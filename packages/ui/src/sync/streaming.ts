@@ -8,7 +8,11 @@
 
 import { create } from "zustand"
 import type { Message, SessionStatus } from "@opencode-ai/sdk/v2/client"
-import { hasTerminalAssistantFinish, isTerminalAssistantMessage } from "./session-working"
+import {
+  hasTerminalAssistantFinish,
+  isLiveAssistantMessage,
+  isTerminalAssistantMessage,
+} from "./session-working"
 import type { State } from "./types"
 
 export type StreamPhase = "streaming" | "cooldown" | "completed"
@@ -38,10 +42,6 @@ export const useStreamingStore = create<StreamingStore>()(() => ({
  */
 /** Only update lastUpdateAt every this many ms to avoid 60Hz store churn */
 const STREAMING_HEARTBEAT_MS = 1000
-
-const isIncompleteAssistantMessage = (message: Message | undefined): message is Message => (
-  Boolean(message && message.role === "assistant" && !isTerminalAssistantMessage(message))
-)
 
 const selectStreamingAssistantMessage = (messages: Message[], state: State): Message | null => {
   let emptyAssistantFallback: Message | null = null
@@ -94,20 +94,21 @@ export function updateStreamingState(state: State) {
     if (busySessionIds.has(sessionID)) continue
     const status = state.session_status?.[sessionID]
     const streamingCandidate = selectStreamingAssistantMessage(messages, state)
+    const streamingCandidateParts = streamingCandidate ? state.part[streamingCandidate.id] : undefined
 
     if (status && status.type !== "busy") {
       const currentStreamingId = currentStreamingIds.get(sessionID)
       if (
         currentStreamingId
         && streamingCandidate?.id === currentStreamingId
-        && isIncompleteAssistantMessage(streamingCandidate)
+        && isLiveAssistantMessage(streamingCandidate, streamingCandidateParts)
       ) {
         busySessionIds.add(sessionID)
       }
       continue
     }
 
-    if (isIncompleteAssistantMessage(streamingCandidate ?? undefined)) {
+    if (isLiveAssistantMessage(streamingCandidate ?? undefined, streamingCandidateParts)) {
       busySessionIds.add(sessionID)
     }
   }
@@ -133,8 +134,13 @@ export function updateStreamingState(state: State) {
     // shell has no parts yet, keep following the nearest assistant in the same
     // turn that has renderable context.
     const streamingMsg = selectStreamingAssistantMessage(messages, state)
+    const streamingMsgParts = streamingMsg ? state.part[streamingMsg.id] : undefined
 
-    if (!streamingMsg || hasTerminalAssistantFinish(streamingMsg)) {
+    if (
+      !streamingMsg
+      || hasTerminalAssistantFinish(streamingMsg)
+      || !isLiveAssistantMessage(streamingMsg, streamingMsgParts)
+    ) {
       const prevId = currentStreamingIds.get(sessionID)
       if (prevId) {
         completeStreamingMessage(sessionID, prevId)

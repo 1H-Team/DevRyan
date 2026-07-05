@@ -10,6 +10,7 @@ import { GitHubSettings } from './GitHubSettings';
 import { VoiceSettings } from './VoiceSettings';
 import { TunnelSettings } from './TunnelSettings';
 import { OpenCodeCliSettings } from './OpenCodeCliSettings';
+import { DesktopKeepAwakeSettings } from './DesktopKeepAwakeSettings';
 import { DesktopNetworkSettings } from './DesktopNetworkSettings';
 import { KeyboardShortcutsSettings } from './KeyboardShortcutsSettings';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
@@ -47,6 +48,7 @@ export const OpenChamberPage: React.FC<OpenChamberPageProps> = ({ section }) => 
                     )}
                     {showDesktopNetworkSettings && (
                         <div className="border-t border-border/40 pt-6">
+                            <DesktopKeepAwakeSettings />
                             <DesktopNetworkSettings />
                         </div>
                     )}
@@ -145,6 +147,7 @@ const SessionsSectionContent: React.FC = () => {
             )}
             {showDesktopNetworkSettings && (
                 <div className="border-t border-border/40 pt-6">
+                    <DesktopKeepAwakeSettings />
                     <DesktopNetworkSettings />
                 </div>
             )}

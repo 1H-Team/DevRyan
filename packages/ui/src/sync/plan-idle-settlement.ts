@@ -1,8 +1,9 @@
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message } from "@opencode-ai/sdk/v2/client"
 
 import { getPlanBlockId, getPlanImplementationKey } from "@/lib/messages/actionablePlan"
 import type { PlanIndicatorEntry } from "./plan-indicator"
 import { filterMessagesForRevert, getEffectiveSessionRevertMessageID } from "./revert-transactions"
+import { hasInFlightToolParts } from "./session-working"
 import type { State } from "./types"
 
 type PlanIdleSettlementState = Pick<
@@ -46,7 +47,7 @@ export function shouldSettlePlanProposalStatus({
   }
 
   if (!isAssistantTurnComplete(trailingMessage)) return false
-  if (hasRunningToolPart(state.part[sourceMessageId] ?? [])) return false
+  if (hasInFlightToolParts(state.part[sourceMessageId])) return false
 
   return true
 }
@@ -82,7 +83,7 @@ export function hasSettledTerminalAssistantTurn({
 
   if (!trailingMessage || trailingMessage.role !== "assistant") return false
   if (!isAssistantTurnComplete(trailingMessage)) return false
-  if (hasRunningToolPart(state.part[trailingMessage.id] ?? [])) return false
+  if (hasInFlightToolParts(state.part[trailingMessage.id])) return false
 
   return true
 }
@@ -113,19 +114,9 @@ export function isSessionTurnSettledForCompletion({
   }
 
   if (!isAssistantTurnComplete(trailingMessage)) return false
-  if (hasRunningToolPart(state.part[completedMessageId] ?? [])) return false
+  if (hasInFlightToolParts(state.part[completedMessageId])) return false
 
   return true
-}
-
-function hasRunningToolPart(parts: readonly Part[]): boolean {
-  for (const part of parts) {
-    if (part.type !== "tool") continue
-    const status = (part as Part & { state?: { status?: unknown } }).state?.status
-    if (status === "pending" || status === "running") return true
-  }
-
-  return false
 }
 
 function isAssistantTurnComplete(message: Message): boolean {

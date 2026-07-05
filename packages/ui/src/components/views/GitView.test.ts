@@ -22,6 +22,23 @@ describe('GitView staged changes workflow', () => {
     expect(code).not.toContain("toast.success(t('gitView.toast.generateCommitChatStarted')");
   });
 
+  test('generates a commit message draft without starting a chat session', () => {
+    const code = source();
+
+    expect(code).toContain('generateCommitMessageDraft');
+    expect(code).toContain('const handleGenerateCommitMessage = React.useCallback(async () => {');
+    expect(code).toContain('await generateCommitMessageDraft(currentDirectory, commitScope.files, {');
+    expect(code).toContain('commitMessageGuidance');
+    expect(code).toContain('setCommitMessage(generatedSubject);');
+    expect(code).toContain("toast.success(t('gitView.toast.commitMessageGenerated'))");
+    expect(code).toContain('commitGenerationRequestRef');
+    expect(code).not.toContain('buildCommitGenerationChatPromptPayload');
+    expect(code).not.toContain('handleStartCommitGenerationChat');
+    expect(code).not.toContain('createSession(undefined, currentDirectory, null)');
+    expect(code).not.toContain("setActiveMainTab('chat')");
+    expect(code).not.toContain('await sendMessage(');
+  });
+
   test('renders staged changes above unstaged changes and derives staged-only commit scope first', () => {
     const code = source();
 

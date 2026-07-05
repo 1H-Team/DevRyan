@@ -168,6 +168,14 @@ describe('resolveSidebarWorkingStatus', () => {
       planState: 'implementing',
     })).toBe(true);
   });
+
+  test('keeps active spinner while completed plan state lingers during new work', () => {
+    expect(resolveSidebarWorkingStatus({
+      isWorking: true,
+      pendingQuestionCount: 0,
+      planState: 'completed',
+    })).toBe(true);
+  });
 });
 
 describe('resolveSubtaskSidebarIndicator', () => {

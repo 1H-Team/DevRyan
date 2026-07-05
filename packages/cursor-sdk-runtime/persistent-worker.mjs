@@ -1,5 +1,9 @@
 import { createInterface } from 'node:readline';
 import process from 'node:process';
+import {
+  normalizeCursorSdkAgentDefinitions,
+  pinCursorSdkSubagentModels,
+} from './agent-definitions.js';
 import { configureCursorSdkRipgrep } from './ripgrep-path.js';
 
 const trimString = (value) => (typeof value === 'string' ? value.trim() : '');
@@ -226,41 +230,6 @@ const stableJson = (value) => {
   }
 };
 
-const normalizeAgentDefinitions = (value) => {
-  if (!isPlainObject(value)) return null;
-  const definitions = {};
-  for (const [rawName, rawDefinition] of Object.entries(value)) {
-    const name = trimString(rawName);
-    if (!name || !isPlainObject(rawDefinition)) continue;
-    const prompt = trimString(rawDefinition.prompt);
-    if (!prompt) continue;
-    definitions[name] = {
-      description: trimString(rawDefinition.description) || `${name} subagent`,
-      prompt,
-      model: 'inherit',
-    };
-  }
-  return Object.keys(definitions).length > 0 ? definitions : null;
-};
-
-// Pin custom subagents to the parent session's exact model selection (id + params
-// such as `fast`). The Cursor SDK's `"inherit"` resolves a subagent's model from
-// cursor-agent's own default, which tracks the Cursor *desktop app* selection. An
-// orchestrator delegation could therefore silently switch e.g. fast=false ->
-// fast=true and trip DevRyan's model-boundary guard (aborting the run). Pinning
-// the concrete selection keeps the DevRyan-chosen model authoritative and fully
-// independent of the desktop app. `auto` sessions stay on `"inherit"`.
-const pinSubagentModelSelection = (definitions, modelSelection) => {
-  if (!isPlainObject(definitions)) return definitions;
-  const selection = normalizeModelSelection(modelSelection);
-  if (!selection?.id || selection.id === 'auto') return definitions;
-  const pinned = {};
-  for (const [name, definition] of Object.entries(definitions)) {
-    pinned[name] = { ...definition, model: selection };
-  }
-  return pinned;
-};
-
 const isMissingCursorAgentError = (error) => /Agent .* not found/i.test(error instanceof Error ? error.message : String(error || ''));
 
 const writeEvent = (event) => {
@@ -281,12 +250,12 @@ writeEvent({ type: 'ready' });
 
 const getAgentCacheKey = (sessionID, directory, model, agents) => `${trimString(sessionID)}\u0000${trimString(directory)}\u0000${stableJson({
   model: normalizeModelSelection(model),
-  agents: normalizeAgentDefinitions(agents),
+  agents: normalizeCursorSdkAgentDefinitions(agents),
   settingSources: CURSOR_SETTING_SOURCES ?? null,
 })}`;
 
 const getOrCreateAgent = async ({ apiKey, sessionID, model, directory, agentID, agents }) => {
-  const normalizedAgents = pinSubagentModelSelection(normalizeAgentDefinitions(agents), model);
+  const normalizedAgents = pinCursorSdkSubagentModels(normalizeCursorSdkAgentDefinitions(agents), model);
   const key = getAgentCacheKey(sessionID, directory, model, normalizedAgents);
   const cached = agentCache.get(key);
   if (cached) return { agent: cached, cacheHit: true };
@@ -326,7 +295,7 @@ const handlePrepare = async (command) => {
   const apiKey = trimString(command.apiKey);
   const modelID = trimString(command.modelID) || 'auto';
   const model = normalizeModelSelection(command.modelSelection, modelID);
-  const agents = normalizeAgentDefinitions(command.agents);
+  const agents = normalizeCursorSdkAgentDefinitions(command.agents);
   const directory = trimString(command.directory);
   const sessionID = trimString(command.sessionID);
   const agentID = trimString(command.agentID);
@@ -364,7 +333,7 @@ const handlePrompt = async (command) => {
   const apiKey = trimString(command.apiKey);
   const modelID = trimString(command.modelID) || 'auto';
   const model = normalizeModelSelection(command.modelSelection, modelID);
-  const agents = normalizeAgentDefinitions(command.agents);
+  const agents = normalizeCursorSdkAgentDefinitions(command.agents);
   const prompt = trimString(command.prompt);
   const directory = trimString(command.directory);
   const sessionID = trimString(command.sessionID);

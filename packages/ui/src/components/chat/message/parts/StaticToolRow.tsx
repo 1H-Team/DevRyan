@@ -19,6 +19,7 @@ import {
 import { areActivityListsEqual, getToolReadOffset } from './activityRowUtils';
 import { isActivityRunning } from './activityTools';
 import { normalizeToolName } from './toolRenderUtils';
+import { buildTodoSummary, formatCompactTodoTotal } from '../../lib/todoSummary';
 
 const getFirstToolPath = (...records: Array<Record<string, unknown> | undefined>): string | null => {
     for (const record of records) {
@@ -67,43 +68,8 @@ const getToolFilePath = (activity: TurnActivityPart): string | null => {
     return typeof filePath === 'string' && filePath.trim().length > 0 ? filePath : null;
 };
 
-const toTodoStatusKey = (value: unknown): 'pending' | 'in_progress' | 'completed' | 'cancelled' | null => {
-    if (typeof value !== 'string') {
-        return null;
-    }
-    const normalized = value.trim().toLowerCase();
-    if (normalized === 'pending') return 'pending';
-    if (normalized === 'in_progress' || normalized === 'in progress' || normalized === 'inprogress') return 'in_progress';
-    if (normalized === 'completed' || normalized === 'done') return 'completed';
-    if (normalized === 'cancelled' || normalized === 'canceled') return 'cancelled';
-    return null;
-};
-
 const formatTodoSummary = (todos: unknown[]): string | null => {
-    if (todos.length === 0) {
-        return '0 tasks';
-    }
-
-    let pending = 0;
-    let inProgress = 0;
-    for (const todo of todos) {
-        if (!todo || typeof todo !== 'object') {
-            continue;
-        }
-        const status = toTodoStatusKey((todo as { status?: unknown }).status);
-        if (!status) {
-            continue;
-        }
-        if (status === 'pending') pending += 1;
-        if (status === 'in_progress') inProgress += 1;
-    }
-
-    const activeCount = pending + inProgress;
-    if (activeCount === 0) {
-        return '0 tasks';
-    }
-
-    return `${activeCount} ${activeCount === 1 ? 'task' : 'tasks'}`;
+    return formatCompactTodoTotal(buildTodoSummary(todos).total);
 };
 
 const getTodoSummaryFromActivity = (activity: TurnActivityPart): string | null => {

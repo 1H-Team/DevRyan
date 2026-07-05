@@ -15,6 +15,7 @@ describe('CommitSection primary action', () => {
     expect(code).not.toContain('onSync(trackingRemote)');
     expect(code).not.toContain('onGenerateMessage();');
     expect(code).not.toContain('onStartCommitGenerationChat();\\n            onCommit();');
+    expect(code).not.toContain('onStartCommitGenerationChat');
     expect(code).toContain('onCommit();');
   });
 
@@ -23,8 +24,10 @@ describe('CommitSection primary action', () => {
 
     expect(code).toContain('RiSparklingLine');
     expect(code).toContain('trailingAction={');
-    expect(code).toContain('onStartCommitGenerationChat');
-    expect(code).toContain("aria-label={t('gitView.commit.generateChatAria')}");
+    expect(code).toContain('onGenerateCommitMessage');
+    expect(code).toContain("aria-label={t('gitView.commit.generateAria')}");
+    expect(code).not.toContain('generateChatAria');
+    expect(code).not.toContain('generateChatTooltip');
   });
 
   test('commit controls stay clickable when changes exist without requiring a message', () => {

@@ -304,6 +304,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const showQuickPinAction = !archivedBucket && !mobileVariant;
   const showQuickArchiveAction = !archivedBucket && !mobileVariant;
   const showQuickUnarchiveAction = archivedBucket && !isArchiveAncestorOnly && !mobileVariant;
+  const showQuickDeleteAction = archivedBucket && !isArchiveAncestorOnly && !mobileVariant;
   const {
     revealOnHoverClass,
     hideOnHoverClass,
@@ -703,6 +704,13 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     handleUnarchiveSession(session);
   };
 
+  const handleQuickDeleteClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setOpenSidebarMenuKey(null);
+    handleDeleteSession(session, { archivedBucket: true });
+  };
+
   const quickActionButtonClass = cn(
     'inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 transition-opacity',
     !alwaysShowActions ? 'h-5 w-5' : 'h-6 w-6',
@@ -1036,6 +1044,26 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                   </TooltipTrigger>
                   <TooltipContent side="left" sideOffset={8}>
                     {t('sessions.sidebar.session.menu.unarchive')}
+                  </TooltipContent>
+                </Tooltip>
+              ) : null}
+              {showQuickDeleteAction ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className={quickActionButtonClass}
+                      aria-label={t('sessions.sidebar.bulkActions.delete')}
+                      onPointerDown={handleQuickArchivePointerDown}
+                      onMouseDown={handleQuickArchiveMouseDown}
+                      onClick={handleQuickDeleteClick}
+                      onKeyDown={(event) => event.stopPropagation()}
+                    >
+                      <RiDeleteBinLine className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="left" sideOffset={8}>
+                    {t('sessions.sidebar.bulkActions.delete')}
                   </TooltipContent>
                 </Tooltip>
               ) : null}

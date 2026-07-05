@@ -11,6 +11,7 @@ import {
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { getProviderIntegrationLookupIds } from './provider-integrations.js';
 
 const ANTHROPIC_OAUTH_PROVIDER_IDS = new Set([
   'anthropic',
@@ -75,6 +76,10 @@ function getProviderLookupIds(providerId) {
   const normalized = normalizeProviderId(providerId);
   if (!normalized) {
     return [];
+  }
+  const providerIntegrationLookupIds = getProviderIntegrationLookupIds(normalized);
+  if (providerIntegrationLookupIds.length > 1 || providerIntegrationLookupIds[0] !== normalized) {
+    return providerIntegrationLookupIds;
   }
   if (ANTHROPIC_OAUTH_PROVIDER_IDS.has(normalized)) {
     return [normalized, ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID];
@@ -1121,15 +1126,18 @@ function removeProviderConfig(providerId, workingDirectory, scope = 'user') {
   const targetConfig = getConfigForPath(layers, targetPath);
   const providerConfig = isPlainObject(targetConfig.provider) ? targetConfig.provider : {};
   const providersConfig = isPlainObject(targetConfig.providers) ? targetConfig.providers : {};
-  const removedProvider = Object.prototype.hasOwnProperty.call(providerConfig, providerId);
-  const removedProviders = Object.prototype.hasOwnProperty.call(providersConfig, providerId);
+  const providerLookupIds = getProviderLookupIds(providerId);
+  const removedProvider = providerLookupIds.some((lookupId) => Object.prototype.hasOwnProperty.call(providerConfig, lookupId));
+  const removedProviders = providerLookupIds.some((lookupId) => Object.prototype.hasOwnProperty.call(providersConfig, lookupId));
 
   if (!removedProvider && !removedProviders) {
     return false;
   }
 
   if (removedProvider) {
-    delete providerConfig[providerId];
+    for (const lookupId of providerLookupIds) {
+      delete providerConfig[lookupId];
+    }
     if (Object.keys(providerConfig).length === 0) {
       delete targetConfig.provider;
     } else {
@@ -1138,7 +1146,9 @@ function removeProviderConfig(providerId, workingDirectory, scope = 'user') {
   }
 
   if (removedProviders) {
-    delete providersConfig[providerId];
+    for (const lookupId of providerLookupIds) {
+      delete providersConfig[lookupId];
+    }
     if (Object.keys(providersConfig).length === 0) {
       delete targetConfig.providers;
     } else {

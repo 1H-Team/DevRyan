@@ -613,6 +613,7 @@ export interface SettingsPayload {
   lastDirectory?: string;
   homeDirectory?: string;
   opencodeBinary?: string;
+  desktopKeepAwakeEnabled?: boolean;
   projects?: ProjectEntry[];
   activeProjectId?: string;
   approvedDirectories?: string[];

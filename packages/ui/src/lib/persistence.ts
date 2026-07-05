@@ -655,6 +655,9 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   if (typeof candidate.desktopLanAccessEnabled === 'boolean') {
     result.desktopLanAccessEnabled = candidate.desktopLanAccessEnabled;
   }
+  if (typeof candidate.desktopKeepAwakeEnabled === 'boolean') {
+    result.desktopKeepAwakeEnabled = candidate.desktopKeepAwakeEnabled;
+  }
 
   const projects = sanitizeProjects(candidate.projects);
   if (projects) {
@@ -1226,11 +1229,8 @@ let _pendingSettingsChanges: Partial<DesktopSettings> | null = null;
 let _settingsFlushTimer: ReturnType<typeof setTimeout> | null = null;
 const SETTINGS_DEBOUNCE_MS = 200;
 
-const _flushSettingsUpdate = async (): Promise<void> => {
-  const changes = _pendingSettingsChanges;
-  _pendingSettingsChanges = null;
-  _settingsFlushTimer = null;
-  if (!changes || Object.keys(changes).length === 0) return;
+const persistSettingsChanges = async (changes: Partial<DesktopSettings>): Promise<DesktopSettings | null> => {
+  if (!changes || Object.keys(changes).length === 0) return null;
 
   const runtimeSettings = getRuntimeSettingsAPI();
   const modelPrefsBaseline = createModelPrefsBaseline(readCurrentModelPrefs());
@@ -1241,7 +1241,7 @@ const _flushSettingsUpdate = async (): Promise<void> => {
         persistToLocalStorage(updated);
         applyDesktopUiPreferences(updated, { modelPrefsBaseline });
       }
-      return;
+      return updated ?? null;
     } catch (error) {
       console.warn('Failed to update settings via runtime settings API:', error);
     }
@@ -1259,7 +1259,7 @@ const _flushSettingsUpdate = async (): Promise<void> => {
 
     if (!response.ok) {
       console.warn('Failed to update shared settings via API:', response.status, response.statusText);
-      return;
+      return null;
     }
 
     const updated = (await response.json().catch(() => null)) as DesktopSettings | null;
@@ -1269,9 +1269,20 @@ const _flushSettingsUpdate = async (): Promise<void> => {
       // Invalidate GET cache so next read sees the fresh data
       _settingsCache = null;
     }
+    return updated;
   } catch (error) {
     console.warn('Failed to update shared settings via API:', error);
+    return null;
   }
+};
+
+const _flushSettingsUpdate = async (): Promise<void> => {
+  const changes = _pendingSettingsChanges;
+  _pendingSettingsChanges = null;
+  _settingsFlushTimer = null;
+  if (!changes || Object.keys(changes).length === 0) return;
+
+  await persistSettingsChanges(changes);
 };
 
 export const updateDesktopSettings = async (changes: Partial<DesktopSettings>): Promise<void> => {
@@ -1285,6 +1296,21 @@ export const updateDesktopSettings = async (changes: Partial<DesktopSettings>): 
     clearTimeout(_settingsFlushTimer);
   }
   _settingsFlushTimer = setTimeout(() => void _flushSettingsUpdate(), SETTINGS_DEBOUNCE_MS);
+};
+
+export const saveDesktopSettingsNow = async (changes: Partial<DesktopSettings>): Promise<DesktopSettings | null> => {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const mergedChanges = { ...(_pendingSettingsChanges ?? {}), ...changes };
+  _pendingSettingsChanges = null;
+  if (_settingsFlushTimer) {
+    clearTimeout(_settingsFlushTimer);
+    _settingsFlushTimer = null;
+  }
+
+  return persistSettingsChanges(mergedChanges);
 };
 
 export const initializeAppearancePreferences = async (): Promise<void> => {

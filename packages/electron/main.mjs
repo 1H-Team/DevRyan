@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, session, shell, systemPreferences } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, session, shell, systemPreferences } from 'electron';
 import contextMenu from 'electron-context-menu';
 import log from 'electron-log/main.js';
 import dgram from 'node:dgram';
@@ -13,6 +13,7 @@ import updaterPkg from 'electron-updater';
 import { ElectronSshManager } from './ssh-manager.mjs';
 import { MacosSpeechManager } from './speech-manager.mjs';
 import { clearElectronRuntimeCaches } from './cache-maintenance.mjs';
+import { createKeepAwakeController } from './keep-awake-controller.mjs';
 import { buildStartupSplashHtml as buildStartupSplashHtmlFromSettings } from './startup-splash.mjs';
 import {
   isAllowedElectronContentUrl,
@@ -127,6 +128,7 @@ const INSTALLED_APPS_CACHE_TTL_SECS = 60 * 60 * 24;
 const INSTALLED_APPS_CACHE_FILE = 'discovered-apps.json';
 
 const { autoUpdater } = updaterPkg;
+const keepAwakeController = createKeepAwakeController({ powerSaveBlocker });
 
 const state = {
   serverHandle: null,
@@ -184,6 +186,7 @@ const prepareForQuit = ({ installingUpdate = false } = {}) => {
   state.quitConfirmed = true;
   state.installingUpdate = installingUpdate;
   state.quitConfirmationPending = false;
+  releaseDesktopKeepAwake();
 
   if (state.mainWindow && !state.mainWindow.isDestroyed()) {
     try {
@@ -356,6 +359,18 @@ const writeJsonFile = async (filePath, data) => {
 const readSettingsRoot = () => {
   const root = readJsonFile(settingsFilePath());
   return root && typeof root === 'object' && !Array.isArray(root) ? root : {};
+};
+
+const readDesktopKeepAwakeEnabled = () => readSettingsRoot().desktopKeepAwakeEnabled === true;
+
+const applyDesktopKeepAwake = (enabled) => {
+  const result = keepAwakeController.apply(enabled === true);
+  log.info('[electron] desktop keep awake updated', result);
+  return result;
+};
+
+const releaseDesktopKeepAwake = () => {
+  keepAwakeController.stop();
 };
 
 // Serializes read-modify-write of the settings file within this process.
@@ -2111,6 +2126,9 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       return { enabled: false, requiresRestart: false };
     }
 
+    case 'desktop_set_keep_awake':
+      return applyDesktopKeepAwake(args.enabled === true);
+
     case 'desktop_check_for_updates': {
       const currentVersion = APP_VERSION;
       let payload = null;
@@ -2531,6 +2549,7 @@ app.on('window-all-closed', () => {
     killSidecar();
     void sshManager.shutdownAll();
     speechManager.shutdown();
+    releaseDesktopKeepAwake();
   }
   if (process.platform !== 'darwin') {
     app.quit();
@@ -2540,10 +2559,15 @@ app.on('window-all-closed', () => {
 app.on('before-quit', (event) => {
   if (state.quitConfirmed || state.installingUpdate || process.platform !== 'darwin') {
     state.quitRequested = true;
+    releaseDesktopKeepAwake();
     return;
   }
   event.preventDefault();
   void requestQuitWithConfirmation();
+});
+
+app.on('will-quit', () => {
+  releaseDesktopKeepAwake();
 });
 
 app.on('second-instance', (_event, argv) => {
@@ -2589,6 +2613,11 @@ app.whenReady().then(async () => {
     arch: process.arch,
   });
   nativeTheme.themeSource = readThemeSource();
+  try {
+    applyDesktopKeepAwake(readDesktopKeepAwakeEnabled());
+  } catch (error) {
+    log.warn('[electron] failed to apply persisted desktop keep awake setting:', error);
+  }
   setupAutoUpdater();
 
   if (process.platform === 'darwin') {
@@ -2621,5 +2650,6 @@ app.whenReady().then(async () => {
   });
 }).catch((error) => {
   log.error('[electron] startup failed:', error);
+  releaseDesktopKeepAwake();
   app.exit(1);
 });

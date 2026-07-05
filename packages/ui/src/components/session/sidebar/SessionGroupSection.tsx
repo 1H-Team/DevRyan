@@ -146,6 +146,14 @@ export function SessionGroupSection(props: Props): React.ReactNode {
     draftCount = 0,
   } = props;
 
+  // Tracks whether a session row is currently animating out (collapsing via
+  // SessionSidebarMotionRow's grid-track exit). While true, the empty-state
+  // "No chats" block is suppressed so it doesn't slide upward to fill the
+  // gap left by the exiting row — it should appear in place only after the
+  // collapse finishes.
+  const [isExitAnimating, setIsExitAnimating] = React.useState(false);
+  const prevVisibleCountRef = React.useRef(0);
+
   const compareSessionNodes = React.useCallback((a: SessionNode, b: SessionNode) => {
     if (group.isArchivedBucket) {
       return compareArchivedSessionsByParentAssistantActivity(a.session, b.session, archivedAssistantActivity);
@@ -263,10 +271,6 @@ export function SessionGroupSection(props: Props): React.ReactNode {
   const ungroupedSessions = React.useMemo(() => sourceGroupNodes.filter((node) => !sessionIdsInFolders.has(node.session.id)), [sourceGroupNodes, sessionIdsInFolders]);
   const rootFolders = React.useMemo(() => allFoldersForGroup.filter(({ folder }) => !folder.parentId), [allFoldersForGroup]);
 
-  if (hasSessionSearchQuery && !groupMatchesSearch && rootFolders.length === 0 && ungroupedSessions.length === 0 && draftCount === 0) {
-    return null;
-  }
-
   const totalSessions = ungroupedSessions.length;
   const visibleSessions = group.isArchivedBucket
     ? ungroupedSessions
@@ -274,6 +278,21 @@ export function SessionGroupSection(props: Props): React.ReactNode {
       ? ungroupedSessions
       : (isExpanded ? ungroupedSessions : ungroupedSessions.slice(0, maxVisible));
   const remainingCount = totalSessions - visibleSessions.length;
+
+  // Detect when a session was removed from this group (count dropped) so we
+  // can gate the empty-state render until the exit animation finishes. Only
+  // count drops trigger the gate; additions and initial mount do not.
+  React.useEffect(() => {
+    const prev = prevVisibleCountRef.current;
+    if (visibleSessions.length < prev) {
+      setIsExitAnimating(true);
+    }
+    prevVisibleCountRef.current = visibleSessions.length;
+  }, [visibleSessions.length]);
+
+  if (hasSessionSearchQuery && !groupMatchesSearch && rootFolders.length === 0 && ungroupedSessions.length === 0 && draftCount === 0) {
+    return null;
+  }
 
   const collectGroupSessions = (nodes: SessionNode[]): Session[] => {
     if (group.isArchivedBucket) {
@@ -480,7 +499,7 @@ export function SessionGroupSection(props: Props): React.ReactNode {
     >
       {draftItems}
       {group.isArchivedBucket ? null : renderFolderItems()}
-      <AnimatePresence initial={false}>
+      <AnimatePresence initial={false} onExitComplete={() => setIsExitAnimating(false)}>
         {visibleSessions.map((node) => (
           <React.Fragment key={node.session.id}>
             {renderSessionNode(node, 0, group.directory, projectId, group.isArchivedBucket === true)}
@@ -488,7 +507,7 @@ export function SessionGroupSection(props: Props): React.ReactNode {
         ))}
       </AnimatePresence>
       {group.isArchivedBucket ? renderFolderItems() : null}
-      {totalSessions === 0 && allFoldersForGroup.length === 0 && draftCount === 0 ? (
+      {totalSessions === 0 && allFoldersForGroup.length === 0 && draftCount === 0 && !isExitAnimating ? (
         <div className="py-1 text-left typography-micro text-muted-foreground">
           {group.isArchivedBucket
             ? t('sessions.sidebar.group.empty.noArchivedSessions')

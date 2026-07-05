@@ -29,10 +29,10 @@ interface CommitSectionProps {
   onCommitAmend: () => void;
   onCommitAndPush: () => void;
   onCommitAndSync: () => void;
-  onStartCommitGenerationChat: () => void;
+  onGenerateCommitMessage: () => void;
   commitAction: CommitAction;
-  isStartingCommitGenerationChat: boolean;
-  commitGenerationChatDisabled: boolean;
+  isGeneratingCommitMessage: boolean;
+  commitGenerationDisabled: boolean;
   gitmojiEnabled: boolean;
   onOpenGitmojiPicker: () => void;
   syncAction: SyncAction;
@@ -53,10 +53,10 @@ export const CommitSection: React.FC<CommitSectionProps> = ({
   onCommitAmend,
   onCommitAndPush,
   onCommitAndSync,
-  onStartCommitGenerationChat,
+  onGenerateCommitMessage,
   commitAction,
-  isStartingCommitGenerationChat,
-  commitGenerationChatDisabled,
+  isGeneratingCommitMessage,
+  commitGenerationDisabled,
   gitmojiEnabled,
   onOpenGitmojiPicker,
 }) => {
@@ -85,12 +85,12 @@ export const CommitSection: React.FC<CommitSectionProps> = ({
                   type="button"
                   size="icon"
                   variant="ghost"
-                  onClick={onStartCommitGenerationChat}
-                  disabled={commitGenerationChatDisabled}
+                  onClick={onGenerateCommitMessage}
+                  disabled={commitGenerationDisabled}
                   className="h-7 w-7 rounded-md text-muted-foreground hover:text-foreground"
-                  aria-label={t('gitView.commit.generateChatAria')}
+                  aria-label={t('gitView.commit.generateAria')}
                 >
-                  {isStartingCommitGenerationChat ? (
+                  {isGeneratingCommitMessage ? (
                     <RiLoader4Line className="size-4 animate-spin" />
                   ) : (
                     <RiSparklingLine className="size-4" />
@@ -98,9 +98,9 @@ export const CommitSection: React.FC<CommitSectionProps> = ({
                 </Button>
               </TooltipTrigger>
               <TooltipContent sideOffset={8}>
-                {isStartingCommitGenerationChat
-                  ? t('gitView.commit.generateChatLoading')
-                  : t('gitView.commit.generateChatTooltip')}
+                {isGeneratingCommitMessage
+                  ? t('gitView.commit.generateLoading')
+                  : t('gitView.commit.generateTooltip')}
               </TooltipContent>
             </Tooltip>
           }

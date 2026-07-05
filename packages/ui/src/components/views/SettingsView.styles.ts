@@ -5,10 +5,13 @@ export function getSettingsFullPageOverlayClassName(): string {
   return 'absolute inset-0 z-20 bg-background';
 }
 
-export function getSettingsBackButtonClassName({ avoidMacTrafficLights = false }: { avoidMacTrafficLights?: boolean } = {}): string {
+export function getSettingsBackButtonClassName({
+  avoidMacTrafficLights = false,
+  placement = 'floating',
+}: { avoidMacTrafficLights?: boolean; placement?: 'floating' | 'inline' } = {}): string {
   return cn(
-    'absolute top-3 z-50',
-    avoidMacTrafficLights ? 'left-[5.5rem]' : 'left-3',
+    placement === 'floating' && 'absolute top-3 z-50',
+    placement === 'floating' && (avoidMacTrafficLights ? 'left-[5.5rem]' : 'left-3'),
     'inline-flex h-9 w-9 items-center justify-center rounded-lg p-2',
     'text-muted-foreground hover:text-foreground hover:bg-interactive-hover/50',
     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary'

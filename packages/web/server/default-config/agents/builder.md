@@ -13,6 +13,8 @@ permission:
     "*": ask
   plan_enter: deny
   plan_exit: deny
+  question: allow
+  question_*: allow
   read:
     "*.env": ask
     "*.env.*": ask
@@ -33,6 +35,10 @@ permission:
     using-agent-skills: allow
   context7_*: deny
 ---
+
+**Question Routing**
+- Ask only when truly blocked by missing user intent or an unrecoverable implementation choice.
+- When you need input from the user, call the structured question tool with 1-3 questions and 2-3 concrete options where possible. Do not ask clarifying questions as plain assistant text.
 
 **Skill and Reasoning Hygiene**
 - Skill announcements are tool activity only; if a skill says to announce, the skill tool event satisfies that requirement; do not write assistant text to announce skill use.

@@ -557,6 +557,138 @@ describe('Cursor SDK runtime', () => {
     });
   });
 
+  it('preserves explicit Cursor SDK subagent model defaults on direct agent creation', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
+    let createOptions = null;
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: {},
+      useNodeWorkerForPrompts: false,
+      resolveAgentDefinitions: async () => ({
+        fixer: {
+          description: 'Fast implementation specialist',
+          prompt: 'Apply the requested fix.',
+          model: { id: 'composer-2.5', params: [{ id: 'fast', value: 'false' }] },
+        },
+      }),
+      loadSdk: async () => ({
+        Agent: {
+          create: async (options = {}) => {
+            createOptions = options;
+            return {
+              agentId: 'agent-test',
+              send: async () => ({
+                stream: async function* stream() {
+                  yield {
+                    type: 'assistant',
+                    message: {
+                      content: [{ type: 'text', text: 'done' }],
+                    },
+                  };
+                },
+                wait: async () => ({ status: 'finished', result: '' }),
+              }),
+            };
+          },
+        },
+      }),
+    });
+
+    await runtime.handlePromptAsync({
+      sessionID: 'ses_cursor_explicit_agent_model',
+      directory: '/tmp/project',
+      body: {
+        model: { providerID: 'cursor-acp', modelID: 'gpt-5.5' },
+        agent: 'orchestrator',
+        messageID: 'msg_cursor_explicit_agent_model_user',
+        parts: [{ type: 'text', text: 'delegate to fixer' }],
+      },
+    });
+
+    const records = await waitFor(async () => {
+      const current = await runtime.getSessionMessages('ses_cursor_explicit_agent_model');
+      return current.some((record) => record.info?.role === 'assistant' && record.info?.finish)
+        ? current
+        : null;
+    });
+
+    expect(records?.[1]?.info.finish).toBe('stop');
+    expect(createOptions?.model).toEqual({ id: 'gpt-5.5' });
+    expect(createOptions?.agents).toEqual({
+      fixer: {
+        description: 'Fast implementation specialist',
+        prompt: 'Apply the requested fix.',
+        model: { id: 'composer-2.5', params: [{ id: 'fast', value: 'false' }] },
+      },
+    });
+  });
+
+  it('passes a model-selection resolver to Cursor SDK agent definitions', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
+    let createOptions = null;
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: {},
+      useNodeWorkerForPrompts: false,
+      resolveAgentDefinitions: async ({ resolveModelSelection }) => {
+        const model = await resolveModelSelection({ modelID: 'composer-2.5' });
+        return {
+          fixer: {
+            description: 'Fast implementation specialist',
+            prompt: 'Apply the requested fix.',
+            model,
+          },
+        };
+      },
+      loadSdk: async () => ({
+        Agent: {
+          create: async (options = {}) => {
+            createOptions = options;
+            return {
+              agentId: 'agent-test',
+              send: async () => ({
+                stream: async function* stream() {
+                  yield {
+                    type: 'assistant',
+                    message: {
+                      content: [{ type: 'text', text: 'done' }],
+                    },
+                  };
+                },
+                wait: async () => ({ status: 'finished', result: '' }),
+              }),
+            };
+          },
+        },
+      }),
+    });
+
+    await runtime.handlePromptAsync({
+      sessionID: 'ses_cursor_agent_model_resolver',
+      directory: '/tmp/project',
+      body: {
+        model: { providerID: 'cursor-acp', modelID: 'gpt-5.5' },
+        messageID: 'msg_cursor_agent_model_resolver_user',
+        parts: [{ type: 'text', text: 'delegate to fixer' }],
+      },
+    });
+
+    const records = await waitFor(async () => {
+      const current = await runtime.getSessionMessages('ses_cursor_agent_model_resolver');
+      return current.some((record) => record.info?.role === 'assistant' && record.info?.finish)
+        ? current
+        : null;
+    });
+
+    expect(records?.[1]?.info.finish).toBe('stop');
+    expect(createOptions?.agents?.fixer?.model).toEqual({
+      id: 'composer-2.5',
+      params: [{ id: 'fast', value: 'false' }],
+    });
+  });
+
   it('uses the direct Cursor SDK wait result when the stream remains open', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
     const runtime = createCursorSdkRuntime({
@@ -2332,6 +2464,82 @@ describe('Cursor SDK runtime', () => {
         model: 'composer-2.5',
       },
     });
+  });
+
+  it('allows Cursor task subagents that use a configured explicit subagent model', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
+    let cancelled = false;
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: {},
+      emitEvent: () => {},
+      resolveAgentDefinitions: async () => ({
+        fixer: {
+          description: 'Fast implementation specialist',
+          prompt: 'Apply the requested fix.',
+          model: { id: 'composer-2.5', params: [{ id: 'fast', value: 'false' }] },
+        },
+      }),
+      createPromptRun: async () => ({
+        cancel: async () => {
+          cancelled = true;
+        },
+        stream: async function* stream() {
+          yield {
+            type: 'message',
+            message: {
+              type: 'tool_call',
+              call_id: 'task_configured_model_1',
+              name: 'task',
+              status: 'completed',
+              args: {
+                description: 'Fix with a subagent',
+                prompt: 'Apply a small edit',
+                model: 'composer-2.5',
+              },
+              result: 'Subagent completed on its configured model.',
+            },
+          };
+          yield {
+            type: 'message',
+            message: {
+              type: 'assistant',
+              message: {
+                content: [{ type: 'text', text: 'continued after configured subagent' }],
+              },
+            },
+          };
+        },
+      }),
+    });
+
+    await runtime.handlePromptAsync({
+      sessionID: 'ses_configured_subagent_model_boundary',
+      directory: '/tmp/project',
+      body: {
+        model: { providerID: 'cursor-acp', modelID: 'gpt-5.5' },
+        messageID: 'msg_configured_subagent_model_boundary_user',
+        parts: [{ type: 'text', text: 'delegate to configured fixer model' }],
+      },
+    });
+
+    const records = await waitFor(async () => {
+      const current = await runtime.getSessionMessages('ses_configured_subagent_model_boundary');
+      return current.some((record) => record.info?.role === 'assistant' && record.info?.finish)
+        ? current
+        : null;
+    });
+
+    const assistant = records?.find((record) => record.info?.role === 'assistant');
+    const taskPart = assistant?.parts?.find((part) => part.type === 'tool' && part.tool === 'task');
+
+    expect(cancelled).toBe(false);
+    expect(assistant?.info.finish).toBe('stop');
+    expect(taskPart?.state?.status).toBe('completed');
+    expect(taskPart?.output).toBe('Subagent completed on its configured model.');
+    expect(assistant?.parts?.find((part) => part.type === 'text')?.text).toBe('continued after configured subagent');
+    expect(runtime.getRuntimeStatus().lastCancellation).toBeNull();
   });
 
   it('allows Cursor task subagents that request the same effective fast model selection', async () => {

@@ -2679,6 +2679,21 @@ const getSidebarSessionSignature = (session: Session, stableUpdatedAt: number): 
   ].join('|')
 }
 
+const isSidebarSessionWorking = (state: State, sessionID: string): boolean => {
+  const messages = state.message[sessionID] ?? EMPTY_MESSAGES
+  const lastMessage = messages[messages.length - 1]
+  const liveParts = lastMessage ? (state.part[lastMessage.id] ?? EMPTY_PARTS) : EMPTY_PARTS
+  const liveStreamingMessageId = useStreamingStore.getState().streamingMessageIds.get(sessionID) ?? null
+
+  return isSessionWorkingFromState({
+    status: state.session_status?.[sessionID],
+    permissions: state.permission[sessionID] ?? EMPTY_PERMISSION_REQUESTS,
+    messages,
+    liveStreamingMessageId,
+    liveParts,
+  })
+}
+
 /** Get sessions stabilized for sidebar tree rendering */
 export function useSidebarSessions(directory?: string): Session[] {
   const store = useDirectoryStore(directory)
@@ -2698,8 +2713,7 @@ export function useSidebarSessions(directory?: string): Session[] {
     const cached = cacheRef.current
     const streamingSignature = source
       .map((session) => {
-        const statusType = state.session_status?.[session.id]?.type
-        const isStreaming = statusType === 'busy' || statusType === 'retry'
+        const isStreaming = isSidebarSessionWorking(state, session.id)
         return `${session.id}:${isStreaming ? 1 : 0}`
       })
       .join('|')
@@ -2716,8 +2730,7 @@ export function useSidebarSessions(directory?: string): Session[] {
 
     const array = source.map((session) => {
       const rawUpdatedAt = Number(session.time?.updated ?? session.time?.created ?? 0)
-      const statusType = state.session_status?.[session.id]?.type
-      const isStreaming = statusType === 'busy' || statusType === 'retry'
+      const isStreaming = isSidebarSessionWorking(state, session.id)
       const cachedUpdatedAt = cached?.stableUpdatedAtById.get(session.id) ?? rawUpdatedAt
       const wasStreaming = cached?.streamingById.get(session.id) ?? false
       const stableUpdatedAt = isStreaming
@@ -3057,6 +3070,8 @@ export function useIsSessionWorking(sessionID: string, directory?: string): bool
   const status = useSessionStatus(sessionID, directory)
   const permissions = useSessionPermissions(sessionID, directory)
   const messages = useSessionMessages(sessionID, directory)
+  const lastMessageId = messages[messages.length - 1]?.id ?? ""
+  const liveParts = useSessionParts(lastMessageId, directory)
   const liveStreamingMessageId = useStreamingStore(
     React.useCallback(
       (state) => state.streamingMessageIds.get(sessionID) ?? null,
@@ -3065,6 +3080,6 @@ export function useIsSessionWorking(sessionID: string, directory?: string): bool
   )
 
   return useMemo(() => {
-    return isSessionWorkingFromState({ status, permissions, messages, liveStreamingMessageId })
-  }, [status, permissions, messages, liveStreamingMessageId])
+    return isSessionWorkingFromState({ status, permissions, messages, liveStreamingMessageId, liveParts })
+  }, [status, permissions, messages, liveStreamingMessageId, liveParts])
 }

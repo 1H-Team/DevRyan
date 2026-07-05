@@ -70,7 +70,7 @@ import { BranchIntegrationSection, type OperationLogEntry } from './git/BranchIn
 import type { GitPushSyncResult, GitRemote } from '@/lib/gitApi';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
 import { cn } from '@/lib/utils';
-import { buildCommitGenerationChatPromptPayload, getGitWorktreeBootstrapStatus, syncGitBranchForPush } from '@/lib/gitApi';
+import { generateCommitMessageDraft, getGitWorktreeBootstrapStatus, syncGitBranchForPush } from '@/lib/gitApi';
 import { validateCommitMessage } from '@/lib/commitTemplate';
 import { shouldAutoSelectGitChange } from '@/lib/git/commitWorkflowSafety';
 import { sessionEvents } from '@/lib/sessionEvents';
@@ -205,10 +205,6 @@ export const GitView: React.FC = () => {
   const [isWaitingForGitRefreshAfterBootstrap, setIsWaitingForGitRefreshAfterBootstrap] = React.useState(false);
   const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
   const newSessionDraft = useSessionUIStore((s) => s.newSessionDraft);
-  const createSession = useSessionUIStore((s) => s.createSession);
-  const initializeNewOpenChamberSession = useSessionUIStore((s) => s.initializeNewOpenChamberSession);
-  const sendMessage = useSessionUIStore((s) => s.sendMessage);
-  const setCurrentSession = useSessionUIStore((s) => s.setCurrentSession);
   const setDraftBootstrapPendingDirectory = useSessionUIStore((s) => s.setDraftBootstrapPendingDirectory);
   const worktreeMap = useSessionUIStore((s) => s.worktreeMetadata);
   const availableWorktrees = useSessionUIStore((s) => s.availableWorktrees);
@@ -288,9 +284,7 @@ export const GitView: React.FC = () => {
   const isMobile = useUIStore((state) => state.isMobile);
   const openContextDiff = useUIStore((state) => state.openContextDiff);
   const navigateToDiff = useUIStore((state) => state.navigateToDiff);
-  const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
   const setRightSidebarOpen = useUIStore((state) => state.setRightSidebarOpen);
-  const setSessionSwitcherOpen = useUIStore((state) => state.setSessionSwitcherOpen);
   const previousBootstrapStatusRef = React.useRef<'pending' | 'ready' | 'failed' | null>(null);
   const remoteRefreshTimestampsRef = React.useRef<Map<string, number>>(new Map());
 
@@ -407,13 +401,14 @@ export const GitView: React.FC = () => {
   const [syncAction, setSyncAction] = React.useState<SyncAction>(null);
   const [isStashesDialogOpen, setIsStashesDialogOpen] = React.useState(false);
   const [commitAction, setCommitAction] = React.useState<CommitAction>(null);
-  const [isStartingCommitGenerationChat, setIsStartingCommitGenerationChat] = React.useState(false);
+  const [isGeneratingCommitMessage, setIsGeneratingCommitMessage] = React.useState(false);
   const [isRefreshingHistoryControls, setIsRefreshingHistoryControls] = React.useState(false);
   const [logMaxCountLocal, setLogMaxCountLocal] = React.useState<number>(25);
   const [isSettingIdentity, setIsSettingIdentity] = React.useState(false);
   const { triggerFireworks } = useFireworksCelebration();
 
   const autoAppliedDefaultRef = React.useRef<Map<string, string>>(new Map());
+  const commitGenerationRequestRef = React.useRef(0);
   const identityApplyCountRef = React.useRef(0);
 
   const beginIdentityApply = React.useCallback(() => {
@@ -917,6 +912,16 @@ export const GitView: React.FC = () => {
       stagedOnly: false,
     };
   }, [changeEntries, stagedEntries]);
+  const commitGenerationScopeKey = React.useMemo(
+    () => [
+      currentDirectory ?? '',
+      commitScope.stagedOnly ? 'staged' : 'all',
+      ...commitScope.files,
+    ].join('\0'),
+    [commitScope.files, commitScope.stagedOnly, currentDirectory]
+  );
+  const latestCommitGenerationScopeKeyRef = React.useRef(commitGenerationScopeKey);
+  latestCommitGenerationScopeKeyRef.current = commitGenerationScopeKey;
 
   React.useEffect(() => {
     if (!currentDirectory || changeEntries.length === 0) {
@@ -1056,8 +1061,8 @@ export const GitView: React.FC = () => {
     }
   };
 
-  const handleStartCommitGenerationChat = React.useCallback(async () => {
-    if (!currentDirectory || isStartingCommitGenerationChat || commitAction !== null) {
+  const handleGenerateCommitMessage = React.useCallback(async () => {
+    if (!currentDirectory || isGeneratingCommitMessage || commitAction !== null) {
       return;
     }
     if (commitScope.files.length === 0) {
@@ -1065,72 +1070,63 @@ export const GitView: React.FC = () => {
       return;
     }
 
-    const configState = useConfigStore.getState();
-    const providerID = configState.currentProviderId;
-    const modelID = configState.currentModelId;
-    if (!providerID || !modelID) {
-      toast.error(t('gitView.toast.generateCommitChatNoModel'));
-      return;
-    }
-    const agent = typeof configState.currentAgentName === 'string' && configState.currentAgentName.trim().length > 0
-      ? configState.currentAgentName.trim()
-      : undefined;
-    const variant = configState.currentVariant;
+    const requestId = commitGenerationRequestRef.current + 1;
+    commitGenerationRequestRef.current = requestId;
+    const scopeKey = commitGenerationScopeKey;
+    const commitMessageGuidance = commitMessage.trim();
+    const isCurrentRequest = () =>
+      commitGenerationRequestRef.current === requestId &&
+      latestCommitGenerationScopeKeyRef.current === scopeKey;
 
-    setIsStartingCommitGenerationChat(true);
+    setIsGeneratingCommitMessage(true);
     try {
-      const payload = await buildCommitGenerationChatPromptPayload(currentDirectory, commitScope.files, {
+      const result = await generateCommitMessageDraft(currentDirectory, commitScope.files, {
         stagedOnly: commitScope.stagedOnly,
+        commitMessageGuidance,
       });
 
-      if (payload.status === 'blocked') {
-        toast.error(t('gitView.toast.generateCommitWorkflowBlocked'), { description: payload.message });
+      if (!isCurrentRequest()) {
         return;
       }
 
-      const session = await createSession(undefined, currentDirectory, null);
-      if (!session?.id) {
-        toast.error(t('gitView.toast.generateCommitChatCreateFailed'));
+      if (result.status === 'blocked') {
+        toast.error(t('gitView.toast.generateCommitWorkflowBlocked'), { description: result.message });
         return;
       }
 
-      const directoryHint = session.directory ?? currentDirectory;
-      initializeNewOpenChamberSession(session.id, useConfigStore.getState().agents ?? []);
-      setCurrentSession(session.id, directoryHint);
-      setActiveMainTab('chat');
-      setSessionSwitcherOpen(false);
+      const generatedSubject = result.commits[0]?.subject.trim() ?? '';
+      if (!generatedSubject) {
+        toast.error(
+          t('gitView.toast.generateCommitMessageFailed'),
+          result.message ? { description: result.message } : undefined,
+        );
+        return;
+      }
 
-      await sendMessage(
-        payload.visiblePrompt,
-        providerID,
-        modelID,
-        agent,
-        undefined,
-        undefined,
-        payload.syntheticParts,
-        variant,
-      );
+      setCommitMessage(generatedSubject);
+      toast.success(t('gitView.toast.commitMessageGenerated'));
     } catch (error) {
+      if (!isCurrentRequest()) {
+        return;
+      }
       const description = error instanceof Error ? error.message : undefined;
       toast.error(
-        t('gitView.toast.generateCommitChatFailed'),
+        t('gitView.toast.generateCommitMessageFailed'),
         description ? { description } : undefined,
       );
     } finally {
-      setIsStartingCommitGenerationChat(false);
+      if (commitGenerationRequestRef.current === requestId) {
+        setIsGeneratingCommitMessage(false);
+      }
     }
   }, [
     commitAction,
+    commitGenerationScopeKey,
+    commitMessage,
     commitScope.files,
     commitScope.stagedOnly,
-    createSession,
     currentDirectory,
-    initializeNewOpenChamberSession,
-    isStartingCommitGenerationChat,
-    sendMessage,
-    setActiveMainTab,
-    setCurrentSession,
-    setSessionSwitcherOpen,
+    isGeneratingCommitMessage,
     t,
   ]);
 
@@ -1642,11 +1638,11 @@ export const GitView: React.FC = () => {
 
   const selectedCount = commitScope.files.length;
   const isBusy = isLoading || syncAction !== null || commitAction !== null;
-  const canStartCommitGenerationChat = Boolean(
+  const canGenerateCommitMessage = Boolean(
     currentDirectory &&
     commitScope.files.length > 0 &&
     commitAction === null &&
-    !isStartingCommitGenerationChat
+    !isGeneratingCommitMessage
   );
   const currentBranch = status?.current ?? null;
   const canShowIntegrateCommitsSection = Boolean(
@@ -2464,10 +2460,10 @@ export const GitView: React.FC = () => {
                         onCommitAmend={() => handleCommit({ amend: true })}
                         onCommitAndPush={() => handleCommit({ pushAfter: true })}
                         onCommitAndSync={() => handleCommit({ syncAfter: true })}
-                        onStartCommitGenerationChat={handleStartCommitGenerationChat}
+                        onGenerateCommitMessage={handleGenerateCommitMessage}
                         commitAction={commitAction}
-                        isStartingCommitGenerationChat={isStartingCommitGenerationChat}
-                        commitGenerationChatDisabled={!canStartCommitGenerationChat}
+                        isGeneratingCommitMessage={isGeneratingCommitMessage}
+                        commitGenerationDisabled={!canGenerateCommitMessage}
                         gitmojiEnabled={settingsGitmojiEnabled}
                         onOpenGitmojiPicker={() => setIsGitmojiPickerOpen(true)}
                         syncAction={syncAction}

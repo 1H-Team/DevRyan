@@ -11,6 +11,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - `packages/web/server/lib/opencode/cli-entry-runtime.js`: CLI entrypoint runtime that detects direct execution, parses CLI options, and starts server bootstrap.
 - `packages/web/server/lib/opencode/routes.js`: OpenCode/provider settings and auth-related route registration.
 - `packages/web/server/lib/opencode/providers.js`: provider source detection, Anthropic OAuth proxy config helpers, and default Cursor provider bootstrap.
+- `packages/web/server/lib/opencode/provider-integrations.js`: canonical provider metadata helpers for DevRyan-managed provider aliases such as GitHub Copilot.
 - `packages/web/server/lib/opencode/lifecycle.js`: OpenCode process lifecycle runtime (startup, restart, readiness, health monitoring).
 - `packages/web/server/lib/opencode/env-runtime.js`: OpenCode CLI/binary resolution and shell environment runtime.
 - `packages/web/server/lib/opencode/env-config.js`: OpenCode-related environment variable parsing and validation (host/port/hostname).
@@ -40,7 +41,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - `packages/web/server/lib/opencode/static-routes-runtime.js`: static asset/SPA fallback route registration and manifest route wiring.
 - `packages/web/server/lib/opencode/feature-routes-runtime.js`: feature route composition runtime for dynamic import-backed config/skill/provider route registration.
 - `packages/web/server/lib/opencode/opencode-resolution-runtime.js`: OpenCode binary resolution snapshot runtime for settings routes and diagnostics.
-- `packages/web/server/lib/opencode/version-policy.js`: Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.17.10 and surfaces the upstream install command while still using the user/system `opencode` binary.
+- `packages/web/server/lib/opencode/version-policy.js`: Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.17.13 and surfaces the upstream install command while still using the user/system `opencode` binary.
 - `packages/web/server/lib/opencode/tunnel-wiring-runtime.js`: tunnel service/routes composition runtime and active-port wiring for main server startup.
 - `packages/web/server/lib/opencode/startup-pipeline-runtime.js`: server startup tail orchestration runtime for terminal/proxy/static/start-listen flow.
 - `packages/web/server/lib/opencode/server-utils-runtime.js`: shared server runtime utilities for OpenCode proxy wiring, OpenCode port/readiness helpers, and snapshot fetchers.
@@ -106,6 +107,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - `POST /api/provider/cursor-acp/configure` verifies Cursor SDK auth/model discovery without writing OpenCode bridge config.
 - `GET /api/provider/cursor-acp/runtime-status` reports Cursor SDK execution auth and dashboard usage-token status independently as `sdkAuthConfigured` and `usageAuthConfigured`, plus Cursor worker mode/readiness/restart diagnostics.
 - `GET /api/session/status` merges Cursor SDK runtime busy/idle status into the proxied OpenCode session status payload, falling back to Cursor-only status when upstream status is unavailable.
+- `GET /api/config/providers` normalizes GitHub Copilot aliases to `github-copilot`, preserves upstream OpenCode model metadata when present, and exposes a minimal fallback model list for configured auth/config rows when upstream discovery omits Copilot.
 
 ## Public exports (session-runtime.js)
 - `createSessionRuntime({ writeSseEvent, getNotificationClients, broadcastEvent? })`: creates runtime-owned state machine and APIs for session status.

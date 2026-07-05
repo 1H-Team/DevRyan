@@ -606,7 +606,7 @@ describe("session-ui-store send routing", () => {
     expect(useSessionUIStore.getState().sessionCompletionIndicator.has("session-a")).toBe(false)
   })
 
-  test("acknowledges normal and plan indicators when selecting a session", () => {
+  test("selecting a session clears normal and completed plan indicators but preserves proposed plans", () => {
     mockDescendantSessionIds.set("session-a", ["session-child"])
     useSessionUIStore.setState({
       sessionPlanAvailable: new Map([
@@ -628,7 +628,10 @@ describe("session-ui-store send routing", () => {
     const state = useSessionUIStore.getState()
     expect(state.sessionCompletionIndicator.has("session-a")).toBe(false)
     expect(state.sessionCompletionIndicator.has("session-child")).toBe(false)
-    expect(state.sessionPlanIndicator.has("session-a")).toBe(false)
+    expect(state.sessionPlanIndicator.get("session-a")).toEqual({
+      state: "proposed",
+      sourceMessageId: "msg-plan",
+    })
     expect(state.sessionPlanIndicator.has("session-child")).toBe(false)
     expect(state.sessionPlanAvailable.get("session-a")).toBe(true)
     expect(state.sessionPlanAvailable.get("session-child")).toBe(true)
@@ -679,6 +682,52 @@ describe("session-ui-store send routing", () => {
     expect(useSessionUIStore.getState().sessionCompletionIndicator.has("session-a")).toBe(false)
   })
 
+  test("shows settled normal completion when live status is stale busy but the trailing tool turn is finalized", async () => {
+    mockSessionDirectoryAnyDirectory = "/repo"
+    const liveState = {
+      message: {
+        "session-a": [{
+          id: "msg-a",
+          role: "assistant",
+          time: { created: 1, completed: 123 },
+        }],
+      },
+      part: {
+        "msg-a": [{
+          id: "part-tool-a",
+          messageID: "msg-a",
+          type: "tool",
+          state: {
+            status: "completed",
+            time: { start: 1, end: 2 },
+          },
+        }],
+      },
+      permission: {},
+      question: {},
+      session_status: {
+        "session-a": { type: "busy" },
+      },
+      session: [],
+      revert_transaction: {},
+    }
+    mockChildStoreState = liveState
+    mockDirectoryState = liveState
+    useSessionUIStore.setState({
+      sessionCompletionIndicator: new Map(),
+      sessionPlanIndicator: new Map(),
+    })
+
+    useSessionUIStore.getState().markSessionTurnCompleted("session-a", "msg-a", 123)
+
+    await waitForCompletionIndicatorSettlement()
+
+    expect(useSessionUIStore.getState().sessionCompletionIndicator.get("session-a")).toEqual({
+      messageId: "msg-a",
+      completedAt: 123,
+    })
+  })
+
   test("clears completed plan indicators when a session is acknowledged without hiding plan availability", () => {
     useSessionUIStore.setState({
       sessionPlanAvailable: new Map([["session-a", true]]),
@@ -695,7 +744,7 @@ describe("session-ui-store send routing", () => {
     expect(state.sessionPlanAvailable.get("session-a")).toBe(true)
   })
 
-  test("clears proposed plan indicators when a session is acknowledged", () => {
+  test("preserves proposed plan indicators when a session is acknowledged", () => {
     useSessionUIStore.setState({
       sessionPlanAvailable: new Map([["session-a", true]]),
       sessionPlanIndicator: new Map([
@@ -706,7 +755,10 @@ describe("session-ui-store send routing", () => {
 
     useSessionUIStore.getState().clearReadCompletionIndicators(["session-a"])
 
-    expect(useSessionUIStore.getState().sessionPlanIndicator.has("session-a")).toBe(false)
+    expect(useSessionUIStore.getState().sessionPlanIndicator.get("session-a")).toEqual({
+      state: "proposed",
+      sourceMessageId: "msg-plan",
+    })
   })
 
   test("settles completed plan indicators before showing them", async () => {
@@ -781,6 +833,28 @@ describe("session-ui-store send routing", () => {
     const state = useSessionUIStore.getState()
     expect(state.sessionCompletionIndicator.has("session-a")).toBe(false)
     expect(state.sessionPlanIndicator.has("session-a")).toBe(false)
+    expect(state.sessionPlanAvailable.get("session-a")).toBe(true)
+  })
+
+  test("clearSessionTurnCompletion preserves proposed plan indicators", () => {
+    useSessionUIStore.setState({
+      sessionPlanAvailable: new Map([["session-a", true]]),
+      sessionPlanIndicator: new Map([
+        ["session-a", { state: "proposed", sourceMessageId: "msg-plan" }],
+      ]),
+      sessionCompletionIndicator: new Map([
+        ["session-a", { messageId: "msg-complete", completedAt: 123 }],
+      ]),
+    })
+
+    useSessionUIStore.getState().clearSessionTurnCompletion("session-a")
+
+    const state = useSessionUIStore.getState()
+    expect(state.sessionCompletionIndicator.has("session-a")).toBe(false)
+    expect(state.sessionPlanIndicator.get("session-a")).toEqual({
+      state: "proposed",
+      sourceMessageId: "msg-plan",
+    })
     expect(state.sessionPlanAvailable.get("session-a")).toBe(true)
   })
 

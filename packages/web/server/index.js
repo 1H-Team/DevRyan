@@ -87,7 +87,7 @@ import {
   resolveSkillSearchDirectories,
   walkSkillMdFiles,
 } from './lib/opencode/shared.js';
-import { createCursorSdkRuntime } from '@openchamber/cursor-sdk-runtime';
+import { CURSOR_PROVIDER_ID, createCursorSdkRuntime } from '@openchamber/cursor-sdk-runtime';
 import { createScheduledTasksRuntime } from './lib/scheduled-tasks/runtime.js';
 import { createServerStartupRuntime } from './lib/opencode/server-startup-runtime.js';
 import { createTunnelWiringRuntime } from './lib/opencode/tunnel-wiring-runtime.js';
@@ -537,7 +537,28 @@ const emitSyntheticOpenCodeEvent = (payload, options = {}) => {
   broadcastGlobalUiEvent(payload, options);
 };
 
-const resolveCursorSdkAgentDefinitions = ({ directory } = {}) => {
+const resolveCursorSdkAgentModelSelection = async (agent, resolveModelSelection) => {
+  const model = agent?.model && typeof agent.model === 'object' && !Array.isArray(agent.model)
+    ? agent.model
+    : null;
+  const providerID = typeof model?.providerID === 'string' ? model.providerID.trim() : '';
+  const modelID = typeof model?.modelID === 'string' ? model.modelID.trim() : '';
+  if (providerID !== CURSOR_PROVIDER_ID || !modelID || typeof resolveModelSelection !== 'function') {
+    return 'inherit';
+  }
+
+  const variant = typeof agent?.variant === 'string' && agent.variant.trim()
+    ? agent.variant.trim()
+    : undefined;
+  try {
+    return await resolveModelSelection({ modelID, variant });
+  } catch (error) {
+    console.warn('[CursorSDK] failed to resolve agent model selection:', error);
+    return { id: modelID };
+  }
+};
+
+const resolveCursorSdkAgentDefinitions = async ({ directory, resolveModelSelection } = {}) => {
   const definitions = {};
   for (const agent of listConfigAgents(directory)) {
     const name = typeof agent?.name === 'string' ? agent.name.trim() : '';
@@ -548,7 +569,7 @@ const resolveCursorSdkAgentDefinitions = ({ directory } = {}) => {
         ? agent.description.trim()
         : `${name} DevRyan agent`,
       prompt,
-      model: 'inherit',
+      model: await resolveCursorSdkAgentModelSelection(agent, resolveModelSelection),
     };
   }
   return definitions;

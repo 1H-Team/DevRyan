@@ -8,6 +8,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useSelectionStore } from '@/sync/selection-store';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { applyDraftAwareModelChange } from '@/components/chat/draftAwareAgentChange';
+import { buildFavoriteModelsList, getNextFavoriteModelRef } from '@/hooks/useModelLists';
 
 const focusChatInput = () => {
   const textarea = document.querySelector<HTMLTextAreaElement>('textarea[data-chat-input="true"]');
@@ -72,17 +73,26 @@ export const useMiniChatKeyboardShortcuts = () => {
       const cyclesForward = eventMatchesShortcut(event, combo('cycle_favorite_model_forward'));
       const cyclesBackward = eventMatchesShortcut(event, combo('cycle_favorite_model_backward'));
       if (cyclesForward || cyclesBackward) {
-        const { favoriteModels } = useUIStore.getState();
-        if (favoriteModels.length === 0) {
+        const { favoriteModels, hiddenModels } = useUIStore.getState();
+        const configState = useConfigStore.getState();
+        const { currentProviderId, currentModelId } = configState;
+        const delta = cyclesForward ? 1 : -1;
+        const visibleFavoriteModels = buildFavoriteModelsList({
+          favoriteModels,
+          hiddenModels,
+          providers: configState.providers,
+        });
+        const next = getNextFavoriteModelRef({
+          favoriteModels: visibleFavoriteModels,
+          currentProviderId,
+          currentModelId,
+          direction: delta,
+        });
+        if (!next) {
           return;
         }
 
         event.preventDefault();
-        const configState = useConfigStore.getState();
-        const { currentProviderId, currentModelId } = configState;
-        const currentIndex = favoriteModels.findIndex((favorite) => favorite.providerID === currentProviderId && favorite.modelID === currentModelId);
-        const delta = cyclesForward ? 1 : -1;
-        const next = favoriteModels[(currentIndex + delta + favoriteModels.length) % favoriteModels.length];
 
         const sessionState = useSessionUIStore.getState();
         const selectionState = useSelectionStore.getState();

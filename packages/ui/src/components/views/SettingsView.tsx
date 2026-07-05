@@ -586,7 +586,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
 
   const showBackButton = isMobile && mobileStage !== 'nav';
   const showFullPageBackButton = !isMobile && Boolean(onClose);
-  const reserveSettingsNavTopChrome = showFullPageBackButton || shouldAvoidMacTrafficLights;
+  const reserveSettingsNavTopChrome = !showFullPageBackButton && shouldAvoidMacTrafficLights;
 
   const handleBack = React.useCallback(() => {
     setMobileStage((stage) => resolveMobileSettingsBackStage(stage, activePageMeta));
@@ -602,6 +602,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         {/* Scrollable nav items */}
         <div className={getSettingsNavScrollClassName({ reserveTopChrome: reserveSettingsNavTopChrome })}>
           <div className={cn('flex flex-col gap-3 pb-2 px-2', reserveSettingsNavTopChrome ? 'pt-0' : 'pt-4')}>
+            {showFullPageBackButton && (
+              <div
+                className={cn(
+                  'sticky top-0 z-30 -mx-2 px-2 pt-3 pb-2',
+                  'border-b border-transparent backdrop-blur-sm',
+                  runtimeCtx.isVSCode ? 'bg-background/95' : 'bg-sidebar/95',
+                  shouldAvoidMacTrafficLights && 'pl-[5.5rem]'
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label={t('settings.view.actions.closeSettings')}
+                  className={getSettingsBackButtonClassName({ placement: 'inline' })}
+                >
+                  <RiArrowLeftSLine className="h-5 w-5" />
+                </button>
+              </div>
+            )}
             {groupedVisiblePages.map((section) => (
               <div key={section.labelKey} className="space-y-0.5">
                 <div className="px-2 pb-1 typography-micro text-[0.6875rem] font-medium uppercase tracking-wide text-muted-foreground/70">
@@ -773,18 +792,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
 
         </div>
       ) : (
-        <>
-          {showFullPageBackButton && (
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label={t('settings.view.actions.closeSettings')}
-              className={getSettingsBackButtonClassName({ avoidMacTrafficLights: shouldAvoidMacTrafficLights })}
-            >
-              <RiArrowLeftSLine className="h-5 w-5" />
-            </button>
-          )}
-        </>
+        null
       )}
 
       <div className="flex flex-1 min-h-0 overflow-hidden">

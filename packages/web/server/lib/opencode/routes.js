@@ -7,6 +7,12 @@ import {
   clearCursorSdkAuth,
   saveCursorSdkAuth,
 } from '@openchamber/cursor-sdk-runtime';
+import {
+  GITHUB_COPILOT_PROVIDER_ID,
+  getProviderIntegrationLookupIds,
+  isGitHubCopilotProviderId,
+  mergeGitHubCopilotProvider,
+} from './provider-integrations.js';
 
 const ANTHROPIC_PROVIDER_IDS = new Set(['anthropic', 'claude', 'anthropic-oauth', 'opencode-with-claude']);
 const ANTIGRAVITY_PROVIDER_ID = 'antigravity';
@@ -192,6 +198,23 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       typeof cursorAuth.usageSessionToken === 'string' &&
       cursorAuth.usageSessionToken.trim().length > 0
     );
+  };
+
+  const hasProviderAuthForLookupIds = async (providerIds) => {
+    const { readAuthFile } = await getAuthLibrary();
+    const auth = readAuthFile();
+    return providerIds.some((providerId) => (
+      auth?.[providerId] && typeof auth[providerId] === 'object'
+    ));
+  };
+
+  const removeProviderAuthForLookupIds = async (providerIds) => {
+    const { removeProviderAuth } = await getAuthLibrary();
+    let removed = false;
+    for (const providerId of providerIds) {
+      removed = removeProviderAuth(providerId) || removed;
+    }
+    return removed;
   };
 
   const normalizeCursorUsageSessionToken = (value) => {
@@ -571,6 +594,21 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     };
   };
 
+  const mergeProviderIntegrations = async (payload, req) => {
+    const directory = await resolveRequestDirectory(req);
+    const githubCopilotSources = getProviderSources(GITHUB_COPILOT_PROVIDER_ID, directory);
+    const sourceMap = githubCopilotSources?.sources || {};
+    const githubCopilotConfiguredBySource = ['user', 'project', 'custom'].some((scope) => (
+      sourceMap?.[scope]?.exists === true
+    ));
+    const githubCopilotConfigured = githubCopilotConfiguredBySource
+      || await hasProviderAuthForLookupIds(getProviderIntegrationLookupIds(GITHUB_COPILOT_PROVIDER_ID));
+    const withGitHubCopilot = mergeGitHubCopilotProvider(payload, {
+      configured: githubCopilotConfigured,
+    });
+    return mergeCursorProvider(withGitHubCopilot);
+  };
+
   const touchOpenCodeSessionForCursorPrompt = async ({ sessionID, directory }) => {
     if (typeof buildOpenCodeUrl !== 'function') {
       return;
@@ -617,7 +655,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       }
     }
 
-    return res.json(await mergeCursorProvider(upstreamPayload));
+    return res.json(await mergeProviderIntegrations(upstreamPayload, req));
   });
 
   app.get('/api/session/status', async (req, res, next) => {
@@ -867,6 +905,8 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       const { getProviderAuth } = await getAuthLibrary();
       const authLookupIds = ['anthropic', 'claude', 'anthropic-oauth', 'opencode-with-claude'].includes(providerId)
         ? [providerId, 'anthropic', 'claude']
+        : isGitHubCopilotProviderId(providerId)
+        ? getProviderIntegrationLookupIds(providerId)
         : [providerId];
       const auth = authLookupIds.map((id) => getProviderAuth(id)).find(Boolean);
       if (providerId === CURSOR_ACP_PROVIDER_ID) {
@@ -922,25 +962,23 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
 
       let removed = false;
       if (scope === 'auth') {
-        const { removeProviderAuth } = await getAuthLibrary();
         if (providerId === CURSOR_ACP_PROVIDER_ID) {
           const auth = await getAuthLibrary();
           removed = clearCursorSdkAuth({ readAuth: auth.readAuthFile, writeAuth: auth.writeAuthFile });
         } else {
           removed = providerId === ANTIGRAVITY_PROVIDER_ID
           ? await removeAntigravityAccounts()
-          : removeProviderAuth(providerId);
+          : await removeProviderAuthForLookupIds(getProviderIntegrationLookupIds(providerId));
         }
       } else if (scope === 'user' || scope === 'project' || scope === 'custom') {
         removed = removeProviderConfig(providerId, directory, scope);
       } else if (scope === 'all') {
-        const { removeProviderAuth } = await getAuthLibrary();
         const auth = await getAuthLibrary();
         const authRemoved = providerId === CURSOR_ACP_PROVIDER_ID
           ? clearCursorSdkAuth({ readAuth: auth.readAuthFile, writeAuth: auth.writeAuthFile })
           : providerId === ANTIGRAVITY_PROVIDER_ID
           ? await removeAntigravityAccounts()
-          : removeProviderAuth(providerId);
+          : await removeProviderAuthForLookupIds(getProviderIntegrationLookupIds(providerId));
         const userRemoved = removeProviderConfig(providerId, null, 'user');
         const customRemoved = removeProviderConfig(providerId, null, 'custom');
         removed = authRemoved || userRemoved || customRemoved;

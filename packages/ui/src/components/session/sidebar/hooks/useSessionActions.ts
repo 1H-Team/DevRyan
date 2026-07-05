@@ -35,6 +35,8 @@ type Args = {
   archiveSessions: (ids: string[]) => Promise<{ archivedIds: string[]; failedIds: string[] }>;
   unarchiveSession: (id: string) => Promise<boolean>;
   unarchiveSessions: (ids: string[]) => Promise<{ unarchivedIds: string[]; failedIds: string[] }>;
+  onArchiveRequested?: (ids: string[]) => void;
+  onArchiveFailed?: (ids: string[]) => void;
   childrenMap: Map<string, Session[]>;
   showDeletionDialog: boolean;
   setDeleteSessionConfirm: DeleteSessionConfirmSetter;
@@ -175,12 +177,18 @@ export const useSessionActions = (args: Args) => {
       const descendants = collectDescendants(session.id);
       const shouldHardDelete = source?.archivedBucket === true;
       if (descendants.length === 0) {
+        if (!shouldHardDelete) {
+          args.onArchiveRequested?.([session.id]);
+        }
         const success = shouldHardDelete
           ? await args.deleteSession(session.id)
           : await args.archiveSession(session.id);
         if (success) {
           return;
         } else {
+          if (!shouldHardDelete) {
+            args.onArchiveFailed?.([session.id]);
+          }
           toast.error(shouldHardDelete
             ? t('sessions.sidebar.session.delete.error')
             : t('sessions.sidebar.session.archive.error'));
@@ -199,8 +207,10 @@ export const useSessionActions = (args: Args) => {
         return;
       }
 
+      args.onArchiveRequested?.(ids);
       const { failedIds } = await args.archiveSessions(ids);
       if (failedIds.length > 0) {
+        args.onArchiveFailed?.(failedIds);
         toast.error(failedIds.length === 1
           ? t('sessions.sidebar.bulkActions.failedArchiveSingle', { count: failedIds.length })
           : t('sessions.sidebar.bulkActions.failedArchivePlural', { count: failedIds.length }));

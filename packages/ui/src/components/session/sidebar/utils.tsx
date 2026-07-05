@@ -8,7 +8,7 @@ import type { SessionNode } from './types';
 
 type ArchivedGroupSection = {
   project: { id: string };
-  groups: Array<{ id: string; isArchivedBucket?: boolean }>;
+  groups: Array<{ id: string; isArchivedBucket?: boolean; sessions?: SessionNode[] }>;
 };
 
 type VisibleChatDraft = {
@@ -337,6 +337,102 @@ export const addMissingCollapsedGroupKeys = (collapsedGroups: Set<string>, group
     return collapsedGroups;
   }
   return new Set([...collapsedGroups, ...missingKeys]);
+};
+
+const sameSetValues = (a: Set<string>, b: Set<string>): boolean => {
+  if (a === b) return true;
+  if (a.size !== b.size) return false;
+  for (const value of a) {
+    if (!b.has(value)) return false;
+  }
+  return true;
+};
+
+const collectMatchingArchiveRevealSessionIds = (
+  nodes: SessionNode[] | undefined,
+  pendingRevealSessionIds: Set<string>,
+): Set<string> => {
+  const matches = new Set<string>();
+  if (!nodes || nodes.length === 0 || pendingRevealSessionIds.size === 0) {
+    return matches;
+  }
+
+  const visit = (node: SessionNode): void => {
+    if (pendingRevealSessionIds.has(node.session.id)) {
+      matches.add(node.session.id);
+    }
+    node.children.forEach(visit);
+  };
+
+  nodes.forEach(visit);
+  return matches;
+};
+
+export const reconcileArchivedGroupCollapse = (input: {
+  sections: ArchivedGroupSection[];
+  previousVisibleArchivedGroupKeys: Set<string>;
+  collapsedGroups: Set<string>;
+  pendingRevealSessionIds: Set<string>;
+}): {
+  collapsedGroups: Set<string>;
+  visibleArchivedGroupKeys: Set<string>;
+  revealedSessionIds: Set<string>;
+} => {
+  const archivedGroupKeys = getArchivedGroupKeys(input.sections);
+  const visibleArchivedGroupKeys = new Set(archivedGroupKeys);
+  const newlyVisibleArchivedGroupKeys = archivedGroupKeys.filter((key) => !input.previousVisibleArchivedGroupKeys.has(key));
+  let nextCollapsedGroups = addMissingCollapsedGroupKeys(input.collapsedGroups, newlyVisibleArchivedGroupKeys);
+  const revealedGroupKeys = new Set<string>();
+  const revealedSessionIds = new Set<string>();
+
+  if (input.pendingRevealSessionIds.size > 0) {
+    input.sections.forEach((section) => {
+      section.groups.forEach((group) => {
+        if (!group.isArchivedBucket) {
+          return;
+        }
+        const matches = collectMatchingArchiveRevealSessionIds(group.sessions, input.pendingRevealSessionIds);
+        if (matches.size === 0) {
+          return;
+        }
+        revealedGroupKeys.add(`${section.project.id}:${group.id}`);
+        matches.forEach((sessionId) => revealedSessionIds.add(sessionId));
+      });
+    });
+  }
+
+  if (revealedGroupKeys.size > 0) {
+    const expandedGroups = new Set(nextCollapsedGroups);
+    revealedGroupKeys.forEach((groupKey) => {
+      expandedGroups.delete(groupKey);
+    });
+    nextCollapsedGroups = sameSetValues(input.collapsedGroups, expandedGroups)
+      ? input.collapsedGroups
+      : expandedGroups;
+  }
+
+  return {
+    collapsedGroups: nextCollapsedGroups,
+    visibleArchivedGroupKeys,
+    revealedSessionIds,
+  };
+};
+
+export const discardPendingArchiveRevealSessionIds = (
+  pendingSessionIds: Set<string>,
+  sessionIds: Iterable<string>,
+): Set<string> => {
+  let next: Set<string> | null = null;
+  for (const sessionId of sessionIds) {
+    if (!pendingSessionIds.has(sessionId)) {
+      continue;
+    }
+    if (!next) {
+      next = new Set(pendingSessionIds);
+    }
+    next.delete(sessionId);
+  }
+  return next ?? pendingSessionIds;
 };
 
 export const resolveArchivedFolderName = (

@@ -98,7 +98,7 @@ const createRuntime = (overrides = {}) => {
     ...initialState,
   };
 
-  return createOpenCodeLifecycleRuntime({
+  const runtime = createOpenCodeLifecycleRuntime({
     state,
     env: {
       ENV_CONFIGURED_OPENCODE_PORT: 45678,
@@ -143,6 +143,8 @@ const createRuntime = (overrides = {}) => {
     })),
     ...dependencyOverrides,
   });
+  runtime.__testState = state;
+  return runtime;
 };
 
 describe('OpenCode lifecycle', () => {
@@ -366,6 +368,104 @@ describe('OpenCode lifecycle', () => {
     await runtime.bootstrapOpenCodeAtStartup();
 
     expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('starts managed OpenCode when no explicit external env is set even if default port 4096 responds', async () => {
+    delete process.env.OPENCODE_BINARY;
+    const child = createMockChild();
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input);
+      if (url === 'http://127.0.0.1:4096/global/health') {
+        return {
+          ok: true,
+          json: async () => ({ healthy: true, version: '1.0.0' }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => (url.includes('/agent') ? [] : {}),
+      };
+    });
+    spawnMock.mockImplementationOnce((_binary, args) => {
+      const port = args[args.indexOf('--port') + 1];
+      queueMicrotask(() => {
+        child.stdout.emit('data', `opencode server listening on http://127.0.0.1:${port}\n`);
+      });
+      return child;
+    });
+
+    const runtime = createRuntime({
+      env: {
+        ENV_CONFIGURED_OPENCODE_PORT: null,
+        ENV_CONFIGURED_OPENCODE_HOST: null,
+        ENV_EFFECTIVE_PORT: null,
+        ENV_CONFIGURED_OPENCODE_HOSTNAME: '127.0.0.1',
+        ENV_SKIP_OPENCODE_START: false,
+      },
+    });
+
+    await runtime.bootstrapOpenCodeAtStartup();
+
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(runtime.__testState.isExternalOpenCode).toBe(false);
+    expect(runtime.__testState.openCodeProcess).toBeTruthy();
+
+    await runtime.__testState.openCodeProcess.close();
+  });
+
+  it.each([
+    {
+      name: 'configured OPENCODE_PORT',
+      env: {
+        ENV_CONFIGURED_OPENCODE_PORT: 4096,
+        ENV_CONFIGURED_OPENCODE_HOST: null,
+        ENV_EFFECTIVE_PORT: 4096,
+        ENV_CONFIGURED_OPENCODE_HOSTNAME: '127.0.0.1',
+        ENV_SKIP_OPENCODE_START: false,
+      },
+    },
+    {
+      name: 'configured OPENCODE_HOST',
+      env: {
+        ENV_CONFIGURED_OPENCODE_PORT: null,
+        ENV_CONFIGURED_OPENCODE_HOST: { origin: 'http://localhost:4096', port: 4096 },
+        ENV_EFFECTIVE_PORT: 4096,
+        ENV_CONFIGURED_OPENCODE_HOSTNAME: '127.0.0.1',
+        ENV_SKIP_OPENCODE_START: false,
+      },
+    },
+    {
+      name: 'OPENCODE_SKIP_START=true',
+      env: {
+        ENV_CONFIGURED_OPENCODE_PORT: null,
+        ENV_CONFIGURED_OPENCODE_HOST: null,
+        ENV_EFFECTIVE_PORT: null,
+        ENV_CONFIGURED_OPENCODE_HOSTNAME: '127.0.0.1',
+        ENV_SKIP_OPENCODE_START: true,
+      },
+    },
+  ])('attaches to an external OpenCode runtime for $name', async ({ env }) => {
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input);
+      if (url.endsWith('/global/health')) {
+        return {
+          ok: true,
+          json: async () => ({ healthy: true, version: '1.0.0' }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => (url.includes('/agent') ? [] : {}),
+      };
+    });
+
+    const runtime = createRuntime({ env });
+
+    await runtime.bootstrapOpenCodeAtStartup();
+
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(runtime.__testState.isExternalOpenCode).toBe(true);
+    expect(runtime.__testState.openCodePort).toBe(4096);
   });
 
   it('retries managed OpenCode startup once after a pre-ready exit', async () => {

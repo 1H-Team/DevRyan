@@ -425,9 +425,10 @@ describe('Packaged OpenChamber agents', () => {
     ]));
   });
 
-  it('keeps the packaged Builder prompt limited to skill and reasoning hygiene', () => {
+  it('keeps the packaged Builder prompt limited to direct-work question and hygiene guardrails', () => {
     const builder = listPackagedAgents().find((agent) => agent.name === 'builder');
 
+    expect(builder?.prompt).toContain('structured question tool');
     expect(builder?.prompt).toContain('Skill announcements are tool activity only');
     expect(builder?.prompt).toContain('do not write assistant text to announce skill use');
     expect(builder?.prompt).toContain('Do not write visible reasoning about balancing skill instructions against developer or agent instructions');
@@ -438,6 +439,8 @@ describe('Packaged OpenChamber agents', () => {
         '*': 'deny',
       },
       council_session: 'deny',
+      question: 'allow',
+      'question_*': 'allow',
     });
   });
 
@@ -597,7 +600,7 @@ describe('Packaged OpenChamber agents', () => {
     expect(orchestrator?.prompt).toContain('the tool activity already shows skill loading, file inspection, and specialist routing');
     expect(orchestrator?.frontmatter.permission.skill['dispatching-parallel-agents']).toBe('allow');
 
-    for (const agent of [orchestrator, fixer, designer, explorer, oracle, librarian, plan]) {
+    for (const agent of [orchestrator, builder, fixer, designer, explorer, oracle, librarian, plan]) {
       expect(agent?.prompt).toContain('structured question tool');
       expect(agent?.prompt).not.toContain('Skill to use:');
       expect(agent?.prompt).not.toContain('Skills to use:');

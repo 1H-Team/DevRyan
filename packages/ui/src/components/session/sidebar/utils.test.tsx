@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { buildArchivedSessionTree } from './hooks/useSessionGrouping';
-import { addMissingCollapsedGroupKeys, collectArchivedActionSessions, compareArchivedSessionsByParentAssistantActivity, compareSessionsByPinnedAndTime, getArchivedGroupKeys, resolveArchivedFolderName, resolveSessionDiffStats, selectVisibleChatDrafts } from './utils';
+import { addMissingCollapsedGroupKeys, collectArchivedActionSessions, compareArchivedSessionsByParentAssistantActivity, compareSessionsByPinnedAndTime, discardPendingArchiveRevealSessionIds, getArchivedGroupKeys, reconcileArchivedGroupCollapse, resolveArchivedFolderName, resolveSessionDiffStats, selectVisibleChatDrafts } from './utils';
+import type { SessionNode } from './types';
 
 const session = (id: string, created: number, updated = created, parentID?: string): Session => ({
   id,
@@ -14,6 +15,12 @@ const archivedSession = (id: string, created: number, updated = created, parentI
   ...session(id, created, updated, parentID),
   time: { created, updated, archived: updated + 1 },
 } as Session);
+
+const node = (id: string, children: SessionNode[] = []): SessionNode => ({
+  session: session(id, 1),
+  children,
+  worktree: null,
+});
 
 const sortByCreated = (a: Session, b: Session) => Number(a.time?.created ?? 0) - Number(b.time?.created ?? 0);
 
@@ -231,6 +238,91 @@ describe('archived group collapse helpers', () => {
 
     expect(Array.from(withArchived)).toEqual(['project-a:main', 'project-a:archived']);
     expect(addMissingCollapsedGroupKeys(withArchived, ['project-a:archived'])).toBe(withArchived);
+  });
+
+  test('keeps newly visible archived groups collapsed without a pending user archive', () => {
+    const result = reconcileArchivedGroupCollapse({
+      sections: [{
+        project: { id: 'project-a' },
+        groups: [{
+          id: 'archived',
+          isArchivedBucket: true,
+          sessions: [node('archived-session')],
+        }],
+      }],
+      previousVisibleArchivedGroupKeys: new Set(),
+      collapsedGroups: new Set(),
+      pendingRevealSessionIds: new Set(),
+    });
+
+    expect(Array.from(result.collapsedGroups)).toEqual(['project-a:archived']);
+    expect(Array.from(result.revealedSessionIds)).toEqual([]);
+  });
+
+  test('expands a newly visible archived group that contains a pending archived session', () => {
+    const result = reconcileArchivedGroupCollapse({
+      sections: [{
+        project: { id: 'project-a' },
+        groups: [{
+          id: 'archived',
+          isArchivedBucket: true,
+          sessions: [node('archived-session')],
+        }],
+      }],
+      previousVisibleArchivedGroupKeys: new Set(),
+      collapsedGroups: new Set(),
+      pendingRevealSessionIds: new Set(['archived-session']),
+    });
+
+    expect(Array.from(result.collapsedGroups)).toEqual([]);
+    expect(Array.from(result.revealedSessionIds)).toEqual(['archived-session']);
+  });
+
+  test('expands an already collapsed archived group when another session is archived into it', () => {
+    const result = reconcileArchivedGroupCollapse({
+      sections: [{
+        project: { id: 'project-a' },
+        groups: [{
+          id: 'archived',
+          isArchivedBucket: true,
+          sessions: [node('existing-session'), node('newly-archived-session')],
+        }],
+      }],
+      previousVisibleArchivedGroupKeys: new Set(['project-a:archived']),
+      collapsedGroups: new Set(['project-a:archived']),
+      pendingRevealSessionIds: new Set(['newly-archived-session']),
+    });
+
+    expect(Array.from(result.collapsedGroups)).toEqual([]);
+    expect(Array.from(result.revealedSessionIds)).toEqual(['newly-archived-session']);
+  });
+
+  test('expands the archived group when the pending archive is nested under a parent row', () => {
+    const result = reconcileArchivedGroupCollapse({
+      sections: [{
+        project: { id: 'project-a' },
+        groups: [{
+          id: 'archived',
+          isArchivedBucket: true,
+          sessions: [node('parent', [node('archived-child')])],
+        }],
+      }],
+      previousVisibleArchivedGroupKeys: new Set(['project-a:archived']),
+      collapsedGroups: new Set(['project-a:archived']),
+      pendingRevealSessionIds: new Set(['archived-child']),
+    });
+
+    expect(Array.from(result.collapsedGroups)).toEqual([]);
+    expect(Array.from(result.revealedSessionIds)).toEqual(['archived-child']);
+  });
+
+  test('removes failed archive ids from the pending reveal set', () => {
+    const pending = new Set(['failed-session', 'successful-session']);
+    const next = discardPendingArchiveRevealSessionIds(pending, ['failed-session']);
+
+    expect(Array.from(next)).toEqual(['successful-session']);
+    expect(Array.from(pending)).toEqual(['failed-session', 'successful-session']);
+    expect(discardPendingArchiveRevealSessionIds(next, ['missing-session'])).toBe(next);
   });
 });
 

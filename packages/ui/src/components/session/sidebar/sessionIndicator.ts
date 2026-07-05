@@ -78,7 +78,7 @@ export function resolveSidebarWorkingStatus({
   planState,
 }: ResolveSidebarWorkingStatusOptions): boolean {
   if (pendingQuestionCount > 0) return false;
-  if (planState === 'proposed' || planState === 'completed') return false;
+  if (planState === 'proposed') return false;
   return isWorking;
 }
 

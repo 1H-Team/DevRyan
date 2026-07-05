@@ -1,4 +1,8 @@
 import process from 'node:process';
+import {
+  normalizeCursorSdkAgentDefinitions,
+  pinCursorSdkSubagentModels,
+} from './agent-definitions.js';
 import { configureCursorSdkRipgrep } from './ripgrep-path.js';
 
 const readStdin = async () => {
@@ -39,39 +43,6 @@ const normalizeModelSelection = (selection, fallbackModelID) => {
     id,
     ...(params.length > 0 ? { params } : {}),
   };
-};
-
-const normalizeAgentDefinitions = (value) => {
-  if (!isPlainObject(value)) return null;
-  const definitions = {};
-  for (const [rawName, rawDefinition] of Object.entries(value)) {
-    const name = trimString(rawName);
-    if (!name || !isPlainObject(rawDefinition)) continue;
-    const prompt = trimString(rawDefinition.prompt);
-    if (!prompt) continue;
-    definitions[name] = {
-      description: trimString(rawDefinition.description) || `${name} subagent`,
-      prompt,
-      model: 'inherit',
-    };
-  }
-  return Object.keys(definitions).length > 0 ? definitions : null;
-};
-
-// Pin custom subagents to the parent session's exact model selection (id + params
-// such as `fast`) instead of the Cursor SDK's `"inherit"`, which resolves a
-// subagent's model from cursor-agent's own default (tracking the Cursor desktop
-// app). Keeps the DevRyan-chosen model authoritative and independent of the app;
-// `auto` sessions keep `"inherit"`. Mirrors persistent-worker.mjs.
-const pinSubagentModelSelection = (definitions, modelSelection) => {
-  if (!isPlainObject(definitions)) return definitions;
-  const selection = normalizeModelSelection(modelSelection);
-  if (!selection?.id || selection.id === 'auto') return definitions;
-  const pinned = {};
-  for (const [name, definition] of Object.entries(definitions)) {
-    pinned[name] = { ...definition, model: selection };
-  }
-  return pinned;
 };
 
 const isMissingCursorAgentError = (error) => /Agent .* not found/i.test(error instanceof Error ? error.message : String(error || ''));
@@ -238,7 +209,7 @@ const main = async () => {
   const apiKey = trimString(input.apiKey);
   const modelID = trimString(input.modelID) || 'auto';
   const modelSelection = normalizeModelSelection(input.modelSelection, modelID);
-  const agents = pinSubagentModelSelection(normalizeAgentDefinitions(input.agents), modelSelection);
+  const agents = pinCursorSdkSubagentModels(normalizeCursorSdkAgentDefinitions(input.agents), modelSelection);
   const prompt = trimString(input.prompt);
   const images = Array.isArray(input.images)
     ? input.images

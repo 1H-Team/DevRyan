@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
     RETRY_VISIBILITY_GRACE_MS,
+    TRANSIENT_PROVIDER_RETRY_VISIBILITY_GRACE_MS,
     getRetryVisibilityIdentity,
     getRetryVisibilityStartTime,
     shouldShowRetryVisibility,
@@ -60,5 +61,23 @@ describe('retry visibility', () => {
         };
 
         expect(shouldShowRetryVisibility(status, state, 1100)).toBe(true);
+    });
+
+    test('hides transient provider response header timeouts during the default retry grace', () => {
+        const status = retry({
+            message: 'Provider response headers timed out after 1000 milliseconds.',
+        });
+        const state = { identity: getRetryVisibilityIdentity(status), firstSeenAt: 1000 };
+
+        expect(shouldShowRetryVisibility(status, state, 1000 + RETRY_VISIBILITY_GRACE_MS)).toBe(false);
+    });
+
+    test('shows transient provider response header timeouts only after the longer grace window', () => {
+        const status = retry({
+            message: 'Provider response headers timed out after 1000 milliseconds.',
+        });
+        const state = { identity: getRetryVisibilityIdentity(status), firstSeenAt: 1000 };
+
+        expect(shouldShowRetryVisibility(status, state, 1000 + TRANSIENT_PROVIDER_RETRY_VISIBILITY_GRACE_MS)).toBe(true);
     });
 });

@@ -16,15 +16,22 @@ const terminalAssistantMessage = (id: string, finish: string): Message => ({
   time: { created: 1 },
 } as unknown as Message)
 
-const toolPart = (messageID: string): Part => ({
+const completedToolCallsAssistantMessage = (id: string): Message => ({
+  id,
+  role: "assistant",
+  finish: "tool-calls",
+  time: { created: 1, completed: 2 },
+} as unknown as Message)
+
+const toolPart = (messageID: string, status = "completed"): Part => ({
   id: `${messageID}_tool`,
   sessionID: "ses_1",
   messageID,
   type: "tool",
   tool: "write",
   state: {
-    status: "completed",
-    time: { start: 1, end: 2 },
+    status,
+    time: status === "completed" ? { start: 1, end: 2 } : { start: 1 },
   },
 } as unknown as Part)
 
@@ -189,6 +196,42 @@ describe("updateStreamingState", () => {
 
     expect(useStreamingStore.getState().streamingMessageIds.get("ses_1")).toBe("msg_assistant_1")
     expect(useStreamingStore.getState().messageStreamStates.get("msg_assistant_1")?.phase).toBe("streaming")
+  })
+
+  test("keeps a completed tool-call assistant streaming through idle while its tool is running", () => {
+    updateStreamingState(stateWithMessages([
+      message("msg_user_1", "user"),
+      message("msg_assistant_1", "assistant"),
+    ]))
+    expect(useStreamingStore.getState().streamingMessageIds.get("ses_1")).toBe("msg_assistant_1")
+
+    updateStreamingState(stateWithMessages([
+      message("msg_user_1", "user"),
+      completedToolCallsAssistantMessage("msg_assistant_1"),
+    ], { type: "idle" } as SessionStatus, {
+      msg_assistant_1: [toolPart("msg_assistant_1", "running")],
+    }))
+
+    expect(useStreamingStore.getState().streamingMessageIds.get("ses_1")).toBe("msg_assistant_1")
+    expect(useStreamingStore.getState().messageStreamStates.get("msg_assistant_1")?.phase).toBe("streaming")
+  })
+
+  test("completes a tool-call assistant stream after its tool finalizes and status is idle", () => {
+    updateStreamingState(stateWithMessages([
+      message("msg_user_1", "user"),
+      message("msg_assistant_1", "assistant"),
+    ]))
+    expect(useStreamingStore.getState().streamingMessageIds.get("ses_1")).toBe("msg_assistant_1")
+
+    updateStreamingState(stateWithMessages([
+      message("msg_user_1", "user"),
+      completedToolCallsAssistantMessage("msg_assistant_1"),
+    ], { type: "idle" } as SessionStatus, {
+      msg_assistant_1: [toolPart("msg_assistant_1", "completed")],
+    }))
+
+    expect(useStreamingStore.getState().streamingMessageIds.get("ses_1")).toBeNull()
+    expect(useStreamingStore.getState().messageStreamStates.get("msg_assistant_1")?.phase).toBe("completed")
   })
 
   test("does not replace a tool-call assistant with a trailing empty assistant shell", () => {

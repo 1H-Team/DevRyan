@@ -1,6 +1,9 @@
 import * as React from 'react';
 
 export const RETRY_VISIBILITY_GRACE_MS = 1200;
+export const TRANSIENT_PROVIDER_RETRY_VISIBILITY_GRACE_MS = 10_000;
+
+const TRANSIENT_PROVIDER_RESPONSE_HEADER_TIMEOUT = /provider response headers timed out after/i;
 
 export interface RetryVisibilityStatus {
     sessionId: string;
@@ -29,11 +32,17 @@ export const getRetryVisibilityStartTime = (retry: RetryVisibilityStatus, observ
     return typeof retry.confirmedAt === 'number' ? retry.confirmedAt : observedAt;
 };
 
+export const getRetryVisibilityGraceMs = (retry: RetryVisibilityStatus): number => {
+    return TRANSIENT_PROVIDER_RESPONSE_HEADER_TIMEOUT.test(retry.message)
+        ? TRANSIENT_PROVIDER_RETRY_VISIBILITY_GRACE_MS
+        : RETRY_VISIBILITY_GRACE_MS;
+};
+
 export const shouldShowRetryVisibility = (
     retry: RetryVisibilityStatus | null,
     state: RetryVisibilityState | null,
     now: number,
-    graceMs = RETRY_VISIBILITY_GRACE_MS,
+    graceMs?: number,
 ): boolean => {
     if (!retry || !state) {
         return false;
@@ -47,7 +56,8 @@ export const shouldShowRetryVisibility = (
         return false;
     }
 
-    return now - state.firstSeenAt >= graceMs;
+    const effectiveGraceMs = typeof graceMs === 'number' ? graceMs : getRetryVisibilityGraceMs(retry);
+    return now - state.firstSeenAt >= effectiveGraceMs;
 };
 
 export const useRetryVisibility = <T extends RetryVisibilityStatus>(retry: T | null): T | null => {
@@ -56,6 +66,7 @@ export const useRetryVisibility = <T extends RetryVisibilityStatus>(retry: T | n
     const identity = retry ? getRetryVisibilityIdentity(retry) : null;
     const confirmedAt = retry?.confirmedAt;
     const sessionId = retry?.sessionId ?? null;
+    const retryGraceMs = retry ? getRetryVisibilityGraceMs(retry) : RETRY_VISIBILITY_GRACE_MS;
 
     React.useEffect(() => {
         if (!identity || !sessionId) {
@@ -82,7 +93,7 @@ export const useRetryVisibility = <T extends RetryVisibilityStatus>(retry: T | n
 
         stateRef.current = { identity, firstSeenAt, visibleSessionId: null };
 
-        const remainingMs = RETRY_VISIBILITY_GRACE_MS - (now - firstSeenAt);
+        const remainingMs = retryGraceMs - (now - firstSeenAt);
         if (remainingMs <= 0) {
             stateRef.current = { identity, firstSeenAt, visibleSessionId: sessionId };
             setVisibleSessionId(sessionId);
@@ -98,7 +109,7 @@ export const useRetryVisibility = <T extends RetryVisibilityStatus>(retry: T | n
         }, remainingMs);
 
         return () => clearTimeout(timeout);
-    }, [confirmedAt, identity, sessionId]);
+    }, [confirmedAt, identity, retryGraceMs, sessionId]);
 
     if (!retry) {
         return null;

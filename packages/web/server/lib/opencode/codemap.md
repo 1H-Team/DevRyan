@@ -8,6 +8,7 @@ Core OpenCode integration layer: config entities (agents/commands/skills/provide
 - **Runtime factories** (`*-runtime.js`) isolate IO-heavy behaviors (network, startup, watcher, shutdown).
 - **Route split by concern** (`core-routes.js`, `openchamber-routes.js`, `skill-routes.js`, `provider-routes` patterns).
 - **Config scope model** in shared helpers (`shared.js`) for user/project/global entity resolution.
+- **Provider integration aliases** (`provider-integrations.js`) normalize DevRyan-managed provider ids such as GitHub Copilot across upstream payloads, auth files, and config-source checks.
 - **OpenCode Slim adapter** (`slim-config.js` + `agents.js`) reads `oh-my-opencode-slim` config/presets, composes those model defaults with Slim-installed global `agents/*.md` prompt files, exposes Slim-managed agents to Settings, and writes Slim agent model/variant overrides back to the Slim config instead of DevRyan's sidecar.
 - **Managed runtime overlays** (`runtime-agent-overlays.js`) generate high-precedence OpenCode config directories so user-side agent model defaults, skill visibility, and runtime-only user remote MCP timeout guards apply at execution time without editing project/package agent markdown or persisted MCP config.
 - **Harness diagnostics** (`harness-result.js`, `harness-preflight.js`, `turn-timing.js`, `agent-runtime-warmup.js`) expose additive response envelopes, in-memory first-turn timings, latest read-only runtime warmup state, and read-only preflight findings/audits without creating hidden sessions or prompts.

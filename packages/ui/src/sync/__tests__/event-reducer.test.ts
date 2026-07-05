@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Event, Message, Part, PermissionRequest, QuestionRequest, Session, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { Event, Message, Part, PermissionRequest, QuestionRequest, Session, SessionStatus, Todo } from "@opencode-ai/sdk/v2/client"
 import { registerManualAbortGuard, resetAbortGuardState } from "../abort-retry-guard"
 import { applyDirectoryEvent } from "../event-reducer"
 import { INITIAL_STATE, type State } from "../types"
@@ -82,6 +82,22 @@ function testMessage(id: string, sessionID: string, role: Message["role"], creat
     role,
     time: { created },
   } as Message
+}
+
+function todo(id: string, status: Todo["status"]): Todo {
+  return {
+    id,
+    content: id,
+    status,
+    priority: "medium",
+  } as Todo
+}
+
+function todoUpdatedEvent(sessionID: string, todos: Todo[]): Event {
+  return {
+    type: "todo.updated",
+    properties: { sessionID, todos },
+  } as Event
 }
 
 describe("applyDirectoryEvent", () => {
@@ -195,6 +211,46 @@ describe("applyDirectoryEvent", () => {
 
     expect(applyDirectoryEvent(draft, event)).toBe(false)
     expect(draft.session_status.ses_1).toBe(statusRef)
+  })
+
+  test("updates live todos and persistence callback when todo progress changes", () => {
+    const draft = state()
+    const persisted: Array<{ sessionID: string; todos: Todo[] | undefined }> = []
+    const callbacks = {
+      onSetSessionTodo: (sessionID: string, todos: Todo[] | undefined) => {
+        persisted.push({ sessionID, todos })
+      },
+    }
+    const initialTodos = [
+      todo("task-1", "in_progress"),
+      todo("task-2", "pending"),
+      todo("task-3", "pending"),
+      todo("task-4", "pending"),
+      todo("task-5", "pending"),
+      todo("task-6", "pending"),
+    ]
+    const progressedTodos = [
+      todo("task-1", "completed"),
+      todo("task-2", "in_progress"),
+      todo("task-3", "pending"),
+      todo("task-4", "pending"),
+      todo("task-5", "pending"),
+      todo("task-6", "pending"),
+    ]
+
+    expect(applyDirectoryEvent(draft, todoUpdatedEvent("ses_1", initialTodos), callbacks)).toBe(true)
+    expect(draft.todo.ses_1).toEqual(initialTodos)
+
+    expect(applyDirectoryEvent(draft, todoUpdatedEvent("ses_1", progressedTodos), callbacks)).toBe(true)
+
+    expect(draft.todo.ses_1).toEqual(progressedTodos)
+    expect(draft.todo.ses_1).toHaveLength(6)
+    expect(draft.todo.ses_1[0]?.status).toBe("completed")
+    expect(draft.todo.ses_1[1]?.status).toBe("in_progress")
+    expect(persisted).toEqual([
+      { sessionID: "ses_1", todos: initialTodos },
+      { sessionID: "ses_1", todos: progressedTodos },
+    ])
   })
 
   test("skips duplicate session idle events", () => {

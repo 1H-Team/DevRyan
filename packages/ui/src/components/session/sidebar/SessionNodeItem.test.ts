@@ -56,11 +56,12 @@ describe('SessionNodeItem row hover metadata', () => {
 });
 
 describe('session sidebar quick hover actions', () => {
-  test('exposes pin and unarchive hover action flags', () => {
+  test('exposes pin, unarchive, and archived delete hover action flags', () => {
     const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'SessionNodeItem.tsx'), 'utf8');
 
     expect(source).toContain('showQuickPinAction');
     expect(source).toContain('showQuickUnarchiveAction');
+    expect(source).toContain('showQuickDeleteAction');
   });
 
   test('renders pin before archive and uses restore icon for unarchive', () => {
@@ -70,6 +71,15 @@ describe('session sidebar quick hover actions', () => {
     expect(source).toContain('handleQuickPinClick');
     expect(source).toContain('handleQuickUnarchiveClick');
     expect(source).toContain('RiArrowGoBackLine');
+  });
+
+  test('renders archived delete after restore and uses the hard-delete path', () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'SessionNodeItem.tsx'), 'utf8');
+
+    expect(source.indexOf('showQuickUnarchiveAction')).toBeLessThan(source.indexOf('showQuickDeleteAction'));
+    expect(source.indexOf('handleQuickUnarchiveClick')).toBeLessThan(source.indexOf('handleQuickDeleteClick'));
+    expect(source).toContain('handleDeleteSession(session, { archivedBucket: true })');
+    expect(source).toContain('RiDeleteBinLine');
   });
 });
 

@@ -9,6 +9,7 @@ Primary desktop shell (Electron). Boots the DevRyan web server in-process, owns 
 - **Origin policy**: `origin-policy.mjs` centralizes privileged-local vs allowed-content origin rules used by `main.mjs`, `preload.mjs`, init-script injection, navigation handlers, and IPC gates.
 - **Capability gating**: sensitive commands are enforced in main-process handlers (`openchamber:invoke`), with remote/local origin checks.
 - **Manager modules**: `ssh-manager.mjs` and `speech-manager.mjs` encapsulate long-running native integrations and emit structured status events.
+- **Native state controllers**: `keep-awake-controller.mjs` wraps `powerSaveBlocker` with idempotent apply/stop semantics for the desktop Keep Awake setting.
 - **Operational hardening**: single-instance lock, persistent logging via `electron-log`, stale log pruning, graceful/confirmed quit path, and unthrottled renderer paints for chat windows so packaged streaming/status updates stay responsive.
 - **Cache maintenance**: `cache-maintenance.mjs` clears packaged Electron HTTP/code caches at startup without touching app storage such as localStorage, cookies, or IndexedDB.
 

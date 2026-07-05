@@ -23,6 +23,7 @@ import { WorkingPlaceholder } from "./message/parts/WorkingPlaceholder";
 import { isVSCodeRuntime } from "@/lib/desktop";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/lib/i18n";
+import { buildTodoSummary } from "./lib/todoSummary";
 
 const STATUS_ROW_CONTAINER_STYLE = { containerType: "inline-size" as const, containerName: "status-row" };
 
@@ -179,11 +180,8 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   const isMobile = useUIStore((state) => state.isMobile);
   const isCompact = isMobile || isVSCodeRuntime();
 
-  // Filter out cancelled todos for display and keep original order.
-  // This prevents items from jumping around when status changes.
-  const visibleTodos = React.useMemo(() => {
-    return todos.filter((todo) => todo.status !== "cancelled");
-  }, [todos]);
+  const todoSummary = React.useMemo(() => buildTodoSummary(todos), [todos]);
+  const visibleTodos = todoSummary.visibleTodos;
 
   // Find the current active todo (first in_progress, or first pending)
   const activeTodo = React.useMemo(() => {
@@ -195,11 +193,10 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   }, [visibleTodos]);
 
   // Calculate progress
-  const progress = React.useMemo(() => {
-    const total = visibleTodos.length;
-    const completed = visibleTodos.filter((t) => t.status === "completed").length;
-    return { completed, total };
-  }, [visibleTodos]);
+  const progress = React.useMemo(() => ({
+    completed: todoSummary.completed,
+    total: todoSummary.total,
+  }), [todoSummary.completed, todoSummary.total]);
 
   const hasTodoContent = showTodos && progress.total > 0;
   const hasAssistantContent = showAssistantStatus && (

@@ -4,6 +4,7 @@ import {
   isElectronShell,
   requestDirectoryAccess,
   requestFileAccess,
+  setDesktopKeepAwake,
 } from './desktop';
 
 type TestWindow = Window & typeof globalThis & {
@@ -106,5 +107,28 @@ describe('desktop access helpers', () => {
       title: 'Select File',
       filters,
     }]);
+  });
+
+  test('applies Electron keep awake through desktop IPC on the local origin', async () => {
+    const invocations: Array<{ cmd: string; args?: Record<string, unknown> }> = [];
+    installWindow({
+      __OPENCHAMBER_ELECTRON__: { runtime: 'electron' },
+      __OPENCHAMBER_LOCAL_ORIGIN__: 'http://127.0.0.1:3001',
+      __TAURI__: {
+        core: {
+          invoke: mock(async (cmd: string, args?: Record<string, unknown>) => {
+            invocations.push({ cmd, args });
+            return { enabled: true, active: true };
+          }),
+        },
+      },
+    });
+
+    const result = await setDesktopKeepAwake(true);
+
+    expect(result).toEqual({ enabled: true, active: true });
+    expect(invocations).toEqual([
+      { cmd: 'desktop_set_keep_awake', args: { enabled: true } },
+    ]);
   });
 });

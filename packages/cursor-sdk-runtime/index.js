@@ -12,6 +12,10 @@ import {
   configureCursorSdkRipgrep,
   resolveCursorRipgrepPath,
 } from './ripgrep-path.js';
+import {
+  normalizeCursorSdkAgentDefinitions,
+  pinCursorSdkSubagentModels,
+} from './agent-definitions.js';
 
 export const CURSOR_PROVIDER_ID = 'cursor-acp';
 
@@ -894,45 +898,9 @@ const stableJson = (value) => {
   }
 };
 
-const normalizeCursorSdkAgentDefinitions = (value) => {
-  if (!isPlainObject(value)) return null;
-  const definitions = {};
-  for (const [rawName, rawDefinition] of Object.entries(value)) {
-    const name = trimString(rawName);
-    if (!name || !isPlainObject(rawDefinition)) continue;
-    const prompt = trimString(rawDefinition.prompt);
-    if (!prompt) continue;
-    const description = trimString(rawDefinition.description) || `${name} subagent`;
-    definitions[name] = {
-      description,
-      prompt,
-      model: 'inherit',
-    };
-  }
-  return Object.keys(definitions).length > 0 ? definitions : null;
-};
-
 const cloneCursorSdkAgentDefinitions = (definitions) => {
   const normalized = normalizeCursorSdkAgentDefinitions(definitions);
   return normalized ? sortObjectKeys(normalized) : null;
-};
-
-// Pin custom subagents to the parent session's exact model selection (id + params
-// such as `fast`) instead of the Cursor SDK's `"inherit"`. `"inherit"` resolves a
-// subagent's model from cursor-agent's own default, which tracks the Cursor
-// *desktop app* selection — so an orchestrator delegation could silently switch
-// fast=false -> fast=true and trip the model-boundary guard. Pinning the concrete
-// selection keeps the DevRyan-chosen model authoritative and independent of the
-// desktop app. `auto` sessions keep `"inherit"`.
-const pinCursorSdkSubagentModels = (definitions, modelSelection) => {
-  if (!isPlainObject(definitions)) return definitions;
-  const selection = cloneCursorSdkModelSelection(modelSelection);
-  if (!selection || selection.id === 'auto') return definitions;
-  const pinned = {};
-  for (const [name, definition] of Object.entries(definitions)) {
-    pinned[name] = { ...definition, model: selection };
-  }
-  return pinned;
 };
 
 const createAgentRuntimeFingerprint = ({ directory, model, agents }) => stableJson({
@@ -1376,6 +1344,7 @@ const getCursorRuntimePromptContract = (modelID) => {
   return [
     `This Cursor SDK session is pinned to model "${model}".`,
     'Do not start task/subagent/delegation tools with a different model.',
+    'Exception: when invoking a named DevRyan subagent, use that subagent\'s configured model if one is provided.',
     'If the request cannot be completed without switching models, return <status>blocked</status> with the reason instead of continuing.',
   ].join('\n');
 };
@@ -1505,7 +1474,32 @@ const formatCursorSdkModelSelectionForMessage = (selection, fallbackModelID) => 
   return `${normalized.id} (${suffix})`;
 };
 
-const buildCursorTaskModelBoundaryViolation = ({ toolName, input, selectedModelID, selectedModelSelection }) => {
+const getExplicitCursorSdkAgentModelSelections = (agentDefinitions) => {
+  const definitions = normalizeCursorSdkAgentDefinitions(agentDefinitions);
+  if (!definitions) return [];
+  const selections = [];
+  for (const definition of Object.values(definitions)) {
+    const selection = cloneCursorSdkModelSelection(definition?.model);
+    if (selection) selections.push(selection);
+  }
+  return selections;
+};
+
+const buildAllowedCursorTaskModelSelections = ({ selectedModelID, selectedModelSelection, agentDefinitions }) => {
+  const selected = normalizeCursorSdkModelSelectionForBoundary(selectedModelSelection, selectedModelID);
+  return [
+    ...(selected ? [selected] : []),
+    ...getExplicitCursorSdkAgentModelSelections(agentDefinitions),
+  ];
+};
+
+const buildCursorTaskModelBoundaryViolation = ({
+  toolName,
+  input,
+  selectedModelID,
+  selectedModelSelection,
+  allowedModelSelections,
+}) => {
   const selected = normalizeModelId(selectedModelID);
   if (!isCursorTaskTool(toolName) || !selected || selected === 'auto') return '';
 
@@ -1513,7 +1507,14 @@ const buildCursorTaskModelBoundaryViolation = ({ toolName, input, selectedModelI
   if (!requestedSelection) return '';
 
   const selectedSelection = normalizeCursorSdkModelSelectionForBoundary(selectedModelSelection, selected);
-  if (selectedSelection && areCursorSdkModelSelectionsEqual(requestedSelection, selectedSelection)) return '';
+  const allowedSelections = Array.isArray(allowedModelSelections) && allowedModelSelections.length > 0
+    ? allowedModelSelections
+    : (selectedSelection ? [selectedSelection] : []);
+  if (allowedSelections.some((selection) => (
+    areCursorSdkModelSelectionsEqual(requestedSelection, selection)
+  ))) {
+    return '';
+  }
 
   return [
     'Cursor SDK model boundary violation:',
@@ -2956,6 +2957,9 @@ export function createCursorSdkRuntime(options = {}) {
         directory,
         modelID,
         modelSelection: cloneCursorSdkModelSelection(modelSelection),
+        resolveModelSelection: async ({ modelID: nextModelID, variant: nextVariant } = {}) => (
+          resolveCursorSdkModelSelection({ modelID: nextModelID, variant: nextVariant })
+        ),
       }));
     } catch (error) {
       logger.warn?.('[CursorSDK] failed to resolve agent definitions:', error);
@@ -3142,6 +3146,11 @@ export function createCursorSdkRuntime(options = {}) {
         }),
       ]);
     }
+    const allowedTaskModelSelections = buildAllowedCursorTaskModelSelections({
+      selectedModelID: modelID,
+      selectedModelSelection: modelSelection,
+      agentDefinitions,
+    });
     let partSequence = 0;
     let cancellationSource = null;
     // Resolves the instant a host/user stop is requested (markAbortRequested).
@@ -4035,6 +4044,7 @@ export function createCursorSdkRuntime(options = {}) {
               input,
               selectedModelID: modelID,
               selectedModelSelection: modelSelection,
+              allowedModelSelections: allowedTaskModelSelections,
             });
             const status = modelBoundaryViolation
               ? 'error'

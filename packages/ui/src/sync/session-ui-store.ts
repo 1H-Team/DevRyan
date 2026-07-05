@@ -87,6 +87,7 @@ import { useViewportStore } from "./viewport-store"
 import { useSessionWorktreeStore } from "./session-worktree-store"
 import { getAttachedSessionDirectory } from "./session-worktree-contract"
 import { nextPlanIndicatorEntry, type PlanIndicatorEntry } from "./plan-indicator"
+import { hasSettledTerminalAssistantTurn } from "./plan-idle-settlement"
 import {
   clearLegacyNewDraftInput,
   createDraftId,
@@ -127,7 +128,17 @@ const clearPendingCompletionTimers = (sessionId: string) => {
 
 const isLiveSessionWorking = (sessionId: string): boolean => {
   const directory = getSyncSessionDirectoryAnyDirectory(sessionId)
-  const status = directory ? getSyncSessionStatus(sessionId, directory) : undefined
+  const state = directory ? getDirectoryState(directory) : undefined
+  const stateStatus = state?.session_status?.[sessionId]
+  const status = stateStatus ?? (directory ? getSyncSessionStatus(sessionId, directory) : undefined)
+  if (
+    state
+    && stateStatus
+    && (status?.type === "busy" || status?.type === "retry")
+    && hasSettledTerminalAssistantTurn({ sessionID: sessionId, state })
+  ) {
+    return false
+  }
   return status?.type === "busy" || status?.type === "retry"
 }
 
@@ -3136,7 +3147,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       }
 
       const planEntry = state.sessionPlanIndicator.get(sessionId)
-      if (planEntry && planEntry.state !== "implementing") {
+      if (planEntry?.state === "completed") {
         nextPlanIndicator = new Map(state.sessionPlanIndicator)
         nextPlanIndicator.delete(sessionId)
       }
@@ -3180,7 +3191,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         }
 
         const planEntry = state.sessionPlanIndicator.get(sessionId)
-        if (planEntry && planEntry.state !== "implementing") {
+        if (planEntry?.state === "completed") {
           nextPlanIndicator ??= new Map(state.sessionPlanIndicator)
           nextPlanIndicator.delete(sessionId)
         }

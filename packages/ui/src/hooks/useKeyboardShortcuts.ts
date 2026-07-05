@@ -13,6 +13,7 @@ import { eventMatchesShortcut, getEffectiveShortcutCombo } from '@/lib/shortcuts
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { applyDraftAwareModelChange } from '@/components/chat/draftAwareAgentChange';
+import { buildFavoriteModelsList, getNextFavoriteModelRef } from '@/hooks/useModelLists';
 
 export const useKeyboardShortcuts = () => {
   const openNewSessionDraft = useSessionUIStore((s) => s.openNewSessionDraft);
@@ -379,6 +380,7 @@ export const useKeyboardShortcuts = () => {
           isAboutDialogOpen,
           activeMainTab,
           favoriteModels,
+          hiddenModels,
         } = useUIStore.getState();
 
         if (isSettingsDialogOpen) {
@@ -388,20 +390,29 @@ export const useKeyboardShortcuts = () => {
         const hasOverlay = isCommandPaletteOpen || isHelpDialogOpen || isSessionSwitcherOpen || isAboutDialogOpen;
         const isChatActive = activeMainTab === 'chat';
 
-        if (hasOverlay || !isChatActive || favoriteModels.length === 0) {
+        if (hasOverlay || !isChatActive) {
+          return;
+        }
+
+        const configState = useConfigStore.getState();
+        const { currentProviderId, currentModelId } = configState;
+        const visibleFavoriteModels = buildFavoriteModelsList({
+          favoriteModels,
+          hiddenModels,
+          providers: configState.providers,
+        });
+        const delta = eventMatchesShortcut(e, combo('cycle_favorite_model_forward')) ? 1 : -1;
+        const next = getNextFavoriteModelRef({
+          favoriteModels: visibleFavoriteModels,
+          currentProviderId,
+          currentModelId,
+          direction: delta,
+        });
+        if (!next) {
           return;
         }
 
         e.preventDefault();
-
-        const configState = useConfigStore.getState();
-        const { currentProviderId, currentModelId } = configState;
-        const len = favoriteModels.length;
-        const currentIdx = favoriteModels.findIndex(
-          (f) => f.providerID === currentProviderId && f.modelID === currentModelId,
-        );
-        const delta = eventMatchesShortcut(e, combo('cycle_favorite_model_forward')) ? 1 : -1;
-        const next = favoriteModels[(currentIdx + delta + len) % len];
 
         const sessionState = useSessionUIStore.getState();
         const selectionState = useSelectionStore.getState();

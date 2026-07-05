@@ -292,6 +292,44 @@ describe('Cursor SDK worker runtime config', () => {
     });
   });
 
+  test('passes explicit Cursor SDK subagent models to one-shot prompt workers', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-worker-'));
+    const capture = { calls: [], input: null };
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      useNodeWorkerForPrompts: true,
+      usePersistentWorkerForPrompts: false,
+      spawnImpl: createFakeWorkerSpawn(capture),
+      resolveAgentDefinitions: async () => ({
+        fixer: {
+          description: 'Fast implementation specialist',
+          prompt: 'Apply the requested fix.',
+          model: { id: 'composer-2.5', params: [{ id: 'fast', value: 'false' }] },
+        },
+      }),
+    });
+
+    await runtime.handlePromptAsync({
+      sessionID: 'ses_worker_explicit_agent_model',
+      directory: '/tmp/project',
+      body: {
+        model: { providerID: 'cursor-acp', modelID: 'gpt-5.5' },
+        messageID: 'msg_worker_explicit_agent_model_user',
+        parts: [{ type: 'text', text: 'hello' }],
+      },
+    });
+
+    expect(capture.input.agents).toEqual({
+      fixer: {
+        description: 'Fast implementation specialist',
+        prompt: 'Apply the requested fix.',
+        model: { id: 'composer-2.5', params: [{ id: 'fast', value: 'false' }] },
+      },
+    });
+  });
+
   test('applies worker final result while stdout stream remains open', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-worker-'));
     const capture = { calls: [], input: null };
@@ -687,6 +725,47 @@ describe('Cursor SDK worker runtime config', () => {
         description: 'Read-only code explorer',
         prompt: 'Inspect the repository and report findings.',
         model: 'inherit',
+      },
+    });
+
+    await runtime.dispose();
+  });
+
+  test('passes explicit Cursor SDK subagent models to persistent prompt workers', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-worker-'));
+    const capture = { calls: [], children: [], commands: [] };
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      useNodeWorkerForPrompts: true,
+      spawnImpl: createFakePersistentWorkerSpawn(capture),
+      resolveAgentDefinitions: async () => ({
+        fixer: {
+          description: 'Fast implementation specialist',
+          prompt: 'Apply the requested fix.',
+          model: { id: 'composer-2.5', params: [{ id: 'fast', value: 'false' }] },
+        },
+      }),
+    });
+
+    await runtime.handlePromptAsync({
+      sessionID: 'ses_persistent_explicit_agent_model',
+      directory: '/tmp/project',
+      body: {
+        model: { providerID: 'cursor-acp', modelID: 'gpt-5.5' },
+        messageID: 'msg_persistent_explicit_agent_model_user',
+        parts: [{ type: 'text', text: 'hello' }],
+      },
+    });
+
+    const promptCommand = await waitFor(() => capture.commands.find((entry) => entry.type === 'prompt'));
+
+    expect(promptCommand.agents).toEqual({
+      fixer: {
+        description: 'Fast implementation specialist',
+        prompt: 'Apply the requested fix.',
+        model: { id: 'composer-2.5', params: [{ id: 'fast', value: 'false' }] },
       },
     });
 

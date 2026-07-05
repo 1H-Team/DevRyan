@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Message, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { isSessionWorkingFromState } from "../session-working"
 
 function assistantMessage(id: string, completed?: number): Message {
@@ -17,6 +17,27 @@ function terminalAssistantMessage(id: string, finish: string): Message {
     finish,
     time: { created: 1 },
   } as unknown as Message
+}
+
+function completedToolCallsAssistantMessage(id: string): Message {
+  return {
+    id,
+    role: "assistant",
+    finish: "tool-calls",
+    time: { created: 1, completed: 2 },
+  } as unknown as Message
+}
+
+function toolPart(messageID: string, status: string): Part {
+  return {
+    id: `${messageID}_tool`,
+    messageID,
+    type: "tool",
+    tool: "write",
+    state: {
+      status,
+    },
+  } as unknown as Part
 }
 
 describe("isSessionWorkingFromState", () => {
@@ -62,6 +83,26 @@ describe("isSessionWorkingFromState", () => {
     })).toBe(true)
   })
 
+  test("keeps a completed tool-call assistant working through idle while its tool is in flight", () => {
+    expect(isSessionWorkingFromState({
+      status: { type: "idle" } as SessionStatus,
+      permissions: [],
+      messages: [completedToolCallsAssistantMessage("msg_assistant_1")],
+      liveStreamingMessageId: "msg_assistant_1",
+      liveParts: [toolPart("msg_assistant_1", "running")],
+    })).toBe(true)
+  })
+
+  test("stops treating a completed tool-call assistant as working after its tool finalizes", () => {
+    expect(isSessionWorkingFromState({
+      status: { type: "idle" } as SessionStatus,
+      permissions: [],
+      messages: [completedToolCallsAssistantMessage("msg_assistant_1")],
+      liveStreamingMessageId: "msg_assistant_1",
+      liveParts: [toolPart("msg_assistant_1", "completed")],
+    })).toBe(false)
+  })
+
   test("does not treat a stale streaming id for another message as working", () => {
     expect(isSessionWorkingFromState({
       status: { type: "idle" } as SessionStatus,
@@ -103,6 +144,8 @@ describe("isSessionWorkingFromState", () => {
       status: { type: "busy" } as SessionStatus,
       permissions: [{}],
       messages: [assistantMessage("msg_assistant_1")],
+      liveStreamingMessageId: "msg_assistant_1",
+      liveParts: [toolPart("msg_assistant_1", "running")],
     })).toBe(false)
   })
 })

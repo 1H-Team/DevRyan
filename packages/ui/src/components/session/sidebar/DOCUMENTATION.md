@@ -7,7 +7,7 @@
 - `NavRail` is no longer part of sidebar/navigation flow.
 - Project headers now own root sessions directly; there is no separate rendered `project root` subgroup.
 - Active/hover row styling is text-first; selected sessions use primary text instead of background fills.
-- Archived groups are collapsed by default and support bulk deletion at group/folder level.
+- Archived groups are collapsed by default on cold load/refresh, reveal automatically when a user just archived a session into them, and support bulk deletion at group/folder level.
 - Session rows support compact inline dates in minimal mode and simplified metadata in default mode.
 - New extractions in latest pass reduced local effect/callback bulk further:
   - project session list builders

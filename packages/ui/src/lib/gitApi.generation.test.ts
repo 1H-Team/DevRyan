@@ -399,6 +399,45 @@ describe("generateCommitMessage session routing", () => {
     expect(text).toContain("single commit message draft")
   })
 
+  test("draft generation includes commit input guidance without making it authoritative", async () => {
+    gitStatusResponse = {
+      ...gitStatusResponse,
+      files: [{ path: "src/app.ts", index: "M", working_dir: " " }],
+      diffStats: { "src/app.ts": { insertions: 2, deletions: 0 } },
+    }
+
+    await generateCommitMessageDraftQuietly("/repo", ["src/app.ts"], {
+      commitMessageGuidance: "Prefer fix(auth): wording",
+    })
+
+    const text = promptCalls[0]?.parts?.map((part) => part.text).join("\n") ?? ""
+    expect(text).toContain("Commit input guidance")
+    expect(text).toContain("Prefer fix(auth): wording")
+    expect(text).toContain("This guidance is optional")
+    expect(text).toContain("must not override the git context")
+  })
+
+  test("draft generation returns only the first generated commit subject", async () => {
+    gitStatusResponse = {
+      ...gitStatusResponse,
+      files: [{ path: "src/app.ts", index: "M", working_dir: " " }],
+      diffStats: { "src/app.ts": { insertions: 2, deletions: 0 } },
+    }
+    promptResponseText = "```json\n[{\"subject\":\"fix(ui): fill commit input\",\"highlights\":[\"Uses draft\"]},{\"subject\":\"chore: extra subject\",\"highlights\":[\"Ignored\"]}]\n```"
+
+    const result = await generateCommitMessageDraftQuietly("/repo", ["src/app.ts"])
+
+    expect(result).toEqual({
+      status: "complete",
+      commits: [
+        {
+          subject: "fix(ui): fill commit input",
+          highlights: ["Uses draft"],
+        },
+      ],
+    })
+  })
+
   test("builds visible chat prompt payload for commit generation without creating hidden sessions", async () => {
     gitStatusResponse = {
       ...gitStatusResponse,

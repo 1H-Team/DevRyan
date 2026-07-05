@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-07-05
+
+- Providers: add GitHub Copilot as a normalized provider option, including `copilot` alias handling, auth/config lookup parity, and removal cleanup across provider storage locations.
+- Git: generate commit messages directly into the commit input, preserving selected-file safety checks and optional user guidance without starting a separate chat session.
+- Sessions: tighten live working-state detection around tool-call finishes, in-flight tool parts, settled plan turns, and sidebar ordering so completed sessions stop appearing active.
+- UI: skip hidden models when cycling favorites, add archived-session quick delete, remove the PWA install prompt surface, and allow builder agents to ask structured questions when blocked.
+
 ## [1.0.4] - 2026-07-02
 
 - Release: bump DevRyan workspace, Electron, VS Code, web, and legacy desktop metadata to 1.0.4.

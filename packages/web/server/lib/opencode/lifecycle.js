@@ -605,7 +605,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         conflicts: [],
         runtimeApplied: false,
         requiresReload: false,
-        runtimeMessage: 'Agent model defaults were saved, but DevRyan cannot apply them to an external OpenCode runtime automatically.',
+        runtimeMessage: 'Agent model defaults were saved, but DevRyan cannot apply them to a configured external OpenCode runtime automatically.',
       };
     }
 
@@ -799,12 +799,12 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       console.log('Restarting OpenCode process...');
 
       if (state.isExternalOpenCode) {
-        console.log('Re-probing external OpenCode server...');
+        console.log('Re-probing configured external OpenCode runtime...');
         const probePort = state.openCodePort || env.ENV_CONFIGURED_OPENCODE_PORT || 4096;
         const probeOrigin = state.openCodeBaseUrl ?? env.ENV_CONFIGURED_OPENCODE_HOST?.origin;
         const healthy = await probeExternalOpenCode(probePort, probeOrigin);
         if (healthy) {
-          console.log(`External OpenCode server on port ${probePort} is healthy`);
+          console.log(`Configured external OpenCode runtime on port ${probePort} is healthy`);
           setOpenCodePort(probePort);
           state.isOpenCodeReady = true;
           state.lastOpenCodeError = null;
@@ -988,7 +988,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       return {
         runtimeApplied: false,
         requiresReload: false,
-        runtimeMessage: 'Agent model defaults were saved, but DevRyan cannot apply them to an external OpenCode runtime automatically.',
+        runtimeMessage: 'Agent model defaults were saved, but DevRyan cannot apply them to a configured external OpenCode runtime automatically.',
       };
     }
 
@@ -1034,7 +1034,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         }
       } else if (env.ENV_SKIP_OPENCODE_START && env.ENV_EFFECTIVE_PORT) {
         const label = env.ENV_CONFIGURED_OPENCODE_HOST ? env.ENV_CONFIGURED_OPENCODE_HOST.origin : `http://localhost:${env.ENV_EFFECTIVE_PORT}`;
-        console.log(`Using external OpenCode server at ${label} (skip-start mode)`);
+        console.log(`Using configured external OpenCode runtime at ${label} (skip-start mode)`);
         state.openCodeBaseUrl = env.ENV_CONFIGURED_OPENCODE_HOST?.origin ?? null;
         setOpenCodePort(env.ENV_EFFECTIVE_PORT);
         state.isOpenCodeReady = true;
@@ -1044,7 +1044,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         syncToHmrState();
       } else if (env.ENV_EFFECTIVE_PORT && await probeExternalOpenCode(env.ENV_EFFECTIVE_PORT, env.ENV_CONFIGURED_OPENCODE_HOST?.origin)) {
         const label = env.ENV_CONFIGURED_OPENCODE_HOST ? env.ENV_CONFIGURED_OPENCODE_HOST.origin : `http://localhost:${env.ENV_EFFECTIVE_PORT}`;
-        console.log(`Auto-detected existing OpenCode server at ${label}`);
+        console.log(`Using configured external OpenCode runtime at ${label}`);
         state.openCodeBaseUrl = env.ENV_CONFIGURED_OPENCODE_HOST?.origin ?? null;
         setOpenCodePort(env.ENV_EFFECTIVE_PORT);
         state.isOpenCodeReady = true;
@@ -1052,8 +1052,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         state.lastOpenCodeError = null;
         state.openCodeNotReadySince = 0;
         syncToHmrState();
-      } else if (!env.ENV_EFFECTIVE_PORT && await probeExternalOpenCode(4096)) {
-        console.log('Auto-detected existing OpenCode server on default port 4096');
+      } else if (env.ENV_SKIP_OPENCODE_START && !env.ENV_EFFECTIVE_PORT && await probeExternalOpenCode(4096)) {
+        console.log('Using configured external OpenCode runtime at http://localhost:4096 (skip-start mode)');
         setOpenCodePort(4096);
         state.isOpenCodeReady = true;
         state.isExternalOpenCode = true;

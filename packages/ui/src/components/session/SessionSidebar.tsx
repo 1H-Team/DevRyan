@@ -63,10 +63,10 @@ import { useSessionMultiSelectStore } from '@/stores/useSessionMultiSelectStore'
 import { type SessionGroup, type SessionNode } from './sidebar/types';
 import {
   compareSessionsByPinnedAndTime,
+  discardPendingArchiveRevealSessionIds,
   formatProjectLabel,
-  getArchivedGroupKeys,
-  addMissingCollapsedGroupKeys,
   normalizePath,
+  reconcileArchivedGroupCollapse,
   selectVisibleChatDrafts,
 } from './sidebar/utils';
 import { refreshGlobalSessions, resolveGlobalSessionDirectory, useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
@@ -726,6 +726,22 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const archiveSessions = useSessionUIStore((state) => state.archiveSessions);
   const unarchiveSession = useSessionUIStore((state) => state.unarchiveSession);
   const unarchiveSessions = useSessionUIStore((state) => state.unarchiveSessions);
+  const pendingArchiveRevealSessionIdsRef = React.useRef<Set<string>>(new Set());
+  const recordPendingArchiveRevealSessionIds = React.useCallback((ids: string[]) => {
+    if (ids.length === 0) {
+      return;
+    }
+    pendingArchiveRevealSessionIdsRef.current = new Set([
+      ...pendingArchiveRevealSessionIdsRef.current,
+      ...ids,
+    ]);
+  }, []);
+  const discardPendingArchiveRevealSessionIdsFor = React.useCallback((ids: Iterable<string>) => {
+    pendingArchiveRevealSessionIdsRef.current = discardPendingArchiveRevealSessionIds(
+      pendingArchiveRevealSessionIdsRef.current,
+      ids,
+    );
+  }, []);
 
   const {
     copiedSessionId,
@@ -764,6 +780,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     archiveSessions,
     unarchiveSession,
     unarchiveSessions,
+    onArchiveRequested: recordPendingArchiveRevealSessionIds,
+    onArchiveFailed: discardPendingArchiveRevealSessionIdsFor,
     childrenMap,
     showDeletionDialog,
     setDeleteSessionConfirm,
@@ -1106,17 +1124,26 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       visibleArchivedGroupKeysRef.current = new Set();
       return;
     }
-    const archivedGroupKeys = getArchivedGroupKeys(projectSections);
     const previousArchivedGroupKeys = visibleArchivedGroupKeysRef.current;
-    const newlyVisibleArchivedGroupKeys = archivedGroupKeys.filter((key) => !previousArchivedGroupKeys.has(key));
-    visibleArchivedGroupKeysRef.current = new Set(archivedGroupKeys);
+    const result = reconcileArchivedGroupCollapse({
+      sections: projectSections,
+      previousVisibleArchivedGroupKeys: previousArchivedGroupKeys,
+      collapsedGroups,
+      pendingRevealSessionIds: pendingArchiveRevealSessionIdsRef.current,
+    });
 
-    if (newlyVisibleArchivedGroupKeys.length > 0) {
-      // Collapse only when an archived bucket first appears; if it remains visible,
-      // preserve any user expand/collapse choice made afterward.
-      setCollapsedGroups((prev) => addMissingCollapsedGroupKeys(prev, newlyVisibleArchivedGroupKeys));
+    if (result.revealedSessionIds.size > 0) {
+      pendingArchiveRevealSessionIdsRef.current = discardPendingArchiveRevealSessionIds(
+        pendingArchiveRevealSessionIdsRef.current,
+        result.revealedSessionIds,
+      );
     }
-  }, [projectSections]);
+
+    if (result.collapsedGroups !== collapsedGroups) {
+      setCollapsedGroups(result.collapsedGroups);
+    }
+    visibleArchivedGroupKeysRef.current = result.visibleArchivedGroupKeys;
+  }, [collapsedGroups, projectSections]);
 
   const sessionSidebarMetaById = React.useMemo(() => {
     const meta = new Map<string, {
@@ -1726,9 +1753,13 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
             : t('sessions.sidebar.bulkActions.failedDeletePlural', { count: failedIds.length }));
         }
       } else {
+        recordPendingArchiveRevealSessionIds(ids);
         const { archivedIds, failedIds } = await archiveSessions(ids);
         successfulCount = archivedIds.length;
         failedCount = failedIds.length;
+        if (failedIds.length > 0) {
+          discardPendingArchiveRevealSessionIdsFor(failedIds);
+        }
         if (failedIds.length > 0) {
           toast.error(failedIds.length === 1
             ? t('sessions.sidebar.bulkActions.failedArchiveSingle', { count: failedIds.length })
@@ -1744,7 +1775,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       bulkDeletePendingRef.current = false;
       setBulkDeletePending(false);
     }
-  }, [archiveSessions, bulkScopeIsArchived, deleteSessions, selectedIds, t]);
+  }, [archiveSessions, bulkScopeIsArchived, deleteSessions, discardPendingArchiveRevealSessionIdsFor, recordPendingArchiveRevealSessionIds, selectedIds, t]);
 
   const handleBulkDelete = React.useCallback(() => {
     const count = selectedIds.size;

@@ -54,6 +54,18 @@ describe('settings helpers', () => {
     });
   });
 
+  it('accepts desktopKeepAwakeEnabled as a persisted shared setting', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ desktopKeepAwakeEnabled: true })).toEqual({
+      desktopKeepAwakeEnabled: true,
+    });
+    expect(helpers.sanitizeSettingsUpdate({ desktopKeepAwakeEnabled: false })).toEqual({
+      desktopKeepAwakeEnabled: false,
+    });
+    expect(helpers.sanitizeSettingsUpdate({ desktopKeepAwakeEnabled: 'true' })).toEqual({});
+  });
+
   it('accepts hiddenSkills as a persisted shared setting', () => {
     const helpers = createTestHelpers();
     const hiddenSkills = [

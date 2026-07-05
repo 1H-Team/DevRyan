@@ -59,6 +59,7 @@ export type DesktopSettings = {
   // Optional absolute path to `opencode` binary.
   opencodeBinary?: string;
   desktopLanAccessEnabled?: boolean;
+  desktopKeepAwakeEnabled?: boolean;
   projects?: ProjectEntry[];
   activeProjectId?: string;
   approvedDirectories?: string[];
@@ -235,6 +236,18 @@ export const invokeDesktop = async <T = unknown>(command: string, args?: Record<
   const tauri = (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__;
   if (typeof tauri?.core?.invoke !== 'function') return null;
   return tauri.core.invoke(command, args ?? {}) as Promise<T>;
+};
+
+export type DesktopKeepAwakeResult = {
+  enabled: boolean;
+  active: boolean;
+};
+
+export const setDesktopKeepAwake = async (enabled: boolean): Promise<DesktopKeepAwakeResult | null> => {
+  if (!canUseElectronDesktopIPC() || !isDesktopLocalOriginActive()) {
+    return null;
+  }
+  return invokeDesktop<DesktopKeepAwakeResult>('desktop_set_keep_awake', { enabled });
 };
 
 const normalizeOrigin = (raw: string): string | null => {

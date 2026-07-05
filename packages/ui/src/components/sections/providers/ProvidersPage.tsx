@@ -28,18 +28,16 @@ import {
   getHiddenModelRefsForProviderModel,
   isHiddenProviderModelRef,
 } from '@/lib/providers/modelVisibility';
+import { parseProvidersPayload, type ProviderOption } from './providerOptions';
 import { getProviderModelsForDisplay } from './providerSorting';
 import type { ModelMetadata } from '@/types';
 import { useI18n } from '@/lib/i18n';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 
 const ADD_PROVIDER_ID = '__add_provider__';
-const ANTHROPIC_PROVIDER_OPTION: ProviderOption = { id: 'anthropic', name: 'Anthropic' };
 const ANTIGRAVITY_PROVIDER_ID = 'antigravity';
 const GOOGLE_PROVIDER_ID = 'google';
 const CURSOR_USAGE_TOKEN_INPUT_ID = 'cursor-usage-session-token';
-const CURSOR_ACP_PROVIDER_OPTION: ProviderOption = { id: CURSOR_ACP_PROVIDER_ID, name: 'Cursor' };
-const ANTIGRAVITY_PROVIDER_OPTION: ProviderOption = { id: ANTIGRAVITY_PROVIDER_ID, name: 'Antigravity' };
 const AUTH_PROVIDER_ID_KEY = '__authProviderId';
 const AUTH_METHOD_INDEX_KEY = '__authMethodIndex';
 
@@ -51,11 +49,6 @@ interface AuthMethod {
   help?: string;
   method?: number;
   [key: string]: unknown;
-}
-
-interface ProviderOption {
-  id: string;
-  name?: string;
 }
 
 interface ProviderSourceInfo {
@@ -100,10 +93,6 @@ const normalizeAuthType = (method: AuthMethod) => {
   return raw.toLowerCase();
 };
 
-const normalizeAvailableProviderName = (provider: ProviderOption): ProviderOption => (
-  provider.name === 'Anthropic OAuth' ? { ...provider, name: 'Anthropic' } : provider
-);
-
 const isCursorAcpProviderId = (providerId: string | null | undefined) => providerId === CURSOR_ACP_PROVIDER_ID;
 
 const parseAuthPayload = (payload: unknown): Record<string, AuthMethod[]> => {
@@ -133,62 +122,6 @@ const parseAuthPayload = (payload: unknown): Record<string, AuthMethod[]> => {
     result[ANTIGRAVITY_PROVIDER_ID] = antigravityMethods;
   }
   return result;
-};
-
-const normalizeProviderEntry = (entry: unknown): ProviderOption | null => {
-  if (typeof entry === 'string') {
-    return { id: entry };
-  }
-  if (!isRecord(entry)) {
-    return null;
-  }
-  const idCandidate =
-    (typeof entry.id === 'string' && entry.id) ||
-    (typeof entry.providerID === 'string' && entry.providerID) ||
-    (typeof entry.slug === 'string' && entry.slug) ||
-    (typeof entry.name === 'string' && entry.name);
-  if (!idCandidate) {
-    return null;
-  }
-  const nameCandidate = typeof entry.name === 'string' ? entry.name : undefined;
-  return { id: idCandidate, name: nameCandidate };
-};
-
-const parseProvidersPayload = (payload: unknown): ProviderOption[] => {
-  let entries: unknown[] = [];
-
-  if (Array.isArray(payload)) {
-    entries = payload;
-  } else if (isRecord(payload)) {
-    if (Array.isArray(payload.all)) {
-      entries = payload.all;
-    } else if (Array.isArray(payload.providers)) {
-      entries = payload.providers;
-    }
-  }
-
-  const mapped = entries
-    .map((entry) => normalizeProviderEntry(entry))
-    .filter((entry): entry is ProviderOption => Boolean(entry));
-
-  if (!mapped.some((entry) => entry.id === ANTHROPIC_PROVIDER_OPTION.id)) {
-    mapped.push(ANTHROPIC_PROVIDER_OPTION);
-  }
-  if (!mapped.some((entry) => entry.id === ANTIGRAVITY_PROVIDER_OPTION.id)) {
-    mapped.push(ANTIGRAVITY_PROVIDER_OPTION);
-  }
-  if (!mapped.some((entry) => entry.id === CURSOR_ACP_PROVIDER_OPTION.id)) {
-    mapped.push(CURSOR_ACP_PROVIDER_OPTION);
-  }
-
-  const seen = new Set<string>();
-  return mapped.filter((entry) => {
-    if (seen.has(entry.id)) {
-      return false;
-    }
-    seen.add(entry.id);
-    return true;
-  }).map(normalizeAvailableProviderName);
 };
 
 const providerSupportsApiKey = (providerId: string) => (

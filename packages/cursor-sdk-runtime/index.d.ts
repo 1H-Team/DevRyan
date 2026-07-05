@@ -179,6 +179,10 @@ export function createCursorSdkRuntime(options: Record<string, unknown> & {
     directory?: string | null;
     modelID?: string;
     modelSelection?: CursorSdkModelSelection | null;
+    resolveModelSelection?: (input: {
+      modelID?: string | null;
+      variant?: string | null;
+    }) => Promise<CursorSdkModelSelection | null | undefined> | CursorSdkModelSelection | null | undefined;
   }) => Promise<CursorSdkAgentDefinitions | null | undefined> | CursorSdkAgentDefinitions | null | undefined;
 }): CursorSdkRuntime;
 export type CursorAuthFile = Record<string, Record<string, unknown>>;
