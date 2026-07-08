@@ -21,11 +21,26 @@ export function isTerminalAssistantMessage(message: Message | undefined): boolea
   return typeof completed === "number" || hasTerminalAssistantFinish(message)
 }
 
+export function isAssistantTurnComplete(message: Message | undefined): boolean {
+  if (!message || message.role !== "assistant") return false
+
+  const candidate = message as Message & { status?: unknown; streaming?: unknown }
+  if (candidate.streaming === true) return false
+
+  if (typeof candidate.status === "string") {
+    const status = candidate.status.trim().toLowerCase()
+    if (status === "running" || status === "pending" || status === "streaming") return false
+    if (status === "complete" || status === "completed" || status === "done") return true
+  }
+
+  return isTerminalAssistantMessage(message)
+}
+
 export function isIncompleteAssistantMessage(message: Message | undefined): boolean {
   return Boolean(
     message
     && message.role === "assistant"
-    && !isTerminalAssistantMessage(message),
+    && !isAssistantTurnComplete(message),
   )
 }
 
@@ -39,6 +54,30 @@ export function hasInFlightToolParts(parts: readonly Part[] | undefined): boolea
   }
 
   return false
+}
+
+export function hasVisibleAssistantSummary(parts: readonly Part[] | undefined): boolean {
+  for (const part of parts ?? []) {
+    if (part.type !== "text" && part.type !== "reasoning") continue
+
+    const text = (part as { text?: unknown }).text
+    if (typeof text === "string" && text.trim().length > 0) return true
+
+    const output = (part as { output?: unknown }).output
+    if (typeof output === "string" && output.trim().length > 0) return true
+  }
+
+  return false
+}
+
+export function isFinalAssistantSummaryMessage(
+  message: Message | undefined,
+  parts?: readonly Part[],
+): boolean {
+  if (!isAssistantTurnComplete(message)) return false
+  if (hasToolCallAssistantFinish(message)) return false
+  if (hasInFlightToolParts(parts)) return false
+  return hasVisibleAssistantSummary(parts)
 }
 
 export function isLiveAssistantMessage(
@@ -69,16 +108,30 @@ export function isSessionWorkingFromState({
   const hasAuthoritativeStatus = status !== undefined
   const statusWorking = hasAuthoritativeStatus && status.type !== "idle"
   const lastMessage = messages[messages.length - 1]
-  const trailingLiveStreaming = Boolean(
-    isLiveAssistantMessage(lastMessage, liveParts)
-    && lastMessage.id === liveStreamingMessageId
+  const livePartsBelongToLastMessage = !liveStreamingMessageId || lastMessage?.id === liveStreamingMessageId
+  const trackedLiveStreaming = Boolean(
+    liveStreamingMessageId
+    && (() => {
+      for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const message = messages[index]
+        if (message.role === "user") return false
+        if (message.id !== liveStreamingMessageId) continue
+        return isLiveAssistantMessage(message, liveParts)
+      }
+
+      return false
+    })()
   )
   // Trust authoritative idle status over stale incomplete assistant messages.
   // A currently tracked streaming id is the narrow exception for out-of-order
-  // idle status events during the live turn.
+  // idle status events during the live turn. OpenCode can append a trailing
+  // empty assistant shell while the prior tool-call assistant is still live.
   if (hasAuthoritativeStatus) {
-    return statusWorking || trailingLiveStreaming
+    return statusWorking || trackedLiveStreaming
   }
 
-  return isLiveAssistantMessage(lastMessage, liveParts)
+  return trackedLiveStreaming || isLiveAssistantMessage(
+    lastMessage,
+    livePartsBelongToLastMessage ? liveParts : undefined,
+  )
 }

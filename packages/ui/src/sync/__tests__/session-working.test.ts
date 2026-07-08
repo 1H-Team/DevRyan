@@ -93,6 +93,19 @@ describe("isSessionWorkingFromState", () => {
     })).toBe(true)
   })
 
+  test("keeps a tracked live tool-call assistant working behind a trailing empty assistant shell", () => {
+    expect(isSessionWorkingFromState({
+      status: { type: "idle" } as SessionStatus,
+      permissions: [],
+      messages: [
+        completedToolCallsAssistantMessage("msg_assistant_1"),
+        assistantMessage("msg_assistant_empty"),
+      ],
+      liveStreamingMessageId: "msg_assistant_1",
+      liveParts: [toolPart("msg_assistant_1", "running")],
+    })).toBe(true)
+  })
+
   test("stops treating a completed tool-call assistant as working after its tool finalizes", () => {
     expect(isSessionWorkingFromState({
       status: { type: "idle" } as SessionStatus,

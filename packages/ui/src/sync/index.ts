@@ -153,6 +153,7 @@ export {
   optimisticSend,
   abortCurrentOperation,
   interruptCurrentOperationForQueuedSend,
+  interruptCurrentOperationForSteeredSend,
   reconcileUnexpectedAbort,
   respondToPermission,
   dismissPermission,

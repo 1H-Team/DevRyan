@@ -24,6 +24,7 @@ type Props = {
   onToggleSidebar?: () => void;
   hideSearchAction?: boolean;
   avoidWindowControlsOverlay?: boolean;
+  reserveExternalDesktopChromeRow?: boolean;
 };
 
 export function SidebarHeader(props: Props): React.ReactNode {
@@ -42,6 +43,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
     onToggleSidebar,
     hideSearchAction = false,
     avoidWindowControlsOverlay = false,
+    reserveExternalDesktopChromeRow = false,
   } = props;
 
   if (hideDirectoryControls) {
@@ -49,6 +51,13 @@ export function SidebarHeader(props: Props): React.ReactNode {
   }
 
   const showTopRow = showSidebarToggle || !hideSearchAction;
+  const reserveExternalChromeOnly = reserveExternalDesktopChromeRow && !showTopRow;
+  let rootSpacingClass = 'px-2.5 py-1';
+  if (showSidebarToggle) {
+    rootSpacingClass = avoidWindowControlsOverlay ? 'pl-[5.5rem] pr-3 pb-2' : 'pl-3 pr-3 pb-2';
+  } else if (reserveExternalChromeOnly) {
+    rootSpacingClass = 'px-2.5 pb-1 pt-[var(--oc-header-height,56px)]';
+  }
 
   const actionsRow = (
     <div className="flex h-8 items-center gap-1.5">
@@ -101,7 +110,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
     <div
       className={cn(
         'select-none flex-shrink-0',
-        showSidebarToggle ? (avoidWindowControlsOverlay ? 'pl-[5.5rem] pr-3 pb-2' : 'pl-3 pr-3 pb-2') : 'px-2.5 py-1',
+        rootSpacingClass,
       )}
       style={showSidebarToggle && avoidWindowControlsOverlay ? { paddingTop: 'var(--oc-safe-area-top, 0px)' } : undefined}
     >

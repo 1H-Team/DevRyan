@@ -23,6 +23,8 @@ const LOGO_ALIAS = new Map<string, string>([
     ['opencode-with-claude', 'anthropic'],
     ['cursor-acp', 'cursor'],
     ['gemini', 'google'],
+    ['opencode-go', 'opencode'],
+    ['opencodego', 'opencode'],
     ['evroc-ai', 'evroc'],
     ['evrocai', 'evroc'],
     ['ollama-cloud', 'ollama'],

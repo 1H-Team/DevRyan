@@ -41,7 +41,6 @@ permission:
     supabase: allow
     supabase-postgres-best-practices: allow
     using-agent-skills: allow
-  context7_*: deny
 modelRefs:
   - openai/gpt-5.5
 ---

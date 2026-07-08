@@ -69,7 +69,10 @@ import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { createWorktreeDraft } from '@/lib/worktreeSessionCreator';
 import { buildSessionTargetOptions } from '@/sync/session-worktree-contract';
-import { checkoutBranchWithOptionalStash } from '@/lib/git/branchCheckout';
+import {
+    checkoutBranchWithOptionalStash,
+    finishCurrentBranchIntoMainWithOptionalStash,
+} from '@/lib/git/branchCheckout';
 import {
     buildDraftLocalBranchOptions,
     decodeDraftBranchOptionValue,
@@ -94,7 +97,7 @@ import {
     resolveComposerDraftTarget,
     type ComposerDraftTarget,
 } from './chatInputDraftPersistence';
-import { clearSubmittedComposerAfterSend } from './chatInputSubmitCleanup';
+import { clearCommittedComposerText, clearSubmittedComposerAfterSend } from './chatInputSubmitCleanup';
 import { isAbortableSessionPhase, shouldInterruptBeforeSubmit } from './submitInterrupt';
 import { flushQueuedMessagesForSession } from './queuedSend';
 
@@ -733,6 +736,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const isExpandedInput = useUIStore((state) => state.isExpandedInput);
     const setExpandedInput = useUIStore((state) => state.setExpandedInput);
     const setTimelineDialogOpen = useUIStore((state) => state.setTimelineDialogOpen);
+    const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
     const { git: runtimeGit } = useRuntimeAPIs();
     const { currentTheme } = useThemeSystem();
     const chatSearchDirectory = useChatSearchDirectory();
@@ -1712,7 +1716,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
         try {
             if (shouldInterruptCurrentTurn && currentSessionId) {
-                await sessionActions.interruptCurrentOperationForQueuedSend(currentSessionId);
+                await sessionActions.interruptCurrentOperationForSteeredSend(currentSessionId);
             }
 
             retireDraftTarget(submittedDraftTarget);
@@ -1723,11 +1727,16 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             // then gets re-sent on the next Enter. On a hard failure the catch below
             // restores inputSnapshot.message; soft network errors intentionally do not.
             if (!queuedOnly) {
-                setMessage("");
-                if (textareaRef.current) {
-                    textareaRef.current.value = "";
-                }
-                setPendingInputText(null);
+                clearCommittedComposerText({
+                    textarea: textareaRef.current,
+                    clearPendingInputText: () => setPendingInputText(null),
+                    clearPendingDraftPersist,
+                    clearDraftTarget: () => clearDraftTargetImmediately(activeDraftTarget),
+                    syncMessageRef: (value) => {
+                        messageRef.current = value;
+                    },
+                    setMessage,
+                });
             }
 
             await sendMessage(
@@ -1804,6 +1813,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 if (!inputSnapshot.message) {
                     return;
                 }
+                messageRef.current = inputSnapshot.message;
                 setMessage(inputSnapshot.message);
                 if (textareaRef.current) {
                     textareaRef.current.value = inputSnapshot.message;
@@ -3506,6 +3516,69 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         }
     }, [refreshSelectedDraftProjectGit, runtimeGit, selectedDraftProject?.id, selectedDraftProjectPath, selectedDraftProjectStatus, setNewSessionDraftTarget, t]);
 
+    const canFinishDraftCheckoutIntoMain = React.useMemo(() => {
+        if (!draftCheckoutDialog) {
+            return false;
+        }
+
+        const directoryState = useGitStore.getState().directories.get(draftCheckoutDialog.projectRoot);
+        const currentBranch = directoryState?.status?.current ?? selectedDraftProjectStatus?.current;
+        const branchNames = directoryState?.branches?.all ?? selectedDraftProjectBranches?.all ?? [];
+
+        return Boolean(currentBranch && currentBranch !== 'main' && branchNames.includes('main'));
+    }, [draftCheckoutDialog, selectedDraftProjectBranches, selectedDraftProjectStatus]);
+
+    const handleDraftFinishCurrentBranchIntoMain = React.useCallback(async (
+        pending: NonNullable<typeof draftCheckoutDialog>,
+        restoreAfter: boolean,
+    ) => {
+        if (!runtimeGit) {
+            return;
+        }
+
+        const result = await finishCurrentBranchIntoMainWithOptionalStash({
+            git: runtimeGit,
+            directory: pending.projectRoot,
+            restoreAfter,
+        });
+
+        if (result.type === 'blocked') {
+            toast.error(t('gitView.toast.mergeIntoMainBlocked', { reason: result.reason }));
+            return;
+        }
+
+        if (result.type === 'conflict') {
+            setNewSessionDraftTarget({ projectId: pending.projectId, directoryOverride: pending.projectRoot }, { force: true });
+            setActiveMainTab('git');
+            toast.error(t('gitView.toast.mergeIntoMainConflicts', { branch: result.sourceBranch }));
+            await refreshSelectedDraftProjectGit(pending.projectRoot);
+            return;
+        }
+
+        if (result.type === 'delete-failed') {
+            const reason = result.error instanceof Error ? result.error.message : String(result.error || t('gitView.stash.finishIntoMainFailed'));
+            setNewSessionDraftTarget({ projectId: pending.projectId, directoryOverride: pending.projectRoot }, { force: true });
+            toast.error(t('gitView.toast.mergeIntoMainDeleteFailed', { branch: result.sourceBranch, reason }));
+            await refreshSelectedDraftProjectGit(pending.projectRoot);
+            return;
+        }
+
+        if (result.type === 'restore-failed') {
+            const reason = result.error instanceof Error ? result.error.message : String(result.error || t('gitView.toast.restoreStashFailed'));
+            setNewSessionDraftTarget({ projectId: pending.projectId, directoryOverride: pending.projectRoot }, { force: true });
+            toast.error(t('gitView.toast.mergeIntoMainRestoreFailed', { branch: result.sourceBranch, reason }));
+            await refreshSelectedDraftProjectGit(pending.projectRoot);
+            return;
+        }
+
+        setNewSessionDraftTarget({ projectId: pending.projectId, directoryOverride: pending.projectRoot }, { force: true });
+        toast.success(t('gitView.toast.mergedIntoMainAndDeleted', { branch: result.sourceBranch }));
+        if (result.restored) {
+            toast.success(t('gitView.toast.stashedRestored'));
+        }
+        await refreshSelectedDraftProjectGit(pending.projectRoot);
+    }, [refreshSelectedDraftProjectGit, runtimeGit, setActiveMainTab, setNewSessionDraftTarget, t]);
+
     const handleDraftDirectoryChange = React.useCallback((value: string) => {
         const draft = useSessionUIStore.getState().newSessionDraft;
         if (draft?.pendingWorktreeRequestId || draft?.bootstrapPendingDirectory || draft?.preserveDirectoryOverride) {
@@ -4286,6 +4359,15 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                     projectRoot: pending.projectRoot,
                 });
             }}
+            finishBranchAction={canFinishDraftCheckoutIntoMain ? {
+                onConfirm: async (restoreAfter) => {
+                    const pending = draftCheckoutDialog;
+                    if (!pending) {
+                        return;
+                    }
+                    await handleDraftFinishCurrentBranchIntoMain(pending, restoreAfter);
+                },
+            } : undefined}
         />
         </>
     );

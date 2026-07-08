@@ -22,6 +22,7 @@ import {
   getPreviousQuestionIndex,
   isQuestionAnswerComplete,
 } from './questionCardNavigation';
+import { getQuestionOptionPresentation } from './questionCardOptions';
 
 interface QuestionCardProps {
   /**
@@ -296,7 +297,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
         <div className="space-y-0.5">
           {entry.question.options.map((option, index) => {
             const isSelected = selected.includes(option.label);
-            const recommended = /\(recommended\)/i.test(option.label);
+            const { displayLabel, recommended } = getQuestionOptionPresentation(option.label);
             return (
               <button
                 key={`${index}:${option.label}`}
@@ -334,7 +335,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
                           isSelected ? 'text-foreground font-medium' : 'text-foreground/80',
                         )}
                       >
-                        {option.label}
+                        {displayLabel}
                       </span>
                       {recommended ? (
                         <span className="typography-micro text-primary/80">{t('chat.questionCard.recommended')}</span>

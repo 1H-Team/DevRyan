@@ -1,6 +1,7 @@
 export type QuotaProviderId =
   | 'openai'
   | 'codex'
+  | 'opencode-go'
   | 'cursor-acp'
   | 'claude'
   | 'github-copilot'
@@ -35,8 +36,26 @@ export interface UsageWindows {
   sortOrder?: number;
 }
 
+export interface UsageResetCredit {
+  id: string;
+  status: string;
+  resetType: string | null;
+  grantedAt: number | null;
+  grantedAtFormatted: string | null;
+  expiresAt: number | null;
+  expiresAtFormatted: string | null;
+}
+
+export interface UsageResetCredits {
+  availableCount: number | null;
+  totalEarnedCount: number | null;
+  credits: UsageResetCredit[];
+  source: 'dedicated' | 'usage';
+}
+
 export interface ProviderUsage extends UsageWindows {
   models?: Record<string, UsageWindows>;
+  resetCredits?: UsageResetCredits;
 }
 
 export interface ProviderResult {

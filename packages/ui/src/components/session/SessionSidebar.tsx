@@ -1,13 +1,10 @@
 import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
-import { RiDeleteBinLine, RiSearchLine } from '@remixicon/react';
+import { RiDeleteBinLine } from '@remixicon/react';
 import { toast } from '@/components/ui';
-import { SidebarLeftIcon } from '@/components/icons/ToolbarIcons';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useI18n } from '@/lib/i18n';
 import { useDeviceInfo, useTabletStandalonePwaRuntime } from '@/lib/device';
 import { isDesktopShell } from '@/lib/desktop';
-import { isDesktopWindowFullscreen as getDesktopWindowFullscreen, onDesktopWindowResized, startDesktopWindowDrag } from '@/lib/desktopNative';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
 import { formatDirectoryName, cn } from '@/lib/utils';
@@ -265,7 +262,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   showOnlyMainWorkspace = false,
 }) => {
   const { t } = useI18n();
-  const [isSessionSearchOpen, setIsSessionSearchOpen] = React.useState(false);
+  const isSessionSearchOpen = useUIStore((state) => state.isSessionSearchOpen);
+  const setIsSessionSearchOpen = useUIStore((state) => state.setSessionSearchOpen);
   const [sessionSearchQuery, setSessionSearchQuery] = React.useState('');
   const sessionSearchInputRef = React.useRef<HTMLInputElement | null>(null);
   const retriedNoPrStatusKeysRef = React.useRef<Set<string>>(new Set());
@@ -541,7 +539,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
 
   const isDesktopShellRuntime = React.useMemo(() => isDesktopShell(), []);
   const isTabletStandalonePwa = useTabletStandalonePwaRuntime();
-  const [isDesktopWindowFullscreen, setIsDesktopWindowFullscreen] = React.useState(false);
 
   const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
   const {
@@ -559,77 +556,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   });
   const { isTablet } = useDeviceInfo();
   const alwaysShowSidebarActions = mobileVariant || isTablet;
-  const isMacPlatform = React.useMemo(() => {
-    if (typeof navigator === 'undefined') {
-      return false;
-    }
-    return /Macintosh|Mac OS X/.test(navigator.userAgent || '');
-  }, []);
   const isWebRuntime = !mobileVariant && !isVSCode && !isDesktopShellRuntime;
-  const showDesktopSidebarChrome = !mobileVariant && !isVSCode && !isWebRuntime;
-  const desktopSidebarTopPaddingClass = (isDesktopShellRuntime && isMacPlatform && !isDesktopWindowFullscreen) || isTabletStandalonePwa ? 'pl-[5.5rem]' : 'pl-3';
-  const desktopSidebarToggleButtonClass = 'app-region-no-drag inline-flex h-8 w-8 items-center justify-center rounded-md typography-ui-label font-medium text-foreground transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50';
-
-  React.useEffect(() => {
-    if (!isDesktopShellRuntime || !isMacPlatform) {
-      setIsDesktopWindowFullscreen(false);
-      return;
-    }
-
-    let disposed = false;
-    let unlistenResize: (() => void) | null = null;
-
-    const syncFullscreenState = async () => {
-      try {
-        const fullscreen = await getDesktopWindowFullscreen();
-        if (!disposed) {
-          setIsDesktopWindowFullscreen(fullscreen);
-        }
-      } catch {
-        if (!disposed) {
-          setIsDesktopWindowFullscreen(false);
-        }
-      }
-    };
-
-    const attach = async () => {
-      try {
-        unlistenResize = onDesktopWindowResized(() => {
-          void syncFullscreenState();
-        });
-      } catch {
-        // Ignore listener setup failures; fallback state remains false.
-      }
-    };
-
-    void syncFullscreenState();
-    void attach();
-
-    return () => {
-      disposed = true;
-      if (unlistenResize) {
-        unlistenResize();
-      }
-    };
-  }, [isDesktopShellRuntime, isMacPlatform]);
-
-  const handleDesktopSidebarDragStart = React.useCallback(async (event: React.MouseEvent) => {
-    const target = event.target as HTMLElement;
-    if (target.closest('.app-region-no-drag')) {
-      return;
-    }
-    if (target.closest('button, a, input, select, textarea')) {
-      return;
-    }
-    if (event.button !== 0) {
-      return;
-    }
-    if (!isDesktopShellRuntime) {
-      return;
-    }
-
-    await startDesktopWindowDrag();
-  }, [isDesktopShellRuntime]);
+  const hideSearchInSidebarHeader = isDesktopShellRuntime && !mobileVariant && !isVSCode;
 
   const { scheduleCollapsedProjectsPersist } = useSidebarPersistence({
     isVSCode,
@@ -1852,48 +1780,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         mobileVariant ? '' : 'bg-transparent',
       )}
     >
-      {showDesktopSidebarChrome ? (
-        <div
-          onMouseDown={handleDesktopSidebarDragStart}
-          className={cn(
-            'app-region-drag flex h-[var(--oc-header-height,56px)] flex-shrink-0 items-center gap-1.5 pr-3',
-            desktopSidebarTopPaddingClass,
-          )}
-        >
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={toggleSidebar}
-                className={desktopSidebarToggleButtonClass}
-                aria-label={t('sessions.sidebar.header.actions.closeSessions')}
-              >
-                <SidebarLeftIcon className="h-[18px] w-[18px]" chevronDirection="right" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{t('sessions.sidebar.header.actions.closeSessions')}</p>
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={() => setIsSessionSearchOpen(true)}
-                className={cn('app-region-no-drag', desktopSidebarToggleButtonClass)}
-                aria-label={t('sessions.sidebar.header.actions.searchSessions')}
-                aria-expanded={isSessionSearchOpen}
-              >
-                <RiSearchLine className="h-[18px] w-[18px]" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{t('sessions.sidebar.header.actions.searchSessions')}</p>
-            </TooltipContent>
-          </Tooltip>
-        </div>
-      ) : null}
-
       <SidebarHeader
         hideDirectoryControls={hideDirectoryControls}
         handleNewSession={handleSidebarNewSession}
@@ -1906,8 +1792,9 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         setIsSessionSearchOpen={setIsSessionSearchOpen}
         showSidebarToggle={isWebRuntime}
         onToggleSidebar={toggleSidebar}
-        hideSearchAction={showDesktopSidebarChrome}
+        hideSearchAction={hideSearchInSidebarHeader}
         avoidWindowControlsOverlay={isTabletStandalonePwa}
+        reserveExternalDesktopChromeRow={isDesktopShellRuntime && !mobileVariant && !isVSCode}
       />
 
       <SessionSearchDialog

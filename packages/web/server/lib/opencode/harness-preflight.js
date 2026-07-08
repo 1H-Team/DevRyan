@@ -4,6 +4,10 @@ import {
   createHarnessWarning,
   withHarnessResult,
 } from './harness-result.js';
+import {
+  isBlockedManagedRuntimeMcpName,
+  isForbiddenManagedRuntimeToolId,
+} from './runtime-surface-policy.js';
 
 const KNOWN_PERMISSION_KEYS = new Set([
   '*',
@@ -388,6 +392,86 @@ function lintSlimRuntime({ findings, slimRuntime }) {
   }));
 }
 
+function readToolManifestToolIds(toolManifest) {
+  const ids = [];
+  for (const tool of asArray(toolManifest?.tools)) {
+    if (typeof tool?.id === 'string' && tool.id.trim()) {
+      ids.push(tool.id.trim());
+    }
+  }
+  for (const id of asArray(toolManifest?.toolIds)) {
+    if (typeof id === 'string' && id.trim()) {
+      ids.push(id.trim());
+    }
+  }
+  return [...new Set(ids)];
+}
+
+function readToolManifestMcpNames(toolManifest) {
+  const names = [];
+  const readArray = (value) => {
+    for (const entry of asArray(value)) {
+      const name = typeof entry === 'string'
+        ? entry
+        : typeof entry?.name === 'string'
+          ? entry.name
+          : typeof entry?.id === 'string'
+            ? entry.id
+            : '';
+      if (name.trim()) {
+        names.push(name.trim());
+      }
+    }
+  };
+  const readObjectKeys = (value) => {
+    if (!isObject(value)) return;
+    for (const name of Object.keys(value)) {
+      if (name.trim()) {
+        names.push(name.trim());
+      }
+    }
+  };
+
+  readArray(toolManifest?.mcps);
+  readArray(toolManifest?.mcpServers);
+  if (Array.isArray(toolManifest?.mcp)) {
+    readArray(toolManifest.mcp);
+  } else {
+    readObjectKeys(toolManifest?.mcp);
+  }
+  return [...new Set(names)];
+}
+
+function lintForbiddenRuntimeSurface({ findings, toolManifest }) {
+  for (const toolId of readToolManifestToolIds(toolManifest)) {
+    if (!isForbiddenManagedRuntimeToolId(toolId)) {
+      continue;
+    }
+    findings.push(createFinding({
+      ruleId: 'forbidden-runtime-tool-surface',
+      severity: 'error',
+      summary: `Managed runtime exposes forbidden tool "${toolId}"`,
+      artifact: { type: 'tool', name: toolId },
+      suggestedNextAction: 'Restart managed OpenCode after runtime plugin filtering and MCP tombstones are applied',
+      stopCondition: `Stop delegating to subagents while forbidden tool "${toolId}" remains exposed`,
+    }));
+  }
+
+  for (const mcpName of readToolManifestMcpNames(toolManifest)) {
+    if (!isBlockedManagedRuntimeMcpName(mcpName)) {
+      continue;
+    }
+    findings.push(createFinding({
+      ruleId: 'forbidden-runtime-mcp-surface',
+      severity: 'error',
+      summary: `Managed runtime exposes blocked MCP server "${mcpName}"`,
+      artifact: { type: 'mcp', name: mcpName },
+      suggestedNextAction: 'Restart managed OpenCode after the generated overlay disables this ambient MCP server',
+      stopCondition: `Stop relying on managed runtime isolation while blocked MCP "${mcpName}" remains exposed`,
+    }));
+  }
+}
+
 function lintAgentHarness(options = {}) {
   const agents = asArray(options.agents);
   const skills = asArray(options.skills);
@@ -407,6 +491,7 @@ function lintAgentHarness(options = {}) {
   lintStaleOverrides({ findings, staleOverrides });
   lintWarmup({ findings, latestWarmup: options.latestWarmup });
   lintSlimRuntime({ findings, slimRuntime: options.slimRuntime });
+  lintForbiddenRuntimeSurface({ findings, toolManifest: options.toolManifest });
 
   return findings;
 }

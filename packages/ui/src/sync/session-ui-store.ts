@@ -737,7 +737,7 @@ export type SessionUIState = {
   availableWorktrees: WorktreeMetadata[]
   availableWorktreesByProject: Map<string, WorktreeMetadata[]>
   webUICreatedSessions: Set<string>
-  sessionAbortFlags: Map<string, { timestamp: number; acknowledged: boolean; reason?: "manual"; id?: string }>
+  sessionAbortFlags: Map<string, { timestamp: number; acknowledged: boolean; reason?: "manual" | "steered"; id?: string }>
   abortControllers: Map<string, AbortController>
   isLoading: boolean
   lastLoadedDirectory: string | null

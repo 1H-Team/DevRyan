@@ -7,9 +7,6 @@ variant: low
 temperature: 0.1
 permission:
   "*": deny
-  websearch_*: allow
-  context7_*: allow
-  grep_app_*: allow
   webfetch: allow
   question: allow
   question_*: allow

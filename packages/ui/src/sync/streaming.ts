@@ -10,6 +10,7 @@ import { create } from "zustand"
 import type { Message, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import {
   hasTerminalAssistantFinish,
+  hasToolCallAssistantFinish,
   isLiveAssistantMessage,
   isTerminalAssistantMessage,
 } from "./session-working"
@@ -135,11 +136,13 @@ export function updateStreamingState(state: State) {
     // turn that has renderable context.
     const streamingMsg = selectStreamingAssistantMessage(messages, state)
     const streamingMsgParts = streamingMsg ? state.part[streamingMsg.id] : undefined
+    const sessionStatus = state.session_status[sessionID]
+    const busyToolCallGap = sessionStatus?.type === "busy" && hasToolCallAssistantFinish(streamingMsg ?? undefined)
 
     if (
       !streamingMsg
       || hasTerminalAssistantFinish(streamingMsg)
-      || !isLiveAssistantMessage(streamingMsg, streamingMsgParts)
+      || (!busyToolCallGap && !isLiveAssistantMessage(streamingMsg, streamingMsgParts))
     ) {
       const prevId = currentStreamingIds.get(sessionID)
       if (prevId) {

@@ -23,5 +23,6 @@ export {
   fetchMinimaxCodingPlanQuota,
   fetchMinimaxCnCodingPlanQuota,
   fetchOllamaCloudQuota,
+  fetchOpenCodeGoQuota,
   fetchZhipuaiQuota
 } from './providers/index.js';

@@ -12,24 +12,22 @@ import { cn } from '@/lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useI18n } from '@/lib/i18n';
-import { ProviderLogo } from '@/components/ui/ProviderLogo';
-import { UsageProgressBar } from '@/components/sections/usage/UsageProgressBar';
-import { PaceIndicator } from '@/components/sections/usage/PaceIndicator';
-import { buildQuotaTrendKey, buildQuotaWindowDisplayState, formatWindowLabel, QUOTA_PROVIDERS } from '@/lib/quota';
+import { QUOTA_PROVIDERS } from '@/lib/quota';
 import { useQuotaAutoRefresh, useQuotaStore } from '@/stores/useQuotaStore';
 import { useUpdateStore } from '@/stores/useUpdateStore';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import type { UsageWindow } from '@/types';
+import { UsageProviderPanel } from '@/components/layout/usage/UsageProviderPanel';
+import { UsageProviderTabs } from '@/components/layout/usage/UsageProviderTabs';
+import { resolveActiveUsageProviderId } from '@/components/layout/usage/usage-groups';
+import type { RateLimitGroup } from '@/components/layout/usage/types';
 import type { SessionContextUsage } from '@/stores/types/sessionTypes';
 import { getContextUsageFromMessages, isSameSessionContextUsage } from '@/stores/utils/contextUsageUtils';
-import { RiAddLine, RiArrowLeftLine, RiRefreshLine, RiRobot2Line, RiSettings3Line, RiTimerLine } from '@remixicon/react';
+import { RiAddLine, RiArrowLeftLine, RiRobot2Line, RiSettings3Line, RiTimerLine } from '@remixicon/react';
 
 const SettingsView = lazyWithChunkRecovery(() => import('@/components/views/SettingsView').then(m => ({ default: m.SettingsView })));
 
@@ -556,6 +554,9 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
   const quotaTrendHistory = useQuotaStore((state) => state.trendHistory);
   const dropdownProviderIds = useQuotaStore((state) => state.dropdownProviderIds);
   const loadQuotaSettings = useQuotaStore((state) => state.loadSettings);
+  const expandedFamilies = useQuotaStore((state) => state.expandedFamilies);
+  const toggleFamilyExpanded = useQuotaStore((state) => state.toggleFamilyExpanded);
+  const [activeUsageProviderId, setActiveUsageProviderId] = React.useState<string | null>(null);
 
   useQuotaAutoRefresh();
 
@@ -611,12 +612,7 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
   }, [contextUsage, currentSessionId, isContextUsageResolvedForSession]);
 
   const rateLimitGroups = React.useMemo(() => {
-    const groups: Array<{
-      providerId: string;
-      providerName: string;
-      entries: Array<[string, UsageWindow]>;
-      error?: string;
-    }> = [];
+    const groups: RateLimitGroup[] = [];
 
     for (const provider of QUOTA_PROVIDERS) {
       if (!dropdownProviderIds.includes(provider.id)) {
@@ -626,14 +622,28 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
       const windows = (result?.usage?.windows ?? {}) as Record<string, UsageWindow>;
       const entries = Object.entries(windows);
       const error = (result && !result.ok && result.configured) ? result.error : undefined;
-      if (entries.length > 0 || error) {
-        groups.push({ providerId: provider.id, providerName: provider.name, entries, error });
+      const resetCredits = result?.usage?.resetCredits;
+      if (entries.length > 0 || resetCredits || error) {
+        groups.push({ providerId: provider.id, providerName: provider.name, entries, resetCredits, error });
       }
     }
 
     return groups;
   }, [dropdownProviderIds, quotaResults]);
   const hasRateLimits = rateLimitGroups.length > 0;
+  const resolvedActiveUsageProviderId = React.useMemo(
+    () => resolveActiveUsageProviderId(rateLimitGroups, activeUsageProviderId),
+    [activeUsageProviderId, rateLimitGroups],
+  );
+  const selectedGroup = React.useMemo(
+    () => rateLimitGroups.find((group) => group.providerId === resolvedActiveUsageProviderId) ?? null,
+    [rateLimitGroups, resolvedActiveUsageProviderId],
+  );
+  React.useEffect(() => {
+    if (activeUsageProviderId !== resolvedActiveUsageProviderId) {
+      setActiveUsageProviderId(resolvedActiveUsageProviderId);
+    }
+  }, [activeUsageProviderId, resolvedActiveUsageProviderId]);
 
   return (
     <div className="flex items-center gap-1.5 pl-3 pr-2 py-1 border-b border-border bg-background shrink-0">
@@ -692,88 +702,24 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
             align="end"
             className="w-80 max-h-[70vh] overflow-y-auto overflow-x-hidden bg-[var(--surface-elevated)] p-0"
           >
-            <div className="sticky top-0 z-20 bg-[var(--surface-elevated)]">
-              <DropdownMenuLabel className="flex items-center justify-between gap-3 typography-ui-header font-semibold text-foreground">
-                <span>{t('vscodeLayout.quota.title')}</span>
-                <button
-                  type="button"
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                  onClick={() => fetchAllQuotas({ forceRefresh: true })}
-                  disabled={isQuotaLoading}
-                  aria-label={t('vscodeLayout.quota.actions.refreshAria')}
-                >
-                  <RiRefreshLine className="h-4 w-4" />
-                </button>
-              </DropdownMenuLabel>
-            </div>
-            <div className="border-b border-[var(--interactive-border)] px-2 pb-2 typography-micro text-muted-foreground text-[10px]">
-              {t('vscodeLayout.quota.lastUpdated', { time: formatTime(quotaLastUpdated) })}
-            </div>
-            {!hasRateLimits && (
-              <DropdownMenuItem className="cursor-default" closeOnClick={false}>
-                <span className="typography-ui-label text-muted-foreground">{t('vscodeLayout.quota.noRateLimitsAvailable')}</span>
-              </DropdownMenuItem>
-            )}
-            {rateLimitGroups.map((group, index) => (
-              <React.Fragment key={group.providerId}>
-                <DropdownMenuLabel className="flex items-center gap-2 bg-[var(--surface-elevated)] typography-ui-label text-foreground">
-                  <ProviderLogo providerId={group.providerId} className="h-4 w-4" />
-                  {group.providerName}
-                </DropdownMenuLabel>
-                {group.entries.length === 0 ? (
-                  <DropdownMenuItem
-                    key={`${group.providerId}-empty`}
-                    className="cursor-default"
-                    closeOnClick={false}
-                  >
-                    <span className="typography-ui-label text-muted-foreground">
-                      {group.error ?? t('vscodeLayout.quota.noRateLimitsReported')}
-                    </span>
-                  </DropdownMenuItem>
-                ) : (
-                  group.entries.map(([label, window]) => {
-                    const displayState = buildQuotaWindowDisplayState(
-                      window,
-                      label,
-                      'usage',
-                      quotaTrendHistory,
-                      buildQuotaTrendKey(group.providerId, 'window', null, label),
-                    );
-                    return (
-                    <DropdownMenuItem
-                      key={`${group.providerId}-${label}`}
-                      className="cursor-default items-start"
-                      closeOnClick={false}
-                    >
-                      <span className="flex min-w-0 flex-1 flex-col gap-2">
-                              <span className="flex min-w-0 items-center justify-between gap-3">
-                                <span className="truncate typography-micro text-muted-foreground">{formatWindowLabel(label)}</span>
-                                <span className="typography-ui-label text-foreground tabular-nums">
-                                  {displayState.metricLabel === '-' ? '' : displayState.metricLabel}
-                                </span>
-                              </span>
-                              <UsageProgressBar
-                                percent={displayState.displayPercent}
-                                tonePercent={window.usedPercent}
-                                className="h-1"
-                                expectedMarkerPercent={displayState.expectedMarkerPercent}
-                              />
-                              {displayState.paceInfo && (
-                                <div className="mt-0.5">
-                                  <PaceIndicator paceInfo={displayState.paceInfo} compact displayMode="usage" />
-                                </div>
-                              )}
-                              <span className="flex items-center justify-between typography-micro text-muted-foreground text-[10px]">
-                                <span>{window.resetAfterFormatted ?? window.resetAtFormatted ?? ''}</span>
-                              </span>
-                      </span>
-                    </DropdownMenuItem>
-                    );
-                  })
-                )}
-                {index < rateLimitGroups.length - 1 && <DropdownMenuSeparator />}
-              </React.Fragment>
-            ))}
+            {hasRateLimits ? (
+              <UsageProviderTabs
+                groups={rateLimitGroups}
+                activeProviderId={resolvedActiveUsageProviderId}
+                onSelectProvider={setActiveUsageProviderId}
+              />
+            ) : null}
+            <UsageProviderPanel
+              group={selectedGroup}
+              quotaLastUpdated={quotaLastUpdated}
+              quotaTrendHistory={quotaTrendHistory}
+              handleUsageRefresh={() => fetchAllQuotas({ forceRefresh: true })}
+              isQuotaLoading={isQuotaLoading}
+              isUsageRefreshSpinning={isQuotaLoading}
+              expandedFamilies={expandedFamilies}
+              toggleFamilyExpanded={toggleFamilyExpanded}
+              formatUpdatedTime={formatTime}
+            />
           </DropdownMenuContent>
         </DropdownMenu>
       )}

@@ -11,8 +11,16 @@ import {
 } from './shared.js';
 import { listAgentModelOverrides } from './agents.js';
 import { listMcpConfigs } from './mcp.js';
+import {
+  buildBlockedManagedRuntimeMcpOverlay,
+  filterManagedRuntimePluginEntries,
+} from './runtime-surface-policy.js';
 import { sanitizeAgentSkillPolicy } from './skill-policy.js';
 import { resolveSlimConfig } from './slim-config.js';
+import {
+  GITHUB_COPILOT_PROVIDER_ID,
+  GITHUB_COPILOT_PROVIDER_NAME,
+} from './provider-integrations.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_CONFIG_DIR = path.resolve(__dirname, '../../default-config');
@@ -177,7 +185,7 @@ const buildAnthropicOAuthProxyOverlay = (workingDirectory, options = {}) => {
   }
 
   return {
-    plugin,
+    plugin: [ANTHROPIC_OAUTH_PLUGIN_NAME],
     provider: {
       [ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID]: {
         ...anthropic,
@@ -247,6 +255,13 @@ const buildRemoteMcpTimeoutOverlay = (workingDirectory, options = {}) => {
   };
 };
 
+const buildBlockedMcpOverlay = (workingDirectory, options = {}) => {
+  const listConfigs = typeof options.listMcpConfigs === 'function'
+    ? options.listMcpConfigs
+    : listMcpConfigs;
+  return buildBlockedManagedRuntimeMcpOverlay(listConfigs(workingDirectory) || []);
+};
+
 const buildPackagedPluginOverlay = (pluginSpecs = []) => {
   const plugin = [
     ...new Set(pluginSpecs.filter((entry) => typeof entry === 'string' && entry.trim())),
@@ -258,17 +273,47 @@ const buildActivePluginOverlay = (workingDirectory, options = {}) => {
   const readActiveConfig = typeof options.readConfig === 'function' ? options.readConfig : readConfig;
   const config = readActiveConfig(workingDirectory);
   const plugin = Array.isArray(config?.plugin)
-    ? config.plugin.filter((entry) => (
+    ? filterManagedRuntimePluginEntries(config.plugin.filter((entry) => (
       (typeof entry === 'string' && entry.trim())
       || (Array.isArray(entry) && typeof entry[0] === 'string' && entry[0].trim())
-    ))
+    )))
     : [];
   return plugin.length > 0 ? { plugin } : null;
 };
 
+const buildGitHubCopilotProviderOverlay = async (options = {}) => {
+  const readAuthFile = typeof options.readAuthFile === 'function' ? options.readAuthFile : null;
+  if (!readAuthFile) {
+    return null;
+  }
+
+  const { discoverGitHubCopilotModels } = await import('./github-copilot-models.js');
+  const fetchImpl = typeof options.fetchImpl === 'function' ? options.fetchImpl : globalThis.fetch;
+  const discovery = await discoverGitHubCopilotModels({ readAuthFile, fetchImpl });
+  if (discovery.source === 'unavailable') {
+    return null;
+  }
+
+  const models = discovery.models;
+  if (!isPlainObject(models) || Object.keys(models).length === 0) {
+    return null;
+  }
+
+  return {
+    provider: {
+      [GITHUB_COPILOT_PROVIDER_ID]: {
+        name: GITHUB_COPILOT_PROVIDER_NAME,
+        models,
+      },
+    },
+  };
+};
+
 const buildRuntimeConfigOverlay = (workingDirectory, options = {}) => {
   const overlays = [
+    options.githubCopilotProviderOverlay,
     buildRemoteMcpTimeoutOverlay(workingDirectory, options),
+    buildBlockedMcpOverlay(workingDirectory, options),
     buildActivePluginOverlay(workingDirectory, options),
     buildAnthropicOAuthProxyOverlay(workingDirectory, options),
     buildPackagedPluginOverlay(options.packagedPluginSpecs),
@@ -589,9 +634,28 @@ export const syncRuntimeAgentOverlays = async (options = {}) => {
   await fs.mkdir(targetAgentDirectory, { recursive: true });
   const targetConfigFile = path.join(targetConfigDirectory, 'opencode.json');
   const packagedPlugins = await listPackagedPluginFiles(packagedPluginDirectory);
+
+  try {
+    const authModule = await import('./auth.js');
+    const readAuthFile = typeof options.readAuthFile === 'function'
+      ? options.readAuthFile
+      : authModule.readAuthFile;
+    const writeAuthFile = typeof options.writeAuthFile === 'function'
+      ? options.writeAuthFile
+      : authModule.writeAuthFile;
+    const { syncGitHubCopilotAuthAliases } = await import('./provider-integrations.js');
+    if (syncGitHubCopilotAuthAliases({ readAuthFile, writeAuthFile })) {
+      result.changed = true;
+    }
+  } catch (error) {
+    console.warn('[OpenCode] Failed to sync GitHub Copilot auth aliases:', error);
+  }
+
+  const githubCopilotProviderOverlay = await buildGitHubCopilotProviderOverlay(runtimeOptions);
   const desiredRuntimeConfig = buildRuntimeConfigOverlay(workingDirectory, {
     ...options,
     packagedPluginSpecs: packagedPlugins.map((plugin) => plugin.spec),
+    githubCopilotProviderOverlay,
   });
 
   if (desiredRuntimeConfig) {

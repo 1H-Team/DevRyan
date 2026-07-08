@@ -125,6 +125,10 @@ interface TunnelStatusResponse {
   providerMetadata?: {
     configPath?: string | null;
     resolvedHostname?: string | null;
+    startupLogExcerpt?: string[];
+    expectedHostname?: string | null;
+    localOriginUrl?: string | null;
+    cloudflareConfigRequiresManualOriginMatch?: boolean;
   };
   activeSessions?: TunnelSessionRecord[];
   localPort?: number;
@@ -138,6 +142,8 @@ interface TunnelStatusResponse {
 interface TunnelStartResponse {
   ok?: boolean;
   error?: string;
+  code?: string;
+  details?: TunnelDiagnosticDetails | null;
   url?: string;
   connectUrl?: string | null;
   bootstrapExpiresAt?: number | null;
@@ -149,6 +155,19 @@ interface TunnelStartResponse {
   replacedTunnel?: boolean;
   revokedBootstrapCount?: number;
   invalidatedSessionCount?: number;
+}
+
+interface TunnelDiagnosticDetails {
+  startupLogExcerpt?: string[];
+  hint?: string;
+  localOriginUrl?: string | null;
+  expectedHostname?: string | null;
+  cloudflareConfigRequiresManualOriginMatch?: boolean;
+}
+
+interface TunnelDiagnosticViewModel extends TunnelDiagnosticDetails {
+  code?: string;
+  message: string;
 }
 
 interface TunnelProviderModeDescriptor {
@@ -270,6 +289,18 @@ const createPresetId = (): string => {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 };
 
+const sanitizeTunnelDiagnostics = (message: string, code?: string, details?: TunnelDiagnosticDetails | null): TunnelDiagnosticViewModel => ({
+  code,
+  message,
+  startupLogExcerpt: Array.isArray(details?.startupLogExcerpt)
+    ? details.startupLogExcerpt.filter((line): line is string => typeof line === 'string' && line.trim().length > 0).slice(-8)
+    : [],
+  hint: typeof details?.hint === 'string' && details.hint.trim().length > 0 ? details.hint : undefined,
+  localOriginUrl: typeof details?.localOriginUrl === 'string' && details.localOriginUrl.trim().length > 0 ? details.localOriginUrl : null,
+  expectedHostname: typeof details?.expectedHostname === 'string' && details.expectedHostname.trim().length > 0 ? details.expectedHostname : null,
+  cloudflareConfigRequiresManualOriginMatch: details?.cloudflareConfigRequiresManualOriginMatch === true,
+});
+
 export const TunnelSettings: React.FC = () => {
   const { t } = useI18n();
   const tUnsafe = React.useCallback((key: string) => t(key as Parameters<typeof t>[0]), [t]);
@@ -278,6 +309,7 @@ export const TunnelSettings: React.FC = () => {
   const [activeTunnelMode, setActiveTunnelMode] = React.useState<TunnelMode | null>(null);
   const [qrDataUrl, setQrDataUrl] = React.useState<string | null>(null);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
+  const [errorDiagnostics, setErrorDiagnostics] = React.useState<TunnelDiagnosticViewModel | null>(null);
   const [managedRemoteValidationError, setManagedRemoteValidationError] = React.useState<string | null>(null);
   const [copied, setCopied] = React.useState(false);
   const [isSavingTtl, setIsSavingTtl] = React.useState(false);
@@ -769,6 +801,7 @@ export const TunnelSettings: React.FC = () => {
 
   const handleStart = React.useCallback(async () => {
     setErrorMessage(null);
+    setErrorDiagnostics(null);
     setManagedRemoteValidationError(null);
 
     if (tunnelMode === 'managed-local' && managedLocalConfigPath && !hasAllowedManagedLocalConfigExtension(managedLocalConfigPath)) {
@@ -825,7 +858,9 @@ export const TunnelSettings: React.FC = () => {
           return;
         }
         setState('error');
-        setErrorMessage(data.error || t('settings.openchamber.tunnel.toast.startFailed'));
+        const message = data.error || t('settings.openchamber.tunnel.toast.startFailed');
+        setErrorMessage(message);
+        setErrorDiagnostics(sanitizeTunnelDiagnostics(message, data.code, data.details));
         toast.error(data.error || t('settings.openchamber.tunnel.toast.startFailed'));
         return;
       }
@@ -877,6 +912,7 @@ export const TunnelSettings: React.FC = () => {
     } catch {
       setState('error');
       setErrorMessage(t('settings.openchamber.tunnel.toast.startFailed'));
+      setErrorDiagnostics(sanitizeTunnelDiagnostics(t('settings.openchamber.tunnel.toast.startFailed')));
       toast.error(t('settings.openchamber.tunnel.toast.startFailed'));
     }
   }, [
@@ -906,6 +942,7 @@ export const TunnelSettings: React.FC = () => {
       setTunnelInfo(null);
       setActiveTunnelMode(null);
       setQrDataUrl(null);
+      setErrorDiagnostics(null);
       setState('idle');
       toast.success(t('settings.openchamber.tunnel.toast.stopped'));
     } catch {
@@ -951,6 +988,7 @@ export const TunnelSettings: React.FC = () => {
   const handleModeChange = React.useCallback(async (value: TunnelMode) => {
     setManagedRemoteValidationError(null);
     setErrorMessage(null);
+    setErrorDiagnostics(null);
     if (state !== 'active' && state !== 'stopping' && state !== 'starting') {
       setState('idle');
     }
@@ -1752,7 +1790,45 @@ export const TunnelSettings: React.FC = () => {
 
       {state === 'error' && errorMessage && (
         <section className="space-y-3 px-2 pb-2 pt-0">
-          <p className="typography-meta text-[var(--status-error)]">{errorMessage}</p>
+          <div className="rounded-lg border border-[var(--status-error)]/30 bg-[var(--status-error)]/5 p-3">
+            <div className="flex items-start gap-2">
+              <RiErrorWarningLine className="mt-0.5 size-4 shrink-0 text-[var(--status-error)]" />
+              <div className="min-w-0 flex-1 space-y-2">
+                <p className="typography-meta font-medium text-[var(--status-error)]">{errorMessage}</p>
+                {errorDiagnostics?.code && (
+                  <p className="typography-meta text-muted-foreground/70">
+                    {t('settings.openchamber.tunnel.diagnostic.code')}: <code>{errorDiagnostics.code}</code>
+                  </p>
+                )}
+                {errorDiagnostics?.expectedHostname && (
+                  <p className="typography-meta text-muted-foreground/80">
+                    {t('settings.openchamber.tunnel.diagnostic.hostname')}: <code>{errorDiagnostics.expectedHostname}</code>
+                  </p>
+                )}
+                {errorDiagnostics?.localOriginUrl && (
+                  <p className="typography-meta text-muted-foreground/80">
+                    {t('settings.openchamber.tunnel.diagnostic.localOrigin')}: <code>{errorDiagnostics.localOriginUrl}</code>
+                  </p>
+                )}
+                {errorDiagnostics?.cloudflareConfigRequiresManualOriginMatch && errorDiagnostics.localOriginUrl && (
+                  <p className="typography-meta text-[var(--status-warning)]">
+                    {t('settings.openchamber.tunnel.diagnostic.managedRemoteOriginMismatch', { origin: errorDiagnostics.localOriginUrl })}
+                  </p>
+                )}
+                {errorDiagnostics?.hint && (
+                  <p className="typography-meta text-muted-foreground/80">{errorDiagnostics.hint}</p>
+                )}
+                {errorDiagnostics?.startupLogExcerpt && errorDiagnostics.startupLogExcerpt.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="typography-meta text-muted-foreground/70">{t('settings.openchamber.tunnel.diagnostic.startupLog')}</p>
+                    <pre className="typography-code max-h-40 overflow-auto whitespace-pre-wrap rounded bg-muted/50 px-2 py-1.5 text-xs text-foreground">
+                      {errorDiagnostics.startupLogExcerpt.join('\n')}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
           <Button size="sm" variant="ghost" onClick={handleStart}>{t('settings.openchamber.tunnel.actions.retry')}</Button>
         </section>
       )}

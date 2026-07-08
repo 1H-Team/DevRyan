@@ -62,6 +62,28 @@ export interface OpenCodeManager {
   onStatusChange(callback: (status: ConnectionStatus, error?: string) => void): vscode.Disposable;
 }
 
+export function buildManagedOpenCodeServeArgs(port: number): string[] {
+  return ['--pure', 'serve', '--hostname', '127.0.0.1', '--port', String(port)];
+}
+
+export function buildManagedOpenCodeEnvOverrides({
+  overlayConfigDirectory,
+  slimConfigDirectory,
+  slimPreset,
+}: {
+  overlayConfigDirectory?: string | null;
+  slimConfigDirectory?: string | null;
+  slimPreset?: string | null;
+}): Record<string, string> {
+  return {
+    OPENCODE_DISABLE_DEFAULT_PLUGINS: 'true',
+    OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: process.env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS || 'true',
+    ...(slimPreset ? { OH_MY_OPENCODE_SLIM_PRESET: slimPreset } : {}),
+    ...(slimConfigDirectory ? { DEVRYAN_OPENCODE_USER_CONFIG_DIR: slimConfigDirectory } : {}),
+    ...(overlayConfigDirectory ? { OPENCODE_CONFIG_DIR: overlayConfigDirectory } : {}),
+  };
+}
+
 function generateSecureOpenCodePassword(): string {
   return randomBytes(32)
     .toString('base64')
@@ -600,7 +622,7 @@ async function spawnManagedOpenCodeServer(
   envOverrides: Record<string, string> = {}
 ): Promise<{ url: string; close: () => Promise<void> }> {
   const binary = (process.env.OPENCODE_BINARY || 'opencode').trim() || 'opencode';
-  const args = ['serve', '--hostname', '127.0.0.1', '--port', String(port)];
+  const args = buildManagedOpenCodeServeArgs(port);
   const child = spawn(binary, args, {
     cwd: workingDirectory,
     env: { ...process.env, ...envOverrides },
@@ -976,14 +998,11 @@ export function createOpenCodeManager(_context: vscode.ExtensionContext): OpenCo
           workingDirectory,
           port,
           READY_CHECK_TIMEOUT_MS,
-          {
-            OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: process.env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS || 'true',
-            ...(slimPreset ? { OH_MY_OPENCODE_SLIM_PRESET: slimPreset } : {}),
-            ...(slimConfigDirectory ? { DEVRYAN_OPENCODE_USER_CONFIG_DIR: slimConfigDirectory } : {}),
-            ...(overlayResult.targetConfigDirectory
-              ? { OPENCODE_CONFIG_DIR: overlayResult.targetConfigDirectory }
-              : {}),
-          },
+          buildManagedOpenCodeEnvOverrides({
+            overlayConfigDirectory: overlayResult.targetConfigDirectory,
+            slimConfigDirectory,
+            slimPreset,
+          }),
         );
       } finally {
         try {

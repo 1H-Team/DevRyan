@@ -153,10 +153,10 @@ describe('packaged agent defaults', () => {
       plan_enter: 'deny',
       plan_exit: 'deny',
       council_session: 'deny',
-      'websearch_*': 'deny',
-      'context7_*': 'deny',
-      'grep_app_*': 'deny',
     });
+    expect(frontmatter.permission).not.toHaveProperty('websearch_*');
+    expect(frontmatter.permission).not.toHaveProperty('context7_*');
+    expect(frontmatter.permission).not.toHaveProperty('grep_app_*');
   });
 
   it('specialist prompts stay compact while preserving terminal-status guardrails', () => {

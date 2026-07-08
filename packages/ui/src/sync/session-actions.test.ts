@@ -30,7 +30,7 @@ const restoredAttachmentCalls: Array<{ url: string; mimeType: string; filename: 
 
 const setCurrentSessionCalls: Array<{ id: string | null; directory?: string | null }> = []
 let mockCurrentSessionId: string | null = null
-let mockSessionAbortFlags: Map<string, { timestamp: number; acknowledged: boolean; reason?: "manual"; id?: string }> = new Map()
+let mockSessionAbortFlags: Map<string, { timestamp: number; acknowledged: boolean; reason?: "manual" | "steered"; id?: string }> = new Map()
 let mockAbortControllers: Map<string, AbortController> = new Map()
 const clearSessionTurnCompletionCalls: string[] = []
 let mockSessionCompletionIndicator: Map<string, { messageId: string; completedAt: number }> = new Map()
@@ -179,16 +179,16 @@ mock.module("./session-ui-store", () => ({
     setState: (
       partial:
         | {
-          sessionAbortFlags?: Map<string, { timestamp: number; acknowledged: boolean; reason?: "manual"; id?: string }>
+          sessionAbortFlags?: Map<string, { timestamp: number; acknowledged: boolean; reason?: "manual" | "steered"; id?: string }>
           abortControllers?: Map<string, AbortController>
         }
         | ((state: {
           currentSessionId: string | null
-          sessionAbortFlags: Map<string, { timestamp: number; acknowledged: boolean; reason?: "manual"; id?: string }>
+          sessionAbortFlags: Map<string, { timestamp: number; acknowledged: boolean; reason?: "manual" | "steered"; id?: string }>
           abortControllers: Map<string, AbortController>
           getDirectoryForSession: (sessionId: string) => string | null
         }) => {
-          sessionAbortFlags?: Map<string, { timestamp: number; acknowledged: boolean; reason?: "manual"; id?: string }>
+          sessionAbortFlags?: Map<string, { timestamp: number; acknowledged: boolean; reason?: "manual" | "steered"; id?: string }>
           abortControllers?: Map<string, AbortController>
         }),
     ) => {
@@ -2300,6 +2300,39 @@ describe("revertToMessage recovery behavior", () => {
     const abortFlag = mockSessionAbortFlags.get("session-a")
     expect(abortFlag?.id).toBe("msg-assistant")
     expect(abortFlag?.reason).toBe("manual")
+    expect(abortFlag?.acknowledged).toBe(false)
+    expect(typeof abortFlag?.timestamp).toBe("number")
+  })
+
+  test("steered-send interrupt records steered aborts after sdk success", async () => {
+    const userMessage = {
+      id: "msg-user",
+      sessionID: "session-a",
+      role: "user",
+      time: { created: 1 },
+    } as unknown as Message
+    const assistantMessage = {
+      id: "msg-assistant",
+      sessionID: "session-a",
+      role: "assistant",
+      time: { created: 2 },
+    } as unknown as Message
+    const store = createStore({}, [makeSession("session-a")])
+    store.setState({
+      message: { "session-a": [userMessage, assistantMessage] },
+      session_status: { "session-a": { type: "busy" } as SessionStatus },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+
+    const { interruptCurrentOperationForSteeredSend, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/other/current")
+
+    await interruptCurrentOperationForSteeredSend("session-a")
+
+    expect(sessionAbortCalls).toEqual([{ sessionID: "session-a", directory: "/test/project" }])
+    const abortFlag = mockSessionAbortFlags.get("session-a")
+    expect(abortFlag?.id).toBe("msg-assistant")
+    expect(abortFlag?.reason).toBe("steered")
     expect(abortFlag?.acknowledged).toBe(false)
     expect(typeof abortFlag?.timestamp).toBe("number")
   })

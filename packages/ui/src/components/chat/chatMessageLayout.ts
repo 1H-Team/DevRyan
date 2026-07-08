@@ -32,7 +32,7 @@ export const shouldHideAssistantAbortArtifact = ({
     parts,
 }: {
     isUser: boolean;
-    abortKind?: 'manual' | 'unexpected';
+    abortKind?: 'manual' | 'steered' | 'unexpected';
     parts: AssistantPartLike[];
 }): boolean => {
     return !isUser && abortKind === 'manual' && !hasRenderableAssistantContent(parts);

@@ -1,9 +1,12 @@
-import type { Message } from "@opencode-ai/sdk/v2/client"
-
 import { getPlanBlockId, getPlanImplementationKey } from "@/lib/messages/actionablePlan"
 import type { PlanIndicatorEntry } from "./plan-indicator"
 import { filterMessagesForRevert, getEffectiveSessionRevertMessageID } from "./revert-transactions"
-import { hasInFlightToolParts } from "./session-working"
+import {
+  hasInFlightToolParts,
+  hasToolCallAssistantFinish,
+  isAssistantTurnComplete,
+  isFinalAssistantSummaryMessage,
+} from "./session-working"
 import type { State } from "./types"
 
 type PlanIdleSettlementState = Pick<
@@ -46,8 +49,7 @@ export function shouldSettlePlanProposalStatus({
     return false
   }
 
-  if (!isAssistantTurnComplete(trailingMessage)) return false
-  if (hasInFlightToolParts(state.part[sourceMessageId])) return false
+  if (!isFinalAssistantSummaryMessage(trailingMessage, state.part[sourceMessageId])) return false
 
   return true
 }
@@ -82,6 +84,7 @@ export function hasSettledTerminalAssistantTurn({
   const trailingMessage = messages[messages.length - 1]
 
   if (!trailingMessage || trailingMessage.role !== "assistant") return false
+  if (hasToolCallAssistantFinish(trailingMessage)) return false
   if (!isAssistantTurnComplete(trailingMessage)) return false
   if (hasInFlightToolParts(state.part[trailingMessage.id])) return false
 
@@ -113,22 +116,7 @@ export function isSessionTurnSettledForCompletion({
     return false
   }
 
-  if (!isAssistantTurnComplete(trailingMessage)) return false
-  if (hasInFlightToolParts(state.part[completedMessageId])) return false
+  if (!isFinalAssistantSummaryMessage(trailingMessage, state.part[completedMessageId])) return false
 
   return true
-}
-
-function isAssistantTurnComplete(message: Message): boolean {
-  const candidate = message as Message & { status?: unknown; streaming?: unknown }
-  if (candidate.streaming === true) return false
-
-  if (typeof candidate.status === "string") {
-    const status = candidate.status.trim().toLowerCase()
-    if (status === "running" || status === "pending" || status === "streaming") return false
-    if (status === "complete" || status === "completed" || status === "done") return true
-  }
-
-  const completedAt = (message.time as { completed?: unknown } | undefined)?.completed
-  return typeof completedAt === "number" && completedAt > 0
 }

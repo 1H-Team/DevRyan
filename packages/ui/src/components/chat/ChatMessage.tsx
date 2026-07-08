@@ -36,7 +36,7 @@ import { resolveMessageHeaderVariantDisplay } from './message/messageHeaderVaria
 import { isPlanModeUserMessage } from '@/lib/messages/actionablePlan';
 import { getModelVariantDisplayState, getOrderedThinkingVariants } from '@/lib/providers/variantControls';
 import { resolveUserMessageRevertSessionId } from './chatMessageActions';
-import { classifyAssistantError } from './message/assistantError';
+import { classifyAssistantError, classifySteeredAbortFallback } from './message/assistantError';
 import { getAssistantMessageBottomPaddingClass, hasRenderableAssistantContent, shouldHideAssistantAbortArtifact } from './chatMessageLayout';
 import { shouldSuppressIntermediateAssistantStatusText } from './message/assistantInlineActions';
 import { isEditToolName, isShellToolName, normalizeToolName } from './message/parts/toolRenderUtils';
@@ -157,6 +157,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         }, [messageSessionId]),
     );
     const manualAbortMessageId = abortRecord?.reason === 'manual' ? abortRecord.id : undefined;
+    const steeredAbortMessageId = abortRecord?.reason === 'steered' ? abortRecord.id : undefined;
 
     const getAgentModelForSession = useSelectionStore((s) => s.getAgentModelForSession);
     const getSessionModelSelection = useSelectionStore((s) => s.getSessionModelSelection);
@@ -719,17 +720,25 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             | { data?: { message?: unknown }; message?: unknown; name?: unknown }
             | undefined;
         const messageId = typeof message.info.id === 'string' ? message.info.id : undefined;
-        const abortOptions: { manualAbortMessageId?: string; messageId?: string; isLatestMessage?: boolean } = {
+        const abortOptions: {
+            manualAbortMessageId?: string;
+            steeredAbortMessageId?: string;
+            messageId?: string;
+            isLatestMessage?: boolean;
+        } = {
             isLatestMessage: !nextMessage,
         };
         if (manualAbortMessageId) {
             abortOptions.manualAbortMessageId = manualAbortMessageId;
         }
+        if (steeredAbortMessageId) {
+            abortOptions.steeredAbortMessageId = steeredAbortMessageId;
+        }
         if (messageId) {
             abortOptions.messageId = messageId;
         }
-        return classifyAssistantError(errorInfo, abortOptions);
-    }, [isUser, manualAbortMessageId, message.info, nextMessage]);
+        return classifyAssistantError(errorInfo, abortOptions) ?? classifySteeredAbortFallback(abortOptions);
+    }, [isUser, manualAbortMessageId, message.info, nextMessage, steeredAbortMessageId]);
 
     React.useEffect(() => {
         if (assistantError?.abortKind !== 'unexpected' || !messageSessionId) {

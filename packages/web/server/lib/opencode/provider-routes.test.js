@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { getProviderAuth, readAuthFile, writeAuthFile } from './auth.js';
 import { registerCommonRequestMiddleware } from './core-routes.js';
+import { __resetGitHubCopilotModelDiscoveryCache } from './github-copilot-models.js';
 import { registerOpenCodeRoutes } from './routes.js';
 
 vi.mock('./auth.js', () => ({
@@ -105,6 +106,8 @@ describe('OpenCode provider routes', () => {
   let tempDir = null;
 
   afterEach(() => {
+    __resetGitHubCopilotModelDiscoveryCache();
+    vi.restoreAllMocks();
     vi.clearAllMocks();
     if (tempDir) {
       rmSync(tempDir, { recursive: true, force: true });
@@ -365,24 +368,30 @@ describe('OpenCode provider routes', () => {
     fetchSpy.mockRestore();
   });
 
-  it('preserves upstream GitHub Copilot provider metadata without duplicating aliases', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      json: vi.fn(async () => ({
-        providers: [
-          {
-            id: 'copilot',
-            name: 'Copilot',
-            models: { 'gpt-5.1-codex': { id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex' } },
-          },
-          {
-            id: 'openai',
-            name: 'OpenAI',
-            models: { 'gpt-5.5': { id: 'gpt-5.5', name: 'GPT-5.5' } },
-          },
-        ],
-        default: { copilot: 'gpt-5.1-codex', openai: 'gpt-5.5' },
-      })),
+  it('preserves upstream GitHub Copilot provider metadata without duplicating aliases or fetching account models', async () => {
+    readAuthFile.mockReturnValue({ 'github-copilot': { type: 'oauth', access: 'token' } });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      if (String(url).includes('api.githubcopilot.com/models')) {
+        throw new Error('Copilot account discovery should not run when upstream has models');
+      }
+      return {
+        ok: true,
+        json: vi.fn(async () => ({
+          providers: [
+            {
+              id: 'copilot',
+              name: 'Copilot',
+              models: { 'gpt-5.1-codex': { id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex' } },
+            },
+            {
+              id: 'openai',
+              name: 'OpenAI',
+              models: { 'gpt-5.5': { id: 'gpt-5.5', name: 'GPT-5.5' } },
+            },
+          ],
+          default: { copilot: 'gpt-5.1-codex', openai: 'gpt-5.5' },
+        })),
+      };
     });
     const { app } = createApp({
       buildOpenCodeUrl: vi.fn((requestPath) => `http://opencode.test${requestPath}`),
@@ -410,23 +419,68 @@ describe('OpenCode provider routes', () => {
       openai: 'gpt-5.5',
     });
 
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
     fetchSpy.mockRestore();
   });
 
-  it('appends GitHub Copilot fallback models when auth exists but upstream omits it', async () => {
-    readAuthFile.mockReturnValue({ 'github-copilot': { type: 'oauth', access: 'token' } });
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+  it('still returns the upstream provider list when provider integrations throw', async () => {
+    readAuthFile.mockReturnValue({});
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => ({
       ok: true,
       json: vi.fn(async () => ({
         providers: [
-          {
-            id: 'openai',
-            name: 'OpenAI',
-            models: { 'gpt-5.5': { id: 'gpt-5.5', name: 'GPT-5.5' } },
-          },
+          { id: 'openai', name: 'OpenAI', models: { 'gpt-5.5': { id: 'gpt-5.5', name: 'GPT-5.5' } } },
         ],
         default: { openai: 'gpt-5.5' },
       })),
+    }));
+    const { app } = createApp({
+      buildOpenCodeUrl: vi.fn((requestPath) => `http://opencode.test${requestPath}`),
+      getProviderSources: vi.fn(() => {
+        throw new Error('provider source lookup failed');
+      }),
+      cursorSdkRuntime: null,
+    });
+
+    const response = await request(app)
+      .get('/api/config/providers')
+      .expect(200);
+
+    expect(response.body.providers).toEqual([
+      { id: 'openai', name: 'OpenAI', models: { 'gpt-5.5': { id: 'gpt-5.5', name: 'GPT-5.5' } } },
+    ]);
+
+    fetchSpy.mockRestore();
+  });
+
+  it('appends account-specific GitHub Copilot models when auth exists but upstream omits it', async () => {
+    readAuthFile.mockReturnValue({ 'github-copilot': { type: 'oauth', access: 'token' } });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      if (String(url).includes('api.githubcopilot.com/models')) {
+        return {
+          ok: true,
+          json: vi.fn(async () => ({
+            data: [
+              { id: 'gpt-5.5' },
+              { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' },
+            ],
+          })),
+        };
+      }
+      return {
+        ok: true,
+        json: vi.fn(async () => ({
+          providers: [
+            {
+              id: 'openai',
+              name: 'OpenAI',
+              models: { 'gpt-5.5': { id: 'gpt-5.5', name: 'GPT-5.5' } },
+            },
+          ],
+          default: { openai: 'gpt-5.5' },
+        })),
+      };
     });
     const { app } = createApp({
       buildOpenCodeUrl: vi.fn((requestPath) => `http://opencode.test${requestPath}`),
@@ -447,19 +501,84 @@ describe('OpenCode provider routes', () => {
         id: 'github-copilot',
         name: 'GitHub Copilot',
         models: {
-          'gpt-5.1-codex': { id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex' },
+          'gpt-5.5': { id: 'gpt-5.5', name: 'GPT 5.5' },
+          'claude-sonnet-5': { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' },
         },
       },
     ]);
+    expect(fetchSpy).toHaveBeenCalledWith('https://api.githubcopilot.com/models', expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: 'Bearer token' }),
+    }));
 
     fetchSpy.mockRestore();
   });
 
-  it('appends GitHub Copilot when legacy copilot auth exists but upstream omits it', async () => {
-    readAuthFile.mockReturnValue({ copilot: { type: 'oauth', access: 'token' } });
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      json: vi.fn(async () => ({ providers: [], default: {} })),
+  it('fills empty upstream GitHub Copilot models from account discovery', async () => {
+    readAuthFile.mockReturnValue({ 'github-copilot': { type: 'oauth', access: 'token' } });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      if (String(url).includes('api.githubcopilot.com/models')) {
+        return {
+          ok: true,
+          json: vi.fn(async () => ({
+            data: [
+              { id: 'gpt-5.4-mini' },
+              { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex' },
+            ],
+          })),
+        };
+      }
+      return {
+        ok: true,
+        json: vi.fn(async () => ({
+          providers: [
+            {
+              id: 'copilot',
+              name: 'Copilot',
+              models: {},
+            },
+          ],
+          default: { copilot: 'gpt-5.4-mini' },
+        })),
+      };
+    });
+    const { app } = createApp({
+      buildOpenCodeUrl: vi.fn((requestPath) => `http://opencode.test${requestPath}`),
+      cursorSdkRuntime: null,
+    });
+
+    const response = await request(app)
+      .get('/api/config/providers')
+      .expect(200);
+
+    expect(response.body.providers).toEqual([{
+      id: 'github-copilot',
+      name: 'GitHub Copilot',
+      models: {
+        'gpt-5.4-mini': { id: 'gpt-5.4-mini', name: 'GPT 5.4 Mini' },
+        'gpt-5.3-codex': { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex' },
+      },
+    }]);
+    expect(response.body.default).toEqual({
+      'github-copilot': 'gpt-5.4-mini',
+    });
+
+    fetchSpy.mockRestore();
+  });
+
+  it('falls back to the emergency GitHub Copilot model when account discovery fails', async () => {
+    readAuthFile.mockReturnValue({ 'github-copilot': { type: 'oauth', access: 'token' } });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      if (String(url).includes('api.githubcopilot.com/models')) {
+        return {
+          ok: false,
+          status: 503,
+          json: vi.fn(async () => ({})),
+        };
+      }
+      return {
+        ok: true,
+        json: vi.fn(async () => ({ providers: [], default: {} })),
+      };
     });
     const { app } = createApp({
       buildOpenCodeUrl: vi.fn((requestPath) => `http://opencode.test${requestPath}`),
@@ -477,6 +596,43 @@ describe('OpenCode provider routes', () => {
         'gpt-5.1-codex': { id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex' },
       },
     });
+
+    fetchSpy.mockRestore();
+  });
+
+  it('appends account-specific GitHub Copilot models when legacy copilot auth exists but upstream omits it', async () => {
+    readAuthFile.mockReturnValue({ copilot: { type: 'oauth', access: 'legacy-token' } });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      if (String(url).includes('api.githubcopilot.com/models')) {
+        return {
+          ok: true,
+          json: vi.fn(async () => ({ data: [{ id: 'gpt-5.2-codex' }] })),
+        };
+      }
+      return {
+        ok: true,
+        json: vi.fn(async () => ({ providers: [], default: {} })),
+      };
+    });
+    const { app } = createApp({
+      buildOpenCodeUrl: vi.fn((requestPath) => `http://opencode.test${requestPath}`),
+      cursorSdkRuntime: null,
+    });
+
+    const response = await request(app)
+      .get('/api/config/providers')
+      .expect(200);
+
+    expect(response.body.providers).toContainEqual({
+      id: 'github-copilot',
+      name: 'GitHub Copilot',
+      models: {
+        'gpt-5.2-codex': { id: 'gpt-5.2-codex', name: 'GPT 5.2 Codex' },
+      },
+    });
+    expect(fetchSpy).toHaveBeenCalledWith('https://api.githubcopilot.com/models', expect.objectContaining({
+      headers: expect.objectContaining({ Authorization: 'Bearer legacy-token' }),
+    }));
 
     fetchSpy.mockRestore();
   });
@@ -652,6 +808,70 @@ describe('OpenCode provider routes', () => {
         usageSessionToken: 'cursor-session-token',
       },
     });
+  });
+
+  it('saves OpenCode Go usage auth without deleting the API key', async () => {
+    readAuthFile.mockReturnValue({ 'opencode-go': { key: 'go-api-key' } });
+    const { app } = createApp();
+
+    await request(app)
+      .put('/api/provider/opencode-go/usage-auth')
+      .send({ workspaceId: 'wrk_abc123', authCookie: 'Fe26.2**secret-cookie' })
+      .expect(200);
+
+    expect(writeAuthFile).toHaveBeenCalledWith({
+      'opencode-go': {
+        key: 'go-api-key',
+        usageWorkspaceId: 'wrk_abc123',
+        usageAuthCookie: 'Fe26.2**secret-cookie',
+      },
+    });
+  });
+
+  it('reports OpenCode Go usage auth status', async () => {
+    readAuthFile.mockReturnValue({
+      'opencode-go': {
+        usageWorkspaceId: 'wrk_abc123',
+        usageAuthCookie: 'Fe26.2**secret-cookie',
+      },
+    });
+    const { app } = createApp();
+
+    const response = await request(app)
+      .get('/api/provider/opencode-go/usage-auth/status')
+      .expect(200);
+
+    expect(response.body).toEqual({ configured: true, workspaceId: 'wrk_abc123' });
+  });
+
+  it('clears OpenCode Go usage auth without deleting the API key', async () => {
+    readAuthFile.mockReturnValue({
+      'opencode-go': {
+        key: 'go-api-key',
+        usageWorkspaceId: 'wrk_abc123',
+        usageAuthCookie: 'Fe26.2**secret-cookie',
+      },
+    });
+    const { app } = createApp();
+
+    await request(app)
+      .delete('/api/provider/opencode-go/usage-auth')
+      .expect(200);
+
+    expect(writeAuthFile).toHaveBeenCalledWith({
+      'opencode-go': { key: 'go-api-key' },
+    });
+  });
+
+  it('rejects invalid OpenCode Go usage auth values', async () => {
+    const { app } = createApp();
+
+    await request(app)
+      .put('/api/provider/opencode-go/usage-auth')
+      .send({ workspaceId: 'not-a-workspace', authCookie: 'cookie' })
+      .expect(400);
+
+    expect(writeAuthFile).not.toHaveBeenCalled();
   });
 
   it('sends Cursor prompts through the SDK runtime before the OpenCode proxy', async () => {

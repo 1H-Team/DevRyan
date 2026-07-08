@@ -62,6 +62,8 @@ describe('UsagePage model rows', () => {
     expect(sidebarSource).toContain('setShowPredictionValues');
     expect(sidebarSource).toContain('usageShowPredValues: enabled');
     expect(sidebarSource).toContain('settings.usage.sidebar.field.showPredictionRows');
+    expect(sidebarSource).toContain('resolveUsageDisplayModeLabel');
+    expect(sidebarSource).toContain('settings.usage.sidebar.field.displayModeUsage');
   });
 
   test('quota store source defaults prediction visibility to true', () => {
@@ -92,5 +94,16 @@ describe('UsagePage model rows', () => {
     expect(webSettingsSource).not.toContain('result.usageShowPredValues = candidate.usageShowPredValues ??');
     expect(vscodeSettingsSource).toContain('delete restChanges.usageShowPredValues');
     expect(persistenceSource).not.toContain('result.usageShowPredValues = candidate.usageShowPredValues ??');
+  });
+
+  test('Providers page contains OpenCode Go usage auth controls', () => {
+    const providersPageSource = repoSource('packages/ui/src/components/sections/providers/ProvidersPage.tsx');
+    const messages = repoSource('packages/ui/src/lib/i18n/messages/en.settings.ts');
+
+    expect(providersPageSource).toContain('/api/provider/opencode-go/usage-auth/status');
+    expect(providersPageSource).toContain('/api/provider/opencode-go/usage-auth');
+    expect(providersPageSource).toContain('renderOpenCodeGoUsageTracking');
+    expect(messages).toContain('settings.providers.page.auth.openCodeGoUsageTitle');
+    expect(messages).toContain('settings.providers.page.toast.openCodeGoUsageSaved');
   });
 });

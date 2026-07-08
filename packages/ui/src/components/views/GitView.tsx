@@ -51,6 +51,7 @@ import { useSessionWorktreeStore } from '@/sync/session-worktree-store';
 import { getSessionWorktreeRepairActions, getMutationBlockingReasons } from '@/sync/session-worktree-contract';
 import {
   checkoutBranchWithOptionalStash,
+  finishCurrentBranchIntoMainWithOptionalStash,
   formatMutationBlockingReason,
 } from '@/lib/git/branchCheckout';
 import { IntegrateCommitsSection } from './git/IntegrateCommitsSection';
@@ -2284,6 +2285,66 @@ export const GitView: React.FC = () => {
     [currentDirectory, git, status, stashDialogOperation, stashDialogBranch, worktreeAttachment, refreshStatusAndBranches, refreshLog, t]
   );
 
+  const handleFinishCurrentBranchIntoMain = React.useCallback(
+    async (restoreAfter: boolean) => {
+      if (!currentDirectory) return;
+
+      const result = await finishCurrentBranchIntoMainWithOptionalStash({
+        git,
+        directory: currentDirectory,
+        restoreAfter,
+      });
+
+      if (result.type === 'blocked') {
+        toast.error(t('gitView.toast.mergeIntoMainBlocked', { reason: result.reason }));
+        return;
+      }
+
+      if (result.type === 'conflict') {
+        const conflictFiles = result.conflictFiles ?? [];
+        setConflictFiles(conflictFiles);
+        setConflictOperation('merge');
+        setConflictDialogOpen(true);
+        persistConflictState(currentDirectory, conflictFiles, 'merge');
+        toast.error(t('gitView.toast.mergeIntoMainConflicts', { branch: result.sourceBranch }));
+        await refreshStatusAndBranches();
+        await refreshLog();
+        return;
+      }
+
+      clearConflictState();
+
+      if (result.type === 'delete-failed') {
+        const reason = result.error instanceof Error ? result.error.message : String(result.error || t('gitView.stash.finishIntoMainFailed'));
+        toast.error(t('gitView.toast.mergeIntoMainDeleteFailed', { branch: result.sourceBranch, reason }));
+        await refreshStatusAndBranches();
+        await refreshLog();
+        return;
+      }
+
+      if (result.type === 'restore-failed') {
+        const reason = result.error instanceof Error ? result.error.message : String(result.error || t('gitView.toast.restoreStashFailed'));
+        toast.error(t('gitView.toast.mergeIntoMainRestoreFailed', { branch: result.sourceBranch, reason }));
+        await refreshStatusAndBranches();
+        await refreshLog();
+        return;
+      }
+
+      toast.success(t('gitView.toast.mergedIntoMainAndDeleted', { branch: result.sourceBranch }));
+      if (result.restored) {
+        toast.success(t('gitView.toast.stashedRestored'));
+      }
+      await refreshStatusAndBranches();
+      await refreshLog();
+    },
+    [clearConflictState, currentDirectory, git, persistConflictState, refreshLog, refreshStatusAndBranches, t]
+  );
+
+  const canFinishCurrentBranchIntoMain = React.useMemo(() => (
+    stashDialogOperation === 'checkout' &&
+    Boolean(status?.current && status.current !== 'main' && localBranches.includes('main'))
+  ), [localBranches, stashDialogOperation, status]);
+
   if (!currentDirectory) {
     return (
       <div className="flex h-full items-center justify-center px-4 text-center">
@@ -2713,6 +2774,7 @@ export const GitView: React.FC = () => {
         operation={stashDialogOperation}
         targetBranch={stashDialogBranch}
         onConfirm={handleStashAndRetry}
+        finishBranchAction={canFinishCurrentBranchIntoMain ? { onConfirm: handleFinishCurrentBranchIntoMain } : undefined}
       />
 
     </div>

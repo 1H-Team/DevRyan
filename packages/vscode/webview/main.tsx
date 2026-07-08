@@ -1199,6 +1199,37 @@ const handleLocalApiRequest = async (url: URL, init?: RequestInit) => {
     }
   }
 
+  if (pathname === '/api/provider/opencode-go/usage-auth/status' && (init?.method || 'GET').toUpperCase() === 'GET') {
+    try {
+      const data = await sendBridgeMessage('api:provider/opencode-go/usage-auth/status', {});
+      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return new Response(JSON.stringify({ error: message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
+  if (pathname === '/api/provider/opencode-go/usage-auth' && (init?.method || 'GET').toUpperCase() === 'PUT') {
+    try {
+      const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {};
+      const data = await sendBridgeMessage('api:provider/opencode-go/usage-auth:save', body);
+      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return new Response(JSON.stringify({ error: message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
+  if (pathname === '/api/provider/opencode-go/usage-auth' && (init?.method || 'GET').toUpperCase() === 'DELETE') {
+    try {
+      const data = await sendBridgeMessage('api:provider/opencode-go/usage-auth:clear', {});
+      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return new Response(JSON.stringify({ error: message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
   return null;
 };
 

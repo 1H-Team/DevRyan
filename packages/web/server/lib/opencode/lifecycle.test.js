@@ -169,10 +169,13 @@ describe('OpenCode lifecycle', () => {
     const [binary, args, options] = spawnMock.mock.calls[0];
 
     expect(binary).toBe('opencode');
-    expect(args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '45678']);
+    expect(args).toEqual(['--pure', 'serve', '--hostname', '127.0.0.1', '--port', '45678']);
     expect(options.env.PATH).toBe('/home/user/.bun/bin:/usr/local/bin:/usr/bin');
     expect(options.env.SHELL_ONLY).toBe('yes');
     expect(options.env.OPENCODE_SERVER_PASSWORD).toBe('password');
+    // v1.0.6 set this to 'true', which disabled the opencode default plugin that
+    // surfaces the OpenAI (ChatGPT/Codex OAuth) provider. openchamber must NOT force it.
+    expect(options.env.OPENCODE_DISABLE_DEFAULT_PLUGINS).toBeUndefined();
 
     await server.close();
   });
@@ -540,14 +543,18 @@ describe('OpenCode lifecycle', () => {
 
     const runtime = createRuntime({ syncRuntimeAgentOverlays });
     const server = await runtime.startOpenCode();
-    const [, , options] = spawnMock.mock.calls[0];
+    const [, args, options] = spawnMock.mock.calls[0];
 
     expect(order).toEqual(['overlay', 'spawn']);
     expect(syncRuntimeAgentOverlays).toHaveBeenCalledWith({
       workingDirectory: '/tmp/project',
       skillPolicy: expect.any(Object),
     });
+    expect(args).toEqual(['--pure', 'serve', '--hostname', '127.0.0.1', '--port', '45678']);
     expect(options.env.OPENCODE_CONFIG_DIR).toBe('/tmp/openchamber-runtime-overlays/project-hash');
+    // v1.0.6 set this to 'true', which disabled the opencode default plugin that
+    // surfaces the OpenAI (ChatGPT/Codex OAuth) provider. openchamber must NOT force it.
+    expect(options.env.OPENCODE_DISABLE_DEFAULT_PLUGINS).toBeUndefined();
     await server.close();
   });
 
@@ -757,5 +764,77 @@ describe('OpenCode lifecycle', () => {
     expect(reusedProcess.close).toHaveBeenCalledTimes(1);
     expect(spawnMock).toHaveBeenCalledTimes(1);
     expect(syncPackagedAgents).toHaveBeenCalledTimes(2);
+  });
+
+  it('waits for an overridden agent model after refreshing managed OpenCode', async () => {
+    delete process.env.OPENCODE_BINARY;
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+    globalThis.fetch = vi.fn(async (url) => {
+      const href = String(url);
+      if (href.endsWith('/config')) {
+        return { ok: true, json: async () => ({}) };
+      }
+      if (href.endsWith('/agent')) {
+        return {
+          ok: true,
+          json: async () => ([{
+            name: 'fixer',
+            model: { providerID: 'cursor-acp', modelID: 'composer-2.5' },
+          }]),
+        };
+      }
+      return { ok: true, json: async () => ({ healthy: true }) };
+    });
+
+    const runtime = createRuntime();
+
+    await expect(runtime.refreshOpenCodeAfterConfigChange('agent fixer model override', {
+      agentName: 'fixer',
+      expectedAgentModelRef: 'cursor-acp/composer-2.5',
+      agentReadyTimeoutMs: 50,
+      agentReadyIntervalMs: 1,
+    })).resolves.toMatchObject({ runtimeApplied: true, requiresReload: true });
+  });
+
+  it('fails refresh when the runtime loads a stale model for the overridden agent', async () => {
+    delete process.env.OPENCODE_BINARY;
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+    globalThis.fetch = vi.fn(async (url) => {
+      const href = String(url);
+      if (href.endsWith('/config')) {
+        return { ok: true, json: async () => ({}) };
+      }
+      if (href.endsWith('/agent')) {
+        return {
+          ok: true,
+          json: async () => ([{
+            name: 'fixer',
+            model: { providerID: 'openai', modelID: 'gpt-5.5' },
+          }]),
+        };
+      }
+      return { ok: true, json: async () => ({ healthy: true }) };
+    });
+
+    const runtime = createRuntime();
+
+    await expect(runtime.refreshOpenCodeAfterConfigChange('agent fixer model override', {
+      agentName: 'fixer',
+      expectedAgentModelRef: 'cursor-acp/composer-2.5',
+      agentReadyTimeoutMs: 20,
+      agentReadyIntervalMs: 1,
+    })).rejects.toThrow('Agent "fixer" loaded with model "openai/gpt-5.5"; expected "cursor-acp/composer-2.5"');
   });
 });

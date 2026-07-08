@@ -26,9 +26,6 @@ permission:
     supabase: allow
     supabase-postgres-best-practices: allow
   supabase_*: deny
-  websearch_*: deny
-  context7_*: deny
-  grep_app_*: deny
 ---
 
 You are Oracle - the strategic technical advisor and code reviewer.

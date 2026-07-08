@@ -339,15 +339,6 @@ export const addMissingCollapsedGroupKeys = (collapsedGroups: Set<string>, group
   return new Set([...collapsedGroups, ...missingKeys]);
 };
 
-const sameSetValues = (a: Set<string>, b: Set<string>): boolean => {
-  if (a === b) return true;
-  if (a.size !== b.size) return false;
-  for (const value of a) {
-    if (!b.has(value)) return false;
-  }
-  return true;
-};
-
 const collectMatchingArchiveRevealSessionIds = (
   nodes: SessionNode[] | undefined,
   pendingRevealSessionIds: Set<string>,
@@ -381,8 +372,7 @@ export const reconcileArchivedGroupCollapse = (input: {
   const archivedGroupKeys = getArchivedGroupKeys(input.sections);
   const visibleArchivedGroupKeys = new Set(archivedGroupKeys);
   const newlyVisibleArchivedGroupKeys = archivedGroupKeys.filter((key) => !input.previousVisibleArchivedGroupKeys.has(key));
-  let nextCollapsedGroups = addMissingCollapsedGroupKeys(input.collapsedGroups, newlyVisibleArchivedGroupKeys);
-  const revealedGroupKeys = new Set<string>();
+  const nextCollapsedGroups = addMissingCollapsedGroupKeys(input.collapsedGroups, newlyVisibleArchivedGroupKeys);
   const revealedSessionIds = new Set<string>();
 
   if (input.pendingRevealSessionIds.size > 0) {
@@ -395,20 +385,9 @@ export const reconcileArchivedGroupCollapse = (input: {
         if (matches.size === 0) {
           return;
         }
-        revealedGroupKeys.add(`${section.project.id}:${group.id}`);
         matches.forEach((sessionId) => revealedSessionIds.add(sessionId));
       });
     });
-  }
-
-  if (revealedGroupKeys.size > 0) {
-    const expandedGroups = new Set(nextCollapsedGroups);
-    revealedGroupKeys.forEach((groupKey) => {
-      expandedGroups.delete(groupKey);
-    });
-    nextCollapsedGroups = sameSetValues(input.collapsedGroups, expandedGroups)
-      ? input.collapsedGroups
-      : expandedGroups;
   }
 
   return {

@@ -7,6 +7,7 @@ Workspace package for the shared React UI runtime used by web, Electron, and VS 
 - **Runtime-agnostic UI package**: runtime differences are abstracted behind injected APIs (`window.__OPENCHAMBER_RUNTIME_APIS__`) and `lib/desktop` helpers.
 - **Store + sync split**: long-lived app/preferences state lives in Zustand stores (`src/stores/*`), while high-frequency live session/message state is handled by `src/sync/*` child stores and event reducers.
 - **Thin entrypoint**: `src/main.tsx` wires providers, hydration side effects, and mounts `App`.
+- **Header usage composition**: reusable provider-tab and selected-provider quota panels live under `src/components/layout/usage/` and are shared by the desktop/mobile header menus plus the VS Code header surface.
 
 ## Flow
 1. Host runtime injects runtime APIs and loads UI entrypoint.

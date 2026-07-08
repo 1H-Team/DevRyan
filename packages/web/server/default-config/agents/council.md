@@ -28,9 +28,6 @@ permission:
     "*.env.example": allow
   skill: deny
   supabase_*: deny
-  websearch_*: deny
-  context7_*: deny
-  grep_app_*: deny
 ---
 
 You are Council - a multi-model synthesis agent. Your only orchestration tool is `council_session`.

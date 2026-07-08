@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
 import { useUIStore } from './useUIStore';
+import {
+  filterVisibleProviderModelsForPicker,
+  getHiddenModelRefsForProviderModel,
+} from '../lib/providers/modelVisibility';
 
 describe('useUIStore hidden model ref actions', () => {
   beforeEach(() => {
@@ -98,5 +102,41 @@ describe('useUIStore hidden model ref actions', () => {
     } finally {
       Date.now = originalDateNow;
     }
+  });
+
+  test('hide-all then show-all round-trips a provider through the model picker', () => {
+    const openai = {
+      id: 'openai',
+      name: 'OpenAI',
+      models: [
+        { id: 'gpt-5', name: 'GPT-5' },
+        { id: 'gpt-5-mini', name: 'GPT-5 Mini' },
+      ],
+    };
+
+    // Mirror the ProvidersPage "Hide all" button: hide every model of the provider.
+    const refSets = openai.models.map((model) => getHiddenModelRefsForProviderModel(openai.id, model));
+    useUIStore.getState().hideModelRefs(
+      refSets.flatMap((refs) => (refs.canonical ? [refs.canonical] : [])),
+      refSets.flatMap((refs) => refs.aliases),
+    );
+
+    // With all models hidden, the provider disappears from the picker (though the
+    // currently-selected model still routes normally — "still in use but not listed").
+    expect(
+      filterVisibleProviderModelsForPicker([openai], useUIStore.getState().hiddenModels)
+        .some((provider) => provider.id === 'openai'),
+    ).toBe(false);
+
+    // Mirror the ProvidersPage "Show all" button and confirm full recovery.
+    const showRefs = openai.models.flatMap(
+      (model) => getHiddenModelRefsForProviderModel(openai.id, model).aliases,
+    );
+    useUIStore.getState().showModelRefs(showRefs);
+
+    const restored = filterVisibleProviderModelsForPicker([openai], useUIStore.getState().hiddenModels);
+    expect(restored.find((provider) => provider.id === 'openai')?.models.map((model) => model.id))
+      .toEqual(['gpt-5', 'gpt-5-mini']);
+    expect(useUIStore.getState().hiddenModels).toEqual([]);
   });
 });

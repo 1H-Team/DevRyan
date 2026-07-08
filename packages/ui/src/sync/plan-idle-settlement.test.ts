@@ -25,6 +25,22 @@ const assistantMessage = (id: string, created: number, completed?: number): Mess
   time: completed === undefined ? { created } : { created, completed },
 } as Message)
 
+const toolCallsAssistantMessage = (id: string, created: number, completed: number): Message => ({
+  id,
+  sessionID: SESSION_ID,
+  role: "assistant",
+  finish: "tool-calls",
+  time: { created, completed },
+} as unknown as Message)
+
+const textPart = (messageID: string, text = "Completed work."): Part => ({
+  id: `${messageID}_text`,
+  sessionID: SESSION_ID,
+  messageID,
+  type: "text",
+  text,
+} as Part)
+
 const toolPart = (messageID: string, status: "pending" | "running" | "completed"): Part => ({
   id: `${messageID}_tool`,
   sessionID: SESSION_ID,
@@ -43,6 +59,7 @@ const buildState = (overrides: Partial<State> = {}): State => ({
       assistantMessage(PLAN_ASSISTANT_ID, 2, 3),
     ],
   },
+  part: { [PLAN_ASSISTANT_ID]: [textPart(PLAN_ASSISTANT_ID)] },
   ...overrides,
 })
 
@@ -129,17 +146,17 @@ describe("shouldSettlePlanProposalStatus", () => {
 
   test("does not settle when the trailing assistant has pending or running tools", () => {
     expect(shouldSettle(buildState({
-      part: { [PLAN_ASSISTANT_ID]: [toolPart(PLAN_ASSISTANT_ID, "pending")] },
+      part: { [PLAN_ASSISTANT_ID]: [textPart(PLAN_ASSISTANT_ID), toolPart(PLAN_ASSISTANT_ID, "pending")] },
     }))).toBe(false)
 
     expect(shouldSettle(buildState({
-      part: { [PLAN_ASSISTANT_ID]: [toolPart(PLAN_ASSISTANT_ID, "running")] },
+      part: { [PLAN_ASSISTANT_ID]: [textPart(PLAN_ASSISTANT_ID), toolPart(PLAN_ASSISTANT_ID, "running")] },
     }))).toBe(false)
   })
 
   test("settles when the trailing assistant has only completed tools", () => {
     expect(shouldSettle(buildState({
-      part: { [PLAN_ASSISTANT_ID]: [toolPart(PLAN_ASSISTANT_ID, "completed")] },
+      part: { [PLAN_ASSISTANT_ID]: [textPart(PLAN_ASSISTANT_ID), toolPart(PLAN_ASSISTANT_ID, "completed")] },
     }))).toBe(true)
   })
 })
@@ -186,6 +203,21 @@ describe("shouldSettleTerminalSessionStatus", () => {
       }),
     })).toBe(false)
   })
+
+  test("does not settle stale busy status after an intermediate tool-calls assistant turn", () => {
+    expect(shouldSettleTerminalSessionStatus({
+      sessionID: SESSION_ID,
+      state: buildState({
+        message: {
+          [SESSION_ID]: [
+            userMessage(USER_ID, 1),
+            toolCallsAssistantMessage(PLAN_ASSISTANT_ID, 2, 3),
+          ],
+        },
+        part: { [PLAN_ASSISTANT_ID]: [toolPart(PLAN_ASSISTANT_ID, "completed")] },
+      }),
+    })).toBe(false)
+  })
 })
 
 describe("isSessionTurnSettledForCompletion", () => {
@@ -202,7 +234,7 @@ describe("isSessionTurnSettledForCompletion", () => {
       sessionID: SESSION_ID,
       state: buildState({
         session_status: { [SESSION_ID]: { type: "idle" } as SessionStatus },
-        part: { [PLAN_ASSISTANT_ID]: [toolPart(PLAN_ASSISTANT_ID, "pending")] },
+        part: { [PLAN_ASSISTANT_ID]: [textPart(PLAN_ASSISTANT_ID), toolPart(PLAN_ASSISTANT_ID, "pending")] },
       }),
       completedMessageId: PLAN_ASSISTANT_ID,
     })).toBe(false)
@@ -211,7 +243,7 @@ describe("isSessionTurnSettledForCompletion", () => {
       sessionID: SESSION_ID,
       state: buildState({
         session_status: { [SESSION_ID]: { type: "idle" } as SessionStatus },
-        part: { [PLAN_ASSISTANT_ID]: [toolPart(PLAN_ASSISTANT_ID, "running")] },
+        part: { [PLAN_ASSISTANT_ID]: [textPart(PLAN_ASSISTANT_ID), toolPart(PLAN_ASSISTANT_ID, "running")] },
       }),
       completedMessageId: PLAN_ASSISTANT_ID,
     })).toBe(false)
@@ -264,6 +296,34 @@ describe("isSessionTurnSettledForCompletion", () => {
             assistantMessage(PLAN_ASSISTANT_ID, 2),
           ],
         },
+      }),
+      completedMessageId: PLAN_ASSISTANT_ID,
+    })).toBe(false)
+  })
+
+  test("rejects completion until the terminal assistant has visible summary text", () => {
+    expect(isSessionTurnSettledForCompletion({
+      sessionID: SESSION_ID,
+      state: buildState({
+        session_status: { [SESSION_ID]: { type: "idle" } as SessionStatus },
+        part: { [PLAN_ASSISTANT_ID]: [] },
+      }),
+      completedMessageId: PLAN_ASSISTANT_ID,
+    })).toBe(false)
+  })
+
+  test("rejects completion for an intermediate tool-calls assistant message", () => {
+    expect(isSessionTurnSettledForCompletion({
+      sessionID: SESSION_ID,
+      state: buildState({
+        session_status: { [SESSION_ID]: { type: "idle" } as SessionStatus },
+        message: {
+          [SESSION_ID]: [
+            userMessage(USER_ID, 1),
+            toolCallsAssistantMessage(PLAN_ASSISTANT_ID, 2, 3),
+          ],
+        },
+        part: { [PLAN_ASSISTANT_ID]: [textPart(PLAN_ASSISTANT_ID), toolPart(PLAN_ASSISTANT_ID, "completed")] },
       }),
       completedMessageId: PLAN_ASSISTANT_ID,
     })).toBe(false)

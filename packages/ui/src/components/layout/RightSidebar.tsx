@@ -13,10 +13,9 @@ interface RightSidebarProps {
   isOpen: boolean;
   children: React.ReactNode;
   className?: string;
-  onTopActionsHostChange?: (element: HTMLDivElement | null) => void;
 }
 
-export const RightSidebar: React.FC<RightSidebarProps> = ({ isOpen, children, className, onTopActionsHostChange }) => {
+export const RightSidebar: React.FC<RightSidebarProps> = ({ isOpen, children, className }) => {
   const { t } = useI18n();
   const rightSidebarWidth = useUIStore((state) => state.rightSidebarWidth);
   const setRightSidebarWidth = useUIStore((state) => state.setRightSidebarWidth);
@@ -131,12 +130,6 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ isOpen, children, cl
     }
   }, [isResizing]);
 
-  React.useEffect(() => {
-    if (!isOpen) {
-      onTopActionsHostChange?.(null);
-    }
-  }, [isOpen, onTopActionsHostChange]);
-
   const handleDragStart = React.useCallback(async (event: React.MouseEvent) => {
     const target = event.target as HTMLElement;
     if (target.closest('.app-region-no-drag')) {
@@ -183,6 +176,8 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ isOpen, children, cl
         maxWidth: 'var(--oc-right-sidebar-width)',
         ['--oc-right-sidebar-width' as string]: `${isResizing ? (resizingWidthRef.current ?? appliedWidth) : appliedWidth}px`,
         overflowX: 'clip',
+        contain: 'layout paint style',
+        willChange: isResizing || prefersReducedMotion ? 'auto' : 'width',
       }}
       aria-hidden={!isOpen || appliedWidth === 0}
     >
@@ -190,17 +185,12 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ isOpen, children, cl
         <div
           onMouseDown={handleDragStart}
           className={cn(
-            'app-region-drag absolute inset-x-0 top-0 z-20 flex items-center justify-end px-3',
+            'app-region-drag absolute inset-x-0 top-0 z-20',
             'h-[var(--oc-header-height,56px)]',
           )}
           style={webWindowControlsOverlayStyle}
           aria-hidden
-        >
-          <div
-            ref={onTopActionsHostChange}
-            className="app-region-no-drag flex items-center gap-1"
-          />
-        </div>
+        />
       ) : null}
       {isOpen && (
         <div

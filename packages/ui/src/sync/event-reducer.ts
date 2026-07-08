@@ -22,7 +22,7 @@ import { dropSessionCaches } from "./session-cache"
 import { stripSessionDiffSnapshots } from "./sanitize"
 import { syncDebug } from "./debug"
 import { appendNonOverlappingDelta, appendStreamingTextDelta, normalizeAssistantPartText } from "./part-delta"
-import { isTerminalAssistantMessage } from "./session-working"
+import { hasToolCallAssistantFinish, isTerminalAssistantMessage } from "./session-working"
 import {
   updateSessionUserActivityFromMessage,
   updateSessionUserActivityFromMessages,
@@ -174,6 +174,12 @@ const isTrailingConversationalMessage = (state: State, info: Message): boolean =
 
 export function shouldSettleTerminalAssistantMessageStatus(state: State, info: Message | undefined): info is Message {
   if (!info || !isTerminalAssistantMessage(info)) {
+    return false
+  }
+  // `finish: "tool-calls"` is an intermediate assistant handoff, not the end
+  // of the agent turn. Keep busy status intact so live indicators do not flicker
+  // off between tool calls while OpenCode is still working.
+  if (hasToolCallAssistantFinish(info)) {
     return false
   }
   if (isBlockingRequestPending(state, info.sessionID)) {
@@ -382,15 +388,27 @@ function getPartStartTime(part: Part): number | undefined {
   return typeof timeStart === "number" ? timeStart : undefined
 }
 
-function insertProvisionalAssistantMessageForReasoningPart(draft: State, part: Part): boolean {
-  if (part.type !== "reasoning") {
+function shouldCreateProvisionalAssistantMessageForPart(draft: State, part: Part, sessionID: string): boolean {
+  if (part.type === "reasoning") {
+    return true
+  }
+
+  if (part.type !== "text" && part.type !== "tool") {
     return false
   }
 
+  const status = draft.session_status[sessionID]
+  return status?.type === "busy" || status?.type === "retry"
+}
+
+function insertProvisionalAssistantMessageForLivePart(draft: State, part: Part): boolean {
   const partRecord = part as { messageID?: unknown; sessionID?: unknown }
   const messageID = typeof partRecord.messageID === "string" ? partRecord.messageID : ""
   const sessionID = typeof partRecord.sessionID === "string" ? partRecord.sessionID : ""
   if (!messageID || !sessionID || hasMessage(draft, sessionID, messageID)) {
+    return false
+  }
+  if (!shouldCreateProvisionalAssistantMessageForPart(draft, part, sessionID)) {
     return false
   }
 
@@ -715,7 +733,7 @@ export function applyDirectoryEvent(
         ? normalizeAssistantTextPart(part)
         : part
       if (missingOwningMessage) {
-        insertProvisionalAssistantMessageForReasoningPart(draft, incomingPart)
+        insertProvisionalAssistantMessageForLivePart(draft, incomingPart)
       }
       const parts = draft.part[messageID]
       if (!parts) {

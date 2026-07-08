@@ -33,7 +33,6 @@ permission:
     supabase: allow
     supabase-postgres-best-practices: allow
     using-agent-skills: allow
-  context7_*: deny
 ---
 
 **Question Routing**

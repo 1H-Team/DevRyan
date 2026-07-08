@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
-import { AnimatePresence } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import {
   RiAddLine,
   RiArchiveLine,
@@ -31,6 +31,26 @@ type DeleteFolderConfirm = {
   subFolderCount: number;
   sessionCount: number;
 } | null;
+
+const emptyStateEase = [0.33, 1, 0.68, 1] as const;
+
+const emptyStateTransition = {
+  gridTemplateRows: {
+    type: 'tween',
+    duration: 0.17,
+    ease: emptyStateEase,
+  },
+  opacity: {
+    type: 'tween',
+    duration: 0.12,
+    ease: emptyStateEase,
+  },
+  y: {
+    type: 'tween',
+    duration: 0.17,
+    ease: emptyStateEase,
+  },
+} as const;
 
 type Props = {
   group: SessionGroup;
@@ -102,6 +122,7 @@ type Props = {
 
 export function SessionGroupSection(props: Props): React.ReactNode {
   const { t } = useI18n();
+  const shouldReduceMotion = useReducedMotion();
   const {
     group,
     groupKey,
@@ -488,6 +509,25 @@ export function SessionGroupSection(props: Props): React.ReactNode {
     : (hasWorktreeDeleteAction
         ? 'pr-2 group-hover/gh:pr-14 group-focus-within/gh:pr-14'
         : 'pr-2');
+  const emptyStateContent = (
+    <div className="py-1 text-left typography-micro text-muted-foreground">
+      {group.isArchivedBucket
+        ? t('sessions.sidebar.group.empty.noArchivedSessions')
+        : t('sessions.sidebar.group.empty.noSessionsInWorkspace')}
+    </div>
+  );
+  const emptyState = shouldReduceMotion ? emptyStateContent : (
+    <motion.div
+      key="group-empty-state"
+      initial={{ gridTemplateRows: '0fr', opacity: 0, y: -2 }}
+      animate={{ gridTemplateRows: '1fr', opacity: 1, y: 0 }}
+      exit={{ gridTemplateRows: '0fr', opacity: 0, y: -2 }}
+      transition={emptyStateTransition}
+      style={{ display: 'grid', overflow: 'hidden' }}
+    >
+      <div style={{ minHeight: 0 }}>{emptyStateContent}</div>
+    </motion.div>
+  );
 
   const body = (
     <SessionFolderDndScope
@@ -507,13 +547,13 @@ export function SessionGroupSection(props: Props): React.ReactNode {
         ))}
       </AnimatePresence>
       {group.isArchivedBucket ? renderFolderItems() : null}
-      {totalSessions === 0 && allFoldersForGroup.length === 0 && draftCount === 0 && !isExitAnimating ? (
-        <div className="py-1 text-left typography-micro text-muted-foreground">
-          {group.isArchivedBucket
-            ? t('sessions.sidebar.group.empty.noArchivedSessions')
-            : t('sessions.sidebar.group.empty.noSessionsInWorkspace')}
-        </div>
-      ) : null}
+      <AnimatePresence initial={false}>
+        {totalSessions === 0 && allFoldersForGroup.length === 0 && draftCount === 0 && !isExitAnimating ? (
+          <React.Fragment key="group-empty-state-presence">
+            {emptyState}
+          </React.Fragment>
+        ) : null}
+      </AnimatePresence>
       {remainingCount > 0 && !isExpanded ? (
         <button
           type="button"

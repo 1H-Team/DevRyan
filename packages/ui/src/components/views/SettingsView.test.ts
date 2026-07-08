@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import {
   getSettingsBackButtonClassName,
+  getSettingsBackButtonHeaderClassName,
+  getSettingsBackButtonHeaderContentClassName,
   getSettingsFullPageOverlayClassName,
   getSettingsNavButtonClassName,
   getSettingsNavScrollClassName,
@@ -73,6 +75,63 @@ describe('SettingsView navigation', () => {
     expect(classes).not.toContain('left-3');
     expect(classes).toContain('top-3');
     expect(classes).toContain('z-50');
+  });
+
+  test('inline settings back button fills the sidebar row', () => {
+    const className = getSettingsBackButtonClassName({ placement: 'inline' });
+    const classes = className.split(/\s+/);
+
+    expect(classes).toContain('w-full');
+    expect(classes).toContain('h-8');
+    expect(classes).toContain('gap-2');
+    expect(classes).toContain('px-2');
+    expect(classes).toContain('rounded-md');
+    expect(classes).not.toContain('absolute');
+    expect(classes).not.toContain('w-9');
+    expect(classes).not.toContain('pl-[5.5rem]');
+  });
+
+  test('inline settings back button stays left-aligned on macOS desktop', () => {
+    const className = getSettingsBackButtonClassName({
+      placement: 'inline',
+      avoidMacTrafficLights: true,
+    });
+    const classes = className.split(/\s+/);
+
+    expect(classes).toContain('px-2');
+    expect(classes).not.toContain('pl-[5.5rem]');
+    expect(classes).not.toContain('absolute');
+  });
+
+  test('settings back button header stays fixed above the scrollable nav', () => {
+    const className = getSettingsBackButtonHeaderClassName();
+    const classes = className.split(/\s+/);
+
+    expect(classes).toContain('shrink-0');
+    expect(classes).toContain('pt-2');
+    expect(classes).not.toContain('px-2');
+    expect(classes).not.toContain('sticky');
+    expect(classes).not.toContain('absolute');
+  });
+
+  test('settings back button header clears macOS desktop titlebar without sticky positioning', () => {
+    const className = getSettingsBackButtonHeaderClassName({ avoidMacTrafficLights: true });
+    const classes = className.split(/\s+/);
+
+    expect(classes).toContain('shrink-0');
+    expect(classes).toContain('pt-14');
+    expect(classes).not.toContain('sticky');
+    expect(classes).not.toContain('pl-[5.5rem]');
+    expect(classes).not.toContain('px-2');
+  });
+
+  test('settings back button header content keeps sidebar padding on macOS desktop', () => {
+    const className = getSettingsBackButtonHeaderContentClassName();
+    const classes = className.split(/\s+/);
+
+    expect(classes).toContain('px-2');
+    expect(classes).toContain('pb-2');
+    expect(classes).not.toContain('pl-[5.5rem]');
   });
 
   test('skills settings list is wider than other split lists', () => {

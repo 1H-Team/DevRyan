@@ -124,4 +124,22 @@ describe('session sidebar archive reflow animation wiring', () => {
     expect(source).toContain('paddingLeft: SESSION_LEADING_INDICATOR_CLIP_GUTTER_PX');
     expect(source).not.toContain('scale');
   });
+
+  test('animates the group empty state after row exit completes', () => {
+    const testDir = dirname(fileURLToPath(import.meta.url));
+    const source = readFileSync(join(testDir, 'SessionGroupSection.tsx'), 'utf8');
+    const emptyStateGate = 'totalSessions === 0 && allFoldersForGroup.length === 0 && draftCount === 0 && !isExitAnimating';
+    const emptyStateIndex = source.indexOf(emptyStateGate);
+
+    expect(source).toContain("import { AnimatePresence, motion, useReducedMotion } from 'motion/react';");
+    expect(source).toContain('const shouldReduceMotion = useReducedMotion();');
+    expect(source).toContain('const emptyStateContent = (');
+    expect(source).toContain('const emptyState = shouldReduceMotion ? emptyStateContent : (');
+    expect(source).toContain('<AnimatePresence initial={false}>');
+    expect(emptyStateIndex).toBeGreaterThan(-1);
+    expect(source.indexOf('{emptyState}', emptyStateIndex)).toBeGreaterThan(emptyStateIndex);
+    expect(source).toContain("initial={{ gridTemplateRows: '0fr', opacity: 0, y: -2 }}");
+    expect(source).toContain("animate={{ gridTemplateRows: '1fr', opacity: 1, y: 0 }}");
+    expect(source).toContain("exit={{ gridTemplateRows: '0fr', opacity: 0, y: -2 }}");
+  });
 });

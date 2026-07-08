@@ -81,4 +81,12 @@ describe('shouldHideAssistantAbortArtifact', () => {
             parts: [],
         })).toBe(false);
     });
+
+    test('does not hide steered abort markers without assistant content', () => {
+        expect(shouldHideAssistantAbortArtifact({
+            isUser: false,
+            abortKind: 'steered',
+            parts: [],
+        })).toBe(false);
+    });
 });

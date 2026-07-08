@@ -215,6 +215,31 @@ describe("resyncBlockingRequestsForDirectory", () => {
     expect(store.getState().permission.child).toEqual(undefined)
   })
 
+  test("materializes an unknown child session before merging its pending permission", async () => {
+    const store = createDirectoryStore({
+      session: [
+        { id: "parent", title: "parent", time: { created: 1, updated: 1 }, version: "1" } as State["session"][number],
+      ],
+    })
+    pendingPermissionsResponse = [buildPermission({
+      id: "perm_child_file",
+      sessionID: "child",
+      permission: "external_directory",
+      patterns: ["/Users/dev/private-note.md"],
+      metadata: { path: "/Users/dev/private-note.md" },
+      always: ["/Users/dev/*"],
+    })]
+    sessionGetResponse = {
+      child: { id: "child", parentID: "parent", title: "child", time: { created: 1, updated: 1 }, version: "1" } as State["session"][number],
+    }
+
+    await resyncBlockingRequestsForDirectory("/repo", store)
+
+    expect(sessionGetCalls).toEqual([{ sessionID: "child" }])
+    expect(store.getState().session.map((session) => session.id)).toEqual(["child", "parent"])
+    expect(store.getState().permission.child?.map((permission) => permission.id)).toEqual(["perm_child_file"])
+  })
+
   test("returns early without fetching when no candidate sessions are known", async () => {
     const store = createDirectoryStore({ session: [] })
     await resyncBlockingRequestsForDirectory("/repo", store)

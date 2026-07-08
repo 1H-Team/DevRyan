@@ -37,7 +37,10 @@ import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 const ADD_PROVIDER_ID = '__add_provider__';
 const ANTIGRAVITY_PROVIDER_ID = 'antigravity';
 const GOOGLE_PROVIDER_ID = 'google';
+const OPENCODE_GO_PROVIDER_ID = 'opencode-go';
 const CURSOR_USAGE_TOKEN_INPUT_ID = 'cursor-usage-session-token';
+const OPENCODE_GO_WORKSPACE_INPUT_ID = 'opencode-go-usage-workspace-id';
+const OPENCODE_GO_AUTH_COOKIE_INPUT_ID = 'opencode-go-usage-auth-cookie';
 const AUTH_PROVIDER_ID_KEY = '__authProviderId';
 const AUTH_METHOD_INDEX_KEY = '__authMethodIndex';
 
@@ -171,6 +174,10 @@ export const ProvidersPage: React.FC = () => {
   const [cursorUsageTokenInput, setCursorUsageTokenInput] = React.useState('');
   const [cursorUsageAuthConfigured, setCursorUsageAuthConfigured] = React.useState(false);
   const [cursorUsageAuthLoading, setCursorUsageAuthLoading] = React.useState(false);
+  const [openCodeGoWorkspaceIdInput, setOpenCodeGoWorkspaceIdInput] = React.useState('');
+  const [openCodeGoAuthCookieInput, setOpenCodeGoAuthCookieInput] = React.useState('');
+  const [openCodeGoUsageAuthConfigured, setOpenCodeGoUsageAuthConfigured] = React.useState(false);
+  const [openCodeGoUsageAuthLoading, setOpenCodeGoUsageAuthLoading] = React.useState(false);
   const [cursorRuntimeStatus, setCursorRuntimeStatus] = React.useState<CursorAcpRuntimeStatus | null>(null);
   const cursorUsageTokenInputRef = React.useRef<HTMLInputElement | null>(null);
 
@@ -296,6 +303,12 @@ export const ProvidersPage: React.FC = () => {
     }
     return selectedProviderId === CURSOR_ACP_PROVIDER_ID ? selectedProviderId : null;
   }, [candidateProviderId, selectedProviderId]);
+  const activeOpenCodeGoProviderId = React.useMemo(() => {
+    if (selectedProviderId === ADD_PROVIDER_ID) {
+      return candidateProviderId === OPENCODE_GO_PROVIDER_ID ? candidateProviderId : null;
+    }
+    return selectedProviderId === OPENCODE_GO_PROVIDER_ID ? selectedProviderId : null;
+  }, [candidateProviderId, selectedProviderId]);
 
   const refreshClaudeCliStatus = React.useCallback(async () => {
     if (!activeAnthropicProviderId) {
@@ -360,6 +373,38 @@ export const ProvidersPage: React.FC = () => {
   React.useEffect(() => {
     void refreshCursorUsageAuthStatus();
   }, [refreshCursorUsageAuthStatus]);
+
+  const refreshOpenCodeGoUsageAuthStatus = React.useCallback(async () => {
+    if (!activeOpenCodeGoProviderId) {
+      setOpenCodeGoUsageAuthConfigured(false);
+      setOpenCodeGoUsageAuthLoading(false);
+      setOpenCodeGoWorkspaceIdInput('');
+      return;
+    }
+
+    setOpenCodeGoUsageAuthLoading(true);
+    try {
+      const response = await fetch('/api/provider/opencode-go/usage-auth/status', {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error || t('settings.providers.page.toast.openCodeGoUsageStatusFailed'));
+      }
+      setOpenCodeGoUsageAuthConfigured(Boolean(payload?.configured));
+      setOpenCodeGoWorkspaceIdInput(typeof payload?.workspaceId === 'string' ? payload.workspaceId : '');
+    } catch (error) {
+      console.error('Failed to load OpenCode Go usage auth status:', error);
+      setOpenCodeGoUsageAuthConfigured(false);
+    } finally {
+      setOpenCodeGoUsageAuthLoading(false);
+    }
+  }, [activeOpenCodeGoProviderId, t]);
+
+  React.useEffect(() => {
+    void refreshOpenCodeGoUsageAuthStatus();
+  }, [refreshOpenCodeGoUsageAuthStatus]);
 
   const refreshCursorRuntimeStatus = React.useCallback(async () => {
     if (!activeCursorAcpProviderId) {
@@ -853,6 +898,93 @@ export const ProvidersPage: React.FC = () => {
     }
   };
 
+  const handleSaveOpenCodeGoUsageAuth = async () => {
+    const workspaceId = openCodeGoWorkspaceIdInput.trim();
+    const authCookie = openCodeGoAuthCookieInput.trim();
+    if (!workspaceId) {
+      toast.error(t('settings.providers.page.toast.openCodeGoWorkspaceRequired'));
+      return;
+    }
+    if (!authCookie) {
+      toast.error(t('settings.providers.page.toast.openCodeGoAuthCookieRequired'));
+      return;
+    }
+
+    const busyKey = 'opencode-go-usage-save';
+    setAuthBusyKey(busyKey);
+    try {
+      const response = await fetch('/api/provider/opencode-go/usage-auth', {
+        method: 'PUT',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ workspaceId, authCookie }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error || t('settings.providers.page.toast.openCodeGoUsageSaveFailed'));
+      }
+      setOpenCodeGoAuthCookieInput('');
+      setOpenCodeGoUsageAuthConfigured(true);
+      toast.success(t('settings.providers.page.toast.openCodeGoUsageSaved'));
+      await fetchProviderQuota(OPENCODE_GO_PROVIDER_ID, { forceRefresh: true });
+    } catch (error) {
+      console.error('Failed to save OpenCode Go usage auth:', error);
+      toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.openCodeGoUsageSaveFailed'));
+    } finally {
+      setAuthBusyKey(null);
+    }
+  };
+
+  const handleClearOpenCodeGoUsageAuth = async () => {
+    const busyKey = 'opencode-go-usage-clear';
+    setAuthBusyKey(busyKey);
+    try {
+      const response = await fetch('/api/provider/opencode-go/usage-auth', {
+        method: 'DELETE',
+        headers: { Accept: 'application/json' },
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error || t('settings.providers.page.toast.openCodeGoUsageClearFailed'));
+      }
+      setOpenCodeGoWorkspaceIdInput('');
+      setOpenCodeGoAuthCookieInput('');
+      setOpenCodeGoUsageAuthConfigured(false);
+      toast.success(t('settings.providers.page.toast.openCodeGoUsageCleared'));
+      await fetchProviderQuota(OPENCODE_GO_PROVIDER_ID, { forceRefresh: true });
+    } catch (error) {
+      console.error('Failed to clear OpenCode Go usage auth:', error);
+      toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.openCodeGoUsageClearFailed'));
+    } finally {
+      setAuthBusyKey(null);
+    }
+  };
+
+  const handleRefreshOpenCodeGoUsage = async () => {
+    if (!openCodeGoUsageAuthConfigured) {
+      toast.error(t('settings.providers.page.toast.openCodeGoUsageAuthRequired'));
+      return;
+    }
+
+    const busyKey = 'opencode-go-usage-refresh';
+    setAuthBusyKey(busyKey);
+    try {
+      await fetchProviderQuota(OPENCODE_GO_PROVIDER_ID, { forceRefresh: true });
+      const result = useQuotaStore.getState().results.find((entry) => entry.providerId === OPENCODE_GO_PROVIDER_ID);
+      if (result && !result.ok) {
+        throw new Error(result.error || t('settings.providers.page.toast.openCodeGoUsageRefreshFailed'));
+      }
+      toast.success(t('settings.providers.page.toast.openCodeGoUsageRefreshed'));
+    } catch (error) {
+      console.error('Failed to refresh OpenCode Go usage:', error);
+      toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.openCodeGoUsageRefreshFailed'));
+    } finally {
+      setAuthBusyKey(null);
+    }
+  };
+
   const handleDisconnectProvider = async (providerId: string) => {
     const busyKey = `disconnect:${providerId}`;
     setAuthBusyKey(busyKey);
@@ -967,6 +1099,57 @@ export const ProvidersPage: React.FC = () => {
               : t('settings.providers.page.actions.refreshUsage')}
           </Button>
         </div>
+      </div>
+    </div>
+  );
+
+  const renderOpenCodeGoUsageTracking = () => (
+    <div className="space-y-2 border-t border-[var(--surface-subtle)] pt-3">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="typography-ui-label text-foreground">{t('settings.providers.page.auth.openCodeGoUsageTitle')}</div>
+          <div className="typography-meta whitespace-pre-line text-muted-foreground">{t('settings.providers.page.auth.openCodeGoUsageDescription')}</div>
+        </div>
+        <span className={cn(
+          'typography-micro shrink-0',
+          openCodeGoUsageAuthConfigured ? 'text-[var(--status-success)]' : 'text-muted-foreground',
+        )}>
+          {openCodeGoUsageAuthLoading
+            ? t('settings.providers.page.auth.openCodeGoUsageChecking')
+            : openCodeGoUsageAuthConfigured
+              ? t('settings.providers.page.auth.openCodeGoUsageConfigured')
+              : t('settings.providers.page.auth.openCodeGoUsageNotConfigured')}
+        </span>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-[minmax(0,0.45fr)_minmax(0,0.55fr)]">
+        <Input
+          id={OPENCODE_GO_WORKSPACE_INPUT_ID}
+          value={openCodeGoWorkspaceIdInput}
+          onChange={(event) => setOpenCodeGoWorkspaceIdInput(event.target.value)}
+          placeholder={t('settings.providers.page.auth.openCodeGoWorkspacePlaceholder')}
+          className="font-mono text-xs"
+          autoComplete="off"
+        />
+        <Input
+          id={OPENCODE_GO_AUTH_COOKIE_INPUT_ID}
+          type="password"
+          value={openCodeGoAuthCookieInput}
+          onChange={(event) => setOpenCodeGoAuthCookieInput(event.target.value)}
+          placeholder={t('settings.providers.page.auth.openCodeGoAuthCookiePlaceholder')}
+          className="font-mono text-xs"
+          autoComplete="off"
+        />
+      </div>
+      <div className="flex flex-wrap gap-1">
+        <Button size="xs" className="!font-normal" onClick={handleSaveOpenCodeGoUsageAuth} disabled={authBusyKey === 'opencode-go-usage-save'}>
+          {authBusyKey === 'opencode-go-usage-save' ? t('settings.providers.page.actions.saving') : t('settings.providers.page.actions.save')}
+        </Button>
+        <Button variant="outline" size="xs" className="!font-normal" onClick={handleClearOpenCodeGoUsageAuth} disabled={authBusyKey === 'opencode-go-usage-clear' || (!openCodeGoUsageAuthConfigured && !openCodeGoWorkspaceIdInput && !openCodeGoAuthCookieInput)}>
+          {authBusyKey === 'opencode-go-usage-clear' ? t('settings.providers.page.actions.saving') : t('settings.providers.page.actions.clear')}
+        </Button>
+        <Button variant="outline" size="xs" className="!font-normal" onClick={handleRefreshOpenCodeGoUsage} disabled={authBusyKey === 'opencode-go-usage-refresh' || !openCodeGoUsageAuthConfigured}>
+          {authBusyKey === 'opencode-go-usage-refresh' ? t('settings.providers.page.actions.refreshing') : t('settings.providers.page.actions.refreshUsage')}
+        </Button>
       </div>
     </div>
   );
@@ -1208,6 +1391,8 @@ export const ProvidersPage: React.FC = () => {
                   {activeCursorAcpProviderId === candidateProviderId && renderCursorRuntimeNotice()}
 
                   {activeCursorAcpProviderId === candidateProviderId && renderCursorUsageTracking()}
+
+                  {activeOpenCodeGoProviderId === candidateProviderId && renderOpenCodeGoUsageTracking()}
 
                   {(() => {
                     const candidateSupportsApiKey = providerSupportsApiKey(candidateProviderId);
@@ -1505,6 +1690,8 @@ export const ProvidersPage: React.FC = () => {
                 {activeCursorAcpProviderId === selectedProvider.id && renderCursorRuntimeNotice()}
 
                 {activeCursorAcpProviderId === selectedProvider.id && renderCursorUsageTracking()}
+
+                {activeOpenCodeGoProviderId === selectedProvider.id && renderOpenCodeGoUsageTracking()}
 
                 {visibleOAuthAuthMethods.length > 0 && (
                   <div className={cn('space-y-4', selectedProviderSupportsApiKey && 'border-t border-[var(--surface-subtle)] pt-2')}>

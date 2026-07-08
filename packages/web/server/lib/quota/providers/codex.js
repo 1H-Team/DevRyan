@@ -6,7 +6,10 @@ import {
   toUsageWindow,
   toNumber,
   toTimestamp,
-  formatMoney
+  asObject,
+  asNonEmptyString,
+  formatMoney,
+  formatResetTime
 } from '../utils/index.js';
 
 export const providerId = 'codex';
@@ -19,8 +22,84 @@ export const isConfigured = () => {
   return Boolean(entry?.access || entry?.token);
 };
 
-export const fetchQuota = async () => {
-  const auth = readAuthFile();
+const CODEX_USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage';
+const CODEX_RESET_CREDITS_URL = 'https://chatgpt.com/backend-api/wham/rate-limit-reset-credits';
+
+const buildHeaders = (accessToken, accountId, extraHeaders = {}) => ({
+  Authorization: `Bearer ${accessToken}`,
+  'Content-Type': 'application/json',
+  ...(accountId ? { 'ChatGPT-Account-Id': accountId } : {}),
+  ...extraHeaders
+});
+
+const normalizeResetCredit = (value, index) => {
+  const credit = asObject(value);
+  if (!credit) return null;
+
+  const grantedAt = toTimestamp(credit.granted_at ?? credit.grantedAt);
+  const expiresAt = toTimestamp(credit.expires_at ?? credit.expiresAt);
+  const id = asNonEmptyString(credit.id) ?? `reset-credit-${index}`;
+  return {
+    id,
+    status: asNonEmptyString(credit.status) ?? 'available',
+    resetType: asNonEmptyString(credit.reset_type ?? credit.resetType),
+    grantedAt,
+    grantedAtFormatted: grantedAt ? formatResetTime(grantedAt) : null,
+    expiresAt,
+    expiresAtFormatted: expiresAt ? formatResetTime(expiresAt) : null
+  };
+};
+
+const normalizeResetCreditsPayload = (payload, source) => {
+  const data = asObject(payload);
+  if (!data) return null;
+
+  const credits = Array.isArray(data.credits)
+    ? data.credits.map(normalizeResetCredit).filter(Boolean)
+    : [];
+  const availableCount = toNumber(data.available_count ?? data.availableCount);
+  const totalEarnedCount = toNumber(data.total_earned_count ?? data.totalEarnedCount);
+
+  if (availableCount === null && totalEarnedCount === null && credits.length === 0) {
+    return null;
+  }
+
+  return {
+    availableCount,
+    totalEarnedCount,
+    credits,
+    source
+  };
+};
+
+const fetchDedicatedResetCredits = async (fetchImpl, accessToken, accountId) => {
+  try {
+    const response = await fetchImpl(CODEX_RESET_CREDITS_URL, {
+      method: 'GET',
+      headers: buildHeaders(accessToken, accountId, {
+        'OpenAI-Beta': 'codex-1',
+        originator: 'Codex Desktop'
+      })
+    });
+
+    if (!response.ok) return null;
+    const payload = await response.json();
+    return normalizeResetCreditsPayload(payload, 'dedicated');
+  } catch {
+    return null;
+  }
+};
+
+const getFallbackResetCredits = (payload) => {
+  const usageResetCredits = asObject(payload?.rate_limit_reset_credits ?? payload?.rateLimitResetCredits);
+  if (!usageResetCredits) return null;
+  return normalizeResetCreditsPayload(usageResetCredits, 'usage');
+};
+
+export const fetchQuota = async (options = {}) => {
+  const readAuth = options.readAuth ?? readAuthFile;
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const auth = readAuth();
   const entry = normalizeAuthEntry(getAuthEntry(auth, aliases));
   const accessToken = entry?.access ?? entry?.token;
   const accountId = entry?.accountId;
@@ -36,14 +115,9 @@ export const fetchQuota = async () => {
   }
 
   try {
-    const headers = {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-      ...(accountId ? { 'ChatGPT-Account-Id': accountId } : {})
-    };
-    const response = await fetch('https://chatgpt.com/backend-api/wham/usage', {
+    const response = await fetchImpl(CODEX_USAGE_URL, {
       method: 'GET',
-      headers
+      headers: buildHeaders(accessToken, accountId)
     });
 
     if (!response.ok) {
@@ -62,6 +136,8 @@ export const fetchQuota = async () => {
     const primary = payload?.rate_limit?.primary_window ?? null;
     const secondary = payload?.rate_limit?.secondary_window ?? null;
     const credits = payload?.credits ?? null;
+    const resetCredits = await fetchDedicatedResetCredits(fetchImpl, accessToken, accountId)
+      ?? getFallbackResetCredits(payload);
 
     const windows = {};
     if (primary) {
@@ -78,7 +154,7 @@ export const fetchQuota = async () => {
         resetAt: toTimestamp(secondary.reset_at)
       });
     }
-    if (credits) {
+    if (credits && !resetCredits) {
       const balance = toNumber(credits.balance);
       const unlimited = Boolean(credits.unlimited);
       const label = unlimited
@@ -99,7 +175,10 @@ export const fetchQuota = async () => {
       providerName,
       ok: true,
       configured: true,
-      usage: { windows }
+      usage: {
+        windows,
+        ...(resetCredits ? { resetCredits } : {})
+      }
     });
   } catch (error) {
     return buildResult({

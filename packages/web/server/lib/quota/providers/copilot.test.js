@@ -12,7 +12,7 @@ describe('GitHub Copilot quota provider', () => {
     vi.clearAllMocks();
   });
 
-  it('shows token-based billing quota as GitHub AI Credits', async () => {
+  it('shows token-based billing quota as AI Credits', async () => {
     readAuthFile.mockReturnValue({ 'github-copilot': { access: 'copilot-token' } });
     const fetchImpl = vi.fn(async () => ({
       ok: true,
@@ -36,7 +36,7 @@ describe('GitHub Copilot quota provider', () => {
       usedPercent: 25,
       resetAt: Date.parse('2026-07-01T00:00:00.000Z'),
       valueLabel: '5250 / 7000 credits left',
-      description: 'GitHub AI Credits are consumed from token usage, including input, output, and cached tokens.',
+      description: 'AI Credits are consumed from token usage, including input, output, and cached tokens.',
     });
   });
 

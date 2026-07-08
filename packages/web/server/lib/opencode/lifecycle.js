@@ -91,6 +91,28 @@ function resolveManagedWorkingDirectoryFromSettings(settings, fallbackDirectory,
   return normalizeWorkingDirectoryCandidate(fallbackDirectory) || os.homedir();
 }
 
+function normalizeAgentModelRef(agent) {
+  const model = agent?.model;
+  if (typeof model === 'string' && model.trim()) {
+    return model.trim();
+  }
+  if (model && typeof model === 'object' && !Array.isArray(model)) {
+    const providerID = typeof model.providerID === 'string' ? model.providerID.trim() : '';
+    const modelID = typeof model.modelID === 'string' ? model.modelID.trim() : '';
+    if (providerID && modelID) return `${providerID}/${modelID}`;
+  }
+  if (Array.isArray(agent?.modelRefs)) {
+    const first = agent.modelRefs.find((entry) => typeof entry === 'string' && entry.trim());
+    if (first) return first.trim();
+  }
+  return '';
+}
+
+function normalizeAgentVariant(value) {
+  if (typeof value !== 'string') return '';
+  return value.trim();
+}
+
 export const createOpenCodeLifecycleRuntime = (deps) => {
   const {
     state,
@@ -341,7 +363,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
   const createManagedOpenCodeServerProcess = async ({ hostname, port, timeout, cwd, env: processEnv, shellEnvKeysCount = 0 }) => {
     let binary = (process.env.OPENCODE_BINARY || 'opencode').trim() || 'opencode';
-    let args = ['serve', '--hostname', hostname, '--port', String(port)];
+    let args = ['--pure', 'serve', '--hostname', hostname, '--port', String(port)];
     let launchWrapperType = null;
 
     if (process.platform === 'win32' && state.useWslForOpencode) {
@@ -358,6 +380,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       binary = wslBinary;
       args = buildWslExecArgs([
         wslOpencode,
+        '--pure',
         'serve',
         '--hostname',
         serveHost,
@@ -711,6 +734,11 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
           ...process.env,
           PATH: envPath,
           OPENCODE_SERVER_PASSWORD: openCodePassword,
+          // NOTE: We intentionally do NOT set OPENCODE_DISABLE_DEFAULT_PLUGINS here.
+          // v1.0.6 added it during the opencode 1.17.14 upgrade, which disabled the
+          // default plugin that surfaces the OpenAI (ChatGPT/Codex OAuth) provider —
+          // making OpenAI vanish from Settings → Providers and breaking Codex prompts.
+          // `--pure` (no external plugins) is kept; it does not affect built-in providers.
           OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: process.env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS || 'true',
           ...(agentRuntimeConfig?.slimPreset
             ? { OH_MY_OPENCODE_SLIM_PRESET: agentRuntimeConfig.slimPreset }
@@ -952,12 +980,18 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     throw timeoutError;
   };
 
-  const waitForAgentPresence = async (agentName, timeoutMs = 15000, intervalMs = 300) => {
+  const waitForAgentPresence = async (agentName, timeoutMs = 15000, intervalMs = 300, expected = {}) => {
     if (!state.openCodePort) {
       throw new Error('OpenCode port is not available');
     }
 
+    const expectedModelRef = typeof expected.expectedAgentModelRef === 'string'
+      ? expected.expectedAgentModelRef.trim()
+      : '';
+    const expectVariant = Object.prototype.hasOwnProperty.call(expected, 'expectedAgentVariant');
+    const expectedVariant = normalizeAgentVariant(expected.expectedAgentVariant);
     const deadline = Date.now() + timeoutMs;
+    let lastSeenAgent = null;
     while (Date.now() < deadline) {
       try {
         const response = await fetch(buildOpenCodeUrl('/agent'), {
@@ -967,8 +1001,18 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
         if (response.ok) {
           const agents = await response.json();
-          if (Array.isArray(agents) && agents.some((agent) => agent?.name === agentName)) {
-            return;
+          const agent = Array.isArray(agents)
+            ? agents.find((entry) => entry?.name === agentName)
+            : null;
+          if (agent) {
+            lastSeenAgent = agent;
+            const loadedModelRef = normalizeAgentModelRef(agent);
+            const loadedVariant = normalizeAgentVariant(agent.variant);
+            const modelMatches = !expectedModelRef || loadedModelRef === expectedModelRef;
+            const variantMatches = !expectVariant || loadedVariant === expectedVariant;
+            if (modelMatches && variantMatches) {
+              return;
+            }
           }
         }
       } catch {
@@ -977,11 +1021,26 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }
 
+    if (lastSeenAgent && expectedModelRef) {
+      const loadedModelRef = normalizeAgentModelRef(lastSeenAgent) || 'unknown';
+      const loadedVariant = normalizeAgentVariant(lastSeenAgent.variant);
+      const variantSuffix = expectVariant && loadedVariant !== expectedVariant
+        ? ` and variant "${loadedVariant || 'default'}"; expected variant "${expectedVariant || 'default'}"`
+        : '';
+      throw new Error(`Agent "${agentName}" loaded with model "${loadedModelRef}"${variantSuffix}; expected "${expectedModelRef}"`);
+    }
+
     throw new Error(`Agent "${agentName}" not available after OpenCode restart`);
   };
 
   const refreshOpenCodeAfterConfigChange = async (reason, options = {}) => {
-    const { agentName } = options;
+    const { agentName, expectedAgentModelRef, expectedAgentVariant } = options;
+    const agentReadyTimeoutMs = Number.isFinite(options.agentReadyTimeoutMs) && options.agentReadyTimeoutMs > 0
+      ? Math.trunc(options.agentReadyTimeoutMs)
+      : 15000;
+    const agentReadyIntervalMs = Number.isFinite(options.agentReadyIntervalMs) && options.agentReadyIntervalMs > 0
+      ? Math.trunc(options.agentReadyIntervalMs)
+      : 300;
 
     console.log(`Refreshing OpenCode after ${reason}`);
     if (state.isExternalOpenCode || env.ENV_SKIP_OPENCODE_START) {
@@ -1003,7 +1062,10 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       state.openCodeNotReadySince = 0;
 
       if (agentName) {
-        await waitForAgentPresence(agentName);
+        await waitForAgentPresence(agentName, agentReadyTimeoutMs, agentReadyIntervalMs, {
+          expectedAgentModelRef,
+          ...(Object.prototype.hasOwnProperty.call(options, 'expectedAgentVariant') ? { expectedAgentVariant } : {}),
+        });
       }
 
       state.isOpenCodeReady = true;

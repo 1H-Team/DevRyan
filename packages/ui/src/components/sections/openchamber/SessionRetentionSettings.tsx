@@ -159,7 +159,7 @@ export const SessionRetentionSettings: React.FC = () => {
               size="xs"
               onClick={handleRunCleanup}
               disabled={isRunning}
-              className="!font-normal"
+              className="!font-normal normal-case"
             >
               {isRunning ? t('settings.openchamber.sessionRetention.actions.cleaningUp') : t('settings.openchamber.sessionRetention.actions.runCleanupNow')}
             </Button>

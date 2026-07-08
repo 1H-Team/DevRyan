@@ -13,9 +13,50 @@ const TRY_CF_URL_REGEX = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/i;
 const DEFAULT_STARTUP_TIMEOUT_MS = 30000;
 const MANAGED_TUNNEL_STARTUP_TIMEOUT_MS = 20000;
 const MANAGED_TUNNEL_LIVENESS_FALLBACK_MS = 6000;
+const CLOUDFLARED_LOG_MAX_LINES = 20;
 const TUNNEL_MODE_QUICK = 'quick';
 const TUNNEL_MODE_MANAGED_REMOTE = 'managed-remote';
 const TUNNEL_MODE_MANAGED_LOCAL = 'managed-local';
+
+export class CloudflareTunnelStartupError extends Error {
+  constructor(code, message, details = null) {
+    super(message);
+    this.name = 'CloudflareTunnelStartupError';
+    this.code = code;
+    this.details = details;
+  }
+}
+
+export function redactCloudflaredLogLine(line) {
+  if (typeof line !== 'string') {
+    return '';
+  }
+  return line
+    .replace(/(token(?:-file)?[\s=:]+)[^\s]+/ig, '$1[redacted]')
+    .replace(/(authorization[\s=:]+)(?:bearer\s+)?[^\s]+/ig, '$1[redacted]')
+    .replace(/(bearer\s+)[a-z0-9._~+/=-]+/ig, '$1[redacted]');
+}
+
+export function createCloudflaredOutputBuffer({ maxLines = CLOUDFLARED_LOG_MAX_LINES } = {}) {
+  const lines = [];
+  const append = (chunk) => {
+    const text = Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk ?? '');
+    for (const rawLine of text.split(/\r?\n/)) {
+      const line = redactCloudflaredLogLine(rawLine.trim());
+      if (!line) {
+        continue;
+      }
+      lines.push(line);
+      while (lines.length > maxLines) {
+        lines.shift();
+      }
+    }
+  };
+
+  const excerpt = () => [...lines];
+
+  return { append, excerpt };
+}
 
 async function searchPathFor(command) {
   const pathValue = process.env.PATH || '';
@@ -396,12 +437,14 @@ export async function startCloudflareQuickTunnel({ originUrl }) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-cf-'));
 
   const child = spawnCloudflared(['tunnel', '--url', originUrl], { HOME: tempDir }, cfCheck.path);
+  const outputBuffer = createCloudflaredOutputBuffer();
 
   let publicUrl = null;
   let tunnelReady = false;
 
   const onData = (chunk, isStderr) => {
     const text = chunk.toString('utf8');
+    outputBuffer.append(text);
 
     if (!tunnelReady) {
       const match = text.match(TRY_CF_URL_REGEX);
@@ -433,28 +476,57 @@ export async function startCloudflareQuickTunnel({ originUrl }) {
   };
 
   await new Promise((resolve, reject) => {
+    let settled = false;
+    const settle = (handler, value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      clearInterval(checkReady);
+      handler(value);
+    };
+
     const timeout = setTimeout(() => {
       if (!publicUrl) {
         try { child.kill('SIGINT'); } catch { /* ignore */ }
         cleanupTempDir();
-        reject(new Error('Tunnel URL not received within 30 seconds'));
+        settle(reject, new CloudflareTunnelStartupError(
+          'quick_url_timeout',
+          'Cloudflare Quick Tunnel did not return a public URL within 30 seconds',
+          {
+            startupLogExcerpt: outputBuffer.excerpt(),
+            hint: 'Cloudflare Quick Tunnel can fail if WARP or a Zero Trust egress policy blocks api.trycloudflare.com or cloudflared edge connections.',
+          }
+        ));
       }
     }, DEFAULT_STARTUP_TIMEOUT_MS);
 
     const checkReady = setInterval(() => {
       if (publicUrl) {
-        clearTimeout(timeout);
-        clearInterval(checkReady);
-        resolve(null);
+        settle(resolve, null);
       }
     }, 100);
 
     child.on('exit', (code) => {
-      clearTimeout(timeout);
-      clearInterval(checkReady);
       cleanupTempDir();
       if (code !== null && code !== 0) {
-        reject(new Error(`Cloudflared exited with code ${code}`));
+        settle(reject, new CloudflareTunnelStartupError(
+          'quick_cloudflared_exited',
+          `Cloudflared exited before Quick Tunnel was ready (code ${code})`,
+          {
+            startupLogExcerpt: outputBuffer.excerpt(),
+            hint: 'Review cloudflared output for authentication, DNS, or network egress errors.',
+          }
+        ));
+        return;
+      }
+      if (!publicUrl) {
+        settle(reject, new CloudflareTunnelStartupError(
+          'quick_cloudflared_exited',
+          'Cloudflared exited before assigning a Quick Tunnel URL',
+          { startupLogExcerpt: outputBuffer.excerpt() }
+        ));
       }
     });
   });
@@ -470,10 +542,11 @@ export async function startCloudflareQuickTunnel({ originUrl }) {
     },
     process: child,
     getPublicUrl: () => publicUrl,
+    getDiagnostics: () => ({ startupLogExcerpt: outputBuffer.excerpt() }),
   };
 }
 
-export async function startCloudflareManagedRemoteTunnel({ token, hostname, tokenFilePath }) {
+export async function startCloudflareManagedRemoteTunnel({ token, hostname, tokenFilePath, activePort }) {
   const cfCheck = await checkCloudflaredAvailable();
 
   if (!cfCheck.available) {
@@ -503,13 +576,19 @@ export async function startCloudflareManagedRemoteTunnel({ token, hostname, toke
 
   const child = spawnCloudflared(['tunnel', 'run', '--token-file', effectiveTokenFilePath], {}, cfCheck.path);
   const publicUrl = `https://${normalizedHost}`;
+  const outputBuffer = createCloudflaredOutputBuffer();
+  const localOriginUrl = Number.isFinite(activePort) && activePort > 0
+    ? `http://127.0.0.1:${activePort}`
+    : null;
 
-  child.stdout.on('data', () => {
+  child.stdout.on('data', (chunk) => {
+    outputBuffer.append(chunk);
     // Keep stream drained, but avoid logging potentially sensitive output.
   });
 
   child.stderr.on('data', (chunk) => {
     const text = chunk.toString('utf8');
+    outputBuffer.append(text);
     process.stderr.write(text);
   });
 
@@ -539,7 +618,16 @@ export async function startCloudflareManagedRemoteTunnel({ token, hostname, toke
   } catch (error) {
     try { child.kill('SIGINT'); } catch { /* ignore */ }
     cleanupTempTokenFile();
-    throw error;
+    throw new CloudflareTunnelStartupError(
+      'managed_remote_startup_failed',
+      error instanceof Error ? error.message : 'Cloudflared failed to start managed remote tunnel',
+      {
+        startupLogExcerpt: outputBuffer.excerpt(),
+        expectedHostname: normalizedHost,
+        localOriginUrl,
+        hint: 'The managed remote tunnel token starts the Cloudflare connector, but the Cloudflare public hostname ingress must route this hostname to the active DevRyan local port.',
+      }
+    );
   }
 
   return {
@@ -554,6 +642,12 @@ export async function startCloudflareManagedRemoteTunnel({ token, hostname, toke
     },
     process: child,
     getPublicUrl: () => publicUrl,
+    getDiagnostics: () => ({
+      startupLogExcerpt: outputBuffer.excerpt(),
+      expectedHostname: normalizedHost,
+      localOriginUrl,
+      cloudflareConfigRequiresManualOriginMatch: true,
+    }),
   };
 }
 

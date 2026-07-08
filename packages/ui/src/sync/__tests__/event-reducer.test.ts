@@ -42,6 +42,22 @@ function partUpdatedEvent(text = "hello"): Event {
   } as Event
 }
 
+function toolPartUpdatedEvent(): Event {
+  return {
+    type: "message.part.updated",
+    properties: {
+      part: {
+        id: "prt_tool_1",
+        messageID: "msg_tool_1",
+        sessionID: "ses_1",
+        type: "tool",
+        tool: "bash",
+        state: { status: "running", time: { start: 123 } },
+      },
+    },
+  } as Event
+}
+
 function reasoningPartUpdatedEvent(text = ""): Event {
   return {
     type: "message.part.updated",
@@ -82,6 +98,26 @@ function testMessage(id: string, sessionID: string, role: Message["role"], creat
     role,
     time: { created },
   } as Message
+}
+
+function completedToolCallsAssistantMessage(id: string, sessionID: string, created: number, completed: number): Message {
+  return {
+    id,
+    sessionID,
+    role: "assistant",
+    finish: "tool-calls",
+    time: { created, completed },
+  } as unknown as Message
+}
+
+function completedAssistantMessage(id: string, sessionID: string, created: number, completed: number): Message {
+  return {
+    id,
+    sessionID,
+    role: "assistant",
+    finish: "stop",
+    time: { created, completed },
+  } as unknown as Message
 }
 
 function todo(id: string, status: Todo["status"]): Todo {
@@ -139,9 +175,13 @@ describe("applyDirectoryEvent", () => {
   })
 
   test("applies part update and requests materialization when owning message is absent", () => {
-    const draft = state()
+    const draft = state({
+      session_status: { ses_1: { type: "busy" } as SessionStatus },
+    })
     const result = applyDirectoryEvent(draft, partUpdatedEvent())
 
+    expect(draft.message.ses_1[0]?.id).toBe("msg_1")
+    expect(draft.message.ses_1[0]?.role).toBe("assistant")
     expect(draft.part.msg_1.map((item) => item.id)).toEqual(["prt_1"])
     expect(result).toEqual({
       changed: true,
@@ -150,6 +190,45 @@ describe("applyDirectoryEvent", () => {
         sessionID: "ses_1",
         messageID: "msg_1",
         partID: "prt_1",
+      },
+    })
+  })
+
+  test("does not create a provisional assistant message for orphan text when the session is not active", () => {
+    const draft = state()
+    const result = applyDirectoryEvent(draft, partUpdatedEvent())
+
+    expect(draft.message.ses_1).toBe(undefined)
+    expect(draft.part.msg_1.map((item) => item.id)).toEqual(["prt_1"])
+    expect(result).toEqual({
+      changed: true,
+      materialization: {
+        type: "incomplete-session-snapshot",
+        sessionID: "ses_1",
+        messageID: "msg_1",
+        partID: "prt_1",
+      },
+    })
+  })
+
+  test("creates a provisional assistant message for orphan live tool parts", () => {
+    const draft = state({
+      session_status: { ses_1: { type: "busy" } as SessionStatus },
+    })
+    const result = applyDirectoryEvent(draft, toolPartUpdatedEvent())
+
+    expect(draft.message.ses_1[0]?.id).toBe("msg_tool_1")
+    expect(draft.message.ses_1[0]?.sessionID).toBe("ses_1")
+    expect(draft.message.ses_1[0]?.role).toBe("assistant")
+    expect(draft.message.ses_1[0]?.time).toEqual({ created: 123 })
+    expect(draft.part.msg_tool_1.map((item) => item.id)).toEqual(["prt_tool_1"])
+    expect(result).toEqual({
+      changed: true,
+      materialization: {
+        type: "incomplete-session-snapshot",
+        sessionID: "ses_1",
+        messageID: "msg_tool_1",
+        partID: "prt_tool_1",
       },
     })
   })
@@ -590,6 +669,46 @@ describe("applyDirectoryEvent", () => {
 
     expect(applyDirectoryEvent(draft, event)).toBe(true)
     expect((draft.session_status.ses_1 as Extract<SessionStatus, { type: "retry" }>).attempt).toBe(2)
+  })
+
+  test("keeps busy status when an intermediate tool-call assistant completes", () => {
+    const draft = state({
+      message: {
+        ses_1: [
+          testMessage("msg_user_1", "ses_1", "user", 1),
+          testMessage("msg_assistant_1", "ses_1", "assistant", 2),
+        ],
+      },
+      session_status: { ses_1: { type: "busy" } as SessionStatus },
+    })
+
+    const result = applyDirectoryEvent(
+      draft,
+      messageUpdatedEvent(completedToolCallsAssistantMessage("msg_assistant_1", "ses_1", 2, 3)),
+    )
+
+    expect(result).toBe(true)
+    expect(draft.session_status.ses_1).toEqual({ type: "busy" })
+  })
+
+  test("settles busy status when the final assistant message completes", () => {
+    const draft = state({
+      message: {
+        ses_1: [
+          testMessage("msg_user_1", "ses_1", "user", 1),
+          testMessage("msg_assistant_1", "ses_1", "assistant", 2),
+        ],
+      },
+      session_status: { ses_1: { type: "busy" } as SessionStatus },
+    })
+
+    const result = applyDirectoryEvent(
+      draft,
+      messageUpdatedEvent(completedAssistantMessage("msg_assistant_1", "ses_1", 2, 3)),
+    )
+
+    expect(result).toBe(true)
+    expect(draft.session_status.ses_1).toEqual({ type: "idle" })
   })
 
   test("suppresses retry status resurrection after a manual abort", () => {

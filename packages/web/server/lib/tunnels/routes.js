@@ -571,9 +571,18 @@ export const createTunnelRoutesRuntime = (dependencies) => {
             : (error.code === 'validation_error' || error.code === 'provider_unsupported' || error.code === 'mode_unsupported'
               ? 422
               : 500);
-          return res.status(status).json({ ok: false, error: error.message, code: error.code });
+          return res.status(status).json({ ok: false, error: error.message, code: error.code, details: error.details ?? null });
         }
-        return res.status(500).json({ ok: false, error: 'Failed to start tunnel', code: 'startup_failed' });
+        const safeDetails = error && typeof error === 'object' && error.details && typeof error.details === 'object'
+          ? error.details
+          : null;
+        const errorCode = error && typeof error === 'object' && typeof error.code === 'string'
+          ? error.code
+          : 'startup_failed';
+        const errorMessage = error instanceof Error && error.message.trim().length > 0
+          ? error.message
+          : 'Failed to start tunnel';
+        return res.status(500).json({ ok: false, error: errorMessage, code: errorCode, details: safeDetails });
       }
     });
 

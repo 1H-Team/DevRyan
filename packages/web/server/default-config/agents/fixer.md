@@ -29,9 +29,6 @@ permission:
     debugging-and-error-recovery: allow
     frontend-ui-engineering: allow
     planning-and-task-breakdown: allow
-  websearch_*: deny
-  context7_*: deny
-  grep_app_*: deny
 modelRefs:
   - openai/gpt-5.5
 top_p: 0.9

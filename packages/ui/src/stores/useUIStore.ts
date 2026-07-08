@@ -526,6 +526,7 @@ interface UIStore {
   bottomTerminalHeight: number;
   hasManuallyResizedBottomTerminal: boolean;
   isSessionSwitcherOpen: boolean;
+  isSessionSearchOpen: boolean;
   activeMainTab: MainTab;
   mainTabGuard: MainTabGuard | null;
   sidebarOpenBeforeFullscreenTab: boolean | null;
@@ -654,6 +655,7 @@ interface UIStore {
   setBottomTerminalExpanded: (expanded: boolean) => void;
   setBottomTerminalHeight: (height: number) => void;
   setSessionSwitcherOpen: (open: boolean) => void;
+  setSessionSearchOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
   setActiveMainTab: (tab: MainTab) => void;
   setMainTabGuard: (guard: MainTabGuard | null) => void;
   setPendingDiffFile: (filePath: string | null, staged?: boolean) => void;
@@ -787,6 +789,7 @@ export const useUIStore = create<UIStore>()(
         bottomTerminalHeight: 300,
         hasManuallyResizedBottomTerminal: false,
         isSessionSwitcherOpen: false,
+        isSessionSearchOpen: false,
         activeMainTab: 'chat',
         mainTabGuard: null,
         sidebarOpenBeforeFullscreenTab: null,
@@ -1291,6 +1294,12 @@ export const useUIStore = create<UIStore>()(
 
         setSessionSwitcherOpen: (open) => {
           set({ isSessionSwitcherOpen: open });
+        },
+
+        setSessionSearchOpen: (open) => {
+          set((state) => ({
+            isSessionSearchOpen: typeof open === 'function' ? open(state.isSessionSearchOpen) : open,
+          }));
         },
 
         setMainTabGuard: (guard) => {

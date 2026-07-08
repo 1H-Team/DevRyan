@@ -30,7 +30,7 @@ export type QueuedEvent = {
 export type FlushHandler = (events: QueuedEvent[]) => void
 
 const FLUSH_FRAME_MS = 33
-const STREAMING_FLUSH_FRAME_MS = 16
+const STREAMING_FLUSH_FRAME_MS = 24
 const STREAMING_FLUSH_QUEUE_DEPTH = 8
 const BACKPRESSURE_FLUSH_FRAME_MS = 200
 const BACKPRESSURE_MODE_MS = 10_000

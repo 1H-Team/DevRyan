@@ -9,7 +9,6 @@
     }
   },
   "plugin": [
-    "opencode-with-claude",
-    "superpowers@git+https://github.com/obra/superpowers.git"
+    "opencode-with-claude"
   ]
 }

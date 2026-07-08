@@ -82,6 +82,23 @@ const SLIM_DEEP_MERGE_KEYS = [
   'acpAgents',
   'companion',
 ];
+const ALLOWED_MANAGED_RUNTIME_PLUGIN_SPEC_PREFIXES = [
+  '@rama_nigg/open-cursor',
+  'opencode-antigravity-auth',
+];
+const ALLOWED_MANAGED_RUNTIME_PLUGIN_SPECS = new Set([
+  'cursor-acp',
+  'oh-my-opencode-slim',
+  'opencode-with-claude',
+  DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC,
+]);
+const BLOCKED_MANAGED_RUNTIME_MCP_NAMES = [
+  'context7',
+  'gh-grep',
+  'gh_grep',
+  'grep-app',
+  'grep_app',
+];
 
 // Scope types (shared by agents and commands)
 export const AGENT_SCOPE = {
@@ -2103,21 +2120,86 @@ export const getRuntimeAgentOverlayConfigDirectory = (workingDirectory?: string)
   return path.join(RUNTIME_AGENT_OVERLAY_ROOT, hashRuntimeOverlayKey(workingDirectory));
 };
 
+const normalizePluginSpec = (value: unknown): string => (
+  typeof value === 'string' ? value.trim() : ''
+);
+
+const getPluginEntrySpec = (entry: unknown): string => {
+  if (typeof entry === 'string') {
+    return normalizePluginSpec(entry);
+  }
+  if (Array.isArray(entry)) {
+    return normalizePluginSpec(entry[0]);
+  }
+  return '';
+};
+
+const isAllowedManagedRuntimePluginSpec = (spec: string): boolean => {
+  const normalized = normalizePluginSpec(spec);
+  if (!normalized) {
+    return false;
+  }
+  if (ALLOWED_MANAGED_RUNTIME_PLUGIN_SPECS.has(normalized)) {
+    return true;
+  }
+  return ALLOWED_MANAGED_RUNTIME_PLUGIN_SPEC_PREFIXES.some((prefix) => normalized.startsWith(prefix));
+};
+
+const filterManagedRuntimePluginEntries = (entries: unknown[]): unknown[] => (
+  entries.filter((entry) => isAllowedManagedRuntimePluginSpec(getPluginEntrySpec(entry)))
+);
+
+const pushUniquePluginEntry = (target: unknown[], seenSpecs: Set<string>, entry: unknown): void => {
+  const spec = getPluginEntrySpec(entry);
+  if (!spec || seenSpecs.has(spec)) {
+    return;
+  }
+  seenSpecs.add(spec);
+  target.push(entry);
+};
+
+const buildBlockedManagedRuntimeMcpOverlay = (workingDirectory?: string): Record<string, unknown> | null => {
+  const explicitlyConfiguredNames = new Set(
+    listMcpConfigs(workingDirectory)
+      .map((config) => (typeof config.name === 'string' ? config.name.trim() : ''))
+      .filter(Boolean),
+  );
+  const mcp: Record<string, { enabled: false }> = {};
+  for (const name of BLOCKED_MANAGED_RUNTIME_MCP_NAMES) {
+    if (explicitlyConfiguredNames.has(name)) {
+      continue;
+    }
+    mcp[name] = { enabled: false };
+  }
+  return Object.keys(mcp).length > 0 ? { mcp } : null;
+};
+
 const buildRuntimeConfigOverlay = (workingDirectory?: string, packagedPluginSpecs: string[] = []): Record<string, unknown> | null => {
   const activeConfig = readConfig(workingDirectory);
   const activePlugins = Array.isArray(activeConfig.plugin)
-    ? activeConfig.plugin.filter((entry) => (
+    ? filterManagedRuntimePluginEntries(activeConfig.plugin.filter((entry) => (
       (typeof entry === 'string' && entry.trim())
       || (Array.isArray(entry) && typeof entry[0] === 'string' && entry[0].trim())
-    ))
+    )))
     : [];
-  const plugin = [
-    ...new Set([
-      ...activePlugins,
-      ...packagedPluginSpecs.filter((entry) => typeof entry === 'string' && entry.trim()),
-    ]),
-  ];
-  return plugin.length > 0 ? { plugin } : null;
+  const plugin: unknown[] = [];
+  const seenPluginSpecs = new Set<string>();
+  for (const entry of activePlugins) {
+    pushUniquePluginEntry(plugin, seenPluginSpecs, entry);
+  }
+  for (const entry of packagedPluginSpecs.filter((entry) => typeof entry === 'string' && entry.trim())) {
+    pushUniquePluginEntry(plugin, seenPluginSpecs, entry);
+  }
+
+  const overlay: Record<string, unknown> = {};
+  const blockedMcpOverlay = buildBlockedManagedRuntimeMcpOverlay(workingDirectory);
+  if (blockedMcpOverlay) {
+    Object.assign(overlay, blockedMcpOverlay);
+  }
+  if (plugin.length > 0) {
+    overlay.plugin = plugin;
+  }
+  return Object.keys(overlay).length > 0 ? overlay : null;
 };
 
 const removeFileIfPresent = (filePath: string): boolean => {

@@ -22,6 +22,19 @@ export type BranchCheckoutOptions = {
   restoreAfter?: boolean;
 };
 
+export type FinishBranchIntoMainResult =
+  | { type: 'blocked'; reason: string }
+  | { type: 'merged'; sourceBranch: string; targetBranch: 'main'; stashed: boolean; restored: boolean }
+  | { type: 'conflict'; sourceBranch: string; targetBranch: 'main'; conflictFiles?: string[]; stashed: boolean }
+  | { type: 'delete-failed'; sourceBranch: string; targetBranch: 'main'; error: unknown; stashed: boolean }
+  | { type: 'restore-failed'; sourceBranch: string; targetBranch: 'main'; error: unknown; stashed: boolean };
+
+export type FinishBranchIntoMainOptions = {
+  git: GitAPI;
+  directory: string;
+  restoreAfter?: boolean;
+};
+
 export function normalizeCheckoutBranchName(branch: string): string {
   return branch.trim().replace(/^remotes\//, '');
 }
@@ -94,6 +107,90 @@ export async function checkoutBranchWithOptionalStash({
   return {
     type: 'checked-out',
     branch: normalized,
+    stashed: shouldStash,
+    restored: shouldStash && restoreAfter,
+  };
+}
+
+export async function finishCurrentBranchIntoMainWithOptionalStash({
+  git,
+  directory,
+  restoreAfter = false,
+}: FinishBranchIntoMainOptions): Promise<FinishBranchIntoMainResult> {
+  const [status, branches] = await Promise.all([
+    git.getGitStatus(directory),
+    git.getGitBranches(directory),
+  ]);
+
+  const sourceBranch = status.current?.trim();
+  if (!sourceBranch || sourceBranch === 'HEAD') {
+    return { type: 'blocked', reason: 'current branch is required' };
+  }
+
+  if (sourceBranch === 'main') {
+    return { type: 'blocked', reason: 'already on main' };
+  }
+
+  if (!branches.all.some((branch) => branch === 'main')) {
+    return { type: 'blocked', reason: 'local main branch is required' };
+  }
+
+  const shouldStash = status.isClean === false || (status.files?.length ?? 0) > 0;
+
+  if (shouldStash) {
+    await git.stash(directory, {
+      message: `Auto-stash before merging ${sourceBranch} into main`,
+      includeUntracked: true,
+    });
+  }
+
+  await git.checkoutBranch(directory, 'main');
+
+  const mergeResult = await git.merge(directory, { branch: sourceBranch });
+  if (mergeResult.conflict) {
+    return {
+      type: 'conflict',
+      sourceBranch,
+      targetBranch: 'main',
+      conflictFiles: mergeResult.conflictFiles,
+      stashed: shouldStash,
+    };
+  }
+
+  if (!mergeResult.success) {
+    throw new Error('Merge failed');
+  }
+
+  try {
+    await git.deleteGitBranch(directory, { branch: sourceBranch, force: false });
+  } catch (error) {
+    return {
+      type: 'delete-failed',
+      sourceBranch,
+      targetBranch: 'main',
+      error,
+      stashed: shouldStash,
+    };
+  }
+
+  if (shouldStash && restoreAfter) {
+    try {
+      await git.stashPop(directory);
+    } catch (error) {
+      return {
+        type: 'restore-failed',
+        sourceBranch,
+        targetBranch: 'main',
+        error,
+        stashed: shouldStash,
+      };
+    }
+  }
+
+  return {
+    type: 'merged',
+    sourceBranch,
+    targetBranch: 'main',
     stashed: shouldStash,
     restored: shouldStash && restoreAfter,
   };

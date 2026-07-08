@@ -216,4 +216,12 @@ describe('task tool metadata helpers', () => {
             'Task could not start: The user has specified a rule which prevents you from using this specific tool call.'
         );
     });
+
+    test('classifies invalid unavailable-tool task startup errors as runtime tool-surface failures', () => {
+        expect(formatTaskErrorText(
+            "Model tried to call unavailable tool 'invalid'. Available tools: ast_grep_search, glob, grep, read."
+        )).toBe(
+            'Task could not start: OpenCode emitted its internal invalid-tool sentinel while starting the subagent. This usually means the managed runtime tool surface is stale or polluted. Available tools: ast_grep_search, glob, grep, read.'
+        );
+    });
 });

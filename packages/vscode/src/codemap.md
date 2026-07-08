@@ -8,7 +8,7 @@ VS Code extension-host implementation: activation lifecycle, command surface, we
 - Provider classes (`ChatViewProvider`, `SessionEditorPanelProvider`, `AgentManagerPanelProvider`) encapsulate webview setup and host↔webview synchronization.
 - `bridge.ts` is a dispatcher that routes message types to focused runtime modules (`bridge-fs-runtime`, `bridge-git-runtime`, `bridge-system-runtime`, etc.).
 - `opencode.ts` provides a manager object with explicit connection status and restart/start/stop APIs.
-- `opencodeConfig.ts` owns VS Code-side config entity reads/writes, OpenCode Slim config/agent override parity, Slim-installed global agent prompt composition, and managed agent runtime overlays so saved user-side agent model defaults apply to the local OpenCode process.
+- `opencodeConfig.ts` owns VS Code-side config entity reads/writes, OpenCode Slim config/agent override parity, Slim-installed global agent prompt composition, and managed agent runtime overlays so saved user-side agent model defaults, plugin filtering, and blocked ambient MCP tombstones apply to the local OpenCode process.
 - `bridge-system-runtime.ts` owns VS Code Cursor SDK auth/status/configure bridge behavior via `@openchamber/cursor-sdk-runtime`; Cursor usage quota remains in `quotaProviders.ts`.
 
 ## Flow

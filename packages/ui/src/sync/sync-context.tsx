@@ -107,6 +107,7 @@ const FIRST_ASSISTANT_DELTA_MARK_LIMIT = 1_000
 const firstAssistantDeltaMarkedMessages = new Set<string>()
 const sessionChildrenFetches = new Map<string, SessionChildrenFetchCacheEntry>()
 const cursorAcpTitleRepairsInFlight = new Set<string>()
+const blockingRequestSessionMaterializationsInFlight = new Set<string>()
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
@@ -674,6 +675,102 @@ async function materializeSessionFromServer(
   // fetch+replay (the streamed part wasn't in the snapshot yet). The caller retries.
   const messageIDs = (store.getState().message[sessionID] ?? EMPTY_MESSAGES).map((message) => message.id)
   return hasPendingPartDeltasForMessages(pendingPartDeltas, directory, messageIDs)
+}
+
+const getKnownBlockingRequestSessionIds = (state: State): Set<string> => new Set<string>([
+  ...state.session.map((session) => session.id),
+  ...Object.keys(state.message ?? {}),
+  ...Object.keys(state.session_status ?? {}),
+  ...Object.keys(state.question ?? {}),
+  ...Object.keys(state.permission ?? {}),
+])
+
+const mergeRecoveredSessionsIntoStore = (
+  store: StoreApi<DirectoryStore>,
+  sessionsToMerge: Session[],
+): void => {
+  if (sessionsToMerge.length === 0) return
+
+  store.setState((state: DirectoryStore) => {
+    let sessions = state.session
+    let sessionTotal = state.sessionTotal
+    let changed = false
+
+    for (const nextSession of sessionsToMerge) {
+      if (!nextSession?.id) continue
+      const sessionIndex = sessions.findIndex((item) => item.id === nextSession.id)
+      if (sessionIndex >= 0) {
+        if (!haveEquivalentSyncSnapshots(sessions[sessionIndex], nextSession)) {
+          if (!changed) {
+            sessions = [...sessions]
+            changed = true
+          }
+          sessions[sessionIndex] = nextSession
+        }
+        continue
+      }
+
+      if (!changed) {
+        sessions = [...sessions]
+        changed = true
+      }
+      sessions.push(nextSession)
+      if (!nextSession.parentID) sessionTotal += 1
+    }
+
+    if (!changed) return state
+
+    sessions.sort((a, b) => cmp(a.id, b.id))
+    return { session: sessions, sessionTotal }
+  })
+}
+
+const materializeBlockingRequestSessions = async (
+  directory: string,
+  store: StoreApi<DirectoryStore>,
+  sessionIds: Iterable<string | null | undefined>,
+  routingIndex?: EventRoutingIndex,
+): Promise<void> => {
+  if (!directory || directory === "global") return
+
+  const state = store.getState()
+  const knownSessionIds = new Set(state.session.map((session) => session.id))
+  const missingSessionIds: string[] = []
+  const seen = new Set<string>()
+
+  for (const rawSessionId of sessionIds) {
+    const sessionId = typeof rawSessionId === "string" ? rawSessionId.trim() : ""
+    if (!sessionId || seen.has(sessionId) || knownSessionIds.has(sessionId)) continue
+    seen.add(sessionId)
+    missingSessionIds.push(sessionId)
+  }
+
+  if (missingSessionIds.length === 0) return
+
+  const scopedClient = opencodeClient.getScopedSdkClient(directory)
+  const recoveredSessions: Session[] = []
+
+  await Promise.all(missingSessionIds.map(async (sessionID) => {
+    const materializationKey = `${directory}\n${sessionID}`
+    if (blockingRequestSessionMaterializationsInFlight.has(materializationKey)) return
+    blockingRequestSessionMaterializationsInFlight.add(materializationKey)
+    try {
+      const session = await retry(() =>
+        scopedClient.session.get({ sessionID }).then((result) => unwrapSdkResult(result, "session.get")),
+      ).catch(() => null)
+      if (!session?.id) return
+
+      const recoveredSession = stripSessionDiffSnapshots(session) as Session
+      recoveredSessions.push(recoveredSession)
+      if (routingIndex) {
+        setIndexedSessionDirectory(routingIndex, recoveredSession.id, directory)
+      }
+    } finally {
+      blockingRequestSessionMaterializationsInFlight.delete(materializationKey)
+    }
+  }))
+
+  mergeRecoveredSessionsIntoStore(store, recoveredSessions)
 }
 
 // Module-level refs for notification viewed check.
@@ -1465,13 +1562,7 @@ export async function resyncBlockingRequestsForDirectory(
   candidateSessionIds?: string[],
 ) {
   const before = store.getState()
-  const knownSessionIds = new Set<string>([
-    ...before.session.map((session) => session.id),
-    ...Object.keys(before.message ?? {}),
-    ...Object.keys(before.session_status ?? {}),
-    ...Object.keys(before.question ?? {}),
-    ...Object.keys(before.permission ?? {}),
-  ])
+  let knownSessionIds = getKnownBlockingRequestSessionIds(before)
   const candidates = candidateSessionIds ?? Array.from(knownSessionIds)
   if (candidates.length === 0) return
 
@@ -1482,6 +1573,8 @@ export async function resyncBlockingRequestsForDirectory(
       candidates.map((sessionId) => [sessionId, requestSignature(before.question[sessionId])]),
     )
     const pendingQuestions = await opencodeClient.listPendingQuestions({ directories: [directory] })
+    await materializeBlockingRequestSessions(directory, store, pendingQuestions.map((q) => q?.sessionID))
+    knownSessionIds = getKnownBlockingRequestSessionIds(store.getState())
     const grouped: Record<string, QuestionRequest[]> = {}
     for (const q of pendingQuestions) {
       if (!q?.id || !q.sessionID) continue
@@ -1549,6 +1642,8 @@ export async function resyncBlockingRequestsForDirectory(
       candidates.map((sessionId) => [sessionId, requestSignature(before.permission[sessionId])]),
     )
     const pendingPermissions = await opencodeClient.listPendingPermissions({ directories: [directory] })
+    await materializeBlockingRequestSessions(directory, store, pendingPermissions.map((permission) => permission?.sessionID))
+    knownSessionIds = getKnownBlockingRequestSessionIds(store.getState())
     const grouped: Record<string, PermissionRequest[]> = {}
     for (const permission of pendingPermissions) {
       if (!permission?.id || !permission.sessionID) continue
@@ -2005,9 +2100,12 @@ function handleEvent(
       draft.message = { ...current.message }
       draft.part = { ...current.part }
       break
-    case "message.part.updated":
     case "message.part.removed":
     case "message.part.delta":
+      draft.part = { ...current.part }
+      break
+    case "message.part.updated":
+      draft.message = { ...current.message }
       draft.part = { ...current.part }
       break
     case "vcs.branch.updated":
@@ -2059,6 +2157,23 @@ function handleEvent(
         // child store is treated as unarchive/materialization recovery. Existing
         // active title/status updates should not restart hydration work.
         markUnarchived(sessionUpdateInfo.id, resolvedDirectory)
+      }
+    }
+    if (payload.type === "permission.asked") {
+      const permission = payload.properties as PermissionRequest
+      const hasSessionRecord = store.getState().session.some((session) => session.id === permission.sessionID)
+      if (!hasSessionRecord) {
+        // Decision: keep the permission in state immediately, then recover the
+        // session lineage asynchronously so parent chats can prove ownership
+        // before rendering a subagent permission card.
+        void materializeBlockingRequestSessions(resolvedDirectory, store, [permission.sessionID], routingIndex)
+          .then(() => {
+            const pending = store.getState().permission[permission.sessionID]
+              ?.some((entry) => entry.id === permission.id) ?? false
+            if (pending && usePermissionStore.getState().isSessionAutoAccepting(permission.sessionID)) {
+              void sessionActions.respondToPermission(permission.sessionID, permission.id, "once").catch(() => undefined)
+            }
+          })
       }
     }
     const sessionID = getSessionIdFromPayload(payload) ?? undefined
@@ -3071,13 +3186,14 @@ export function useIsSessionWorking(sessionID: string, directory?: string): bool
   const permissions = useSessionPermissions(sessionID, directory)
   const messages = useSessionMessages(sessionID, directory)
   const lastMessageId = messages[messages.length - 1]?.id ?? ""
-  const liveParts = useSessionParts(lastMessageId, directory)
   const liveStreamingMessageId = useStreamingStore(
     React.useCallback(
       (state) => state.streamingMessageIds.get(sessionID) ?? null,
       [sessionID],
     ),
   )
+  const livePartsMessageId = liveStreamingMessageId ?? lastMessageId
+  const liveParts = useSessionParts(livePartsMessageId, directory)
 
   return useMemo(() => {
     return isSessionWorkingFromState({ status, permissions, messages, liveStreamingMessageId, liveParts })

@@ -44,6 +44,28 @@ const COUNCIL_AGENT_NAME = 'council';
 const isCouncilAgentName = (name?: string | null): boolean =>
   name?.trim().toLowerCase() === COUNCIL_AGENT_NAME;
 
+const getRuntimeWarningDescription = (payload: unknown): string | undefined => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return undefined;
+  }
+  const candidate = payload as { warning?: unknown; runtimeMessage?: unknown };
+  if (typeof candidate.warning === 'string' && candidate.warning.trim()) {
+    return candidate.warning.trim();
+  }
+  if (typeof candidate.runtimeMessage === 'string' && candidate.runtimeMessage.trim()) {
+    return candidate.runtimeMessage.trim();
+  }
+  return undefined;
+};
+
+const hasRuntimeWarning = (payload: unknown): boolean => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return false;
+  }
+  const candidate = payload as { reloadFailed?: unknown; runtimeApplied?: unknown };
+  return candidate.reloadFailed === true || candidate.runtimeApplied === false;
+};
+
 const modelValueToRef = (value: unknown): string | null => {
   if (typeof value === 'string') {
     return value.trim() || null;
@@ -619,7 +641,7 @@ export const AgentsPage: React.FC = () => {
         })
         .filter((entry) => entry.model.length > 0);
 
-      await saveAgentModelOverride(selectedAgentName, {
+      const result = await saveAgentModelOverride(selectedAgentName, {
         name: selectedAgentName,
         model: trimmedModel,
         variant: resolvedVariant,
@@ -627,7 +649,12 @@ export const AgentsPage: React.FC = () => {
           ? resolvedCouncillors
           : undefined,
       });
-      toast.success(t('settings.agents.page.toast.modelOverrideSaved'));
+      if (hasRuntimeWarning(result)) {
+        const description = getRuntimeWarningDescription(result);
+        toast.warning(t('settings.agents.page.toast.modelOverrideSavedRuntimeWarning'), description ? { description } : undefined);
+      } else {
+        toast.success(t('settings.agents.page.toast.modelOverrideSaved'));
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t('settings.agents.page.toast.modelOverrideSaveFailed'));
     } finally {
@@ -641,8 +668,13 @@ export const AgentsPage: React.FC = () => {
     }
     setIsSavingModelOverride(true);
     try {
-      await resetAgentModelOverride(selectedAgentName);
-      toast.success(t('settings.agents.page.toast.modelOverrideReset'));
+      const result = await resetAgentModelOverride(selectedAgentName);
+      if (hasRuntimeWarning(result)) {
+        const description = getRuntimeWarningDescription(result);
+        toast.warning(t('settings.agents.page.toast.modelOverrideResetRuntimeWarning'), description ? { description } : undefined);
+      } else {
+        toast.success(t('settings.agents.page.toast.modelOverrideReset'));
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t('settings.agents.page.toast.modelOverrideResetFailed'));
     } finally {

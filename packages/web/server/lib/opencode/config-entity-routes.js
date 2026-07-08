@@ -35,6 +35,31 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
   const formatErrorMessage = (error, fallback) => (
     error instanceof Error && error.message ? error.message : fallback
   );
+  const getAgentModelRef = (agentConfig) => {
+    const modelRefs = Array.isArray(agentConfig?.modelRefs) ? agentConfig.modelRefs : [];
+    const firstModelRef = modelRefs.find((entry) => typeof entry === 'string' && entry.trim());
+    if (firstModelRef) return firstModelRef.trim();
+
+    const model = agentConfig?.model;
+    if (typeof model === 'string' && model.trim()) return model.trim();
+    if (model && typeof model === 'object' && !Array.isArray(model)) {
+      const providerID = typeof model.providerID === 'string' ? model.providerID.trim() : '';
+      const modelID = typeof model.modelID === 'string' ? model.modelID.trim() : '';
+      if (providerID && modelID) return `${providerID}/${modelID}`;
+    }
+
+    return undefined;
+  };
+  const getAgentRuntimeExpectation = (agent) => {
+    const config = agent?.config && typeof agent.config === 'object' && !Array.isArray(agent.config)
+      ? agent.config
+      : null;
+    if (!config) return {};
+    return {
+      expectedAgentModelRef: getAgentModelRef(config),
+      ...(Object.prototype.hasOwnProperty.call(config, 'variant') ? { expectedAgentVariant: config.variant } : {}),
+    };
+  };
   const authResetWarningFields = (mutationResult, existingWarning = null) => {
     const authReset = mutationResult?.authReset;
     if (!authReset || authReset.ok !== false) {
@@ -153,7 +178,10 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     }
 
     try {
-      const refreshResult = await refreshOpenCodeAfterConfigChange(reason, { agentName });
+      const refreshResult = await refreshOpenCodeAfterConfigChange(reason, {
+        agentName,
+        ...getAgentRuntimeExpectation(payload?.agent),
+      });
       return res.json({
         ...payload,
         requiresReload: refreshResult?.requiresReload !== false,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { classifyAssistantError } from "./assistantError"
+import { classifyAssistantError, classifySteeredAbortFallback } from "./assistantError"
 
 describe("classifyAssistantError", () => {
   test("classifies local manual aborts without renderable stopped copy", () => {
@@ -10,6 +10,28 @@ describe("classifyAssistantError", () => {
       text: "",
       variant: "plain",
       abortKind: "manual",
+    })
+  })
+
+  test("classifies direct steering aborts with visible steered copy", () => {
+    expect(classifyAssistantError({ message: "aborted" }, {
+      steeredAbortMessageId: "msg-assistant",
+      messageId: "msg-assistant",
+    })).toEqual({
+      text: "Steered conversation",
+      variant: "info",
+      abortKind: "steered",
+    })
+  })
+
+  test("classifies steered aborts even when the assistant message has no error payload", () => {
+    expect(classifySteeredAbortFallback({
+      steeredAbortMessageId: "msg-assistant",
+      messageId: "msg-assistant",
+    })).toEqual({
+      text: "Steered conversation",
+      variant: "info",
+      abortKind: "steered",
     })
   })
 

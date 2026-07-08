@@ -31,9 +31,6 @@ permission:
   skill:
     "*": deny
     codemap: allow
-  websearch_*: deny
-  context7_*: deny
-  grep_app_*: deny
 modelRefs:
   - opencode-go/deepseek-v4-flash
 top_p: 0.9

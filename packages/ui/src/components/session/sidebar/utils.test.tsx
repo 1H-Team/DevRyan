@@ -259,7 +259,7 @@ describe('archived group collapse helpers', () => {
     expect(Array.from(result.revealedSessionIds)).toEqual([]);
   });
 
-  test('expands a newly visible archived group that contains a pending archived session', () => {
+  test('keeps newly visible archived groups collapsed when they contain a pending archived session', () => {
     const result = reconcileArchivedGroupCollapse({
       sections: [{
         project: { id: 'project-a' },
@@ -274,11 +274,11 @@ describe('archived group collapse helpers', () => {
       pendingRevealSessionIds: new Set(['archived-session']),
     });
 
-    expect(Array.from(result.collapsedGroups)).toEqual([]);
+    expect(Array.from(result.collapsedGroups)).toEqual(['project-a:archived']);
     expect(Array.from(result.revealedSessionIds)).toEqual(['archived-session']);
   });
 
-  test('expands an already collapsed archived group when another session is archived into it', () => {
+  test('keeps already collapsed archived groups collapsed when another session is archived into them', () => {
     const result = reconcileArchivedGroupCollapse({
       sections: [{
         project: { id: 'project-a' },
@@ -293,11 +293,11 @@ describe('archived group collapse helpers', () => {
       pendingRevealSessionIds: new Set(['newly-archived-session']),
     });
 
-    expect(Array.from(result.collapsedGroups)).toEqual([]);
+    expect(Array.from(result.collapsedGroups)).toEqual(['project-a:archived']);
     expect(Array.from(result.revealedSessionIds)).toEqual(['newly-archived-session']);
   });
 
-  test('expands the archived group when the pending archive is nested under a parent row', () => {
+  test('keeps collapsed archived groups collapsed when a pending archive is nested under a parent row', () => {
     const result = reconcileArchivedGroupCollapse({
       sections: [{
         project: { id: 'project-a' },
@@ -312,7 +312,7 @@ describe('archived group collapse helpers', () => {
       pendingRevealSessionIds: new Set(['archived-child']),
     });
 
-    expect(Array.from(result.collapsedGroups)).toEqual([]);
+    expect(Array.from(result.collapsedGroups)).toEqual(['project-a:archived']);
     expect(Array.from(result.revealedSessionIds)).toEqual(['archived-child']);
   });
 

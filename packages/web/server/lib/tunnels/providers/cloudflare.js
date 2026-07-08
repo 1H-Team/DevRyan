@@ -229,6 +229,7 @@ export function createCloudflareTunnelProvider() {
         return startCloudflareManagedRemoteTunnel({
           token: request.token,
           hostname: request.hostname,
+          activePort: context.activePort,
         });
       }
 
@@ -255,6 +256,7 @@ export function createCloudflareTunnelProvider() {
     getMetadata: (controller) => ({
       configPath: controller?.getEffectiveConfigPath?.() ?? null,
       resolvedHostname: controller?.getResolvedHostname?.() ?? null,
+      ...(controller?.getDiagnostics?.() ?? {}),
     }),
   };
 }

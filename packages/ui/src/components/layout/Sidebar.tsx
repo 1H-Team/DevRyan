@@ -158,6 +158,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, isMobile, children, cl
                 maxWidth: 'var(--oc-left-sidebar-width)',
                 ['--oc-left-sidebar-width' as string]: `${isResizing ? (resizingWidthRef.current ?? appliedWidth) : appliedWidth}px`,
                 overflowX: 'clip',
+                contain: 'layout paint style',
+                willChange: isResizing || prefersReducedMotion ? 'auto' : 'width',
             }}
             aria-hidden={!isOpen || appliedWidth === 0}
         >

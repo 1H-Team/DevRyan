@@ -15,6 +15,7 @@ import * as google from './google/index.js';
 import * as kimi from './kimi.js';
 import * as nanogpt from './nanogpt.js';
 import * as openai from './openai.js';
+import * as opencodeGo from './opencode-go.js';
 import * as openrouter from './openrouter.js';
 import * as zai from './zai.js';
 import * as zhipuaiCodingPlan from './zhipuai-coding-plan.js';
@@ -112,6 +113,12 @@ const registry = {
     providerName: ollamaCloud.providerName,
     isConfigured: ollamaCloud.isConfigured,
     fetchQuota: ollamaCloud.fetchQuota
+  },
+  'opencode-go': {
+    providerId: opencodeGo.providerId,
+    providerName: opencodeGo.providerName,
+    isConfigured: opencodeGo.isConfigured,
+    fetchQuota: opencodeGo.fetchQuota
   }
 };
 
@@ -184,4 +191,5 @@ export const fetchNanoGptQuota = nanogpt.fetchQuota;
 export const fetchMinimaxCodingPlanQuota = minimaxCodingPlan.fetchQuota;
 export const fetchMinimaxCnCodingPlanQuota = minimaxCnCodingPlan.fetchQuota;
 export const fetchOllamaCloudQuota = ollamaCloud.fetchQuota;
+export const fetchOpenCodeGoQuota = opencodeGo.fetchQuota;
 export const fetchZhipuaiQuota = zhipuaiCodingPlan.fetchQuota;

@@ -1,9 +1,37 @@
 import { describe, expect, test } from "bun:test"
-import { clearSubmittedComposerAfterSend } from "./chatInputSubmitCleanup"
+import { clearCommittedComposerText, clearSubmittedComposerAfterSend } from "./chatInputSubmitCleanup"
 
 const createTextarea = () => ({ value: "restored prompt" })
 
 describe("chat input submit cleanup", () => {
+  test("committed send clears restored composer text before async submit", () => {
+    const calls: string[] = []
+    const textarea = createTextarea()
+    let messageRef = "restored prompt"
+
+    clearCommittedComposerText({
+      textarea,
+      clearPendingInputText: () => calls.push("clearPendingInputText"),
+      clearPendingDraftPersist: () => calls.push("clearPendingDraftPersist"),
+      clearDraftTarget: () => calls.push("clearDraftTarget"),
+      syncMessageRef: (value) => {
+        messageRef = value
+        calls.push(`syncMessageRef:${value}`)
+      },
+      setMessage: (value) => calls.push(`setMessage:${value}`),
+    })
+
+    expect(textarea.value).toBe("")
+    expect(messageRef).toBe("")
+    expect(calls).toEqual([
+      "clearPendingInputText",
+      "clearPendingDraftPersist",
+      "clearDraftTarget",
+      "syncMessageRef:",
+      "setMessage:",
+    ])
+  })
+
   test("successful non-queued cleanup clears restored composer state", () => {
     const calls: string[] = []
     const textarea = createTextarea()

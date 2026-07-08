@@ -45,6 +45,7 @@ type SortableTabsStripProps = {
   iconOnlyActiveTab?: boolean;
   animateActivePill?: boolean;
   activePillLowercase?: boolean;
+  ariaLabel?: string;
   className?: string;
 };
 
@@ -98,6 +99,7 @@ export const SortableTabsStrip: React.FC<SortableTabsStripProps> = ({
   iconOnlyActiveTab = false,
   animateActivePill,
   activePillLowercase = true,
+  ariaLabel,
   className,
 }) => {
   const { t } = useI18n();
@@ -337,7 +339,7 @@ export const SortableTabsStrip: React.FC<SortableTabsStripProps> = ({
         )}
         style={isScrollable ? { scrollbarWidth: 'none', msOverflowStyle: 'none' } : undefined}
         role="tablist"
-        aria-label={t('sortableTabsStrip.aria.tabs')}
+        aria-label={ariaLabel ?? t('sortableTabsStrip.aria.tabs')}
       >
         {usesActivePillIndicator && pillRect ? (
           <div

@@ -61,6 +61,15 @@ const assistantMessage = (): Message => ({
   time: { created: 2, completed: 3 },
 } as Message)
 
+const toolCallsAssistantMessage = (): Message => ({
+  id: ASSISTANT_MESSAGE_ID,
+  sessionID: SESSION_ID,
+  role: "assistant",
+  providerID: "cursor-acp",
+  finish: "tool-calls",
+  time: { created: 2, completed: 3 },
+} as unknown as Message)
+
 const implementingUserMessage = (): Message => ({
   id: IMPLEMENT_USER_MESSAGE_ID,
   sessionID: SESSION_ID,
@@ -352,7 +361,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     expect(useSessionUIStore.getState().sessionPlanIndicator.has(SESSION_ID)).toBe(false)
   })
 
-  test("settles stale busy completed normal turn and records completion without a separate idle event", async () => {
+  test("does not record normal completion from a finalized tool row before the final assistant summary", async () => {
     const childStores = new ChildStoreManager()
     const store = childStores.ensureChild(DIRECTORY)
     const completedPart = toolPart(ASSISTANT_MESSAGE_ID, "completed")
@@ -366,6 +375,66 @@ describe("sync plan lifecycle on message.part.delta", () => {
       part: {
         [USER_MESSAGE_ID]: [],
         [ASSISTANT_MESSAGE_ID]: [completedPart],
+      },
+      session_status: {
+        [SESSION_ID]: { type: "idle" } as SessionStatus,
+      },
+    })
+
+    applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndexFor())
+    await flushAsync()
+    await waitForCompletionIndicatorSettlement()
+
+    expect(useNotificationStore.getState().list).toHaveLength(0)
+    expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(false)
+    expect(useSessionUIStore.getState().sessionCompletionIndicator.has(SESSION_ID)).toBe(false)
+  })
+
+  test("does not settle or record completion for an intermediate tool-calls assistant turn", async () => {
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    const completedPart = toolPart(ASSISTANT_MESSAGE_ID, "completed")
+
+    store.setState({
+      ...INITIAL_STATE,
+      session: [{ id: SESSION_ID, title: "Task session", time: { created: 1, updated: 2 } } as Session],
+      message: {
+        [SESSION_ID]: [userMessage(), toolCallsAssistantMessage()],
+      },
+      part: {
+        [USER_MESSAGE_ID]: [],
+        [ASSISTANT_MESSAGE_ID]: [completedPart],
+      },
+      session_status: {
+        [SESSION_ID]: { type: "busy" } as SessionStatus,
+      },
+    })
+
+    applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndexFor())
+    await flushAsync()
+    await waitForCompletionIndicatorSettlement()
+
+    expect(store.getState().session_status[SESSION_ID]).toEqual({ type: "busy" })
+    expect(useNotificationStore.getState().list).toHaveLength(0)
+    expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(false)
+    expect(useSessionUIStore.getState().sessionCompletionIndicator.has(SESSION_ID)).toBe(false)
+  })
+
+  test("settles stale busy completed normal turn and records completion without a separate idle event", async () => {
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    const completedPart = toolPart(ASSISTANT_MESSAGE_ID, "completed")
+    const summaryPart = textPart("Completed work.")
+
+    store.setState({
+      ...INITIAL_STATE,
+      session: [{ id: SESSION_ID, title: "Task session", time: { created: 1, updated: 2 } } as Session],
+      message: {
+        [SESSION_ID]: [userMessage(), assistantMessage()],
+      },
+      part: {
+        [USER_MESSAGE_ID]: [],
+        [ASSISTANT_MESSAGE_ID]: [summaryPart, completedPart],
       },
       session_status: {
         [SESSION_ID]: { type: "busy" } as SessionStatus,
@@ -448,6 +517,22 @@ describe("sync plan lifecycle on message.part.delta", () => {
     expect(useNotificationStore.getState().list).toHaveLength(0)
     await waitForCompletionIndicatorSettlement()
 
+    expect(useSessionUIStore.getState().sessionCompletionIndicator.has(SESSION_ID)).toBe(false)
+  })
+
+  test("does not create a green indicator from an unread completion notification alone", async () => {
+    useNotificationStore.getState().append({
+      type: "turn-complete",
+      directory: DIRECTORY,
+      session: SESSION_ID,
+      messageId: ASSISTANT_MESSAGE_ID,
+      time: Date.now(),
+      viewed: false,
+    })
+
+    await waitForCompletionIndicatorSettlement()
+
+    expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(true)
     expect(useSessionUIStore.getState().sessionCompletionIndicator.has(SESSION_ID)).toBe(false)
   })
 
@@ -655,6 +740,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     const childStores = new ChildStoreManager()
     const store = childStores.ensureChild(DIRECTORY)
     const completedPart = toolPart(IMPLEMENT_ASSISTANT_MESSAGE_ID, "completed")
+    const summaryPart = implementTextPart("Implemented the plan.")
     const implementationKey = `${SESSION_ID}:${ASSISTANT_MESSAGE_ID}:plan:0`
 
     store.setState({
@@ -672,7 +758,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
         [USER_MESSAGE_ID]: [planModePart()],
         [ASSISTANT_MESSAGE_ID]: [textPart(`<!--plan-->\n${structuredPlanBody}`)],
         [IMPLEMENT_USER_MESSAGE_ID]: [],
-        [IMPLEMENT_ASSISTANT_MESSAGE_ID]: [completedPart],
+        [IMPLEMENT_ASSISTANT_MESSAGE_ID]: [summaryPart, completedPart],
       },
       session_status: {
         [SESSION_ID]: { type: "busy" } as SessionStatus,

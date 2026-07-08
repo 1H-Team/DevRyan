@@ -310,6 +310,7 @@ const syncConfigStoreAgent = (nextAgent: Agent) => {
 };
 
 export type AgentScope = 'packaged' | 'project';
+export type AgentOverrideMutationResponse = Record<string, unknown> | null;
 
 export interface AgentConfig {
   name: string;
@@ -436,8 +437,8 @@ interface AgentsStore {
   getAgentByName: (name: string) => Agent | undefined;
   // Returns only visible agents (excludes hidden internal agents)
   getVisibleAgents: () => Agent[];
-  saveAgentModelOverride: (name: string, config: Partial<AgentConfig>) => Promise<void>;
-  resetAgentModelOverride: (name: string) => Promise<void>;
+  saveAgentModelOverride: (name: string, config: Partial<AgentConfig>) => Promise<AgentOverrideMutationResponse>;
+  resetAgentModelOverride: (name: string) => Promise<AgentOverrideMutationResponse>;
 }
 
 declare global {
@@ -563,6 +564,7 @@ export const useAgentsStore = create<AgentsStore>()(
             syncConfigStoreAgent(nextAgent as Agent);
           }
           invalidateAgentsLoadCache(configDirectory);
+          return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as AgentOverrideMutationResponse : null;
         },
 
         resetAgentModelOverride: async (name: string) => {
@@ -591,6 +593,7 @@ export const useAgentsStore = create<AgentsStore>()(
             syncConfigStoreAgent(nextAgent as Agent);
           }
           invalidateAgentsLoadCache(configDirectory);
+          return payload && typeof payload === 'object' && !Array.isArray(payload) ? payload as AgentOverrideMutationResponse : null;
         },
       }),
       {

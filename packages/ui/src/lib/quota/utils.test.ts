@@ -53,7 +53,11 @@ describe('quota usage utils', () => {
   });
 
   test('formats GitHub Copilot AI Credits quota label', () => {
-    expect(formatWindowLabel('ai-credits')).toBe('GitHub AI Credits');
+    expect(formatWindowLabel('ai-credits')).toBe('AI Credits');
+  });
+
+  test('formats OpenCode Go rolling usage label', () => {
+    expect(formatWindowLabel('rolling')).toBe('Rolling');
   });
 
   test('prediction falls back to full-window pace without enough trend samples', () => {

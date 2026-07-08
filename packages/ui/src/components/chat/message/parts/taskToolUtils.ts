@@ -392,6 +392,13 @@ export const formatTaskErrorText = (error: unknown): string => {
         return '';
     }
 
+    const unavailableToolMatch = message.match(/Model tried to call unavailable tool ['"]?([^'".]+)['"]?\.\s*Available tools:\s*([^.]*)\.?/i);
+    if (unavailableToolMatch?.[1]?.trim() === 'invalid') {
+        const availableTools = unavailableToolMatch[2]?.trim();
+        const availableToolsText = availableTools ? ` Available tools: ${availableTools}.` : '';
+        return `Task could not start: OpenCode emitted its internal invalid-tool sentinel while starting the subagent. This usually means the managed runtime tool surface is stale or polluted.${availableToolsText}`;
+    }
+
     return `Task could not start: ${message}`;
 };
 

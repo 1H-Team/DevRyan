@@ -798,8 +798,22 @@ describe('OpenCode config agent routes', () => {
       });
 
     expect(refreshCalls).toEqual([
-      { reason: 'agent explorer model override', options: { agentName: 'explorer' } },
-      { reason: 'agent explorer model override reset', options: { agentName: 'explorer' } },
+      {
+        reason: 'agent explorer model override',
+        options: {
+          agentName: 'explorer',
+          expectedAgentModelRef: 'openai/gpt-5.5',
+          expectedAgentVariant: 'high',
+        },
+      },
+      {
+        reason: 'agent explorer model override reset',
+        options: {
+          agentName: 'explorer',
+          expectedAgentModelRef: 'opencode-go/deepseek-v4-flash',
+          expectedAgentVariant: 'medium',
+        },
+      },
     ]);
 
     await fs.rm(userConfigDirectory, { recursive: true, force: true });

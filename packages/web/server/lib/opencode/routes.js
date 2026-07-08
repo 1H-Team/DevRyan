@@ -10,14 +10,19 @@ import {
 import {
   GITHUB_COPILOT_PROVIDER_ID,
   getProviderIntegrationLookupIds,
+  hasGitHubCopilotProviderModels,
   isGitHubCopilotProviderId,
   mergeGitHubCopilotProvider,
 } from './provider-integrations.js';
+import { discoverGitHubCopilotModels } from './github-copilot-models.js';
 
 const ANTHROPIC_PROVIDER_IDS = new Set(['anthropic', 'claude', 'anthropic-oauth', 'opencode-with-claude']);
 const ANTIGRAVITY_PROVIDER_ID = 'antigravity';
 const CURSOR_ACP_PROVIDER_ID = 'cursor-acp';
 const CURSOR_USAGE_TOKEN_MAX_LENGTH = 16_384;
+const OPENCODE_GO_PROVIDER_ID = 'opencode-go';
+const OPENCODE_GO_WORKSPACE_ID_PATTERN = /^wrk_[a-zA-Z0-9]+$/;
+const OPENCODE_GO_USAGE_COOKIE_MAX_LENGTH = 16_384;
 const CLAUDE_AUTH_CHECK_TIMEOUT_MS = 45000;
 const CLAUDE_AUTH_CHECK_PROMPT = 'Reply with exactly: OK';
 
@@ -226,6 +231,40 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       return null;
     }
     return token;
+  };
+
+  const readOpenCodeGoUsageAuthStatus = async () => {
+    const { readAuthFile } = await getAuthLibrary();
+    const auth = readAuthFile();
+    const entry = auth?.[OPENCODE_GO_PROVIDER_ID];
+    const workspaceId = typeof entry?.usageWorkspaceId === 'string' ? entry.usageWorkspaceId.trim() : '';
+    const authCookie = typeof entry?.usageAuthCookie === 'string' ? entry.usageAuthCookie.trim() : '';
+    return {
+      configured: Boolean(workspaceId && authCookie),
+      workspaceId: workspaceId || null,
+    };
+  };
+
+  const normalizeOpenCodeGoWorkspaceId = (value) => {
+    if (typeof value !== 'string') {
+      return null;
+    }
+    const workspaceId = value.trim();
+    if (!OPENCODE_GO_WORKSPACE_ID_PATTERN.test(workspaceId)) {
+      return null;
+    }
+    return workspaceId;
+  };
+
+  const normalizeOpenCodeGoAuthCookie = (value) => {
+    if (typeof value !== 'string') {
+      return null;
+    }
+    const authCookie = value.trim();
+    if (!authCookie || authCookie.length > OPENCODE_GO_USAGE_COOKIE_MAX_LENGTH) {
+      return null;
+    }
+    return authCookie;
   };
 
   const normalizeWorkspaceDirectory = (value) => {
@@ -603,8 +642,17 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     ));
     const githubCopilotConfigured = githubCopilotConfiguredBySource
       || await hasProviderAuthForLookupIds(getProviderIntegrationLookupIds(GITHUB_COPILOT_PROVIDER_ID));
+    let githubCopilotModels;
+    if (githubCopilotConfigured && !hasGitHubCopilotProviderModels(payload)) {
+      const { readAuthFile } = await getAuthLibrary();
+      const discovery = await discoverGitHubCopilotModels({ readAuthFile, fetchImpl: fetch });
+      if (discovery.source !== 'unavailable') {
+        githubCopilotModels = discovery.models;
+      }
+    }
     const withGitHubCopilot = mergeGitHubCopilotProvider(payload, {
       configured: githubCopilotConfigured,
+      models: githubCopilotModels,
     });
     return mergeCursorProvider(withGitHubCopilot);
   };
@@ -655,7 +703,15 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       }
     }
 
-    return res.json(await mergeProviderIntegrations(upstreamPayload, req));
+    try {
+      return res.json(await mergeProviderIntegrations(upstreamPayload, req));
+    } catch (error) {
+      // Provider integrations (Copilot/Cursor discovery, auth reads) are best-effort.
+      // If merging fails, still return the upstream provider list so the UI never
+      // blanks the entire provider list or persists an empty snapshot.
+      console.error('Failed to merge provider integrations:', error);
+      return res.json(upstreamPayload);
+    }
   });
 
   app.get('/api/session/status', async (req, res, next) => {
@@ -876,6 +932,68 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     } catch (error) {
       console.error('Failed to clear Cursor usage auth:', error);
       return res.status(500).json({ error: error.message || 'Failed to clear Cursor usage auth' });
+    }
+  });
+
+  app.get('/api/provider/opencode-go/usage-auth/status', async (_req, res) => {
+    try {
+      return res.json(await readOpenCodeGoUsageAuthStatus());
+    } catch (error) {
+      console.error('Failed to read OpenCode Go usage auth status:', error);
+      return res.status(500).json({ error: error.message || 'Failed to read OpenCode Go usage auth status' });
+    }
+  });
+
+  app.put('/api/provider/opencode-go/usage-auth', async (req, res) => {
+    try {
+      const workspaceId = normalizeOpenCodeGoWorkspaceId(req.body?.workspaceId);
+      const authCookie = normalizeOpenCodeGoAuthCookie(req.body?.authCookie);
+      if (!workspaceId) {
+        return res.status(400).json({ error: 'A valid OpenCode Go workspace ID is required.' });
+      }
+      if (!authCookie) {
+        return res.status(400).json({ error: 'OpenCode Go auth cookie is required.' });
+      }
+
+      const { readAuthFile, writeAuthFile } = await getAuthLibrary();
+      const auth = readAuthFile();
+      const existing = auth?.[OPENCODE_GO_PROVIDER_ID] && typeof auth[OPENCODE_GO_PROVIDER_ID] === 'object'
+        ? auth[OPENCODE_GO_PROVIDER_ID]
+        : {};
+      writeAuthFile({
+        ...auth,
+        [OPENCODE_GO_PROVIDER_ID]: {
+          ...existing,
+          usageWorkspaceId: workspaceId,
+          usageAuthCookie: authCookie,
+        },
+      });
+
+      return res.json({ success: true, configured: true, workspaceId });
+    } catch (error) {
+      console.error('Failed to save OpenCode Go usage auth:', error);
+      return res.status(500).json({ error: error.message || 'Failed to save OpenCode Go usage auth' });
+    }
+  });
+
+  app.delete('/api/provider/opencode-go/usage-auth', async (_req, res) => {
+    try {
+      const { readAuthFile, writeAuthFile } = await getAuthLibrary();
+      const auth = readAuthFile();
+      const existing = auth?.[OPENCODE_GO_PROVIDER_ID] && typeof auth[OPENCODE_GO_PROVIDER_ID] === 'object'
+        ? { ...auth[OPENCODE_GO_PROVIDER_ID] }
+        : {};
+      delete existing.usageWorkspaceId;
+      delete existing.usageAuthCookie;
+      writeAuthFile({
+        ...auth,
+        [OPENCODE_GO_PROVIDER_ID]: existing,
+      });
+
+      return res.json({ success: true, configured: false, workspaceId: null });
+    } catch (error) {
+      console.error('Failed to clear OpenCode Go usage auth:', error);
+      return res.status(500).json({ error: error.message || 'Failed to clear OpenCode Go usage auth' });
     }
   });
 

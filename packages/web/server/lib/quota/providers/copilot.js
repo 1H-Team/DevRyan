@@ -8,7 +8,7 @@ import {
   toTimestamp
 } from '../utils/index.js';
 
-const COPILOT_AI_CREDITS_DESCRIPTION = 'GitHub AI Credits are consumed from token usage, including input, output, and cached tokens.';
+const COPILOT_AI_CREDITS_DESCRIPTION = 'AI Credits are consumed from token usage, including input, output, and cached tokens.';
 
 const isTokenBasedBillingPayload = (payload) => (
   payload?.token_based_billing !== undefined

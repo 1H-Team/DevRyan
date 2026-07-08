@@ -438,7 +438,7 @@ describe('VS Code Cursor SDK config handling', () => {
     }
   });
 
-  it('preserves active Slim and user plugin entries in VS Code runtime overlays', async () => {
+  it('filters active Slim and user plugin entries through the managed runtime allowlist in VS Code runtime overlays', async () => {
     const { syncRuntimeAgentOverlays } = await loadRuntime();
     const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-slim-overlay-'));
     writeJson(path.join(tempHome, '.config', 'opencode', 'opencode.json'), {
@@ -447,6 +447,9 @@ describe('VS Code Cursor SDK config handling', () => {
         '@rama_nigg/open-cursor@latest',
         'cursor-acp',
         'oh-my-opencode-slim',
+        'superpowers@git+https://github.com/obra/superpowers.git',
+        'context7@latest',
+        'grep-app@latest',
       ],
     });
     writeJson(path.join(tempHome, '.config', 'opencode', 'oh-my-opencode-slim.json'), {
@@ -470,6 +473,9 @@ describe('VS Code Cursor SDK config handling', () => {
       expect(overlayConfig.plugin).toContain('oh-my-opencode-slim');
       expect(overlayConfig.plugin).toContain('./plugins/council-session.js');
       expect(overlayConfig.plugin).toContain('./plugins/openai-tool-schema-sanitizer.mjs');
+      expect(overlayConfig.plugin).not.toContain('superpowers@git+https://github.com/obra/superpowers.git');
+      expect(overlayConfig.plugin).not.toContain('context7@latest');
+      expect(overlayConfig.plugin).not.toContain('grep-app@latest');
       expect(overlaySlimConfig.preset).toBe('openai');
       expect(overlaySlimConfig.presets.openai.designer).toEqual({
         model: 'openai/gpt-5.4-mini',

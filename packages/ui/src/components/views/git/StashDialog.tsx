@@ -19,6 +19,10 @@ interface StashDialogProps {
   operation: 'merge' | 'rebase' | 'checkout';
   targetBranch: string;
   onConfirm: (restoreAfter: boolean) => Promise<void>;
+  finishBranchAction?: {
+    onConfirm: (restoreAfter: boolean) => Promise<void>;
+    disabled?: boolean;
+  };
 }
 
 export const StashDialog: React.FC<StashDialogProps> = ({
@@ -27,10 +31,12 @@ export const StashDialog: React.FC<StashDialogProps> = ({
   operation,
   targetBranch,
   onConfirm,
+  finishBranchAction,
 }) => {
   const { t } = useI18n();
   const [restoreAfter, setRestoreAfter] = React.useState(true);
-  const [isProcessing, setIsProcessing] = React.useState(false);
+  const [processingAction, setProcessingAction] = React.useState<'primary' | 'finish' | null>(null);
+  const isProcessing = processingAction !== null;
 
   const operationLabel = operation === 'merge'
     ? t('gitView.operation.merge')
@@ -39,7 +45,7 @@ export const StashDialog: React.FC<StashDialogProps> = ({
       : t('gitView.operation.checkout');
 
   const handleConfirm = async () => {
-    setIsProcessing(true);
+    setProcessingAction('primary');
     try {
       await onConfirm(restoreAfter);
       onOpenChange(false);
@@ -48,7 +54,21 @@ export const StashDialog: React.FC<StashDialogProps> = ({
       const message = err instanceof Error ? err.message : t('gitView.stash.failed', { operation: operationLabel });
       toast.error(message);
     } finally {
-      setIsProcessing(false);
+      setProcessingAction(null);
+    }
+  };
+
+  const handleFinishBranch = async () => {
+    if (!finishBranchAction) return;
+    setProcessingAction('finish');
+    try {
+      await finishBranchAction.onConfirm(restoreAfter);
+      onOpenChange(false);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t('gitView.stash.finishIntoMainFailed');
+      toast.error(message);
+    } finally {
+      setProcessingAction(null);
     }
   };
 
@@ -89,18 +109,28 @@ export const StashDialog: React.FC<StashDialogProps> = ({
           </ol>
         </div>
 
+        {finishBranchAction ? (
+          <div className="rounded-md border border-border/60 bg-interactive-hover/30 px-3 py-2">
+            <p className="typography-meta text-foreground">
+              {t('gitView.stash.finishIntoMainDescription')}
+            </p>
+          </div>
+        ) : null}
+
         <div className="flex items-center gap-2 py-2">
           <Checkbox
             checked={restoreAfter}
             onChange={setRestoreAfter}
             disabled={isProcessing}
-            ariaLabel={t('gitView.stash.restoreAria')}
+            ariaLabel={finishBranchAction ? t('gitView.stash.restoreAfterSelectedActionAria') : t('gitView.stash.restoreAria')}
           />
           <span
             className="typography-ui-label text-foreground cursor-pointer select-none"
             onClick={() => !isProcessing && setRestoreAfter(!restoreAfter)}
           >
-            {t('gitView.stash.restoreAfterOperation', { operation })}
+            {finishBranchAction
+              ? t('gitView.stash.restoreAfterSelectedAction')
+              : t('gitView.stash.restoreAfterOperation', { operation })}
           </span>
         </div>
 
@@ -113,6 +143,24 @@ export const StashDialog: React.FC<StashDialogProps> = ({
           >
             {t('gitView.common.cancel')}
           </Button>
+          {finishBranchAction ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleFinishBranch}
+              disabled={isProcessing || finishBranchAction.disabled}
+              className="gap-1.5"
+            >
+              {processingAction === 'finish' ? (
+                <>
+                  <RiLoader4Line className="size-4 animate-spin" />
+                  {t('gitView.common.processing')}
+                </>
+              ) : (
+                t('gitView.stash.finishIntoMainButton')
+              )}
+            </Button>
+          ) : null}
           <Button
             variant="default"
             size="sm"
@@ -120,7 +168,7 @@ export const StashDialog: React.FC<StashDialogProps> = ({
             disabled={isProcessing}
             className="gap-1.5"
           >
-            {isProcessing ? (
+            {processingAction === 'primary' ? (
               <>
                 <RiLoader4Line className="size-4 animate-spin" />
                 {t('gitView.common.processing')}

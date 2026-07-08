@@ -2,6 +2,7 @@ import type { Message } from "@opencode-ai/sdk/v2/client"
 import type { PlanIndicatorEntry } from "./plan-indicator"
 import { getPlanBlockId, getPlanImplementationKey, isPlanModeUserMessage, resolveMessagePlanCard } from "@/lib/messages/actionablePlan"
 import { filterMessagesForRevert, getEffectiveSessionRevertMessageID } from "./revert-transactions"
+import { isFinalAssistantSummaryMessage } from "./session-working"
 import type { State } from "./types"
 
 export type PlanCompletedCandidate = {
@@ -41,7 +42,7 @@ export function detectPlanCompletedCandidate({
     ))
     if (implementationIndex < 0) return null
 
-    const completedMessage = findCompletedAssistantAfter(messages, implementationIndex)
+    const completedMessage = findCompletedAssistantAfter(state, messages, implementationIndex)
     if (!completedMessage) return null
 
     return {
@@ -82,7 +83,7 @@ function detectPersistedPlanCompletedCandidate({
   for (let assistantIndex = messages.length - 1; assistantIndex >= 0; assistantIndex -= 1) {
     const assistantMessage = messages[assistantIndex]
     if (assistantMessage.role !== "assistant") continue
-    if (!isAssistantTurnComplete(assistantMessage)) continue
+    if (!isFinalAssistantSummaryMessage(assistantMessage, state.part[assistantMessage.id])) continue
     if (!hasPresentedPlanCard(state, assistantMessage.id)) continue
 
     const userMessage = findOriginatingUserMessage(messages, assistantIndex)
@@ -96,7 +97,7 @@ function detectPersistedPlanCompletedCandidate({
     const implementationIndex = findImplementationUserIndex(messages, assistantIndex, planEntry, assistantMessage.id)
     if (implementationIndex < 0) return null
 
-    const completedMessage = findCompletedAssistantAfter(messages, implementationIndex)
+    const completedMessage = findCompletedAssistantAfter(state, messages, implementationIndex)
     if (!completedMessage) return null
 
     return {
@@ -110,11 +111,15 @@ function detectPersistedPlanCompletedCandidate({
   return null
 }
 
-function findCompletedAssistantAfter(messages: readonly Message[], startIndex: number): Message | null {
+function findCompletedAssistantAfter(
+  state: PlanCompletionDetectionState,
+  messages: readonly Message[],
+  startIndex: number,
+): Message | null {
   for (let index = startIndex + 1; index < messages.length; index += 1) {
     const message = messages[index]
     if (message.role !== "assistant") continue
-    if (!isAssistantTurnComplete(message)) continue
+    if (!isFinalAssistantSummaryMessage(message, state.part[message.id])) continue
     return message
   }
 
@@ -153,18 +158,4 @@ function hasPresentedPlanCard(state: PlanCompletionDetectionState, assistantMess
   const parts = state.part[assistantMessageId] ?? []
   const split = resolveMessagePlanCard(parts, { isPlanModeSource: true })
   return Boolean(split && split.planText.trim().length > 0)
-}
-
-function isAssistantTurnComplete(message: Message): boolean {
-  const candidate = message as Message & { status?: unknown; streaming?: unknown }
-  if (candidate.streaming === true) return false
-
-  if (typeof candidate.status === "string") {
-    const status = candidate.status.trim().toLowerCase()
-    if (status === "running" || status === "pending" || status === "streaming") return false
-    if (status === "complete" || status === "completed" || status === "done") return true
-  }
-
-  const completedAt = (message.time as { completed?: unknown } | undefined)?.completed
-  return typeof completedAt === "number" && completedAt > 0
 }

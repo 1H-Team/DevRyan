@@ -2,7 +2,7 @@ import React from 'react';
 import { cn } from '@/lib/utils';
 import type { Part } from '@opencode-ai/sdk/v2';
 import type { AgentMentionInfo } from '../types';
-import { SimpleMarkdownRenderer } from '../../MarkdownRenderer';
+import { ExactUserPromptText } from './ExactUserPromptText';
 import { useUIStore } from '@/stores/useUIStore';
 import { useI18n } from '@/lib/i18n';
 import { RiArrowUpSLine } from '@remixicon/react';
@@ -16,24 +16,6 @@ type UserTextPartProps = {
     agentMention?: AgentMentionInfo;
 };
 
-const buildMentionUrl = (name: string): string => {
-    const encoded = encodeURIComponent(name);
-    return `https://opencode.ai/docs/agents/#${encoded}`;
-};
-
-const escapeHtml = (text: string): string => {
-    return text
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#x27;');
-};
-
-const normalizeUserMessageRenderingMode = (mode: unknown): 'markdown' | 'plain' => {
-    return mode === 'markdown' ? 'markdown' : 'plain';
-};
-
 const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMention }) => {
     const partWithText = part as PartWithText;
     const rawText = partWithText.text;
@@ -41,10 +23,8 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
 
     const [isExpanded, setIsExpanded] = React.useState(false);
     const [isTruncated, setIsTruncated] = React.useState(false);
-    const userMessageRenderingMode = useUIStore((state) => state.userMessageRenderingMode);
     const collapsibleUserMessages = useUIStore((state) => state.collapsibleUserMessages);
     const { t } = useI18n();
-    const normalizedRenderingMode = normalizeUserMessageRenderingMode(userMessageRenderingMode);
     const textRef = React.useRef<HTMLDivElement>(null);
 
     const hasActiveSelectionInElement = React.useCallback((element: HTMLElement): boolean => {
@@ -106,46 +86,6 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
         setIsExpanded(false);
     }, []);
 
-    const processedMarkdownContent = React.useMemo(() => {
-        let content = textContent;
-
-        // Step 1: First escape HTML to protect against XSS and ensure HTML tags display as text
-        content = escapeHtml(content);
-
-        // Step 2: Then insert agent mention links (after escaping, so <a> tags won't be escaped)
-        if (agentMention?.token && content.includes(agentMention.token)) {
-            const mentionHtml = `<a href="${buildMentionUrl(agentMention.name)}" class="text-primary hover:underline" target="_blank" rel="noopener noreferrer">${agentMention.token}</a>`;
-            content = content.replace(agentMention.token, mentionHtml);
-        }
-
-        return content;
-    }, [agentMention, textContent]);
-
-    const plainTextContent = React.useMemo(() => {
-        if (!agentMention?.token || !textContent.includes(agentMention.token)) {
-            return textContent;
-        }
-
-        const idx = textContent.indexOf(agentMention.token);
-        const before = textContent.slice(0, idx);
-        const after = textContent.slice(idx + agentMention.token.length);
-        return (
-            <>
-                {before}
-                <a
-                    href={buildMentionUrl(agentMention.name)}
-                    className="text-primary hover:underline"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(event) => event.stopPropagation()}
-                >
-                    {agentMention.token}
-                </a>
-                {after}
-            </>
-        );
-    }, [agentMention, textContent]);
-
     if (!textContent || textContent.trim().length === 0) {
         return null;
     }
@@ -166,22 +106,14 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
                 className={cn(
                     "break-words font-sans typography-markdown",
                     isExpanded && "pb-4 [&_p:last-child]:mb-0 [&>*:last-child]:mb-0",
-                    normalizedRenderingMode === 'plain' && 'whitespace-pre-wrap',
+                    'whitespace-pre-wrap',
                     collapsibleUserMessages && !isExpanded && "line-clamp-2",
                     collapsibleUserMessages && isTruncated && !isExpanded && "cursor-pointer"
                 )}
                 ref={textRef}
                 onClick={handleClick}
             >
-                {normalizedRenderingMode === 'markdown' ? (
-                    <SimpleMarkdownRenderer 
-                        content={processedMarkdownContent} 
-                        className="whitespace-pre-wrap"
-                        disableLinkSafety 
-                    />
-                ) : (
-                    plainTextContent
-                )}
+                <ExactUserPromptText text={textContent} agentMention={agentMention} />
             </div>
         </div>
     );

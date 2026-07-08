@@ -57,6 +57,14 @@ const runtimeDirectoryAllows = (...directories) => Object.fromEntries(
   }),
 );
 
+const BLOCKED_MCP_TOMBSTONES = {
+  context7: { enabled: false },
+  'gh-grep': { enabled: false },
+  gh_grep: { enabled: false },
+  'grep-app': { enabled: false },
+  grep_app: { enabled: false },
+};
+
 describe('syncRuntimeAgentOverlays', () => {
   let tempRoot;
   let projectDirectory;
@@ -150,6 +158,39 @@ describe('syncRuntimeAgentOverlays', () => {
     expect(overlay.frontmatter.model).toBe('openai/gpt-5.5');
     expect(overlay.frontmatter.modelRefs).toEqual(['openai/gpt-5.5']);
     expect(overlay.frontmatter.variant).toBe('');
+  });
+
+  it('writes Cursor model overrides into runtime overlay frontmatter', async () => {
+    await writeAgent(path.join(projectDirectory, '.opencode', 'agents'), 'fixer', [
+      'mode: subagent',
+      'model: openai/gpt-5.5',
+      'modelRefs:',
+      '  - openai/gpt-5.5',
+      'variant: high',
+    ], 'Project fixer prompt');
+
+    const result = await syncRuntimeAgentOverlays({
+      workingDirectory: projectDirectory,
+      packagedAgentDirectory,
+      overlayRoot,
+      manifestPath,
+      agentOverrides: {
+        fixer: {
+          model: 'cursor-acp/composer-2.5',
+          variant: null,
+        },
+      },
+    });
+
+    const overlay = await readOverlayAgent(result.targetConfigDirectory, 'fixer');
+    expect(overlay.frontmatter).toMatchObject({
+      name: 'fixer',
+      mode: 'subagent',
+      model: 'cursor-acp/composer-2.5',
+      modelRefs: ['cursor-acp/composer-2.5'],
+      variant: '',
+    });
+    expect(overlay.prompt).toBe('Project fixer prompt');
   });
 
   it('prefers project prompt over same-name packaged prompt while applying the user model override', async () => {
@@ -600,9 +641,11 @@ describe('syncRuntimeAgentOverlays', () => {
       ],
     });
 
-    await expect(fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8'))
-      .resolves.toBe(`${JSON.stringify({
+    await expect(fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8')
+      .then((content) => JSON.parse(content)))
+      .resolves.toEqual({
         mcp: {
+          ...BLOCKED_MCP_TOMBSTONES,
           'slow-remote': {
             type: 'remote',
             url: 'https://mcp.example.test/mcp',
@@ -610,7 +653,7 @@ describe('syncRuntimeAgentOverlays', () => {
             timeout: 5_000,
           },
         },
-      }, null, 2)}\n`);
+      });
     expect(result.configWritten).toBe(true);
   });
 
@@ -656,6 +699,7 @@ describe('syncRuntimeAgentOverlays', () => {
       .then((content) => JSON.parse(content)))
       .resolves.toEqual({
         mcp: {
+          ...BLOCKED_MCP_TOMBSTONES,
           'slow-remote': {
             type: 'remote',
             url: 'https://mcp.example.test/mcp',
@@ -705,6 +749,7 @@ describe('syncRuntimeAgentOverlays', () => {
       .then((content) => JSON.parse(content)))
       .resolves.toEqual({
         mcp: {
+          ...BLOCKED_MCP_TOMBSTONES,
           supabase: {
             type: 'remote',
             url: 'https://mcp.supabase.com/mcp',
@@ -759,8 +804,44 @@ describe('syncRuntimeAgentOverlays', () => {
       ],
     });
 
-    await expect(fs.stat(path.join(result.targetConfigDirectory, 'opencode.json'))).rejects.toMatchObject({ code: 'ENOENT' });
-    expect(result.configRemoved).toBe(true);
+    await expect(fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8')
+      .then((content) => JSON.parse(content)))
+      .resolves.toEqual({
+        mcp: BLOCKED_MCP_TOMBSTONES,
+      });
+    expect(result.configUpdated).toBe(true);
+  });
+
+  it('writes blocked MCP tombstones while preserving explicitly configured blocked MCP names', async () => {
+    const result = await syncRuntimeAgentOverlays({
+      workingDirectory: projectDirectory,
+      packagedAgentDirectory,
+      packagedPluginDirectory,
+      overlayRoot,
+      manifestPath,
+      readConfig: () => ({}),
+      listMcpConfigs: () => [
+        {
+          name: 'context7',
+          type: 'remote',
+          url: 'https://context7.example.test/mcp',
+          enabled: true,
+          scope: 'user',
+          timeout: 10_000,
+        },
+      ],
+    });
+
+    await expect(fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8')
+      .then((content) => JSON.parse(content)))
+      .resolves.toEqual({
+        mcp: {
+          ...Object.fromEntries(
+            Object.entries(BLOCKED_MCP_TOMBSTONES).filter(([name]) => name !== 'context7'),
+          ),
+        },
+      });
+    expect(result.configWritten).toBe(true);
   });
 
   it('copies and registers packaged runtime plugins while skipping test files', async () => {
@@ -831,6 +912,7 @@ describe('syncRuntimeAgentOverlays', () => {
       .then((content) => JSON.parse(content)))
       .resolves.toEqual({
         mcp: {
+          ...BLOCKED_MCP_TOMBSTONES,
           'slow-remote': {
             type: 'remote',
             url: 'https://mcp.example.test/mcp',
@@ -855,7 +937,7 @@ describe('syncRuntimeAgentOverlays', () => {
     expect(result.pluginsWritten).toEqual(['council-session.js', 'openai-tool-schema-sanitizer.mjs']);
   });
 
-  it('preserves active user plugin entries including oh-my-opencode-slim while adding packaged runtime plugins', async () => {
+  it('filters active user plugin entries through the managed runtime allowlist while adding packaged runtime plugins', async () => {
     await fs.mkdir(packagedPluginDirectory, { recursive: true });
     await fs.writeFile(
       path.join(packagedPluginDirectory, 'council-session.js'),
@@ -876,6 +958,9 @@ describe('syncRuntimeAgentOverlays', () => {
           'cursor-acp',
           'opencode-with-claude',
           'oh-my-opencode-slim',
+          'superpowers@git+https://github.com/obra/superpowers.git',
+          'context7@latest',
+          'grep-app@latest',
         ],
       }),
       listMcpConfigs: () => [],
@@ -884,6 +969,7 @@ describe('syncRuntimeAgentOverlays', () => {
     await expect(fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8')
       .then((content) => JSON.parse(content)))
       .resolves.toEqual({
+        mcp: BLOCKED_MCP_TOMBSTONES,
         plugin: [
           'opencode-antigravity-auth@latest',
           '@rama_nigg/open-cursor@latest',
@@ -893,5 +979,40 @@ describe('syncRuntimeAgentOverlays', () => {
           './plugins/council-session.js',
         ],
       });
+  });
+
+  it('writes GitHub Copilot provider models into the runtime overlay when auth exists', async () => {
+    const fetchImpl = async () => ({
+      ok: true,
+      json: async () => ({
+        data: [
+          { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex' },
+          { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini' },
+        ],
+      }),
+    });
+
+    const result = await syncRuntimeAgentOverlays({
+      workingDirectory: projectDirectory,
+      packagedAgentDirectory,
+      packagedPluginDirectory,
+      overlayRoot,
+      manifestPath,
+      readAuthFile: () => ({ 'github-copilot': { access: 'copilot-token' } }),
+      writeAuthFile: () => {},
+      fetchImpl,
+      readConfig: () => ({}),
+      listMcpConfigs: () => [],
+    });
+
+    expect(result.configWritten || result.configUpdated).toBe(true);
+    const runtimeConfig = JSON.parse(await fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8'));
+    expect(runtimeConfig.provider?.['github-copilot']).toEqual({
+      name: 'GitHub Copilot',
+      models: {
+        'gpt-5.3-codex': { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex' },
+        'gpt-5.4-mini': { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini' },
+      },
+    });
   });
 });

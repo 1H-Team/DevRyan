@@ -131,6 +131,7 @@ describe("detectPlanCompletedCandidate", () => {
       part: {
         msg_plan_user: [textPart("msg_plan_user", "User has requested to enter plan mode.")],
         msg_plan_assistant: [textPart("msg_plan_assistant", "<!--plan-->\n# Plan\n\nDo the work.")],
+        msg_impl_assistant: [textPart("msg_impl_assistant", "Implemented.")],
       },
     })
 
@@ -176,6 +177,7 @@ describe("detectPlanCompletedCandidate", () => {
       part: {
         msg_plan_user: [textPart("msg_plan_user", "User has requested to enter plan mode.")],
         msg_plan_assistant: [textPart("msg_plan_assistant", structuredPlanBody)],
+        msg_impl_assistant: [textPart("msg_impl_assistant", "Implemented.")],
       },
     })
 

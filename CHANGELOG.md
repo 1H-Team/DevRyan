@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-07-07
+
+- OpenCode: update the bundled SDK and managed runtime target to 1.17.14, launch managed servers in pure mode, and filter ambient plugins/MCP servers from the managed runtime surface.
+- Quota: add OpenCode Go usage reporting, surface Codex reset credits, and keep web and VS Code quota providers aligned.
+- Git: add a finish-current-branch flow that can stash local changes, merge into `main`, delete the source branch, and restore the stash.
+- UI: extract the header usage panel into focused components, preserve exact user prompt text rendering, refine settings/back navigation, and smooth empty sidebar group states.
+- Sessions: tighten live working-state detection when a prior assistant/tool turn is still streaming behind a trailing assistant shell.
+
 ## [1.0.5] - 2026-07-05
 
 - Providers: add GitHub Copilot as a normalized provider option, including `copilot` alias handling, auth/config lookup parity, and removal cleanup across provider storage locations.

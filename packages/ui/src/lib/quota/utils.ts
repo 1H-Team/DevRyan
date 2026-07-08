@@ -39,11 +39,12 @@ export const formatWindowLabel = (label: string): string => {
   if (label === '7d') return '7-Day Limit';
   if (label === '7d-sonnet') return '7-Day Sonnet Limit';
   if (label === '7d-opus') return '7-Day Opus Limit';
+  if (label === 'rolling') return 'Rolling';
   if (label === 'weekly') return 'Weekly Limit';
   if (label === 'daily') return 'Daily';
   if (label === 'monthly') return 'Monthly Limit';
   if (label === 'credits') return 'Credits';
-  if (label === 'ai-credits') return 'GitHub AI Credits';
+  if (label === 'ai-credits') return 'AI Credits';
   if (label === 'session') return 'Session';
   if (label === 'premium') return 'Premium Interactions';
   if (label === 'chat') return 'Chat Requests';

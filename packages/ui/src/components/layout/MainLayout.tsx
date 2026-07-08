@@ -5,6 +5,7 @@ import { BottomTerminalDock } from './BottomTerminalDock';
 import { Sidebar, SIDEBAR_CONTENT_WIDTH } from './Sidebar';
 import { RightSidebar, RIGHT_SIDEBAR_CONTENT_WIDTH } from './RightSidebar';
 import { RightSidebarTabs } from './RightSidebarTabs';
+import { DesktopEdgeChrome } from './DesktopEdgeChrome';
 import { ContextPanel } from './ContextPanel';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { CommandPalette } from '../ui/CommandPalette';
@@ -68,7 +69,6 @@ export const MainLayout: React.FC = () => {
     const isDesktopShellRuntime = React.useMemo(() => isDesktopShell(), []);
     const sidebarWidth = useUIStore((state) => state.sidebarWidth);
     const rightSidebarWidth = useUIStore((state) => state.rightSidebarWidth);
-    const [desktopRightSidebarActionsHost, setDesktopRightSidebarActionsHost] = React.useState<HTMLDivElement | null>(null);
     const rightSidebarAutoClosedRef = React.useRef(false);
     const bottomTerminalAutoClosedRef = React.useRef(false);
     const responsiveRightSidebarChangeRef = React.useRef<ResponsivePanelAction | null>(null);
@@ -346,6 +346,13 @@ export const MainLayout: React.FC = () => {
         return Math.min(DESKTOP_RIGHT_SIDEBAR_MAX_WIDTH, Math.max(DESKTOP_RIGHT_SIDEBAR_MIN_WIDTH, rawWidth));
     }, [rightSidebarWidth]);
 
+    // Memoize sidebar children by JSX identity so that toggling isSidebarOpen /
+    // isRightSidebarOpen does NOT recurse React into these heavy trees. Without
+    // this, the first frame of the width transition is delayed by SessionSidebar's
+    // reconciliation (~2k lines, many store subscriptions), causing a visible stutter.
+    const sessionSidebarElement = React.useMemo(() => <SessionSidebar />, []);
+    const rightSidebarTabsElement = React.useMemo(() => <ErrorBoundary><RightSidebarTabs /></ErrorBoundary>, []);
+
     return (
         <DiffWorkerProvider>
             <div
@@ -622,7 +629,7 @@ export const MainLayout: React.FC = () => {
                                 isMobile={isMobile}
                                 className="border-0"
                             >
-                                <SessionSidebar />
+                                {sessionSidebarElement}
                             </Sidebar>
                             <div className={cn(
                                 'relative flex flex-1 min-w-0 flex-col overflow-hidden',
@@ -630,7 +637,7 @@ export const MainLayout: React.FC = () => {
                                 isSidebarOpen && 'border-l border-border/50 rounded-tl-[10px] rounded-bl-[10px]',
                                 isRightSidebarOpen && 'border-r border-border/50 rounded-tr-[10px] rounded-br-[10px]'
                             )} data-page-scroll-lock="true">
-                                <Header desktopRightSidebarActionsHost={desktopRightSidebarActionsHost} />
+                                <Header />
                                 <div className={cn(
                                     'flex flex-1 min-h-0 overflow-hidden',
                                     isSidebarOpen || isChatActive ? '' : 'border-l border-border/50',
@@ -663,10 +670,10 @@ export const MainLayout: React.FC = () => {
                             <RightSidebar
                                 isOpen={isRightSidebarOpen}
                                 className="border-0"
-                                onTopActionsHostChange={setDesktopRightSidebarActionsHost}
                             >
-                                <ErrorBoundary><RightSidebarTabs /></ErrorBoundary>
+                                {rightSidebarTabsElement}
                             </RightSidebar>
+                            <DesktopEdgeChrome />
                         </div>
 
                     </div>

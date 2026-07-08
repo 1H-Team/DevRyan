@@ -9,12 +9,36 @@ export type AssistantErrorInfo = {
 export type AssistantErrorClassification = {
   text: string
   variant: "plain" | "info" | "error"
-  abortKind?: "manual" | "unexpected"
+  abortKind?: "manual" | "steered" | "unexpected"
+}
+
+type SteeredAbortOptions = {
+  steeredAbortMessageId?: string | null
+  messageId?: string | null
+}
+
+export function classifySteeredAbortFallback(
+  options: SteeredAbortOptions,
+): AssistantErrorClassification | undefined {
+  if (options.steeredAbortMessageId && options.messageId && options.steeredAbortMessageId === options.messageId) {
+    return {
+      text: "Steered conversation",
+      variant: "info",
+      abortKind: "steered",
+    }
+  }
+
+  return undefined
 }
 
 export function classifyAssistantError(
   errorInfo: AssistantErrorInfo | undefined,
-  options: { manualAbortMessageId?: string | null; messageId?: string | null; isLatestMessage?: boolean } = {},
+  options: {
+    manualAbortMessageId?: string | null
+    steeredAbortMessageId?: string | null
+    messageId?: string | null
+    isLatestMessage?: boolean
+  } = {},
 ): AssistantErrorClassification | undefined {
   if (!errorInfo) {
     return undefined
@@ -49,6 +73,11 @@ export function classifyAssistantError(
         variant: "plain",
         abortKind: "manual",
       }
+    }
+
+    const steeredAbort = classifySteeredAbortFallback(options)
+    if (steeredAbort) {
+      return steeredAbort
     }
 
     if (options.isLatestMessage === false) {

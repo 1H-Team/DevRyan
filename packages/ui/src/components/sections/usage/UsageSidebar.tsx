@@ -80,6 +80,16 @@ export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect }) => {
     void persistUsageSettings({ usageShowPredValues: enabled });
   }, [persistUsageSettings, setShowPredictionValues]);
 
+  const resolveUsageDisplayModeLabel = React.useCallback((value: string | undefined) => {
+    if (value === 'usage') {
+      return t('settings.usage.sidebar.field.displayModeUsage');
+    }
+    if (value === 'remaining') {
+      return t('settings.usage.sidebar.field.displayModeRemaining');
+    }
+    return value ?? '';
+  }, [t]);
+
   const bgClass = 'bg-background';
 
   return (
@@ -133,7 +143,9 @@ export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect }) => {
           <span className="typography-micro text-muted-foreground">{t('settings.usage.sidebar.field.display')}</span>
           <Select value={usageDisplayMode} onValueChange={handleUsageDisplayModeChange}>
             <SelectTrigger className="w-fit">
-              <SelectValue placeholder={t('settings.usage.sidebar.field.displayModePlaceholder')} />
+              <SelectValue placeholder={t('settings.usage.sidebar.field.displayModePlaceholder')}>
+                {resolveUsageDisplayModeLabel}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="usage">{t('settings.usage.sidebar.field.displayModeUsage')}</SelectItem>

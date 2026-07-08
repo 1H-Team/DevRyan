@@ -241,7 +241,7 @@ export interface SessionStore {
     sessionCompactionUntil: Map<string, number>;
     permissions: Map<string, PermissionRequest[]>;
     questions: Map<string, QuestionRequest[]>;
-    sessionAbortFlags: Map<string, { timestamp: number; acknowledged: boolean; reason?: "manual"; id?: string }>;
+    sessionAbortFlags: Map<string, { timestamp: number; acknowledged: boolean; reason?: "manual" | "steered"; id?: string }>;
     attachedFiles: AttachedFile[];
     abortPromptSessionId: string | null;
     abortPromptExpiresAt: number | null;

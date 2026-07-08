@@ -18,6 +18,7 @@ describe('quota provider metadata', () => {
       'MiniMax Coding Plan (minimaxi.com)',
       'NanoGPT',
       'Ollama Cloud',
+      'OpenCode Go',
       'OpenRouter',
       'z.ai',
       'Zhipu AI Coding Plan',

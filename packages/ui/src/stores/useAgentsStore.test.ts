@@ -203,6 +203,44 @@ describe("agent model override persistence", () => {
     }
   });
 
+  test("returns runtime warning metadata while keeping the saved model locally", async () => {
+    const originalAgents = useAgentsStore.getState().agents;
+    useAgentsStore.setState({
+      agents: [makeAgent({
+        name: "fixer",
+        mode: "subagent",
+        model: { providerID: "openai", modelID: "gpt-5.5" },
+        modelRefs: ["openai/gpt-5.5"],
+        variant: "high",
+      } as Partial<Agent> & { name: string })],
+    });
+
+    const fetchMock = async () => new Response(JSON.stringify({
+      success: true,
+      runtimeApplied: false,
+      reloadFailed: true,
+      warning: 'Agent "fixer" loaded with model "openai/gpt-5.5"; expected "cursor-acp/composer-2.5"',
+    }), { status: 200 });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    try {
+      const result = await useAgentsStore.getState().saveAgentModelOverride("fixer", {
+        model: "cursor-acp/composer-2.5",
+        variant: undefined,
+      });
+
+      expect((result as Record<string, unknown>)?.runtimeApplied).toBe(false);
+      expect((result as Record<string, unknown>)?.reloadFailed).toBe(true);
+      const savedAgent = useAgentsStore.getState().agents.find((agent) => agent.name === "fixer") as Agent & { modelRefs?: string[]; variant?: string };
+      expect(savedAgent.model).toEqual({ providerID: "cursor-acp", modelID: "composer-2.5" });
+      expect(savedAgent.modelRefs).toEqual(["cursor-acp/composer-2.5"]);
+      expect(savedAgent.variant).toBe(undefined);
+    } finally {
+      globalThis.fetch = originalFetch;
+      useAgentsStore.setState({ agents: originalAgents });
+    }
+  });
+
   test("sends null when saving the default thinking level and clears local variant", async () => {
     const originalAgents = useAgentsStore.getState().agents;
     useAgentsStore.setState({

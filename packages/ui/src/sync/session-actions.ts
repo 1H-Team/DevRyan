@@ -222,11 +222,13 @@ function restoreUserMessageInput(parts: Part[], messageText: string): void {
   }
 }
 
-function markManualAbort(sessionId: string, messageId?: string): void {
+type AbortDisplayReason = "manual" | "steered"
+
+function markSessionAbort(sessionId: string, reason: AbortDisplayReason, messageId?: string): void {
   useSessionUIStore.setState((state) => {
     const flags = new Map(state.sessionAbortFlags)
-    const record: { timestamp: number; acknowledged: boolean; reason: "manual"; id?: string } = {
-      reason: "manual",
+    const record: { timestamp: number; acknowledged: boolean; reason: AbortDisplayReason; id?: string } = {
+      reason,
       timestamp: Date.now(),
       acknowledged: false,
     }
@@ -236,6 +238,10 @@ function markManualAbort(sessionId: string, messageId?: string): void {
     flags.set(sessionId, record)
     return { sessionAbortFlags: flags }
   })
+}
+
+function markManualAbort(sessionId: string, messageId?: string): void {
+  markSessionAbort(sessionId, "manual", messageId)
 }
 
 function postAbortRequestedMark(sessionId: string, directory?: string): void {
@@ -1504,6 +1510,26 @@ export async function interruptCurrentOperationForQueuedSend(sessionId: string):
     throw error
   }
   markManualAbort(sessionId, getLatestAssistantMessageId(sessionId, sessionDirectory))
+  forceSessionIdleAfterManualAbort(sessionId, sessionDirectory)
+  await waitForSessionIdleAfterQueuedInterrupt(sessionId, sessionDirectory)
+}
+
+export async function interruptCurrentOperationForSteeredSend(sessionId: string): Promise<void> {
+  if (!sessionId) return
+  const sessionDirectory = getSessionDirectory(sessionId)
+  const status = getSessionStatusForAction(sessionId, sessionDirectory)
+  if (status?.type === "idle") return
+
+  postAbortRequestedMark(sessionId, sessionDirectory)
+  registerManualAbortGuard(sessionId, sessionDirectory)
+  try {
+    await sdk().session.abort({ sessionID: sessionId, directory: sessionDirectory })
+  } catch (error) {
+    // The interrupt never reached the server — do not mask live status.
+    clearAbortGuard(sessionId)
+    throw error
+  }
+  markSessionAbort(sessionId, "steered", getLatestAssistantMessageId(sessionId, sessionDirectory))
   forceSessionIdleAfterManualAbort(sessionId, sessionDirectory)
   await waitForSessionIdleAfterQueuedInterrupt(sessionId, sessionDirectory)
 }

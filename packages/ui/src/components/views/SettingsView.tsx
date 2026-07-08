@@ -75,7 +75,8 @@ import {
 } from '@/lib/settings/metadata';
 import { SETTINGS_NAV_SECTIONS } from '@/lib/settings/navigation';
 import {
-  getSettingsBackButtonClassName,
+  getSettingsBackButtonHeaderClassName,
+  getSettingsBackButtonHeaderContentClassName,
   getSettingsNavScrollClassName,
   getSettingsNavButtonClassName,
   getSettingsPageSidebarClassName,
@@ -599,28 +600,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   const renderSettingsNav = () => {
     return (
       <div className="flex h-full flex-col overflow-hidden">
-        {/* Scrollable nav items */}
-        <div className={getSettingsNavScrollClassName({ reserveTopChrome: reserveSettingsNavTopChrome })}>
-          <div className={cn('flex flex-col gap-3 pb-2 px-2', reserveSettingsNavTopChrome ? 'pt-0' : 'pt-4')}>
-            {showFullPageBackButton && (
-              <div
+        {showFullPageBackButton && (
+          <div
+            className={cn(
+              getSettingsBackButtonHeaderClassName({ avoidMacTrafficLights: shouldAvoidMacTrafficLights }),
+              'backdrop-blur-sm',
+              runtimeCtx.isVSCode ? 'bg-background/95' : 'bg-sidebar/95'
+            )}
+          >
+            <div className={getSettingsBackButtonHeaderContentClassName()}>
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label={t('settings.view.actions.back')}
                 className={cn(
-                  'sticky top-0 z-30 -mx-2 px-2 pt-3 pb-2',
-                  'border-b border-transparent backdrop-blur-sm',
-                  runtimeCtx.isVSCode ? 'bg-background/95' : 'bg-sidebar/95',
-                  shouldAvoidMacTrafficLights && 'pl-[5.5rem]'
+                  getSettingsNavButtonClassName(false),
+                  'text-muted-foreground hover:text-foreground hover:bg-interactive-hover/50'
                 )}
               >
-                <button
-                  type="button"
-                  onClick={onClose}
-                  aria-label={t('settings.view.actions.closeSettings')}
-                  className={getSettingsBackButtonClassName({ placement: 'inline' })}
-                >
-                  <RiArrowLeftSLine className="h-5 w-5" />
-                </button>
-              </div>
-            )}
+                <RiArrowLeftSLine className="h-4 w-4 shrink-0" />
+                <span className="typography-ui-label font-normal truncate">{t('settings.view.actions.back')}</span>
+              </button>
+            </div>
+          </div>
+        )}
+        {/* Scrollable nav items */}
+        <div className={getSettingsNavScrollClassName({ reserveTopChrome: reserveSettingsNavTopChrome })}>
+          <div className={cn(
+            'flex flex-col gap-3 pb-2 px-2',
+            reserveSettingsNavTopChrome ? 'pt-0' : showFullPageBackButton ? 'pt-2' : 'pt-4'
+          )}>
             {groupedVisiblePages.map((section) => (
               <div key={section.labelKey} className="space-y-0.5">
                 <div className="px-2 pb-1 typography-micro text-[0.6875rem] font-medium uppercase tracking-wide text-muted-foreground/70">

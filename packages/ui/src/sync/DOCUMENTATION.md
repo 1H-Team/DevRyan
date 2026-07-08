@@ -169,7 +169,8 @@ Keep this in sync with `handleDirectoryEvent` in `sync-context.tsx`:
 | `todo.updated` | `todo` |
 | `message.updated` | `message`; `session_status` only for terminal trailing assistant status settlement |
 | `message.removed` | `message`, `part` |
-| `message.part.updated/removed/delta` | `part` |
+| `message.part.updated` | `part`; `message` only when inserting a provisional live assistant message for an orphan assistant text/reasoning/tool part |
+| `message.part.removed/delta` | `part` |
 | `vcs.branch.updated` | (none — mutates `draft.vcs` directly) |
 | `permission.asked/replied` | `permission` |
 | `question.asked/replied/rejected` | `question` |
@@ -187,9 +188,13 @@ Server compatibility events named `openchamber:session-status` are normalized in
 
 ## Completion vs active work
 
-Completion indicators are derived from settled terminal assistant turns, not from historical unread state alone. A trailing assistant message can settle stale `busy`/`retry` status to `idle` only when it is terminal, has no running tool parts, and has no pending permission or question.
+Completion indicators are derived from final visible assistant summaries, not from historical unread state alone. The green sidebar completion indicator means the trailing assistant message is terminal, is not an intermediate `finish: "tool-calls"` message, has no running tool parts, and has visible assistant text or reasoning summary content. Finalized tool rows and unread completion notifications do not create the green indicator by themselves.
+
+A trailing assistant message can settle stale `busy`/`retry` status to `idle` only when it is terminal, has no running tool parts, has no pending permission or question, and is not `finish: "tool-calls"`. This keeps the session working spinner visible between tool calls while OpenCode is still running and prevents an intermediate tool-call shell from hiding the final summary stream.
 
 Accepted `busy`/`retry` status is treated as a new-work edge. When the sync store still contains `busy`/`retry` after reducing a status event, `sync-context.tsx` clears pending and visible completion indicators for that session. Delayed completion timers in `session-ui-store.ts` also re-check live status before writing so a green dot cannot appear after the session has started working again.
+
+When OpenCode emits `message.part.updated` before the owning `message.updated`, the reducer may insert a provisional assistant message so live output renders immediately. This is intentionally narrow: reasoning parts preserve the existing provisional path, while text/tool parts only provisionalize for an actively busy/retrying session. The real `message.updated` later replaces the provisional message by ID, and buffered `message.part.delta` events replay once the part exists.
 
 ## Active-session recovery watchdog
 

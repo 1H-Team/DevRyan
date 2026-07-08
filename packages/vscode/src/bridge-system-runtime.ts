@@ -18,6 +18,7 @@ import type { BridgeContext, BridgeResponse } from './bridge';
 import {
   clearCursorSdkAuth,
   createCursorSdkRuntime,
+  CURSOR_PROVIDER_ID,
   saveCursorSdkAuth,
 } from '@openchamber/cursor-sdk-runtime';
 
@@ -53,10 +54,46 @@ const CLAUDE_AUTH_CHECK_TIMEOUT_MS = 25000;
 const CLAUDE_AUTH_CHECK_PROMPT = 'Reply with exactly: OK';
 const CURSOR_ACP_PROVIDER_ID = 'cursor-acp';
 const CURSOR_USAGE_TOKEN_MAX_LENGTH = 16_384;
+const OPENCODE_GO_PROVIDER_ID = 'opencode-go';
+const OPENCODE_GO_WORKSPACE_ID_PATTERN = /^wrk_[a-zA-Z0-9]+$/;
+const OPENCODE_GO_USAGE_COOKIE_MAX_LENGTH = 16_384;
 let cachedZenModels: { models: Array<{ id: string; owned_by?: string }>; at: number } | null = null;
 
-const resolveCursorSdkAgentDefinitions = ({ directory }: { directory?: string | null } = {}) => {
-  const definitions: Record<string, { description: string; prompt: string; model: 'inherit' }> = {};
+type CursorSdkModelSelection = { id: string; params?: Array<{ id: string; value: string }> };
+type CursorSdkAgentDefinition = { description: string; prompt: string; model: 'inherit' | CursorSdkModelSelection };
+type ResolveCursorSdkModelSelection = (input: { modelID?: string | null; variant?: string | null }) =>
+  CursorSdkModelSelection | Promise<CursorSdkModelSelection | null | undefined> | null | undefined;
+type CursorSdkAgentDefinitionInput = {
+  directory?: string | null;
+  resolveModelSelection?: ResolveCursorSdkModelSelection;
+};
+
+export const resolveCursorSdkAgentModel = async (
+  agent: Record<string, unknown>,
+  resolveModelSelection?: CursorSdkAgentDefinitionInput['resolveModelSelection'],
+): Promise<'inherit' | CursorSdkModelSelection> => {
+  const model = agent?.model && typeof agent.model === 'object' && !Array.isArray(agent.model)
+    ? agent.model as { providerID?: unknown; modelID?: unknown }
+    : null;
+  const providerID = typeof model?.providerID === 'string' ? model.providerID.trim() : '';
+  const modelID = typeof model?.modelID === 'string' ? model.modelID.trim() : '';
+  if (providerID !== CURSOR_PROVIDER_ID || !modelID || typeof resolveModelSelection !== 'function') {
+    return 'inherit';
+  }
+
+  const variant = typeof agent?.variant === 'string' && agent.variant.trim()
+    ? agent.variant.trim()
+    : undefined;
+  try {
+    return await resolveModelSelection({ modelID, variant }) ?? { id: modelID };
+  } catch (error) {
+    console.warn('[CursorSDK] failed to resolve VS Code agent model selection:', error);
+    return { id: modelID };
+  }
+};
+
+export const resolveCursorSdkAgentDefinitions = async ({ directory, resolveModelSelection }: CursorSdkAgentDefinitionInput = {}) => {
+  const definitions: Record<string, CursorSdkAgentDefinition> = {};
   for (const agent of listConfigAgents(directory || undefined)) {
     const name = typeof agent?.name === 'string' ? agent.name.trim() : '';
     const prompt = typeof agent?.prompt === 'string' ? agent.prompt.trim() : '';
@@ -66,7 +103,7 @@ const resolveCursorSdkAgentDefinitions = ({ directory }: { directory?: string | 
         ? agent.description.trim()
         : `${name} DevRyan agent`,
       prompt,
-      model: 'inherit',
+      model: await resolveCursorSdkAgentModel(agent as Record<string, unknown>, resolveModelSelection),
     };
   }
   return definitions;
@@ -214,6 +251,36 @@ const readCursorUsageAuthConfigured = (): boolean => {
   const auth = readAuthFile();
   const entry = asObject(auth[CURSOR_ACP_PROVIDER_ID]);
   return Boolean(normalizeCursorUsageSessionToken(entry?.usageSessionToken));
+};
+
+const normalizeOpenCodeGoWorkspaceId = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const workspaceId = value.trim();
+  return OPENCODE_GO_WORKSPACE_ID_PATTERN.test(workspaceId) ? workspaceId : null;
+};
+
+const normalizeOpenCodeGoAuthCookie = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const authCookie = value.trim();
+  if (!authCookie || authCookie.length > OPENCODE_GO_USAGE_COOKIE_MAX_LENGTH) {
+    return null;
+  }
+  return authCookie;
+};
+
+const readOpenCodeGoUsageAuthStatus = () => {
+  const auth = readAuthFile();
+  const entry = asObject(auth[OPENCODE_GO_PROVIDER_ID]) ?? {};
+  const workspaceId = normalizeOpenCodeGoWorkspaceId(entry.usageWorkspaceId);
+  const authCookie = normalizeOpenCodeGoAuthCookie(entry.usageAuthCookie);
+  return {
+    configured: Boolean(workspaceId && authCookie),
+    workspaceId,
+  };
 };
 
 const ensureVirtualDiffProviderRegistered = (ctx?: BridgeContext): void => {
@@ -814,6 +881,72 @@ export async function handleSystemBridgeMessage(
           type,
           success: true,
           data: { success: true, configured: false, changed },
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return { id, type, success: false, error: errorMessage };
+      }
+    }
+
+    case 'api:provider/opencode-go/usage-auth/status': {
+      try {
+        return {
+          id,
+          type,
+          success: true,
+          data: readOpenCodeGoUsageAuthStatus(),
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return { id, type, success: false, error: errorMessage };
+      }
+    }
+
+    case 'api:provider/opencode-go/usage-auth:save': {
+      const body = asObject(payload);
+      const workspaceId = normalizeOpenCodeGoWorkspaceId(body?.workspaceId);
+      const authCookie = normalizeOpenCodeGoAuthCookie(body?.authCookie);
+      if (!workspaceId) {
+        return { id, type, success: false, error: 'A valid OpenCode Go workspace ID is required.' };
+      }
+      if (!authCookie) {
+        return { id, type, success: false, error: 'OpenCode Go auth cookie is required.' };
+      }
+      try {
+        const auth = readAuthFile();
+        const existing = asObject(auth[OPENCODE_GO_PROVIDER_ID]) ?? {};
+        auth[OPENCODE_GO_PROVIDER_ID] = {
+          ...existing,
+          usageWorkspaceId: workspaceId,
+          usageAuthCookie: authCookie,
+        };
+        writeAuthFile(auth);
+        return {
+          id,
+          type,
+          success: true,
+          data: { success: true, configured: true, workspaceId },
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return { id, type, success: false, error: errorMessage };
+      }
+    }
+
+    case 'api:provider/opencode-go/usage-auth:clear': {
+      try {
+        const auth = readAuthFile();
+        const existing = asObject(auth[OPENCODE_GO_PROVIDER_ID]) ?? {};
+        const nextEntry = { ...existing };
+        delete nextEntry.usageWorkspaceId;
+        delete nextEntry.usageAuthCookie;
+        auth[OPENCODE_GO_PROVIDER_ID] = nextEntry;
+        writeAuthFile(auth);
+        return {
+          id,
+          type,
+          success: true,
+          data: { success: true, configured: false, workspaceId: null },
         };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);

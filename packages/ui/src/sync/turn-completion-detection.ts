@@ -1,6 +1,7 @@
 import type { Message } from "@opencode-ai/sdk/v2/client"
 import type { PlanIndicatorEntry } from "./plan-indicator"
 import { filterMessagesForRevert, getEffectiveSessionRevertMessageID } from "./revert-transactions"
+import { isFinalAssistantSummaryMessage } from "./session-working"
 import type { State } from "./types"
 
 export type TurnCompletedCandidate = {
@@ -37,7 +38,7 @@ export function detectTurnCompletedCandidate({
   for (let assistantIndex = messages.length - 1; assistantIndex >= 0; assistantIndex -= 1) {
     const assistantMessage = messages[assistantIndex]
     if (assistantMessage.role !== "assistant") continue
-    if (!isAssistantTurnComplete(assistantMessage)) continue
+    if (!isFinalAssistantSummaryMessage(assistantMessage, state.part[assistantMessage.id])) continue
     if (planEntry?.sourceMessageId === assistantMessage.id) return null
 
     const userMessage = findOriginatingUserMessage(messages, assistantIndex)
@@ -61,18 +62,4 @@ function findOriginatingUserMessage(messages: readonly Message[], assistantIndex
     if (message.role === "user") return message
   }
   return null
-}
-
-function isAssistantTurnComplete(message: Message): boolean {
-  const candidate = message as Message & { status?: unknown; streaming?: unknown }
-  if (candidate.streaming === true) return false
-
-  if (typeof candidate.status === "string") {
-    const status = candidate.status.trim().toLowerCase()
-    if (status === "running" || status === "pending" || status === "streaming") return false
-    if (status === "complete" || status === "completed" || status === "done") return true
-  }
-
-  const completedAt = (message.time as { completed?: unknown } | undefined)?.completed
-  return typeof completedAt === "number" && completedAt > 0
 }

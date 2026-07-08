@@ -20,6 +20,24 @@ type UsageWindow = {
 type ProviderUsage = {
   windows: Record<string, UsageWindow>;
   models?: Record<string, ProviderUsage>;
+  resetCredits?: UsageResetCredits;
+};
+
+type UsageResetCredit = {
+  id: string;
+  status: string;
+  resetType: string | null;
+  grantedAt: number | null;
+  grantedAtFormatted: string | null;
+  expiresAt: number | null;
+  expiresAtFormatted: string | null;
+};
+
+type UsageResetCredits = {
+  availableCount: number | null;
+  totalEarnedCount: number | null;
+  credits: UsageResetCredit[];
+  source: 'dedicated' | 'usage';
 };
 
 type QuotaFetch = (
@@ -29,6 +47,7 @@ type QuotaFetch = (
   ok: boolean;
   status: number;
   json: () => Promise<unknown>;
+  text?: () => Promise<string>;
 }>;
 
 type FetchQuotaOptions = {
@@ -52,6 +71,14 @@ type OpenAiUsagePayload = {
   credits?: {
     balance?: number | string;
     unlimited?: boolean;
+  };
+  rate_limit_reset_credits?: {
+    available_count?: number | string;
+    total_earned_count?: number | string;
+  };
+  rateLimitResetCredits?: {
+    availableCount?: number | string;
+    totalEarnedCount?: number | string;
   };
 };
 
@@ -134,7 +161,9 @@ const CURSOR_CURRENT_PERIOD_USAGE_URL = 'https://cursor.com/api/dashboard/get-cu
 const CURSOR_DASHBOARD_URL = 'https://cursor.com/dashboard?tab=spending';
 const CURSOR_AUTO_COMPOSER_DESCRIPTION = 'Additional usage beyond limits consumes API quota or on-demand spend.';
 const CURSOR_API_DESCRIPTION = 'Additional usage beyond limits consumes on-demand spend.';
-const COPILOT_AI_CREDITS_DESCRIPTION = 'GitHub AI Credits are consumed from token usage, including input, output, and cached tokens.';
+const COPILOT_AI_CREDITS_DESCRIPTION = 'AI Credits are consumed from token usage, including input, output, and cached tokens.';
+const CODEX_USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage';
+const CODEX_RESET_CREDITS_URL = 'https://chatgpt.com/backend-api/wham/rate-limit-reset-credits';
 
 
 const ANTIGRAVITY_ACCOUNTS_PATHS = [
@@ -195,6 +224,27 @@ const resolveGoogleWindow = (sourceId: GoogleAuthSource['sourceId'], resetAt: nu
 };
 
 const ZAI_TOKEN_WINDOW_SECONDS: Record<number, number> = { 3: 3600 };
+const OPENCODE_GO_ALIASES = ['opencode-go', 'opencodego', 'go'];
+const OPENCODE_GO_WORKSPACE_ID_PATTERN = /^wrk_[a-zA-Z0-9]+$/;
+const OPENCODE_GO_DASHBOARD_USAGE_ERROR = 'OpenCode Go usage tracking requires OPENCODE_GO_WORKSPACE_ID and OPENCODE_GO_AUTH_COOKIE, or usageWorkspaceId and usageAuthCookie in auth["opencode-go"].';
+const OPENCODE_GO_AUTH_COOKIE_ERROR = 'OpenCode Go dashboard authentication failed. Update OPENCODE_GO_AUTH_COOKIE or auth["opencode-go"].usageAuthCookie.';
+const OPENCODE_GO_WINDOW_DEFINITIONS = {
+  rolling: {
+    label: 'rolling',
+    windowSeconds: 5 * 60 * 60,
+    description: '$12 of usage every 5 hours.',
+  },
+  weekly: {
+    label: 'weekly',
+    windowSeconds: 7 * 24 * 60 * 60,
+    description: '$30 of usage per week.',
+  },
+  monthly: {
+    label: 'monthly',
+    windowSeconds: 30 * 24 * 60 * 60,
+    description: '$60 of usage per month.',
+  },
+} as const;
 
 const readAuthFile = (): AuthFile => {
   if (!fs.existsSync(AUTH_FILE)) {
@@ -417,6 +467,24 @@ export const listConfiguredQuotaProviders = () => {
     configured.add('codex');
   }
 
+  const opencodeGoAuth = normalizeAuthEntry(getAuthEntry(auth, OPENCODE_GO_ALIASES));
+  if (
+    opencodeGoAuth &&
+    (
+      (opencodeGoAuth as Record<string, unknown>).key ||
+      (opencodeGoAuth as Record<string, unknown>).token ||
+      (opencodeGoAuth as Record<string, unknown>).access ||
+      (
+        (opencodeGoAuth as Record<string, unknown>).usageWorkspaceId &&
+        (opencodeGoAuth as Record<string, unknown>).usageAuthCookie
+      )
+    )
+  ) {
+    configured.add('opencode-go');
+  } else if (process.env.OPENCODE_GO_WORKSPACE_ID && process.env.OPENCODE_GO_AUTH_COOKIE) {
+    configured.add('opencode-go');
+  }
+
   if (getCursorUsageSessionToken(auth)) {
     configured.add('cursor-acp');
   }
@@ -476,8 +544,80 @@ export const listConfiguredQuotaProviders = () => {
   return Array.from(configured);
 };
 
-export const fetchCodexQuota = async (): Promise<ProviderResult> => {
-  const auth = readAuthFile();
+const buildCodexHeaders = (accessToken: string, accountId?: string, extraHeaders: Record<string, string> = {}) => ({
+  Authorization: `Bearer ${accessToken}`,
+  'Content-Type': 'application/json',
+  ...(accountId ? { 'ChatGPT-Account-Id': accountId } : {}),
+  ...extraHeaders,
+});
+
+const normalizeResetCredit = (value: unknown, index: number): UsageResetCredit | null => {
+  const credit = asObject(value);
+  if (!credit) return null;
+
+  const grantedAt = toTimestamp(credit.granted_at ?? credit.grantedAt);
+  const expiresAt = toTimestamp(credit.expires_at ?? credit.expiresAt);
+  return {
+    id: asNonEmptyString(credit.id) ?? `reset-credit-${index}`,
+    status: asNonEmptyString(credit.status) ?? 'available',
+    resetType: asNonEmptyString(credit.reset_type ?? credit.resetType),
+    grantedAt,
+    grantedAtFormatted: grantedAt ? formatResetTime(grantedAt) : null,
+    expiresAt,
+    expiresAtFormatted: expiresAt ? formatResetTime(expiresAt) : null,
+  };
+};
+
+const normalizeResetCreditsPayload = (payload: unknown, source: UsageResetCredits['source']): UsageResetCredits | null => {
+  const data = asObject(payload);
+  if (!data) return null;
+
+  const credits = Array.isArray(data.credits)
+    ? data.credits.map(normalizeResetCredit).filter((credit): credit is UsageResetCredit => Boolean(credit))
+    : [];
+  const availableCount = toNumber(data.available_count ?? data.availableCount);
+  const totalEarnedCount = toNumber(data.total_earned_count ?? data.totalEarnedCount);
+
+  if (availableCount === null && totalEarnedCount === null && credits.length === 0) {
+    return null;
+  }
+
+  return {
+    availableCount,
+    totalEarnedCount,
+    credits,
+    source,
+  };
+};
+
+const fetchDedicatedResetCredits = async (
+  fetchImpl: QuotaFetch,
+  accessToken: string,
+  accountId?: string,
+): Promise<UsageResetCredits | null> => {
+  try {
+    const response = await fetchImpl(CODEX_RESET_CREDITS_URL, {
+      method: 'GET',
+      headers: buildCodexHeaders(accessToken, accountId, {
+        'OpenAI-Beta': 'codex-1',
+        originator: 'Codex Desktop',
+      }),
+    });
+    if (!response.ok) return null;
+    return normalizeResetCreditsPayload(await response.json(), 'dedicated');
+  } catch {
+    return null;
+  }
+};
+
+const getFallbackResetCredits = (payload: OpenAiUsagePayload): UsageResetCredits | null => {
+  const fallback = payload.rate_limit_reset_credits ?? payload.rateLimitResetCredits;
+  return normalizeResetCreditsPayload(fallback, 'usage');
+};
+
+export const fetchCodexQuota = async (options: FetchQuotaOptions = {}): Promise<ProviderResult> => {
+  const auth = options.readAuth?.() ?? readAuthFile();
+  const fetchImpl = options.fetchImpl ?? fetch;
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['openai', 'codex', 'chatgpt'])) as Record<string, unknown> | null;
   const accessToken = (entry?.access as string | undefined) ?? (entry?.token as string | undefined);
   const accountId = entry?.accountId as string | undefined;
@@ -493,13 +633,9 @@ export const fetchCodexQuota = async (): Promise<ProviderResult> => {
   }
 
   try {
-    const response = await fetch('https://chatgpt.com/backend-api/wham/usage', {
+    const response = await fetchImpl(CODEX_USAGE_URL, {
       method: 'GET',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        ...(accountId ? { 'ChatGPT-Account-Id': accountId } : {}),
-      },
+      headers: buildCodexHeaders(accessToken, accountId),
     });
 
     if (!response.ok) {
@@ -516,6 +652,8 @@ export const fetchCodexQuota = async (): Promise<ProviderResult> => {
     const primary = payload?.rate_limit?.primary_window ?? null;
     const secondary = payload?.rate_limit?.secondary_window ?? null;
     const credits = payload?.credits ?? null;
+    const resetCredits = await fetchDedicatedResetCredits(fetchImpl, accessToken, accountId)
+      ?? getFallbackResetCredits(payload);
 
     const windows: Record<string, UsageWindow> = {};
     if (primary) {
@@ -532,7 +670,7 @@ export const fetchCodexQuota = async (): Promise<ProviderResult> => {
         resetAt: toTimestamp(secondary.reset_at),
       });
     }
-    if (credits) {
+    if (credits && !resetCredits) {
       const balance = toNumber(credits.balance);
       const unlimited = Boolean(credits.unlimited);
       const valueLabel = unlimited
@@ -553,12 +691,195 @@ export const fetchCodexQuota = async (): Promise<ProviderResult> => {
       providerName: 'Codex',
       ok: true,
       configured: true,
-      usage: { windows },
+      usage: {
+        windows,
+        ...(resetCredits ? { resetCredits } : {}),
+      },
     });
   } catch (error) {
     return buildResult({
       providerId: 'codex',
       providerName: 'Codex',
+      ok: false,
+      configured: true,
+      error: error instanceof Error ? error.message : 'Request failed',
+    });
+  }
+};
+
+const resolveOpenCodeGoCredentials = (options: FetchQuotaOptions = {}) => {
+  const auth = options.readAuth?.() ?? readAuthFile();
+  const entry = normalizeAuthEntry(getAuthEntry(auth, OPENCODE_GO_ALIASES)) as Record<string, unknown> | null;
+  const apiKey = asNonEmptyString(entry?.key) ?? asNonEmptyString(entry?.token) ?? asNonEmptyString(entry?.access);
+  const workspaceId = asNonEmptyString(process.env.OPENCODE_GO_WORKSPACE_ID)
+    ?? asNonEmptyString(entry?.usageWorkspaceId);
+  const authCookie = asNonEmptyString(process.env.OPENCODE_GO_AUTH_COOKIE)
+    ?? asNonEmptyString(entry?.usageAuthCookie);
+
+  return {
+    apiConfigured: Boolean(apiKey),
+    usageConfigured: Boolean(workspaceId && authCookie),
+    workspaceId,
+    authCookie,
+  };
+};
+
+const extractBalancedObjectLiteral = (source: string, openBraceIndex: number): string | null => {
+  let depth = 0;
+  let stringQuote: '"' | "'" | null = null;
+  let escaped = false;
+
+  for (let index = openBraceIndex; index < source.length; index += 1) {
+    const char = source[index];
+
+    if (stringQuote) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+      } else if (char === stringQuote) {
+        stringQuote = null;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      stringQuote = char;
+      continue;
+    }
+
+    if (char === '{') {
+      depth += 1;
+    } else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return source.slice(openBraceIndex, index + 1);
+      }
+    }
+  }
+
+  return null;
+};
+
+const parseObjectLiteral = (objectLiteral: string): Record<string, unknown> | null => {
+  try {
+    const jsonLike = objectLiteral.replace(/([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/g, '$1"$2"$3');
+    return JSON.parse(jsonLike) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+};
+
+const extractOpenCodeGoUsageObject = (html: string, key: keyof typeof OPENCODE_GO_WINDOW_DEFINITIONS): Record<string, unknown> | null => {
+  const pattern = new RegExp(`["']?${key}Usage["']?\\s*[:=]?\\s*(?:\\$R\\[\\d+\\]\\s*=\\s*)?\\{`, 'g');
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(html)) !== null) {
+    const openBraceIndex = match.index + match[0].lastIndexOf('{');
+    const objectLiteral = extractBalancedObjectLiteral(html, openBraceIndex);
+    if (!objectLiteral) continue;
+
+    const usage = parseObjectLiteral(objectLiteral);
+    if (usage) return usage;
+  }
+
+  return null;
+};
+
+const buildOpenCodeGoUsage = (html: string): ProviderUsage => {
+  const windows: Record<string, UsageWindow> = {};
+  const now = Date.now();
+
+  for (const [key, definition] of Object.entries(OPENCODE_GO_WINDOW_DEFINITIONS) as Array<[keyof typeof OPENCODE_GO_WINDOW_DEFINITIONS, typeof OPENCODE_GO_WINDOW_DEFINITIONS[keyof typeof OPENCODE_GO_WINDOW_DEFINITIONS]]>) {
+    const usage = extractOpenCodeGoUsageObject(html, key);
+    if (!usage) continue;
+
+    const resetInSec = toNumber(usage.resetInSec);
+    windows[definition.label] = toUsageWindow({
+      usedPercent: toNumber(usage.usagePercent),
+      windowSeconds: definition.windowSeconds,
+      resetAt: resetInSec === null ? null : now + resetInSec * 1000,
+      description: definition.description,
+    });
+  }
+
+  if (Object.keys(windows).length === 0) {
+    throw new Error('OpenCode Go dashboard usage fields were not found. The website structure may have changed.');
+  }
+
+  return { windows };
+};
+
+export const fetchOpenCodeGoQuota = async (options: FetchQuotaOptions = {}): Promise<ProviderResult> => {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const credentials = resolveOpenCodeGoCredentials(options);
+
+  if (!credentials.apiConfigured && !credentials.usageConfigured) {
+    return buildResult({
+      providerId: 'opencode-go',
+      providerName: 'OpenCode Go',
+      ok: false,
+      configured: false,
+      error: 'Not configured',
+    });
+  }
+
+  if (!credentials.usageConfigured) {
+    return buildResult({
+      providerId: 'opencode-go',
+      providerName: 'OpenCode Go',
+      ok: false,
+      configured: true,
+      error: OPENCODE_GO_DASHBOARD_USAGE_ERROR,
+    });
+  }
+
+  if (!credentials.workspaceId || !OPENCODE_GO_WORKSPACE_ID_PATTERN.test(credentials.workspaceId)) {
+    return buildResult({
+      providerId: 'opencode-go',
+      providerName: 'OpenCode Go',
+      ok: false,
+      configured: true,
+      error: 'Invalid OpenCode Go workspace ID format.',
+    });
+  }
+
+  try {
+    const response = await fetchImpl(`https://opencode.ai/workspace/${encodeURIComponent(credentials.workspaceId)}/go`, {
+      method: 'GET',
+      headers: {
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        Cookie: `auth=${credentials.authCookie}`,
+      },
+    });
+
+    if (!response.ok) {
+      return buildResult({
+        providerId: 'opencode-go',
+        providerName: 'OpenCode Go',
+        ok: false,
+        configured: true,
+        error: response.status === 401 || response.status === 403
+          ? OPENCODE_GO_AUTH_COOKIE_ERROR
+          : `OpenCode Go dashboard request failed: ${response.status}`,
+      });
+    }
+
+    if (typeof response.text !== 'function') {
+      throw new Error('OpenCode Go dashboard response did not include HTML content.');
+    }
+
+    return buildResult({
+      providerId: 'opencode-go',
+      providerName: 'OpenCode Go',
+      ok: true,
+      configured: true,
+      usage: buildOpenCodeGoUsage(await response.text()),
+    });
+  } catch (error) {
+    return buildResult({
+      providerId: 'opencode-go',
+      providerName: 'OpenCode Go',
       ok: false,
       configured: true,
       error: error instanceof Error ? error.message : 'Request failed',
@@ -1988,7 +2309,9 @@ export const fetchQuotaForProvider = async (providerId: string, options: FetchQu
     case 'claude':
       return fetchClaudeQuota();
     case 'codex':
-      return fetchCodexQuota();
+      return fetchCodexQuota(options);
+    case 'opencode-go':
+      return fetchOpenCodeGoQuota(options);
     case 'cursor-acp':
       return fetchCursorAcpQuota(options);
     case 'github-copilot':

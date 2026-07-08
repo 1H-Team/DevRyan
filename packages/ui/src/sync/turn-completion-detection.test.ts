@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Message } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { detectTurnCompletedCandidate } from "./turn-completion-detection"
 import type { State } from "./types"
 
@@ -17,9 +17,20 @@ const assistantMessage = (id: string, created: number, completed?: number): Mess
   time: completed ? { created, completed } : { created },
 } as Message)
 
-const stateWithMessages = (messages: Message[]): Pick<State, "message" | "part" | "question" | "session" | "revert_transaction"> => ({
+const textPart = (messageID: string, text: string): Part => ({
+  id: `${messageID}_part`,
+  sessionID: "ses_1",
+  messageID,
+  type: "text",
+  text,
+} as Part)
+
+const stateWithMessages = (
+  messages: Message[],
+  part: Pick<State, "part">["part"] = {},
+): Pick<State, "message" | "part" | "question" | "session" | "revert_transaction"> => ({
   message: { ses_1: messages },
-  part: {},
+  part,
   question: {},
   session: [],
   revert_transaction: {},
@@ -30,7 +41,9 @@ describe("detectTurnCompletedCandidate", () => {
     const state = stateWithMessages([
       userMessage("msg_user", 1),
       assistantMessage("msg_assistant", 2, 3),
-    ])
+    ], {
+      msg_assistant: [textPart("msg_assistant", "Done.")],
+    })
 
     expect(detectTurnCompletedCandidate({
       sessionID: "ses_1",

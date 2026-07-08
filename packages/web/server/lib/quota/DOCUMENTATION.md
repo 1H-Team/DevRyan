@@ -27,11 +27,18 @@ These provider IDs are currently dispatchable via `fetchQuotaForProvider(provide
 | `kimi-for-coding` | Kimi for Coding | `providers/kimi.js` | `kimi-for-coding`, `kimi` |
 | `nano-gpt` | NanoGPT | `providers/nanogpt.js` | `nano-gpt`, `nanogpt`, `nano_gpt` |
 | `openrouter` | OpenRouter | `providers/openrouter.js` | `openrouter` |
+| `opencode-go` | OpenCode Go | `providers/opencode-go.js` | `opencode-go`, `opencodego`, `go`; usage credentials from `OPENCODE_GO_WORKSPACE_ID` + `OPENCODE_GO_AUTH_COOKIE` or auth fields `usageWorkspaceId` + `usageAuthCookie` |
 | `zai-coding-plan` | z.ai | `providers/zai.js` | `zai-coding-plan`, `zai`, `z.ai` |
 | `zhipuai-coding-plan` | Zhipu AI Coding Plan | `providers/zhipuai-coding-plan.js` | `zhipuai-coding-plan`, `zhipuai`, `zhipu` |
 | `minimax-coding-plan` | MiniMax Coding Plan (minimax.io) | `providers/minimax-coding-plan.js` | `minimax-coding-plan` |
 | `minimax-cn-coding-plan` | MiniMax Coding Plan (minimaxi.com) | `providers/minimax-cn-coding-plan.js` | `minimax-cn-coding-plan` |
 | `ollama-cloud` | Ollama Cloud | `providers/ollama-cloud.js` | Cookie file at `~/.config/ollama-quota/cookie` (raw session cookie string) |
+
+## Codex reset-bank credits
+
+The Codex provider uses the OpenAI/ChatGPT OAuth entry (`openai`, `codex`, or `chatgpt`) and fetches the standard usage payload from `https://chatgpt.com/backend-api/wham/usage`. When possible it also makes a best-effort request to the private `https://chatgpt.com/backend-api/wham/rate-limit-reset-credits` endpoint to display reset-bank credits with per-credit expiry dates.
+
+The reset-credit endpoint is undocumented and can change independently of the stable usage payload. Provider failures from this secondary request must not fail quota refresh. If the dedicated request fails, the provider falls back to `rate_limit_reset_credits.available_count` from `/wham/usage` when present; if neither source reports reset-bank data, the legacy `credits.balance` dollar row remains available.
 
 ## Internal-only provider module
 - `providers/openai.js` exists for logic parity/reuse but is intentionally not registered for dispatcher ID routing.
@@ -44,6 +51,10 @@ The Claude provider has two usage data sources, in priority order:
 
 1. When OpenCode auth contains an Anthropic OAuth access token, `providers/claude.js` calls Anthropic's OAuth usage endpoint (`https://api.anthropic.com/api/oauth/usage`) and maps `five_hour`, `seven_day`, and model-specific seven-day windows into the shared quota response shape.
 2. When no token exists but the local `opencode-with-claude` proxy config is detected, `providers/claude.js` self-heals the Claude Code status-line bridge and reads Claude Code's status JSON. This path reports the overall 5-hour and 7-day windows from Claude Code `rate_limits` data. If Claude Code has not emitted a status-line payload yet, OpenChamber runs `claude -p "Reply with exactly: OK" --output-format text` to force a minimal non-interactive Claude Code response, then reads the status JSON again. If the CLI is missing, unauthenticated, or still does not emit status-line usage, the provider returns a configured error with deterministic guidance.
+
+## OpenCode Go usage source
+
+OpenCode Go usage is dashboard-backed because OpenCode documents Go model endpoints but not a stable usage API. `providers/opencode-go.js` reads `OPENCODE_GO_WORKSPACE_ID` + `OPENCODE_GO_AUTH_COOKIE` first, then falls back to `auth["opencode-go"].usageWorkspaceId` + `auth["opencode-go"].usageAuthCookie`. It fetches `https://opencode.ai/workspace/<workspaceId>/go` with the `auth` cookie and parses the server-rendered `rollingUsage`, `weeklyUsage`, and `monthlyUsage` fields into the shared quota window shape. The provider is considered configured when either the Go API key or usage credentials exist; if only the API key exists, the quota result returns a configured setup error instead of hiding the provider.
 
 ## Response contract
 All providers should return results via shared helpers to preserve API shape:

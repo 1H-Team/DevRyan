@@ -234,6 +234,24 @@ describe("updateStreamingState", () => {
     expect(useStreamingStore.getState().messageStreamStates.get("msg_assistant_1")?.phase).toBe("completed")
   })
 
+  test("keeps a completed tool-call assistant streaming between tools while status is busy", () => {
+    updateStreamingState(stateWithMessages([
+      message("msg_user_1", "user"),
+      message("msg_assistant_1", "assistant"),
+    ]))
+    expect(useStreamingStore.getState().streamingMessageIds.get("ses_1")).toBe("msg_assistant_1")
+
+    updateStreamingState(stateWithMessages([
+      message("msg_user_1", "user"),
+      completedToolCallsAssistantMessage("msg_assistant_1"),
+    ], { type: "busy" } as SessionStatus, {
+      msg_assistant_1: [toolPart("msg_assistant_1", "completed")],
+    }))
+
+    expect(useStreamingStore.getState().streamingMessageIds.get("ses_1")).toBe("msg_assistant_1")
+    expect(useStreamingStore.getState().messageStreamStates.get("msg_assistant_1")?.phase).toBe("streaming")
+  })
+
   test("does not replace a tool-call assistant with a trailing empty assistant shell", () => {
     updateStreamingState(stateWithMessages([
       message("msg_user_1", "user"),
