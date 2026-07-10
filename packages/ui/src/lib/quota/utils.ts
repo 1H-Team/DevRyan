@@ -51,7 +51,7 @@ export const formatWindowLabel = (label: string): string => {
   if (label === 'completions') return 'Completions';
   if (label === 'premium_interactions') return 'Premium interactions';
   if (label === 'total') return 'Total';
-  if (label === 'auto-composer') return 'Auto + Composer';
+  if (label === 'auto-composer') return 'First-party models';
   if (label === 'api') return 'API';
   return label;
 };

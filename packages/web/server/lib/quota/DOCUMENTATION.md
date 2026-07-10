@@ -18,7 +18,7 @@ These provider IDs are currently dispatchable via `fetchQuotaForProvider(provide
 | Provider ID | Display name | Module | Auth aliases/keys |
 | --- | --- | --- | --- |
 | `claude` | Anthropic | `providers/claude.js` | `anthropic`, `claude`, `anthropic-oauth`, `opencode-with-claude` |
-| `codex` | Codex | `providers/codex.js` | `openai`, `codex`, `chatgpt` |
+| `codex` | ChatGPT | `providers/codex.js` | `openai`, `codex`, `chatgpt` |
 | `cursor-acp` | Cursor | `providers/cursor-acp.js` | `cursor-acp.usageSessionToken` |
 | `google` | Google | `providers/google/index.js` | `google`, `google.oauth` |
 | `antigravity` | Antigravity | `providers/google/index.js` | Antigravity accounts file |

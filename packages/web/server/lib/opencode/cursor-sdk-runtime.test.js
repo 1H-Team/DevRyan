@@ -140,6 +140,10 @@ describe('Cursor SDK runtime', () => {
       cacheHit: false,
     });
     expect(createCalls).toHaveLength(1);
+    expect(createCalls[0]).toMatchObject({
+      local: { cwd: '/tmp/project' },
+      platform: { workspaceRef: '/tmp/project' },
+    });
     expect(sendCalls).toHaveLength(0);
 
     const secondRuntime = createCursorSdkRuntime({
@@ -192,6 +196,10 @@ describe('Cursor SDK runtime', () => {
 
     expect(resumeCalls).toHaveLength(1);
     expect(resumeCalls[0].agentID).toBe('agent-prepared');
+    expect(resumeCalls[0].options).toMatchObject({
+      local: { cwd: '/tmp/project' },
+      platform: { workspaceRef: '/tmp/project' },
+    });
     expect(sendCalls).toEqual(['resumed']);
   });
 
@@ -1114,8 +1122,8 @@ describe('Cursor SDK runtime', () => {
     });
 
     expect(sentPrompt).toContain('<agent_instructions name="builder">');
-    expect(sentPrompt).toContain('This Cursor SDK session is pinned to model "composer-2".');
-    expect(sentPrompt).toContain('Do not start task/subagent/delegation tools with a different model.');
+    expect(sentPrompt).toContain('This Cursor SDK parent session is pinned to model "composer-2".');
+    expect(sentPrompt).toContain('Cursor-managed task/subagent tools may report a different provider-selected model without changing the parent session model.');
     expect(sentPrompt).toContain('Builder must always finish with Summary and Verification sections.');
     expect(sentPrompt).toContain('<user_request>');
     expect(sentPrompt).toContain('Fix the startup race.');
@@ -1377,8 +1385,8 @@ describe('Cursor SDK runtime', () => {
     expect(result).toMatchObject({ handled: true, status: 204 });
     expect(runCreated).toBe(true);
     expect(sentPrompt.startsWith('User has requested to enter plan mode')).toBe(true);
-    expect(sentPrompt).toContain('This Cursor SDK session is pinned to model "composer-2".');
-    expect(sentPrompt).toContain('Do not start task/subagent/delegation tools with a different model.');
+    expect(sentPrompt).toContain('This Cursor SDK parent session is pinned to model "composer-2".');
+    expect(sentPrompt).toContain('Cursor-managed task/subagent tools may report a different provider-selected model without changing the parent session model.');
     expect(sentPrompt).toContain('<agent_instructions name="orchestrator">');
     expect(sentPrompt).toContain('Unknown codebase location: call `explorer` before broad direct search.');
     expect(sentPrompt).toContain('Unknown file/code discovery in plan mode also routes to `explorer`; keep the rest of the turn read-only and produce only the plan.');
@@ -2382,31 +2390,59 @@ describe('Cursor SDK runtime', () => {
     expect(runtime.getSessionStatus?.().ses_status).toEqual({ type: 'idle' });
   });
 
-  it('cancels Cursor task subagents that switch away from the selected concrete model', async () => {
+  it('continues a Grok parent run when a generic Cursor task uses Composer 2.5', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
     let cancelled = false;
+    let sentModelSelection = null;
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
       env: {},
       emitEvent: () => {},
-      createPromptRun: async () => ({
+      loadSdk: async () => ({
+        Cursor: {
+          models: {
+            list: async () => [{
+              id: 'grok-4.5',
+              displayName: 'Grok 4.5',
+              parameters: [
+                { id: 'effort', values: [{ value: 'low' }] },
+                { id: 'fast', values: [{ value: 'false' }, { value: 'true' }] },
+              ],
+              variants: [{
+                displayName: 'Grok 4.5 Low',
+                isDefault: true,
+                params: [
+                  { id: 'effort', value: 'low' },
+                  { id: 'fast', value: 'false' },
+                ],
+              }],
+            }],
+          },
+        },
+      }),
+      createPromptRun: async ({ modelSelection }) => ({
         cancel: async () => {
           cancelled = true;
         },
         stream: async function* stream() {
+          sentModelSelection = modelSelection;
           yield {
             type: 'message',
             message: {
               type: 'tool_call',
               call_id: 'task_1',
               name: 'task',
-              status: 'running',
+              status: 'completed',
               args: {
                 description: 'Explore with a subagent',
                 prompt: 'Read-only exploration',
-                model: 'composer-2.5',
+                model: {
+                  id: 'composer-2.5',
+                  params: [{ id: 'fast', value: 'false' }],
+                },
               },
+              result: 'Subagent completed on Composer 2.5.',
             },
           };
           yield {
@@ -2414,7 +2450,7 @@ describe('Cursor SDK runtime', () => {
             message: {
               type: 'assistant',
               message: {
-                content: [{ type: 'text', text: 'should not continue' }],
+                content: [{ type: 'text', text: 'continued on the Grok parent' }],
               },
             },
           };
@@ -2422,13 +2458,15 @@ describe('Cursor SDK runtime', () => {
       }),
     });
 
+    await runtime.getVirtualProvider();
     await runtime.handlePromptAsync({
       sessionID: 'ses_model_boundary',
       directory: '/tmp/project',
       body: {
-        model: { providerID: 'cursor-acp', modelID: 'composer-2' },
+        model: { providerID: 'cursor-acp', modelID: 'grok-4.5' },
+        variant: 'low',
         messageID: 'msg_model_boundary_user',
-        parts: [{ type: 'text', text: 'stay on composer 2' }],
+        parts: [{ type: 'text', text: 'delegate and continue on Grok' }],
       },
     });
 
@@ -2440,30 +2478,212 @@ describe('Cursor SDK runtime', () => {
     });
 
     const assistant = records?.find((record) => record.info?.role === 'assistant');
-    const text = assistant?.parts?.find((part) => part.type === 'text')?.text || '';
     const taskPart = assistant?.parts?.find((part) => part.type === 'tool' && part.tool === 'task');
 
-    expect(cancelled).toBe(true);
+    expect(sentModelSelection).toEqual({
+      id: 'grok-4.5',
+      params: [
+        { id: 'effort', value: 'low' },
+        { id: 'fast', value: 'false' },
+      ],
+    });
+    expect(cancelled).toBe(false);
     await waitFor(async () => (
       runtime.getSessionStatus?.().ses_model_boundary?.type === 'idle' ? true : null
     ));
     expect(runtime.getSessionStatus?.().ses_model_boundary).toEqual({ type: 'idle' });
-    expect(runtime.getRuntimeStatus().lastCancellation).toMatchObject({
-      sessionID: 'ses_model_boundary',
-      assistantMessageID: 'msg_model_boundary_user_assistant',
-      source: 'model_boundary',
-      finalStatus: 'error',
-    });
-    expect(assistant?.info.finish).toBe('error');
-    expect(text).toContain('Cursor SDK model boundary violation');
-    expect(text).toContain('composer-2.5');
-    expect(text).toContain('composer-2');
+    expect(runtime.getRuntimeStatus().lastCancellation).toBeNull();
+    expect(assistant?.info.finish).toBe('stop');
+    expect(assistant?.parts?.find((part) => part.type === 'text')?.text).toBe('continued on the Grok parent');
+    expect(taskPart?.output).toBe('Subagent completed on Composer 2.5.');
     expect(taskPart?.state).toMatchObject({
-      status: 'error',
+      status: 'completed',
       input: {
+        model: {
+          id: 'composer-2.5',
+          params: [{ id: 'fast', value: 'false' }],
+        },
+      },
+    });
+  });
+
+  it('preserves Task input, output, metadata, and terminal status across split SDK events', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: {},
+      emitEvent: () => {},
+      createPromptRun: async () => ({
+        cancel: async () => {},
+        stream: async function* stream() {
+          yield {
+            type: 'message',
+            message: {
+              type: 'tool_call',
+              call_id: 'task_split_1',
+              name: 'task',
+              status: 'running',
+              args: {
+                description: 'Explore with a subagent',
+                model: {
+                  id: 'composer-2.5',
+                  params: [{ id: 'fast', value: 'false' }],
+                },
+              },
+              metadata: { startedBy: 'cursor' },
+            },
+          };
+          yield {
+            type: 'message',
+            message: {
+              type: 'tool_call',
+              call_id: 'task_split_1',
+              name: 'task',
+              status: 'completed',
+              result: 'Subagent completed on Composer 2.5.',
+              metadata: { resultSource: 'sdk' },
+            },
+          };
+          yield {
+            type: 'message',
+            message: {
+              type: 'tool_call',
+              call_id: 'task_split_1',
+              name: 'task',
+              status: 'running',
+            },
+          };
+          yield {
+            type: 'message',
+            message: {
+              type: 'assistant',
+              message: { content: [{ type: 'text', text: 'parent continued' }] },
+            },
+          };
+        },
+      }),
+    });
+
+    await runtime.handlePromptAsync({
+      sessionID: 'ses_split_task_events',
+      directory: '/tmp/project',
+      body: {
+        model: { providerID: 'cursor-acp', modelID: 'grok-4.5' },
+        messageID: 'msg_split_task_events_user',
+        parts: [{ type: 'text', text: 'delegate and continue' }],
+      },
+    });
+
+    const records = await waitFor(async () => {
+      const current = await runtime.getSessionMessages('ses_split_task_events');
+      return current.some((record) => record.info?.role === 'assistant' && record.info?.finish)
+        ? current
+        : null;
+    });
+    const taskPart = records?.[1]?.parts?.find((part) => part.type === 'tool' && part.tool === 'task');
+
+    expect(taskPart?.input).toEqual({
+      description: 'Explore with a subagent',
+      model: {
+        id: 'composer-2.5',
+        params: [{ id: 'fast', value: 'false' }],
+      },
+    });
+    expect(taskPart?.output).toBe('Subagent completed on Composer 2.5.');
+    expect(taskPart?.state).toMatchObject({
+      status: 'completed',
+      metadata: {
+        startedBy: 'cursor',
+        resultSource: 'sdk',
+      },
+    });
+    expect(taskPart?.state?.time?.end).toEqual(expect.any(Number));
+    expect(records?.[1]?.parts?.find((part) => part.type === 'text')?.text).toBe('parent continued');
+    await runtime.dispose();
+  });
+
+  it('continues a Cursor parent run when a named custom task reports a different model', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
+    let cancelled = false;
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: {},
+      emitEvent: () => {},
+      resolveAgentDefinitions: async () => ({
+        explorer: {
+          description: 'Read-only code explorer',
+          prompt: 'Inspect the repository and report findings.',
+          model: 'inherit',
+        },
+      }),
+      createPromptRun: async () => ({
+        cancel: async () => {
+          cancelled = true;
+        },
+        stream: async function* stream() {
+          yield {
+            type: 'message',
+            message: {
+              type: 'tool_call',
+              call_id: 'task_named_model_1',
+              name: 'task',
+              status: 'completed',
+              args: {
+                description: 'Explore with the named agent',
+                prompt: 'Read-only exploration',
+                subagentType: { kind: 'custom', name: 'explorer' },
+                model: 'composer-2.5',
+              },
+              result: 'Named subagent completed.',
+            },
+          };
+          yield {
+            type: 'message',
+            message: {
+              type: 'assistant',
+              message: {
+                content: [{ type: 'text', text: 'continued after named task' }],
+              },
+            },
+          };
+        },
+      }),
+    });
+
+    await runtime.handlePromptAsync({
+      sessionID: 'ses_named_model_boundary',
+      directory: '/tmp/project',
+      body: {
+        model: { providerID: 'cursor-acp', modelID: 'gpt-5.5' },
+        messageID: 'msg_named_model_boundary_user',
+        parts: [{ type: 'text', text: 'delegate to explorer' }],
+      },
+    });
+
+    const records = await waitFor(async () => {
+      const current = await runtime.getSessionMessages('ses_named_model_boundary');
+      return current.some((record) => record.info?.role === 'assistant' && record.info?.finish)
+        ? current
+        : null;
+    });
+
+    const assistant = records?.find((record) => record.info?.role === 'assistant');
+    const taskPart = assistant?.parts?.find((part) => part.type === 'tool' && part.tool === 'task');
+
+    expect(cancelled).toBe(false);
+    expect(assistant?.info.finish).toBe('stop');
+    expect(taskPart?.state).toMatchObject({
+      status: 'completed',
+      input: {
+        subagentType: { kind: 'custom', name: 'explorer' },
         model: 'composer-2.5',
       },
     });
+    expect(taskPart?.output).toBe('Named subagent completed.');
+    expect(assistant?.parts?.find((part) => part.type === 'text')?.text).toBe('continued after named task');
+    expect(runtime.getRuntimeStatus().lastCancellation).toBeNull();
   });
 
   it('allows Cursor task subagents that use a configured explicit subagent model', async () => {
@@ -2542,7 +2762,7 @@ describe('Cursor SDK runtime', () => {
     expect(runtime.getRuntimeStatus().lastCancellation).toBeNull();
   });
 
-  it('allows Cursor task subagents that request the same effective fast model selection', async () => {
+  it('preserves structured model input for Cursor task subagents', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
     let cancelled = false;
     const runtime = createCursorSdkRuntime({
@@ -2614,12 +2834,7 @@ describe('Cursor SDK runtime', () => {
     expect(runtime.getRuntimeStatus().lastCancellation).toBeNull();
   });
 
-  it('does not abort a non-fast Cursor session when a subagent delegates with fast=true', async () => {
-    // Regression: cursor-agent's default (which tracks the Cursor desktop app)
-    // makes an orchestrator delegate to composer-2.5 (fast=true) even when the
-    // DevRyan session is pinned to composer-2.5 (fast=false). `fast` is a pure
-    // speed/cost toggle, not a distinct model, so this must NOT trip the
-    // model-boundary guard or abort the run.
+  it('continues the parent run when Cursor reports a different task fast toggle', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-runtime-'));
     let cancelled = false;
     const runtime = createCursorSdkRuntime({

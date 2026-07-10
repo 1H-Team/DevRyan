@@ -23,7 +23,11 @@ const SidebarLeftExpandIcon = (props: React.ComponentProps<typeof SidebarLeftIco
   <SidebarLeftIcon {...props} chevronDirection="right" />
 );
 
-export const DesktopEdgeChrome: React.FC = () => {
+interface DesktopEdgeChromeProps {
+  hideActions: boolean;
+}
+
+export const DesktopEdgeChrome: React.FC<DesktopEdgeChromeProps> = ({ hideActions }) => {
   const { t } = useI18n();
   const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
   const toggleSidebar = useUIStore((state) => state.toggleSidebar);
@@ -163,61 +167,65 @@ export const DesktopEdgeChrome: React.FC = () => {
         className="app-region-drag pointer-events-auto absolute top-0 left-0 h-full"
         style={{ width: 'var(--oc-desktop-chrome-left, 0.75rem)' }}
       />
-      <div
-        className={cn(
-          'app-region-no-drag pointer-events-auto absolute top-0 flex h-full items-center gap-1.5',
-          leftInsetClassName,
-        )}
-      >
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={toggleSidebar}
-              className={DESKTOP_HEADER_ICON_BUTTON_CLASS}
-              aria-label={isSidebarOpen
-                ? t('sessions.sidebar.header.actions.closeSessions')
-                : t('header.actions.openSessionsAria')}
-            >
-              {isSidebarOpen ? (
-                <SidebarLeftIcon className="h-[18px] w-[18px]" chevronDirection="left" />
-              ) : (
-                <SidebarLeftExpandIcon className="h-[18px] w-[18px]" />
-              )}
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>
-              {isSidebarOpen
-                ? t('sessions.sidebar.header.actions.closeSessions')
-                : t('header.actions.openSessionsWithShortcut', { shortcut: shortcutLabel('toggle_sidebar') })}
-            </p>
-          </TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={() => setSessionSearchOpen(true)}
-              className={DESKTOP_HEADER_ICON_BUTTON_CLASS}
-              aria-label={t('sessions.sidebar.header.actions.searchSessions')}
-              aria-expanded={isSessionSearchOpen}
-            >
-              <RiSearchLine className="h-[18px] w-[18px]" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{t('sessions.sidebar.header.actions.searchSessions')}</p>
-          </TooltipContent>
-        </Tooltip>
-      </div>
+      {!hideActions && (
+        <div
+          className={cn(
+            'app-region-no-drag pointer-events-auto absolute top-0 flex h-full items-center gap-1.5',
+            leftInsetClassName,
+          )}
+        >
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                className={DESKTOP_HEADER_ICON_BUTTON_CLASS}
+                aria-label={isSidebarOpen
+                  ? t('sessions.sidebar.header.actions.closeSessions')
+                  : t('header.actions.openSessionsAria')}
+              >
+                {isSidebarOpen ? (
+                  <SidebarLeftIcon className="h-[18px] w-[18px]" chevronDirection="left" />
+                ) : (
+                  <SidebarLeftExpandIcon className="h-[18px] w-[18px]" />
+                )}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>
+                {isSidebarOpen
+                  ? t('sessions.sidebar.header.actions.closeSessions')
+                  : t('header.actions.openSessionsWithShortcut', { shortcut: shortcutLabel('toggle_sidebar') })}
+              </p>
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={() => setSessionSearchOpen(true)}
+                className={DESKTOP_HEADER_ICON_BUTTON_CLASS}
+                aria-label={t('sessions.sidebar.header.actions.searchSessions')}
+                aria-expanded={isSessionSearchOpen}
+              >
+                <RiSearchLine className="h-[18px] w-[18px]" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{t('sessions.sidebar.header.actions.searchSessions')}</p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      )}
 
-      <div
-        className="app-region-no-drag pointer-events-auto absolute top-0 flex h-full items-center"
-        style={rightClusterStyle}
-      >
-        <DesktopRightChromeActions />
-      </div>
+      {!hideActions && (
+        <div
+          className="app-region-no-drag pointer-events-auto absolute top-0 flex h-full items-center"
+          style={rightClusterStyle}
+        >
+          <DesktopRightChromeActions />
+        </div>
+      )}
     </div>
   );
 };

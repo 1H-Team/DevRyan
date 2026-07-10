@@ -30,6 +30,7 @@ import {
 import {
     getTaskSummaryLabel,
     formatTaskErrorText,
+    formatTaskModelLabel,
     formatSpecialistTaskOutputForMarkdown,
     shouldRenderGitPathLabel,
     stripTaskMetadataFromOutput,
@@ -390,6 +391,7 @@ export const TaskToolSummary: React.FC<{
     );
     const hasOutput = trimmedOutput.length > 0;
     const errorText = formatTaskErrorText(error);
+    const taskModelLabel = formatTaskModelLabel(input?.model);
     const [isOutputExpanded, setIsOutputExpanded] = React.useState(false);
     const summaryRowsState = React.useMemo(() => {
         const toolParts = entries.map(taskSummaryEntryToToolPart);
@@ -420,6 +422,11 @@ export const TaskToolSummary: React.FC<{
     if (entries.length === 0 && !hasOutput && !sessionId) {
         return (
             <div className="relative pr-2 pb-2 pt-2 space-y-2 pl-[1.4375rem]">
+                {taskModelLabel ? (
+                    <div className="typography-micro font-mono text-muted-foreground/60" title={taskModelLabel}>
+                        {taskModelLabel}
+                    </div>
+                ) : null}
                 <div className="typography-meta text-muted-foreground/70">
                     {errorText || (isActive ? 'Waiting for subagent activity...' : 'Subtask activity is unavailable.')}
                 </div>
@@ -433,6 +440,11 @@ export const TaskToolSummary: React.FC<{
 
     return (
         <div className="relative pr-2 pb-2 pt-2 space-y-2">
+            {taskModelLabel ? (
+                <div className="pl-[1.4375rem] typography-micro font-mono text-muted-foreground/60" title={taskModelLabel}>
+                    {taskModelLabel}
+                </div>
+            ) : null}
             {hasActivityContent ? (
                 <div
                     className={cn(

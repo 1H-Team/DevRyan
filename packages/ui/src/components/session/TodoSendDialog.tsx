@@ -16,7 +16,7 @@ import { ModelSelector } from '@/components/sections/agents/ModelSelector';
 import { AgentSelector } from '@/components/sections/commands/AgentSelector';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useAgentsStore } from '@/stores/useAgentsStore';
-import { isPrimaryMode } from '@/components/chat/mobileControlsUtils';
+import { formatEffortLabel, isPrimaryMode } from '@/components/chat/mobileControlsUtils';
 import { cn } from '@/lib/utils';
 import { RiArrowDownSLine } from '@remixicon/react';
 import { useI18n } from '@/lib/i18n';
@@ -62,7 +62,7 @@ type ThinkingPillProps = {
 const ThinkingPill = ({ value, options, disabled, onChange }: ThinkingPillProps) => {
   const { t } = useI18n();
   const resolvedValue = resolveThinkingVariant(value, options);
-  const label = resolvedValue || t('chat.modelControls.thinking');
+  const label = resolvedValue ? formatEffortLabel(resolvedValue) : t('chat.modelControls.thinking');
 
   const trigger = (
     <div
@@ -89,7 +89,7 @@ const ThinkingPill = ({ value, options, disabled, onChange }: ThinkingPillProps)
             onSelect={() => onChange(option)}
           >
             <span className={cn('font-medium capitalize', resolvedValue === option && 'text-primary')}>
-              {option}
+              {formatEffortLabel(option)}
             </span>
           </DropdownMenuItem>
         ))}

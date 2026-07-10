@@ -32,8 +32,24 @@ describe('GitHub Copilot model discovery', () => {
     expect(result).toEqual({
       source: 'account',
       models: {
-        'gpt-5.5': { id: 'gpt-5.5', name: 'GPT 5.5' },
-        'claude-sonnet-5': { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' },
+        'gpt-5.5': {
+          id: 'gpt-5.5',
+          name: 'GPT 5.5',
+          api: {
+            id: 'gpt-5.5',
+            url: 'https://api.githubcopilot.com',
+            npm: '@ai-sdk/github-copilot',
+          },
+        },
+        'claude-sonnet-5': {
+          id: 'claude-sonnet-5',
+          name: 'Claude Sonnet 5',
+          api: {
+            id: 'claude-sonnet-5',
+            url: 'https://api.githubcopilot.com',
+            npm: '@ai-sdk/github-copilot',
+          },
+        },
       },
     });
     expect(fetchImpl).toHaveBeenCalledWith('https://api.githubcopilot.com/models', {
@@ -100,12 +116,117 @@ describe('GitHub Copilot model discovery', () => {
     expect(first).toEqual({
       source: 'fallback',
       models: {
-        'gpt-5.1-codex': { id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex' },
+        'gpt-5.1-codex': {
+          id: 'gpt-5.1-codex',
+          name: 'GPT-5.1 Codex',
+          api: {
+            id: 'gpt-5.1-codex',
+            url: 'https://api.githubcopilot.com',
+            npm: '@ai-sdk/github-copilot',
+          },
+        },
       },
     });
     expect(second.source).toBe('account');
-    expect(second.models['gpt-5.3-codex']).toEqual({ id: 'gpt-5.3-codex', name: 'GPT 5.3 Codex' });
+    expect(second.models['gpt-5.3-codex']).toEqual({
+      id: 'gpt-5.3-codex',
+      name: 'GPT 5.3 Codex',
+      api: {
+        id: 'gpt-5.3-codex',
+        url: 'https://api.githubcopilot.com',
+        npm: '@ai-sdk/github-copilot',
+      },
+    });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('prefers picker-enabled models when capability metadata is present', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: vi.fn(async () => ({
+        data: [
+          {
+            id: 'gpt-hidden',
+            name: 'Hidden',
+            model_picker_enabled: false,
+            capabilities: {
+              limits: { max_output_tokens: 1000, max_prompt_tokens: 8000 },
+              supports: { tool_calls: true },
+            },
+          },
+          {
+            id: 'gpt-visible',
+            name: 'Visible',
+            model_picker_enabled: true,
+            capabilities: {
+              limits: { max_output_tokens: 1000, max_prompt_tokens: 8000 },
+              supports: { tool_calls: true },
+            },
+          },
+          {
+            id: 'text-embedding-3-small',
+            name: 'Embeddings',
+            model_picker_enabled: true,
+            capabilities: {
+              limits: { max_output_tokens: 1000, max_prompt_tokens: 8000 },
+              supports: { tool_calls: true },
+            },
+          },
+        ],
+      })),
+    }));
+
+    const result = await discoverGitHubCopilotModels({
+      readAuthFile: () => ({ 'github-copilot': { access: 'copilot-token' } }),
+      fetchImpl,
+    });
+
+    expect(Object.keys(result.models)).toEqual(['gpt-visible']);
+  });
+
+  it('falls back to usable chat models when every picker flag is false', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: vi.fn(async () => ({
+        data: [
+          {
+            id: 'gpt-5.3-codex',
+            name: 'GPT-5.3 Codex',
+            model_picker_enabled: false,
+            capabilities: {
+              limits: { max_output_tokens: 1000, max_prompt_tokens: 8000 },
+              supports: { tool_calls: true },
+            },
+          },
+          {
+            id: 'text-embedding-3-small',
+            name: 'Embeddings',
+            model_picker_enabled: false,
+            capabilities: {
+              limits: { max_output_tokens: 1000, max_prompt_tokens: 8000 },
+              supports: { tool_calls: true },
+            },
+          },
+          {
+            id: 'incomplete',
+            name: 'Incomplete',
+            model_picker_enabled: false,
+            capabilities: {
+              limits: { max_output_tokens: 1000 },
+              supports: {},
+            },
+          },
+        ],
+      })),
+    }));
+
+    const result = await discoverGitHubCopilotModels({
+      readAuthFile: () => ({ 'github-copilot': { access: 'copilot-token' } }),
+      fetchImpl,
+    });
+
+    expect(Object.keys(result.models)).toEqual(['gpt-5.3-codex']);
+    expect(result.models['gpt-5.3-codex'].api.npm).toBe('@ai-sdk/github-copilot');
   });
 
   it('reports unavailable when no Copilot token exists', async () => {

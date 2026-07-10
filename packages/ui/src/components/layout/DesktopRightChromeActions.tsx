@@ -342,7 +342,7 @@ export const DesktopRightChromeActions: React.FC = () => {
     return servicesTabs.map((tab) => ({
       id: tab.value,
       label: tab.label,
-      icon: <tab.icon className="h-3.5 w-3.5" />,
+      icon: <tab.icon className="h-4 w-4" />,
     }));
   }, [servicesTabs]);
 

@@ -376,6 +376,7 @@ interface MessageRowProps {
     message: ChatMessageEntry;
     previousMessage?: ChatMessageEntry;
     nextMessage?: ChatMessageEntry;
+    isLatestMessage: boolean;
     turnGroupingContext?: TurnGroupingContext;
     assistantHeaderMessageId?: string;
     isInActiveTurn?: boolean;
@@ -391,6 +392,7 @@ const MessageRow = React.memo<MessageRowProps>(({
     message,
     previousMessage,
     nextMessage,
+    isLatestMessage,
     turnGroupingContext,
     assistantHeaderMessageId,
     isInActiveTurn,
@@ -406,6 +408,7 @@ const MessageRow = React.memo<MessageRowProps>(({
             message={message}
             previousMessage={previousMessage}
             nextMessage={nextMessage}
+            isLatestMessage={isLatestMessage}
             animateUserOnMount={animateUserOnMount}
             onUserAnimationConsumed={onUserAnimationConsumed}
             onContentChange={onContentChange}
@@ -424,6 +427,7 @@ const MessageRow = React.memo<MessageRowProps>(({
     return areRenderRelevantMessagesEqual(prev.message, next.message)
         && areOptionalRenderRelevantMessagesEqual(prev.previousMessage, next.previousMessage)
         && areOptionalRenderRelevantMessagesEqual(prev.nextMessage, next.nextMessage)
+        && prev.isLatestMessage === next.isLatestMessage
         && prev.animateUserOnMount === next.animateUserOnMount
         && prev.onUserAnimationConsumed === next.onUserAnimationConsumed
         && prev.onContentChange === next.onContentChange
@@ -445,6 +449,7 @@ MessageRow.displayName = 'MessageRow';
 
 interface TurnBlockProps {
     turn: TurnRecord;
+    latestRawMessageId: string | null;
     isLastTurn: boolean;
     sessionIsWorking: boolean;
     defaultActivityExpanded: boolean;
@@ -463,6 +468,7 @@ interface TurnBlockProps {
 
 const TurnBlock = React.memo(({
     turn,
+    latestRawMessageId,
     isLastTurn,
     sessionIsWorking,
     defaultActivityExpanded,
@@ -729,6 +735,7 @@ const TurnBlock = React.memo(({
                     message={message}
                     previousMessage={previousMessage}
                     nextMessage={nextMessage}
+                    isLatestMessage={message.info.id === latestRawMessageId}
                     turnGroupingContext={turnGroupingContext}
                     assistantHeaderMessageId={assistantHeaderMessageId}
                     isInActiveTurn={Boolean(streamingAssistantMessageId) && message.info.id === streamingAssistantMessageId}
@@ -744,6 +751,7 @@ const TurnBlock = React.memo(({
         [
             getAnimationHandlers,
             isLastTurn,
+            latestRawMessageId,
             messageOrder.lookup,
             messageOrder.ordered,
             onMessageContentChange,
@@ -790,6 +798,7 @@ interface UngroupedMessageRowProps {
     message: ChatMessageEntry;
     previousMessage?: ChatMessageEntry;
     nextMessage?: ChatMessageEntry;
+    isLatestMessage: boolean;
     onMessageContentChange: (reason?: ContentChangeReason) => void;
     getAnimationHandlers: (messageId: string) => AnimationHandlers;
     scrollToBottom?: () => void;
@@ -803,6 +812,7 @@ const UngroupedMessageRow = React.memo(({
     message,
     previousMessage,
     nextMessage,
+    isLatestMessage,
     onMessageContentChange,
     getAnimationHandlers,
     scrollToBottom,
@@ -816,6 +826,7 @@ const UngroupedMessageRow = React.memo(({
             message={message}
             previousMessage={previousMessage}
             nextMessage={nextMessage}
+            isLatestMessage={isLatestMessage}
             animateUserOnMount={shouldAnimateUserMessage(message)}
             onUserAnimationConsumed={onUserAnimationConsumed}
             onContentChange={onMessageContentChange}
@@ -831,6 +842,7 @@ UngroupedMessageRow.displayName = 'UngroupedMessageRow';
 
 interface MessageListEntryProps {
     entry: RenderEntry;
+    latestRawMessageId: string | null;
     onMessageContentChange: (reason?: ContentChangeReason) => void;
     getAnimationHandlers: (messageId: string) => AnimationHandlers;
     scrollToBottom?: () => void;
@@ -860,6 +872,7 @@ const turnContainsMessageId = (turn: TurnRecord, messageId: string | null | unde
 
 const MessageListEntry = React.memo(({
     entry,
+    latestRawMessageId,
     onMessageContentChange,
     getAnimationHandlers,
     scrollToBottom,
@@ -880,6 +893,7 @@ const MessageListEntry = React.memo(({
                 message={entry.message}
                 previousMessage={entry.previousMessage}
                 nextMessage={entry.nextMessage}
+                isLatestMessage={entry.message.info.id === latestRawMessageId}
                 onMessageContentChange={onMessageContentChange}
                 getAnimationHandlers={getAnimationHandlers}
                 scrollToBottom={scrollToBottom}
@@ -894,6 +908,7 @@ const MessageListEntry = React.memo(({
     return (
         <TurnBlock
             turn={entry.turn}
+            latestRawMessageId={latestRawMessageId}
             isLastTurn={entry.isLastTurn}
             sessionIsWorking={sessionIsWorking}
             defaultActivityExpanded={defaultActivityExpanded}
@@ -917,6 +932,7 @@ MessageListEntry.displayName = 'MessageListEntry';
 // Inner component that renders staged turn entries.
 const StaticHistoryList: React.FC<{
     entries: RenderEntry[];
+    latestRawMessageId: string | null;
     shouldVirtualize: boolean;
     virtualRows: VirtualItem[];
     totalSize: number;
@@ -933,12 +949,13 @@ const StaticHistoryList: React.FC<{
     shouldAnimateUserMessage: (message: ChatMessageEntry) => boolean;
     onUserAnimationConsumed: (messageId: string) => void;
     activeStreamingPhase?: StreamPhase | null;
-}> = ({ entries, shouldVirtualize, virtualRows, totalSize, measureElement, contentRef, onMessageContentChange, getAnimationHandlers, scrollToBottom, stickyUserHeader, defaultActivityExpanded, turnUiStates, onToggleTurnGroup, chatRenderMode, shouldAnimateUserMessage, onUserAnimationConsumed, activeStreamingPhase }) => {
+}> = ({ entries, latestRawMessageId, shouldVirtualize, virtualRows, totalSize, measureElement, contentRef, onMessageContentChange, getAnimationHandlers, scrollToBottom, stickyUserHeader, defaultActivityExpanded, turnUiStates, onToggleTurnGroup, chatRenderMode, shouldAnimateUserMessage, onUserAnimationConsumed, activeStreamingPhase }) => {
     const renderEntry = React.useCallback((entry: RenderEntry) => {
         return (
             <MessageListEntry
                 key={entry.key}
                 entry={entry}
+                latestRawMessageId={latestRawMessageId}
                 onMessageContentChange={onMessageContentChange}
                 getAnimationHandlers={getAnimationHandlers}
                 scrollToBottom={scrollToBottom}
@@ -954,7 +971,7 @@ const StaticHistoryList: React.FC<{
                 activeStreamingPhase={activeStreamingPhase}
             />
         );
-    }, [activeStreamingPhase, chatRenderMode, defaultActivityExpanded, getAnimationHandlers, onMessageContentChange, onToggleTurnGroup, onUserAnimationConsumed, scrollToBottom, shouldAnimateUserMessage, stickyUserHeader, turnUiStates]);
+    }, [activeStreamingPhase, chatRenderMode, defaultActivityExpanded, getAnimationHandlers, latestRawMessageId, onMessageContentChange, onToggleTurnGroup, onUserAnimationConsumed, scrollToBottom, shouldAnimateUserMessage, stickyUserHeader, turnUiStates]);
 
     const paddingTop = shouldVirtualize && virtualRows.length > 0
         ? virtualRows[0]?.start ?? 0
@@ -1007,6 +1024,7 @@ StaticHistoryList.displayName = 'StaticHistoryList';
 
 const StreamingTailContent: React.FC<{
     entry: RenderEntry;
+    latestRawMessageId: string | null;
     onMessageContentChange: (reason?: ContentChangeReason) => void;
     getAnimationHandlers: (messageId: string) => AnimationHandlers;
     scrollToBottom?: () => void;
@@ -1022,6 +1040,7 @@ const StreamingTailContent: React.FC<{
     activeStreamingPhase?: StreamPhase | null;
 }> = ({
     entry,
+    latestRawMessageId,
     onMessageContentChange,
     getAnimationHandlers,
     scrollToBottom,
@@ -1039,6 +1058,7 @@ const StreamingTailContent: React.FC<{
     return (
         <MessageListEntry
             entry={entry}
+            latestRawMessageId={latestRawMessageId}
             onMessageContentChange={onMessageContentChange}
             getAnimationHandlers={getAnimationHandlers}
             scrollToBottom={scrollToBottom}
@@ -1083,6 +1103,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
     const activityRenderMode = useUIStore((state) => state.activityRenderMode);
     const defaultActivityExpanded = activityRenderMode === 'summary';
+    const latestRawMessageId = messages.at(-1)?.info.id ?? null;
     const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
     const taskInvocations = React.useMemo(() => {
         const invocations = [];
@@ -1657,6 +1678,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                     <div className="relative w-full">
                         <StaticHistoryList
                             entries={historyEntries}
+                            latestRawMessageId={latestRawMessageId}
                             shouldVirtualize={shouldVirtualizeHistory}
                             virtualRows={historyVirtualRows}
                             totalSize={historyVirtualizer.getTotalSize()}
@@ -1677,6 +1699,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                         {trailingStreamingEntry ? (
                             <StreamingTailContent
                                 entry={trailingStreamingEntry}
+                                latestRawMessageId={latestRawMessageId}
                                 onMessageContentChange={stableTailContentChange}
                                 getAnimationHandlers={stableGetAnimationHandlers}
                                 scrollToBottom={stableScrollToBottom}

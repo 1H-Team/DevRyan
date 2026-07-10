@@ -1584,7 +1584,7 @@ describe("session-ui-store send routing", () => {
     expect(unarchiveCalls).toEqual([])
   })
 
-  test("successful Cursor sends repair stale provider-error session titles", async () => {
+  test("successful Cursor sends do not persist prompt fallbacks over provider-error titles", async () => {
     mockDirectoryState = {
       command: [],
       session: [{
@@ -1607,13 +1607,10 @@ describe("session-ui-store send routing", () => {
       "normal",
     )
 
-    expect(updateSessionTitleCalls).toEqual([{
-      sessionId: "session-b",
-      title: "Find services page",
-    }])
+    expect(updateSessionTitleCalls).toEqual([])
   })
 
-  test("successful Cursor sends repair generated new-session titles", async () => {
+  test("successful Cursor sends do not persist prompt fallbacks over generated new-session titles", async () => {
     mockDirectoryState = {
       command: [],
       session: [{
@@ -1636,10 +1633,7 @@ describe("session-ui-store send routing", () => {
       "normal",
     )
 
-    expect(updateSessionTitleCalls).toEqual([{
-      sessionId: "session-b",
-      title: "Remove calendar export PDF button",
-    }])
+    expect(updateSessionTitleCalls).toEqual([])
   })
 
   test("non-Cursor sends do not repair provider-error session titles", async () => {
@@ -2869,6 +2863,82 @@ describe("session-ui-store send routing", () => {
       entry.sessionId === "session-new"
       && entry.providerID === "provider-selected"
       && entry.modelID === "model-selected"
+    )).toBe(true)
+  })
+
+  test("first draft send routes to the orchestrator configured model before directory activation replaces retained global state", async () => {
+    mockCreatedSession = { id: "session-new", directory: "/repo" }
+    mockConfigState = {
+      currentAgentName: "orchestrator",
+      currentProviderId: "openai",
+      currentModelId: "gpt-5.5",
+      currentVariant: "medium",
+      settingsDefaultAgent: "orchestrator",
+      providers: [
+        {
+          id: "openai",
+          models: [
+            { id: "gpt-5.5", variants: { medium: {}, high: {} } },
+            { id: "gpt-5.6", variants: { sol: {}, medium: {} } },
+          ],
+        },
+      ],
+      agents: [
+        {
+          name: "orchestrator",
+          mode: "primary",
+          model: { providerID: "openai", modelID: "gpt-5.6" },
+          variant: "sol",
+        },
+      ],
+      activateDirectory: mock(() => {
+        mockConfigState = {
+          ...mockConfigState,
+          currentProviderId: "openai",
+          currentModelId: "gpt-5.6",
+          currentVariant: "sol",
+        }
+        return Promise.resolve()
+      }),
+    }
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      newSessionDraft: { open: true, directoryOverride: "/repo", parentID: null },
+    })
+
+    await useSessionUIStore.getState().sendMessage(
+      "first prompt",
+      "openai",
+      "gpt-5.5",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "medium",
+      "normal",
+    )
+
+    expect(sendMessageCalls[0]?.agent).toBe("orchestrator")
+    expect(sendMessageCalls[0]?.providerID).toBe("openai")
+    expect(sendMessageCalls[0]?.modelID).toBe("gpt-5.6")
+    expect(sendMessageCalls[0]?.variant).toBe("sol")
+    expect(savedSessionModels.some((entry) =>
+      entry.sessionId === "session-new"
+      && entry.providerID === "openai"
+      && entry.modelID === "gpt-5.6"
+    )).toBe(true)
+    expect(savedAgentModels.some((entry) =>
+      entry.sessionId === "session-new"
+      && entry.agent === "orchestrator"
+      && entry.providerID === "openai"
+      && entry.modelID === "gpt-5.6"
+    )).toBe(true)
+    expect(savedAgentVariants.some((entry) =>
+      entry.sessionId === "session-new"
+      && entry.agent === "orchestrator"
+      && entry.providerID === "openai"
+      && entry.modelID === "gpt-5.6"
+      && entry.variant === "sol"
     )).toBe(true)
   })
 

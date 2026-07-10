@@ -8,7 +8,7 @@ import {
   mergeOptimisticPage,
   type OptimisticItem,
 } from "./optimistic"
-import { scheduleCursorAcpTitleRepair, useSyncSDK, useSyncDirectory, useChildStoreManager, useSyncResyncSession } from "./sync-context"
+import { useSyncSDK, useSyncDirectory, useChildStoreManager, useSyncResyncSession } from "./sync-context"
 import { dropSessionCaches, getProtectedSessionCacheIds } from "./session-cache"
 import { stripMessageDiffSnapshots } from "./sanitize"
 import { updateSessionUserActivityFromMessages } from "./session-user-activity"
@@ -299,7 +299,6 @@ export function useSync() {
           ...(normalizedSessions !== current.session ? { session: normalizedSessions } : {}),
           ...(activityChanged ? { session_user_activity: draft.session_user_activity } : {}),
         })
-        scheduleCursorAcpTitleRepair(targetStore.getState(), sessionID)
         setMetaFor(sessionID, {
           limit: normalizeMessageFetchLimit(materialized.messages.length, limit),
           cursor: merged.cursor,

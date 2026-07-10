@@ -175,4 +175,38 @@ describe('oh-my-opencode-slim config adapter', () => {
     expect(written.agents.oracle).not.toHaveProperty('variant');
     expect(override).toEqual({ model: 'openai/gpt-5.4-mini', variant: null });
   });
+
+  it('persists a Grok fixer model and low variant as one Slim override', async () => {
+    const slimConfigPath = path.join(configDirectory, 'oh-my-opencode-slim.json');
+    await writeJson(path.join(configDirectory, 'opencode.json'), {
+      plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC],
+    });
+    await writeJson(slimConfigPath, {
+      preset: 'openai',
+      presets: {
+        openai: {
+          fixer: { model: 'openai/gpt-5.5', variant: 'low' },
+        },
+      },
+    });
+
+    writeSlimAgentModelOverride('fixer', {
+      model: 'cursor-acp/grok-4.5',
+      variant: 'low',
+    }, { configDirectory });
+
+    await expect(readJsonc(slimConfigPath)).resolves.toMatchObject({
+      agents: {
+        fixer: {
+          model: 'cursor-acp/grok-4.5',
+          variant: 'low',
+        },
+      },
+    });
+    expect(resolveSlimConfig(projectDirectory, { configDirectory }).agents.fixer).toMatchObject({
+      model: { providerID: 'cursor-acp', modelID: 'grok-4.5' },
+      modelRefs: ['cursor-acp/grok-4.5'],
+      variant: 'low',
+    });
+  });
 });

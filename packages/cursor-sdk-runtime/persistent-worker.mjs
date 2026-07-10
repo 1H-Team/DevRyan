@@ -5,6 +5,9 @@ import {
   pinCursorSdkSubagentModels,
 } from './agent-definitions.js';
 import { configureCursorSdkRipgrep } from './ripgrep-path.js';
+import {
+  generateCursorSessionTitle,
+} from './title-generation.js';
 
 const trimString = (value) => (typeof value === 'string' ? value.trim() : '');
 
@@ -268,6 +271,7 @@ const getOrCreateAgent = async ({ apiKey, sessionID, model, directory, agentID, 
     apiKey,
     model,
     local,
+    ...(directory ? { platform: { workspaceRef: directory } } : {}),
     ...(normalizedAgents ? { agents: normalizedAgents } : {}),
   };
   let agent = null;
@@ -324,6 +328,38 @@ const handlePrepare = async (command) => {
     writeRequestEvent(requestID, {
       type: 'error',
       error: error instanceof Error ? error.message : 'Cursor SDK worker prepare failed.',
+    });
+  }
+};
+
+const handleTitle = async (command) => {
+  const requestID = trimString(command.requestID);
+  const apiKey = trimString(command.apiKey);
+  const text = trimString(command.text);
+  const directory = trimString(command.directory);
+
+  if (!requestID) return;
+  if (!apiKey) throw new Error('Cursor SDK API key is not configured.');
+  if (!text) {
+    writeRequestEvent(requestID, { type: 'title-result', title: null });
+    return;
+  }
+
+  try {
+    const title = await generateCursorSessionTitle({
+      Agent,
+      apiKey,
+      text,
+      directory,
+    });
+    writeRequestEvent(requestID, {
+      type: 'title-result',
+      title,
+    });
+  } catch (error) {
+    writeRequestEvent(requestID, {
+      type: 'error',
+      error: error instanceof Error ? error.message : 'Cursor SDK title generation failed.',
     });
   }
 };
@@ -557,6 +593,8 @@ for await (const line of lines) {
     void handlePrompt(command);
   } else if (command?.type === 'prepare') {
     void handlePrepare(command);
+  } else if (command?.type === 'title') {
+    void handleTitle(command);
   } else if (command?.type === 'cancel') {
     void cancelRun(trimString(command.requestID));
   } else if (command?.type === 'warm') {

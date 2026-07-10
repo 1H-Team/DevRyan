@@ -7,6 +7,7 @@ Reusable React hooks for UI behavior orchestration: keyboard shortcuts, session 
 - **Behavior hooks, not data stores**: hooks compose existing store/sync selectors and runtime APIs; they avoid owning canonical state.
 - **Runtime-aware wrappers**: several hooks gate behavior for desktop/web/vscode differences (menu actions, filesystem access, PWA, voice availability).
 - **Stability and hot-path safety**: hooks tend to memoize callbacks/selectors and use refs to avoid frequent effect resubscription.
+- **Transient stream recovery**: `useTransientErrorAutoRetry.ts` reacts only to observed live busy/retry-to-idle transitions and delegates one-shot eligibility to a pure decision helper.
 
 ## Flow
 1. Components call hooks with local props/context.

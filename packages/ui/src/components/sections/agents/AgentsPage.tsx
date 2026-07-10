@@ -262,14 +262,12 @@ export const AgentsPage: React.FC = () => {
     agents,
     staleModelOverrides,
     saveAgentModelOverride,
-    resetAgentModelOverride,
   } = useAgentsStore(useShallow((s) => ({
     selectedAgentName: s.selectedAgentName,
     getAgentByName: s.getAgentByName,
     agents: s.agents,
     staleModelOverrides: s.staleModelOverrides,
     saveAgentModelOverride: s.saveAgentModelOverride,
-    resetAgentModelOverride: s.resetAgentModelOverride,
   })));
 
   const selectedAgent = selectedAgentName ? getAgentByName(selectedAgentName) : null;
@@ -662,26 +660,6 @@ export const AgentsPage: React.FC = () => {
     }
   }, [councilModels, councilVariants, getProviderForModelRef, isCouncilAgent, model, saveAgentModelOverride, selectedAgentName, t, variant]);
 
-  const handleResetModelOverride = React.useCallback(async () => {
-    if (!selectedAgentName) {
-      return;
-    }
-    setIsSavingModelOverride(true);
-    try {
-      const result = await resetAgentModelOverride(selectedAgentName);
-      if (hasRuntimeWarning(result)) {
-        const description = getRuntimeWarningDescription(result);
-        toast.warning(t('settings.agents.page.toast.modelOverrideResetRuntimeWarning'), description ? { description } : undefined);
-      } else {
-        toast.success(t('settings.agents.page.toast.modelOverrideReset'));
-      }
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : t('settings.agents.page.toast.modelOverrideResetFailed'));
-    } finally {
-      setIsSavingModelOverride(false);
-    }
-  }, [resetAgentModelOverride, selectedAgentName, t]);
-
   if (!selectedAgentName) {
     return <BehaviorPage />;
   }
@@ -843,28 +821,11 @@ export const AgentsPage: React.FC = () => {
     <ScrollableOverlay outerClassName="h-full" className="w-full">
       <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
 
-        {/* Header & Actions */}
-        <div className="mb-4 flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <h2 className="typography-ui-header font-semibold text-foreground truncate">
-              {formatAgentDisplayName(selectedAgentName)}
-            </h2>
-            <p className="typography-meta text-muted-foreground truncate">
-              {t('settings.agents.page.subtitle.edit')}
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="xs"
-              className="!font-normal"
-              onClick={() => void handleResetModelOverride()}
-              disabled={isSavingModelOverride}
-            >
-              {t('settings.agents.page.actions.resetModelOverride')}
-            </Button>
-          </div>
+        {/* Header */}
+        <div className="mb-4 min-w-0">
+          <h2 className="typography-ui-header font-semibold text-foreground truncate">
+            {formatAgentDisplayName(selectedAgentName)}
+          </h2>
         </div>
 
         {staleModelOverrides.length > 0 && (
@@ -1029,7 +990,7 @@ export const AgentsPage: React.FC = () => {
                       type="button"
                       variant="default"
                       size="xs"
-                      className="!font-normal"
+                      className="!font-normal normal-case"
                       onClick={() => void handleSaveModelOverride()}
                       disabled={isSavingModelOverride}
                     >

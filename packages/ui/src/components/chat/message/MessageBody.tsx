@@ -360,6 +360,8 @@ interface MessageBodyProps {
     onFork?: () => void;
     errorMessage?: string;
     errorVariant?: 'error' | 'info' | 'plain';
+    onErrorRetry?: () => void | Promise<void>;
+    errorRetryPending?: boolean;
     userActionsMode?: 'inline' | 'external-content' | 'external-actions';
     stickyUserHeaderEnabled?: boolean;
     isPlanModeSource?: boolean;
@@ -871,6 +873,8 @@ const AssistantMessageBody = React.memo(({
     turnGroupingContext,
     errorMessage,
     errorVariant = 'error',
+    onErrorRetry,
+    errorRetryPending = false,
     isPlanModeSource = false,
 }: Omit<MessageBodyProps, 'isUser'>) => {
     const { t } = useI18n();
@@ -1863,10 +1867,10 @@ const AssistantMessageBody = React.memo(({
                                              : 'bg-[var(--status-error-background)] border-[var(--status-error-border)]',
                                      ),
                              )}>
-                                 <div className={cn(errorVariant !== 'plain' && 'flex items-center gap-2')}>
+                                 <div className={cn(errorVariant !== 'plain' && 'flex items-start gap-2')}>
                                      {errorVariant !== 'plain' && (
                                          <ErrorIcon className={cn(
-                                             'h-4 w-4 shrink-0',
+                                             'mt-0.5 h-4 w-4 shrink-0',
                                              errorVariant === 'info' ? 'text-[var(--status-info)]' : 'text-[var(--status-error)]',
                                          )} />
                                      )}
@@ -1874,9 +1878,22 @@ const AssistantMessageBody = React.memo(({
                                          <SimpleMarkdownRenderer
                                              content={errorMessage ?? ''}
                                              onShowPopup={onShowPopup}
-                                            className="[&_.markdown-content>*:first-child]:mt-0 [&_.markdown-content>*:last-child]:mb-0"
+                                             className="[&_.markdown-content>*:first-child]:mt-0 [&_.markdown-content>*:last-child]:mb-0"
                                         />
                                     </div>
+                                    {onErrorRetry ? (
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-7 shrink-0 gap-1.5"
+                                            disabled={errorRetryPending}
+                                            onClick={() => void onErrorRetry()}
+                                        >
+                                            {errorRetryPending ? <RiHourglassLine className="h-3.5 w-3.5" /> : null}
+                                            {t('chat.assistantError.retry')}
+                                        </Button>
+                                    ) : null}
                                 </div>
                             </div>
                         </FadeInOnReveal>

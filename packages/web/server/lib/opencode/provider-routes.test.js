@@ -501,8 +501,24 @@ describe('OpenCode provider routes', () => {
         id: 'github-copilot',
         name: 'GitHub Copilot',
         models: {
-          'gpt-5.5': { id: 'gpt-5.5', name: 'GPT 5.5' },
-          'claude-sonnet-5': { id: 'claude-sonnet-5', name: 'Claude Sonnet 5' },
+          'gpt-5.5': {
+            id: 'gpt-5.5',
+            name: 'GPT 5.5',
+            api: {
+              id: 'gpt-5.5',
+              url: 'https://api.githubcopilot.com',
+              npm: '@ai-sdk/github-copilot',
+            },
+          },
+          'claude-sonnet-5': {
+            id: 'claude-sonnet-5',
+            name: 'Claude Sonnet 5',
+            api: {
+              id: 'claude-sonnet-5',
+              url: 'https://api.githubcopilot.com',
+              npm: '@ai-sdk/github-copilot',
+            },
+          },
         },
       },
     ]);
@@ -554,8 +570,24 @@ describe('OpenCode provider routes', () => {
       id: 'github-copilot',
       name: 'GitHub Copilot',
       models: {
-        'gpt-5.4-mini': { id: 'gpt-5.4-mini', name: 'GPT 5.4 Mini' },
-        'gpt-5.3-codex': { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex' },
+        'gpt-5.4-mini': {
+          id: 'gpt-5.4-mini',
+          name: 'GPT 5.4 Mini',
+          api: {
+            id: 'gpt-5.4-mini',
+            url: 'https://api.githubcopilot.com',
+            npm: '@ai-sdk/github-copilot',
+          },
+        },
+        'gpt-5.3-codex': {
+          id: 'gpt-5.3-codex',
+          name: 'GPT-5.3 Codex',
+          api: {
+            id: 'gpt-5.3-codex',
+            url: 'https://api.githubcopilot.com',
+            npm: '@ai-sdk/github-copilot',
+          },
+        },
       },
     }]);
     expect(response.body.default).toEqual({
@@ -593,7 +625,15 @@ describe('OpenCode provider routes', () => {
       id: 'github-copilot',
       name: 'GitHub Copilot',
       models: {
-        'gpt-5.1-codex': { id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex' },
+        'gpt-5.1-codex': {
+          id: 'gpt-5.1-codex',
+          name: 'GPT-5.1 Codex',
+          api: {
+            id: 'gpt-5.1-codex',
+            url: 'https://api.githubcopilot.com',
+            npm: '@ai-sdk/github-copilot',
+          },
+        },
       },
     });
 
@@ -627,7 +667,15 @@ describe('OpenCode provider routes', () => {
       id: 'github-copilot',
       name: 'GitHub Copilot',
       models: {
-        'gpt-5.2-codex': { id: 'gpt-5.2-codex', name: 'GPT 5.2 Codex' },
+        'gpt-5.2-codex': {
+          id: 'gpt-5.2-codex',
+          name: 'GPT 5.2 Codex',
+          api: {
+            id: 'gpt-5.2-codex',
+            url: 'https://api.githubcopilot.com',
+            npm: '@ai-sdk/github-copilot',
+          },
+        },
       },
     });
     expect(fetchSpy).toHaveBeenCalledWith('https://api.githubcopilot.com/models', expect.objectContaining({
@@ -910,6 +958,67 @@ describe('OpenCode provider routes', () => {
     expect(downstream).not.toHaveBeenCalled();
   });
 
+  it('schedules Cursor title generation without delaying the accepted prompt response', async () => {
+    const schedule = vi.fn(() => new Promise(() => {}));
+    const { app } = createApp({
+      cursorSessionTitleRuntime: { schedule },
+      cursorSdkRuntime: {
+        getRuntimeStatus: vi.fn(),
+        verifyConnection: vi.fn(),
+        getVirtualProvider: vi.fn(),
+        handlePromptAsync: vi.fn(async () => ({ handled: true, status: 204 })),
+        abortSession: vi.fn(),
+        getSessionMessages: vi.fn(async () => []),
+        generateTitle: vi.fn(),
+      },
+    });
+
+    await request(app)
+      .post('/api/session/ses_1/prompt_async')
+      .send({
+        model: { providerID: 'cursor-acp', modelID: 'auto' },
+        messageID: 'msg_1',
+        parts: [{ type: 'text', text: 'hello' }],
+      })
+      .expect(204);
+
+    expect(schedule).toHaveBeenCalledWith({
+      sessionID: 'ses_1',
+      directory: '/tmp/project',
+    });
+  });
+
+  it('does not schedule Cursor title generation for a handled prompt error', async () => {
+    const schedule = vi.fn();
+    const { app } = createApp({
+      cursorSessionTitleRuntime: { schedule },
+      cursorSdkRuntime: {
+        getRuntimeStatus: vi.fn(),
+        verifyConnection: vi.fn(),
+        getVirtualProvider: vi.fn(),
+        handlePromptAsync: vi.fn(async () => ({
+          handled: true,
+          status: 401,
+          body: { error: 'Cursor SDK API key is not configured.' },
+        })),
+        abortSession: vi.fn(),
+        getSessionMessages: vi.fn(async () => []),
+        generateTitle: vi.fn(),
+      },
+    });
+
+    await request(app)
+      .post('/api/session/ses_1/prompt_async')
+      .send({
+        model: { providerID: 'cursor-acp', modelID: 'auto' },
+        messageID: 'msg_1',
+        parts: [{ type: 'text', text: 'hello' }],
+      })
+      .expect(401);
+
+    expect(schedule).not.toHaveBeenCalled();
+  });
+
   it('unarchives the upstream OpenCode session when Cursor SDK handles a prompt', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
@@ -996,7 +1105,9 @@ describe('OpenCode provider routes', () => {
 
   it('lets non-Cursor prompt sends continue to the OpenCode proxy path', async () => {
     const handlePromptAsync = vi.fn(async () => ({ handled: false }));
+    const schedule = vi.fn();
     const { app } = createApp({
+      cursorSessionTitleRuntime: { schedule },
       cursorSdkRuntime: {
         getRuntimeStatus: vi.fn(),
         verifyConnection: vi.fn(),
@@ -1018,6 +1129,7 @@ describe('OpenCode provider routes', () => {
       .expect(200);
 
     expect(handlePromptAsync).toHaveBeenCalled();
+    expect(schedule).not.toHaveBeenCalled();
     expect(response.body).toEqual({ proxied: true });
   });
 

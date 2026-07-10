@@ -19,6 +19,7 @@ import { sortProviderTreeForPicker } from '@/lib/providers/sorting';
 import type { ModelMetadata } from '@/types';
 import { useI18n } from '@/lib/i18n';
 import { getOrderedThinkingVariants, resolveThinkingVariant } from '@/lib/providers/variantControls';
+import { formatEffortLabel } from '@/components/chat/mobileControlsUtils';
 
 /** Chip height class - shared between chips and add button */
 const CHIP_HEIGHT_CLASS = 'h-7';
@@ -563,12 +564,14 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
                             variantValue ? 'text-[color:var(--status-info)]' : 'text-muted-foreground'
                           )}
                         />
-                        <SelectValue placeholder={t('multirun.modelMultiSelect.variant.placeholder')} />
+                        <SelectValue placeholder={t('multirun.modelMultiSelect.variant.placeholder')}>
+                          {(value) => formatEffortLabel(value)}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent fitContent>
                         {variantKeys.map((variant) => (
                           <SelectItem key={variant} value={variant} className="pr-2 [&>span:first-child]:hidden">
-                            {variant}
+                            {formatEffortLabel(variant)}
                           </SelectItem>
                         ))}
                       </SelectContent>

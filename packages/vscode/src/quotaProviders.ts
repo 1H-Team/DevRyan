@@ -625,7 +625,7 @@ export const fetchCodexQuota = async (options: FetchQuotaOptions = {}): Promise<
   if (!accessToken) {
     return buildResult({
       providerId: 'codex',
-      providerName: 'Codex',
+      providerName: 'ChatGPT',
       ok: false,
       configured: false,
       error: 'Not configured',
@@ -641,7 +641,7 @@ export const fetchCodexQuota = async (options: FetchQuotaOptions = {}): Promise<
     if (!response.ok) {
       return buildResult({
         providerId: 'codex',
-        providerName: 'Codex',
+        providerName: 'ChatGPT',
         ok: false,
         configured: true,
         error: `API error: ${response.status}`,
@@ -688,7 +688,7 @@ export const fetchCodexQuota = async (options: FetchQuotaOptions = {}): Promise<
 
     return buildResult({
       providerId: 'codex',
-      providerName: 'Codex',
+      providerName: 'ChatGPT',
       ok: true,
       configured: true,
       usage: {
@@ -699,7 +699,7 @@ export const fetchCodexQuota = async (options: FetchQuotaOptions = {}): Promise<
   } catch (error) {
     return buildResult({
       providerId: 'codex',
-      providerName: 'Codex',
+      providerName: 'ChatGPT',
       ok: false,
       configured: true,
       error: error instanceof Error ? error.message : 'Request failed',

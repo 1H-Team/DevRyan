@@ -4,6 +4,7 @@ import {
     buildTaskSummaryEntriesFromSession,
     formatSpecialistTaskOutputForMarkdown,
     formatTaskErrorText,
+    formatTaskModelLabel,
     normalizeTaskSummaryEntries,
     parseTaskMetadataBlock,
     readTaskSessionIdFromOutput,
@@ -12,6 +13,20 @@ import {
 } from './taskToolUtils';
 
 describe('task tool metadata helpers', () => {
+    test('formats string and structured Cursor task models without inferring missing data', () => {
+        expect(formatTaskModelLabel(' composer-2.5 ')).toBe('composer-2.5');
+        expect(formatTaskModelLabel({
+            id: 'composer-2.5',
+            params: [
+                { id: 'fast', value: 'false' },
+                { id: 'effort', value: 'medium' },
+            ],
+        })).toBe('composer-2.5 (fast=false, effort=medium)');
+        expect(formatTaskModelLabel(undefined)).toBe('');
+        expect(formatTaskModelLabel({ params: [{ id: 'fast', value: 'false' }] })).toBe('');
+        expect(formatTaskModelLabel({ id: 'composer-2.5', params: [{ id: '', value: 'false' }] })).toBe('composer-2.5');
+    });
+
     test('formats fixer result sections as markdown without dropping content', () => {
         const output = [
             '<summary>',

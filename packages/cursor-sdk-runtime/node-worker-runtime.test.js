@@ -99,6 +99,41 @@ const createFinalResultBeforeStreamWorkerSpawn = (capture) => (command, args, op
   return child;
 };
 
+const createFakeTitleWorkerSpawn = (capture) => (command, args, options) => {
+  const child = new EventEmitter();
+  let rawInput = '';
+
+  capture.calls.push({ command, args, options });
+  child.exitCode = null;
+  child.killed = false;
+  child.stdout = new Readable({ read() {} });
+  child.stderr = new Readable({ read() {} });
+  child.stdin = new Writable({
+    write(chunk, _encoding, callback) {
+      rawInput += chunk.toString();
+      callback();
+    },
+    final(callback) {
+      capture.input = JSON.parse(rawInput);
+      queueMicrotask(() => {
+        child.stdout.push(`${JSON.stringify({ type: 'title-result', title: '# Worker Generated Title.' })}\n`);
+        child.stdout.push(null);
+        child.exitCode = 0;
+        child.emit('close', 0, null);
+      });
+      callback();
+    },
+  });
+  child.kill = (signal) => {
+    child.killed = true;
+    child.exitCode = signal === 'SIGKILL' ? 137 : 130;
+    queueMicrotask(() => child.emit('close', child.exitCode, signal));
+    return true;
+  };
+
+  return child;
+};
+
 const createFakePersistentWorkerSpawn = (capture, options = {}) => (command, args, spawnOptions) => {
   const child = new EventEmitter();
   let pendingInput = '';
@@ -150,6 +185,15 @@ const createFakePersistentWorkerSpawn = (capture, options = {}) => (command, arg
             })}\n`);
           });
         }
+        if (commandPayload.type === 'title' && options.autoRespond !== false) {
+          queueMicrotask(() => {
+            child.stdout.push(`${JSON.stringify({
+              requestID: commandPayload.requestID,
+              type: 'title-result',
+              title: 'Persistent Worker Title.',
+            })}\n`);
+          });
+        }
       }
       callback();
     },
@@ -167,9 +211,11 @@ const createFakePersistentWorkerSpawn = (capture, options = {}) => (command, arg
     child.stdout.push(`${JSON.stringify(payload)}\n`);
   };
 
-  queueMicrotask(() => {
-    child.stdout.push(`${JSON.stringify({ type: 'ready' })}\n`);
-  });
+  if (options.autoReady !== false) {
+    queueMicrotask(() => {
+      child.stdout.push(`${JSON.stringify({ type: 'ready' })}\n`);
+    });
+  }
 
   return child;
 };
@@ -245,13 +291,71 @@ describe('Cursor SDK worker runtime config', () => {
     expect(capture.calls[0].args).toEqual([
       '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/node-worker.mjs',
     ]);
-    expect(capture.calls[0].options.cwd).toBe('/Applications/DevRyan.app/Contents/Resources');
+    expect(capture.calls[0].options.cwd).toBe('/tmp/project');
     expect(capture.calls[0].options.env.ELECTRON_RUN_AS_NODE).toBe('1');
     expect(capture.calls[0].options.env.CURSOR_SDK_RIPGREP_PATH).toBe('/Applications/DevRyan.app/Contents/Resources/app.asar.unpacked/node_modules/@cursor/sdk-darwin-arm64/bin/rg');
     expect(capture.input.modelSelection).toEqual({
       id: 'composer-2.5',
       params: [{ id: 'fast', value: 'false' }],
     });
+  });
+
+  test('generates titles through an ephemeral one-shot Cursor Auto worker request', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-title-worker-'));
+    const capture = { calls: [], input: null };
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: {},
+      useNodeWorkerForPrompts: true,
+      usePersistentWorkerForPrompts: false,
+      nodeBinary: '/custom/node',
+      workerPath: '/custom/title-worker.mjs',
+      workerCwd: '/custom/cwd',
+      spawnImpl: createFakeTitleWorkerSpawn(capture),
+    });
+
+    const title = await runtime.generateTitle({ text: 'Summarize this Cursor prompt', directory: '/repo' });
+
+    expect(title).toBe('Worker Generated Title');
+    expect(capture.input).toMatchObject({
+      type: 'title',
+      apiKey: 'cursor-sdk-key',
+      text: 'Summarize this Cursor prompt',
+      directory: '/repo',
+      modelID: 'auto',
+      modelSelection: { id: 'auto' },
+    });
+    expect(capture.input.sessionID).toBeUndefined();
+    expect(capture.input.agentID).toBeUndefined();
+  });
+
+  test('generates titles through the persistent worker without a prompt session request', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-title-'));
+    const capture = { calls: [], commands: [], children: [] };
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: {},
+      useNodeWorkerForPrompts: true,
+      usePersistentWorkerForPrompts: true,
+      spawnImpl: createFakePersistentWorkerSpawn(capture),
+    });
+
+    const title = await runtime.generateTitle({ text: 'Summarize persistent title', directory: '/repo' });
+
+    expect(title).toBe('Persistent Worker Title');
+    expect(capture.commands.filter((entry) => entry.type === 'title')).toHaveLength(1);
+    expect(capture.commands.filter((entry) => entry.type === 'prompt')).toHaveLength(0);
+    expect(capture.commands.find((entry) => entry.type === 'title')).toMatchObject({
+      apiKey: 'cursor-sdk-key',
+      text: 'Summarize persistent title',
+      directory: '/repo',
+      modelID: 'auto',
+      modelSelection: { id: 'auto' },
+    });
+
+    await runtime.dispose();
   });
 
   test('passes inherited Cursor SDK subagent definitions to one-shot prompt workers', async () => {
@@ -633,6 +737,7 @@ describe('Cursor SDK worker runtime config', () => {
     expect(capture.calls[0].args).toEqual([
       '/Applications/DevRyan.app/Contents/Resources/app.asar/node_modules/@openchamber/cursor-sdk-runtime/persistent-worker.mjs',
     ]);
+    expect(capture.calls[0].options.cwd).toBe('/tmp/project');
     expect(capture.calls[0].options.env.CURSOR_SDK_RIPGREP_PATH).toBe('/Applications/DevRyan.app/Contents/Resources/app.asar.unpacked/node_modules/@cursor/sdk-darwin-arm64/bin/rg');
     expect(promptCommands).toHaveLength(2);
     expect(promptCommands[0].modelSelection).toEqual({
@@ -649,6 +754,189 @@ describe('Cursor SDK worker runtime config', () => {
 
     await runtime.dispose();
     expect(capture.children[0].killed).toBe(true);
+  });
+
+  test('isolates persistent Node workers by project directory', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-directories-'));
+    const capture = { calls: [], children: [], commands: [] };
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      useNodeWorkerForPrompts: true,
+      spawnImpl: createFakePersistentWorkerSpawn(capture),
+    });
+
+    for (const [sessionID, directory] of [
+      ['ses_project_a', '/tmp/project-a'],
+      ['ses_project_b', '/tmp/project-b'],
+    ]) {
+      await runtime.handlePromptAsync({
+        sessionID,
+        directory,
+        body: {
+          model: { providerID: 'cursor-acp', modelID: 'composer-2.5' },
+          messageID: `${sessionID}_user`,
+          parts: [{ type: 'text', text: 'hello' }],
+        },
+      });
+      await waitFor(async () => {
+        const records = await runtime.getSessionMessages(sessionID);
+        return records.some((record) => record.info?.id === `${sessionID}_user_assistant` && record.info?.finish);
+      });
+    }
+
+    expect(capture.calls.map((call) => call.options.cwd)).toEqual([
+      '/tmp/project-a',
+      '/tmp/project-b',
+    ]);
+
+    await runtime.dispose();
+    expect(capture.children.every((child) => child.killed)).toBe(true);
+  });
+
+  test('caps simultaneous cold persistent workers and falls back to one-shot for the fourth directory', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-cold-cap-'));
+    const capture = { calls: [], children: [], commands: [], input: null };
+    const persistentSpawn = createFakePersistentWorkerSpawn(capture, { autoReady: false });
+    const oneShotSpawn = createFakeWorkerSpawn(capture);
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      useNodeWorkerForPrompts: true,
+      spawnImpl: (command, args, options) => (
+        args[0]?.endsWith('persistent-worker.mjs')
+          ? persistentSpawn(command, args, options)
+          : oneShotSpawn(command, args, options)
+      ),
+      logger: { warn: () => {}, error: () => {} },
+    });
+
+    const starts = Array.from({ length: 4 }, (_, index) => runtime.handlePromptAsync({
+      sessionID: `ses_cold_cap_${index}`,
+      directory: `/tmp/cold-cap-${index}`,
+      body: {
+        model: { providerID: 'cursor-acp', modelID: 'composer-2.5' },
+        messageID: `msg_cold_cap_${index}_user`,
+        parts: [{ type: 'text', text: `hello ${index}` }],
+      },
+    }));
+
+    await waitFor(() => (capture.calls.length === 4 ? true : null));
+    expect(capture.calls.filter((call) => call.args[0]?.endsWith('persistent-worker.mjs'))).toHaveLength(3);
+    expect(capture.calls.filter((call) => call.args[0]?.endsWith('node-worker.mjs'))).toHaveLength(1);
+
+    for (const child of capture.children) {
+      child.emitWorkerEvent({ type: 'ready' });
+    }
+    await Promise.all(starts);
+    await runtime.dispose();
+  });
+
+  test('falls back to one-shot when three directory workers all have active prompts', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-busy-cap-'));
+    const capture = { calls: [], children: [], commands: [], input: null };
+    const persistentSpawn = createFakePersistentWorkerSpawn(capture, { autoRespond: false });
+    const oneShotSpawn = createFakeWorkerSpawn(capture);
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      useNodeWorkerForPrompts: true,
+      spawnImpl: (command, args, options) => (
+        args[0]?.endsWith('persistent-worker.mjs')
+          ? persistentSpawn(command, args, options)
+          : oneShotSpawn(command, args, options)
+      ),
+      logger: { warn: () => {}, error: () => {} },
+    });
+
+    for (let index = 0; index < 3; index += 1) {
+      await runtime.handlePromptAsync({
+        sessionID: `ses_busy_cap_${index}`,
+        directory: `/tmp/busy-cap-${index}`,
+        body: {
+          model: { providerID: 'cursor-acp', modelID: 'composer-2.5' },
+          messageID: `msg_busy_cap_${index}_user`,
+          parts: [{ type: 'text', text: `hello ${index}` }],
+        },
+      });
+    }
+    await waitFor(() => (
+      capture.commands.filter((command) => command.type === 'prompt').length === 3 ? true : null
+    ));
+
+    await runtime.handlePromptAsync({
+      sessionID: 'ses_busy_cap_fourth',
+      directory: '/tmp/busy-cap-fourth',
+      body: {
+        model: { providerID: 'cursor-acp', modelID: 'composer-2.5' },
+        messageID: 'msg_busy_cap_fourth_user',
+        parts: [{ type: 'text', text: 'hello fourth' }],
+      },
+    });
+
+    expect(capture.calls.filter((call) => call.args[0]?.endsWith('persistent-worker.mjs'))).toHaveLength(3);
+    expect(capture.calls.filter((call) => call.args[0]?.endsWith('node-worker.mjs'))).toHaveLength(1);
+    await runtime.dispose();
+  });
+
+  test('does not evict reused workers while prompt admission is still registering requests', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-admission-cap-'));
+    const capture = { calls: [], children: [], commands: [] };
+    const admissionReleases = new Map();
+    let pauseAdmissions = false;
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      useNodeWorkerForPrompts: true,
+      spawnImpl: createFakePersistentWorkerSpawn(capture),
+      resolveAgentDefinitions: async ({ directory }) => {
+        if (!pauseAdmissions) return null;
+        await new Promise((resolve) => {
+          admissionReleases.set(directory, resolve);
+        });
+        return null;
+      },
+    });
+    const directories = ['/tmp/admission-a', '/tmp/admission-b', '/tmp/admission-c'];
+
+    for (const [index, directory] of directories.entries()) {
+      await runtime.prewarmSession({
+        sessionID: `ses_admission_seed_${index}`,
+        directory,
+        modelID: 'composer-2.5',
+      });
+    }
+    expect(capture.calls).toHaveLength(3);
+
+    pauseAdmissions = true;
+    const admissions = [...directories, '/tmp/admission-fourth'].map((directory, index) => runtime.prewarmSession({
+      sessionID: `ses_admission_live_${index}`,
+      directory,
+      modelID: 'composer-2.5',
+    }));
+    await waitFor(() => (admissionReleases.size === 4 ? true : null));
+
+    for (const directory of directories) {
+      admissionReleases.get(directory)?.();
+    }
+    for (let index = 0; index < 8; index += 1) {
+      await Promise.resolve();
+    }
+    admissionReleases.get('/tmp/admission-fourth')?.();
+
+    const results = await Promise.all(admissions);
+    expect(capture.calls).toHaveLength(3);
+    expect(results.slice(0, 3).every((result) => result.ok)).toBe(true);
+    expect(results[3]).toMatchObject({
+      ok: false,
+      error: 'Cursor SDK persistent worker capacity (3) is full.',
+    });
+    await runtime.dispose();
+    expect(capture.children.every((child) => child.killed)).toBe(true);
   });
 
   test('prewarms a session through the persistent worker prepare command', async () => {

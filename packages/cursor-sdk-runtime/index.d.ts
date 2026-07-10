@@ -112,6 +112,10 @@ export type CursorSdkRuntime = {
   getVirtualProvider(): Promise<{ id: string; name: string; models: Record<string, CursorModelRecord> }>;
   getCachedVirtualProvider(): { id: string; name: string; models: Record<string, CursorModelRecord> };
   refreshVirtualProvider(options?: { force?: boolean; reason?: string; timeoutMs?: number }): Promise<{ id: string; name: string; models: Record<string, CursorModelRecord> }>;
+  generateTitle(input: {
+    text: string;
+    directory?: string | null;
+  }): Promise<string | null>;
   handlePromptAsync(input: {
     sessionID: string;
     body: Record<string, unknown>;

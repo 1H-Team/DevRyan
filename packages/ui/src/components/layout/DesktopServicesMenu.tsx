@@ -137,7 +137,7 @@ export const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
         className="w-[min(27rem,calc(100vw-2rem))] max-h-[75vh] overflow-y-auto bg-[var(--surface-elevated)] p-0"
       >
         <div className="sticky top-0 z-20 bg-[var(--surface-elevated)] px-2 py-1">
-          <div className="h-8">
+          <div className="h-9">
             <SortableTabsStrip
               items={servicesTabItems}
               activeId={desktopServicesTab}
@@ -151,7 +151,7 @@ export const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
               layoutMode="fit"
               variant="active-pill"
               activePillInsetClassName="gap-0.5 px-px py-0"
-              activePillButtonClassName="h-7 text-xs"
+              activePillButtonClassName="h-8 text-sm"
               activePillLowercase={false}
               className="h-full"
             />

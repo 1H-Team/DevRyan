@@ -25,6 +25,38 @@ const normalizeSessionIdCandidate = (value: unknown): string | undefined => {
     return trimmed.length > 0 ? trimmed : undefined;
 };
 
+export const formatTaskModelLabel = (model: unknown): string => {
+    if (typeof model === 'string') {
+        return model.trim();
+    }
+    if (!model || typeof model !== 'object' || Array.isArray(model)) {
+        return '';
+    }
+
+    const selection = model as Record<string, unknown>;
+    const id = typeof selection.id === 'string' ? selection.id.trim() : '';
+    if (!id) {
+        return '';
+    }
+
+    const params: string[] = [];
+    if (Array.isArray(selection.params)) {
+        for (const candidate of selection.params) {
+            if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+                continue;
+            }
+            const param = candidate as Record<string, unknown>;
+            const paramID = typeof param.id === 'string' ? param.id.trim() : '';
+            const value = typeof param.value === 'string' ? param.value.trim() : '';
+            if (paramID && value) {
+                params.push(`${paramID}=${value}`);
+            }
+        }
+    }
+
+    return params.length > 0 ? `${id} (${params.join(', ')})` : id;
+};
+
 export const readTaskSessionIdFromRecord = (value: unknown): string | undefined => {
     if (!value || typeof value !== 'object') {
         return undefined;

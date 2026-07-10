@@ -26,7 +26,7 @@ const makeWindow = (overrides: Partial<UsageWindow>): UsageWindow => ({
 
 const makeProviderResult = (window: UsageWindow, fetchedAt: number, resetAt = window.resetAt): ProviderResult => ({
   providerId: 'codex',
-  providerName: 'Codex',
+  providerName: 'ChatGPT',
   ok: true,
   configured: true,
   fetchedAt,
@@ -58,6 +58,10 @@ describe('quota usage utils', () => {
 
   test('formats OpenCode Go rolling usage label', () => {
     expect(formatWindowLabel('rolling')).toBe('Rolling');
+  });
+
+  test('formats Cursor auto-composer quota label as First-party models', () => {
+    expect(formatWindowLabel('auto-composer')).toBe('First-party models');
   });
 
   test('prediction falls back to full-window pace without enough trend samples', () => {

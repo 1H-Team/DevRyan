@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import type { AttachedFile } from "@/stores/types/sessionTypes"
 import { useMessageQueueStore } from "@/stores/messageQueueStore"
-import { flushQueuedMessagesForSession } from "./queuedSend"
+import { flushQueuedMessagesForSession, isQueuedMessageFlushInFlight } from "./queuedSend"
 
 const createAttachment = (filename: string): AttachedFile => ({
   id: filename,
@@ -254,5 +254,35 @@ describe("queued message flushing", () => {
       "wait",
       "send:second queued",
     ])
+  })
+
+  test("keeps claimed queue ownership visible until every claimed turn settles", async () => {
+    useMessageQueueStore.getState().addToQueue("session-a", { content: "first queued" })
+    useMessageQueueStore.getState().addToQueue("session-a", { content: "second queued" })
+
+    let releaseWait!: () => void
+    const waiting = new Promise<void>((resolve) => {
+      releaseWait = resolve
+    })
+    const flush = flushQueuedMessagesForSession({
+      sessionId: "session-a",
+      fallbackSendConfig: { providerID: "provider-a", modelID: "model-a" },
+      prepareQueuedMessage: (message, sendConfig) => ({
+        content: message.content,
+        providerID: sendConfig.providerID,
+        modelID: sendConfig.modelID,
+      }),
+      sendMessageToSession: async () => {},
+      waitForReadyToSendNext: () => waiting,
+    })
+
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(useMessageQueueStore.getState().getQueueForSession("session-a")).toEqual([])
+    expect(isQueuedMessageFlushInFlight("session-a")).toBe(true)
+
+    releaseWait()
+    await flush
+    expect(isQueuedMessageFlushInFlight("session-a")).toBe(false)
   })
 })

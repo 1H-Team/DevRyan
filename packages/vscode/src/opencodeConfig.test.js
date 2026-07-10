@@ -192,9 +192,24 @@ describe('VS Code Cursor SDK config handling', () => {
 
     expect(overlayConfig.plugin).toContain('@rama_nigg/open-cursor@latest');
     expect(overlayConfig.plugin).toContain('./plugins/openai-tool-schema-sanitizer.mjs');
-    expect(overlayConfig.provider).toBeUndefined();
+    expect(overlayConfig.provider?.['cursor-acp']).toBeUndefined();
+    expect(overlayConfig.provider?.openai).toBeUndefined();
     expect(JSON.stringify(readJson(configPath))).toContain('@rama_nigg/open-cursor@latest');
     fs.rmSync(projectDir, { recursive: true, force: true });
+  });
+
+  it('does not synthesize direct OpenAI GPT-5.6 model availability', async () => {
+    const { syncRuntimeAgentOverlays } = await loadRuntime();
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-native-ultra-'));
+
+    try {
+      const result = syncRuntimeAgentOverlays(projectDir);
+      const overlayConfig = readJson(path.join(result.targetConfigDirectory, 'opencode.json'));
+      expect(overlayConfig.provider?.openai).toBeUndefined();
+      expect(overlayConfig.provider?.anthropic).toBeUndefined();
+    } finally {
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
   });
 
   it('copies and registers packaged runtime plugins in managed overlays', async () => {
@@ -431,8 +446,14 @@ describe('VS Code Cursor SDK config handling', () => {
       const overlayResult = syncRuntimeAgentOverlays(projectDir);
       const overlayConfig = readJson(path.join(overlayResult.targetConfigDirectory, 'opencode.json'));
       const overlaySlimConfig = readJson(path.join(overlayResult.targetConfigDirectory, 'oh-my-opencode-slim.json'));
+      const overlayAgentPath = path.join(overlayResult.targetConfigDirectory, 'agents', 'orchestrator.md');
       expect(overlayConfig.plugin).toContain('./plugins/devryan-oh-my-opencode-slim.mjs');
       expect(overlaySlimConfig.preset).toBe('openai');
+      expect(fs.existsSync(overlayAgentPath)).toBe(true);
+      const overlayAgent = readAgentFrontmatter(overlayAgentPath);
+      expect(overlayAgent).toContain('model: openai/gpt-5.4-mini');
+      expect(overlayAgent).toContain('  - openai/gpt-5.4-mini');
+      expect(overlayAgent).toContain('variant: ""');
     } finally {
       fs.rmSync(projectDir, { recursive: true, force: true });
     }

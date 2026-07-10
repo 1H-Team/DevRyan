@@ -40,7 +40,6 @@ import { waitForPendingDraftWorktreeRequest } from "@/lib/worktrees/pendingDraft
 import { resolveProjectForSessionDirectory } from "@/lib/projectResolution"
 import { postTurnTimingMark, streamDebugMark } from "@/stores/utils/streamDebug"
 import { isGitGenerationSessionRecord } from "@/lib/git/gitGenerationSessions"
-import { deriveSessionTitleFromUserText, isCursorAcpErrorTitle, isGeneratedNewSessionTitle } from "@/lib/sessionTitles"
 import { assertPdfAttachmentsSupported } from "@/lib/attachments/attachmentCapabilities"
 import {
   resolveDraftSendSelection,
@@ -229,47 +228,6 @@ async function autoUnarchiveAfterSuccessfulSend(sessionId: string | null | undef
   }
 }
 
-function readSessionTitle(sessionId: string, directory?: string | null): string | null {
-  const dirState = getDirectoryState(directory ?? undefined)
-  const sessions = (dirState as { session?: unknown } | null | undefined)?.session
-  if (Array.isArray(sessions)) {
-    const match = sessions.find((candidate): candidate is { id: string; title?: string | null } => (
-      Boolean(candidate)
-      && typeof candidate === "object"
-      && "id" in candidate
-      && (candidate as { id?: unknown }).id === sessionId
-    ))
-    if (typeof match?.title === "string") {
-      return match.title
-    }
-  }
-
-  const fallback = getAllSyncSessions().find((session) => session.id === sessionId)
-  return typeof fallback?.title === "string" ? fallback.title : null
-}
-
-async function repairCursorSessionTitleAfterSuccessfulSend(params: {
-  sessionId: string
-  providerID: string
-  content: string
-  directory?: string | null
-}): Promise<void> {
-  if (params.providerID !== CURSOR_ACP_PROVIDER_ID) {
-    return
-  }
-
-  const currentTitle = readSessionTitle(params.sessionId, params.directory)
-  if (!isCursorAcpErrorTitle(currentTitle) && !isGeneratedNewSessionTitle(currentTitle)) {
-    return
-  }
-
-  try {
-    await updateSessionTitleAction(params.sessionId, deriveSessionTitleFromUserText(params.content))
-  } catch (error) {
-    console.warn(`[session-ui-store] Failed to repair Cursor session title: ${params.sessionId}`, error)
-  }
-}
-
 // Decision: keep the runtime plan-mode prompt in this shared UI module instead
 // of reading plan.md at send time, so web/Electron/VS Code use the same
 // synchronous contract even when project agent files are unavailable or stale.
@@ -425,12 +383,6 @@ async function routeMessage(params: {
           signal: params.lifecycleCallbacks?.signal,
         }).then(() => {}),
       })
-      await repairCursorSessionTitleAfterSuccessfulSend({
-        sessionId: params.sessionId,
-        providerID: params.providerID,
-        content: params.content,
-        directory: messageDirectory,
-      })
       await autoUnarchiveAfterSuccessfulSend(params.sessionId)
       return false
     }
@@ -471,12 +423,6 @@ async function routeMessage(params: {
       directory: messageDirectory,
       signal: params.lifecycleCallbacks?.signal,
     }).then(() => {}),
-  })
-  await repairCursorSessionTitleAfterSuccessfulSend({
-    sessionId: params.sessionId,
-    providerID: params.providerID,
-    content: params.content,
-    directory: messageDirectory,
   })
   await autoUnarchiveAfterSuccessfulSend(params.sessionId)
   return true

@@ -34,4 +34,13 @@ describe('TaskToolSummary output layout', () => {
         expect(code).toContain('formatSpecialistTaskOutputForMarkdown(trimmedOutput)');
         expect(code).toContain('<SimpleMarkdownRenderer content={displayOutput}');
     });
+
+    test('shows the authoritative task model as quiet metadata', () => {
+        const code = source();
+
+        expect(code).toContain('formatTaskModelLabel');
+        expect(code).toContain('const taskModelLabel = formatTaskModelLabel(input?.model)');
+        expect(code).toContain('typography-micro font-mono');
+        expect(code).toContain('{taskModelLabel}');
+    });
 });

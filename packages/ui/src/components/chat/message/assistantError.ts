@@ -1,4 +1,9 @@
 import { isLikelyProviderAuthFailure, PROVIDER_AUTH_FAILURE_MESSAGE } from "@/lib/messages/providerAuthError"
+import {
+  isLikelyProviderModelNotFound,
+  PROVIDER_MODEL_NOT_FOUND_MESSAGE,
+} from "@/lib/messages/providerModelNotFound"
+import { isLikelyTransientStreamFailure, stripWrappedJsonQuotes } from "@/lib/messages/transientStreamError"
 
 export type AssistantErrorInfo = {
   data?: { message?: unknown }
@@ -10,6 +15,7 @@ export type AssistantErrorClassification = {
   text: string
   variant: "plain" | "info" | "error"
   abortKind?: "manual" | "steered" | "unexpected"
+  retryable?: boolean
 }
 
 type SteeredAbortOptions = {
@@ -47,10 +53,11 @@ export function classifyAssistantError(
   const dataMessage = typeof errorInfo.data?.message === "string" ? errorInfo.data.message : undefined
   const errorMessage = typeof errorInfo.message === "string" ? errorInfo.message : undefined
   const errorName = typeof errorInfo.name === "string" ? errorInfo.name : undefined
-  const detail = dataMessage || errorMessage || errorName
-  if (!detail) {
+  const rawDetail = dataMessage || errorMessage || errorName
+  if (!rawDetail) {
     return undefined
   }
+  const detail = stripWrappedJsonQuotes(rawDetail)
 
   if (errorName === "SessionRetry") {
     return {
@@ -63,6 +70,14 @@ export function classifyAssistantError(
     return {
       text: PROVIDER_AUTH_FAILURE_MESSAGE,
       variant: "error",
+    }
+  }
+
+  if (isLikelyProviderModelNotFound(detail) || errorName === "ProviderModelNotFoundError") {
+    return {
+      text: `${PROVIDER_MODEL_NOT_FOUND_MESSAGE}\n\`${detail}\``,
+      variant: "error",
+      retryable: true,
     }
   }
 
@@ -88,6 +103,14 @@ export function classifyAssistantError(
       text: "The turn stopped before completion. Reconnecting session state…",
       variant: "info",
       abortKind: "unexpected",
+    }
+  }
+
+  if (isLikelyTransientStreamFailure(errorName, detail)) {
+    return {
+      text: `The model provider dropped the connection mid-response. This is a temporary provider-side issue — retry, or switch models if it keeps happening.\n\`${detail}\``,
+      variant: "error",
+      retryable: true,
     }
   }
 

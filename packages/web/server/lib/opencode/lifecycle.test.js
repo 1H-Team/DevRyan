@@ -802,6 +802,120 @@ describe('OpenCode lifecycle', () => {
     })).resolves.toMatchObject({ runtimeApplied: true, requiresReload: true });
   });
 
+  it('accepts an omitted runtime variant for a matching Cursor agent model', async () => {
+    delete process.env.OPENCODE_BINARY;
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+    globalThis.fetch = vi.fn(async (url) => {
+      const href = String(url);
+      if (href.endsWith('/config')) {
+        return { ok: true, json: async () => ({}) };
+      }
+      if (href.endsWith('/agent')) {
+        return {
+          ok: true,
+          json: async () => ([{
+            name: 'fixer',
+            model: { providerID: 'cursor-acp', modelID: 'grok-4.5' },
+            variant: '',
+          }]),
+        };
+      }
+      return { ok: true, json: async () => ({ healthy: true }) };
+    });
+
+    const runtime = createRuntime();
+
+    await expect(runtime.refreshOpenCodeAfterConfigChange('agent fixer model override', {
+      agentName: 'fixer',
+      expectedAgentModelRef: 'cursor-acp/grok-4.5',
+      expectedAgentVariant: 'low',
+      agentReadyTimeoutMs: 20,
+      agentReadyIntervalMs: 1,
+    })).resolves.toMatchObject({ runtimeApplied: true, requiresReload: true });
+  });
+
+  it('rejects an explicit stale runtime variant for a matching Cursor agent model', async () => {
+    delete process.env.OPENCODE_BINARY;
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+    globalThis.fetch = vi.fn(async (url) => {
+      const href = String(url);
+      if (href.endsWith('/config')) {
+        return { ok: true, json: async () => ({}) };
+      }
+      if (href.endsWith('/agent')) {
+        return {
+          ok: true,
+          json: async () => ([{
+            name: 'fixer',
+            model: { providerID: 'cursor-acp', modelID: 'grok-4.5' },
+            variant: 'high',
+          }]),
+        };
+      }
+      return { ok: true, json: async () => ({ healthy: true }) };
+    });
+
+    const runtime = createRuntime();
+
+    await expect(runtime.refreshOpenCodeAfterConfigChange('agent fixer model override', {
+      agentName: 'fixer',
+      expectedAgentModelRef: 'cursor-acp/grok-4.5',
+      expectedAgentVariant: 'low',
+      agentReadyTimeoutMs: 20,
+      agentReadyIntervalMs: 1,
+    })).rejects.toThrow('Agent "fixer" loaded with model "cursor-acp/grok-4.5" and variant "high"; expected variant "low"; expected "cursor-acp/grok-4.5"');
+  });
+
+  it('rejects an omitted runtime variant for a matching native agent model', async () => {
+    delete process.env.OPENCODE_BINARY;
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+    globalThis.fetch = vi.fn(async (url) => {
+      const href = String(url);
+      if (href.endsWith('/config')) {
+        return { ok: true, json: async () => ({}) };
+      }
+      if (href.endsWith('/agent')) {
+        return {
+          ok: true,
+          json: async () => ([{
+            name: 'fixer',
+            model: { providerID: 'openai', modelID: 'gpt-5.5' },
+            variant: '',
+          }]),
+        };
+      }
+      return { ok: true, json: async () => ({ healthy: true }) };
+    });
+
+    const runtime = createRuntime();
+
+    await expect(runtime.refreshOpenCodeAfterConfigChange('agent fixer model override', {
+      agentName: 'fixer',
+      expectedAgentModelRef: 'openai/gpt-5.5',
+      expectedAgentVariant: 'low',
+      agentReadyTimeoutMs: 20,
+      agentReadyIntervalMs: 1,
+    })).rejects.toThrow('Agent "fixer" loaded with model "openai/gpt-5.5" and variant "default"; expected variant "low"; expected "openai/gpt-5.5"');
+  });
+
   it('fails refresh when the runtime loads a stale model for the overridden agent', async () => {
     delete process.env.OPENCODE_BINARY;
     const child = createMockChild();

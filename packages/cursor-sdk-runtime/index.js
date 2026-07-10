@@ -16,6 +16,10 @@ import {
   normalizeCursorSdkAgentDefinitions,
   pinCursorSdkSubagentModels,
 } from './agent-definitions.js';
+import {
+  generateCursorSessionTitle,
+  normalizeCursorSessionTitle,
+} from './title-generation.js';
 
 export const CURSOR_PROVIDER_ID = 'cursor-acp';
 
@@ -46,6 +50,10 @@ const CURSOR_MODEL_PARAM_CONTEXT = 'context';
 const CURSOR_MODEL_TRUE_VALUE = 'true';
 const DEFAULT_MODEL_DISCOVERY_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_MODEL_DISCOVERY_TIMEOUT_MS = 1500;
+const CURSOR_NATIVE_ULTRA_MODEL_IDS = new Set([
+  'gpt-5.6-sol',
+  'gpt-5.6-terra',
+]);
 
 const CURSOR_MODEL_EFFORT_ALIASES = new Map([
   ['none', 'none'],
@@ -57,6 +65,7 @@ const CURSOR_MODEL_EFFORT_ALIASES = new Map([
   ['xhigh', 'extra-high'],
   ['extra-high', 'extra-high'],
   ['max', 'max'],
+  ['ultra', 'ultra'],
 ]);
 
 const CURSOR_MODEL_EFFORT_DEFAULT_SCORES = new Map([
@@ -65,6 +74,7 @@ const CURSOR_MODEL_EFFORT_DEFAULT_SCORES = new Map([
   ['low', 40],
   ['extra-high', 35],
   ['max', 30],
+  ['ultra', 25],
   ['minimal', 20],
   ['none', 10],
 ]);
@@ -1024,6 +1034,44 @@ const stripInternalCursorSdkScores = (records) => Object.fromEntries(
   })
 );
 
+const addNativeUltraCursorVariants = (records) => {
+  for (const [recordId, record] of Object.entries(records)) {
+    const baseModelId = recordId.endsWith('-fast') ? recordId.slice(0, -'-fast'.length) : recordId;
+    if (!CURSOR_NATIVE_ULTRA_MODEL_IDS.has(baseModelId) || !isPlainObject(record)) continue;
+
+    const variants = isPlainObject(record.variants) ? { ...record.variants } : {};
+    if (isPlainObject(variants.ultra)) continue;
+
+    const maxVariant = isPlainObject(variants.max) ? variants.max : null;
+    const sourceSelection = cloneCursorSdkModelSelection(
+      maxVariant?.cursorSdkModel || record.options?.cursorSdkModel
+    );
+    if (!sourceSelection) continue;
+
+    let replacedEffort = false;
+    const ultraParams = normalizeModelSelectionParams(sourceSelection.params).map((param) => {
+      if (
+        !replacedEffort
+        && (param.id === CURSOR_MODEL_PARAM_REASONING || param.id === CURSOR_MODEL_PARAM_EFFORT)
+      ) {
+        replacedEffort = true;
+        return { ...param, value: 'ultra' };
+      }
+      return param;
+    });
+    if (!replacedEffort) {
+      ultraParams.push({ id: CURSOR_MODEL_PARAM_REASONING, value: 'ultra' });
+    }
+
+    variants.ultra = {
+      cursorSdkModel: createCursorSdkModelSelection(sourceSelection.id, ultraParams),
+      _cursorSdkScore: Number.isFinite(maxVariant?._cursorSdkScore) ? maxVariant._cursorSdkScore - 1 : 0,
+    };
+    record.variants = variants;
+  }
+  return records;
+};
+
 const addSdkModelRecord = (records, model) => {
   const sdkModelId = trimString(model.id);
   if (!sdkModelId) return;
@@ -1091,7 +1139,7 @@ const normalizeSdkModelRecords = (models) => {
   }
 
   return Object.keys(records).length > 0
-    ? stripInternalCursorSdkScores(addCompatibilityModelPairs(records))
+    ? stripInternalCursorSdkScores(addNativeUltraCursorVariants(addCompatibilityModelPairs(records)))
     : fallbackModelRecords();
 };
 
@@ -1342,10 +1390,9 @@ const getCursorRuntimePromptContract = (modelID) => {
   const model = trimString(modelID);
   if (!model || model === 'auto') return '';
   return [
-    `This Cursor SDK session is pinned to model "${model}".`,
-    'Do not start task/subagent/delegation tools with a different model.',
-    'Exception: when invoking a named DevRyan subagent, use that subagent\'s configured model if one is provided.',
-    'If the request cannot be completed without switching models, return <status>blocked</status> with the reason instead of continuing.',
+    `This Cursor SDK parent session is pinned to model "${model}".`,
+    'Cursor-managed task/subagent tools may report a different provider-selected model without changing the parent session model.',
+    'If the parent request cannot be completed without switching its model, return <status>blocked</status> with the reason instead of continuing.',
   ].join('\n');
 };
 
@@ -1410,117 +1457,6 @@ const isCursorPlanTool = (toolName) => {
 const isCursorTaskTool = (toolName) => {
   const normalized = normalizeRuntimeToolName(toolName);
   return normalized === 'task';
-};
-
-const extractCursorToolModelSelection = (input) => {
-  if (!isPlainObject(input)) return '';
-  const candidates = [
-    input.model,
-    input.modelID,
-    input.modelId,
-    input.model_id,
-  ];
-  for (const candidate of candidates) {
-    if (isPlainObject(candidate)) {
-      const id = trimString(candidate.id || candidate.modelID || candidate.modelId || candidate.model_id);
-      if (id) return createCursorSdkModelSelection(id, candidate.params);
-      continue;
-    }
-    const id = trimString(candidate);
-    if (id) return createFallbackCursorSdkModelSelection(normalizeModelId(id));
-  }
-  return null;
-};
-
-const normalizeCursorSdkModelSelectionForBoundary = (selection, fallbackModelID) => {
-  const cloned = cloneCursorSdkModelSelection(selection);
-  if (cloned) return cloned;
-  const id = normalizeModelId(fallbackModelID);
-  return id ? createFallbackCursorSdkModelSelection(id) : null;
-};
-
-// Params that are pure Cursor speed/cost toggles rather than a distinct model.
-// They must NOT count toward model identity for the task model-boundary guard:
-// `fast` in particular tracks cursor-agent's own default, which mirrors the
-// Cursor *desktop app* selection, so an orchestrator delegating to
-// composer-2.5 (fast=true) against a fast=false session would otherwise abort the
-// run even though it is the same model. The guard still blocks genuine model
-// switches (different id, or behavior-changing params like effort/thinking).
-const BOUNDARY_IGNORED_MODEL_PARAMS = new Set([CURSOR_MODEL_PARAM_FAST]);
-
-const canonicalCursorSdkModelSelection = (selection) => {
-  const normalized = normalizeCursorSdkModelSelectionForBoundary(selection, '');
-  if (!normalized?.id) return '';
-  const params = normalizeModelSelectionParams(normalized.params)
-    .filter((param) => !BOUNDARY_IGNORED_MODEL_PARAMS.has(param.id))
-    .sort((left, right) => left.id.localeCompare(right.id) || left.value.localeCompare(right.value));
-  return stableJson({ id: normalized.id, params });
-};
-
-const areCursorSdkModelSelectionsEqual = (left, right) => {
-  const leftKey = canonicalCursorSdkModelSelection(left);
-  const rightKey = canonicalCursorSdkModelSelection(right);
-  return Boolean(leftKey && rightKey && leftKey === rightKey);
-};
-
-const formatCursorSdkModelSelectionForMessage = (selection, fallbackModelID) => {
-  const normalized = normalizeCursorSdkModelSelectionForBoundary(selection, fallbackModelID);
-  if (!normalized?.id) return trimString(fallbackModelID);
-  const params = normalizeModelSelectionParams(normalized.params);
-  if (params.length === 0) return normalized.id;
-  const suffix = params
-    .map((param) => `${param.id}=${param.value}`)
-    .join(', ');
-  return `${normalized.id} (${suffix})`;
-};
-
-const getExplicitCursorSdkAgentModelSelections = (agentDefinitions) => {
-  const definitions = normalizeCursorSdkAgentDefinitions(agentDefinitions);
-  if (!definitions) return [];
-  const selections = [];
-  for (const definition of Object.values(definitions)) {
-    const selection = cloneCursorSdkModelSelection(definition?.model);
-    if (selection) selections.push(selection);
-  }
-  return selections;
-};
-
-const buildAllowedCursorTaskModelSelections = ({ selectedModelID, selectedModelSelection, agentDefinitions }) => {
-  const selected = normalizeCursorSdkModelSelectionForBoundary(selectedModelSelection, selectedModelID);
-  return [
-    ...(selected ? [selected] : []),
-    ...getExplicitCursorSdkAgentModelSelections(agentDefinitions),
-  ];
-};
-
-const buildCursorTaskModelBoundaryViolation = ({
-  toolName,
-  input,
-  selectedModelID,
-  selectedModelSelection,
-  allowedModelSelections,
-}) => {
-  const selected = normalizeModelId(selectedModelID);
-  if (!isCursorTaskTool(toolName) || !selected || selected === 'auto') return '';
-
-  const requestedSelection = extractCursorToolModelSelection(input);
-  if (!requestedSelection) return '';
-
-  const selectedSelection = normalizeCursorSdkModelSelectionForBoundary(selectedModelSelection, selected);
-  const allowedSelections = Array.isArray(allowedModelSelections) && allowedModelSelections.length > 0
-    ? allowedModelSelections
-    : (selectedSelection ? [selectedSelection] : []);
-  if (allowedSelections.some((selection) => (
-    areCursorSdkModelSelectionsEqual(requestedSelection, selection)
-  ))) {
-    return '';
-  }
-
-  return [
-    'Cursor SDK model boundary violation:',
-    `the task tool requested model "${formatCursorSdkModelSelectionForMessage(requestedSelection)}" while this session is pinned to "${formatCursorSdkModelSelectionForMessage(selectedSelection, selected)}".`,
-    'The run was aborted so DevRyan does not silently execute part of the chat on a different model.',
-  ].join(' ');
 };
 
 const getCursorPlanToolText = (part) => {
@@ -1692,6 +1628,7 @@ export function createCursorSdkRuntime(options = {}) {
   const modelDiscoveryTimeoutMs = Math.max(0, Number(options.modelDiscoveryTimeoutMs) || DEFAULT_MODEL_DISCOVERY_TIMEOUT_MS);
   const recordTimingMark = typeof options.recordTimingMark === 'function' ? options.recordTimingMark : null;
   const MAX_CACHED_AGENTS = 32;
+  const MAX_PERSISTENT_WORKERS = 3;
   const activeRuns = new Map();
   const sessionStatuses = new Map();
   const agentsBySession = new Map();
@@ -1705,8 +1642,6 @@ export function createCursorSdkRuntime(options = {}) {
   let lastModelRefreshTimedOut = false;
   let lastModelRefreshError = null;
   let lastWorkerTiming = null;
-  let workerReady = false;
-  let workerRestarts = 0;
   let lastError = null;
   let lastCancellation = null;
   let lastPostTaskEmptyFinish = null;
@@ -1835,7 +1770,7 @@ export function createCursorSdkRuntime(options = {}) {
       usageAuthConfigured: isCursorUsageAuthConfigured(auth),
       ...(useNodeWorkerForPrompts && usePersistentWorkerForPrompts
         ? persistentWorkerRuntime.getStatus()
-        : { workerMode: useNodeWorkerForPrompts ? 'node-worker' : 'direct', workerReady: false, workerRestarts }),
+        : { workerMode: useNodeWorkerForPrompts ? 'node-worker' : 'direct', workerReady: false, workerRestarts: 0 }),
       activeRuns: activeRuns.size,
       modelsSource: lastModelsSource,
       modelCount: Object.keys(lastModelRecords).length,
@@ -1988,6 +1923,7 @@ export function createCursorSdkRuntime(options = {}) {
       apiKey,
       model,
       local,
+      ...(trimString(directory) ? { platform: { workspaceRef: directory } } : {}),
       ...(agents ? { agents } : {}),
     };
     let agent = null;
@@ -2164,11 +2100,89 @@ export function createCursorSdkRuntime(options = {}) {
     };
   };
 
+  const generateDirectTitle = async ({ text, directory }) => {
+    const promptText = trimString(text);
+    if (!promptText) return null;
+    const apiKey = getCursorSdkApiKey({ env, readAuth });
+    if (!apiKey) return null;
+
+    const { Agent } = await loadSdk();
+    return generateCursorSessionTitle({
+      Agent,
+      apiKey,
+      text: promptText,
+      directory,
+    });
+  };
+
+  const generateNodeWorkerTitle = async ({ text, directory }) => {
+    const promptText = trimString(text);
+    if (!promptText) return null;
+    const apiKey = getCursorSdkApiKey({ env, readAuth });
+    if (!apiKey) return null;
+
+    const child = spawnImpl(nodeBinary, [workerPath], {
+      cwd: workerCwd,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        ...workerEnv,
+      },
+    });
+    let stderr = '';
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk) => {
+      stderr = `${stderr}${chunk}`;
+      if (stderr.length > 8000) stderr = stderr.slice(-8000);
+    });
+    child.stdin.end(JSON.stringify({
+      type: 'title',
+      apiKey,
+      text: promptText,
+      directory: trimString(directory),
+      modelID: 'auto',
+      modelSelection: { id: 'auto' },
+    }));
+
+    const exitPromise = new Promise((resolve) => {
+      child.on('error', (error) => resolve({ code: 1, signal: null, error }));
+      child.on('close', (code, signal) => resolve({ code, signal, error: null }));
+    });
+    let title = null;
+    let workerError = null;
+    const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
+    for await (const line of lines) {
+      if (!trimString(line)) continue;
+      let payload = null;
+      try {
+        payload = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (payload?.type === 'title-result') {
+        title = normalizeCursorSessionTitle(payload.title);
+      } else if (payload?.type === 'error') {
+        workerError = trimString(payload.error) || 'Cursor SDK title generation failed.';
+      }
+    }
+
+    const exit = await exitPromise;
+    if (workerError) throw new Error(workerError);
+    if (exit.error) throw exit.error;
+    if (exit.code && exit.code !== 0) {
+      const detail = trimString(stderr);
+      throw new Error(detail
+        ? `Cursor SDK title worker exited with code ${exit.code}: ${detail}`
+        : `Cursor SDK title worker exited with code ${exit.code}.`);
+    }
+    return title;
+  };
+
   const createNodeWorkerPromptRun = async ({ sessionID, messageID, apiKey, modelID, modelSelection, prompt, directory, images, agentDefinitions }) => {
     const state = await readSessionState(sessionID);
     const workerStartedAt = now();
     const child = spawnImpl(nodeBinary, [workerPath], {
-      cwd: workerCwd,
+      cwd: trimString(directory) || workerCwd,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
         ...process.env,
@@ -2385,7 +2399,7 @@ export function createCursorSdkRuntime(options = {}) {
     };
   };
 
-  const createPersistentWorkerRuntime = () => {
+  const createPersistentWorkerRuntime = (runtimeDirectory = '') => {
     let child = null;
     let readerPromise = null;
     let readyPromise = null;
@@ -2393,12 +2407,34 @@ export function createCursorSdkRuntime(options = {}) {
     let rejectReady = null;
     let stderr = '';
     let stopping = false;
+    let disposed = false;
+    let pendingAdmissions = 0;
+    let runtimeWorkerReady = false;
+    let runtimeWorkerRestarts = 0;
     const requests = new Map();
+    const runtimeWorkerCwd = trimString(runtimeDirectory) || workerCwd;
 
     const clearReadyPromise = () => {
       readyPromise = null;
       resolveReady = null;
       rejectReady = null;
+    };
+
+    const createDisposedError = () => {
+      const error = new Error('Cursor SDK persistent worker runtime is disposed.');
+      error.code = 'CURSOR_PERSISTENT_WORKER_DISPOSED';
+      return error;
+    };
+
+    const reserveAdmission = () => {
+      if (disposed) throw createDisposedError();
+      pendingAdmissions += 1;
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        pendingAdmissions = Math.max(0, pendingAdmissions - 1);
+      };
     };
 
     const setRequestFinalResult = (request, result) => {
@@ -2417,6 +2453,10 @@ export function createCursorSdkRuntime(options = {}) {
           agentID: trimString(result?.agentID),
           cacheHit: result?.cacheHit === true,
         });
+        return;
+      }
+      if (request.kind === 'title') {
+        request.resolve?.(normalizeCursorSessionTitle(result?.title));
         return;
       }
       if (result) {
@@ -2441,6 +2481,10 @@ export function createCursorSdkRuntime(options = {}) {
           ok: false,
           error: finalError.message,
         });
+        return;
+      }
+      if (request.kind === 'title') {
+        request.reject?.(finalError);
         return;
       }
       setRequestFinalResult(request, {
@@ -2475,7 +2519,7 @@ export function createCursorSdkRuntime(options = {}) {
 
     const handleWorkerPayload = (payload) => {
       if (payload?.type === 'ready') {
-        workerReady = true;
+        runtimeWorkerReady = true;
         resolveReady?.();
         clearReadyPromise();
         return;
@@ -2496,6 +2540,11 @@ export function createCursorSdkRuntime(options = {}) {
           agentID: trimString(payload.agentID),
           cacheHit: payload.cacheHit === true,
         });
+        return;
+      }
+
+      if (payload.type === 'title-result') {
+        closeRequest(requestID, { title: payload.title });
         return;
       }
 
@@ -2568,7 +2617,7 @@ export function createCursorSdkRuntime(options = {}) {
           if (child === worker) {
             child = null;
             readerPromise = null;
-            workerReady = false;
+            runtimeWorkerReady = false;
             clearReadyPromise();
           }
         }
@@ -2580,11 +2629,12 @@ export function createCursorSdkRuntime(options = {}) {
     };
 
     const startWorker = () => {
+      if (disposed) throw createDisposedError();
       if (child && child.exitCode === null && !child.killed) return child;
-      workerReady = false;
+      runtimeWorkerReady = false;
       const spawnedAt = now();
       const worker = spawnImpl(nodeBinary, [persistentWorkerPath], {
-        cwd: workerCwd,
+        cwd: runtimeWorkerCwd,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: {
           ...process.env,
@@ -2592,7 +2642,6 @@ export function createCursorSdkRuntime(options = {}) {
         },
       });
       child = worker;
-      stopping = false;
       stderr = '';
       lastWorkerTiming = {
         runtime: 'persistent-node-worker',
@@ -2633,7 +2682,7 @@ export function createCursorSdkRuntime(options = {}) {
         rejectReady?.(error);
         failAllRequests(error);
         if (!stopping) {
-          workerRestarts += 1;
+          runtimeWorkerRestarts += 1;
         }
       });
 
@@ -2643,7 +2692,7 @@ export function createCursorSdkRuntime(options = {}) {
 
     const waitUntilReady = async () => {
       startWorker();
-      if (workerReady) return;
+      if (runtimeWorkerReady) return;
       if (readyPromise) {
         await readyPromise;
       }
@@ -2658,8 +2707,9 @@ export function createCursorSdkRuntime(options = {}) {
       getStatus() {
         return {
           workerMode: useNodeWorkerForPrompts && usePersistentWorkerForPrompts ? 'persistent-node-worker' : (useNodeWorkerForPrompts ? 'node-worker' : 'direct'),
-          workerReady,
-          workerRestarts,
+          workerReady: runtimeWorkerReady,
+          workerRestarts: runtimeWorkerRestarts,
+          activeRequests: requests.size + pendingAdmissions,
         };
       },
       async prewarm(options = {}) {
@@ -2677,32 +2727,37 @@ export function createCursorSdkRuntime(options = {}) {
         }
       },
       async createPromptRun(input) {
-        await waitUntilReady();
-        const state = await readSessionState(input.sessionID);
-        const requestID = createId('cursor_req');
-        const eventQueue = createAsyncQueue();
+        const releaseAdmission = reserveAdmission();
+        let requestID = null;
+        let eventQueue = null;
         let resolveFinalResult = null;
-        const finalResultPromise = new Promise((resolve) => {
-          resolveFinalResult = resolve;
-        });
-      const request = {
-          kind: 'prompt',
-          requestID,
-          eventQueue,
-          finalResultPromise,
-          resolveFinalResult,
-          finalResultSettled: false,
-          sessionID: input.sessionID,
-          messageID: trimString(input.messageID) || null,
-          modelID: input.modelID,
-          directory: input.directory,
-        };
-        requests.set(requestID, request);
-        if (workerReady) {
-          markForRequest(request, 'cursor_worker_ready', { workerMode: 'persistent-node-worker' });
-        }
-
+        let finalResultPromise = null;
         try {
+          await waitUntilReady();
+          const state = await readSessionState(input.sessionID);
+          if (disposed) throw createDisposedError();
+          requestID = createId('cursor_req');
+          eventQueue = createAsyncQueue();
+          finalResultPromise = new Promise((resolve) => {
+            resolveFinalResult = resolve;
+          });
+          const request = {
+            kind: 'prompt',
+            requestID,
+            eventQueue,
+            finalResultPromise,
+            resolveFinalResult,
+            finalResultSettled: false,
+            sessionID: input.sessionID,
+            messageID: trimString(input.messageID) || null,
+            modelID: input.modelID,
+            directory: input.directory,
+          };
+          requests.set(requestID, request);
+          releaseAdmission();
+          if (runtimeWorkerReady) {
+            markForRequest(request, 'cursor_worker_ready', { workerMode: 'persistent-node-worker' });
+          }
           writeCommand({
             type: 'prompt',
             requestID,
@@ -2717,8 +2772,9 @@ export function createCursorSdkRuntime(options = {}) {
             agentID: trimString(state.agentID),
           });
         } catch (error) {
-          requests.delete(requestID);
-          eventQueue.close();
+          releaseAdmission();
+          if (requestID) requests.delete(requestID);
+          eventQueue?.close();
           throw error;
         }
 
@@ -2745,29 +2801,75 @@ export function createCursorSdkRuntime(options = {}) {
           },
         };
       },
-      async prepareSession(input) {
-        await waitUntilReady();
-        const state = await readSessionState(input.sessionID);
-        const requestID = createId('cursor_req');
-        let resolvePrepare = null;
-        const resultPromise = new Promise((resolve) => {
-          resolvePrepare = resolve;
-        });
-        const request = {
-          kind: 'prepare',
-          requestID,
-          resolve: resolvePrepare,
-          sessionID: input.sessionID,
-          messageID: trimString(input.messageID) || null,
-          modelID: input.modelID,
-          directory: input.directory,
-        };
-        requests.set(requestID, request);
-        if (workerReady) {
-          markForRequest(request, 'cursor_worker_ready', { workerMode: 'persistent-node-worker' });
+      async generateTitle(input) {
+        const releaseAdmission = reserveAdmission();
+        let requestID = null;
+        let resolveTitle = null;
+        let rejectTitle = null;
+        let resultPromise = null;
+        try {
+          await waitUntilReady();
+          if (disposed) throw createDisposedError();
+          requestID = createId('cursor_req');
+          resultPromise = new Promise((resolve, reject) => {
+            resolveTitle = resolve;
+            rejectTitle = reject;
+          });
+          requests.set(requestID, {
+            kind: 'title',
+            requestID,
+            resolve: resolveTitle,
+            reject: rejectTitle,
+            sessionID: '',
+            messageID: null,
+            modelID: 'auto',
+            directory: input.directory,
+          });
+          releaseAdmission();
+          writeCommand({
+            type: 'title',
+            requestID,
+            apiKey: input.apiKey,
+            text: input.text,
+            directory: trimString(input.directory),
+            modelID: 'auto',
+            modelSelection: { id: 'auto' },
+          });
+        } catch (error) {
+          releaseAdmission();
+          if (requestID) requests.delete(requestID);
+          throw error;
         }
 
+        return resultPromise;
+      },
+      async prepareSession(input) {
+        const releaseAdmission = reserveAdmission();
+        let requestID = null;
+        let resolvePrepare = null;
+        let resultPromise = null;
         try {
+          await waitUntilReady();
+          const state = await readSessionState(input.sessionID);
+          if (disposed) throw createDisposedError();
+          requestID = createId('cursor_req');
+          resultPromise = new Promise((resolve) => {
+            resolvePrepare = resolve;
+          });
+          const request = {
+            kind: 'prepare',
+            requestID,
+            resolve: resolvePrepare,
+            sessionID: input.sessionID,
+            messageID: trimString(input.messageID) || null,
+            modelID: input.modelID,
+            directory: input.directory,
+          };
+          requests.set(requestID, request);
+          releaseAdmission();
+          if (runtimeWorkerReady) {
+            markForRequest(request, 'cursor_worker_ready', { workerMode: 'persistent-node-worker' });
+          }
           writeCommand({
             type: 'prepare',
             requestID,
@@ -2780,7 +2882,8 @@ export function createCursorSdkRuntime(options = {}) {
             agentID: trimString(state.agentID),
           });
         } catch (error) {
-          requests.delete(requestID);
+          releaseAdmission();
+          if (requestID) requests.delete(requestID);
           throw error;
         }
 
@@ -2791,8 +2894,12 @@ export function createCursorSdkRuntime(options = {}) {
         return result;
       },
       async dispose() {
+        if (disposed) return;
+        disposed = true;
         stopping = true;
-        failAllRequests(new Error('Cursor SDK runtime is shutting down.'));
+        const disposeError = createDisposedError();
+        rejectReady?.(disposeError);
+        failAllRequests(disposeError);
         if (child && child.exitCode === null && !child.killed) {
           try {
             child.stdin.write(`${JSON.stringify({ type: 'shutdown' })}\n`);
@@ -2807,7 +2914,79 @@ export function createCursorSdkRuntime(options = {}) {
     };
   };
 
-  const persistentWorkerRuntime = createPersistentWorkerRuntime();
+  const persistentWorkerRuntimes = new Map();
+  let persistentWorkerPrewarmApiKey = '';
+
+  const createPersistentWorkerCapacityError = () => {
+    const error = new Error(`Cursor SDK persistent worker capacity (${MAX_PERSISTENT_WORKERS}) is full.`);
+    error.code = 'CURSOR_PERSISTENT_WORKER_CAPACITY';
+    return error;
+  };
+
+  const getPersistentWorkerRuntime = (directory) => {
+    const key = trimString(directory) || workerCwd;
+    const cached = persistentWorkerRuntimes.get(key);
+    if (cached) {
+      persistentWorkerRuntimes.delete(key);
+      persistentWorkerRuntimes.set(key, cached);
+      return cached;
+    }
+
+    if (persistentWorkerRuntimes.size >= MAX_PERSISTENT_WORKERS) {
+      const evictable = [...persistentWorkerRuntimes.entries()].find(([, candidate]) => {
+        const status = candidate.getStatus();
+        return status.workerReady && status.activeRequests === 0;
+      });
+      if (!evictable) {
+        throw createPersistentWorkerCapacityError();
+      }
+      const [candidateKey, candidate] = evictable;
+      persistentWorkerRuntimes.delete(candidateKey);
+      candidate.dispose().catch(() => {});
+    }
+
+    const runtime = createPersistentWorkerRuntime(key);
+    persistentWorkerRuntimes.set(key, runtime);
+    if (persistentWorkerPrewarmApiKey) {
+      runtime.prewarm({ apiKey: persistentWorkerPrewarmApiKey }).catch((error) => {
+        lastError = error instanceof Error ? error.message : 'Cursor SDK persistent worker prewarm failed.';
+      });
+    }
+
+    return runtime;
+  };
+
+  const persistentWorkerRuntime = {
+    getStatus() {
+      const statuses = [...persistentWorkerRuntimes.values()].map((runtime) => runtime.getStatus());
+      return {
+        workerMode: 'persistent-node-worker',
+        workerReady: statuses.some((status) => status.workerReady),
+        workerRestarts: statuses.reduce((total, status) => total + status.workerRestarts, 0),
+      };
+    },
+    async prewarm(options = {}) {
+      const directory = trimString(options.directory);
+      const apiKey = trimString(options.apiKey);
+      if (apiKey) persistentWorkerPrewarmApiKey = apiKey;
+      if (!directory) return;
+      await getPersistentWorkerRuntime(directory).prewarm(options);
+    },
+    createPromptRun(input) {
+      return getPersistentWorkerRuntime(input.directory).createPromptRun(input);
+    },
+    generateTitle(input) {
+      return getPersistentWorkerRuntime(input.directory).generateTitle(input);
+    },
+    prepareSession(input) {
+      return getPersistentWorkerRuntime(input.directory).prepareSession(input);
+    },
+    async dispose() {
+      const runtimes = [...persistentWorkerRuntimes.values()];
+      persistentWorkerRuntimes.clear();
+      await Promise.all(runtimes.map((runtime) => runtime.dispose()));
+    },
+  };
 
   const createPersistentWorkerPromptRun = async (input) => {
     try {
@@ -2816,6 +2995,34 @@ export function createCursorSdkRuntime(options = {}) {
       logger.warn?.('[CursorSDK] persistent worker unavailable, falling back to one-shot worker:', error);
       return createNodeWorkerPromptRun(input);
     }
+  };
+
+  const generatePersistentWorkerTitle = async (input) => {
+    try {
+      return await persistentWorkerRuntime.generateTitle(input);
+    } catch (error) {
+      logger.warn?.('[CursorSDK] persistent title worker unavailable, falling back to one-shot worker:', error);
+      return generateNodeWorkerTitle(input);
+    }
+  };
+
+  const generateTitle = async (input = {}) => {
+    const text = trimString(input.text);
+    if (!text) return null;
+    const apiKey = getCursorSdkApiKey({ env, readAuth });
+    if (!apiKey) return null;
+    const titleInput = {
+      text,
+      directory: trimString(input.directory),
+      apiKey,
+    };
+    if (!useNodeWorkerForPrompts) {
+      return generateDirectTitle(titleInput);
+    }
+    if (usePersistentWorkerForPrompts) {
+      return generatePersistentWorkerTitle(titleInput);
+    }
+    return generateNodeWorkerTitle(titleInput);
   };
 
   const createPromptRun = typeof options.createPromptRun === 'function'
@@ -2895,6 +3102,12 @@ export function createCursorSdkRuntime(options = {}) {
     try {
       return await persistentWorkerRuntime.prepareSession(input);
     } catch (error) {
+      if (error?.code === 'CURSOR_PERSISTENT_WORKER_CAPACITY') {
+        return {
+          ok: false,
+          error: error.message,
+        };
+      }
       logger.warn?.('[CursorSDK] persistent worker session prewarm unavailable, falling back to direct prepare:', error);
       return prepareDirectCursorSession(input);
     }
@@ -3146,11 +3359,6 @@ export function createCursorSdkRuntime(options = {}) {
         }),
       ]);
     }
-    const allowedTaskModelSelections = buildAllowedCursorTaskModelSelections({
-      selectedModelID: modelID,
-      selectedModelSelection: modelSelection,
-      agentDefinitions,
-    });
     let partSequence = 0;
     let cancellationSource = null;
     // Resolves the instant a host/user stop is requested (markAbortRequested).
@@ -4038,22 +4246,29 @@ export function createCursorSdkRuntime(options = {}) {
             }
             const partID = getToolPartID(message.call_id);
             const existing = assistantRecord.parts.find((part) => part.id === partID);
-            const input = isPlainObject(message.args) ? message.args : undefined;
-            const modelBoundaryViolation = buildCursorTaskModelBoundaryViolation({
-              toolName: message.name,
-              input,
-              selectedModelID: modelID,
-              selectedModelSelection: modelSelection,
-              allowedModelSelections: allowedTaskModelSelections,
-            });
-            const status = modelBoundaryViolation
-              ? 'error'
-              : normalizeToolCallStatus(message.status);
-            const startedAt = existing?.state?.time?.start || now();
+            const existingState = isPlainObject(existing?.state) ? existing.state : {};
+            const existingInput = isPlainObject(existing?.input)
+              ? existing.input
+              : (isPlainObject(existingState.input) ? existingState.input : undefined);
+            const input = isPlainObject(message.args) ? message.args : existingInput;
+            const incomingStatus = normalizeToolCallStatus(message.status);
+            const existingStatus = trimString(existingState.status);
+            const existingIsTerminal = existingStatus && existingStatus !== 'running' && existingStatus !== 'pending';
+            const incomingIsTerminal = incomingStatus !== 'running' && incomingStatus !== 'pending';
+            const status = existingIsTerminal && !incomingIsTerminal ? existingStatus : incomingStatus;
+            const existingTime = isPlainObject(existingState.time) ? existingState.time : {};
+            const startedAt = existingTime.start || now();
             const existingSummary = cursorTaskSummariesByPartId.get(partID);
-            const resultOutput = safeJson(message.result);
-            const output = modelBoundaryViolation || (trimString(resultOutput) ? resultOutput : existingSummary || resultOutput);
+            const existingOutput = typeof existing?.output === 'string'
+              ? existing.output
+              : (typeof existingState.output === 'string' ? existingState.output : '');
+            const hasResult = hasOwn(message, 'result');
+            const resultOutput = hasResult ? safeJson(message.result) : '';
+            const output = hasResult
+              ? (trimString(resultOutput) ? resultOutput : existingSummary || resultOutput)
+              : existingOutput || existingSummary || '';
             const metadata = {
+              ...(isPlainObject(existingState.metadata) ? existingState.metadata : {}),
               ...(isPlainObject(message.metadata) ? message.metadata : {}),
               ...(existingSummary ? { cursorTaskSummary: existingSummary } : {}),
             };
@@ -4062,7 +4277,7 @@ export function createCursorSdkRuntime(options = {}) {
               sessionID,
               messageID: assistantMessageID,
               type: 'tool',
-              tool: trimString(message.name) || 'tool',
+              tool: trimString(message.name) || trimString(existing?.tool) || 'tool',
               ...(input ? { input } : {}),
               output,
               state: {
@@ -4072,7 +4287,7 @@ export function createCursorSdkRuntime(options = {}) {
                 ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
                 time: {
                   start: startedAt,
-                  ...(status !== 'running' && status !== 'pending' ? { end: now() } : {}),
+                  ...(status !== 'running' && status !== 'pending' ? { end: existingTime.end || now() } : {}),
                 },
               },
             };
@@ -4087,20 +4302,6 @@ export function createCursorSdkRuntime(options = {}) {
             previousContentKind = 'tool';
             if (partChanged || planTextChanged) {
               await emitRecordDelta(assistantRecord);
-            }
-            if (modelBoundaryViolation) {
-              applyFinalAssistantText(modelBoundaryViolation);
-              await emitRecordDelta(assistantRecord);
-              finalStatus = 'error';
-              cancellationSource = 'model_boundary';
-              try {
-                await run.cancel?.();
-              } catch {
-              }
-              if (typeof iterator.return === 'function') {
-                iterator.return().catch(() => {});
-              }
-              break;
             }
             if (isTerminalToolStatus && isWorkspaceMutationCandidateTool(message.name)) {
               sawMutationCandidateTool = true;
@@ -4230,6 +4431,9 @@ export function createCursorSdkRuntime(options = {}) {
     },
     refreshVirtualProvider(options = {}) {
       return refreshVirtualProviderNow(options);
+    },
+    async generateTitle(input = {}) {
+      return generateTitle(input);
     },
     async handlePromptAsync(input) {
       const providerID = trimString(input?.body?.model?.providerID);

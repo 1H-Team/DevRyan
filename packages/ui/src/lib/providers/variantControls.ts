@@ -29,7 +29,7 @@ export type ModelVariantDisplayState = {
 const FAST_VARIANT_KEY = 'fast';
 const FAST_MODEL_SUFFIX = '-fast';
 
-const THINKING_VARIANT_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const;
+const THINKING_VARIANT_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const;
 const THINKING_VARIANT_RANK = new Map<string, number>(
     THINKING_VARIANT_ORDER.map((variant, index) => [variant, index]),
 );

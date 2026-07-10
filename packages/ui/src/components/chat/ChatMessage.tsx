@@ -37,6 +37,7 @@ import { isPlanModeUserMessage } from '@/lib/messages/actionablePlan';
 import { getModelVariantDisplayState, getOrderedThinkingVariants } from '@/lib/providers/variantControls';
 import { resolveUserMessageRevertSessionId } from './chatMessageActions';
 import { classifyAssistantError, classifySteeredAbortFallback } from './message/assistantError';
+import { executeTransientRetry } from '@/sync/transient-retry';
 import { getAssistantMessageBottomPaddingClass, hasRenderableAssistantContent, shouldHideAssistantAbortArtifact } from './chatMessageLayout';
 import { shouldSuppressIntermediateAssistantStatusText } from './message/assistantInlineActions';
 import { isEditToolName, isShellToolName, normalizeToolName } from './message/parts/toolRenderUtils';
@@ -115,6 +116,7 @@ interface ChatMessageProps {
         info: Message;
         parts: Part[];
     };
+    isLatestMessage: boolean;
     onContentChange?: (reason?: ContentChangeReason) => void;
     animationHandlers?: AnimationHandlers;
     scrollToBottom?: () => void;
@@ -130,6 +132,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     message,
     previousMessage,
     nextMessage,
+    isLatestMessage,
     onContentChange,
     animationHandlers,
     turnGroupingContext,
@@ -196,6 +199,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     const [copiedCode, setCopiedCode] = React.useState<string | null>(null);
     const [copiedMessage, setCopiedMessage] = React.useState(false);
     const [isReverting, setIsReverting] = React.useState(false);
+    const [errorRetryPending, setErrorRetryPending] = React.useState(false);
     const [expandedTools, setExpandedTools] = React.useState<Set<string>>(() => readExpandedToolsCache(message.info.id));
     const [collapsedTools, setCollapsedTools] = React.useState<Set<string>>(() => readCollapsedToolsCache(message.info.id));
     const [popupContent, setPopupContent] = React.useState<ToolPopupContent>({
@@ -726,7 +730,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             messageId?: string;
             isLatestMessage?: boolean;
         } = {
-            isLatestMessage: !nextMessage,
+            isLatestMessage,
         };
         if (manualAbortMessageId) {
             abortOptions.manualAbortMessageId = manualAbortMessageId;
@@ -738,7 +742,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             abortOptions.messageId = messageId;
         }
         return classifyAssistantError(errorInfo, abortOptions) ?? classifySteeredAbortFallback(abortOptions);
-    }, [isUser, manualAbortMessageId, message.info, nextMessage, steeredAbortMessageId]);
+    }, [isLatestMessage, isUser, manualAbortMessageId, message.info, steeredAbortMessageId]);
 
     React.useEffect(() => {
         if (assistantError?.abortKind !== 'unexpected' || !messageSessionId) {
@@ -829,6 +833,19 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             setIsReverting(false);
         }
     }, [currentSessionId, isReverting, message.info.id, revertToMessage, sessionId]);
+
+    const handleErrorRetry = React.useCallback(async () => {
+        if (errorRetryPending || !messageSessionId) return;
+
+        setErrorRetryPending(true);
+        try {
+            await executeTransientRetry(messageSessionId);
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Failed to retry the message.');
+        } finally {
+            setErrorRetryPending(false);
+        }
+    }, [errorRetryPending, messageSessionId]);
 
     // NEW: Fork handler
     const handleFork = React.useCallback(() => {
@@ -1224,6 +1241,8 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                 turnGroupingContext={turnGroupingContext}
                                  errorMessage={assistantErrorText}
                                  errorVariant={assistantErrorVariant}
+                                 onErrorRetry={assistantError?.retryable && isLatestMessage ? handleErrorRetry : undefined}
+                                 errorRetryPending={errorRetryPending}
                                  isPlanModeSource={effectiveIsPlanModeSource}
                              />
 
@@ -1257,6 +1276,7 @@ export default React.memo(ChatMessage, (prev, next) => {
             next.nextMessage ? { info: next.nextMessage.info, parts: next.nextMessage.parts } : undefined
         )
         && prev.isInActiveTurn === next.isInActiveTurn
+        && prev.isLatestMessage === next.isLatestMessage
         && prev.activeStreamingPhase === next.activeStreamingPhase
         && prev.assistantHeaderMessageId === next.assistantHeaderMessageId
         && prev.animateUserOnMount === next.animateUserOnMount

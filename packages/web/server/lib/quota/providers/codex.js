@@ -13,7 +13,7 @@ import {
 } from '../utils/index.js';
 
 export const providerId = 'codex';
-export const providerName = 'Codex';
+export const providerName = 'ChatGPT';
 export const aliases = ['openai', 'codex', 'chatgpt'];
 
 export const isConfigured = () => {

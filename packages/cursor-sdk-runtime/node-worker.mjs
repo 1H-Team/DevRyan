@@ -4,6 +4,9 @@ import {
   pinCursorSdkSubagentModels,
 } from './agent-definitions.js';
 import { configureCursorSdkRipgrep } from './ripgrep-path.js';
+import {
+  generateCursorSessionTitle,
+} from './title-generation.js';
 
 const readStdin = async () => {
   let raw = '';
@@ -210,7 +213,7 @@ const main = async () => {
   const modelID = trimString(input.modelID) || 'auto';
   const modelSelection = normalizeModelSelection(input.modelSelection, modelID);
   const agents = pinCursorSdkSubagentModels(normalizeCursorSdkAgentDefinitions(input.agents), modelSelection);
-  const prompt = trimString(input.prompt);
+  const prompt = trimString(input.type === 'title' ? input.text : input.prompt);
   const images = Array.isArray(input.images)
     ? input.images
       .filter((image) => (
@@ -237,6 +240,17 @@ const main = async () => {
   configureCursorSdkRipgrep(cursorSdk, { env: process.env });
   const { Agent } = cursorSdk;
   const model = modelSelection;
+  if (input.type === 'title') {
+    const title = await generateCursorSessionTitle({
+      Agent,
+      apiKey,
+      text: prompt,
+      directory,
+    });
+    writeEvent({ type: 'title-result', title });
+    setTimeout(() => process.exit(0), 25).unref?.();
+    return;
+  }
   const local = {
     ...(directory ? { cwd: directory } : {}),
     ...(CURSOR_SETTING_SOURCES ? { settingSources: CURSOR_SETTING_SOURCES } : {}),
@@ -245,6 +259,7 @@ const main = async () => {
     apiKey,
     model,
     local,
+    ...(directory ? { platform: { workspaceRef: directory } } : {}),
     ...(agents ? { agents } : {}),
   };
   writeTiming('cursor_run_create_started');

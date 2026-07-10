@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-07-10
+
+- Release: bump DevRyan workspace, Electron, VS Code, web, and legacy desktop metadata to 1.0.7.
+- OpenCode: update the bundled SDK dependency to 1.17.18 across web, UI, VS Code, and the workspace lockfile.
+- Desktop: hide desktop edge chrome action clusters while settings are open, preserving the draggable titlebar filler.
+
 ## [1.0.6] - 2026-07-07
 
 - OpenCode: update the bundled SDK and managed runtime target to 1.17.14, launch managed servers in pure mode, and filter ambient plugins/MCP servers from the managed runtime surface.

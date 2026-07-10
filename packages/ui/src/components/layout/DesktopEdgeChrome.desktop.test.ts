@@ -37,4 +37,20 @@ describe('DesktopEdgeChrome desktop drag regions', () => {
 
     expect(source).toContain('<div className="app-region-no-drag flex items-center gap-1.5">');
   });
+
+  test('hides both action clusters for settings while preserving the drag filler', () => {
+    const chromeSource = readSource('DesktopEdgeChrome.tsx');
+    const layoutSource = readSource('MainLayout.tsx');
+
+    expect(layoutSource).toContain('<DesktopEdgeChrome hideActions={isSettingsDialogOpen} />');
+    expect(chromeSource).toContain('interface DesktopEdgeChromeProps {');
+    expect(chromeSource).toContain('hideActions: boolean;');
+    expect(chromeSource).toContain('export const DesktopEdgeChrome: React.FC<DesktopEdgeChromeProps> = ({ hideActions }) => {');
+    expect(chromeSource.match(/!hideActions && \(/g)).toHaveLength(2);
+
+    const dragFillerIndex = chromeSource.indexOf('app-region-drag pointer-events-auto absolute top-0 left-0 h-full');
+    const firstActionGuardIndex = chromeSource.indexOf('!hideActions && (');
+    expect(dragFillerIndex).toBeGreaterThan(-1);
+    expect(firstActionGuardIndex).toBeGreaterThan(dragFillerIndex);
+  });
 });

@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { getAgentColor } from '@/lib/agentColors';
 import { useProviderLogo } from '@/hooks/useProviderLogo';
 import { ChatMetadataBadge } from '../ChatMetadataBadge';
-import { formatAgentLabel } from '../mobileControlsUtils';
+import { formatAgentLabel, formatEffortLabel } from '../mobileControlsUtils';
 import { getMessageHeaderDisplay } from './messageHeaderDisplay';
 
 interface MessageHeaderProps {
@@ -18,15 +18,13 @@ interface MessageHeaderProps {
     isDarkTheme: boolean;
 }
 
-const capitalizeMetadataLabel = (value: string) => (value.length > 0 ? value[0].toUpperCase() + value.slice(1) : value);
-
 const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, providerID, modelID, agentName, modelName, variant, fastEnabled = false, isDarkTheme }) => {
     const { providerID: displayProviderID, modelName: displayModelName } = React.useMemo(
         () => getMessageHeaderDisplay({ providerID, modelID, modelName }),
         [modelID, modelName, providerID],
     );
     const { src: logoSrc, onError: handleLogoError, hasLogo } = useProviderLogo(displayProviderID);
-    const thinkingLabel = variant ? capitalizeMetadataLabel(variant) : undefined;
+    const thinkingLabel = variant ? formatEffortLabel(variant) : undefined;
     const fastIcon = fastEnabled ? (
         <RiFlashlightFill className="h-3 w-3 text-[var(--status-warning)]" aria-label="Fast mode" />
     ) : null;

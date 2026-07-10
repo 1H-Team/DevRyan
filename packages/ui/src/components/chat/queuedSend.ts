@@ -60,6 +60,12 @@ const delay = (ms: number): Promise<void> => new Promise((resolve) => {
   setTimeout(resolve, ms)
 })
 
+const queuedMessageFlushCounts = new Map<string, number>()
+
+export function isQueuedMessageFlushInFlight(sessionId: string): boolean {
+  return (queuedMessageFlushCounts.get(sessionId) ?? 0) > 0
+}
+
 export async function waitForQueuedTurnIdle(sessionId: string): Promise<void> {
   const busyDeadline = Date.now() + 5_000
 
@@ -92,6 +98,10 @@ export async function flushQueuedMessagesForSession(options: FlushQueuedMessages
   const sendMessageToSession = options.sendMessageToSession ?? defaultSendMessageToSession
   const waitForReadyToSendNext = options.waitForReadyToSendNext ?? waitForQueuedTurnIdle
   let nextMessageIndex = 0
+  queuedMessageFlushCounts.set(
+    options.sessionId,
+    (queuedMessageFlushCounts.get(options.sessionId) ?? 0) + 1,
+  )
 
   try {
     while (nextMessageIndex < claimedMessages.length) {
@@ -125,6 +135,13 @@ export async function flushQueuedMessagesForSession(options: FlushQueuedMessages
       claimedMessages.slice(nextMessageIndex),
     )
     throw error
+  } finally {
+    const remainingFlushes = (queuedMessageFlushCounts.get(options.sessionId) ?? 1) - 1
+    if (remainingFlushes > 0) {
+      queuedMessageFlushCounts.set(options.sessionId, remainingFlushes)
+    } else {
+      queuedMessageFlushCounts.delete(options.sessionId)
+    }
   }
 
   return claimedMessages.length

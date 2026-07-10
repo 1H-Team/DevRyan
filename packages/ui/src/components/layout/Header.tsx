@@ -595,13 +595,21 @@ export const Header: React.FC<HeaderProps> = ({
 
   const desktopPaddingClass = React.useMemo(() => {
     if (isDesktopApp) {
-      return 'pl-3';
+      return '';
     }
     if (!isSidebarOpen && isTabletStandalonePwa) {
       return 'pl-[5.5rem]';
     }
     return 'pl-3';
   }, [isDesktopApp, isSidebarOpen, isTabletStandalonePwa]);
+
+  const desktopHeaderRowInsetStyle = React.useMemo<React.CSSProperties | undefined>(() => {
+    if (!isDesktopApp || isSidebarOpen) {
+      return undefined;
+    }
+
+    return { paddingLeft: DESKTOP_LEFT_CHROME_CLUSTER_WIDTH };
+  }, [isDesktopApp, isSidebarOpen]);
 
   const macosHeaderSizeClass = React.useMemo(() => {
     if (!isDesktopApp || !isMacPlatform || macosMajorVersion === null) {
@@ -807,7 +815,7 @@ export const Header: React.FC<HeaderProps> = ({
     <div
       onMouseDown={handleDragStart}
       className={cn(
-        'app-region-drag relative flex h-12 select-none items-center',
+        'app-region-drag relative flex h-12 w-full select-none items-center',
         isDesktopApp ? 'pr-[calc(11rem+var(--oc-wco-right-inset,0px))]' : 'pr-3',
         desktopPaddingClass,
         macosHeaderSizeClass
@@ -816,13 +824,7 @@ export const Header: React.FC<HeaderProps> = ({
       role="tablist"
       aria-label={t('header.navigation.mainAria')}
     >
-      {isDesktopApp ? (
-        <div
-          aria-hidden
-          className="shrink-0"
-          style={{ width: DESKTOP_LEFT_CHROME_CLUSTER_WIDTH }}
-        />
-      ) : (
+      {!isDesktopApp ? (
         <HeaderIconActionButton
           visible={!isSidebarOpen}
           title={t('header.actions.openSessionsWithShortcut', { shortcut: shortcutLabel('toggle_sidebar') })}
@@ -831,45 +833,52 @@ export const Header: React.FC<HeaderProps> = ({
           className={`${DESKTOP_HEADER_ICON_BUTTON_CLASS} shrink-0`}
           Icon={SidebarLeftExpandIcon}
         />
-      )}
+      ) : null}
 
-      <div className={cn('flex min-w-0 flex-1 items-center', !isDesktopApp && !isSidebarOpen && 'pl-3')}>
-        {!isLeftSidebarOpen ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                aria-label={t('header.actions.newSessionAria')}
-                onClick={handleHeaderNewSession}
-                className={cn(DESKTOP_HEADER_ICON_BUTTON_CLASS, 'mr-6 shrink-0')}
-              >
-                <RiChatNewLine className="h-[18px] w-[18px]" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p>{t('header.actions.newSessionWithShortcut', { shortcut: shortcutLabel('new_chat') })}</p>
-            </TooltipContent>
-          </Tooltip>
-        ) : null}
-        {!isNewSessionDraftOpen ? (
-          <div className="mr-3 flex min-w-0 items-center gap-2 pl-1">
-            <div className="min-w-0 truncate typography-ui-label text-[14px] font-normal leading-tight text-foreground">
-              {currentSessionTitle}
-            </div>
-            {hasNonZeroSessionChanges ? (
-              <SessionChangesBadge stats={currentSessionChanges} />
-            ) : null}
-          </div>
-        ) : null}
-        {tabs.length > 0 && (
-          <div className="flex items-center gap-1 rounded-lg bg-[var(--surface-muted)]/50 p-1">
-            {tabs.map((tab) => renderTab(tab))}
-          </div>
+      <div
+        className={cn(
+          'flex min-w-0 w-full flex-1 items-center gap-3',
+          isDesktopApp && isSidebarOpen && 'pl-3',
+          !isDesktopApp && !isSidebarOpen && 'pl-3',
         )}
+        style={desktopHeaderRowInsetStyle}
+      >
+        <div className="flex min-w-0 flex-1 items-center justify-start gap-2 overflow-hidden">
+          {!isLeftSidebarOpen ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={t('header.actions.newSessionAria')}
+                  onClick={handleHeaderNewSession}
+                  className={cn(DESKTOP_HEADER_ICON_BUTTON_CLASS, 'shrink-0')}
+                >
+                  <RiChatNewLine className="h-[18px] w-[18px]" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>{t('header.actions.newSessionWithShortcut', { shortcut: shortcutLabel('new_chat') })}</p>
+              </TooltipContent>
+            </Tooltip>
+          ) : null}
+          {!isNewSessionDraftOpen ? (
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="min-w-0 truncate text-left typography-ui-label text-[14px] font-normal leading-tight text-foreground">
+                {currentSessionTitle}
+              </div>
+              {hasNonZeroSessionChanges ? (
+                <SessionChangesBadge stats={currentSessionChanges} />
+              ) : null}
+            </div>
+          ) : null}
+          {tabs.length > 0 && (
+            <div className="flex items-center gap-1 rounded-lg bg-[var(--surface-muted)]/50 p-1">
+              {tabs.map((tab) => renderTab(tab))}
+            </div>
+          )}
+        </div>
 
-        <div className="flex-1" />
-
-        <div className="app-region-no-drag pointer-events-auto relative flex shrink-0 items-center gap-1.5">
+        <div className="app-region-no-drag pointer-events-auto relative ml-auto flex shrink-0 items-center gap-1.5">
           {projectActionsContext && (
             <ProjectActionsButton
               projectRef={projectActionsContext.projectRef}

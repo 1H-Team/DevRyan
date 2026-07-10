@@ -673,7 +673,7 @@ export const MainLayout: React.FC = () => {
                             >
                                 {rightSidebarTabsElement}
                             </RightSidebar>
-                            <DesktopEdgeChrome />
+                            <DesktopEdgeChrome hideActions={isSettingsDialogOpen} />
                         </div>
 
                     </div>

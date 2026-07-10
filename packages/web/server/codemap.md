@@ -10,6 +10,7 @@ Primary backend runtime for DevRyan web/desktop: starts Express, wires OpenCode 
 - **Local cache policy**: `lib/http-cache-policy.js` marks dynamic `/api/*` responses as `no-store` so Electron/Chromium profiles do not persist session/message/git/preview API payloads.
 - **Cross-surface support**: same backend serves standalone web and embedded desktop runtime.
 - **Cursor SDK split**: `index.js` composes `@openchamber/cursor-sdk-runtime`; `lib/opencode/routes.js` intercepts `cursor-acp` prompt sends and virtual provider discovery while quota routes keep using the existing dashboard usage token.
+- **Cursor title ownership**: `lib/opencode/cursor-session-title-runtime.js` schedules guarded, asynchronous Cursor Auto titles after intercepted prompts and preserves manual session renames.
 
 ## Flow
 1. Parse CLI/runtime options (`lib/opencode/cli-options.js`) and initialize config/state runtimes.

@@ -3,9 +3,11 @@ import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import yaml from 'yaml';
 
+import { deleteAgentModelOverride, writeAgentModelOverride } from './agents.js';
+import * as authModule from './auth.js';
 import { syncRuntimeAgentOverlays } from './runtime-agent-overlays.js';
 import { DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE, DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC } from './slim-config.js';
 
@@ -73,6 +75,7 @@ describe('syncRuntimeAgentOverlays', () => {
   let overlayRoot;
   let manifestPath;
   let targetConfigDirectory;
+  let readAuthSpy;
 
   beforeEach(async () => {
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-runtime-agent-overlays-'));
@@ -82,9 +85,13 @@ describe('syncRuntimeAgentOverlays', () => {
     overlayRoot = path.join(tempRoot, 'runtime-overlays');
     manifestPath = path.join(overlayRoot, 'manifest.json');
     targetConfigDirectory = path.join(overlayRoot, crypto.createHash('sha256').update(projectDirectory).digest('hex'));
+    // Keep suite hermetic: real machine Copilot auth must not leak into overlay expectations.
+    readAuthSpy = vi.spyOn(authModule, 'readAuthFile').mockReturnValue({});
   });
 
   afterEach(async () => {
+    readAuthSpy?.mockRestore();
+    readAuthSpy = undefined;
     if (tempRoot) {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
@@ -132,6 +139,41 @@ describe('syncRuntimeAgentOverlays', () => {
       },
     });
     expect(overlay.prompt).toBe('Project builder prompt');
+  });
+
+  it('preserves a stale Luna agent override without manufacturing provider availability', async () => {
+    await writeAgent(path.join(projectDirectory, '.opencode', 'agents'), 'explorer', [
+      'mode: subagent',
+      'model: openai/gpt-5.5',
+    ], 'Project explorer prompt');
+
+    const result = await syncRuntimeAgentOverlays({
+      workingDirectory: projectDirectory,
+      packagedAgentDirectory,
+      packagedPluginDirectory,
+      overlayRoot,
+      manifestPath,
+      agentOverrides: {
+        explorer: {
+          model: 'openai/gpt-5.6-luna',
+          variant: 'max',
+        },
+      },
+      readAuthFile: () => ({}),
+      writeAuthFile: () => {},
+      readConfig: () => ({}),
+      listMcpConfigs: () => [],
+    });
+
+    const runtimeConfig = JSON.parse(await fs.readFile(
+      path.join(result.targetConfigDirectory, 'opencode.json'),
+      'utf8',
+    ));
+    const overlay = await readOverlayAgent(result.targetConfigDirectory, 'explorer');
+
+    expect(overlay.frontmatter.model).toBe('openai/gpt-5.6-luna');
+    expect(overlay.frontmatter.variant).toBe('max');
+    expect(runtimeConfig.provider?.openai).toBeUndefined();
   });
 
   it('uses an OpenCode-compatible empty variant sentinel to clear inherited project thinking', async () => {
@@ -345,24 +387,41 @@ describe('syncRuntimeAgentOverlays', () => {
     expect(result.slimConfigWritten).toBe(true);
   });
 
-  it('copies wrapper-mode Slim config and packaged wrapper plugin without excluding DevRyan agents', async () => {
+  it('materializes wrapper-mode Slim model saves into managed agent overlays', async () => {
     const opencodeConfigDirectory = path.join(tempRoot, 'opencode-config');
+    const userConfigPath = path.join(opencodeConfigDirectory, 'opencode.json');
     const slimConfigPath = path.join(opencodeConfigDirectory, 'oh-my-opencode-slim.json');
     const wrapperSource = 'export default async function wrapper() { return {}; }\n';
+    await writeJson(userConfigPath, {
+      plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC],
+    });
     await writeJson(slimConfigPath, {
       preset: 'openai',
       presets: {
         openai: {
-          orchestrator: { model: 'openai/gpt-5.5', variant: 'medium' },
+          fixer: { model: 'openai/gpt-5.5', variant: 'medium' },
         },
       },
     });
-    await writeAgent(packagedAgentDirectory, 'orchestrator', [
-      'mode: primary',
-      'model: packaged/orchestrator',
-    ], 'Packaged DevRyan orchestrator prompt');
+    await writeAgent(packagedAgentDirectory, 'fixer', [
+      'mode: subagent',
+      'model: openai/gpt-5.5',
+      'modelRefs:',
+      '  - openai/gpt-5.5',
+      'variant: medium',
+    ], 'Packaged DevRyan fixer prompt');
     await fs.mkdir(packagedPluginDirectory, { recursive: true });
     await fs.writeFile(path.join(packagedPluginDirectory, DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE), wrapperSource, 'utf8');
+
+    writeAgentModelOverride(
+      'fixer',
+      { model: 'openai/gpt-5.6-terra', variant: 'low' },
+      projectDirectory,
+      {
+        userConfigPath,
+        slimConfigDirectory: opencodeConfigDirectory,
+      },
+    );
 
     const result = await syncRuntimeAgentOverlays({
       workingDirectory: projectDirectory,
@@ -370,26 +429,142 @@ describe('syncRuntimeAgentOverlays', () => {
       packagedPluginDirectory,
       overlayRoot,
       manifestPath,
+      userConfigPath,
       slimConfigDirectory: opencodeConfigDirectory,
       readConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
       readOpenCodeConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
-      agentOverrides: {
-        orchestrator: {
-          model: 'openai/gpt-5.5',
-          variant: 'medium',
-        },
+      skillPolicy: {
+        skillNames: [],
+        skillDirectories: [],
+        skillDirectoriesByName: {},
       },
     });
 
     const overlayConfig = JSON.parse(await fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8'));
-    const overlay = await readOverlayAgent(result.targetConfigDirectory, 'orchestrator');
+    const overlay = await readOverlayAgent(result.targetConfigDirectory, 'fixer');
     await expect(fs.readFile(path.join(result.targetConfigDirectory, 'oh-my-opencode-slim.json'), 'utf8'))
       .resolves.toContain('"preset": "openai"');
     await expect(fs.readFile(path.join(result.targetConfigDirectory, 'plugins', DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE), 'utf8'))
       .resolves.toBe(wrapperSource);
     expect(overlayConfig.plugin).toContain(DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC);
-    expect(overlay.prompt).toBe('Packaged DevRyan orchestrator prompt');
-    expect(overlay.frontmatter.model).toBe('openai/gpt-5.5');
+    expect(overlay.prompt).toBe('Packaged DevRyan fixer prompt');
+    expect(overlay.frontmatter.model).toBe('openai/gpt-5.6-terra');
+    expect(overlay.frontmatter.modelRefs).toEqual(['openai/gpt-5.6-terra']);
+    expect(overlay.frontmatter.variant).toBe('low');
+  });
+
+  it('updates wrapper-mode Slim overlays and restores preset values after reset', async () => {
+    const opencodeConfigDirectory = path.join(tempRoot, 'opencode-config');
+    const userConfigPath = path.join(opencodeConfigDirectory, 'opencode.json');
+    await writeJson(userConfigPath, {
+      plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC],
+    });
+    await writeJson(path.join(opencodeConfigDirectory, 'oh-my-opencode-slim.json'), {
+      preset: 'openai',
+      presets: {
+        openai: {
+          fixer: { model: 'openai/gpt-5.5', variant: 'medium' },
+        },
+      },
+    });
+    await writeAgent(packagedAgentDirectory, 'fixer', [
+      'mode: subagent',
+      'model: openai/gpt-5.5',
+      'variant: medium',
+    ], 'Packaged DevRyan fixer prompt');
+
+    const writeOptions = {
+      userConfigPath,
+      slimConfigDirectory: opencodeConfigDirectory,
+    };
+    const syncOptions = {
+      workingDirectory: projectDirectory,
+      packagedAgentDirectory,
+      packagedPluginDirectory,
+      overlayRoot,
+      manifestPath,
+      userConfigPath,
+      slimConfigDirectory: opencodeConfigDirectory,
+      readConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
+      readOpenCodeConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
+      skillPolicy: {
+        skillNames: [],
+        skillDirectories: [],
+        skillDirectoriesByName: {},
+      },
+    };
+
+    writeAgentModelOverride('fixer', { model: 'openai/gpt-5.6-terra', variant: 'low' }, projectDirectory, writeOptions);
+    await syncRuntimeAgentOverlays(syncOptions);
+    writeAgentModelOverride('fixer', { model: 'openai/gpt-5.7', variant: 'high' }, projectDirectory, writeOptions);
+
+    const updated = await syncRuntimeAgentOverlays(syncOptions);
+    const updatedOverlay = await readOverlayAgent(updated.targetConfigDirectory, 'fixer');
+    expect(updated.updated).toContain('fixer');
+    expect(updatedOverlay.frontmatter.model).toBe('openai/gpt-5.7');
+    expect(updatedOverlay.frontmatter.variant).toBe('high');
+
+    deleteAgentModelOverride('fixer', {
+      ...writeOptions,
+      workingDirectory: projectDirectory,
+    });
+
+    const reset = await syncRuntimeAgentOverlays(syncOptions);
+    const resetOverlay = await readOverlayAgent(reset.targetConfigDirectory, 'fixer');
+    expect(reset.updated).toContain('fixer');
+    expect(resetOverlay.frontmatter.model).toBe('openai/gpt-5.5');
+    expect(resetOverlay.frontmatter.variant).toBe('medium');
+  });
+
+  it('clears inherited variants in wrapper-mode Slim overlays', async () => {
+    const opencodeConfigDirectory = path.join(tempRoot, 'opencode-config');
+    const userConfigPath = path.join(opencodeConfigDirectory, 'opencode.json');
+    await writeJson(userConfigPath, {
+      plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC],
+    });
+    await writeJson(path.join(opencodeConfigDirectory, 'oh-my-opencode-slim.json'), {
+      preset: 'openai',
+      presets: {
+        openai: {
+          fixer: { model: 'openai/gpt-5.5', variant: 'medium' },
+        },
+      },
+    });
+    await writeAgent(packagedAgentDirectory, 'fixer', [
+      'mode: subagent',
+      'model: openai/gpt-5.5',
+      'variant: medium',
+    ], 'Packaged DevRyan fixer prompt');
+
+    writeAgentModelOverride(
+      'fixer',
+      { model: 'openai/gpt-5.6-terra', variant: null },
+      projectDirectory,
+      {
+        userConfigPath,
+        slimConfigDirectory: opencodeConfigDirectory,
+      },
+    );
+
+    const result = await syncRuntimeAgentOverlays({
+      workingDirectory: projectDirectory,
+      packagedAgentDirectory,
+      packagedPluginDirectory,
+      overlayRoot,
+      manifestPath,
+      userConfigPath,
+      slimConfigDirectory: opencodeConfigDirectory,
+      readConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
+      readOpenCodeConfig: () => ({ plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC] }),
+      skillPolicy: {
+        skillNames: [],
+        skillDirectories: [],
+        skillDirectoriesByName: {},
+      },
+    });
+    const overlay = await readOverlayAgent(result.targetConfigDirectory, 'fixer');
+    expect(overlay.frontmatter.model).toBe('openai/gpt-5.6-terra');
+    expect(overlay.frontmatter.variant).toBe('');
   });
 
   it('keeps project-directory allows out of global packaged agent sync output', async () => {
@@ -1010,9 +1185,79 @@ describe('syncRuntimeAgentOverlays', () => {
     expect(runtimeConfig.provider?.['github-copilot']).toEqual({
       name: 'GitHub Copilot',
       models: {
-        'gpt-5.3-codex': { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex' },
-        'gpt-5.4-mini': { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini' },
+        'gpt-5.3-codex': {
+          id: 'gpt-5.3-codex',
+          name: 'GPT-5.3 Codex',
+          api: {
+            id: 'gpt-5.3-codex',
+            url: 'https://api.githubcopilot.com',
+            npm: '@ai-sdk/github-copilot',
+          },
+        },
+        'gpt-5.4-mini': {
+          id: 'gpt-5.4-mini',
+          name: 'GPT-5.4 Mini',
+          api: {
+            id: 'gpt-5.4-mini',
+            url: 'https://api.githubcopilot.com',
+            npm: '@ai-sdk/github-copilot',
+          },
+        },
       },
     });
+  });
+
+  it('does not synthesize direct OpenAI GPT-5.6 model availability', async () => {
+    const result = await syncRuntimeAgentOverlays({
+      workingDirectory: projectDirectory,
+      packagedAgentDirectory,
+      packagedPluginDirectory,
+      overlayRoot,
+      manifestPath,
+      readAuthFile: () => ({}),
+      writeAuthFile: () => {},
+      readConfig: () => ({}),
+      listMcpConfigs: () => [],
+    });
+
+    const runtimeConfig = JSON.parse(await fs.readFile(
+      path.join(result.targetConfigDirectory, 'opencode.json'),
+      'utf8',
+    ));
+    expect(runtimeConfig.provider?.openai).toBeUndefined();
+    expect(runtimeConfig.provider?.anthropic).toBeUndefined();
+  });
+
+  it('writes GitHub Copilot provider models using auth-module fallback when readAuthFile is omitted', async () => {
+    readAuthSpy.mockReturnValue({
+      'github-copilot': { access: 'copilot-token' },
+    });
+    const fetchImpl = async () => ({
+      ok: true,
+      json: async () => ({
+        data: [{ id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex' }],
+      }),
+    });
+
+    const result = await syncRuntimeAgentOverlays({
+      workingDirectory: projectDirectory,
+      packagedAgentDirectory,
+      packagedPluginDirectory,
+      overlayRoot,
+      manifestPath,
+      writeAuthFile: () => {},
+      fetchImpl,
+      readConfig: () => ({}),
+      listMcpConfigs: () => [],
+    });
+
+    expect(result.configWritten || result.configUpdated).toBe(true);
+    const runtimeConfig = JSON.parse(await fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8'));
+    expect(runtimeConfig.provider?.['github-copilot']?.models?.['gpt-5.3-codex']?.api).toEqual({
+      id: 'gpt-5.3-codex',
+      url: 'https://api.githubcopilot.com',
+      npm: '@ai-sdk/github-copilot',
+    });
+    expect(readAuthSpy).toHaveBeenCalled();
   });
 });

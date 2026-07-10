@@ -113,6 +113,25 @@ function normalizeAgentVariant(value) {
   return value.trim();
 }
 
+function agentVariantMatches({
+  expectVariant,
+  expectedModelRef,
+  expectedVariant,
+  loadedModelRef,
+  loadedVariant,
+}) {
+  if (!expectVariant || loadedVariant === expectedVariant) {
+    return true;
+  }
+
+  // Cursor is a DevRyan-owned virtual provider, so OpenCode can load its model
+  // but reports an empty agent variant; the intercepted prompt path applies it.
+  return expectedModelRef.startsWith('cursor-acp/')
+    && loadedModelRef === expectedModelRef
+    && Boolean(expectedVariant)
+    && !loadedVariant;
+}
+
 export const createOpenCodeLifecycleRuntime = (deps) => {
   const {
     state,
@@ -1009,7 +1028,13 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
             const loadedModelRef = normalizeAgentModelRef(agent);
             const loadedVariant = normalizeAgentVariant(agent.variant);
             const modelMatches = !expectedModelRef || loadedModelRef === expectedModelRef;
-            const variantMatches = !expectVariant || loadedVariant === expectedVariant;
+            const variantMatches = agentVariantMatches({
+              expectVariant,
+              expectedModelRef,
+              expectedVariant,
+              loadedModelRef,
+              loadedVariant,
+            });
             if (modelMatches && variantMatches) {
               return;
             }
@@ -1024,7 +1049,14 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     if (lastSeenAgent && expectedModelRef) {
       const loadedModelRef = normalizeAgentModelRef(lastSeenAgent) || 'unknown';
       const loadedVariant = normalizeAgentVariant(lastSeenAgent.variant);
-      const variantSuffix = expectVariant && loadedVariant !== expectedVariant
+      const variantMatches = agentVariantMatches({
+        expectVariant,
+        expectedModelRef,
+        expectedVariant,
+        loadedModelRef,
+        loadedVariant,
+      });
+      const variantSuffix = !variantMatches
         ? ` and variant "${loadedVariant || 'default'}"; expected variant "${expectedVariant || 'default'}"`
         : '';
       throw new Error(`Agent "${agentName}" loaded with model "${loadedModelRef}"${variantSuffix}; expected "${expectedModelRef}"`);

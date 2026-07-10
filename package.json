@@ -1,6 +1,6 @@
 {
   "name": "openchamber-monorepo",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "OpenChamber monorepo workspace for web, ui, and desktop runtimes",
   "private": true,
   "type": "module",
@@ -99,7 +99,7 @@
     "@fontsource/ibm-plex-sans": "^5.1.1",
     "@lezer/highlight": "^1.2.3",
     "@octokit/rest": "^22.0.1",
-    "@opencode-ai/sdk": "^1.17.16",
+    "@opencode-ai/sdk": "^1.17.18",
     "@base-ui/react": "^1.4.0",
     "@remixicon/react": "^4.7.0",
     "@types/react-syntax-highlighter": "^15.5.13",

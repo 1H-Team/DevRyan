@@ -131,7 +131,7 @@ describe("send config resolution", () => {
     })
   })
 
-  test("uses the current model before the default agent model with the model's concrete thinking fallback", () => {
+  test("uses the selected agent model before the retained current model", () => {
     const result = resolveDraftSendSelection({
       requestedAgent: undefined,
       currentAgent: "builder",
@@ -148,9 +148,9 @@ describe("send config resolution", () => {
 
     expect(result).toEqual({
       agent: "builder",
-      providerID: "openai",
-      modelID: "gpt-5.5",
-      variant: "medium",
+      providerID: "anthropic",
+      modelID: "claude-sonnet-4-5",
+      variant: "high",
     })
   })
 
@@ -359,6 +359,52 @@ describe("send config resolution", () => {
       variant: "medium",
       planMode: true,
     })
+  })
+
+  test("preserves advertised OpenAI Ultra as the exact current send variant", () => {
+    useConfigStore.setState({
+      currentProviderId: "openai",
+      currentModelId: "gpt-5.6",
+      currentAgentName: "builder",
+      currentVariant: "ultra",
+      providers: [{
+        id: "openai",
+        name: "OpenAI",
+        source: "custom",
+        options: {},
+        env: [],
+        models: [
+          createStoreModel("openai", "gpt-5.6", { xhigh: {}, ultra: {} }),
+        ],
+      }],
+    })
+
+    expect(resolveCurrentSendConfig(null)).toEqual({
+      providerID: "openai",
+      modelID: "gpt-5.6",
+      agent: "builder",
+      variant: "ultra",
+      planMode: false,
+    })
+  })
+
+  test("preserves captured Ultra queue config over later live selections", () => {
+    const result = resolveSessionSendConfigSnapshot(snapshot({
+      providers: [{
+        id: "openai",
+        models: [{ id: "gpt-5.6", variants: { xhigh: {}, ultra: {} } }],
+      }],
+      currentVariant: "xhigh",
+      sessionAgentModelVariant: "xhigh",
+    }), {
+      providerID: "openai",
+      modelID: "gpt-5.6",
+      agent: "builder",
+      variant: "ultra",
+      planMode: false,
+    })
+
+    expect(result.variant).toBe("ultra")
   })
 
   test("drops stale current variants when provider metadata is unavailable", () => {

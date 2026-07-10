@@ -137,36 +137,49 @@ export function resolveDraftSendSelection(params: {
     ? findProviderModel(params.providers, params.draftAgentModelSelection?.providerId, params.draftAgentModelSelection?.modelId)
     : null
   const draftModel = findProviderModel(params.providers, params.draftModelSelection?.providerId, params.draftModelSelection?.modelId)
+  const agentModel = findProviderModel(params.providers, agent?.model?.providerID, agent?.model?.modelID)
   const inputModel = findProviderModel(params.providers, params.inputProviderID, params.inputModelID)
   const currentModel = findProviderModel(params.providers, params.currentProviderID, params.currentModelID)
 
-  let providerID = explicitModel
-    ? params.draftSendConfig?.providerID
-    : (draftAgentModel
-      ? params.draftAgentModelSelection?.providerId
-      : (draftModel ? params.draftModelSelection?.providerId : (inputModel ? params.inputProviderID : (currentModel ? params.currentProviderID : params.inputProviderID))))
-  let modelID = explicitModel
-    ? params.draftSendConfig?.modelID
-    : (draftAgentModel
-      ? params.draftAgentModelSelection?.modelId
-      : (draftModel ? params.draftModelSelection?.modelId : (inputModel ? params.inputModelID : (currentModel ? params.currentModelID : params.inputModelID))))
-  let variant = explicitModel && hasOwn(params.draftSendConfig, "variant")
-    ? clean(params.draftSendConfig?.variant)
-    : draftAgentModel
-      ? params.draftAgentModelVariant
-      : undefined
+  // Precedence: persisted explicit draft config, explicit per-draft selections,
+  // the selected agent's configured model, then the retained current model.
+  let providerID: string | undefined
+  let modelID: string | undefined
+  let variant: string | undefined
+  let selectedModel: SendConfigProviderModel | null = null
 
-  const agentProviderID = agent?.model?.providerID
-  const agentModelID = agent?.model?.modelID
-  const agentModel = findProviderModel(params.providers, agentProviderID, agentModelID)
-  if (agentModel && agentProviderID && agentModelID && !explicitModel && !draftAgentModel && !draftModel && !inputModel && !currentModel) {
-    providerID = agentProviderID
-    modelID = agentModelID
-    variant = resolveAgentVariantForModel(agent, agentModel.model, agentProviderID, agentModelID)
+  if (explicitModel) {
+    providerID = params.draftSendConfig?.providerID
+    modelID = params.draftSendConfig?.modelID
+    variant = hasOwn(params.draftSendConfig, "variant") ? clean(params.draftSendConfig?.variant) : undefined
+  } else if (draftAgentModel) {
+    providerID = params.draftAgentModelSelection?.providerId
+    modelID = params.draftAgentModelSelection?.modelId
+    variant = params.draftAgentModelVariant
+    selectedModel = draftAgentModel.model
+  } else if (draftModel) {
+    providerID = params.draftModelSelection?.providerId
+    modelID = params.draftModelSelection?.modelId
+    selectedModel = draftModel.model
+  } else if (agentModel) {
+    providerID = agent?.model?.providerID
+    modelID = agent?.model?.modelID
+    variant = clean(agent?.variant)
+    selectedModel = agentModel.model
+  } else if (inputModel) {
+    providerID = params.inputProviderID
+    modelID = params.inputModelID
+    selectedModel = inputModel.model
+  } else if (currentModel) {
+    providerID = params.currentProviderID
+    modelID = params.currentModelID
+    selectedModel = currentModel.model
+  } else {
+    providerID = params.inputProviderID
+    modelID = params.inputModelID
   }
 
   if (!variant && !explicitModel) {
-    const selectedModel = draftAgentModel?.model ?? draftModel?.model ?? inputModel?.model ?? currentModel?.model ?? null
     variant = resolveAgentVariantForModel(agent, selectedModel, providerID, modelID)
   }
 

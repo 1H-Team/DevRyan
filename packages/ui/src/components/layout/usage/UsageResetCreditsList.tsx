@@ -38,15 +38,11 @@ export const UsageResetCreditsList = React.memo(function UsageResetCreditsList({
           </span>
         </div>
 
-        <div className="flex min-w-0 items-start justify-between gap-3 px-2 py-1.5">
-          <span className="shrink-0 typography-micro text-muted-foreground">
-            {t('header.services.resetCredits.expiryLabel')}
-          </span>
-          {expirySummary.length === 0 ? (
-            <span className="min-w-0 text-right typography-micro text-muted-foreground">
-              {t('header.services.resetCredits.expiryUnavailable')}
+        {expirySummary.length > 0 ? (
+          <div className="flex min-w-0 items-start justify-between gap-3 px-2 py-1.5">
+            <span className="shrink-0 typography-micro text-muted-foreground">
+              {t('header.services.resetCredits.expiryLabel')}
             </span>
-          ) : (
             <div className="flex min-w-0 flex-wrap justify-end gap-1">
               {expirySummary.map((summary) => (
                 <span
@@ -61,8 +57,8 @@ export const UsageResetCreditsList = React.memo(function UsageResetCreditsList({
                 </span>
               ))}
             </div>
-          )}
-        </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

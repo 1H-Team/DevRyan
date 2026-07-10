@@ -176,6 +176,183 @@ describe('Cursor SDK model discovery', () => {
     });
   });
 
+  test('keeps Max distinct and adds native Ultra only for Sol and Terra', async () => {
+    const runtime = createRuntimeForModels([
+      {
+        id: 'gpt-5.6-sol',
+        displayName: 'GPT-5.6 Sol',
+        variants: [
+          {
+            displayName: 'GPT-5.6 Sol Max',
+            params: [
+              { id: 'reasoning', value: 'max' },
+              { id: 'fast', value: 'false' },
+            ],
+          },
+          {
+            displayName: 'GPT-5.6 Sol Max Fast',
+            params: [
+              { id: 'reasoning', value: 'max' },
+              { id: 'fast', value: 'true' },
+            ],
+          },
+        ],
+      },
+      {
+        id: 'gpt-5.6-terra',
+        displayName: 'GPT-5.6 Terra',
+        variants: [{
+          displayName: 'GPT-5.6 Terra Max',
+          params: [{ id: 'reasoning', value: 'max' }],
+        }],
+      },
+      {
+        id: 'gpt-5.6-luna',
+        displayName: 'GPT-5.6 Luna',
+        variants: [{
+          displayName: 'GPT-5.6 Luna Max',
+          params: [{ id: 'reasoning', value: 'max' }],
+        }],
+      },
+      {
+        id: 'gpt-5.6-pro',
+        displayName: 'GPT-5.6 Pro',
+        variants: [{
+          displayName: 'GPT-5.6 Pro Max',
+          params: [{ id: 'reasoning', value: 'max' }],
+        }],
+      },
+      {
+        id: 'claude-opus-4-7',
+        displayName: 'Claude Opus 4.7',
+        variants: [{
+          displayName: 'Claude Opus 4.7 Max',
+          params: [{ id: 'effort', value: 'max' }],
+        }],
+      },
+    ]);
+
+    const provider = await runtime.getVirtualProvider();
+
+    expect(provider.models['gpt-5.6-sol']?.variants?.max?.cursorSdkModel).toEqual({
+      id: 'gpt-5.6-sol',
+      params: [
+        { id: 'reasoning', value: 'max' },
+        { id: 'fast', value: 'false' },
+      ],
+    });
+    expect(provider.models['gpt-5.6-sol']?.variants?.ultra?.cursorSdkModel).toEqual({
+      id: 'gpt-5.6-sol',
+      params: [
+        { id: 'reasoning', value: 'ultra' },
+        { id: 'fast', value: 'false' },
+      ],
+    });
+    expect(provider.models['gpt-5.6-sol-fast']?.variants?.ultra?.cursorSdkModel).toEqual({
+      id: 'gpt-5.6-sol',
+      params: [
+        { id: 'reasoning', value: 'ultra' },
+        { id: 'fast', value: 'true' },
+      ],
+    });
+    expect(provider.models['gpt-5.6-terra']?.variants?.max?.cursorSdkModel).toEqual({
+      id: 'gpt-5.6-terra',
+      params: [{ id: 'reasoning', value: 'max' }],
+    });
+    expect(provider.models['gpt-5.6-terra']?.variants?.ultra?.cursorSdkModel).toEqual({
+      id: 'gpt-5.6-terra',
+      params: [{ id: 'reasoning', value: 'ultra' }],
+    });
+    expect(provider.models['gpt-5.6-luna']?.variants?.max).toBeDefined();
+    expect(provider.models['gpt-5.6-luna']?.variants?.ultra).toBeUndefined();
+    expect(provider.models['gpt-5.6-pro']?.variants?.max).toBeDefined();
+    expect(provider.models['claude-opus-4-7']?.variants?.max).toBeDefined();
+  });
+
+  test('preserves literal Ultra as a distinct SDK effort variant', async () => {
+    const runtime = createRuntimeForModels([{
+      id: 'gpt-5.6-sol',
+      displayName: 'GPT-5.6 Sol',
+      variants: [
+        {
+          displayName: 'GPT-5.6 Sol Extra High',
+          params: [{ id: 'reasoning', value: 'extra-high' }],
+        },
+        {
+          displayName: 'GPT-5.6 Sol Ultra',
+          params: [{ id: 'reasoning', value: 'ultra' }],
+        },
+      ],
+    }]);
+
+    const provider = await runtime.getVirtualProvider();
+
+    expect(provider.models['gpt-5.6-sol']?.variants?.['extra-high']).toBeDefined();
+    expect(provider.models['gpt-5.6-sol']?.variants?.ultra?.cursorSdkModel.params).toEqual([
+      { id: 'reasoning', value: 'ultra' },
+    ]);
+  });
+
+  test('preserves Ultra as a distinct SDK effort variant', async () => {
+    const runtime = createRuntimeForModels([
+      {
+        id: 'gpt-5.6',
+        displayName: 'GPT-5.6',
+        parameters: [
+          { id: 'thinking', values: [{ value: 'false' }, { value: 'true' }] },
+          { id: 'effort', values: [{ value: 'extra-high' }, { value: 'ultra' }] },
+        ],
+        variants: [
+          {
+            displayName: 'GPT-5.6 Extra High',
+            params: [
+              { id: 'thinking', value: 'false' },
+              { id: 'effort', value: 'extra-high' },
+            ],
+          },
+          {
+            displayName: 'GPT-5.6 Ultra',
+            params: [
+              { id: 'thinking', value: 'false' },
+              { id: 'effort', value: 'ultra' },
+            ],
+          },
+          {
+            displayName: 'GPT-5.6 Thinking Ultra',
+            params: [
+              { id: 'thinking', value: 'true' },
+              { id: 'effort', value: 'ultra' },
+            ],
+          },
+        ],
+      },
+    ]);
+
+    const provider = await runtime.getVirtualProvider();
+
+    expect(provider.models['gpt-5.6']?.variants?.['extra-high']?.cursorSdkModel).toEqual({
+      id: 'gpt-5.6',
+      params: [
+        { id: 'thinking', value: 'false' },
+        { id: 'effort', value: 'extra-high' },
+      ],
+    });
+    expect(provider.models['gpt-5.6']?.variants?.ultra?.cursorSdkModel).toEqual({
+      id: 'gpt-5.6',
+      params: [
+        { id: 'thinking', value: 'false' },
+        { id: 'effort', value: 'ultra' },
+      ],
+    });
+    expect(provider.models['gpt-5.6']?.variants?.['thinking-ultra']?.cursorSdkModel).toEqual({
+      id: 'gpt-5.6',
+      params: [
+        { id: 'thinking', value: 'true' },
+        { id: 'effort', value: 'ultra' },
+      ],
+    });
+  });
+
   test('maps base and fast Composer rows to SDK fast parameter selections', async () => {
     const runtime = createRuntimeForModels([
       {

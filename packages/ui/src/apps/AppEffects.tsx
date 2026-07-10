@@ -2,6 +2,7 @@ import React from 'react';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { usePwaManifestSync } from '@/hooks/usePwaManifestSync';
 import { useQueuedMessageAutoSend } from '@/hooks/useQueuedMessageAutoSend';
+import { useTransientErrorAutoRetry } from '@/hooks/useTransientErrorAutoRetry';
 import { useSessionAutoCleanup } from '@/hooks/useSessionAutoCleanup';
 import { useWindowControlsOverlayLayout } from '@/hooks/useWindowControlsOverlayLayout';
 import { setOptimisticRefs } from '@/sync/session-actions';
@@ -65,6 +66,7 @@ export function SyncRuntimeEffects({ embeddedBackgroundWorkEnabled }: {
   embeddedBackgroundWorkEnabled: boolean;
 }) {
   useSessionAutoCleanup(embeddedBackgroundWorkEnabled);
+  useTransientErrorAutoRetry(embeddedBackgroundWorkEnabled);
   useQueuedMessageAutoSend(embeddedBackgroundWorkEnabled);
 
   return <SyncOptimisticBridge />;

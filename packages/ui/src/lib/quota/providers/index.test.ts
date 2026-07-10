@@ -9,7 +9,7 @@ describe('quota provider metadata', () => {
     expect(sorted.map((provider) => provider.name)).toEqual([
       'Anthropic',
       'Antigravity',
-      'Codex',
+      'ChatGPT',
       'Cursor',
       'GitHub Copilot',
       'Google',

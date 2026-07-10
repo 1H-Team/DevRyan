@@ -4,7 +4,7 @@
 Hosts app-shell entry compositions for different runtime surfaces.
 
 ## Design
-Thin composition roots that wire providers, routes, and top-level views.
+Thin composition roots that wire providers, routes, top-level views, and gated runtime effects such as queued sends and transient stream recovery.
 
 ## Flow
 Runtime selects an app entry, mounts providers, then renders feature components.

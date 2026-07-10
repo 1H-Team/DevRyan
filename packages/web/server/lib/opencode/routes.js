@@ -15,6 +15,7 @@ import {
   mergeGitHubCopilotProvider,
 } from './provider-integrations.js';
 import { discoverGitHubCopilotModels } from './github-copilot-models.js';
+import { createCursorSessionTitleRuntime } from './cursor-session-title-runtime.js';
 
 const ANTHROPIC_PROVIDER_IDS = new Set(['anthropic', 'claude', 'anthropic-oauth', 'opencode-with-claude']);
 const ANTIGRAVITY_PROVIDER_ID = 'antigravity';
@@ -172,7 +173,16 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     getOpenCodeWorkingDirectory = () => null,
     setOpenCodeWorkingDirectory = () => {},
     cursorSdkRuntime = null,
+    cursorSessionTitleRuntime: injectedCursorSessionTitleRuntime = null,
   } = dependencies;
+
+  const cursorSessionTitleRuntime = injectedCursorSessionTitleRuntime || createCursorSessionTitleRuntime({
+    cursorSdkRuntime,
+    fetchImpl: fetch,
+    buildOpenCodeUrl,
+    getOpenCodeAuthHeaders,
+    logger: console,
+  });
 
   let authLibrary = null;
   const pendingMcpAuthContextByState = new Map();
@@ -785,6 +795,13 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         sessionID: req.params.sessionID,
         directory,
       });
+      const handledStatus = result.status || 200;
+      if (handledStatus >= 200 && handledStatus < 300) {
+        void cursorSessionTitleRuntime.schedule({
+          sessionID: req.params.sessionID,
+          directory,
+        });
+      }
       if (result.status === 204) {
         return res.status(204).end();
       }

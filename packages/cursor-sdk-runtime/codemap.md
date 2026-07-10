@@ -9,17 +9,20 @@ Shared Cursor SDK runtime for DevRyan hosts. It keeps Cursor model execution, SD
 - `persistent-worker.mjs`: long-lived Node/Electron-as-Node prompt worker that keeps `@cursor/sdk` imported, caches Cursor agents per session/directory, and multiplexes prompt/cancel events by request id.
 - `node-worker.mjs`: one-shot fallback prompt worker retained for startup failures and compatibility tests.
 - `plan-card-normalize.js`: normalizes Cursor plan-mode assistant parts so structured plans are promoted into the shared `<!--plan-->` card marker format.
+- `title-generation.js`: builds and normalizes isolated Cursor Auto requests for concise session titles shared by direct and worker execution.
 - `index.d.ts`: Type declarations consumed by TypeScript packages.
 - SDK auth uses `CURSOR_API_KEY`, then `cursor-acp.key`, then `cursor-acp.token`.
 - Usage/quota auth is intentionally separate and only reads `cursor-acp.usageSessionToken`.
 - Host runtimes may pass `resolveAgentPrompt` and `resolveAgentDefinitions` so Cursor prompts include the selected DevRyan agent markdown and Cursor SDK custom subagents inherit the DevRyan-selected parent model.
-- Bun and desktop Electron hosts run Cursor prompt work through `node-worker.mjs` instead of the host process. Packaged Electron launches its own executable with `ELECTRON_RUN_AS_NODE=1` and `process.resourcesPath` as cwd so SDK streaming cannot block the Electron main loop and the worker can execute from `app.asar`.
+- Bun and desktop Electron hosts run Cursor prompt work through `node-worker.mjs` instead of the host process. Packaged Electron launches its own executable with `ELECTRON_RUN_AS_NODE=1`; prompt workers use the selected project as their process cwd while the script remains executable from `app.asar`, and persistent workers are reused per directory with a small LRU cap.
+- Local Cursor agents bind both `local.cwd` and the SDK platform `workspaceRef` to the request directory so shell tools and persisted agent state stay scoped to the selected project instead of the worker process directory.
 - Cursor virtual provider models advertise text and image input only; PDF and other non-image attachments are blocked with a visible assistant error instead of being silently dropped.
-- Cursor SDK model parameters are preserved as DevRyan model variants: reasoning/effort/thinking levels become variant keys, SDK `fast` becomes paired `*-fast` rows, and prompt sends resolve the selected row/variant back to SDK `{ id, params }`.
+- Cursor SDK model parameters are preserved as DevRyan model variants: reasoning/effort/thinking levels become variant keys, SDK `fast` becomes paired `*-fast` rows, and prompt sends resolve the selected row/variant back to SDK `{ id, params }`. GPT-5.6 Sol/Terra retain discovered Max and receive their known native Ultra wire selection; Luna retains Max without Ultra.
 - Image file parts are forwarded to the Cursor SDK `images` field and preserved on the stored user message for shared UI rendering.
 - The Council agent is blocked in Cursor SDK sessions because it requires OpenCode plugin tools such as `council_session`, which the Cursor bridge cannot expose.
 - Cursor plan-mode prompts keep the selected concrete model pinned through the runtime contract instead of blocking before the SDK run starts; pinned Cursor Orchestrator plan mode preserves the selected agent instructions and adds no-mutation constraints so read-only discovery delegation remains available without model switches.
-- Runtime status exposes the latest Cursor cancellation attribution so hosts can distinguish explicit user aborts, model-boundary cancellations, and provider/runtime cancellations.
+- Runtime status exposes the latest Cursor cancellation attribution for explicit user aborts and provider/runtime cancellations; the public `model_boundary` value remains type-compatible but the runtime no longer produces it for provider-managed Task model differences.
+- Cursor session titles use an ephemeral Auto request with ambient setting sources disabled; the request never resumes, caches, or writes through the chat session agent.
 
 ## Integration
 - Web/Electron creates the runtime in `packages/web/server/index.js` and intercepts `cursor-acp` prompt sends before the OpenCode proxy.

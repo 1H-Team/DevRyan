@@ -73,4 +73,12 @@ describe('ModelControls Cursor fast-only controls', () => {
         expect(code).toContain("t('chat.modelControls.showAllProviders')");
         expect(code).not.toContain('const openProvidersSettings = React.useCallback(() => {\\n        setSelectedProvider(ADD_PROVIDER_ID);');
     });
+
+    test('keeps a rehydrated draft variant while the draft agent is still restoring', () => {
+        const code = source();
+
+        expect(
+            /if \(!contextHydrated\) \{\s*return;\s*\}\s*if \(!currentAgentName\) \{[\s\S]*?if \(!currentSessionId\) \{\s*return;/.test(code),
+        ).toBe(true);
+    });
 });

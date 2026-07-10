@@ -71,7 +71,7 @@ const agents: Agent[] = [
 
 describe("useConfigStore default agent selection", () => {
   beforeEach(() => {
-    useSessionUIStore.setState({ currentSessionId: null })
+    useSessionUIStore.setState({ currentSessionId: null, currentDraftId: null })
     useSelectionStore.setState((state) => ({
       ...state,
       sessionModelSelections: new Map(),
@@ -105,6 +105,91 @@ describe("useConfigStore default agent selection", () => {
     expect(useConfigStore.getState().currentProviderId).toBe("opencode")
     expect(useConfigStore.getState().currentModelId).toBe("builder-model")
     expect(useConfigStore.getState().currentVariant).toBe("high")
+  })
+
+  test("preserves Ultra from an advertised agent default", () => {
+    useConfigStore.setState({
+      providers: [{
+        id: "openai",
+        name: "OpenAI",
+        source: "custom",
+        options: {},
+        env: [],
+        models: [createModel("openai", "gpt-5.6", { xhigh: {}, ultra: {} })],
+      }],
+      agents: [{
+        name: "Builder",
+        mode: "primary",
+        model: { providerID: "openai", modelID: "gpt-5.6" },
+        variant: "ultra",
+        permission: [],
+        options: {},
+      }],
+      settingsDefaultAgent: "Builder",
+    })
+
+    useConfigStore.getState().applyDefaultsToCurrent()
+
+    expect(useConfigStore.getState().currentProviderId).toBe("openai")
+    expect(useConfigStore.getState().currentModelId).toBe("gpt-5.6")
+    expect(useConfigStore.getState().currentVariant).toBe("ultra")
+  })
+
+  test("keeps a rehydrated draft model and variant when startup reapplies the default agent", () => {
+    useConfigStore.setState({
+      providers: [
+        ...providers,
+        {
+          id: "openai",
+          name: "OpenAI",
+          source: "custom",
+          options: {},
+          env: [],
+          models: [createModel("openai", "gpt-5.6-sol", { max: {}, ultra: {} })],
+        },
+      ],
+      currentProviderId: "openai",
+      currentModelId: "gpt-5.6-sol",
+      currentVariant: "ultra",
+      currentAgentName: "Builder",
+      settingsDefaultAgent: "Builder",
+    })
+
+    useConfigStore.getState().applyDefaultsToCurrent()
+
+    expect(useConfigStore.getState().currentAgentName).toBe("Builder")
+    expect(useConfigStore.getState().currentProviderId).toBe("openai")
+    expect(useConfigStore.getState().currentModelId).toBe("gpt-5.6-sol")
+    expect(useConfigStore.getState().currentVariant).toBe("ultra")
+  })
+
+  test("keeps a rehydrated draft variant when startup already created an empty draft placeholder", () => {
+    useSessionUIStore.setState({ currentSessionId: null, currentDraftId: "draft-placeholder" })
+    useConfigStore.setState({
+      providers: [
+        ...providers,
+        {
+          id: "openai",
+          name: "OpenAI",
+          source: "custom",
+          options: {},
+          env: [],
+          models: [createModel("openai", "gpt-5.6-sol", { max: {}, ultra: {} })],
+        },
+      ],
+      currentProviderId: "openai",
+      currentModelId: "gpt-5.6-sol",
+      currentVariant: "ultra",
+      currentAgentName: "Builder",
+      settingsDefaultAgent: "Builder",
+    })
+
+    useConfigStore.getState().applyDefaultsToCurrent()
+
+    expect(useConfigStore.getState().currentAgentName).toBe("Builder")
+    expect(useConfigStore.getState().currentProviderId).toBe("openai")
+    expect(useConfigStore.getState().currentModelId).toBe("gpt-5.6-sol")
+    expect(useConfigStore.getState().currentVariant).toBe("ultra")
   })
 
   test("updates an empty draft immediately when the configured default agent changes", () => {
@@ -190,6 +275,30 @@ describe("useConfigStore default agent selection", () => {
     expect(useConfigStore.getState().directoryScoped.__global__?.currentVariant).toBe("high")
   })
 
+  test("restores Ultra from a directory snapshot and clears it when switching models", async () => {
+    const openaiProvider: TestProvider = {
+      id: "openai",
+      name: "OpenAI",
+      source: "custom",
+      options: {},
+      env: [],
+      models: [
+        createModel("openai", "gpt-5.6", { xhigh: {}, ultra: {} }),
+        createModel("openai", "gpt-5.6-no-ultra", { xhigh: {} }),
+      ],
+    }
+    useConfigStore.setState({ providers: [openaiProvider], isConnected: false })
+
+    useConfigStore.getState().setProviderModel("openai", "gpt-5.6", "ultra")
+    await useConfigStore.getState().activateDirectory("/tmp/other-project")
+    await useConfigStore.getState().activateDirectory(null)
+
+    expect(useConfigStore.getState().currentVariant).toBe("ultra")
+
+    useConfigStore.getState().setProviderModel("openai", "gpt-5.6-no-ultra")
+    expect(useConfigStore.getState().currentVariant).toBe(undefined)
+  })
+
   test("cycles through concrete thinking variants without wrapping to default", () => {
     useConfigStore.setState({
       currentProviderId: "opencode",
@@ -202,7 +311,13 @@ describe("useConfigStore default agent selection", () => {
         options: {},
         env: [],
         models: [
-          createModel("opencode", "builder-model", { low: {}, medium: {}, high: {} }),
+          createModel("opencode", "builder-model", {
+            low: {},
+            medium: {},
+            high: {},
+            xhigh: {},
+            ultra: {},
+          }),
         ],
       }],
     })
@@ -212,6 +327,12 @@ describe("useConfigStore default agent selection", () => {
 
     useConfigStore.getState().cycleCurrentVariant()
     expect(useConfigStore.getState().currentVariant).toBe("high")
+
+    useConfigStore.getState().cycleCurrentVariant()
+    expect(useConfigStore.getState().currentVariant).toBe("xhigh")
+
+    useConfigStore.getState().cycleCurrentVariant()
+    expect(useConfigStore.getState().currentVariant).toBe("ultra")
 
     useConfigStore.getState().cycleCurrentVariant()
     expect(useConfigStore.getState().currentVariant).toBe("low")

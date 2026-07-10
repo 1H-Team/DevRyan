@@ -58,13 +58,14 @@ export const getAgentDisplayName = (agents: Agent[], agentName?: string) => {
 type ProviderModel = { id?: string; name?: string; variants?: Record<string, unknown> };
 
 const CURSOR_ACP_THINKING_KEY = 'thinking';
-const CURSOR_ACP_EFFORT_ORDER = ['low', 'medium', 'high', 'extra-high', 'max', 'minimal', 'none'];
+const CURSOR_ACP_EFFORT_ORDER = ['low', 'medium', 'high', 'extra-high', 'max', 'ultra', 'minimal', 'none'];
 const CURSOR_ACP_EFFORT_ALIASES = new Map<string, string>([
     ['low', 'low'],
     ['medium', 'medium'],
     ['high', 'high'],
     ['xhigh', 'extra-high'],
     ['max', 'max'],
+    ['ultra', 'ultra'],
     ['minimal', 'minimal'],
     ['min', 'minimal'],
     ['none', 'none'],
@@ -296,7 +297,7 @@ export const formatEffortLabel = (variant?: string) => {
         return cursorVariant.effort
             .split('-')
             .filter(Boolean)
-            .map((part) => capitalizeLabel(part))
+            .map((part) => part.toLowerCase() === 'low' ? 'Light' : capitalizeLabel(part))
             .join(' ');
     }
     return trimmed
@@ -306,6 +307,9 @@ export const formatEffortLabel = (variant?: string) => {
             const normalized = part.toLowerCase();
             if (normalized === 'xhigh') {
                 return 'Extra High';
+            }
+            if (normalized === 'low') {
+                return 'Light';
             }
             return capitalizeLabel(normalized);
         })

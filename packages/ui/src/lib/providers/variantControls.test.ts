@@ -16,11 +16,33 @@ describe('provider variant controls', () => {
       high: {},
       low: {},
       custom: {},
+      aaa: {},
       none: {},
       xhigh: {},
+      max: {},
+      ultra: {},
       medium: {},
       minimal: {},
-    })).toEqual(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'custom']);
+    })).toEqual(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'aaa', 'custom']);
+  });
+
+  test('keeps OpenAI Extra High and Ultra as separate advertised wire values', () => {
+    const provider = {
+      id: 'openai',
+      models: [
+        { id: 'gpt-5.6', variants: { low: {}, medium: {}, high: {}, xhigh: {}, max: {}, ultra: {} } },
+        { id: 'gpt-5.5', variants: { low: {}, medium: {}, high: {}, xhigh: {} } },
+      ],
+    };
+
+    expect(getModelVariantControlState(provider, 'gpt-5.6', 'xhigh')?.visibleVariantOptions)
+      .toEqual(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
+    expect(resolveModelVariantSelection(provider, 'gpt-5.6', 'xhigh', { variant: 'ultra' }))
+      .toEqual({ modelId: 'gpt-5.6', variant: 'ultra' });
+    expect(resolveModelVariantSelection(provider, 'gpt-5.6', 'ultra', { variant: 'xhigh' }))
+      .toEqual({ modelId: 'gpt-5.6', variant: 'xhigh' });
+    expect(getModelVariantControlState(provider, 'gpt-5.5', 'xhigh')?.visibleVariantOptions)
+      .toEqual(['low', 'medium', 'high', 'xhigh']);
   });
 
   test('resolves missing thinking to medium when supported, otherwise the first concrete variant', () => {

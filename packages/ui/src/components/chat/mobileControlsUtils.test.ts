@@ -3,6 +3,7 @@ import type { Agent } from '@opencode-ai/sdk/v2';
 
 import {
     formatAgentLabel,
+    formatEffortLabel,
     formatVisibleEffortLabel,
     getCursorAcpVariantDisplayLabel,
     getCursorAcpVariantState,
@@ -57,7 +58,7 @@ describe('formatVisibleEffortLabel', () => {
     });
 
     test('shows the first supported thinking level when default is selected and medium is unavailable', () => {
-        expect(formatVisibleEffortLabel(undefined, ['low', 'high'])).toBe('Low');
+        expect(formatVisibleEffortLabel(undefined, ['low', 'high'])).toBe('Light');
     });
 
     test('shows the selected thinking level when an explicit variant is selected', () => {
@@ -67,11 +68,18 @@ describe('formatVisibleEffortLabel', () => {
     test('formats stale compound Cursor thinking levels as effort labels', () => {
         expect(formatVisibleEffortLabel('extra-high-thinking', ['extra-high-thinking'])).toBe('Extra High');
         expect(formatVisibleEffortLabel('xhigh-thinking', ['xhigh-thinking'])).toBe('Extra High');
-        expect(formatVisibleEffortLabel('low-thinking', ['low-thinking'])).toBe('Low');
+        expect(formatVisibleEffortLabel('low-thinking', ['low-thinking'])).toBe('Light');
     });
 
     test('returns null when the model has no thinking levels', () => {
         expect(formatVisibleEffortLabel(undefined, [])).toBeNull();
+    });
+
+    test('keeps Extra High and Ultra as separate labels', () => {
+        expect(formatEffortLabel('low')).toBe('Light');
+        expect(formatEffortLabel('xhigh')).toBe('Extra High');
+        expect(formatEffortLabel('extra-high')).toBe('Extra High');
+        expect(formatEffortLabel('ultra')).toBe('Ultra');
     });
 });
 
@@ -86,9 +94,12 @@ describe('Cursor ACP variant helpers', () => {
                     low: {},
                     medium: {},
                     high: {},
+                    'extra-high': {},
+                    ultra: {},
                     'thinking-low': {},
                     'thinking-medium': {},
                     'thinking-high': {},
+                    'thinking-ultra': {},
                     thinking: {},
                 },
             },
@@ -129,8 +140,8 @@ describe('Cursor ACP variant helpers', () => {
         expect(state?.thinkingEnabled).toBe(true);
         expect(state?.canToggleThinking).toBe(true);
         expect(state?.selectedEffort).toBe('medium');
-        expect(state?.effortOptions).toEqual(['low', 'medium', 'high']);
-        expect(state?.visibleVariantOptions).toEqual(['low', 'medium', 'high']);
+        expect(state?.effortOptions).toEqual(['low', 'medium', 'high', 'extra-high', 'ultra']);
+        expect(state?.visibleVariantOptions).toEqual(['low', 'medium', 'high', 'extra-high', 'ultra']);
     });
 
     test('normalizes stale Cursor thinking suffixes for UI state', () => {
@@ -149,6 +160,21 @@ describe('Cursor ACP variant helpers', () => {
         expect(resolveCursorAcpVariantSelection(provider, 'claude-opus-4-7', 'thinking-medium', { thinkingEnabled: false })).toEqual({
             modelId: 'claude-opus-4-7',
             variant: 'medium',
+        });
+    });
+
+    test('selects Ultra without collapsing Extra High', () => {
+        expect(resolveCursorAcpVariantSelection(provider, 'claude-opus-4-7', 'extra-high', { effort: 'ultra' })).toEqual({
+            modelId: 'claude-opus-4-7',
+            variant: 'ultra',
+        });
+        expect(resolveCursorAcpVariantSelection(provider, 'claude-opus-4-7', 'ultra', { effort: 'extra-high' })).toEqual({
+            modelId: 'claude-opus-4-7',
+            variant: 'extra-high',
+        });
+        expect(resolveCursorAcpVariantSelection(provider, 'claude-opus-4-7', 'ultra', { thinkingEnabled: true })).toEqual({
+            modelId: 'claude-opus-4-7',
+            variant: 'thinking-ultra',
         });
     });
 
@@ -198,7 +224,7 @@ describe('Cursor ACP variant helpers', () => {
 
         expect(state?.canToggleFast).toBe(true);
         expect(state?.canToggleThinking).toBe(true);
-        expect(state?.visibleVariantOptions).toEqual(['low', 'medium', 'high']);
+        expect(state?.visibleVariantOptions).toEqual(['low', 'medium', 'high', 'extra-high', 'ultra']);
         expect(getCursorAcpVariantDisplayLabel(state)).toBe('Medium');
     });
 

@@ -9,7 +9,7 @@ import {
   OPENCODE_CONFIG_DIR,
   readConfig,
 } from './shared.js';
-import { listAgentModelOverrides } from './agents.js';
+import { listManagedRuntimeAgentModelOverrides } from './agents.js';
 import { listMcpConfigs } from './mcp.js';
 import {
   buildBlockedManagedRuntimeMcpOverlay,
@@ -282,19 +282,32 @@ const buildActivePluginOverlay = (workingDirectory, options = {}) => {
 };
 
 const buildGitHubCopilotProviderOverlay = async (options = {}) => {
-  const readAuthFile = typeof options.readAuthFile === 'function' ? options.readAuthFile : null;
+  let readAuthFile = typeof options.readAuthFile === 'function' ? options.readAuthFile : null;
+  if (!readAuthFile) {
+    try {
+      const authModule = await import('./auth.js');
+      if (typeof authModule.readAuthFile === 'function') {
+        readAuthFile = authModule.readAuthFile;
+      }
+    } catch {
+      return null;
+    }
+  }
   if (!readAuthFile) {
     return null;
   }
 
-  const { discoverGitHubCopilotModels } = await import('./github-copilot-models.js');
+  const {
+    discoverGitHubCopilotModels,
+    enrichGitHubCopilotModels,
+  } = await import('./github-copilot-models.js');
   const fetchImpl = typeof options.fetchImpl === 'function' ? options.fetchImpl : globalThis.fetch;
   const discovery = await discoverGitHubCopilotModels({ readAuthFile, fetchImpl });
   if (discovery.source === 'unavailable') {
     return null;
   }
 
-  const models = discovery.models;
+  const models = enrichGitHubCopilotModels(discovery.models);
   if (!isPlainObject(models) || Object.keys(models).length === 0) {
     return null;
   }
@@ -307,6 +320,47 @@ const buildGitHubCopilotProviderOverlay = async (options = {}) => {
       },
     },
   };
+};
+
+const mergeProviderModels = (left, right) => {
+  const modelIds = new Set([
+    ...Object.keys(isPlainObject(left) ? left : {}),
+    ...Object.keys(isPlainObject(right) ? right : {}),
+  ]);
+  return Object.fromEntries(Array.from(modelIds).map((modelId) => {
+    const leftModel = isPlainObject(left?.[modelId]) ? left[modelId] : {};
+    const rightModel = isPlainObject(right?.[modelId]) ? right[modelId] : {};
+    return [modelId, {
+      ...leftModel,
+      ...rightModel,
+      ...(isPlainObject(leftModel.variants) || isPlainObject(rightModel.variants)
+        ? {
+            variants: {
+              ...(isPlainObject(leftModel.variants) ? leftModel.variants : {}),
+              ...(isPlainObject(rightModel.variants) ? rightModel.variants : {}),
+            },
+          }
+        : {}),
+    }];
+  }));
+};
+
+const mergeProviderRecords = (left, right) => {
+  const providerIds = new Set([
+    ...Object.keys(isPlainObject(left) ? left : {}),
+    ...Object.keys(isPlainObject(right) ? right : {}),
+  ]);
+  return Object.fromEntries(Array.from(providerIds).map((providerId) => {
+    const leftProvider = isPlainObject(left?.[providerId]) ? left[providerId] : {};
+    const rightProvider = isPlainObject(right?.[providerId]) ? right[providerId] : {};
+    return [providerId, {
+      ...leftProvider,
+      ...rightProvider,
+      ...(isPlainObject(leftProvider.models) || isPlainObject(rightProvider.models)
+        ? { models: mergeProviderModels(leftProvider.models, rightProvider.models) }
+        : {}),
+    }];
+  }));
 };
 
 const buildRuntimeConfigOverlay = (workingDirectory, options = {}) => {
@@ -326,10 +380,7 @@ const buildRuntimeConfigOverlay = (workingDirectory, options = {}) => {
   return overlays.reduce((merged, overlay) => {
     const next = { ...merged, ...overlay };
     if (isPlainObject(merged.provider) || isPlainObject(overlay.provider)) {
-      next.provider = {
-        ...(isPlainObject(merged.provider) ? merged.provider : {}),
-        ...(isPlainObject(overlay.provider) ? overlay.provider : {}),
-      };
+      next.provider = mergeProviderRecords(merged.provider, overlay.provider);
     }
     if (Array.isArray(merged.plugin) || Array.isArray(overlay.plugin)) {
       next.plugin = [
@@ -501,10 +552,10 @@ const listBaseAgentSources = async (workingDirectory, packagedAgentDirectory) =>
   return agentsByName;
 };
 
-const normalizeOverrides = (options) => (
+const normalizeOverrides = (options, workingDirectory) => (
   options.agentOverrides && isPlainObject(options.agentOverrides)
     ? options.agentOverrides
-    : listAgentModelOverrides(options)
+    : listManagedRuntimeAgentModelOverrides(workingDirectory, options)
 );
 
 const hasSkillPermission = (frontmatter) => {
@@ -603,7 +654,7 @@ export const syncRuntimeAgentOverlays = async (options = {}) => {
     ?? (workingDirectory ? path.join(overlayRoot, projectKey) : path.join(overlayRoot, projectKey));
   const targetAgentDirectory = path.join(targetConfigDirectory, 'agents');
   const targetPluginDirectory = path.join(targetConfigDirectory, 'plugins');
-  const overrides = normalizeOverrides(options);
+  const overrides = normalizeOverrides(options, workingDirectory);
   const runtimeSkillPolicy = buildRuntimeSkillPolicy(options.skillPolicy, workingDirectory);
   const runtimeOptions = {
     ...options,

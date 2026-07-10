@@ -1377,7 +1377,17 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     }, [currentAgentName, currentSessionId, getAgentModelForSession, tryApplyModelSelection, contextHydrated]);
 
     React.useEffect(() => {
-        if (!contextHydrated || !currentAgentName) {
+        if (!contextHydrated) {
+            return;
+        }
+
+        if (!currentAgentName) {
+            // On reload the persisted draft model/variant can hydrate before the
+            // draft agent. Preserve that explicit choice until agent restoration
+            // finishes instead of replacing it with the model default.
+            if (!currentSessionId) {
+                return;
+            }
             manualVariantSelectionRef.current = false;
             setCurrentVariant(undefined);
             return;

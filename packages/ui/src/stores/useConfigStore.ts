@@ -1357,9 +1357,17 @@ export const useConfigStore = create<ConfigStore>()(
                         (!!draftSendConfig?.providerID && !!draftSendConfig?.modelID)
                         || !!useSelectionStore.getState().getDraftModelSelection(currentDraftId)
                     );
+                    const isReapplyingCurrentAgent = !state.currentAgentName || state.currentAgentName === target.name;
+                    const hasRehydratedDraftVariant = !sessionState.currentSessionId
+                        && isReapplyingCurrentAgent
+                        && typeof state.currentVariant === 'string'
+                        && state.currentVariant.trim().length > 0
+                        && hasProviderModel(state.providers, state.currentProviderId, state.currentModelId);
 
                     get().setAgent(target.name, {
-                        preserveCurrentModel: options?.preserveCurrentModel === true || hasExplicitDraftModel,
+                        preserveCurrentModel: options?.preserveCurrentModel === true
+                            || hasExplicitDraftModel
+                            || hasRehydratedDraftVariant,
                         recordSessionSelection: false,
                     });
                 },

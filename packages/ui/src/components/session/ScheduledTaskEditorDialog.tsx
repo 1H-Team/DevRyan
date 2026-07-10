@@ -12,7 +12,7 @@ import { toast } from '@/components/ui';
 import { RiAddLine, RiCloseLine, RiCalendarLine, RiArrowLeftSLine, RiArrowRightSLine, RiArrowDownSLine } from '@remixicon/react';
 import { ModelSelector } from '@/components/sections/agents/ModelSelector';
 import { AgentSelector } from '@/components/sections/commands/AgentSelector';
-import { isPrimaryMode } from '@/components/chat/mobileControlsUtils';
+import { formatEffortLabel, isPrimaryMode } from '@/components/chat/mobileControlsUtils';
 import { CommandAutocomplete, type CommandAutocompleteHandle, type CommandInfo } from '@/components/chat/CommandAutocomplete';
 import { FileMentionAutocomplete, type FileMentionHandle } from '@/components/chat/FileMentionAutocomplete';
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -1341,12 +1341,12 @@ export function ScheduledTaskEditorDialog(props: {
                   <SelectValue>
                     {(value) => value === NO_VARIANT_VALUE
                       ? t('sessions.scheduledTasks.editor.thinkingLevel.label')
-                      : value}
+                      : formatEffortLabel(value)}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {variantOptions.map((variant) => (
-                    <SelectItem key={variant} value={variant}>{variant}</SelectItem>
+                    <SelectItem key={variant} value={variant}>{formatEffortLabel(variant)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

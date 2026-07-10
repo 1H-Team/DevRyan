@@ -1796,6 +1796,35 @@ const listDevRyanBaseConfigAgents = (workingDirectory?: string): ConfigAgent[] =
   return Array.from(agentsByName.values()).sort((a, b) => a.name.localeCompare(b.name));
 };
 
+const listManagedRuntimeAgentModelOverrides = (workingDirectory?: string): Record<string, AgentModelOverride> => {
+  const overrides = { ...listAgentModelOverrides() };
+  const slim = resolveSlimConfig(workingDirectory);
+  if (!slim.wrapperPluginEnabled || slim.slimAgentCatalogEnabled) {
+    return overrides;
+  }
+
+  const devRyanAgentNames = new Set(
+    listDevRyanBaseConfigAgents(workingDirectory).map((agent) => agent.name),
+  );
+  for (const [agentName, slimAgent] of Object.entries(slim.agents)) {
+    if (!devRyanAgentNames.has(agentName)) {
+      continue;
+    }
+
+    const modelRef = normalizeModelRefs(slimAgent.modelRefs)[0]
+      || modelValueToRef(slimAgent.model);
+    overrides[agentName] = {
+      ...(overrides[agentName] || {}),
+      ...(modelRef ? { model: modelRef } : {}),
+      variant: typeof slimAgent.variant === 'string' && slimAgent.variant.trim()
+        ? slimAgent.variant.trim()
+        : null,
+    };
+  }
+
+  return overrides;
+};
+
 const applySlimModelMetadata = (agent: ConfigAgent, slimAgent?: ConfigAgent): ConfigAgent => {
   if (!slimAgent) return agent;
   const next = {
@@ -2261,8 +2290,12 @@ export const syncRuntimeAgentOverlays = (workingDirectory?: string): {
   const targetPluginDirectory = path.join(targetConfigDirectory, 'plugins');
   fs.mkdirSync(targetAgentDirectory, { recursive: true });
 
-  const baseAgents = new Map(getBaseConfigAgents(workingDirectory).map((agent) => [agent.name, agent]));
-  const overrides = listAgentModelOverrides();
+  const slim = resolveSlimConfig(workingDirectory);
+  const baseAgentList = slim.wrapperPluginEnabled && !slim.slimAgentCatalogEnabled
+    ? listDevRyanBaseConfigAgents(workingDirectory)
+    : getBaseConfigAgents(workingDirectory);
+  const baseAgents = new Map(baseAgentList.map((agent) => [agent.name, agent]));
+  const overrides = listManagedRuntimeAgentModelOverrides(workingDirectory);
   const runtimeExternalDirectories = buildRuntimeExternalDirectories(workingDirectory);
   const packagedPlugins = listPackagedRuntimePlugins();
   const manifest = readRuntimeOverlayManifest();

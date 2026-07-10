@@ -60,6 +60,10 @@ import {
   streamDebugMark,
 } from "@/stores/utils/streamDebug"
 import { toast } from "@/components/ui"
+import {
+  isLikelyProviderModelNotFound,
+  PROVIDER_MODEL_NOT_FOUND_MESSAGE,
+} from "@/lib/messages/providerModelNotFound"
 import { appendNotification } from "./notification-store"
 import type { State } from "./types"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
@@ -90,7 +94,6 @@ import {
   type SessionChildrenFetchCacheEntry,
   type SessionChildrenHookStatus,
 } from "./session-children"
-import { getCursorAcpTitleRepair } from "./cursor-title-repair"
 import {
   normalizeChatOwnedDiffSummary,
   stripUntrustedSessionDiffSummary,
@@ -106,7 +109,6 @@ const EMPTY_QUESTION_REQUESTS: QuestionRequest[] = []
 const FIRST_ASSISTANT_DELTA_MARK_LIMIT = 1_000
 const firstAssistantDeltaMarkedMessages = new Set<string>()
 const sessionChildrenFetches = new Map<string, SessionChildrenFetchCacheEntry>()
-const cursorAcpTitleRepairsInFlight = new Set<string>()
 const blockingRequestSessionMaterializationsInFlight = new Set<string>()
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
@@ -250,22 +252,6 @@ const markRendererReducedEvent = (
   }
 }
 
-export const scheduleCursorAcpTitleRepair = (state: State, sessionId: string): void => {
-  const repair = getCursorAcpTitleRepair(state, sessionId)
-  if (!repair) return
-
-  const key = `${repair.sessionId}\n${repair.title}`
-  if (cursorAcpTitleRepairsInFlight.has(key)) return
-  cursorAcpTitleRepairsInFlight.add(key)
-  void sessionActions.updateSessionTitle(repair.sessionId, repair.title)
-    .catch((error) => {
-      console.warn(`[sync-context] Failed to repair Cursor error session title: ${repair.sessionId}`, error)
-    })
-    .finally(() => {
-      cursorAcpTitleRepairsInFlight.delete(key)
-    })
-}
-
 // ---------------------------------------------------------------------------
 // Context
 // ---------------------------------------------------------------------------
@@ -290,6 +276,10 @@ function useSyncSystem() {
   const ctx = useContext(SyncContext)
   if (!ctx) throw new Error("useSyncSystem must be used within <SyncProvider>")
   return ctx
+}
+
+export function useSyncChildStores(): ChildStoreManager {
+  return useSyncSystem().childStores
 }
 
 function getLiveStates(childStores: ChildStoreManager): State[] {
@@ -2028,17 +2018,36 @@ function handleEvent(
   // Notification dispatch for terminal error events.
   // These are NOT handled by the event reducer — only the notification store.
   if (payload.type === "session.error") {
-    const props = payload.properties as { sessionID?: string; error?: { message?: string; code?: string } }
+    const props = payload.properties as {
+      sessionID?: string
+      error?: { message?: string; code?: string; name?: string; data?: { message?: string } }
+    }
     const sessionID = props.sessionID
     if (sessionID) {
+      const viewed = isViewedInCurrentSession(resolvedDirectory, sessionID)
       appendNotification({
         directory: resolvedDirectory,
         session: sessionID,
         time: Date.now(),
-        viewed: isViewedInCurrentSession(resolvedDirectory, sessionID),
+        viewed,
         type: "error",
         error: props.error,
       })
+
+      const errorDetail = [
+        typeof props.error?.data?.message === "string" ? props.error.data.message : "",
+        typeof props.error?.message === "string" ? props.error.message : "",
+        typeof props.error?.name === "string" ? props.error.name : "",
+      ].find((value) => value.trim().length > 0) || ""
+      if (
+        isLikelyProviderModelNotFound(errorDetail)
+        || props.error?.name === "ProviderModelNotFoundError"
+      ) {
+        toast.error(PROVIDER_MODEL_NOT_FOUND_MESSAGE, {
+          id: `provider-model-not-found-${sessionID}`,
+          description: errorDetail || undefined,
+        })
+      }
     }
   }
 
@@ -2241,9 +2250,6 @@ function handleEvent(
           || payload.type === "message.part.updated",
         payload.type === "message.part.updated" ? getMessageIdFromPayload(payload) : null,
       ).catch(() => undefined)
-      if (payload.type === "session.idle" || isIdleSessionStatusEvent(payload) || payload.type === "session.updated" || payload.type === "message.updated") {
-        scheduleCursorAcpTitleRepair(store.getState(), lifecycleSessionId)
-      }
     }
   } else if (payload.type === "message.part.delta" && reducerChanged) {
     const lifecycleSessionId = resolveLifecycleSessionIdFromPartDelta(store.getState(), routingIndex, payload)

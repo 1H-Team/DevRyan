@@ -356,6 +356,36 @@ function getDevRyanBaseConfigAgents(workingDirectory) {
   return Array.from(agentsByName.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function listManagedRuntimeAgentModelOverrides(workingDirectory, options = {}) {
+  const overrides = { ...listAgentModelOverrides(options) };
+  const slim = resolveSlimConfig(workingDirectory, options);
+  if (!slim.wrapperPluginEnabled || slim.slimAgentCatalogEnabled) {
+    return overrides;
+  }
+
+  const devRyanAgentNames = new Set(
+    getDevRyanBaseConfigAgents(workingDirectory).map((agent) => agent.name),
+  );
+  for (const [agentName, slimAgent] of Object.entries(slim.agents)) {
+    if (!devRyanAgentNames.has(agentName)) {
+      continue;
+    }
+
+    const modelRef = normalizeModelRefs(slimAgent.modelRefs)[0]
+      || modelValueToRef(slimAgent.model);
+    const runtimeOverride = {
+      ...(overrides[agentName] || {}),
+      ...(modelRef ? { model: modelRef } : {}),
+      variant: typeof slimAgent.variant === 'string' && slimAgent.variant.trim()
+        ? slimAgent.variant.trim()
+        : null,
+    };
+    overrides[agentName] = runtimeOverride;
+  }
+
+  return overrides;
+}
+
 function applySlimModelMetadata(agent, slimAgent) {
   if (!slimAgent) return agent;
   const next = {
@@ -876,6 +906,7 @@ export {
   getAgentConfig,
   getEffectivePackagedAgentRuntimeFrontmatter,
   listAgentModelOverrides,
+  listManagedRuntimeAgentModelOverrides,
   listStaleAgentModelOverrides,
   writeAgentModelOverride,
   deleteAgentModelOverride,
