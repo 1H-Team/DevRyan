@@ -5,11 +5,13 @@ import {
   ABORT_GUARD_REABORT_DEBOUNCE_MS,
   ABORT_GUARD_TTL_MS,
   clearAbortGuard,
+  clearAbortGuards,
   filterSessionStatusThroughAbortGuard,
   isAbortGuardActive,
   registerManualAbortGuard,
   resetAbortGuardState,
   setAbortGuardExecutor,
+  waitForAbortGuardSettlement,
 } from "./abort-retry-guard"
 
 const retryStatus = { type: "retry", attempt: 2, message: "out of usage", next: 5000 } as SessionStatus
@@ -89,11 +91,30 @@ describe("filterSessionStatusThroughAbortGuard", () => {
     expect(filterSessionStatusThroughAbortGuard("ses_1", retryStatus)).toBe(retryStatus)
   })
 
+  test("manual recovery waits until the authoritative retry loop settles", async () => {
+    registerManualAbortGuard("ses_wait")
+    const waiting = waitForAbortGuardSettlement("ses_wait", { timeoutMs: 100, pollMs: 1 })
+    setTimeout(() => clearAbortGuard("ses_wait"), 2)
+
+    await waiting
+    expect(isAbortGuardActive("ses_wait")).toBe(false)
+  })
+
   test("clearAbortGuard restores authoritative statuses (new local send)", () => {
     registerManualAbortGuard("ses_1")
     clearAbortGuard("ses_1")
 
     expect(filterSessionStatusThroughAbortGuard("ses_1", retryStatus)).toBe(retryStatus)
+  })
+
+  test("clears retained guards for disposed session ownership", () => {
+    registerManualAbortGuard("ses_1", "/dir")
+    registerManualAbortGuard("ses_2", "/other")
+
+    clearAbortGuards(["ses_1"])
+
+    expect(isAbortGuardActive("ses_1")).toBe(false)
+    expect(isAbortGuardActive("ses_2")).toBe(true)
   })
 
   test("guard expires after TTL so live state wins again", () => {

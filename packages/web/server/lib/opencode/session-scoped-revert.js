@@ -135,7 +135,10 @@ export const parseUnifiedPatch = (patch) => {
 
     if (!current) continue;
     if (line.startsWith('diff --git ') || line.startsWith('--- ') || line.startsWith('+++ ')) continue;
-    if (line.startsWith('\\')) continue;
+    if (line.startsWith('\\')) {
+      current.lines.push(line);
+      continue;
+    }
     if (line.startsWith(' ') || line.startsWith('+') || line.startsWith('-')) {
       current.lines.push(line);
     }
@@ -200,8 +203,18 @@ export const reverseApplyUnifiedPatch = (currentText, patch, filePath) => {
 
 const extractPatchSideContent = (patch, side) => {
   const lines = [];
+  let finalNewline = true;
   for (const hunk of parseUnifiedPatch(patch)) {
+    let previousPrefix = '';
     for (const line of hunk.lines) {
+      if (line.startsWith('\\')) {
+        const markerApplies = previousPrefix === ' '
+          || (side === 'before' ? previousPrefix === '-' : previousPrefix === '+');
+        if (markerApplies && line.includes('No newline at end of file')) {
+          finalNewline = false;
+        }
+        continue;
+      }
       if (line.startsWith(' ')) {
         lines.push(line.slice(1));
       } else if (side === 'before' && line.startsWith('-')) {
@@ -209,9 +222,10 @@ const extractPatchSideContent = (patch, side) => {
       } else if (side === 'after' && line.startsWith('+')) {
         lines.push(line.slice(1));
       }
+      previousPrefix = line[0] ?? '';
     }
   }
-  return joinLines(lines, true);
+  return joinLines(lines, finalNewline);
 };
 
 const assertSnapshotTextEquals = (snapshot, expectedText, filePath) => {
@@ -335,15 +349,28 @@ const sortMessageRecords = (records) => [...records].sort((a, b) => {
   return String(aInfo.id ?? '').localeCompare(String(bInfo.id ?? ''));
 });
 
-const collectRevertDiffs = (records, messageID) => {
+const collectRevertDiffs = (records, messageID, currentRevertMessageID) => {
   const ordered = sortMessageRecords(Array.isArray(records) ? records : []);
   const targetIndex = ordered.findIndex((record) => record?.info?.id === messageID);
   if (targetIndex < 0) {
     throw new Error('Target message was not found in the session');
   }
 
+  let endIndex = ordered.length;
+  if (typeof currentRevertMessageID === 'string' && currentRevertMessageID.length > 0) {
+    const currentRevertIndex = ordered.findIndex((record) => record?.info?.id === currentRevertMessageID);
+    if (currentRevertIndex < 0) {
+      throw new Error('Current session revert boundary was not found in the session');
+    }
+    if (targetIndex <= currentRevertIndex) {
+      // Messages at and after the current boundary are already absent from the
+      // worktree. Moving farther back reverses only the newly hidden interval.
+      endIndex = currentRevertIndex;
+    }
+  }
+
   const diffs = [];
-  for (const record of ordered.slice(targetIndex)) {
+  for (const record of ordered.slice(targetIndex, endIndex)) {
     const info = record?.info;
     if (info?.role !== 'user' || !Array.isArray(info.summary?.diffs)) continue;
     for (const diff of info.summary.diffs) {
@@ -475,7 +502,88 @@ const collectSnapshotTargetSnapshots = async ({
   return Array.from(snapshotsByFile.values());
 };
 
-const prepareScopedRevert = async (directory, diffs, snapshotTargetSnapshots = []) => {
+const collectGitTrackedFiles = async (directory) => {
+  try {
+    const { stdout } = await execFileAsync('git', ['ls-files', '-z'], {
+      cwd: directory,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    return new Set(stdout.split('\0').filter(Boolean).map(toPosixRelative));
+  } catch (error) {
+    const detail = error?.stderr || error?.message || String(error);
+    throw new Error(`Cannot inspect tracked files before scoped session revert: ${detail}`);
+  }
+};
+
+const listSnapshotTreeFiles = async ({ snapshotRoot, projectID, snapshotHash }) => {
+  const gitDir = await findSnapshotGitDir(snapshotRoot, projectID, snapshotHash);
+  if (!gitDir) {
+    throw new Error(`Cannot safely inspect OpenCode snapshot ${snapshotHash}`);
+  }
+
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['--git-dir', gitDir, 'ls-tree', '-r', '-z', '--name-only', snapshotHash],
+      { maxBuffer: 100 * 1024 * 1024 },
+    );
+    return stdout.split('\0').filter(Boolean);
+  } catch (error) {
+    const detail = error?.stderr || error?.message || String(error);
+    throw new Error(`Cannot safely inspect OpenCode snapshot ${snapshotHash}: ${detail}`);
+  }
+};
+
+const collectSnapshotProtectionPaths = async ({
+  directory,
+  records,
+  messageID,
+  session,
+  snapshotRoot = defaultOpenCodeSnapshotRoot(),
+}) => {
+  // Git status cannot represent an absent untracked path. OpenCode's broad
+  // revert can still rehydrate that path from either the current unrevert
+  // snapshot or the target turn's initial patch snapshot, so protect those
+  // non-Git paths explicitly (including an "absent" snapshot tombstone).
+  const snapshotHashes = new Set();
+  const existingRevertSnapshot = session?.revert?.snapshot;
+  if (typeof existingRevertSnapshot === 'string' && existingRevertSnapshot.length > 0) {
+    snapshotHashes.add(existingRevertSnapshot);
+  }
+
+  const firstPatchSnapshot = collectPatchSnapshotTargets(records, messageID)[0]?.snapshot;
+  if (firstPatchSnapshot) {
+    snapshotHashes.add(firstPatchSnapshot);
+  }
+  if (snapshotHashes.size === 0) {
+    return [];
+  }
+
+  const projectID = typeof session?.projectID === 'string' ? session.projectID : '';
+  if (!projectID) {
+    throw new Error('Cannot safely inspect OpenCode snapshots without a session project ID');
+  }
+
+  const trackedFiles = await collectGitTrackedFiles(directory);
+  const protectedPaths = new Set();
+  for (const snapshotHash of snapshotHashes) {
+    const snapshotFiles = await listSnapshotTreeFiles({ snapshotRoot, projectID, snapshotHash });
+    for (const file of snapshotFiles) {
+      const { relative } = ensureInsideDirectory(directory, file);
+      if (!trackedFiles.has(relative)) {
+        protectedPaths.add(relative);
+      }
+    }
+  }
+  return Array.from(protectedPaths);
+};
+
+const prepareScopedRevert = async (
+  directory,
+  diffs,
+  snapshotTargetSnapshots = [],
+  snapshotProtectionPaths = [],
+) => {
   const targetFiles = new Set();
   for (const diff of diffs) {
     targetFiles.add(ensureInsideDirectory(directory, diff.file).relative);
@@ -489,6 +597,9 @@ const prepareScopedRevert = async (directory, diffs, snapshotTargetSnapshots = [
   // unrelated files another chat changed, so the endpoint fails instead of
   // risking hidden data loss.
   const protectedFiles = new Set(await collectGitStatusFiles(directory));
+  for (const file of snapshotProtectionPaths) {
+    protectedFiles.add(ensureInsideDirectory(directory, file).relative);
+  }
   for (const file of targetFiles) protectedFiles.add(file);
 
   const snapshots = new Map();
@@ -563,7 +674,10 @@ export const runScopedSessionRevert = async ({
       fetchSessionMessages({ buildOpenCodeUrl, getOpenCodeAuthHeaders, directory, sessionID }),
       fetchSession({ buildOpenCodeUrl, getOpenCodeAuthHeaders, directory, sessionID }).catch(() => null),
     ]);
-    const diffs = collectRevertDiffs(records, messageID);
+    const currentRevertMessageID = typeof sessionSnapshot?.revert?.messageID === 'string'
+      ? sessionSnapshot.revert.messageID
+      : '';
+    const diffs = collectRevertDiffs(records, messageID, currentRevertMessageID);
     const snapshotTargetSnapshots = diffs.length === 0
       ? await collectSnapshotTargetSnapshots({
         directory,
@@ -573,7 +687,19 @@ export const runScopedSessionRevert = async ({
         snapshotRoot: openCodeSnapshotRoot,
       })
       : [];
-    const prepared = await prepareScopedRevert(directory, diffs, snapshotTargetSnapshots);
+    const snapshotProtectionPaths = await collectSnapshotProtectionPaths({
+      directory,
+      records,
+      messageID,
+      session: sessionSnapshot,
+      snapshotRoot: openCodeSnapshotRoot,
+    });
+    const prepared = await prepareScopedRevert(
+      directory,
+      diffs,
+      snapshotTargetSnapshots,
+      snapshotProtectionPaths,
+    );
     let revertedSession;
     try {
       revertedSession = await callUpstreamRevert({ buildOpenCodeUrl, getOpenCodeAuthHeaders, directory, sessionID, messageID });

@@ -1,6 +1,7 @@
 import { readdirSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { spawnSync } from "node:child_process"
+import { verifyPackagedNativeArtifacts } from "./packaged-native-modules.mjs"
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -49,6 +50,9 @@ export default async function adhocSignMacosApp(context) {
 
   const appName = context.packager.appInfo.productFilename
   const appPath = join(context.appOutDir, `${appName}.app`)
+
+  console.log(`[adhoc-sign] Verifying packaged native artifacts in ${appPath}`)
+  verifyPackagedNativeArtifacts(appPath, context.arch)
 
   console.log(`[adhoc-sign] Cleaning ${appPath}`)
   removeDsStoreFiles(appPath)

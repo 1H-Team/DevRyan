@@ -92,6 +92,18 @@ describe('packaged agent defaults', () => {
     expect(content).toContain('No-mutation plans must keep snapshots and logs outside the target workspace');
   });
 
+  it('grants managed delegation only to orchestrator and keeps provider-native work distinct', () => {
+    const orchestrator = readPackagedAgent('orchestrator');
+    expect(orchestrator.frontmatter.permission.devryan_task).toBe('allow');
+    expect(orchestrator.content).toContain('DevRyan-managed delegation');
+    expect(orchestrator.content).toContain('provider-native');
+    expect(orchestrator.content).toContain('no more than three');
+
+    for (const agentName of ['builder', 'council', 'designer', 'explorer', 'fixer', 'librarian', 'oracle', 'plan']) {
+      expect(readPackagedAgent(agentName).frontmatter.permission.devryan_task, agentName).toBe('deny');
+    }
+  });
+
   it('orchestrator asks on consequential ambiguity without over-analyzing', () => {
     const content = fs.readFileSync(path.join(AGENTS_DIR, 'orchestrator.md'), 'utf8');
 

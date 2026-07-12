@@ -198,7 +198,6 @@ const ChatViewport = React.memo(({
 
         scrollRef.current?.focus({ preventScroll: true });
     }, [scrollRef]);
-
     return (
         <div
             className={cn(
@@ -518,7 +517,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
             variant="outline"
             size="xs"
             onClick={handleReturnToParentSession}
-            className="absolute left-3 top-3 z-20 !font-normal bg-[var(--surface-background)]/95"
+            className="absolute left-3 top-3 z-20 normal-case !font-normal bg-[var(--surface-background)]/95"
             aria-label={t('chat.container.returnToParent.aria')}
             title={parentSession.title?.trim()
                 ? t('chat.container.returnToParent.titleNamed', { title: parentSession.title })

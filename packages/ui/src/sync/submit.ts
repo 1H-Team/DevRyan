@@ -1,6 +1,7 @@
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { useCallback } from "react"
 import { clearAbortGuard } from "./abort-retry-guard"
+import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
 import { useSyncSDK } from "./sync-context"
 import { useDirectoryStore } from "./sync-context"
 import { useSync } from "./use-sync"
@@ -66,6 +67,7 @@ export function usePromptSubmit() {
 
       // A new user-initiated turn supersedes any pending stop-during-retry guard.
       clearAbortGuard(input.sessionID)
+      useProviderRecoveryStore.getState().clearRecovery(input.sessionID)
 
       // Set busy status optimistically
       store.setState((prev) => ({

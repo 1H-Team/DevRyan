@@ -190,6 +190,50 @@ describe("coalescePartDeltaValue", () => {
 })
 
 describe("createEventPipeline", () => {
+  test("routes managed orchestration events before directory queues", () => {
+    const routed: unknown[] = []
+    let directoryEvents = 0
+    const pipeline = createEventPipeline({
+      sdk: createSdk([], () => undefined),
+      onEvent: () => {
+        directoryEvents += 1
+      },
+      onManagedOrchestrationEvent: (event) => {
+        routed.push(event)
+      },
+      transport: "sse",
+      heartbeatTimeoutMs: 1_000,
+    })
+    const managedEvent = {
+      type: "openchamber:managed-task",
+      properties: {
+        owner: "devryan",
+        directory: "/repo",
+        task: { taskId: "dvr_task_1" },
+      },
+    } as unknown as OpencodeEvent
+    const removalEvent = {
+      type: "openchamber:managed-task-removed",
+      properties: {
+        owner: "devryan",
+        taskId: "dvr_task_1",
+        rootSessionId: "ses_root",
+        directory: "/repo",
+        sequence: 1,
+      },
+    } as unknown as OpencodeEvent
+
+    try {
+      pipeline.enqueueEvent("/repo", managedEvent)
+      pipeline.enqueueEvent("/repo", removalEvent)
+      expect(routed).toEqual([managedEvent, removalEvent])
+      expect(directoryEvents).toBe(0)
+      expect(pipeline.getDirectoryQueueCount()).toBe(0)
+    } finally {
+      pipeline.cleanup()
+    }
+  })
+
   test("normalizes synthetic session status events into canonical session.status events", async () => {
     let resolveStreamFinished!: () => void
     const streamFinished = new Promise<void>((resolve) => {
@@ -236,6 +280,54 @@ describe("createEventPipeline", () => {
       message: "Retrying",
       next: 123,
     })
+  })
+
+  test("releases empty per-directory queues after flush", async () => {
+    let delivered = 0
+    const pipeline = createEventPipeline({
+      sdk: createSdk([], () => undefined),
+      onEvent: () => {
+        delivered += 1
+      },
+      transport: "sse",
+      heartbeatTimeoutMs: 1_000,
+    })
+
+    try {
+      for (let index = 0; index < 100; index += 1) {
+        pipeline.enqueueEvent(`/repo/${index}`, partUpdatedEvent(String(index)))
+      }
+      await Promise.race([
+        (async () => {
+          while (delivered < 100) await new Promise((resolve) => setTimeout(resolve, 5))
+        })(),
+        failAfter(1_000),
+      ])
+      expect(pipeline.getDirectoryQueueCount()).toBe(0)
+      expect(pipeline.getRecentDirectoryCount() <= 64).toBe(true)
+    } finally {
+      pipeline.cleanup()
+    }
+  })
+
+  test("releaseDirectory drops queued events only for the released directory", async () => {
+    let resolveStreamFinished!: () => void
+    const pipeline = createEventPipeline({
+      sdk: createSdk([], () => resolveStreamFinished?.()),
+      onEvent: () => {
+        throw new Error("Released event should not be delivered")
+      },
+      transport: "sse",
+      heartbeatTimeoutMs: 1_000,
+    })
+
+    pipeline.enqueueEvent("/repo/released", partUpdatedEvent("pending"))
+    expect(pipeline.getDirectoryQueueCount()).toBe(1)
+    expect(pipeline.releaseDirectory("/repo/released")).toBe(true)
+    expect(pipeline.getDirectoryQueueCount()).toBe(0)
+    expect(pipeline.getRecentDirectoryCount()).toBe(0)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    pipeline.cleanup()
   })
 
   test("coalesces normalized synthetic status events by session", async () => {

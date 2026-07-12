@@ -3,7 +3,7 @@ const GENERATED_NEW_SESSION_TITLE_PATTERN = /^new session\s*-\s*\d{4}-\d{2}-\d{2
 const DEFAULT_SESSION_TITLE = "Untitled Session"
 const MAX_DERIVED_TITLE_LENGTH = 80
 const ROUTE_CONTEXT_PATTERN = /^(?:in|on|for)\s+((?:\/|\.{1,2}\/)[^,\s]+)\s*,?\s*(.+)$/i
-const REQUEST_VERB_PATTERN = /^(add|build|change|create|delete|diagnose|find|fix|hide|implement|investigate|make|move|refactor|remove|rename|replace|test|update)\b\s*(.*)$/i
+const REQUEST_VERB_PATTERN = /^(add|build|change|create|delete|diagnose|find|fix|hide|implement|investigate|make|move|refactor|remove|rename|replace|start|summarize|test|update)\b\s*(.*)$/i
 const TRAILING_FIX_REFERENCE_PATTERN = /\b(fix|repair|resolve|debug|diagnose)\s+(?:this|it|that|issue|bug)\.?$/i
 
 const normalizeTitleWhitespace = (value: string): string => value.replace(/\s+/g, " ").trim()
@@ -111,7 +111,18 @@ export const deriveSessionTitleFromUserText = (
   text?: string | null,
   fallback = DEFAULT_SESSION_TITLE,
 ): string => {
-  const normalized = typeof text === "string" ? text.replace(/\s+/g, " ").trim() : ""
+  const raw = typeof text === "string" ? text.trim() : ""
+  const markdownHeading = raw
+    .split(/\r?\n/)
+    .map((line) => line.match(/^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/)?.[1]?.trim() ?? "")
+    .find(Boolean)
+  if (markdownHeading) {
+    const normalizedHeading = normalizeKnownTitleTerms(normalizeTitleQuotes(markdownHeading))
+    return normalizedHeading.length <= MAX_DERIVED_TITLE_LENGTH
+      ? normalizedHeading
+      : `${normalizedHeading.slice(0, MAX_DERIVED_TITLE_LENGTH - 3).trimEnd()}...`
+  }
+  const normalized = raw.replace(/\s+/g, " ").trim()
   if (!normalized) {
     return fallback
   }

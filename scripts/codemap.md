@@ -4,8 +4,8 @@
 Repository automation entrypoint for developer workflows: validation planning, local dev orchestration, release/build smoke checks, and utility tooling.
 
 ## Design
-- **Orchestrator scripts** (`*.mjs`) spawn and supervise child processes with graceful shutdown (`SIGINT` → `SIGTERM` → `SIGKILL`) and detached-group handling on macOS.
-- **Validation planner** (`validate.mjs`): computes changed-file impact via git diff, maps files to package scopes, and selects quick/affected/full command sets.
+- **Orchestrator scripts** (`*.mjs`) spawn and supervise child processes with graceful shutdown (`SIGINT` → `SIGTERM` → `SIGKILL`) and detached-group handling on macOS. Group shutdown remains active after a wrapper leader exits, so nested watchers can finish reaping their owned runtimes before the orchestrator returns.
+- **Validation planner** (`validate.mjs`): computes changed-file impact via git diff, maps files to package scopes, and selects quick/affected/full command sets. Cursor runtime changes always run the Cursor package suite; affected mode also type-checks web/VS Code and runs web integration tests.
 - **Dual-mode release testing** (`test-release-build.sh`): native macOS build path plus optional `act` workflow simulation.
 - **Small focused utilities**: per-purpose scripts for VS Code dev host boot, web watcher startup, version/theme/build helper tasks.
 

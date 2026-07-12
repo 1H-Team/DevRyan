@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils';
 import { RiArrowDownSLine } from '@remixicon/react';
 import { useI18n } from '@/lib/i18n';
 import { getOrderedThinkingVariants, resolveThinkingVariant } from '@/lib/providers/variantControls';
+import { resolveAvailableProviderModel } from '@/lib/providers/modelAvailability';
 
 type TodoSendTarget = 'session' | 'worktree';
 
@@ -55,14 +56,15 @@ const getInitialExecution = (params: {
 type ThinkingPillProps = {
   value: string;
   options: string[];
+  providerId: string;
   disabled?: boolean;
   onChange: (value: string) => void;
 };
 
-const ThinkingPill = ({ value, options, disabled, onChange }: ThinkingPillProps) => {
+const ThinkingPill = ({ value, options, providerId, disabled, onChange }: ThinkingPillProps) => {
   const { t } = useI18n();
   const resolvedValue = resolveThinkingVariant(value, options);
-  const label = resolvedValue ? formatEffortLabel(resolvedValue) : t('chat.modelControls.thinking');
+  const label = resolvedValue ? formatEffortLabel(resolvedValue, { providerId }) : t('chat.modelControls.thinking');
 
   const trigger = (
     <div
@@ -89,7 +91,7 @@ const ThinkingPill = ({ value, options, disabled, onChange }: ThinkingPillProps)
             onSelect={() => onChange(option)}
           >
             <span className={cn('font-medium capitalize', resolvedValue === option && 'text-primary')}>
-              {formatEffortLabel(option)}
+              {formatEffortLabel(option, { providerId })}
             </span>
           </DropdownMenuItem>
         ))}
@@ -138,17 +140,14 @@ export function TodoSendDialog(props: TodoSendDialogProps) {
   React.useEffect(() => {
     if (!open || providers.length === 0) return;
 
-    const provider = providers.find((item) => item.id === execution.providerID) ?? providers[0];
-    const models = Array.isArray(provider?.models) ? provider.models : [];
-    const hasModel = models.some((item) => item.id === execution.modelID);
-    const fallbackModelID = models[0]?.id ?? '';
-
-    if (provider?.id === execution.providerID && hasModel) return;
+    const resolved = resolveAvailableProviderModel(providers, execution.providerID, execution.modelID);
+    if (!resolved) return;
+    if (resolved.providerId === execution.providerID && resolved.modelId === execution.modelID) return;
 
     setExecution((prev) => ({
       ...prev,
-      providerID: provider?.id ?? '',
-      modelID: hasModel ? prev.modelID : fallbackModelID,
+      providerID: resolved.providerId,
+      modelID: resolved.modelId,
       variant: '',
     }));
   }, [open, providers, execution.providerID, execution.modelID]);
@@ -216,6 +215,7 @@ export function TodoSendDialog(props: TodoSendDialogProps) {
           <ThinkingPill
             value={execution.variant}
             options={variantOptions}
+            providerId={execution.providerID}
             disabled={!hasVariantOptions}
             onChange={(variant) => setExecution((prev) => ({ ...prev, variant }))}
           />

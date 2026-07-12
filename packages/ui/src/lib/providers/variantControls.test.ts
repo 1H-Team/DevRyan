@@ -83,6 +83,35 @@ describe('provider variant controls', () => {
     });
   });
 
+  test('preserves GPT-5.6 Max and Ultra wire levels across paired Fast rows', () => {
+    const provider = {
+      id: 'openai',
+      models: [
+        { id: 'gpt-5.6-sol', variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {}, max: {}, ultra: {} } },
+        { id: 'gpt-5.6-sol-fast', variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {}, max: {}, ultra: {} } },
+        { id: 'gpt-5.6-luna', variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {}, max: {} } },
+        { id: 'gpt-5.6-luna-fast', variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {}, max: {} } },
+      ],
+    };
+
+    expect(resolveModelVariantSelection(provider, 'gpt-5.6-sol', 'max', { fastEnabled: true })).toEqual({
+      modelId: 'gpt-5.6-sol-fast',
+      variant: 'max',
+    });
+    expect(resolveModelVariantSelection(provider, 'gpt-5.6-sol-fast', 'ultra', { fastEnabled: false })).toEqual({
+      modelId: 'gpt-5.6-sol',
+      variant: 'ultra',
+    });
+    expect(getModelVariantControlState(provider, 'gpt-5.6-luna', 'max')?.visibleVariantOptions).toEqual([
+      'none',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
+  });
+
   test('does not treat mini or nano model families as a fast toggle', () => {
     const provider = {
       id: 'openai',

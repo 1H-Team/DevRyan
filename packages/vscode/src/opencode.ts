@@ -9,6 +9,7 @@ import { randomBytes } from 'crypto';
 import { normalizeWindowsDriveLetter } from './pathUtils';
 import { resolveSlimRuntimeConfigDirectory, resolveSlimRuntimePreset, syncRuntimeAgentOverlays } from './opencodeConfig';
 import { resolveWorkingDirectoryChange } from './workingDirectoryChange';
+import { provisionManagedUserProfile } from './userProfileProvisioning';
 import {
   reapOrphanedManagedOpenCodeProcesses,
   registerManagedOpenCodeProcess,
@@ -62,26 +63,77 @@ export interface OpenCodeManager {
   onStatusChange(callback: (status: ConnectionStatus, error?: string) => void): vscode.Disposable;
 }
 
+type OpenCodeManagerOptions = {
+  provisionUserProfile?: typeof provisionManagedUserProfile;
+  getManagedOrchestrationEnvironment?: () => Promise<Partial<Record<
+    'DEVRYAN_ORCHESTRATION_URL' | 'DEVRYAN_ORCHESTRATION_TOKEN',
+    string
+  >>>;
+};
+
 export function buildManagedOpenCodeServeArgs(port: number): string[] {
-  return ['--pure', 'serve', '--hostname', '127.0.0.1', '--port', String(port)];
+  return ['serve', '--hostname', '127.0.0.1', '--port', String(port)];
 }
 
 export function buildManagedOpenCodeEnvOverrides({
   overlayConfigDirectory,
   slimConfigDirectory,
   slimPreset,
+  orchestrationEnvironment,
 }: {
   overlayConfigDirectory?: string | null;
   slimConfigDirectory?: string | null;
   slimPreset?: string | null;
+  orchestrationEnvironment?: Partial<Record<'DEVRYAN_ORCHESTRATION_URL' | 'DEVRYAN_ORCHESTRATION_TOKEN', string>>;
 }): Record<string, string> {
+  const orchestrationUrl = orchestrationEnvironment?.DEVRYAN_ORCHESTRATION_URL?.trim() || '';
+  const orchestrationToken = orchestrationEnvironment?.DEVRYAN_ORCHESTRATION_TOKEN?.trim() || '';
+  if (Boolean(orchestrationUrl) !== Boolean(orchestrationToken)) {
+    throw new Error('Managed orchestration bridge URL and token must be provided together');
+  }
+  if (orchestrationUrl) {
+    const parsed = new URL(orchestrationUrl);
+    const port = Number(parsed.port);
+    if (
+      parsed.protocol !== 'http:'
+      || parsed.hostname !== '127.0.0.1'
+      || parsed.pathname !== '/rpc'
+      || !parsed.port
+      || !Number.isSafeInteger(port)
+      || port < 1
+      || port > 65_535
+      || Boolean(parsed.username || parsed.password || parsed.search || parsed.hash)
+    ) {
+      throw new Error('Managed orchestration bridge must use the private IPv4 loopback RPC endpoint');
+    }
+  }
   return {
-    OPENCODE_DISABLE_DEFAULT_PLUGINS: 'true',
     OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: process.env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS || 'true',
     ...(slimPreset ? { OH_MY_OPENCODE_SLIM_PRESET: slimPreset } : {}),
     ...(slimConfigDirectory ? { DEVRYAN_OPENCODE_USER_CONFIG_DIR: slimConfigDirectory } : {}),
     ...(overlayConfigDirectory ? { OPENCODE_CONFIG_DIR: overlayConfigDirectory } : {}),
+    ...(orchestrationUrl ? {
+      DEVRYAN_ORCHESTRATION_URL: orchestrationUrl,
+      DEVRYAN_ORCHESTRATION_TOKEN: orchestrationToken,
+    } : {}),
   };
+}
+
+export function buildManagedOpenCodeProcessEnv(
+  baseEnvironment: NodeJS.ProcessEnv,
+  overrides: Record<string, string>,
+): NodeJS.ProcessEnv {
+  const orchestrationUrl = overrides.DEVRYAN_ORCHESTRATION_URL;
+  const orchestrationToken = overrides.DEVRYAN_ORCHESTRATION_TOKEN;
+  const environment: NodeJS.ProcessEnv = { ...baseEnvironment, ...overrides };
+  delete environment.OPENCODE_DISABLE_DEFAULT_PLUGINS;
+  delete environment.DEVRYAN_ORCHESTRATION_URL;
+  delete environment.DEVRYAN_ORCHESTRATION_TOKEN;
+  if (orchestrationUrl && orchestrationToken) {
+    environment.DEVRYAN_ORCHESTRATION_URL = orchestrationUrl;
+    environment.DEVRYAN_ORCHESTRATION_TOKEN = orchestrationToken;
+  }
+  return environment;
 }
 
 function generateSecureOpenCodePassword(): string {
@@ -625,7 +677,7 @@ async function spawnManagedOpenCodeServer(
   const args = buildManagedOpenCodeServeArgs(port);
   const child = spawn(binary, args, {
     cwd: workingDirectory,
-    env: { ...process.env, ...envOverrides },
+    env: buildManagedOpenCodeProcessEnv(process.env, envOverrides),
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
     shell: shouldUseWindowsShell(binary),
@@ -802,7 +854,10 @@ async function allocateManagedOpenCodePort(): Promise<number> {
   });
 }
 
-export function createOpenCodeManager(_context: vscode.ExtensionContext): OpenCodeManager {
+export function createOpenCodeManager(
+  _context: vscode.ExtensionContext,
+  options: OpenCodeManagerOptions = {},
+): OpenCodeManager {
   void _context;
   let server: { url: string; close: () => Promise<void> } | null = null;
   let managedApiUrlOverride: string | null = null;
@@ -917,7 +972,7 @@ export function createOpenCodeManager(_context: vscode.ExtensionContext): OpenCo
 
   async function startInternal(
     workdir?: string,
-    options: { rotateManaged?: boolean } = {}
+    startOptions: { rotateManaged?: boolean } = {}
   ): Promise<void> {
     startCount += 1;
     setStatus('connecting');
@@ -980,12 +1035,19 @@ export function createOpenCodeManager(_context: vscode.ExtensionContext): OpenCo
       }
 
       const password = await ensureManagedOpenCodeServerPassword({
-        rotateManaged: options.rotateManaged === true,
+        rotateManaged: startOptions.rotateManaged === true,
       });
       process.env.OPENCODE_SERVER_PASSWORD = password;
+      const profileResult = await (options.provisionUserProfile || provisionManagedUserProfile)();
+      if (!profileResult.ok) {
+        throw new Error(profileResult.error || 'Failed to provision the OpenCode user profile');
+      }
       const overlayResult = syncRuntimeAgentOverlays(workingDirectory);
       const slimPreset = resolveSlimRuntimePreset(workingDirectory);
       const slimConfigDirectory = resolveSlimRuntimeConfigDirectory(workingDirectory);
+      const orchestrationEnvironment = options.getManagedOrchestrationEnvironment
+        ? await options.getManagedOrchestrationEnvironment()
+        : undefined;
 
       // SDK spawns `opencode serve` in current process cwd.
       // Some OpenCode endpoints behave differently based on server process cwd,
@@ -1002,6 +1064,7 @@ export function createOpenCodeManager(_context: vscode.ExtensionContext): OpenCo
             overlayConfigDirectory: overlayResult.targetConfigDirectory,
             slimConfigDirectory,
             slimPreset,
+            orchestrationEnvironment,
           }),
         );
       } finally {

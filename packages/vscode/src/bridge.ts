@@ -6,6 +6,8 @@ import { handleFsBridgeMessage } from './bridge-fs-runtime';
 import { handleConfigBridgeMessage } from './bridge-config-runtime';
 import { handleSystemBridgeMessage } from './bridge-system-runtime';
 import { handleProxyBridgeMessage } from './bridge-proxy-runtime';
+import { handleManagedOrchestrationBridgeMessage } from './bridge-orchestration-runtime';
+import type { VsCodeManagedOrchestrationRuntime } from './managedOrchestrationRuntime';
 import {
   fetchOpenCodeSkillsFromApi,
   persistSettings,
@@ -53,6 +55,7 @@ export interface BridgeResponse {
 export interface BridgeContext {
   manager?: OpenCodeManager;
   context?: vscode.ExtensionContext;
+  managedOrchestrationRuntime?: VsCodeManagedOrchestrationRuntime;
 }
 
 const CLIENT_RELOAD_DELAY_MS = 800;
@@ -65,6 +68,13 @@ export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeCo
   const { id, type, payload } = message;
 
   try {
+    const orchestrationResponse = await handleManagedOrchestrationBridgeMessage(
+      message,
+      ctx?.managedOrchestrationRuntime,
+    );
+    if (orchestrationResponse) {
+      return orchestrationResponse;
+    }
     const standardGitResponse = await handleStandardGitBridgeMessage({ id, type, payload });
     if (standardGitResponse) {
       return standardGitResponse;

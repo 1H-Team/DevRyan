@@ -2,7 +2,7 @@
   "name": "openchamber",
   "displayName": "DevRyan",
   "description": "AI coding assistant powered by OpenCode",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "publisher": "fedaykindev",
   "private": true,
   "repository": {
@@ -221,7 +221,7 @@
   "scripts": {
     "vscode:prepublish": "bun run build",
     "build": "bun run build:extension && bun run build:webview",
-    "build:extension": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --minify --main-fields=module,main",
+    "build:extension": "esbuild src/extension.ts --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node --minify --main-fields=module,main && node scripts/copy-default-config.mjs",
     "build:webview": "VITE_OPENCODE_URL=/api vite build",
     "dev": "concurrently -n \"ext,web\" -c \"cyan,magenta\" \"bun run watch:extension\" \"bun run dev:webview\"",
     "dev:webview": "vite --host localhost --port 5173 --strictPort",
@@ -245,6 +245,7 @@
   },
   "dependencies": {
     "@openchamber/cursor-sdk-runtime": "workspace:*",
+    "@openchamber/orchestration-runtime": "workspace:*",
     "@openchamber/ui": "workspace:*",
     "@opencode-ai/sdk": "^1.17.18",
     "adm-zip": "^0.5.16",

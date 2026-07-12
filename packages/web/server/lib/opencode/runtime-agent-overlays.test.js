@@ -8,6 +8,7 @@ import yaml from 'yaml';
 
 import { deleteAgentModelOverride, writeAgentModelOverride } from './agents.js';
 import * as authModule from './auth.js';
+import { GITHUB_COPILOT_AUTO_MODEL } from './github-copilot-models.js';
 import { syncRuntimeAgentOverlays } from './runtime-agent-overlays.js';
 import { DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE, DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC } from './slim-config.js';
 
@@ -61,6 +62,7 @@ const runtimeDirectoryAllows = (...directories) => Object.fromEntries(
 
 const BLOCKED_MCP_TOMBSTONES = {
   context7: { enabled: false },
+  ghgrep: { enabled: false },
   'gh-grep': { enabled: false },
   gh_grep: { enabled: false },
   'grep-app': { enabled: false },
@@ -1185,6 +1187,7 @@ describe('syncRuntimeAgentOverlays', () => {
     expect(runtimeConfig.provider?.['github-copilot']).toEqual({
       name: 'GitHub Copilot',
       models: {
+        auto: GITHUB_COPILOT_AUTO_MODEL,
         'gpt-5.3-codex': {
           id: 'gpt-5.3-codex',
           name: 'GPT-5.3 Codex',

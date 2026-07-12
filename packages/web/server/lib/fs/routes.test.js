@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '../../test-supertest.js';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';

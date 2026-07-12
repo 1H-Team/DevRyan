@@ -10,6 +10,8 @@ export const createOpenCodeEnvRuntime = (deps) => {
     normalizeDirectoryPath,
     readSettingsFromDiskMigrated,
     ENV_CONFIGURED_OPENCODE_WSL_DISTRO,
+    homeDirectory = os.homedir(),
+    environmentPath = process.env.PATH || '',
   } = deps;
 
   const parseNullSeparatedEnvSnapshot = (raw) => {
@@ -57,7 +59,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
       return null;
     }
 
-    const current = process.env.PATH || '';
+    const current = environmentPath;
     const parts = current.split(path.delimiter).filter(Boolean);
     const candidateNames = [trimmed];
 
@@ -359,6 +361,15 @@ export const createOpenCodeEnvRuntime = (deps) => {
       }
     }
 
+    const canonicalBinary = process.platform === 'win32'
+      ? null
+      : path.join(homeDirectory, '.opencode', 'bin', 'opencode');
+    if (canonicalBinary && isExecutable(canonicalBinary)) {
+      clearWslOpencodeResolution();
+      state.resolvedOpencodeBinarySource = 'canonical';
+      return canonicalBinary;
+    }
+
     const resolvedFromPath = searchPathFor('opencode');
     if (resolvedFromPath) {
       clearWslOpencodeResolution();
@@ -366,7 +377,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
       return resolvedFromPath;
     }
 
-    const home = os.homedir();
+    const home = homeDirectory;
     const unixFallbacks = [
       path.join(home, '.opencode', 'bin', 'opencode'),
       path.join(home, '.bun', 'bin', 'opencode'),

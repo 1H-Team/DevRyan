@@ -2,6 +2,7 @@ import { describe, expect, test, beforeEach, mock } from "bun:test"
 import type { PermissionRequest } from "@/types/permission"
 import type { Message, Part, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { applyDirectoryEvent } from "./event-reducer"
+import { useManagedOrchestrationStore } from "@/stores/useManagedOrchestrationStore"
 
 // Mock SDK client that records permission.reply / question.reply calls
 const replyCalls: Array<{ method: string; params: Record<string, unknown> }> = []
@@ -460,6 +461,23 @@ describe("createSessionRecord startup readiness", () => {
     })
     expect(sessionDirectories["session-created-after-restart"]).toBe("/test/project")
     expect(consumeLastCreateSessionError()).toBeNull()
+  })
+
+  test("releases imperative SDK refs only for the owning provider", async () => {
+    const ownerStore = createStore({}, [])
+    const owner = createChildStores([["/test/project", ownerStore]])
+    const other = createChildStores([["/other", createStore({}, [])]])
+    const { clearActionRefs, createSessionRecord, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, owner, () => "/test/project")
+
+    expect(clearActionRefs(other)).toBe(false)
+    expect((await createSessionRecord("Owned", "/test/project"))?.id).toBe("created-session")
+    const callsBeforeRelease = sessionCreateCalls.length
+
+    expect(clearActionRefs(owner)).toBe(true)
+    const releasedResult = await withMutedConsoleError(() => createSessionRecord("Released", "/test/project"))
+    expect(releasedResult).toBeNull()
+    expect(sessionCreateCalls).toHaveLength(callsBeforeRelease)
   })
 })
 
@@ -2239,6 +2257,42 @@ describe("revertToMessage recovery behavior", () => {
     expect(sessionAbortCalls).toEqual([{ sessionID: "session-a", directory: "/test/project" }])
   })
 
+  test("abortCurrentOperation silently cascades cancellation through active managed subtasks", async () => {
+    const store = createStore({}, [makeSession("session-a")])
+    const childStores = createChildStores([["/test/project", store]])
+    const cancelCalls: Array<{ taskId: string; options?: { cascade?: boolean; reason?: string } }> = []
+    const orchestrationState = useManagedOrchestrationStore.getState()
+    useManagedOrchestrationStore.setState({
+      tasksById: {
+        "task-root": { taskId: "task-root", rootSessionId: "session-a", parentTaskId: null, status: "running" } as never,
+        "task-child": { taskId: "task-child", rootSessionId: "session-a", parentTaskId: "task-root", status: "running" } as never,
+        "task-queued": { taskId: "task-queued", rootSessionId: "session-a", parentTaskId: null, status: "queued" } as never,
+        "task-done": { taskId: "task-done", rootSessionId: "session-a", parentTaskId: null, status: "completed" } as never,
+      },
+      taskIdsByRootId: {
+        "session-a": ["task-root", "task-child", "task-queued", "task-done"],
+      },
+      cancelTask: mock(async (taskId, options) => {
+        cancelCalls.push({ taskId, options })
+      }),
+    })
+
+    try {
+      const { abortCurrentOperation, setActionRefs } = await import("./session-actions")
+      setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+      await abortCurrentOperation("session-a")
+
+      expect(cancelCalls).toEqual([
+        { taskId: "task-root", options: { cascade: true, reason: "Parent session stopped" } },
+        { taskId: "task-queued", options: { cascade: true, reason: "Parent session stopped" } },
+      ])
+      expect(sessionAbortCalls).toEqual([{ sessionID: "session-a", directory: "/test/project" }])
+    } finally {
+      useManagedOrchestrationStore.setState(orchestrationState)
+    }
+  })
+
   test("abortCurrentOperation clears pending local sends even when sdk abort fails", async () => {
     const store = createStore({}, [makeSession("session-a")])
     const childStores = createChildStores([["/test/project", store]])
@@ -2375,6 +2429,33 @@ describe("revertToMessage recovery behavior", () => {
     expect(sessionMessageCalls).toEqual([{ sessionID: "session-a", directory: "/test/project", limit: 200 }])
 
     refetch.resolve({ data: [] })
+    await Promise.all([first, second])
+  })
+
+  test("releases unexpected-abort reconciliation ownership for a disposed directory", async () => {
+    const store = createStore({}, [makeSession("session-a")])
+    const childStores = createChildStores([["/test/project", store]])
+    const firstRefetch = createDeferred<{ data: [] }>()
+    const secondRefetch = createDeferred<{ data: [] }>()
+    sessionMessagesHandler = () => sessionMessageCalls.length === 1
+      ? firstRefetch.promise
+      : secondRefetch.promise
+
+    const {
+      reconcileUnexpectedAbort,
+      releaseSessionActionDirectory,
+      setActionRefs,
+    } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const first = reconcileUnexpectedAbort("session-a")
+    releaseSessionActionDirectory("/test/project")
+    const second = reconcileUnexpectedAbort("session-a")
+
+    expect(first).not.toBe(second)
+    expect(sessionMessageCalls).toHaveLength(2)
+    firstRefetch.resolve({ data: [] })
+    secondRefetch.resolve({ data: [] })
     await Promise.all([first, second])
   })
 

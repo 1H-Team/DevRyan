@@ -124,10 +124,9 @@ function agentVariantMatches({
     return true;
   }
 
-  // Cursor is a DevRyan-owned virtual provider, so OpenCode can load its model
-  // but reports an empty agent variant; the intercepted prompt path applies it.
-  return expectedModelRef.startsWith('cursor-acp/')
-    && loadedModelRef === expectedModelRef
+  // OpenCode reports an empty variant when the model does not support or apply
+  // the requested thinking level; the persisted config remains authoritative.
+  return loadedModelRef === expectedModelRef
     && Boolean(expectedVariant)
     && !loadedVariant;
 }
@@ -156,7 +155,9 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     buildAugmentedPath,
     buildManagedOpenCodePath,
     getManagedOpenCodeShellEnvSnapshot,
+    getManagedOrchestrationEnvironment = async () => ({}),
     getActiveSessionCount = () => 0,
+    provisionUserProfile = async () => ({ ok: true, changed: false, conflicts: [] }),
     syncPackagedAgents = async () => ({ changed: false, conflicts: [] }),
     syncRuntimeAgentOverlays = async () => ({ changed: false, targetConfigDirectory: null }),
     readSettingsFromDisk = async () => ({}),
@@ -382,7 +383,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
   const createManagedOpenCodeServerProcess = async ({ hostname, port, timeout, cwd, env: processEnv, shellEnvKeysCount = 0 }) => {
     let binary = (process.env.OPENCODE_BINARY || 'opencode').trim() || 'opencode';
-    let args = ['--pure', 'serve', '--hostname', hostname, '--port', String(port)];
+    let args = ['serve', '--hostname', hostname, '--port', String(port)];
     let launchWrapperType = null;
 
     if (process.platform === 'win32' && state.useWslForOpencode) {
@@ -399,7 +400,6 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       binary = wslBinary;
       args = buildWslExecArgs([
         wslOpencode,
-        '--pure',
         'serve',
         '--hostname',
         serveHost,
@@ -669,6 +669,13 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     }
 
     const hiddenSkills = sanitizeHiddenSkills(settings?.hiddenSkills) || [];
+    const profileResult = await provisionUserProfile();
+    if (profileResult?.ok === false) {
+      throw new Error(profileResult.error || 'Failed to provision the OpenCode user profile');
+    }
+    if (Array.isArray(profileResult?.conflicts) && profileResult.conflicts.length > 0) {
+      console.warn('[OpenCode] Preserved user-modified managed profile files', profileResult.conflicts);
+    }
     const skills = discoverSkills(state.openCodeWorkingDirectory);
     const skillPolicy = buildVisibleSkillPolicy({ skills, hiddenSkills });
     const slimConfig = resolveSlimConfig(state.openCodeWorkingDirectory);
@@ -740,6 +747,52 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     const shellEnv = typeof getManagedOpenCodeShellEnvSnapshot === 'function'
       ? getManagedOpenCodeShellEnvSnapshot() || {}
       : {};
+    const orchestrationEnvironmentInput = await getManagedOrchestrationEnvironment();
+    const orchestrationUrl = typeof orchestrationEnvironmentInput?.DEVRYAN_ORCHESTRATION_URL === 'string'
+      ? orchestrationEnvironmentInput.DEVRYAN_ORCHESTRATION_URL.trim()
+      : '';
+    const orchestrationToken = typeof orchestrationEnvironmentInput?.DEVRYAN_ORCHESTRATION_TOKEN === 'string'
+      ? orchestrationEnvironmentInput.DEVRYAN_ORCHESTRATION_TOKEN.trim()
+      : '';
+    if (Boolean(orchestrationUrl) !== Boolean(orchestrationToken)) {
+      throw new Error('Managed orchestration bridge URL and token must be provided together');
+    }
+    if (orchestrationUrl) {
+      const parsedBridgeUrl = new URL(orchestrationUrl);
+      if (
+        parsedBridgeUrl.protocol !== 'http:'
+        || parsedBridgeUrl.hostname !== '127.0.0.1'
+        || parsedBridgeUrl.pathname !== '/rpc'
+      ) {
+        throw new Error('Managed orchestration bridge must use the private IPv4 loopback RPC endpoint');
+      }
+    }
+    const processEnvironment = {
+      ...shellEnv,
+      ...process.env,
+      PATH: envPath,
+      OPENCODE_SERVER_PASSWORD: openCodePassword,
+      // NOTE: We intentionally do NOT set OPENCODE_DISABLE_DEFAULT_PLUGINS or
+      // launch with `--pure`. Both disable required provider/bundled plugin
+      // surfaces. The generated runtime overlay is the plugin allowlist owner.
+      OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: process.env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS || 'true',
+      ...(agentRuntimeConfig?.slimPreset
+        ? { OH_MY_OPENCODE_SLIM_PRESET: agentRuntimeConfig.slimPreset }
+        : {}),
+      ...(agentRuntimeConfig?.slimConfigDirectory
+        ? { DEVRYAN_OPENCODE_USER_CONFIG_DIR: agentRuntimeConfig.slimConfigDirectory }
+        : {}),
+      ...(agentRuntimeConfig?.targetConfigDirectory
+        ? { OPENCODE_CONFIG_DIR: agentRuntimeConfig.targetConfigDirectory }
+        : {}),
+    };
+    delete processEnvironment.OPENCODE_DISABLE_DEFAULT_PLUGINS;
+    delete processEnvironment.DEVRYAN_ORCHESTRATION_URL;
+    delete processEnvironment.DEVRYAN_ORCHESTRATION_TOKEN;
+    if (orchestrationUrl) {
+      processEnvironment.DEVRYAN_ORCHESTRATION_URL = orchestrationUrl;
+      processEnvironment.DEVRYAN_ORCHESTRATION_TOKEN = orchestrationToken;
+    }
 
     try {
       const serverInstance = await createManagedOpenCodeServerProcess({
@@ -748,27 +801,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         timeout: 30000,
         cwd: state.openCodeWorkingDirectory,
         shellEnvKeysCount: Object.keys(shellEnv).length,
-        env: {
-          ...shellEnv,
-          ...process.env,
-          PATH: envPath,
-          OPENCODE_SERVER_PASSWORD: openCodePassword,
-          // NOTE: We intentionally do NOT set OPENCODE_DISABLE_DEFAULT_PLUGINS here.
-          // v1.0.6 added it during the opencode 1.17.14 upgrade, which disabled the
-          // default plugin that surfaces the OpenAI (ChatGPT/Codex OAuth) provider —
-          // making OpenAI vanish from Settings → Providers and breaking Codex prompts.
-          // `--pure` (no external plugins) is kept; it does not affect built-in providers.
-          OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: process.env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS || 'true',
-          ...(agentRuntimeConfig?.slimPreset
-            ? { OH_MY_OPENCODE_SLIM_PRESET: agentRuntimeConfig.slimPreset }
-            : {}),
-          ...(agentRuntimeConfig?.slimConfigDirectory
-            ? { DEVRYAN_OPENCODE_USER_CONFIG_DIR: agentRuntimeConfig.slimConfigDirectory }
-            : {}),
-          ...(agentRuntimeConfig?.targetConfigDirectory
-            ? { OPENCODE_CONFIG_DIR: agentRuntimeConfig.targetConfigDirectory }
-            : {}),
-        },
+        env: processEnvironment,
       });
 
       if (!serverInstance || !serverInstance.url) {
@@ -1057,7 +1090,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         loadedVariant,
       });
       const variantSuffix = !variantMatches
-        ? ` and variant "${loadedVariant || 'default'}"; expected variant "${expectedVariant || 'default'}"`
+        ? ` and variant "${loadedVariant || '(none)'}"; expected variant "${expectedVariant || '(none)'}"`
         : '';
       throw new Error(`Agent "${agentName}" loaded with model "${loadedModelRef}"${variantSuffix}; expected "${expectedModelRef}"`);
     }

@@ -10,8 +10,8 @@ describe('ModelControls Cursor fast-only controls', () => {
     test('uses the Cursor display label helper for the model-adjacent variant trigger', () => {
         const code = source();
 
-        expect(code).toContain('getCursorAcpVariantDisplayLabel(cursorVariantState)');
-        expect(code).toContain('getCursorAcpVariantDisplayLabel(cursorRowVariantState)');
+        expect(code).toContain('getCursorAcpVariantDisplayLabel(cursorVariantState, { providerId');
+        expect(code).toContain('getCursorAcpVariantDisplayLabel(cursorRowVariantState, { providerId');
     });
 
     test('renders a Cursor Fast switch in the mobile expanded model row', () => {

@@ -8,23 +8,24 @@ import {
     normalizeTaskSummaryEntries,
     parseTaskMetadataBlock,
     readTaskSessionIdFromOutput,
+    resolveTaskResultPresentation,
     stripTaskMetadataFromOutput,
     type SessionMessageWithParts,
 } from './taskToolUtils';
 
 describe('task tool metadata helpers', () => {
     test('formats string and structured Cursor task models without inferring missing data', () => {
-        expect(formatTaskModelLabel(' composer-2.5 ')).toBe('composer-2.5');
+        expect(formatTaskModelLabel(' composer-2.5 ')).toBe('Composer 2.5');
         expect(formatTaskModelLabel({
             id: 'composer-2.5',
             params: [
                 { id: 'fast', value: 'false' },
                 { id: 'effort', value: 'medium' },
             ],
-        })).toBe('composer-2.5 (fast=false, effort=medium)');
+        })).toBe('Composer 2.5 (fast=false, effort=medium)');
         expect(formatTaskModelLabel(undefined)).toBe('');
         expect(formatTaskModelLabel({ params: [{ id: 'fast', value: 'false' }] })).toBe('');
-        expect(formatTaskModelLabel({ id: 'composer-2.5', params: [{ id: '', value: 'false' }] })).toBe('composer-2.5');
+        expect(formatTaskModelLabel({ id: 'composer-2.5', params: [{ id: '', value: 'false' }] })).toBe('Composer 2.5');
     });
 
     test('formats fixer result sections as markdown without dropping content', () => {
@@ -238,5 +239,60 @@ describe('task tool metadata helpers', () => {
         )).toBe(
             'Task could not start: OpenCode emitted its internal invalid-tool sentinel while starting the subagent. This usually means the managed runtime tool surface is stale or polluted. Available tools: ast_grep_search, glob, grep, read.'
         );
+    });
+
+    test('marks retained subagent output as partial when the task fails', () => {
+        expect(resolveTaskResultPresentation({
+            output: 'Completed repository inspection before disconnecting.',
+            error: { message: 'provider disconnected' },
+            hasActivity: true,
+        })).toEqual({
+            hasOutput: true,
+            outputKind: 'partial',
+            failureText: 'Task was interrupted: provider disconnected',
+        });
+    });
+
+    test('keeps successful subagent output marked complete', () => {
+        expect(resolveTaskResultPresentation({
+            output: 'Completed repository inspection.',
+            error: undefined,
+            hasActivity: true,
+        })).toEqual({
+            hasOutput: true,
+            outputKind: 'complete',
+            failureText: '',
+        });
+    });
+
+    test('keeps startup failures distinct from failures after visible activity', () => {
+        expect(resolveTaskResultPresentation({
+            output: '',
+            error: 'permission denied',
+            hasActivity: false,
+        })).toEqual({
+            hasOutput: false,
+            outputKind: 'none',
+            failureText: 'Task could not start: permission denied',
+        });
+        expect(resolveTaskResultPresentation({
+            output: '',
+            error: 'provider stopped',
+            hasActivity: true,
+        }).failureText).toBe('Task was interrupted: provider stopped');
+    });
+
+    test('marks retained output partial when a provider-native task is cancelled without an error body', () => {
+        expect(resolveTaskResultPresentation({
+            output: 'Completed useful inspection before cancellation.',
+            error: undefined,
+            hasActivity: true,
+            status: 'cancelled',
+        })).toEqual({
+            hasOutput: true,
+            outputKind: 'partial',
+            failureText: '',
+            failureStatus: 'cancelled',
+        });
     });
 });

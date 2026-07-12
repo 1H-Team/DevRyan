@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test"
 
+const bunTestHooks = (await import("bun:test")) as unknown as {
+  afterEach: (callback: () => void) => void
+}
+
 const optimisticCalls: Array<{
   sessionId: string
   content: string
@@ -8,9 +12,11 @@ const optimisticCalls: Array<{
   agent?: string
 }> = []
 const sendMessageCalls: Array<Record<string, unknown>> = []
+const sendImmediateSubtaskPromptCalls: Array<Record<string, unknown>> = []
 const sendCommandCalls: Array<Record<string, unknown>> = []
 const shellCalls: Array<Record<string, unknown>> = []
 const unarchiveCalls: string[] = []
+const refetchSessionMessagesCalls: string[] = []
 const updateSessionTitleCalls: Array<{ sessionId: string; title: string }> = []
 const createSessionCalls: Array<{
   title?: string
@@ -44,6 +50,10 @@ let viewportMemoryState = new Map<string, Record<string, unknown>>()
 let mockCreatedSession: Record<string, unknown> | null = null
 let mockConfigState: Record<string, unknown> = {}
 let mockDirectoryState: Record<string, unknown> = { command: [] }
+let mockAllSyncSessions: Array<Record<string, unknown>> = [
+  { id: "session-a", directory: "/repo/a" },
+  { id: "session-b", directory: "/repo/b" },
+]
 let mockSyncMessages: Array<Record<string, unknown>> = []
 let mockPartsByMessage = new Map<string, Array<Record<string, unknown>>>()
 let mockSourceParts: Array<Record<string, unknown>> = []
@@ -89,49 +99,6 @@ const applyMockChildStoreState = (next: unknown) => {
     mockChildStoreState = { ...mockChildStoreState, ...(patch as Record<string, unknown>) }
   }
 }
-
-mock.module("@/lib/opencode/client", () => ({
-  opencodeClient: {
-    getDirectory: () => "/repo",
-    setDirectory: () => {},
-    getSdkClient: () => ({
-      session: {
-        shell: mock((params: Record<string, unknown>) => {
-          shellCalls.push(params)
-          return Promise.resolve({ data: true })
-        }),
-      },
-    }),
-    sendCommand: mock((params: Record<string, unknown>) => {
-      sendCommandCalls.push(params)
-      return Promise.resolve({ data: true })
-    }),
-    sendMessage: mock((params: Record<string, unknown>) => {
-      sendMessageCalls.push(params)
-      const signal = params.signal as AbortSignal | undefined
-      if (signal?.aborted) {
-        return Promise.reject(new DOMException("Aborted", "AbortError"))
-      }
-      if (rejectNextSendMessage) {
-        rejectNextSendMessage = false
-        return Promise.reject(new Error("send failed"))
-      }
-      if (deferNextSendMessage) {
-        deferNextSendMessage = false
-        deferredSendMessage = createDeferredSend()
-        signal?.addEventListener("abort", () => {
-          deferredSendMessage?.reject(new DOMException("Aborted", "AbortError"))
-        }, { once: true })
-        return deferredSendMessage.promise
-      }
-      return Promise.resolve({ data: true })
-    }),
-    prewarmCursorSession: mock((params: Record<string, unknown>) => {
-      prewarmCursorSessionCalls.push(params)
-      return Promise.resolve({ ok: true, agentID: "agent-prepared", cacheHit: false })
-    }),
-  },
-}))
 
 mock.module("@/stores/useGlobalSessionsStore", () => ({
   useGlobalSessionsStore: {
@@ -210,7 +177,10 @@ mock.module("./session-actions", () => ({
     return Promise.resolve()
   }),
   revertToMessage: mock(() => Promise.resolve()),
-  refetchSessionMessages: mock(() => Promise.resolve()),
+  refetchSessionMessages: mock((sessionId: string) => {
+    refetchSessionMessagesCalls.push(sessionId)
+    return Promise.resolve()
+  }),
   unrevertSession: mock(() => Promise.resolve()),
   forkFromMessage: mock(() => Promise.resolve()),
   optimisticSend: mock(async (params: {
@@ -369,10 +339,7 @@ mock.module("./sync-refs", () => ({
   }),
   getSyncDirectory: () => "/repo",
   getSyncSessions: () => [],
-  getAllSyncSessions: () => [
-    { id: "session-a", directory: "/repo/a" },
-    { id: "session-b", directory: "/repo/b" },
-  ],
+  getAllSyncSessions: () => mockAllSyncSessions,
   getSyncMessages: () => mockSyncMessages,
   getSyncSessionMaterializationStatus: () => "ready",
   getSyncParts: (messageId: string) => mockPartsByMessage.get(messageId) ?? mockSourceParts,
@@ -392,6 +359,67 @@ mock.module("./sync-context", () => ({
   }),
 }))
 
+const { opencodeClient: testOpencodeClient } = await import("@/lib/opencode/client")
+const testOpencodeClientRecord = testOpencodeClient as unknown as Record<string, unknown>
+const originalOpencodeClientMethods = {
+  getDirectory: testOpencodeClient.getDirectory.bind(testOpencodeClient),
+  setDirectory: testOpencodeClient.setDirectory.bind(testOpencodeClient),
+  getSdkClient: testOpencodeClient.getSdkClient.bind(testOpencodeClient),
+  sendCommand: testOpencodeClient.sendCommand.bind(testOpencodeClient),
+  sendMessage: testOpencodeClient.sendMessage.bind(testOpencodeClient),
+  sendImmediateSubtaskPrompt: testOpencodeClient.sendImmediateSubtaskPrompt.bind(testOpencodeClient),
+  prewarmCursorSession: testOpencodeClient.prewarmCursorSession.bind(testOpencodeClient),
+}
+
+const installOpencodeClientMock = () => {
+  testOpencodeClientRecord.getDirectory = () => "/repo"
+  testOpencodeClientRecord.setDirectory = () => {}
+  testOpencodeClientRecord.getSdkClient = () => ({
+    session: {
+      shell: (params: Record<string, unknown>) => {
+        shellCalls.push(params)
+        return Promise.resolve({ data: true })
+      },
+    },
+  })
+  testOpencodeClientRecord.sendCommand = (params: Record<string, unknown>) => {
+    sendCommandCalls.push(params)
+    return Promise.resolve({ data: true })
+  }
+  testOpencodeClientRecord.sendMessage = (params: Record<string, unknown>) => {
+    sendMessageCalls.push(params)
+    const signal = params.signal as AbortSignal | undefined
+    if (signal?.aborted) {
+      return Promise.reject(new DOMException("Aborted", "AbortError"))
+    }
+    if (rejectNextSendMessage) {
+      rejectNextSendMessage = false
+      return Promise.reject(new Error("send failed"))
+    }
+    if (deferNextSendMessage) {
+      deferNextSendMessage = false
+      deferredSendMessage = createDeferredSend()
+      signal?.addEventListener("abort", () => {
+        deferredSendMessage?.reject(new DOMException("Aborted", "AbortError"))
+      }, { once: true })
+      return deferredSendMessage.promise
+    }
+    return Promise.resolve({ data: true })
+  }
+  testOpencodeClientRecord.sendImmediateSubtaskPrompt = (params: Record<string, unknown>) => {
+    sendImmediateSubtaskPromptCalls.push(params)
+    return Promise.resolve({ data: true })
+  }
+  testOpencodeClientRecord.prewarmCursorSession = (params: Record<string, unknown>) => {
+    prewarmCursorSessionCalls.push(params)
+    return Promise.resolve({ ok: true, agentID: "agent-prepared", cacheHit: false })
+  }
+}
+
+const restoreOpencodeClientMock = () => {
+  Object.assign(testOpencodeClient, originalOpencodeClientMethods)
+}
+
 const {
   buildPlanModeSyntheticInstruction,
   useSessionUIStore,
@@ -404,10 +432,15 @@ const {
 } = await import("./session-draft-storage")
 const { useMessageQueueStore } = await import("@/stores/messageQueueStore")
 const { useInputStore } = await import("./input-store")
+const { useNotificationStore } = await import("./notification-store")
 const { useProjectsStore } = await import("@/stores/useProjectsStore")
 const { getSafeStorage } = await import("@/stores/utils/safeStorage")
 
 const SESSION_COMPLETION_INDICATOR_SETTLE_MS = 250
+
+bunTestHooks.afterEach(() => {
+  restoreOpencodeClientMock()
+})
 
 const waitForCompletionIndicatorSettlement = async () => {
   await new Promise((resolve) => setTimeout(resolve, SESSION_COMPLETION_INDICATOR_SETTLE_MS + 20))
@@ -442,11 +475,15 @@ const createPdfAttachment = () => ({
 
 describe("session-ui-store send routing", () => {
   beforeEach(() => {
+    restoreOpencodeClientMock()
+    installOpencodeClientMock()
     optimisticCalls.length = 0
     sendMessageCalls.length = 0
+    sendImmediateSubtaskPromptCalls.length = 0
     sendCommandCalls.length = 0
     shellCalls.length = 0
     unarchiveCalls.length = 0
+    refetchSessionMessagesCalls.length = 0
     updateSessionTitleCalls.length = 0
     createSessionCalls.length = 0
     waitForWorktreeBootstrapCalls.length = 0
@@ -469,6 +506,10 @@ describe("session-ui-store send routing", () => {
     mockCreatedSession = null
     mockConfigState = {}
     mockDirectoryState = { command: [] }
+    mockAllSyncSessions = [
+      { id: "session-a", directory: "/repo/a" },
+      { id: "session-b", directory: "/repo/b" },
+    ]
     mockSyncMessages = []
     mockPartsByMessage = new Map()
     mockSourceParts = []
@@ -512,6 +553,13 @@ describe("session-ui-store send routing", () => {
     useInputStore.setState({ pendingInputText: null, pendingInputMode: "replace" })
     useMessageQueueStore.setState({ queuedMessages: {}, queueModeEnabled: true })
     useProjectsStore.setState({ projects: [], activeProjectId: null })
+    useNotificationStore.setState({
+      list: [],
+      index: {
+        session: { unseenCount: {}, unseenHasError: {}, unseenHasCompletion: {} },
+        project: { unseenCount: {}, unseenHasError: {}, unseenHasCompletion: {} },
+      },
+    })
   })
 
   test("createSessionFromAssistantMessage seeds a local assistant starter without sending", async () => {
@@ -635,6 +683,32 @@ describe("session-ui-store send routing", () => {
     expect(state.sessionPlanIndicator.has("session-child")).toBe(false)
     expect(state.sessionPlanAvailable.get("session-a")).toBe(true)
     expect(state.sessionPlanAvailable.get("session-child")).toBe(true)
+  })
+
+  test("selecting a session synchronously marks root and descendant completion notifications read", () => {
+    mockDescendantSessionIds.set("session-a", ["session-child"])
+    useNotificationStore.getState().append({
+      type: "turn-complete",
+      directory: "/repo",
+      session: "session-a",
+      messageId: "msg-a",
+      time: Date.now(),
+      viewed: false,
+    })
+    useNotificationStore.getState().append({
+      type: "turn-complete",
+      directory: "/repo",
+      session: "session-child",
+      messageId: "msg-child",
+      time: Date.now(),
+      viewed: false,
+    })
+
+    useSessionUIStore.getState().setCurrentSession("session-a", "/repo")
+
+    expect(useNotificationStore.getState().sessionHasCompletion("session-a")).toBe(false)
+    expect(useNotificationStore.getState().sessionHasCompletion("session-child")).toBe(false)
+    expect(useNotificationStore.getState().list.every((notification) => notification.viewed)).toBe(true)
   })
 
   test("settles normal completion indicators before showing them", async () => {
@@ -933,6 +1007,55 @@ describe("session-ui-store send routing", () => {
     expect(sendMessageCalls[0]?.text).toBe("start a new chat")
     expect(sendMessageCalls[0]?.agent).toBe("builder")
     expect(sendMessageCalls[0]?.directory).toBe("/repo")
+  })
+
+  test("new OpenAI draft sessions leave automatic title generation to the server runtime", async () => {
+    mockCreatedSession = { id: "session-created", directory: "/repo" }
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      newSessionDraft: { open: true, directoryOverride: "/repo", parentID: null },
+    })
+
+    await useSessionUIStore.getState().sendMessage(
+      "fix the OpenAI session title regression",
+      "openai",
+      "gpt-5.6",
+    )
+
+    expect(createSessionCalls[0]?.title).toBe(undefined)
+  })
+
+  test("new standard-provider draft sessions leave automatic title generation to the server runtime", async () => {
+    mockCreatedSession = { id: "session-created", directory: "/repo" }
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      newSessionDraft: { open: true, directoryOverride: "/repo", parentID: null },
+    })
+
+    await useSessionUIStore.getState().sendMessage(
+      "summarize this session with the selected provider",
+      "provider-a",
+      "model-a",
+    )
+
+    expect(createSessionCalls[0]?.title).toBe(undefined)
+  })
+
+  test("new OpenAI draft sessions preserve an explicit custom title", async () => {
+    mockCreatedSession = { id: "session-created", directory: "/repo" }
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      newSessionDraft: {
+        open: true,
+        directoryOverride: "/repo",
+        parentID: null,
+        title: "Custom session name",
+      },
+    })
+
+    await useSessionUIStore.getState().sendMessage("fix the title", "openai", "gpt-5.6")
+
+    expect(createSessionCalls[0]?.title).toBe("Custom session name")
   })
 
   test("Cursor new draft send promotes a prewarmed hidden session instead of creating another", async () => {
@@ -1526,6 +1649,130 @@ describe("session-ui-store send routing", () => {
     expect(waitForWorktreeBootstrapCalls).toEqual([])
   })
 
+  test("active OpenCode child sessions send follow-ups through immediate v2 prompt without optimistic prompt_async", async () => {
+    mockAllSyncSessions = [
+      { id: "session-parent", directory: "/repo/parent" },
+      { id: "session-child", directory: "/repo/child", parentID: "session-parent" },
+    ]
+    mockSessionDirectoryAnyDirectory = "/repo/child"
+    mockChildStoreState = {
+      message: {},
+      part: {},
+      session_status: {
+        "session-child": { type: "busy" },
+      },
+    }
+    useSessionUIStore.setState({ currentSessionId: "session-child" })
+
+    await useSessionUIStore.getState().sendMessage(
+      "continue from here",
+      "anthropic",
+      "claude-sonnet-4-5",
+      "builder",
+      [],
+      "reviewer",
+      undefined,
+      undefined,
+      "normal",
+    )
+
+    expect(optimisticCalls).toHaveLength(0)
+    expect(sendMessageCalls).toHaveLength(0)
+    expect(sendImmediateSubtaskPromptCalls).toEqual([{
+      id: "session-child",
+      text: "continue from here",
+      directory: "/repo/child",
+      files: undefined,
+      agentMentions: [{ name: "reviewer" }],
+      additionalParts: undefined,
+      signal: undefined,
+    }])
+    expect(refetchSessionMessagesCalls).toEqual(["session-child"])
+    expect(pendingAnimationCalls).toEqual(["session-child"])
+  })
+
+  test("active Cursor child sessions fail non-destructively instead of falling back to prompt_async", async () => {
+    mockAllSyncSessions = [
+      { id: "session-parent", directory: "/repo/parent" },
+      { id: "session-child", directory: "/repo/child", parentID: "session-parent" },
+    ]
+    mockSessionDirectoryAnyDirectory = "/repo/child"
+    mockChildStoreState = {
+      message: {},
+      part: {},
+      session_status: {
+        "session-child": { type: "busy" },
+      },
+    }
+    mockSyncMessages = [
+      {
+        id: "msg_cursor_user",
+        role: "user",
+        model: { providerID: "cursor-acp", modelID: "composer-2.5" },
+        time: { created: 1 },
+      },
+    ]
+    useSessionUIStore.setState({ currentSessionId: "session-child" })
+
+    let error: unknown = null
+    try {
+      await useSessionUIStore.getState().sendMessage(
+        "continue",
+        "anthropic",
+        "claude-sonnet-4-5",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "normal",
+      )
+    } catch (caught) {
+      error = caught
+    }
+
+    expect(error instanceof Error ? error.message : String(error)).toContain("Cursor SDK cannot accept live messages into a running subtask yet")
+
+    expect(optimisticCalls).toHaveLength(0)
+    expect(sendMessageCalls).toHaveLength(0)
+    expect(sendImmediateSubtaskPromptCalls).toHaveLength(0)
+    expect(refetchSessionMessagesCalls).toEqual([])
+  })
+
+  test("idle child sessions keep the normal send path", async () => {
+    mockAllSyncSessions = [
+      { id: "session-parent", directory: "/repo/parent" },
+      { id: "session-child", directory: "/repo/child", parentID: "session-parent" },
+    ]
+    mockSessionDirectoryAnyDirectory = "/repo/child"
+    mockChildStoreState = {
+      message: {},
+      part: {},
+      session_status: {
+        "session-child": { type: "idle" },
+      },
+    }
+    useSessionUIStore.setState({ currentSessionId: "session-child" })
+
+    await useSessionUIStore.getState().sendMessage(
+      "new idle turn",
+      "anthropic",
+      "claude-sonnet-4-5",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "normal",
+    )
+
+    expect(optimisticCalls).toHaveLength(1)
+    expect(sendMessageCalls[0]?.id).toBe("session-child")
+    expect(sendMessageCalls[0]?.text).toBe("new idle turn")
+    expect(sendImmediateSubtaskPromptCalls).toHaveLength(0)
+    expect(refetchSessionMessagesCalls).toEqual([])
+  })
+
   test("shell sends still wait for worktree bootstrap before calling the SDK", async () => {
     useSessionUIStore.setState({ currentSessionId: "session-b" })
 
@@ -1633,6 +1880,61 @@ describe("session-ui-store send routing", () => {
       "normal",
     )
 
+    expect(updateSessionTitleCalls).toEqual([])
+  })
+
+  test("successful first non-Cursor send leaves an authoritative untitled session unchanged", async () => {
+    mockDirectoryState = {
+      command: [],
+      session: [{ id: "session-b", directory: "/repo/b", title: "Untitled Session" }],
+      message: { "session-b": [] },
+    }
+    useSessionUIStore.setState({ currentSessionId: "session-b" })
+
+    await useSessionUIStore.getState().sendMessage(
+      "fix the OpenAI session title regression",
+      "openai",
+      "gpt-5.6",
+    )
+
+    expect(updateSessionTitleCalls).toEqual([])
+  })
+
+  test("successful non-Cursor sends preserve an existing generated title", async () => {
+    mockDirectoryState = {
+      command: [],
+      session: [{ id: "session-b", directory: "/repo/b", title: "Generated by OpenCode" }],
+      message: { "session-b": [] },
+    }
+    useSessionUIStore.setState({ currentSessionId: "session-b" })
+
+    await useSessionUIStore.getState().sendMessage("fix the title", "openai", "gpt-5.6")
+
+    expect(updateSessionTitleCalls).toEqual([])
+  })
+
+  test("failed non-Cursor sends do not persist a prompt-derived title", async () => {
+    mockDirectoryState = {
+      command: [],
+      session: [{ id: "session-b", directory: "/repo/b", title: "Untitled Session" }],
+      message: { "session-b": [] },
+    }
+    rejectNextSendMessage = true
+    useSessionUIStore.setState({ currentSessionId: "session-b" })
+
+    let error: unknown
+    try {
+      await useSessionUIStore.getState().sendMessage(
+        "fix the title",
+        "openai",
+        "gpt-5.6",
+      )
+    } catch (caught) {
+      error = caught
+    }
+
+    expect(error).toBeInstanceOf(Error)
+    expect((error as Error).message).toBe("send failed")
     expect(updateSessionTitleCalls).toEqual([])
   })
 

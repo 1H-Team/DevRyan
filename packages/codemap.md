@@ -9,6 +9,7 @@ Monorepo package boundary for DevRyan runtimes. It organizes shared UI/runtime i
   - `desktop/`: legacy Tauri shell for migration/compatibility.
   - `vscode/`: extension-host + webview runtime.
   - `cursor-sdk-runtime/`: shared Cursor SDK execution/auth helper package used by web/Electron and VS Code.
+  - `orchestration-runtime/`: dependency-free DevRyan-managed task contracts and scheduler policy shared by web/Electron and VS Code.
   - `ui/` and `web/` (outside this task scope) provide shared renderer/server layers consumed by runtimes.
 - **Compatibility-first API contracts**: runtime shells expose equivalent command/event semantics so shared UI remains mostly shell-agnostic.
 
@@ -20,5 +21,5 @@ Monorepo package boundary for DevRyan runtimes. It organizes shared UI/runtime i
 
 ## Integration
 - **Build integration**: root scripts orchestrate package-local build/type-check/lint commands.
-- **Cross-package dependencies**: runtime packages consume shared UI assets, the Cursor SDK runtime for Cursor model execution, and, for desktop, the web server package.
+- **Cross-package dependencies**: runtime packages consume shared UI assets, the Cursor SDK runtime for Cursor model execution, the managed orchestration runtime for DevRyan-owned task policy, and, for desktop, the web server package.
 - **Primary shell policy**: Electron is forward path; Tauri remains maintenance-only until cutover completion.

@@ -42,6 +42,31 @@ describe('text summarization zen requests', () => {
     expect(result.summary).toBe('Short summary');
   });
 
+  it('uses the strict concise-title contract for session title generation', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        output: [{
+          type: 'message',
+          content: [{ type: 'output_text', text: 'Fix OpenAI session titles.' }],
+        }],
+      }),
+    }));
+    stubFetch(fetchMock);
+
+    const result = await summarizeText({
+      text: 'Investigate why OpenAI session titles remain untitled',
+      threshold: 0,
+      maxLength: 80,
+      zenModel: 'gpt-5-nano',
+      mode: 'title',
+    });
+
+    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(requestBody.input[0].content).toContain('3 to 7 words');
+    expect(result.summary).toBe('Fix OpenAI session titles');
+  });
+
   it('uses chat completions endpoint for openai-compatible zen models', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,

@@ -29,6 +29,15 @@ export function setSyncRefs(
   }
 }
 
+export function clearSyncRefs(childStores: ChildStoreManager): boolean {
+  if (_childStores !== childStores) return false
+  _sdk = null
+  _childStores = null
+  _directory = ""
+  _registerSessionDirectory = null
+  return true
+}
+
 /** Pre-register a session→directory mapping in the routing index.
  *  Called from session-actions when creating sessions so SSE events
  *  arriving before session.created can be routed correctly. */

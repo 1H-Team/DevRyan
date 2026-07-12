@@ -144,6 +144,11 @@ export const UsageProviderPanel = React.memo(function UsageProviderPanel({
         </div>
       ) : group ? (
         <div className={cn('space-y-3 pb-3 pt-3', mobile ? 'px-4' : 'px-4')}>
+          {group.error ? (
+            <div className="rounded-md border border-[var(--status-warning-border)] bg-[var(--status-warning-background)] px-2.5 py-2 typography-micro text-[var(--status-warning)]">
+              {group.error}
+            </div>
+          ) : null}
           {entries.map(([label, window]) => (
             <UsageMetricRow
               key={`${group.providerId}-${label}`}

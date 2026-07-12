@@ -1,4 +1,7 @@
-import { GITHUB_COPILOT_FALLBACK_MODELS } from './github-copilot-models.js';
+import {
+  GITHUB_COPILOT_FALLBACK_MODELS,
+  withGitHubCopilotAutoModel,
+} from './github-copilot-models.js';
 
 export const GITHUB_COPILOT_PROVIDER_ID = 'github-copilot';
 export const GITHUB_COPILOT_UPSTREAM_PROVIDER_ID = 'copilot';
@@ -79,7 +82,7 @@ const normalizeGitHubCopilotProvider = (provider, { useFallbackModels = false, m
     ...(isPlainObject(provider) ? provider : {}),
     id: GITHUB_COPILOT_PROVIDER_ID,
     name: GITHUB_COPILOT_PROVIDER_NAME,
-    models,
+    models: withGitHubCopilotAutoModel(models),
   };
 };
 

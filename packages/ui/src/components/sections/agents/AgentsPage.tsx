@@ -23,7 +23,7 @@ import { useI18n } from '@/lib/i18n';
 import { formatAgentDisplayName } from '@/lib/agentDisplay';
 import { parseModelIdentifier } from '@/lib/modelIdentifier';
 import { getModelVariantControlState, getModelVariantDisplayState, getOrderedThinkingVariants } from '@/lib/providers/variantControls';
-import { resolveAgentVariantForSave, resolveAgentVariantSelection } from './agentVariantSelection';
+import { resolveAgentVariantForModel, resolveAgentVariantForSave, resolveAgentVariantSelection } from './agentVariantSelection';
 import { formatEffortLabel, formatVisibleEffortLabel } from '@/components/chat/mobileControlsUtils';
 import {
   Select,
@@ -307,7 +307,23 @@ export const AgentsPage: React.FC = () => {
     const parsedModel = parseModelIdentifier(modelRef);
     return parsedModel ? providers.find((entry) => entry.id === parsedModel.providerId) : undefined;
   }, [providers]);
+  const resolveVariantForModel = React.useCallback((
+    modelRef: string,
+    currentVariant: string | undefined,
+  ) => resolveAgentVariantForModel(
+    getProviderForModelRef(modelRef),
+    modelRef,
+    currentVariant,
+  ), [getProviderForModelRef]);
   const setCouncilModelAt = React.useCallback((index: number, value: string) => {
+    setCouncilVariants((prev) => {
+      const next = [...prev];
+      while (next.length <= index) {
+        next.push(undefined);
+      }
+      next[index] = resolveVariantForModel(value, next[index]);
+      return next;
+    });
     setCouncilModels((prev) => {
       const next = [...prev];
       while (next.length <= index) {
@@ -319,12 +335,12 @@ export const AgentsPage: React.FC = () => {
 
       if (index === 0 && previousFirstModel !== nextFirstModel) {
         setModel(nextFirstModel);
-        setVariant(undefined);
+        setVariant((currentVariant) => resolveVariantForModel(nextFirstModel, currentVariant));
       }
 
       return next;
     });
-  }, []);
+  }, [resolveVariantForModel]);
 
   const addCouncilModel = React.useCallback(() => {
     setCouncilModels((prev) => [...prev, '']);
@@ -584,11 +600,15 @@ export const AgentsPage: React.FC = () => {
         ? selectedCouncillors.map((entry) => entry.model)
         : normalizeModelRows(selectedModelRefs);
       const councilVariantValues = selectedCouncillors.length > 0
-        ? selectedCouncillors.map((entry) => typeof entry.variant === 'string' ? entry.variant : undefined)
-        : councilModelValues.map(() => undefined);
-      const variantValue = typeof (selectedAgent as { variant?: unknown }).variant === 'string'
+        ? selectedCouncillors.map((entry) => resolveVariantForModel(
+          entry.model,
+          typeof entry.variant === 'string' ? entry.variant : undefined,
+        ))
+        : councilModelValues.map((entry) => resolveVariantForModel(entry, undefined));
+      const savedVariantValue = typeof (selectedAgent as { variant?: unknown }).variant === 'string'
         ? (selectedAgent as { variant: string }).variant
         : undefined;
+      const variantValue = resolveVariantForModel(modelValue, savedVariantValue);
       const temperatureValue = selectedAgent.temperature;
       const promptValue = selectedAgent.prompt || '';
 
@@ -606,7 +626,7 @@ export const AgentsPage: React.FC = () => {
         permissionConfigToRuleset(selectedAgent.permission),
       );
     }
-  }, [selectedAgent, selectedAgentName]);
+  }, [resolveVariantForModel, selectedAgent, selectedAgentName]);
 
   const handleSaveModelOverride = React.useCallback(async () => {
     if (!selectedAgentName) {
@@ -690,11 +710,11 @@ export const AgentsPage: React.FC = () => {
       : null;
     const rowFastEnabled = Boolean(rowVariantDisplayState?.fastEnabled);
     const rowEffortLabel = selectedVariant
-      ? formatEffortLabel(selectedVariant)
+      ? formatEffortLabel(selectedVariant, { providerId: parsedRowModel?.providerId })
       : (
         rowVariantDisplayState?.selectedVariant && rowAvailableVariants.length > 0
-          ? formatVisibleEffortLabel(rowVariantDisplayState.selectedVariant, rowAvailableVariants)
-          : formatEffortLabel(undefined)
+          ? formatVisibleEffortLabel(rowVariantDisplayState.selectedVariant, rowAvailableVariants, { providerId: parsedRowModel?.providerId })
+          : formatEffortLabel(undefined, { providerId: parsedRowModel?.providerId })
       );
     const applyVariantUpdate = (updates: { fastEnabled?: boolean; variant?: string }) => {
       const selection = resolveAgentVariantSelection(rowProvider, modelRef, value, updates);
@@ -751,12 +771,9 @@ export const AgentsPage: React.FC = () => {
                   <SelectSeparator />
                 </>
               ) : null}
-              <SelectItem value={NO_VARIANT_VALUE}>
-                {formatEffortLabel(undefined)}
-              </SelectItem>
               {rowAvailableVariants.map((availableVariant) => (
                 <SelectItem key={availableVariant} value={availableVariant}>
-                  {formatEffortLabel(availableVariant)}
+                  {formatEffortLabel(availableVariant, { providerId: parsedRowModel?.providerId })}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -937,12 +954,9 @@ export const AgentsPage: React.FC = () => {
                         className="w-full sm:max-w-[360px]"
                         disabled={isSavingModelOverride}
                         onChange={(providerId: string, modelId: string) => {
-                          if (providerId && modelId) {
-                            setModel(`${providerId}/${modelId}`);
-                          } else {
-                            setModel('');
-                          }
-                          setVariant(undefined);
+                          const nextModel = providerId && modelId ? `${providerId}/${modelId}` : '';
+                          setModel(nextModel);
+                          setVariant((currentVariant) => resolveVariantForModel(nextModel, currentVariant));
                         }}
                       />
                     </div>

@@ -15,6 +15,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     setTerminalRuntime,
     getMessageStreamRuntime,
     setMessageStreamRuntime,
+    getManagedOrchestrationRuntime,
     getCursorSdkRuntime,
     shouldSkipOpenCodeStop,
     getOpenCodePort,
@@ -67,6 +68,17 @@ export const createGracefulShutdownRuntime = (dependencies) => {
       }
     }
 
+    const managedOrchestrationRuntime = typeof getManagedOrchestrationRuntime === 'function'
+      ? getManagedOrchestrationRuntime()
+      : null;
+    if (managedOrchestrationRuntime && typeof managedOrchestrationRuntime.shutdown === 'function') {
+      try {
+        await managedOrchestrationRuntime.shutdown();
+      } catch (error) {
+        console.warn('Error stopping managed orchestration runtime:', error);
+      }
+    }
+
     const cursorSdkRuntime = typeof getCursorSdkRuntime === 'function' ? getCursorSdkRuntime() : null;
     if (cursorSdkRuntime && typeof cursorSdkRuntime.dispose === 'function') {
       try {
@@ -81,10 +93,23 @@ export const createGracefulShutdownRuntime = (dependencies) => {
 
       if (openCodeProcess) {
         console.log('Stopping OpenCode process...');
+        let openCodeCloseTimeout = null;
         try {
-          await openCodeProcess.close();
+          await Promise.race([
+            openCodeProcess.close(),
+            new Promise((resolve) => {
+              openCodeCloseTimeout = setTimeout(() => {
+                console.warn('OpenCode close timeout reached, continuing shutdown');
+                resolve();
+              }, Math.min(shutdownTimeoutMs, 4000));
+            }),
+          ]);
         } catch (error) {
           console.warn('Error closing OpenCode process:', error);
+        } finally {
+          if (openCodeCloseTimeout) {
+            clearTimeout(openCodeCloseTimeout);
+          }
         }
         setOpenCodeProcess(null);
       }

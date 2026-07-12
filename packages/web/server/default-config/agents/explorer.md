@@ -28,6 +28,7 @@ permission:
   task:
     "*": deny
   council_session: deny
+  devryan_task: deny
   skill:
     "*": deny
     codemap: allow

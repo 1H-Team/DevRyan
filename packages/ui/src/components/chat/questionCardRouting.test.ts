@@ -15,6 +15,11 @@ const request = (id: string, count: number): QuestionRequest => ({
   })),
 })
 
+const requestForSession = (sessionID: string, id: string): QuestionRequest => ({
+  ...request(id, 1),
+  sessionID,
+})
+
 describe("question card routing", () => {
   test("groups flattened answers back into one reply payload per QuestionRequest", async () => {
     const first = request("que_1", 2)
@@ -62,5 +67,20 @@ describe("question card routing", () => {
     if (results[1].status !== "rejected") throw new Error("expected second result to reject")
     expect(results[1].request).toBe(second)
     expect(results[1].reason).toBeInstanceOf(Error)
+  })
+
+  test("does not merge identical request ids from different sessions", () => {
+    const first = requestForSession("ses_1", "que_shared")
+    const second = requestForSession("ses_2", "que_shared")
+
+    const groups = buildQuestionRequestAnswerGroups([
+      { request: first, withinRequestIndex: 0, answers: ["A1"] },
+      { request: second, withinRequestIndex: 0, answers: ["B1"] },
+    ])
+
+    expect(groups.map((group) => [group.request.sessionID, group.request.id, group.answers])).toEqual([
+      ["ses_1", "que_shared", [["A1"]]],
+      ["ses_2", "que_shared", [["B1"]]],
+    ])
   })
 })

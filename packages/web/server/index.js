@@ -13,6 +13,7 @@ import yaml from 'yaml';
 import { createUiAuth } from './lib/ui-auth/ui-auth.js';
 import { createTunnelAuth } from './lib/opencode/tunnel-auth.js';
 import { createManagedTunnelConfigRuntime } from './lib/tunnels/managed-config.js';
+import { normalizeManagedRemoteTunnelToken } from './lib/tunnels/managed-token.js';
 import { createTunnelProviderRegistry } from './lib/tunnels/registry.js';
 import { createCloudflareTunnelProvider } from './lib/tunnels/providers/cloudflare.js';
 import { createRequestSecurityRuntime } from './lib/security/request-security.js';
@@ -49,6 +50,7 @@ import { createFsSearchRuntime as createFsSearchRuntimeFactory } from './lib/fs/
 import { createOpenCodeLifecycleRuntime } from './lib/opencode/lifecycle.js';
 import { syncPackagedAgents } from './lib/opencode/packaged-agent-sync.js';
 import { syncRuntimeAgentOverlays } from './lib/opencode/runtime-agent-overlays.js';
+import { createUserProfileProvisioningRuntime } from './lib/opencode/user-profile-provisioning.js';
 import { readAuthFile } from './lib/opencode/auth.js';
 import { discoverSkills } from './lib/opencode/skills.js';
 import { createOpenCodeEnvRuntime } from './lib/opencode/env-runtime.js';
@@ -102,6 +104,8 @@ import { createGracefulShutdownRuntime } from './lib/opencode/shutdown-runtime.j
 import { createProjectConfigRuntime } from './lib/projects/project-config.js';
 import { createPreviewProxyRuntime } from './lib/preview/proxy-runtime.js';
 import { dynamicNoStoreMiddleware } from './lib/http-cache-policy.js';
+import { createWebManagedOrchestrationRuntime } from './lib/orchestration/runtime.js';
+import { registerManagedOrchestrationRoutes } from './lib/orchestration/routes.js';
 import { createProxyMiddleware, responseInterceptor } from 'http-proxy-middleware';
 import webPush from 'web-push';
 
@@ -393,6 +397,7 @@ const managedTunnelConfigRuntime = createManagedTunnelConfigRuntime({
   path,
   normalizeManagedRemoteTunnelHostname,
   normalizeManagedRemoteTunnelPresets,
+  normalizeManagedRemoteTunnelToken,
   constants: {
     CLOUDFLARE_MANAGED_REMOTE_TUNNELS_FILE_PATH,
     CLOUDFLARE_LEGACY_NAMED_TUNNELS_FILE_PATH,
@@ -644,6 +649,7 @@ let runtimeManagedRemoteTunnelToken = '';
 let runtimeManagedRemoteTunnelHostname = '';
 let terminalRuntime = null;
 let messageStreamRuntime = null;
+let managedOrchestrationRuntime = null;
 const userProvidedOpenCodePassword = hmrStateRuntime.getUserProvidedOpenCodePassword(hmrState);
 const initialOpenCodeAuthState = hmrStateRuntime.resolveOpenCodeAuthFromState({
   hmrState,
@@ -1130,12 +1136,22 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
   buildManagedOpenCodePath,
   getManagedOpenCodeShellEnvSnapshot: getLoginShellEnvSnapshot,
   getActiveSessionCount,
+  provisionUserProfile: createUserProfileProvisioningRuntime({
+    configRoot: path.join(__dirname, 'default-config'),
+    profileRoot: path.join(__dirname, 'default-config', 'user-profile'),
+  }).provision,
   syncPackagedAgents,
   syncRuntimeAgentOverlays,
   readSettingsFromDisk,
   sanitizeProjects,
   sanitizeHiddenSkills,
   discoverSkills,
+  getManagedOrchestrationEnvironment: async () => {
+    if (!managedOrchestrationRuntime) {
+      throw new Error('Managed orchestration runtime was not prepared before OpenCode startup');
+    }
+    return await managedOrchestrationRuntime.prepareBridge();
+  },
 });
 
 const restartOpenCode = (...args) => openCodeLifecycleRuntime.restartOpenCode(...args);
@@ -1188,6 +1204,18 @@ const ensureGlobalWatcherStarted = async () => {
 };
 const bootstrapOpenCodeAtStartup = async (...args) => {
   await openCodeLifecycleRuntime.bootstrapOpenCodeAtStartup(...args);
+  if (
+    managedOrchestrationRuntime
+    && isOpenCodeReady
+    && openCodePort
+    && !(isExternalOpenCode || ENV_SKIP_OPENCODE_START || ENV_CONFIGURED_OPENCODE_HOST)
+  ) {
+    try {
+      await managedOrchestrationRuntime.initialize();
+    } catch (error) {
+      console.warn('[ManagedOrchestration] Failed to initialize after OpenCode startup:', error?.message || error);
+    }
+  }
   scheduleOpenCodeApiDetection();
   if (openCodeLifecycleState.openCodeProcess && !openCodeLifecycleState.isExternalOpenCode) {
     startHealthMonitoring();
@@ -1226,6 +1254,7 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   setMessageStreamRuntime: (value) => {
     messageStreamRuntime = value;
   },
+  getManagedOrchestrationRuntime: () => managedOrchestrationRuntime,
   getCursorSdkRuntime: () => cursorSdkRuntime,
   shouldSkipOpenCodeStop: () => ENV_SKIP_OPENCODE_START || isExternalOpenCode,
   getOpenCodePort: () => openCodePort,
@@ -1395,6 +1424,24 @@ async function main(options = {}) {
   });
   uiAuthController = bootstrapResult.uiAuthController;
 
+  managedOrchestrationRuntime = createWebManagedOrchestrationRuntime({
+    dataDirectory: OPENCHAMBER_DATA_DIR,
+    buildOpenCodeUrl,
+    getOpenCodeAuthHeaders,
+    cursorSdkRuntime,
+    publishEvent: emitSyntheticOpenCodeEvent,
+    isManagedOpenCode: () => !(
+      isExternalOpenCode
+      || ENV_SKIP_OPENCODE_START
+      || ENV_CONFIGURED_OPENCODE_HOST
+    ),
+    logger: console,
+  });
+  registerManagedOrchestrationRoutes(app, {
+    runtime: managedOrchestrationRuntime,
+    express,
+  });
+
   const tunnelRuntimeContext = tunnelWiringRuntime.initialize(app, port);
   const { tunnelService, startTunnelWithNormalizedRequest } = tunnelRuntimeContext;
 
@@ -1474,6 +1521,7 @@ async function main(options = {}) {
     getOpenChamberEventClients: () => uiOpenChamberEventClients,
     writeSseEvent,
     emitSyntheticOpenCodeEvent,
+    resolveZenModel,
   });
 
   const previewProxyRuntime = createPreviewProxyRuntime({
@@ -1552,6 +1600,7 @@ async function main(options = {}) {
     httpServer: server,
     getPort: () => tunnelRuntimeContext.getActivePort(),
     getOpenCodePort: () => openCodePort,
+    getManagedOrchestrationDiagnostics: () => managedOrchestrationRuntime?.getDiagnostics() ?? null,
     getTunnelUrl: () => tunnelService.getPublicUrl(),
     getQuitRiskStatus: () => ({
       tunnel: {

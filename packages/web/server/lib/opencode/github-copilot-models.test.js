@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   __resetGitHubCopilotModelDiscoveryCache,
   discoverGitHubCopilotModels,
+  GITHUB_COPILOT_AUTO_MODEL,
+  withGitHubCopilotAutoModel,
 } from './github-copilot-models.js';
 
 describe('GitHub Copilot model discovery', () => {
@@ -116,11 +118,11 @@ describe('GitHub Copilot model discovery', () => {
     expect(first).toEqual({
       source: 'fallback',
       models: {
-        'gpt-5.1-codex': {
-          id: 'gpt-5.1-codex',
-          name: 'GPT-5.1 Codex',
+        'gpt-4.1': {
+          id: 'gpt-4.1',
+          name: 'GPT-4.1',
           api: {
-            id: 'gpt-5.1-codex',
+            id: 'gpt-4.1',
             url: 'https://api.githubcopilot.com',
             npm: '@ai-sdk/github-copilot',
           },
@@ -184,7 +186,7 @@ describe('GitHub Copilot model discovery', () => {
     expect(Object.keys(result.models)).toEqual(['gpt-visible']);
   });
 
-  it('falls back to usable chat models when every picker flag is false', async () => {
+  it('falls back to universal utility models when every picker flag is false', async () => {
     const fetchImpl = vi.fn(async () => ({
       ok: true,
       json: vi.fn(async () => ({
@@ -192,6 +194,24 @@ describe('GitHub Copilot model discovery', () => {
           {
             id: 'gpt-5.3-codex',
             name: 'GPT-5.3 Codex',
+            model_picker_enabled: false,
+            capabilities: {
+              limits: { max_output_tokens: 1000, max_prompt_tokens: 8000 },
+              supports: { tool_calls: true },
+            },
+          },
+          {
+            id: 'gpt-4.1',
+            name: 'GPT-4.1',
+            model_picker_enabled: false,
+            capabilities: {
+              limits: { max_output_tokens: 1000, max_prompt_tokens: 8000 },
+              supports: { tool_calls: true },
+            },
+          },
+          {
+            id: 'gpt-4o',
+            name: 'GPT-4o',
             model_picker_enabled: false,
             capabilities: {
               limits: { max_output_tokens: 1000, max_prompt_tokens: 8000 },
@@ -225,8 +245,8 @@ describe('GitHub Copilot model discovery', () => {
       fetchImpl,
     });
 
-    expect(Object.keys(result.models)).toEqual(['gpt-5.3-codex']);
-    expect(result.models['gpt-5.3-codex'].api.npm).toBe('@ai-sdk/github-copilot');
+    expect(Object.keys(result.models)).toEqual(['gpt-4.1', 'gpt-4o']);
+    expect(result.models['gpt-4.1'].api.npm).toBe('@ai-sdk/github-copilot');
   });
 
   it('reports unavailable when no Copilot token exists', async () => {
@@ -253,5 +273,22 @@ describe('GitHub Copilot model discovery', () => {
 
     expect(result).toEqual({ source: 'unavailable', models: {} });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe('GitHub Copilot Auto model', () => {
+  it('provides the complete capability contract required by OpenCode provider.list', () => {
+    const result = withGitHubCopilotAutoModel({
+      auto: { id: 'auto', name: 'Untrusted upstream Auto' },
+    });
+
+    expect(result.auto).toEqual(GITHUB_COPILOT_AUTO_MODEL);
+    expect(result.auto.api.id).toBe('auto');
+    expect(result.auto.capabilities).toMatchObject({
+      temperature: true,
+      reasoning: false,
+      attachment: true,
+      toolcall: true,
+    });
   });
 });

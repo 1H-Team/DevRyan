@@ -6,6 +6,7 @@ export interface WebUiServerController {
   httpServer: Server;
   getPort: () => number | null;
   getOpenCodePort: () => number | null;
+  getManagedOrchestrationDiagnostics: () => unknown;
   isReady: () => boolean;
   restartOpenCode: () => Promise<void>;
   stop: (options?: { exitProcess?: boolean }) => Promise<void>;

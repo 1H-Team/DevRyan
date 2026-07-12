@@ -5,11 +5,17 @@ import { SessionEditorPanelProvider } from './SessionEditorPanelProvider';
 import { createOpenCodeManager, type OpenCodeManager } from './opencode';
 import { startGlobalEventWatcher, stopGlobalEventWatcher, setChatViewProvider } from './sessionActivityWatcher';
 import { resolveWorkspaceFolders } from './workspaceResolver';
+import { getVsCodeCursorSdkRuntime } from './bridge-system-runtime';
+import {
+  createVsCodeManagedOrchestrationRuntime,
+  type VsCodeManagedOrchestrationRuntime,
+} from './managedOrchestrationRuntime';
 
 let chatViewProvider: ChatViewProvider | undefined;
 let agentManagerProvider: AgentManagerPanelProvider | undefined;
 let sessionEditorProvider: SessionEditorPanelProvider | undefined;
 let openCodeManager: OpenCodeManager | undefined;
+let managedOrchestrationRuntime: VsCodeManagedOrchestrationRuntime | undefined;
 let outputChannel: vscode.OutputChannel | undefined;
 
 let activeSessionId: string | null = null;
@@ -116,12 +122,36 @@ export async function activate(context: vscode.ExtensionContext) {
     await config.update('apiUrl', '', vscode.ConfigurationTarget.Global);
   }
 
-  // Create OpenCode manager first
-  openCodeManager = createOpenCodeManager(context);
+  // The private orchestration bridge must exist before managed OpenCode loads its
+  // tool plugins, while the executor itself needs the manager's eventual URL.
+  openCodeManager = createOpenCodeManager(context, {
+    getManagedOrchestrationEnvironment: async () => {
+      if (!managedOrchestrationRuntime) {
+        throw new Error('Managed orchestration runtime is unavailable during OpenCode startup');
+      }
+      return await managedOrchestrationRuntime.prepareBridge();
+    },
+  });
+  managedOrchestrationRuntime = createVsCodeManagedOrchestrationRuntime({
+    storageDirectory: context.globalStorageUri.fsPath,
+    manager: openCodeManager,
+    cursorSdkRuntime: getVsCodeCursorSdkRuntime(),
+    publishEvent: (event) => {
+      chatViewProvider?.postMessage(event);
+      agentManagerProvider?.postMessage(event);
+      sessionEditorProvider?.postMessage(event);
+    },
+    logger: console,
+  });
 
   // Create chat view provider with manager reference
   // The webview will show a loading state until OpenCode is ready
-  chatViewProvider = new ChatViewProvider(context, context.extensionUri, openCodeManager);
+  chatViewProvider = new ChatViewProvider(
+    context,
+    context.extensionUri,
+    openCodeManager,
+    managedOrchestrationRuntime,
+  );
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
@@ -159,8 +189,18 @@ export async function activate(context: vscode.ExtensionContext) {
   void maybeMoveChatToRightSidebarOnStartup();
 
   // Create Agent Manager panel provider
-  agentManagerProvider = new AgentManagerPanelProvider(context, context.extensionUri, openCodeManager);
-  sessionEditorProvider = new SessionEditorPanelProvider(context, context.extensionUri, openCodeManager);
+  agentManagerProvider = new AgentManagerPanelProvider(
+    context,
+    context.extensionUri,
+    openCodeManager,
+    managedOrchestrationRuntime,
+  );
+  sessionEditorProvider = new SessionEditorPanelProvider(
+    context,
+    context.extensionUri,
+    openCodeManager,
+    managedOrchestrationRuntime,
+  );
 
   context.subscriptions.push(
     vscode.commands.registerCommand('openchamber.internal.settingsSynced', (settings: unknown) => {
@@ -667,6 +707,13 @@ export async function activate(context: vscode.ExtensionContext) {
       if (status === 'connected' && chatViewProvider && openCodeManager) {
         setChatViewProvider(chatViewProvider);
         void startGlobalEventWatcher(openCodeManager, chatViewProvider);
+        if (openCodeManager.getDebugInfo().mode === 'managed') {
+          void managedOrchestrationRuntime?.initialize().catch((runtimeError) => {
+            outputChannel?.appendLine(
+              `[DevRyan] Managed orchestration initialization failed: ${runtimeError instanceof Error ? runtimeError.message : String(runtimeError)}`,
+            );
+          });
+        }
       } else if (status === 'disconnected' || status === 'error') {
         stopGlobalEventWatcher();
       }
@@ -680,6 +727,14 @@ export async function activate(context: vscode.ExtensionContext) {
 
 export async function deactivate() {
   stopGlobalEventWatcher();
+  try {
+    await managedOrchestrationRuntime?.shutdown();
+  } catch (error) {
+    outputChannel?.appendLine(
+      `[DevRyan] Managed orchestration shutdown failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  managedOrchestrationRuntime = undefined;
   await openCodeManager?.stop();
   openCodeManager = undefined;
   chatViewProvider = undefined;

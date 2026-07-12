@@ -237,6 +237,18 @@ const safeJson = (value) => {
   }
 };
 
+const readToolFailureReason = (result) => {
+  if (typeof result === 'string') return trimString(result);
+  if (!isPlainObject(result)) return '';
+  const candidate = result.error ?? result.message ?? result.reason;
+  if (typeof candidate === 'string') return trimString(candidate);
+  if (isPlainObject(candidate)) {
+    const nested = candidate.message ?? candidate.error ?? candidate.reason;
+    if (typeof nested === 'string') return trimString(nested);
+  }
+  return candidate === undefined || candidate === null ? '' : trimString(safeJson(candidate));
+};
+
 const areRuntimeValuesEqual = (left, right) => left === right || safeJson(left) === safeJson(right);
 
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
@@ -302,9 +314,12 @@ export const normalizeInteractionUpdateToSdkMessage = (input) => {
     const toolCall = isPlainObject(update.toolCall) ? update.toolCall : {};
     const callID = trimString(update.callId ?? update.call_id ?? toolCall.callId ?? toolCall.call_id ?? toolCall.id);
     const name = trimString(toolCall.name ?? toolCall.type ?? update.name) || 'tool';
-    const status = update.type === 'tool-call-completed'
-      ? 'completed'
-      : normalizeToolCallStatus(update.status);
+    const explicitStatus = trimString(update.status);
+    const status = explicitStatus
+      ? normalizeToolCallStatus(explicitStatus)
+      : update.type === 'tool-call-completed'
+        ? 'completed'
+        : 'running';
     return {
       type: 'tool_call',
       call_id: callID,
@@ -1632,6 +1647,7 @@ export function createCursorSdkRuntime(options = {}) {
   const activeRuns = new Map();
   const sessionStatuses = new Map();
   const agentsBySession = new Map();
+  let releaseSessionFromPersistentWorkers = () => false;
   let lastModelRecords = fallbackModelRecords();
   let lastModelsSource = 'fallback';
   let modelRefreshInFlight = null;
@@ -1711,6 +1727,7 @@ export function createCursorSdkRuntime(options = {}) {
       } catch {
       }
     }
+    releaseSessionFromPersistentWorkers(id);
     // Serialize behind any in-flight persist so the state file cannot be
     // re-created by a write that was already queued.
     const previous = persistQueues.get(id) || Promise.resolve();
@@ -2893,6 +2910,16 @@ export function createCursorSdkRuntime(options = {}) {
         }
         return result;
       },
+      releaseSession(sessionID) {
+        const id = trimString(sessionID);
+        if (!id || disposed || !child || child.exitCode !== null || child.killed) return false;
+        try {
+          child.stdin.write(`${JSON.stringify({ type: 'release-session', sessionID: id })}\n`);
+          return true;
+        } catch {
+          return false;
+        }
+      },
       async dispose() {
         if (disposed) return;
         disposed = true;
@@ -2981,12 +3008,20 @@ export function createCursorSdkRuntime(options = {}) {
     prepareSession(input) {
       return getPersistentWorkerRuntime(input.directory).prepareSession(input);
     },
+    releaseSession(sessionID) {
+      let released = false;
+      for (const runtime of persistentWorkerRuntimes.values()) {
+        released = runtime.releaseSession(sessionID) || released;
+      }
+      return released;
+    },
     async dispose() {
       const runtimes = [...persistentWorkerRuntimes.values()];
       persistentWorkerRuntimes.clear();
       await Promise.all(runtimes.map((runtime) => runtime.dispose()));
     },
   };
+  releaseSessionFromPersistentWorkers = (sessionID) => persistentWorkerRuntime.releaseSession(sessionID);
 
   const createPersistentWorkerPromptRun = async (input) => {
     try {
@@ -3814,7 +3849,7 @@ export function createCursorSdkRuntime(options = {}) {
     };
 
     let lastUsageTokens = null;
-    const finalizeAssistantRun = async (finalStatus, completed = now()) => {
+    const finalizeAssistantRun = async (finalStatus, completed = now(), failureReason = '') => {
       const finish = normalizeFinish(finalStatus);
       if (finish === 'cancelled' || cancellationSource) {
         lastCancellation = {
@@ -3862,12 +3897,30 @@ export function createCursorSdkRuntime(options = {}) {
       const finalToolStatus = finishToToolStatus(finish);
       assistantRecord.parts = assistantRecord.parts.map((part) => {
         if (part?.type === 'tool') {
-          if (part?.state?.status !== 'running' && part?.state?.status !== 'pending') return part;
+          if (part?.state?.status !== 'running' && part?.state?.status !== 'pending') {
+            const terminalStatus = normalizeToolCallStatus(part?.state?.status);
+            if (
+              finalToolStatus === 'error'
+              && terminalStatus === 'error'
+              && failureReason
+              && !trimString(part?.state?.error)
+            ) {
+              return {
+                ...part,
+                state: {
+                  ...part.state,
+                  error: failureReason,
+                },
+              };
+            }
+            return part;
+          }
           return {
             ...part,
             state: {
               ...part.state,
               status: finalToolStatus,
+              ...(finalToolStatus === 'error' && failureReason ? { error: failureReason } : {}),
               time: {
                 ...(part.state?.time || {}),
                 end: completed,
@@ -3925,7 +3978,7 @@ export function createCursorSdkRuntime(options = {}) {
 
     if (unsupportedMessage) {
       applyFinalAssistantText(unsupportedMessage);
-      await finalizeAssistantRun('error');
+      await finalizeAssistantRun('error', now(), unsupportedMessage);
       return {
         handled: true,
         status: 204,
@@ -3950,7 +4003,7 @@ export function createCursorSdkRuntime(options = {}) {
       const text = error instanceof Error ? error.message : 'Cursor SDK run failed.';
       applyFinalAssistantText(`Cursor SDK error: ${text}`);
       lastError = text;
-      await finalizeAssistantRun('error');
+      await finalizeAssistantRun('error', now(), text);
       return {
         handled: true,
         status: 204,
@@ -3969,6 +4022,7 @@ export function createCursorSdkRuntime(options = {}) {
 
     const pump = (async () => {
       let finalStatus = 'success';
+      let runFailureReason = '';
       const finalResultPromise = shouldRaceFinalResultBeforeStream && typeof run.waitFinalResult === 'function'
         ? waitForFinalRunResult(0)
           .then((result) => ({ finalResult: result }))
@@ -4263,10 +4317,21 @@ export function createCursorSdkRuntime(options = {}) {
               ? existing.output
               : (typeof existingState.output === 'string' ? existingState.output : '');
             const hasResult = hasOwn(message, 'result');
+            const hasRetainedPartialOutput = Boolean(trimString(existingOutput || existingSummary));
+            const shouldPreservePartialOutput = incomingStatus === 'error' && hasRetainedPartialOutput;
             const resultOutput = hasResult ? safeJson(message.result) : '';
-            const output = hasResult
-              ? (trimString(resultOutput) ? resultOutput : existingSummary || resultOutput)
+            const output = shouldPreservePartialOutput
+              ? existingOutput || existingSummary || ''
+              : hasResult
+              ? (trimString(resultOutput) ? resultOutput : existingOutput || existingSummary || resultOutput)
               : existingOutput || existingSummary || '';
+            const providerFailureReason = incomingStatus === 'error'
+              ? readToolFailureReason(message.result)
+              : '';
+            const existingFailureReason = typeof existingState.error === 'string'
+              ? trimString(existingState.error)
+              : '';
+            const toolFailureReason = providerFailureReason || existingFailureReason;
             const metadata = {
               ...(isPlainObject(existingState.metadata) ? existingState.metadata : {}),
               ...(isPlainObject(message.metadata) ? message.metadata : {}),
@@ -4284,6 +4349,7 @@ export function createCursorSdkRuntime(options = {}) {
                 status,
                 ...(input ? { input } : {}),
                 output,
+                ...(toolFailureReason ? { error: toolFailureReason } : {}),
                 ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
                 time: {
                   start: startedAt,
@@ -4312,6 +4378,9 @@ export function createCursorSdkRuntime(options = {}) {
           } else if (message.type === 'status') {
             const terminalStatus = finalStatusFromSdkStatus(message.status);
             if (terminalStatus) {
+              if (terminalStatus !== 'success') {
+                runFailureReason = trimString(message.message) || runFailureReason;
+              }
               const result = await waitForFinalRunResult(finalResultWaitTimeoutMs);
               applyFinalRunResult(result);
               finalStatus = terminalStatus;
@@ -4324,6 +4393,7 @@ export function createCursorSdkRuntime(options = {}) {
       } catch (error) {
         finalStatus = 'error';
         const text = error instanceof Error ? error.message : 'Cursor SDK run failed.';
+        runFailureReason = text;
         const hasAssistantText = assistantRecord.parts.some((part) => (
           part?.type === 'text' && trimString(part.text)
         ));
@@ -4338,7 +4408,7 @@ export function createCursorSdkRuntime(options = {}) {
         if (activeRuns.get(sessionID)?.run === run) {
           activeRuns.delete(sessionID);
         }
-        await finalizeAssistantRun(finalStatus);
+        await finalizeAssistantRun(finalStatus, now(), runFailureReason);
       }
     })();
 

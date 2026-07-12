@@ -1,5 +1,7 @@
 # VS Code Backend Modules
 
+Managed OpenCode startup provisions the same sanitized repository-owned user profile used by web/Electron before generating runtime overlays. It resolves `default-config/user-profile` from the extension bundle, preserves user-modified managed files, installs missing declared plugins into the user's OpenCode config directory, and fails visibly when required package installation cannot complete. Configured external OpenCode URLs remain read-only.
+
 This document describes backend runtime modules used by the VS Code extension bridge (`packages/vscode/src/bridge.ts`).
 
 ## Purpose
@@ -39,6 +41,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 
 - `bridge-proxy-runtime.ts`
   - Proxy route handlers (`api:proxy`, `api:session:message`) with injected helper dependencies.
+  - The managed `/config/providers` proxy annotates OpenAI models with the same sanitized authentication and OAuth-only availability metadata as web/Electron, using `openaiModelAvailability.ts`; API-key and configured external OpenCode catalogs stay provider-driven, and credentials are never included in the response.
 
 - `bridge-config-runtime.ts`
   - Config and skills message handlers (`api:config/*`).
@@ -47,7 +50,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Passes Slim's active preset into managed OpenCode with `OH_MY_OPENCODE_SLIM_PRESET`, copies the active Slim config into the runtime overlay `OPENCODE_CONFIG_DIR`, and keeps background subagents enabled for Slim orchestration.
 
 - `opencodeVersionPolicy.ts`
-  - Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.17.16 and exposes the upstream install command in diagnostics while still using the user/system `opencode` binary.
+  - Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.17.18 and exposes the upstream install command in diagnostics while still using the user/system `opencode` binary.
 
 - `bridge-settings-runtime.ts`
   - Settings read/write and OpenCode skills discovery via API for bridge consumers.
@@ -57,6 +60,31 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Includes session activity snapshot bridge handler used by webview parity routes (`/api/session-activity`).
   - Includes Zen utility model parity handler used by shared notification settings (`/api/zen/models`).
 
+- `managedOrchestrationRuntime.ts`
+  - Composes the one VS Code-owned `@openchamber/orchestration-runtime` scheduler.
+  - Enforces a maximum of three running DevRyan-managed children, scoped task access, deterministic queueing/cancellation, recovery-envelope acknowledgement (including same-child `retry_in_place` model overrides), and external-runtime unavailability.
+  - Publishes safe task projections, identity-only compaction removals, and corrupt-ledger recovery warnings to open webviews.
+
+- `managedOrchestrationPersistence.ts`
+  - Stores the versioned scheduler ledger under extension global storage with atomic replacement, mode `0600`, serialized writes, validation, and quarantine-on-corruption.
+
+- `managedOrchestrationHost.ts`
+  - Hosts the private bearer-authenticated `127.0.0.1` RPC endpoint used by the bundled managed-orchestration tool.
+  - Bounds request bodies, aborts active requests during shutdown, and never exposes the token through the webview bridge.
+
+- `managedOpenCodeExecutor.ts`
+  - Creates canonical OpenCode child sessions and routes normal providers through OpenCode HTTP.
+  - Routes `cursor-acp` prompts, status, messages, and aborts through the shared Cursor SDK owner.
+  - Applies the shared Copilot prompt-tool policy through `@openchamber/orchestration-runtime`.
+
+- `bridge-orchestration-runtime.ts`
+  - Maps snapshot/status/cancel/acknowledge requests from the webview to the scoped runtime contract.
+  - Returns HTTP-shaped status/body results inside successful bridge responses so authoritative failures remain visible and retryable.
+
+- `opencode.ts`
+  - Managed launches retain config-origin bundled plugins, including GitHub Copilot Auto/picker fallback and exact OpenAI GPT-5.6 Max/Ultra enrichment, and receive a validated private bridge URL/token pair. The plugins only enrich model rows advertised by that managed runtime.
+  - Ambient bridge variables are stripped; incomplete or non-IPv4-loopback pairs are rejected.
+
 ## Extension guideline
 
 When adding new bridge route families:
@@ -64,3 +92,11 @@ When adding new bridge route families:
 1. Prefer creating or extending a domain runtime module under `packages/vscode/src/bridge-*-runtime.ts`.
 2. Keep `bridge.ts` focused on delegation order and minimal fallthrough behavior.
 3. Inject dependencies into runtimes instead of reaching into unrelated modules directly.
+
+## Managed orchestration lifecycle
+
+1. `extension.ts` creates the OpenCode manager with a lazy bridge-environment callback, then creates the orchestration owner before starting OpenCode.
+2. A managed OpenCode start asks the owner for the private URL/token; configured external OpenCode never receives or controls this owner.
+3. Connected managed runtimes initialize/reconcile the persisted ledger. Safe task and compaction events are broadcast to each open webview, while initial state remains recoverable through snapshots.
+4. Webviews use `/api/orchestration/*`, which `webview/api/orchestration.ts` maps to the extension bridge.
+5. Deactivation stops the private host and scheduler before stopping OpenCode, preserving terminal/partial records while releasing listeners and active work.

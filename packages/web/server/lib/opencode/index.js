@@ -1,4 +1,8 @@
 export {
+  createUserProfileProvisioningRuntime,
+} from './user-profile-provisioning.js';
+
+export {
   AGENT_DIR,
   COMMAND_DIR,
   SKILL_DIR,

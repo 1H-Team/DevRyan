@@ -44,10 +44,68 @@ So:
 | child directory stores in `sync-context.tsx` | `session`, `message`, `part`, `permission`, `question`, etc. | One directory |
 | `session-ui-store.ts` | Session selection, draft lifecycle, abort prompts, worktree metadata, SDK-facing action entrypoints | App UI state |
 | `useGlobalSessionsStore.ts` | Global active sessions, global archived sessions, `sessionsByDirectory` | All opened project/worktree session lists |
+| `useManagedOrchestrationStore.ts` | Safe DevRyan-managed task projections and result envelopes | Global, keyed by root session; low frequency |
 | `viewport-store.ts` | Scroll anchors, session memory, loading indicators | App UI state |
 | `input-store.ts` | Draft input state, attached files, synthetic parts | App UI state |
 | `selection-store.ts` | Model/agent/variant selections | App UI state |
 | `voice-store.ts` | Voice state | App UI state |
+
+## Directory disposal ownership
+
+`ChildStoreManager` is the single release boundary for a directory store. Both
+LRU/TTL eviction through `disposeDirectory()` and provider shutdown through
+`disposeAll()` snapshot the store, remove it from the registry, run registered
+hook-local disposers, and invoke the configured sync ownership callback exactly
+once. The currently displayed directory is pinned while mounted, and normal
+eviction continues to protect booting, loading, pinned, and blocking-request
+stores.
+
+The ownership callback releases all ephemeral directory-scoped resources:
+
+- session prefetch data, in-flight markers, and generation revisions;
+- message-loading metadata and optimistic shadow entries owned by `useSync()`;
+- pending part deltas, materialization retries, child-session fetches, and
+  archived-session offload timers;
+- event-pipeline queues and session/message routing-index entries;
+- reconnect/activity timestamps, abort guards, toast dedupe keys, and
+  imperative SDK/store references on provider shutdown.
+
+Async loaders compare both their generation token and child-store identity
+before committing. A late request from an evicted directory therefore cannot
+write into a replacement store or repopulate a cleared cache. Provider teardown
+is deferred by one microtask and generation-checked so React Strict Mode's
+development cleanup/restart cycle does not dispose stores still referenced by
+mounted hooks; a real unmount still deterministically calls `disposeAll()`.
+
+`directory-disposal.ts` owns the cold-path routing, timer, prefix-clear, and
+restart-safe cleanup helpers. These helpers are intentionally used only at
+directory lifecycle edges, where bounded scans are acceptable; they are not
+part of high-frequency SSE reduction. `event-pipeline.ts` deletes an empty
+directory queue after each flush while retaining only a 64-entry LRU of recent
+flush timestamps, preserving frame pacing without retaining queue arrays.
+
+## Managed orchestration event routing
+
+`openchamber:managed-task`, `openchamber:managed-task-removed`, and
+`openchamber:managed-orchestration-warning` are host-owned synthetic events.
+`event-pipeline.ts` normalizes and routes them to
+`useManagedOrchestrationStore.ts` before resolving a directory, allocating a
+queue, coalescing, or invoking the session reducer. This guarantees that a
+managed status transition cannot clone session/message/part collections or be
+mistaken for provider-native task activity.
+
+Removal events contain only DevRyan task/root/directory/sequence identity and
+mirror a successfully persisted host-ledger compaction. The projection store
+requires an exact identity match, releases task/result/action leaves, and marks
+the removal against every in-flight snapshot so stale snapshot data cannot
+resurrect it.
+
+`AppEffects.tsx` owns the initial host-ledger snapshot and direct VS Code
+webview events. `sync-context.tsx` reloads the snapshot after reconnect or a
+replay gap. Snapshot requests are scope-deduplicated, so overlapping lifecycle
+signals do not create overlapping host work. High-frequency output from the
+managed child is still delivered through its canonical OpenCode session and is
+not copied into the managed-task event stream.
 
 ## Session list rules
 
@@ -111,6 +169,7 @@ Rules:
 5. Draft sends must resolve and validate provider/model/agent selection before creating the backend session. A missing model should keep the draft intact and avoid creating an empty chat.
 6. A foreground send must always target a real session ID. If the UI has no current session and no open draft, `session-ui-store.ts` creates and selects a normal session before optimistic send/routing; never route a prompt with an empty session ID.
 7. Backend session creation retries transient 5xx/startup responses in `createSessionRecord()`. The managed OpenCode server can still be warming up when the web UI is already interactive, so a single `503 OpenCode is restarting` must not strand the user's first prompt.
+8. Automatic session titles have exactly one owner. Standard-provider sessions are created without a title, then the server-side standard title runtime generates and persists the authoritative Zen summary after an accepted proxied prompt; the sync layer consumes the resulting `session.updated` event and must not persist a prompt-derived fallback. Cursor sessions remain owned by the separate server-side Cursor title runtime, and explicit custom draft titles remain authoritative for every provider.
 
 Examples of global-store updates performed in `session-actions.ts`:
 
@@ -188,7 +247,9 @@ Server compatibility events named `openchamber:session-status` are normalized in
 
 ## Completion vs active work
 
-Completion indicators are derived from final visible assistant summaries, not from historical unread state alone. The green sidebar completion indicator means the trailing assistant message is terminal, is not an intermediate `finish: "tool-calls"` message, has no running tool parts, and has visible assistant text or reasoning summary content. Finalized tool rows and unread completion notifications do not create the green indicator by themselves.
+Completion indicators combine a settled lifecycle record with unread state; neither historical messages nor unread notifications create green by themselves. Green is restricted to a non-working background session with an unread completion. The active session never renders green, and selecting a session synchronously marks its root/descendant notifications viewed and clears settled normal/completed-plan indicators. Pending questions remain blue and proposed plans remain yellow regardless of which session is active; their precedence is question, proposed plan, unread error, then unread completion.
+
+Proposed-plan and unread-completion state are restored after startup from authoritative materialized messages. Restoration is narrowed by the persisted session-to-plan-mode-message ownership map and compact completion identity/read records, processed sequentially per directory, and re-runs normal lifecycle detection after each snapshot load. Only completion identity, directory/session/message IDs, timestamp, and read state are persisted; provider errors and response content are not. This avoids treating arbitrary historical output as active while preserving yellow/green background indicators across reload and reconnect.
 
 A trailing assistant message can settle stale `busy`/`retry` status to `idle` only when it is terminal, has no running tool parts, has no pending permission or question, and is not `finish: "tool-calls"`. This keeps the session working spinner visible between tool calls while OpenCode is still running and prevents an intermediate tool-call shell from hiding the final summary stream.
 
@@ -200,16 +261,18 @@ When OpenCode emits `message.part.updated` before the owning `message.updated`, 
 
 `sync-context.tsx` tracks the last observed `session.status` and message/part output event per `directory + sessionID`. A 5-second watchdog checks only the active viewed session; when that session remains `busy` or `retry` without fresh status or output activity for 20 seconds, it runs a targeted reconnect resync for that session only. A 15-second per-session cooldown prevents repeated recovery calls.
 
-## Stop-during-retry guard
+## Manual provider recovery and stop-during-retry guard
 
 OpenCode ignores `session.abort` while a session sleeps between provider retry attempts (out of usage / rate limit) and keeps emitting `session.status: retry` — it never emits `session.idle`/`session.error` from inside the loop. `abort-retry-guard.ts` makes a manual Stop stick:
 
 - Every user-initiated abort path (`abortCurrentOperation`, queued-send interrupt, archive/delete pre-abort, revert/unrevert) registers a per-session guard via `registerManualAbortGuard`.
+- An unguarded provider `retry` remains authoritative so OpenCode can apply its retry policy; observing a live retry does not create a recovery record or abort the active turn.
 - While active (60s TTL), `filterSessionStatusThroughAbortGuard` coerces incoming `retry` statuses to `idle` (event reducer and reconnect status merge both route through it) and schedules bounded, debounced re-aborts (max 3) so the server loop is cancelled the moment its next attempt creates an abortable in-flight request.
 - The guard clears on authoritative idle (`session.idle`, `session.error`, idle `session.status`) and on any new local send (`optimisticSend`, `usePromptSubmit`), so a legitimate new turn is never suppressed or re-aborted.
+- `useProviderErrorRecovery` creates recovery records only after an authoritative active-to-idle transition ends with a matching retryable terminal assistant error. Manual recovery waits for guard settlement before sending the selected model, preventing an explicitly stopped retry loop from overlapping the replacement turn.
 - When the TTL expires without idle, live server state wins again — the guard never permanently masks real activity.
 
-`abortCurrentOperation` additionally settles a local `retry` status to `idle` right after the abort request (narrow optimistic transition mirroring `revertToMessage`), so the input and model picker unlock immediately.
+`abortCurrentOperation` first cancels the active top-level DevRyan-managed tasks for the parent session with scheduler cascade enabled, then aborts the parent OpenCode session. This stops queued and running managed descendants without emitting cancellation tool calls into chat. It additionally settles a local `retry` status to `idle` right after the abort request (narrow optimistic transition mirroring `revertToMessage`), so the input and model picker unlock immediately.
 
 ## Selector hygiene
 

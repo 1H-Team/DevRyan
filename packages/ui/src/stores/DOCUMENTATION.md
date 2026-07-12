@@ -50,6 +50,53 @@ Examples:
 
 These stores coordinate persistent project/session metadata across multiple views.
 
+### Managed orchestration projection store
+
+`useManagedOrchestrationStore.ts` is the dedicated client projection of the
+host-owned DevRyan scheduler. It is intentionally separate from directory sync
+stores and provider-native tool activity.
+
+Core model:
+
+- safe task records keyed by `dvr_task_*` identity
+- root-session task ID arrays with stable references
+- terminal result envelopes keyed by task ID
+- per-task pending action and visible action-error leaves
+- one serialized snapshot load per scope, reconciled against events received
+  after that load began in one atomic store update
+
+Ownership and safety rules:
+
+1. The store is not persisted. The web/Electron or VS Code host ledger is the
+   durable source of truth and every app owner performs an initial snapshot.
+2. Ingestion reconstructs an explicit safe projection. Prompt text,
+   idempotency keys, lease tokens, and unknown fields are not retained.
+3. Managed events are low frequency and never carry child streaming output;
+   child output remains in the existing directory-scoped session stores.
+4. A malformed snapshot fails as a unit and preserves the last valid records.
+   It must not silently filter a record and then delete known-good state.
+5. Late snapshots cannot replace a task updated by a newer event. Task status,
+   child identity, timestamps, and terminal state never regress.
+6. Cancel/retry/resume/continue/abandon keep the card in place until the host
+   returns authoritative state. Duplicate requests share one promise, failures
+   remain visible, and retry reuses its idempotency key.
+7. Components subscribe through one-root or one-task selectors. Do not select
+   `tasksById` or `resultEnvelopesByTaskId` from rendering components.
+8. The app owner resets the projection on real runtime shutdown; generation
+   tokens prevent late requests from repopulating the reset store.
+9. Identity-only compaction events remove the exact task, result, action state,
+   and root index immediately. Active snapshot requests record removals locally
+   so a stale response cannot resurrect an evicted projection.
+
+### Provider recovery store
+
+`useProviderRecoveryStore.ts` retains one low-frequency, non-persisted recovery
+record per session. Retryable terminal provider errors populate it after an
+authoritative active-to-idle transition; live provider retry statuses do not.
+The record owns a local provider/model/variant selection plus pending/action
+error leaves. Normal user sends clear it, while a manual recovery send preserves
+it until the send succeeds so failed retries remain actionable.
+
 ## Git / PR Stores
 
 The Git and PR stores are the most important stores to understand before editing this directory.

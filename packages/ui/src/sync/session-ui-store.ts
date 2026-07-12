@@ -24,6 +24,7 @@ import { useDirectoryStore } from "@/stores/useDirectoryStore"
 import { useSessionFoldersStore } from "@/stores/useSessionFoldersStore"
 import { useCommandsStore } from "@/stores/useCommandsStore"
 import { useMessageQueueStore } from "@/stores/messageQueueStore"
+import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
 import { getSafeStorage } from "@/stores/utils/safeStorage"
 import {
   attachRelatedSubagentContextUsage,
@@ -287,6 +288,7 @@ async function routeMessage(params: {
   providerID: string
   modelID: string
   agent?: string
+  agentMentionName?: string
   variant?: string
   planMode?: boolean
   inputMode?: "normal" | "shell"
@@ -296,6 +298,9 @@ async function routeMessage(params: {
   lifecycleCallbacks?: SendLifecycleCallbacks
 }): Promise<boolean> {
   throwIfAborted(params.lifecycleCallbacks?.signal)
+  if (!params.lifecycleCallbacks?.preserveProviderRecovery) {
+    useProviderRecoveryStore.getState().clearRecovery(params.sessionId)
+  }
   const messageDirectory = normalizePath(params.directory ?? useSessionUIStore.getState().getDirectoryForSession(params.sessionId) ?? opencodeClient.getDirectory() ?? null)
   if (params.inputMode === "shell") {
     if (messageDirectory) {
@@ -337,6 +342,32 @@ async function routeMessage(params: {
     ],
   })
 
+  const session = getAllSyncSessions().find((candidate) => candidate.id === params.sessionId)
+  const isSubtaskSession = Boolean((session as (Session & { parentID?: string | null }) | undefined)?.parentID)
+  const sessionStatus = getSyncSessionStatus(params.sessionId, messageDirectory ?? undefined)
+  const isActiveSubtaskSession = isSubtaskSession && (sessionStatus?.type === "busy" || sessionStatus?.type === "retry")
+
+  if (isActiveSubtaskSession) {
+    const lastUserChoice = useSessionUIStore.getState().getLastUserChoice(params.sessionId)
+    const activeProviderID = lastUserChoice?.providerID ?? params.providerID
+    if (activeProviderID === CURSOR_ACP_PROVIDER_ID) {
+      throw new Error("Cursor SDK cannot accept live messages into a running subtask yet. Stop or wait for it to finish, then send.")
+    }
+
+    await opencodeClient.sendImmediateSubtaskPrompt({
+      id: params.sessionId,
+      text: params.content,
+      files: params.files && params.files.length > 0 ? params.files : undefined,
+      agentMentions: params.agentMentionName ? [{ name: params.agentMentionName }] : undefined,
+      additionalParts,
+      directory: messageDirectory,
+      signal: params.lifecycleCallbacks?.signal,
+    })
+    await refetchSessionMessages(params.sessionId)
+    await autoUnarchiveAfterSuccessfulSend(params.sessionId)
+    return true
+  }
+
   // Slash commands — fire and forget, SSE delivers messages and status
   if (params.content.startsWith("/")) {
     const [head, ...tail] = params.content.split(" ")
@@ -369,6 +400,7 @@ async function routeMessage(params: {
           params.lifecycleCallbacks?.onMessageRollback?.(messageID)
         },
         signal: params.lifecycleCallbacks?.signal,
+        preserveProviderRecovery: params.lifecycleCallbacks?.preserveProviderRecovery,
         send: (messageID) => opencodeClient.sendCommand({
           id: params.sessionId,
           providerID: params.providerID,
@@ -408,6 +440,7 @@ async function routeMessage(params: {
       params.lifecycleCallbacks?.onMessageRollback?.(messageID)
     },
     signal: params.lifecycleCallbacks?.signal,
+    preserveProviderRecovery: params.lifecycleCallbacks?.preserveProviderRecovery,
     send: (messageID) => opencodeClient.sendMessage({
       id: params.sessionId,
       providerID: params.providerID,
@@ -528,6 +561,7 @@ type SendLifecycleCallbacks = {
   onMessageRollback?: (messageID: string) => void
   onSessionReady?: (sessionID: string, directory?: string | null) => void
   signal?: AbortSignal
+  preserveProviderRecovery?: boolean
 }
 
 type PendingQuestionDismissal = {
@@ -2170,13 +2204,12 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     modelID: string,
     agent?: string,
     attachments?: AttachedFile[],
-    _agentMentionName?: string,
+    agentMentionName?: string,
     additionalParts?: Array<{ text: string; attachments?: AttachedFile[]; synthetic?: boolean }>,
     variant?: string,
     inputMode?: "normal" | "shell",
     planMode?: boolean,
   ) => {
-    void _agentMentionName
     streamDebugMark("first-reply-send-start", {
       hasCurrentSession: Boolean(get().currentSessionId),
       inputMode: inputMode ?? "normal",
@@ -2360,6 +2393,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
           providerID: effectiveProviderID,
           modelID: effectiveModelID,
           agent: effectiveDraftAgent,
+          agentMentionName,
           variant: effectiveVariant,
           inputMode,
           directory: createdDirectory,
@@ -2500,6 +2534,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         providerID: effectiveProviderID,
         modelID: effectiveModelID,
         agent: effectiveAgent,
+        agentMentionName,
         variant: effectiveVariant,
         inputMode,
         directory: targetSessionDirectory,
@@ -2532,14 +2567,13 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     modelID,
     agent,
     attachments,
-    _agentMentionName,
+    agentMentionName,
     additionalParts,
     variant,
     inputMode,
     planMode,
     lifecycleCallbacks,
   ) => {
-    void _agentMentionName
     streamDebugMark("first-reply-send-start", {
       sessionId,
       inputMode: inputMode ?? "normal",
@@ -2619,6 +2653,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         providerID: effectiveProviderID,
         modelID: effectiveModelID,
         agent: effectiveAgent,
+        agentMentionName,
         variant: effectiveVariant,
         inputMode,
         directory: sessionDirectory,

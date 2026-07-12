@@ -25,7 +25,7 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useAllLiveSessions, useSession } from '@/sync/sync-context';
 import { getAllSyncSessions } from '@/sync/sync-refs';
 import { useProjectsStore } from '@/stores/useProjectsStore';
-import { useQuotaAutoRefresh, useQuotaStore } from '@/stores/useQuotaStore';
+import { quotaRefreshCoordinator, useQuotaStore } from '@/stores/useQuotaStore';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 
@@ -133,12 +133,12 @@ export const Header: React.FC<HeaderProps> = ({
     return pathSegments[pathSegments.length - 1] ?? null;
   }, [activeProject]);
   const quotaResults = useQuotaStore((state) => state.results);
-  const fetchAllQuotas = useQuotaStore((state) => state.fetchAllQuotas);
+  const quotaProviderRefreshState = useQuotaStore((state) => state.providerRefreshState);
+  const fetchAllQuotas = quotaRefreshCoordinator.refreshNow;
   const isQuotaLoading = useQuotaStore((state) => state.isLoading);
   const quotaLastUpdated = useQuotaStore((state) => state.lastUpdated);
   const quotaTrendHistory = useQuotaStore((state) => state.trendHistory);
   const dropdownProviderIds = useQuotaStore((state) => state.dropdownProviderIds);
-  const loadQuotaSettings = useQuotaStore((state) => state.loadSettings);
 
   const { isMobile } = useDeviceInfo();
 
@@ -208,7 +208,6 @@ export const Header: React.FC<HeaderProps> = ({
     }
     return isSessionSwitcherOpen;
   }, [isMobile, isSessionSwitcherOpen, isSidebarOpen, leftDrawerOpen, onToggleLeftDrawer]);
-  useQuotaAutoRefresh();
   const selectedModels = useQuotaStore((state) => state.selectedModels);
   const expandedFamilies = useQuotaStore((state) => state.expandedFamilies);
   const toggleFamilyExpanded = useQuotaStore((state) => state.toggleFamilyExpanded);
@@ -231,7 +230,8 @@ export const Header: React.FC<HeaderProps> = ({
         providerName: provider.name,
         entries,
         resetCredits: result?.usage?.resetCredits,
-        error: (result && !result.ok && result.configured) ? result.error : undefined,
+        error: quotaProviderRefreshState[provider.id]?.refreshError
+          ?? ((result && !result.ok && result.configured) ? result.error : undefined),
       };
 
       // Add model families if provider has per-model quotas
@@ -339,7 +339,7 @@ export const Header: React.FC<HeaderProps> = ({
     }
 
     return groups;
-  }, [dropdownProviderIds, quotaResults, selectedModels, t]);
+  }, [dropdownProviderIds, quotaProviderRefreshState, quotaResults, selectedModels, t]);
   const hasRateLimits = rateLimitGroups.length > 0;
   const resolvedActiveUsageProviderId = React.useMemo(
     () => resolveActiveUsageProviderId(rateLimitGroups, activeUsageProviderId),
@@ -354,10 +354,6 @@ export const Header: React.FC<HeaderProps> = ({
       setActiveUsageProviderId(resolvedActiveUsageProviderId);
     }
   }, [activeUsageProviderId, resolvedActiveUsageProviderId]);
-  React.useEffect(() => {
-    void loadQuotaSettings();
-  }, [loadQuotaSettings]);
-
   const handleUsageRefresh = React.useCallback(() => {
     if (isUsageRefreshSpinning) return;
     setIsUsageRefreshSpinning(true);

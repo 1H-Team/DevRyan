@@ -7,7 +7,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { getSortedQuotaProviders } from '@/lib/quota';
-import { useQuotaStore } from '@/stores/useQuotaStore';
+import { quotaRefreshCoordinator, useQuotaStore } from '@/stores/useQuotaStore';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { RiRefreshLine } from '@remixicon/react';
 import { useI18n } from '@/lib/i18n';
@@ -21,7 +21,7 @@ export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect }) => {
   const results = useQuotaStore((state) => state.results);
   const selectedProviderId = useQuotaStore((state) => state.selectedProviderId);
   const setSelectedProvider = useQuotaStore((state) => state.setSelectedProvider);
-  const fetchAllQuotas = useQuotaStore((state) => state.fetchAllQuotas);
+  const fetchAllQuotas = quotaRefreshCoordinator.refreshNow;
   const isLoading = useQuotaStore((state) => state.isLoading);
   const usageAutoRefresh = useQuotaStore((state) => state.autoRefresh);
   const usageRefreshIntervalMs = useQuotaStore((state) => state.refreshIntervalMs);
@@ -31,7 +31,6 @@ export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect }) => {
   const setUsageRefreshInterval = useQuotaStore((state) => state.setRefreshInterval);
   const setUsageDisplayMode = useQuotaStore((state) => state.setDisplayMode);
   const setShowPredictionValues = useQuotaStore((state) => state.setShowPredictionValues);
-  const loadUsageSettings = useQuotaStore((state) => state.loadSettings);
 
   const visibleProviders = React.useMemo(() => {
     const configuredByProviderId = new Map(results.map((entry) => [entry.providerId, entry.configured]));
@@ -40,10 +39,6 @@ export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect }) => {
       || (provider.id === 'cursor-acp' && configuredByProviderId.has(provider.id))
     ));
   }, [results]);
-
-  React.useEffect(() => {
-    void loadUsageSettings();
-  }, [loadUsageSettings]);
 
   const persistUsageSettings = React.useCallback(async (changes: { usageAutoRefresh?: boolean; usageRefreshIntervalMs?: number; usageDisplayMode?: 'usage' | 'remaining'; usageShowPredValues?: boolean; usageDropdownProviders?: string[] }) => {
     try {

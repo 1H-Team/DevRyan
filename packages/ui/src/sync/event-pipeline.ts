@@ -40,6 +40,7 @@ const DEFAULT_HEARTBEAT_TIMEOUT_MS = 30_000
 const WS_FALLBACK_WINDOW_MS = 60_000
 const DEFAULT_WS_READY_TIMEOUT_MS = 2_000
 const PERMANENT_HTTP_RETRY_DELAY_MS = 5_000
+const RECENT_DIRECTORY_FLUSH_LIMIT = 64
 const ABSOLUTE_URL_PATTERN = /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//
 
 const nowMs = (): number => {
@@ -65,6 +66,8 @@ export type EventPipelineInput = {
    * state as potentially stale and trigger a full resync.
    */
   onReplayGap?: () => void
+  /** Routes low-frequency DevRyan-managed task state outside directory sync stores. */
+  onManagedOrchestrationEvent?: (payload: unknown) => void
   transport?: "auto" | "ws" | "sse"
   heartbeatTimeoutMs?: number
   reconnectDelayMs?: number
@@ -391,6 +394,7 @@ export function createEventPipeline(input: EventPipelineInput) {
     onDisconnect,
     onTransportSwitch,
     onReplayGap,
+    onManagedOrchestrationEvent,
     routeDirectory,
     transport = "auto",
     heartbeatTimeoutMs = DEFAULT_HEARTBEAT_TIMEOUT_MS,
@@ -403,6 +407,17 @@ export function createEventPipeline(input: EventPipelineInput) {
   let wsFallbackUntil = 0
 
   const directories = new Map<string, DirectoryQueue>()
+  const recentDirectoryFlushes = new Map<string, number>()
+
+  const rememberDirectoryFlush = (directory: string, timestamp: number) => {
+    recentDirectoryFlushes.delete(directory)
+    recentDirectoryFlushes.set(directory, timestamp)
+    while (recentDirectoryFlushes.size > RECENT_DIRECTORY_FLUSH_LIMIT) {
+      const oldest = recentDirectoryFlushes.keys().next().value
+      if (typeof oldest !== "string") break
+      recentDirectoryFlushes.delete(oldest)
+    }
+  }
 
   const getOrCreateDir = (directory: string): DirectoryQueue => {
     let d = directories.get(directory)
@@ -412,7 +427,7 @@ export function createEventPipeline(input: EventPipelineInput) {
       buffer: [],
       coalesced: new Map(),
       timer: undefined,
-      last: 0,
+      last: recentDirectoryFlushes.get(directory) ?? 0,
     }
     directories.set(directory, d)
     return d
@@ -456,7 +471,10 @@ export function createEventPipeline(input: EventPipelineInput) {
       clearTimeout(d.timer)
       d.timer = undefined
     }
-    if (d.queue.length === 0) return
+    if (d.queue.length === 0) {
+      directories.delete(directory)
+      return
+    }
 
     const events = d.queue
     d.queue = d.buffer
@@ -465,6 +483,7 @@ export function createEventPipeline(input: EventPipelineInput) {
     d.coalesced.clear()
 
     d.last = Date.now()
+    rememberDirectoryFlush(directory, d.last)
     syncDebug.pipeline.flush(events.length)
     responsivenessPerfCount("event_pipeline.flush_count")
     responsivenessPerfObserve("event_pipeline.flush_size", events.length)
@@ -475,6 +494,9 @@ export function createEventPipeline(input: EventPipelineInput) {
     responsivenessPerfObserve("event_pipeline.flush_ms", nowMs() - startedAt)
 
     d.buffer.length = 0
+    if (d.queue.length === 0 && !d.timer && directories.get(directory) === d) {
+      directories.delete(directory)
+    }
   }
 
   const flushAll = () => {
@@ -499,6 +521,21 @@ export function createEventPipeline(input: EventPipelineInput) {
         ? STREAMING_FLUSH_FRAME_MS
         : FLUSH_FRAME_MS
     d.timer = setTimeout(() => flushDir(directory), Math.max(0, flushFrameMs - elapsed))
+  }
+
+  const releaseDirectory = (directory: string): boolean => {
+    const releasedRecent = recentDirectoryFlushes.delete(directory)
+    const d = directories.get(directory)
+    if (!d) return releasedRecent
+    if (d.timer) {
+      clearTimeout(d.timer)
+      d.timer = undefined
+    }
+    d.queue.length = 0
+    d.buffer.length = 0
+    d.coalesced.clear()
+    directories.delete(directory)
+    return true
   }
 
   const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -591,6 +628,15 @@ export function createEventPipeline(input: EventPipelineInput) {
   const enqueueEvent = (directory: string, payload: Event) => {
     responsivenessPerfCount("event_pipeline.enqueue_count")
     const normalizedPayload = normalizeIncomingEvent(payload)
+    const normalizedType = (normalizedPayload as unknown as { type?: string }).type
+    if (
+      normalizedType === "openchamber:managed-task"
+      || normalizedType === "openchamber:managed-task-removed"
+      || normalizedType === "openchamber:managed-orchestration-warning"
+    ) {
+      onManagedOrchestrationEvent?.(normalizedPayload)
+      return
+    }
     const routedDirectory = routeDirectory?.(directory, normalizedPayload) || directory
     const rendererTarget = getRendererTimingTarget(normalizedPayload)
     if (rendererTarget?.sessionId || rendererTarget?.assistantMessageId) {
@@ -1034,7 +1080,14 @@ export function createEventPipeline(input: EventPipelineInput) {
     }
     abort.abort()
     flushAll()
+    recentDirectoryFlushes.clear()
   }
 
-  return { cleanup, enqueueEvent }
+  return {
+    cleanup,
+    enqueueEvent,
+    releaseDirectory,
+    getDirectoryQueueCount: () => directories.size,
+    getRecentDirectoryCount: () => recentDirectoryFlushes.size,
+  }
 }

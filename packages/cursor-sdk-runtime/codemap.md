@@ -6,13 +6,15 @@ Shared Cursor SDK runtime for DevRyan hosts. It keeps Cursor model execution, SD
 ## Design
 - `index.js`: ESM runtime and credential helpers.
 - `ripgrep-path.js`: resolves and configures the Cursor SDK platform `rg` binary for direct, one-shot worker, and persistent worker execution without exposing absolute paths in runtime status.
-- `persistent-worker.mjs`: long-lived Node/Electron-as-Node prompt worker that keeps `@cursor/sdk` imported, caches Cursor agents per session/directory, and multiplexes prompt/cancel events by request id.
+- `persistent-worker.mjs`: long-lived Node/Electron-as-Node prompt worker that keeps `@cursor/sdk` imported, multiplexes prompt/cancel events by request id, and owns an active-aware Agent cache capped at 16 idle entries with a 30-minute idle TTL. Session deletion releases matching entries, active entries defer release until their run settles, and shutdown closes all retained Agents.
+- `agent-cache.js`: dependency-free count/TTL/LRU ownership policy for in-process Cursor Agent objects, including active-run protection and exactly-once eviction cleanup.
 - `node-worker.mjs`: one-shot fallback prompt worker retained for startup failures and compatibility tests.
 - `plan-card-normalize.js`: normalizes Cursor plan-mode assistant parts so structured plans are promoted into the shared `<!--plan-->` card marker format.
 - `title-generation.js`: builds and normalizes isolated Cursor Auto requests for concise session titles shared by direct and worker execution.
 - `index.d.ts`: Type declarations consumed by TypeScript packages.
 - SDK auth uses `CURSOR_API_KEY`, then `cursor-acp.key`, then `cursor-acp.token`.
 - Usage/quota auth is intentionally separate and only reads `cursor-acp.usageSessionToken`.
+- Tool-call normalization preserves explicit SDK terminal status. Partial task/tool output survives a later error or cancellation, while provider failure reasons remain attached to the same canonical tool part.
 - Host runtimes may pass `resolveAgentPrompt` and `resolveAgentDefinitions` so Cursor prompts include the selected DevRyan agent markdown and Cursor SDK custom subagents inherit the DevRyan-selected parent model.
 - Bun and desktop Electron hosts run Cursor prompt work through `node-worker.mjs` instead of the host process. Packaged Electron launches its own executable with `ELECTRON_RUN_AS_NODE=1`; prompt workers use the selected project as their process cwd while the script remains executable from `app.asar`, and persistent workers are reused per directory with a small LRU cap.
 - Local Cursor agents bind both `local.cwd` and the SDK platform `workspaceRef` to the request directory so shell tools and persisted agent state stay scoped to the selected project instead of the worker process directory.
@@ -27,4 +29,4 @@ Shared Cursor SDK runtime for DevRyan hosts. It keeps Cursor model execution, SD
 ## Integration
 - Web/Electron creates the runtime in `packages/web/server/index.js` and intercepts `cursor-acp` prompt sends before the OpenCode proxy.
 - Web/Electron merges `getSessionStatus()` into `/api/session/status` so Cursor SDK sessions report live busy/idle state alongside OpenCode sessions.
-- VS Code uses the shared credential/status/configure helpers through `packages/vscode/src/bridge-system-runtime.ts`.
+- VS Code uses the shared credential/status/configure helpers through `packages/vscode/src/bridge-system-runtime.ts` and the same prompt/status/message/abort owner for managed Cursor children through `packages/vscode/src/managedOpenCodeExecutor.ts`.

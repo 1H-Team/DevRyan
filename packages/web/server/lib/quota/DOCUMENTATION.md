@@ -65,6 +65,31 @@ All providers should return results via shared helpers to preserve API shape:
 
 Quota routes accept the active project directory via `x-opencode-directory` or `?directory=` so project-local `.opencode/opencode.json` provider config is included in provider detection.
 
+## Client refresh ownership
+
+The shared UI has one quota polling owner in `packages/ui/src/apps/AppEffects.tsx`.
+It delegates scheduling to `packages/ui/src/stores/quota-refresh-coordinator.ts`
+and state/transport to `packages/ui/src/stores/useQuotaStore.ts`.
+
+- Startup performs configured-provider discovery through
+  `GET /api/quota/providers`, followed by one initial refresh of only those
+  provider IDs.
+- The mandatory baseline cadence is 30 minutes. The existing optional
+  auto-refresh preference may choose a faster 30-second to 5-minute cadence,
+  but it does not disable the baseline refresh.
+- Header, desktop chrome, VS Code, and Usage settings surfaces can request a
+  manual refresh but do not own timers.
+- Provider requests are deduplicated per provider. A coordinator request that
+  arrives during a cycle is merged into at most one ordered follow-up cycle.
+- Successful data is retained when a later request fails. UI state records
+  `lastAttemptAt`, `lastSuccessAt`, and `refreshError` separately and derives
+  staleness from the active cadence.
+- Authentication and provider-configuration success paths request safe
+  rediscovery instead of starting additional polling loops.
+
+Do not log quota payloads, provider tokens, cookies, or response bodies when
+measuring refresh behavior. Request counts and status codes are sufficient.
+
 ## Add a new provider (quick steps)
 1. Choose module shape based on complexity:
    - Simple providers: create `packages/web/server/lib/quota/providers/<provider>.js`.

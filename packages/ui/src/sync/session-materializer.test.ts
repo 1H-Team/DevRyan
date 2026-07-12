@@ -8,7 +8,9 @@ import {
   markArchived,
   markUnarchived,
   offloadArchivedSessionNow,
+  getSessionMaterializerDirectoryRetainedCountsForTest,
   registerSessionMaterializer,
+  releaseSessionMaterializerDirectory,
 } from "./session-materializer"
 
 describe("session-materializer", () => {
@@ -85,5 +87,57 @@ describe("session-materializer", () => {
     expect(getMaterializationState("ses_unarchive", "/unarchive/project").archived).toBe(false)
     cancelArchivedOffload("ses_unarchive", "/unarchive/project")
     unregister()
+  })
+
+  test("releases callbacks, state, and archived timers for only the disposed directory", async () => {
+    const callbacks = {
+      ensureFirstPage: async () => undefined,
+      loadOlderMessages: async () => undefined,
+      offloadSession: () => undefined,
+    }
+    registerSessionMaterializer("/release/a", callbacks)
+    registerSessionMaterializer("/release/b", callbacks)
+    await ensureSessionMaterialized("ses_a", "/release/a")
+    await ensureSessionMaterialized("ses_b", "/release/b")
+    markArchived("ses_a", "/release/a")
+    markArchived("ses_b", "/release/b")
+
+    releaseSessionMaterializerDirectory("/release/a")
+
+    expect(getSessionMaterializerDirectoryRetainedCountsForTest("/release/a")).toEqual({
+      callbacks: 0,
+      states: 0,
+      timers: 0,
+    })
+    expect(getSessionMaterializerDirectoryRetainedCountsForTest("/release/b")).toEqual({
+      callbacks: 1,
+      states: 1,
+      timers: 1,
+    })
+
+    releaseSessionMaterializerDirectory("/release/b")
+  })
+
+  test("does not let a late materialization completion recreate disposed state", async () => {
+    let resolve!: () => void
+    const pending = new Promise<void>((done) => {
+      resolve = done
+    })
+    registerSessionMaterializer("/release/late", {
+      ensureFirstPage: () => pending,
+      loadOlderMessages: async () => undefined,
+      offloadSession: () => undefined,
+    })
+
+    const materializing = ensureSessionMaterialized("ses_late", "/release/late")
+    releaseSessionMaterializerDirectory("/release/late")
+    resolve()
+    await materializing
+
+    expect(getSessionMaterializerDirectoryRetainedCountsForTest("/release/late")).toEqual({
+      callbacks: 0,
+      states: 0,
+      timers: 0,
+    })
   })
 })

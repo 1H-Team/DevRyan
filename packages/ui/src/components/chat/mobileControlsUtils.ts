@@ -284,7 +284,15 @@ export const resolveCursorAcpVariantSelection = (
     };
 };
 
-export const formatEffortLabel = (variant?: string) => {
+export type EffortLabelContext = {
+    providerId?: string | null;
+};
+
+const shouldUseLightLabel = (context?: EffortLabelContext) => (
+    context?.providerId?.trim().toLowerCase() === 'openai'
+);
+
+export const formatEffortLabel = (variant?: string, context?: EffortLabelContext) => {
     if (!variant || variant.trim().length === 0) {
         return 'Default';
     }
@@ -297,7 +305,7 @@ export const formatEffortLabel = (variant?: string) => {
         return cursorVariant.effort
             .split('-')
             .filter(Boolean)
-            .map((part) => part.toLowerCase() === 'low' ? 'Light' : capitalizeLabel(part))
+            .map((part) => part.toLowerCase() === 'low' && shouldUseLightLabel(context) ? 'Light' : capitalizeLabel(part))
             .join(' ');
     }
     return trimmed
@@ -308,7 +316,7 @@ export const formatEffortLabel = (variant?: string) => {
             if (normalized === 'xhigh') {
                 return 'Extra High';
             }
-            if (normalized === 'low') {
+            if (normalized === 'low' && shouldUseLightLabel(context)) {
                 return 'Light';
             }
             return capitalizeLabel(normalized);
@@ -316,15 +324,18 @@ export const formatEffortLabel = (variant?: string) => {
         .join(' ');
 };
 
-export const getCursorAcpVariantDisplayLabel = (state: CursorAcpVariantState | null | undefined) => {
+export const getCursorAcpVariantDisplayLabel = (
+    state: CursorAcpVariantState | null | undefined,
+    context?: EffortLabelContext,
+) => {
     if (!state) {
         return null;
     }
     if (state.selectedEffort) {
-        return formatEffortLabel(state.selectedEffort);
+        return formatEffortLabel(state.selectedEffort, context);
     }
     if (state.canToggleFast && !state.fastEnabled && !state.canToggleThinking && state.visibleVariantOptions.length === 0) {
-        return formatEffortLabel(undefined);
+        return formatEffortLabel(undefined, context);
     }
     return null;
 };
@@ -339,9 +350,10 @@ export const resolveVisibleEffortVariant = (
 export const formatVisibleEffortLabel = (
     variant: string | undefined,
     variants: string[],
+    context?: EffortLabelContext,
 ) => {
     const visibleVariant = resolveVisibleEffortVariant(variant, variants);
-    return visibleVariant ? formatEffortLabel(visibleVariant) : null;
+    return visibleVariant ? formatEffortLabel(visibleVariant, context) : null;
 };
 
 export const DEFAULT_EFFORT_KEY = 'default';

@@ -300,6 +300,7 @@ const buildGitHubCopilotProviderOverlay = async (options = {}) => {
   const {
     discoverGitHubCopilotModels,
     enrichGitHubCopilotModels,
+    withGitHubCopilotAutoModel,
   } = await import('./github-copilot-models.js');
   const fetchImpl = typeof options.fetchImpl === 'function' ? options.fetchImpl : globalThis.fetch;
   const discovery = await discoverGitHubCopilotModels({ readAuthFile, fetchImpl });
@@ -307,7 +308,7 @@ const buildGitHubCopilotProviderOverlay = async (options = {}) => {
     return null;
   }
 
-  const models = enrichGitHubCopilotModels(discovery.models);
+  const models = withGitHubCopilotAutoModel(enrichGitHubCopilotModels(discovery.models));
   if (!isPlainObject(models) || Object.keys(models).length === 0) {
     return null;
   }

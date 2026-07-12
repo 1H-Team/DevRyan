@@ -14,6 +14,7 @@ const providers = [
     models: [
       { id: 'gpt-5', name: 'GPT-5' },
       { id: 'gpt-5-mini', name: 'GPT-5 mini' },
+      { id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna', available: false },
     ],
   },
   {
@@ -40,6 +41,7 @@ describe('buildFavoriteModelsList', () => {
       { providerID: 'openai', modelID: 'missing-model' },
       { providerID: 'openai', modelID: 'gpt-5' },
       { providerID: 'openai', modelID: 'gpt-5-mini' },
+      { providerID: 'openai', modelID: 'gpt-5.6-luna' },
       { providerID: 'cursor', modelID: 'cursor-base-fast' },
       { providerID: 'anthropic', modelID: 'claude-sonnet' },
     ];

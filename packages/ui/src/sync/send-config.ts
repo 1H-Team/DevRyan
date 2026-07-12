@@ -7,6 +7,7 @@ import {
   resolveSelectableAgentOptions,
 } from "@/lib/agentSelection"
 import { resolveProviderModelVariant } from "@/lib/providers/variantControls"
+import { isProviderModelAvailable, type ProviderModelAvailability } from "@/lib/providers/modelAvailability"
 
 export type SendConfig = {
   providerID?: string
@@ -16,7 +17,7 @@ export type SendConfig = {
   planMode?: boolean
 }
 
-export type SendConfigProviderModel = {
+export type SendConfigProviderModel = ProviderModelAvailability & {
   id: string
   variants?: Record<string, unknown>
 }
@@ -68,7 +69,7 @@ function findProviderModel(providers: SendConfigProvider[], providerID?: string,
   if (!providerID || !modelID) return null
   const provider = providers.find((entry) => entry.id === providerID)
   const model = provider?.models?.find((entry) => entry.id === modelID)
-  return model ? { provider, model } : null
+  return provider && model && isProviderModelAvailable(model) ? { provider, model } : null
 }
 
 function resolveVariantForModel(
@@ -210,16 +211,65 @@ export function resolveSessionSendConfigSnapshot(
     : null
   const sessionModel = snapshot.sessionModelSelection ?? snapshot.contextSessionModelSelection
 
-  const providerID = requestedProviderID
-    ?? agentModel?.providerId
-    ?? sessionModel?.providerId
-    ?? clean(snapshot.currentProviderId)
-    ?? snapshot.lastUsedProvider?.providerID
-  const modelID = requestedModelID
-    ?? agentModel?.modelId
-    ?? sessionModel?.modelId
-    ?? clean(snapshot.currentModelId)
-    ?? snapshot.lastUsedProvider?.modelID
+  if (snapshot.providers.length === 0) {
+    return {
+      providerID: requestedProviderID
+        ?? agentModel?.providerId
+        ?? sessionModel?.providerId
+        ?? clean(snapshot.currentProviderId)
+        ?? snapshot.lastUsedProvider?.providerID,
+      modelID: requestedModelID
+        ?? agentModel?.modelId
+        ?? sessionModel?.modelId
+        ?? clean(snapshot.currentModelId)
+        ?? snapshot.lastUsedProvider?.modelID,
+      agent,
+      variant: undefined,
+      planMode: requested.planMode ?? snapshot.planMode,
+    }
+  }
+
+  const requestedModel = findProviderModel(snapshot.providers, requestedProviderID, requestedModelID)
+  const storedAgentModel = findProviderModel(snapshot.providers, agentModel?.providerId, agentModel?.modelId)
+  const storedSessionModel = findProviderModel(snapshot.providers, sessionModel?.providerId, sessionModel?.modelId)
+  const currentModel = findProviderModel(
+    snapshot.providers,
+    clean(snapshot.currentProviderId),
+    clean(snapshot.currentModelId),
+  )
+  const lastUsedModel = findProviderModel(
+    snapshot.providers,
+    snapshot.lastUsedProvider?.providerID,
+    snapshot.lastUsedProvider?.modelID,
+  )
+
+  if ((requestedProviderID || requestedModelID) && !requestedModel) {
+    return {
+      providerID: undefined,
+      modelID: undefined,
+      agent,
+      variant: undefined,
+      planMode: requested.planMode ?? snapshot.planMode,
+    }
+  }
+
+  const selected = requestedModel
+    ?? storedAgentModel
+    ?? storedSessionModel
+    ?? currentModel
+    ?? lastUsedModel
+  const providerID = selected?.provider.id
+  const modelID = selected?.model.id
+
+  if (!providerID || !modelID) {
+    return {
+      providerID: undefined,
+      modelID: undefined,
+      agent,
+      variant: undefined,
+      planMode: requested.planMode ?? snapshot.planMode,
+    }
+  }
 
   const requestedOrStoredVariant = Object.prototype.hasOwnProperty.call(requested, "variant")
     ? requested.variant

@@ -68,6 +68,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getOpenChamberEventClients,
       writeSseEvent,
       emitSyntheticOpenCodeEvent,
+      resolveZenModel,
     } = routeDependencies;
 
     const {
@@ -107,6 +108,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       isExternalOpenCode,
       cursorSdkRuntime,
       emitSyntheticOpenCodeEvent,
+      resolveZenModel,
     });
 
     registerProjectIconRoutes(app, {

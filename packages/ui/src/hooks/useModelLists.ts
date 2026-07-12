@@ -3,6 +3,7 @@ import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { isHiddenProviderModelRef } from '@/lib/providers/modelVisibility';
 import { shouldHidePairedFastModel } from '@/lib/providers/variantControls';
+import { isProviderModelAvailable } from '@/lib/providers/modelAvailability';
 import type { Provider } from '@opencode-ai/sdk/v2';
 
 type ProviderModel = Provider["models"][string];
@@ -35,6 +36,7 @@ export const buildFavoriteModelsList = ({
     const providerModels = provider.models;
     const model = providerModels.find((m: ProviderModel) => m.id === modelID);
     if (!model) return null;
+    if (!isProviderModelAvailable(model)) return null;
     if (isHiddenProviderModelRef(hiddenModels, providerID, model)) return null;
     if (shouldHidePairedFastModel(provider, modelID)) return null;
     return {

@@ -20,6 +20,26 @@ describe("submit interrupt decision", () => {
     })).toBe(true)
   })
 
+  test("does not interrupt an explicit submit for a busy subtask session", () => {
+    expect(shouldInterruptBeforeSubmit({
+      currentSessionId: "session-child",
+      sessionPhase: "busy",
+      queuedMessageCount: 0,
+      queuedOnly: false,
+      isSubtaskSession: true,
+    })).toBe(false)
+  })
+
+  test("does not interrupt a queued submit for a busy subtask session", () => {
+    expect(shouldInterruptBeforeSubmit({
+      currentSessionId: "session-child",
+      sessionPhase: "busy",
+      queuedMessageCount: 1,
+      queuedOnly: true,
+      isSubtaskSession: true,
+    })).toBe(false)
+  })
+
   test("does not interrupt an explicit submit for an idle session", () => {
     expect(shouldInterruptBeforeSubmit({
       currentSessionId: "session-a",

@@ -16,6 +16,7 @@ import {
   splitAntigravityProviderForDisplay,
 } from '@/lib/providers/antigravity';
 import { sortProviderTreeForPicker } from '@/lib/providers/sorting';
+import { isProviderModelAvailable } from '@/lib/providers/modelAvailability';
 import type { ModelMetadata } from '@/types';
 import { useI18n } from '@/lib/i18n';
 import { getOrderedThinkingVariants, resolveThinkingVariant } from '@/lib/providers/variantControls';
@@ -213,6 +214,7 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
       .map((provider) => {
         const models = Array.isArray(provider.models) ? provider.models : [];
         const filteredModels = models.filter((model) => {
+          if (!isProviderModelAvailable(model)) return false;
           const modelName = getTruncatedModelDisplayName(model);
           return filterByQuery(modelName, provider.name || provider.id || '');
         });
@@ -565,13 +567,13 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
                           )}
                         />
                         <SelectValue placeholder={t('multirun.modelMultiSelect.variant.placeholder')}>
-                          {(value) => formatEffortLabel(value)}
+                          {(value) => formatEffortLabel(value, { providerId: model.providerID })}
                         </SelectValue>
                       </SelectTrigger>
                       <SelectContent fitContent>
                         {variantKeys.map((variant) => (
                           <SelectItem key={variant} value={variant} className="pr-2 [&>span:first-child]:hidden">
-                            {formatEffortLabel(variant)}
+                            {formatEffortLabel(variant, { providerId: model.providerID })}
                           </SelectItem>
                         ))}
                       </SelectContent>

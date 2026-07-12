@@ -1,9 +1,9 @@
 export const GITHUB_COPILOT_FALLBACK_MODELS = {
-  'gpt-5.1-codex': {
-    id: 'gpt-5.1-codex',
-    name: 'GPT-5.1 Codex',
+  'gpt-4.1': {
+    id: 'gpt-4.1',
+    name: 'GPT-4.1',
     api: {
-      id: 'gpt-5.1-codex',
+      id: 'gpt-4.1',
       url: 'https://api.githubcopilot.com',
       npm: '@ai-sdk/github-copilot',
     },
@@ -14,15 +14,63 @@ const GITHUB_COPILOT_MODEL_URL = 'https://api.githubcopilot.com/models';
 const GITHUB_COPILOT_AUTH_ALIASES = ['github-copilot', 'copilot'];
 const GITHUB_COPILOT_API_BASE = 'https://api.githubcopilot.com';
 const GITHUB_COPILOT_NPM = '@ai-sdk/github-copilot';
+const GITHUB_COPILOT_UTILITY_MODEL_IDS = new Set([
+  'gpt-4o-mini',
+  'gpt-4o',
+  'gpt-4.1',
+  'gpt-5.4-nano',
+]);
 const ACCOUNT_MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
-
-let accountModelsCache = null;
 
 const isPlainObject = (value) => (
   value !== null
   && typeof value === 'object'
   && !Array.isArray(value)
 );
+
+export const GITHUB_COPILOT_AUTO_MODEL = {
+  id: 'auto',
+  name: 'Auto',
+  limit: {
+    context: 128_000,
+    input: 128_000,
+    output: 16_384,
+  },
+  capabilities: {
+    temperature: true,
+    reasoning: false,
+    attachment: true,
+    toolcall: true,
+    input: {
+      text: true,
+      audio: false,
+      image: true,
+      video: false,
+      pdf: false,
+    },
+    output: {
+      text: true,
+      audio: false,
+      image: false,
+      video: false,
+      pdf: false,
+    },
+    interleaved: false,
+  },
+  api: {
+    id: 'auto',
+    url: GITHUB_COPILOT_API_BASE,
+    npm: GITHUB_COPILOT_NPM,
+  },
+};
+
+export const withGitHubCopilotAutoModel = (models) => ({
+  auto: GITHUB_COPILOT_AUTO_MODEL,
+  ...(isPlainObject(models) ? models : {}),
+  auto: GITHUB_COPILOT_AUTO_MODEL,
+});
+
+let accountModelsCache = null;
 
 const getAuthEntry = (auth) => {
   if (!isPlainObject(auth)) {
@@ -178,7 +226,11 @@ const normalizeCopilotModelsPayload = (payload) => {
   const pickerEnabled = hasCapabilityRows
     ? usable.filter((row) => row.model_picker_enabled === true)
     : [];
-  const selected = pickerEnabled.length > 0 ? pickerEnabled : usable;
+  const selected = pickerEnabled.length > 0
+    ? pickerEnabled
+    : hasCapabilityRows
+      ? usable.filter((row) => GITHUB_COPILOT_UTILITY_MODEL_IDS.has(row.id.trim()))
+      : usable;
   const models = {};
 
   for (const row of selected) {

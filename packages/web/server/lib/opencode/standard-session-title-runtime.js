@@ -1,0 +1,136 @@
+import { summarizeText } from '../text/summarization.js';
+
+const GENERATED_NEW_SESSION_TITLE_PATTERN = /^new session\s*-\s*\d{4}-\d{2}-\d{2}t\d{2}:\d{2}:\d{2}(?:\.\d+)?z$/i;
+const DEFAULT_SESSION_TITLE = 'Untitled Session';
+const SESSION_TITLE_MAX_LENGTH = 80;
+
+const trimString = (value) => (typeof value === 'string' ? value.trim() : '');
+const normalizeWhitespace = (value) => trimString(value).replace(/\s+/g, ' ');
+
+const getFirstUserText = (records) => {
+  if (!Array.isArray(records)) return '';
+  for (const record of records) {
+    if (record?.info?.role !== 'user') continue;
+    const text = (Array.isArray(record.parts) ? record.parts : [])
+      .filter((part) => part?.type === 'text' && part?.synthetic !== true)
+      .map((part) => trimString(part.text ?? part.content ?? part.value))
+      .filter(Boolean)
+      .join(' ');
+    if (text) return normalizeWhitespace(text);
+  }
+  return '';
+};
+
+const isEligibleStandardTitle = (title) => {
+  const normalized = normalizeWhitespace(title);
+  return !normalized
+    || normalized === DEFAULT_SESSION_TITLE
+    || GENERATED_NEW_SESSION_TITLE_PATTERN.test(normalized);
+};
+
+const generateDefaultTitle = async ({ text, zenModel }) => {
+  const result = await summarizeText({
+    text,
+    threshold: 0,
+    maxLength: SESSION_TITLE_MAX_LENGTH,
+    zenModel,
+    mode: 'title',
+  });
+  return result.summarized ? trimString(result.summary) || null : null;
+};
+
+export const createStandardSessionTitleRuntime = ({
+  generateTitle = null,
+  resolveZenModel = async () => 'gpt-5-nano',
+  fetchImpl = fetch,
+  buildOpenCodeUrl,
+  getOpenCodeAuthHeaders = () => ({}),
+  logger = console,
+} = {}) => {
+  const pendingBySession = new Map();
+  const titleGenerator = typeof generateTitle === 'function'
+    ? generateTitle
+    : async ({ text, directory }) => generateDefaultTitle({
+        text,
+        directory,
+        zenModel: await resolveZenModel(),
+      });
+
+  const buildSessionUrl = (sessionID, directory, suffix = '') => {
+    if (typeof buildOpenCodeUrl !== 'function') return null;
+    const query = trimString(directory) ? `?directory=${encodeURIComponent(trimString(directory))}` : '';
+    return buildOpenCodeUrl(`/session/${encodeURIComponent(sessionID)}${suffix}${query}`, '');
+  };
+
+  const readJson = async (url) => {
+    if (!url) return null;
+    const response = await fetchImpl(url, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        ...getOpenCodeAuthHeaders(),
+      },
+    });
+    if (!response?.ok) return null;
+    return response.json().catch(() => null);
+  };
+
+  const updateSessionTitle = async (sessionID, directory, title) => {
+    const url = buildSessionUrl(sessionID, directory);
+    if (!url) return false;
+    const response = await fetchImpl(url, {
+      method: 'PATCH',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        ...getOpenCodeAuthHeaders(),
+      },
+      body: JSON.stringify({ title }),
+    });
+    return Boolean(response?.ok);
+  };
+
+  const run = async ({ sessionID, directory, text }) => {
+    if (!trimString(sessionID)) return false;
+
+    const records = await readJson(buildSessionUrl(sessionID, directory, '/message'));
+    const firstUserText = getFirstUserText(records) || normalizeWhitespace(text);
+    if (!firstUserText) return false;
+
+    const before = await readJson(buildSessionUrl(sessionID, directory));
+    const observedTitle = trimString(before?.title);
+    if (!before || !isEligibleStandardTitle(observedTitle)) return false;
+
+    const generatedTitle = trimString(await titleGenerator({
+      text: firstUserText,
+      directory: trimString(directory) || undefined,
+    }));
+    if (!generatedTitle || generatedTitle === observedTitle) return false;
+
+    const current = await readJson(buildSessionUrl(sessionID, directory));
+    if (!current || trimString(current.title) !== observedTitle) return false;
+    return updateSessionTitle(sessionID, directory, generatedTitle);
+  };
+
+  const schedule = (input = {}) => {
+    const sessionID = trimString(input.sessionID);
+    if (!sessionID) return Promise.resolve(false);
+    const existing = pendingBySession.get(sessionID);
+    if (existing) return existing;
+
+    const job = run({ sessionID, directory: input.directory, text: input.text })
+      .catch((error) => {
+        logger.warn?.('[SessionTitle] Failed to generate standard-provider session title:', error instanceof Error ? error.message : error);
+        return false;
+      })
+      .finally(() => {
+        if (pendingBySession.get(sessionID) === job) {
+          pendingBySession.delete(sessionID);
+        }
+      });
+    pendingBySession.set(sessionID, job);
+    return job;
+  };
+
+  return { schedule };
+};

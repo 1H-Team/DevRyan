@@ -96,6 +96,25 @@ const createOpenCodeSnapshotRepo = async (directory, snapshotRoot, projectID) =>
   return stdout.trim();
 };
 
+const createOpenCodeSnapshotRepoWithFiles = async (directory, snapshotRoot, projectID, files) => {
+  const sourceDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-snapshot-source-'));
+  try {
+    await execFileAsync('git', ['clone', '--quiet', directory, sourceDirectory]);
+    await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: sourceDirectory });
+    await execFileAsync('git', ['config', 'user.name', 'OpenChamber Test'], { cwd: sourceDirectory });
+    for (const [file, content] of Object.entries(files)) {
+      const absolute = path.join(sourceDirectory, file);
+      await fs.mkdir(path.dirname(absolute), { recursive: true });
+      await fs.writeFile(absolute, content);
+    }
+    await commitAll(sourceDirectory, 'snapshot state');
+    const snapshotHash = await createOpenCodeSnapshotRepo(sourceDirectory, snapshotRoot, projectID);
+    return snapshotHash;
+  } finally {
+    await fs.rm(sourceDirectory, { recursive: true, force: true });
+  }
+};
+
 describe('OpenCode proxy SSE forwarding', () => {
   let upstreamServer;
   let proxyServer;
@@ -408,6 +427,7 @@ describe('OpenCode scoped session revert', () => {
   let upstreamServer;
   let proxyServer;
   let repoDirectory;
+  let snapshotRoot;
   let upstreamRevertCalls = 0;
 
   afterEach(async () => {
@@ -416,9 +436,13 @@ describe('OpenCode scoped session revert', () => {
     if (repoDirectory) {
       await fs.rm(repoDirectory, { recursive: true, force: true });
     }
+    if (snapshotRoot) {
+      await fs.rm(snapshotRoot, { recursive: true, force: true });
+    }
     proxyServer = undefined;
     upstreamServer = undefined;
     repoDirectory = undefined;
+    snapshotRoot = undefined;
     upstreamRevertCalls = 0;
   });
 
@@ -462,6 +486,51 @@ describe('OpenCode scoped session revert', () => {
     expect(upstreamRevertCalls).toBe(1);
     expect(await fs.readFile(path.join(repoDirectory, 'file-a.txt'), 'utf8')).toBe('base\n');
     expect(await fs.readFile(path.join(repoDirectory, 'file-b.txt'), 'utf8')).toBe('base\nsession-b\n');
+  });
+
+  it('reverts an added file whose patch has no final newline', async () => {
+    repoDirectory = await createTestRepo();
+    await fs.writeFile(path.join(repoDirectory, 'baseline.txt'), 'base\n');
+    await commitAll(repoDirectory);
+    await fs.writeFile(path.join(repoDirectory, 'added.txt'), 'session-a');
+
+    const upstream = express();
+    upstream.use(express.json());
+    upstream.get('/session/:sessionID/message', (_req, res) => {
+      res.json([
+        userMessageWithDiff('msg-target', {
+          file: 'added.txt',
+          status: 'added',
+          patch: `Index: added.txt
+===================================================================
+--- added.txt
++++ added.txt
+@@ -0,0 +1,1 @@
++session-a
+\\ No newline at end of file
+`,
+          additions: 1,
+          deletions: 0,
+        }),
+      ]);
+    });
+    upstream.post('/session/:sessionID/revert', async (_req, res) => {
+      upstreamRevertCalls += 1;
+      await fs.rm(path.join(repoDirectory, 'added.txt'));
+      res.json({ id: 'session-a', title: 'session-a', revert: { messageID: 'msg-target' } });
+    });
+    upstreamServer = await listen(upstream);
+
+    proxyServer = await listen(createProxyApp(upstreamServer.address().port));
+    const response = await fetch(`http://127.0.0.1:${proxyServer.address().port}/api/openchamber/session/session-a/scoped-revert?directory=${encodeURIComponent(repoDirectory)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messageID: 'msg-target' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(upstreamRevertCalls).toBe(1);
+    await expect(fs.access(path.join(repoDirectory, 'added.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('preserves unrelated hunks in the same file', async () => {
@@ -509,12 +578,161 @@ describe('OpenCode scoped session revert', () => {
     expect(await fs.readFile(path.join(repoDirectory, 'same.txt'), 'utf8')).toBe('one\ntwo\nthree\nsession-b\nfour\n');
   });
 
+  it('does not resurrect an absent file from another session snapshot', async () => {
+    repoDirectory = await createTestRepo();
+    await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\n');
+    await commitAll(repoDirectory);
+
+    snapshotRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-snapshot-root-'));
+    const projectID = 'project-a';
+    const snapshotHash = await createOpenCodeSnapshotRepoWithFiles(
+      repoDirectory,
+      snapshotRoot,
+      projectID,
+      {
+        'file-a.txt': 'base\nsession-a\n',
+        'file-b.txt': 'session-b\n',
+      },
+    );
+
+    await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\nsession-a\n');
+
+    const upstream = express();
+    upstream.use(express.json());
+    upstream.get('/session/:sessionID', (_req, res) => {
+      res.json({ id: 'session-a', projectID });
+    });
+    upstream.get('/session/:sessionID/message', (_req, res) => {
+      res.json([
+        userMessageWithDiff('msg-target', {
+          file: 'file-a.txt',
+          status: 'modified',
+          patch: addedLinePatch('file-a.txt', 'base', 'session-a'),
+          additions: 1,
+          deletions: 0,
+        }),
+        {
+          info: {
+            id: 'msg-assistant',
+            sessionID: 'session-a',
+            role: 'assistant',
+            time: { created: 2, completed: 3 },
+            parentID: 'msg-target',
+          },
+          parts: [
+            {
+              id: 'part-patch',
+              sessionID: 'session-a',
+              messageID: 'msg-assistant',
+              type: 'patch',
+              hash: snapshotHash,
+              files: [path.join(repoDirectory, 'file-a.txt')],
+            },
+          ],
+        },
+      ]);
+    });
+    upstream.post('/session/:sessionID/revert', async (_req, res) => {
+      upstreamRevertCalls += 1;
+      await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\n');
+      await fs.writeFile(path.join(repoDirectory, 'file-b.txt'), 'session-b\n');
+      res.json({ id: 'session-a', title: 'session-a', revert: { messageID: 'msg-target' } });
+    });
+    upstreamServer = await listen(upstream);
+
+    proxyServer = await listen(createProxyApp(upstreamServer.address().port, { openCodeSnapshotRoot: snapshotRoot }));
+    const response = await fetch(`http://127.0.0.1:${proxyServer.address().port}/api/openchamber/session/session-a/scoped-revert?directory=${encodeURIComponent(repoDirectory)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messageID: 'msg-target' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(upstreamRevertCalls).toBe(1);
+    expect(await fs.readFile(path.join(repoDirectory, 'file-a.txt'), 'utf8')).toBe('base\n');
+    await expect(fs.access(path.join(repoDirectory, 'file-b.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('moves an existing revert boundary earlier without replaying already reverted diffs', async () => {
+    repoDirectory = await createTestRepo();
+    await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\n');
+    await commitAll(repoDirectory);
+
+    snapshotRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-snapshot-root-'));
+    const projectID = 'project-a';
+    const snapshotHash = await createOpenCodeSnapshotRepoWithFiles(
+      repoDirectory,
+      snapshotRoot,
+      projectID,
+      {
+        'file-a.txt': 'base\ncheckpoint\nafter\n',
+        'file-b.txt': 'session-b\n',
+      },
+    );
+
+    await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\ncheckpoint\n');
+
+    const upstream = express();
+    upstream.use(express.json());
+    upstream.get('/session/:sessionID', (_req, res) => {
+      res.json({
+        id: 'session-a',
+        projectID,
+        revert: { messageID: 'msg-later', snapshot: snapshotHash },
+      });
+    });
+    upstream.get('/session/:sessionID/message', (_req, res) => {
+      res.json([
+        userMessageWithDiff('msg-target', {
+          file: 'file-a.txt',
+          status: 'modified',
+          patch: addedLinePatch('file-a.txt', 'base', 'checkpoint'),
+          additions: 1,
+          deletions: 0,
+        }),
+        userMessageWithDiff('msg-later', {
+          file: 'file-a.txt',
+          status: 'modified',
+          patch: `diff --git a/file-a.txt b/file-a.txt
+--- a/file-a.txt
++++ b/file-a.txt
+@@ -1,2 +1,3 @@
+ base
+ checkpoint
++after
+`,
+          additions: 1,
+          deletions: 0,
+        }),
+      ]);
+    });
+    upstream.post('/session/:sessionID/revert', async (_req, res) => {
+      upstreamRevertCalls += 1;
+      await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\n');
+      await fs.writeFile(path.join(repoDirectory, 'file-b.txt'), 'session-b\n');
+      res.json({ id: 'session-a', title: 'session-a', revert: { messageID: 'msg-target' } });
+    });
+    upstreamServer = await listen(upstream);
+
+    proxyServer = await listen(createProxyApp(upstreamServer.address().port, { openCodeSnapshotRoot: snapshotRoot }));
+    const response = await fetch(`http://127.0.0.1:${proxyServer.address().port}/api/openchamber/session/session-a/scoped-revert?directory=${encodeURIComponent(repoDirectory)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messageID: 'msg-target' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(upstreamRevertCalls).toBe(1);
+    expect(await fs.readFile(path.join(repoDirectory, 'file-a.txt'), 'utf8')).toBe('base\n');
+    await expect(fs.access(path.join(repoDirectory, 'file-b.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('restores aborted patch files from OpenCode snapshots when message diffs are not finalized', async () => {
     repoDirectory = await createTestRepo();
     await fs.writeFile(path.join(repoDirectory, 'target.txt'), 'base\n');
     await fs.writeFile(path.join(repoDirectory, 'unrelated.txt'), 'base\n');
     await commitAll(repoDirectory);
-    const snapshotRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-snapshot-root-'));
+    snapshotRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-snapshot-root-'));
     const projectID = 'project-a';
     const snapshotHash = await createOpenCodeSnapshotRepo(repoDirectory, snapshotRoot, projectID);
 

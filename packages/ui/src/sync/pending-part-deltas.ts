@@ -164,6 +164,21 @@ export function hasPendingPartDeltasForMessages(
   return false
 }
 
+export function clearPendingPartDeltasForDirectory(
+  store: PendingPartDeltaStore,
+  directory: string,
+): number {
+  if (!directory || directory === "global") return 0
+  const prefix = `${directory}${KEY_SEPARATOR}`
+  let cleared = 0
+  for (const key of store.keys()) {
+    if (!key.startsWith(prefix)) continue
+    store.delete(key)
+    cleared += 1
+  }
+  return cleared
+}
+
 export function applyPendingPartDeltasToParts(
   parts: Part[],
   partID: string,

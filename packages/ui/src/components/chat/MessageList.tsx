@@ -3,6 +3,7 @@ import type { Part } from '@opencode-ai/sdk/v2';
 import { measureElement as measureVirtualElement, type VirtualItem, useVirtualizer } from '@tanstack/react-virtual';
 
 import ChatMessage from './ChatMessage';
+import { PrimaryModelRecovery } from './PrimaryModelRecovery';
 import { areOptionalRenderRelevantMessagesEqual, areRelevantTurnGroupingContextsEqual, areRenderRelevantMessagesEqual } from './message/renderCompare';
 import TurnItem from './components/TurnItem';
 import type { AnimationHandlers, ContentChangeReason } from '@/hooks/useChatAutoFollow';
@@ -1715,6 +1716,10 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                                 activeStreamingPhase={activeStreamingPhase}
                             />
                         ) : null}
+                        <PrimaryModelRecovery
+                            sessionId={sessionKey}
+                            onContentChange={() => stableTailContentChange('structural')}
+                        />
                     </div>
                 </FadeInDisabledProvider>
 

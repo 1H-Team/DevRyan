@@ -9,12 +9,13 @@ Browser-side bootstrap for the VS Code-hosted DevRyan UI. It initializes runtime
 - **Bootstrap resilience**: connection status state machine + overlay logic tolerates delayed API readiness and partial fetch failures.
 - **Theme translation**: VS Code palette is converted into shared theme token shape before app mount.
 - **SSE tunneling**: stream start/stop requests go through extension messaging rather than direct unrestricted sockets.
+- **Managed-orchestration adapter**: `api/orchestration.ts` maps the shared HTTP-shaped snapshot/status/cancel/acknowledge surface to the extension host, preserves authoritative status codes, and enforces the UI body limit.
 
 ## Flow
 1. `main.tsx` reads injected globals from `webviewHtml.ts` (workspace, status, panel type, platform).
 2. Webview initializes bridge-backed runtime API surface and connection state.
 3. Shared UI mounts and uses runtime APIs; outbound API intents become bridge messages.
-4. Incoming messages (`connectionStatus`, commands, stream events) update globals and dispatch window events.
+4. Incoming messages (`connectionStatus`, commands, stream events, safe managed-task projections/removals) update globals and dispatch window events; `managedOrchestrationWindowEvents.ts` owns the narrow event-type allowlist.
 5. Loading overlay hides only after UI mount + connection/critical bootstrap conditions.
 
 ## Integration

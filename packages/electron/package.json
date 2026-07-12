@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/electron",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "private": true,
   "description": "Electron desktop runtime for DevRyan",
   "author": "DevRyan",
@@ -14,7 +14,7 @@
   },
   "devDependencies": {
     "@electron/rebuild": "^3.7.0",
-    "electron": "^41.2.1",
+    "electron": "41.2.1",
     "electron-builder": "^26.0.0"
   },
   "desktopPrerequisites": [
@@ -31,6 +31,7 @@
     "rebuild:native": "node ./scripts/rebuild-native.mjs",
     "build:speech-helper": "node ./scripts/build-speech-helper.mjs",
     "package": "bun run build:web-assets && bun run build:speech-helper && bun run bundle:main && bun run rebuild:native && electron-builder",
+    "test": "bun test startup-splash.test.mjs scripts/rebuild-native.test.mjs tests/*.test.mjs",
     "finalize:latest-yml": "node ./scripts/finalize-latest-yml.mjs",
     "type-check": "node --check ./origin-policy.mjs && node --check ./main.mjs && node --check ./preload.mjs",
     "lint": "node -e \"process.exit(0)\""

@@ -37,7 +37,18 @@ describe("github-copilot-models plugin selection", () => {
       }),
     ]);
 
-    expect(Object.keys(models)).toEqual(["gpt-visible"]);
+    expect(Object.keys(models)).toEqual(["auto", "gpt-visible"]);
+    expect(models.auto.api).toEqual({
+      id: "auto",
+      url: "https://api.githubcopilot.com",
+      npm: "@ai-sdk/github-copilot",
+    });
+    expect(models.auto.capabilities).toMatchObject({
+      temperature: true,
+      reasoning: false,
+      attachment: true,
+      toolcall: true,
+    });
     expect(models["gpt-visible"].api).toEqual({
       id: "gpt-visible",
       url: "https://api.githubcopilot.com",
@@ -45,10 +56,12 @@ describe("github-copilot-models plugin selection", () => {
     });
   });
 
-  test("falls back to all usable models when picker flags are all false", () => {
+  test("falls back to universal utility models when picker flags are all false", () => {
     const models = selectGitHubCopilotRemoteModels([
       usable("gpt-5.3-codex"),
       usable("gpt-5.4-mini"),
+      usable("gpt-4.1"),
+      usable("gpt-4o"),
       usable("text-embedding-3-small"),
       usable("incomplete", {
         capabilities: {
@@ -60,9 +73,9 @@ describe("github-copilot-models plugin selection", () => {
       usable("disabled", { policy: { state: "disabled" } }),
     ]);
 
-    expect(Object.keys(models).sort()).toEqual(["gpt-5.3-codex", "gpt-5.4-mini"]);
-    expect(models["gpt-5.3-codex"].providerID).toBe("github-copilot");
-    expect(models["gpt-5.3-codex"].capabilities.toolcall).toBe(true);
+    expect(Object.keys(models).sort()).toEqual(["auto", "gpt-4.1", "gpt-4o"]);
+    expect(models["gpt-4.1"].providerID).toBe("github-copilot");
+    expect(models["gpt-4.1"].capabilities.toolcall).toBe(true);
   });
 
   test("uses anthropic npm + messages endpoint for /v1/messages models", () => {
@@ -91,6 +104,7 @@ describe("github-copilot-models plugin hook", () => {
         data: [
           usable("gpt-5.3-codex"),
           usable("gpt-5.4-mini"),
+          usable("gpt-4.1"),
         ],
       }),
     });
@@ -103,7 +117,7 @@ describe("github-copilot-models plugin hook", () => {
         { models: {} },
         { auth: { type: "oauth", refresh: "token", access: "token" } },
       );
-      expect(Object.keys(models).sort()).toEqual(["gpt-5.3-codex", "gpt-5.4-mini"]);
+      expect(Object.keys(models)).toEqual(["auto", "gpt-4.1"]);
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -125,5 +139,6 @@ describe("github-copilot-models plugin hook", () => {
       url: "https://api.githubcopilot.com",
       npm: "@ai-sdk/github-copilot",
     });
+    expect(models.auto.api.id).toBe("auto");
   });
 });

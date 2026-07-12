@@ -20,6 +20,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import type { ScheduledTask } from '@/lib/scheduledTasksApi';
 import { useI18n } from '@/lib/i18n';
 import { getOrderedThinkingVariants, resolveThinkingVariant } from '@/lib/providers/variantControls';
+import { resolveAvailableProviderModel } from '@/lib/providers/modelAvailability';
 
 const WEEKDAY_INDEXES = [0, 1, 2, 3, 4, 5, 6] as const;
 const NO_VARIANT_VALUE = '__no_variant__';
@@ -709,6 +710,26 @@ export function ScheduledTaskEditorDialog(props: {
     return getOrderedThinkingVariants(model?.variants);
   }, [providers, draft.execution.providerID, draft.execution.modelID]);
   const hasVariantOptions = variantOptions.length > 0;
+
+  React.useEffect(() => {
+    if (!open || providers.length === 0) return;
+    const resolved = resolveAvailableProviderModel(
+      providers,
+      draft.execution.providerID,
+      draft.execution.modelID,
+    );
+    if (!resolved) return;
+    if (resolved.providerId === draft.execution.providerID && resolved.modelId === draft.execution.modelID) return;
+    setDraft((prev) => ({
+      ...prev,
+      execution: {
+        ...prev.execution,
+        providerID: resolved.providerId,
+        modelID: resolved.modelId,
+        variant: '',
+      },
+    }));
+  }, [draft.execution.modelID, draft.execution.providerID, open, providers]);
   const selectedVariantValue = React.useMemo(() => {
     return resolveThinkingVariant(draft.execution.variant, variantOptions) ?? NO_VARIANT_VALUE;
   }, [draft.execution.variant, variantOptions]);
@@ -1341,12 +1362,12 @@ export function ScheduledTaskEditorDialog(props: {
                   <SelectValue>
                     {(value) => value === NO_VARIANT_VALUE
                       ? t('sessions.scheduledTasks.editor.thinkingLevel.label')
-                      : formatEffortLabel(value)}
+                      : formatEffortLabel(value, { providerId: draft.execution.providerID })}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {variantOptions.map((variant) => (
-                    <SelectItem key={variant} value={variant}>{formatEffortLabel(variant)}</SelectItem>
+                    <SelectItem key={variant} value={variant}>{formatEffortLabel(variant, { providerId: draft.execution.providerID })}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

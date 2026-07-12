@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "^2.0.47",
+    "@opencode-ai/plugin": "1.17.11",
+    "oh-my-opencode-slim": "2.0.5"
+  }
+}

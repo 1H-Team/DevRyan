@@ -79,6 +79,20 @@ describe('model visibility helpers', () => {
     expect(filtered[0]?.models.map((model) => model.id)).toEqual(['claude-visible']);
   });
 
+  test('removes unavailable models from picker providers', () => {
+    const filtered = filterVisibleProviderModelsForPicker([
+      {
+        id: 'openai',
+        models: [
+          { id: 'gpt-5.6', name: 'GPT-5.6', available: false },
+          { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' },
+        ],
+      },
+    ], []);
+
+    expect(filtered[0]?.models.map((model) => model.id)).toEqual(['gpt-5.6-sol']);
+  });
+
   test('hides Google-backed Antigravity models by display provider id', () => {
     const filtered = filterHiddenProviderModels([
       {

@@ -32,7 +32,7 @@ export const StatusChip: React.FC<StatusChipProps> = ({ onClick, className }) =>
     const agentLabel = getAgentDisplayName(agents, uiAgentName);
     const currentProvider = getCurrentProvider();
     const modelLabel = getModelDisplayName(currentProvider, currentModelId);
-    const effortLabel = formatVisibleEffortLabel(currentVariant, getCurrentModelVariants());
+    const effortLabel = formatVisibleEffortLabel(currentVariant, getCurrentModelVariants(), { providerId: currentProvider?.id });
     const fullLabel = [agentLabel, modelLabel, effortLabel].filter(Boolean).join(' · ');
 
     return (

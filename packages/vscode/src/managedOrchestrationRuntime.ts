@@ -1,0 +1,415 @@
+import {
+  createManagedTaskScheduler,
+  toManagedTaskEvent,
+  type ManagedTaskExecutor,
+  type ManagedTaskMode,
+  type ManagedTaskResultAction,
+  type ManagedTaskScheduler,
+} from '@openchamber/orchestration-runtime';
+
+import {
+  createVsCodeManagedOpenCodeExecutor,
+  type VsCodeCursorSdkRuntimeAdapter,
+  type VsCodeManagedOpenCodeManagerAdapter,
+} from './managedOpenCodeExecutor';
+import {
+  createVsCodeManagedOrchestrationHost,
+  type ManagedOrchestrationBridgeEnvironment,
+  type ManagedOrchestrationRpcContext,
+  type ManagedOrchestrationRpcRequest,
+  type VsCodeManagedOrchestrationPrivateHost,
+} from './managedOrchestrationHost';
+import {
+  createVsCodeManagedOrchestrationLedger,
+  type VsCodeManagedOrchestrationPersistence,
+} from './managedOrchestrationPersistence';
+
+export { createVsCodeManagedOpenCodeExecutor } from './managedOpenCodeExecutor';
+export { createVsCodeManagedOrchestrationHost } from './managedOrchestrationHost';
+export { createVsCodeManagedOrchestrationLedger } from './managedOrchestrationPersistence';
+
+const DEFAULT_TASK_TIMEOUT_MS = 30 * 60 * 1_000;
+
+type Logger = Pick<Console, 'warn'>;
+type RuntimeError = Error & { code?: string; statusCode?: number };
+
+const isRecord = (value: unknown): value is Record<string, unknown> => (
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+);
+
+const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
+
+const ERROR_STATUS_BY_CODE: Record<string, number> = {
+  child_session_conflict: 409,
+  duplicate_idempotency_key: 409,
+  invalid_result_action: 400,
+  ledger_capacity_exceeded: 507,
+  managed_runtime_unavailable: 503,
+  mode_lease_active: 409,
+  mode_lease_conflict: 409,
+  parent_not_found: 404,
+  parent_scope_mismatch: 403,
+  result_already_acknowledged: 409,
+  result_already_acknowledging: 409,
+  result_not_found: 404,
+  result_not_resumable: 409,
+  rpc_method_not_found: 404,
+  scheduler_shut_down: 503,
+  task_not_found: 404,
+  task_scope_mismatch: 403,
+};
+
+const createRuntimeError = (code: string, message: string, statusCode = ERROR_STATUS_BY_CODE[code] ?? 400) => {
+  const error: RuntimeError = new Error(message);
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
+};
+
+const normalizeRuntimeError = (error: unknown) => {
+  if (!isRecord(error)) return error;
+  const runtimeError = error as unknown as RuntimeError;
+  if (typeof runtimeError.code !== 'string' || !runtimeError.code) {
+    const invalidInput = error instanceof TypeError || error instanceof RangeError;
+    runtimeError.code = invalidInput ? 'invalid_request' : 'managed_orchestration_internal_error';
+    runtimeError.statusCode = invalidInput ? 400 : 500;
+  } else if (!Number.isSafeInteger(runtimeError.statusCode)) {
+    runtimeError.statusCode = ERROR_STATUS_BY_CODE[runtimeError.code] ?? 400;
+  }
+  return runtimeError;
+};
+
+const requireString = (params: Record<string, unknown>, field: string) => {
+  const value = typeof params[field] === 'string' ? params[field].trim() : '';
+  if (!value) throw new TypeError(`${field} is required`);
+  return value;
+};
+
+const requireContentString = (params: Record<string, unknown>, field: string) => {
+  const value = params[field];
+  if (typeof value !== 'string' || !value.trim()) throw new TypeError(`${field} is required`);
+  return value;
+};
+
+const optionalString = (params: Record<string, unknown>, field: string) => {
+  const value = typeof params[field] === 'string' ? params[field].trim() : '';
+  return value || null;
+};
+
+const optionalContentString = (params: Record<string, unknown>, field: string) => {
+  const value = params[field];
+  return typeof value === 'string' && value.trim() ? value : null;
+};
+
+const requireMode = (value: unknown): ManagedTaskMode => {
+  if (value !== 'builder' && value !== 'orchestrator') {
+    throw new TypeError('mode must be builder or orchestrator');
+  }
+  return value;
+};
+
+const requireResultAction = (value: unknown): ManagedTaskResultAction => {
+  if (value !== 'continue' && value !== 'resume' && value !== 'retry' && value !== 'retry_in_place' && value !== 'abandon') {
+    throw new TypeError('action must be continue, resume, retry, retry_in_place, or abandon');
+  }
+  return value;
+};
+
+export type VsCodeManagedOrchestrationRuntime = {
+  prepareBridge(): Promise<ManagedOrchestrationBridgeEnvironment>;
+  initialize(): Promise<void>;
+  handleRpc(request: ManagedOrchestrationRpcRequest, context?: ManagedOrchestrationRpcContext): Promise<unknown>;
+  getSnapshot(options?: { rootSessionId?: string }): Promise<{
+    available: boolean;
+    bridgeReady: boolean;
+    recoveryWarning: string | null;
+    tasks: unknown[];
+    resultEnvelopes: unknown[];
+  }>;
+  flush(): Promise<void>;
+  shutdown(): Promise<void>;
+  getDiagnostics(): unknown;
+};
+
+export const createVsCodeManagedOrchestrationRuntime = (options: {
+  storageDirectory: string;
+  manager?: VsCodeManagedOpenCodeManagerAdapter;
+  cursorSdkRuntime?: VsCodeCursorSdkRuntimeAdapter | null;
+  persistence?: VsCodeManagedOrchestrationPersistence;
+  executor?: ManagedTaskExecutor;
+  scheduler?: ManagedTaskScheduler;
+  privateHost?: VsCodeManagedOrchestrationPrivateHost;
+  publishEvent?: (event: unknown) => void | Promise<void>;
+  isManagedOpenCode?: () => boolean;
+  logger?: Logger;
+  fetchImpl?: typeof fetch;
+  now?: () => number;
+  createTaskId?: () => string;
+  createLeaseToken?: () => string;
+}): VsCodeManagedOrchestrationRuntime => {
+  const logger = options.logger ?? console;
+  const now = options.now ?? Date.now;
+  const isManagedOpenCode = options.isManagedOpenCode ?? (() => (
+    options.manager?.getDebugInfo?.().mode !== 'external'
+  ));
+  const publishEvent = options.publishEvent ?? (() => undefined);
+  const persistence = options.persistence ?? createVsCodeManagedOrchestrationLedger({
+    storageDirectory: options.storageDirectory,
+    logger,
+  });
+  const executor = options.executor ?? (() => {
+    if (!options.manager) throw new TypeError('manager is required when executor is not provided');
+    return createVsCodeManagedOpenCodeExecutor({
+      manager: options.manager,
+      cursorSdkRuntime: options.cursorSdkRuntime,
+      fetchImpl: options.fetchImpl,
+    });
+  })();
+  const scheduler = options.scheduler ?? createManagedTaskScheduler({
+    executor,
+    persistence,
+    maxConcurrency: 3,
+    now,
+    publishEvent,
+    logger,
+    ...(options.createTaskId ? { createTaskId: options.createTaskId } : {}),
+    ...(options.createLeaseToken ? { createLeaseToken: options.createLeaseToken } : {}),
+  });
+
+  let bridgeEnvironment: ManagedOrchestrationBridgeEnvironment | null = null;
+  let initialized = false;
+  let initializePromise: Promise<void> | null = null;
+  let recoveryWarningPublished = false;
+  let shutdownPromise: Promise<void> | null = null;
+
+  const assertAvailable = () => {
+    if (!isManagedOpenCode()) {
+      throw createRuntimeError(
+        'managed_runtime_unavailable',
+        'DevRyan-managed orchestration is unavailable for configured external OpenCode runtimes',
+        503,
+      );
+    }
+  };
+
+  const initialize = () => {
+    assertAvailable();
+    if (initialized) return Promise.resolve();
+    if (initializePromise) return initializePromise;
+    initializePromise = scheduler.initialize().then(async () => {
+      initialized = true;
+      const recoveryWarning = persistence.getDiagnostics?.().recoveryWarning ?? null;
+      if (recoveryWarning && !recoveryWarningPublished) {
+        recoveryWarningPublished = true;
+        try {
+          await publishEvent({
+            type: 'openchamber:managed-orchestration-warning',
+            properties: { message: recoveryWarning },
+          });
+        } catch (error) {
+          logger.warn('[ManagedOrchestration] Failed to publish VS Code recovery warning', {
+            reason: errorMessage(error),
+          });
+        }
+      }
+    }).finally(() => { initializePromise = null; });
+    return initializePromise;
+  };
+
+  const ensureInitialized = async () => {
+    assertAvailable();
+    if (!initialized) await initialize();
+  };
+
+  const projectTask = (task: ReturnType<ManagedTaskScheduler['getTask']>) => {
+    if (!task) throw createRuntimeError('task_not_found', 'managed task was not found', 404);
+    return toManagedTaskEvent(task, scheduler.getResultEnvelope(task.taskId)).properties.task;
+  };
+
+  const assertTaskScope = (
+    task: NonNullable<ReturnType<ManagedTaskScheduler['getTask']>>,
+    params: Record<string, unknown>,
+  ) => {
+    const rootSessionId = requireString(params, 'rootSessionId');
+    if (task.rootSessionId !== rootSessionId) {
+      throw createRuntimeError(
+        'task_scope_mismatch',
+        `managed task ${task.taskId} does not belong to the requesting root session`,
+        403,
+      );
+    }
+    const directory = optionalString(params, 'directory');
+    if (directory && task.directory !== directory) {
+      throw createRuntimeError(
+        'task_scope_mismatch',
+        `managed task ${task.taskId} does not belong to the requesting directory`,
+        403,
+      );
+    }
+  };
+
+  const getScopedTask = (params: Record<string, unknown>) => {
+    const taskId = requireString(params, 'taskId');
+    const task = scheduler.getTask(taskId);
+    if (!task) throw createRuntimeError('task_not_found', `managed task ${taskId} was not found`, 404);
+    assertTaskScope(task, params);
+    return task;
+  };
+
+  const projectTaskResult = (task: NonNullable<ReturnType<ManagedTaskScheduler['getTask']>>) => {
+    const envelope = scheduler.getResultEnvelope(task.taskId);
+    return {
+      task: projectTask(task),
+      ...(envelope ? { resultEnvelope: envelope } : {}),
+    };
+  };
+
+  const handleRpcInternal = async (
+    request: ManagedOrchestrationRpcRequest,
+    context: ManagedOrchestrationRpcContext = {},
+  ) => {
+    await ensureInitialized();
+    const params = request.params ?? {};
+    switch (request.method) {
+      case 'submit': {
+        const timeoutAt = typeof params.timeoutAt === 'number' && Number.isFinite(params.timeoutAt)
+          ? params.timeoutAt
+          : now() + DEFAULT_TASK_TIMEOUT_MS;
+        const task = await scheduler.submit({
+          idempotencyKey: requireString(params, 'idempotencyKey'),
+          rootSessionId: requireString(params, 'rootSessionId'),
+          parentTaskId: optionalString(params, 'parentTaskId'),
+          childSessionId: optionalString(params, 'childSessionId'),
+          directory: requireString(params, 'directory'),
+          mode: requireMode(params.mode),
+          providerId: requireString(params, 'providerId'),
+          modelId: requireString(params, 'modelId'),
+          agent: requireString(params, 'agent'),
+          variant: optionalString(params, 'variant'),
+          label: requireString(params, 'label'),
+          prompt: requireContentString(params, 'prompt'),
+          timeoutAt,
+        });
+        return projectTaskResult(task);
+      }
+      case 'wait': {
+        const task = getScopedTask(params);
+        return projectTaskResult(await scheduler.waitForTask(task.taskId, { signal: context.signal }));
+      }
+      case 'status':
+        return projectTaskResult(getScopedTask(params));
+      case 'snapshot':
+        return await getSnapshot({ rootSessionId: requireString(params, 'rootSessionId') });
+      case 'cancel': {
+        const task = getScopedTask(params);
+        const reason = optionalString(params, 'reason') ?? undefined;
+        const cancelled = params.cascade === true
+          ? await scheduler.cancelTask(task.taskId, { cascade: true, ...(reason ? { reason } : {}) })
+          : await scheduler.cancelTask(task.taskId, { cascade: false, ...(reason ? { reason } : {}) });
+        return Array.isArray(cancelled)
+          ? { tasks: cancelled.map(projectTaskResult) }
+          : projectTaskResult(cancelled);
+      }
+      case 'acknowledge': {
+        const task = getScopedTask(params);
+        const providerId = optionalString(params, 'providerId');
+        const modelId = optionalString(params, 'modelId');
+        const agent = optionalString(params, 'agent');
+        const label = optionalString(params, 'label');
+        const prompt = optionalContentString(params, 'prompt');
+        const result = await scheduler.acknowledgeResult(task.taskId, {
+          action: requireResultAction(params.action),
+          idempotencyKey: requireString(params, 'idempotencyKey'),
+          ...(providerId ? { providerId } : {}),
+          ...(modelId ? { modelId } : {}),
+          ...(agent ? { agent } : {}),
+          ...(params.variant !== undefined ? { variant: optionalString(params, 'variant') } : {}),
+          ...(label ? { label } : {}),
+          ...(prompt ? { prompt } : {}),
+          ...(typeof params.timeoutAt === 'number' && Number.isFinite(params.timeoutAt)
+            ? { timeoutAt: params.timeoutAt }
+            : {}),
+        });
+        return {
+          resultEnvelope: result.envelope,
+          followUpTask: result.followUpTask ? projectTaskResult(result.followUpTask) : null,
+        };
+      }
+      default:
+        throw createRuntimeError('rpc_method_not_found', `Unknown managed orchestration method: ${request.method}`, 404);
+    }
+  };
+
+  const handleRpc = async (
+    request: ManagedOrchestrationRpcRequest,
+    context?: ManagedOrchestrationRpcContext,
+  ) => {
+    try {
+      return await handleRpcInternal(request, context);
+    } catch (error) {
+      throw normalizeRuntimeError(error);
+    }
+  };
+
+  const privateHost = options.privateHost ?? createVsCodeManagedOrchestrationHost({ handleRpc });
+
+  const prepareBridge = async () => {
+    assertAvailable();
+    if (bridgeEnvironment) return bridgeEnvironment;
+    bridgeEnvironment = await privateHost.start();
+    return bridgeEnvironment;
+  };
+
+  async function getSnapshot({ rootSessionId }: { rootSessionId?: string } = {}) {
+    if (!isManagedOpenCode()) {
+      return {
+        available: false,
+        bridgeReady: false,
+        recoveryWarning: null,
+        tasks: [],
+        resultEnvelopes: [],
+      };
+    }
+    await ensureInitialized();
+    const tasks = scheduler.listTasks({ rootSessionId });
+    return {
+      available: true,
+      bridgeReady: Boolean(bridgeEnvironment),
+      recoveryWarning: persistence.getDiagnostics?.().recoveryWarning ?? null,
+      tasks: tasks.map(projectTask),
+      resultEnvelopes: scheduler.listResultEnvelopes({ rootSessionId }),
+    };
+  }
+
+  const shutdown = () => {
+    if (shutdownPromise) return shutdownPromise;
+    shutdownPromise = (async () => {
+      const [hostResult, schedulerResult] = await Promise.allSettled([
+        privateHost.stop(),
+        scheduler.shutdown(),
+      ]);
+      bridgeEnvironment = null;
+      const errors = [hostResult, schedulerResult]
+        .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+        .map((result) => result.reason);
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) throw new AggregateError(errors, 'managed orchestration shutdown failed');
+    })();
+    return shutdownPromise;
+  };
+
+  return {
+    prepareBridge,
+    initialize,
+    handleRpc,
+    getSnapshot,
+    flush: () => scheduler.flush(),
+    shutdown,
+    getDiagnostics: () => ({
+      available: isManagedOpenCode(),
+      bridge: privateHost.getDiagnostics?.() ?? null,
+      ledger: { recoveryWarning: persistence.getDiagnostics?.().recoveryWarning ?? null },
+      scheduler: scheduler.getDiagnostics(),
+    }),
+  };
+};

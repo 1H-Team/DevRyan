@@ -29,6 +29,7 @@ describe("opencode client sends", () => {
     waitForWorktreeBootstrapCalls.length = 0
     fetchCalls.length = 0
     opencodeClient.setDirectory(undefined)
+    ;(opencodeClient as unknown as { baseUrl: string }).baseUrl = "http://127.0.0.1:5180/api"
     globalThis.fetch = mock((url: string | URL | Request, init?: RequestInit) => {
       const request = typeof Request !== "undefined" && url instanceof Request ? url : undefined
       fetchCalls.push({ url: request?.url ?? String(url), init, request })
@@ -156,6 +157,84 @@ describe("opencode client sends", () => {
     expect(fetchCalls[0]?.url).toContain("/api/session/session-openai/prompt_async")
     const body = JSON.parse(String(fetchCalls[0]?.init?.body ?? "{}"))
     expect(body.parts.map((part: { text?: string }) => part.text)).toEqual(["hello"])
+  })
+
+  test("keeps GitHub Copilot prompts below the provider tool limit", async () => {
+    await opencodeClient.sendMessage({
+      id: "session-copilot",
+      providerID: "github-copilot",
+      modelID: "gpt-4.1",
+      text: "hello",
+      directory: "/repo/copilot",
+    })
+
+    expect(getPromptBody().tools).toEqual({
+      "resend_*": false,
+      "mcp__resend__*": false,
+    })
+  })
+
+  test("does not restrict prompt tools for providers without a tool limit", async () => {
+    await opencodeClient.sendMessage({
+      id: "session-openai",
+      providerID: "openai",
+      modelID: "gpt-5.5",
+      text: "hello",
+      directory: "/repo/openai",
+    })
+
+    expect(getPromptBody().tools).toBe(undefined)
+  })
+
+  test("sends active subtask follow-ups through the v2 immediate prompt endpoint", async () => {
+    await opencodeClient.sendImmediateSubtaskPrompt({
+      id: "session-child",
+      text: "continue from here",
+      directory: "/repo/subtask",
+      files: [{
+        type: "file",
+        mime: "image/png",
+        filename: "screenshot.png",
+        url: "data:image/png;base64,iVBORw0KGgo=",
+      }],
+      agentMentions: [{ name: "builder" }],
+    })
+
+    expect(waitForWorktreeBootstrapCalls).toEqual(["/repo/subtask"])
+    expect(fetchCalls.some((call) => call.url.includes("/prompt_async"))).toBe(false)
+    expect(fetchCalls[0]?.url).toContain("/api/session/session-child/prompt")
+    expect(fetchCalls[0]?.url).toContain("directory=%2Frepo%2Fsubtask")
+    const body = JSON.parse(String(fetchCalls[0]?.init?.body ?? "{}"))
+    expect(body).toEqual({
+      prompt: {
+        text: "continue from here",
+        files: [{
+          uri: "data:image/png;base64,iVBORw0KGgo=",
+          mime: "image/png",
+          name: "screenshot.png",
+        }],
+        agents: [{ name: "builder" }],
+      },
+      delivery: "immediate",
+    })
+  })
+
+  test("rejects active subtask follow-ups with synthetic hidden text", async () => {
+    let error: unknown = null
+    try {
+      await opencodeClient.sendImmediateSubtaskPrompt({
+        id: "session-child",
+        text: "continue from here",
+        directory: "/repo/subtask",
+        additionalParts: [{ text: "hidden plan instructions", synthetic: true }],
+      })
+    } catch (caught) {
+      error = caught
+    }
+
+    expect(error instanceof Error ? error.message : String(error)).toContain("Active subtask follow-ups do not support hidden synthetic text")
+
+    expect(fetchCalls).toHaveLength(0)
   })
 
   test("preserves raw PDF file parts", async () => {

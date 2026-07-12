@@ -7,8 +7,9 @@
 //
 // Fix: register a later `provider.models` hook for `github-copilot` that:
 // - prefers picker-enabled models when any exist (match upstream)
-// - otherwise exposes all usable chat models (limits + tool_calls present,
-//   policy not disabled, not embeddings)
+// - otherwise exposes only API-returned utility models that GitHub documents as
+//   universally enabled, rather than guessing that every non-picker row is
+//   manually selectable
 // Packaged plugins load after built-ins, so this overwrites the empty list.
 
 const PROVIDER_ID = "github-copilot";
@@ -16,6 +17,42 @@ const API_BASE = "https://api.githubcopilot.com";
 const API_VERSION = "2026-06-01";
 const COPILOT_NPM = "@ai-sdk/github-copilot";
 const ANTHROPIC_NPM = "@ai-sdk/anthropic";
+const UTILITY_MODEL_IDS = new Set([
+  "gpt-4o-mini",
+  "gpt-4o",
+  "gpt-4.1",
+  "gpt-5.4-nano",
+]);
+const AUTO_MODEL = {
+  id: "auto",
+  name: "Auto",
+  limit: {
+    context: 128_000,
+    input: 128_000,
+    output: 16_384,
+  },
+  capabilities: {
+    temperature: true,
+    reasoning: false,
+    attachment: true,
+    toolcall: true,
+    input: {
+      text: true,
+      audio: false,
+      image: true,
+      video: false,
+      pdf: false,
+    },
+    output: {
+      text: true,
+      audio: false,
+      image: false,
+      video: false,
+      pdf: false,
+    },
+    interleaved: false,
+  },
+};
 
 const isPlainObject = (value) => (
   value !== null
@@ -114,17 +151,25 @@ const buildModel = (row, existing) => {
 
 const supportsFlag = (row, key) => Boolean(row.capabilities?.supports?.[key]);
 
+const addAutoModel = (models) => ({
+  auto: fixConfiguredModel(AUTO_MODEL, "auto"),
+  ...models,
+  auto: fixConfiguredModel(AUTO_MODEL, "auto"),
+});
+
 export const selectGitHubCopilotRemoteModels = (rows, existingModels = {}) => {
   const list = Array.isArray(rows) ? rows : [];
   const usable = list.filter(isUsableRemoteModel);
   const pickerEnabled = usable.filter((row) => row.model_picker_enabled === true);
-  const selected = pickerEnabled.length > 0 ? pickerEnabled : usable;
+  const selected = pickerEnabled.length > 0
+    ? pickerEnabled
+    : usable.filter((row) => UTILITY_MODEL_IDS.has(row.id.trim()));
   const models = {};
   for (const row of selected) {
     const id = row.id.trim();
     models[id] = buildModel(row, existingModels[id]);
   }
-  return models;
+  return addAutoModel(models);
 };
 
 const fixConfiguredModel = (model, id) => {
@@ -180,9 +225,9 @@ export const GitHubCopilotModelsPlugin = async () => {
       async models(provider, ctx) {
         const existing = isPlainObject(provider?.models) ? provider.models : {};
         if (ctx.auth?.type !== "oauth") {
-          return Object.fromEntries(
+          return addAutoModel(Object.fromEntries(
             Object.entries(existing).map(([id, model]) => [id, fixConfiguredModel(model, id)]),
-          );
+          ));
         }
 
         try {
@@ -194,9 +239,9 @@ export const GitHubCopilotModelsPlugin = async () => {
           // Fall through to configured models so overlay/config backups remain usable.
         }
 
-        return Object.fromEntries(
+        return addAutoModel(Object.fromEntries(
           Object.entries(existing).map(([id, model]) => [id, fixConfiguredModel(model, id)]),
-        );
+        ));
       },
     },
   };

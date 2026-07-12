@@ -115,10 +115,16 @@ const createCouncilTool = async ({ sessionStates, councillors }) => {
 
 describe('CouncilSessionPlugin', () => {
   let originalConfigDir;
+  let originalOrchestrationUrl;
+  let originalOrchestrationToken;
   const tempDirs = [];
 
   beforeEach(() => {
     originalConfigDir = process.env.OPENCODE_CONFIG_DIR;
+    originalOrchestrationUrl = process.env.DEVRYAN_ORCHESTRATION_URL;
+    originalOrchestrationToken = process.env.DEVRYAN_ORCHESTRATION_TOKEN;
+    delete process.env.DEVRYAN_ORCHESTRATION_URL;
+    delete process.env.DEVRYAN_ORCHESTRATION_TOKEN;
     vi.useFakeTimers();
     vi.setSystemTime(0);
   });
@@ -130,6 +136,11 @@ describe('CouncilSessionPlugin', () => {
     } else {
       process.env.OPENCODE_CONFIG_DIR = originalConfigDir;
     }
+    if (originalOrchestrationUrl === undefined) delete process.env.DEVRYAN_ORCHESTRATION_URL;
+    else process.env.DEVRYAN_ORCHESTRATION_URL = originalOrchestrationUrl;
+    if (originalOrchestrationToken === undefined) delete process.env.DEVRYAN_ORCHESTRATION_TOKEN;
+    else process.env.DEVRYAN_ORCHESTRATION_TOKEN = originalOrchestrationToken;
+    vi.unstubAllGlobals();
     for (const dir of tempDirs.splice(0)) {
       await fs.rm(dir, { recursive: true, force: true });
     }
@@ -337,5 +348,54 @@ describe('CouncilSessionPlugin', () => {
     expect(output).toContain('first final');
     expect(output).toContain('second final');
     expect(output).not.toContain('second partial');
+  });
+
+  it('routes local council fanout through the shared managed scheduler bridge', async () => {
+    const councillors = Array.from({ length: 5 }, (_, index) => ({
+      model: `provider-${index + 1}/model-${index + 1}`,
+    }));
+    const setup = await createCouncilTool({ sessionStates: [], councillors });
+    tempDirs.push(setup.configDir);
+    process.env.DEVRYAN_ORCHESTRATION_URL = 'http://127.0.0.1:43210/rpc';
+    process.env.DEVRYAN_ORCHESTRATION_TOKEN = 'private-token';
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const body = JSON.parse(init.body);
+      requests.push(body);
+      if (body.method === 'submit') {
+        const index = requests.filter((request) => request.method === 'submit').length;
+        return new Response(JSON.stringify({
+          ok: true,
+          result: { task: { taskId: `dvr_task_${index}`, status: index <= 3 ? 'starting' : 'queued' } },
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      const index = Number.parseInt(body.params.taskId.split('_').at(-1), 10);
+      return new Response(JSON.stringify({
+        ok: true,
+        result: {
+          task: { taskId: body.params.taskId, status: 'completed' },
+          resultEnvelope: {
+            status: 'completed',
+            recoverablePreview: `managed answer ${index}`,
+          },
+        },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+
+    const output = await setup.execute({ prompt: 'review this plan' }, {
+      directory: PROJECT_DIR,
+      sessionID: PARENT_SESSION_ID,
+      messageID: 'msg_council',
+      abort: new AbortController().signal,
+    });
+
+    expect(requests.filter((request) => request.method === 'submit')).toHaveLength(5);
+    expect(requests.filter((request) => request.method === 'wait')).toHaveLength(5);
+    expect(requests.filter((request) => request.method === 'submit').map((request) => request.params.mode))
+      .toEqual(['orchestrator', 'orchestrator', 'orchestrator', 'orchestrator', 'orchestrator']);
+    expect(setup.client.session.create).not.toHaveBeenCalled();
+    expect(output).toContain('Councillors requested: 5');
+    expect(output).toContain('managed answer 1');
+    expect(output).toContain('managed answer 5');
   });
 });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { RiArrowDownSLine, RiArrowRightSLine, RiCheckLine, RiExternalLinkLine } from '@remixicon/react';
+import { RiArrowDownSLine, RiArrowRightSLine, RiCheckLine, RiErrorWarningLine, RiExternalLinkLine } from '@remixicon/react';
 import type { ToolPart as ToolPartType } from '@opencode-ai/sdk/v2';
 import { SimpleMarkdownRenderer } from '../../MarkdownRenderer';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
@@ -29,9 +29,9 @@ import {
 } from './toolRenderUtils';
 import {
     getTaskSummaryLabel,
-    formatTaskErrorText,
     formatTaskModelLabel,
     formatSpecialistTaskOutputForMarkdown,
+    resolveTaskResultPresentation,
     shouldRenderGitPathLabel,
     stripTaskMetadataFromOutput,
     taskSummaryEntryToToolPart,
@@ -372,13 +372,14 @@ export const TaskToolSummary: React.FC<{
     isMobile: boolean;
     output?: string;
     error?: unknown;
+    status?: unknown;
     sessionId?: string;
     sessionAgent?: string;
     onShowPopup?: (content: ToolPopupContent) => void;
     input?: Record<string, unknown>;
     animateTailText?: boolean;
     isActive?: boolean;
-}> = ({ entries, isExpanded, isMobile, output, error, sessionId, sessionAgent, onShowPopup, input, animateTailText = true, isActive = false }) => {
+}> = ({ entries, isExpanded, isMobile, output, error, status, sessionId, sessionAgent, onShowPopup, input, animateTailText = true, isActive = false }) => {
     const { t } = useI18n();
     const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
 
@@ -389,8 +390,17 @@ export const TaskToolSummary: React.FC<{
         () => formatSpecialistTaskOutputForMarkdown(trimmedOutput),
         [trimmedOutput]
     );
-    const hasOutput = trimmedOutput.length > 0;
-    const errorText = formatTaskErrorText(error);
+    const taskResult = resolveTaskResultPresentation({
+        output: trimmedOutput,
+        error,
+        hasActivity: entries.length > 0 || Boolean(sessionId),
+        status,
+    });
+    const hasOutput = taskResult.hasOutput;
+    const errorText = taskResult.failureText
+        || (taskResult.failureStatus
+            ? t('chat.toolPart.taskEndedWithStatus', { status: taskResult.failureStatus })
+            : '');
     const taskModelLabel = formatTaskModelLabel(input?.model);
     const [isOutputExpanded, setIsOutputExpanded] = React.useState(false);
     const summaryRowsState = React.useMemo(() => {
@@ -423,7 +433,7 @@ export const TaskToolSummary: React.FC<{
         return (
             <div className="relative pr-2 pb-2 pt-2 space-y-2 pl-[1.4375rem]">
                 {taskModelLabel ? (
-                    <div className="typography-micro font-mono text-muted-foreground/60" title={taskModelLabel}>
+                    <div className="typography-micro text-muted-foreground/60" title={taskModelLabel}>
                         {taskModelLabel}
                     </div>
                 ) : null}
@@ -441,7 +451,7 @@ export const TaskToolSummary: React.FC<{
     return (
         <div className="relative pr-2 pb-2 pt-2 space-y-2">
             {taskModelLabel ? (
-                <div className="pl-[1.4375rem] typography-micro font-mono text-muted-foreground/60" title={taskModelLabel}>
+                <div className="pl-[1.4375rem] typography-micro text-muted-foreground/60" title={taskModelLabel}>
                     {taskModelLabel}
                 </div>
             ) : null}
@@ -505,6 +515,19 @@ export const TaskToolSummary: React.FC<{
                 </div>
             ) : null}
 
+            {errorText ? (
+                <div
+                    className="ml-[1.4375rem] rounded-xl border px-2 py-1.5 typography-meta"
+                    style={{
+                        backgroundColor: 'var(--status-error-background)',
+                        borderColor: 'var(--status-error-border)',
+                        color: 'var(--status-error)',
+                    }}
+                >
+                    {errorText}
+                </div>
+            ) : null}
+
             {hasOutput ? (
                 <div className={cn('space-y-1', hasActivityContent && 'pt-1')}>
                     <button
@@ -518,8 +541,16 @@ export const TaskToolSummary: React.FC<{
                         }}
                         aria-expanded={isOutputExpanded}
                     >
-                        <RiCheckLine className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--status-success)' }} />
-                        <span className="typography-meta font-medium">{t('chat.toolPart.output')}</span>
+                        {taskResult.outputKind === 'partial' ? (
+                            <RiErrorWarningLine className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--status-error)' }} />
+                        ) : (
+                            <RiCheckLine className="h-3.5 w-3.5 flex-shrink-0" style={{ color: 'var(--status-success)' }} />
+                        )}
+                        <span className="typography-meta font-medium">
+                            {taskResult.outputKind === 'partial'
+                                ? t('chat.toolPart.partialOutput')
+                                : t('chat.toolPart.output')}
+                        </span>
                     </button>
                     {isOutputExpanded ? (
                         <div className="pl-[1.4375rem]">

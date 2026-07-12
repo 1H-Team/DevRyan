@@ -25,9 +25,22 @@ const normalizeSessionIdCandidate = (value: unknown): string | undefined => {
     return trimmed.length > 0 ? trimmed : undefined;
 };
 
+const humanizeTaskModelId = (id: string): string => (
+    id
+        .split(/[-_]+/)
+        .filter(Boolean)
+        .map((segment) => (
+            /^\d/.test(segment)
+                ? segment
+                : `${segment.charAt(0).toUpperCase()}${segment.slice(1)}`
+        ))
+        .join(' ')
+);
+
 export const formatTaskModelLabel = (model: unknown): string => {
     if (typeof model === 'string') {
-        return model.trim();
+        const trimmed = model.trim();
+        return trimmed ? humanizeTaskModelId(trimmed) : '';
     }
     if (!model || typeof model !== 'object' || Array.isArray(model)) {
         return '';
@@ -39,6 +52,7 @@ export const formatTaskModelLabel = (model: unknown): string => {
         return '';
     }
 
+    const displayId = humanizeTaskModelId(id);
     const params: string[] = [];
     if (Array.isArray(selection.params)) {
         for (const candidate of selection.params) {
@@ -54,7 +68,7 @@ export const formatTaskModelLabel = (model: unknown): string => {
         }
     }
 
-    return params.length > 0 ? `${id} (${params.join(', ')})` : id;
+    return params.length > 0 ? `${displayId} (${params.join(', ')})` : displayId;
 };
 
 export const readTaskSessionIdFromRecord = (value: unknown): string | undefined => {
@@ -413,12 +427,31 @@ export const stripTaskMetadataFromOutput = (output: string): string => {
     return output.replace(/\n*<task_metadata>[\s\S]*?<\/task_metadata>\s*$/i, '').trimEnd();
 };
 
-export const formatTaskErrorText = (error: unknown): string => {
-    const message = typeof error === 'string'
-        ? error.trim()
-        : error && typeof error === 'object' && typeof (error as { message?: unknown }).message === 'string'
-            ? (error as { message: string }).message.trim()
-            : '';
+const readTaskErrorMessage = (error: unknown): string => {
+    if (typeof error === 'string') {
+        return error.trim();
+    }
+    if (error && typeof error === 'object' && typeof (error as { message?: unknown }).message === 'string') {
+        return (error as { message: string }).message.trim();
+    }
+    return '';
+};
+
+const TASK_FAILURE_STATUSES = new Set([
+    'error',
+    'failed',
+    'aborted',
+    'timeout',
+    'timedout',
+    'cancelled',
+    'canceled',
+]);
+
+export const formatTaskErrorText = (
+    error: unknown,
+    phase: 'startup' | 'interrupted' = 'startup',
+): string => {
+    const message = readTaskErrorMessage(error);
 
     if (!message) {
         return '';
@@ -431,7 +464,47 @@ export const formatTaskErrorText = (error: unknown): string => {
         return `Task could not start: OpenCode emitted its internal invalid-tool sentinel while starting the subagent. This usually means the managed runtime tool surface is stale or polluted.${availableToolsText}`;
     }
 
-    return `Task could not start: ${message}`;
+    return phase === 'interrupted'
+        ? `Task was interrupted: ${message}`
+        : `Task could not start: ${message}`;
+};
+
+export const resolveTaskResultPresentation = ({
+    output,
+    error,
+    hasActivity,
+    status,
+}: {
+    output: unknown;
+    error: unknown;
+    hasActivity: boolean;
+    status?: unknown;
+}): {
+    hasOutput: boolean;
+    outputKind: 'none' | 'complete' | 'partial';
+    failureText: string;
+    failureStatus?: string;
+} => {
+    const hasOutput = typeof output === 'string' && output.trim().length > 0;
+    const failureText = formatTaskErrorText(error, hasOutput || hasActivity ? 'interrupted' : 'startup');
+    const normalizedStatus = typeof status === 'string'
+        ? status.toLowerCase().trim().replace(/[\s_-]+/g, '')
+        : '';
+    const failureStatus = TASK_FAILURE_STATUSES.has(normalizedStatus)
+        ? normalizedStatus
+        : undefined;
+
+    let outputKind: 'none' | 'complete' | 'partial' = 'none';
+    if (hasOutput) {
+        outputKind = failureText || failureStatus ? 'partial' : 'complete';
+    }
+
+    return {
+        hasOutput,
+        outputKind,
+        failureText,
+        ...(failureStatus ? { failureStatus } : {}),
+    };
 };
 
 export const normalizeTaskSummaryEntries = (value: unknown): TaskToolSummaryEntry[] => {

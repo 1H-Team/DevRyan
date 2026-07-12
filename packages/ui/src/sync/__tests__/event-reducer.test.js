@@ -358,7 +358,7 @@ describe('applyDirectoryEvent', () => {
     expect(state.part[messageID]?.[0]?.text).toBe(`${meta}\n\n${prose}`)
   })
 
-  it('strips Cursor meta-restatement lines from assistant reasoning deltas', () => {
+  it('preserves intent-restatement lines from assistant reasoning deltas', () => {
     const state = structuredClone(INITIAL_STATE)
     const messageID = 'msg-reasoning-meta-restatement'
     const partID = 'part-reasoning-meta-restatement'
@@ -389,10 +389,10 @@ describe('applyDirectoryEvent', () => {
       },
     })
 
-    expect(state.part[messageID]?.[0]?.text).toBe(reasoning)
+    expect(state.part[messageID]?.[0]?.text).toBe(`${meta}\n\n${reasoning}`)
   })
 
-  it('strips self-referential skill/action lines from assistant reasoning deltas', () => {
+  it('preserves self-referential skill/action lines from assistant reasoning deltas', () => {
     const state = structuredClone(INITIAL_STATE)
     const messageID = 'msg-reasoning-skill-action'
     const partID = 'part-reasoning-skill-action'
@@ -423,7 +423,7 @@ describe('applyDirectoryEvent', () => {
       },
     })
 
-    expect(state.part[messageID]?.[0]?.text).toBe(reasoning)
+    expect(state.part[messageID]?.[0]?.text).toBe(`${noisy}\n\n${reasoning}`)
   })
 
   it('does not strip internal diagnostic-looking user text', () => {
@@ -519,7 +519,7 @@ describe('applyDirectoryEvent', () => {
     expect(state.part[messageID]?.[0]?.text).toBe(prose)
   })
 
-  it('sanitizes full assistant reasoning part updates after the owning message arrives', () => {
+  it('preserves full assistant reasoning part updates after the owning message arrives', () => {
     const state = structuredClone(INITIAL_STATE)
     const messageID = 'msg-full-assistant-reasoning-meta'
     const partID = 'part-full-assistant-reasoning-meta'
@@ -541,7 +541,7 @@ describe('applyDirectoryEvent', () => {
 
     upsertMessage(state, messageID, 'assistant')
 
-    expect(state.part[messageID]?.[0]?.text).toBe(reasoning)
+    expect(state.part[messageID]?.[0]?.text).toBe(`${meta}\n\n${reasoning}`)
   })
 
   it('does not let a stale running tool update overwrite a completed tool part', () => {

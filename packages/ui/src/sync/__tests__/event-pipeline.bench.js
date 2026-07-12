@@ -8,16 +8,24 @@
  * Run with:
  *   bun packages/ui/src/sync/__tests__/event-pipeline.bench.js
  *
- * This is NOT a bun:test file — it prints a report and exits. Nothing here
- * asserts; it exists purely to give you intuition about the optimization
- * impact at varying concurrency levels.
+ * This is NOT a bun:test file — it prints a report and exits. Integrity is a
+ * hard assertion so incomplete replay can never masquerade as event loss.
  */
 
+import assert from 'node:assert/strict';
+
 import { createEventPipeline } from '../event-pipeline.ts';
+import {
+  getResponsivenessPerfSnapshot,
+  resetStreamPerf,
+  setStreamPerfEnabled,
+} from '../../stores/utils/streamDebug.ts';
 
 // ---------------------------------------------------------------------------
 // Minimal DOM stubs (same approach as the unit tests)
 // ---------------------------------------------------------------------------
+
+const storage = new Map();
 
 globalThis.document = {
   visibilityState: 'visible',
@@ -25,6 +33,17 @@ globalThis.document = {
   removeEventListener() {},
 };
 globalThis.window = {
+  localStorage: {
+    getItem(key) {
+      return storage.get(key) ?? null;
+    },
+    setItem(key, value) {
+      storage.set(key, value);
+    },
+    removeItem(key) {
+      storage.delete(key);
+    },
+  },
   addEventListener() {},
   removeEventListener() {},
 };
@@ -34,16 +53,26 @@ globalThis.window = {
 // ---------------------------------------------------------------------------
 
 function createReplaySdk(events, hold) {
-  return {
+  let resolveReplayComplete;
+  const replayComplete = new Promise((resolve) => {
+    resolveReplayComplete = resolve;
+  });
+
+  const sdk = {
     global: {
       event: async () => ({
         stream: (async function* () {
-          for (const e of events) yield e;
+          for (const event of events) {
+            yield event;
+          }
+          resolveReplayComplete();
           await hold;
         })(),
       }),
     },
   };
+
+  return { sdk, replayComplete };
 }
 
 // ---------------------------------------------------------------------------
@@ -72,6 +101,7 @@ function buildTokenStreamWorkload({
       const sessionID = `dir-${d}-s${s}`;
       const messageID = `${sessionID}-m1`;
       const partID = `${messageID}-p1`;
+      let finalText = '';
 
       events.push({
         directory,
@@ -82,6 +112,12 @@ function buildTokenStreamWorkload({
       });
 
       for (let t = 0; t < tokensPerSession; t++) {
+        // Use an unambiguous incremental character. Repeated "x" chunks can
+        // legitimately be collapsed by the production duplicate-frame guard
+        // once they form a long adjacent repeat, which makes them unsuitable
+        // for byte-integrity measurement.
+        const delta = String.fromCharCode(0xe000 + t);
+        finalText += delta;
         events.push({
           directory,
           payload: {
@@ -90,7 +126,7 @@ function buildTokenStreamWorkload({
               messageID,
               partID,
               field: 'text',
-              delta: 'x',
+              delta,
             },
           },
         });
@@ -105,7 +141,7 @@ function buildTokenStreamWorkload({
               id: partID,
               type: 'text',
               messageID,
-              text: 'x'.repeat(tokensPerSession),
+              text: finalText,
             },
           },
         },
@@ -164,7 +200,9 @@ async function runScenario(label, workload) {
   let deliveredDeltas = 0;
   let deliveredDeltaBytes = 0;
 
-  const sdk = createReplaySdk(workload, hold);
+  const { sdk, replayComplete } = createReplaySdk(workload, hold);
+  setStreamPerfEnabled(true);
+  resetStreamPerf();
 
   const startWall = performance.now();
   const { cleanup } = createEventPipeline({
@@ -179,16 +217,10 @@ async function runScenario(label, workload) {
     },
   });
 
-  // Give the pipeline enough time to finish enqueueing AND flush. Scale wait
-  // time with workload so large stress scenarios have room to drain — the SSE
-  // loop yields every 8ms and the flush fires every 16ms, so in the worst case
-  // we need ~(workload / STREAM_YIELD) * 16ms of wall clock.
-  const waitMs = Math.max(200, Math.ceil(workload.length / 100));
-  await new Promise((resolve) => setTimeout(resolve, waitMs));
-  const endWall = performance.now();
-
+  await replayComplete;
   cleanup();
   release();
+  const endWall = performance.now();
 
   // Count input-side delta events for comparison
   const inputDeltas = workload.filter((e) => e.payload.type === 'message.part.delta').length;
@@ -198,6 +230,21 @@ async function runScenario(label, workload) {
 
   const wallMs = endWall - startWall;
   const reductionPct = inputDeltas === 0 ? 0 : (1 - deliveredDeltas / inputDeltas) * 100;
+  const perfEntries = new Map(
+    getResponsivenessPerfSnapshot().entries.map((entry) => [entry.metric, entry]),
+  );
+  const flushCount = perfEntries.get('responsiveness.event_pipeline.flush_count')?.count ?? 0;
+  const flushSize = perfEntries.get('responsiveness.event_pipeline.flush_size');
+  const flushDuration = perfEntries.get('responsiveness.event_pipeline.flush_ms');
+  // Bun and Node currently expose different maxRSS units on macOS. Use the
+  // unambiguous current RSS sample instead of publishing a false peak value.
+  const rssBytes = process.memoryUsage().rss;
+
+  assert.equal(
+    deliveredDeltaBytes,
+    inputDeltaBytes,
+    `${label}: delivered delta bytes must match input delta bytes`,
+  );
 
   return {
     label,
@@ -209,6 +256,10 @@ async function runScenario(label, workload) {
     deliveredDeltaBytes,
     reductionPct,
     wallMs,
+    flushCount,
+    maxFlushSize: flushSize?.max ?? 0,
+    totalFlushMs: flushDuration?.total ?? 0,
+    rssBytes,
   };
 }
 
@@ -220,8 +271,12 @@ function formatRow(r) {
     String(r.inputDeltas).padStart(8),
     String(r.deliveredDeltas).padStart(8),
     `${r.reductionPct.toFixed(1)}%`.padStart(8),
+    String(r.flushCount).padStart(7),
+    String(r.maxFlushSize).padStart(8),
+    `${r.totalFlushMs.toFixed(1)}ms`.padStart(10),
     `${r.wallMs.toFixed(1)}ms`.padStart(10),
-    r.inputDeltaBytes === r.deliveredDeltaBytes ? 'bytes ✓' : `bytes ${r.inputDeltaBytes}→${r.deliveredDeltaBytes}`,
+    `${(r.rssBytes / 1024 / 1024).toFixed(1)}MiB`.padStart(10),
+    'bytes ✓',
   ];
   return cols.join('  ');
 }
@@ -234,7 +289,11 @@ function header() {
     'in Δ'.padStart(8),
     'out Δ'.padStart(8),
     'reduce'.padStart(8),
+    'flushes'.padStart(7),
+    'max batch'.padStart(8),
+    'flush ms'.padStart(10),
     'wall'.padStart(10),
+    'RSS'.padStart(10),
     'integrity',
   ];
   return cols.join('  ');
@@ -320,8 +379,11 @@ async function main() {
   console.log(header());
   console.log('-'.repeat(header().length + 8));
 
+  const selectedScenarios = process.env.EVENT_PIPELINE_BENCH_SCENARIO === 'small'
+    ? scenarios.slice(0, 1)
+    : scenarios;
   const results = [];
-  for (const { label, workload } of scenarios) {
+  for (const { label, workload } of selectedScenarios) {
     const r = await runScenario(label, workload);
     results.push(r);
     console.log(formatRow(r));
@@ -333,7 +395,11 @@ async function main() {
   console.log('  in Δ     — input events of type message.part.delta');
   console.log('  out Δ    — delta events that actually made it to onEvent (after merging)');
   console.log('  reduce   — (1 − outΔ / inΔ) × 100, i.e. how much delta traffic shrunk');
-  console.log('  wall     — total wall-clock time for the scenario (bounded by 200ms wait)');
+  console.log('  flushes  — number of per-directory batches dispatched');
+  console.log('  max batch — largest number of events dispatched in one flush');
+  console.log('  flush ms — total time spent invoking onEvent across flushes');
+  console.log('  wall     — total wall-clock time through replay completion and final flush');
+  console.log('  RSS      — process resident set size sampled after the final flush');
   console.log('  integrity — "bytes ✓" means the concatenated delta bytes match the input total');
   console.log('');
   console.log('Interpretation:');
@@ -348,5 +414,5 @@ main()
   })
   .catch((error) => {
     console.error('benchmark failed:', error);
-    process.exit(1);
+    process.exitCode = 1;
   });

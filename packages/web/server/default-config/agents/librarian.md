@@ -18,6 +18,7 @@ permission:
   plan_enter: deny
   plan_exit: deny
   council_session: deny
+  devryan_task: deny
 ---
 
 You are Librarian - the online research specialist.

@@ -12,6 +12,7 @@ const ALLOWED_MANAGED_RUNTIME_PLUGIN_SPECS = new Set([
 
 const BLOCKED_MANAGED_RUNTIME_MCP_NAMES = [
   'context7',
+  'ghgrep',
   'gh-grep',
   'gh_grep',
   'grep-app',
@@ -20,6 +21,7 @@ const BLOCKED_MANAGED_RUNTIME_MCP_NAMES = [
 
 const FORBIDDEN_MANAGED_RUNTIME_TOOL_PREFIXES = [
   'context7_',
+  'ghgrep_',
   'grep_app_',
 ];
 

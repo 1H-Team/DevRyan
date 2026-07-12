@@ -58,7 +58,8 @@ describe('formatVisibleEffortLabel', () => {
     });
 
     test('shows the first supported thinking level when default is selected and medium is unavailable', () => {
-        expect(formatVisibleEffortLabel(undefined, ['low', 'high'])).toBe('Light');
+        expect(formatVisibleEffortLabel(undefined, ['low', 'high'])).toBe('Low');
+        expect(formatVisibleEffortLabel(undefined, ['low', 'high'], { providerId: 'openai' })).toBe('Light');
     });
 
     test('shows the selected thinking level when an explicit variant is selected', () => {
@@ -68,18 +69,27 @@ describe('formatVisibleEffortLabel', () => {
     test('formats stale compound Cursor thinking levels as effort labels', () => {
         expect(formatVisibleEffortLabel('extra-high-thinking', ['extra-high-thinking'])).toBe('Extra High');
         expect(formatVisibleEffortLabel('xhigh-thinking', ['xhigh-thinking'])).toBe('Extra High');
-        expect(formatVisibleEffortLabel('low-thinking', ['low-thinking'])).toBe('Light');
+        expect(formatVisibleEffortLabel('low-thinking', ['low-thinking'], { providerId: 'cursor-acp' })).toBe('Low');
     });
 
     test('returns null when the model has no thinking levels', () => {
         expect(formatVisibleEffortLabel(undefined, [])).toBeNull();
     });
 
-    test('keeps Extra High and Ultra as separate labels', () => {
-        expect(formatEffortLabel('low')).toBe('Light');
+    test('uses Light only for OpenAI low variants and preserves other labels', () => {
+        expect(formatEffortLabel('low', { providerId: 'openai' })).toBe('Light');
+        expect(formatEffortLabel('low', { providerId: ' OpenAI ' })).toBe('Light');
+        expect(formatEffortLabel('low', { providerId: 'cursor-acp' })).toBe('Low');
+        expect(formatEffortLabel('thinking-low', { providerId: 'cursor-acp' })).toBe('Low');
+        expect(formatEffortLabel('low', { providerId: 'anthropic' })).toBe('Low');
+        expect(formatEffortLabel('low')).toBe('Low');
+        expect(formatEffortLabel('medium', { providerId: 'openai' })).toBe('Medium');
+        expect(formatEffortLabel('high', { providerId: 'openai' })).toBe('High');
         expect(formatEffortLabel('xhigh')).toBe('Extra High');
         expect(formatEffortLabel('extra-high')).toBe('Extra High');
         expect(formatEffortLabel('ultra')).toBe('Ultra');
+        expect(formatEffortLabel('1.5', { providerId: 'openai' })).toBe('1.5');
+        expect(formatEffortLabel(undefined, { providerId: 'openai' })).toBe('Default');
     });
 });
 

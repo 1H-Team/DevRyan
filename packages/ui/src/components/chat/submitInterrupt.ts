@@ -3,6 +3,7 @@ export type SubmitInterruptOptions = {
   sessionPhase: "idle" | string
   queuedMessageCount: number
   queuedOnly: boolean
+  isSubtaskSession?: boolean
 }
 
 export function isAbortableSessionPhase(sessionPhase: "idle" | string): boolean {
@@ -10,6 +11,10 @@ export function isAbortableSessionPhase(sessionPhase: "idle" | string): boolean 
 }
 
 export function shouldInterruptBeforeSubmit(options: SubmitInterruptOptions): boolean {
+  if (options.isSubtaskSession) {
+    return false
+  }
+
   if (!options.currentSessionId || !isAbortableSessionPhase(options.sessionPhase)) {
     return false
   }

@@ -111,26 +111,10 @@ export function collapseExactAdjacentTextRepeats(value: string): string {
 const MALFORMED_TOOL_CALL_MARKER = 'Skipped malformed tool call "'
 const TOOL_BLOCKED_DIAGNOSTIC = /\s*Tool "[^"]+" has been temporarily blocked after \d+ repeated validation failures\. Do not retry this tool\. Use a different approach to complete the task\./g
 const TOOL_LOOP_GUARD_DIAGNOSTIC = /\s*Tool loop guard stopped repeated schema-invalid calls to "[^"]+" after \d+ attempts \(limit \d+\)\. Adjust tool arguments and retry\./g
-const CURSOR_ASSISTANT_META_RESTATEMENT_PATTERNS = [
-  /^The user wants to .*[.!?]$/,
-  /^The user requests to .*[.!?]$/,
-  /^The user asked to .*[.!?]$/,
-  /^The user is asking to .*[.!?]$/,
-  /^The user wants me to .*[.!?]$/,
-  /^The user intends for me to .*[.!?]$/,
-  /^The user is asking me to .*[.!?]$/,
-  /^The user asked me to .*[.!?]$/,
-  /^The user requested that I .*[.!?]$/,
-]
 const CURSOR_ASSISTANT_TOOL_WORKAROUND_PATTERNS = [
   /^The `?edit`? tool is blocked, so I['’]ll use `?Write`? and `?StrReplace`? to .*[.!?]$/,
   /^Continuing with `?Write`? and `?StrReplace`? since `?edit`? is blocked\.$/,
 ]
-const SELF_REFERENTIAL_REASONING_STATUS_PATTERN = /^(?:Considering|Exploring|Inspecting|Checking|Reviewing|Reading|Loading|Searching)\s+(.+?)\s+I\s+(?:(?:think\s+)?I\s+)?(?:might\s+need\s+to|need\s+to|am going to|will|should)\s+(?:apply|use|load|inspect|read|check|explore|review|search|open)\s+(.+?)[.!?]?$/i
-const SKILL_CONFLICT_REASONING_STATUS_PATTERN = /^(?:Addressing|Handling|Resolving)\s+skill\s+conflicts?\s+I\s+(?:(?:think\s+)?I\s+)?(?:need|should|have)\s+to\b.*$/i
-const SKILL_ANNOUNCEMENT_REASONING_PATTERN = /\b(?:my|the|a)\s+skill\s+(?:indicates|says|requires|asks|tells|instructs)\b.*\bannounce\b/i
-const DANGLING_REASONING_LIST_MARKER_PATTERN = /(?:\n\s*)+(?:[-*]|\d+[.)])\s*$/
-const SENTENCE_BOUNDARY_PATTERN = /[.!?][)"'\]]?(?=\s|$)/g
 
 function stripMalformedToolCallDiagnostics(value: string): string {
   let output = ""
@@ -182,13 +166,6 @@ export function stripInternalToolRunnerDiagnostics(value: string): string {
   return stripped === value ? value : cleanupDiagnosticWhitespace(stripped)
 }
 
-function isCursorAssistantMetaRestatementLine(value: string): boolean {
-  const trimmed = value.trim()
-  if (!trimmed) return false
-
-  return CURSOR_ASSISTANT_META_RESTATEMENT_PATTERNS.some((pattern) => pattern.test(trimmed))
-}
-
 function isCursorAssistantToolWorkaroundLine(value: string): boolean {
   const trimmed = value.trim()
   if (!trimmed) return false
@@ -200,7 +177,6 @@ function stripMatchingCursorAssistantLines(
   value: string,
   predicate: (line: string) => boolean,
   quickCheck: (value: string) => boolean,
-  options: { stripPrecedingHeading?: boolean } = {},
 ): string {
   if (!quickCheck(value)) {
     return value
@@ -213,9 +189,6 @@ function stripMatchingCursorAssistantLines(
   for (const record of records) {
     if (predicate(record.content)) {
       changed = true
-      if (options.stripPrecedingHeading) {
-        removeTrailingStandaloneHeading(output)
-      }
       continue
     }
 
@@ -223,32 +196,6 @@ function stripMatchingCursorAssistantLines(
   }
 
   return changed ? cleanupDiagnosticWhitespace(output.join("")) : value
-}
-
-function removeTrailingStandaloneHeading(output: string[]) {
-  let index = output.length - 1
-  while (index >= 0 && output[index]?.trim() === "") {
-    index -= 1
-  }
-
-  const candidate = output[index]?.trim()
-  if (!candidate || !/^(?:#{1,6}\s+\S.*|\*\*[^*\n]+\*\*)$/.test(candidate)) {
-    return
-  }
-
-  output.splice(index)
-}
-
-function stripCursorAssistantMetaRestatementLines(value: string): string {
-  if (!value.includes("The user ")) {
-    return value
-  }
-
-  return stripMatchingCursorAssistantLines(
-    value,
-    isCursorAssistantMetaRestatementLine,
-    (candidate) => candidate.includes("The user "),
-  )
 }
 
 function stripCursorAssistantToolWorkaroundLines(value: string): string {
@@ -259,79 +206,6 @@ function stripCursorAssistantToolWorkaroundLines(value: string): string {
   )
 }
 
-function normalizeReasoningStatusTarget(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[`"'()[\]{}]/g, "")
-    .replace(/[.!?,:;]+$/g, "")
-    .replace(/\b(?:a|an|the|some|any|current|relevant)\b/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-}
-
-function isSelfReferentialReasoningStatusLine(value: string): boolean {
-  const trimmed = value.trim()
-  if (SKILL_ANNOUNCEMENT_REASONING_PATTERN.test(trimmed)) {
-    return true
-  }
-
-  if (!trimmed.includes(" I ")) {
-    return false
-  }
-
-  if (SKILL_CONFLICT_REASONING_STATUS_PATTERN.test(trimmed)) {
-    return true
-  }
-
-  const match = trimmed.match(SELF_REFERENTIAL_REASONING_STATUS_PATTERN)
-  if (!match) {
-    return false
-  }
-
-  const firstTarget = normalizeReasoningStatusTarget(match[1] ?? "")
-  const secondTarget = normalizeReasoningStatusTarget(match[2] ?? "")
-  if (!firstTarget || !secondTarget) {
-    return false
-  }
-
-  return firstTarget === secondTarget
-    || firstTarget.includes(secondTarget)
-    || secondTarget.includes(firstTarget)
-}
-
-function stripSelfReferentialReasoningStatusLines(value: string): string {
-  if (!value.includes(" I ")) {
-    return value
-  }
-
-  return stripMatchingCursorAssistantLines(
-    value,
-    isSelfReferentialReasoningStatusLine,
-    (candidate) => {
-      const lower = candidate.toLowerCase()
-      return candidate.includes(" I ") || (lower.includes("skill") && lower.includes("announce"))
-    },
-    { stripPrecedingHeading: true },
-  )
-}
-
-function stripDanglingCursorReasoningFragment(value: string): string {
-  if (!DANGLING_REASONING_LIST_MARKER_PATTERN.test(value)) {
-    return value
-  }
-
-  const withoutDanglingMarker = value.replace(DANGLING_REASONING_LIST_MARKER_PATTERN, "").trimEnd()
-  let lastBoundaryEnd = -1
-  for (const match of withoutDanglingMarker.matchAll(SENTENCE_BOUNDARY_PATTERN)) {
-    lastBoundaryEnd = (match.index ?? 0) + match[0].length
-  }
-  if (lastBoundaryEnd > 0 && lastBoundaryEnd < withoutDanglingMarker.length) {
-    return withoutDanglingMarker.slice(0, lastBoundaryEnd).trim()
-  }
-
-  return withoutDanglingMarker
-}
-
 export function normalizeAssistantVisibleText(value: string): string {
   return stripCursorAssistantToolWorkaroundLines(
     stripInternalToolRunnerDiagnostics(collapseExactAdjacentTextRepeats(value)),
@@ -339,11 +213,7 @@ export function normalizeAssistantVisibleText(value: string): string {
 }
 
 export function normalizeAssistantReasoningText(value: string): string {
-  return stripDanglingCursorReasoningFragment(
-    stripSelfReferentialReasoningStatusLines(
-      stripCursorAssistantMetaRestatementLines(normalizeAssistantVisibleText(value)),
-    ),
-  )
+  return stripInternalToolRunnerDiagnostics(collapseExactAdjacentTextRepeats(value))
 }
 
 export function normalizeAssistantPartText(value: string, partType: string | undefined): string {

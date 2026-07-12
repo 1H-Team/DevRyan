@@ -7,7 +7,7 @@ Settings section for existing OpenCode plugin configuration and plugin files plu
 - Split Settings section with a grouped sidebar and detail page.
 - Sidebar groups user/project config entries and user/project plugin files.
 - Page content displays plugin metadata only; no create, edit, delete, registry, update, or reload controls for arbitrary plugins.
-- The Slim Runtime panel is a separate guarded action surface for installing/repairing DevRyan's `oh-my-opencode-slim` wrapper setup and reporting backup/status diagnostics.
+- The Slim Runtime panel is a separate guarded action surface shown only for a Slim plugin selection or the no-selection setup state. Ready setup hides Install and offers Repair; unrelated plugin pages contain only their own metadata.
 
 ## Flow
 Settings view loads `usePluginsStore` when the Plugins page is active. The store calls `GET /api/config/plugins` for the active directory and exposes stable read-only lists to the sidebar/page. It also calls `GET /api/config/slim/status`; install/repair buttons call the matching Slim setup endpoints and then refresh plugin status/lists.

@@ -7,9 +7,12 @@ This module contains tunnel provider orchestration for OpenChamber, including pr
 - `packages/web/server/lib/tunnels/index.js`: tunnel service orchestration.
 - `packages/web/server/lib/tunnels/registry.js`: provider registry.
 - `packages/web/server/lib/tunnels/managed-config.js`: managed remote tunnel token/preset persistence runtime.
+- `packages/web/server/lib/tunnels/managed-token.js`: authoritative parser for raw Cloudflare tunnel tokens and supported Cloudflare-generated connector commands.
 - `packages/web/server/lib/tunnels/routes.js`: tunnel API route registration and request orchestration runtime.
 - `packages/web/server/lib/tunnels/types.js`: tunnel constants, normalization, and shared type helpers.
 - `packages/web/server/lib/tunnels/providers/cloudflare.js`: Cloudflare tunnel provider implementation.
+
+Managed remote tunnel tokens are normalized by `managed-token.js` both before configuration persistence and immediately before cloudflared launch. Persisted configuration and generated token files therefore contain raw tokens only, while the launch boundary also recovers supported legacy command-form values.
 
 ## Public exports (routes.js)
 - `createTunnelRoutesRuntime(dependencies)`: creates tunnel routes runtime and helpers.

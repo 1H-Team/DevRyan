@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/ui",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "private": true,
   "type": "module",
   "main": "src/main.tsx",
@@ -12,6 +12,7 @@
     "test": "node ../../scripts/test-ui.mjs"
   },
   "dependencies": {
+    "@openchamber/orchestration-runtime": "workspace:*",
     "@codemirror/autocomplete": "^6.20.0",
     "@codemirror/commands": "^6.10.1",
     "@codemirror/lang-cpp": "^6.0.3",

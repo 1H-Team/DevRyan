@@ -8,6 +8,7 @@
 import { create } from "zustand"
 
 import { isGitGenerationSession } from "@/lib/git/gitGenerationSessions"
+import { getSafeStorage } from "@/stores/utils/safeStorage"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -55,6 +56,8 @@ type NotificationIndex = {
 
 const MAX_NOTIFICATIONS = 500
 const NOTIFICATION_TTL_MS = 1000 * 60 * 60 * 24 * 30 // 30 days
+const COMPLETION_NOTIFICATION_STORAGE_KEY = "openchamber:notification-completions:v1"
+const notificationStorage = getSafeStorage()
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -91,6 +94,54 @@ function buildIndex(list: Notification[]): NotificationIndex {
   return index
 }
 
+function readPersistedCompletionNotifications(): Notification[] {
+  try {
+    const raw = notificationStorage.getItem(COMPLETION_NOTIFICATION_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+
+    const completions: Notification[] = []
+    for (const value of parsed) {
+      if (!value || typeof value !== "object") continue
+      const candidate = value as Record<string, unknown>
+      if (candidate.type !== "turn-complete") continue
+      if (typeof candidate.session !== "string" || candidate.session.length === 0) continue
+      if (typeof candidate.time !== "number" || !Number.isFinite(candidate.time)) continue
+      if (typeof candidate.viewed !== "boolean") continue
+
+      completions.push({
+        type: "turn-complete",
+        session: candidate.session,
+        time: candidate.time,
+        viewed: candidate.viewed,
+        ...(typeof candidate.directory === "string" && candidate.directory.length > 0
+          ? { directory: candidate.directory }
+          : {}),
+        ...(typeof candidate.messageId === "string" && candidate.messageId.length > 0
+          ? { messageId: candidate.messageId }
+          : {}),
+      })
+    }
+    return pruneNotifications(completions)
+  } catch {
+    return []
+  }
+}
+
+function persistCompletionNotifications(list: Notification[]): void {
+  try {
+    const completions = pruneNotifications(list.filter((notification) => notification.type === "turn-complete"))
+    if (completions.length === 0) {
+      notificationStorage.removeItem(COMPLETION_NOTIFICATION_STORAGE_KEY)
+      return
+    }
+    notificationStorage.setItem(COMPLETION_NOTIFICATION_STORAGE_KEY, JSON.stringify(completions))
+  } catch {
+    // Completion indicators remain functional in memory when storage is unavailable.
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
@@ -114,12 +165,11 @@ interface NotificationStore {
   projectHasError: (directory: string) => boolean
 }
 
+const initialNotifications = readPersistedCompletionNotifications()
+
 export const useNotificationStore = create<NotificationStore>((set, get) => ({
-  list: [],
-  index: {
-    session: { unseenCount: {}, unseenHasError: {}, unseenHasCompletion: {} },
-    project: { unseenCount: {}, unseenHasError: {}, unseenHasCompletion: {} },
-  },
+  list: initialNotifications,
+  index: buildIndex(initialNotifications),
 
   append: (notification) => {
     if (notification.session && isGitGenerationSession(notification.session)) {
@@ -136,6 +186,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
     }
     const next = pruneNotifications([...current, notification])
     set({ list: next, index: buildIndex(next) })
+    persistCompletionNotifications(next)
   },
 
   markSessionViewed: (sessionId) => {
@@ -156,6 +207,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
       n.session && viewedSessionIds.has(n.session) && !n.viewed ? { ...n, viewed: true } : n,
     )
     set({ list: next, index: buildIndex(next) })
+    persistCompletionNotifications(next)
   },
 
   markSessionCompletionsViewed: (sessionId) => {
@@ -166,6 +218,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
       n.session === sessionId && n.type === "turn-complete" && !n.viewed ? { ...n, viewed: true } : n,
     )
     set({ list: next, index: buildIndex(next) })
+    persistCompletionNotifications(next)
   },
 
   markProjectViewed: (directory) => {
@@ -177,6 +230,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
       n.directory === directory && !n.viewed ? { ...n, viewed: true } : n,
     )
     set({ list: next, index: buildIndex(next) })
+    persistCompletionNotifications(next)
   },
 
   sessionUnseenCount: (sessionId) => get().index.session.unseenCount[sessionId] ?? 0,

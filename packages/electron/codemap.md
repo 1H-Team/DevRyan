@@ -10,7 +10,7 @@ Primary desktop shell (Electron). Boots the DevRyan web server in-process, owns 
 - **Capability gating**: sensitive commands are enforced in main-process handlers (`openchamber:invoke`), with remote/local origin checks.
 - **Manager modules**: `ssh-manager.mjs` and `speech-manager.mjs` encapsulate long-running native integrations and emit structured status events.
 - **Native state controllers**: `keep-awake-controller.mjs` wraps `powerSaveBlocker` with idempotent apply/stop semantics for the desktop Keep Awake setting.
-- **Operational hardening**: single-instance lock, persistent logging via `electron-log`, stale log pruning, graceful/confirmed quit path, and unthrottled renderer paints for chat windows so packaged streaming/status updates stay responsive.
+- **Operational hardening**: single-instance lock, persistent logging via `electron-log`, stale log pruning, and unthrottled renderer paints for chat windows so packaged streaming/status updates stay responsive. `quit-cleanup.mjs` keeps the main process alive until owned web/OpenCode/SSH cleanup settles, with a bounded force-exit fallback.
 - **Cache maintenance**: `cache-maintenance.mjs` clears packaged Electron HTTP/code caches at startup without touching app storage such as localStorage, cookies, or IndexedDB.
 
 ## Flow
@@ -19,10 +19,14 @@ Primary desktop shell (Electron). Boots the DevRyan web server in-process, owns 
 3. `preload.mjs` injects shell flags/global values and wires IPC invoke/listen channels.
 4. Renderer calls `window.__TAURI__.core.invoke(...)` for desktop actions; main process handles command routing and side effects.
 5. Main process emits lifecycle/update/SSH/speech events back to renderer via `openchamber:emit`.
-6. On quit/update install, main process runs shutdown sequence (persist window state, stop managed resources, exit).
+6. On normal quit, main process persists window state, awaits managed web/OpenCode and SSH cleanup, then exits. Update installation retains its updater-owned shutdown path.
 
 ## Integration
 - **Depends on**: `@openchamber/web` server entrypoint, Electron runtime APIs, `electron-updater`, OS facilities.
 - **Consumes/hosts**: web UI bundle served from local web server; startup splash and boot metadata are injected from main process.
 - **Contract with shared UI**: `__TAURI__` invoke commands and emitted `openchamber:*` events.
 - **Packaging/release hooks**: `packages/electron/scripts/*` for bundling main process, native helper build/signing, release metadata finalization.
+- **Window-state persistence**: `window-state-persistence.mjs` snapshots native `BrowserWindow` values before queued settings writes, so shutdown never retains a destroyed native window.
+- **Quit cleanup**: `quit-cleanup.mjs` orders normal app quit after owned-resource cleanup, deduplicates the main-process stop promise, and bounds a genuinely hung cleanup at ten seconds.
+- **Native packaging verification**: `scripts/native-module-paths.mjs` resolves workspace/transitive native modules without assuming Bun hoisting, while `scripts/packaged-native-modules.mjs` rejects artifacts missing required Electron ABI bindings or Cursor ripgrep.
+- **Regression suite**: `bun run test` runs all Electron `.test.mjs` files under Bun; the root full and affected validation gates invoke this package suite.

@@ -8,6 +8,7 @@ import { openSseProxy } from './sseProxy';
 import { resolveWebviewDevServerUrl } from './webviewDevServer';
 import { normalizeWindowsDriveLetter } from './pathUtils';
 import { resolveWorkspaceFolders } from './workspaceResolver';
+import type { VsCodeManagedOrchestrationRuntime } from './managedOrchestrationRuntime';
 
 export class AgentManagerPanelProvider {
   public static readonly viewType = 'openchamber.agentManager';
@@ -24,7 +25,8 @@ export class AgentManagerPanelProvider {
   constructor(
     private readonly _context: vscode.ExtensionContext,
     private readonly _extensionUri: vscode.Uri,
-    private readonly _openCodeManager?: OpenCodeManager
+    private readonly _openCodeManager?: OpenCodeManager,
+    private readonly _managedOrchestrationRuntime?: VsCodeManagedOrchestrationRuntime,
   ) {
     this._webviewDevServerUrl = resolveWebviewDevServerUrl(this._context);
   }
@@ -96,6 +98,7 @@ export class AgentManagerPanelProvider {
       const response = await handleBridgeMessage(message, {
         manager: this._openCodeManager,
         context: this._context,
+        managedOrchestrationRuntime: this._managedOrchestrationRuntime,
       });
       this._panel?.webview.postMessage(response);
     }, null, this._context.subscriptions);
@@ -120,6 +123,10 @@ export class AgentManagerPanelProvider {
 
     // Send to webview if it exists
     this._sendCachedState();
+  }
+
+  public postMessage(message: unknown): void {
+    void this._panel?.webview.postMessage(message);
   }
 
   private _sendCachedState() {

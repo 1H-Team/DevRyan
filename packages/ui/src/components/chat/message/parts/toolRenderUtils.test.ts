@@ -564,6 +564,14 @@ describe('tool activity grouping', () => {
         }
     });
 
+    test('hides raw DevRyan managed-task tool activity', () => {
+        const rows = collectToolActivityRowsFromToolParts([
+            toolPart('devryan_task', { input: { action: 'start' } }, 'managed-task-1'),
+        ]);
+
+        expect(rows).toEqual([]);
+    });
+
     test('labels shell rollups as command counts', () => {
         expect(getToolActivityGroupInfo('bash')?.kind).toBe('shell');
         expect(getToolActivityGroupInfo('shellCommandToolCall')?.kind).toBe('shell');

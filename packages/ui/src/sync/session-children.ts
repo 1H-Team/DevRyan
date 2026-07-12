@@ -44,6 +44,20 @@ export const getSessionChildrenFetchKey = (directory: string, parentSessionId: s
   return `${directory}::${parentSessionId}`;
 };
 
+export const clearSessionChildrenForDirectory = (
+  cache: Map<string, SessionChildrenFetchCacheEntry>,
+  directory: string,
+): number => {
+  const prefix = `${directory}::`;
+  let cleared = 0;
+  for (const key of cache.keys()) {
+    if (!key.startsWith(prefix)) continue;
+    cache.delete(key);
+    cleared += 1;
+  }
+  return cleared;
+};
+
 export type SessionChildrenFetchCacheEntry = {
   promise?: Promise<void>;
   fetchedAt?: number;

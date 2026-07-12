@@ -8,38 +8,85 @@ export function sleep(ms) {
   });
 }
 
+function isDetachedProcessGroupRunning(child) {
+  if (!child?.pid || !useDetachedChildren || process.platform === 'win32') {
+    return false;
+  }
+
+  try {
+    process.kill(-child.pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code !== 'ESRCH';
+  }
+}
+
+export function isChildTreeRunning(child) {
+  if (!child) {
+    return false;
+  }
+  if (useDetachedChildren && process.platform !== 'win32') {
+    return isDetachedProcessGroupRunning(child);
+  }
+  return child.exitCode === null && child.signalCode === null;
+}
+
 export function waitForExit(child, timeoutMs) {
   return new Promise((resolve) => {
-    if (!child || child.exitCode !== null || child.signalCode !== null) {
+    if (!isChildTreeRunning(child)) {
       resolve();
       return;
     }
 
-    const onExit = () => {
-      clearTimeout(timer);
+    const deadline = Date.now() + timeoutMs;
+    let timer;
+    let settled = false;
+
+    const cleanup = () => {
+      if (timer) clearTimeout(timer);
+      child.off('exit', onExit);
+    };
+
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
       resolve();
     };
 
-    const timer = setTimeout(() => {
-      child.off('exit', onExit);
-      resolve();
-    }, timeoutMs);
+    const check = () => {
+      if (!isChildTreeRunning(child) || Date.now() >= deadline) {
+        settle();
+        return;
+      }
+      timer = setTimeout(check, Math.min(25, Math.max(1, deadline - Date.now())));
+    };
+
+    const onExit = () => {
+      if (timer) clearTimeout(timer);
+      check();
+    };
 
     child.once('exit', onExit);
+    check();
   });
 }
 
 export function signalChild(child, signal) {
-  if (!child || child.exitCode !== null || child.signalCode !== null) {
+  if (!child) {
     return;
   }
 
   try {
-    if (useDetachedChildren && process.platform !== 'win32') {
+    if (child.pid && useDetachedChildren && process.platform !== 'win32') {
       process.kill(-child.pid, signal);
       return;
     }
   } catch {
+  }
+
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return;
   }
 
   try {
@@ -49,19 +96,19 @@ export function signalChild(child, signal) {
 }
 
 export async function stopChildTree(child) {
-  if (!child || child.exitCode !== null || child.signalCode !== null) {
+  if (!isChildTreeRunning(child)) {
     return;
   }
 
   signalChild(child, 'SIGINT');
   await waitForExit(child, 2500);
 
-  if (child.exitCode === null && child.signalCode === null) {
+  if (isChildTreeRunning(child)) {
     signalChild(child, 'SIGTERM');
     await waitForExit(child, 2500);
   }
 
-  if (child.exitCode === null && child.signalCode === null) {
+  if (isChildTreeRunning(child)) {
     signalChild(child, 'SIGKILL');
     await waitForExit(child, 1000);
   }

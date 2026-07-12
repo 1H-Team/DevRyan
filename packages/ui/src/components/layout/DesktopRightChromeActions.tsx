@@ -14,7 +14,7 @@ import { McpIcon } from '@/components/icons/McpIcon';
 import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useProjectsStore } from '@/stores/useProjectsStore';
-import { useQuotaAutoRefresh, useQuotaStore } from '@/stores/useQuotaStore';
+import { quotaRefreshCoordinator, useQuotaStore } from '@/stores/useQuotaStore';
 import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 import { cn } from '@/lib/utils';
 import { QUOTA_PROVIDERS } from '@/lib/quota';
@@ -80,12 +80,12 @@ export const DesktopRightChromeActions: React.FC = () => {
   });
 
   const quotaResults = useQuotaStore((state) => state.results);
-  const fetchAllQuotas = useQuotaStore((state) => state.fetchAllQuotas);
+  const quotaProviderRefreshState = useQuotaStore((state) => state.providerRefreshState);
+  const fetchAllQuotas = quotaRefreshCoordinator.refreshNow;
   const isQuotaLoading = useQuotaStore((state) => state.isLoading);
   const quotaLastUpdated = useQuotaStore((state) => state.lastUpdated);
   const quotaTrendHistory = useQuotaStore((state) => state.trendHistory);
   const dropdownProviderIds = useQuotaStore((state) => state.dropdownProviderIds);
-  const loadQuotaSettings = useQuotaStore((state) => state.loadSettings);
   const selectedModels = useQuotaStore((state) => state.selectedModels);
   const expandedFamilies = useQuotaStore((state) => state.expandedFamilies);
   const toggleFamilyExpanded = useQuotaStore((state) => state.toggleFamilyExpanded);
@@ -143,8 +143,6 @@ export const DesktopRightChromeActions: React.FC = () => {
   useEffect(() => {
     void refreshCurrentInstanceLabel();
   }, [refreshCurrentInstanceLabel]);
-  useQuotaAutoRefresh();
-
   const rateLimitGroups = React.useMemo(() => {
     const groups: RateLimitGroup[] = [];
 
@@ -163,7 +161,8 @@ export const DesktopRightChromeActions: React.FC = () => {
         providerName: provider.name,
         entries,
         resetCredits: result?.usage?.resetCredits,
-        error: (result && !result.ok && result.configured) ? result.error : undefined,
+        error: quotaProviderRefreshState[provider.id]?.refreshError
+          ?? ((result && !result.ok && result.configured) ? result.error : undefined),
       };
 
       if (models && Object.keys(models).length > 0) {
@@ -265,7 +264,7 @@ export const DesktopRightChromeActions: React.FC = () => {
     }
 
     return groups;
-  }, [dropdownProviderIds, quotaResults, selectedModels, t]);
+  }, [dropdownProviderIds, quotaProviderRefreshState, quotaResults, selectedModels, t]);
 
   const hasRateLimits = rateLimitGroups.length > 0;
   const resolvedActiveUsageProviderId = React.useMemo(
@@ -278,10 +277,6 @@ export const DesktopRightChromeActions: React.FC = () => {
       setActiveUsageProviderId(resolvedActiveUsageProviderId);
     }
   }, [activeUsageProviderId, resolvedActiveUsageProviderId]);
-
-  React.useEffect(() => {
-    void loadQuotaSettings();
-  }, [loadQuotaSettings]);
 
   const handleUsageRefresh = React.useCallback(() => {
     if (isUsageRefreshSpinning) return;

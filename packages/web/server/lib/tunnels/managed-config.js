@@ -4,6 +4,7 @@ export const createManagedTunnelConfigRuntime = (deps) => {
     path,
     normalizeManagedRemoteTunnelHostname,
     normalizeManagedRemoteTunnelPresets,
+    normalizeManagedRemoteTunnelToken,
     constants,
   } = deps;
 
@@ -31,7 +32,12 @@ export const createManagedTunnelConfigRuntime = (deps) => {
       const id = typeof entry.id === 'string' ? entry.id.trim() : '';
       const name = typeof entry.name === 'string' ? entry.name.trim() : '';
       const hostname = normalizeManagedRemoteTunnelHostname(entry.hostname);
-      const token = typeof entry.token === 'string' ? entry.token.trim() : '';
+      let token = '';
+      try {
+        token = normalizeManagedRemoteTunnelToken(entry.token);
+      } catch {
+        continue;
+      }
       const updatedAt = Number.isFinite(entry.updatedAt) ? entry.updatedAt : Date.now();
 
       if (!id || !name || !hostname || !token) {
@@ -148,7 +154,7 @@ export const createManagedTunnelConfigRuntime = (deps) => {
     const normalizedId = id.trim();
     const normalizedName = name.trim();
     const normalizedHostname = normalizeManagedRemoteTunnelHostname(hostname);
-    const normalizedToken = token.trim();
+    const normalizedToken = normalizeManagedRemoteTunnelToken(token);
     if (!normalizedId || !normalizedName || !normalizedHostname || !normalizedToken) {
       return;
     }

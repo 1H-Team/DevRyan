@@ -26,4 +26,18 @@ describe('Header usage dropdown', () => {
     expect(source).toContain('const entries = isAntigravityProvider ? [] : Object.entries(windows)');
     expect(source).toContain('group.modelRows = [...(group.modelRows ?? []), ...familyModels]');
   });
+
+  test('surfaces refresh failures without removing retained usage rows', () => {
+    const source = headerSource();
+    const desktopSource = readFileSync(resolve(testDir, 'DesktopRightChromeActions.tsx'), 'utf8');
+    const vscodeSource = readFileSync(resolve(testDir, 'VSCodeLayout.tsx'), 'utf8');
+    const panelSource = readFileSync(resolve(testDir, 'usage/UsageProviderPanel.tsx'), 'utf8');
+
+    for (const layoutSource of [source, desktopSource, vscodeSource]) {
+      expect(layoutSource).toContain('providerRefreshState');
+      expect(layoutSource).toContain('refreshError');
+    }
+    expect(panelSource).toContain('group.error ?');
+    expect(panelSource).toContain('status-warning-background');
+  });
 });

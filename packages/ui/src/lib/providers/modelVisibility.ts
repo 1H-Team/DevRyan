@@ -2,6 +2,7 @@ import {
   getDisplayProviderId,
   splitAntigravityProviderForDisplay,
 } from './antigravity';
+import { isProviderModelAvailable } from './modelAvailability';
 
 export type HiddenModelRef = {
   providerID: string;
@@ -141,8 +142,11 @@ export const filterVisibleProviderModelsForPicker = <
   providers: TProvider[],
   hiddenModels: HiddenModelRef[],
   shouldKeepModel?: (provider: TProvider, model: TModel, modelID: string) => boolean,
-): TProvider[] => filterHiddenProviderModels(
-  splitAntigravityProviderForDisplay(providers),
+): TProvider[] => filterHiddenProviderModels<TModel, TProvider>(
+  splitAntigravityProviderForDisplay<TModel, TProvider>(providers),
   hiddenModels,
-  shouldKeepModel,
+  (provider, model, modelID) => (
+    isProviderModelAvailable(model)
+    && (shouldKeepModel ? shouldKeepModel(provider, model, modelID) : true)
+  ),
 );

@@ -47,11 +47,11 @@ export class ChildStoreManager {
   readonly children = new Map<string, StoreApi<DirectoryStore>>()
   private readonly lifecycle = new Map<string, DirState>()
   private readonly pins = new Map<string, number>()
-  private readonly disposers = new Map<string, () => void>()
+  private readonly disposers = new Map<string, Set<() => void>>()
   private readonly registrySubscribers = new Set<() => void>()
 
   private onBootstrap?: (directory: string) => void
-  private onDispose?: (directory: string) => void
+  private onDispose?: (directory: string, snapshot: State) => void
   private isBooting?: (directory: string) => boolean
   private isLoadingSessions?: (directory: string) => boolean
 
@@ -63,7 +63,7 @@ export class ChildStoreManager {
 
   configure(callbacks: {
     onBootstrap?: (directory: string) => void
-    onDispose?: (directory: string) => void
+    onDispose?: (directory: string, snapshot: State) => void
     isBooting?: (directory: string) => boolean
     isLoadingSessions?: (directory: string) => boolean
   }) {
@@ -113,7 +113,7 @@ export class ChildStoreManager {
     this.mark(directory)
 
     const shouldBootstrap = options?.bootstrap ?? true
-    if (shouldBootstrap && store.getState().status === "loading") {
+    if (shouldBootstrap && store.getState().status !== "complete") {
       this.onBootstrap?.(directory)
     }
 
@@ -122,6 +122,56 @@ export class ChildStoreManager {
 
   getChild(directory: string): StoreApi<DirectoryStore> | undefined {
     return this.children.get(directory)
+  }
+
+  registerDisposer(directory: string, disposer: () => void): () => void {
+    if (!directory || !this.children.has(directory)) {
+      return () => undefined
+    }
+
+    const registered = this.disposers.get(directory) ?? new Set<() => void>()
+    registered.add(disposer)
+    this.disposers.set(directory, registered)
+
+    let active = true
+    return () => {
+      if (!active) return
+      active = false
+      const current = this.disposers.get(directory)
+      current?.delete(disposer)
+      if (current?.size === 0) {
+        this.disposers.delete(directory)
+      }
+    }
+  }
+
+  private releaseDirectory(directory: string, notify = true): boolean {
+    const store = this.children.get(directory)
+    if (!store) return false
+
+    const snapshot = store.getState()
+    const disposers = [...(this.disposers.get(directory) ?? [])]
+    this.disposers.delete(directory)
+    this.children.delete(directory)
+    this.lifecycle.delete(directory)
+    this.pins.delete(directory)
+    for (const dispose of disposers) {
+      try {
+        dispose()
+      } catch (error) {
+        console.error("[sync] directory disposer failed", { directory, error })
+      }
+    }
+    try {
+      this.onDispose?.(directory, snapshot)
+    } catch (error) {
+      console.error("[sync] directory ownership callback failed", { directory, error })
+    }
+
+    if (notify) {
+      this.notifyRegistrySubscribers()
+    }
+    return true
   }
 
   disposeDirectory(directory: string): boolean {
@@ -138,16 +188,7 @@ export class ChildStoreManager {
       return false
     }
 
-    this.lifecycle.delete(directory)
-    this.children.delete(directory)
-    this.notifyRegistrySubscribers()
-    const dispose = this.disposers.get(directory)
-    if (dispose) {
-      dispose()
-      this.disposers.delete(directory)
-    }
-    this.onDispose?.(directory)
-    return true
+    return this.releaseDirectory(directory)
   }
 
   runEviction(skip?: string) {
@@ -187,7 +228,7 @@ export class ChildStoreManager {
 
   disposeAll() {
     for (const directory of [...this.children.keys()]) {
-      this.children.delete(directory)
+      this.releaseDirectory(directory, false)
     }
     this.notifyRegistrySubscribers()
     this.lifecycle.clear()

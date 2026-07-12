@@ -8,6 +8,7 @@ import { openSseProxy } from './sseProxy';
 import { resolveWebviewDevServerUrl } from './webviewDevServer';
 import { normalizeWindowsDriveLetter } from './pathUtils';
 import { resolveWorkspaceFolders } from './workspaceResolver';
+import type { VsCodeManagedOrchestrationRuntime } from './managedOrchestrationRuntime';
 
 type SessionPanelState = {
   panel: vscode.WebviewPanel;
@@ -26,7 +27,8 @@ export class SessionEditorPanelProvider {
   constructor(
     private readonly _context: vscode.ExtensionContext,
     private readonly _extensionUri: vscode.Uri,
-    private readonly _openCodeManager?: OpenCodeManager
+    private readonly _openCodeManager?: OpenCodeManager,
+    private readonly _managedOrchestrationRuntime?: VsCodeManagedOrchestrationRuntime,
   ) {
     this._webviewDevServerUrl = resolveWebviewDevServerUrl(this._context);
   }
@@ -110,6 +112,7 @@ export class SessionEditorPanelProvider {
       const response = await handleBridgeMessage(message, {
         manager: this._openCodeManager,
         context: this._context,
+        managedOrchestrationRuntime: this._managedOrchestrationRuntime,
       });
       state.panel.webview.postMessage(response);
 
@@ -147,6 +150,12 @@ export class SessionEditorPanelProvider {
         command: 'settingsSynced',
         payload: settings,
       });
+    }
+  }
+
+  public postMessage(message: unknown): void {
+    for (const entry of this._panels.values()) {
+      void entry.panel.webview.postMessage(message);
     }
   }
 

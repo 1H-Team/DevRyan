@@ -14,6 +14,8 @@ import { ElectronSshManager } from './ssh-manager.mjs';
 import { MacosSpeechManager } from './speech-manager.mjs';
 import { clearElectronRuntimeCaches } from './cache-maintenance.mjs';
 import { createKeepAwakeController } from './keep-awake-controller.mjs';
+import { finishQuitAfterCleanup } from './quit-cleanup.mjs';
+import { persistWindowState } from './window-state-persistence.mjs';
 import { buildStartupSplashHtml as buildStartupSplashHtmlFromSettings } from './startup-splash.mjs';
 import {
   isAllowedElectronContentUrl,
@@ -140,6 +142,7 @@ const state = {
   quitRequested: false,
   quitConfirmed: false,
   quitConfirmationPending: false,
+  quitCleanupPromise: null,
   installingUpdate: false,
   pendingUpdate: null,
   unreachableHosts: new Set(),
@@ -194,29 +197,33 @@ const prepareForQuit = ({ installingUpdate = false } = {}) => {
     } catch {
     }
   }
-
-  if (!installingUpdate) {
-    try {
-      killSidecar();
-    } catch {
-    }
-    void sshManager.shutdownAll().catch(() => {});
-    speechManager.shutdown();
-  }
 };
 
 const performConfirmedQuit = () => {
-  if (state.quitConfirmed) return;
+  if (state.quitConfirmed || state.quitCleanupPromise) return;
   prepareForQuit();
-
-  // Safety net: force-exit if normal quit sequence stalls (e.g. background
-  // handles in electron-updater / fetch refs) after a short grace period.
-  const safety = setTimeout(() => {
-    app.exit(0);
-  }, 1500);
-  if (typeof safety?.unref === 'function') safety.unref();
-
-  app.quit();
+  state.quitCleanupPromise = finishQuitAfterCleanup({
+    cleanupOwnedResources: async () => {
+      speechManager.shutdown();
+      await Promise.all([
+        killSidecar(),
+        Promise.resolve(sshManager.shutdownAll()).catch((error) => {
+          log.warn('[electron] SSH shutdown failed during quit:', error);
+        }),
+      ]);
+    },
+    requestQuit: () => {
+      state.quitCleanupPromise = null;
+      app.quit();
+    },
+    forceExit: () => {
+      state.quitCleanupPromise = null;
+      app.exit(0);
+    },
+    onCleanupError: (error) => {
+      log.warn('[electron] owned-resource cleanup failed during quit:', error);
+    },
+  });
 };
 
 const requestQuitWithConfirmation = async () => {
@@ -461,19 +468,12 @@ const readWindowState = () => {
 };
 
 const writeWindowState = async (browserWindow) => {
-  if (!browserWindow || browserWindow.isDestroyed()) return;
-  if (!state.mainWindow || browserWindow.id !== state.mainWindow.id) return;
-
-  const bounds = browserWindow.getBounds();
-  await mutateSettingsRoot((root) => {
-    root.desktopWindowState = {
-      x: bounds.x,
-      y: bounds.y,
-      width: Math.max(bounds.width, MIN_WINDOW_WIDTH),
-      height: Math.max(bounds.height, MIN_WINDOW_HEIGHT),
-      maximized: browserWindow.isMaximized(),
-      fullscreen: browserWindow.isFullScreen(),
-    };
+  await persistWindowState({
+    browserWindow,
+    mainWindowID: state.mainWindow?.id ?? null,
+    minWidth: MIN_WINDOW_WIDTH,
+    minHeight: MIN_WINDOW_HEIGHT,
+    mutateSettingsRoot,
   });
 };
 
@@ -487,14 +487,17 @@ const debounceWindowStatePersist = (browserWindow, immediate = false) => {
     if (state.windowGeometryRevisions.get(key) !== revision) return;
     await writeWindowState(browserWindow);
   };
+  const reportFailure = (error) => {
+    log.warn('[electron] failed to persist window state:', error);
+  };
 
   if (immediate) {
-    void persist();
+    void persist().catch(reportFailure);
     return;
   }
 
   setTimeout(() => {
-    void persist();
+    void persist().catch(reportFailure);
   }, 300);
 };
 
@@ -849,18 +852,22 @@ const spawnLocalServer = async () => {
   return url;
 };
 
+let sidecarStopPromise = null;
+
 const killSidecar = () => {
-  if (state.serverHandle) {
-    try {
-      const result = state.serverHandle.stop({ exitProcess: false });
-      if (result && typeof result.then === 'function') {
-        result.catch(() => {});
-      }
-    } catch {
-    }
-    state.serverHandle = null;
-  }
+  if (!state.serverHandle) return sidecarStopPromise ?? Promise.resolve();
+  const serverHandle = state.serverHandle;
+  state.serverHandle = null;
   state.sidecarUrl = null;
+  sidecarStopPromise = Promise.resolve()
+    .then(() => serverHandle.stop({ exitProcess: false }))
+    .catch((error) => {
+      log.warn('[electron] web runtime shutdown failed:', error);
+    })
+    .finally(() => {
+      sidecarStopPromise = null;
+    });
+  return sidecarStopPromise;
 };
 
 const macosMajorVersion = () => {
@@ -2557,6 +2564,10 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', (event) => {
+  if (state.quitCleanupPromise) {
+    event.preventDefault();
+    return;
+  }
   if (state.quitConfirmed || state.installingUpdate || process.platform !== 'darwin') {
     state.quitRequested = true;
     releaseDesktopKeepAwake();

@@ -68,4 +68,51 @@ describe('graceful shutdown runtime', () => {
 
     expect(cursorSdkRuntime.dispose).toHaveBeenCalledTimes(1);
   });
+
+  it('stops the managed orchestration owner before provider runtime teardown', async () => {
+    const order = [];
+    const managedOrchestrationRuntime = {
+      shutdown: vi.fn(async () => { order.push('managed'); }),
+    };
+    const cursorSdkRuntime = {
+      dispose: vi.fn(async () => { order.push('cursor'); }),
+    };
+    const runtime = createRuntime(null, {
+      getManagedOrchestrationRuntime: () => managedOrchestrationRuntime,
+      getCursorSdkRuntime: () => cursorSdkRuntime,
+    });
+
+    await runtime.gracefulShutdown({ exitProcess: false });
+
+    expect(managedOrchestrationRuntime.shutdown).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(['managed', 'cursor']);
+  });
+
+  it('does not let a hung OpenCode close block server cleanup or process exit', async () => {
+    vi.useFakeTimers();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const exit = vi.fn();
+    const close = vi.fn(() => new Promise(() => {}));
+    const server = {
+      close: vi.fn((callback) => callback()),
+    };
+    const runtime = createRuntime(server, {
+      process: { exit },
+      shouldSkipOpenCodeStop: () => false,
+      getOpenCodePort: () => 64251,
+      getOpenCodeProcess: () => ({ close }),
+    });
+    let settled = false;
+
+    void runtime.gracefulShutdown({ exitProcess: true }).then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(settled).toBe(true);
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(server.close).toHaveBeenCalledTimes(1);
+    expect(exit).toHaveBeenCalledWith(0);
+    expect(warnSpy).toHaveBeenCalledWith('OpenCode close timeout reached, continuing shutdown');
+  });
 });

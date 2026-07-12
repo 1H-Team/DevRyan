@@ -25,7 +25,7 @@ import { useInputStore } from '@/sync/input-store';
 import { resolveCurrentDraftSendConfig, resolveCurrentSendConfig } from '@/sync/send-config';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
 import * as sessionActions from '@/sync/session-actions';
-import { useSessionMessagesResolved, useUserMessageHistory } from '@/sync/sync-context';
+import { useSession, useSessionMessagesResolved, useUserMessageHistory } from '@/sync/sync-context';
 import { useInlineCommentDraftStore, type InlineCommentDraft } from '@/stores/useInlineCommentDraftStore';
 import { appendInlineComments } from '@/lib/messages/inlineComments';
 import { renderMagicPrompt } from '@/lib/magicPrompts';
@@ -682,6 +682,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const currentSessionDirectory = useSessionUIStore((s) =>
         currentSessionId ? s.getDirectoryForSession(currentSessionId) : null,
     );
+    const currentSession = useSession(currentSessionId, currentSessionDirectory ?? undefined);
+    const currentSessionIsSubtask = Boolean((currentSession as { parentID?: string | null } | undefined)?.parentID);
     const currentSessionMessagesResolved = useSessionMessagesResolved(
         currentSessionId ?? '',
         currentSessionDirectory ?? undefined,
@@ -702,7 +704,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const addAttachedFile = useInputStore((s) => s.addAttachedFile);
     const clearAttachedFiles = useInputStore((s) => s.clearAttachedFiles);
     const saveSessionAgentSelection = useSelectionStore((s) => s.saveSessionAgentSelection);
-    const getDraftModelSelection = useSelectionStore((s) => s.getDraftModelSelection);
+    const getDraftAgentModelForSelection = useSelectionStore((s) => s.getDraftAgentModelForSelection);
+    const getDraftAgentModelVariantForSelection = useSelectionStore((s) => s.getDraftAgentModelVariantForSelection);
     const saveDraftAgentSelection = useSelectionStore((s) => s.saveDraftAgentSelection);
     const saveDraftModelSelection = useSelectionStore((s) => s.saveDraftModelSelection);
     const saveDraftAgentModelForSelection = useSelectionStore((s) => s.saveDraftAgentModelForSelection);
@@ -722,6 +725,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const setActiveProjectIdOnly = useProjectsStore((state) => state.setActiveProjectIdOnly);
 
     const currentAgentName = useConfigStore((state) => state.currentAgentName);
+    const setProviderModel = useConfigStore((state) => state.setProviderModel);
     const isPlanModeSelected = useSelectionStore((state) => state.getPlanModeSelection(currentSessionId));
     const setPlanModeSelection = useSelectionStore((state) => state.setPlanModeSelection);
     const setAgent = useConfigStore((state) => state.setAgent);
@@ -1437,6 +1441,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                     sessionPhase,
                     queuedMessageCount: latestQueuedMessages.length,
                     queuedOnly: true,
+                    isSubtaskSession: currentSessionIsSubtask,
                 });
                 if (shouldInterruptCurrentTurn) {
                     await sessionActions.interruptCurrentOperationForQueuedSend(queueSessionId);
@@ -1709,6 +1714,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             sessionPhase,
             queuedMessageCount: 0,
             queuedOnly: queuedOnly === true,
+            isSubtaskSession: currentSessionIsSubtask,
         });
         const submittedDraftTarget = newSessionDraftOpen && !currentSessionId
             ? activeDraftTarget
@@ -1859,13 +1865,13 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     // Primary action for send button - respects queue mode setting
     const handlePrimaryAction = React.useCallback(() => {
         const inputSnapshot = getCurrentInputSnapshot();
-        const canQueue = inputMode === 'normal' && inputSnapshot.hasContent && currentSessionId && isAbortableSessionPhase(sessionPhase);
+        const canQueue = inputMode === 'normal' && inputSnapshot.hasContent && currentSessionId && !currentSessionIsSubtask && isAbortableSessionPhase(sessionPhase);
         if (queueModeEnabled && canQueue) {
             handleQueueMessage();
         } else {
             void handleSubmitRef.current();
         }
-    }, [inputMode, getCurrentInputSnapshot, currentSessionId, sessionPhase, queueModeEnabled, handleQueueMessage]);
+    }, [inputMode, getCurrentInputSnapshot, currentSessionId, currentSessionIsSubtask, sessionPhase, queueModeEnabled, handleQueueMessage]);
 
     const handleContextCompact = React.useCallback(() => {
         if (!currentSessionId) return;
@@ -2047,7 +2053,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             // Normal mode: Enter sends, Ctrl+Enter queues
             // Note: Queueing only works when there's an existing session (currentSessionId)
             // For new sessions (draft), always send immediately
-            const canQueue = inputMode === 'normal' && hasContent && currentSessionId && isAbortableSessionPhase(sessionPhase);
+            const canQueue = inputMode === 'normal' && hasContent && currentSessionId && !currentSessionIsSubtask && isAbortableSessionPhase(sessionPhase);
 
             if (queueModeEnabled) {
                 if (isCtrlEnter || !canQueue) {
@@ -2226,8 +2232,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             { currentSessionId, currentDraftId, newSessionDraftOpen },
             {
                 setAgent,
+                setProviderModel,
                 saveSessionAgentSelection,
-                getDraftModelSelection,
+                getDraftAgentModelForSelection,
+                getDraftAgentModelVariantForSelection,
                 saveDraftAgentSelection,
                 saveDraftModelSelection,
                 saveDraftAgentModelForSelection,
@@ -2242,8 +2250,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         currentDraftId,
         newSessionDraftOpen,
         setAgent,
+        setProviderModel,
         saveSessionAgentSelection,
-        getDraftModelSelection,
+        getDraftAgentModelForSelection,
+        getDraftAgentModelVariantForSelection,
         saveDraftAgentSelection,
         saveDraftModelSelection,
         saveDraftAgentModelForSelection,
@@ -4248,7 +4258,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                     </div>
                                 </div>
                                 <MemoModelControls
-                                    className="hidden"
+                                    hideInlineControls
                                     mobilePanel={mobileControlsPanel}
                                     onMobilePanelChange={setMobileControlsPanel}
                                 />

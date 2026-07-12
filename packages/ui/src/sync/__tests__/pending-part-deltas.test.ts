@@ -130,7 +130,7 @@ describe("pending part deltas", () => {
     expect((result.parts[0] as { text?: string }).text).toBe("The user wants to continue implementing the solution.\n\nFixing the broken section.")
   })
 
-  test("strips Cursor meta-restatement when replaying pending assistant reasoning", () => {
+  test("preserves intent restatements when replaying pending assistant reasoning", () => {
     const result = applyPendingPartDeltasToParts([reasoningPart()], "prt_1", [{
       messageID: "msg_1",
       partID: "prt_1",
@@ -140,10 +140,10 @@ describe("pending part deltas", () => {
     }], { sanitizeAssistantText: true })
 
     expect(result.applied).toBe(true)
-    expect((result.parts[0] as { text?: string }).text).toBe("The hook has already been created.")
+    expect((result.parts[0] as { text?: string }).text).toBe("The user requests to continue implementing the solution.\n\nThe hook has already been created.")
   })
 
-  test("strips self-referential skill/action lines when replaying pending assistant reasoning", () => {
+  test("preserves skill/action lines when replaying pending assistant reasoning", () => {
     const result = applyPendingPartDeltasToParts([reasoningPart()], "prt_1", [{
       messageID: "msg_1",
       partID: "prt_1",
@@ -153,7 +153,7 @@ describe("pending part deltas", () => {
     }], { sanitizeAssistantText: true })
 
     expect(result.applied).toBe(true)
-    expect((result.parts[0] as { text?: string }).text).toBe("The available skills are loaded from the runtime metadata.")
+    expect((result.parts[0] as { text?: string }).text).toBe("Exploring skills index I need to inspect the skills index.\n\nThe available skills are loaded from the runtime metadata.")
   })
 
   test("replays buffered reasoning text onto an initially empty live reasoning part", () => {

@@ -3,7 +3,11 @@ import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { Checkbox } from '@/components/ui/checkbox';
 import { UsageCard } from './UsageCard';
 import { buildQuotaTrendKey, getSortedQuotaProviders, QUOTA_PROVIDERS } from '@/lib/quota';
-import { useQuotaAutoRefresh, useQuotaStore } from '@/stores/useQuotaStore';
+import {
+  getEffectiveQuotaRefreshIntervalMs,
+  getQuotaProviderRefreshStatus,
+  useQuotaStore,
+} from '@/stores/useQuotaStore';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import {
@@ -41,11 +45,14 @@ export const UsagePage: React.FC = () => {
   const results = useQuotaStore((state) => state.results);
   const selectedProviderId = useQuotaStore((state) => state.selectedProviderId);
   const setSelectedProvider = useQuotaStore((state) => state.setSelectedProvider);
-  const loadSettings = useQuotaStore((state) => state.loadSettings);
-  const fetchAllQuotas = useQuotaStore((state) => state.fetchAllQuotas);
+  const selectedRefreshState = useQuotaStore((state) => (
+    selectedProviderId ? state.providerRefreshState[selectedProviderId] : undefined
+  ));
   const isLoading = useQuotaStore((state) => state.isLoading);
   const lastUpdated = useQuotaStore((state) => state.lastUpdated);
   const error = useQuotaStore((state) => state.error);
+  const autoRefresh = useQuotaStore((state) => state.autoRefresh);
+  const refreshIntervalMs = useQuotaStore((state) => state.refreshIntervalMs);
   const dropdownProviderIds = useQuotaStore((state) => state.dropdownProviderIds);
   const setDropdownProviderIds = useQuotaStore((state) => state.setDropdownProviderIds);
   const selectedModels = useQuotaStore((state) => state.selectedModels);
@@ -53,15 +60,7 @@ export const UsagePage: React.FC = () => {
   const toggleModelSelected = useQuotaStore((state) => state.toggleModelSelected);
   const applyDefaultSelections = useQuotaStore((state) => state.applyDefaultSelections);
 
-  useQuotaAutoRefresh();
-
   const sortedQuotaProviders = React.useMemo(() => getSortedQuotaProviders(), []);
-
-  React.useEffect(() => {
-    void loadSettings();
-    void fetchAllQuotas();
-  }, [loadSettings, fetchAllQuotas]);
-
 
   React.useEffect(() => {
     if (results.length === 0) {
@@ -83,12 +82,22 @@ export const UsagePage: React.FC = () => {
   }, [results, selectedProviderId, setSelectedProvider, sortedQuotaProviders]);
 
   const selectedResult = results.find((entry) => entry.providerId === selectedProviderId) ?? null;
+  const selectedRefreshStatus = getQuotaProviderRefreshStatus(
+    selectedRefreshState,
+    getEffectiveQuotaRefreshIntervalMs({ autoRefresh, refreshIntervalMs }),
+  );
 
   const providerMeta = QUOTA_PROVIDERS.find((provider) => provider.id === selectedProviderId);
   const providerName = providerMeta?.name ?? selectedProviderId ?? t('settings.usage.sidebar.title');
   const usage = selectedResult?.usage;
-  const selectedProviderError = selectedResult?.error ?? null;
-  const showSelectedProviderError = selectedProviderError && selectedProviderError !== error;
+  const selectedProviderError = selectedRefreshStatus.refreshError ?? selectedResult?.error ?? null;
+  const hasRetainedUsageAfterFailure = Boolean(selectedResult?.ok && selectedRefreshStatus.refreshError);
+  const showSelectedProviderError = selectedProviderError
+    && selectedProviderError !== error
+    && !hasRetainedUsageAfterFailure;
+  const showStaleNotice = Boolean(selectedResult?.ok && (
+    selectedRefreshStatus.isStale || hasRetainedUsageAfterFailure
+  ));
   const isClaudeUsagePending = selectedResult?.errorCode === CLAUDE_CODE_USAGE_PENDING_CODE;
   const showInDropdown = selectedProviderId ? dropdownProviderIds.includes(selectedProviderId) : false;
   const handleDropdownToggle = React.useCallback((enabled: boolean) => {
@@ -214,7 +223,9 @@ export const UsagePage: React.FC = () => {
               {isLoading ? (
                 <span className="animate-pulse">{t('settings.usage.page.header.refreshing')}</span>
               ) : (
-                t('settings.usage.page.header.lastUpdated', { time: formatTime(lastUpdated) })
+                t('settings.usage.page.header.lastUpdated', {
+                  time: formatTime(selectedRefreshStatus.lastSuccessAt ?? lastUpdated),
+                })
               )}
             </p>
           </div>
@@ -265,6 +276,15 @@ export const UsagePage: React.FC = () => {
           <div className="mb-8 rounded-lg border border-[var(--status-error-border)] bg-[var(--status-error-background)] px-4 py-3">
             <p className="typography-ui-label font-medium text-[var(--status-error)]">{t('settings.usage.page.state.refreshFailedTitle')}</p>
             <p className="typography-meta text-[var(--status-error)]/80 mt-1">{error}</p>
+          </div>
+        )}
+
+        {showStaleNotice && (
+          <div className="mb-8 rounded-lg border border-[var(--status-warning-border)] bg-[var(--status-warning-background)] px-4 py-3">
+            <p className="typography-ui-label font-medium text-[var(--status-warning)]">{t('settings.usage.page.state.staleTitle')}</p>
+            <p className="typography-meta text-[var(--status-warning)]/80 mt-1">
+              {selectedRefreshStatus.refreshError ?? t('settings.usage.page.state.staleDescription')}
+            </p>
           </div>
         )}
 

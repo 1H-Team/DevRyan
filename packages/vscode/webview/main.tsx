@@ -1,6 +1,8 @@
 import { createVSCodeAPIs } from './api';
 import { onCommand, onThemeChange, proxyApiRequest, proxySessionMessageRequest, sendBridgeMessage, startSseProxy, stopSseProxy } from './api/bridge';
 import { vscodeStreamPerfCount, vscodeStreamPerfMeasure, vscodeStreamPerfObserve } from './api/streamPerf';
+import { handleManagedOrchestrationApiRequest } from './api/orchestration';
+import { isManagedOrchestrationWindowEventType } from './managedOrchestrationWindowEvents';
 import type { RuntimeAPIs } from '@openchamber/ui/lib/api/types';
 import {
   buildVSCodeThemeFromPalette,
@@ -76,6 +78,12 @@ const handleConnectionMessage = (event: MessageEvent) => {
 };
 
 window.addEventListener('message', handleConnectionMessage);
+window.addEventListener('message', (event: MessageEvent) => {
+  const message = event.data;
+  if (isManagedOrchestrationWindowEventType(message?.type)) {
+    window.dispatchEvent(new CustomEvent(message.type, { detail: message }));
+  }
+});
 window.addEventListener('openchamber:connection-status', () => {
   maybeHideLoadingOverlay();
 });
@@ -374,10 +382,18 @@ const extractBodyText = async (input: RequestInfo | URL, init: RequestInit | und
 const isSseApiPath = (pathname: string) => pathname === '/api/event' || pathname === '/api/global/event';
 const isSessionMessageApiPath = (pathname: string) => /^\/api\/session\/[^/]+\/message$/.test(pathname);
 
-const handleLocalApiRequest = async (url: URL, init?: RequestInit) => {
+const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init?: RequestInit) => {
   const pathname = url.pathname;
   const normalizedPathname = pathname !== '/' ? pathname.replace(/\/+$/, '') : pathname;
-  const method = ((init?.method || 'GET') as string).toUpperCase();
+  const method = (init?.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
+
+  const orchestrationResponse = await handleManagedOrchestrationApiRequest({
+    url,
+    method,
+    send: sendBridgeMessage,
+    readBody: () => extractBodyText(input, init, method),
+  });
+  if (orchestrationResponse) return orchestrationResponse;
 
   if (normalizedPathname === '/api/sessions/snapshot' && method === 'GET') {
     const activity = await sendBridgeMessage<Record<string, { type: 'idle' | 'busy' | 'cooldown' }>>('api:session-activity:get')
@@ -1255,7 +1271,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   }
 
   if (targetUrl && targetUrl.pathname.startsWith('/api/')) {
-    const localResponse = await handleLocalApiRequest(targetUrl, init);
+    const localResponse = await handleLocalApiRequest(input, targetUrl, init);
     if (localResponse) {
       maybeHideLoadingOverlay();
       return localResponse;

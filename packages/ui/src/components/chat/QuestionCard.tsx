@@ -1,7 +1,5 @@
 import React from 'react';
 import { RiArrowLeftSLine, RiArrowRightSLine, RiCheckLine, RiCloseLine, RiEditLine, RiQuestionLine } from '@remixicon/react';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Radio } from '@/components/ui/radio';
 
 import { cn } from '@/lib/utils';
 import { isIMECompositionEvent } from '@/lib/ime';
@@ -15,6 +13,7 @@ import {
   buildQuestionRequestAnswerGroups,
   submitQuestionRequestAnswerGroups,
   type QuestionAnswerEntry,
+  type QuestionRequestSubmitResult,
 } from './questionCardRouting';
 import {
   getIndexAfterOptionSelection,
@@ -23,6 +22,15 @@ import {
   isQuestionAnswerComplete,
 } from './questionCardNavigation';
 import { getQuestionOptionPresentation } from './questionCardOptions';
+import { QuestionOptionRow } from './QuestionOptionRow';
+import {
+  applyQuestionSubmissionResults,
+  createQuestionSubmissionLock,
+  filterPendingQuestionRequestAnswerGroups,
+  getQuestionEntryKey,
+  getQuestionRequestKey,
+  reconcileAcknowledgedQuestionRequestKeys,
+} from './questionCardSubmission';
 
 interface QuestionCardProps {
   /**
@@ -39,6 +47,8 @@ interface QuestionCardProps {
 }
 
 interface QuestionEntry {
+  /** Stable identity across filtering and authoritative request updates. */
+  entryKey: string;
   /** Stable flat index across all requests. */
   flatIndex: number;
   /** The source request this question came from. */
@@ -64,8 +74,65 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
     return [];
   }, [requests, question]);
 
-  // The session id is shared across the merged requests; take it from the first.
   const sessionID = normalizedRequests[0]?.sessionID;
+  const sessionScopeKey = React.useMemo(
+    () => JSON.stringify(Array.from(new Set(normalizedRequests.map((request) => request.sessionID))).sort()),
+    [normalizedRequests],
+  );
+  const requestSetKey = React.useMemo(
+    () => JSON.stringify(normalizedRequests.map(getQuestionRequestKey)),
+    [normalizedRequests],
+  );
+
+  const [activeIndex, setActiveIndex] = React.useState(0);
+  const [isResponding, setIsResponding] = React.useState(false);
+  const [selectedOptions, setSelectedOptions] = React.useState<Record<string, string[]>>({});
+  const [customMode, setCustomMode] = React.useState<Record<string, boolean>>({});
+  const [customText, setCustomText] = React.useState<Record<string, string>>({});
+  const [acknowledgedRequestKeys, setAcknowledgedRequestKeys] = React.useState<Set<string>>(
+    () => new Set(),
+  );
+  const [requestErrors, setRequestErrors] = React.useState<Record<string, string>>({});
+  const initialSubmissionLock = React.useMemo(createQuestionSubmissionLock, []);
+  const submissionLockRef = React.useRef(initialSubmissionLock);
+  const previousSessionScopeRef = React.useRef(sessionScopeKey);
+  const activeScopeRef = React.useRef(sessionScopeKey);
+  activeScopeRef.current = sessionScopeKey;
+
+  const currentRequestKeys = React.useMemo(
+    () => new Set(normalizedRequests.map(getQuestionRequestKey)),
+    [normalizedRequests],
+  );
+  const currentRequestKeysRef = React.useRef(currentRequestKeys);
+  currentRequestKeysRef.current = currentRequestKeys;
+
+  React.useEffect(() => {
+    if (previousSessionScopeRef.current !== sessionScopeKey) {
+      previousSessionScopeRef.current = sessionScopeKey;
+      submissionLockRef.current = createQuestionSubmissionLock();
+      setActiveIndex(0);
+      setIsResponding(false);
+      setSelectedOptions({});
+      setCustomMode({});
+      setCustomText({});
+      setAcknowledgedRequestKeys(new Set());
+      setRequestErrors({});
+      return;
+    }
+
+    setAcknowledgedRequestKeys((previous) => {
+      const next = reconcileAcknowledgedQuestionRequestKeys(previous, normalizedRequests);
+      if (next.size === previous.size && Array.from(next).every((key) => previous.has(key))) {
+        return previous;
+      }
+      return next;
+    });
+  }, [normalizedRequests, requestSetKey, sessionScopeKey]);
+
+  const pendingRequests = React.useMemo(
+    () => normalizedRequests.filter((request) => !acknowledgedRequestKeys.has(getQuestionRequestKey(request))),
+    [acknowledgedRequestKeys, normalizedRequests],
+  );
 
   const isFromSubagent = React.useMemo(() => {
     if (!currentSessionId || !sessionID || sessionID === currentSessionId) return false;
@@ -73,14 +140,15 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
     return Boolean(sourceSession?.parentID && sourceSession.parentID === currentSessionId);
   }, [sessionID, currentSessionId, sessions]);
 
-  // Flatten all questions across all requests.
+  // Flatten unresolved questions while preserving stable request-scoped answer keys.
   const entries = React.useMemo<QuestionEntry[]>(() => {
     const acc: QuestionEntry[] = [];
     let flatIndex = 0;
-    for (const req of normalizedRequests) {
+    for (const req of pendingRequests) {
       const list = req.questions ?? [];
       for (let i = 0; i < list.length; i += 1) {
         acc.push({
+          entryKey: getQuestionEntryKey(req, i),
           flatIndex,
           request: req,
           withinRequestIndex: i,
@@ -90,64 +158,40 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
       }
     }
     return acc;
-  }, [normalizedRequests]);
+  }, [pendingRequests]);
 
   const totalCount = entries.length;
-
-  const [activeIndex, setActiveIndex] = React.useState(0);
-  const [isResponding, setIsResponding] = React.useState(false);
-  const [hasResponded, setHasResponded] = React.useState(false);
-
-  // Per-flat-index answer state.
-  const [selectedOptions, setSelectedOptions] = React.useState<Record<number, string[]>>({});
-  const [customMode, setCustomMode] = React.useState<Record<number, boolean>>({});
-  const [customText, setCustomText] = React.useState<Record<number, string>>({});
-  // Per-request error after partial submit failure.
-  const [requestErrors, setRequestErrors] = React.useState<Record<string, string>>({});
-
-  // Reset when the underlying request-set changes.
-  const requestKey = React.useMemo(
-    () => normalizedRequests.map((r) => r.id).join('|'),
-    [normalizedRequests],
-  );
-  React.useEffect(() => {
-    setActiveIndex(0);
-    setSelectedOptions({});
-    setCustomMode({});
-    setCustomText({});
-    setHasResponded(false);
-    setRequestErrors({});
-  }, [requestKey]);
 
   React.useEffect(() => {
     setActiveIndex((current) => Math.min(current, Math.max(0, totalCount - 1)));
   }, [totalCount]);
 
-  const activeEntry = entries[activeIndex] ?? null;
-  const isLastQuestion = activeIndex >= totalCount - 1;
+  const boundedActiveIndex = Math.min(activeIndex, Math.max(0, totalCount - 1));
+  const activeEntry = entries[boundedActiveIndex] ?? null;
+  const isLastQuestion = boundedActiveIndex >= totalCount - 1;
   const progressLabel = totalCount > 1
-    ? t('chat.questionCard.progress', { current: activeIndex + 1, total: totalCount })
+    ? t('chat.questionCard.progress', { current: boundedActiveIndex + 1, total: totalCount })
     : null;
 
   const isEntryAnswered = React.useCallback(
-    (flatIndex: number): boolean => isQuestionAnswerComplete({
-      isCustom: Boolean(customMode[flatIndex]),
-      customText: customText[flatIndex],
-      selectedOptions: selectedOptions[flatIndex] ?? [],
+    (entryKey: string): boolean => isQuestionAnswerComplete({
+      isCustom: Boolean(customMode[entryKey]),
+      customText: customText[entryKey],
+      selectedOptions: selectedOptions[entryKey] ?? [],
     }),
     [customMode, customText, selectedOptions],
   );
 
-  const unansweredIndexes = React.useMemo(() => {
-    const pending: number[] = [];
+  const unansweredEntryKeys = React.useMemo(() => {
+    const pending: string[] = [];
     for (const entry of entries) {
-      if (!isEntryAnswered(entry.flatIndex)) pending.push(entry.flatIndex);
+      if (!isEntryAnswered(entry.entryKey)) pending.push(entry.entryKey);
     }
     return pending;
   }, [entries, isEntryAnswered]);
 
-  const requiredSatisfied = totalCount > 0 && unansweredIndexes.length === 0;
-  const activeAnswerComplete = activeEntry ? isEntryAnswered(activeEntry.flatIndex) : false;
+  const requiredSatisfied = totalCount > 0 && unansweredEntryKeys.length === 0;
+  const activeAnswerComplete = activeEntry ? isEntryAnswered(activeEntry.entryKey) : false;
 
   const handleBack = React.useCallback(() => {
     setActiveIndex((current) => getPreviousQuestionIndex(current));
@@ -159,28 +203,28 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
   }, [activeAnswerComplete, totalCount]);
 
   const buildAnswerForEntry = React.useCallback(
-    (flatIndex: number): string[] => {
-      const isCustom = Boolean(customMode[flatIndex]);
+    (entryKey: string): string[] => {
+      const isCustom = Boolean(customMode[entryKey]);
       if (isCustom) {
-        const value = (customText[flatIndex] ?? '').trim();
+        const value = (customText[entryKey] ?? '').trim();
         return value ? [value] : [];
       }
-      return selectedOptions[flatIndex] ?? [];
+      return selectedOptions[entryKey] ?? [];
     },
     [customMode, customText, selectedOptions],
   );
 
   const handleToggleOption = React.useCallback(
     (entry: QuestionEntry, label: string) => {
-      setCustomMode((prev) => ({ ...prev, [entry.flatIndex]: false }));
+      setCustomMode((prev) => ({ ...prev, [entry.entryKey]: false }));
       setSelectedOptions((prev) => {
-        const current = prev[entry.flatIndex] ?? [];
+        const current = prev[entry.entryKey] ?? [];
         if (entry.question.multiple) {
           const exists = current.includes(label);
           const next = exists ? current.filter((item) => item !== label) : [...current, label];
-          return { ...prev, [entry.flatIndex]: next };
+          return { ...prev, [entry.entryKey]: next };
         }
-        return { ...prev, [entry.flatIndex]: [label] };
+        return { ...prev, [entry.entryKey]: [label] };
       });
 
       const nextIndex = getIndexAfterOptionSelection({
@@ -194,46 +238,76 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
   );
 
   const handleSelectCustom = React.useCallback((entry: QuestionEntry) => {
-    setCustomMode((prev) => ({ ...prev, [entry.flatIndex]: true }));
-    setSelectedOptions((prev) => ({ ...prev, [entry.flatIndex]: [] }));
+    setCustomMode((prev) => ({ ...prev, [entry.entryKey]: true }));
+    setSelectedOptions((prev) => ({ ...prev, [entry.entryKey]: [] }));
+  }, []);
+
+  const applyRelevantSubmissionResults = React.useCallback((
+    submissionScope: string,
+    results: readonly QuestionRequestSubmitResult[],
+    fallbackError: string,
+  ) => {
+    if (activeScopeRef.current !== submissionScope) return;
+
+    const relevantResults = results.filter((result) => (
+      currentRequestKeysRef.current.has(getQuestionRequestKey(result.request))
+    ));
+    const outcome = applyQuestionSubmissionResults(new Set(), relevantResults, fallbackError);
+
+    setAcknowledgedRequestKeys((previous) => {
+      const next = applyQuestionSubmissionResults(previous, relevantResults, fallbackError)
+        .acknowledgedRequestKeys;
+      if (next.size === previous.size && Array.from(next).every((key) => previous.has(key))) {
+        return previous;
+      }
+      return next;
+    });
+    setRequestErrors(outcome.errorsByRequestKey);
   }, []);
 
   const handleConfirm = React.useCallback(async () => {
-    if (!requiredSatisfied) return;
+    const submissionLock = submissionLockRef.current;
+    if (!requiredSatisfied || !submissionLock.tryAcquire()) return;
 
+    const submissionScope = sessionScopeKey;
     setIsResponding(true);
     setRequestErrors({});
 
-    const answerGroups = buildQuestionRequestAnswerGroups(
-      entries.map((entry): QuestionAnswerEntry => ({
-        request: entry.request,
-        withinRequestIndex: entry.withinRequestIndex,
-        answers: buildAnswerForEntry(entry.flatIndex),
-      })),
-    );
-    const results = await submitQuestionRequestAnswerGroups(answerGroups, respondToQuestion);
-
-    const nextErrors: Record<string, string> = {};
-    let anySucceeded = false;
-    let anyFailed = false;
-    for (const result of results) {
-      if (result.status === 'fulfilled') {
-        anySucceeded = true;
-      } else {
-        anyFailed = true;
-        nextErrors[result.request.id] = result.reason instanceof Error
-          ? result.reason.message
-          : 'Failed to submit answer';
+    try {
+      const answerGroups = filterPendingQuestionRequestAnswerGroups(
+        buildQuestionRequestAnswerGroups(
+          entries.map((entry): QuestionAnswerEntry => ({
+            request: entry.request,
+            withinRequestIndex: entry.withinRequestIndex,
+            answers: buildAnswerForEntry(entry.entryKey),
+          })),
+        ),
+        acknowledgedRequestKeys,
+      );
+      const results = await submitQuestionRequestAnswerGroups(answerGroups, respondToQuestion);
+      applyRelevantSubmissionResults(submissionScope, results, 'Failed to submit answer');
+    } catch (error) {
+      if (activeScopeRef.current === submissionScope && pendingRequests[0]) {
+        setRequestErrors({
+          [getQuestionRequestKey(pendingRequests[0])]: error instanceof Error
+            ? error.message
+            : 'Failed to submit answer',
+        });
       }
+    } finally {
+      submissionLock.release();
+      if (activeScopeRef.current === submissionScope) setIsResponding(false);
     }
-
-    if (anyFailed) setRequestErrors(nextErrors);
-    if (!anyFailed) setHasResponded(true);
-    if (anyFailed && !anySucceeded) {
-      // Nothing got through — keep the card up for retry.
-    }
-    setIsResponding(false);
-  }, [buildAnswerForEntry, entries, requiredSatisfied, respondToQuestion]);
+  }, [
+    acknowledgedRequestKeys,
+    applyRelevantSubmissionResults,
+    buildAnswerForEntry,
+    entries,
+    pendingRequests,
+    requiredSatisfied,
+    respondToQuestion,
+    sessionScopeKey,
+  ]);
 
   const handleKeyDown = React.useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -251,39 +325,49 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
   );
 
   const handleDismiss = React.useCallback(async () => {
+    const submissionLock = submissionLockRef.current;
+    if (!submissionLock.tryAcquire()) return;
+
+    const submissionScope = sessionScopeKey;
+    const targetRequests = pendingRequests;
     setIsResponding(true);
     setRequestErrors({});
-    // Reject every underlying request. Same partial-failure semantics as submit.
-    const results = await Promise.allSettled(
-      normalizedRequests.map((req) => rejectQuestion(req.sessionID, req.id).then(() => req.id)),
-    );
-    const nextErrors: Record<string, string> = {};
-    let anyFailed = false;
-    for (let i = 0; i < results.length; i += 1) {
-      const result = results[i];
-      if (result.status === 'rejected') {
-        anyFailed = true;
-        nextErrors[normalizedRequests[i].id] = result.reason instanceof Error
-          ? result.reason.message
-          : 'Failed to dismiss';
-      }
-    }
-    if (anyFailed) setRequestErrors(nextErrors);
-    if (!anyFailed) setHasResponded(true);
-    setIsResponding(false);
-  }, [normalizedRequests, rejectQuestion]);
 
-  if (hasResponded || totalCount === 0) return null;
+    try {
+      const settled = await Promise.allSettled(
+        targetRequests.map((request) => rejectQuestion(request.sessionID, request.id)),
+      );
+      const results: QuestionRequestSubmitResult[] = settled.map((result, index) => {
+        const request = targetRequests[index];
+        if (result.status === 'fulfilled') return { status: 'fulfilled', request };
+        return { status: 'rejected', request, reason: result.reason };
+      });
+      applyRelevantSubmissionResults(submissionScope, results, 'Failed to dismiss');
+    } catch (error) {
+      if (activeScopeRef.current === submissionScope && targetRequests[0]) {
+        setRequestErrors({
+          [getQuestionRequestKey(targetRequests[0])]: error instanceof Error
+            ? error.message
+            : 'Failed to dismiss',
+        });
+      }
+    } finally {
+      submissionLock.release();
+      if (activeScopeRef.current === submissionScope) setIsResponding(false);
+    }
+  }, [applyRelevantSubmissionResults, pendingRequests, rejectQuestion, sessionScopeKey]);
+
+  if (totalCount === 0) return null;
 
   const footerError = Array.from(new Set(Object.values(requestErrors).filter(Boolean))).join(' ');
   const primaryDisabled = isResponding || (isLastQuestion ? !requiredSatisfied : !activeAnswerComplete);
   const handlePrimaryAction = isLastQuestion ? handleConfirm : handleNext;
 
   const renderQuestionBody = (entry: QuestionEntry, opts: { withHeader: boolean }) => {
-    const selected = selectedOptions[entry.flatIndex] ?? [];
-    const isCustomActive = Boolean(customMode[entry.flatIndex]);
+    const selected = selectedOptions[entry.entryKey] ?? [];
+    const isCustomActive = Boolean(customMode[entry.entryKey]);
     return (
-      <div key={entry.flatIndex}>
+      <div key={entry.entryKey}>
         {opts.withHeader && entry.question.header?.trim() ? (
           <div className="typography-micro font-medium text-muted-foreground mb-1">
             {entry.question.header}
@@ -294,64 +378,33 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
           <div className="typography-micro text-muted-foreground mb-1.5">{t('chat.questionCard.selectMultiple')}</div>
         ) : null}
 
-        <div className="space-y-0.5">
+        <div
+          className="space-y-0.5"
+          role={entry.question.multiple ? 'group' : 'radiogroup'}
+          aria-label={entry.question.question}
+        >
           {entry.question.options.map((option, index) => {
             const isSelected = selected.includes(option.label);
             const { displayLabel, recommended } = getQuestionOptionPresentation(option.label);
             return (
-              <button
+              <QuestionOptionRow
                 key={`${index}:${option.label}`}
-                type="button"
-                onClick={() => handleToggleOption(entry, option.label)}
+                label={displayLabel}
+                description={option.description}
+                selected={isSelected}
+                multiple={Boolean(entry.question.multiple)}
                 disabled={isResponding}
-                className={cn(
-                  'w-full px-1.5 py-1 text-left rounded transition-colors',
-                  'hover:bg-interactive-hover/30',
-                  isSelected ? 'bg-interactive-selection/20' : null,
-                  isResponding ? 'opacity-60 cursor-not-allowed' : null,
-                )}
-              >
-                <div className="flex items-start gap-2">
-                  <div className="mt-0.5 shrink-0">
-                    {entry.question.multiple ? (
-                      <Checkbox
-                        checked={isSelected}
-                        onChange={() => handleToggleOption(entry, option.label)}
-                        disabled={isResponding}
-                      />
-                    ) : (
-                      <Radio
-                        checked={isSelected}
-                        onChange={() => handleToggleOption(entry, option.label)}
-                        disabled={isResponding}
-                      />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className={cn(
-                          'typography-meta break-all',
-                          isSelected ? 'text-foreground font-medium' : 'text-foreground/80',
-                        )}
-                      >
-                        {displayLabel}
-                      </span>
-                      {recommended ? (
-                        <span className="typography-micro text-primary/80">{t('chat.questionCard.recommended')}</span>
-                      ) : null}
-                    </div>
-                    {option.description ? (
-                      <div className="typography-micro text-muted-foreground break-words">{option.description}</div>
-                    ) : null}
-                  </div>
-                </div>
-              </button>
+                recommended={recommended}
+                recommendedLabel={t('chat.questionCard.recommended')}
+                onSelect={() => handleToggleOption(entry, option.label)}
+              />
             );
           })}
 
           <button
             type="button"
+            role={entry.question.multiple ? 'checkbox' : 'radio'}
+            aria-checked={isCustomActive}
             onClick={() => handleSelectCustom(entry)}
             disabled={isResponding}
             className={cn(
@@ -363,6 +416,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
           >
             <div className="flex items-center gap-2">
               <RiEditLine
+                aria-hidden="true"
                 className={cn('h-3.5 w-3.5', isCustomActive ? 'text-primary' : 'text-muted-foreground/50')}
               />
               <span
@@ -388,7 +442,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
                     el.style.height = `${Math.min(Math.max(el.scrollHeight, minHeight), maxHeight)}px`;
                   }
                 }}
-                value={customText[entry.flatIndex] ?? ''}
+                value={customText[entry.entryKey] ?? ''}
                 onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => {
                   const el = event.target;
                   el.style.height = 'auto';
@@ -396,7 +450,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
                   const minHeight = lineHeight * 2;
                   const maxHeight = lineHeight * 4;
                   el.style.height = `${Math.min(Math.max(el.scrollHeight, minHeight), maxHeight)}px`;
-                  setCustomText((prev) => ({ ...prev, [entry.flatIndex]: el.value }));
+                  setCustomText((prev) => ({ ...prev, [entry.entryKey]: el.value }));
                 }}
                 placeholder={t('chat.questionCard.yourAnswer')}
                 disabled={isResponding}
@@ -446,7 +500,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
 
           {/* Footer actions */}
           <div className="px-2 pb-1.5 pt-1 flex items-center gap-1.5 border-t border-border/20">
-            {activeIndex > 0 ? (
+            {boundedActiveIndex > 0 ? (
               <button
                 type="button"
                 onClick={handleBack}

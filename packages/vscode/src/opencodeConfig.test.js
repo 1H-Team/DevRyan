@@ -224,8 +224,10 @@ describe('VS Code Cursor SDK config handling', () => {
       const pluginFiles = fs.readdirSync(pluginDirectory).sort();
 
       expect(config.plugin).toContain('./plugins/council-session.js');
+      expect(config.plugin).toContain('./plugins/openai-gpt-5-6-models.mjs');
       expect(config.plugin).toContain('./plugins/openai-tool-schema-sanitizer.mjs');
       expect(pluginFiles).toContain('council-session.js');
+      expect(pluginFiles).toContain('openai-gpt-5-6-models.mjs');
       expect(pluginFiles).toContain('openai-tool-schema-sanitizer.mjs');
       expect(pluginFiles.some((fileName) => fileName.includes('.test.') || fileName.includes('.spec.') || fileName.endsWith('.d.ts'))).toBe(false);
     } finally {
@@ -497,6 +499,7 @@ describe('VS Code Cursor SDK config handling', () => {
       expect(overlayConfig.plugin).not.toContain('superpowers@git+https://github.com/obra/superpowers.git');
       expect(overlayConfig.plugin).not.toContain('context7@latest');
       expect(overlayConfig.plugin).not.toContain('grep-app@latest');
+      expect(overlayConfig.mcp.ghgrep).toEqual({ enabled: false });
       expect(overlaySlimConfig.preset).toBe('openai');
       expect(overlaySlimConfig.presets.openai.designer).toEqual({
         model: 'openai/gpt-5.4-mini',

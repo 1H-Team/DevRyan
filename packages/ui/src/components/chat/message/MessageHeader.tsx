@@ -24,7 +24,7 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, providerID, model
         [modelID, modelName, providerID],
     );
     const { src: logoSrc, onError: handleLogoError, hasLogo } = useProviderLogo(displayProviderID);
-    const thinkingLabel = variant ? formatEffortLabel(variant) : undefined;
+    const thinkingLabel = variant ? formatEffortLabel(variant, { providerId: providerID }) : undefined;
     const fastIcon = fastEnabled ? (
         <RiFlashlightFill className="h-3 w-3 text-[var(--status-warning)]" aria-label="Fast mode" />
     ) : null;

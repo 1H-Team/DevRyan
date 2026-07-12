@@ -4,6 +4,7 @@ import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui';
 import { useConfigStore } from '@/stores/useConfigStore';
+import { quotaRefreshCoordinator } from '@/stores/useQuotaStore';
 import { RiAddLine, RiDeleteBinLine, RiStackLine } from '@remixicon/react';
 import { cn } from '@/lib/utils';
 import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
@@ -119,6 +120,7 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
         toast.success(t('settings.providers.page.toast.providerDisconnected'));
         await reloadOpenCodeConfiguration({ scopes: ['providers'], mode: 'active' });
         await loadProviders({ directory: null });
+        quotaRefreshCoordinator.settingsChanged();
       } catch (error) {
         console.error('Failed to disconnect provider:', error);
         toast.error(t('settings.providers.page.toast.providerDisconnectFailed'));

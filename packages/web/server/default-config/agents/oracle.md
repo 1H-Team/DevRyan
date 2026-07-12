@@ -17,6 +17,7 @@ permission:
     "*.env.*": ask
     "*.env.example": allow
   council_session: deny
+  devryan_task: deny
   skill:
     "*": deny
     agent-browser: allow

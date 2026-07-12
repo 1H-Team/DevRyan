@@ -8,6 +8,7 @@ import { openSseProxy } from './sseProxy';
 import { resolveWebviewDevServerUrl } from './webviewDevServer';
 import { normalizeWindowsDriveLetter } from './pathUtils';
 import { resolveWorkspaceFolders, type WorkspaceFolderCandidate } from './workspaceResolver';
+import type { VsCodeManagedOrchestrationRuntime } from './managedOrchestrationRuntime';
 
 type ActiveEditorFilePayload = {
   filePath: string;
@@ -69,7 +70,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   constructor(
     private readonly _context: vscode.ExtensionContext,
     private readonly _extensionUri: vscode.Uri,
-    private readonly _openCodeManager?: OpenCodeManager
+    private readonly _openCodeManager?: OpenCodeManager,
+    private readonly _managedOrchestrationRuntime?: VsCodeManagedOrchestrationRuntime,
   ) {
     this._webviewDevServerUrl = resolveWebviewDevServerUrl(this._context);
 
@@ -137,6 +139,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       const response = await handleBridgeMessage(message, {
         manager: this._openCodeManager,
         context: this._context,
+        managedOrchestrationRuntime: this._managedOrchestrationRuntime,
       });
       void this._sendMessageWithRetry(response);
 

@@ -23,6 +23,7 @@ import {
   shouldRetry,
   getRetryDelayMs,
 } from "./provider-tracker";
+import { resolveProviderPromptTools } from "./provider-prompt-tools";
 
 // Use relative path by default (works with both dev and nginx proxy server)
 // Can be overridden with VITE_OPENCODE_URL for absolute URLs in special deployments
@@ -317,6 +318,21 @@ type FileInputLite = {
   mime: string;
   filename?: string;
   url: string;
+};
+
+type ImmediateSubtaskPromptAgentMention = {
+  name: string;
+  source?: {
+    value: string;
+    start: number;
+    end: number;
+  };
+};
+
+type ImmediateSubtaskAdditionalPart = {
+  text: string;
+  synthetic?: boolean;
+  files?: Array<FileInputLite>;
 };
 
 export type DirectorySwitchResult = {
@@ -641,10 +657,11 @@ class OpencodeService {
     };
   }
 
-  async getSession(id: string): Promise<Session> {
+  async getSession(id: string, directory?: string | null): Promise<Session> {
+    const targetDirectory = this.normalizeCandidatePath(directory) ?? this.currentDirectory;
     const response = await this.client.session.get({
       sessionID: id,
-      ...(this.currentDirectory ? { directory: this.currentDirectory } : {})
+      ...(targetDirectory ? { directory: targetDirectory } : {})
     });
     if (!response.data) throw new Error('Session not found');
     return response.data;
@@ -929,6 +946,112 @@ class OpencodeService {
     };
   }
 
+  async sendImmediateSubtaskPrompt(params: {
+    id: string;
+    text: string;
+    files?: Array<FileInputLite>;
+    agentMentions?: Array<ImmediateSubtaskPromptAgentMention>;
+    additionalParts?: Array<ImmediateSubtaskAdditionalPart>;
+    directory?: string | null;
+    signal?: AbortSignal;
+  }): Promise<void> {
+    const textSegments: string[] = [];
+    const visibleText = typeof params.text === 'string' ? params.text.trim() : '';
+    if (visibleText.startsWith('/')) {
+      throw new Error('Active subtask follow-ups do not support slash commands.');
+    }
+    if (visibleText) {
+      textSegments.push(visibleText);
+    }
+
+    const promptFiles = [] as Array<{ uri: string; mime: string; name?: string; source?: { value: string; start: number; end: number } }>;
+    const appendFile = async (file: FileInputLite) => {
+      const normalized = await this.toNormalizedFilePartInput(file);
+      promptFiles.push({
+        uri: normalized.url,
+        mime: normalized.mime,
+        ...(normalized.filename ? { name: normalized.filename } : {}),
+      });
+    };
+
+    if (params.files && params.files.length > 0) {
+      for (const file of params.files) {
+        await appendFile(file);
+      }
+    }
+
+    if (params.additionalParts && params.additionalParts.length > 0) {
+      for (const additional of params.additionalParts) {
+        if (additional.synthetic) {
+          throw new Error('Active subtask follow-ups do not support hidden synthetic text.');
+        }
+        const text = typeof additional.text === 'string' ? additional.text.trim() : '';
+        if (text) {
+          textSegments.push(text);
+        }
+        if (additional.files && additional.files.length > 0) {
+          for (const file of additional.files) {
+            await appendFile(file);
+          }
+        }
+      }
+    }
+
+    const promptAgents = (params.agentMentions ?? [])
+      .filter((mention) => typeof mention?.name === 'string' && mention.name.trim().length > 0)
+      .map((mention) => ({
+        name: mention.name.trim(),
+        ...(mention.source ? { source: mention.source } : {}),
+      }));
+
+    const promptText = textSegments.join('\n\n').trim();
+    if (!promptText && promptFiles.length === 0 && promptAgents.length === 0) {
+      throw new Error('Active subtask follow-up must include text, a file, or an agent mention.');
+    }
+
+    const targetDirectory = this.normalizeCandidatePath(params.directory) ?? this.currentDirectory;
+    if (targetDirectory) {
+      await waitForWorktreeBootstrap(targetDirectory);
+    }
+    if (params.signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+
+    const base = this.baseUrl.replace(/\/+$/, '');
+    const url = new URL(`${base}/session/${encodeURIComponent(params.id)}/prompt`);
+    if (targetDirectory) {
+      url.searchParams.set('directory', targetDirectory);
+    }
+
+    const response = await fetch(url.toString(), {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json',
+      },
+      body: JSON.stringify({
+        prompt: {
+          text: promptText,
+          ...(promptFiles.length > 0 ? { files: promptFiles } : {}),
+          ...(promptAgents.length > 0 ? { agents: promptAgents } : {}),
+        },
+        delivery: 'immediate',
+      }),
+      signal: params.signal,
+    });
+
+    if (!response.ok) {
+      let detail = '';
+      try {
+        detail = await response.text();
+      } catch {
+        // ignore
+      }
+      const suffix = detail && detail.trim().length > 0 ? `: ${detail.trim()}` : '';
+      throw new Error(`Active subtask follow-up failed (${response.status})${suffix}`);
+    }
+  }
+
   async sendMessage(params: {
     id: string;
     providerID: string;
@@ -1099,6 +1222,7 @@ class OpencodeService {
 
     assertProviderCircuitClosed(params.providerID);
 
+    const tools = resolveProviderPromptTools(params.providerID);
     let response!: Response;
     postTurnTimingMark({
       sessionId: params.id,
@@ -1126,6 +1250,7 @@ class OpencodeService {
             variant: params.variant,
             messageID: messageId,
             ...(params.format ? { format: params.format } : {}),
+            ...(tools ? { tools } : {}),
             parts,
           }),
           signal: params.signal,

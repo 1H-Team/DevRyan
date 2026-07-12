@@ -55,6 +55,15 @@ describe('SessionNodeItem row hover metadata', () => {
   });
 });
 
+describe('SessionNodeItem status selectors', () => {
+  test('checks only the row scope instead of scanning every session notification', () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'SessionNodeItem.tsx'), 'utf8');
+
+    expect(source).toContain('state.index.session.unseenHasError[sessionId]');
+    expect(source).not.toContain('Object.entries(state.index.session.unseenHasError)');
+  });
+});
+
 describe('session sidebar quick hover actions', () => {
   test('exposes pin, unarchive, and archived delete hover action flags', () => {
     const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'SessionNodeItem.tsx'), 'utf8');

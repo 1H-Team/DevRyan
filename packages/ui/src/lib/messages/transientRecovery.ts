@@ -13,7 +13,7 @@ export type TransientRecoveryAttachment = {
 export type TransientRecoveryPlan = {
   mode: "resend" | "continue"
   anchorUserMessageId: string
-  erroredMessageId: string
+  erroredMessageId?: string
   content: string
   attachments: TransientRecoveryAttachment[]
   providerID?: string
@@ -24,6 +24,12 @@ type PlanTransientRecoveryInput = {
   messages: Message[]
   getParts: (messageId: string) => Part[]
   erroredMessageId: string
+}
+
+type PlanManualRecoveryInput = {
+  messages: Message[]
+  getParts: (messageId: string) => Part[]
+  anchorUserMessageId: string
 }
 
 function getRestorableText(parts: Part[]): string {
@@ -110,6 +116,51 @@ export function planTransientRecovery({
     return null
   }
 
+  return {
+    ...basePlan,
+    mode: "resend",
+    content,
+    attachments,
+  }
+}
+
+export function planManualRecovery({
+  messages,
+  getParts,
+  anchorUserMessageId,
+}: PlanManualRecoveryInput): TransientRecoveryPlan | null {
+  const anchorIndex = messages.findIndex((message) => (
+    message.id === anchorUserMessageId && message.role === "user"
+  ))
+  if (anchorIndex < 0) return null
+  const anchorMessage = messages[anchorIndex] as Message & {
+    model?: { providerID?: string; modelID?: string }
+  }
+  const trailingMessages = messages.slice(anchorIndex + 1)
+  if (trailingMessages.some((message) => message.role === "user")) return null
+  const assistants = trailingMessages.filter((message) => message.role === "assistant")
+  const latestAssistant = assistants.at(-1)
+  const hasAssistantContent = assistants.some((message) => (
+    hasRenderableAssistantContent(getParts(message.id))
+  ))
+  const basePlan = {
+    anchorUserMessageId,
+    ...(latestAssistant ? { erroredMessageId: latestAssistant.id } : {}),
+    providerID: latestAssistant?.providerID?.trim() || anchorMessage.model?.providerID?.trim() || undefined,
+    modelID: latestAssistant?.modelID?.trim() || anchorMessage.model?.modelID?.trim() || undefined,
+  }
+  if (hasAssistantContent) {
+    return {
+      ...basePlan,
+      mode: "continue",
+      content: TRANSIENT_CONTINUATION_PROMPT,
+      attachments: [],
+    }
+  }
+  const anchorParts = getParts(anchorMessage.id)
+  const content = getRestorableText(anchorParts)
+  const attachments = getRestorableAttachments(anchorParts)
+  if (!content && attachments.length === 0) return null
   return {
     ...basePlan,
     mode: "resend",

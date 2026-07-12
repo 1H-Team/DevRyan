@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
-import request from 'supertest';
+import request from '../../test-supertest.js';
 import { registerServerStatusRoutes } from './core-routes.js';
 
 describe('core-routes', () => {

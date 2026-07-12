@@ -6,6 +6,8 @@ Holds Electron-specific build/packaging helper scripts used by npm/bun tasks.
 ## Design
 Script-first utilities (small Node/shell entrypoints) that run outside runtime code. They orchestrate packaging steps and release metadata, not app behavior.
 
+Native packaging is explicit and fail-closed: `rebuild-native.mjs` resolves each ABI-sensitive dependency from its declaring workspace, and the `afterPack` hook verifies the required bindings and Cursor executable before signing.
+
 ## Flow
 1. Workspace script invokes a helper in this folder.
 2. Helper reads local package/release inputs.

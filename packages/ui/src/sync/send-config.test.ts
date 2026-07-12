@@ -83,6 +83,38 @@ const createStoreModel = (providerID: string, id: string, variants?: Model["vari
 })
 
 describe("send config resolution", () => {
+  test("falls back from a stale session model that is absent from the provider catalog", () => {
+    const result = resolveSessionSendConfigSnapshot(snapshot({
+      sessionModelSelection: { providerId: "codex", modelId: "gpt-5.4" },
+    }))
+
+    expect(result).toEqual({
+      providerID: "openai",
+      modelID: "gpt-5.5",
+      agent: "builder",
+      variant: "medium",
+      planMode: false,
+    })
+  })
+
+  test("does not route a send through an explicitly unavailable model", () => {
+    const result = resolveSessionSendConfigSnapshot(snapshot({
+      currentProviderId: "openai",
+      currentModelId: "gpt-5.6-luna",
+      currentVariant: "high",
+      providers: [{
+        id: "openai",
+        models: [
+          { id: "gpt-5.6-luna", available: false },
+          { id: "gpt-5.6", variants: { medium: {}, high: {} } },
+        ],
+      }],
+    }))
+
+    expect(result.providerID).toBe(undefined)
+    expect(result.modelID).toBe(undefined)
+    expect(result.variant).toBe(undefined)
+  })
   beforeEach(() => {
     useConfigStore.setState({
       currentAgentName: undefined,

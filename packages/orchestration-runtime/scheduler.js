@@ -1,0 +1,1144 @@
+import {
+  MAX_MANAGED_TASK_FAILURE_BYTES,
+  MAX_MANAGED_TASK_PREVIEW_BYTES,
+  createManagedTaskRecord,
+  isTerminalManagedTaskStatus,
+  toManagedTaskEvent,
+  toManagedTaskRemovalEvent,
+  truncateManagedText,
+  validateManagedTaskRecord,
+} from './contract.js';
+import { assertManagedTaskTransition } from './transitions.js';
+import {
+  assertManagedTaskResultEnvelopeMatchesTask,
+  createManagedTaskResultEnvelope,
+  validateManagedTaskResultEnvelope,
+} from './result-envelope.js';
+import {
+  DEFAULT_MANAGED_LEDGER_MAX_BYTES,
+  DEFAULT_MANAGED_TERMINAL_MAX_AGE_MS,
+  DEFAULT_MANAGED_TERMINAL_MAX_RECORDS,
+  compactManagedOrchestrationState,
+} from './persistence.js';
+
+const DEFAULT_MAX_CONCURRENCY = 3;
+const ACTIVE_STATUSES = new Set(['starting', 'running']);
+const TERMINAL_RESULT_STATUSES = new Set(['completed', 'failed', 'aborted', 'interrupted']);
+
+const cloneTask = (task) => task ? {
+  ...task,
+  canonicalRefs: task.canonicalRefs.map((reference) => ({ ...reference })),
+} : null;
+
+const createDefaultPersistence = () => ({
+  async load() {
+    return null;
+  },
+  async save() {
+  },
+});
+
+const createRandomId = (prefix) => {
+  const random = globalThis.crypto?.randomUUID?.()
+    ?? `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+  return `${prefix}${random.replaceAll('-', '')}`;
+};
+
+const idempotencyIndexKey = (rootSessionId, idempotencyKey) => (
+  `${rootSessionId}\u0000${idempotencyKey}`
+);
+
+export const compareManagedTaskQueueOrder = (left, right) => (
+  left.sequence - right.sequence
+  || left.createdAt - right.createdAt
+  || left.taskId.localeCompare(right.taskId)
+);
+
+export class ManagedOrchestrationError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = 'ManagedOrchestrationError';
+    this.code = code;
+  }
+}
+
+export const createManagedTaskScheduler = (options = {}) => {
+  const executor = options.executor;
+  if (!executor || typeof executor.start !== 'function') {
+    throw new TypeError('executor.start is required');
+  }
+
+  const maxConcurrency = options.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY;
+  if (!Number.isSafeInteger(maxConcurrency) || maxConcurrency < 1 || maxConcurrency > DEFAULT_MAX_CONCURRENCY) {
+    throw new RangeError(`maxConcurrency must be between 1 and ${DEFAULT_MAX_CONCURRENCY}`);
+  }
+
+  const persistence = options.persistence ?? createDefaultPersistence();
+  const now = options.now ?? Date.now;
+  const scheduleTimeout = options.scheduleTimeout ?? globalThis.setTimeout;
+  const cancelTimeout = options.cancelTimeout ?? globalThis.clearTimeout;
+  const abortTimeoutMs = options.abortTimeoutMs ?? 5_000;
+  if (!Number.isFinite(abortTimeoutMs) || abortTimeoutMs < 1) {
+    throw new RangeError('abortTimeoutMs must be a positive finite number');
+  }
+  const createTaskId = options.createTaskId ?? (() => createRandomId('dvr_task_'));
+  const createLeaseToken = options.createLeaseToken ?? (() => createRandomId('dvr_lease_'));
+  const publishEvent = options.publishEvent ?? (() => undefined);
+  const logger = options.logger ?? console;
+  const maxTerminalRecords = options.maxTerminalRecords ?? DEFAULT_MANAGED_TERMINAL_MAX_RECORDS;
+  const maxHistoryAgeMs = options.maxHistoryAgeMs ?? DEFAULT_MANAGED_TERMINAL_MAX_AGE_MS;
+  const maxPersistedBytes = options.maxPersistedBytes ?? DEFAULT_MANAGED_LEDGER_MAX_BYTES;
+  const startingLeaseTimeoutMs = options.startingLeaseTimeoutMs ?? 60_000;
+  if (!Number.isFinite(startingLeaseTimeoutMs) || startingLeaseTimeoutMs < 1) {
+    throw new RangeError('startingLeaseTimeoutMs must be a positive finite number');
+  }
+
+  const tasks = new Map();
+  const resultEnvelopes = new Map();
+  const idempotencyIndex = new Map();
+  const activeLaunches = new Map();
+  const cancellationPromises = new Map();
+  const acknowledgementPromises = new Map();
+  const taskWaiters = new Map();
+  const timeoutTimers = new Map();
+  const startingLeaseTimers = new Map();
+  let initialized = false;
+  let initializePromise = null;
+  let mutationTail = Promise.resolve();
+  let publicationTail = Promise.resolve();
+  let recovering = false;
+  let compactedTaskCount = 0;
+  let lastSerializedBytes = 0;
+  let shutDown = false;
+  let shutdownPromise = null;
+
+  const unrefTimer = (timer) => {
+    if (timer && typeof timer.unref === 'function') timer.unref();
+    return timer;
+  };
+
+  const runExclusive = (operation) => {
+    const result = mutationTail.then(operation, operation);
+    mutationTail = result.catch(() => undefined);
+    return result;
+  };
+
+  const snapshotLocked = () => ({
+    version: 1,
+    tasks: [...tasks.values()]
+      .sort((left, right) => left.createdAt - right.createdAt || left.taskId.localeCompare(right.taskId))
+      .map(cloneTask),
+    resultEnvelopes: [...resultEnvelopes.values()]
+      .sort((left, right) => left.sequence - right.sequence)
+      .map((envelope) => structuredClone(envelope)),
+  });
+
+  const publishManagedEvent = async (event) => {
+    try {
+      await publishEvent(event);
+    } catch (error) {
+      logger.warn?.('[ManagedOrchestration] Failed to publish task event', {
+        taskId: event.properties.task?.taskId ?? event.properties.taskId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  const queueTaskPublication = (task) => {
+    const event = toManagedTaskEvent(task, resultEnvelopes.get(task.taskId) ?? null);
+    publicationTail = publicationTail.then(
+      () => publishManagedEvent(event),
+      () => publishManagedEvent(event),
+    );
+  };
+
+  const queueTaskRemovalPublication = (task) => {
+    const event = toManagedTaskRemovalEvent(task);
+    publicationTail = publicationTail.then(
+      () => publishManagedEvent(event),
+      () => publishManagedEvent(event),
+    );
+  };
+
+  const persistLocked = async () => {
+    const compaction = compactManagedOrchestrationState(snapshotLocked(), {
+      now: now(),
+      maxTerminalRecords,
+      maxAgeMs: maxHistoryAgeMs,
+      maxBytes: maxPersistedBytes,
+    });
+    if (compaction.overLimit) {
+      throw new ManagedOrchestrationError(
+        'ledger_capacity_exceeded',
+        `managed orchestration ledger cannot fit within ${maxPersistedBytes} bytes without removing protected work`,
+      );
+    }
+    await persistence.save(compaction.state);
+    lastSerializedBytes = compaction.serializedBytes;
+    for (const taskId of compaction.removedTaskIds) {
+      const removedTask = tasks.get(taskId);
+      if (removedTask) {
+        idempotencyIndex.delete(idempotencyIndexKey(removedTask.rootSessionId, removedTask.idempotencyKey));
+        queueTaskRemovalPublication(removedTask);
+      }
+      tasks.delete(taskId);
+      resultEnvelopes.delete(taskId);
+      clearTaskTimeout(taskId);
+      compactedTaskCount += 1;
+    }
+  };
+
+  const commitNewTaskLocked = async (task) => {
+    tasks.set(task.taskId, task);
+    idempotencyIndex.set(idempotencyIndexKey(task.rootSessionId, task.idempotencyKey), task.taskId);
+    try {
+      await persistLocked();
+    } catch (error) {
+      tasks.delete(task.taskId);
+      idempotencyIndex.delete(idempotencyIndexKey(task.rootSessionId, task.idempotencyKey));
+      throw error;
+    }
+    queueTaskPublication(task);
+  };
+
+  const commitTaskUpdateLocked = async (previous, next) => {
+    assertManagedTaskTransition(previous, next);
+    tasks.set(next.taskId, next);
+    try {
+      await persistLocked();
+    } catch (error) {
+      tasks.set(previous.taskId, previous);
+      throw error;
+    }
+    queueTaskPublication(next);
+  };
+
+  const nextResultSequenceLocked = () => {
+    let sequence = 0;
+    for (const envelope of resultEnvelopes.values()) {
+      sequence = Math.max(sequence, envelope.sequence);
+    }
+    return sequence + 1;
+  };
+
+  const notifyTaskWaiters = (task) => {
+    const waiters = taskWaiters.get(task.taskId);
+    if (!waiters || waiters.size === 0) return;
+    taskWaiters.delete(task.taskId);
+    for (const waiter of waiters) waiter.resolve(cloneTask(task));
+  };
+
+  const clearTaskTimeout = (taskId) => {
+    const timer = timeoutTimers.get(taskId);
+    if (timer === undefined) return;
+    timeoutTimers.delete(taskId);
+    cancelTimeout(timer);
+  };
+
+  const clearStartingLease = (taskId) => {
+    const timer = startingLeaseTimers.get(taskId);
+    if (timer === undefined) return;
+    startingLeaseTimers.delete(taskId);
+    cancelTimeout(timer);
+  };
+
+  const commitTerminalTaskLocked = async (previous, next, { resumable = false } = {}) => {
+    assertManagedTaskTransition(previous, next);
+    const existingEnvelope = resultEnvelopes.get(next.taskId);
+    const envelope = existingEnvelope ?? createManagedTaskResultEnvelope(next, {
+      sequence: nextResultSequenceLocked(),
+      createdAt: next.finishedAt ?? now(),
+      resumable,
+    });
+    tasks.set(next.taskId, next);
+    resultEnvelopes.set(next.taskId, envelope);
+    try {
+      await persistLocked();
+    } catch (error) {
+      tasks.set(previous.taskId, previous);
+      if (!existingEnvelope) resultEnvelopes.delete(next.taskId);
+      throw error;
+    }
+    clearTaskTimeout(next.taskId);
+    clearStartingLease(next.taskId);
+    if (tasks.has(next.taskId)) queueTaskPublication(next);
+    notifyTaskWaiters(next);
+  };
+
+  const commitEnvelopeUpdateLocked = async (previous, next) => {
+    validateManagedTaskResultEnvelope(next);
+    if (previous.taskId !== next.taskId || previous.envelopeId !== next.envelopeId) {
+      throw new ManagedOrchestrationError('result_identity_changed', 'result envelope identity is immutable');
+    }
+    resultEnvelopes.set(next.taskId, next);
+    try {
+      await persistLocked();
+    } catch (error) {
+      resultEnvelopes.set(previous.taskId, previous);
+      throw error;
+    }
+    const task = tasks.get(next.taskId);
+    if (task) queueTaskPublication(task);
+  };
+
+  const getActiveModeForRootLocked = (rootSessionId) => {
+    for (const task of tasks.values()) {
+      if (task.rootSessionId === rootSessionId && !isTerminalManagedTaskStatus(task.status)) {
+        return task.mode;
+      }
+    }
+    return null;
+  };
+
+  const nextSequenceLocked = () => {
+    let sequence = 0;
+    for (const task of tasks.values()) {
+      sequence = Math.max(sequence, task.sequence);
+    }
+    return sequence + 1;
+  };
+
+  const countActiveLocked = () => {
+    let count = 0;
+    for (const task of tasks.values()) {
+      if (ACTIVE_STATUSES.has(task.status)) count += 1;
+    }
+    return count;
+  };
+
+  const finishTask = async (taskId, leaseToken, result, fallbackStatus = 'failed') => {
+    if (shutDown) return;
+    let changed = false;
+    await runExclusive(async () => {
+      const previous = tasks.get(taskId);
+      if (!previous || isTerminalManagedTaskStatus(previous.status)) return;
+      if (previous.leaseToken !== leaseToken) return;
+
+      let status = TERMINAL_RESULT_STATUSES.has(result?.status) ? result.status : fallbackStatus;
+      let failureReason = typeof result?.failureReason === 'string' && result.failureReason.trim()
+        ? truncateManagedText(result.failureReason, MAX_MANAGED_TASK_FAILURE_BYTES)
+        : null;
+      if (previous.status === 'starting' && status === 'completed') {
+        status = 'interrupted';
+        failureReason = 'Executor completed before provider acceptance was recorded';
+      }
+
+      const next = {
+        ...previous,
+        status,
+        finishedAt: now(),
+        failureReason,
+        partial: Boolean(result?.partial),
+        recoverablePreview: typeof result?.recoverablePreview === 'string'
+          ? truncateManagedText(result.recoverablePreview, MAX_MANAGED_TASK_PREVIEW_BYTES)
+          : '',
+        canonicalRefs: Array.isArray(result?.canonicalRefs)
+          ? result.canonicalRefs.map((reference) => ({ ...reference }))
+          : [],
+      };
+      await commitTerminalTaskLocked(previous, next, {
+        resumable: Boolean(result?.resumable),
+      });
+      changed = true;
+    });
+    if (changed && !recovering) await pump();
+  };
+
+  const createTaskControl = (taskId, leaseToken) => ({
+    async setChildSessionId(childSessionId) {
+      if (shutDown) return;
+      await runExclusive(async () => {
+        const previous = tasks.get(taskId);
+        if (!previous || isTerminalManagedTaskStatus(previous.status)) return;
+        if (previous.leaseToken !== leaseToken) return;
+        if (previous.childSessionId && previous.childSessionId !== childSessionId) {
+          throw new ManagedOrchestrationError(
+            'child_session_conflict',
+            `task ${taskId} already owns child session ${previous.childSessionId}`,
+          );
+        }
+        if (previous.childSessionId === childSessionId) return;
+        const next = { ...previous, childSessionId };
+        await commitTaskUpdateLocked(previous, next);
+      });
+    },
+    async markAccepted() {
+      if (shutDown) return;
+      await runExclusive(async () => {
+        const previous = tasks.get(taskId);
+        if (!previous || previous.leaseToken !== leaseToken) return;
+        if (previous.status === 'running' || isTerminalManagedTaskStatus(previous.status)) return;
+        if (previous.status !== 'starting') {
+          throw new ManagedOrchestrationError(
+            'invalid_acceptance_state',
+            `task ${taskId} cannot record provider acceptance from ${previous.status}`,
+          );
+        }
+        const next = { ...previous, status: 'running' };
+        await commitTaskUpdateLocked(previous, next);
+        clearStartingLease(taskId);
+      });
+    },
+  });
+
+  const launchTask = (task) => {
+    if (activeLaunches.has(task.taskId)) return;
+    const leaseToken = task.leaseToken;
+    const control = createTaskControl(task.taskId, leaseToken);
+    const launch = (async () => {
+      try {
+        const method = task.executionKind === 'resume'
+          ? executor.resume
+          : task.executionKind === 'retry_in_place'
+            ? executor.retryInPlace
+            : executor.start;
+        if (typeof method !== 'function') {
+          const methodName = task.executionKind === 'resume'
+            ? 'resume'
+            : task.executionKind === 'retry_in_place'
+              ? 'retryInPlace'
+              : 'start';
+          throw new Error(`executor.${methodName} is required`);
+        }
+        const result = await method(cloneTask(task), control);
+        await finishTask(task.taskId, leaseToken, result, 'failed');
+      } catch (error) {
+        await finishTask(task.taskId, leaseToken, {
+          status: 'failed',
+          failureReason: error instanceof Error ? error.message : String(error),
+        });
+      }
+    })();
+    activeLaunches.set(task.taskId, launch);
+    void launch.then(
+      () => activeLaunches.delete(task.taskId),
+      () => activeLaunches.delete(task.taskId),
+    );
+  };
+
+  const observeRecoveredTask = (task) => {
+    if (activeLaunches.has(task.taskId)) return;
+    const leaseToken = task.leaseToken;
+    const control = createTaskControl(task.taskId, leaseToken);
+    const observation = (async () => {
+      try {
+        if (typeof executor.observe !== 'function') {
+          throw new Error('executor.observe is required to recover a live child session');
+        }
+        const result = await executor.observe(cloneTask(task), control);
+        await finishTask(task.taskId, leaseToken, result, 'interrupted');
+      } catch (error) {
+        await finishTask(task.taskId, leaseToken, {
+          status: 'interrupted',
+          failureReason: error instanceof Error ? error.message : String(error),
+        }, 'interrupted');
+      }
+    })();
+    activeLaunches.set(task.taskId, observation);
+    void observation.then(
+      () => activeLaunches.delete(task.taskId),
+      () => activeLaunches.delete(task.taskId),
+    );
+  };
+
+  const readRecovery = async (task) => {
+    try {
+      return await executor.readRecoverableResult(cloneTask(task)) ?? {};
+    } catch (error) {
+      logger.warn?.('[ManagedOrchestration] Failed to read recoverable task result', {
+        taskId: task.taskId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return {};
+    }
+  };
+
+  const recoverTask = async (task) => {
+    let reconciliation;
+    try {
+      reconciliation = await executor.reconcile(cloneTask(task));
+    } catch (error) {
+      reconciliation = {
+        state: 'unavailable',
+        failureReason: error instanceof Error ? error.message : String(error),
+      };
+    }
+
+    if (reconciliation?.state === 'terminal') {
+      const result = reconciliation.result ?? { status: 'interrupted' };
+      if (task.status === 'starting' && result.status === 'completed') {
+        await createTaskControl(task.taskId, task.leaseToken).markAccepted();
+      }
+      await finishTask(task.taskId, task.leaseToken, result, 'interrupted');
+      return;
+    }
+
+    if (reconciliation?.state === 'live') {
+      if (task.status === 'starting') {
+        await createTaskControl(task.taskId, task.leaseToken).markAccepted();
+      }
+      const current = tasks.get(task.taskId);
+      if (current && !isTerminalManagedTaskStatus(current.status)) {
+        observeRecoveredTask(cloneTask(current));
+      }
+      return;
+    }
+
+    const recovery = reconciliation?.recovery ?? await readRecovery(task);
+    const recoverablePreview = typeof recovery?.recoverablePreview === 'string'
+      ? recovery.recoverablePreview
+      : '';
+    const canonicalRefs = Array.isArray(recovery?.canonicalRefs)
+      ? recovery.canonicalRefs.map((reference) => ({ ...reference }))
+      : [];
+    await finishTask(task.taskId, task.leaseToken, {
+      status: 'interrupted',
+      failureReason: reconciliation?.failureReason
+        || 'Child session ownership could not be recovered after restart',
+      partial: typeof recovery?.partial === 'boolean'
+        ? recovery.partial
+        : Boolean(recoverablePreview || canonicalRefs.length > 0),
+      recoverablePreview,
+      canonicalRefs,
+      resumable: Boolean(recovery?.resumable),
+    }, 'interrupted');
+  };
+
+  async function pump() {
+    if (shutDown) return;
+    const admitted = [];
+    await runExclusive(async () => {
+      let available = maxConcurrency - countActiveLocked();
+      if (available <= 0) return;
+      const queued = [...tasks.values()]
+        .filter((task) => task.status === 'queued')
+        .sort(compareManagedTaskQueueOrder);
+      for (const previous of queued) {
+        if (available <= 0) break;
+        const next = {
+          ...previous,
+          status: 'starting',
+          leaseToken: createLeaseToken(),
+          startedAt: now(),
+        };
+        await commitTaskUpdateLocked(previous, next);
+        scheduleStartingLease(next);
+        admitted.push(cloneTask(next));
+        available -= 1;
+      }
+    });
+    for (const task of admitted) launchTask(task);
+  }
+
+  const handleTaskTimeout = async (taskId, timeoutAt) => {
+    const task = tasks.get(taskId);
+    if (!task || isTerminalManagedTaskStatus(task.status) || task.timeoutAt !== timeoutAt) return;
+    const reason = `Managed task timed out at ${timeoutAt}`;
+    await cancelSingleTask(taskId, {
+      reason,
+      terminalStatus: task.status === 'queued' ? 'aborted' : 'failed',
+    });
+  };
+
+  const handleStartingLease = async (taskId, leaseToken) => {
+    if (shutDown) return;
+    const task = tasks.get(taskId);
+    if (!task || task.status !== 'starting' || task.leaseToken !== leaseToken) return;
+    // The original start promise may still be pending. Reconciliation becomes
+    // the authoritative observer; a late original completion is ignored by
+    // terminal immutability and the lease/status checks.
+    activeLaunches.delete(taskId);
+    await recoverTask(cloneTask(task));
+  };
+
+  const scheduleStartingLease = (task) => {
+    clearStartingLease(task.taskId);
+    if (task.status !== 'starting' || !task.leaseToken || shutDown) return;
+    const dueAt = (task.startedAt ?? now()) + startingLeaseTimeoutMs;
+    const timer = unrefTimer(scheduleTimeout(() => {
+      startingLeaseTimers.delete(task.taskId);
+      void handleStartingLease(task.taskId, task.leaseToken).catch((error) => {
+        logger.warn?.('[ManagedOrchestration] Failed to reconcile starting lease', {
+          taskId: task.taskId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }, Math.max(0, dueAt - now())));
+    startingLeaseTimers.set(task.taskId, timer);
+  };
+
+  const scheduleTaskDeadline = (task) => {
+    clearTaskTimeout(task.taskId);
+    if (task.timeoutAt === null || isTerminalManagedTaskStatus(task.status)) return;
+    const delay = Math.max(0, task.timeoutAt - now());
+    const timer = unrefTimer(scheduleTimeout(() => {
+      timeoutTimers.delete(task.taskId);
+      void handleTaskTimeout(task.taskId, task.timeoutAt).catch((error) => {
+        logger.warn?.('[ManagedOrchestration] Failed to settle task timeout', {
+          taskId: task.taskId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }, delay));
+    timeoutTimers.set(task.taskId, timer);
+  };
+
+  const initialize = () => {
+    if (shutDown) {
+      return Promise.reject(new ManagedOrchestrationError(
+        'scheduler_shut_down',
+        'managed orchestration scheduler is shut down',
+      ));
+    }
+    if (initialized) return Promise.resolve();
+    if (initializePromise) return initializePromise;
+    initializePromise = runExclusive(async () => {
+      if (initialized) return;
+      const loaded = await persistence.load();
+      if (loaded !== null && loaded !== undefined) {
+        if (!loaded || loaded.version !== 1 || !Array.isArray(loaded.tasks)) {
+          throw new ManagedOrchestrationError('invalid_ledger', 'managed orchestration ledger is invalid');
+        }
+        for (const rawTask of loaded.tasks) {
+          const task = validateManagedTaskRecord(rawTask);
+          if (tasks.has(task.taskId)) {
+            throw new ManagedOrchestrationError('duplicate_task', `duplicate task ${task.taskId} in ledger`);
+          }
+          const indexKey = idempotencyIndexKey(task.rootSessionId, task.idempotencyKey);
+          if (idempotencyIndex.has(indexKey)) {
+            throw new ManagedOrchestrationError(
+              'duplicate_idempotency_key',
+              `duplicate idempotency key for root ${task.rootSessionId}`,
+            );
+          }
+          tasks.set(task.taskId, cloneTask(task));
+          idempotencyIndex.set(indexKey, task.taskId);
+        }
+        const loadedEnvelopes = loaded.resultEnvelopes ?? [];
+        if (!Array.isArray(loadedEnvelopes)) {
+          throw new ManagedOrchestrationError('invalid_ledger', 'managed result envelopes are invalid');
+        }
+        for (const rawEnvelope of loadedEnvelopes) {
+          const envelope = validateManagedTaskResultEnvelope(rawEnvelope);
+          const task = tasks.get(envelope.taskId);
+          if (!task || resultEnvelopes.has(envelope.taskId)) {
+            throw new ManagedOrchestrationError(
+              'invalid_result_envelope',
+              `result envelope ${envelope.envelopeId} has no unique task`,
+            );
+          }
+          assertManagedTaskResultEnvelopeMatchesTask(task, envelope);
+          resultEnvelopes.set(envelope.taskId, structuredClone(envelope));
+        }
+      }
+      initialized = true;
+    }).then(async () => {
+      const missingEnvelopeTasks = [...tasks.values()]
+        .filter((task) => isTerminalManagedTaskStatus(task.status) && !resultEnvelopes.has(task.taskId));
+      await runExclusive(async () => {
+        if (missingEnvelopeTasks.length > 0) {
+          for (const task of missingEnvelopeTasks) {
+            resultEnvelopes.set(task.taskId, createManagedTaskResultEnvelope(task, {
+              sequence: nextResultSequenceLocked(),
+              createdAt: task.finishedAt ?? task.createdAt,
+              resumable: false,
+            }));
+          }
+        }
+        await persistLocked();
+      });
+
+      recovering = true;
+      try {
+        const active = [...tasks.values()]
+          .filter((task) => ACTIVE_STATUSES.has(task.status))
+          .sort(compareManagedTaskQueueOrder);
+        for (const task of active) await recoverTask(cloneTask(task));
+      } finally {
+        recovering = false;
+      }
+      for (const task of tasks.values()) {
+        scheduleTaskDeadline(task);
+        scheduleStartingLease(task);
+      }
+      await pump();
+    }).finally(() => {
+      initializePromise = null;
+    });
+    return initializePromise;
+  };
+
+  const ensureInitialized = async () => {
+    if (shutDown) {
+      throw new ManagedOrchestrationError(
+        'scheduler_shut_down',
+        'managed orchestration scheduler is shut down',
+      );
+    }
+    if (!initialized) await initialize();
+    if (shutDown) {
+      throw new ManagedOrchestrationError(
+        'scheduler_shut_down',
+        'managed orchestration scheduler is shut down',
+      );
+    }
+  };
+
+  const submit = async (input) => {
+    await ensureInitialized();
+    const task = await runExclusive(async () => {
+      const indexKey = idempotencyIndexKey(input.rootSessionId, input.idempotencyKey);
+      const existingTaskId = idempotencyIndex.get(indexKey);
+      if (existingTaskId) return cloneTask(tasks.get(existingTaskId));
+
+      const activeMode = getActiveModeForRootLocked(input.rootSessionId);
+      if (activeMode && activeMode !== input.mode) {
+        throw new ManagedOrchestrationError(
+          'mode_lease_conflict',
+          `root ${input.rootSessionId} is leased to ${activeMode} mode`,
+        );
+      }
+
+      if (input.parentTaskId) {
+        const parent = tasks.get(input.parentTaskId);
+        if (!parent) {
+          throw new ManagedOrchestrationError('parent_not_found', `parent task ${input.parentTaskId} was not found`);
+        }
+        if (
+          parent.rootSessionId !== input.rootSessionId
+          || parent.directory !== input.directory
+          || parent.mode !== input.mode
+        ) {
+          throw new ManagedOrchestrationError(
+            'parent_scope_mismatch',
+            `parent task ${input.parentTaskId} does not belong to the requested root graph`,
+          );
+        }
+      }
+
+      const taskId = createTaskId();
+      if (tasks.has(taskId)) {
+        throw new ManagedOrchestrationError('task_id_collision', `task ID ${taskId} already exists`);
+      }
+      const next = createManagedTaskRecord({
+        taskId,
+        idempotencyKey: input.idempotencyKey,
+        rootSessionId: input.rootSessionId,
+        parentTaskId: input.parentTaskId ?? null,
+        childSessionId: input.childSessionId ?? null,
+        directory: input.directory,
+        sequence: nextSequenceLocked(),
+        mode: input.mode,
+        providerId: input.providerId,
+        modelId: input.modelId,
+        agent: input.agent,
+        variant: input.variant ?? null,
+        label: input.label,
+        prompt: input.prompt,
+        attempt: input.attempt ?? 1,
+        priorTaskId: input.priorTaskId ?? null,
+        executionKind: input.executionKind ?? 'start',
+        createdAt: now(),
+        timeoutAt: input.timeoutAt ?? null,
+      });
+      await commitNewTaskLocked(next);
+      return cloneTask(next);
+    });
+    scheduleTaskDeadline(tasks.get(task.taskId));
+    await pump();
+    return cloneTask(tasks.get(task.taskId));
+  };
+
+  const releaseModeLease = async (rootSessionId, mode) => {
+    await ensureInitialized();
+    return await runExclusive(async () => {
+      const activeMode = getActiveModeForRootLocked(rootSessionId);
+      if (!activeMode) return true;
+      if (activeMode !== mode) {
+        throw new ManagedOrchestrationError(
+          'mode_lease_conflict',
+          `root ${rootSessionId} is leased to ${activeMode} mode`,
+        );
+      }
+      throw new ManagedOrchestrationError(
+        'mode_lease_active',
+        'cannot release mode lease while managed tasks are active',
+      );
+    });
+  };
+
+  const raceAbortWithTimeout = async (abortPromise) => {
+    let timer;
+    const timeout = new Promise((resolve) => {
+      timer = unrefTimer(scheduleTimeout(() => resolve({ timedOut: true }), abortTimeoutMs));
+    });
+    try {
+      return await Promise.race([
+        Promise.resolve(abortPromise).then(
+          (value) => ({ value }),
+          (error) => ({ error }),
+        ),
+        timeout,
+      ]);
+    } finally {
+      if (timer !== undefined) cancelTimeout(timer);
+    }
+  };
+
+  const cancelSingleTask = async (taskId, {
+    reason = 'Cancelled by parent orchestrator',
+    terminalStatus = 'aborted',
+  } = {}) => {
+    const existingCancellation = cancellationPromises.get(taskId);
+    if (existingCancellation) return await existingCancellation;
+
+    const cancellation = (async () => {
+      await ensureInitialized();
+      let task = tasks.get(taskId);
+      if (!task) {
+        throw new ManagedOrchestrationError('task_not_found', `managed task ${taskId} was not found`);
+      }
+      if (isTerminalManagedTaskStatus(task.status)) return cloneTask(task);
+
+      if (task.status === 'queued') {
+        await runExclusive(async () => {
+          const previous = tasks.get(taskId);
+          if (!previous || isTerminalManagedTaskStatus(previous.status)) return;
+          const next = {
+            ...previous,
+            status: 'aborted',
+            finishedAt: now(),
+            failureReason: reason,
+          };
+          await commitTerminalTaskLocked(previous, next);
+        });
+        return cloneTask(tasks.get(taskId));
+      }
+
+      let abortResult = null;
+      let abortFailure = null;
+      try {
+        const outcome = await raceAbortWithTimeout(executor.abort(cloneTask(task)));
+        if (outcome.timedOut) {
+          abortFailure = `Provider abort did not settle within ${abortTimeoutMs}ms`;
+        } else if (outcome.error) {
+          abortFailure = outcome.error instanceof Error ? outcome.error.message : String(outcome.error);
+        } else {
+          abortResult = outcome.value;
+        }
+      } catch (error) {
+        abortFailure = error instanceof Error ? error.message : String(error);
+      }
+
+      const recovery = await readRecovery(task);
+      const recoverablePreview = typeof recovery.recoverablePreview === 'string'
+        ? recovery.recoverablePreview
+        : '';
+      const canonicalRefs = Array.isArray(recovery.canonicalRefs)
+        ? recovery.canonicalRefs.map((reference) => ({ ...reference }))
+        : [];
+      const abortConfirmed = !abortFailure && abortResult?.aborted !== false;
+      await finishTask(taskId, task.leaseToken, {
+        status: abortConfirmed ? terminalStatus : 'interrupted',
+        failureReason: abortFailure || abortResult?.failureReason || reason,
+        partial: typeof recovery.partial === 'boolean'
+          ? recovery.partial
+          : Boolean(recoverablePreview || canonicalRefs.length > 0),
+        recoverablePreview,
+        canonicalRefs,
+        resumable: Boolean(recovery.resumable),
+      });
+      return cloneTask(tasks.get(taskId));
+    })();
+
+    cancellationPromises.set(taskId, cancellation);
+    try {
+      return await cancellation;
+    } finally {
+      cancellationPromises.delete(taskId);
+    }
+  };
+
+  const collectDescendants = (taskId) => {
+    const depthByTask = new Map([[taskId, 0]]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const task of tasks.values()) {
+        if (!task.parentTaskId || depthByTask.has(task.taskId)) continue;
+        const parentDepth = depthByTask.get(task.parentTaskId);
+        if (parentDepth === undefined) continue;
+        depthByTask.set(task.taskId, parentDepth + 1);
+        changed = true;
+      }
+    }
+    return [...depthByTask.entries()]
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+      .map(([id]) => id);
+  };
+
+  const cancelTask = async (taskId, cancelOptions = {}) => {
+    await ensureInitialized();
+    if (!cancelOptions.cascade) {
+      return await cancelSingleTask(taskId, cancelOptions);
+    }
+    if (!tasks.has(taskId)) {
+      throw new ManagedOrchestrationError('task_not_found', `managed task ${taskId} was not found`);
+    }
+    const cancelled = [];
+    for (const descendantTaskId of collectDescendants(taskId)) {
+      const task = await cancelSingleTask(descendantTaskId, cancelOptions);
+      cancelled.push(task);
+    }
+    return cancelled;
+  };
+
+  const waitForTask = async (taskId, { signal } = {}) => {
+    await ensureInitialized();
+    if (shutDown) {
+      throw new ManagedOrchestrationError(
+        'scheduler_shut_down',
+        'managed orchestration scheduler is shut down',
+      );
+    }
+    const task = tasks.get(taskId);
+    if (!task) {
+      throw new ManagedOrchestrationError('task_not_found', `managed task ${taskId} was not found`);
+    }
+    if (isTerminalManagedTaskStatus(task.status)) return cloneTask(task);
+    if (signal?.aborted) throw signal.reason ?? new Error('Task wait aborted');
+    return await new Promise((resolve, reject) => {
+      const waiters = taskWaiters.get(taskId) ?? new Set();
+      const waiter = {
+        resolve(value) {
+          signal?.removeEventListener('abort', onAbort);
+          resolve(value);
+        },
+        reject(error) {
+          signal?.removeEventListener('abort', onAbort);
+          reject(error);
+        },
+      };
+      const onAbort = () => {
+        waiters.delete(waiter);
+        if (waiters.size === 0) taskWaiters.delete(taskId);
+        waiter.reject(signal.reason ?? new Error('Task wait aborted'));
+      };
+      /*
+       * Register synchronously after the terminal check. JavaScript cannot run
+       * a terminal callback between this check and Set insertion.
+       */
+      waiters.add(waiter);
+      taskWaiters.set(taskId, waiters);
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
+  };
+
+  const shutdown = () => {
+    if (shutdownPromise) return shutdownPromise;
+    shutdownPromise = (async () => {
+      if (shutDown) return;
+      shutDown = true;
+      for (const taskId of [...timeoutTimers.keys()]) clearTaskTimeout(taskId);
+      for (const taskId of [...startingLeaseTimers.keys()]) clearStartingLease(taskId);
+      const shutdownError = new ManagedOrchestrationError(
+        'scheduler_shut_down',
+        'managed orchestration scheduler is shut down',
+      );
+      for (const waiters of taskWaiters.values()) {
+        for (const waiter of waiters) waiter.reject(shutdownError);
+      }
+      taskWaiters.clear();
+      activeLaunches.clear();
+      cancellationPromises.clear();
+      acknowledgementPromises.clear();
+      let persistenceError = null;
+      try {
+        await runExclusive(async () => {
+          if (initialized) await persistLocked();
+        });
+        await publicationTail;
+      } catch (error) {
+        persistenceError = error;
+      }
+
+      let executorError = null;
+      try {
+        if (typeof executor.shutdown === 'function') {
+          await executor.shutdown();
+        }
+      } catch (error) {
+        executorError = error;
+      }
+
+      if (persistenceError && executorError) {
+        throw new AggregateError(
+          [persistenceError, executorError],
+          'managed orchestration persistence and executor shutdown failed',
+        );
+      }
+      if (persistenceError) throw persistenceError;
+      if (executorError) throw executorError;
+    })();
+    return shutdownPromise;
+  };
+
+  const acknowledgeResult = async (taskId, actionOptions = {}) => {
+    await ensureInitialized();
+    const action = actionOptions.action;
+    if (!['continue', 'resume', 'retry', 'retry_in_place', 'abandon'].includes(action)) {
+      throw new ManagedOrchestrationError('invalid_result_action', 'result action is invalid');
+    }
+    if (typeof actionOptions.idempotencyKey !== 'string' || !actionOptions.idempotencyKey.trim()) {
+      throw new ManagedOrchestrationError('missing_idempotency_key', 'result action idempotencyKey is required');
+    }
+
+    const pending = acknowledgementPromises.get(taskId);
+    if (pending) {
+      if (pending.action !== action) {
+        throw new ManagedOrchestrationError(
+          'result_already_acknowledging',
+          `result is already being acknowledged with ${pending.action}`,
+        );
+      }
+      return await pending.promise;
+    }
+
+    const promise = (async () => {
+      const currentEnvelope = resultEnvelopes.get(taskId);
+      const sourceTask = tasks.get(taskId);
+      if (!currentEnvelope || !sourceTask) {
+        throw new ManagedOrchestrationError('result_not_found', `managed task result ${taskId} was not found`);
+      }
+      if (currentEnvelope.action !== null) {
+        if (currentEnvelope.action !== action) {
+          throw new ManagedOrchestrationError(
+            'result_already_acknowledged',
+            `result is already acknowledged with ${currentEnvelope.action}`,
+          );
+        }
+        return {
+          envelope: structuredClone(currentEnvelope),
+          followUpTask: currentEnvelope.followUpTaskId
+            ? cloneTask(tasks.get(currentEnvelope.followUpTaskId))
+            : null,
+        };
+      }
+
+      if ((action === 'resume' || action === 'retry_in_place') && !currentEnvelope.resumable) {
+        throw new ManagedOrchestrationError('result_not_resumable', 'result cannot be resumed');
+      }
+
+      let followUpTask = null;
+      if (action === 'retry' || action === 'resume' || action === 'retry_in_place') {
+        followUpTask = await submit({
+          idempotencyKey: actionOptions.idempotencyKey,
+          rootSessionId: sourceTask.rootSessionId,
+          parentTaskId: sourceTask.parentTaskId,
+          childSessionId: action === 'resume' || action === 'retry_in_place'
+            ? sourceTask.childSessionId
+            : null,
+          directory: sourceTask.directory,
+          mode: sourceTask.mode,
+          providerId: actionOptions.providerId ?? sourceTask.providerId,
+          modelId: actionOptions.modelId ?? sourceTask.modelId,
+          agent: actionOptions.agent ?? sourceTask.agent,
+          variant: actionOptions.variant === undefined ? sourceTask.variant : actionOptions.variant,
+          label: actionOptions.label ?? sourceTask.label,
+          prompt: actionOptions.prompt ?? sourceTask.prompt,
+          attempt: sourceTask.attempt + 1,
+          priorTaskId: sourceTask.taskId,
+          executionKind: action,
+          timeoutAt: actionOptions.timeoutAt ?? null,
+        });
+      }
+
+      await runExclusive(async () => {
+        const previous = resultEnvelopes.get(taskId);
+        if (!previous) {
+          throw new ManagedOrchestrationError('result_not_found', `managed task result ${taskId} was not found`);
+        }
+        if (previous.action !== null && previous.action !== action) {
+          throw new ManagedOrchestrationError(
+            'result_already_acknowledged',
+            `result is already acknowledged with ${previous.action}`,
+          );
+        }
+        if (previous.action === action) return;
+        const next = {
+          ...previous,
+          acknowledgedAt: now(),
+          action,
+          followUpTaskId: followUpTask?.taskId ?? null,
+        };
+        await commitEnvelopeUpdateLocked(previous, next);
+      });
+
+      return {
+        envelope: structuredClone(resultEnvelopes.get(taskId)),
+        followUpTask: followUpTask ? cloneTask(tasks.get(followUpTask.taskId)) : null,
+      };
+    })();
+    acknowledgementPromises.set(taskId, { action, promise });
+    try {
+      return await promise;
+    } finally {
+      acknowledgementPromises.delete(taskId);
+    }
+  };
+
+  const flush = async () => {
+    for (let round = 0; round < 3; round += 1) {
+      await Promise.resolve();
+      await runExclusive(async () => undefined);
+      await publicationTail;
+    }
+  };
+
+  return {
+    initialize,
+    submit,
+    cancelTask,
+    waitForTask,
+    acknowledgeResult,
+    shutdown,
+    releaseModeLease,
+    flush,
+    getTask(taskId) {
+      return cloneTask(tasks.get(taskId));
+    },
+    listTasks({ rootSessionId } = {}) {
+      return [...tasks.values()]
+        .filter((task) => !rootSessionId || task.rootSessionId === rootSessionId)
+        .sort(compareManagedTaskQueueOrder)
+        .map(cloneTask);
+    },
+    getSnapshot() {
+      return snapshotLocked();
+    },
+    getDiagnostics() {
+      return {
+        taskCount: tasks.size,
+        activeLaunchCount: activeLaunches.size,
+        pendingCancellationCount: cancellationPromises.size,
+        pendingAcknowledgementCount: acknowledgementPromises.size,
+        pendingWaiterCount: [...taskWaiters.values()].reduce((sum, waiters) => sum + waiters.size, 0),
+        pendingTimeoutCount: timeoutTimers.size,
+        pendingLeaseCount: startingLeaseTimers.size,
+        compactedTaskCount,
+        serializedBytes: lastSerializedBytes,
+        shutDown,
+      };
+    },
+    getResultEnvelope(taskId) {
+      const envelope = resultEnvelopes.get(taskId);
+      return envelope ? structuredClone(envelope) : null;
+    },
+    listResultEnvelopes({ rootSessionId } = {}) {
+      return [...resultEnvelopes.values()]
+        .filter((envelope) => !rootSessionId || envelope.rootSessionId === rootSessionId)
+        .sort((left, right) => left.sequence - right.sequence)
+        .map((envelope) => structuredClone(envelope));
+    },
+  };
+};

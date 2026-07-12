@@ -255,6 +255,20 @@ describe("applyDirectoryEvent", () => {
     })
   })
 
+  test("preserves semantic reasoning when the assistant message completes", () => {
+    const text = "The user requests to continue implementing the complete explanation."
+    const draft = state()
+
+    expect(applyDirectoryEvent(draft, reasoningPartUpdatedEvent(text))).not.toBe(false)
+    applyDirectoryEvent(draft, messageUpdatedEvent({
+      ...testMessage("msg_reasoning_1", "ses_1", "assistant", 1),
+      finish: "stop",
+      time: { created: 1, completed: 2 },
+    } as Message))
+
+    expect((draft.part.msg_reasoning_1[0] as { text?: string }).text).toBe(text)
+  })
+
   test("applies part update without materialization when owning message exists", () => {
     const draft = state({
       message: { ses_1: [{ id: "msg_1", sessionID: "ses_1", role: "assistant", time: { created: 1 } } as never] },
@@ -497,9 +511,30 @@ describe("applyDirectoryEvent", () => {
     } as unknown as Event)
 
     expect(result).toBe(true)
+    expect(draft.session[0]?.title).toBe("new title")
     expect((draft.session[0] as Session & { summary?: { title?: string; additions?: number; deletions?: number; files?: number } }).summary).toEqual({
       title: "preserve me",
     })
+  })
+
+  test("replaces an untitled placeholder with the authoritative generated title", () => {
+    const draft = state({
+      session: [{ ...testSession("ses_1"), title: "Untitled Session" }],
+    })
+
+    const result = applyDirectoryEvent(draft, {
+      type: "session.updated",
+      properties: {
+        info: {
+          ...testSession("ses_1"),
+          title: "Fix OpenAI session titles",
+          time: { created: 1, updated: 2 },
+        },
+      },
+    } as Event)
+
+    expect(result).toBe(true)
+    expect(draft.session[0]?.title).toBe("Fix OpenAI session titles")
   })
 
   test("strips untrusted diff totals from raw session created snapshots without cached messages", () => {

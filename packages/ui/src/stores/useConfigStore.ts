@@ -21,6 +21,7 @@ import {
 } from "@/lib/agentSelection";
 import { cacheResponseStyleInstructionFromSettings } from "@/lib/responseStyle";
 import { getOrderedThinkingVariants, resolveProviderModelVariant, resolveThinkingVariant } from "@/lib/providers/variantControls";
+import { isProviderModelAvailable, resolveAvailableProviderModel } from "@/lib/providers/modelAvailability";
 
 const MODELS_DEV_API_URL = "https://models.dev/api.json";
 const MODELS_DEV_PROXY_URL = "/api/openchamber/models-metadata";
@@ -198,7 +199,7 @@ const hasProviderModel = (
     if (!provider) {
         return false;
     }
-    return provider.models.some((model) => model.id === modelId);
+    return provider.models.some((model) => model.id === modelId && isProviderModelAvailable(model));
 };
 
 export const mergeRuntimeAgentsWithConfigOverrides = (runtimeAgents: Agent[], configAgents: Agent[]): Agent[] => {
@@ -1084,20 +1085,23 @@ export const useConfigStore = create<ConfigStore>()(
                                     const selectionIsValid = Boolean(state.currentProviderId)
                                         && Boolean(state.currentModelId)
                                         && processedProviders.some((p) => p.id === state.currentProviderId
-                                            && p.models.some((m) => m.id === state.currentModelId));
+                                            && p.models.some((m) => m.id === state.currentModelId && isProviderModelAvailable(m)));
                                     if (!selectionIsValid) {
                                         let resolved: { providerId: string; modelId: string } | null = null;
                                         for (const p of processedProviders) {
                                             const def = defaults?.[p.id];
-                                            if (def && p.models.some((m) => m.id === def)) {
+                                            if (def && p.models.some((m) => m.id === def && isProviderModelAvailable(m))) {
                                                 resolved = { providerId: p.id, modelId: def };
                                                 break;
                                             }
                                         }
                                         if (!resolved) {
-                                            const firstWithModel = processedProviders.find((p) => p.models.length > 0);
+                                            const firstWithModel = processedProviders.find((p) => p.models.some(isProviderModelAvailable));
                                             if (firstWithModel) {
-                                                resolved = { providerId: firstWithModel.id, modelId: firstWithModel.models[0].id };
+                                                resolved = {
+                                                    providerId: firstWithModel.id,
+                                                    modelId: firstWithModel.models.find(isProviderModelAvailable)?.id ?? "",
+                                                };
                                             }
                                         }
                                         if (resolved) {
@@ -1164,7 +1168,7 @@ export const useConfigStore = create<ConfigStore>()(
                         return;
                     }
  
-                    const firstModel = provider.models[0];
+                    const firstModel = provider.models.find(isProviderModelAvailable);
                     const newModelId = firstModel?.id || "";
  
                     set((state) => {
@@ -1193,7 +1197,7 @@ export const useConfigStore = create<ConfigStore>()(
                 setProviderModel: (providerId: string, modelId: string, variant?: string) => {
                     const { providers } = get();
                     const provider = providers.find((p) => p.id === providerId);
-                    if (!provider?.models.some((model) => model.id === modelId)) {
+                    if (!provider?.models.some((model) => model.id === modelId && isProviderModelAvailable(model))) {
                         return;
                     }
 
@@ -1686,7 +1690,7 @@ export const useConfigStore = create<ConfigStore>()(
                             const agentProvider = providers.find((provider) => provider.id === providerID);
                             const agentModel = agentProvider?.models.find((model) => model.id === modelID) as { variants?: Record<string, unknown> } | undefined;
 
-                            if (agentModel) {
+                            if (agentModel && isProviderModelAvailable(agentModel)) {
                                 const agentVariant = typeof (agent as { variant?: unknown }).variant === 'string'
                                     ? (agent as { variant: string }).variant
                                     : undefined;
@@ -1700,6 +1704,15 @@ export const useConfigStore = create<ConfigStore>()(
 
                         if (hasProviderModel(providers, currentProviderId, currentModelId)) {
                             return;
+                        }
+
+                        const fallback = resolveAvailableProviderModel(
+                            providers,
+                            currentProviderId,
+                            currentModelId,
+                        );
+                        if (fallback) {
+                            applyResolvedModelSelection(fallback.providerId, fallback.modelId);
                         }
                     }
                 },

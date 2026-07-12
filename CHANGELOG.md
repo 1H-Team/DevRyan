@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.8] - 2026-07-11
+
+- Sync: stop deterministic unavailable-model retry loops after the first provider model-resolution failure, surface the error once, and keep transient provider retries such as rate limits on the normal OpenCode path.
+- Docs: add reliability audit and stabilization planning notes for the next DevRyan hardening pass.
+- Release: keep managed orchestration runtime metadata covered by version bumping and release-tag verification.
+- Release: run hosted asset packaging on Node.js 22 to keep native dependency installation compatible with current GitHub runners.
+
 ## [1.0.7] - 2026-07-10
 
 - Release: bump DevRyan workspace, Electron, VS Code, web, and legacy desktop metadata to 1.0.7.

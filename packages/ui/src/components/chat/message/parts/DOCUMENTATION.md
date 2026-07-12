@@ -25,6 +25,15 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Controls expandable header title/description/diff stats/timer and expanded output body.
   - If you want to change expandable tool layout, edit here.
 
+- `toolExpandedFallback.ts`
+  - Selects the first meaningful expandable representation without losing secondary failure state.
+  - Precedence is structured diff/diagnostics, formatted input, provider output, provider failure, then an explicit no-details state.
+  - Empty-state copy is terminal-only; partial output may render while a tool is still running.
+
+- `TaskToolSummary.tsx` + `taskToolUtils.ts`
+  - Preserve provider-native subagent output across failure and cancellation.
+  - Failed or cancelled output is labelled as partial, retains its provider status/reason, and never receives a success check.
+
 - `toolPresentation.tsx`
   - Shared icon mapping for tool names (`getToolIcon`).
   - Used by both `ProgressiveGroup.tsx` and `ToolPart.tsx`.
@@ -47,6 +56,8 @@ Use this doc when you ask an agent to change tool/header/description behavior.
 
 - `read` and most search/fetch tools are treated as **static tools** and passive lookup activity rolls up across reasoning text into one dropdown per kind until a hard tool boundary such as shell/question/task.
 - `bash/edit/write/question/task` are **expandable tools** and render via `ToolPart`.
+- Output-only `write/create/file_write` aliases remain expandable even when no structured diff is available.
+- Terminal tool failures remain visible alongside retained partial output. A genuinely empty terminal payload renders an explicit provider-no-details message instead of an empty expansion.
 - `perplexity` is currently treated as static and grouped into search/web-search style rows (through static grouping + short description extraction).
 - Thinking/Justification duration is hidden in `sorted` mode (handled in `ReasoningPart.tsx` + `JustificationBlock.tsx`).
 

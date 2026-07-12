@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
-import { TRANSIENT_CONTINUATION_PROMPT, planTransientRecovery } from "./transientRecovery"
+import { TRANSIENT_CONTINUATION_PROMPT, planManualRecovery, planTransientRecovery } from "./transientRecovery"
 
 function makeMessage(id: string, role: "user" | "assistant", extra: Record<string, unknown> = {}): Message {
   return {
@@ -26,6 +26,30 @@ function getPartsFrom(records: Record<string, Part[]>) {
 }
 
 describe("planTransientRecovery", () => {
+  test("plans manual recovery from a retry status without requiring an assistant error message", () => {
+    const messages = [
+      makeMessage("user-1", "user", {
+        model: { providerID: "opencode-go", modelID: "deepseek-v4-flash" },
+      }),
+      makeMessage("assistant-partial", "assistant"),
+    ]
+    const getParts = getPartsFrom({
+      "user-1": [makePart({ type: "text", text: "Finish the task", messageID: "user-1" })],
+      "assistant-partial": [makePart({ type: "text", text: "Partial work", messageID: "assistant-partial" })],
+    })
+
+    const plan = planManualRecovery({ messages, getParts, anchorUserMessageId: "user-1" })
+    expect({
+      mode: plan?.mode,
+      anchorUserMessageId: plan?.anchorUserMessageId,
+      content: plan?.content,
+    }).toEqual({
+      mode: "continue",
+      anchorUserMessageId: "user-1",
+      content: TRANSIENT_CONTINUATION_PROMPT,
+    })
+  })
+
   test("resends the original prompt when the first assistant stream produced no content", () => {
     const messages = [
       makeMessage("user-1", "user"),

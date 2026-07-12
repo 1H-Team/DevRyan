@@ -1,13 +1,17 @@
 import express from 'express';
-import request from 'supertest';
+import request from '../../test-supertest.js';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import * as authModule from './auth.js';
 import { getProviderAuth, readAuthFile, writeAuthFile } from './auth.js';
 import { registerCommonRequestMiddleware } from './core-routes.js';
-import { __resetGitHubCopilotModelDiscoveryCache } from './github-copilot-models.js';
+import {
+  __resetGitHubCopilotModelDiscoveryCache,
+  GITHUB_COPILOT_AUTO_MODEL,
+} from './github-copilot-models.js';
 import { registerOpenCodeRoutes } from './routes.js';
 
 vi.mock('./auth.js', () => ({
@@ -16,6 +20,8 @@ vi.mock('./auth.js', () => ({
   getProviderAuth: vi.fn(() => null),
   removeProviderAuth: vi.fn(() => false),
 }));
+
+const COPILOT_AUTO_MODEL = GITHUB_COPILOT_AUTO_MODEL;
 
 const createApp = (overrides = {}) => {
   const app = express();
@@ -90,6 +96,8 @@ const createApp = (overrides = {}) => {
       abortSession: vi.fn(async () => false),
       getSessionMessages: vi.fn(async () => []),
     },
+    standardSessionTitleRuntime: { schedule: vi.fn() },
+    authLibrary: authModule,
     ...overrides,
   };
   delete dependencies.useJsonParser;
@@ -193,6 +201,23 @@ describe('OpenCode provider routes', () => {
       .expect(200);
 
     expect(ensureAnthropicOAuthProviderConfig).toHaveBeenCalledWith({ workingDirectory: '/tmp/project' });
+  });
+
+  it('returns a deterministic code when Claude CLI OAuth is unavailable', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'openchamber-claude-route-'));
+    const fakeClaude = join(tempDir, 'claude');
+    writeFileSync(fakeClaude, '#!/bin/sh\necho "not logged in" >&2\nexit 1\n', 'utf8');
+    chmodSync(fakeClaude, 0o755);
+    const { app } = createApp({ buildAugmentedPath: vi.fn(() => tempDir) });
+
+    const response = await request(app)
+      .post('/api/provider/anthropic/check-oauth')
+      .expect(400);
+
+    expect(response.body).toEqual({
+      code: 'claude_cli_unauthenticated',
+      error: 'not logged in',
+    });
   });
 
   it('verifies the Cursor SDK connection without writing the old OpenCode bridge config', async () => {
@@ -368,6 +393,146 @@ describe('OpenCode provider routes', () => {
     fetchSpy.mockRestore();
   });
 
+  it('keeps only real GPT-5.6 family rows selectable for OAuth without exposing credentials', async () => {
+    readAuthFile.mockReturnValue({
+      openai: { type: 'oauth', access: 'secret-access-token', refresh: 'secret-refresh-token' },
+    });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: vi.fn(async () => ({
+        providers: [{
+          id: 'openai',
+          name: 'OpenAI',
+          models: {
+            'gpt-5.6': { id: 'gpt-5.6', name: 'GPT-5.6' },
+            'gpt-5.6-pro': { id: 'gpt-5.6-pro', name: 'GPT-5.6 Pro' },
+            'gpt-5.6-sol': { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' },
+            'gpt-5.6-sol-fast': { id: 'gpt-5.6-sol-fast', name: 'GPT-5.6 Sol Fast' },
+            'gpt-5.6-sol-pro': { id: 'gpt-5.6-sol-pro', name: 'GPT-5.6 Sol Pro' },
+            'gpt-5.6-terra': { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra' },
+            'gpt-5.6-luna': { id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna' },
+            'gpt-5.5': { id: 'gpt-5.5', name: 'GPT-5.5' },
+          },
+        }],
+        default: { openai: 'gpt-5.6' },
+      })),
+    });
+    const { app } = createApp({
+      buildOpenCodeUrl: vi.fn((requestPath) => `http://opencode.test${requestPath}`),
+      cursorSdkRuntime: null,
+    });
+
+    const response = await request(app).get('/api/config/providers').expect(200);
+
+    expect(response.body.providers[0]).toMatchObject({
+      id: 'openai',
+      authType: 'oauth',
+      models: {
+        'gpt-5.6': {
+          id: 'gpt-5.6',
+          available: false,
+          unavailableReason: 'auth_type_unsupported',
+          requiredAuthType: 'api',
+        },
+        'gpt-5.6-luna': {
+          id: 'gpt-5.6-luna',
+        },
+        'gpt-5.6-sol': {
+          id: 'gpt-5.6-sol',
+        },
+        'gpt-5.6-sol-fast': {
+          id: 'gpt-5.6-sol-fast',
+        },
+        'gpt-5.6-terra': {
+          id: 'gpt-5.6-terra',
+        },
+        'gpt-5.6-pro': {
+          available: false,
+          unavailableReason: 'auth_type_unsupported',
+          requiredAuthType: 'api',
+        },
+        'gpt-5.6-sol-pro': {
+          available: false,
+          unavailableReason: 'auth_type_unsupported',
+          requiredAuthType: 'api',
+        },
+        'gpt-5.5': {
+          id: 'gpt-5.5',
+        },
+      },
+    });
+    expect(response.body.providers[0].models['gpt-5.6-luna'].available).not.toBe(false);
+    expect(response.body.providers[0].models['gpt-5.6-sol'].available).not.toBe(false);
+    expect(response.body.providers[0].models['gpt-5.6-terra'].available).not.toBe(false);
+    expect(JSON.stringify(response.body)).not.toContain('secret-access-token');
+    expect(JSON.stringify(response.body)).not.toContain('secret-refresh-token');
+    fetchSpy.mockRestore();
+  });
+
+  it('keeps OpenAI Luna available for API-key authentication', async () => {
+    readAuthFile.mockReturnValue({ openai: { type: 'api', key: 'secret-api-key' } });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: vi.fn(async () => ({
+        providers: [{
+          id: 'openai',
+          name: 'OpenAI',
+          models: {
+            'gpt-5.6-luna': { id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna' },
+          },
+        }],
+        default: { openai: 'gpt-5.6-luna' },
+      })),
+    });
+    const { app } = createApp({
+      buildOpenCodeUrl: vi.fn((requestPath) => `http://opencode.test${requestPath}`),
+      cursorSdkRuntime: null,
+    });
+
+    const response = await request(app).get('/api/config/providers').expect(200);
+
+    expect(response.body.providers[0]).toMatchObject({
+      id: 'openai',
+      authType: 'api',
+      models: {
+        'gpt-5.6-luna': { id: 'gpt-5.6-luna' },
+      },
+    });
+    expect(response.body.providers[0].models['gpt-5.6-luna'].available).not.toBe(false);
+    expect(JSON.stringify(response.body)).not.toContain('secret-api-key');
+    fetchSpy.mockRestore();
+  });
+
+  it('leaves external OpenCode OpenAI catalogs unchanged', async () => {
+    readAuthFile.mockReturnValue({ openai: { type: 'oauth', access: 'secret-access-token' } });
+    const upstream = {
+      providers: [{
+        id: 'openai',
+        name: 'OpenAI',
+        models: {
+          'gpt-5.6': { id: 'gpt-5.6', name: 'GPT-5.6' },
+          'gpt-5.6-sol': { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' },
+        },
+      }],
+      default: { openai: 'gpt-5.6' },
+    };
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: vi.fn(async () => upstream),
+    });
+    const { app } = createApp({
+      buildOpenCodeUrl: vi.fn((requestPath) => `http://opencode.test${requestPath}`),
+      cursorSdkRuntime: null,
+      isExternalOpenCode: vi.fn(() => true),
+    });
+
+    const response = await request(app).get('/api/config/providers').expect(200);
+
+    expect(response.body.providers[0]).toEqual(upstream.providers[0]);
+    expect(response.body.providers[0].authType).toBeUndefined();
+    fetchSpy.mockRestore();
+  });
+
   it('preserves upstream GitHub Copilot provider metadata without duplicating aliases or fetching account models', async () => {
     readAuthFile.mockReturnValue({ 'github-copilot': { type: 'oauth', access: 'token' } });
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
@@ -406,7 +571,10 @@ describe('OpenCode provider routes', () => {
       {
         id: 'github-copilot',
         name: 'GitHub Copilot',
-        models: { 'gpt-5.1-codex': { id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex' } },
+        models: {
+          auto: COPILOT_AUTO_MODEL,
+          'gpt-5.1-codex': { id: 'gpt-5.1-codex', name: 'GPT-5.1 Codex' },
+        },
       },
       {
         id: 'openai',
@@ -501,6 +669,7 @@ describe('OpenCode provider routes', () => {
         id: 'github-copilot',
         name: 'GitHub Copilot',
         models: {
+          auto: COPILOT_AUTO_MODEL,
           'gpt-5.5': {
             id: 'gpt-5.5',
             name: 'GPT 5.5',
@@ -570,6 +739,7 @@ describe('OpenCode provider routes', () => {
       id: 'github-copilot',
       name: 'GitHub Copilot',
       models: {
+        auto: COPILOT_AUTO_MODEL,
         'gpt-5.4-mini': {
           id: 'gpt-5.4-mini',
           name: 'GPT 5.4 Mini',
@@ -625,11 +795,12 @@ describe('OpenCode provider routes', () => {
       id: 'github-copilot',
       name: 'GitHub Copilot',
       models: {
-        'gpt-5.1-codex': {
-          id: 'gpt-5.1-codex',
-          name: 'GPT-5.1 Codex',
+        auto: COPILOT_AUTO_MODEL,
+        'gpt-4.1': {
+          id: 'gpt-4.1',
+          name: 'GPT-4.1',
           api: {
-            id: 'gpt-5.1-codex',
+            id: 'gpt-4.1',
             url: 'https://api.githubcopilot.com',
             npm: '@ai-sdk/github-copilot',
           },
@@ -667,6 +838,7 @@ describe('OpenCode provider routes', () => {
       id: 'github-copilot',
       name: 'GitHub Copilot',
       models: {
+        auto: COPILOT_AUTO_MODEL,
         'gpt-5.2-codex': {
           id: 'gpt-5.2-codex',
           name: 'GPT 5.2 Codex',
@@ -1131,6 +1303,48 @@ describe('OpenCode provider routes', () => {
     expect(handlePromptAsync).toHaveBeenCalled();
     expect(schedule).not.toHaveBeenCalled();
     expect(response.body).toEqual({ proxied: true });
+  });
+
+  it('schedules standard-provider title generation after the proxied prompt succeeds', async () => {
+    const schedule = vi.fn();
+    const { app } = createApp({
+      standardSessionTitleRuntime: { schedule },
+    });
+    app.use('/api', (_req, res) => res.status(204).end());
+
+    await request(app)
+      .post('/api/session/ses_1/prompt_async?directory=%2Ftmp%2Fproject')
+      .send({
+        model: { providerID: 'openai', modelID: 'gpt-5.6-sol' },
+        messageID: 'msg_1',
+        parts: [{ type: 'text', text: 'hello' }],
+      })
+      .expect(204);
+
+    expect(schedule).toHaveBeenCalledWith({
+      sessionID: 'ses_1',
+      directory: '/tmp/project',
+      text: 'hello',
+    });
+  });
+
+  it('does not schedule standard-provider title generation after a proxied prompt error', async () => {
+    const schedule = vi.fn();
+    const { app } = createApp({
+      standardSessionTitleRuntime: { schedule },
+    });
+    app.post('/api/session/:sessionID/prompt_async', (_req, res) => res.status(401).json({ error: 'nope' }));
+
+    await request(app)
+      .post('/api/session/ses_1/prompt_async')
+      .send({
+        model: { providerID: 'openai', modelID: 'gpt-5.6-sol' },
+        messageID: 'msg_1',
+        parts: [{ type: 'text', text: 'hello' }],
+      })
+      .expect(401);
+
+    expect(schedule).not.toHaveBeenCalled();
   });
 
   it('merges Cursor SDK session statuses into the session status route with Cursor taking precedence', async () => {

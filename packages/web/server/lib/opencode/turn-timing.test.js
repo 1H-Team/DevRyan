@@ -1,5 +1,5 @@
 import express from 'express';
-import request from 'supertest';
+import request from '../../test-supertest.js';
 import { describe, expect, it } from 'vitest';
 
 import { createTurnTimingRuntime, registerTurnTimingRoutes } from './turn-timing.js';

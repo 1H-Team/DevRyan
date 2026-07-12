@@ -1,5 +1,7 @@
 import type { BridgeContext, BridgeResponse } from './bridge';
 import { waitForApiUrl } from './opencode-ready';
+import { readAuthFile } from './opencodeAuth';
+import { annotateOpenAIModelAvailability } from './openaiModelAvailability';
 
 type BridgeMessageInput = {
   id: string;
@@ -88,7 +90,22 @@ export async function handleProxyBridgeMessage(
               : undefined,
         });
 
-        const arrayBuffer = await response.arrayBuffer();
+        let arrayBuffer = await response.arrayBuffer();
+        if (
+          response.ok
+          && normalizedMethod === 'GET'
+          && normalizedPath.split('?')[0] === '/config/providers'
+          && ctx?.manager?.getDebugInfo?.().mode !== 'external'
+        ) {
+          try {
+            const payload = JSON.parse(Buffer.from(arrayBuffer).toString('utf8')) as Record<string, unknown>;
+            const auth = readAuthFile();
+            const annotated = annotateOpenAIModelAvailability(payload, auth.openai);
+            arrayBuffer = Buffer.from(JSON.stringify(annotated));
+          } catch {
+            // Preserve the upstream provider response if it is not valid JSON or auth lookup fails.
+          }
+        }
         const data: ApiProxyResponsePayload = {
           status: response.status,
           headers: deps.collectHeaders(response.headers),

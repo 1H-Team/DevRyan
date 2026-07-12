@@ -121,6 +121,7 @@ export type CursorSdkRuntime = {
     body: Record<string, unknown>;
     directory?: string | null;
   }): Promise<{ handled: boolean; status?: number; body?: Record<string, unknown> }>;
+  getSessionStatus(): Record<string, { type: string }>;
   abortSession(sessionID: string): Promise<boolean>;
   getSessionMessages(sessionID: string): Promise<Array<{ info: Record<string, unknown>; parts: Record<string, unknown>[] }>>;
   deleteSessionState(sessionID: string): Promise<boolean>;

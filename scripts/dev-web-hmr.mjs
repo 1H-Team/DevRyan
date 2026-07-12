@@ -3,11 +3,11 @@ import { spawn } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stopChildTree, useDetachedChildren } from './dev-child-utils.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
-const useDetachedChildren = process.platform === 'darwin';
 const webRoot = path.join(repoRoot, 'packages/web');
 
 function run(label, command, args, env = {}, options = {}) {
@@ -19,65 +19,6 @@ function run(label, command, args, env = {}, options = {}) {
   }).on('error', (error) => {
     console.error(`[dev:web:hmr] Failed to start ${label}:`, error);
   });
-}
-
-function waitForExit(child, timeoutMs) {
-  return new Promise((resolve) => {
-    if (!child || child.exitCode !== null || child.signalCode !== null) {
-      resolve();
-      return;
-    }
-
-    const onExit = () => {
-      clearTimeout(timer);
-      resolve();
-    };
-
-    const timer = setTimeout(() => {
-      child.off('exit', onExit);
-      resolve();
-    }, timeoutMs);
-
-    child.once('exit', onExit);
-  });
-}
-
-function signalChild(child, signal) {
-  if (!child || child.exitCode !== null || child.signalCode !== null) {
-    return;
-  }
-
-  try {
-    if (useDetachedChildren && process.platform !== 'win32') {
-      process.kill(-child.pid, signal);
-      return;
-    }
-  } catch {
-  }
-
-  try {
-    child.kill(signal);
-  } catch {
-  }
-}
-
-async function stopChildTree(child) {
-  if (!child || child.exitCode !== null || child.signalCode !== null) {
-    return;
-  }
-
-  signalChild(child, 'SIGINT');
-  await waitForExit(child, 2500);
-
-  if (child.exitCode === null && child.signalCode === null) {
-    signalChild(child, 'SIGTERM');
-    await waitForExit(child, 2500);
-  }
-
-  if (child.exitCode === null && child.signalCode === null) {
-    signalChild(child, 'SIGKILL');
-    await waitForExit(child, 1000);
-  }
 }
 
 const uiPort = process.env.OPENCHAMBER_HMR_UI_PORT || '5180';

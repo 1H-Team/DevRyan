@@ -55,6 +55,37 @@ export function setSessionMaterializerChildStores(childStores: ChildStoreManager
   childStoresRef = childStores
 }
 
+export function clearSessionMaterializerChildStores(childStores: ChildStoreManager): void {
+  if (childStoresRef === childStores) {
+    childStoresRef = null
+  }
+}
+
+export function releaseSessionMaterializerDirectory(directory: string): void {
+  if (!directory) return
+  callbacksByDirectory.delete(directory)
+  const prefix = `${directory}\n`
+  for (const key of materializationState.keys()) {
+    if (key.startsWith(prefix)) {
+      materializationState.delete(key)
+    }
+  }
+  for (const [key, timer] of archivedOffloadTimers) {
+    if (!key.startsWith(prefix)) continue
+    clearTimeout(timer)
+    archivedOffloadTimers.delete(key)
+  }
+}
+
+export function getSessionMaterializerDirectoryRetainedCountsForTest(directory: string) {
+  const prefix = `${directory}\n`
+  return {
+    callbacks: callbacksByDirectory.has(directory) ? 1 : 0,
+    states: [...materializationState.keys()].filter((key) => key.startsWith(prefix)).length,
+    timers: [...archivedOffloadTimers.keys()].filter((key) => key.startsWith(prefix)).length,
+  }
+}
+
 function offloadSessionCaches(sessionID: string, directory?: string): void {
   if (!sessionID) return
   const store = directory ? childStoresRef?.getChild(directory) : undefined
@@ -114,9 +145,11 @@ export async function ensureFirstPage(
 
   try {
     await callbacks.ensureFirstPage(sessionID, options)
+    if (getCallbacks(directory) !== callbacks) return
     const latest = getMaterializationState(sessionID, directory)
     setMaterializationState(directory, sessionID, nowState("firstPageLoaded", latest.archived))
   } catch (error) {
+    if (getCallbacks(directory) !== callbacks) return
     const latest = getMaterializationState(sessionID, directory)
     const message = error instanceof Error ? error.message : "Session materialization failed"
     setMaterializationState(directory, sessionID, nowState("error", latest.archived, message))

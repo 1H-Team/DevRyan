@@ -7,6 +7,7 @@ permission:
   external_directory:
     "*": ask
   plan_enter: deny
+  devryan_task: deny
   read:
     "*.env": ask
     "*.env.*": ask

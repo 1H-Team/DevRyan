@@ -7,6 +7,7 @@ import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { usePluginsStore } from "@/stores/usePluginsStore";
 import type { PluginEntry, PluginFile } from "@/lib/api/types";
+import { getSlimActions, isSlimPlugin } from "./pluginSlimPresentation";
 
 const formatOptions = (options: Record<string, unknown> | undefined): string => {
   if (!options || Object.keys(options).length === 0) {
@@ -40,6 +41,7 @@ const SlimStatusPanel: React.FC = () => {
   const installSlimRuntime = usePluginsStore((state) => state.installSlimRuntime);
   const repairSlimRuntime = usePluginsStore((state) => state.repairSlimRuntime);
   const busy = isLoading || actionInFlight !== null;
+  const actions = getSlimActions(status);
   const stateLabel = status?.runtimeEnabled && status.wrapperConfigured
     ? t("settings.plugins.slim.status.ready")
     : t("settings.plugins.slim.status.needsSetup");
@@ -73,7 +75,7 @@ const SlimStatusPanel: React.FC = () => {
           </div>
         ) : null}
         <div className="flex flex-wrap gap-2">
-          <Button
+          {actions.install ? <Button
             type="button"
             size="sm"
             onClick={() => { void installSlimRuntime(); }}
@@ -81,8 +83,8 @@ const SlimStatusPanel: React.FC = () => {
           >
             <RiDownloadCloud2Line className="h-4 w-4" />
             {actionInFlight === "install" ? t("settings.plugins.slim.action.installing") : t("settings.plugins.slim.action.install")}
-          </Button>
-          <Button
+          </Button> : null}
+          {actions.repair ? <Button
             type="button"
             size="sm"
             variant="outline"
@@ -91,7 +93,7 @@ const SlimStatusPanel: React.FC = () => {
           >
             <RiRefreshLine className="h-4 w-4" />
             {actionInFlight === "repair" ? t("settings.plugins.slim.action.repairing") : t("settings.plugins.slim.action.repair")}
-          </Button>
+          </Button> : null}
         </div>
       </div>
     </SettingsSection>
@@ -103,8 +105,7 @@ const EntryDetails: React.FC<{ entry: PluginEntry }> = ({ entry }) => {
   const Icon = entry.parsedKind === "path" ? RiFolderLine : RiCodeBoxLine;
 
   return (
-    <SettingsPageLayout>
-      <SlimStatusPanel />
+    <>
       <div className="flex items-center gap-3">
         <Icon className="h-5 w-5 text-muted-foreground" />
         <div className="min-w-0 flex-1">
@@ -137,7 +138,7 @@ const EntryDetails: React.FC<{ entry: PluginEntry }> = ({ entry }) => {
           {formatOptions(entry.options)}
         </pre>
       </SettingsSection>
-    </SettingsPageLayout>
+    </>
   );
 };
 
@@ -145,8 +146,7 @@ const FileDetails: React.FC<{ file: PluginFile }> = ({ file }) => {
   const { t } = useI18n();
 
   return (
-    <SettingsPageLayout>
-      <SlimStatusPanel />
+    <>
       <div className="flex items-center gap-3">
         <RiFileTextLine className="h-5 w-5 text-muted-foreground" />
         <div className="min-w-0 flex-1">
@@ -169,7 +169,7 @@ const FileDetails: React.FC<{ file: PluginFile }> = ({ file }) => {
         />
         <DetailRow label={t("settings.plugins.page.field.absolutePath")} value={file.absolutePath} mono />
       </SettingsSection>
-    </SettingsPageLayout>
+    </>
   );
 };
 
@@ -194,7 +194,12 @@ export const PluginsPage: React.FC = () => {
     );
   }
 
-  return selected.kind === "config"
-    ? <EntryDetails entry={selected} />
-    : <FileDetails file={selected} />;
+  return (
+    <SettingsPageLayout>
+      {isSlimPlugin(selected) ? <SlimStatusPanel /> : null}
+      {selected.kind === "config"
+        ? <EntryDetails entry={selected} />
+        : <FileDetails file={selected} />}
+    </SettingsPageLayout>
+  );
 };

@@ -18,21 +18,24 @@ const session = (id, directory, updated, extra = {}) => ({
 })
 
 describe('live aggregate', () => {
-  it('prefers the freshest live session snapshot across child stores', () => {
+  it('exposes the generated title from the freshest live session snapshot', () => {
     const states = [
       {
-        session: [session('ses-1', '/a', 10, { title: 'old' })],
+        session: [session('ses-1', '/a', 10, { title: 'Untitled Session' })],
         session_status: {},
       },
       {
-        session: [session('ses-1', '/a', 25, { title: 'new' }), session('ses-2', '/b', 20)],
+        session: [session('ses-1', '/a', 25, { title: 'Fix OpenAI session titles' }), session('ses-2', '/b', 20)],
         session_status: {},
       },
     ]
 
     const sessions = aggregateLiveSessions(states)
-    expect(sessions.map((item) => `${item.id}:${item.title}`)).toEqual(['ses-1:new', 'ses-2:ses-2-title'])
-    expect(findLiveSession(states, 'ses-1')?.title).toBe('new')
+    expect(sessions.map((item) => `${item.id}:${item.title}`)).toEqual([
+      'ses-1:Fix OpenAI session titles',
+      'ses-2:ses-2-title',
+    ])
+    expect(findLiveSession(states, 'ses-1')?.title).toBe('Fix OpenAI session titles')
   })
 
   it('prefers busy/retry statuses over stale idle snapshots', () => {

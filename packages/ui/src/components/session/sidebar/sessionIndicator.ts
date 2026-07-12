@@ -14,7 +14,7 @@ export type SessionIndicator = {
 type ResolveSidebarIndicatorOptions = {
   isRootSession: boolean;
   isWorking: boolean;
-  hasUnreadStatus: boolean;
+  isActive: boolean;
   hasUnreadCompletion: boolean;
   hasCompletedStatus: boolean;
   hasErrorStatus: boolean;
@@ -85,6 +85,8 @@ export function resolveSidebarWorkingStatus({
 export function resolveSidebarIndicator({
   isRootSession,
   isWorking,
+  isActive,
+  hasUnreadCompletion,
   hasCompletedStatus,
   hasErrorStatus,
   pendingQuestionCount,
@@ -107,7 +109,7 @@ export function resolveSidebarIndicator({
     return ERROR_INDICATOR;
   }
 
-  if (isWorking) return null;
+  if (isWorking || isActive || !hasUnreadCompletion) return null;
 
   if (planState === 'completed') {
     return PLAN_COMPLETED_INDICATOR;

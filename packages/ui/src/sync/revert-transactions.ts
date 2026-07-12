@@ -30,6 +30,18 @@ export function endCommittedRevertResend(sessionID: string, messageID: string | 
   committedRevertResends.delete(committedRevertResendKey(sessionID, messageID))
 }
 
+export function clearCommittedRevertResendsForSessions(sessionIDs: Iterable<string>): void {
+  for (const sessionID of sessionIDs) {
+    if (!sessionID) continue
+    const prefix = `${sessionID}\0`
+    for (const key of committedRevertResends) {
+      if (key.startsWith(prefix)) {
+        committedRevertResends.delete(key)
+      }
+    }
+  }
+}
+
 export function isCommittedRevertResendInFlight(sessionID: string, messageID: string | undefined): boolean {
   if (!sessionID || !messageID) return false
   return committedRevertResends.has(committedRevertResendKey(sessionID, messageID))

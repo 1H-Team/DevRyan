@@ -362,10 +362,9 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const hasUnreadError = useNotificationStore(
     React.useCallback((state) => {
       if (questionScopeSessionIds.length === 0) return false;
-
-      const scopedSessionIds = new Set(questionScopeSessionIds);
-      return Object.entries(state.index.session.unseenHasError)
-        .some(([sessionId, hasError]) => hasError && scopedSessionIds.has(sessionId));
+      return questionScopeSessionIds.some((sessionId) => (
+        state.index.session.unseenHasError[sessionId] ?? false
+      ));
     }, [questionScopeSessionIds]),
   );
   const pendingQuestionCount = useDirectorySync(
@@ -571,8 +570,8 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const sidebarStatusIndicator = resolveSidebarIndicator({
     isRootSession,
     isWorking: sidebarIsWorking,
-    hasUnreadStatus: false,
-    hasUnreadCompletion: false,
+    isActive,
+    hasUnreadCompletion: sessionHasUnreadCompletion,
     hasCompletedStatus,
     hasErrorStatus: hasUnreadError,
     pendingQuestionCount,

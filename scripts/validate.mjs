@@ -4,6 +4,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
 const mode = process.argv[2] ?? 'affected';
 
@@ -28,6 +29,7 @@ const packages = {
     prefix: 'packages/electron/',
     lint: ['bun', ['run', 'lint:electron']],
     typeCheck: ['bun', ['run', 'type-check:electron']],
+    test: ['bun', ['run', '--cwd', 'packages/electron', 'test']],
   },
   desktop: {
     prefix: 'packages/desktop/',
@@ -39,6 +41,14 @@ const packages = {
     lint: ['bun', ['run', '--cwd', 'packages/vscode', 'lint']],
     typeCheck: ['bun', ['run', 'vscode:type-check']],
     test: ['bun', ['run', '--cwd', 'packages/vscode', 'test']],
+  },
+  cursor: {
+    prefix: 'packages/cursor-sdk-runtime/',
+    test: ['bun', ['test', 'packages/cursor-sdk-runtime']],
+  },
+  orchestration: {
+    prefix: 'packages/orchestration-runtime/',
+    test: ['bun', ['test', 'packages/orchestration-runtime']],
   },
 };
 
@@ -143,6 +153,25 @@ function isVscodeTestRelevant(file, quick) {
   return file.startsWith('packages/vscode/src/') || file.startsWith('packages/vscode/tests/');
 }
 
+function isElectronTestRelevant(file, quick) {
+  if (!file.startsWith('packages/electron/')) return false;
+  if (testFilePattern.test(file)) return true;
+  if (quick) return false;
+  return ['.js', '.mjs'].includes(path.extname(file)) || file === 'packages/electron/package.json';
+}
+
+function isCursorTestRelevant(file) {
+  if (!file.startsWith('packages/cursor-sdk-runtime/')) return false;
+  if (testFilePattern.test(file)) return true;
+  return ['.js', '.mjs'].includes(path.extname(file));
+}
+
+function isOrchestrationTestRelevant(file) {
+  if (!file.startsWith('packages/orchestration-runtime/')) return false;
+  if (testFilePattern.test(file)) return true;
+  return ['.js', '.mjs'].includes(path.extname(file));
+}
+
 function command(label, executable, args) {
   return { label, executable, args };
 }
@@ -162,6 +191,15 @@ function packageCommands(packageNames, commandName) {
 function affectedTypeCheckPackages(changedPackages, includeDependents) {
   const result = new Set(changedPackages);
   if (includeDependents && changedPackages.has('ui')) {
+    result.add('web');
+    result.add('vscode');
+  }
+  if (includeDependents && changedPackages.has('cursor')) {
+    result.add('web');
+    result.add('vscode');
+  }
+  if (includeDependents && changedPackages.has('orchestration')) {
+    result.add('ui');
     result.add('web');
     result.add('vscode');
   }
@@ -189,8 +227,8 @@ function fullCommands() {
   ];
 }
 
-function buildPlan(requestedMode) {
-  const files = changedFilesFromGit();
+export function buildPlan(requestedMode, providedFiles) {
+  const files = providedFiles ?? changedFilesFromGit();
   const changedPackages = new Set(files.map(packageForFile).filter(Boolean));
   const fullRequired = files.some((file) => isFullValidationFile(file));
   const codeFiles = files.filter((file) => !isDocsOnlyFile(file));
@@ -213,7 +251,16 @@ function buildPlan(requestedMode) {
     for (const file of files) {
       if (isUiTestRelevant(file, false)) tests.add('ui');
       if (isWebTestRelevant(file, false)) tests.add('web');
+      if (isElectronTestRelevant(file, false)) tests.add('electron');
       if (isVscodeTestRelevant(file, false)) tests.add('vscode');
+      if (isCursorTestRelevant(file)) tests.add('cursor');
+      if (isOrchestrationTestRelevant(file)) tests.add('orchestration');
+    }
+    if (tests.has('cursor')) tests.add('web');
+    if (tests.has('orchestration')) {
+      tests.add('ui');
+      tests.add('web');
+      tests.add('vscode');
     }
     return { files, commands: packageCommands(tests, 'test'), reason: 'affected tests requested' };
   }
@@ -246,7 +293,16 @@ function buildPlan(requestedMode) {
   for (const file of files) {
     if (isUiTestRelevant(file, quick)) tests.add('ui');
     if (isWebTestRelevant(file, quick)) tests.add('web');
+    if (isElectronTestRelevant(file, quick)) tests.add('electron');
     if (isVscodeTestRelevant(file, quick)) tests.add('vscode');
+    if (isCursorTestRelevant(file)) tests.add('cursor');
+    if (isOrchestrationTestRelevant(file)) tests.add('orchestration');
+  }
+  if (!quick && tests.has('cursor')) tests.add('web');
+  if (!quick && tests.has('orchestration')) {
+    tests.add('ui');
+    tests.add('web');
+    tests.add('vscode');
   }
   commands.push(...packageCommands(tests, 'test'));
 
@@ -288,11 +344,18 @@ function runCommands(commands) {
   }
 }
 
-try {
-  const plan = buildPlan(mode);
-  printPlan(plan);
-  runCommands(plan.commands);
-} catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
+const isDirectExecution = Boolean(
+  process.argv[1]
+  && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+);
+
+if (isDirectExecution) {
+  try {
+    const plan = buildPlan(mode);
+    printPlan(plan);
+    runCommands(plan.commands);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
 }

@@ -121,6 +121,8 @@ const cursorSdkRuntime = createCursorSdkRuntime({
   resolveAgentDefinitions: resolveCursorSdkAgentDefinitions,
 });
 
+export const getVsCodeCursorSdkRuntime = () => cursorSdkRuntime;
+
 const runClaudeCliAuthCheck = () => new Promise<{ ok: boolean; error?: string }>((resolve) => {
   let settled = false;
   let stderr = '';

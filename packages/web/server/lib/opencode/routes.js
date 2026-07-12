@@ -14,8 +14,10 @@ import {
   isGitHubCopilotProviderId,
   mergeGitHubCopilotProvider,
 } from './provider-integrations.js';
+import { annotateOpenAIModelAvailability } from './openai-model-availability.js';
 import { discoverGitHubCopilotModels } from './github-copilot-models.js';
 import { createCursorSessionTitleRuntime } from './cursor-session-title-runtime.js';
+import { createStandardSessionTitleRuntime } from './standard-session-title-runtime.js';
 
 const ANTHROPIC_PROVIDER_IDS = new Set(['anthropic', 'claude', 'anthropic-oauth', 'opencode-with-claude']);
 const ANTIGRAVITY_PROVIDER_ID = 'antigravity';
@@ -172,8 +174,12 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     getOpenCodeAuthHeaders = () => ({}),
     getOpenCodeWorkingDirectory = () => null,
     setOpenCodeWorkingDirectory = () => {},
+    isExternalOpenCode = () => false,
     cursorSdkRuntime = null,
     cursorSessionTitleRuntime: injectedCursorSessionTitleRuntime = null,
+    standardSessionTitleRuntime: injectedStandardSessionTitleRuntime = null,
+    resolveZenModel = async () => undefined,
+    authLibrary: injectedAuthLibrary = null,
   } = dependencies;
 
   const cursorSessionTitleRuntime = injectedCursorSessionTitleRuntime || createCursorSessionTitleRuntime({
@@ -183,8 +189,15 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     getOpenCodeAuthHeaders,
     logger: console,
   });
+  const standardSessionTitleRuntime = injectedStandardSessionTitleRuntime || createStandardSessionTitleRuntime({
+    fetchImpl: fetch,
+    buildOpenCodeUrl,
+    getOpenCodeAuthHeaders,
+    resolveZenModel,
+    logger: console,
+  });
 
-  let authLibrary = null;
+  let authLibrary = injectedAuthLibrary;
   const pendingMcpAuthContextByState = new Map();
   const PENDING_MCP_AUTH_TTL_MS = 30 * 60 * 1000;
   const getAuthLibrary = async () => {
@@ -455,12 +468,18 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         : process.env.PATH || '';
       const executable = searchPathForExecutable('claude', pathValue);
       if (!executable) {
-        return res.status(400).json({ error: 'Claude CLI is not installed or is not available on PATH.' });
+        return res.status(400).json({
+          code: 'claude_cli_unavailable',
+          error: 'Claude CLI is not installed or is not available on PATH.',
+        });
       }
 
       const authCheck = await runClaudeCliAuthCheck({ executable, pathValue });
       if (!authCheck.ok) {
-        return res.status(400).json({ error: authCheck.error || 'Claude OAuth check failed.' });
+        return res.status(400).json({
+          code: 'claude_cli_unauthenticated',
+          error: authCheck.error || 'Claude OAuth check failed.',
+        });
       }
 
       const headerDirectory = typeof req.get === 'function' ? req.get('x-opencode-directory') : null;
@@ -664,7 +683,13 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       configured: githubCopilotConfigured,
       models: githubCopilotModels,
     });
-    return mergeCursorProvider(withGitHubCopilot);
+    let withOpenAIAvailability = withGitHubCopilot;
+    if (!isExternalOpenCode()) {
+      const { readAuthFile } = await getAuthLibrary();
+      const auth = readAuthFile();
+      withOpenAIAvailability = annotateOpenAIModelAvailability(withGitHubCopilot, auth?.openai);
+    }
+    return mergeCursorProvider(withOpenAIAvailability);
   };
 
   const touchOpenCodeSessionForCursorPrompt = async ({ sessionID, directory }) => {
@@ -773,6 +798,37 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       });
     } catch (error) {
       console.error('Failed to merge Cursor SDK session status:', error);
+      return next(error);
+    }
+  });
+
+  app.post('/api/session/:sessionID/prompt_async', async (req, res, next) => {
+    const sessionID = req.params.sessionID;
+    const providerID = typeof req.body?.model?.providerID === 'string'
+      ? req.body.model.providerID.trim()
+      : '';
+    if (!providerID || providerID === CURSOR_ACP_PROVIDER_ID) {
+      return next();
+    }
+
+    try {
+      const directory = await resolveRequestDirectory(req);
+      const text = (Array.isArray(req.body?.parts) ? req.body.parts : [])
+        .filter((part) => part?.type === 'text' && part?.synthetic !== true)
+        .map((part) => typeof part.text === 'string' ? part.text.trim() : '')
+        .filter(Boolean)
+        .join(' ');
+      res.once('finish', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          void standardSessionTitleRuntime.schedule({
+            sessionID,
+            directory,
+            text,
+          });
+        }
+      });
+      return next();
+    } catch (error) {
       return next(error);
     }
   });

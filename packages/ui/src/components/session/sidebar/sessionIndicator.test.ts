@@ -16,28 +16,25 @@ function parseNegativeLeftOffsetPx(className: string): number {
 }
 
 describe('resolveSidebarIndicator', () => {
-  test('shows a success indicator for completed plans without unread notifications', () => {
+  test('does not show a completed-plan indicator without unread completion state', () => {
     expect(resolveSidebarIndicator({
       isRootSession: true,
       isWorking: false,
-      hasUnreadStatus: false,
+      isActive: false,
       hasUnreadCompletion: false,
       hasCompletedStatus: false,
       hasErrorStatus: false,
       pendingQuestionCount: 0,
       planState: 'completed',
-    })).toEqual({
-      className: 'bg-status-success',
-      labelKey: 'sessions.sidebar.session.status.planCompleted',
-    });
+    })).toBeNull();
   });
 
-  test('shows a success indicator for completed normal turns', () => {
+  test('shows a success indicator for unread background normal turns', () => {
     expect(resolveSidebarIndicator({
       isRootSession: true,
       isWorking: false,
-      hasUnreadStatus: false,
-      hasUnreadCompletion: false,
+      isActive: false,
+      hasUnreadCompletion: true,
       hasCompletedStatus: true,
       hasErrorStatus: false,
       pendingQuestionCount: 0,
@@ -52,7 +49,7 @@ describe('resolveSidebarIndicator', () => {
     expect(resolveSidebarIndicator({
       isRootSession: true,
       isWorking: false,
-      hasUnreadStatus: true,
+      isActive: false,
       hasUnreadCompletion: true,
       hasCompletedStatus: false,
       hasErrorStatus: false,
@@ -65,7 +62,7 @@ describe('resolveSidebarIndicator', () => {
     expect(resolveSidebarIndicator({
       isRootSession: true,
       isWorking: false,
-      hasUnreadStatus: false,
+      isActive: false,
       hasUnreadCompletion: false,
       hasCompletedStatus: false,
       hasErrorStatus: false,
@@ -78,7 +75,7 @@ describe('resolveSidebarIndicator', () => {
     expect(resolveSidebarIndicator({
       isRootSession: true,
       isWorking: false,
-      hasUnreadStatus: true,
+      isActive: true,
       hasUnreadCompletion: true,
       hasCompletedStatus: true,
       hasErrorStatus: true,
@@ -94,7 +91,7 @@ describe('resolveSidebarIndicator', () => {
     expect(resolveSidebarIndicator({
       isRootSession: true,
       isWorking: true,
-      hasUnreadStatus: true,
+      isActive: false,
       hasUnreadCompletion: true,
       hasCompletedStatus: true,
       hasErrorStatus: false,
@@ -107,7 +104,7 @@ describe('resolveSidebarIndicator', () => {
     expect(resolveSidebarIndicator({
       isRootSession: true,
       isWorking: false,
-      hasUnreadStatus: true,
+      isActive: false,
       hasUnreadCompletion: true,
       hasCompletedStatus: true,
       hasErrorStatus: false,
@@ -123,7 +120,7 @@ describe('resolveSidebarIndicator', () => {
     expect(resolveSidebarIndicator({
       isRootSession: true,
       isWorking: false,
-      hasUnreadStatus: true,
+      isActive: false,
       hasUnreadCompletion: true,
       hasCompletedStatus: true,
       hasErrorStatus: true,
@@ -139,7 +136,7 @@ describe('resolveSidebarIndicator', () => {
     expect(resolveSidebarIndicator({
       isRootSession: true,
       isWorking: true,
-      hasUnreadStatus: false,
+      isActive: true,
       hasUnreadCompletion: false,
       hasCompletedStatus: false,
       hasErrorStatus: false,
@@ -148,6 +145,51 @@ describe('resolveSidebarIndicator', () => {
     })).toEqual({
       className: 'bg-status-warning',
       labelKey: 'sessions.sidebar.session.status.planReady',
+    });
+  });
+
+  test('does not show green for the active session even when completion state is stale', () => {
+    expect(resolveSidebarIndicator({
+      isRootSession: true,
+      isWorking: false,
+      isActive: true,
+      hasUnreadCompletion: true,
+      hasCompletedStatus: true,
+      hasErrorStatus: false,
+      pendingQuestionCount: 0,
+      planState: null,
+    })).toBeNull();
+  });
+
+  test('shows completed plans only for unread background completion', () => {
+    expect(resolveSidebarIndicator({
+      isRootSession: true,
+      isWorking: false,
+      isActive: false,
+      hasUnreadCompletion: true,
+      hasCompletedStatus: false,
+      hasErrorStatus: false,
+      pendingQuestionCount: 0,
+      planState: 'completed',
+    })).toEqual({
+      className: 'bg-status-success',
+      labelKey: 'sessions.sidebar.session.status.planCompleted',
+    });
+  });
+
+  test('keeps unread errors higher priority than unread completion', () => {
+    expect(resolveSidebarIndicator({
+      isRootSession: true,
+      isWorking: false,
+      isActive: false,
+      hasUnreadCompletion: true,
+      hasCompletedStatus: true,
+      hasErrorStatus: true,
+      pendingQuestionCount: 0,
+      planState: 'completed',
+    })).toEqual({
+      className: 'bg-status-error',
+      labelKey: 'sessions.sidebar.session.status.error',
     });
   });
 });

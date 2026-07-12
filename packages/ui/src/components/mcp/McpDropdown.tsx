@@ -25,6 +25,7 @@ import { McpIcon } from '@/components/icons/McpIcon';
 import { useI18n } from '@/lib/i18n';
 import { formatMcpServerDisplayName } from '@/components/sections/mcp/McpSidebar.utils';
 import { toggleMcpServerEnabled } from './McpDropdown.actions';
+import { getVisibleMcpServerNames, getVisibleMcpStatus } from './McpDropdown.utils';
 
 const statusTooltip = (
   status: McpStatus | undefined,
@@ -154,13 +155,7 @@ export const McpDropdownContent: React.FC<McpDropdownContentProps> = ({ active, 
   }, [active, refresh, directory, loadMcpConfigs]);
 
   const sortedNames = React.useMemo(() => {
-    const names = new Set<string>(Object.keys(status));
-    for (const server of mcpServers) {
-      if (server?.name) {
-        names.add(server.name);
-      }
-    }
-    return Array.from(names).sort((a, b) => a.localeCompare(b));
+    return getVisibleMcpServerNames(status, mcpServers);
   }, [mcpServers, status]);
 
   const mcpServerByName = React.useMemo(() => {
@@ -331,16 +326,14 @@ export const McpDropdown: React.FC<McpDropdownProps> = ({ headerIconButtonClass 
     ]);
   }, [open, refresh, directory, loadMcpConfigs]);
 
-  const health = React.useMemo(() => computeMcpHealth(status), [status]);
+  const visibleStatus = React.useMemo(
+    () => getVisibleMcpStatus(status, mcpServers),
+    [mcpServers, status],
+  );
+  const health = React.useMemo(() => computeMcpHealth(visibleStatus), [visibleStatus]);
 
   const sortedNames = React.useMemo(() => {
-    const names = new Set<string>(Object.keys(status));
-    for (const server of mcpServers) {
-      if (server?.name) {
-        names.add(server.name);
-      }
-    }
-    return Array.from(names).sort((a, b) => a.localeCompare(b));
+    return getVisibleMcpServerNames(status, mcpServers);
   }, [mcpServers, status]);
 
   const mcpServerByName = React.useMemo(() => {

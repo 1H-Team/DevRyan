@@ -17,7 +17,7 @@ import {
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useI18n } from '@/lib/i18n';
 import { QUOTA_PROVIDERS } from '@/lib/quota';
-import { useQuotaAutoRefresh, useQuotaStore } from '@/stores/useQuotaStore';
+import { quotaRefreshCoordinator, useQuotaStore } from '@/stores/useQuotaStore';
 import { useUpdateStore } from '@/stores/useUpdateStore';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import type { UsageWindow } from '@/types';
@@ -548,21 +548,15 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
   const currentSessionMessages = useSessionMessages(currentSessionId ?? '');
   const currentSessionMessagesResolved = useSessionMessagesResolved(currentSessionId ?? '');
   const quotaResults = useQuotaStore((state) => state.results);
-  const fetchAllQuotas = useQuotaStore((state) => state.fetchAllQuotas);
+  const quotaProviderRefreshState = useQuotaStore((state) => state.providerRefreshState);
+  const fetchAllQuotas = quotaRefreshCoordinator.refreshNow;
   const isQuotaLoading = useQuotaStore((state) => state.isLoading);
   const quotaLastUpdated = useQuotaStore((state) => state.lastUpdated);
   const quotaTrendHistory = useQuotaStore((state) => state.trendHistory);
   const dropdownProviderIds = useQuotaStore((state) => state.dropdownProviderIds);
-  const loadQuotaSettings = useQuotaStore((state) => state.loadSettings);
   const expandedFamilies = useQuotaStore((state) => state.expandedFamilies);
   const toggleFamilyExpanded = useQuotaStore((state) => state.toggleFamilyExpanded);
   const [activeUsageProviderId, setActiveUsageProviderId] = React.useState<string | null>(null);
-
-  useQuotaAutoRefresh();
-
-  React.useEffect(() => {
-    void loadQuotaSettings();
-  }, [loadQuotaSettings]);
 
   const currentModel = getCurrentModel();
   const latestAssistantModel = React.useMemo(() => {
@@ -621,7 +615,8 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
       const result = quotaResults.find((entry) => entry.providerId === provider.id);
       const windows = (result?.usage?.windows ?? {}) as Record<string, UsageWindow>;
       const entries = Object.entries(windows);
-      const error = (result && !result.ok && result.configured) ? result.error : undefined;
+      const error = quotaProviderRefreshState[provider.id]?.refreshError
+        ?? ((result && !result.ok && result.configured) ? result.error : undefined);
       const resetCredits = result?.usage?.resetCredits;
       if (entries.length > 0 || resetCredits || error) {
         groups.push({ providerId: provider.id, providerName: provider.name, entries, resetCredits, error });
@@ -629,7 +624,7 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
     }
 
     return groups;
-  }, [dropdownProviderIds, quotaResults]);
+  }, [dropdownProviderIds, quotaProviderRefreshState, quotaResults]);
   const hasRateLimits = rateLimitGroups.length > 0;
   const resolvedActiveUsageProviderId = React.useMemo(
     () => resolveActiveUsageProviderId(rateLimitGroups, activeUsageProviderId),

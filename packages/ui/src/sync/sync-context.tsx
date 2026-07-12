@@ -26,8 +26,8 @@ import { bootstrapGlobal, bootstrapDirectory } from "./bootstrap"
 import { retry } from "./retry"
 import { updateStreamingState, useStreamingStore } from "./streaming"
 import { isSessionWorkingFromState } from "./session-working"
-import { setActionRefs } from "./session-actions"
-import { setSyncRefs } from "./sync-refs"
+import { clearActionRefs, releaseSessionActionDirectory, setActionRefs } from "./session-actions"
+import { clearSyncRefs, setSyncRefs } from "./sync-refs"
 import { stripMessageDiffSnapshots, stripSessionDiffSnapshots } from "./sanitize"
 import { syncDebug } from "./debug"
 import {
@@ -42,6 +42,7 @@ import { hasMessageRecordInfo, unwrapMessageRecordsResult } from "./message-fetc
 import {
   addPendingPartDelta,
   applyPendingPartDeltasToState,
+  clearPendingPartDeltasForDirectory,
   consumePendingPartDeltas,
   hasPendingPartDeltasForMessages,
   readPendingPartDeltaFromEvent,
@@ -52,6 +53,8 @@ import { usePermissionStore } from "@/stores/permissionStore"
 import { useConfigStore } from "@/stores/useConfigStore"
 import { useTodosPersistStore } from "@/stores/useTodosPersistStore"
 import { useUIStore } from "@/stores/useUIStore"
+import { useManagedOrchestrationStore } from "@/stores/useManagedOrchestrationStore"
+import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
 import {
   postRendererTurnTimingMark,
   responsivenessPerfCount,
@@ -60,11 +63,8 @@ import {
   streamDebugMark,
 } from "@/stores/utils/streamDebug"
 import { toast } from "@/components/ui"
-import {
-  isLikelyProviderModelNotFound,
-  PROVIDER_MODEL_NOT_FOUND_MESSAGE,
-} from "@/lib/messages/providerModelNotFound"
-import { appendNotification } from "./notification-store"
+import { clearAbortGuards } from "./abort-retry-guard"
+import { appendNotification, useNotificationStore } from "./notification-store"
 import type { State } from "./types"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import type { PermissionRequest } from "@/types/permission"
@@ -72,8 +72,17 @@ import type { QuestionRequest } from "@/types/question"
 import * as sessionActions from "./session-actions"
 import { getSessionMaterializationStatus, materializeSessionSnapshots } from "./materialization"
 import { updateSessionUserActivityFromMessages } from "./session-user-activity"
-import { getEffectiveSessionRevertMessageID } from "./revert-transactions"
-import { markArchived, markUnarchived, setSessionMaterializerChildStores } from "./session-materializer"
+import {
+  clearCommittedRevertResendsForSessions,
+  getEffectiveSessionRevertMessageID,
+} from "./revert-transactions"
+import {
+  clearSessionMaterializerChildStores,
+  markArchived,
+  markUnarchived,
+  releaseSessionMaterializerDirectory,
+  setSessionMaterializerChildStores,
+} from "./session-materializer"
 import { detectPlanCompletedCandidate } from "./plan-completion-detection"
 import { detectPlanProposedCandidate } from "./plan-proposed-detection"
 import {
@@ -88,12 +97,21 @@ import {
 } from "./subtaskParentMaterialization"
 import {
   ensureSessionChildrenFetch,
+  clearSessionChildrenForDirectory,
   getEffectiveSessionChildrenFetchStatus,
   getSessionChildrenFetchKey,
   mergeChildSessions,
   type SessionChildrenFetchCacheEntry,
   type SessionChildrenHookStatus,
 } from "./session-children"
+import { clearSessionPrefetchDirectory } from "./session-prefetch-cache"
+import {
+  clearDirectoryMaterializations,
+  clearDirectoryPrefixedEntries,
+  createRestartSafeOwnershipCleanup,
+  releaseDirectoryRoutingIndex,
+  type DirectoryRoutingIndex,
+} from "./directory-disposal"
 import {
   normalizeChatOwnedDiffSummary,
   stripUntrustedSessionDiffSummary,
@@ -109,7 +127,7 @@ const EMPTY_QUESTION_REQUESTS: QuestionRequest[] = []
 const FIRST_ASSISTANT_DELTA_MARK_LIMIT = 1_000
 const firstAssistantDeltaMarkedMessages = new Set<string>()
 const sessionChildrenFetches = new Map<string, SessionChildrenFetchCacheEntry>()
-const blockingRequestSessionMaterializationsInFlight = new Set<string>()
+const blockingRequestSessionMaterializationsInFlight = new Map<string, symbol>()
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
@@ -407,6 +425,19 @@ const PENDING_DELTA_DRAIN_MAX_RETRIES = 4
 const PENDING_DELTA_DRAIN_RETRY_MS = 300
 const pendingSessionMaterializations = new Map<string, PendingSessionMaterialization>() // key: directory:sessionID
 const pendingPartDeltas: PendingPartDeltaStore = new Map()
+type SessionLifecycleRestoration = {
+  promise: Promise<void>
+  detectsTurnCompletion: boolean
+  cancelled: boolean
+}
+
+type DirectoryIndicatorRestoration = {
+  promise: Promise<void>
+  token: symbol
+}
+
+const lifecycleRestorationsBySession = new Map<string, SessionLifecycleRestoration>()
+const indicatorRestorationsByDirectory = new Map<string, DirectoryIndicatorRestoration>()
 
 const materializationKey = (directory: string, sessionID: string) => `${directory}:${sessionID}`
 
@@ -445,13 +476,36 @@ async function runSessionMaterialization(key: string, childStores: ChildStoreMan
 
   pending.inFlight = true
   try {
-    const stillPending = await materializeSessionFromServer(pending.directory, pending.sessionID, store)
+    const isCurrent = () => (
+      pendingSessionMaterializations.get(key) === pending
+      && childStores.getChild(pending.directory) === store
+    )
+    const stillPending = await materializeSessionFromServer(
+      pending.directory,
+      pending.sessionID,
+      store,
+      isCurrent,
+    )
+    if (
+      pendingSessionMaterializations.get(key) !== pending
+      || childStores.getChild(pending.directory) !== store
+    ) {
+      return
+    }
     await detectAndMarkPlanLifecycle(
       pending.sessionID,
       pending.directory,
       store,
       pending.detectTurnCompletionAfterLoad,
+      undefined,
+      isCurrent,
     ).catch(() => undefined)
+    if (
+      pendingSessionMaterializations.get(key) !== pending
+      || childStores.getChild(pending.directory) !== store
+    ) {
+      return
+    }
     const latest = pendingSessionMaterializations.get(key)
     if (stillPending && latest && latest.drainAttempts < PENDING_DELTA_DRAIN_MAX_RETRIES) {
       // Fetch succeeded but buffered part-deltas still can't apply — the streamed
@@ -627,11 +681,13 @@ async function materializeSessionFromServer(
   directory: string,
   sessionID: string,
   store: StoreApi<DirectoryStore>,
+  isCurrent: () => boolean = () => true,
 ) {
   const scopedClient = opencodeClient.getScopedSdkClient(directory)
   const result = await retry(() =>
     scopedClient.session.messages({ sessionID, limit: SESSION_MATERIALIZATION_MESSAGE_LIMIT }).then(unwrapMessageRecordsResult),
   )
+  if (!isCurrent()) return false
   const records = result.filter(hasMessageRecordInfo)
   if (records.length === 0) return false
 
@@ -665,6 +721,128 @@ async function materializeSessionFromServer(
   // fetch+replay (the streamed part wasn't in the snapshot yet). The caller retries.
   const messageIDs = (store.getState().message[sessionID] ?? EMPTY_MESSAGES).map((message) => message.id)
   return hasPendingPartDeltasForMessages(pendingPartDeltas, directory, messageIDs)
+}
+
+async function materializeAndRestoreSessionLifecycle(
+  directory: string,
+  sessionID: string,
+  store: StoreApi<DirectoryStore>,
+  detectTurnCompletion = false,
+): Promise<void> {
+  const key = `${directory}\u0000${sessionID}`
+  const existing = lifecycleRestorationsBySession.get(key)
+  if (existing) {
+    await existing.promise
+    if (existing.cancelled) return
+    if (detectTurnCompletion && !existing.detectsTurnCompletion) {
+      await detectAndMarkPlanLifecycle(
+        sessionID,
+        directory,
+        store,
+        true,
+        undefined,
+        () => !existing.cancelled,
+      )
+    }
+    return
+  }
+
+  const restoration: SessionLifecycleRestoration = {
+    promise: Promise.resolve(),
+    detectsTurnCompletion: detectTurnCompletion,
+    cancelled: false,
+  }
+  const promise = Promise.resolve().then(async () => {
+    if (lifecycleRestorationsBySession.get(key) !== restoration) return
+    if (!getSessionMaterializationStatus(store.getState(), sessionID).renderable) {
+      await materializeSessionFromServer(
+        directory,
+        sessionID,
+        store,
+        () => lifecycleRestorationsBySession.get(key) === restoration,
+      )
+    }
+    if (lifecycleRestorationsBySession.get(key) !== restoration) return
+    await detectAndMarkPlanLifecycle(
+      sessionID,
+      directory,
+      store,
+      detectTurnCompletion,
+      undefined,
+      () => lifecycleRestorationsBySession.get(key) === restoration,
+    )
+  })
+  restoration.promise = promise
+  lifecycleRestorationsBySession.set(key, restoration)
+
+  try {
+    await promise
+  } finally {
+    if (lifecycleRestorationsBySession.get(key) === restoration) {
+      lifecycleRestorationsBySession.delete(key)
+    }
+  }
+}
+
+export async function restorePersistedSessionIndicatorsForDirectory(
+  directory: string,
+  store: StoreApi<DirectoryStore>,
+): Promise<void> {
+  if (!directory || directory === "global") return
+
+  const existing = indicatorRestorationsByDirectory.get(directory)
+  if (existing) return existing.promise
+
+  const token = Symbol(directory)
+  const promise = Promise.resolve().then(async () => {
+    if (indicatorRestorationsByDirectory.get(directory)?.token !== token) return
+    const { useSessionUIStore } = await import("./session-ui-store")
+    if (indicatorRestorationsByDirectory.get(directory)?.token !== token) return
+    const sessionIDs = store.getState().session
+      .map((session) => session.id)
+      .filter((sessionID) => {
+        const hasPendingPlan = useSessionUIStore.getState().planModeUserMessagesBySession.has(sessionID)
+        const hasUnreadCompletion = useNotificationStore.getState()
+          .index.session.unseenHasCompletion[sessionID] ?? false
+        return hasPendingPlan || hasUnreadCompletion
+      })
+      .sort()
+
+    // Persisted plan ownership and unread completion records narrow startup
+    // restoration to sessions with an unresolved indicator. Restore
+    // sequentially so many candidates cannot create an unbounded request burst.
+    for (const sessionID of sessionIDs) {
+      if (indicatorRestorationsByDirectory.get(directory)?.token !== token) return
+      const sessionUI = useSessionUIStore.getState()
+      const hasPendingPlan = sessionUI.planModeUserMessagesBySession.has(sessionID)
+      const hasUnreadCompletion = useNotificationStore.getState()
+        .index.session.unseenHasCompletion[sessionID] ?? false
+      if (!hasPendingPlan && !hasUnreadCompletion) continue
+      if (sessionUI.sessionPlanIndicator.get(sessionID)?.state === "proposed" && !hasUnreadCompletion) continue
+      try {
+        await materializeAndRestoreSessionLifecycle(
+          directory,
+          sessionID,
+          store,
+          hasUnreadCompletion,
+        )
+        if (indicatorRestorationsByDirectory.get(directory)?.token !== token) return
+      } catch {
+        // Restore other sessions independently; a transient failure for one
+        // plan must not hide every later plan in the directory.
+      }
+    }
+  })
+  const restoration = { promise, token }
+  indicatorRestorationsByDirectory.set(directory, restoration)
+
+  try {
+    await promise
+  } finally {
+    if (indicatorRestorationsByDirectory.get(directory) === restoration) {
+      indicatorRestorationsByDirectory.delete(directory)
+    }
+  }
 }
 
 const getKnownBlockingRequestSessionIds = (state: State): Set<string> => new Set<string>([
@@ -743,11 +921,13 @@ const materializeBlockingRequestSessions = async (
   await Promise.all(missingSessionIds.map(async (sessionID) => {
     const materializationKey = `${directory}\n${sessionID}`
     if (blockingRequestSessionMaterializationsInFlight.has(materializationKey)) return
-    blockingRequestSessionMaterializationsInFlight.add(materializationKey)
+    const token = Symbol(materializationKey)
+    blockingRequestSessionMaterializationsInFlight.set(materializationKey, token)
     try {
       const session = await retry(() =>
         scopedClient.session.get({ sessionID }).then((result) => unwrapSdkResult(result, "session.get")),
       ).catch(() => null)
+      if (blockingRequestSessionMaterializationsInFlight.get(materializationKey) !== token) return
       if (!session?.id) return
 
       const recoveredSession = stripSessionDiffSnapshots(session) as Session
@@ -756,7 +936,9 @@ const materializeBlockingRequestSessions = async (
         setIndexedSessionDirectory(routingIndex, recoveredSession.id, directory)
       }
     } finally {
-      blockingRequestSessionMaterializationsInFlight.delete(materializationKey)
+      if (blockingRequestSessionMaterializationsInFlight.get(materializationKey) === token) {
+        blockingRequestSessionMaterializationsInFlight.delete(materializationKey)
+      }
     }
   }))
 
@@ -838,6 +1020,62 @@ const dropPendingToastKeysForSession = (sessionID: string) => {
   }
 }
 
+const releaseDirectoryOwnedSyncState = (
+  directory: string,
+  snapshot: State,
+  routingIndex: DirectoryRoutingIndex,
+  releaseEventPipelineDirectory: (directory: string) => void,
+) => {
+  clearSessionPrefetchDirectory(directory)
+  releaseSessionMaterializerDirectory(directory)
+  releaseSessionActionDirectory(directory)
+  clearSessionChildrenForDirectory(sessionChildrenFetches, directory)
+  clearPendingPartDeltasForDirectory(pendingPartDeltas, directory)
+  clearDirectoryMaterializations(pendingSessionMaterializations, directory)
+  for (const [key, restoration] of lifecycleRestorationsBySession) {
+    if (key.startsWith(`${directory}\u0000`)) {
+      restoration.cancelled = true
+    }
+  }
+  clearDirectoryPrefixedEntries(lifecycleRestorationsBySession, directory, "\u0000")
+  indicatorRestorationsByDirectory.delete(directory)
+  clearDirectoryPrefixedEntries(blockingRequestSessionMaterializationsInFlight, directory)
+  clearDirectoryPrefixedEntries(externallyViewedSessions, directory)
+  clearDirectoryPrefixedEntries(lastStatusEventAtBySessionKey, directory)
+  clearDirectoryPrefixedEntries(lastOutputEventAtBySessionKey, directory)
+  clearDirectoryPrefixedEntries(lastRecoveryAtBySessionKey, directory)
+
+  const releasedSessionIDs = releaseDirectoryRoutingIndex(routingIndex, directory, snapshot)
+  for (const sessionID of [
+    ...Object.keys(snapshot.session_status),
+    ...Object.keys(snapshot.question),
+    ...Object.keys(snapshot.permission),
+  ]) {
+    releasedSessionIDs.add(sessionID)
+  }
+  for (const sessionID of releasedSessionIDs) {
+    dropPendingToastKeysForSession(sessionID)
+  }
+  clearAbortGuards(releasedSessionIDs)
+  clearCommittedRevertResendsForSessions(releasedSessionIDs)
+
+  for (const messageID of Object.keys(snapshot.part)) {
+    firstAssistantDeltaMarkedMessages.delete(messageID)
+  }
+  for (const messages of Object.values(snapshot.message)) {
+    for (const message of messages) {
+      firstAssistantDeltaMarkedMessages.delete(message.id)
+    }
+  }
+
+  if (_activeDirectory === directory) {
+    _activeDirectory = ""
+    _activeSession = ""
+    _activeSessionTrackingKey = ""
+  }
+  releaseEventPipelineDirectory(directory)
+}
+
 const resolveRootSessionId = (sessions: readonly Session[], sessionID?: string): string | undefined => {
   if (!sessionID) return undefined
 
@@ -872,8 +1110,10 @@ async function detectAndMarkPlanLifecycle(
   store: StoreApi<DirectoryStore>,
   shouldDetectTurnCompletion: boolean,
   completionMessageId?: string | null,
+  isCurrent: () => boolean = () => true,
 ): Promise<void> {
   const { useSessionUIStore } = await import("./session-ui-store")
+  if (!isCurrent()) return
   const sessionUI = useSessionUIStore.getState()
   let state = store.getState()
 
@@ -941,7 +1181,7 @@ async function detectAndMarkPlanLifecycle(
     ? isManuallyAbortedCandidate(settledPlanCandidate.completedMessageId)
     : false
 
-  if (settledTurnCandidate && !suppressTurnCandidate && (!isViewed || isActiveInCurrentSession(directory, sessionID))) {
+  if (settledTurnCandidate && !suppressTurnCandidate && !isViewed) {
     sessionUI.markSessionTurnCompleted(
       sessionID,
       settledTurnCandidate.completedMessageId,
@@ -1039,10 +1279,6 @@ function isViewedInCurrentSession(directory: string, sessionId?: string): boolea
   return externallyViewedSessions.has(viewedSessionKey(directory, sessionId))
 }
 
-function isActiveInCurrentSession(directory: string, sessionId?: string): boolean {
-  return Boolean(sessionId && _activeDirectory && _activeSession && directory === _activeDirectory && sessionId === _activeSession)
-}
-
 function isIdleSessionStatusEvent(payload: Event): boolean {
   if (payload.type !== "session.status") return false
   const props = payload.properties as { status?: SessionStatus } | undefined
@@ -1123,11 +1359,7 @@ function getViewedSessionMaterializationTarget(directory: string) {
   }
 }
 
-type EventRoutingIndex = {
-  sessionDirectoryById: Map<string, string>
-  messageSessionById: Map<string, string>
-  sessionMessageIdsById: Map<string, Set<string>>
-}
+type EventRoutingIndex = DirectoryRoutingIndex
 
 const createEventRoutingIndex = (): EventRoutingIndex => ({
   sessionDirectoryById: new Map(),
@@ -2012,6 +2244,7 @@ function handleEvent(
     const sessionID = info?.id
     if (sessionID) {
       dropPendingToastKeysForSession(sessionID)
+      useProviderRecoveryStore.getState().clearRecovery(sessionID)
     }
   }
 
@@ -2033,21 +2266,6 @@ function handleEvent(
         type: "error",
         error: props.error,
       })
-
-      const errorDetail = [
-        typeof props.error?.data?.message === "string" ? props.error.data.message : "",
-        typeof props.error?.message === "string" ? props.error.message : "",
-        typeof props.error?.name === "string" ? props.error.name : "",
-      ].find((value) => value.trim().length > 0) || ""
-      if (
-        isLikelyProviderModelNotFound(errorDetail)
-        || props.error?.name === "ProviderModelNotFoundError"
-      ) {
-        toast.error(PROVIDER_MODEL_NOT_FOUND_MESSAGE, {
-          id: `provider-model-not-found-${sessionID}`,
-          description: errorDetail || undefined,
-        })
-      }
     }
   }
 
@@ -2296,6 +2514,16 @@ export function SyncProvider(props: {
   const routingIndexRef = useRef<EventRoutingIndex | null>(null)
   if (!routingIndexRef.current) routingIndexRef.current = createEventRoutingIndex()
   const routingIndex = routingIndexRef.current
+  const releaseEventPipelineDirectoryRef = useRef<(directory: string) => void>(() => undefined)
+  const activateOwnershipCleanupRef = useRef<(() => () => void) | null>(null)
+  if (!activateOwnershipCleanupRef.current) {
+    activateOwnershipCleanupRef.current = createRestartSafeOwnershipCleanup(() => {
+      childStores.disposeAll()
+      clearSessionMaterializerChildStores(childStores)
+      clearSyncRefs(childStores)
+      clearActionRefs(childStores)
+    })
+  }
   setSessionMaterializerChildStores(childStores)
 
   const resyncSession = useCallback(
@@ -2323,15 +2551,25 @@ export function SyncProvider(props: {
 
   // Configure child store manager
   useEffect(() => {
-    const bootingDirs = new Set<string>()
+    const bootingDirs = new Map<string, symbol>()
 
     childStores.configure({
       onBootstrap: (directory) => {
         if (bootingDirs.has(directory)) return
-        bootingDirs.add(directory)
+        const bootstrapToken = Symbol(directory)
+        bootingDirs.set(directory, bootstrapToken)
 
         const store = childStores.getChild(directory)
-        if (!store) return
+        if (!store) {
+          if (bootingDirs.get(directory) === bootstrapToken) {
+            bootingDirs.delete(directory)
+          }
+          return
+        }
+        const isOwned = () => (
+          childStores.getChild(directory) === store
+          && bootingDirs.get(directory) === bootstrapToken
+        )
 
         const runBootstrap = async () => {
           const globalState = useGlobalSyncStore.getState()
@@ -2340,6 +2578,7 @@ export function SyncProvider(props: {
             sdk: props.sdk,
             getState: () => store.getState(),
             set: (patch) => {
+              if (!isOwned()) return
               store.setState(patch)
               if (patch.session || patch.message) {
                 ingestDirectoryStateIntoRoutingIndex(routingIndex, directory, store.getState())
@@ -2351,12 +2590,14 @@ export function SyncProvider(props: {
               providers: globalState.providers,
             },
             loadSessions: (dir) => retry(async () => {
+              if (!isOwned()) return
               store.setState({ sessionListStatus: "loading", sessionListError: undefined })
               const result = await props.sdk.session.list({
                 directory: dir,
                 roots: true,
                 limit: 50,
               })
+              if (!isOwned()) return
               // SDK returns { error } instead of { data } on non-ok responses (503).
               // Preserve HTTP status so retry()'s transient detection works.
               const rawError = (result as { error?: unknown }).error
@@ -2400,18 +2641,36 @@ export function SyncProvider(props: {
               ingestDirectoryStateIntoRoutingIndex(routingIndex, directory, store.getState())
             }),
           })
+          if (!isOwned()) return
+          void restorePersistedSessionIndicatorsForDirectory(directory, store).catch(() => undefined)
         }
 
         runBootstrap().finally(() => {
-          bootingDirs.delete(directory)
+          if (bootingDirs.get(directory) === bootstrapToken) {
+            bootingDirs.delete(directory)
+          }
         })
       },
-      onDispose: (directory) => {
+      onDispose: (directory, snapshot) => {
         bootingDirs.delete(directory)
+        releaseDirectoryOwnedSyncState(
+          directory,
+          snapshot,
+          routingIndex,
+          releaseEventPipelineDirectoryRef.current,
+        )
       },
       isBooting: (directory) => bootingDirs.has(directory),
       isLoadingSessions: () => false,
     })
+    for (const [directory, store] of childStores.children) {
+      if (store.getState().status !== "complete") {
+        childStores.ensureChild(directory)
+      }
+    }
+    return () => {
+      bootingDirs.clear()
+    }
   }, [childStores, props.sdk, routingIndex])
 
   // Bootstrap global state — set bootingRoot/bootedAt to suppress
@@ -2527,7 +2786,7 @@ export function SyncProvider(props: {
       document.addEventListener("visibilitychange", onVisible)
     }
 
-    const { cleanup } = createEventPipeline({
+    const { cleanup, releaseDirectory } = createEventPipeline({
       sdk: props.sdk,
       transport: messageStreamTransport,
       routeDirectory: (directory, payload) => {
@@ -2536,6 +2795,9 @@ export function SyncProvider(props: {
       onEvent: (directory, payload) => {
         handleEvent(directory, payload, childStores, routingIndex)
       },
+      onManagedOrchestrationEvent: (payload) => {
+        useManagedOrchestrationStore.getState().ingestEvent(payload)
+      },
       onReconnect: () => {
         useConfigStore.setState({
           isConnected: true,
@@ -2543,6 +2805,7 @@ export function SyncProvider(props: {
           connectionPhase: "connected",
         })
         triggerAllRecovery()
+        void useManagedOrchestrationStore.getState().loadSnapshot()
       },
       onDisconnect: (reason) => {
         const { hasEverConnected } = useConfigStore.getState()
@@ -2570,12 +2833,17 @@ export function SyncProvider(props: {
         // is potentially stale. Re-fetch every directory we currently have a
         // store for. Cheaper than triggering a full re-bootstrap.
         triggerAllRecovery()
+        void useManagedOrchestrationStore.getState().loadSnapshot()
       },
     })
+    releaseEventPipelineDirectoryRef.current = releaseDirectory
     return () => {
       clearInterval(activeRecoveryWatchdog)
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", onVisible)
+      }
+      if (releaseEventPipelineDirectoryRef.current === releaseDirectory) {
+        releaseEventPipelineDirectoryRef.current = () => undefined
       }
       cleanup()
     }
@@ -2583,11 +2851,16 @@ export function SyncProvider(props: {
 
   // Ensure current directory's child store exists
   useEffect(() => {
-    if (props.directory) {
-      const store = childStores.ensureChild(props.directory)
-      ingestDirectoryStateIntoRoutingIndex(routingIndex, props.directory, store.getState())
+    if (!props.directory) return
+    const store = childStores.ensureChild(props.directory)
+    childStores.pin(props.directory)
+    ingestDirectoryStateIntoRoutingIndex(routingIndex, props.directory, store.getState())
+    return () => {
+      childStores.unpin(props.directory)
     }
   }, [props.directory, childStores, routingIndex])
+
+  useEffect(() => activateOwnershipCleanupRef.current?.(), [childStores])
 
   // Set refs so non-React code (session-actions, session-ui-store) can access sync state
   useEffect(() => {
@@ -2663,8 +2936,15 @@ export function useEnsureSessionChildren(
     let cancelled = false
     const key = getSessionChildrenFetchKey(dir, parentID)
     const store = system.childStores.ensureChild(dir)
+    const fetchOwnership: { promise?: Promise<void> } = {}
     const fetchResult = ensureSessionChildrenFetch(sessionChildrenFetches, key, refreshKey, async () => {
       const result = await system.sdk.session.children({ sessionID: parentID, directory: dir })
+      if (
+        system.childStores.getChild(dir) !== store
+        || sessionChildrenFetches.get(key)?.promise !== fetchOwnership.promise
+      ) {
+        return
+      }
       const childSessions = unwrapSdkResult(result, "session.children") ?? []
       store.setState((state: DirectoryStore) => {
         const nextSessions = mergeChildSessions(state.session, childSessions, { directory: dir })
@@ -2674,6 +2954,7 @@ export function useEnsureSessionChildren(
         return { session: nextSessions }
       })
     })
+    fetchOwnership.promise = fetchResult.promise
 
     setStatus({ isLoading: fetchResult.isLoading, hasFetched: fetchResult.hasFetched, parentID, directory: dir, refreshKey })
 
@@ -3144,11 +3425,6 @@ export function useSessionMessageRecords(
  * session metadata, not messages.
  */
 
-// Module-level in-flight tracking for useEnsureSessionMessages.
-// Prevents redundant parallel fetches when multiple component instances
-// (e.g. multiple ToolParts) request the same session's messages.
-const _ensureMessagesLoading = new Set<string>()
-
 export function useEnsureSessionMessages(sessionID: string, directory?: string) {
   const store = useDirectoryStore(directory)
 
@@ -3156,27 +3432,13 @@ export function useEnsureSessionMessages(sessionID: string, directory?: string) 
     if (!sessionID) return
 
     const state = store.getState()
-    // Already loaded into a renderable message/part snapshot — nothing to do.
-    if (getSessionMaterializationStatus(state, sessionID).renderable) return
     // Session doesn't exist — nothing to load
     if (!state.session.some((s) => s.id === sessionID)) return
 
     const dir = directory ?? opencodeClient.getDirectory()
-    const loadingKey = `${dir ?? ""}:${sessionID}`
-    // Already loading this session for this directory
-    if (_ensureMessagesLoading.has(loadingKey)) return
-
-    _ensureMessagesLoading.add(loadingKey)
-
-    void (async () => {
-      try {
-        await materializeSessionFromServer(dir ?? "", sessionID, store)
-      } catch {
-        // Transient failure — next navigation or reconnect will retry
-      } finally {
-        _ensureMessagesLoading.delete(loadingKey)
-      }
-    })()
+    void materializeAndRestoreSessionLifecycle(dir ?? "", sessionID, store).catch(() => {
+      // Transient failure — next navigation or reconnect will retry.
+    })
   }, [sessionID, store, directory])
 }
 

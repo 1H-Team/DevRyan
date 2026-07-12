@@ -6,6 +6,8 @@ Defines the webview-side API bridge used by VS Code UI code to call extension-ho
 ## Design
 Thin transport wrappers around message passing: typed request/response helpers and feature-level API modules that hide `postMessage` protocol details from UI components.
 
+`orchestration.ts` is the API-shaped adapter for managed task snapshot, status, cancellation, and result acknowledgement. It validates JSON/body size locally and preserves extension-host HTTP status semantics.
+
 ## Flow
 1. Webview component invokes an API helper from this folder.
 2. Helper sends a structured message to extension host.

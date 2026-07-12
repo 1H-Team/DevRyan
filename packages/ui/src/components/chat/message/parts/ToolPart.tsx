@@ -58,6 +58,7 @@ import {
     type TaskToolSummaryEntry,
 } from './taskToolUtils';
 import { getDiffPatchEntries, resolveRawPatchFallback } from './toolPartDiffEntries';
+import { resolveToolExpandedDetails } from './toolExpandedFallback';
 
 type ToolStateWithMetadata = ToolStateUnion & { metadata?: Record<string, unknown>; input?: Record<string, unknown>; output?: string; error?: string; time?: { start: number; end?: number } };
 
@@ -1066,6 +1067,17 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
         const filePath = getFirstToolPath(input, metadata);
         return buildWritePreviewPatch(filePath, inputTextContent);
     }, [hasInputText, input, inputTextContent, isWriteLikeTool, metadata]);
+    const hasStructuredDetails = diffEntries.length > 0 || Boolean(rawPatchFallback) || Boolean(diagnosticSection);
+    const expandedDetails = React.useMemo(() => resolveToolExpandedDetails({
+        hasStructuredDetails,
+        inputText: hasInputText ? inputTextContent : '',
+        output: rawOutput,
+        error: stateWithData.error,
+        status: lifecycle.status,
+        isFinalized: lifecycle.isFinalized,
+    }), [hasInputText, hasStructuredDetails, inputTextContent, lifecycle.isFinalized, lifecycle.status, rawOutput, stateWithData.error]);
+    const failureDisplayText = expandedDetails.failureReason
+        ?? t('chat.toolPart.endedWithStatus', { status: expandedDetails.failureStatus ?? lifecycle.status ?? 'unknown' });
 
     React.useEffect(() => {
         setDiffViewMode('unified');
@@ -1149,7 +1161,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                 }
             }
 
-            if (state.status === 'error' && 'error' in state) {
+            if (expandedDetails.isFailure) {
                 return (
                     <div>
                         <div className="typography-meta font-medium text-muted-foreground mb-1">{t('chat.toolPart.error')}</div>
@@ -1158,7 +1170,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                             color: 'var(--status-error)',
                             borderColor: 'var(--status-error-border)',
                         }}>
-                            {state.error}
+                            {failureDisplayText}
                         </div>
                     </div>
                 );
@@ -1238,7 +1250,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
             );
         }
 
-        if (isWriteLikeTool) {
+        if (isWriteLikeTool && !hasStringOutput) {
             return null;
         }
 
@@ -1259,7 +1271,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
         }
 
         return renderScrollableBlock(
-            <div className="typography-meta text-muted-foreground/70">{t('chat.toolPart.noOutputProduced')}</div>,
+            <div className="typography-meta text-muted-foreground/70">{t('chat.toolPart.noDetails')}</div>,
             { maxHeightClass: 'max-h-60' }
         );
     };
@@ -1301,7 +1313,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                         </div>
                     ) : null}
 
-                    {isSuccessfulFinalStatus && 'output' in state && (
+                    {expandedDetails.showResult && (
                         <div>
                             {isDiffOutputTool && rawPatchSource ? (
                                 <div className="mb-1 flex items-center justify-end gap-2">
@@ -1316,7 +1328,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                         </div>
                     )}
 
-                    {state.status === 'error' && 'error' in state && (
+                    {lifecycle.isFinalized && expandedDetails.isFailure && (
                         <div>
                             <div className="typography-meta font-medium text-muted-foreground/80 mb-1">{t('chat.toolPart.error')}</div>
                             <div className="typography-meta p-2 rounded-xl border" style={{
@@ -1324,7 +1336,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                                 color: 'var(--status-error)',
                                 borderColor: 'var(--status-error-border)',
                             }}>
-                                {state.error}
+                                {failureDisplayText}
                             </div>
                         </div>
                     )}
@@ -2152,6 +2164,7 @@ const ToolPart: React.FC<ToolPartProps> = ({
                     isMobile={isMobile}
                     output={taskOutputString}
                     error={stateWithData.error}
+                    status={stateWithData.status}
                     sessionId={taskSessionId}
                     onShowPopup={onShowPopup}
                     input={input}

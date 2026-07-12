@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  resolveAgentVariantForModel,
   resolveAgentVariantForSave,
   resolveAgentVariantSelection,
 } from './agentVariantSelection';
@@ -36,7 +37,7 @@ describe('agent Settings variant selection', () => {
     });
   });
 
-  test('keeps default variant empty instead of inventing a thinking level on save', () => {
+  test('keeps an unset variant empty instead of inventing a thinking level on save', () => {
     const provider = {
       id: 'opencode',
       models: [
@@ -45,6 +46,26 @@ describe('agent Settings variant selection', () => {
     };
 
     expect(resolveAgentVariantForSave(provider, 'opencode/deepseek-v4-flash-free', undefined)).toBe(undefined);
+  });
+
+  test('seeds the model fallback when an agent has no saved thinking variant', () => {
+    const provider = {
+      id: 'opencode',
+      models: [
+        { id: 'deepseek-v4-flash-free', variants: { low: {}, medium: {}, high: {} } },
+      ],
+    };
+
+    expect(resolveAgentVariantForModel(
+      provider,
+      'opencode/deepseek-v4-flash-free',
+      undefined,
+    )).toBe('medium');
+    expect(resolveAgentVariantForModel(
+      provider,
+      'opencode/deepseek-v4-flash-free',
+      'stale',
+    )).toBe('medium');
   });
 
   test('normalizes selected thinking variants by provider metadata on save', () => {

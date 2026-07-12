@@ -599,6 +599,81 @@ describe('Cursor SDK worker runtime config', () => {
     expect(sentMessage.text).toContain('describe this');
   });
 
+  test('preserves provider-native task output and its failure reason when a run fails', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-partial-tool-failure-'));
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: {},
+      createPromptRun: async () => ({
+        async *stream() {
+          yield {
+            type: 'tool_call',
+            call_id: 'call_partial_task',
+            name: 'task',
+            status: 'running',
+            args: { subagent_type: 'explorer', description: 'Inspect provider activity' },
+            result: { partialSummary: 'Inspected 12 files before disconnecting' },
+          };
+          yield {
+            type: 'tool_call',
+            call_id: 'call_partial_task',
+            name: 'task',
+            status: 'error',
+            result: {
+              status: 'error',
+              error: { message: 'subagent failed after partial output' },
+            },
+          };
+          yield {
+            type: 'tool_call',
+            call_id: 'call_string_failure_task',
+            name: 'task',
+            status: 'running',
+            args: { subagent_type: 'reviewer', description: 'Review provider activity' },
+            result: { partialSummary: 'Reviewed the retained partial result' },
+          };
+          yield {
+            type: 'tool_call',
+            call_id: 'call_string_failure_task',
+            name: 'task',
+            status: 'error',
+            result: 'reviewer stopped unexpectedly',
+          };
+          throw new Error('provider disconnected after partial output');
+        },
+      }),
+    });
+
+    await runtime.handlePromptAsync({
+      sessionID: 'ses_partial_tool_failure',
+      directory: '/tmp/project',
+      body: {
+        model: { providerID: 'cursor-acp', modelID: 'composer-2.5' },
+        messageID: 'msg_partial_tool_failure_user',
+        parts: [{ type: 'text', text: 'write the file' }],
+      },
+    });
+
+    const records = await waitFor(async () => {
+      const next = await runtime.getSessionMessages('ses_partial_tool_failure');
+      return next.some((record) => record.info?.role === 'assistant' && record.info?.finish) ? next : null;
+    });
+    const assistant = records.find((record) => record.info?.role === 'assistant');
+    const nestedFailureTool = assistant?.parts?.find((part) => part.id?.endsWith('call_partial_task'));
+    const stringFailureTool = assistant?.parts?.find((part) => part.id?.endsWith('call_string_failure_task'));
+
+    expect(assistant?.info.finish).toBe('error');
+    expect(nestedFailureTool?.state?.status).toBe('error');
+    expect(nestedFailureTool?.state?.output).toContain('"partialSummary": "Inspected 12 files before disconnecting"');
+    expect(nestedFailureTool?.state?.error).toBe('subagent failed after partial output');
+    expect(stringFailureTool?.state?.status).toBe('error');
+    expect(stringFailureTool?.state?.output).toContain('"partialSummary": "Reviewed the retained partial result"');
+    expect(stringFailureTool?.state?.error).toBe('reviewer stopped unexpectedly');
+
+    await runtime.dispose();
+  });
+
   test('non-data image URLs are rejected before calling the Cursor SDK', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-url-image-'));
     let promptRunCalled = false;
@@ -978,6 +1053,35 @@ describe('Cursor SDK worker runtime config', () => {
     await runtime.dispose();
   });
 
+  test('releases persistent worker Agent entries when session state is deleted', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-release-'));
+    const capture = { calls: [], children: [], commands: [] };
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      useNodeWorkerForPrompts: true,
+      spawnImpl: createFakePersistentWorkerSpawn(capture),
+    });
+
+    await runtime.prewarmSession({
+      sessionID: 'ses_release',
+      directory: '/tmp/project',
+      modelID: 'composer-2.5',
+    });
+    expect(await runtime.deleteSessionState('ses_release')).toBe(true);
+
+    const releaseCommand = await waitFor(() => (
+      capture.commands.find((entry) => entry.type === 'release-session')
+    ));
+    expect(releaseCommand).toEqual({
+      type: 'release-session',
+      sessionID: 'ses_release',
+    });
+
+    await runtime.dispose();
+  });
+
   test('passes inherited Cursor SDK subagent definitions to persistent prompt workers', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-persistent-worker-'));
     const capture = { calls: [], children: [], commands: [] };
@@ -1203,6 +1307,66 @@ describe('Cursor SDK worker runtime config', () => {
         && event?.properties?.status?.type === 'idle',
     );
     expect(idleEvent).toBeTruthy();
+    await runtime.dispose();
+  });
+
+  test('abortSession preserves provider-native task output and stops consuming cancel-tail events', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-abort-partial-task-'));
+    const events = [];
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: {},
+      emitEvent: (payload) => { events.push(payload); },
+      createPromptRun: async () => ({
+        async *stream() {
+          yield {
+            type: 'tool_call',
+            call_id: 'call_abort_partial_task',
+            name: 'task',
+            status: 'running',
+            args: { subagent_type: 'explorer', description: 'Inspect before abort' },
+            result: { partialSummary: 'Useful task output before abort' },
+          };
+          await new Promise(() => {});
+        },
+        cancel: async () => {},
+      }),
+    });
+
+    await runtime.handlePromptAsync({
+      sessionID: 'ses_abort_partial_task',
+      directory: '/tmp/project',
+      body: {
+        model: { providerID: 'cursor-acp', modelID: 'composer-2.5' },
+        messageID: 'msg_abort_partial_task_user',
+        parts: [{ type: 'text', text: 'inspect and report' }],
+      },
+    });
+
+    await waitFor(async () => {
+      const records = await runtime.getSessionMessages('ses_abort_partial_task');
+      const task = records.flatMap((record) => record.parts || []).find((part) => part.tool === 'task');
+      return task?.state?.output?.includes('Useful task output before abort') ? true : null;
+    });
+    expect(await runtime.abortSession('ses_abort_partial_task')).toBe(true);
+
+    const records = await waitFor(async () => {
+      const next = await runtime.getSessionMessages('ses_abort_partial_task');
+      return next.some((record) => record.info?.role === 'assistant' && record.info?.finish) ? next : null;
+    });
+    const assistant = records.find((record) => record.info?.role === 'assistant');
+    const task = assistant?.parts?.find((part) => part.tool === 'task');
+    const eventCountAfterFinalization = events.length;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(assistant?.info.finish).toBe('cancelled');
+    expect(task?.state?.status).toBe('cancelled');
+    expect(task?.state?.output).toContain('Useful task output before abort');
+    expect(task?.state?.error).toBeUndefined();
+    expect(runtime.getRuntimeStatus().activeRuns).toBe(0);
+    expect(events).toHaveLength(eventCountAfterFinalization);
+
     await runtime.dispose();
   });
 

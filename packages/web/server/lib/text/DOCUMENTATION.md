@@ -13,11 +13,13 @@ This module provides shared text transformation helpers that are not owned by a 
 - `sanitizeForTTS(text)`: Sanitizes text for speech output.
 - `sanitizeForNotification(text)`: Sanitizes text for compact notification output.
 - `sanitizeForNote(text)`: Sanitizes text for short note/distillation output.
+- `sanitizeForTitle(text)`: Sanitizes model output into a concise session title without trailing punctuation.
 
 ## Modes
 - `tts`: Speakable summary for TTS flows.
 - `notification`: Short plain-text summary for notification bodies.
 - `note`: Distilled short project-memory note.
+- `title`: Three-to-seven-word sentence-case session title with no markdown, quotes, or trailing punctuation.
 
 ## Response contract
 

@@ -9,7 +9,7 @@ const STANDALONE_TOOL_NAMES = new Set<string>(['task']);
 // `create_plan` is rendered as the rich Implementation Plan card (driven by the
 // plan-text sentinel), so its generic tool-activity row would be a redundant
 // "Create Plan" line below the card — hide it.
-const HIDDEN_TOOL_NAMES = new Set<string>(['mkdir', 'create_plan']);
+const HIDDEN_TOOL_NAMES = new Set<string>(['mkdir', 'create_plan', 'devryan_task']);
 const SHELL_TOOL_NAMES = new Set<string>(['bash', 'shell', 'cmd', 'terminal']);
 const QUESTION_TOOL_NAMES = new Set<string>(['question']);
 
@@ -122,6 +122,10 @@ export const isStandaloneTool = (toolName: unknown): boolean => {
 
 export const isHiddenTool = (toolName: unknown): boolean => {
     return HIDDEN_TOOL_NAMES.has(normalizeToolName(toolName));
+};
+
+export const isManagedTaskToolName = (toolName: unknown): boolean => {
+    return normalizeToolName(toolName) === 'devryan_task';
 };
 
 export const isStaticTool = (toolName: unknown): boolean => {

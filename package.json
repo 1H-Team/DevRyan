@@ -1,6 +1,6 @@
 {
   "name": "openchamber-monorepo",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "OpenChamber monorepo workspace for web, ui, and desktop runtimes",
   "private": true,
   "type": "module",
@@ -38,7 +38,7 @@
     "test": "bun run test:full",
     "test:affected": "node scripts/validate.mjs test-affected",
     "test:scripts": "node --test scripts/test-runner-utils.test.mjs scripts/dev.test.mjs",
-    "test:full": "bun run test:scripts && bun run --cwd packages/ui test && bun run --cwd packages/web test && bun run --cwd packages/vscode test",
+    "test:full": "bun run test:scripts && bun test packages/orchestration-runtime && bun test packages/cursor-sdk-runtime && bun run --cwd packages/electron test && bun run --cwd packages/ui test && bun run --cwd packages/web test && bun run --cwd packages/vscode test",
     "validate:quick": "node scripts/validate.mjs quick",
     "validate:affected": "node scripts/validate.mjs affected",
     "validate:full": "node scripts/validate.mjs full",

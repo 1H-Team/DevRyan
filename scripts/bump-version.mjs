@@ -9,6 +9,7 @@ const ROOT = path.resolve(__dirname, '..');
 const PACKAGES = [
   'package.json',
   'packages/cursor-sdk-runtime/package.json',
+  'packages/orchestration-runtime/package.json',
   'packages/ui/package.json',
   'packages/web/package.json',
   'packages/desktop/package.json',

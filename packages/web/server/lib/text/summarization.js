@@ -5,9 +5,20 @@
  * - tts: concise speakable text
  * - notification: concise notification text
  * - note: distilled project note
+ * - title: concise session title
  */
 
 function buildSummarizationPrompt(maxLength, mode = 'tts') {
+  if (mode === 'title') {
+    return `Generate a concise title for this coding session.
+
+Rules:
+1. Output only the title: 3 to 7 words, sentence case, no markdown, no quotes, and no trailing punctuation.
+2. Keep it under ${maxLength} characters.
+3. Summarize the user's intent instead of repeating the full prompt.
+4. Do not use tools or inspect the workspace.`;
+  }
+
   if (mode === 'note') {
     return `You are distilling selected assistant text into a single short project note.
 
@@ -109,7 +120,26 @@ export function sanitizeForNote(text) {
     .trim();
 }
 
+export function sanitizeForTitle(text) {
+  if (!text || typeof text !== 'string') return '';
+
+  const line = text
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .find((entry) => entry && !/^```/.test(entry));
+  if (!line) return '';
+
+  return line
+    .replace(/^#{1,6}\s+/, '')
+    .replace(/^[-*+]\s+/, '')
+    .replace(/^[`*_~"'“”‘’]+|[`*_~"'“”‘’]+$/g, '')
+    .replace(/[.!?;:]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function sanitizeByMode(text, mode) {
+  if (mode === 'title') return sanitizeForTitle(text);
   if (mode === 'note') return sanitizeForNote(text);
   if (mode === 'notification') return sanitizeForNotification(text);
   return sanitizeForTTS(text);
@@ -202,6 +232,7 @@ function distillNoteFallback(text, maxLength) {
 
 function fallbackByMode(text, maxLength, mode) {
   if (mode === 'note') return distillNoteFallback(text, maxLength);
+  if (mode === 'title') return clampToMaxLength(sanitizeForTitle(text), maxLength);
   return sanitizeByMode(text, mode);
 }
 

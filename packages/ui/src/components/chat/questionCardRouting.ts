@@ -1,5 +1,11 @@
 import type { QuestionRequest } from "@/types/question"
 
+const QUESTION_REQUEST_KEY_SEPARATOR = "\u0000"
+
+export function getQuestionRequestKey(request: QuestionRequest): string {
+  return `${request.sessionID}${QUESTION_REQUEST_KEY_SEPARATOR}${request.id}`
+}
+
 export type QuestionAnswerEntry = {
   request: QuestionRequest
   withinRequestIndex: number
@@ -25,13 +31,14 @@ export function buildQuestionRequestAnswerGroups(entries: readonly QuestionAnswe
   const grouped = new Map<string, QuestionRequestAnswerGroup>()
 
   for (const entry of entries) {
-    let group = grouped.get(entry.request.id)
+    const requestKey = getQuestionRequestKey(entry.request)
+    let group = grouped.get(requestKey)
     if (!group) {
       group = {
         request: entry.request,
         answers: new Array(entry.request.questions.length).fill(null).map(() => []),
       }
-      grouped.set(entry.request.id, group)
+      grouped.set(requestKey, group)
     }
     group.answers[entry.withinRequestIndex] = entry.answers
   }

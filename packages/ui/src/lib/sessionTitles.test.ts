@@ -20,6 +20,12 @@ describe("session title helpers", () => {
     expect(deriveSessionTitleFromUserText("x".repeat(100))).toBe(`${"x".repeat(77)}...`)
   })
 
+  test("prefers the first markdown heading for long implementation prompts", () => {
+    expect(deriveSessionTitleFromUserText(
+      "Implement this plan, and ensure everything works end to end with a live visual check\n# Patient/Provider Relationship Hub + Booking Prescriptions\n## Context\nLong implementation details",
+    )).toBe("Patient/Provider Relationship Hub + Booking Prescriptions")
+  })
+
   test("summarizes file-route edit prompts into concise titles", () => {
     expect(deriveSessionTitleFromUserText("in /dashboard/professional/calendar, remove the button to export pdf")).toBe(
       "Remove calendar export PDF button",

@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, test } from "bun:test"
+import { getSafeStorage } from "@/stores/utils/safeStorage"
 import { appendNotification, markSessionViewed, markSessionsViewed, useNotificationStore } from "./notification-store"
+
+const COMPLETION_NOTIFICATION_STORAGE_KEY = "openchamber:notification-completions:v1"
 
 function resetNotificationStore() {
   useNotificationStore.setState({
@@ -14,6 +17,7 @@ function resetNotificationStore() {
 describe("notification-store", () => {
   beforeEach(() => {
     resetNotificationStore()
+    getSafeStorage().removeItem(COMPLETION_NOTIFICATION_STORAGE_KEY)
   })
 
   test("indexes unviewed turn-complete notifications as session completion", () => {
@@ -138,5 +142,43 @@ describe("notification-store", () => {
     expect(after.list).toBe(before.list)
     expect(after.index).toBe(before.index)
     expect(after.sessionUnseenCount("unrelated")).toBe(1)
+  })
+
+  test("persists only bounded completion read state for reload restoration", () => {
+    appendNotification({
+      type: "turn-complete",
+      directory: "/repo",
+      session: "ses_1",
+      messageId: "msg_assistant",
+      time: Date.now(),
+      viewed: false,
+    })
+    appendNotification({
+      type: "error",
+      directory: "/repo",
+      session: "ses_1",
+      messageId: "msg_error",
+      time: Date.now(),
+      viewed: false,
+      error: { message: "provider details must not be persisted here" },
+    })
+
+    const persistedBeforeRead = JSON.parse(
+      getSafeStorage().getItem(COMPLETION_NOTIFICATION_STORAGE_KEY) ?? "[]",
+    ) as Array<Record<string, unknown>>
+    expect(persistedBeforeRead).toHaveLength(1)
+    expect(persistedBeforeRead[0]?.type).toBe("turn-complete")
+    expect(persistedBeforeRead[0]?.directory).toBe("/repo")
+    expect(persistedBeforeRead[0]?.session).toBe("ses_1")
+    expect(persistedBeforeRead[0]?.messageId).toBe("msg_assistant")
+    expect(persistedBeforeRead[0]?.viewed).toBe(false)
+    expect(JSON.stringify(persistedBeforeRead)).not.toContain("provider details")
+
+    markSessionViewed("ses_1")
+
+    const persistedAfterRead = JSON.parse(
+      getSafeStorage().getItem(COMPLETION_NOTIFICATION_STORAGE_KEY) ?? "[]",
+    ) as Array<Record<string, unknown>>
+    expect(persistedAfterRead[0]?.viewed).toBe(true)
   })
 })

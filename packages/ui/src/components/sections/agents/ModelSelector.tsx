@@ -25,6 +25,7 @@ import {
 import { filterVisibleProviderModelsForPicker } from '@/lib/providers/modelVisibility';
 import { shouldHidePairedFastModel } from '@/lib/providers/variantControls';
 import { sortProviderTreeForPicker } from '@/lib/providers/sorting';
+import { getProviderModelUnavailableMessage, isProviderModelAvailable } from '@/lib/providers/modelAvailability';
 import type { ModelMetadata } from '@/types';
 import { useI18n } from '@/lib/i18n';
 import { useOpenCodeReadiness } from '@/hooks/useOpenCodeReadiness';
@@ -176,6 +177,10 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         : (providerId && modelId ? `${providerId}/${modelId}` : '');
 
     const handleProviderAndModelChange = (newProviderId: string, newModelId: string) => {
+        const model = providers
+            .find((provider) => provider.id === newProviderId)
+            ?.models.find((entry: ProviderModel) => entry.id === newModelId);
+        if (model && !isProviderModelAvailable(model)) return;
         onChange(newProviderId, newModelId);
         setIsDropdownOpen(false);
     };
@@ -204,6 +209,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         const contextTokens = formatTokens(metadata?.limit?.context);
         const isSelected = providerId === provID && modelId === modID;
         const isFavorite = isFavoriteModel(provID, modID);
+        const unavailableMessage = getProviderModelUnavailableMessage(model);
 
         const showProviderLogo = keyPrefix === 'fav';
 
@@ -213,8 +219,11 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                 ref={(el) => { itemRefs.current[flatIndex] = el; }}
                 className={cn(
                     "group flex items-center gap-2",
-                    isHighlighted && "bg-interactive-selection"
+                    isHighlighted && "bg-interactive-selection",
+                    unavailableMessage && "cursor-not-allowed opacity-50"
                 )}
+                disabled={Boolean(unavailableMessage)}
+                title={unavailableMessage}
                 onSelect={() => handleProviderAndModelChange(provID, modID)}
                 onMouseEnter={() => setSelectedIndex(flatIndex)}
             >
@@ -225,6 +234,11 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                     <span className="font-medium truncate">
                         {getTruncatedModelDisplayName(model)}
                     </span>
+                    {unavailableMessage ? (
+                        <span className="typography-micro text-muted-foreground flex-shrink-0">
+                            {unavailableMessage}
+                        </span>
+                    ) : null}
                     {contextTokens ? (
                         <span className="typography-micro text-muted-foreground flex-shrink-0">
                             {contextTokens}
@@ -435,6 +449,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                                         {providerModels.map((modelItem: ProviderModel) => {
                                             const executionProviderId = getExecutionProviderId(provider.id as string, modelItem);
                                             const isSelectedModel = executionProviderId === providerId && modelItem.id === modelId;
+                                            const unavailableMessage = getProviderModelUnavailableMessage(modelItem);
 
                                             return (
                                                 <div
@@ -443,17 +458,23 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                                                         'flex w-full items-center justify-between px-2 py-1.5 text-left',
                                                         'typography-meta',
                                                         isSelectedModel ? 'bg-primary/10 text-primary' : 'text-foreground'
+                                                        , unavailableMessage && 'opacity-50'
                                                     )}
                                                 >
                                                     <button
                                                         type="button"
                                                         className="flex-1 flex flex-col min-w-0 mr-2"
+                                                        disabled={Boolean(unavailableMessage)}
+                                                        title={unavailableMessage}
                                                         onClick={() => {
                                                             handleProviderAndModelChange(executionProviderId, modelItem.id as string);
                                                             closeMobilePanel();
                                                         }}
                                                     >
                                                         <span className="font-medium truncate">{getTruncatedModelDisplayName(modelItem)}</span>
+                                                        {unavailableMessage ? (
+                                                            <span className="typography-micro text-muted-foreground">{unavailableMessage}</span>
+                                                        ) : null}
                                                     </button>
                                                     
                                                     <div className="flex items-center gap-2 flex-shrink-0">

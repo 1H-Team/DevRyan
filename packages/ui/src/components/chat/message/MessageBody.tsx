@@ -39,7 +39,9 @@ import { formatTimestampForDisplay } from './timeFormat';
 import { ToolRevealOnMount } from './parts/ToolRevealOnMount';
 import { GroupedToolActivityRow } from './parts/ProgressiveGroup';
 import { StaticToolRow } from './parts/StaticToolRow';
-import { collectToolActivityBurst, isExpandableTool, isHiddenTool, isStandaloneTool, normalizeToolName } from './parts/toolRenderUtils';
+import { collectToolActivityBurst, isExpandableTool, isHiddenTool, isManagedTaskToolName, isStandaloneTool, normalizeToolName } from './parts/toolRenderUtils';
+import { ManagedTaskList } from '../ManagedTaskList';
+import { resolveManagedTaskDispatch } from '../managedTaskDispatch';
 import { isCursorProvider, shouldRenderAssistantCopyButton, shouldRenderStandaloneAssistantActionsForTextGroup } from './assistantInlineActions';
 import { isToolPartFinalizedForDisplay } from './parts/toolDisplayState';
 import TurnActivity from '../components/TurnActivity';
@@ -49,6 +51,7 @@ import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useSessions } from '@/sync/sync-context';
 import { useI18n } from '@/lib/i18n';
 import { extractLoopbackUrls } from '@/lib/url';
+import { filterGroupedActivityReasoning, shouldRenderInlineReasoning } from './reasoningRenderPolicy';
 
 const CONTAIN_LAYOUT_STYLE = { contain: 'layout' as const, transform: 'translateZ(0)' };
 const MESSAGE_FOOTER_CONTAINER_STYLE = { containerType: 'inline-size' as const, containerName: 'message-footer' };
@@ -360,8 +363,6 @@ interface MessageBodyProps {
     onFork?: () => void;
     errorMessage?: string;
     errorVariant?: 'error' | 'info' | 'plain';
-    onErrorRetry?: () => void | Promise<void>;
-    errorRetryPending?: boolean;
     userActionsMode?: 'inline' | 'external-content' | 'external-actions';
     stickyUserHeaderEnabled?: boolean;
     isPlanModeSource?: boolean;
@@ -873,8 +874,6 @@ const AssistantMessageBody = React.memo(({
     turnGroupingContext,
     errorMessage,
     errorVariant = 'error',
-    onErrorRetry,
-    errorRetryPending = false,
     isPlanModeSource = false,
 }: Omit<MessageBodyProps, 'isUser'>) => {
     const { t } = useI18n();
@@ -904,6 +903,7 @@ const AssistantMessageBody = React.memo(({
                 // Hidden tools (e.g. create_plan, which is surfaced as the rich
                 // Implementation Plan card) must never render as their own row.
                 if (part.type !== 'tool') return true;
+                if (isManagedTaskToolName((part as ToolPartType).tool)) return true;
                 return !isHiddenTool((part as ToolPartType).tool);
             })
             .filter((part, index, arr) => {
@@ -917,6 +917,11 @@ const AssistantMessageBody = React.memo(({
                 );
             });
     }, [parts, turnGroupingContext?.lastTodoToolPartId]);
+
+    const managedTaskDispatch = React.useMemo(
+        () => resolveManagedTaskDispatch(visibleParts),
+        [visibleParts],
+    );
 
     const toolParts = React.useMemo(() => {
         return visibleParts.filter((part): part is ToolPartType => part.type === 'tool');
@@ -1343,9 +1348,7 @@ const AssistantMessageBody = React.memo(({
 
         if (shouldRenderActivityGroup && toggleActivityGroup) {
             activityGroupSegmentsForMessage.forEach((segment) => {
-                const visibleSegmentParts = showReasoningTraces
-                    ? segment.parts
-                    : segment.parts.filter((activity) => activity.kind !== 'reasoning');
+                const visibleSegmentParts = filterGroupedActivityReasoning(segment.parts);
                 if (visibleSegmentParts.length === 0) {
                     return;
                 }
@@ -1521,12 +1524,7 @@ const AssistantMessageBody = React.memo(({
             }
 
             if (part.type === 'reasoning') {
-                const activity = activityByPart.get(part);
-                if (activity?.kind === 'reasoning') {
-                    i += 1;
-                    continue;
-                }
-                if (showReasoningTraces) {
+                if (shouldRenderInlineReasoning(showReasoningTraces)) {
                     rendered.push(
                         <ReasoningPart
                             key={`reasoning-${messageId}-${i}`}
@@ -1544,6 +1542,20 @@ const AssistantMessageBody = React.memo(({
             if (part.type === 'tool') {
                 const toolPart = part as ToolPartType;
                 const toolName = normalizeToolName(toolPart.tool);
+
+                if (isManagedTaskToolName(toolName)) {
+                    if (toolPart.id === managedTaskDispatch.anchorPartId && managedTaskDispatch.taskIds.length > 0) {
+                        rendered.push(
+                            <ManagedTaskList
+                                key={`managed-task-dispatch-${messageId}`}
+                                taskIds={managedTaskDispatch.taskIds}
+                                onContentChange={onContentChange}
+                            />,
+                        );
+                    }
+                    i += 1;
+                    continue;
+                }
 
                 if (isSortedRenderMode && !isActivityOwnerMessage) {
                     i += 1;
@@ -1727,6 +1739,7 @@ const AssistantMessageBody = React.memo(({
         messageId,
         messageActionButtons,
         messagePlan,
+        managedTaskDispatch,
         sessionId,
         onContentChange,
         onShowPopup,
@@ -1881,19 +1894,6 @@ const AssistantMessageBody = React.memo(({
                                              className="[&_.markdown-content>*:first-child]:mt-0 [&_.markdown-content>*:last-child]:mb-0"
                                         />
                                     </div>
-                                    {onErrorRetry ? (
-                                        <Button
-                                            type="button"
-                                            variant="outline"
-                                            size="sm"
-                                            className="h-7 shrink-0 gap-1.5"
-                                            disabled={errorRetryPending}
-                                            onClick={() => void onErrorRetry()}
-                                        >
-                                            {errorRetryPending ? <RiHourglassLine className="h-3.5 w-3.5" /> : null}
-                                            {t('chat.assistantError.retry')}
-                                        </Button>
-                                    ) : null}
                                 </div>
                             </div>
                         </FadeInOnReveal>

@@ -3,7 +3,7 @@ import express from 'express';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import request from 'supertest';
+import request from './test-supertest.js';
 
 import {
   deleteAgentModelOverride,
@@ -444,10 +444,11 @@ describe('Packaged OpenChamber agents', () => {
     });
   });
 
-  it('instructs Orchestrator to use the task tool when delegating to Explorer', () => {
+  it('instructs Orchestrator to prefer managed delegation while preserving provider-native tasks', () => {
     const orchestrator = listPackagedAgents().find((agent) => agent.name === 'orchestrator');
 
-    expect(orchestrator?.prompt).toContain('calling the task tool');
+    expect(orchestrator?.prompt).toContain('calling `devryan_task`');
+    expect(orchestrator?.prompt).toContain('provider-native delegation means calling `task`');
     expect(orchestrator?.prompt).toContain('If Explorer is unavailable');
   });
 

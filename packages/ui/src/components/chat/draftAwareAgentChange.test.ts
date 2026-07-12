@@ -77,8 +77,10 @@ function selectionActions() {
     const selection = useSelectionStore.getState();
     return {
         setAgent: useConfigStore.getState().setAgent,
+        setProviderModel: useConfigStore.getState().setProviderModel,
         saveSessionAgentSelection: selection.saveSessionAgentSelection,
-        getDraftModelSelection: selection.getDraftModelSelection,
+        getDraftAgentModelForSelection: selection.getDraftAgentModelForSelection,
+        getDraftAgentModelVariantForSelection: selection.getDraftAgentModelVariantForSelection,
         saveDraftAgentSelection: selection.saveDraftAgentSelection,
         saveDraftModelSelection: selection.saveDraftModelSelection,
         saveDraftAgentModelForSelection: selection.saveDraftAgentModelForSelection,
@@ -133,10 +135,7 @@ describe('applyDraftAwareAgentChange', () => {
         });
     });
 
-    test('preserves a manually selected draft model when cycling agents on a new draft', () => {
-        const selection = useSelectionStore.getState();
-        selection.saveDraftModelSelection(DRAFT_ID, 'anthropic', 'claude');
-
+    test('uses each target agent configured model when cycling a new draft', () => {
         applyDraftAwareAgentChange(
             'Builder',
             {
@@ -148,17 +147,22 @@ describe('applyDraftAwareAgentChange', () => {
         );
 
         expect(useConfigStore.getState().currentAgentName).toBe('Builder');
-        expect(useConfigStore.getState().currentProviderId).toBe('anthropic');
-        expect(useConfigStore.getState().currentModelId).toBe('claude');
-        expect(selection.getDraftAgentSelection(DRAFT_ID)).toBe('Builder');
-        expect(selection.getDraftModelSelection(DRAFT_ID)).toEqual({
-            providerId: 'anthropic',
-            modelId: 'claude',
-        });
-        expect(selection.getDraftAgentModelForSelection(DRAFT_ID, 'Builder')).toEqual({
-            providerId: 'anthropic',
-            modelId: 'claude',
-        });
+        expect(useConfigStore.getState().currentModelId).toBe('builder-model');
+
+        applyDraftAwareAgentChange(
+            'Orchestrator',
+            {
+                currentSessionId: null,
+                currentDraftId: DRAFT_ID,
+                newSessionDraftOpen: true,
+            },
+            selectionActions(),
+        );
+
+        expect(useConfigStore.getState().currentAgentName).toBe('Orchestrator');
+        expect(useConfigStore.getState().currentProviderId).toBe('opencode');
+        expect(useConfigStore.getState().currentModelId).toBe('small');
+        expect(useConfigStore.getState().currentVariant).toBe(undefined);
     });
 
     test('applies the selected agent configured model when no draft model was saved', () => {
@@ -181,6 +185,44 @@ describe('applyDraftAwareAgentChange', () => {
             providerId: 'opencode',
             modelId: 'builder-model',
         });
+    });
+
+    test('falls back to an available model when the target agent configured model is unavailable', () => {
+        const unavailableModel = {
+            ...createModel('opencode', 'unavailable-model'),
+            available: false,
+        } as Model;
+        useConfigStore.setState({
+            providers: [{
+                ...providers[0],
+                models: [...providers[0].models, unavailableModel],
+            }, providers[1]],
+            agents: [...agents, {
+                name: 'UnavailableAgent',
+                mode: 'primary',
+                model: { providerID: 'opencode', modelID: 'unavailable-model' },
+                permission: [],
+                options: {},
+            }],
+            currentAgentName: 'Orchestrator',
+            currentProviderId: 'opencode',
+            currentModelId: 'unavailable-model',
+            currentVariant: 'max',
+        });
+
+        applyDraftAwareAgentChange(
+            'UnavailableAgent',
+            {
+                currentSessionId: null,
+                currentDraftId: DRAFT_ID,
+                newSessionDraftOpen: true,
+            },
+            selectionActions(),
+        );
+
+        expect(useConfigStore.getState().currentModelId).toBe('small');
+        expect(useConfigStore.getState().currentVariant).toBe(undefined);
+        expect(resolveCurrentDraftSendConfig(DRAFT_ID)?.modelID).toBe('small');
     });
 
     test('records draft send config when cycling agents on a new draft', () => {
@@ -220,9 +262,18 @@ describe('applyDraftAwareAgentChange', () => {
         }]);
     });
 
-    test('promotes cycled draft agent and preserved model through draft send config', () => {
-        const selection = useSelectionStore.getState();
-        selection.saveDraftModelSelection(DRAFT_ID, 'anthropic', 'claude');
+    test('restores a manual model only for the agent that selected it', () => {
+        applyDraftAwareModelChange(
+            'anthropic',
+            'claude',
+            {
+                currentSessionId: null,
+                currentDraftId: DRAFT_ID,
+                newSessionDraftOpen: true,
+                currentAgentName: 'Orchestrator',
+            },
+            modelSelectionActions(),
+        );
 
         applyDraftAwareAgentChange(
             'Builder',
@@ -234,10 +285,24 @@ describe('applyDraftAwareAgentChange', () => {
             selectionActions(),
         );
 
+        expect(useConfigStore.getState().currentAgentName).toBe('Builder');
+        expect(useConfigStore.getState().currentProviderId).toBe('opencode');
+        expect(useConfigStore.getState().currentModelId).toBe('builder-model');
+
+        applyDraftAwareAgentChange(
+            'Orchestrator',
+            {
+                currentSessionId: null,
+                currentDraftId: DRAFT_ID,
+                newSessionDraftOpen: true,
+            },
+            selectionActions(),
+        );
+
         expect(resolveCurrentDraftSendConfig(DRAFT_ID)).toEqual({
             providerID: 'anthropic',
             modelID: 'claude',
-            agent: 'Builder',
+            agent: 'Orchestrator',
             variant: undefined,
             planMode: false,
         });
@@ -293,7 +358,7 @@ describe('applyDraftAwareAgentChange', () => {
         }]);
     });
 
-    test('keeps keyboard-selected draft model when Tab cycles the draft agent before send', () => {
+    test('does not carry a keyboard-selected model into another agent', () => {
         applyDraftAwareModelChange(
             'anthropic',
             'claude',
@@ -327,11 +392,38 @@ describe('applyDraftAwareAgentChange', () => {
         );
 
         expect(resolveCurrentDraftSendConfig(DRAFT_ID)).toEqual({
-            providerID: 'anthropic',
-            modelID: 'claude',
+            providerID: 'opencode',
+            modelID: 'builder-model',
             agent: 'Builder',
-            variant: undefined,
+            variant: 'high',
             planMode: false,
+        });
+    });
+
+    test('rapid agent switching settles on the final target model and variant', () => {
+        for (const agentName of ['Builder', 'Orchestrator', 'Builder', 'Orchestrator', 'Builder']) {
+            applyDraftAwareAgentChange(
+                agentName,
+                {
+                    currentSessionId: null,
+                    currentDraftId: DRAFT_ID,
+                    newSessionDraftOpen: true,
+                },
+                selectionActions(),
+            );
+        }
+
+        const state = useConfigStore.getState();
+        expect({
+            currentAgentName: state.currentAgentName,
+            currentProviderId: state.currentProviderId,
+            currentModelId: state.currentModelId,
+            currentVariant: state.currentVariant,
+        }).toEqual({
+            currentAgentName: 'Builder',
+            currentProviderId: 'opencode',
+            currentModelId: 'builder-model',
+            currentVariant: 'high',
         });
     });
 
@@ -356,5 +448,42 @@ describe('applyDraftAwareAgentChange', () => {
         expect(useConfigStore.getState().currentProviderId).toBe('opencode');
         expect(useConfigStore.getState().currentModelId).toBe('builder-model');
         expect(useSelectionStore.getState().getSessionAgentSelection('session-1')).toBe('Builder');
+    });
+
+    test('restores each target agent saved model and variant for established sessions', () => {
+        useSessionUIStore.setState({
+            currentSessionId: 'session-agent-restore',
+            currentDraftId: null,
+            newSessionDraft: { open: false, directoryOverride: null, parentID: null },
+        });
+        const selection = useSelectionStore.getState();
+        selection.saveAgentModelForSession('session-agent-restore', 'Builder', 'opencode', 'builder-model');
+        selection.saveAgentModelVariantForSession('session-agent-restore', 'Builder', 'opencode', 'builder-model', 'high');
+        selection.saveAgentModelForSession('session-agent-restore', 'Orchestrator', 'anthropic', 'claude');
+
+        applyDraftAwareAgentChange(
+            'Builder',
+            {
+                currentSessionId: 'session-agent-restore',
+                currentDraftId: null,
+                newSessionDraftOpen: false,
+            },
+            selectionActions(),
+        );
+        expect(useConfigStore.getState().currentModelId).toBe('builder-model');
+        expect(useConfigStore.getState().currentVariant).toBe('high');
+
+        applyDraftAwareAgentChange(
+            'Orchestrator',
+            {
+                currentSessionId: 'session-agent-restore',
+                currentDraftId: null,
+                newSessionDraftOpen: false,
+            },
+            selectionActions(),
+        );
+        expect(useConfigStore.getState().currentProviderId).toBe('anthropic');
+        expect(useConfigStore.getState().currentModelId).toBe('claude');
+        expect(useConfigStore.getState().currentVariant).toBe(undefined);
     });
 });

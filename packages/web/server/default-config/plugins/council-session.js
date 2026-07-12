@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { tool } from '@opencode-ai/plugin';
 
 const DEFAULT_PRESET = 'default';
@@ -12,6 +13,38 @@ const PRESET_COUNCILLORS = Object.freeze({
 });
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const getManagedBridge = () => {
+  const rawUrl = process.env.DEVRYAN_ORCHESTRATION_URL;
+  const token = process.env.DEVRYAN_ORCHESTRATION_TOKEN;
+  if (!rawUrl && !token) return null;
+  if (!rawUrl || !token) throw new Error('Managed council bridge URL and token must be provided together');
+  const url = new URL(rawUrl);
+  if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1' || url.pathname !== '/rpc') {
+    throw new Error('Managed council bridge must use the private IPv4 loopback RPC endpoint');
+  }
+  return { url: url.toString(), token };
+};
+
+const callManagedRpc = async (bridge, method, params, signal) => {
+  const response = await fetch(bridge.url, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${bridge.token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ method, params }),
+    signal,
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || body?.ok !== true) {
+    const message = typeof body?.error?.message === 'string' && body.error.message.trim()
+      ? body.error.message.trim()
+      : `Managed council RPC failed (${response.status})`;
+    throw new Error(message);
+  }
+  return body.result;
+};
 
 const cloneCouncillors = (councillors) => councillors.map((councillor) => ({ ...councillor }));
 
@@ -255,6 +288,14 @@ const waitForAssistantResponse = async (client, sessionID, directory, timeoutMs)
   throw new Error(`Timed out after ${timeoutMs}ms waiting for councillor session`);
 };
 
+const buildCouncillorPrompt = (prompt) => [
+  'You are one councillor in a multi-model council.',
+  'Answer independently and concisely. Do not ask follow-up questions.',
+  'State assumptions and uncertainty when needed.',
+  '',
+  prompt,
+].join('\n');
+
 const runCouncillor = async ({ client, context, prompt, councillor, index, timeoutMs }) => {
   const parsed = parseModelRef(councillor.model);
   const variant = normalizeVariant(councillor.variant);
@@ -289,13 +330,7 @@ const runCouncillor = async ({ client, context, prompt, councillor, index, timeo
       },
       parts: [{
         type: 'text',
-        text: [
-          'You are one councillor in a multi-model council.',
-          'Answer independently and concisely. Do not ask follow-up questions.',
-          'State assumptions and uncertainty when needed.',
-          '',
-          prompt,
-        ].join('\n'),
+        text: buildCouncillorPrompt(prompt),
       }],
     },
   }, { throwOnError: false }).then((result) => unwrap(result, 'session.promptAsync', { allowEmpty: true }));
@@ -305,6 +340,70 @@ const runCouncillor = async ({ client, context, prompt, councillor, index, timeo
     name,
     status: response ? 'completed' : 'failed',
     response: response || 'No assistant response was recorded.',
+  };
+};
+
+const runManagedCouncillor = async ({ bridge, context, prompt, councillor, index, timeoutMs }) => {
+  const parsed = parseModelRef(councillor.model);
+  const variant = normalizeVariant(councillor.variant);
+  const modelLabel = formatModelLabel({ model: councillor.model, variant });
+  const name = `Councillor ${index + 1} (${modelLabel})`;
+  if (!parsed) {
+    return { name, status: 'failed', response: `Invalid model ref: ${councillor.model}` };
+  }
+  const rootSessionId = typeof context.sessionID === 'string' ? context.sessionID.trim() : '';
+  const directory = typeof context.directory === 'string' ? context.directory.trim() : '';
+  if (!rootSessionId || !directory) {
+    throw new Error('Managed council execution requires session and directory context');
+  }
+  const idempotencyDigest = crypto.createHash('sha256')
+    .update(JSON.stringify({
+      messageID: context.messageID || '',
+      index,
+      model: councillor.model,
+      variant: variant || null,
+      prompt,
+    }))
+    .digest('hex');
+  const submitted = await callManagedRpc(bridge, 'submit', {
+    idempotencyKey: `council:${rootSessionId}:${idempotencyDigest}`,
+    rootSessionId,
+    parentTaskId: null,
+    directory,
+    mode: 'orchestrator',
+    providerId: parsed.providerID,
+    modelId: parsed.modelID,
+    agent: DEFAULT_COUNCIL_AGENT,
+    variant: variant || null,
+    label: `Counsellor ${index + 1}: ${modelLabel}`,
+    prompt: buildCouncillorPrompt(prompt),
+    timeoutAt: Date.now() + timeoutMs,
+  }, context.abort);
+  const taskId = submitted?.task?.taskId;
+  if (typeof taskId !== 'string' || !taskId) {
+    throw new Error('Managed council submit returned no task ID');
+  }
+  const settled = await callManagedRpc(bridge, 'wait', {
+    taskId,
+    rootSessionId,
+    directory,
+  }, context.abort);
+  const task = settled?.task ?? {};
+  const envelope = settled?.resultEnvelope ?? {};
+  const recoverablePreview = typeof envelope.recoverablePreview === 'string'
+    ? envelope.recoverablePreview.trim()
+    : (typeof task.recoverablePreview === 'string' ? task.recoverablePreview.trim() : '');
+  const failureReason = typeof envelope.failureReason === 'string' && envelope.failureReason.trim()
+    ? envelope.failureReason.trim()
+    : (typeof task.failureReason === 'string' ? task.failureReason.trim() : '');
+  const completed = task.status === 'completed';
+  return {
+    name,
+    status: completed ? 'completed' : 'failed',
+    response: [
+      recoverablePreview,
+      ...(!completed && failureReason ? [`Interrupted: ${failureReason}`] : []),
+    ].filter(Boolean).join('\n\n') || 'No assistant response was recorded.',
   };
 };
 
@@ -328,14 +427,27 @@ export const CouncilSessionPlugin = async ({ client }) => ({
           return 'Council session failed: no councillor models are configured for the council agent.';
         }
 
-        const settled = await Promise.allSettled(councillors.map((councillor, index) => runCouncillor({
-          client,
-          context,
-          prompt,
-          councillor,
-          index,
-          timeoutMs: DEFAULT_TIMEOUT_MS,
-        })));
+        const managedBridge = getManagedBridge();
+
+        const settled = await Promise.allSettled(councillors.map((councillor, index) => (
+          managedBridge
+            ? runManagedCouncillor({
+                bridge: managedBridge,
+                context,
+                prompt,
+                councillor,
+                index,
+                timeoutMs: DEFAULT_TIMEOUT_MS,
+              })
+            : runCouncillor({
+                client,
+                context,
+                prompt,
+                councillor,
+                index,
+                timeoutMs: DEFAULT_TIMEOUT_MS,
+              })
+        )));
 
         const results = settled.map((result, index) => (
           result.status === 'fulfilled'

@@ -4,6 +4,7 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'yaml';
+import { normalizeManagedRemoteTunnelToken } from './tunnels/managed-token.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -554,7 +555,7 @@ export async function startCloudflareManagedRemoteTunnel({ token, hostname, toke
     throw new Error('cloudflared is not installed');
   }
 
-  const normalizedToken = typeof token === 'string' ? token.trim() : '';
+  const normalizedToken = normalizeManagedRemoteTunnelToken(token);
   const normalizedHost = typeof hostname === 'string' ? hostname.trim().toLowerCase() : '';
 
   if (!normalizedToken) {

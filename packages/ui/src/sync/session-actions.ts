@@ -31,6 +31,8 @@ import {
 import { hasMessageRecordInfo, unwrapMessageRecordsResult } from "./message-fetch"
 import { isSessionWorkingFromState } from "./session-working"
 import { isTransientError, retry } from "./retry"
+import { useManagedOrchestrationStore } from "@/stores/useManagedOrchestrationStore"
+import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
 import {
   clearAbortGuard,
   registerManualAbortGuard,
@@ -78,6 +80,26 @@ export function setActionRefs(
   _sdk = sdk
   _childStores = childStores
   _getDirectory = getDirectory
+}
+
+export function clearActionRefs(childStores: ChildStoreManager): boolean {
+  if (_childStores !== childStores) return false
+  _sdk = null
+  _childStores = null
+  _getDirectory = () => ""
+  _optimisticAdd = null
+  _optimisticRemove = null
+  return true
+}
+
+export function releaseSessionActionDirectory(directory: string): void {
+  if (!directory) return
+  const prefix = `${directory}\0`
+  for (const key of unexpectedAbortReconcileInFlight.keys()) {
+    if (key.startsWith(prefix)) {
+      unexpectedAbortReconcileInFlight.delete(key)
+    }
+  }
 }
 
 export function setOptimisticRefs(
@@ -1285,6 +1307,7 @@ export async function optimisticSend(input: {
   onMessageID?: (messageID: string) => void
   onMessageRollback?: (messageID: string) => void
   signal?: AbortSignal
+  preserveProviderRecovery?: boolean
 }): Promise<void> {
   if (!_optimisticAdd || !_optimisticRemove) {
     throw new Error("Optimistic refs not set — is useSync() mounted?")
@@ -1399,6 +1422,9 @@ export async function optimisticSend(input: {
   // A new user-initiated turn supersedes any pending stop-during-retry guard —
   // its busy/retry statuses are authoritative again and must not be re-aborted.
   clearAbortGuard(input.sessionId)
+  if (!input.preserveProviderRecovery) {
+    useProviderRecoveryStore.getState().clearRecovery(input.sessionId)
+  }
 
   // Set busy status
   const current = storeForMessage.getState()
@@ -1445,10 +1471,31 @@ export async function optimisticSend(input: {
 // Abort
 // ---------------------------------------------------------------------------
 
+async function cancelActiveManagedSubtasks(rootSessionId: string): Promise<void> {
+  const state = useManagedOrchestrationStore.getState()
+  const taskIds = state.taskIdsByRootId[rootSessionId] ?? []
+  const activeTasks = taskIds
+    .map((taskId) => state.tasksById[taskId])
+    .filter((task) => task && (task.status === "queued" || task.status === "starting" || task.status === "running"))
+  const activeTaskIds = new Set(activeTasks.map((task) => task.taskId))
+  const cascadeRoots = activeTasks.filter((task) => !task.parentTaskId || !activeTaskIds.has(task.parentTaskId))
+
+  const results = await Promise.allSettled(cascadeRoots.map((task) => state.cancelTask(task.taskId, {
+    cascade: true,
+    reason: "Parent session stopped",
+  })))
+  results.forEach((result) => {
+    if (result.status === "rejected") {
+      console.error("[session-actions] managed subtask cancellation failed", result.reason)
+    }
+  })
+}
+
 export async function abortCurrentOperation(sessionId: string): Promise<void> {
   if (!sessionId) return
   const sessionDirectory = getSessionDirectory(sessionId)
   useSessionUIStore.getState().abortPendingSend?.(sessionId)
+  await cancelActiveManagedSubtasks(sessionId)
   try {
     postAbortRequestedMark(sessionId, sessionDirectory)
     registerManualAbortGuard(sessionId, sessionDirectory)

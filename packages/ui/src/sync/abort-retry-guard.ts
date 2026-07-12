@@ -46,7 +46,7 @@ export function setAbortGuardExecutor(executor: AbortGuardExecutor | null): void
   abortExecutor = executor
 }
 
-/** Record that the user (or a user-initiated flow) explicitly aborted this session. */
+/** Record that the user, a user-initiated flow, or manual provider recovery stopped this session. */
 export function registerManualAbortGuard(sessionId: string, directory?: string): void {
   if (!sessionId) return
   records.set(sessionId, {
@@ -62,6 +62,12 @@ export function clearAbortGuard(sessionId: string): void {
   records.delete(sessionId)
 }
 
+export function clearAbortGuards(sessionIds: Iterable<string>): void {
+  for (const sessionId of sessionIds) {
+    records.delete(sessionId)
+  }
+}
+
 /** Test/HMR helper. */
 export function resetAbortGuardState(): void {
   records.clear()
@@ -75,6 +81,21 @@ export function isAbortGuardActive(sessionId: string, now: number = Date.now()):
     return false
   }
   return true
+}
+
+export async function waitForAbortGuardSettlement(
+  sessionId: string,
+  options: { timeoutMs?: number; pollMs?: number } = {},
+): Promise<void> {
+  const timeoutMs = options.timeoutMs ?? ABORT_GUARD_TTL_MS
+  const pollMs = options.pollMs ?? 100
+  const deadline = Date.now() + timeoutMs
+  while (isAbortGuardActive(sessionId)) {
+    if (Date.now() >= deadline) {
+      throw new Error("The previous provider retry loop did not stop")
+    }
+    await new Promise((resolve) => setTimeout(resolve, Math.min(pollMs, Math.max(1, deadline - Date.now()))))
+  }
 }
 
 function scheduleReabort(sessionId: string, record: AbortGuardRecord, now: number): void {

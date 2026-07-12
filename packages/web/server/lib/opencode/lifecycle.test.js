@@ -18,6 +18,7 @@ const originalOpencodeBinary = process.env.OPENCODE_BINARY;
 const originalOpenChamberDataDir = process.env.OPENCHAMBER_DATA_DIR;
 const originalOpencodeConfigDir = process.env.OPENCODE_CONFIG_DIR;
 const originalSlimPreset = process.env.OH_MY_OPENCODE_SLIM_PRESET;
+const originalDisableDefaultPlugins = process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS;
 const originalFetch = globalThis.fetch;
 const tempDirs = [];
 
@@ -54,6 +55,11 @@ afterEach(() => {
     process.env.OH_MY_OPENCODE_SLIM_PRESET = originalSlimPreset;
   } else {
     delete process.env.OH_MY_OPENCODE_SLIM_PRESET;
+  }
+  if (typeof originalDisableDefaultPlugins === 'string') {
+    process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS = originalDisableDefaultPlugins;
+  } else {
+    delete process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS;
   }
 });
 
@@ -134,6 +140,7 @@ const createRuntime = (overrides = {}) => {
       OPENCODE_SERVER_PASSWORD: 'shell-password',
     })),
     syncPackagedAgents: vi.fn(async () => ({ changed: false, conflicts: [] })),
+    provisionUserProfile: vi.fn(async () => ({ ok: true, changed: false, conflicts: [] })),
     syncRuntimeAgentOverlays: vi.fn(async () => ({
       changed: false,
       written: [],
@@ -148,6 +155,35 @@ const createRuntime = (overrides = {}) => {
 };
 
 describe('OpenCode lifecycle', () => {
+  it('provisions the user profile before managed agent and overlay sync', async () => {
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n'));
+      return child;
+    });
+    const calls = [];
+    const provisionUserProfile = vi.fn(async () => { calls.push('profile'); return { ok: true, changed: true, conflicts: [] }; });
+    const syncPackagedAgents = vi.fn(async () => { calls.push('agents'); return { changed: false, conflicts: [] }; });
+    const syncRuntimeAgentOverlays = vi.fn(async () => {
+      calls.push('overlays');
+      return { changed: false, targetConfigDirectory: '/tmp/overlay', written: [], updated: [], removed: [] };
+    });
+
+    const runtime = createRuntime({ provisionUserProfile, syncPackagedAgents, syncRuntimeAgentOverlays });
+    const server = await runtime.startOpenCode();
+
+    expect(calls).toEqual(['profile', 'agents', 'overlays']);
+    await server.close();
+  });
+
+  it('fails managed startup when required user plugins cannot be installed', async () => {
+    const provisionUserProfile = vi.fn(async () => ({ ok: false, error: 'network unavailable' }));
+    const runtime = createRuntime({ provisionUserProfile });
+
+    await expect(runtime.startOpenCode()).rejects.toThrow('network unavailable');
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
   it('exposes the port cleanup helper required by graceful shutdown', () => {
     const runtime = createRuntime();
 
@@ -169,7 +205,7 @@ describe('OpenCode lifecycle', () => {
     const [binary, args, options] = spawnMock.mock.calls[0];
 
     expect(binary).toBe('opencode');
-    expect(args).toEqual(['--pure', 'serve', '--hostname', '127.0.0.1', '--port', '45678']);
+    expect(args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '45678']);
     expect(options.env.PATH).toBe('/home/user/.bun/bin:/usr/local/bin:/usr/bin');
     expect(options.env.SHELL_ONLY).toBe('yes');
     expect(options.env.OPENCODE_SERVER_PASSWORD).toBe('password');
@@ -177,6 +213,49 @@ describe('OpenCode lifecycle', () => {
     // surfaces the OpenAI (ChatGPT/Codex OAuth) provider. openchamber must NOT force it.
     expect(options.env.OPENCODE_DISABLE_DEFAULT_PLUGINS).toBeUndefined();
 
+    await server.close();
+  });
+
+  it('removes an ambient default-plugin disable flag from managed OpenCode', async () => {
+    process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS = 'true';
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+
+    const runtime = createRuntime();
+    const server = await runtime.startOpenCode();
+    const [, , options] = spawnMock.mock.calls[0];
+
+    expect(options.env.OPENCODE_DISABLE_DEFAULT_PLUGINS).toBeUndefined();
+    await server.close();
+  });
+
+  it('injects only the private managed orchestration bridge contract before spawn', async () => {
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+    const getManagedOrchestrationEnvironment = vi.fn(async () => ({
+      DEVRYAN_ORCHESTRATION_URL: 'http://127.0.0.1:43210/rpc',
+      DEVRYAN_ORCHESTRATION_TOKEN: 'opaque-private-token',
+      UNTRUSTED_EXTRA_KEY: 'must-not-be-injected',
+    }));
+    const runtime = createRuntime({ getManagedOrchestrationEnvironment });
+
+    const server = await runtime.startOpenCode();
+    const [, , options] = spawnMock.mock.calls[0];
+
+    expect(getManagedOrchestrationEnvironment).toHaveBeenCalledTimes(1);
+    expect(options.env.DEVRYAN_ORCHESTRATION_URL).toBe('http://127.0.0.1:43210/rpc');
+    expect(options.env.DEVRYAN_ORCHESTRATION_TOKEN).toBe('opaque-private-token');
+    expect(options.env.UNTRUSTED_EXTRA_KEY).toBeUndefined();
     await server.close();
   });
 
@@ -550,7 +629,7 @@ describe('OpenCode lifecycle', () => {
       workingDirectory: '/tmp/project',
       skillPolicy: expect.any(Object),
     });
-    expect(args).toEqual(['--pure', 'serve', '--hostname', '127.0.0.1', '--port', '45678']);
+    expect(args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '45678']);
     expect(options.env.OPENCODE_CONFIG_DIR).toBe('/tmp/openchamber-runtime-overlays/project-hash');
     // v1.0.6 set this to 'true', which disabled the opencode default plugin that
     // surfaces the OpenAI (ChatGPT/Codex OAuth) provider. openchamber must NOT force it.
@@ -878,7 +957,7 @@ describe('OpenCode lifecycle', () => {
     })).rejects.toThrow('Agent "fixer" loaded with model "cursor-acp/grok-4.5" and variant "high"; expected variant "low"; expected "cursor-acp/grok-4.5"');
   });
 
-  it('rejects an omitted runtime variant for a matching native agent model', async () => {
+  it('accepts an omitted runtime variant for a matching native agent model', async () => {
     delete process.env.OPENCODE_BINARY;
     const child = createMockChild();
     spawnMock.mockImplementationOnce(() => {
@@ -913,7 +992,7 @@ describe('OpenCode lifecycle', () => {
       expectedAgentVariant: 'low',
       agentReadyTimeoutMs: 20,
       agentReadyIntervalMs: 1,
-    })).rejects.toThrow('Agent "fixer" loaded with model "openai/gpt-5.5" and variant "default"; expected variant "low"; expected "openai/gpt-5.5"');
+    })).resolves.toMatchObject({ runtimeApplied: true, requiresReload: true });
   });
 
   it('fails refresh when the runtime loads a stale model for the overridden agent', async () => {

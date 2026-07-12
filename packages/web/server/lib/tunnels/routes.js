@@ -1,3 +1,5 @@
+import { ManagedRemoteTunnelTokenValidationError } from './managed-token.js';
+
 export const createTunnelRoutesRuntime = (dependencies) => {
   const {
     crypto,
@@ -435,6 +437,9 @@ export const createTunnelRoutesRuntime = (dependencies) => {
         const managedRemoteTunnelConfig = await readManagedRemoteTunnelConfigFromDisk();
         return res.json({ ok: true, managedRemoteTunnelTokenPresetIds: managedRemoteTunnelConfig.tunnels.map((entry) => entry.id) });
       } catch (error) {
+        if (error instanceof ManagedRemoteTunnelTokenValidationError) {
+          return res.status(400).json({ ok: false, error: error.message });
+        }
         return res.status(500).json({ ok: false, error: 'Failed to save managed remote tunnel token' });
       }
     });

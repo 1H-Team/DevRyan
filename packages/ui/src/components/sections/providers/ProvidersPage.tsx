@@ -5,7 +5,7 @@ import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useTerminalStore } from '@/stores/useTerminalStore';
-import { useQuotaStore } from '@/stores/useQuotaStore';
+import { quotaRefreshCoordinator, useQuotaStore } from '@/stores/useQuotaStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -151,7 +151,6 @@ export const ProvidersPage: React.FC = () => {
   const toggleHiddenModelRefs = useUIStore((state) => state.toggleHiddenModelRefs);
   const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
   const setBottomTerminalOpen = useUIStore((state) => state.setBottomTerminalOpen);
-  const fetchProviderQuota = useQuotaStore((state) => state.fetchProviderQuota);
 
   const [authMethodsByProvider, setAuthMethodsByProvider] = React.useState<Record<string, AuthMethod[]>>({});
   const [authLoading, setAuthLoading] = React.useState(false);
@@ -538,6 +537,7 @@ export const ProvidersPage: React.FC = () => {
       if (providerId === CURSOR_ACP_PROVIDER_ID) {
         await refreshCursorRuntimeStatus();
       }
+      quotaRefreshCoordinator.settingsChanged();
     } catch (error) {
       console.error('Failed to save API key:', error);
       toast.error(t('settings.providers.page.toast.apiKeySaveFailed'));
@@ -640,6 +640,7 @@ export const ProvidersPage: React.FC = () => {
       await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
       await loadProviders({ directory: null });
       setSelectedProvider(providerId);
+      quotaRefreshCoordinator.settingsChanged();
     } catch (error) {
       console.error('Failed to complete OAuth flow:', error);
       toast.error(t('settings.providers.page.toast.oauthCompleteFailed'));
@@ -762,7 +763,7 @@ export const ProvidersPage: React.FC = () => {
       const resolvedProviderId = 'anthropic';
       setSelectedProvider(resolvedProviderId);
       await loadProviderSources(resolvedProviderId);
-      await fetchProviderQuota('claude', { forceRefresh: true });
+      await quotaRefreshCoordinator.refreshNow({ forceRefresh: true, rediscover: true });
     } catch (error) {
       console.error('Failed to check Claude OAuth:', error);
       toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.claudeOAuthCheckFailed'));
@@ -805,6 +806,7 @@ export const ProvidersPage: React.FC = () => {
       setSelectedProvider(CURSOR_ACP_PROVIDER_ID);
       await loadProviderSources(CURSOR_ACP_PROVIDER_ID);
       await refreshCursorRuntimeStatus();
+      quotaRefreshCoordinator.settingsChanged();
     } catch (error) {
       console.error('Failed to configure Cursor:', error);
       toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.cursorConfigureFailed'));
@@ -842,7 +844,7 @@ export const ProvidersPage: React.FC = () => {
       setCursorUsageTokenInput('');
       setCursorUsageAuthConfigured(true);
       toast.success(t('settings.providers.page.toast.cursorUsageSaved'));
-      await fetchProviderQuota(CURSOR_ACP_PROVIDER_ID, { forceRefresh: true });
+      await quotaRefreshCoordinator.refreshNow({ forceRefresh: true, rediscover: true });
     } catch (error) {
       console.error('Failed to save Cursor usage token:', error);
       toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.cursorUsageSaveFailed'));
@@ -866,7 +868,7 @@ export const ProvidersPage: React.FC = () => {
       setCursorUsageTokenInput('');
       setCursorUsageAuthConfigured(false);
       toast.success(t('settings.providers.page.toast.cursorUsageCleared'));
-      await fetchProviderQuota(CURSOR_ACP_PROVIDER_ID, { forceRefresh: true });
+      await quotaRefreshCoordinator.refreshNow({ forceRefresh: true, rediscover: true });
     } catch (error) {
       console.error('Failed to clear Cursor usage token:', error);
       toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.cursorUsageClearFailed'));
@@ -884,10 +886,12 @@ export const ProvidersPage: React.FC = () => {
     const busyKey = 'cursor-usage-refresh';
     setAuthBusyKey(busyKey);
     try {
-      await fetchProviderQuota(CURSOR_ACP_PROVIDER_ID, { forceRefresh: true });
-      const result = useQuotaStore.getState().results.find((entry) => entry.providerId === CURSOR_ACP_PROVIDER_ID);
-      if (result && !result.ok) {
-        throw new Error(result.error || t('settings.providers.page.toast.cursorUsageRefreshFailed'));
+      await quotaRefreshCoordinator.refreshNow({ forceRefresh: true });
+      const quotaState = useQuotaStore.getState();
+      const result = quotaState.results.find((entry) => entry.providerId === CURSOR_ACP_PROVIDER_ID);
+      const refreshError = quotaState.providerRefreshState[CURSOR_ACP_PROVIDER_ID]?.refreshError;
+      if (refreshError || (result && !result.ok)) {
+        throw new Error(refreshError || result?.error || t('settings.providers.page.toast.cursorUsageRefreshFailed'));
       }
       toast.success(t('settings.providers.page.toast.cursorUsageRefreshed'));
     } catch (error) {
@@ -928,7 +932,7 @@ export const ProvidersPage: React.FC = () => {
       setOpenCodeGoAuthCookieInput('');
       setOpenCodeGoUsageAuthConfigured(true);
       toast.success(t('settings.providers.page.toast.openCodeGoUsageSaved'));
-      await fetchProviderQuota(OPENCODE_GO_PROVIDER_ID, { forceRefresh: true });
+      await quotaRefreshCoordinator.refreshNow({ forceRefresh: true, rediscover: true });
     } catch (error) {
       console.error('Failed to save OpenCode Go usage auth:', error);
       toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.openCodeGoUsageSaveFailed'));
@@ -953,7 +957,7 @@ export const ProvidersPage: React.FC = () => {
       setOpenCodeGoAuthCookieInput('');
       setOpenCodeGoUsageAuthConfigured(false);
       toast.success(t('settings.providers.page.toast.openCodeGoUsageCleared'));
-      await fetchProviderQuota(OPENCODE_GO_PROVIDER_ID, { forceRefresh: true });
+      await quotaRefreshCoordinator.refreshNow({ forceRefresh: true, rediscover: true });
     } catch (error) {
       console.error('Failed to clear OpenCode Go usage auth:', error);
       toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.openCodeGoUsageClearFailed'));
@@ -971,10 +975,12 @@ export const ProvidersPage: React.FC = () => {
     const busyKey = 'opencode-go-usage-refresh';
     setAuthBusyKey(busyKey);
     try {
-      await fetchProviderQuota(OPENCODE_GO_PROVIDER_ID, { forceRefresh: true });
-      const result = useQuotaStore.getState().results.find((entry) => entry.providerId === OPENCODE_GO_PROVIDER_ID);
-      if (result && !result.ok) {
-        throw new Error(result.error || t('settings.providers.page.toast.openCodeGoUsageRefreshFailed'));
+      await quotaRefreshCoordinator.refreshNow({ forceRefresh: true });
+      const quotaState = useQuotaStore.getState();
+      const result = quotaState.results.find((entry) => entry.providerId === OPENCODE_GO_PROVIDER_ID);
+      const refreshError = quotaState.providerRefreshState[OPENCODE_GO_PROVIDER_ID]?.refreshError;
+      if (refreshError || (result && !result.ok)) {
+        throw new Error(refreshError || result?.error || t('settings.providers.page.toast.openCodeGoUsageRefreshFailed'));
       }
       toast.success(t('settings.providers.page.toast.openCodeGoUsageRefreshed'));
     } catch (error) {
@@ -1004,6 +1010,7 @@ export const ProvidersPage: React.FC = () => {
       toast.success(t('settings.providers.page.toast.providerDisconnected'));
       await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
       await loadProviders({ directory: null });
+      quotaRefreshCoordinator.settingsChanged();
     } catch (error) {
       console.error('Failed to disconnect provider:', error);
       toast.error(t('settings.providers.page.toast.providerDisconnectFailed'));

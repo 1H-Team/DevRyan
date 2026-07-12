@@ -5,6 +5,7 @@ import { describe, expect, test } from 'bun:test';
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 const source = () => readFileSync(resolve(testDir, 'TaskToolSummary.tsx'), 'utf8');
+const toolPartSource = () => readFileSync(resolve(testDir, 'ToolPart.tsx'), 'utf8');
 
 describe('TaskToolSummary output layout', () => {
     test('places output below the lined task activity block', () => {
@@ -40,7 +41,19 @@ describe('TaskToolSummary output layout', () => {
 
         expect(code).toContain('formatTaskModelLabel');
         expect(code).toContain('const taskModelLabel = formatTaskModelLabel(input?.model)');
-        expect(code).toContain('typography-micro font-mono');
+        expect(code).toContain('typography-micro text-muted-foreground/60');
+        expect(code).not.toContain('typography-micro font-mono');
         expect(code).toContain('{taskModelLabel}');
+    });
+
+    test('marks failed output partial and keeps the failure reason visible', () => {
+        const code = source();
+
+        expect(code).toContain('resolveTaskResultPresentation');
+        expect(code).toContain("taskResult.outputKind === 'partial'");
+        expect(code).toContain("t('chat.toolPart.partialOutput')");
+        expect(code).toContain('RiErrorWarningLine');
+        expect(toolPartSource()).toContain('status={stateWithData.status}');
+        expect(code.match(/\{errorText \? \(/g)?.length ?? 0).toBeGreaterThan(0);
     });
 });

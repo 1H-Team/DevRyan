@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Session } from '@opencode-ai/sdk/v2';
 import {
+  clearSessionChildrenForDirectory,
   ensureSessionChildrenFetch,
   getEffectiveSessionChildrenFetchStatus,
   getSessionChildrenFetchKey,
@@ -195,5 +196,31 @@ describe('session children helpers', () => {
     const fetchedAt = cache.get(key)?.fetchedAt;
     expect(typeof fetchedAt).toBe('number');
     expect(fetchedAt!).toBeGreaterThan(now - 1);
+  });
+
+  test('clears one directory and prevents an older in-flight completion from repopulating it', async () => {
+    const cache = new Map();
+    let resolveFetch!: () => void;
+    const fetchGate = new Promise<void>((resolve) => {
+      resolveFetch = resolve;
+    });
+    const pending = ensureSessionChildrenFetch(
+      cache,
+      getSessionChildrenFetchKey('/repo/a', 'parent-a'),
+      'tasks:1',
+      () => fetchGate,
+    );
+    cache.set(getSessionChildrenFetchKey('/repo/b', 'parent-b'), {
+      fetchedAt: 100,
+      refreshKey: 'tasks:1',
+    });
+
+    expect(clearSessionChildrenForDirectory(cache, '/repo/a')).toBe(1);
+    expect(cache.has(getSessionChildrenFetchKey('/repo/a', 'parent-a'))).toBe(false);
+    expect(cache.has(getSessionChildrenFetchKey('/repo/b', 'parent-b'))).toBe(true);
+
+    resolveFetch();
+    await pending.promise;
+    expect(cache.has(getSessionChildrenFetchKey('/repo/a', 'parent-a'))).toBe(false);
   });
 });

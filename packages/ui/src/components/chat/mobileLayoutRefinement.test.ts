@@ -52,4 +52,12 @@ describe('mobile chat layout refinement', () => {
         expect(agentIndex).toBeLessThan(modelIndex);
         expect(source).not.toContain('<RiCommandLine className={cn(iconSizeClass)} />');
     });
+
+    test('mobile composer does not render the duplicate inline model controls', () => {
+        const chatInput = readSource('ChatInput.tsx');
+        const modelControls = readSource('ModelControls.tsx');
+
+        expect(chatInput).toContain('<MemoModelControls\n                                    hideInlineControls');
+        expect(modelControls).toContain('{!hideInlineControls ? (');
+    });
 });

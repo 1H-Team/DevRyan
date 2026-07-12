@@ -36,7 +36,7 @@ afterEach(() => {
   delete process.env.OPENCODE_BINARY;
 });
 
-const createRuntime = (settings) => {
+const createRuntime = (settings, overrides = {}) => {
   const state = {
     cachedLoginShellEnvSnapshot: null,
     resolvedOpencodeBinary: null,
@@ -55,12 +55,34 @@ const createRuntime = (settings) => {
     normalizeDirectoryPath: (value) => value,
     readSettingsFromDiskMigrated: async () => settings,
     ENV_CONFIGURED_OPENCODE_WSL_DISTRO: null,
+    ...overrides,
   });
 
   return { runtime, state };
 };
 
 describe('OpenCode env runtime', () => {
+  it('prefers the canonical OpenCode installer binary over a PATH shadow', () => {
+    const home = createTempDir('openchamber-opencode-home-');
+    const canonicalDir = path.join(home, '.opencode', 'bin');
+    const pathDir = createTempDir('openchamber-opencode-path-');
+    const canonicalBinary = path.join(canonicalDir, 'opencode');
+    const pathBinary = path.join(pathDir, 'opencode');
+    fs.mkdirSync(canonicalDir, { recursive: true });
+    fs.writeFileSync(canonicalBinary, '#!/bin/sh\nexit 0\n');
+    fs.writeFileSync(pathBinary, '#!/bin/sh\nexit 0\n');
+    fs.chmodSync(canonicalBinary, 0o755);
+    fs.chmodSync(pathBinary, 0o755);
+
+    const { runtime, state } = createRuntime({}, {
+      homeDirectory: home,
+      environmentPath: pathDir,
+    });
+
+    expect(runtime.resolveOpencodeCliPath()).toBe(canonicalBinary);
+    expect(state.resolvedOpencodeBinarySource).toBe('canonical');
+  });
+
   it('throws a specific error for a missing configured OpenCode binary in strict mode', async () => {
     const { runtime } = createRuntime({ opencodeBinary: '/missing/opencode' });
 

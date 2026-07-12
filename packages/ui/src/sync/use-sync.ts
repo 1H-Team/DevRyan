@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useMemo } from "react"
 import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client"
+import type { ChildStoreManager } from "./child-store"
 import { Binary } from "./binary"
 import { retry } from "./retry"
 import { SESSION_CACHE_LIMIT } from "./types"
@@ -14,7 +15,10 @@ import { stripMessageDiffSnapshots } from "./sanitize"
 import { updateSessionUserActivityFromMessages } from "./session-user-activity"
 import {
   shouldSkipSessionPrefetch,
+  captureSessionPrefetchRevision,
   getSessionPrefetch,
+  isSessionPrefetchCurrent,
+  releaseSessionPrefetchRevision,
   setSessionPrefetch,
   clearSessionPrefetch,
 } from "./session-prefetch-cache"
@@ -82,6 +86,37 @@ export function useSync() {
     loading: boolean
     initialized: boolean
   }>())
+  const directoryDisposerUnregisters = useRef(new Map<string, () => void>())
+
+  const clearDirectoryTracking = useCallback((targetDirectory: string) => {
+    const prefix = `${targetDirectory}\n`
+    for (const key of inflight.current.keys()) {
+      if (key.startsWith(prefix)) inflight.current.delete(key)
+    }
+    for (const key of optimistic.current.keys()) {
+      if (key.startsWith(prefix)) optimistic.current.delete(key)
+    }
+    for (const key of meta.current.keys()) {
+      if (key.startsWith(prefix)) meta.current.delete(key)
+    }
+    seen.current.delete(targetDirectory)
+    directoryDisposerUnregisters.current.delete(targetDirectory)
+  }, [])
+
+  const registerDirectoryTracking = useCallback((targetDirectory: string) => {
+    if (!targetDirectory || directoryDisposerUnregisters.current.has(targetDirectory)) return
+    const unregister = childStores.registerDisposer(targetDirectory, () => {
+      clearDirectoryTracking(targetDirectory)
+    })
+    directoryDisposerUnregisters.current.set(targetDirectory, unregister)
+  }, [childStores, clearDirectoryTracking])
+
+  useEffect(() => () => {
+    for (const unregister of directoryDisposerUnregisters.current.values()) {
+      unregister()
+    }
+    directoryDisposerUnregisters.current.clear()
+  }, [])
 
   const resolveDirectory = useCallback((override?: string | null) => override || directory, [directory])
 
@@ -106,6 +141,27 @@ export function useSync() {
     },
     [keyFor],
   )
+
+  const reconcileSupersededLoad = useCallback((
+    sessionID: string,
+    targetDirectory: string,
+    targetStore: ReturnType<ChildStoreManager["ensureChild"]>,
+  ): boolean => {
+    if (childStores.getChild(targetDirectory) !== targetStore) return false
+    const latest = getSessionPrefetch(targetDirectory, sessionID)
+    if (!latest) {
+      setMetaFor(sessionID, { loading: false }, targetDirectory)
+      return false
+    }
+    setMetaFor(sessionID, {
+      limit: latest.limit,
+      cursor: latest.cursor,
+      complete: latest.complete,
+      loading: false,
+      initialized: true,
+    }, targetDirectory)
+    return true
+  }, [childStores, setMetaFor])
 
   // Session cache eviction — two levels of LRU:
   // (1) across directories (max 30), (2) within a directory (SESSION_CACHE_LIMIT).
@@ -176,6 +232,7 @@ export function useSync() {
     (sessionID: string, directoryOverride?: string | null) => {
       const targetDirectory = resolveDirectory(directoryOverride)
       const targetStore = childStores.ensureChild(targetDirectory)
+      registerDirectoryTracking(targetDirectory)
       const s = seenFor(targetDirectory)
       const protectedIds = getProtectedSessionCacheIds(targetStore.getState())
       const stale = pickSessionCacheEvictions({
@@ -186,7 +243,7 @@ export function useSync() {
       })
       evict(targetDirectory, stale)
     },
-    [childStores, resolveDirectory, seenFor, evict],
+    [childStores, resolveDirectory, seenFor, evict, registerDirectoryTracking],
   )
 
   // Optimistic operations
@@ -259,13 +316,23 @@ export function useSync() {
     async (sessionID: string, options?: { before?: string; mode?: "replace" | "prepend"; directory?: string | null }) => {
       const targetDirectory = resolveDirectory(options?.directory)
       const targetStore = childStores.ensureChild(targetDirectory)
+      registerDirectoryTracking(targetDirectory)
       const m = getMetaFor(sessionID, targetDirectory)
       if (m.loading) return true
       setMetaFor(sessionID, { loading: true }, targetDirectory)
+      const prefetchRevision = captureSessionPrefetchRevision(targetDirectory, sessionID)
 
       try {
         const limit = normalizeMessageFetchLimit(m.limit, MESSAGE_PAGE_SIZE)
         const page = await fetchMessages(sessionID, limit, options?.before, targetDirectory)
+        if (childStores.getChild(targetDirectory) !== targetStore) {
+          releaseSessionPrefetchRevision(targetDirectory, sessionID, prefetchRevision)
+          return false
+        }
+        if (!isSessionPrefetchCurrent(targetDirectory, sessionID, prefetchRevision)) {
+          releaseSessionPrefetchRevision(targetDirectory, sessionID, prefetchRevision)
+          return reconcileSupersededLoad(sessionID, targetDirectory, targetStore)
+        }
 
         // Merge optimistic items
         const items = getOptimistic(sessionID, targetDirectory)
@@ -312,14 +379,19 @@ export function useSync() {
           limit: normalizeMessageFetchLimit(materialized.messages.length, limit),
           cursor: merged.cursor,
           complete: merged.complete,
+          revision: prefetchRevision,
         })
         return true
       } catch {
+        const current = isSessionPrefetchCurrent(targetDirectory, sessionID, prefetchRevision)
+        releaseSessionPrefetchRevision(targetDirectory, sessionID, prefetchRevision)
+        if (!current) return reconcileSupersededLoad(sessionID, targetDirectory, targetStore)
+        if (childStores.getChild(targetDirectory) !== targetStore) return false
         setMetaFor(sessionID, { loading: false }, targetDirectory)
         return false
       }
     },
-    [childStores, fetchMessages, getMetaFor, setMetaFor, getOptimistic, clearOptimistic, resolveDirectory],
+    [childStores, fetchMessages, getMetaFor, setMetaFor, getOptimistic, clearOptimistic, resolveDirectory, registerDirectoryTracking, reconcileSupersededLoad],
   )
 
   // Sync a session (load if not cached)
@@ -370,6 +442,9 @@ export function useSync() {
             const result = await retry(() =>
               targetSdk.session.get({ sessionID }).then((response) => unwrapSdkResult(response, "session.get")),
             )
+            if (childStores.getChild(targetDirectory) !== targetStore) {
+              return false
+            }
             if (result) {
               const s = targetStore.getState()
               const sessions = [...s.session]
@@ -402,7 +477,11 @@ export function useSync() {
       })()
 
       inflight.current.set(key, promise)
-      promise.finally(() => inflight.current.delete(key))
+      promise.finally(() => {
+        if (inflight.current.get(key) === promise) {
+          inflight.current.delete(key)
+        }
+      })
       return promise
     },
     [childStores, directory, sdk, resolveDirectory, keyFor, touch, getMetaFor, setMetaFor, loadMessages],
@@ -458,6 +537,7 @@ export function useSync() {
     (input: { sessionID: string; message: Message; parts: Part[]; directory?: string | null }) => {
       const targetDirectory = resolveDirectory(input.directory)
       const targetStore = childStores.ensureChild(targetDirectory)
+      registerDirectoryTracking(targetDirectory)
       setOptimistic(input.sessionID, { message: input.message, parts: input.parts }, targetDirectory)
       const current = targetStore.getState()
       const message = { ...current.message }
@@ -485,7 +565,7 @@ export function useSync() {
         ...(activityChanged ? { session_user_activity: draft.session_user_activity } : {}),
       })
     },
-    [childStores, resolveDirectory, setOptimistic],
+    [childStores, resolveDirectory, setOptimistic, registerDirectoryTracking],
   )
 
   // Optimistic remove (for rollback on error)

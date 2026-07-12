@@ -18,6 +18,7 @@ permission:
   clarification: deny
   clarification_*: deny
   council_session: allow
+  devryan_task: deny
   external_directory:
     "*": ask
   plan_enter: deny

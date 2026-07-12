@@ -8,6 +8,7 @@ import { configureCursorSdkRipgrep } from './ripgrep-path.js';
 import {
   generateCursorSessionTitle,
 } from './title-generation.js';
+import { createAgentCache } from './agent-cache.js';
 
 const trimString = (value) => (typeof value === 'string' ? value.trim() : '');
 
@@ -44,6 +45,8 @@ const firstStringValue = (...candidates) => {
 // force the request to finish. Prevents a hung cancel from leaving the host
 // stream stuck mid-tool (a cause of the "stop then switch models" freeze).
 const CANCEL_TIMEOUT_MS = 4000;
+const AGENT_CACHE_MAX_ENTRIES = 16;
+const AGENT_CACHE_IDLE_TTL_MS = 30 * 60 * 1000;
 
 const withTimeout = (promise, timeoutMs) => {
   if (!promise || !timeoutMs) return Promise.resolve(promise);
@@ -243,7 +246,17 @@ const writeRequestEvent = (requestID, event) => {
   writeEvent({ requestID, ...event });
 };
 
-const agentCache = new Map();
+const agentCache = createAgentCache({
+  maxEntries: AGENT_CACHE_MAX_ENTRIES,
+  idleTtlMs: AGENT_CACHE_IDLE_TTL_MS,
+  onEvict: (agent) => {
+    try {
+      agent?.close?.();
+    } catch {
+      // Provider cleanup failure must not retain the cache entry.
+    }
+  },
+});
 const activeRuns = new Map();
 const cursorSdk = await import('@cursor/sdk');
 configureCursorSdkRipgrep(cursorSdk, { env: process.env });
@@ -257,11 +270,14 @@ const getAgentCacheKey = (sessionID, directory, model, agents) => `${trimString(
   settingSources: CURSOR_SETTING_SOURCES ?? null,
 })}`;
 
-const getOrCreateAgent = async ({ apiKey, sessionID, model, directory, agentID, agents }) => {
+const getOrCreateAgent = async ({ apiKey, sessionID, model, directory, agentID, agents, active = false }) => {
   const normalizedAgents = pinCursorSdkSubagentModels(normalizeCursorSdkAgentDefinitions(agents), model);
   const key = getAgentCacheKey(sessionID, directory, model, normalizedAgents);
   const cached = agentCache.get(key);
-  if (cached) return { agent: cached, cacheHit: true };
+  if (cached) {
+    if (active) agentCache.markActive(key);
+    return { agent: cached, cacheHit: true, cacheKey: key };
+  }
 
   const local = {
     ...(directory ? { cwd: directory } : {}),
@@ -290,8 +306,8 @@ const getOrCreateAgent = async ({ apiKey, sessionID, model, directory, agentID, 
       ...agentOptions,
     });
   }
-  agentCache.set(key, agent);
-  return { agent, cacheHit: false };
+  agent = agentCache.set(key, agent, { sessionID, active });
+  return { agent, cacheHit: false, cacheKey: key };
 };
 
 const handlePrepare = async (command) => {
@@ -385,6 +401,7 @@ const handlePrompt = async (command) => {
     cancelRequested: false,
     streamIterator: null,
   };
+  let activeAgentCacheKey = '';
   activeRuns.set(requestID, state);
 
   const shouldSkipDuplicateMessage = createCrossSourceMessageDedupe();
@@ -403,7 +420,16 @@ const handlePrompt = async (command) => {
 
   try {
     writeTiming('cursor_run_create_started');
-    const prepared = await getOrCreateAgent({ apiKey, sessionID, model, directory, agentID, agents });
+    const prepared = await getOrCreateAgent({
+      apiKey,
+      sessionID,
+      model,
+      directory,
+      agentID,
+      agents,
+      active: true,
+    });
+    activeAgentCacheKey = prepared.cacheKey;
     writeTiming('cursor_run_created', { cacheHit: prepared.cacheHit === true });
     const agent = prepared.agent;
     if (agent?.agentId) {
@@ -533,6 +559,9 @@ const handlePrompt = async (command) => {
       error: error instanceof Error ? error.message : 'Cursor SDK worker failed.',
     });
   } finally {
+    if (activeAgentCacheKey) {
+      agentCache.markInactive(activeAgentCacheKey);
+    }
     activeRuns.delete(requestID);
   }
 };
@@ -554,6 +583,7 @@ const shutdown = async () => {
   for (const requestID of [...activeRuns.keys()]) {
     await cancelRun(requestID);
   }
+  agentCache.clear();
   process.exit(0);
 };
 
@@ -597,6 +627,8 @@ for await (const line of lines) {
     void handleTitle(command);
   } else if (command?.type === 'cancel') {
     void cancelRun(trimString(command.requestID));
+  } else if (command?.type === 'release-session') {
+    agentCache.releaseSession(trimString(command.sessionID));
   } else if (command?.type === 'warm') {
     void handleWarm(command);
   } else if (command?.type === 'shutdown') {

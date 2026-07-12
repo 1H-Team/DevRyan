@@ -11,6 +11,9 @@ Primary backend runtime for DevRyan web/desktop: starts Express, wires OpenCode 
 - **Cross-surface support**: same backend serves standalone web and embedded desktop runtime.
 - **Cursor SDK split**: `index.js` composes `@openchamber/cursor-sdk-runtime`; `lib/opencode/routes.js` intercepts `cursor-acp` prompt sends and virtual provider discovery while quota routes keep using the existing dashboard usage token.
 - **Cursor title ownership**: `lib/opencode/cursor-session-title-runtime.js` schedules guarded, asynchronous Cursor Auto titles after intercepted prompts and preserves manual session renames.
+- **Standard-provider title ownership**: `lib/opencode/standard-session-title-runtime.js` schedules guarded, asynchronous Zen summaries after successful proxied prompts; it captures the session identity before the generic proxy clears Express route params and preserves explicit/manual session names.
+- **Loopback-safe route tests**: `test-supertest.js` targets the address family actually bound by each ephemeral test server, preventing unrelated IPv4 listeners from receiving requests when Node selects an IPv6 port with the same number.
+- **Managed orchestration owner**: `lib/orchestration/` owns one durable three-slot scheduler for web and in-process Electron, an authenticated private OpenCode bridge, safe UI routes/events, and deterministic shutdown. See `lib/orchestration/DOCUMENTATION.md`.
 
 ## Flow
 1. Parse CLI/runtime options (`lib/opencode/cli-options.js`) and initialize config/state runtimes.
@@ -21,5 +24,5 @@ Primary backend runtime for DevRyan web/desktop: starts Express, wires OpenCode 
 
 ## Integration
 - Consumed by: `packages/web/bin/cli.js` and Electron main process import path.
-- Depends on: Express, ws, http-proxy-middleware, simple-git, web-push, OAuth/GitHub/OpenCode SDK utilities, and `@openchamber/cursor-sdk-runtime`.
+- Depends on: Express, ws, http-proxy-middleware, simple-git, web-push, OAuth/GitHub/OpenCode SDK utilities, `@openchamber/cursor-sdk-runtime`, and `@openchamber/orchestration-runtime`.
 - Publishes HTTP + SSE + WS contracts consumed by `packages/ui` through `packages/web/src/api/*` adapters.

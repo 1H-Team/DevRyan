@@ -8,8 +8,15 @@ export type DraftAwareAgentChangeContext = {
 
 export type DraftAwareAgentChangeActions = {
     setAgent: (agentName: string, options?: { preserveCurrentModel?: boolean }) => void;
+    setProviderModel: (providerId: string, modelId: string, variant?: string) => void;
     saveSessionAgentSelection: (sessionId: string, agentName: string) => void;
-    getDraftModelSelection: (draftId: string) => { providerId: string; modelId: string } | null;
+    getDraftAgentModelForSelection: (draftId: string, agentName: string) => { providerId: string; modelId: string } | null;
+    getDraftAgentModelVariantForSelection: (
+        draftId: string,
+        agentName: string,
+        providerId: string,
+        modelId: string,
+    ) => string | undefined;
     saveDraftAgentSelection: (draftId: string, agentName: string) => void;
     saveDraftModelSelection: (draftId: string, providerId: string, modelId: string) => void;
     saveDraftAgentModelForSelection: (draftId: string, agentName: string, providerId: string, modelId: string) => void;
@@ -73,8 +80,8 @@ const normalizeAgentName = (agentName: string | null | undefined): string | unde
 };
 
 /**
- * Switch the active primary agent while preserving draft model selections when the user
- * has already chosen a provider/model for a new-session draft.
+ * Switch the active primary agent and synchronously restore the target agent's saved
+ * model/variant before falling back to its configured defaults.
  */
 export function applyDraftAwareAgentChange(
     agentName: string,
@@ -88,27 +95,27 @@ export function applyDraftAwareAgentChange(
     }
 
     if (context.currentDraftId && context.newSessionDraftOpen) {
-        const savedDraftModel = actions.getDraftModelSelection(context.currentDraftId);
-        const preservedDraftVariant = savedDraftModel
-            ? useConfigStore.getState().currentVariant
-            : undefined;
-
-        actions.setAgent(agentName, savedDraftModel ? { preserveCurrentModel: true } : undefined);
+        const savedAgentModel = actions.getDraftAgentModelForSelection(context.currentDraftId, agentName);
+        actions.setAgent(agentName);
+        if (savedAgentModel) {
+            const savedVariant = actions.getDraftAgentModelVariantForSelection(
+                context.currentDraftId,
+                agentName,
+                savedAgentModel.providerId,
+                savedAgentModel.modelId,
+            );
+            actions.setProviderModel(savedAgentModel.providerId, savedAgentModel.modelId, savedVariant);
+        }
         actions.saveDraftAgentSelection(context.currentDraftId, agentName);
 
-        let draftModel: { providerId: string; modelId: string; variant?: string } | null = null;
-        if (savedDraftModel) {
-            draftModel = { ...savedDraftModel, variant: preservedDraftVariant };
-        } else {
-            const liveConfig = useConfigStore.getState();
-            if (liveConfig.currentProviderId && liveConfig.currentModelId) {
-                draftModel = {
-                    providerId: liveConfig.currentProviderId,
-                    modelId: liveConfig.currentModelId,
-                    variant: liveConfig.currentVariant,
-                };
+        const liveConfig = useConfigStore.getState();
+        const draftModel = liveConfig.currentProviderId && liveConfig.currentModelId
+            ? {
+                providerId: liveConfig.currentProviderId,
+                modelId: liveConfig.currentModelId,
+                variant: liveConfig.currentVariant,
             }
-        }
+            : null;
 
         if (draftModel) {
             actions.saveDraftModelSelection(

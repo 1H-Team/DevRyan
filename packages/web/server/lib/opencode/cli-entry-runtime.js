@@ -23,8 +23,10 @@ export const runCliEntryIfMain = (dependencies) => {
     managedLocalMode,
   });
 
-  const isDevMode = process.env.OPENCHAMBER_DEV_MODE === 'true';
-  setExitOnShutdown(!isDevMode);
+  // This file is the process entrypoint even when an outer dev watcher owns
+  // restarts. Once signal cleanup finishes, the child must exit so the watcher
+  // can settle instead of retaining a detached, listener-less server process.
+  setExitOnShutdown(true);
   startServer({
     port: cliOptions.port,
     host: cliOptions.host,
@@ -34,8 +36,8 @@ export const runCliEntryIfMain = (dependencies) => {
     tunnelConfigPath: cliOptions.tunnelConfigPath,
     tunnelToken: cliOptions.tunnelToken,
     tunnelHostname: cliOptions.tunnelHostname,
-    attachSignals: !isDevMode,
-    exitOnShutdown: !isDevMode,
+    attachSignals: true,
+    exitOnShutdown: true,
     uiPassword: cliOptions.uiPassword,
   }).catch((error) => {
     console.error('Failed to start server:', error);

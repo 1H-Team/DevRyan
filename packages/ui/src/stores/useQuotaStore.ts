@@ -1,4 +1,3 @@
-import React from 'react';
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import type { ProviderResult, QuotaProviderId } from '@/types';
@@ -8,11 +7,26 @@ import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { getDefaultModels } from '@/lib/quota/model-families';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { opencodeClient } from '@/lib/opencode/client';
+import {
+  BASELINE_QUOTA_REFRESH_MS,
+  createQuotaRefreshCoordinator,
+  type QuotaRefreshOptions,
+} from './quota-refresh-coordinator';
+
+export { BASELINE_QUOTA_REFRESH_MS } from './quota-refresh-coordinator';
 
 const DEFAULT_REFRESH_INTERVAL_MS = 60000;
 
-interface FetchQuotaOptions {
-  forceRefresh?: boolean;
+type FetchQuotaOptions = QuotaRefreshOptions;
+
+export interface ProviderRefreshState {
+  lastAttemptAt: number | null;
+  lastSuccessAt: number | null;
+  refreshError: string | null;
+}
+
+export interface ProviderRefreshStatus extends ProviderRefreshState {
+  isStale: boolean;
 }
 
 interface QuotaSettingsState {
@@ -28,6 +42,8 @@ interface QuotaSettingsState {
 interface QuotaStore extends QuotaSettingsState {
   results: ProviderResult[];
   trendHistory: UsageTrendHistory;
+  configuredProviderIds: QuotaProviderId[] | null;
+  providerRefreshState: Partial<Record<QuotaProviderId, ProviderRefreshState>>;
   selectedProviderId: QuotaProviderId | null;
   isLoading: boolean;
   isFetchingProvider: Record<string, boolean>;
@@ -35,6 +51,7 @@ interface QuotaStore extends QuotaSettingsState {
   error: string | null;
 
   loadSettings: () => Promise<void>;
+  discoverConfiguredProviders: () => Promise<QuotaProviderId[]>;
   fetchAllQuotas: (options?: FetchQuotaOptions) => Promise<void>;
   fetchProviderQuota: (providerId: QuotaProviderId, options?: FetchQuotaOptions) => Promise<void>;
   setSelectedProvider: (providerId: QuotaProviderId | null) => void;
@@ -49,6 +66,96 @@ interface QuotaStore extends QuotaSettingsState {
   toggleFamilyExpanded: (providerId: string, familyId: string) => void;
   applyDefaultSelections: (providerId: string, availableModels: string[]) => void;
 }
+
+const knownProviderIds = new Set<QuotaProviderId>(QUOTA_PROVIDERS.map((provider) => provider.id));
+const inFlightProviderRefreshes = new Map<QuotaProviderId, Promise<void>>();
+let inFlightDiscovery: Promise<QuotaProviderId[]> | null = null;
+let activeAllRefreshes = 0;
+let notifyQuotaSettingsChanged = () => {};
+
+const quotaRequestHeaders = (): Record<string, string> => {
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  const directory = opencodeClient.getDirectory();
+  if (directory) {
+    headers['x-opencode-directory'] = directory;
+  }
+  return headers;
+};
+
+const errorMessage = (error: unknown, fallback: string): string => (
+  error instanceof Error ? error.message : fallback
+);
+
+const payloadError = (payload: unknown, fallback: string): string => {
+  if (
+    payload
+    && typeof payload === 'object'
+    && 'error' in payload
+    && typeof payload.error === 'string'
+    && payload.error.trim()
+  ) {
+    return payload.error;
+  }
+  return fallback;
+};
+
+const isProviderResult = (payload: unknown, providerId: QuotaProviderId): payload is ProviderResult => {
+  if (!payload || typeof payload !== 'object') return false;
+  const candidate = payload as Partial<ProviderResult>;
+  return candidate.providerId === providerId
+    && typeof candidate.providerName === 'string'
+    && typeof candidate.ok === 'boolean'
+    && typeof candidate.configured === 'boolean'
+    && typeof candidate.fetchedAt === 'number'
+    && ('usage' in candidate);
+};
+
+const sameProviderIds = (
+  left: QuotaProviderId[] | null,
+  right: QuotaProviderId[],
+): boolean => Boolean(left && left.length === right.length && left.every((id, index) => id === right[index]));
+
+const replaceProviderResult = (
+  results: ProviderResult[],
+  providerId: QuotaProviderId,
+  result: ProviderResult,
+): ProviderResult[] => {
+  const index = results.findIndex((entry) => entry.providerId === providerId);
+  if (index < 0) return [...results, result];
+  if (results[index] === result) return results;
+  const next = [...results];
+  next[index] = result;
+  return next;
+};
+
+export const getEffectiveQuotaRefreshIntervalMs = (
+  settings: Pick<QuotaSettingsState, 'autoRefresh' | 'refreshIntervalMs'>,
+): number => {
+  if (!settings.autoRefresh) return BASELINE_QUOTA_REFRESH_MS;
+  if (!Number.isFinite(settings.refreshIntervalMs) || settings.refreshIntervalMs <= 0) {
+    return BASELINE_QUOTA_REFRESH_MS;
+  }
+  return Math.min(BASELINE_QUOTA_REFRESH_MS, Math.round(settings.refreshIntervalMs));
+};
+
+export const getQuotaProviderRefreshStatus = (
+  refreshState: ProviderRefreshState | undefined,
+  refreshIntervalMs: number,
+  now = Date.now(),
+): ProviderRefreshStatus => {
+  const lastAttemptAt = refreshState?.lastAttemptAt ?? null;
+  const lastSuccessAt = refreshState?.lastSuccessAt ?? null;
+  const refreshError = refreshState?.refreshError ?? null;
+  const staleAfterMs = Number.isFinite(refreshIntervalMs) && refreshIntervalMs > 0
+    ? Math.min(BASELINE_QUOTA_REFRESH_MS, Math.round(refreshIntervalMs))
+    : BASELINE_QUOTA_REFRESH_MS;
+  return {
+    lastAttemptAt,
+    lastSuccessAt,
+    refreshError,
+    isStale: lastSuccessAt !== null && now - lastSuccessAt >= staleAfterMs,
+  };
+};
 
 const parseSettings = (data: Record<string, unknown> | null): QuotaSettingsState => {
   const allProviderIds = QUOTA_PROVIDERS.map((provider) => provider.id);
@@ -165,6 +272,8 @@ export const useQuotaStore = create<QuotaStore>()(
     (set, get) => ({
       results: [],
       trendHistory: {},
+      configuredProviderIds: null,
+      providerRefreshState: {},
       selectedProviderId: null,
       isLoading: false,
       isFetchingProvider: {},
@@ -187,78 +296,233 @@ export const useQuotaStore = create<QuotaStore>()(
         }
       },
 
-      fetchAllQuotas: async (options = {}) => {
-        set({ isLoading: true, error: null });
-        const providerIds = QUOTA_PROVIDERS.map((provider) => provider.id);
-        try {
-          await Promise.all(
-            providerIds.map((providerId) => get().fetchProviderQuota(providerId, options))
-          );
-          set({
-            isLoading: false,
-            lastUpdated: Date.now()
-          });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'Failed to fetch quotas';
-          set({ isLoading: false, error: message });
-        }
-      },
+      discoverConfiguredProviders: () => {
+        if (inFlightDiscovery) return inFlightDiscovery;
 
-      fetchProviderQuota: async (providerId, options = {}) => {
-        set((state) => ({
-          isFetchingProvider: { ...state.isFetchingProvider, [providerId]: true }
-        }));
-        try {
-          const search = options.forceRefresh ? '?refresh=true' : '';
-          const directory = opencodeClient.getDirectory();
-          const headers: Record<string, string> = { Accept: 'application/json' };
-          if (directory) {
-            headers['x-opencode-directory'] = directory;
-          }
-          const response = await fetch(`/api/quota/${encodeURIComponent(providerId)}${search}`, { headers });
-          const payload = await response.json().catch(() => null);
+        const request = (async () => {
+          const response = await fetch('/api/quota/providers', { headers: quotaRequestHeaders() });
+          const payload = await response.json().catch(() => null) as unknown;
           if (!response.ok) {
-            throw new Error(payload?.error || 'Failed to fetch quota');
+            throw new Error(payloadError(payload, 'Failed to discover quota providers'));
+          }
+          if (
+            !payload
+            || typeof payload !== 'object'
+            || !('providers' in payload)
+            || !Array.isArray(payload.providers)
+          ) {
+            throw new Error('Malformed quota provider discovery response');
           }
 
-          const result = payload as ProviderResult;
+          const configuredSet = new Set(
+            payload.providers.filter((id): id is QuotaProviderId => (
+              typeof id === 'string' && knownProviderIds.has(id as QuotaProviderId)
+            )),
+          );
+          const providerIds = QUOTA_PROVIDERS
+            .map((provider) => provider.id)
+            .filter((id) => configuredSet.has(id));
+
           set((state) => {
-            const next = state.results.filter((entry) => entry.providerId !== providerId);
-            next.push(result);
+            const nextResults = state.results.filter((result) => configuredSet.has(result.providerId));
+            let nextProviderRefreshState = state.providerRefreshState;
+            for (const providerId of Object.keys(state.providerRefreshState) as QuotaProviderId[]) {
+              if (configuredSet.has(providerId)) continue;
+              if (nextProviderRefreshState === state.providerRefreshState) {
+                nextProviderRefreshState = { ...state.providerRefreshState };
+              }
+              delete nextProviderRefreshState[providerId];
+            }
             return {
-              results: next,
-              trendHistory: recordProviderUsageTrends(state.trendHistory, result),
+              configuredProviderIds: sameProviderIds(state.configuredProviderIds, providerIds)
+                ? state.configuredProviderIds
+                : providerIds,
+              results: nextResults.length === state.results.length ? state.results : nextResults,
+              providerRefreshState: nextProviderRefreshState,
               error: null,
             };
           });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'Failed to fetch quota';
-          const fallback: ProviderResult = {
-            providerId,
-            providerName: providerId,
-            ok: false,
-            configured: false,
-            error: message,
-            usage: null,
-            fetchedAt: Date.now()
-          };
-          set((state) => {
-            const next = state.results.filter((entry) => entry.providerId !== providerId);
-            next.push(fallback);
-            return { results: next, error: message };
+          return providerIds;
+        })();
+
+        const tracked = request
+          .catch((error) => {
+            set({ error: errorMessage(error, 'Failed to discover quota providers') });
+            throw error;
+          })
+          .finally(() => {
+            if (inFlightDiscovery === tracked) {
+              inFlightDiscovery = null;
+            }
           });
-        } finally {
-          set((state) => ({
-            isFetchingProvider: { ...state.isFetchingProvider, [providerId]: false }
-          }));
-        }
+        inFlightDiscovery = tracked;
+        return tracked;
+      },
+
+      fetchAllQuotas: (options = {}) => {
+        activeAllRefreshes += 1;
+        set({ isLoading: true, error: null });
+
+        return (async () => {
+          try {
+            if (options.rediscover || get().configuredProviderIds === null) {
+              await get().discoverConfiguredProviders();
+            }
+            const providerIds = get().configuredProviderIds ?? [];
+            await Promise.all(
+              providerIds.map((providerId) => get().fetchProviderQuota(providerId, options)),
+            );
+            const latestSuccessAt = providerIds.reduce((latest, providerId) => (
+              Math.max(latest, get().providerRefreshState[providerId]?.lastSuccessAt ?? 0)
+            ), 0);
+            if (latestSuccessAt > 0) {
+              set({ lastUpdated: latestSuccessAt });
+            }
+          } catch (error) {
+            set({ error: errorMessage(error, 'Failed to fetch quotas') });
+          } finally {
+            activeAllRefreshes = Math.max(0, activeAllRefreshes - 1);
+            if (activeAllRefreshes === 0) {
+              set({ isLoading: false });
+            }
+          }
+        })();
+      },
+
+      fetchProviderQuota: (providerId, options = {}) => {
+        const existingRequest = inFlightProviderRefreshes.get(providerId);
+        if (existingRequest) return existingRequest;
+
+        const attemptAt = Date.now();
+        set((state) => ({
+          isFetchingProvider: { ...state.isFetchingProvider, [providerId]: true },
+          providerRefreshState: {
+            ...state.providerRefreshState,
+            [providerId]: {
+              lastAttemptAt: attemptAt,
+              lastSuccessAt: state.providerRefreshState[providerId]?.lastSuccessAt ?? null,
+              refreshError: state.providerRefreshState[providerId]?.refreshError ?? null,
+            },
+          },
+        }));
+
+        const request = (async () => {
+          try {
+            const search = options.forceRefresh ? '?refresh=true' : '';
+            const response = await fetch(
+              `/api/quota/${encodeURIComponent(providerId)}${search}`,
+              { headers: quotaRequestHeaders() },
+            );
+            const payload = await response.json().catch(() => null) as unknown;
+            if (!response.ok) {
+              throw new Error(payloadError(payload, 'Failed to fetch quota'));
+            }
+            if (!isProviderResult(payload, providerId)) {
+              throw new Error('Malformed quota response');
+            }
+
+            const result = payload;
+            const completedAt = Date.now();
+            set((state) => {
+              const previousRefresh = state.providerRefreshState[providerId];
+              const previousResult = state.results.find((entry) => entry.providerId === providerId);
+
+              if (!result.configured) {
+                return {
+                  results: replaceProviderResult(state.results, providerId, result),
+                  configuredProviderIds: state.configuredProviderIds?.filter((id) => id !== providerId) ?? null,
+                  providerRefreshState: {
+                    ...state.providerRefreshState,
+                    [providerId]: {
+                      lastAttemptAt: attemptAt,
+                      lastSuccessAt: previousRefresh?.lastSuccessAt ?? null,
+                      refreshError: result.error ?? null,
+                    },
+                  },
+                };
+              }
+
+              if (!result.ok) {
+                return {
+                  results: previousResult?.ok
+                    ? state.results
+                    : replaceProviderResult(state.results, providerId, result),
+                  providerRefreshState: {
+                    ...state.providerRefreshState,
+                    [providerId]: {
+                      lastAttemptAt: attemptAt,
+                      lastSuccessAt: previousRefresh?.lastSuccessAt ?? null,
+                      refreshError: result.error ?? 'Provider usage unavailable',
+                    },
+                  },
+                };
+              }
+
+              return {
+                results: replaceProviderResult(state.results, providerId, result),
+                trendHistory: recordProviderUsageTrends(state.trendHistory, result),
+                providerRefreshState: {
+                  ...state.providerRefreshState,
+                  [providerId]: {
+                    lastAttemptAt: attemptAt,
+                    lastSuccessAt: completedAt,
+                    refreshError: null,
+                  },
+                },
+              };
+            });
+          } catch (error) {
+            const message = errorMessage(error, 'Failed to fetch quota');
+            const fallback: ProviderResult = {
+              providerId,
+              providerName: QUOTA_PROVIDERS.find((provider) => provider.id === providerId)?.name ?? providerId,
+              ok: false,
+              configured: get().configuredProviderIds?.includes(providerId) ?? false,
+              error: message,
+              usage: null,
+              fetchedAt: Date.now(),
+            };
+            set((state) => {
+              const previousResult = state.results.find((entry) => entry.providerId === providerId);
+              return {
+                results: previousResult
+                  ? state.results
+                  : replaceProviderResult(state.results, providerId, fallback),
+                providerRefreshState: {
+                  ...state.providerRefreshState,
+                  [providerId]: {
+                    lastAttemptAt: attemptAt,
+                    lastSuccessAt: state.providerRefreshState[providerId]?.lastSuccessAt ?? null,
+                    refreshError: message,
+                  },
+                },
+              };
+            });
+          } finally {
+            set((state) => ({
+              isFetchingProvider: { ...state.isFetchingProvider, [providerId]: false },
+            }));
+          }
+        })();
+
+        const tracked = request.finally(() => {
+          if (inFlightProviderRefreshes.get(providerId) === tracked) {
+            inFlightProviderRefreshes.delete(providerId);
+          }
+        });
+        inFlightProviderRefreshes.set(providerId, tracked);
+        return tracked;
       },
 
       setSelectedProvider: (providerId) => set({ selectedProviderId: providerId }),
-      setAutoRefresh: (enabled) => set({ autoRefresh: enabled }),
+      setAutoRefresh: (enabled) => {
+        set({ autoRefresh: enabled });
+        notifyQuotaSettingsChanged();
+      },
       setRefreshInterval: (intervalMs) => {
         const clamped = Math.max(30000, Math.min(300000, Math.round(intervalMs)));
         set({ refreshIntervalMs: clamped });
+        notifyQuotaSettingsChanged();
       },
       setDisplayMode: (mode) => set({ displayMode: mode }),
       setShowPredictionValues: (enabled) => set({ showPredictionValues: enabled }),
@@ -325,20 +589,10 @@ export const useQuotaStore = create<QuotaStore>()(
   )
 );
 
-export const useQuotaAutoRefresh = () => {
-  const autoRefresh = useQuotaStore((state) => state.autoRefresh);
-  const refreshIntervalMs = useQuotaStore((state) => state.refreshIntervalMs);
-  const fetchAllQuotas = useQuotaStore((state) => state.fetchAllQuotas);
+export const quotaRefreshCoordinator = createQuotaRefreshCoordinator({
+  loadSettings: () => useQuotaStore.getState().loadSettings(),
+  refresh: (options) => useQuotaStore.getState().fetchAllQuotas(options),
+  getRefreshIntervalMs: () => getEffectiveQuotaRefreshIntervalMs(useQuotaStore.getState()),
+});
 
-  React.useEffect(() => {
-    if (!autoRefresh) {
-      return;
-    }
-
-    const interval = window.setInterval(() => {
-      fetchAllQuotas();
-    }, refreshIntervalMs);
-
-    return () => window.clearInterval(interval);
-  }, [autoRefresh, refreshIntervalMs, fetchAllQuotas]);
-};
+notifyQuotaSettingsChanged = () => quotaRefreshCoordinator.settingsChanged();

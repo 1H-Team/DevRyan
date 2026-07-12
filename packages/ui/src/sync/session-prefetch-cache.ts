@@ -21,8 +21,16 @@ const compositeKey = (directory: string, sessionID: string) =>
 const cache = new Map<string, Meta>()
 const inflight = new Map<string, Promise<Meta | undefined>>()
 const rev = new Map<string, number>()
+let nextRevision = 1
 
-const version = (id: string) => rev.get(id) ?? 0
+const captureRevision = (id: string) => {
+  const existing = rev.get(id)
+  if (existing !== undefined) return existing
+  const revision = nextRevision
+  nextRevision += 1
+  rev.set(id, revision)
+  return revision
+}
 
 /** Check if a prefetch/sync can be skipped (recently fetched). */
 export function shouldSkipSessionPrefetch(input: {
@@ -50,7 +58,18 @@ export function getSessionPrefetchPromise(directory: string, sessionID: string) 
 }
 
 export function isSessionPrefetchCurrent(directory: string, sessionID: string, value: number) {
-  return version(compositeKey(directory, sessionID)) === value
+  return rev.get(compositeKey(directory, sessionID)) === value
+}
+
+export function captureSessionPrefetchRevision(directory: string, sessionID: string) {
+  return captureRevision(compositeKey(directory, sessionID))
+}
+
+export function releaseSessionPrefetchRevision(directory: string, sessionID: string, value: number) {
+  const id = compositeKey(directory, sessionID)
+  if (rev.get(id) === value) {
+    rev.delete(id)
+  }
 }
 
 /** Run a prefetch task with inflight dedup + version tracking. */
@@ -63,10 +82,15 @@ export function runSessionPrefetch(input: {
   const pending = inflight.get(id)
   if (pending) return pending
 
-  const value = version(id)
+  const value = captureRevision(id)
 
-  const promise = input.task(value).finally(() => {
-    if (inflight.get(id) === promise) inflight.delete(id)
+  const promise = Promise.resolve().then(() => input.task(value)).finally(() => {
+    if (inflight.get(id) === promise) {
+      inflight.delete(id)
+      if (rev.get(id) === value) {
+        rev.delete(id)
+      }
+    }
   })
 
   inflight.set(id, promise)
@@ -80,13 +104,22 @@ export function setSessionPrefetch(input: {
   cursor?: string
   complete: boolean
   at?: number
+  revision?: number
 }) {
-  cache.set(compositeKey(input.directory, input.sessionID), {
+  const id = compositeKey(input.directory, input.sessionID)
+  if (input.revision !== undefined && rev.get(id) !== input.revision) {
+    return false
+  }
+  cache.set(id, {
     limit: input.limit,
     cursor: input.cursor,
     complete: input.complete,
     at: input.at ?? Date.now(),
   })
+  if (input.revision !== undefined && rev.get(id) === input.revision) {
+    rev.delete(id)
+  }
+  return true
 }
 
 /** Invalidate cache for specific sessions (e.g. after eviction). */
@@ -94,20 +127,31 @@ export function clearSessionPrefetch(directory: string, sessionIDs: Iterable<str
   for (const sessionID of sessionIDs) {
     if (!sessionID) continue
     const id = compositeKey(directory, sessionID)
-    rev.set(id, version(id) + 1)
     cache.delete(id)
     inflight.delete(id)
+    rev.delete(id)
   }
 }
 
 /** Invalidate all cache entries for a directory. */
 export function clearSessionPrefetchDirectory(directory: string) {
   const prefix = `${directory}\n`
-  const keys = new Set([...cache.keys(), ...inflight.keys()])
+  const keys = new Set([...cache.keys(), ...inflight.keys(), ...rev.keys()])
   for (const id of keys) {
     if (!id.startsWith(prefix)) continue
-    rev.set(id, version(id) + 1)
     cache.delete(id)
     inflight.delete(id)
+    rev.delete(id)
   }
+}
+
+export function getSessionPrefetchCacheSizesForTest() {
+  return { cache: cache.size, inflight: inflight.size, revisions: rev.size }
+}
+
+export function resetSessionPrefetchCacheForTest() {
+  cache.clear()
+  inflight.clear()
+  rev.clear()
+  nextRevision = 1
 }

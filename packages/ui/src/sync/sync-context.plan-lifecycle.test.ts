@@ -18,8 +18,14 @@ import type { Event, Message, Part, Session, SessionStatus } from "@opencode-ai/
 import { ChildStoreManager } from "./child-store"
 import { INITIAL_STATE } from "./types"
 import { useSessionUIStore } from "./session-ui-store"
-import { applySyncEventForTest, setActiveSession, setExternallyViewedSession } from "./sync-context"
+import {
+  applySyncEventForTest,
+  restorePersistedSessionIndicatorsForDirectory,
+  setActiveSession,
+  setExternallyViewedSession,
+} from "./sync-context"
 import { useNotificationStore } from "./notification-store"
+import { isAbortGuardActive, resetAbortGuardState } from "./abort-retry-guard"
 
 const DIRECTORY = "/repo"
 const SESSION_ID = "ses_1"
@@ -162,6 +168,7 @@ const waitForCompletionIndicatorSettlement = async () => {
 
 describe("sync plan lifecycle on message.part.delta", () => {
   beforeEach(() => {
+    resetAbortGuardState()
     useSessionUIStore.setState({
       sessionPlanIndicator: new Map(),
       sessionPlanAvailable: new Map(),
@@ -180,6 +187,28 @@ describe("sync plan lifecycle on message.part.delta", () => {
         project: { unseenCount: {}, unseenHasError: {}, unseenHasCompletion: {} },
       },
     })
+  })
+
+  test("keeps an unguarded provider retry authoritative at the sync event boundary", () => {
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    store.setState({
+      ...INITIAL_STATE,
+      session: [{ id: SESSION_ID, title: "Missing model", time: { created: 1, updated: 2 } } as Session],
+      session_status: {},
+    })
+
+    const retryStatus = {
+      type: "retry",
+      attempt: 1,
+      message: "Model not found gpt-5.6-luna",
+      next: Date.now() + 1_000,
+    } as SessionStatus
+
+    applySyncEventForTest(DIRECTORY, sessionStatusEvent(retryStatus), childStores, routingIndexFor([]))
+
+    expect(isAbortGuardActive(SESSION_ID)).toBe(false)
+    expect(store.getState().session_status[SESSION_ID]).toEqual(retryStatus)
   })
 
   test("marks sessionPlanIndicator proposed when structured plan text arrives via delta on an idle session", async () => {
@@ -216,6 +245,71 @@ describe("sync plan lifecycle on message.part.delta", () => {
     expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toEqual({
       state: "proposed",
       sourceMessageId: ASSISTANT_MESSAGE_ID,
+    })
+  })
+
+  test("restores a persisted proposed plan indicator from authoritative materialized messages", async () => {
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    store.setState({
+      ...INITIAL_STATE,
+      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 3 } } as Session],
+      message: {
+        [SESSION_ID]: [userMessage(), assistantMessage()],
+      },
+      part: {
+        [USER_MESSAGE_ID]: [planModePart()],
+        [ASSISTANT_MESSAGE_ID]: [textPart(structuredPlanBody)],
+      },
+      session_status: {
+        [SESSION_ID]: { type: "idle" } as SessionStatus,
+      },
+    })
+    useSessionUIStore.setState({
+      planModeUserMessages: new Set([USER_MESSAGE_ID]),
+      planModeUserMessagesBySession: new Map([[SESSION_ID, USER_MESSAGE_ID]]),
+    })
+
+    await restorePersistedSessionIndicatorsForDirectory(DIRECTORY, store)
+
+    expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toEqual({
+      state: "proposed",
+      sourceMessageId: ASSISTANT_MESSAGE_ID,
+    })
+  })
+
+  test("restores unread background completion only after authoritative message materialization", async () => {
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    store.setState({
+      ...INITIAL_STATE,
+      session: [{ id: SESSION_ID, title: "Completed session", time: { created: 1, updated: 3 } } as Session],
+      message: {
+        [SESSION_ID]: [userMessage(), assistantMessage()],
+      },
+      part: {
+        [USER_MESSAGE_ID]: [],
+        [ASSISTANT_MESSAGE_ID]: [textPart("Completed work.")],
+      },
+      session_status: {
+        [SESSION_ID]: { type: "idle" } as SessionStatus,
+      },
+    })
+    useNotificationStore.getState().append({
+      type: "turn-complete",
+      directory: DIRECTORY,
+      session: SESSION_ID,
+      messageId: ASSISTANT_MESSAGE_ID,
+      time: Date.now(),
+      viewed: false,
+    })
+
+    await restorePersistedSessionIndicatorsForDirectory(DIRECTORY, store)
+    await waitForCompletionIndicatorSettlement()
+
+    expect(useSessionUIStore.getState().sessionCompletionIndicator.get(SESSION_ID)).toEqual({
+      messageId: ASSISTANT_MESSAGE_ID,
+      completedAt: 3,
     })
   })
 
@@ -457,7 +551,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     })
   })
 
-  test("shows viewed normal turn completion indicator without unread notification", async () => {
+  test("does not show a completion indicator for the viewed active session", async () => {
     const childStores = new ChildStoreManager()
     const store = childStores.ensureChild(DIRECTORY)
     const completedPart = textPart("Completed work.")
@@ -484,10 +578,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     expect(useNotificationStore.getState().list).toHaveLength(0)
     await waitForCompletionIndicatorSettlement()
 
-    expect(useSessionUIStore.getState().sessionCompletionIndicator.get(SESSION_ID)).toEqual({
-      messageId: ASSISTANT_MESSAGE_ID,
-      completedAt: 3,
-    })
+    expect(useSessionUIStore.getState().sessionCompletionIndicator.has(SESSION_ID)).toBe(false)
   })
 
   test("does not show externally viewed normal turn completion indicator", async () => {

@@ -64,6 +64,33 @@ describe('test file discovery', () => {
 });
 
 describe('release workflow', () => {
+  test('includes the Cursor runtime package in the full test gate', () => {
+    const packageJson = JSON.parse(readFileSync(new URL('package.json', repoRoot), 'utf8'));
+
+    assert.match(
+      packageJson.scripts['test:full'],
+      /bun test packages\/cursor-sdk-runtime/,
+    );
+  });
+
+  test('includes the managed orchestration runtime package in the full test gate', () => {
+    const packageJson = JSON.parse(readFileSync(new URL('package.json', repoRoot), 'utf8'));
+
+    assert.match(
+      packageJson.scripts['test:full'],
+      /bun test packages\/orchestration-runtime/,
+    );
+  });
+
+  test('includes the Electron package suite in the full test gate', () => {
+    const packageJson = JSON.parse(readFileSync(new URL('package.json', repoRoot), 'utf8'));
+
+    assert.match(
+      packageJson.scripts['test:full'],
+      /bun run --cwd packages\/electron test/,
+    );
+  });
+
   test('installs Electron macOS optional dependencies for runner and package target architectures', () => {
     const workflow = readFileSync(new URL('.github/workflows/release.yml', repoRoot), 'utf8');
     const electronJobMatch = workflow.match(/  build-desktop-electron-macos:\n(?<job>[\s\S]*?)(?:\n  [a-zA-Z0-9_-]+:\n|\n$)/);

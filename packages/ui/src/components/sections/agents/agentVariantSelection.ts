@@ -1,6 +1,7 @@
 import {
   findProviderModel,
   resolveModelVariantSelection,
+  resolveProviderModelVariant,
   type ProviderLike,
   type ProviderModelLike,
 } from '@/lib/providers/variantControls';
@@ -65,6 +66,19 @@ export const resolveAgentVariantSelection = (
     modelRef: `${parsed.providerId}/${selection.modelId}`,
     variant: selection.variant,
   };
+};
+
+export const resolveAgentVariantForModel = (
+  provider: ProviderLike<ProviderModelLike> | undefined,
+  modelRef: string,
+  variant: string | undefined,
+): string | undefined => {
+  const parsed = parseModelRef(modelRef);
+  if (!parsed) {
+    return undefined;
+  }
+
+  return resolveProviderModelVariant(provider, parsed.modelId, variant);
 };
 
 export const resolveAgentVariantForSave = (
