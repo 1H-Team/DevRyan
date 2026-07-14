@@ -240,6 +240,37 @@ describe('syncPackagedAgents', () => {
     expect(result.updated).toEqual(['builder']);
   });
 
+  it('propagates question-policy updates to unmodified managed primary agents', async () => {
+    const oldBuilder = agentContent('builder', 'Ask only when truly blocked.');
+    const oldOrchestrator = agentContent('orchestrator', 'Ask only for consequential ambiguity.');
+    const newBuilder = agentContent('builder', 'Ask whenever user-answerable ambiguity remains.');
+    const newOrchestrator = agentContent('orchestrator', 'Ask whenever user-answerable ambiguity remains.');
+    await writePackagedAgent('builder', newBuilder);
+    await writePackagedAgent('orchestrator', newOrchestrator);
+    await writeTargetAgent('builder', oldBuilder);
+    await writeTargetAgent('orchestrator', oldOrchestrator);
+    await writeManifest({
+      version: 1,
+      agents: {
+        builder: { hash: hashContent(oldBuilder), packagedHash: hashContent(oldBuilder) },
+        orchestrator: { hash: hashContent(oldOrchestrator), packagedHash: hashContent(oldOrchestrator) },
+      },
+    });
+
+    const result = await syncPackagedAgents({
+      packagedAgentDirectory,
+      targetAgentDirectory,
+      manifestPath,
+    });
+
+    await expect(fs.readFile(path.join(targetAgentDirectory, 'builder.md'), 'utf8'))
+      .resolves.toContain('Ask whenever user-answerable ambiguity remains.');
+    await expect(fs.readFile(path.join(targetAgentDirectory, 'orchestrator.md'), 'utf8'))
+      .resolves.toContain('Ask whenever user-answerable ambiguity remains.');
+    expect(result.updated).toEqual(['builder', 'orchestrator']);
+    expect(result.conflicts).toEqual([]);
+  });
+
   it('removes stale managed runtime files that no longer exist in the packaged source', async () => {
     const stale = agentContent('stale', 'Stale prompt');
     await writeTargetAgent('stale', stale);

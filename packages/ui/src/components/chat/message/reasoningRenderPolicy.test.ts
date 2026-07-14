@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import {
   filterGroupedActivityReasoning,
-  shouldRenderInlineReasoning,
+  getReasoningPartRenderKey,
+  shouldRenderReasoning,
 } from "./reasoningRenderPolicy"
 
 describe("reasoning render policy", () => {
@@ -24,8 +25,14 @@ describe("reasoning render policy", () => {
     expect(filterGroupedActivityReasoning(parts)).toBe(parts)
   })
 
-  test("uses the global reasoning setting as the inline visibility gate", () => {
-    expect(shouldRenderInlineReasoning(true)).toBe(true)
-    expect(shouldRenderInlineReasoning(false)).toBe(false)
+  test("uses the global reasoning setting as the visibility gate", () => {
+    expect(shouldRenderReasoning(true)).toBe(true)
+    expect(shouldRenderReasoning(false)).toBe(false)
+  })
+
+  test("keeps a reasoning block's React identity stable when streaming inserts move its index", () => {
+    expect(getReasoningPartRenderKey("message-1", "reasoning-1", 2)).toBe("reasoning-message-1-reasoning-1")
+    expect(getReasoningPartRenderKey("message-1", "reasoning-1", 7)).toBe("reasoning-message-1-reasoning-1")
+    expect(getReasoningPartRenderKey("message-1", undefined, 2)).toBe("reasoning-message-1-2")
   })
 })

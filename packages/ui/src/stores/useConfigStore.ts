@@ -10,6 +10,7 @@ import { getSafeStorage } from "./utils/safeStorage";
 import { filterVisibleAgentSelectorOptions } from "./useAgentsStore";
 import { useSessionUIStore } from "@/sync/session-ui-store";
 import { useSelectionStore } from "@/sync/selection-store";
+import { hasExplicitDraftModelIntent } from "@/sync/send-config";
 import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry";
 import { updateDesktopSettings } from "@/lib/persistence";
 import { useDirectoryStore } from "@/stores/useDirectoryStore";
@@ -1273,7 +1274,7 @@ export const useConfigStore = create<ConfigStore>()(
                 getCurrentModelVariants: () => {
                     const model = get().getCurrentModel();
                     const variants = (model as { variants?: Record<string, unknown> } | undefined)?.variants;
-                    return getOrderedThinkingVariants(variants);
+                    return getOrderedThinkingVariants(variants, { providerId: get().currentProviderId });
                 },
 
                 cycleCurrentVariant: () => {
@@ -1284,7 +1285,11 @@ export const useConfigStore = create<ConfigStore>()(
 
                     const current = get().currentVariant;
                     if (!current || !variantKeys.includes(current)) {
-                        get().setCurrentVariant(resolveThinkingVariant(current, variantKeys));
+                        get().setCurrentVariant(resolveThinkingVariant(
+                            current,
+                            variantKeys,
+                            { providerId: get().currentProviderId },
+                        ));
                         return;
                     }
 
@@ -1357,13 +1362,11 @@ export const useConfigStore = create<ConfigStore>()(
                     const draftSendConfig = currentDraftId
                         ? (sessionState.draftsById[currentDraftId]?.sendConfig ?? sessionState.newSessionDraft?.sendConfig)
                         : undefined;
-                    const hasExplicitDraftModel = !!currentDraftId && (
-                        (!!draftSendConfig?.providerID && !!draftSendConfig?.modelID)
-                        || !!useSelectionStore.getState().getDraftModelSelection(currentDraftId)
-                    );
+                    const hasExplicitDraftModel = !!currentDraftId && hasExplicitDraftModelIntent(draftSendConfig);
                     const isReapplyingCurrentAgent = !state.currentAgentName || state.currentAgentName === target.name;
                     const hasRehydratedDraftVariant = !sessionState.currentSessionId
                         && isReapplyingCurrentAgent
+                        && draftSendConfig?.modelProvenance !== 'agent-default'
                         && typeof state.currentVariant === 'string'
                         && state.currentVariant.trim().length > 0
                         && hasProviderModel(state.providers, state.currentProviderId, state.currentModelId);

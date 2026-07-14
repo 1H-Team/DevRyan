@@ -99,6 +99,7 @@ export class AgentManagerPanelProvider {
         manager: this._openCodeManager,
         context: this._context,
         managedOrchestrationRuntime: this._managedOrchestrationRuntime,
+        postMessage: (nextMessage) => this.postMessage(nextMessage),
       });
       this._panel?.webview.postMessage(response);
     }, null, this._context.subscriptions);

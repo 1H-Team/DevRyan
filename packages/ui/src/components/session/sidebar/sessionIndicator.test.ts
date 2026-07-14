@@ -229,6 +229,7 @@ describe('resolveSubtaskSidebarIndicator', () => {
       isActive: false,
       hasUnreadCompletion: false,
       hasUnreadError: false,
+      hasManualRecovery: false,
     })).toBeNull();
   });
 
@@ -240,6 +241,7 @@ describe('resolveSubtaskSidebarIndicator', () => {
       isActive: false,
       hasUnreadCompletion: true,
       hasUnreadError: true,
+      hasManualRecovery: false,
     })).toEqual({
       className: 'bg-status-error',
       labelKey: 'sessions.sidebar.session.status.error',
@@ -252,9 +254,25 @@ describe('resolveSubtaskSidebarIndicator', () => {
       isActive: false,
       hasUnreadCompletion: true,
       hasUnreadError: false,
+      hasManualRecovery: false,
     })).toEqual({
       className: 'bg-status-success',
       labelKey: 'sessions.sidebar.session.status.completed',
+    });
+  });
+
+  test('keeps manual recovery red even when selected, working, read, or notifications are disabled', () => {
+    expect(resolveSubtaskSidebarIndicator({
+      isRootSession: false,
+      notifyOnSubtasks: false,
+      isWorking: true,
+      isActive: true,
+      hasUnreadCompletion: false,
+      hasUnreadError: false,
+      hasManualRecovery: true,
+    })).toEqual({
+      className: 'bg-status-error',
+      labelKey: 'sessions.sidebar.session.status.error',
     });
   });
 });

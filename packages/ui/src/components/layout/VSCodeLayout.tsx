@@ -6,6 +6,7 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useViewportStore } from '@/sync/viewport-store';
 import { useSessions, useDirectorySync, useSessionMessages, useSessionMessagesResolved } from '@/sync/sync-context';
 import { useConfigStore } from '@/stores/useConfigStore';
+import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { ContextUsageDisplay } from '@/components/ui/ContextUsageDisplay';
 import { McpDropdown } from '@/components/mcp/McpDropdown';
 import { cn } from '@/lib/utils';
@@ -25,8 +26,9 @@ import { UsageProviderPanel } from '@/components/layout/usage/UsageProviderPanel
 import { UsageProviderTabs } from '@/components/layout/usage/UsageProviderTabs';
 import { resolveActiveUsageProviderId } from '@/components/layout/usage/usage-groups';
 import type { RateLimitGroup } from '@/components/layout/usage/types';
-import type { SessionContextUsage } from '@/stores/types/sessionTypes';
-import { getContextUsageFromMessages, isSameSessionContextUsage } from '@/stores/utils/contextUsageUtils';
+import { getContextUsageFromMessages } from '@/stores/utils/contextUsageUtils';
+import { useStableSessionContextUsage } from '@/hooks/useStableSessionContextUsage';
+import { useSelectedModelContextCapacity } from '@/hooks/useSelectedModelContextCapacity';
 import { RiAddLine, RiArrowLeftLine, RiRobot2Line, RiSettings3Line, RiTimerLine } from '@remixicon/react';
 
 const SettingsView = lazyWithChunkRecovery(() => import('@/components/views/SettingsView').then(m => ({ default: m.SettingsView })));
@@ -542,8 +544,7 @@ interface VSCodeHeaderProps {
 
 const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, onNewSession, onSettings, onAgentManager, showMcp, showContextUsage, showRateLimits }) => {
   const { t } = useI18n();
-  const getCurrentModel = useConfigStore((state) => state.getCurrentModel);
-  const providers = useConfigStore((state) => state.providers);
+  const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const currentSessionMessages = useSessionMessages(currentSessionId ?? '');
   const currentSessionMessagesResolved = useSessionMessagesResolved(currentSessionId ?? '');
@@ -558,52 +559,18 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
   const toggleFamilyExpanded = useQuotaStore((state) => state.toggleFamilyExpanded);
   const [activeUsageProviderId, setActiveUsageProviderId] = React.useState<string | null>(null);
 
-  const currentModel = getCurrentModel();
-  const latestAssistantModel = React.useMemo(() => {
-    for (let i = currentSessionMessages.length - 1; i >= 0; i -= 1) {
-      const message = currentSessionMessages[i] as { role?: unknown; providerID?: unknown; modelID?: unknown };
-      if (message.role !== 'assistant') continue;
-      if (typeof message.providerID !== 'string' || typeof message.modelID !== 'string') continue;
-      const provider = providers.find((entry) => entry.id === message.providerID);
-      const model = provider?.models.find((entry) => entry.id === message.modelID);
-      if (model) return model;
-    }
-    return undefined;
-  }, [currentSessionMessages, providers]);
-  const modelForLimits = currentModel?.limit ? currentModel : latestAssistantModel;
-  const limit = modelForLimits && typeof modelForLimits.limit === 'object' && modelForLimits.limit !== null
-    ? (modelForLimits.limit as Record<string, unknown>)
-    : null;
-  const contextLimit = limit && typeof limit.context === 'number' ? limit.context : 0;
-  const outputLimit = limit && typeof limit.output === 'number' ? limit.output : 0;
-
-  const contextUsage = React.useMemo<SessionContextUsage | null>(() => {
+  const selectedCapacity = useSelectedModelContextCapacity();
+  const contextUsage = React.useMemo(() => {
     if (!currentSessionId || currentSessionMessages.length === 0) return null;
-    return getContextUsageFromMessages(currentSessionMessages, contextLimit, outputLimit);
-  }, [contextLimit, currentSessionId, currentSessionMessages, outputLimit]);
-  const [stableContextUsage, setStableContextUsage] = React.useState<SessionContextUsage | null>(null);
+    return getContextUsageFromMessages(currentSessionMessages, selectedCapacity);
+  }, [currentSessionId, currentSessionMessages, selectedCapacity]);
   const isContextUsageResolvedForSession = !currentSessionId || currentSessionMessagesResolved;
-
-  React.useEffect(() => {
-    if (!currentSessionId) {
-      setStableContextUsage((prev) => (prev === null ? prev : null));
-      return;
-    }
-
-    if (contextUsage && contextUsage.totalTokens > 0) {
-      setStableContextUsage((prev) => {
-        if (isSameSessionContextUsage(prev, contextUsage)) {
-          return prev;
-        }
-        return contextUsage;
-      });
-      return;
-    }
-
-    if (isContextUsageResolvedForSession) {
-      setStableContextUsage((prev) => (prev === null ? prev : null));
-    }
-  }, [contextUsage, currentSessionId, isContextUsageResolvedForSession]);
+  const stableContextUsage = useStableSessionContextUsage({
+    directory: currentDirectory,
+    sessionId: currentSessionId,
+    usage: contextUsage,
+    resolved: isContextUsageResolvedForSession,
+  });
 
   const rateLimitGroups = React.useMemo(() => {
     const groups: RateLimitGroup[] = [];
@@ -729,10 +696,7 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
       )}
       {showContextUsage && stableContextUsage && stableContextUsage.totalTokens > 0 && (
         <ContextUsageDisplay
-          totalTokens={stableContextUsage.totalTokens}
-          percentage={stableContextUsage.percentage}
-          contextLimit={stableContextUsage.contextLimit}
-          outputLimit={stableContextUsage.outputLimit ?? 0}
+          usage={stableContextUsage}
           className="h-9 shrink-0 pl-1 pr-1 typography-ui-label"
           valueClassName="font-semibold leading-none"
           hideIcon

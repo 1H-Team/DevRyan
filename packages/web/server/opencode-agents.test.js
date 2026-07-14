@@ -425,10 +425,17 @@ describe('Packaged OpenChamber agents', () => {
     ]));
   });
 
-  it('keeps the packaged Builder prompt limited to direct-work question and hygiene guardrails', () => {
+  it('keeps the packaged Builder prompt native-like for unresolved user-answerable ambiguity', () => {
     const builder = listPackagedAgents().find((agent) => agent.name === 'builder');
 
     expect(builder?.prompt).toContain('structured question tool');
+    expect(builder?.prompt).toContain('Inspect repository and system facts that could resolve the ambiguity before asking.');
+    expect(builder?.prompt).toContain('multiple plausible interpretations remain and the user can resolve them');
+    expect(builder?.prompt).toContain('even when the ambiguity is not a hard blocker');
+    expect(builder?.prompt).toContain('Choose trivial, reversible implementation details yourself.');
+    expect(builder?.prompt).toContain('If the user skips a question, continue with best judgment and explicitly state the assumption.');
+    expect(builder?.prompt).toContain('Plan or design approval belongs to the plan-card lifecycle');
+    expect(builder?.prompt).not.toContain('Ask only when truly blocked');
     expect(builder?.prompt).toContain('Skill announcements are tool activity only');
     expect(builder?.prompt).toContain('do not write assistant text to announce skill use');
     expect(builder?.prompt).toContain('Do not write visible reasoning about balancing skill instructions against developer or agent instructions');
@@ -444,12 +451,15 @@ describe('Packaged OpenChamber agents', () => {
     });
   });
 
-  it('instructs Orchestrator to prefer managed delegation while preserving provider-native tasks', () => {
+  it('instructs Orchestrator to keep managed recovery separate from explicit provider-native tasks', () => {
     const orchestrator = listPackagedAgents().find((agent) => agent.name === 'orchestrator');
 
     expect(orchestrator?.prompt).toContain('calling `devryan_task`');
     expect(orchestrator?.prompt).toContain('provider-native delegation means calling `task`');
-    expect(orchestrator?.prompt).toContain('If Explorer is unavailable');
+    expect(orchestrator?.prompt).toContain('at most one managed retry');
+    expect(orchestrator?.prompt).toContain('Never invoke provider-native `task` as an automatic fallback');
+    expect(orchestrator?.prompt).toContain('explicit current-user request');
+    expect(orchestrator?.prompt).toContain('If Explorer remains unavailable after the one managed recovery');
   });
 
   it('keeps Explorer discovery speed-bounded and Orchestrator prompts compact', () => {
@@ -494,12 +504,14 @@ describe('Packaged OpenChamber agents', () => {
     expect(orchestrator?.prompt).not.toContain('Do not present design options, design directions, wireframes, or implementation approaches for user approval before calling @designer.');
   });
 
-  it('keeps Orchestrator question-first and low-analysis for consequential ambiguity', () => {
+  it('keeps Orchestrator question-first for unresolved user-answerable ambiguity', () => {
     const orchestrator = listPackagedAgents().find((agent) => agent.name === 'orchestrator');
 
-    expect(orchestrator?.prompt).toContain('Clarify intent before consequential choices.');
-    expect(orchestrator?.prompt).toContain('Ask when ambiguity affects user-visible outcome');
-    expect(orchestrator?.prompt).toContain('Infer only reversible implementation details');
+    expect(orchestrator?.prompt).toContain('Inspect repository and system facts that could resolve the ambiguity before asking.');
+    expect(orchestrator?.prompt).toContain('multiple plausible interpretations remain and the user can resolve them');
+    expect(orchestrator?.prompt).toContain('even when the ambiguity is not a hard blocker');
+    expect(orchestrator?.prompt).toContain('Infer only trivial, reversible implementation details');
+    expect(orchestrator?.prompt).not.toContain('Clarify intent before consequential choices.');
     expect(orchestrator?.prompt).toContain('Do not build long speculative option trees');
     expect(orchestrator?.prompt).toContain('Do not re-litigate settled decisions');
     expect(orchestrator?.prompt).toContain('Pick exactly one next action: ask, inspect, delegate, implement, verify, or finish.');
@@ -599,7 +611,12 @@ describe('Packaged OpenChamber agents', () => {
     expect(orchestrator?.prompt).toContain('do not write assistant text to announce skill use');
     expect(orchestrator?.prompt).toContain('Do not write visible reasoning about balancing skill instructions against developer or agent instructions');
     expect(orchestrator?.prompt).toContain('the tool activity already shows skill loading, file inspection, and specialist routing');
+    expect(orchestrator?.prompt).toContain('If the user skips a question, continue with best judgment and explicitly state the assumption.');
     expect(orchestrator?.frontmatter.permission.skill['dispatching-parallel-agents']).toBe('allow');
+    expect(orchestrator?.frontmatter.permission).toMatchObject({
+      question: 'allow',
+      'question_*': 'allow',
+    });
 
     for (const agent of [orchestrator, builder, fixer, designer, explorer, oracle, librarian, plan]) {
       expect(agent?.prompt).toContain('structured question tool');

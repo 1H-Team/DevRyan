@@ -68,6 +68,8 @@ export const handleManagedOrchestrationBridgeMessage = async (
           directory: optionalText(payload.directory),
         },
       });
+    } else if (action === 'handoff') {
+      result = await runtime.handleRpc({ method: 'handoff', params: body });
     } else if (action === 'cancel' || action === 'acknowledge') {
       result = await runtime.handleRpc({
         method: action,

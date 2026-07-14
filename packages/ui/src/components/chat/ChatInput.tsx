@@ -87,9 +87,9 @@ import { ContextUsageDisplay } from '@/components/ui/ContextUsageDisplay';
 import { ContextUsageWindow } from './ContextUsageWindow';
 import { resolveSelectableAgentOptions } from './modelControlAgentOptions';
 import { getPdfAttachmentValidation, type AttachmentValidationResult } from '@/lib/attachments/attachmentCapabilities';
-import type { SessionContextUsage } from '@/stores/types/sessionTypes';
 import { listenDesktopNativeDragDrop } from '@/lib/desktopNative';
-import { isSameSessionContextUsage } from '@/stores/utils/contextUsageUtils';
+import { useStableSessionContextUsage } from '@/hooks/useStableSessionContextUsage';
+import { useSelectedModelContextCapacity } from '@/hooks/useSelectedModelContextCapacity';
 import { getEditableComposerTargetKey } from './chatInputFocusTarget';
 import {
     createComposerDraftPersistenceController,
@@ -99,17 +99,16 @@ import {
 } from './chatInputDraftPersistence';
 import { clearCommittedComposerText, clearSubmittedComposerAfterSend } from './chatInputSubmitCleanup';
 import { isAbortableSessionPhase, shouldInterruptBeforeSubmit } from './submitInterrupt';
-import { flushQueuedMessagesForSession } from './queuedSend';
+import {
+    QueuedSendAuthorizationRequiredError,
+    sendQueuedMessagesNowForSession,
+} from './queuedSend';
+import { useAgentHandoffGuard } from './agentHandoffGuardContext';
 
 const MAX_VISIBLE_TEXTAREA_LINES = 8;
 const EMPTY_QUEUE: QueuedMessage[] = [];
 const FILE_MENTION_TOKEN = /^@[^\s]+$/;
 const CHAT_DRAFT_PERSIST_DEBOUNCE_MS = 500;
-
-const isSameContextUsage = (
-    a: SessionContextUsage | null,
-    b: SessionContextUsage | null,
-): boolean => isSameSessionContextUsage(a, b);
 
 const VS_CODE_DROP_DATA_TYPES = [
     'CodeFiles',
@@ -597,6 +596,7 @@ type PendingTextareaSelectionRestore = {
 
 const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBottom }) => {
     const { t } = useI18n();
+    const { guardBuilderSend, requestAgentChange } = useAgentHandoffGuard();
     const draftStorage = React.useMemo(() => getSafeStorage(), []);
     const draftTextUpdateRef = React.useRef<(draftId: string, text: string) => void>(() => {});
     const draftPersistenceRef = React.useRef<ReturnType<typeof createComposerDraftPersistenceController> | null>(null);
@@ -725,11 +725,14 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const setActiveProjectIdOnly = useProjectsStore((state) => state.setActiveProjectIdOnly);
 
     const currentAgentName = useConfigStore((state) => state.currentAgentName);
+    const sessionSavedAgentName = useSelectionStore((state) => (
+        currentSessionId ? state.sessionAgentSelections.get(currentSessionId) ?? null : null
+    ));
+    const effectiveCurrentAgentName = sessionSavedAgentName ?? currentAgentName;
     const setProviderModel = useConfigStore((state) => state.setProviderModel);
     const isPlanModeSelected = useSelectionStore((state) => state.getPlanModeSelection(currentSessionId));
     const setPlanModeSelection = useSelectionStore((state) => state.setPlanModeSelection);
     const setAgent = useConfigStore((state) => state.setAgent);
-    const getCurrentModel = useConfigStore((state) => state.getCurrentModel);
     const agents = useVisibleConfigAgents();
     const selectableAgentOptions = React.useMemo(() => resolveSelectableAgentOptions(agents, []), [agents]);
     const isMobile = useUIStore((state) => state.isMobile);
@@ -755,34 +758,17 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
     const sendableAttachedFiles = attachedFiles;
     const getContextUsage = useSessionUIStore((state) => state.getContextUsage);
-    const currentModel = getCurrentModel();
-    const limit = currentModel && typeof currentModel.limit === 'object' && currentModel.limit !== null
-        ? (currentModel.limit as Record<string, unknown>)
-        : null;
-    const contextLimit = limit && typeof limit.context === 'number' ? limit.context : 0;
-    const outputLimit = limit && typeof limit.output === 'number' ? limit.output : 0;
-    const contextUsage = getContextUsage(contextLimit, outputLimit);
-    const [stableContextUsage, setStableContextUsage] = React.useState<SessionContextUsage | null>(null);
+    const selectedCapacity = useSelectedModelContextCapacity();
+    const contextUsage = getContextUsage(selectedCapacity);
     const isContextUsageResolvedForSession = !currentSessionId || currentSessionMessagesResolved;
-
-    React.useEffect(() => {
-        if (!currentSessionId) {
-            setStableContextUsage((prev) => (prev === null ? prev : null));
-            return;
-        }
-
-        if (contextUsage && contextUsage.totalTokens > 0) {
-            setStableContextUsage((prev) => (isSameContextUsage(prev, contextUsage) ? prev : contextUsage));
-            return;
-        }
-
-        if (isContextUsageResolvedForSession) {
-            setStableContextUsage((prev) => (prev === null ? prev : null));
-        }
-    }, [contextUsage, currentSessionId, isContextUsageResolvedForSession]);
+    const stableContextUsage = useStableSessionContextUsage({
+        directory: currentDirectory,
+        sessionId: currentSessionId,
+        usage: contextUsage,
+        resolved: isContextUsageResolvedForSession,
+    });
 
     const showContextUsageButton = !isMobile && !isVSCode && !!stableContextUsage && stableContextUsage.totalTokens > 0;
-    const contextUsagePercentage = stableContextUsage?.percentage ?? 0;
     const [contextWindowOpen, setContextWindowOpen] = React.useState(false);
 
     React.useEffect(() => {
@@ -1313,9 +1299,13 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const submitInFlightRef = React.useRef(false);
 
     // Add message to queue instead of sending
-    const handleQueueMessage = React.useCallback(() => {
+    const handleQueueMessage = React.useCallback(async () => {
         const inputSnapshot = getCurrentInputSnapshot();
         if (!inputSnapshot.hasContent || !currentSessionId) return;
+        if (!await guardBuilderSend({
+            sessionId: currentSessionId,
+            agentName: effectiveCurrentAgentName,
+        })) return;
 
         let messageToQueue = inputSnapshot.message.replace(/^\n+|\n+$/g, '');
         const attachmentsToQueue = sanitizeAttachmentsForSend(sendableAttachedFiles);
@@ -1339,6 +1329,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
         addToQueue(currentSessionId, {
             content: messageToQueue,
+            directory: currentSessionDirectory ?? undefined,
             attachments: attachmentsToQueue.length > 0 ? attachmentsToQueue : undefined,
             sendConfig: liveSendConfig.providerID && liveSendConfig.modelID ? {
                 providerID: liveSendConfig.providerID,
@@ -1364,7 +1355,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         if (!isMobile) {
             textareaRef.current?.focus();
         }
-    }, [getCurrentInputSnapshot, currentSessionId, sendableAttachedFiles, sanitizeAttachmentsForSend, getLiveSendConfig, showPdfAttachmentValidationToast, consumeDrafts, addToQueue, clearAttachedFiles, isMobile]);
+    }, [addToQueue, clearAttachedFiles, consumeDrafts, currentSessionDirectory, currentSessionId, effectiveCurrentAgentName, getCurrentInputSnapshot, getLiveSendConfig, guardBuilderSend, isMobile, sanitizeAttachmentsForSend, sendableAttachedFiles, showPdfAttachmentValidationToast]);
 
     const handleQueuedMessageEdit = React.useCallback((content: string) => {
         setMessage(content);
@@ -1372,6 +1363,79 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             textareaRef.current?.focus();
         }, 0);
     }, []);
+
+    const handleQueuedMessageSend = React.useCallback(async (queuedMessage: QueuedMessage) => {
+        const sessionId = currentSessionId;
+        if (!sessionId) return;
+
+        const liveSendConfig = getLiveSendConfig();
+        const providerID = queuedMessage.sendConfig?.providerID ?? liveSendConfig.providerID;
+        const modelID = queuedMessage.sendConfig?.modelID ?? liveSendConfig.modelID;
+        if (!providerID || !modelID) {
+            console.warn('Cannot send queued message: provider or model not selected');
+            return;
+        }
+        const agent = queuedMessage.sendConfig?.agent ?? liveSendConfig.agent;
+        const variant = queuedMessage.sendConfig?.variant ?? liveSendConfig.variant;
+        const planMode = typeof queuedMessage.sendConfig?.planMode === 'boolean'
+            ? queuedMessage.sendConfig.planMode
+            : liveSendConfig.planMode;
+
+        if (!await guardBuilderSend({ sessionId, agentName: agent })) return;
+
+        const { sanitizedText, mention } = parseAgentMentions(queuedMessage.content, agents);
+        const { sanitizedText: messageText, attachments: mentionAttachments } = extractInlineFileMentions(sanitizedText);
+        const attachments = [...sanitizeAttachmentsForSend(queuedMessage.attachments), ...mentionAttachments];
+
+        const pdfValidation = getPdfAttachmentValidation({ providerID, modelID, files: attachments });
+        if (!showPdfAttachmentValidationToast(pdfValidation)) {
+            return;
+        }
+
+        // Remove first so the idle auto-send hook can't dispatch the same item concurrently.
+        useMessageQueueStore.getState().removeFromQueue(sessionId, queuedMessage.id);
+
+        try {
+            const shouldInterruptCurrentTurn = shouldInterruptBeforeSubmit({
+                currentSessionId: sessionId,
+                sessionPhase,
+                queuedMessageCount: 1,
+                queuedOnly: true,
+                isSubtaskSession: currentSessionIsSubtask,
+            });
+            if (shouldInterruptCurrentTurn) {
+                await sessionActions.interruptCurrentOperationForQueuedSend(sessionId);
+            }
+
+            const messageID = queuedMessage.messageId;
+            const directory = queuedMessage.directory;
+            await useSessionUIStore.getState().sendMessageToSession(
+                sessionId,
+                messageText,
+                providerID,
+                modelID,
+                agent,
+                attachments,
+                mention?.name,
+                undefined,
+                variant,
+                'normal',
+                planMode,
+                (messageID || directory) ? { messageID, directory } : undefined,
+            );
+        } catch (error) {
+            // Re-queue on failure so the message isn't lost.
+            useMessageQueueStore.getState().addToQueue(sessionId, {
+                content: queuedMessage.content,
+                directory: queuedMessage.directory,
+                attachments: queuedMessage.attachments,
+                sendConfig: queuedMessage.sendConfig,
+            });
+            const rawMessage = error instanceof Error ? error.message : String(error ?? '');
+            console.error('Queued message send failed:', rawMessage || error);
+            toast.error(rawMessage || t('chat.chatInput.toast.messageSendFailed'));
+        }
+    }, [agents, currentSessionId, currentSessionIsSubtask, extractInlineFileMentions, getLiveSendConfig, guardBuilderSend, sanitizeAttachmentsForSend, sessionPhase, showPdfAttachmentValidationToast, t]);
 
     const handleOpenAgentPanel = React.useCallback(() => {
         setMobileControlsPanel('agent');
@@ -1443,13 +1507,11 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                     queuedOnly: true,
                     isSubtaskSession: currentSessionIsSubtask,
                 });
-                if (shouldInterruptCurrentTurn) {
-                    await sessionActions.interruptCurrentOperationForQueuedSend(queueSessionId);
-                }
-
                 try {
-                    await flushQueuedMessagesForSession({
+                    await sendQueuedMessagesNowForSession({
                         sessionId: queueSessionId,
+                        interruptBeforeFlush: shouldInterruptCurrentTurn,
+                        interruptCurrentOperation: sessionActions.interruptCurrentOperationForQueuedSend,
                         fallbackSendConfig: {
                             providerID: sendProviderId,
                             modelID: sendModelId,
@@ -1457,6 +1519,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                             variant: sendVariant,
                             planMode: sendPlanMode,
                         },
+                        authorizeSend: guardBuilderSend,
                         prepareQueuedMessage: (queuedMsg, sendConfig) => {
                             const { sanitizedText, mention } = parseAgentMentions(queuedMsg.content, agents);
                             const { sanitizedText: queuedText, attachments: mentionAttachments } = extractInlineFileMentions(sanitizedText);
@@ -1474,6 +1537,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
                             return {
                                 content: queuedText,
+                                messageID: queuedMsg.messageId,
                                 attachments,
                                 agentMentionName: mention?.name,
                                 providerID: sendConfig.providerID,
@@ -1485,6 +1549,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                         },
                     });
                 } catch (error) {
+                    if (error instanceof QueuedSendAuthorizationRequiredError) return;
                     const rawMessage = error instanceof Error ? error.message : String(error ?? '');
                     console.error('Queued message send failed:', rawMessage || error);
                     if (!rawMessage.includes('Queued message attachments are unsupported')) {
@@ -1504,6 +1569,11 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                     return;
                 }
             }
+
+            if (!await guardBuilderSend({
+                sessionId: queueSessionId,
+                agentName: sendAgentName,
+            })) return;
 
         // Build the primary message (first part) and additional parts
         let primaryText = '';
@@ -1867,7 +1937,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         const inputSnapshot = getCurrentInputSnapshot();
         const canQueue = inputMode === 'normal' && inputSnapshot.hasContent && currentSessionId && !currentSessionIsSubtask && isAbortableSessionPhase(sessionPhase);
         if (queueModeEnabled && canQueue) {
-            handleQueueMessage();
+            void handleQueueMessage();
         } else {
             void handleSubmitRef.current();
         }
@@ -2058,18 +2128,18 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             if (queueModeEnabled) {
                 if (isCtrlEnter || !canQueue) {
                     // Ctrl+Enter sends, or Enter when can't queue (new session)
-                    handleSubmit();
+                    void handleSubmit();
                 } else {
                     // Enter queues when we have a session
-                    handleQueueMessage();
+                    void handleQueueMessage();
                 }
             } else {
                 if (isCtrlEnter && canQueue) {
                     // Ctrl+Enter queues when we have a session
-                    handleQueueMessage();
+                    void handleQueueMessage();
                 } else {
                     // Enter sends
-                    handleSubmit();
+                    void handleSubmit();
                 }
             }
         }
@@ -2224,28 +2294,35 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     }, [abortCurrentOperation, clearAbortPrompt, currentDraftId, currentSessionId, newSessionDraftOpen, startAbortIndicator]);
 
     const handleCycleAgent = React.useCallback(() => {
-        const nextAgentName = getCycledPrimaryAgentName(selectableAgentOptions, currentAgentName);
+        const nextAgentName = getCycledPrimaryAgentName(selectableAgentOptions, effectiveCurrentAgentName);
         if (!nextAgentName) return;
 
-        applyDraftAwareAgentChange(
+        void requestAgentChange({
+            sessionId: currentSessionId,
+            currentAgentName: effectiveCurrentAgentName,
             nextAgentName,
-            { currentSessionId, currentDraftId, newSessionDraftOpen },
-            {
-                setAgent,
-                setProviderModel,
-                saveSessionAgentSelection,
-                getDraftAgentModelForSelection,
-                getDraftAgentModelVariantForSelection,
-                saveDraftAgentSelection,
-                saveDraftModelSelection,
-                saveDraftAgentModelForSelection,
-                saveDraftAgentModelVariantForSelection,
-                saveDraftSendConfig: (_draftId, sendConfig) => updateNewSessionDraftSendConfig(sendConfig),
+            commit: () => {
+                applyDraftAwareAgentChange(
+                    nextAgentName,
+                    { currentSessionId, currentDraftId, newSessionDraftOpen },
+                    {
+                        setAgent,
+                        setProviderModel,
+                        saveSessionAgentSelection,
+                        getDraftAgentModelForSelection,
+                        getDraftAgentModelVariantForSelection,
+                        saveDraftAgentSelection,
+                        saveDraftModelSelection,
+                        saveDraftAgentModelForSelection,
+                        saveDraftAgentModelVariantForSelection,
+                        saveDraftSendConfig: (_draftId, sendConfig) => updateNewSessionDraftSendConfig(sendConfig),
+                    },
+                );
             },
-        );
+        });
     }, [
         selectableAgentOptions,
-        currentAgentName,
+        effectiveCurrentAgentName,
         currentSessionId,
         currentDraftId,
         newSessionDraftOpen,
@@ -2259,6 +2336,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         saveDraftAgentModelForSelection,
         saveDraftAgentModelVariantForSelection,
         updateNewSessionDraftSendConfig,
+        requestAgentChange,
     ]);
 
     const syncComposerHighlightScroll = React.useCallback((scrollTop: number) => {
@@ -3732,6 +3810,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 <AttachedFilesList />
                 <QueuedMessageChips
                     onEditMessage={handleQueuedMessageEdit}
+                    onSendMessage={handleQueuedMessageSend}
                 />
                 {hasDrafts && (
                     <div className="flex flex-wrap items-center gap-2 pb-2">
@@ -4032,7 +4111,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                     {contextWindowOpen && stableContextUsage ? (
                         <ContextUsageWindow
                             usage={stableContextUsage}
-                            displayPercentage={contextUsagePercentage}
                             onClose={() => setContextWindowOpen(false)}
                             onCompact={currentSessionId ? handleContextCompact : undefined}
                         />
@@ -4287,11 +4365,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                     />
                                     {showContextUsageButton && stableContextUsage ? (
                                         <ContextUsageDisplay
-                                            totalTokens={stableContextUsage.totalTokens}
-                                            percentage={contextUsagePercentage}
-                                            colorPercentage={stableContextUsage.percentage}
-                                            contextLimit={stableContextUsage.contextLimit}
-                                            outputLimit={stableContextUsage.outputLimit ?? 0}
+                                            usage={stableContextUsage}
                                             size="compact"
                                             hideIcon
                                             hideValue

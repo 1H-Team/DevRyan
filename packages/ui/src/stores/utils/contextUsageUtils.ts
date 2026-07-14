@@ -5,6 +5,7 @@ import type {
     SessionContextUsage,
 } from "@/stores/types/sessionTypes";
 import { calculateContextUsage } from "./contextUtils";
+import type { ResolvedModelContextCapacity } from "./modelContextCapacity";
 import { extractTokenBreakdownFromMessage, type ExtractedTokenBreakdown } from "./tokenUtils";
 
 export type ContextUsageMessage = Message | { info: Message; parts: Part[] };
@@ -52,20 +53,20 @@ const hasDetailedTokenBreakdown = (breakdown: ContextUsageTokenBreakdown): boole
 
 export const buildContextUsageFromTokenBreakdown = (
     breakdown: ExtractedTokenBreakdown,
-    contextLimit: number,
-    outputLimit: number,
+    capacity: ResolvedModelContextCapacity,
     lastMessageId?: string,
 ): SessionContextUsage => {
-    const usage = calculateContextUsage(breakdown.total, contextLimit, outputLimit);
+    const usage = calculateContextUsage(breakdown.total, capacity);
     const tokenBreakdown = buildTokenBreakdown(breakdown);
 
     return {
         totalTokens: breakdown.total,
         percentage: usage.percentage,
+        capacityLimit: usage.capacityLimit,
+        capacityBasis: usage.capacityBasis,
+        inputLimit: usage.inputLimit,
         contextLimit: usage.contextLimit,
         outputLimit: usage.outputLimit,
-        normalizedOutput: usage.normalizedOutput,
-        thresholdLimit: usage.thresholdLimit,
         lastMessageId,
         tokenBreakdown,
         hasTokenBreakdown: hasDetailedTokenBreakdown(tokenBreakdown),
@@ -77,8 +78,7 @@ export const buildContextUsageFromTokenBreakdown = (
 
 export const getContextUsageFromMessages = (
     messages: ContextUsageMessage[],
-    contextLimit: number,
-    outputLimit: number,
+    capacity: ResolvedModelContextCapacity,
 ): SessionContextUsage | null => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
         const message = messages[index];
@@ -87,8 +87,7 @@ export const getContextUsageFromMessages = (
         if (breakdown.total <= 0) continue;
         return buildContextUsageFromTokenBreakdown(
             breakdown,
-            contextLimit,
-            outputLimit,
+            capacity,
             getMessageId(message),
         );
     }
@@ -100,7 +99,7 @@ export const getSubagentContextUsageForSession = (
     rootSessionId: string,
     sessions: ContextUsageSessionLike[],
     getMessages: (sessionId: string, session: ContextUsageSessionLike) => ContextUsageMessage[],
-    getLimits: (session: ContextUsageSessionLike, messages: ContextUsageMessage[]) => { contextLimit: number; outputLimit: number },
+    getCapacity: (session: ContextUsageSessionLike, messages: ContextUsageMessage[]) => ResolvedModelContextCapacity,
 ): SubagentContextUsageResult => {
     if (!rootSessionId || sessions.length === 0) {
         return { sessions: [], totalTokens: 0 };
@@ -126,14 +125,18 @@ export const getSubagentContextUsageForSession = (
 
         const childMessages = getMessages(sessionId, session);
         if (childMessages.length > 0) {
-            const limits = getLimits(session, childMessages);
-            const usage = getContextUsageFromMessages(childMessages, limits.contextLimit, limits.outputLimit);
+            const capacity = getCapacity(session, childMessages);
+            const usage = getContextUsageFromMessages(childMessages, capacity);
             if (usage && usage.totalTokens > 0) {
                 relatedSessions.push({
                     sessionId,
                     ...(session.title?.trim() ? { title: session.title.trim() } : {}),
                     totalTokens: usage.totalTokens,
+                    capacityLimit: usage.capacityLimit,
+                    capacityBasis: usage.capacityBasis,
+                    inputLimit: usage.inputLimit,
                     contextLimit: usage.contextLimit,
+                    outputLimit: usage.outputLimit,
                     percentage: usage.percentage,
                     ...(usage.lastMessageId ? { lastMessageId: usage.lastMessageId } : {}),
                 });
@@ -177,10 +180,11 @@ export const isSameSessionContextUsage = (
 
     return a.totalTokens === b.totalTokens
         && a.percentage === b.percentage
+        && a.capacityLimit === b.capacityLimit
+        && a.capacityBasis === b.capacityBasis
+        && a.inputLimit === b.inputLimit
         && a.contextLimit === b.contextLimit
-        && (a.outputLimit ?? 0) === (b.outputLimit ?? 0)
-        && (a.normalizedOutput ?? 0) === (b.normalizedOutput ?? 0)
-        && a.thresholdLimit === b.thresholdLimit
+        && a.outputLimit === b.outputLimit
         && (a.lastMessageId ?? "") === (b.lastMessageId ?? "")
         && (a.sourceTotalTokens ?? 0) === (b.sourceTotalTokens ?? 0)
         && a.sourceAccuracy === b.sourceAccuracy
@@ -207,7 +211,11 @@ export const isSameSessionContextUsage = (
                 && session.sessionId === other.sessionId
                 && (session.title ?? "") === (other.title ?? "")
                 && session.totalTokens === other.totalTokens
+                && session.capacityLimit === other.capacityLimit
+                && session.capacityBasis === other.capacityBasis
+                && session.inputLimit === other.inputLimit
                 && session.contextLimit === other.contextLimit
+                && session.outputLimit === other.outputLimit
                 && session.percentage === other.percentage
                 && (session.lastMessageId ?? "") === (other.lastMessageId ?? "");
         });

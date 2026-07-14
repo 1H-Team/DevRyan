@@ -6,6 +6,12 @@ import { updateDesktopSettings } from '@/lib/persistence';
 
 export interface QueuedMessage {
     id: string;
+    /** Canonical user-message ID assigned immediately before this row's first dispatch attempt. */
+    messageId?: string;
+    /** Distinguishes dispatch-safe IDs from legacy queue-time IDs that can sort before newer turns. */
+    messageIdScope?: 'dispatch';
+    /** Session directory captured at queue time; absent only on legacy persisted rows. */
+    directory?: string;
     content: string;
     attachments?: AttachedFile[];
     createdAt: number;
@@ -49,6 +55,7 @@ export const useMessageQueueStore = create<MessageQueueStore>()(
                     const id = `queued-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
                     const queuedMessage: QueuedMessage = {
                         id,
+                        directory: message.directory,
                         content: message.content,
                         attachments: message.attachments,
                         createdAt: Date.now(),

@@ -4,8 +4,6 @@ const MAX_MODEL_IDS = new Set([
   "gpt-5.6-sol-fast",
   "gpt-5.6-terra",
   "gpt-5.6-terra-fast",
-  "gpt-5.6-luna",
-  "gpt-5.6-luna-fast",
 ]);
 const ULTRA_MODEL_IDS = new Set([
   "gpt-5.6-sol",
@@ -13,7 +11,18 @@ const ULTRA_MODEL_IDS = new Set([
   "gpt-5.6-terra",
   "gpt-5.6-terra-fast",
 ]);
-const VISIBLE_GPT_56_MODEL_IDS = MAX_MODEL_IDS;
+const VISIBLE_GPT_56_MODEL_IDS = new Set([
+  ...MAX_MODEL_IDS,
+  "gpt-5.6-luna",
+  "gpt-5.6-luna-fast",
+]);
+const LUNA_MODEL_IDS = new Set([
+  "gpt-5.6-luna",
+  "gpt-5.6-luna-fast",
+]);
+const LUNA_API_MODEL_ID = "gpt-5.6-luna";
+const CODEX_ORIGINATOR = "codex_cli_rs";
+const CODEX_USER_AGENT = "codex_cli_rs/0.0.0 (OpenCode)";
 
 const isPlainObject = (value) => (
   value !== null
@@ -34,12 +43,37 @@ const buildReasoningVariant = (variants, effort) => {
   };
 };
 
+const removeNoneReasoningVariants = (models) => {
+  if (!isPlainObject(models)) return {};
+
+  let normalized = models;
+  for (const [modelId, model] of Object.entries(models)) {
+    if (!isPlainObject(model) || !isPlainObject(model.variants) || !("none" in model.variants)) {
+      continue;
+    }
+
+    if (normalized === models) normalized = { ...models };
+    const variants = { ...model.variants };
+    delete variants.none;
+    normalized[modelId] = { ...model, variants };
+  }
+
+  return normalized;
+};
+
 export const normalizeOpenAIOAuthGpt56Models = (models) => {
   if (!isPlainObject(models)) return {};
 
   const normalized = {};
   for (const [modelId, model] of Object.entries(models)) {
     if (isInvalidOAuthGpt56Model(modelId)) continue;
+    if (LUNA_MODEL_IDS.has(modelId) && isPlainObject(model)) {
+      const variants = isPlainObject(model.variants) ? { ...model.variants } : {};
+      delete variants.max;
+      delete variants.ultra;
+      normalized[modelId] = { ...model, variants };
+      continue;
+    }
     if (!MAX_MODEL_IDS.has(modelId) || !isPlainObject(model)) {
       normalized[modelId] = model;
       continue;
@@ -55,15 +89,33 @@ export const normalizeOpenAIOAuthGpt56Models = (models) => {
   return normalized;
 };
 
-export const OpenAIGpt56ModelsPlugin = async () => ({
-  provider: {
-    id: PROVIDER_ID,
-    async models(provider, ctx) {
-      const models = provider?.models ?? {};
-      if (ctx?.auth?.type !== "oauth") return models;
-      return normalizeOpenAIOAuthGpt56Models(models);
+export const OpenAIGpt56ModelsPlugin = async () => {
+  let openAIOAuthActive = false;
+
+  return {
+    provider: {
+      id: PROVIDER_ID,
+      async models(provider, ctx) {
+        const models = removeNoneReasoningVariants(provider?.models ?? {});
+        openAIOAuthActive = ctx?.auth?.type === "oauth";
+        if (!openAIOAuthActive) return models;
+        return normalizeOpenAIOAuthGpt56Models(models);
+      },
     },
-  },
-});
+    "chat.headers": async (input, output) => {
+      const model = input?.model;
+      if (
+        !openAIOAuthActive
+        || model?.providerID !== PROVIDER_ID
+        || model?.api?.id !== LUNA_API_MODEL_ID
+      ) {
+        return;
+      }
+
+      output.headers.originator = CODEX_ORIGINATOR;
+      output.headers["User-Agent"] = CODEX_USER_AGENT;
+    },
+  };
+};
 
 export default OpenAIGpt56ModelsPlugin;

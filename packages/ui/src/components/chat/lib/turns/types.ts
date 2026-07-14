@@ -93,12 +93,35 @@ export interface TurnIndexes {
     messageMetaById: Map<string, TurnMessageMeta>;
 }
 
+export interface PlanTurnTraceEntry {
+    sessionId: string | null;
+    planVersion: number;
+    turnId: string;
+    userMessageId: string;
+    assistantSourceMessageId: string | null;
+    assistantParentMessageId: string | null;
+    completedAt: number | null;
+    isLatestPlan: boolean;
+    isSuperseded: boolean;
+    isActionable: boolean;
+}
+
+export interface PlanTurnTraceIndex {
+    entries: PlanTurnTraceEntry[];
+    byTurnId: Map<string, PlanTurnTraceEntry>;
+    bySourceMessageId: Map<string, PlanTurnTraceEntry>;
+    latestPlanTurnId: string | null;
+    latestPlanSourceMessageId: string | null;
+    pendingPlanTurnId: string | null;
+}
+
 export interface TurnProjectionResult {
     turns: TurnRecord[];
     indexes: TurnIndexes;
     lastTurnId: string | null;
     lastTurnMessageIds: Set<string>;
     ungroupedMessageIds: Set<string>;
+    planTraceIndex: PlanTurnTraceIndex;
 }
 
 export type Turn = Pick<TurnRecord, 'turnId' | 'userMessage' | 'assistantMessages'>;

@@ -1,6 +1,7 @@
 import type { Session, Message, Part } from "@opencode-ai/sdk/v2";
 import type { PermissionRequest, PermissionResponse } from "@/types/permission";
 import type { QuestionRequest } from "@/types/question";
+import type { ContextCapacityBasis, ResolvedModelContextCapacity } from "@/stores/utils/modelContextCapacity";
 
 export type SessionWorktreeAttachment = {
   worktreeRoot: string | null;
@@ -94,18 +95,23 @@ export interface ContextUsageRelatedSession {
     sessionId: string;
     title?: string;
     totalTokens: number;
-    contextLimit: number;
-    percentage: number;
+    capacityLimit: number | null;
+    capacityBasis: ContextCapacityBasis;
+    inputLimit: number | null;
+    contextLimit: number | null;
+    outputLimit: number | null;
+    percentage: number | null;
     lastMessageId?: string;
 }
 
 export interface SessionContextUsage {
     totalTokens: number;
-    percentage: number;
-    contextLimit: number;
-    outputLimit?: number;
-    normalizedOutput?: number;
-    thresholdLimit: number;
+    percentage: number | null;
+    capacityLimit: number | null;
+    capacityBasis: ContextCapacityBasis;
+    inputLimit: number | null;
+    contextLimit: number | null;
+    outputLimit: number | null;
     lastMessageId?: string;
     tokenBreakdown: ContextUsageTokenBreakdown;
     hasTokenBreakdown: boolean;
@@ -178,6 +184,7 @@ export type DraftSendConfig = {
     agent?: string;
     variant?: string;
     planMode?: boolean;
+    modelProvenance?: 'explicit' | 'agent-default';
 };
 
 export type NewSessionDraftState = {
@@ -398,11 +405,11 @@ export interface SessionStore {
     setWorktreeMetadata: (sessionId: string, metadata: import('@/types/worktree').WorktreeMetadata | null) => void;
     getWorktreeMetadata: (sessionId: string) => import('@/types/worktree').WorktreeMetadata | undefined;
 
-    getContextUsage: (contextLimit: number, outputLimit: number) => SessionContextUsage | null;
+    getContextUsage: (capacity: ResolvedModelContextCapacity) => SessionContextUsage | null;
 
-    updateSessionContextUsage: (sessionId: string, contextLimit: number, outputLimit: number) => void;
+    updateSessionContextUsage: (sessionId: string, capacity: ResolvedModelContextCapacity) => void;
 
-    initializeSessionContextUsage: (sessionId: string, contextLimit: number, outputLimit: number) => void;
+    initializeSessionContextUsage: (sessionId: string, capacity: ResolvedModelContextCapacity) => void;
 
      debugSessionMessages: (sessionId: string) => Promise<void>;
 

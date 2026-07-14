@@ -14,6 +14,11 @@ describe("getAssistantToolStatusPhrase", () => {
         expect(getAssistantToolStatusPhrase("apply_patch")).toBe("applying patch");
     });
 
+    test("uses the subagent waiting phrase for managed task tools case-insensitively", () => {
+        expect(getAssistantToolStatusPhrase("devryan_task")).toBe("waiting for subagent output");
+        expect(getAssistantToolStatusPhrase("DEVRYAN_TASK")).toBe("waiting for subagent output");
+    });
+
     test("matches built-in tool names case-insensitively", () => {
         expect(getAssistantToolStatusPhrase("Bash")).toBe("running command");
     });

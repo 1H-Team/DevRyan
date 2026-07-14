@@ -25,6 +25,7 @@ export interface ManagedTaskRecord {
   taskId: string;
   idempotencyKey: string;
   rootSessionId: string;
+  dispatchGroupId: string | null;
   parentTaskId: string | null;
   childSessionId: string | null;
   directory: string;
@@ -51,7 +52,10 @@ export interface ManagedTaskRecord {
   canonicalRefs: ManagedTaskCanonicalRef[];
 }
 
-export type ManagedTaskEventRecord = Omit<ManagedTaskRecord, 'prompt' | 'idempotencyKey' | 'leaseToken'>;
+export type ManagedTaskEventRecord = Omit<ManagedTaskRecord,
+  'prompt' | 'idempotencyKey' | 'dispatchGroupId' | 'leaseToken'> & {
+    agentRetryAvailable: boolean;
+  };
 
 export interface ManagedTaskResultEnvelope {
   owner: 'devryan';
@@ -103,6 +107,7 @@ export type ManagedOrchestrationEvent = ManagedTaskEvent | ManagedTaskRemovalEve
 export interface ManagedTaskSubmitInput {
   idempotencyKey: string;
   rootSessionId: string;
+  dispatchGroupId?: string | null;
   parentTaskId?: string | null;
   childSessionId?: string | null;
   directory: string;
@@ -229,6 +234,7 @@ export interface ManagedTaskSchedulerDiagnostics {
   activeLaunchCount: number;
   pendingCancellationCount: number;
   pendingAcknowledgementCount: number;
+  activeHandoffCount: number;
   pendingWaiterCount: number;
   pendingTimeoutCount: number;
   pendingLeaseCount: number;
@@ -237,12 +243,40 @@ export interface ManagedTaskSchedulerDiagnostics {
   shutDown: boolean;
 }
 
+export interface ManagedAgentHandoffScope {
+  rootSessionId: string;
+  fromMode: 'orchestrator';
+  toMode: 'builder';
+}
+
+export interface ManagedAgentHandoffResult {
+  state: 'clear' | 'confirmation_required' | 'blocked';
+  taskIds: string[];
+  failures: Array<{
+    taskId: string;
+    code: 'cleanup_failed';
+    message: string;
+  }>;
+}
+
 export interface ManagedTaskScheduler {
   initialize(): Promise<void>;
   submit(input: ManagedTaskSubmitInput): Promise<ManagedTaskRecord>;
   cancelTask(taskId: string, options?: { cascade?: false; reason?: string }): Promise<ManagedTaskRecord>;
   cancelTask(taskId: string, options: { cascade: true; reason?: string }): Promise<ManagedTaskRecord[]>;
   waitForTask(taskId: string, options?: { signal?: AbortSignal }): Promise<ManagedTaskRecord>;
+  waitForDispatchBarrier(rootSessionId: string, options?: { signal?: AbortSignal }): Promise<{
+    state: 'clear' | 'awaiting_acknowledgement';
+    taskIds: string[];
+  }>;
+  inspectDispatchBarrier(rootSessionId: string): Promise<{
+    state: 'clear' | 'active' | 'awaiting_acknowledgement';
+    taskIds: string[];
+  }>;
+  inspectAgentHandoff(input: ManagedAgentHandoffScope): Promise<ManagedAgentHandoffResult>;
+  confirmAgentHandoff(input: ManagedAgentHandoffScope & {
+    idempotencyKey: string;
+  }): Promise<ManagedAgentHandoffResult>;
   acknowledgeResult(taskId: string, options: {
     action: ManagedTaskResultAction;
     idempotencyKey: string;
@@ -287,6 +321,7 @@ export function validateManagedTaskRecord(task: unknown): ManagedTaskRecord;
 export function createManagedTaskRecord(input: Omit<ManagedTaskRecord,
   | 'owner'
   | 'status'
+  | 'dispatchGroupId'
   | 'childSessionId'
   | 'leaseToken'
   | 'startedAt'
@@ -295,7 +330,7 @@ export function createManagedTaskRecord(input: Omit<ManagedTaskRecord,
   | 'partial'
   | 'recoverablePreview'
   | 'canonicalRefs'
-> & { childSessionId?: string | null }): ManagedTaskRecord;
+> & { childSessionId?: string | null; dispatchGroupId?: string | null }): ManagedTaskRecord;
 export function toManagedTaskEvent(task: ManagedTaskRecord, resultEnvelope?: ManagedTaskResultEnvelope | null): ManagedTaskEvent;
 export function toManagedTaskRemovalEvent(task: ManagedTaskRecord): ManagedTaskRemovalEvent;
 export function createManagedTaskResultEnvelope(task: ManagedTaskRecord, options: {

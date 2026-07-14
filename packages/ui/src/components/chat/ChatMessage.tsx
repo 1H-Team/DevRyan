@@ -417,7 +417,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             | { variants?: Record<string, unknown> }
             | undefined;
 
-        return getOrderedThinkingVariants(model?.variants);
+        return getOrderedThinkingVariants(model?.variants, { providerId: providerID });
     }, [isUser, modelID, modelVariantDisplayState, providerID, providers]);
 
     const displayAgentName = useStickyDisplayValue<string>(agentName);

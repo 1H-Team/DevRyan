@@ -57,6 +57,13 @@ export const registerManagedOrchestrationRoutes = (app, options = {}) => {
     return await runtime.getSnapshot(rootSessionId ? { rootSessionId } : {});
   }));
 
+  app.post('/api/orchestration/handoff', parseJson, run(async (request) => (
+    await runtime.handleRpc({
+      method: 'handoff',
+      params: request.body ?? {},
+    })
+  )));
+
   app.get('/api/orchestration/task/:taskId', run(async (request) => (
     await runtime.handleRpc({
       method: 'status',

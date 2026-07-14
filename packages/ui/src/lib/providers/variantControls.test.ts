@@ -56,6 +56,39 @@ describe('provider variant controls', () => {
     expect(getOrderedThinkingVariants({ none: {}, low: {}, medium: {} })).toEqual(['none', 'low', 'medium']);
   });
 
+  test('removes none from OpenAI thinking variants while preserving other providers', () => {
+    const variants = { none: {}, low: {}, medium: {}, high: {} };
+
+    expect(getOrderedThinkingVariants(variants, { providerId: ' OpenAI ' }))
+      .toEqual(['low', 'medium', 'high']);
+    expect(getOrderedThinkingVariants(variants, { providerId: 'custom' }))
+      .toEqual(['none', 'low', 'medium', 'high']);
+  });
+
+  test('migrates stale OpenAI none selections to Light', () => {
+    const provider = {
+      id: 'openai',
+      models: [{ id: 'gpt-5.6-luna', variants: { none: {}, low: {}, medium: {}, high: {} } }],
+    };
+
+    const state = getModelVariantControlState(provider, 'gpt-5.6-luna', 'none');
+    expect(state?.selectedVariant).toBe('low');
+    expect(state?.visibleVariantOptions).toEqual(['low', 'medium', 'high']);
+    expect(resolveProviderModelVariant(provider, 'gpt-5.6-luna', 'none')).toBe('low');
+  });
+
+  test('never returns OpenAI none when a malformed catalog has no Light variant', () => {
+    const provider = {
+      id: 'openai',
+      models: [{ id: 'gpt-5.6-custom', variants: { none: {}, high: {} } }],
+    };
+
+    const state = getModelVariantControlState(provider, 'gpt-5.6-custom', 'none');
+    expect(state?.selectedVariant).toBe('high');
+    expect(state?.visibleVariantOptions).toEqual(['high']);
+    expect(resolveProviderModelVariant(provider, 'gpt-5.6-custom', 'none')).toBe('high');
+  });
+
   test('derives a fast toggle from an explicit paired fast model and preserves thinking when possible', () => {
     const provider = {
       id: 'openai',
@@ -83,14 +116,14 @@ describe('provider variant controls', () => {
     });
   });
 
-  test('preserves GPT-5.6 Max and Ultra wire levels across paired Fast rows', () => {
+  test('preserves the advertised GPT-5.6 reasoning levels across paired Fast rows', () => {
     const provider = {
       id: 'openai',
       models: [
         { id: 'gpt-5.6-sol', variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {}, max: {}, ultra: {} } },
         { id: 'gpt-5.6-sol-fast', variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {}, max: {}, ultra: {} } },
-        { id: 'gpt-5.6-luna', variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {}, max: {} } },
-        { id: 'gpt-5.6-luna-fast', variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {}, max: {} } },
+        { id: 'gpt-5.6-luna', variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {} } },
+        { id: 'gpt-5.6-luna-fast', variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {} } },
       ],
     };
 
@@ -102,14 +135,16 @@ describe('provider variant controls', () => {
       modelId: 'gpt-5.6-sol',
       variant: 'ultra',
     });
-    expect(getModelVariantControlState(provider, 'gpt-5.6-luna', 'max')?.visibleVariantOptions).toEqual([
-      'none',
+    expect(getModelVariantControlState(provider, 'gpt-5.6-luna', 'xhigh')?.visibleVariantOptions).toEqual([
       'low',
       'medium',
       'high',
       'xhigh',
-      'max',
     ]);
+    expect(resolveModelVariantSelection(provider, 'gpt-5.6-luna', 'medium', { fastEnabled: true })).toEqual({
+      modelId: 'gpt-5.6-luna-fast',
+      variant: 'medium',
+    });
   });
 
   test('does not treat mini or nano model families as a fast toggle', () => {

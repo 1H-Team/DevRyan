@@ -1,13 +1,57 @@
 import { describe, expect, test } from 'bun:test'
 
 import {
+  getSessionTouchedFilePaths,
   getChatOwnedDiffTotalsFromMessages,
   normalizeChatOwnedDiffSummary,
+  resolveSessionWorkingTreeDiffStats,
   resolveSessionDiffStats,
   stripUntrustedSessionDiffSummary,
 } from './sessionDiffStats'
 
 describe('sessionDiffStats', () => {
+  test('uses current working-tree totals for files touched by the active session', () => {
+    const messages = [
+      {
+        role: 'user',
+        summary: {
+          diffs: [{ file: 'diff-counter-visual-check.txt', additions: 3, deletions: 0 }],
+        },
+      },
+      {
+        role: 'user',
+        summary: {
+          diffs: [{ file: 'diff-counter-visual-check.txt', additions: 1, deletions: 1 }],
+        },
+      },
+      {
+        role: 'assistant',
+        summary: {
+          diffs: [{ file: 'unrelated.txt', additions: 50, deletions: 10 }],
+        },
+      },
+    ]
+
+    expect(getSessionTouchedFilePaths(messages)).toEqual(['diff-counter-visual-check.txt'])
+    expect(resolveSessionWorkingTreeDiffStats(messages, {
+      'diff-counter-visual-check.txt': { insertions: 3, deletions: 0 },
+      'unrelated.txt': { insertions: 50, deletions: 10 },
+    })).toEqual({ additions: 3, deletions: 0 })
+  })
+
+  test('hides active-session totals once its touched files are clean', () => {
+    const messages = [{
+      role: 'user',
+      summary: {
+        diffs: [{ file: './diff-counter-visual-check.txt', additions: 3, deletions: 0 }],
+      },
+    }]
+
+    expect(getSessionTouchedFilePaths(messages)).toEqual(['diff-counter-visual-check.txt'])
+    expect(resolveSessionWorkingTreeDiffStats(messages, {})).toBeNull()
+    expect(resolveSessionWorkingTreeDiffStats(messages, undefined)).toBeNull()
+  })
+
   test('derives chat-owned totals from user message summaries only', () => {
     expect(getChatOwnedDiffTotalsFromMessages([
       { role: 'assistant', summary: { additions: 100, deletions: 50 } },

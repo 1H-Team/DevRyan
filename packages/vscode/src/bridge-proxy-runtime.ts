@@ -34,6 +34,76 @@ type ProxyRuntimeDeps = {
   sanitizeForwardHeaders: (input: Record<string, string> | undefined) => Record<string, string>;
   collectHeaders: (headers: Headers) => Record<string, string>;
   base64EncodeUtf8: (text: string) => string;
+  getCachedCursorProvider: () => Record<string, unknown> | null;
+  refreshCursorProvider: () => Promise<void>;
+};
+
+const sortFingerprintValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(sortFingerprintValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, sortFingerprintValue(entry)]),
+  );
+};
+
+const cursorProviderFingerprint = (provider: Record<string, unknown> | null): string => {
+  try {
+    return JSON.stringify(sortFingerprintValue(provider));
+  } catch {
+    return '';
+  }
+};
+
+const scheduleCursorProviderRefresh = (
+  ctx: BridgeContext | undefined,
+  deps: ProxyRuntimeDeps,
+): void => {
+  let previousFingerprint = '';
+  try {
+    previousFingerprint = cursorProviderFingerprint(deps.getCachedCursorProvider());
+  } catch {
+    // A failed cache read must not block the upstream provider response.
+  }
+
+  try {
+    void deps.refreshCursorProvider()
+      .then(() => {
+        let nextFingerprint = previousFingerprint;
+        try {
+          nextFingerprint = cursorProviderFingerprint(deps.getCachedCursorProvider());
+        } catch {
+          return;
+        }
+        if (!nextFingerprint || nextFingerprint === previousFingerprint) return;
+        setTimeout(() => {
+          void ctx?.postMessage?.({ type: 'command', command: 'providersChanged' });
+        }, 0);
+      })
+      .catch(() => {
+        // Discovery is best-effort and will retry on the next managed catalog request.
+      });
+  } catch {
+    // Preserve the cached provider if refresh scheduling fails synchronously.
+  }
+};
+
+const mergeCachedCursorProvider = (
+  payload: Record<string, unknown>,
+  provider: Record<string, unknown> | null,
+): Record<string, unknown> => {
+  if (!provider) return payload;
+  const providers = Array.isArray(payload.providers) ? payload.providers : [];
+  return {
+    ...payload,
+    providers: [
+      ...providers.filter((entry) => (
+        !entry || typeof entry !== 'object' || (entry as { id?: unknown }).id !== 'cursor-acp'
+      )),
+      provider,
+    ],
+  };
 };
 
 export async function handleProxyBridgeMessage(
@@ -99,11 +169,22 @@ export async function handleProxyBridgeMessage(
         ) {
           try {
             const payload = JSON.parse(Buffer.from(arrayBuffer).toString('utf8')) as Record<string, unknown>;
-            const auth = readAuthFile();
-            const annotated = annotateOpenAIModelAvailability(payload, auth.openai);
-            arrayBuffer = Buffer.from(JSON.stringify(annotated));
+            let nextPayload = payload;
+            try {
+              const auth = readAuthFile();
+              nextPayload = annotateOpenAIModelAvailability(nextPayload, auth.openai);
+            } catch {
+              // Cursor metadata remains independently mergeable if auth lookup fails.
+            }
+            scheduleCursorProviderRefresh(ctx, deps);
+            try {
+              nextPayload = mergeCachedCursorProvider(nextPayload, deps.getCachedCursorProvider());
+            } catch {
+              // Keep other managed-provider annotations if the Cursor cache is unavailable.
+            }
+            arrayBuffer = Buffer.from(JSON.stringify(nextPayload));
           } catch {
-            // Preserve the upstream provider response if it is not valid JSON or auth lookup fails.
+            // Preserve the upstream provider response if parsing or serialization fails.
           }
         }
         const data: ApiProxyResponsePayload = {

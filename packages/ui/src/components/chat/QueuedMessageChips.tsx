@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { RiCloseLine, RiMessage2Line } from '@remixicon/react';
+import { RiArrowUpLine, RiCloseLine, RiMessage2Line } from '@remixicon/react';
 import { useMessageQueueStore, type QueuedMessage } from '@/stores/messageQueueStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useInputStore } from '@/sync/input-store';
@@ -9,9 +9,10 @@ interface QueuedMessageChipProps {
     message: QueuedMessage;
     sessionId: string;
     onEdit: (message: QueuedMessage) => void;
+    onSend: (message: QueuedMessage) => void;
 }
 
-const QueuedMessageChip = memo(({ message, sessionId, onEdit }: QueuedMessageChipProps) => {
+const QueuedMessageChip = memo(({ message, sessionId, onEdit, onSend }: QueuedMessageChipProps) => {
     const { t } = useI18n();
     const removeFromQueue = useMessageQueueStore((state) => state.removeFromQueue);
 
@@ -29,7 +30,7 @@ const QueuedMessageChip = memo(({ message, sessionId, onEdit }: QueuedMessageChi
     const attachmentCount = message.attachments?.length ?? 0;
 
     return (
-        <div className="flex w-full items-center gap-1.5 typography-ui-caption h-5 px-1">
+        <div className="flex w-full items-center gap-1.5 typography-ui-caption rounded-lg border border-border/50 bg-background/30 px-2 py-1">
             <button
                 type="button"
                 onClick={() => onEdit(message)}
@@ -50,6 +51,14 @@ const QueuedMessageChip = memo(({ message, sessionId, onEdit }: QueuedMessageChi
             </button>
             <button
                 type="button"
+                onClick={() => onSend(message)}
+                className="flex items-center justify-center h-6 w-6 flex-shrink-0 hover:bg-[var(--interactive-hover)] rounded-full transition-colors"
+                aria-label={t('chat.queuedMessage.sendAria')}
+            >
+                <RiArrowUpLine className="h-4 w-4 text-muted-foreground" />
+            </button>
+            <button
+                type="button"
                 onClick={() => removeFromQueue(sessionId, message.id)}
                 className="flex items-center justify-center h-6 w-6 flex-shrink-0 hover:bg-[var(--interactive-hover)] rounded-full transition-colors"
                 aria-label={t('chat.queuedMessage.removeAria')}
@@ -64,11 +73,12 @@ QueuedMessageChip.displayName = 'QueuedMessageChip';
 
 interface QueuedMessageChipsProps {
     onEditMessage: (content: string, attachments?: QueuedMessage['attachments']) => void;
+    onSendMessage: (message: QueuedMessage) => void;
 }
 
 const EMPTY_QUEUE: QueuedMessage[] = [];
 
-export const QueuedMessageChips = memo(({ onEditMessage }: QueuedMessageChipsProps) => {
+export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage }: QueuedMessageChipsProps) => {
     const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
     const queuedMessages = useMessageQueueStore(
         React.useCallback(
@@ -106,6 +116,7 @@ export const QueuedMessageChips = memo(({ onEditMessage }: QueuedMessageChipsPro
                     message={message}
                     sessionId={currentSessionId}
                     onEdit={handleEdit}
+                    onSend={onSendMessage}
                 />
             ))}
         </div>

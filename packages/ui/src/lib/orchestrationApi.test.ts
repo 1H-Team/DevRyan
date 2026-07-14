@@ -71,6 +71,50 @@ describe('managed orchestration API', () => {
     ]);
   });
 
+  test('posts inspection and confirmed handoff requests without changing their idempotency scope', async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const api = createManagedOrchestrationApi({
+      fetchImpl: async (_input, init) => {
+        requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return Response.json({
+          rootSessionId: 'ses_root',
+          fromMode: 'orchestrator',
+          toMode: 'builder',
+          state: 'clear',
+          tasks: [],
+          failures: [],
+        });
+      },
+    });
+
+    await api.handoff({
+      rootSessionId: 'ses_root',
+      fromMode: 'orchestrator',
+      toMode: 'builder',
+      confirm: false,
+    });
+    await api.handoff({
+      rootSessionId: 'ses_root',
+      fromMode: 'orchestrator',
+      toMode: 'builder',
+      confirm: true,
+      idempotencyKey: 'switch-ui-01',
+    });
+
+    expect(requests).toEqual([{
+      rootSessionId: 'ses_root',
+      fromMode: 'orchestrator',
+      toMode: 'builder',
+      confirm: false,
+    }, {
+      rootSessionId: 'ses_root',
+      fromMode: 'orchestrator',
+      toMode: 'builder',
+      confirm: true,
+      idempotencyKey: 'switch-ui-01',
+    }]);
+  });
+
   test('uses no-store snapshots and reports invalid successful JSON', async () => {
     const requests: Array<{ input: string; init?: RequestInit }> = [];
     const api = createManagedOrchestrationApi({

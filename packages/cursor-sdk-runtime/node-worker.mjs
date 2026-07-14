@@ -213,6 +213,7 @@ const main = async () => {
   const modelID = trimString(input.modelID) || 'auto';
   const modelSelection = normalizeModelSelection(input.modelSelection, modelID);
   const agents = pinCursorSdkSubagentModels(normalizeCursorSdkAgentDefinitions(input.agents), modelSelection);
+  const mcpServers = isPlainObject(input.mcpServers) ? input.mcpServers : null;
   const prompt = trimString(input.type === 'title' ? input.text : input.prompt);
   const images = Array.isArray(input.images)
     ? input.images
@@ -261,6 +262,7 @@ const main = async () => {
     local,
     ...(directory ? { platform: { workspaceRef: directory } } : {}),
     ...(agents ? { agents } : {}),
+    ...(mcpServers ? { mcpServers } : {}),
   };
   writeTiming('cursor_run_create_started');
   let agent = null;

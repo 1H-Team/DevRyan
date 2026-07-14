@@ -18,6 +18,9 @@ import { annotateOpenAIModelAvailability } from './openai-model-availability.js'
 import { discoverGitHubCopilotModels } from './github-copilot-models.js';
 import { createCursorSessionTitleRuntime } from './cursor-session-title-runtime.js';
 import { createStandardSessionTitleRuntime } from './standard-session-title-runtime.js';
+import { registerQuestionRoutes } from './question-routes.js';
+import { createGlobalAgentsMdRuntime } from './global-agents-md-runtime.js';
+import { registerGlobalAgentsMdRoutes } from './global-agents-md-routes.js';
 
 const ANTHROPIC_PROVIDER_IDS = new Set(['anthropic', 'claude', 'anthropic-oauth', 'opencode-with-claude']);
 const ANTIGRAVITY_PROVIDER_ID = 'antigravity';
@@ -178,6 +181,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     cursorSdkRuntime = null,
     cursorSessionTitleRuntime: injectedCursorSessionTitleRuntime = null,
     standardSessionTitleRuntime: injectedStandardSessionTitleRuntime = null,
+    globalAgentsMdRuntime: injectedGlobalAgentsMdRuntime = null,
     resolveZenModel = async () => undefined,
     authLibrary: injectedAuthLibrary = null,
   } = dependencies;
@@ -196,6 +200,18 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     resolveZenModel,
     logger: console,
   });
+  const globalAgentsMdRuntime = injectedGlobalAgentsMdRuntime || createGlobalAgentsMdRuntime({
+    agentsMdPath: path.join(os.homedir(), '.config', 'opencode', 'AGENTS.md'),
+    refreshRuntime: () => refreshOpenCodeAfterConfigChange('global behavior (AGENTS.md) updated'),
+    isEditable: () => !isExternalOpenCode(),
+  });
+
+  registerQuestionRoutes(app, {
+    cursorSdkRuntime,
+    buildOpenCodeUrl,
+    getOpenCodeAuthHeaders,
+  });
+  registerGlobalAgentsMdRoutes(app, { runtime: globalAgentsMdRuntime });
 
   let authLibrary = injectedAuthLibrary;
   const pendingMcpAuthContextByState = new Map();
@@ -1246,54 +1262,4 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     }
   });
 
-  // Behavior / Global AGENTS.md endpoints
-  const AGENTS_MD_PATH = path.join(os.homedir(), '.config', 'opencode', 'AGENTS.md');
-  const MAX_BEHAVIOR_PROMPT_SIZE = 1024 * 1024; // 1 MB
-
-  app.get('/api/behavior/agents-md', async (_req, res) => {
-    try {
-      try {
-        await fs.promises.access(AGENTS_MD_PATH);
-      } catch {
-        return res.json({ content: '', exists: false });
-      }
-      const content = await fs.promises.readFile(AGENTS_MD_PATH, 'utf8');
-      return res.json({ content, exists: true });
-    } catch (error) {
-      console.error('Failed to read AGENTS.md:', error);
-      return res.status(500).json({ error: 'Failed to read AGENTS.md' });
-    }
-  });
-
-  app.put('/api/behavior/agents-md', async (req, res) => {
-    try {
-      const content = typeof req.body?.content === 'string' ? req.body.content : '';
-
-      if (content.length > MAX_BEHAVIOR_PROMPT_SIZE) {
-        return res.status(413).json({ error: `Content exceeds maximum size of ${MAX_BEHAVIOR_PROMPT_SIZE} bytes` });
-      }
-
-      // Ensure parent directory exists
-      const parentDir = path.dirname(AGENTS_MD_PATH);
-      try {
-        await fs.promises.access(parentDir);
-      } catch {
-        await fs.promises.mkdir(parentDir, { recursive: true });
-      }
-
-      await fs.promises.writeFile(AGENTS_MD_PATH, content, 'utf8');
-
-      // Refresh OpenCode so it picks up the new AGENTS.md without a full restart
-      try {
-        await refreshOpenCodeAfterConfigChange('global behavior (AGENTS.md) updated');
-      } catch {
-        // Non-fatal: file was written successfully
-      }
-
-      return res.json({ success: true });
-    } catch (error) {
-      console.error('Failed to write AGENTS.md:', error);
-      return res.status(500).json({ error: error.message || 'Failed to write AGENTS.md' });
-    }
-  });
 };

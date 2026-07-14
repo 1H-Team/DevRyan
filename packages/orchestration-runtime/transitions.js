@@ -18,6 +18,7 @@ const IMMUTABLE_FIELDS = Object.freeze([
   'taskId',
   'idempotencyKey',
   'rootSessionId',
+  'dispatchGroupId',
   'parentTaskId',
   'directory',
   'sequence',

@@ -12,7 +12,7 @@ import { showOpenCodeStatus } from '@/lib/openCodeStatus';
 import { eventMatchesShortcut, getEffectiveShortcutCombo } from '@/lib/shortcuts';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
-import { applyDraftAwareModelChange } from '@/components/chat/draftAwareAgentChange';
+import { applyDraftAwareModelChange, persistCycledThinkingVariant } from '@/components/chat/draftAwareAgentChange';
 import { buildFavoriteModelsList, getNextFavoriteModelRef } from '@/hooks/useModelLists';
 
 export const useKeyboardShortcuts = () => {
@@ -354,15 +354,39 @@ export const useKeyboardShortcuts = () => {
         e.preventDefault();
         configState.cycleCurrentVariant();
 
-        const nextVariant = useConfigStore.getState().currentVariant;
-        const sessionId = useSessionUIStore.getState().currentSessionId;
-        const agentName = useConfigStore.getState().currentAgentName;
-        const providerId = useConfigStore.getState().currentProviderId;
-        const modelId = useConfigStore.getState().currentModelId;
-
-        if (sessionId && agentName && providerId && modelId) {
-          useSelectionStore.getState().saveAgentModelVariantForSession(sessionId, agentName, providerId, modelId, nextVariant);
+        const liveConfig = useConfigStore.getState();
+        const nextVariant = liveConfig.currentVariant;
+        const providerId = liveConfig.currentProviderId;
+        const modelId = liveConfig.currentModelId;
+        if (!providerId || !modelId) {
+          return;
         }
+
+        const sessionState = useSessionUIStore.getState();
+        const selectionState = useSelectionStore.getState();
+        persistCycledThinkingVariant(
+          {
+            currentSessionId: sessionState.currentSessionId,
+            currentDraftId: sessionState.currentDraftId,
+            newSessionDraftOpen: Boolean(sessionState.currentDraftId && sessionState.newSessionDraft?.open),
+            currentAgentName: liveConfig.currentAgentName,
+            providerId,
+            modelId,
+            nextVariant,
+          },
+          {
+            setProviderModel: liveConfig.setProviderModel,
+            saveSessionModelSelection: selectionState.saveSessionModelSelection,
+            saveAgentModelForSession: selectionState.saveAgentModelForSession,
+            saveAgentModelVariantForSession: selectionState.saveAgentModelVariantForSession,
+            saveDraftModelSelection: selectionState.saveDraftModelSelection,
+            saveDraftAgentModelForSelection: selectionState.saveDraftAgentModelForSelection,
+            saveDraftAgentModelVariantForSelection: selectionState.saveDraftAgentModelVariantForSelection,
+            saveDraftSendConfig: (_draftId, sendConfig) => {
+              useSessionUIStore.getState().updateNewSessionDraftSendConfig(sendConfig);
+            },
+          },
+        );
 
         return;
       }

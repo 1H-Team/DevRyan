@@ -8,13 +8,28 @@ import { createWebManagedOpenCodeExecutor } from './open-code-executor.js';
 import { createManagedOrchestrationPrivateHost } from './private-host.js';
 
 const DEFAULT_TASK_TIMEOUT_MS = 30 * 60 * 1_000;
+const COUNCIL_TASK_TIMEOUT_MS = 3 * 60 * 1_000;
+
+const resolveSubmitTimeoutAt = (params, now) => {
+  const submittedAt = now();
+  if (params.deadlineClass === 'council') return submittedAt + COUNCIL_TASK_TIMEOUT_MS;
+  const minimumTimeoutAt = submittedAt + DEFAULT_TASK_TIMEOUT_MS;
+  return Number.isFinite(params.timeoutAt)
+    ? Math.max(params.timeoutAt, minimumTimeoutAt)
+    : minimumTimeoutAt;
+};
 
 const ERROR_STATUS_BY_CODE = Object.freeze({
   child_session_conflict: 409,
   duplicate_idempotency_key: 409,
+  handoff_conflict: 409,
+  handoff_in_progress: 409,
+  invalid_handoff_scope: 400,
   invalid_result_action: 400,
   ledger_capacity_exceeded: 507,
+  managed_retry_limit_reached: 409,
   managed_runtime_unavailable: 503,
+  missing_idempotency_key: 400,
   mode_lease_active: 409,
   mode_lease_conflict: 409,
   parent_not_found: 404,
@@ -53,6 +68,42 @@ const normalizeRuntimeError = (error) => {
 const projectTask = (task, envelope = null) => (
   toManagedTaskEvent(task, envelope).properties.task
 );
+
+const normalizeHandoffParams = (params) => {
+  const rootSessionId = typeof params?.rootSessionId === 'string'
+    ? params.rootSessionId.trim()
+    : '';
+  if (!rootSessionId) {
+    throw createRuntimeError('invalid_handoff_scope', 'rootSessionId is required', 400);
+  }
+  if (params.fromMode !== 'orchestrator' || params.toMode !== 'builder') {
+    throw createRuntimeError(
+      'invalid_handoff_scope',
+      'only orchestrator-to-builder handoff is supported',
+      400,
+    );
+  }
+  if (typeof params.confirm !== 'boolean') {
+    throw createRuntimeError('invalid_handoff_scope', 'confirm must be a boolean', 400);
+  }
+  const idempotencyKey = typeof params.idempotencyKey === 'string'
+    ? params.idempotencyKey.trim()
+    : '';
+  if (params.confirm && !idempotencyKey) {
+    throw createRuntimeError(
+      'missing_idempotency_key',
+      'handoff idempotencyKey is required when confirm is true',
+      400,
+    );
+  }
+  return {
+    rootSessionId,
+    fromMode: 'orchestrator',
+    toMode: 'builder',
+    confirm: params.confirm,
+    ...(idempotencyKey ? { idempotencyKey } : {}),
+  };
+};
 
 export const createWebManagedOrchestrationRuntime = (options = {}) => {
   const logger = options.logger ?? console;
@@ -171,16 +222,27 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     };
   };
 
+  const projectHandoffResult = (scope, result) => ({
+    rootSessionId: scope.rootSessionId,
+    fromMode: scope.fromMode,
+    toMode: scope.toMode,
+    state: result.state,
+    tasks: result.taskIds
+      .map((taskId) => scheduler.getTask(taskId))
+      .filter(Boolean)
+      .map(projectTaskResult),
+    failures: result.failures,
+  });
+
   const handleRpcInternal = async ({ method, params = {} }, context = {}) => {
     await ensureInitialized();
     switch (method) {
       case 'submit': {
-        const timeoutAt = Number.isFinite(params.timeoutAt)
-          ? params.timeoutAt
-          : now() + DEFAULT_TASK_TIMEOUT_MS;
+        const timeoutAt = resolveSubmitTimeoutAt(params, now);
         const task = await scheduler.submit({
           idempotencyKey: params.idempotencyKey,
           rootSessionId: params.rootSessionId,
+          dispatchGroupId: params.dispatchGroupId ?? null,
           parentTaskId: params.parentTaskId ?? null,
           childSessionId: params.childSessionId ?? null,
           directory: params.directory,
@@ -199,6 +261,40 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         const task = getScopedTask(params);
         const settled = await scheduler.waitForTask(task.taskId, { signal: context.signal });
         return projectTaskResult(settled);
+      }
+      case 'barrier': {
+        const rootSessionId = typeof params.rootSessionId === 'string'
+          ? params.rootSessionId.trim()
+          : '';
+        if (!rootSessionId) {
+          throw createRuntimeError('task_scope_mismatch', 'rootSessionId is required', 403);
+        }
+        return await scheduler.waitForDispatchBarrier(rootSessionId, { signal: context.signal });
+      }
+      case 'barrier_status': {
+        const rootSessionId = typeof params.rootSessionId === 'string'
+          ? params.rootSessionId.trim()
+          : '';
+        if (!rootSessionId) {
+          throw createRuntimeError('task_scope_mismatch', 'rootSessionId is required', 403);
+        }
+        return await scheduler.inspectDispatchBarrier(rootSessionId);
+      }
+      case 'handoff': {
+        const scope = normalizeHandoffParams(params);
+        const result = scope.confirm
+          ? await scheduler.confirmAgentHandoff({
+            rootSessionId: scope.rootSessionId,
+            fromMode: scope.fromMode,
+            toMode: scope.toMode,
+            idempotencyKey: scope.idempotencyKey,
+          })
+          : await scheduler.inspectAgentHandoff({
+            rootSessionId: scope.rootSessionId,
+            fromMode: scope.fromMode,
+            toMode: scope.toMode,
+          });
+        return projectHandoffResult(scope, result);
       }
       case 'status': {
         return projectTaskResult(getScopedTask(params));
@@ -226,6 +322,9 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       }
       case 'acknowledge': {
         const task = getScopedTask(params);
+        const timeoutAt = Number.isFinite(params.timeoutAt)
+          ? params.timeoutAt
+          : now() + DEFAULT_TASK_TIMEOUT_MS;
         const result = await scheduler.acknowledgeResult(task.taskId, {
           action: params.action,
           idempotencyKey: params.idempotencyKey,
@@ -235,7 +334,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           ...(params.variant !== undefined ? { variant: params.variant } : {}),
           ...(params.label ? { label: params.label } : {}),
           ...(params.prompt ? { prompt: params.prompt } : {}),
-          ...(Number.isFinite(params.timeoutAt) ? { timeoutAt: params.timeoutAt } : {}),
+          timeoutAt,
         });
         return {
           resultEnvelope: result.envelope,

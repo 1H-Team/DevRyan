@@ -1512,6 +1512,12 @@ onCommand('settingsSynced', () => {
   });
 });
 
+onCommand('providersChanged', () => {
+  import('@/stores/useConfigStore').then(({ useConfigStore }) => {
+    void useConfigStore.getState().loadProviders();
+  });
+});
+
 // Listen for active editor file changes from the extension
 onCommand('activeEditorFile', (payload) => {
   import('@/sync/input-store').then(({ useInputStore }) => {

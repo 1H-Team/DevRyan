@@ -742,9 +742,9 @@ const MarkdownCodeBlock: React.FC<{
               type="button"
               onClick={() => setViewMode((mode) => (mode === 'preview' ? 'code' : 'preview'))}
               className="p-1 rounded hover:bg-interactive-hover/60 text-muted-foreground hover:text-foreground transition-colors"
-              title={viewMode === 'preview' ? 'Show code' : 'Preview'}
+              title={viewMode === 'preview' ? 'Show Code' : 'Preview'}
               aria-pressed={viewMode === 'preview'}
-              aria-label={viewMode === 'preview' ? 'Show code' : 'Preview HTML'}
+              aria-label={viewMode === 'preview' ? 'Show Code' : 'Preview HTML'}
             >
               {viewMode === 'preview' ? <RiCodeLine className="size-3.5" /> : <RiEyeLine className="size-3.5" />}
             </button>
@@ -764,8 +764,8 @@ const MarkdownCodeBlock: React.FC<{
             type="button"
             onClick={() => { void handleCopy(); }}
             className="p-1 rounded hover:bg-interactive-hover/60 text-muted-foreground hover:text-foreground transition-colors"
-            title={copied ? 'Copied' : 'Copy code'}
-            aria-label={copied ? 'Copied' : 'Copy code'}
+            title={copied ? 'Copied' : 'Copy Code'}
+            aria-label={copied ? 'Copied' : 'Copy Code'}
           >
             {copied ? <RiCheckLine className="size-3.5" /> : <RiFileCopyLine className="size-3.5" />}
           </button>
@@ -775,7 +775,7 @@ const MarkdownCodeBlock: React.FC<{
         <div className="h-[320px] md:h-[420px] bg-background">
           <iframe
             srcDoc={code}
-            title="HTML preview"
+            title="HTML Preview"
             className="h-full w-full border-0"
             sandbox="allow-scripts allow-forms"
           />
@@ -908,8 +908,8 @@ const buildMarkdownComponents = ({
               onPreviewLoopback(targetHref);
             }}
             className="ml-1 inline-flex h-5 items-center gap-0.5 rounded border border-[var(--border)] bg-[var(--surface-background)] px-1.5 align-middle text-[11px] leading-none text-[var(--muted-foreground)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)]"
-            aria-label={previewTitle ?? previewLabel ?? 'Open preview pane'}
-            title={previewTitle ?? previewLabel ?? 'Open preview pane'}
+            aria-label={previewTitle ?? previewLabel ?? 'Open Preview Pane'}
+            title={previewTitle ?? previewLabel ?? 'Open Preview Pane'}
             data-loopback-preview-trigger="true"
           >
             <RiEyeLine className="size-3" aria-hidden="true" />

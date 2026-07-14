@@ -6,8 +6,12 @@ import {
   getSubagentContextUsageForSession,
   isSameSessionContextUsage,
 } from "./contextUsageUtils"
+import { resolveModelContextCapacity } from "./modelContextCapacity"
 
 const makeMessage = (message: Record<string, unknown>): Message => message as unknown as Message
+const capacity = (context: number, output?: number) => resolveModelContextCapacity({
+  limit: { context, ...(output ? { output } : {}) },
+})
 
 describe("getContextUsageFromMessages", () => {
   test("extracts flat assistant token totals", () => {
@@ -23,11 +27,14 @@ describe("getContextUsageFromMessages", () => {
           cache: { read: 10, write: 5 },
         },
       }),
-    ], 10_000, 1000)
+    ], capacity(10_000, 1000))
 
     expect(usage?.totalTokens).toBe(1265)
+    expect(usage?.capacityLimit).toBe(10_000)
+    expect(usage?.capacityBasis).toBe("context")
     expect(usage?.contextLimit).toBe(10_000)
-    expect(usage?.thresholdLimit).toBe(9000)
+    expect(usage?.outputLimit).toBe(1000)
+    expect(usage?.percentage).toBe(12.65)
     expect(usage?.hasTokenBreakdown).toBe(true)
     expect(usage?.tokenBreakdown).toEqual({
       input: 1000,
@@ -54,7 +61,7 @@ describe("getContextUsageFromMessages", () => {
           cache: { read: 10, write: 5 },
         },
       }),
-    ], 10_000, 0)
+    ], capacity(10_000))
 
     expect(usage?.totalTokens).toBe(1500)
     expect(usage?.tokenBreakdown).toEqual({
@@ -80,7 +87,7 @@ describe("getContextUsageFromMessages", () => {
           cache: { read: 0, write: 0 },
         },
       }),
-    ], 200_000, 0)
+    ], capacity(200_000))
 
     expect(usage?.totalTokens).toBe(29_012)
     expect(usage?.tokenBreakdown.input).toBe(29_000)
@@ -107,7 +114,7 @@ describe("getContextUsageFromMessages", () => {
           } as never,
         ],
       },
-    ], 10_000, 0)
+    ], capacity(10_000))
 
     expect(usage?.totalTokens).toBe(900)
     expect(usage?.tokenBreakdown).toEqual({
@@ -127,7 +134,7 @@ describe("getContextUsageFromMessages", () => {
         role: "assistant",
         tokens: 512,
       }),
-    ], 2048, 0)
+    ], capacity(2048))
 
     expect(usage?.totalTokens).toBe(512)
     expect(usage?.hasTokenBreakdown).toBe(false)
@@ -160,7 +167,7 @@ describe("getContextUsageFromMessages", () => {
           ],
         },
       }),
-    ], 10_000, 0)
+    ], capacity(10_000))
 
     expect(usage?.totalTokens).toBe(1100)
     expect(usage?.sourceAccuracy).toBe("reported")
@@ -190,7 +197,7 @@ describe("getContextUsageFromMessages", () => {
           ],
         },
       }),
-    ], 1000, 0)
+    ], capacity(1000))
 
     expect(usage?.sourceAccuracy).toBe("reported")
     expect(usage?.sourceTotalTokens).toBe(65)
@@ -217,7 +224,7 @@ describe("getContextUsageFromMessages", () => {
           ],
         },
       }),
-    ], 1000, 0)
+    ], capacity(1000))
 
     expect(usage?.sourceTotalTokens).toBe(100)
     expect(usage?.sources).toEqual([
@@ -230,7 +237,7 @@ describe("getContextUsageFromMessages", () => {
     const usage = getContextUsageFromMessages([
       makeMessage({ id: "user-1", role: "user" }),
       makeMessage({ id: "assistant-1", role: "assistant" }),
-    ], 1000, 0)
+    ], capacity(1000))
 
     expect(usage).toBeNull()
   })
@@ -248,8 +255,8 @@ describe("getContextUsageFromMessages", () => {
       },
     })
 
-    const rawUsage = getContextUsageFromMessages([rawMessage], 1000, 0)
-    const recordUsage = getContextUsageFromMessages([{ info: rawMessage, parts: [] }], 1000, 0)
+    const rawUsage = getContextUsageFromMessages([rawMessage], capacity(1000))
+    const recordUsage = getContextUsageFromMessages([{ info: rawMessage, parts: [] }], capacity(1000))
 
     expect(isSameSessionContextUsage(rawUsage, recordUsage)).toBe(true)
   })
@@ -270,7 +277,7 @@ describe("getContextUsageFromMessages", () => {
         { id: "nested-1", parentID: "child-1", title: "Nested agent" },
       ],
       (sessionId) => messages.get(sessionId) ?? [],
-      () => ({ contextLimit: 1000, outputLimit: 0 }),
+      () => capacity(1000),
     )
 
     expect(related.totalTokens).toBe(300)
@@ -279,16 +286,24 @@ describe("getContextUsageFromMessages", () => {
         sessionId: "child-1",
         title: "Review agent",
         totalTokens: 225,
+        capacityLimit: 1000,
+        capacityBasis: "context",
+        inputLimit: null,
         contextLimit: 1000,
-        percentage: 100,
+        outputLimit: null,
+        percentage: 22.5,
         lastMessageId: "assistant-child-1",
       },
       {
         sessionId: "nested-1",
         title: "Nested agent",
         totalTokens: 75,
+        capacityLimit: 1000,
+        capacityBasis: "context",
+        inputLimit: null,
         contextLimit: 1000,
-        percentage: 100,
+        outputLimit: null,
+        percentage: 7.5,
         lastMessageId: "assistant-nested-1",
       },
     ])
@@ -297,19 +312,58 @@ describe("getContextUsageFromMessages", () => {
   test("attaches related subagent usage without changing parent context totals", () => {
     const usage = getContextUsageFromMessages([
       makeMessage({ id: "assistant-parent", role: "assistant", tokens: { input: 100, output: 25 } }),
-    ], 1000, 0)
+    ], capacity(1000))
 
     expect(usage !== null).toBe(true)
     if (!usage) throw new Error("expected parent context usage")
     const parentPercentage = usage.percentage
     const withRelated = attachRelatedSubagentContextUsage(usage, {
       totalTokens: 300,
-      sessions: [{ sessionId: "child-1", totalTokens: 300, contextLimit: 1000, percentage: 30 }],
+      sessions: [{
+        sessionId: "child-1",
+        totalTokens: 300,
+        capacityLimit: 1000,
+        capacityBasis: "context",
+        inputLimit: null,
+        contextLimit: 1000,
+        outputLimit: null,
+        percentage: 30,
+      }],
     })
 
     expect(withRelated.totalTokens).toBe(125)
     expect(withRelated.percentage).toBe(parentPercentage)
     expect(withRelated.relatedSubagentTotalTokens).toBe(300)
     expect(withRelated.relatedSubagentSessions).toHaveLength(1)
+  })
+
+  test("keeps measured usage available when capacity is unknown", () => {
+    const usage = getContextUsageFromMessages([
+      makeMessage({ id: "assistant-unknown", role: "assistant", tokens: 512 }),
+    ], resolveModelContextCapacity(undefined))
+
+    expect(usage?.totalTokens).toBe(512)
+    expect(usage?.percentage).toBeNull()
+    expect(usage?.capacityLimit).toBeNull()
+    expect(usage?.capacityBasis).toBe("unavailable")
+    expect(usage?.inputLimit).toBeNull()
+    expect(usage?.contextLimit).toBeNull()
+    expect(usage?.outputLimit).toBeNull()
+  })
+
+  test("does not clamp percentages above one hundred percent", () => {
+    const usage = getContextUsageFromMessages([
+      makeMessage({ id: "assistant-over", role: "assistant", tokens: 1250 }),
+    ], capacity(1000))
+
+    expect(usage?.percentage).toBe(125)
+  })
+
+  test("treats capacity metadata changes as distinct usage projections", () => {
+    const messages = [makeMessage({ id: "assistant-capacity", role: "assistant", tokens: 500 })]
+    const known = getContextUsageFromMessages(messages, capacity(1000))
+    const unavailable = getContextUsageFromMessages(messages, resolveModelContextCapacity(undefined))
+
+    expect(isSameSessionContextUsage(known, unavailable)).toBe(false)
   })
 })

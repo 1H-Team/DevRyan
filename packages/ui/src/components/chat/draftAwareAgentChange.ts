@@ -1,4 +1,10 @@
 import { useConfigStore } from '@/stores/useConfigStore';
+import {
+    hasExplicitDraftModelIntent,
+    type SendConfig,
+    type SendConfigModelProvenance,
+} from '@/sync/send-config';
+import { useSessionUIStore } from '@/sync/session-ui-store';
 
 export type DraftAwareAgentChangeContext = {
     currentSessionId: string | null;
@@ -34,6 +40,7 @@ export type DraftAwareAgentChangeActions = {
             modelID?: string;
             agent?: string;
             variant?: string;
+            modelProvenance?: SendConfigModelProvenance;
         },
     ) => void;
 };
@@ -70,6 +77,7 @@ export type DraftAwareModelChangeActions = {
             modelID?: string;
             agent?: string;
             variant?: string;
+            modelProvenance?: SendConfigModelProvenance;
         },
     ) => void;
 };
@@ -79,9 +87,18 @@ const normalizeAgentName = (agentName: string | null | undefined): string | unde
     return trimmed.length > 0 ? trimmed : undefined;
 };
 
+const readDraftSendConfig = (draftId: string): SendConfig | undefined => {
+    const sessionUI = useSessionUIStore.getState();
+    return sessionUI.draftsById[draftId]?.sendConfig
+        ?? (sessionUI.currentDraftId === draftId ? sessionUI.newSessionDraft.sendConfig : undefined);
+};
+
 /**
  * Switch the active primary agent and synchronously restore the target agent's saved
  * model/variant before falling back to its configured defaults.
+ *
+ * On a new draft, an explicit (or legacy) user model survives the switch; automatic
+ * agent-default models follow the target agent's saved/configured resolution.
  */
 export function applyDraftAwareAgentChange(
     agentName: string,
@@ -95,17 +112,25 @@ export function applyDraftAwareAgentChange(
     }
 
     if (context.currentDraftId && context.newSessionDraftOpen) {
-        const savedAgentModel = actions.getDraftAgentModelForSelection(context.currentDraftId, agentName);
-        actions.setAgent(agentName);
-        if (savedAgentModel) {
-            const savedVariant = actions.getDraftAgentModelVariantForSelection(
-                context.currentDraftId,
-                agentName,
-                savedAgentModel.providerId,
-                savedAgentModel.modelId,
-            );
-            actions.setProviderModel(savedAgentModel.providerId, savedAgentModel.modelId, savedVariant);
+        const priorSendConfig = readDraftSendConfig(context.currentDraftId);
+        const preserveExplicitModel = hasExplicitDraftModelIntent(priorSendConfig);
+
+        if (preserveExplicitModel) {
+            actions.setAgent(agentName, { preserveCurrentModel: true });
+        } else {
+            const savedAgentModel = actions.getDraftAgentModelForSelection(context.currentDraftId, agentName);
+            actions.setAgent(agentName);
+            if (savedAgentModel) {
+                const savedVariant = actions.getDraftAgentModelVariantForSelection(
+                    context.currentDraftId,
+                    agentName,
+                    savedAgentModel.providerId,
+                    savedAgentModel.modelId,
+                );
+                actions.setProviderModel(savedAgentModel.providerId, savedAgentModel.modelId, savedVariant);
+            }
         }
+
         actions.saveDraftAgentSelection(context.currentDraftId, agentName);
 
         const liveConfig = useConfigStore.getState();
@@ -116,6 +141,7 @@ export function applyDraftAwareAgentChange(
                 variant: liveConfig.currentVariant,
             }
             : null;
+        const modelProvenance: SendConfigModelProvenance = preserveExplicitModel ? 'explicit' : 'agent-default';
 
         if (draftModel) {
             actions.saveDraftModelSelection(
@@ -141,9 +167,13 @@ export function applyDraftAwareAgentChange(
                 modelID: draftModel.modelId,
                 agent: agentName,
                 variant: draftModel.variant,
+                modelProvenance,
             });
         } else {
-            actions.saveDraftSendConfig?.(context.currentDraftId, { agent: agentName });
+            actions.saveDraftSendConfig?.(context.currentDraftId, {
+                agent: agentName,
+                modelProvenance,
+            });
         }
         return;
     }
@@ -197,6 +227,63 @@ export function applyDraftAwareModelChange(
             modelID: modelId,
             agent: agentName,
             variant: context.variant,
+            modelProvenance: 'explicit',
         });
+    }
+}
+
+/**
+ * After cycling the live thinking variant, persist session agent-variant maps
+ * or (for an open new-session draft) mark the model/variant as explicit.
+ */
+export function persistCycledThinkingVariant(
+    context: {
+        currentSessionId: string | null;
+        currentDraftId: string | null;
+        newSessionDraftOpen: boolean;
+        currentAgentName?: string | null;
+        providerId: string;
+        modelId: string;
+        nextVariant: string | undefined;
+    },
+    actions: Pick<
+        DraftAwareModelChangeActions,
+        | 'setProviderModel'
+        | 'saveSessionModelSelection'
+        | 'saveAgentModelForSession'
+        | 'saveAgentModelVariantForSession'
+        | 'saveDraftModelSelection'
+        | 'saveDraftAgentModelForSelection'
+        | 'saveDraftAgentModelVariantForSelection'
+        | 'saveDraftSendConfig'
+    >,
+): void {
+    const agentName = normalizeAgentName(context.currentAgentName);
+    const { providerId, modelId, nextVariant } = context;
+
+    if (context.currentSessionId && agentName) {
+        actions.saveAgentModelVariantForSession(
+            context.currentSessionId,
+            agentName,
+            providerId,
+            modelId,
+            nextVariant,
+        );
+        return;
+    }
+
+    if (context.currentDraftId && context.newSessionDraftOpen) {
+        applyDraftAwareModelChange(
+            providerId,
+            modelId,
+            {
+                currentSessionId: context.currentSessionId,
+                currentDraftId: context.currentDraftId,
+                newSessionDraftOpen: context.newSessionDraftOpen,
+                currentAgentName: agentName,
+                variant: nextVariant,
+            },
+            actions,
+        );
     }
 }

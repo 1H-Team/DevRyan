@@ -18,6 +18,7 @@ const validInput = (overrides = {}) => ({
   taskId: 'dvr_task_01',
   idempotencyKey: 'root-1:research-auth',
   rootSessionId: 'ses_root',
+  dispatchGroupId: 'msg_parent_01',
   parentTaskId: null,
   directory: '/workspace',
   sequence: 1,
@@ -87,6 +88,17 @@ describe('managed orchestration contract', () => {
     expect(validateManagedTaskRecord(task)).toBe(task);
   });
 
+  test('defaults legacy and ungrouped work to no private dispatch group', () => {
+    const input = validInput();
+    delete input.dispatchGroupId;
+
+    const task = createManagedTaskRecord(input);
+
+    expect(task.dispatchGroupId).toBeNull();
+    expect(() => validateManagedTaskRecord({ ...task, dispatchGroupId: '' }))
+      .toThrow('dispatchGroupId is required');
+  });
+
   test('rejects provider-native ownership and colliding task identifiers', () => {
     const task = createManagedTaskRecord(validInput());
 
@@ -138,8 +150,37 @@ describe('managed orchestration contract', () => {
     expect(event.properties.task.label).toBe(task.label);
     expect(event.properties.task).not.toHaveProperty('prompt');
     expect(event.properties.task).not.toHaveProperty('idempotencyKey');
+    expect(event.properties.task).not.toHaveProperty('dispatchGroupId');
+    expect(event.properties.task.agentRetryAvailable).toBe(true);
     expect(event.properties.directory).toBe('/workspace');
     expect(JSON.parse(JSON.stringify(event))).toEqual(event);
+  });
+
+  test('projects agent retry availability only for the first grouped Orchestrator attempt', () => {
+    const groupedInitial = createManagedTaskRecord(validInput());
+    const groupedRecovery = createManagedTaskRecord(validInput({
+      taskId: 'dvr_task_02',
+      idempotencyKey: 'retry-02',
+      attempt: 2,
+      priorTaskId: groupedInitial.taskId,
+      executionKind: 'retry',
+    }));
+    const ungrouped = createManagedTaskRecord(validInput({
+      taskId: 'dvr_task_03',
+      idempotencyKey: 'ungrouped-03',
+      dispatchGroupId: null,
+    }));
+    const groupedBuilder = createManagedTaskRecord(validInput({
+      taskId: 'dvr_task_04',
+      idempotencyKey: 'builder-04',
+      mode: 'builder',
+    }));
+
+    expect(toManagedTaskEvent(groupedInitial).properties.task.agentRetryAvailable).toBe(true);
+    expect(toManagedTaskEvent(groupedRecovery).properties.task.agentRetryAvailable).toBe(false);
+    expect(toManagedTaskEvent(ungrouped).properties.task.agentRetryAvailable).toBe(false);
+    expect(toManagedTaskEvent(groupedBuilder).properties.task.agentRetryAvailable).toBe(false);
+    expect(toManagedTaskEvent(groupedRecovery).properties.task).not.toHaveProperty('dispatchGroupId');
   });
 
   test('projects compaction as a safe identity-only removal event', () => {

@@ -38,15 +38,22 @@ const validateSnapshot = (value: unknown): ManagedOrchestrationState => {
   }
 
   const tasks = new Map<string, ReturnType<typeof validateManagedTaskRecord>>();
+  const normalizedTasks: ReturnType<typeof validateManagedTaskRecord>[] = [];
   const idempotencyKeys = new Set<string>();
   for (const candidate of value.tasks) {
-    const task = validateManagedTaskRecord(candidate);
+    const task = validateManagedTaskRecord({
+      ...(isRecord(candidate) ? candidate : {}),
+      dispatchGroupId: isRecord(candidate) && candidate.dispatchGroupId !== undefined
+        ? candidate.dispatchGroupId
+        : null,
+    });
     if (tasks.has(task.taskId)) throw new TypeError(`duplicate managed task ${task.taskId}`);
     const idempotencyKey = `${task.rootSessionId}\u0000${task.idempotencyKey}`;
     if (idempotencyKeys.has(idempotencyKey)) {
       throw new TypeError(`duplicate managed idempotency key for root ${task.rootSessionId}`);
     }
     tasks.set(task.taskId, task);
+    normalizedTasks.push(task);
     idempotencyKeys.add(idempotencyKey);
   }
 
@@ -62,7 +69,7 @@ const validateSnapshot = (value: unknown): ManagedOrchestrationState => {
     envelopes.add(envelope.taskId);
   }
 
-  return value as unknown as ManagedOrchestrationState;
+  return { ...value, tasks: normalizedTasks } as unknown as ManagedOrchestrationState;
 };
 
 export const createVsCodeManagedOrchestrationLedger = (options: {

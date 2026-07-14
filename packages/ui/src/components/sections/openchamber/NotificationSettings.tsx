@@ -736,7 +736,7 @@ export const NotificationSettings: React.FC = () => {
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2 md:gap-3">
                 {(['completion', 'subtask', 'error', 'question'] as const).map((event: NotificationTemplateEvent) => (
                   <section key={event} className="p-2">
-                    <span className="typography-ui-label text-foreground font-normal capitalize block">
+                    <span className="typography-ui-label text-foreground font-normal block">
                       {t(TEMPLATE_EVENT_LABEL_KEYS[event])}
                     </span>
                     <div className="mt-1.5 space-y-2">

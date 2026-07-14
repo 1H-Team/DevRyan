@@ -9,7 +9,11 @@ import { resolveSessionSendConfig } from '@/sync/send-config';
 import { getPdfAttachmentValidation } from '@/lib/attachments/attachmentCapabilities';
 import { toast } from '@/components/ui';
 import { useI18n } from '@/lib/i18n';
-import { flushQueuedMessagesForSession } from '@/components/chat/queuedSend';
+import {
+  flushQueuedMessagesForSession,
+  QueuedSendAuthorizationRequiredError,
+} from '@/components/chat/queuedSend';
+import { guardQueuedBuilderSend } from '@/components/chat/agentHandoffGuardContext';
 
 export function useQueuedMessageAutoSend(enabledOrOptions?: boolean | { enabled?: boolean }) {
   const { t } = useI18n();
@@ -52,6 +56,7 @@ export function useQueuedMessageAutoSend(enabledOrOptions?: boolean | { enabled?
       try {
         await flushQueuedMessagesForSession({
           sessionId,
+          waitForCurrentTurnBeforeFirstSend: true,
           fallbackSendConfig: {
             providerID: fallbackSendConfig.providerID,
             modelID: fallbackSendConfig.modelID,
@@ -59,6 +64,7 @@ export function useQueuedMessageAutoSend(enabledOrOptions?: boolean | { enabled?
             variant: fallbackSendConfig.variant,
             planMode: fallbackSendConfig.planMode,
           },
+          authorizeSend: guardQueuedBuilderSend,
           prepareQueuedMessage: (message, sendConfig) => {
             const agents = useConfigStore.getState().getVisibleAgents();
             const { sanitizedText, mention } = parseAgentMentions(message.content, agents);
@@ -90,6 +96,7 @@ export function useQueuedMessageAutoSend(enabledOrOptions?: boolean | { enabled?
           },
         });
       } catch (error) {
+        if (error instanceof QueuedSendAuthorizationRequiredError) return;
         console.warn('[queue] queued auto-send failed:', error);
       } finally {
         inFlightSessionsRef.current.delete(sessionId);

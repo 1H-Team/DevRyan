@@ -48,6 +48,7 @@ const IMMUTABLE_PROJECTED_TASK_FIELDS = [
   'executionKind',
   'createdAt',
   'timeoutAt',
+  'agentRetryAvailable',
 ] as const satisfies readonly (keyof ManagedTaskEventRecord)[];
 const EMPTY_TASK_IDS: readonly string[] = Object.freeze([]);
 
@@ -67,6 +68,7 @@ export type ManagedOrchestrationStore = {
   tasksById: Readonly<Record<string, ManagedTaskEventRecord>>;
   taskIdsByRootId: Readonly<Record<string, readonly string[]>>;
   resultEnvelopesByTaskId: Readonly<Record<string, ManagedTaskResultEnvelope>>;
+  manualRecoveryTaskIdByChildSessionId: Readonly<Record<string, string>>;
   available: boolean | null;
   bridgeReady: boolean;
   recoveryWarning: string | null;
@@ -89,6 +91,7 @@ const initialState = () => ({
   tasksById: {} as Readonly<Record<string, ManagedTaskEventRecord>>,
   taskIdsByRootId: {} as Readonly<Record<string, readonly string[]>>,
   resultEnvelopesByTaskId: {} as Readonly<Record<string, ManagedTaskResultEnvelope>>,
+  manualRecoveryTaskIdByChildSessionId: {} as Readonly<Record<string, string>>,
   available: null as boolean | null,
   bridgeReady: false,
   recoveryWarning: null as string | null,
@@ -151,7 +154,8 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskEventRecord | n
     && typeof value.partial === 'boolean'
     && typeof value.recoverablePreview === 'string'
     && Array.isArray(value.canonicalRefs)
-    && value.canonicalRefs.every(isCanonicalReference);
+    && value.canonicalRefs.every(isCanonicalReference)
+    && typeof value.agentRetryAvailable === 'boolean';
   if (!valid) return null;
   return {
     owner: 'devryan',
@@ -186,6 +190,7 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskEventRecord | n
         type: truncateManagedText(reference.type, 1_024),
         id: truncateManagedText(reference.id, 1_024),
       })),
+    agentRetryAvailable: value.agentRetryAvailable as boolean,
   };
 };
 
@@ -406,6 +411,58 @@ const withRootIds = (
   return next ?? current;
 };
 
+const isManualRecoveryTask = (
+  task: ManagedTaskEventRecord,
+  envelope: ManagedTaskResultEnvelope | undefined,
+) => Boolean(
+  task.childSessionId
+  && !task.agentRetryAvailable
+  && (task.status === 'failed' || task.status === 'interrupted')
+  && envelope?.resumable
+  && envelope.action === null
+);
+
+const resolveManualRecoveryTaskId = (
+  tasksById: Readonly<Record<string, ManagedTaskEventRecord>>,
+  resultEnvelopesByTaskId: Readonly<Record<string, ManagedTaskResultEnvelope>>,
+  childSessionId: string,
+) => {
+  let latest: ManagedTaskEventRecord | null = null;
+  for (const task of Object.values(tasksById)) {
+    if (
+      task.childSessionId !== childSessionId
+      || !isManualRecoveryTask(task, resultEnvelopesByTaskId[task.taskId])
+    ) continue;
+    if (
+      !latest
+      || task.sequence > latest.sequence
+      || (task.sequence === latest.sequence && task.taskId.localeCompare(latest.taskId) > 0)
+    ) latest = task;
+  }
+  return latest?.taskId;
+};
+
+const withManualRecoveryTaskIds = (
+  current: Readonly<Record<string, string>>,
+  tasksById: Readonly<Record<string, ManagedTaskEventRecord>>,
+  resultEnvelopesByTaskId: Readonly<Record<string, ManagedTaskResultEnvelope>>,
+  childSessionIds: Set<string>,
+) => {
+  let next: Record<string, string> | null = null;
+  for (const childSessionId of childSessionIds) {
+    const taskId = resolveManualRecoveryTaskId(
+      tasksById,
+      resultEnvelopesByTaskId,
+      childSessionId,
+    );
+    if (current[childSessionId] === taskId) continue;
+    next ??= { ...current };
+    if (taskId) next[childSessionId] = taskId;
+    else delete next[childSessionId];
+  }
+  return next ?? current;
+};
+
 const errorMessage = (error: unknown) => error instanceof Error
   ? error.message
   : 'Managed orchestration action failed';
@@ -447,9 +504,12 @@ export const createManagedOrchestrationStore = (options: {
         let mutableTasksById: Record<string, ManagedTaskEventRecord> | null = null;
         let mutableEnvelopesByTaskId: Record<string, ManagedTaskResultEnvelope> | null = null;
         const affectedRoots = new Set<string>();
+        const affectedChildSessionIds = new Set<string>();
 
         for (const { task, envelope } of projections) {
           const currentTask = (mutableTasksById ?? state.tasksById)[task.taskId];
+          if (currentTask?.childSessionId) affectedChildSessionIds.add(currentTask.childSessionId);
+          if (task.childSessionId) affectedChildSessionIds.add(task.childSessionId);
           const nextTask = mergeTask(currentTask, task);
           if (nextTask !== currentTask) {
             mutableTasksById ??= { ...state.tasksById };
@@ -471,13 +531,22 @@ export const createManagedOrchestrationStore = (options: {
           return state;
         }
         const tasksById = mutableTasksById ?? state.tasksById;
+        const resultEnvelopesByTaskId = mutableEnvelopesByTaskId ?? state.resultEnvelopesByTaskId;
         return {
           ...state,
           tasksById,
           taskIdsByRootId: affectedRoots.size > 0
             ? withRootIds(state.taskIdsByRootId, tasksById, affectedRoots)
             : state.taskIdsByRootId,
-          resultEnvelopesByTaskId: mutableEnvelopesByTaskId ?? state.resultEnvelopesByTaskId,
+          resultEnvelopesByTaskId,
+          manualRecoveryTaskIdByChildSessionId: affectedChildSessionIds.size > 0
+            ? withManualRecoveryTaskIds(
+              state.manualRecoveryTaskIdByChildSessionId,
+              tasksById,
+              resultEnvelopesByTaskId,
+              affectedChildSessionIds,
+            )
+            : state.manualRecoveryTaskIdByChildSessionId,
         };
       });
     };
@@ -556,11 +625,22 @@ export const createManagedOrchestrationStore = (options: {
         delete pendingActionByTaskId[taskId];
         delete actionErrorByTaskId[taskId];
         removed = true;
+        const affectedChildSessionIds = task.childSessionId
+          ? new Set([task.childSessionId])
+          : new Set<string>();
         return {
           ...state,
           tasksById,
           taskIdsByRootId: withRootIds(state.taskIdsByRootId, tasksById, new Set([rootSessionId])),
           resultEnvelopesByTaskId,
+          manualRecoveryTaskIdByChildSessionId: affectedChildSessionIds.size > 0
+            ? withManualRecoveryTaskIds(
+              state.manualRecoveryTaskIdByChildSessionId,
+              tasksById,
+              resultEnvelopesByTaskId,
+              affectedChildSessionIds,
+            )
+            : state.manualRecoveryTaskIdByChildSessionId,
           pendingActionByTaskId,
           actionErrorByTaskId,
         };
@@ -637,10 +717,13 @@ export const createManagedOrchestrationStore = (options: {
               let mutableTasksById: Record<string, ManagedTaskEventRecord> | null = null;
               let mutableEnvelopesByTaskId: Record<string, ManagedTaskResultEnvelope> | null = null;
               const affectedRoots = new Set<string>();
+              const affectedChildSessionIds = new Set<string>();
 
               for (const task of snapshot.tasks) {
                 if (wasRemovedDuringLoad(task)) continue;
                 const currentTask = (mutableTasksById ?? state.tasksById)[task.taskId];
+                if (currentTask?.childSessionId) affectedChildSessionIds.add(currentTask.childSessionId);
+                if (task.childSessionId) affectedChildSessionIds.add(task.childSessionId);
                 if (currentTask && immutableTaskMetadataChanged(currentTask, task)) {
                   throw new TypeError('Managed orchestration returned an invalid snapshot');
                 }
@@ -669,6 +752,9 @@ export const createManagedOrchestrationStore = (options: {
                 mutableTasksById ??= { ...state.tasksById };
                 delete mutableTasksById[taskId];
                 affectedRoots.add(baselineTask.rootSessionId);
+                if (baselineTask.childSessionId) {
+                  affectedChildSessionIds.add(baselineTask.childSessionId);
+                }
                 removedTaskIds.add(taskId);
                 if ((mutableEnvelopesByTaskId ?? state.resultEnvelopesByTaskId)[taskId]) {
                   mutableEnvelopesByTaskId ??= { ...state.resultEnvelopesByTaskId };
@@ -690,13 +776,22 @@ export const createManagedOrchestrationStore = (options: {
               }
 
               const tasksById = mutableTasksById ?? state.tasksById;
+              const resultEnvelopesByTaskId = mutableEnvelopesByTaskId ?? state.resultEnvelopesByTaskId;
               return {
                 ...state,
                 tasksById,
                 taskIdsByRootId: affectedRoots.size > 0
                   ? withRootIds(state.taskIdsByRootId, tasksById, affectedRoots)
                   : state.taskIdsByRootId,
-                resultEnvelopesByTaskId: mutableEnvelopesByTaskId ?? state.resultEnvelopesByTaskId,
+                resultEnvelopesByTaskId,
+                manualRecoveryTaskIdByChildSessionId: affectedChildSessionIds.size > 0
+                  ? withManualRecoveryTaskIds(
+                    state.manualRecoveryTaskIdByChildSessionId,
+                    tasksById,
+                    resultEnvelopesByTaskId,
+                    affectedChildSessionIds,
+                  )
+                  : state.manualRecoveryTaskIdByChildSessionId,
                 pendingActionByTaskId: mutablePendingActions ?? state.pendingActionByTaskId,
                 actionErrorByTaskId: mutableActionErrors ?? state.actionErrorByTaskId,
                 available: snapshot.available === true,
@@ -883,6 +978,9 @@ export const managedOrchestrationSelectors = {
   resultEnvelope: (taskId: string) => (state: ManagedOrchestrationStore) => (
     state.resultEnvelopesByTaskId[taskId]
   ),
+  manualRecoveryTaskIdForChildSession: (childSessionId: string) => (
+    state: ManagedOrchestrationStore
+  ) => state.manualRecoveryTaskIdByChildSessionId[childSessionId],
   pendingAction: (taskId: string) => (state: ManagedOrchestrationStore) => (
     state.pendingActionByTaskId[taskId]
   ),

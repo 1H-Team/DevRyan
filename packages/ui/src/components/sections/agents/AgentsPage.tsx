@@ -301,7 +301,7 @@ export const AgentsPage: React.FC = () => {
     if (!parsedModel) return [];
     const provider = providers.find((entry) => entry.id === parsedModel.providerId);
     const providerModel = provider?.models.find((entry) => entry.id === parsedModel.modelId) as { variants?: Record<string, unknown> } | undefined;
-    return getOrderedThinkingVariants(providerModel?.variants);
+    return getOrderedThinkingVariants(providerModel?.variants, { providerId: parsedModel.providerId });
   }, [providers]);
   const getProviderForModelRef = React.useCallback((modelRef: string) => {
     const parsedModel = parseModelIdentifier(modelRef);
@@ -1177,7 +1177,7 @@ export const AgentsPage: React.FC = () => {
                              <SelectContent>
                                <SelectItem value="global">{t('settings.common.scope.global')}</SelectItem>
                               {wildcardOptions.map((action) => (
-                                <SelectItem key={action} value={action} className="capitalize">
+                                <SelectItem key={action} value={action}>
                                   {permissionActionLabel(action)}
                                 </SelectItem>
                               ))}

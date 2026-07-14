@@ -6,4 +6,10 @@ export const filterGroupedActivityReasoning = <T extends { kind: string }>(parts
     return parts.filter((part) => part.kind !== 'reasoning');
 };
 
-export const shouldRenderInlineReasoning = (showReasoningTraces: boolean): boolean => showReasoningTraces;
+export const shouldRenderReasoning = (showReasoningTraces: boolean): boolean => showReasoningTraces;
+
+export const getReasoningPartRenderKey = (
+    messageId: string,
+    partId: string | undefined,
+    index: number,
+): string => `reasoning-${messageId}-${partId || index}`;

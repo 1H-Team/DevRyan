@@ -4,6 +4,21 @@ import { formatManagedTaskDisplayName } from './contract.js';
 const LIVE_STATUS_TYPES = new Set(['busy', 'retry']);
 export const MANAGED_RETRY_IN_PLACE_PROMPT = 'Continue the task from the existing progress. The previous provider could not continue. Do not repeat completed work.';
 const ABORT_FINISH_REASONS = new Set(['abort', 'aborted', 'cancelled', 'canceled']);
+const TRANSIENT_HTTP_STATUSES = new Set([408, 425, 429]);
+const TRANSIENT_NETWORK_CODES = new Set([
+  'ECONNABORTED',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'EHOSTUNREACH',
+  'ENETDOWN',
+  'ENETUNREACH',
+  'ENOTFOUND',
+  'EPIPE',
+  'ETIMEDOUT',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_SOCKET',
+]);
 const FINAL_TOOL_STATUSES = new Set([
   'completed',
   'complete',
@@ -70,6 +85,25 @@ const extractFailureReason = (error) => {
   } catch {
     return null;
   }
+};
+
+const isTransientObservationError = (error) => {
+  if (!error || typeof error !== 'object') return false;
+  if (error.name === 'TimeoutError' || error.name === 'AbortError') return true;
+
+  const status = [
+    error.status,
+    error.statusCode,
+    error.response?.status,
+    error.cause?.status,
+    error.cause?.statusCode,
+  ].find((candidate) => Number.isSafeInteger(candidate));
+  if (TRANSIENT_HTTP_STATUSES.has(status) || (status >= 500 && status <= 599)) return true;
+
+  const code = trimString(error.code ?? error.cause?.code).toUpperCase();
+  if (TRANSIENT_NETWORK_CODES.has(code)) return true;
+
+  return error instanceof TypeError && /fetch|network|socket|connection/i.test(error.message);
 };
 
 const extractToolOutput = (part) => {
@@ -169,6 +203,7 @@ const analyzeMessages = (records, childSessionId) => {
 };
 
 const toTerminalResult = (observation) => {
+  if (LIVE_STATUS_TYPES.has(observation.statusType)) return null;
   const hasUsefulOutput = observation.hasUsefulWork === true;
   if (observation.failureReason) {
     return {
@@ -194,7 +229,6 @@ const toTerminalResult = (observation) => {
     observation.terminal
     && !observation.hasFinalUsefulWork
     && !observation.hasInFlightTool
-    && !LIVE_STATUS_TYPES.has(observation.statusType)
   ) {
     return {
       status: 'failed',
@@ -209,7 +243,6 @@ const toTerminalResult = (observation) => {
     observation.terminal
     && observation.hasFinalUsefulWork
     && !observation.hasInFlightTool
-    && !LIVE_STATUS_TYPES.has(observation.statusType)
   ) {
     return {
       status: 'completed',
@@ -347,21 +380,27 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       throw new Error(`Managed task ${task.taskId} has no child session`);
     }
     let emptyTerminalPolls = 0;
+    let lastSuccessfulObservation = null;
     while (true) {
-      const observation = await readObservation(task);
-      if (observation.statusType === 'retry') {
-        void startRetryStop(task, {
-          type: observation.statusType,
-          message: observation.statusMessage,
-          attempt: observation.statusAttempt,
-          next: observation.statusNext,
-        });
+      let observation;
+      try {
+        observation = await readObservation(task);
+        lastSuccessfulObservation = observation;
+      } catch (error) {
+        if (shutdownController.signal.aborted) {
+          throw shutdownController.signal.reason ?? error;
+        }
+        if (isTransientObservationError(error)) {
+          await sleep(pollIntervalMs, { signal: shutdownController.signal });
+          assertRunning();
+          continue;
+        }
         return {
-          status: 'failed',
-          failureReason: observation.statusMessage || 'The model provider could not continue the managed task',
-          partial: observation.hasUsefulWork,
-          recoverablePreview: observation.recoverablePreview,
-          canonicalRefs: observation.canonicalRefs,
+          status: 'interrupted',
+          failureReason: extractFailureReason(error) || 'Managed child observation was interrupted',
+          partial: lastSuccessfulObservation?.hasUsefulWork === true,
+          recoverablePreview: lastSuccessfulObservation?.recoverablePreview ?? '',
+          canonicalRefs: lastSuccessfulObservation?.canonicalRefs ?? [],
           resumable: true,
         };
       }

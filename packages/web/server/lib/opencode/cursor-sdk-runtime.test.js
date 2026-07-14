@@ -2300,7 +2300,11 @@ describe('Cursor SDK runtime', () => {
 
     const records = await waitFor(async () => {
       const current = await runtime.getSessionMessages('ses_cursor_plan_delta');
-      return current.some((record) => record.info?.role === 'assistant' && record.info?.finish)
+      const assistantFinished = current.some((record) => (
+        record.info?.role === 'assistant' && record.info?.finish
+      ));
+      const sessionIdle = runtime.getSessionStatus?.().ses_cursor_plan_delta?.type === 'idle';
+      return assistantFinished && sessionIdle
         ? current
         : null;
     });

@@ -10,6 +10,44 @@ type LoadResult = {
   archivedSessions: Session[];
 };
 
+type GlobalSessionsSnapshotCompleteness = {
+  activeComplete: boolean;
+  archivedComplete: boolean;
+};
+
+export type GlobalSessionMembershipMutationKind = 'archive' | 'delete' | 'unarchive';
+
+export type GlobalSessionMembershipMutationHandle = Readonly<{
+  entries: ReadonlyArray<Readonly<{
+    sessionID: string;
+    version: number;
+  }>>;
+}>;
+
+export type BeginGlobalSessionMembershipMutationInput =
+  | {
+    kind: 'archive';
+    sessionIds: string[];
+    snapshots: Session[];
+    archivedAt: number;
+  }
+  | {
+    kind: 'delete';
+    sessionIds: string[];
+  }
+  | {
+    kind: 'unarchive';
+    sessionIds: string[];
+    snapshots: Session[];
+  };
+
+type GlobalSessionMembershipMutationIntent = {
+  kind: GlobalSessionMembershipMutationKind;
+  version: number;
+  phase: 'pending' | 'succeeded';
+  desiredSession?: Session;
+};
+
 type GlobalSessionsState = {
   activeSessions: Session[];
   archivedSessions: Session[];
@@ -17,7 +55,12 @@ type GlobalSessionsState = {
   hasLoaded: boolean;
   status: GlobalSessionsStatus;
   loadSessions: (fallbackActive?: Session[]) => Promise<LoadResult>;
-  applySnapshot: (activeSessions: Session[], archivedSessions: Session[], status?: GlobalSessionsStatus) => void;
+  applySnapshot: (
+    activeSessions: Session[],
+    archivedSessions: Session[],
+    status?: GlobalSessionsStatus,
+    completeness?: GlobalSessionsSnapshotCompleteness,
+  ) => void;
   upsertSession: (session: Session) => void;
   restoreSessions: (sessions: Session[]) => void;
   archiveSessionSnapshots: (sessions: Session[], archivedAt?: number) => void;
@@ -29,6 +72,15 @@ type GlobalSessionsState = {
 const PAGE_SIZE = 200;
 
 let inflightLoad: Promise<LoadResult> | null = null;
+let postMutationRefreshRequested = false;
+let postMutationRefreshPromise: Promise<void> | null = null;
+let nextMembershipMutationVersion = 0;
+const membershipMutationShadow = new Map<string, GlobalSessionMembershipMutationIntent>();
+
+const COMPLETE_GLOBAL_SNAPSHOT: GlobalSessionsSnapshotCompleteness = {
+  activeComplete: true,
+  archivedComplete: true,
+};
 
 const normalizePath = (value?: string | null): string | null => {
   if (typeof value !== 'string') {
@@ -123,6 +175,108 @@ const removeSessionsFromList = (sessions: Session[], ids: Set<string>): Session[
   });
 
   return removed ? next : sessions;
+};
+
+const markSessionArchived = (session: Session, archivedAt: number): Session => ({
+  ...session,
+  time: {
+    ...session.time,
+    archived: archivedAt,
+  },
+});
+
+const markSessionUnarchived = (session: Session): Session => {
+  const time = { ...session.time };
+  delete time.archived;
+  return { ...session, time };
+};
+
+const prependDesiredSessions = (sessions: Session[], desiredSessions: Session[]): Session[] => {
+  if (desiredSessions.length === 0) {
+    return sessions;
+  }
+  const desiredIds = new Set(desiredSessions.map((session) => session.id));
+  const remaining = sessions.filter((session) => !desiredIds.has(session.id));
+  return [...desiredSessions, ...remaining];
+};
+
+const isMembershipMutationConfirmed = (
+  sessionID: string,
+  intent: GlobalSessionMembershipMutationIntent,
+  activeById: Map<string, Session>,
+  archivedById: Map<string, Session>,
+  completeness: GlobalSessionsSnapshotCompleteness,
+): boolean => {
+  if (
+    intent.phase !== 'succeeded'
+    || !completeness.activeComplete
+    || !completeness.archivedComplete
+  ) {
+    return false;
+  }
+
+  const isActive = activeById.has(sessionID);
+  const isArchived = archivedById.has(sessionID);
+  if (intent.kind === 'archive') {
+    return !isActive && isArchived;
+  }
+  if (intent.kind === 'unarchive') {
+    return isActive && !isArchived;
+  }
+  return !isActive && !isArchived;
+};
+
+const reconcileMembershipMutationShadow = (
+  activeSessions: Session[],
+  archivedSessions: Session[],
+  completeness: GlobalSessionsSnapshotCompleteness,
+): LoadResult => {
+  if (membershipMutationShadow.size === 0) {
+    return { activeSessions, archivedSessions };
+  }
+
+  const activeById = new Map(activeSessions.map((session) => [session.id, session]));
+  const archivedById = new Map(archivedSessions.map((session) => [session.id, session]));
+  const protectedIds = new Set<string>();
+  const desiredActiveSessions: Session[] = [];
+  const desiredArchivedSessions: Session[] = [];
+
+  for (const [sessionID, intent] of membershipMutationShadow) {
+    if (isMembershipMutationConfirmed(sessionID, intent, activeById, archivedById, completeness)) {
+      membershipMutationShadow.delete(sessionID);
+      continue;
+    }
+
+    protectedIds.add(sessionID);
+    if (intent.kind === 'archive') {
+      const desired = archivedById.get(sessionID) ?? intent.desiredSession;
+      if (desired) {
+        desiredArchivedSessions.push(desired);
+      }
+      continue;
+    }
+    if (intent.kind === 'unarchive') {
+      const desired = activeById.get(sessionID) ?? intent.desiredSession;
+      if (desired) {
+        desiredActiveSessions.push(desired);
+      }
+    }
+  }
+
+  if (protectedIds.size === 0) {
+    return { activeSessions, archivedSessions };
+  }
+
+  return {
+    activeSessions: prependDesiredSessions(
+      removeSessionsFromList(activeSessions, protectedIds),
+      desiredActiveSessions,
+    ),
+    archivedSessions: prependDesiredSessions(
+      removeSessionsFromList(archivedSessions, protectedIds),
+      desiredArchivedSessions,
+    ),
+  };
 };
 
 const removeSessionsFromDirectoryMap = (
@@ -254,8 +408,23 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
   hasLoaded: false,
   status: 'idle',
 
-  applySnapshot: (activeSessions, archivedSessions, status = 'ready') => {
-    set((state) => applySnapshot(state, activeSessions, archivedSessions, status));
+  applySnapshot: (
+    activeSessions,
+    archivedSessions,
+    status = 'ready',
+    completeness = COMPLETE_GLOBAL_SNAPSHOT,
+  ) => {
+    const reconciled = reconcileMembershipMutationShadow(
+      activeSessions,
+      archivedSessions,
+      completeness,
+    );
+    set((state) => applySnapshot(
+      state,
+      reconciled.activeSessions,
+      reconciled.archivedSessions,
+      status,
+    ));
   },
 
   loadSessions: async (fallbackActive) => {
@@ -290,14 +459,37 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
           console.warn('[GlobalSessions] Failed to load archived sessions, preserving current snapshot:', archivedResult.reason);
         }
 
-        set((state) => applySnapshot(state, nextActiveSessions, nextArchivedSessions, 'ready'));
-        return { activeSessions: nextActiveSessions, archivedSessions: nextArchivedSessions };
+        const reconciled = reconcileMembershipMutationShadow(
+          nextActiveSessions,
+          nextArchivedSessions,
+          {
+            activeComplete: activeResult.status === 'fulfilled',
+            archivedComplete: archivedResult.status === 'fulfilled',
+          },
+        );
+        set((state) => applySnapshot(
+          state,
+          reconciled.activeSessions,
+          reconciled.archivedSessions,
+          'ready',
+        ));
+        return reconciled;
       } catch (error) {
         const nextActiveSessions = mergeSessionLists(current.activeSessions, fallbackActive);
         const nextArchivedSessions = current.archivedSessions;
         console.warn('[GlobalSessions] Failed to load sessions, using fallback snapshot:', error);
-        set((state) => applySnapshot(state, nextActiveSessions, nextArchivedSessions, 'error'));
-        return { activeSessions: nextActiveSessions, archivedSessions: nextArchivedSessions };
+        const reconciled = reconcileMembershipMutationShadow(
+          nextActiveSessions,
+          nextArchivedSessions,
+          { activeComplete: false, archivedComplete: false },
+        );
+        set((state) => applySnapshot(
+          state,
+          reconciled.activeSessions,
+          reconciled.archivedSessions,
+          'error',
+        ));
+        return reconciled;
       } finally {
         inflightLoad = null;
       }
@@ -505,6 +697,117 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
     });
   },
 }));
+
+export const beginGlobalSessionMembershipMutation = (
+  input: BeginGlobalSessionMembershipMutationInput,
+): GlobalSessionMembershipMutationHandle => {
+  const uniqueSessionIds = Array.from(new Set(input.sessionIds.filter(Boolean)));
+  const snapshotsById = input.kind === 'delete'
+    ? new Map<string, Session>()
+    : new Map(input.snapshots.map((session) => [session.id, session]));
+  const entries: Array<{ sessionID: string; version: number }> = [];
+
+  for (const sessionID of uniqueSessionIds) {
+    const snapshot = snapshotsById.get(sessionID);
+    const desiredSession = input.kind === 'archive'
+      ? (snapshot ? markSessionArchived(snapshot, input.archivedAt) : undefined)
+      : input.kind === 'unarchive'
+        ? (snapshot ? markSessionUnarchived(snapshot) : undefined)
+        : undefined;
+    const version = ++nextMembershipMutationVersion;
+    membershipMutationShadow.set(sessionID, {
+      kind: input.kind,
+      version,
+      phase: 'pending',
+      desiredSession,
+    });
+    entries.push({ sessionID, version });
+  }
+
+  const idSet = new Set(uniqueSessionIds);
+  const desiredSessions = entries
+    .map((entry) => membershipMutationShadow.get(entry.sessionID)?.desiredSession)
+    .filter((session): session is Session => Boolean(session));
+
+  useGlobalSessionsStore.setState((state) => {
+    const remainingActiveSessions = removeSessionsFromList(state.activeSessions, idSet);
+    const remainingArchivedSessions = removeSessionsFromList(state.archivedSessions, idSet);
+    const nextActiveSessions = input.kind === 'unarchive'
+      ? prependDesiredSessions(remainingActiveSessions, desiredSessions)
+      : remainingActiveSessions;
+    const nextArchivedSessions = input.kind === 'archive'
+      ? prependDesiredSessions(remainingArchivedSessions, desiredSessions)
+      : remainingArchivedSessions;
+
+    if (
+      nextActiveSessions === state.activeSessions
+      && nextArchivedSessions === state.archivedSessions
+    ) {
+      return state;
+    }
+
+    return {
+      activeSessions: nextActiveSessions,
+      archivedSessions: nextArchivedSessions,
+      sessionsByDirectory: nextActiveSessions === state.activeSessions
+        ? state.sessionsByDirectory
+        : buildSessionsByDirectory(nextActiveSessions),
+    };
+  });
+
+  return { entries };
+};
+
+export const settleGlobalSessionMembershipMutation = (
+  handle: GlobalSessionMembershipMutationHandle,
+  result: { successfulIds: string[]; failedIds: string[] },
+): void => {
+  const successfulIds = new Set(result.successfulIds);
+  const failedIds = new Set(result.failedIds);
+
+  for (const entry of handle.entries) {
+    const current = membershipMutationShadow.get(entry.sessionID);
+    if (!current || current.version !== entry.version) {
+      continue;
+    }
+    if (failedIds.has(entry.sessionID)) {
+      membershipMutationShadow.delete(entry.sessionID);
+      continue;
+    }
+    if (successfulIds.has(entry.sessionID)) {
+      membershipMutationShadow.set(entry.sessionID, {
+        ...current,
+        phase: 'succeeded',
+      });
+    }
+  }
+};
+
+export const queueGlobalSessionsRefreshAfterMutation = (): Promise<void> => {
+  postMutationRefreshRequested = true;
+  if (postMutationRefreshPromise) {
+    return postMutationRefreshPromise;
+  }
+
+  const runRefreshLoop = async () => {
+    while (postMutationRefreshRequested) {
+      postMutationRefreshRequested = false;
+      const existingLoad = inflightLoad;
+      if (existingLoad) {
+        await existingLoad;
+      }
+      await useGlobalSessionsStore.getState().loadSessions();
+    }
+  };
+
+  postMutationRefreshPromise = runRefreshLoop().finally(() => {
+    postMutationRefreshPromise = null;
+    if (postMutationRefreshRequested) {
+      void queueGlobalSessionsRefreshAfterMutation();
+    }
+  });
+  return postMutationRefreshPromise;
+};
 
 export const ensureGlobalSessionsLoaded = async (fallbackActive?: Session[]): Promise<LoadResult> => {
   const state = useGlobalSessionsStore.getState();

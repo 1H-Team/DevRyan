@@ -15,7 +15,7 @@ Workspace package for the shared React UI runtime used by web, Electron, and VS 
 2. `src/main.tsx` initializes locale/appearance persistence and mounts provider tree.
 3. `src/App.tsx` initializes config/runtime wiring, mounts sync provider, and routes to views.
 4. Feature components consume selectors/hooks from `stores`, `sync`, and `lib` helpers.
-5. Managed-task events bypass directory queues, while snapshot/cancel/recovery actions use `src/lib/orchestrationApi.ts` against the host-owned `/api/orchestration/*` contract.
+5. Managed-task events bypass directory queues, while snapshot/cancel/recovery and confirmed primary-agent handoff actions use `src/lib/orchestrationApi.ts` against the host-owned `/api/orchestration/*` contract.
 
 ## Integration
 - **Depends on**: `@opencode-ai/sdk` (sessions/messages/providers), `@openchamber/orchestration-runtime` (provider prompt-tool policy plus managed-task projections/envelopes), host-provided runtime APIs, and backend `/api/*` routes.

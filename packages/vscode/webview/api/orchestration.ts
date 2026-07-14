@@ -73,7 +73,14 @@ export const handleManagedOrchestrationApiRequest = async (options: {
   const pathname = options.url.pathname.replace(/\/+$/, '') || '/';
   let payload: Record<string, unknown> | null = null;
 
-  if (pathname === '/api/orchestration/snapshot' && method === 'GET') {
+  if (pathname === '/api/orchestration/handoff') {
+    if (method !== 'POST') {
+      return errorResponse(405, 'method_not_allowed', 'Method not allowed');
+    }
+    const parsed = await parseBody(options.readBody, options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES);
+    if (parsed.response) return parsed.response;
+    payload = { action: 'handoff', body: parsed.body ?? {} };
+  } else if (pathname === '/api/orchestration/snapshot' && method === 'GET') {
     payload = {
       action: 'snapshot',
       rootSessionId: options.url.searchParams.get('rootSessionId')?.trim() || undefined,

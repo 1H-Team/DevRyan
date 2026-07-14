@@ -1,5 +1,6 @@
 import { projectTurnActivity } from './projectTurnActivity';
 import { projectTurnIndexes } from './projectTurnIndexes';
+import { projectPlanTurnTraceIndex } from './projectPlanTurnTraceIndex';
 import { projectTurnDiffStats, projectTurnSummary } from './projectTurnSummary';
 import type {
     ChatMessageEntry,
@@ -214,11 +215,13 @@ const canReusePreviousTurn = (previous: TurnRecord, next: TurnRecord): boolean =
 
 interface ProjectTurnRecordsOptions {
     previousProjection?: TurnProjectionResult | null;
+    recordedPlanModeMessageIds?: ReadonlySet<string>;
     showTextJustificationActivity: boolean;
 }
 
 const DEFAULT_OPTIONS: ProjectTurnRecordsOptions = {
     previousProjection: null,
+    recordedPlanModeMessageIds: new Set<string>(),
     showTextJustificationActivity: false,
 };
 
@@ -333,5 +336,9 @@ export const projectTurnRecords = (
     return {
         ...projection,
         ungroupedMessageIds,
+        planTraceIndex: projectPlanTurnTraceIndex(stableTurns, {
+            previousIndex: effectiveOptions.previousProjection?.planTraceIndex,
+            recordedPlanModeMessageIds: effectiveOptions.recordedPlanModeMessageIds,
+        }),
     };
 };

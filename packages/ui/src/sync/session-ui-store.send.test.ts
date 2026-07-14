@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test"
 const bunTestHooks = (await import("bun:test")) as unknown as {
   afterEach: (callback: () => void) => void
 }
+const actualSyncRefsModule = await import("./sync-refs")
 
 const optimisticCalls: Array<{
   sessionId: string
@@ -39,6 +40,18 @@ const savedAgentVariants: Array<{
   modelID: string
   variant?: string
 }> = []
+const savedDraftAgents: Array<{ draftId: string; agent: string }> = []
+const savedDraftModels: Array<{ draftId: string; providerID: string; modelID: string }> = []
+const savedDraftAgentModels: Array<{ draftId: string; agent: string; providerID: string; modelID: string }> = []
+const savedDraftAgentVariants: Array<{
+  draftId: string
+  agent: string
+  providerID: string
+  modelID: string
+  variant?: string
+}> = []
+const configSetAgentCalls: Array<{ agentName: string; options?: Record<string, unknown> }> = []
+const configSetProviderModelCalls: Array<{ providerId: string; modelId: string; variant?: string }> = []
 const rejectQuestionCalls: Array<{ sessionId: string; requestId: string }> = []
 let sessionAgentSelections = new Map<string, string>()
 let draftAgentSelections = new Map<string, string>()
@@ -192,6 +205,7 @@ mock.module("./session-actions", () => ({
     send: (messageID: string) => Promise<void>
     onMessageID?: (messageID: string) => void
     onMessageRollback?: (messageID: string) => void
+    messageID?: string
   }) => {
     optimisticCalls.push({
       sessionId: params.sessionId,
@@ -200,7 +214,7 @@ mock.module("./session-actions", () => ({
       modelID: params.modelID,
       agent: params.agent,
     })
-    const messageID = `message-${optimisticCalls.length}`
+    const messageID = params.messageID ?? `message-${optimisticCalls.length}`
     params.onMessageID?.(messageID)
     try {
       await params.send(messageID)
@@ -223,6 +237,19 @@ mock.module("@/stores/useConfigStore", () => ({
       providers: [],
       activateDirectory: mock(() => Promise.resolve()),
       applyDefaultsToCurrent: mock(() => {}),
+      setAgent: mock((agentName: string, options?: Record<string, unknown>) => {
+        configSetAgentCalls.push({ agentName, options })
+        mockConfigState = { ...mockConfigState, currentAgentName: agentName }
+      }),
+      setProviderModel: mock((providerId: string, modelId: string, variant?: string) => {
+        configSetProviderModelCalls.push({ providerId, modelId, variant })
+        mockConfigState = {
+          ...mockConfigState,
+          currentProviderId: providerId,
+          currentModelId: modelId,
+          currentVariant: variant,
+        }
+      }),
       ...mockConfigState,
     }),
   },
@@ -239,6 +266,44 @@ mock.module("./selection-store", () => ({
       getDraftAgentModelVariantForSelection: (draftId: string, agent: string, providerID: string, modelID: string) =>
         draftAgentModelVariants.get(draftId)?.get(agent)?.get(`${providerID}/${modelID}`),
       getPlanModeSelection: () => selectedPlanMode,
+      saveDraftAgentSelection: (draftId: string, agent: string) => {
+        savedDraftAgents.push({ draftId, agent })
+        draftAgentSelections.set(draftId, agent)
+      },
+      saveDraftModelSelection: (draftId: string, providerID: string, modelID: string) => {
+        savedDraftModels.push({ draftId, providerID, modelID })
+        draftModelSelections.set(draftId, { providerId: providerID, modelId: modelID })
+      },
+      saveDraftAgentModelForSelection: (draftId: string, agent: string, providerID: string, modelID: string) => {
+        savedDraftAgentModels.push({ draftId, agent, providerID, modelID })
+        const agentMap = draftAgentModelSelections.get(draftId) ?? new Map()
+        agentMap.set(agent, { providerId: providerID, modelId: modelID })
+        draftAgentModelSelections.set(draftId, agentMap)
+      },
+      saveDraftAgentModelVariantForSelection: (
+        draftId: string,
+        agent: string,
+        providerID: string,
+        modelID: string,
+        variant?: string,
+      ) => {
+        savedDraftAgentVariants.push({ draftId, agent, providerID, modelID, variant })
+        const agentMap = draftAgentModelVariants.get(draftId) ?? new Map()
+        const modelMap = agentMap.get(agent) ?? new Map()
+        if (variant) {
+          modelMap.set(`${providerID}/${modelID}`, variant)
+        } else {
+          modelMap.delete(`${providerID}/${modelID}`)
+        }
+        agentMap.set(agent, modelMap)
+        draftAgentModelVariants.set(draftId, agentMap)
+      },
+      clearDraftSelection: (draftId: string) => {
+        draftAgentSelections.delete(draftId)
+        draftModelSelections.delete(draftId)
+        draftAgentModelSelections.delete(draftId)
+        draftAgentModelVariants.delete(draftId)
+      },
       saveSessionModelSelection: (sessionId: string, providerID: string, modelID: string) => {
         savedSessionModels.push({ sessionId, providerID, modelID })
       },
@@ -326,7 +391,9 @@ mock.module("@/lib/userSendAnimation", () => ({
 }))
 
 mock.module("./sync-refs", () => ({
+  ...actualSyncRefsModule,
   setSyncRefs: () => {},
+  clearSyncRefs: () => true,
   registerSessionDirectory: () => {},
   getSyncSDK: () => ({}),
   getSyncChildStores: () => ({
@@ -347,9 +414,17 @@ mock.module("./sync-refs", () => ({
     const statuses = mockChildStoreState.session_status as Record<string, { type?: string }> | undefined
     return statuses?.[sessionId]
   },
+  getAllSyncSessionStatuses: () => mockChildStoreState.session_status ?? {},
+  getSyncSessionStatusAnyDirectory: (sessionId: string) => {
+    const statuses = mockChildStoreState.session_status as Record<string, { type?: string }> | undefined
+    return statuses?.[sessionId]
+  },
   getSyncSessionDirectoryAnyDirectory: () => mockSessionDirectoryAnyDirectory,
   getSyncPermissions: () => [],
   getSyncQuestions: (sessionId: string) => mockQuestionsBySession.get(sessionId) ?? [],
+  getSyncBlockingRequestCountAnyDirectory: (sessionId: string) => (
+    (mockQuestionsBySession.get(sessionId)?.length ?? 0)
+  ),
   getDirectoryState: () => mockDirectoryState,
 }))
 
@@ -369,6 +444,7 @@ const originalOpencodeClientMethods = {
   sendMessage: testOpencodeClient.sendMessage.bind(testOpencodeClient),
   sendImmediateSubtaskPrompt: testOpencodeClient.sendImmediateSubtaskPrompt.bind(testOpencodeClient),
   prewarmCursorSession: testOpencodeClient.prewarmCursorSession.bind(testOpencodeClient),
+  deleteSession: testOpencodeClient.deleteSession.bind(testOpencodeClient),
 }
 
 const installOpencodeClientMock = () => {
@@ -414,6 +490,7 @@ const installOpencodeClientMock = () => {
     prewarmCursorSessionCalls.push(params)
     return Promise.resolve({ ok: true, agentID: "agent-prepared", cacheHit: false })
   }
+  testOpencodeClientRecord.deleteSession = () => Promise.resolve(true)
 }
 
 const restoreOpencodeClientMock = () => {
@@ -437,6 +514,7 @@ const { useProjectsStore } = await import("@/stores/useProjectsStore")
 const { getSafeStorage } = await import("@/stores/utils/safeStorage")
 
 const SESSION_COMPLETION_INDICATOR_SETTLE_MS = 250
+const CURSOR_DRAFT_PREWARM_STORAGE_KEY = "openchamber.cursorDraftPrewarmSessions.v1"
 
 bunTestHooks.afterEach(() => {
   restoreOpencodeClientMock()
@@ -461,6 +539,11 @@ const expectPlanModeInstructionContract = (text: string) => {
   expect(text).toContain("The plan card provides the implementation action")
   expect(text).not.toContain("End the message with a single approval question")
   expect(text).toContain("Do not wrap it in a code fence")
+  expect(text).toContain("same-session planning history")
+  expect(text).toContain("Treat the latest visible user prompt as a revision")
+  expect(text).toContain("Preserve every prior requirement, decision, constraint, and file reference")
+  expect(text).toContain("complete, self-contained replacement plan")
+  expect(text).toContain("Never return only a patch, diff, addendum, or abbreviated delta")
 }
 
 const createPdfAttachment = () => ({
@@ -495,6 +578,12 @@ describe("session-ui-store send routing", () => {
     savedSessionModels.length = 0
     savedAgentModels.length = 0
     savedAgentVariants.length = 0
+    savedDraftAgents.length = 0
+    savedDraftModels.length = 0
+    savedDraftAgentModels.length = 0
+    savedDraftAgentVariants.length = 0
+    configSetAgentCalls.length = 0
+    configSetProviderModelCalls.length = 0
     rejectQuestionCalls.length = 0
     sessionAgentSelections = new Map()
     draftAgentSelections = new Map()
@@ -527,6 +616,7 @@ describe("session-ui-store send routing", () => {
     selectCreatedSessionDuringCreate = false
     deferredActivateDirectoryResolve = null
     const storage = getSafeStorage()
+    storage.removeItem(CURSOR_DRAFT_PREWARM_STORAGE_KEY)
     storage.removeItem(CHAT_DRAFTS_STORAGE_KEY)
     storage.removeItem(LEGACY_NEW_INPUT_DRAFT_KEY)
     storage.removeItem(getDraftInputStorageKey("draft-send"))
@@ -614,6 +704,44 @@ describe("session-ui-store send routing", () => {
     expect(activeSessionCalls).toEqual([{ directory: "", sessionId: "" }])
   })
 
+  test("opening a startup draft preserves reload-compatible config-only drafts", () => {
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      currentDraftId: null,
+      draftsById: {
+        "draft-reloaded": {
+          id: "draft-reloaded",
+          text: "",
+          createdAt: 1,
+          updatedAt: 2,
+          selectedProjectId: null,
+          directoryOverride: "/repo",
+          parentID: null,
+          sendConfig: {
+            providerID: "cursor-acp",
+            modelID: "composer-2.5-fast",
+            agent: "builder",
+            modelProvenance: "explicit",
+          },
+        },
+      },
+      draftOrder: ["draft-reloaded"],
+      newSessionDraft: { open: false, directoryOverride: null, parentID: null },
+    })
+
+    useSessionUIStore.getState().openNewSessionDraft({ directoryOverride: "/repo" })
+
+    const state = useSessionUIStore.getState()
+    expect(state.draftsById["draft-reloaded"]?.sendConfig).toEqual({
+      providerID: "cursor-acp",
+      modelID: "composer-2.5-fast",
+      agent: "builder",
+      modelProvenance: "explicit",
+    })
+    expect(state.draftOrder).toContain("draft-reloaded")
+    expect(getSafeStorage().getItem(CHAT_DRAFTS_STORAGE_KEY)).toContain("draft-reloaded")
+  })
+
   test("selecting an existing draft clears the active session tracker", () => {
     useSessionUIStore.getState().openNewSessionDraft({ directoryOverride: "/repo" })
     const draftId = useSessionUIStore.getState().currentDraftId
@@ -627,6 +755,170 @@ describe("session-ui-store send routing", () => {
     expect(useSessionUIStore.getState().currentSessionId).toBe(null)
     expect(useSessionUIStore.getState().currentDraftId).toBe(draftId)
     expect(activeSessionCalls).toEqual([{ directory: "", sessionId: "" }])
+  })
+
+  test("selecting a draft restores live agent/model from authoritative draft selection after activation", async () => {
+    mockConfigState = {
+      currentAgentName: "stale-agent",
+      currentProviderId: "stale-provider",
+      currentModelId: "stale-model",
+      currentVariant: "stale",
+      settingsDefaultAgent: "builder",
+      agents: [{
+        name: "builder",
+        mode: "primary",
+        model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
+        variant: "high",
+      }],
+      providers: [{
+        id: "anthropic",
+        models: [{ id: "claude-sonnet-4-5", variants: { high: {}, medium: {} } }],
+      }, {
+        id: "openai",
+        models: [{ id: "gpt-5.2", variants: { low: {}, medium: {} } }],
+      }],
+      activateDirectory: mock(() => Promise.resolve()),
+    }
+
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      currentDraftId: "draft-restore",
+      draftsById: {
+        "draft-restore": {
+          id: "draft-restore",
+          text: "hello",
+          createdAt: 1,
+          updatedAt: 1,
+          selectedProjectId: null,
+          directoryOverride: "/repo",
+          parentID: null,
+          sendConfig: {
+            providerID: "openai",
+            modelID: "gpt-5.2",
+            agent: "builder",
+            variant: "low",
+            modelProvenance: "explicit",
+          },
+        },
+      },
+      draftOrder: ["draft-restore"],
+      newSessionDraft: {
+        open: true,
+        id: "draft-restore",
+        directoryOverride: "/repo",
+        parentID: null,
+        sendConfig: {
+          providerID: "openai",
+          modelID: "gpt-5.2",
+          agent: "builder",
+          variant: "low",
+          modelProvenance: "explicit",
+        },
+      },
+    })
+
+    useSessionUIStore.getState().selectNewSessionDraft("draft-restore")
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(configSetAgentCalls).toEqual([{
+      agentName: "builder",
+      options: { preserveCurrentModel: true, recordSessionSelection: false },
+    }])
+    expect(configSetProviderModelCalls).toEqual([{
+      providerId: "openai",
+      modelId: "gpt-5.2",
+      variant: "low",
+    }])
+    expect(savedDraftAgents).toEqual([{ draftId: "draft-restore", agent: "builder" }])
+    expect(savedDraftModels).toEqual([{
+      draftId: "draft-restore",
+      providerID: "openai",
+      modelID: "gpt-5.2",
+    }])
+  })
+
+  test("selecting a draft skips restore when a newer draft becomes current before activation settles", async () => {
+    const activation = createDeferredSend()
+    mockConfigState = {
+      currentAgentName: "stale-agent",
+      currentProviderId: "stale-provider",
+      currentModelId: "stale-model",
+      agents: [{
+        name: "builder",
+        mode: "primary",
+        model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
+        variant: "high",
+      }],
+      providers: [{
+        id: "anthropic",
+        models: [{ id: "claude-sonnet-4-5", variants: { high: {} } }],
+      }],
+      activateDirectory: mock(() => activation.promise.then(() => undefined)),
+    }
+
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      currentDraftId: "draft-a",
+      draftsById: {
+        "draft-a": {
+          id: "draft-a",
+          text: "a",
+          createdAt: 1,
+          updatedAt: 1,
+          selectedProjectId: null,
+          directoryOverride: "/repo",
+          parentID: null,
+          sendConfig: {
+            providerID: "anthropic",
+            modelID: "claude-sonnet-4-5",
+            agent: "builder",
+            variant: "high",
+            modelProvenance: "explicit",
+          },
+        },
+        "draft-b": {
+          id: "draft-b",
+          text: "b",
+          createdAt: 2,
+          updatedAt: 2,
+          selectedProjectId: null,
+          directoryOverride: "/repo",
+          parentID: null,
+        },
+      },
+      draftOrder: ["draft-a", "draft-b"],
+      newSessionDraft: {
+        open: true,
+        id: "draft-a",
+        directoryOverride: "/repo",
+        parentID: null,
+        sendConfig: {
+          providerID: "anthropic",
+          modelID: "claude-sonnet-4-5",
+          agent: "builder",
+          variant: "high",
+          modelProvenance: "explicit",
+        },
+      },
+    })
+
+    useSessionUIStore.getState().selectNewSessionDraft("draft-a")
+    useSessionUIStore.setState({
+      currentDraftId: "draft-b",
+      newSessionDraft: {
+        open: true,
+        id: "draft-b",
+        directoryOverride: "/repo",
+        parentID: null,
+      },
+    })
+    activation.resolve(undefined)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(configSetAgentCalls).toEqual([])
+    expect(configSetProviderModelCalls).toEqual([])
   })
 
   test("clears recorded plan-mode session ownership once implementation starts", () => {
@@ -982,6 +1274,28 @@ describe("session-ui-store send routing", () => {
     expect(messageIds).toEqual(["message-1"])
   })
 
+  test("sendMessageToSession preserves queued client identity and directory", async () => {
+    useSessionUIStore.setState({ currentSessionId: "session-a" })
+
+    await useSessionUIStore.getState().sendMessageToSession(
+      "session-a",
+      "queued prompt",
+      "provider-a",
+      "model-a",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "normal",
+      false,
+      { messageID: "msg_queued_client_id", directory: "/repo/queued" } as never,
+    )
+
+    expect(sendMessageCalls.at(-1)?.messageId).toBe("msg_queued_client_id")
+    expect(sendMessageCalls.at(-1)?.directory).toBe("/repo/queued")
+  })
+
   test("sendMessage defensively creates a session when no draft or current session exists", async () => {
     mockCreatedSession = { id: "session-created", directory: "/repo" }
 
@@ -1058,49 +1372,172 @@ describe("session-ui-store send routing", () => {
     expect(createSessionCalls[0]?.title).toBe("Custom session name")
   })
 
-  test("Cursor new draft send promotes a prewarmed hidden session instead of creating another", async () => {
+  test("Cursor draft model changes remain local until the first send", async () => {
     mockConfigState = {
-      currentProviderId: "cursor-acp",
-      currentModelId: "composer-2.5",
+      currentAgentName: "builder",
+      currentProviderId: "provider-a",
+      currentModelId: "model-a",
       currentVariant: undefined,
+      settingsDefaultAgent: "builder",
+      agents: [{ name: "builder", mode: "primary" }],
+      providers: [
+        { id: "provider-a", models: [{ id: "model-a" }] },
+        {
+          id: "cursor-acp",
+          models: [{ id: "composer-2.5", variants: { low: {}, high: {} } }],
+        },
+      ],
     }
-    mockCreatedSession = { id: "session-prewarmed", directory: "/repo" }
+    mockCreatedSession = { id: "session-should-not-exist", directory: "/repo" }
 
     useSessionUIStore.getState().openNewSessionDraft({ directoryOverride: "/repo" })
     const draftId = useSessionUIStore.getState().currentDraftId
     expect(draftId).toBeTruthy()
 
-    for (let index = 0; index < 20 && prewarmCursorSessionCalls.length === 0; index += 1) {
+    useSessionUIStore.getState().updateNewSessionDraftSendConfig({
+      providerID: "cursor-acp",
+      modelID: "composer-2.5",
+      agent: "builder",
+      variant: "low",
+      modelProvenance: "explicit",
+    })
+    useSessionUIStore.getState().updateNewSessionDraftSendConfig({
+      providerID: "cursor-acp",
+      modelID: "composer-2.5",
+      agent: "builder",
+      variant: "high",
+      modelProvenance: "explicit",
+    })
+    useSessionUIStore.getState().updateNewSessionDraftSendConfig({
+      providerID: "provider-a",
+      modelID: "model-a",
+      agent: "builder",
+      variant: undefined,
+      modelProvenance: "explicit",
+    })
+    useSessionUIStore.getState().updateNewSessionDraftSendConfig({
+      providerID: "cursor-acp",
+      modelID: "composer-2.5",
+      agent: "builder",
+      variant: "high",
+      modelProvenance: "explicit",
+    })
+
+    for (let index = 0; index < 20; index += 1) {
       await Promise.resolve()
     }
-    await Promise.resolve()
-    await Promise.resolve()
+
+    expect(createSessionCalls).toEqual([])
+    expect(prewarmCursorSessionCalls).toEqual([])
+    expect(getSafeStorage().getItem(CURSOR_DRAFT_PREWARM_STORAGE_KEY)).toBe(null)
+    expect(useSessionUIStore.getState().newSessionDraft.sendConfig).toEqual({
+      providerID: "cursor-acp",
+      modelID: "composer-2.5",
+      agent: "builder",
+      variant: "high",
+      modelProvenance: "explicit",
+    })
+  })
+
+  test("replacing and discarding Cursor drafts never creates a server session", async () => {
+    mockConfigState = {
+      currentProviderId: "cursor-acp",
+      currentModelId: "composer-2.5",
+      currentVariant: undefined,
+      providers: [{ id: "cursor-acp", models: [{ id: "composer-2.5" }] }],
+    }
+    mockCreatedSession = { id: "session-should-not-exist", directory: "/repo" }
+
+    useSessionUIStore.getState().openNewSessionDraft({ directoryOverride: "/repo" })
+    const firstDraftId = useSessionUIStore.getState().currentDraftId
+    expect(firstDraftId).toBeTruthy()
+
+    useSessionUIStore.getState().openNewSessionDraft({ directoryOverride: "/repo" })
+    const secondDraftId = useSessionUIStore.getState().currentDraftId
+    expect(secondDraftId).toBeTruthy()
+    expect(secondDraftId).not.toBe(firstDraftId)
+
+    useSessionUIStore.getState().deleteNewSessionDraft(secondDraftId ?? "")
+    for (let index = 0; index < 20; index += 1) {
+      await Promise.resolve()
+    }
+
+    expect(createSessionCalls).toEqual([])
+    expect(prewarmCursorSessionCalls).toEqual([])
+  })
+
+  test("Cursor first send creates one normal session with the final draft selection", async () => {
+    mockConfigState = {
+      currentAgentName: "builder",
+      currentProviderId: "provider-a",
+      currentModelId: "model-a",
+      currentVariant: undefined,
+      settingsDefaultAgent: "builder",
+      agents: [{ name: "builder", mode: "primary" }],
+      providers: [
+        { id: "provider-a", models: [{ id: "model-a" }] },
+        {
+          id: "cursor-acp",
+          models: [{ id: "composer-2.5", variants: { low: {}, high: {} } }],
+        },
+      ],
+    }
+    mockCreatedSession = { id: "session-created", directory: "/repo" }
+
+    useSessionUIStore.getState().openNewSessionDraft({ directoryOverride: "/repo" })
+    const draftId = useSessionUIStore.getState().currentDraftId
+    expect(draftId).toBeTruthy()
+    draftAgentSelections.set(draftId ?? "", "builder")
+    draftModelSelections.set(draftId ?? "", {
+      providerId: "cursor-acp",
+      modelId: "composer-2.5",
+    })
+    draftAgentModelSelections.set(draftId ?? "", new Map([
+      ["builder", { providerId: "cursor-acp", modelId: "composer-2.5" }],
+    ]))
+    draftAgentModelVariants.set(draftId ?? "", new Map([
+      ["builder", new Map([["cursor-acp/composer-2.5", "high"]])],
+    ]))
+    useSessionUIStore.getState().updateNewSessionDraftSendConfig({
+      providerID: "cursor-acp",
+      modelID: "composer-2.5",
+      agent: "builder",
+      variant: "high",
+      modelProvenance: "explicit",
+    })
+
+    for (let index = 0; index < 20; index += 1) {
+      await Promise.resolve()
+    }
+
+    await useSessionUIStore.getState().sendMessage(
+      "start cursor chat",
+      "provider-a",
+      "model-a",
+      "builder",
+    )
 
     expect(createSessionCalls).toEqual([{
       title: undefined,
       directory: "/repo",
       parentID: null,
-      options: { isDraftPrewarmSession: true },
+      options: undefined,
     }])
-    expect(prewarmCursorSessionCalls).toEqual([{
-      sessionID: "session-prewarmed",
-      directory: "/repo",
+    expect(prewarmCursorSessionCalls).toEqual([])
+    expect(globalUpsertCalls).toEqual([])
+    expect(useSessionUIStore.getState().currentSessionId).toBe("session-created")
+    expect(optimisticCalls[0]).toEqual({
+      sessionId: "session-created",
+      content: "start cursor chat",
+      providerID: "cursor-acp",
       modelID: "composer-2.5",
-      variant: "",
-      agent: "",
-    }])
-
-    await useSessionUIStore.getState().sendMessage(
-      "start cursor chat",
-      "cursor-acp",
-      "composer-2.5",
-    )
-
-    expect(createSessionCalls).toHaveLength(1)
-    expect(useSessionUIStore.getState().currentSessionId).toBe("session-prewarmed")
-    expect(globalUpsertCalls.map((session) => session.id)).toEqual(["session-prewarmed"])
-    expect(optimisticCalls[0]?.sessionId).toBe("session-prewarmed")
-    expect(sendMessageCalls[0]?.id).toBe("session-prewarmed")
+      agent: "builder",
+    })
+    expect(sendMessageCalls[0]?.id).toBe("session-created")
+    expect(sendMessageCalls[0]?.providerID).toBe("cursor-acp")
+    expect(sendMessageCalls[0]?.modelID).toBe("composer-2.5")
+    expect(sendMessageCalls[0]?.agent).toBe("builder")
+    expect(sendMessageCalls[0]?.variant).toBe("high")
   })
 
   test("new draft sends expose a pending abort target before prompt acceptance", async () => {
@@ -1386,6 +1823,120 @@ describe("session-ui-store send routing", () => {
     expect(String(additionalParts?.[0]?.text)).toContain("Conversation context from Cursor SDK turns")
     expect(String(additionalParts?.[0]?.text)).toContain("User: What did Cursor do?")
     expect(String(additionalParts?.[0]?.text)).toContain("Assistant: Cursor changed the reviews page.")
+  })
+
+  test("adds synthetic handoff context when switching from OpenCode to Cursor SDK", async () => {
+    mockSyncMessages = [{
+      id: "msg_open_assistant",
+      role: "assistant",
+      providerID: "anthropic",
+      modelID: "claude-sonnet-4-5",
+      time: { created: 1 },
+    }]
+    mockPartsByMessage = new Map([[
+      "msg_open_assistant",
+      [{ id: "prt_open", messageID: "msg_open_assistant", type: "text", text: "OpenCode retained this detail." }],
+    ]])
+
+    await useSessionUIStore.getState().sendMessageToSession(
+      "session-a",
+      "Continue in Cursor",
+      "cursor-acp",
+      "composer-2.5",
+      "builder",
+    )
+
+    const additionalParts = sendMessageCalls[0]?.additionalParts as Array<Record<string, unknown>> | undefined
+    expect(additionalParts?.[0]?.synthetic).toBe(true)
+    expect(String(additionalParts?.[0]?.text)).toContain("Conversation context from OpenCode turns")
+    expect(String(additionalParts?.[0]?.text)).toContain("Assistant: OpenCode retained this detail.")
+  })
+
+  test("does not add synthetic handoff context between OpenCode providers", async () => {
+    mockSyncMessages = [{
+      id: "msg_anthropic",
+      role: "assistant",
+      providerID: "anthropic",
+      modelID: "claude-sonnet-4-5",
+      time: { created: 1 },
+    }]
+    mockPartsByMessage = new Map([[
+      "msg_anthropic",
+      [{ id: "prt_anthropic", messageID: "msg_anthropic", type: "text", text: "Native history" }],
+    ]])
+
+    await useSessionUIStore.getState().sendMessageToSession(
+      "session-a",
+      "Continue with OpenAI",
+      "openai",
+      "gpt-5.5",
+      "builder",
+    )
+
+    expect(sendMessageCalls[0]?.additionalParts).toBe(undefined)
+  })
+
+  test("does not copy synthetic context into a later runtime handoff", async () => {
+    mockSyncMessages = [{
+      id: "msg_cursor",
+      role: "assistant",
+      providerID: "cursor-acp",
+      modelID: "composer-2.5",
+      time: { created: 1 },
+    }]
+    mockPartsByMessage = new Map([[
+      "msg_cursor",
+      [
+        { id: "prt_synthetic", messageID: "msg_cursor", type: "text", text: "STALE_SYNTHETIC_CONTEXT", synthetic: true },
+        { id: "prt_visible", messageID: "msg_cursor", type: "text", text: "Newest real Cursor reply." },
+      ],
+    ]])
+
+    await useSessionUIStore.getState().sendMessageToSession(
+      "session-a",
+      "Continue with OpenCode",
+      "anthropic",
+      "claude-sonnet-4-5",
+      "builder",
+    )
+
+    const additionalParts = sendMessageCalls[0]?.additionalParts as Array<Record<string, unknown>> | undefined
+    const handoff = String(additionalParts?.[0]?.text)
+    expect(handoff).toContain("Newest real Cursor reply.")
+    expect(handoff).not.toContain("STALE_SYNTHETIC_CONTEXT")
+  })
+
+  test("prioritizes newest messages when cross-runtime handoff context exceeds its budget", async () => {
+    mockSyncMessages = Array.from({ length: 8 }, (_, index) => ({
+      id: `msg_long_${index + 1}`,
+      role: index % 2 === 0 ? "user" : "assistant",
+      providerID: "anthropic",
+      modelID: "claude-sonnet-4-5",
+      time: { created: index + 1 },
+    }))
+    mockPartsByMessage = new Map(mockSyncMessages.map((message, index) => {
+      const marker = index === 0 ? "OLDEST_CONTEXT" : index === 7 ? "NEWEST_CONTEXT" : `CONTEXT_${index + 1}`
+      return [
+        String(message.id),
+        [{ id: `prt_long_${index + 1}`, messageID: message.id, type: "text", text: `${marker}:${"x".repeat(1390)}` }],
+      ] as const
+    }))
+
+    await useSessionUIStore.getState().sendMessageToSession(
+      "session-a",
+      "Continue with the newest context",
+      "cursor-acp",
+      "composer-2.5",
+      "builder",
+    )
+
+    const additionalParts = sendMessageCalls[0]?.additionalParts as Array<Record<string, unknown>> | undefined
+    const handoff = String(additionalParts?.[0]?.text)
+    expect(handoff).toContain("NEWEST_CONTEXT")
+    expect(handoff).not.toContain("OLDEST_CONTEXT")
+    expect(handoff).toContain("[older conversation context omitted]")
+    expect(handoff.length <= 6000).toBe(true)
+    expect(handoff.indexOf("CONTEXT_5")).toBeLessThan(handoff.indexOf("NEWEST_CONTEXT"))
   })
 
   test("does not add synthetic handoff context for same-backend model switches", async () => {

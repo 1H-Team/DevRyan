@@ -99,6 +99,7 @@ export const createManagedTaskScheduler = (options = {}) => {
   const activeLaunches = new Map();
   const cancellationPromises = new Map();
   const acknowledgementPromises = new Map();
+  const handoffLocks = new Map();
   const taskWaiters = new Map();
   const timeoutTimers = new Map();
   const startingLeaseTimers = new Map();
@@ -289,6 +290,89 @@ export const createManagedTaskScheduler = (options = {}) => {
     }
     return null;
   };
+
+  const validateAgentHandoffScope = (input, { requireIdempotencyKey = false } = {}) => {
+    if (!input || typeof input !== 'object') {
+      throw new ManagedOrchestrationError('invalid_handoff_scope', 'handoff scope is required');
+    }
+    if (typeof input.rootSessionId !== 'string' || !input.rootSessionId.trim()) {
+      throw new ManagedOrchestrationError('missing_root_session_id', 'rootSessionId is required');
+    }
+    if (input.fromMode !== 'orchestrator' || input.toMode !== 'builder') {
+      throw new ManagedOrchestrationError(
+        'invalid_handoff_scope',
+        'only orchestrator-to-builder handoff is supported',
+      );
+    }
+    if (
+      requireIdempotencyKey
+      && (typeof input.idempotencyKey !== 'string' || !input.idempotencyKey.trim())
+    ) {
+      throw new ManagedOrchestrationError(
+        'missing_idempotency_key',
+        'handoff idempotencyKey is required',
+      );
+    }
+  };
+
+  const getDispatchBarrierStateLocked = (rootSessionId) => {
+    const groupedTasks = [...tasks.values()]
+      .filter((task) => (
+        task.rootSessionId === rootSessionId
+        && task.dispatchGroupId !== null
+      ))
+      .sort(compareManagedTaskQueueOrder);
+    const lockedGroupIds = new Set();
+
+    for (const task of groupedTasks) {
+      const envelope = resultEnvelopes.get(task.taskId);
+      if (!isTerminalManagedTaskStatus(task.status) || !envelope || envelope.action === null) {
+        lockedGroupIds.add(task.dispatchGroupId);
+      }
+    }
+
+    if (lockedGroupIds.size === 0) {
+      return { state: 'clear', taskIds: [] };
+    }
+
+    const activeTaskIds = groupedTasks
+      .filter((task) => (
+        lockedGroupIds.has(task.dispatchGroupId)
+        && !isTerminalManagedTaskStatus(task.status)
+      ))
+      .map((task) => task.taskId);
+    if (activeTaskIds.length > 0) {
+      return { state: 'active', taskIds: activeTaskIds };
+    }
+
+    return {
+      state: 'awaiting_acknowledgement',
+      taskIds: groupedTasks
+        .filter((task) => {
+          if (!lockedGroupIds.has(task.dispatchGroupId)) return false;
+          const envelope = resultEnvelopes.get(task.taskId);
+          return !envelope || envelope.action === null;
+        })
+        .map((task) => task.taskId),
+    };
+  };
+
+  const collectAgentHandoffTaskIdsLocked = (rootSessionId) => (
+    [...tasks.values()]
+      .filter((task) => {
+        if (
+          task.rootSessionId !== rootSessionId
+          || task.mode !== 'orchestrator'
+          || task.dispatchGroupId === null
+        ) {
+          return false;
+        }
+        const envelope = resultEnvelopes.get(task.taskId);
+        return !isTerminalManagedTaskStatus(task.status) || !envelope || envelope.action === null;
+      })
+      .sort(compareManagedTaskQueueOrder)
+      .map((task) => task.taskId)
+  );
 
   const nextSequenceLocked = () => {
     let sequence = 0;
@@ -511,7 +595,13 @@ export const createManagedTaskScheduler = (options = {}) => {
       let available = maxConcurrency - countActiveLocked();
       if (available <= 0) return;
       const queued = [...tasks.values()]
-        .filter((task) => task.status === 'queued')
+        .filter((task) => (
+          task.status === 'queued'
+          && !(
+            task.dispatchGroupId !== null
+            && handoffLocks.has(task.rootSessionId)
+          )
+        ))
         .sort(compareManagedTaskQueueOrder);
       for (const previous of queued) {
         if (available <= 0) break;
@@ -600,7 +690,10 @@ export const createManagedTaskScheduler = (options = {}) => {
           throw new ManagedOrchestrationError('invalid_ledger', 'managed orchestration ledger is invalid');
         }
         for (const rawTask of loaded.tasks) {
-          const task = validateManagedTaskRecord(rawTask);
+          const task = validateManagedTaskRecord({
+            ...rawTask,
+            dispatchGroupId: rawTask?.dispatchGroupId ?? null,
+          });
           if (tasks.has(task.taskId)) {
             throw new ManagedOrchestrationError('duplicate_task', `duplicate task ${task.taskId} in ledger`);
           }
@@ -691,6 +784,16 @@ export const createManagedTaskScheduler = (options = {}) => {
       const existingTaskId = idempotencyIndex.get(indexKey);
       if (existingTaskId) return cloneTask(tasks.get(existingTaskId));
 
+      if (input.dispatchGroupId !== null && input.dispatchGroupId !== undefined) {
+        const handoff = handoffLocks.get(input.rootSessionId);
+        if (handoff) {
+          throw new ManagedOrchestrationError(
+            'handoff_in_progress',
+            `root ${input.rootSessionId} orchestrator-to-builder handoff is in progress`,
+          );
+        }
+      }
+
       const activeMode = getActiveModeForRootLocked(input.rootSessionId);
       if (activeMode && activeMode !== input.mode) {
         throw new ManagedOrchestrationError(
@@ -724,6 +827,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         taskId,
         idempotencyKey: input.idempotencyKey,
         rootSessionId: input.rootSessionId,
+        dispatchGroupId: input.dispatchGroupId ?? null,
         parentTaskId: input.parentTaskId ?? null,
         childSessionId: input.childSessionId ?? null,
         directory: input.directory,
@@ -859,6 +963,84 @@ export const createManagedTaskScheduler = (options = {}) => {
     }
   };
 
+  const cancelTaskForAgentHandoff = async (taskId) => {
+    const existingCancellation = cancellationPromises.get(taskId);
+    if (existingCancellation) {
+      const cancelled = await existingCancellation;
+      if (cancelled.status === 'interrupted') {
+        throw new ManagedOrchestrationError(
+          'handoff_abort_unconfirmed',
+          `managed task ${taskId} abort could not be confirmed`,
+        );
+      }
+      return cancelled;
+    }
+
+    const cancellation = (async () => {
+      const task = tasks.get(taskId);
+      if (!task) {
+        throw new ManagedOrchestrationError('task_not_found', `managed task ${taskId} was not found`);
+      }
+      const interruptedLaunchStillActive = task.status === 'interrupted'
+        && activeLaunches.has(taskId);
+      if (isTerminalManagedTaskStatus(task.status) && !interruptedLaunchStillActive) {
+        return cloneTask(task);
+      }
+      if (task.status === 'queued') {
+        await runExclusive(async () => {
+          const previous = tasks.get(taskId);
+          if (!previous || isTerminalManagedTaskStatus(previous.status)) return;
+          const next = {
+            ...previous,
+            status: 'aborted',
+            finishedAt: now(),
+            failureReason: 'Stopped during orchestrator-to-builder handoff',
+          };
+          await commitTerminalTaskLocked(previous, next);
+        });
+        return cloneTask(tasks.get(taskId));
+      }
+
+      const outcome = await raceAbortWithTimeout(executor.abort(cloneTask(task)));
+      const abortConfirmed = !outcome.timedOut && !outcome.error && outcome.value?.aborted !== false;
+      if (!abortConfirmed) {
+        throw new ManagedOrchestrationError(
+          'handoff_abort_unconfirmed',
+          `managed task ${taskId} abort could not be confirmed`,
+        );
+      }
+
+      const recovery = await readRecovery(task);
+      const recoverablePreview = typeof recovery.recoverablePreview === 'string'
+        ? recovery.recoverablePreview
+        : '';
+      const canonicalRefs = Array.isArray(recovery.canonicalRefs)
+        ? recovery.canonicalRefs.map((reference) => ({ ...reference }))
+        : [];
+      if (!isTerminalManagedTaskStatus(task.status)) {
+        await finishTask(taskId, task.leaseToken, {
+          status: 'aborted',
+          failureReason: outcome.value?.failureReason || 'Stopped during orchestrator-to-builder handoff',
+          partial: typeof recovery.partial === 'boolean'
+            ? recovery.partial
+            : Boolean(recoverablePreview || canonicalRefs.length > 0),
+          recoverablePreview,
+          canonicalRefs,
+          resumable: Boolean(recovery.resumable),
+        });
+      }
+      return cloneTask(tasks.get(taskId));
+    })();
+    cancellationPromises.set(taskId, cancellation);
+    try {
+      return await cancellation;
+    } finally {
+      if (cancellationPromises.get(taskId) === cancellation) {
+        cancellationPromises.delete(taskId);
+      }
+    }
+  };
+
   const collectDescendants = (taskId) => {
     const depthByTask = new Map([[taskId, 0]]);
     let changed = true;
@@ -934,6 +1116,46 @@ export const createManagedTaskScheduler = (options = {}) => {
     });
   };
 
+  const waitForDispatchBarrier = async (rootSessionId, { signal } = {}) => {
+    await ensureInitialized();
+    if (typeof rootSessionId !== 'string' || !rootSessionId.trim()) {
+      throw new ManagedOrchestrationError('missing_root_session_id', 'rootSessionId is required');
+    }
+
+    while (true) {
+      if (signal?.aborted) throw signal.reason ?? new Error('Dispatch barrier wait aborted');
+      const state = getDispatchBarrierStateLocked(rootSessionId);
+      if (state.state === 'clear' || state.state === 'awaiting_acknowledgement') {
+        return state;
+      }
+      if (state.taskIds.length > 0) {
+        await Promise.all(state.taskIds.map((taskId) => waitForTask(taskId, { signal })));
+        continue;
+      }
+    }
+  };
+
+  const inspectDispatchBarrier = async (rootSessionId) => {
+    await ensureInitialized();
+    if (typeof rootSessionId !== 'string' || !rootSessionId.trim()) {
+      throw new ManagedOrchestrationError('missing_root_session_id', 'rootSessionId is required');
+    }
+    return await runExclusive(async () => getDispatchBarrierStateLocked(rootSessionId));
+  };
+
+  const inspectAgentHandoff = async (input) => {
+    await ensureInitialized();
+    validateAgentHandoffScope(input);
+    return await runExclusive(async () => {
+      const taskIds = collectAgentHandoffTaskIdsLocked(input.rootSessionId);
+      return {
+        state: taskIds.length === 0 ? 'clear' : 'confirmation_required',
+        taskIds,
+        failures: [],
+      };
+    });
+  };
+
   const shutdown = () => {
     if (shutdownPromise) return shutdownPromise;
     shutdownPromise = (async () => {
@@ -952,6 +1174,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       activeLaunches.clear();
       cancellationPromises.clear();
       acknowledgementPromises.clear();
+      handoffLocks.clear();
       let persistenceError = null;
       try {
         await runExclusive(async () => {
@@ -1025,6 +1248,18 @@ export const createManagedTaskScheduler = (options = {}) => {
         };
       }
 
+      if (
+        (action === 'retry' || action === 'resume')
+        && sourceTask.mode === 'orchestrator'
+        && sourceTask.dispatchGroupId !== null
+        && sourceTask.attempt >= 2
+      ) {
+        throw new ManagedOrchestrationError(
+          'managed_retry_limit_reached',
+          'grouped Orchestrator tasks allow only one agent retry or resume; choose a model and retry in place',
+        );
+      }
+
       if ((action === 'resume' || action === 'retry_in_place') && !currentEnvelope.resumable) {
         throw new ManagedOrchestrationError('result_not_resumable', 'result cannot be resumed');
       }
@@ -1034,6 +1269,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         followUpTask = await submit({
           idempotencyKey: actionOptions.idempotencyKey,
           rootSessionId: sourceTask.rootSessionId,
+          dispatchGroupId: sourceTask.dispatchGroupId,
           parentTaskId: sourceTask.parentTaskId,
           childSessionId: action === 'resume' || action === 'retry_in_place'
             ? sourceTask.childSessionId
@@ -1087,6 +1323,87 @@ export const createManagedTaskScheduler = (options = {}) => {
     }
   };
 
+  const confirmAgentHandoff = async (input) => {
+    await ensureInitialized();
+    validateAgentHandoffScope(input, { requireIdempotencyKey: true });
+
+    const existing = handoffLocks.get(input.rootSessionId);
+    if (existing) {
+      if (existing.idempotencyKey !== input.idempotencyKey) {
+        throw new ManagedOrchestrationError(
+          'handoff_conflict',
+          `another handoff is already in progress for root ${input.rootSessionId}`,
+        );
+      }
+      return await existing.promise;
+    }
+
+    const lock = {
+      idempotencyKey: input.idempotencyKey,
+      promise: null,
+    };
+    handoffLocks.set(input.rootSessionId, lock);
+    const promise = (async () => {
+      const taskIds = await runExclusive(async () => (
+        collectAgentHandoffTaskIdsLocked(input.rootSessionId)
+      ));
+      const failures = [];
+
+      for (const taskId of taskIds) {
+        try {
+          const currentTask = tasks.get(taskId);
+          if (currentTask && (
+            !isTerminalManagedTaskStatus(currentTask.status)
+            || (currentTask.status === 'interrupted' && activeLaunches.has(taskId))
+          )) {
+            await cancelTaskForAgentHandoff(taskId);
+          }
+          const envelope = resultEnvelopes.get(taskId);
+          if (envelope && envelope.action === null) {
+            await acknowledgeResult(taskId, {
+              action: 'abandon',
+              idempotencyKey: `handoff:${input.idempotencyKey}:${taskId}`,
+            });
+          }
+        } catch {
+          failures.push({
+            taskId,
+            code: 'cleanup_failed',
+            message: 'Managed task cleanup failed',
+          });
+        }
+      }
+
+      const verification = await runExclusive(async () => (
+        collectAgentHandoffTaskIdsLocked(input.rootSessionId)
+      ));
+      const affectedTaskIds = [...new Set([...taskIds, ...verification])]
+        .map((taskId) => tasks.get(taskId))
+        .filter(Boolean)
+        .sort(compareManagedTaskQueueOrder)
+        .map((task) => task.taskId);
+      return {
+        state: failures.length === 0 && verification.length === 0 ? 'clear' : 'blocked',
+        taskIds: affectedTaskIds,
+        failures,
+      };
+    })();
+    lock.promise = promise;
+
+    try {
+      return await promise;
+    } finally {
+      if (handoffLocks.get(input.rootSessionId) === lock) {
+        handoffLocks.delete(input.rootSessionId);
+        void pump().catch((error) => {
+          logger.error?.('[ManagedOrchestration] Failed to resume queued work after agent handoff', {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      }
+    }
+  };
+
   const flush = async () => {
     for (let round = 0; round < 3; round += 1) {
       await Promise.resolve();
@@ -1100,6 +1417,10 @@ export const createManagedTaskScheduler = (options = {}) => {
     submit,
     cancelTask,
     waitForTask,
+    waitForDispatchBarrier,
+    inspectDispatchBarrier,
+    inspectAgentHandoff,
+    confirmAgentHandoff,
     acknowledgeResult,
     shutdown,
     releaseModeLease,
@@ -1122,6 +1443,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         activeLaunchCount: activeLaunches.size,
         pendingCancellationCount: cancellationPromises.size,
         pendingAcknowledgementCount: acknowledgementPromises.size,
+        activeHandoffCount: handoffLocks.size,
         pendingWaiterCount: [...taskWaiters.values()].reduce((sum, waiters) => sum + waiters.size, 0),
         pendingTimeoutCount: timeoutTimers.size,
         pendingLeaseCount: startingLeaseTimers.size,

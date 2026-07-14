@@ -69,6 +69,30 @@ describe('managed orchestration UI routes', () => {
     ]);
   });
 
+  it('routes the public handoff body through the shared runtime contract', async () => {
+    const runtime = {
+      getSnapshot: vi.fn(),
+      handleRpc: vi.fn(async ({ method, params }) => ({ method, params })),
+    };
+    const app = express();
+    registerManagedOrchestrationRoutes(app, { runtime, express });
+    const body = {
+      rootSessionId: 'ses_root',
+      fromMode: 'orchestrator',
+      toMode: 'builder',
+      confirm: true,
+      idempotencyKey: 'switch-route-01',
+    };
+
+    const response = await request(app)
+      .post('/api/orchestration/handoff')
+      .send(body);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ method: 'handoff', params: body });
+    expect(runtime.handleRpc).toHaveBeenCalledWith({ method: 'handoff', params: body });
+  });
+
   it('returns deterministic recoverable errors and enforces the body limit', async () => {
     const runtime = {
       getSnapshot: vi.fn(),

@@ -47,6 +47,10 @@ import { DraggableSessionRow } from './sessionFolderDnd';
 import type { SessionNode, SessionSummaryMeta } from './types';
 import { formatSessionCompactDateLabel, normalizePath, renderHighlightedText, resolveSessionDiffStats } from './utils';
 import { useSessionMultiSelectStore } from '@/stores/useSessionMultiSelectStore';
+import {
+  managedOrchestrationSelectors,
+  useManagedOrchestrationStore,
+} from '@/stores/useManagedOrchestrationStore';
 import { useI18n } from '@/lib/i18n';
 import type { PlanIndicatorState } from '@/sync/plan-indicator';
 import { useNotificationStore } from '@/sync/notification-store';
@@ -422,6 +426,10 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const sessionHasUnreadError = useNotificationStore(
     React.useCallback((state) => state.index.session.unseenHasError[session.id] ?? false, [session.id]),
   );
+  const manualRecoveryTaskId = useManagedOrchestrationStore(React.useMemo(
+    () => managedOrchestrationSelectors.manualRecoveryTaskIdForChildSession(session.id),
+    [session.id],
+  ));
   const sessionTimestamp = userActivityTimestamp ?? resolvedSession.time?.updated ?? resolvedSession.time?.created ?? Date.now();
   const sessionCompactUpdatedLabel = formatSessionCompactDateLabel(sessionTimestamp);
   const isMenuOpen = openSidebarMenuKey === menuInstanceKey;
@@ -584,6 +592,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     isActive,
     hasUnreadCompletion: sessionHasUnreadCompletion,
     hasUnreadError: sessionHasUnreadError,
+    hasManualRecovery: Boolean(manualRecoveryTaskId),
   });
   const effectiveSidebarStatusIndicator = sidebarStatusIndicator ?? subtaskStatusIndicator;
   const showLeadingStatus = Boolean(effectiveSidebarStatusIndicator);

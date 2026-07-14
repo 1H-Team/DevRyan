@@ -13,6 +13,7 @@ Core OpenCode integration layer: config entities (agents/commands/skills/provide
 - **OpenCode Slim adapter** (`slim-config.js` + `agents.js`) reads `oh-my-opencode-slim` config/presets, composes those model defaults with Slim-installed global `agents/*.md` prompt files, exposes Slim-managed agents to Settings, and writes Slim agent model/variant overrides back to the Slim config instead of DevRyan's sidecar.
 - **Managed runtime overlays** (`runtime-agent-overlays.js`, `runtime-surface-policy.js`) generate high-precedence OpenCode config directories so user-side agent model defaults, skill visibility, allowlisted plugins, blocked ambient MCP tombstones, and runtime-only user remote MCP timeout guards apply at execution time without editing project/package agent markdown or persisted MCP config.
 - **Harness diagnostics** (`harness-result.js`, `harness-preflight.js`, `turn-timing.js`, `agent-runtime-warmup.js`) expose additive response envelopes, in-memory first-turn timings, latest read-only runtime warmup state, forbidden runtime surface findings, and read-only preflight audits without creating hidden sessions or prompts.
+- **Global behavior ownership** (`global-agents-md-runtime.js`, `global-agents-md-routes.js`) treats `~/.config/opencode/AGENTS.md` as the sole prompt source, keeps external runtimes read-only, and reports refresh failures without hiding successful persistence.
 
 ## Flow
 1. Server bootstrap resolves env/config (`env-config`, `settings-normalization-runtime`).
@@ -24,3 +25,4 @@ Core OpenCode integration layer: config entities (agents/commands/skills/provide
 - Primary dependency of `packages/web/server/index.js`.
 - Integrates with `ui-auth`, `event-stream`, `skills-catalog`, `tunnels`, and filesystem/project modules.
 - Contract provider for UI settings/auth/config editors and CLI automation paths.
+- Global agent behavior is absent by default and stored only at `~/.config/opencode/AGENTS.md`; clearing it removes the file.

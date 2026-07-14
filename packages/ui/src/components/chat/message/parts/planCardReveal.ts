@@ -29,6 +29,35 @@ export interface PlanSkeletonRevealState {
   skeletonLineCount: number;
 }
 
+export interface PlanCardActionState {
+  canImplement: boolean;
+  disabledReason: string | null;
+}
+
+export const getPlanCardActionState = ({
+  streamPhase,
+  hasPlanText,
+  isImplementationRequested,
+  isLatestPlan,
+}: {
+  streamPhase: StreamPhase;
+  hasPlanText: boolean;
+  isImplementationRequested: boolean;
+  isLatestPlan: boolean;
+}): PlanCardActionState => {
+  if (!isLatestPlan) {
+    return {
+      canImplement: false,
+      disabledReason: 'Superseded by a newer plan.',
+    };
+  }
+
+  return {
+    canImplement: streamPhase === 'completed' && hasPlanText && !isImplementationRequested,
+    disabledReason: null,
+  };
+};
+
 export const resolvePlanCardDisplayText = ({
   rawPlanText,
   throttledPlanText,

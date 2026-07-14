@@ -1,6 +1,6 @@
 import type { TurnIndexes, TurnProjectionResult, TurnRecord } from './types';
 
-export const projectTurnIndexes = (turns: TurnRecord[]): TurnProjectionResult => {
+export const projectTurnIndexes = (turns: TurnRecord[]): Omit<TurnProjectionResult, 'planTraceIndex'> => {
     const turnById = new Map<string, TurnRecord>();
     const messageToTurnId = new Map<string, string>();
     const messageMetaById: TurnIndexes['messageMetaById'] = new Map();

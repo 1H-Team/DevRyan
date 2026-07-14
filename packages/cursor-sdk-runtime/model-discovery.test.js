@@ -387,6 +387,68 @@ describe('Cursor SDK model discovery', () => {
     });
   });
 
+  test('publishes validated SDK context magnitudes on default and variant records', async () => {
+    const runtime = createRuntimeForModels([{
+      id: 'gpt-5.5',
+      displayName: 'GPT-5.5',
+      variants: [
+        {
+          displayName: 'GPT-5.5 High',
+          isDefault: true,
+          params: [
+            { id: 'effort', value: 'high' },
+            { id: 'context', value: '1m' },
+            { id: 'fast', value: 'false' },
+          ],
+        },
+        {
+          displayName: 'GPT-5.5 Low',
+          params: [
+            { id: 'effort', value: 'low' },
+            { id: 'context', value: '200k' },
+            { id: 'fast', value: 'false' },
+          ],
+        },
+        {
+          displayName: 'GPT-5.5 Fast',
+          params: [
+            { id: 'effort', value: 'high' },
+            { id: 'context', value: '272k' },
+            { id: 'fast', value: 'true' },
+          ],
+        },
+      ],
+    }]);
+
+    const provider = await runtime.getVirtualProvider();
+
+    expect(provider.models['gpt-5.5']?.limit).toEqual({ context: 1_000_000 });
+    expect(provider.models['gpt-5.5']?.variants?.high?.limit).toEqual({ context: 1_000_000 });
+    expect(provider.models['gpt-5.5']?.variants?.low?.limit).toEqual({ context: 200_000 });
+    expect(provider.models['gpt-5.5-fast']?.limit).toEqual({ context: 272_000 });
+    expect(provider.models['gpt-5.5-fast']?.variants?.high?.limit).toEqual({ context: 272_000 });
+  });
+
+  test('keeps malformed, zero, and absent SDK context parameters limit-free', async () => {
+    const runtime = createRuntimeForModels([
+      {
+        id: 'malformed-context',
+        variants: [{ params: [{ id: 'context', value: '200000' }] }],
+      },
+      {
+        id: 'zero-context',
+        variants: [{ params: [{ id: 'context', value: '0k' }] }],
+      },
+      { id: 'missing-context' },
+    ]);
+
+    const provider = await runtime.getVirtualProvider();
+
+    expect(provider.models['malformed-context']?.limit).toBeUndefined();
+    expect(provider.models['zero-context']?.limit).toBeUndefined();
+    expect(provider.models['missing-context']?.limit).toBeUndefined();
+  });
+
   test('uses full fallback list when SDK model discovery returns no models', async () => {
     const runtime = createRuntimeForModels([]);
 
@@ -395,6 +457,7 @@ describe('Cursor SDK model discovery', () => {
     expect(provider.models['composer-2.5']).toBeDefined();
     expect(provider.models['composer-2.5-fast']).toBeDefined();
     expect(provider.models.auto).toBeDefined();
+    expect(provider.models['composer-2.5']?.limit).toBeUndefined();
   });
 
   test('advertises Cursor model input modalities as text and image only', async () => {

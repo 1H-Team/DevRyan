@@ -104,7 +104,7 @@ export const InstallConflictsDialog: React.FC<InstallConflictsDialogProps> = ({
                   onValueChange={(v) => setDecisions((prev) => ({ ...prev, [conflict.skillName]: v as ConflictDecision }))}
                 >
                   <SelectTrigger className="w-fit">
-                    <span className="capitalize">
+                    <span>
                       {(decisions[conflict.skillName] || 'skip') === 'overwrite'
                         ? t('settings.skills.catalog.conflicts.decision.overwrite')
                         : t('settings.skills.catalog.conflicts.decision.skip')}

@@ -707,7 +707,7 @@ export function ScheduledTaskEditorDialog(props: {
   const variantOptions = React.useMemo(() => {
     const provider = providers.find((item) => item.id === draft.execution.providerID);
     const model = provider?.models?.find((item) => item.id === draft.execution.modelID) as { variants?: Record<string, unknown> } | undefined;
-    return getOrderedThinkingVariants(model?.variants);
+    return getOrderedThinkingVariants(model?.variants, { providerId: draft.execution.providerID });
   }, [providers, draft.execution.providerID, draft.execution.modelID]);
   const hasVariantOptions = variantOptions.length > 0;
 
@@ -731,8 +731,12 @@ export function ScheduledTaskEditorDialog(props: {
     }));
   }, [draft.execution.modelID, draft.execution.providerID, open, providers]);
   const selectedVariantValue = React.useMemo(() => {
-    return resolveThinkingVariant(draft.execution.variant, variantOptions) ?? NO_VARIANT_VALUE;
-  }, [draft.execution.variant, variantOptions]);
+    return resolveThinkingVariant(
+      draft.execution.variant,
+      variantOptions,
+      { providerId: draft.execution.providerID },
+    ) ?? NO_VARIANT_VALUE;
+  }, [draft.execution.providerID, draft.execution.variant, variantOptions]);
 
   React.useEffect(() => {
     if (!hasVariantOptions) {
@@ -749,7 +753,11 @@ export function ScheduledTaskEditorDialog(props: {
       return;
     }
 
-    const resolvedVariant = resolveThinkingVariant(draft.execution.variant, variantOptions);
+    const resolvedVariant = resolveThinkingVariant(
+      draft.execution.variant,
+      variantOptions,
+      { providerId: draft.execution.providerID },
+    );
     if (!resolvedVariant || draft.execution.variant === resolvedVariant) {
       return;
     }
@@ -761,7 +769,7 @@ export function ScheduledTaskEditorDialog(props: {
         variant: resolvedVariant,
       },
     }));
-  }, [hasVariantOptions, draft.execution.variant, variantOptions]);
+  }, [hasVariantOptions, draft.execution.providerID, draft.execution.variant, variantOptions]);
 
   const toggleWeekday = React.useCallback((weekday: number, nextChecked: boolean) => {
     setDraft((prev) => {

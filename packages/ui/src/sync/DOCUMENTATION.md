@@ -143,7 +143,7 @@ Current consumers:
 `useGlobalSessionsStore` is not maintained by SSE directly. It is kept correct by:
 
 1. shared global fetch/reconciliation via `loadSessions()` / `refreshGlobalSessions()`
-2. direct mutation from session actions after successful SDK calls:
+2. optimistic mutation from session actions, followed by authoritative reconciliation:
    - create
    - title update
    - share
@@ -152,7 +152,25 @@ Current consumers:
    - delete
    - retention cleanup batch archive/delete
 
-This keeps cold/global lists responsive without requiring a refetch after every change.
+This keeps cold/global lists responsive while preserving server authority.
+
+Manual archive, delete, and unarchive actions use a module-level membership-mutation shadow in
+`useGlobalSessionsStore.ts`. `beginGlobalSessionMembershipMutation()` records a versioned intent
+and applies the optimistic list change atomically. `settleGlobalSessionMembershipMutation()` clears
+failed intents before their original snapshots are restored, while successful intents remain
+protected from stale global snapshots. The shadow is deliberately outside Zustand state so it does
+not add a render subscription boundary.
+
+A successful intent is cleared only after complete active and archived listings jointly confirm its
+target membership: archived sessions are absent from active and present in archived, deleted sessions
+are absent from both, and unarchived sessions are present in active and absent from archived. Partial
+or failed listings cannot confirm an intent. Per-session versions ensure an older overlapping action
+cannot settle a newer opposite action.
+
+`queueGlobalSessionsRefreshAfterMutation()` waits for any refresh that predated the mutation, then
+guarantees a new post-mutation refresh. Concurrent completions are coalesced, with another pass queued
+when a later mutation completes during reconciliation. Do not replace this with a direct
+`loadSessions()` call, because that may reuse a stale in-flight promise.
 
 Live activity/status indicators must not depend on this cache. They must derive from aggregated child-store state.
 
@@ -162,7 +180,7 @@ Session actions live in `session-actions.ts` and are the canonical place for SDK
 
 Rules:
 
-1. If an action mutates session list membership or visible session metadata, update `useGlobalSessionsStore` there.
+1. If an action mutates session list membership or visible session metadata, update `useGlobalSessionsStore` there. Canonical manual archive/delete/unarchive actions must use the versioned membership lifecycle rather than direct list helpers.
 2. If an action targets a session by ID, resolve the **session's own directory**. Do not assume the current directory is correct.
 3. `session-ui-store.ts` should delegate to `session-actions.ts` for these mutations instead of duplicating SDK calls.
 4. Revert/fork input restoration belongs in `session-actions.ts`; for safe scoped revert, restore the clicked prompt/attachments only after the server acknowledges the revert so failed reverts do not leave the input out of sync with visible history.
@@ -170,6 +188,7 @@ Rules:
 6. A foreground send must always target a real session ID. If the UI has no current session and no open draft, `session-ui-store.ts` creates and selects a normal session before optimistic send/routing; never route a prompt with an empty session ID.
 7. Backend session creation retries transient 5xx/startup responses in `createSessionRecord()`. The managed OpenCode server can still be warming up when the web UI is already interactive, so a single `503 OpenCode is restarting` must not strand the user's first prompt.
 8. Automatic session titles have exactly one owner. Standard-provider sessions are created without a title, then the server-side standard title runtime generates and persists the authoritative Zen summary after an accepted proxied prompt; the sync layer consumes the resulting `session.updated` event and must not persist a prompt-derived fallback. Cursor sessions remain owned by the separate server-side Cursor title runtime, and explicit custom draft titles remain authoritative for every provider.
+9. `session-actions.ts` resolves the UI store through the registered reference in `sync-refs.ts`; `session-ui-store.ts` registers the completed Zustand store after initialization. Tests that need a narrow UI store must register and release that reference instead of replacing the entire `session-ui-store` module, because Bun module mocks are process-wide and can leak into later chat-flow suites.
 
 Examples of global-store updates performed in `session-actions.ts`:
 
@@ -251,6 +270,8 @@ Completion indicators combine a settled lifecycle record with unread state; neit
 
 Proposed-plan and unread-completion state are restored after startup from authoritative materialized messages. Restoration is narrowed by the persisted session-to-plan-mode-message ownership map and compact completion identity/read records, processed sequentially per directory, and re-runs normal lifecycle detection after each snapshot load. Only completion identity, directory/session/message IDs, timestamp, and read state are persisted; provider errors and response content are not. This avoids treating arbitrary historical output as active while preserving yellow/green background indicators across reload and reconnect.
 
+Plan revision and actionability remain derived from canonical message history rather than a second ledger. Plan-mode user turns are ordered by their canonical user message IDs/turn projection, assistant sources attach through `parentID`, and completed plan cards receive monotonic versions. A newer plan-mode user turn immediately supersedes older cards even before its replacement card is complete; history remains visible, but only the latest completed and unimplemented source is actionable. Unchanged plan trace indexes preserve reference identity while text streams.
+
 A trailing assistant message can settle stale `busy`/`retry` status to `idle` only when it is terminal, has no running tool parts, has no pending permission or question, and is not `finish: "tool-calls"`. This keeps the session working spinner visible between tool calls while OpenCode is still running and prevents an intermediate tool-call shell from hiding the final summary stream.
 
 Accepted `busy`/`retry` status is treated as a new-work edge. When the sync store still contains `busy`/`retry` after reducing a status event, `sync-context.tsx` clears pending and visible completion indicators for that session. Delayed completion timers in `session-ui-store.ts` also re-check live status before writing so a green dot cannot appear after the session has started working again.
@@ -273,6 +294,8 @@ OpenCode ignores `session.abort` while a session sleeps between provider retry a
 - When the TTL expires without idle, live server state wins again — the guard never permanently masks real activity.
 
 `abortCurrentOperation` first cancels the active top-level DevRyan-managed tasks for the parent session with scheduler cascade enabled, then aborts the parent OpenCode session. This stops queued and running managed descendants without emitting cancellation tool calls into chat. It additionally settles a local `retry` status to `idle` right after the abort request (narrow optimistic transition mirroring `revertToMessage`), so the input and model picker unlock immediately.
+
+Direct steering and queued **send now** share the same successful-abort path and record abort display reason `steered`; the explicit Stop action remains `manual`. Send-now performs the steer before claiming the queue, then atomically flushes every claimed item FIFO. Natural idle auto-send never aborts and waits for the pre-existing user turn to have a terminal, parent-correlated assistant response before its first send. Before every later item, the flush likewise requires a terminal assistant message whose `parentID` matches the prior queued transport message ID while live status is idle; an early idle event cannot advance the queue. Queue rows capture a stable queue-item ID, session directory, provider/model/agent/variant/plan mode, and attachments at enqueue time. An OpenCode-compatible, time-sortable transport message ID is assigned immediately before each individual FIFO dispatch—after the preceding assistant turn—and is then preserved across rollback and ambiguous retries. Later, unattempted claimed rows remain without a transport ID until their turn; legacy queue-time IDs without dispatch scope are refreshed before dispatch. Missing directories use the authoritative session lookup.
 
 ## Selector hygiene
 

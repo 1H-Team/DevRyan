@@ -30,6 +30,7 @@ import {
     resolveTaskSessionAssignments,
 } from './lib/taskSessionLinking';
 import { TaskSessionLinkProvider } from './lib/taskSessionLinkContext';
+import { PlanTurnTraceProvider } from './PlanTurnTraceProvider';
 
 const MESSAGE_LIST_VIRTUALIZE_THRESHOLD = Number.POSITIVE_INFINITY;
 const MESSAGE_LIST_OVERSCAN = 6;
@@ -1104,6 +1105,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
     const activityRenderMode = useUIStore((state) => state.activityRenderMode);
     const defaultActivityExpanded = activityRenderMode === 'summary';
+    const recordedPlanModeMessageIds = useSessionUIStore((state) => state.planModeUserMessages);
     const latestRawMessageId = messages.at(-1)?.info.id ?? null;
     const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
     const taskInvocations = React.useMemo(() => {
@@ -1237,6 +1239,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     }), [baseDisplayMessages, retryOverlay]);
 
     const { projection, staticTurns, streamingTurn } = useTurnRecords(displayMessages, {
+        recordedPlanModeMessageIds,
         sessionKey,
         showTextJustificationActivity: chatRenderMode === 'sorted',
     });
@@ -1656,6 +1659,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
 
     return (
         <TaskSessionLinkProvider value={taskSessionLinkContextValue}>
+            <PlanTurnTraceProvider value={projection.planTraceIndex}>
         <div>
                 {(turnStart > 0 || hasMoreAbove) && (
                     <div className="flex justify-center py-3">
@@ -1669,7 +1673,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                                 onClick={stableOnLoadOlder}
                                 className="text-xs uppercase tracking-wide text-muted-foreground/80 hover:text-foreground"
                             >
-                                Load older messages
+                                Load Older Messages
                             </button>
                         )}
                     </div>
@@ -1724,6 +1728,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                 </FadeInDisabledProvider>
 
         </div>
+            </PlanTurnTraceProvider>
         </TaskSessionLinkProvider>
     );
 });

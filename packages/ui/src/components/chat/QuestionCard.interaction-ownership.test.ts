@@ -15,4 +15,12 @@ describe("QuestionCard option interaction ownership", () => {
     expect(source).not.toContain("@/components/ui/checkbox")
     expect(source).not.toContain("@/components/ui/radio")
   })
+
+  test("labels rejection as Skip and keeps it independent from answer completion", () => {
+    expect(source).toContain("const handleSkip")
+    expect(source).toContain("t('chat.questionCard.skip')")
+    expect(source).toContain("onClick={handleSkip}")
+    expect(source).not.toContain("handleDismiss")
+    expect(source).not.toContain("chat.questionCard.dismiss")
+  })
 })

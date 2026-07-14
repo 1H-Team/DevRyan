@@ -112,6 +112,22 @@ describe('managed orchestration ledger compaction', () => {
     expect(result.overLimit).toBe(true);
   });
 
+  test('never compacts a grouped terminal result before disposition', () => {
+    const grouped = terminal(1, { dispatchGroupId: 'msg_parent' });
+    const removable = terminal(2);
+
+    const result = compactManagedOrchestrationState(state([grouped, removable]), {
+      now: 100,
+      maxTerminalRecords: 0,
+      maxAgeMs: 0,
+      maxBytes: Number.POSITIVE_INFINITY,
+    });
+
+    expect(result.state.tasks.map((entry) => entry.taskId)).toEqual([grouped.taskId]);
+    expect(result.removedTaskIds).toEqual([removable.taskId]);
+    expect(result.overLimit).toBe(true);
+  });
+
   test('ages out old unreferenced terminal history before the count limit is reached', () => {
     const day = 24 * 60 * 60 * 1_000;
     const old = terminal(1, { finishedAt: day });

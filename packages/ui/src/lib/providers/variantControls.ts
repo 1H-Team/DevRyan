@@ -9,6 +9,10 @@ export type ProviderLike<Model extends ProviderModelLike = ProviderModelLike> = 
     models?: readonly Model[];
 };
 
+export type ThinkingVariantContext = {
+    providerId?: string;
+};
+
 export type ModelVariantControlState = {
     modelId: string;
     baseModelId: string;
@@ -36,6 +40,10 @@ const THINKING_VARIANT_RANK = new Map<string, number>(
 
 const normalizeVariantKey = (variant: string) => variant.trim().toLowerCase();
 
+const isOpenAIProvider = (providerId: string | undefined): boolean => (
+    normalizeVariantKey(providerId ?? '') === 'openai'
+);
+
 const getVariantKeys = (variants?: Record<string, unknown> | readonly string[]): string[] => {
     if (Array.isArray(variants)) {
         return variants;
@@ -48,14 +56,20 @@ const getVariantKeys = (variants?: Record<string, unknown> | readonly string[]):
 
 export const getOrderedThinkingVariants = (
     variants?: Record<string, unknown> | readonly string[],
+    context?: ThinkingVariantContext,
 ): string[] => {
     const uniqueVariants = new Map<string, string>();
     for (const variant of getVariantKeys(variants)) {
         const trimmed = typeof variant === 'string' ? variant.trim() : '';
-        if (!trimmed || normalizeVariantKey(trimmed) === FAST_VARIANT_KEY) {
+        const normalized = normalizeVariantKey(trimmed);
+        if (
+            !trimmed
+            || normalized === FAST_VARIANT_KEY
+            || (normalized === 'none' && isOpenAIProvider(context?.providerId))
+        ) {
             continue;
         }
-        uniqueVariants.set(normalizeVariantKey(trimmed), trimmed);
+        uniqueVariants.set(normalized, trimmed);
     }
 
     return Array.from(uniqueVariants.values()).sort((left, right) => {
@@ -77,12 +91,18 @@ export const getOrderedThinkingVariants = (
 export const resolveThinkingVariant = (
     variant: string | undefined,
     variants: readonly string[],
+    context?: ThinkingVariantContext,
 ): string | undefined => {
     if (variants.length === 0) {
         return undefined;
     }
 
     const trimmed = typeof variant === 'string' ? variant.trim() : '';
+    if (normalizeVariantKey(trimmed) === 'none' && isOpenAIProvider(context?.providerId)) {
+        return variants.find((entry) => normalizeVariantKey(entry) === 'low')
+            ?? variants.find((entry) => normalizeVariantKey(entry) === 'medium')
+            ?? variants[0];
+    }
     if (trimmed.length > 0) {
         const exactMatch = variants.find((entry) => entry === trimmed);
         if (exactMatch) {
@@ -126,8 +146,11 @@ const findVariantKey = (
     return Object.keys(variants).find((key) => normalizeVariantKey(key) === normalizedVariant);
 };
 
-const getModelVariants = (model: ProviderModelLike | undefined): string[] => (
-    getOrderedThinkingVariants(model?.variants)
+const getModelVariants = (
+    provider: ProviderLike | undefined,
+    model: ProviderModelLike | undefined,
+): string[] => (
+    getOrderedThinkingVariants(model?.variants, { providerId: provider?.id })
 );
 
 export const findProviderModel = <Model extends ProviderModelLike>(
@@ -173,10 +196,11 @@ export const getModelVariantControlState = (
         ? Boolean(baseModel)
         : Boolean(pairedFastModel && pairedFastModel.id !== modelId);
     const canUseFastVariant = hasFastVariant(model);
-    const visibleVariantOptions = getModelVariants(model);
+    const visibleVariantOptions = getModelVariants(provider, model);
     const selectedVariant = resolveThinkingVariant(
         normalizeVariantKey(variant ?? '') === FAST_VARIANT_KEY ? undefined : variant,
         visibleVariantOptions,
+        { providerId: provider.id },
     );
     const canToggleFast = canUsePairedFastModel || canUseFastVariant;
 
@@ -213,7 +237,7 @@ export const resolveProviderModelVariant = (
     }
 
     const normalizedVariant = normalizeVariantKey(cleanedVariant ?? '');
-    const thinkingVariants = getModelVariants(model);
+    const thinkingVariants = getModelVariants(provider, model);
     if (normalizedVariant === FAST_VARIANT_KEY) {
         const pairedFastModelId = getPairedFastModelId(modelId);
         const pairedFastModel = pairedFastModelId === modelId
@@ -229,6 +253,10 @@ export const resolveProviderModelVariant = (
         }
 
         return resolveThinkingVariant(undefined, thinkingVariants);
+    }
+
+    if (normalizedVariant === 'none' && isOpenAIProvider(provider.id)) {
+        return resolveThinkingVariant(cleanedVariant, thinkingVariants, { providerId: provider.id });
     }
 
     const matchedVariant = findVariantKey(model.variants, cleanedVariant);
@@ -268,7 +296,7 @@ export const getModelVariantDisplayState = (
         return null;
     }
 
-    const visibleVariantOptions = getModelVariants(model);
+    const visibleVariantOptions = getModelVariants(provider, model);
     return {
         displayModelId: modelId,
         fastEnabled: normalizeVariantKey(variant ?? '') === FAST_VARIANT_KEY,
@@ -295,10 +323,14 @@ export const resolveModelVariantSelection = (
                 ? currentState.fastModelId ?? modelId
                 : currentState.baseModelId;
             const targetModel = findProviderModel(provider, targetModelId);
-            const targetVariants = getModelVariants(targetModel);
+            const targetVariants = getModelVariants(provider, targetModel);
             return {
                 modelId: targetModelId,
-                variant: resolveThinkingVariant(currentState.selectedVariant ?? variant, targetVariants),
+                variant: resolveThinkingVariant(
+                    currentState.selectedVariant ?? variant,
+                    targetVariants,
+                    { providerId: provider?.id },
+                ),
             };
         }
 

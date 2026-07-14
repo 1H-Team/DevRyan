@@ -74,5 +74,6 @@ export const stabilizeTurnProjection = (
     return {
         ...projection,
         ungroupedMessageIds: nextProjection.ungroupedMessageIds,
+        planTraceIndex: nextProjection.planTraceIndex,
     };
 };

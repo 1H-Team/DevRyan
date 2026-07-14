@@ -90,6 +90,9 @@ describe('packaged agent defaults', () => {
     expect(content).toContain('Return:');
     expect(content).toContain('<status>complete</status>');
     expect(content).toContain('No-mutation plans must keep snapshots and logs outside the target workspace');
+    expect(content).toContain(
+      'start it before any standalone todo read/write whose only purpose is to restate that delegation',
+    );
   });
 
   it('grants managed delegation only to orchestrator and keeps provider-native work distinct', () => {
@@ -104,12 +107,39 @@ describe('packaged agent defaults', () => {
     }
   });
 
-  it('orchestrator asks on consequential ambiguity without over-analyzing', () => {
+  it('requires managed dispatches to be waited, collected, and dispositioned before local work', () => {
+    const content = readPackagedAgent('orchestrator').content;
+
+    expect(content).toContain('Start all independent managed tasks first');
+    expect(content).toContain('wait for every dispatched task');
+    expect(content).toContain('Disposition every collected result');
+    expect(content).toContain('Only after every result is dispositioned may you resume local work');
+    expect(content).toContain('successful result requires `continue` after `wait`');
+  });
+
+  it('never presents provider-native delegation as a managed-failure fallback', () => {
+    const content = readPackagedAgent('orchestrator').content;
+
+    expect(content).toContain('consume its partial output');
+    expect(content).toContain('at most one managed retry');
+    expect(content).toContain('Never invoke provider-native `task` as an automatic fallback');
+    expect(content).toContain('explicit current-user request');
+    expect(content).not.toMatch(/managed (?:failure|timeout)[^\n]{0,120}(?:fall back|fallback) to (?:the )?`?task`?/i);
+  });
+
+  it('builder and orchestrator ask on unresolved user-answerable ambiguity without over-analyzing', () => {
+    const builder = fs.readFileSync(path.join(AGENTS_DIR, 'builder.md'), 'utf8');
     const content = fs.readFileSync(path.join(AGENTS_DIR, 'orchestrator.md'), 'utf8');
 
-    expect(content).toContain('Clarify intent before consequential choices.');
-    expect(content).toContain('Ask when ambiguity affects user-visible outcome');
-    expect(content).toContain('Infer only reversible implementation details');
+    for (const prompt of [builder, content]) {
+      expect(prompt).toContain('Inspect repository and system facts that could resolve the ambiguity before asking.');
+      expect(prompt).toContain('multiple plausible interpretations remain and the user can resolve them');
+      expect(prompt).toContain('even when the ambiguity is not a hard blocker');
+      expect(prompt).toContain('If the user skips a question, continue with best judgment and explicitly state the assumption.');
+      expect(prompt).not.toContain('Ask only when truly blocked');
+    }
+    expect(content).toContain('Infer only trivial, reversible implementation details');
+    expect(content).not.toContain('Clarify intent before consequential choices.');
     expect(content).toContain('Do not build long speculative option trees');
     expect(content).toContain('Do not re-litigate settled decisions');
     expect(content).toContain('Ask one focused structured question before analyzing branches that depend on the missing answer.');
@@ -131,7 +161,7 @@ describe('packaged agent defaults', () => {
     expect(content).toContain('Unknown codebase location: call `explorer` before broad direct search.');
     expect(content).toContain('Unknown file/code discovery in plan mode also routes to `explorer`; keep the rest of the turn read-only and produce only the plan.');
     expect(content).toContain('Direct inspection is allowed only for codemap-identified targets, exact known paths, exact symbols in 1-2 files, or one narrow `read`/`grep`.');
-    expect(content).toContain('If Explorer is unavailable in the task tool choices, report that blocker before doing broad direct search.');
+    expect(content).toContain('If Explorer remains unavailable after the one managed recovery, continue direct inspection only within the current task scope or report the blocker before broader search.');
     expect(content).toContain('Do not phrase unknown discovery as optional between Explorer and broad direct search.');
     expect(content).not.toContain('delegate to `explorer` or look yourself');
   });

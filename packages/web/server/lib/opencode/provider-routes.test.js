@@ -353,7 +353,7 @@ describe('OpenCode provider routes', () => {
     const getCachedVirtualProvider = vi.fn(() => ({
       id: 'cursor-acp',
       name: 'Cursor',
-      models: { cached: { id: 'cached', name: 'Cached Cursor' } },
+      models: { cached: { id: 'cached', name: 'Cached Cursor', limit: { context: 272_000 } } },
     }));
     const refreshVirtualProvider = vi.fn(() => Promise.resolve());
     const { app } = createApp({
@@ -383,7 +383,7 @@ describe('OpenCode provider routes', () => {
       {
         id: 'cursor-acp',
         name: 'Cursor',
-        models: { cached: { id: 'cached', name: 'Cached Cursor' } },
+        models: { cached: { id: 'cached', name: 'Cached Cursor', limit: { context: 272_000 } } },
       },
     ]);
     expect(getCachedVirtualProvider).toHaveBeenCalledWith();
@@ -410,7 +410,16 @@ describe('OpenCode provider routes', () => {
             'gpt-5.6-sol-fast': { id: 'gpt-5.6-sol-fast', name: 'GPT-5.6 Sol Fast' },
             'gpt-5.6-sol-pro': { id: 'gpt-5.6-sol-pro', name: 'GPT-5.6 Sol Pro' },
             'gpt-5.6-terra': { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra' },
-            'gpt-5.6-luna': { id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna' },
+            'gpt-5.6-luna': {
+              id: 'gpt-5.6-luna',
+              name: 'GPT-5.6 Luna',
+              variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {} },
+            },
+            'gpt-5.6-luna-fast': {
+              id: 'gpt-5.6-luna-fast',
+              name: 'GPT-5.6 Luna Fast',
+              variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {} },
+            },
             'gpt-5.5': { id: 'gpt-5.5', name: 'GPT-5.5' },
           },
         }],
@@ -436,6 +445,11 @@ describe('OpenCode provider routes', () => {
         },
         'gpt-5.6-luna': {
           id: 'gpt-5.6-luna',
+          variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {} },
+        },
+        'gpt-5.6-luna-fast': {
+          id: 'gpt-5.6-luna-fast',
+          variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {} },
         },
         'gpt-5.6-sol': {
           id: 'gpt-5.6-sol',
@@ -462,6 +476,7 @@ describe('OpenCode provider routes', () => {
       },
     });
     expect(response.body.providers[0].models['gpt-5.6-luna'].available).not.toBe(false);
+    expect(response.body.providers[0].models['gpt-5.6-luna-fast'].available).not.toBe(false);
     expect(response.body.providers[0].models['gpt-5.6-sol'].available).not.toBe(false);
     expect(response.body.providers[0].models['gpt-5.6-terra'].available).not.toBe(false);
     expect(JSON.stringify(response.body)).not.toContain('secret-access-token');

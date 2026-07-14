@@ -4,6 +4,7 @@ export type SessionDiffStats = {
 }
 
 export type SessionSummaryDiffEntry = {
+  file?: string | null
   additions?: number | string | null
   deletions?: number | string | null
   [key: string]: unknown
@@ -19,9 +20,19 @@ export type SessionDiffSummaryMessage = {
   summary?: SessionSummaryDiffStats | null
 }
 
+export type SessionTouchedFileMessage = {
+  role?: string
+  summary?: SessionSummaryDiffStats | boolean | null
+}
+
 export type SessionDiffSummaryTarget = {
   summary?: SessionSummaryDiffStats | null
 }
+
+export type WorkingTreeDiffStats = Record<string, {
+  insertions?: number | null
+  deletions?: number | null
+}>
 
 export const parseSessionDiffCount = (value: number | string | null | undefined): number => {
   if (typeof value === 'number' && Number.isFinite(value)) {
@@ -58,6 +69,52 @@ export const getSessionSummaryDiffTotals = (summary?: SessionSummaryDiffStats | 
 export const resolveSessionDiffStats = (summary?: SessionSummaryDiffStats | null): SessionDiffStats | null => {
   const stats = getScopedMessageDiffTotals(summary)
   return stats.additions === 0 && stats.deletions === 0 ? null : stats
+}
+
+const normalizeSessionDiffPath = (value: string): string => {
+  return value.replace(/\\/g, '/').replace(/^\.\//, '')
+}
+
+export const getSessionTouchedFilePaths = (
+  messages: readonly SessionTouchedFileMessage[] | undefined,
+): string[] => {
+  const paths = new Set<string>()
+
+  for (const message of messages ?? []) {
+    if (message?.role !== 'user') continue
+    const summary = message.summary
+    if (!summary || typeof summary !== 'object') continue
+    for (const diff of summary.diffs ?? []) {
+      if (typeof diff.file !== 'string') continue
+      const path = normalizeSessionDiffPath(diff.file.trim())
+      if (path) paths.add(path)
+    }
+  }
+
+  return [...paths].sort()
+}
+
+export const resolveTouchedFileWorkingTreeDiffStats = (
+  touchedFiles: readonly string[],
+  diffStats: WorkingTreeDiffStats | undefined,
+): SessionDiffStats | null => {
+  let additions = 0
+  let deletions = 0
+
+  for (const file of touchedFiles) {
+    const stats = diffStats?.[normalizeSessionDiffPath(file)]
+    additions += parseSessionDiffCount(stats?.insertions)
+    deletions += parseSessionDiffCount(stats?.deletions)
+  }
+
+  return additions === 0 && deletions === 0 ? null : { additions, deletions }
+}
+
+export const resolveSessionWorkingTreeDiffStats = (
+  messages: readonly SessionTouchedFileMessage[] | undefined,
+  diffStats: WorkingTreeDiffStats | undefined,
+): SessionDiffStats | null => {
+  return resolveTouchedFileWorkingTreeDiffStats(getSessionTouchedFilePaths(messages), diffStats)
 }
 
 export const getScopedMessageDiffTotals = (summary?: SessionSummaryDiffStats | null): SessionDiffStats => {

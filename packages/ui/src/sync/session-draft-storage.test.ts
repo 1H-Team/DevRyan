@@ -123,6 +123,7 @@ describe("session draft storage", () => {
           agent: "reviewer",
           variant: "low",
           planMode: true,
+          modelProvenance: "explicit",
         },
       },
     }, ["draft-config"])
@@ -136,6 +137,65 @@ describe("session draft storage", () => {
       agent: "reviewer",
       variant: "low",
       planMode: true,
+      modelProvenance: "explicit",
+    })
+  })
+
+  test("preserves legacy draft send config without provenance on round-trip", () => {
+    storage.setItem(CHAT_DRAFTS_STORAGE_KEY, JSON.stringify({
+      order: ["draft-legacy"],
+      drafts: [{
+        id: "draft-legacy",
+        text: "legacy configured send",
+        createdAt: 1,
+        updatedAt: 1,
+        selectedProjectId: null,
+        directoryOverride: "/repo",
+        parentID: null,
+        sendConfig: {
+          providerID: "openai",
+          modelID: "gpt-5.2",
+          agent: "reviewer",
+        },
+      }],
+    }))
+
+    const result = readPersistedDrafts(storage)
+
+    expect(result.draftsById["draft-legacy"]?.sendConfig).toEqual({
+      providerID: "openai",
+      modelID: "gpt-5.2",
+      agent: "reviewer",
+    })
+    expect(result.draftsById["draft-legacy"]?.sendConfig?.modelProvenance).toBe(undefined)
+  })
+
+  test("round-trips agent-default model provenance", () => {
+    persistDrafts(storage, {
+      "draft-agent-default": {
+        id: "draft-agent-default",
+        text: "agent default send",
+        createdAt: 1,
+        updatedAt: 1,
+        selectedProjectId: null,
+        directoryOverride: "/repo",
+        parentID: null,
+        sendConfig: {
+          providerID: "opencode",
+          modelID: "small",
+          agent: "Orchestrator",
+          modelProvenance: "agent-default",
+        },
+      },
+    }, ["draft-agent-default"])
+
+    const result = readPersistedDrafts(storage)
+
+    expect(result.draftsById["draft-agent-default"]?.sendConfig).toEqual({
+      providerID: "opencode",
+      modelID: "small",
+      agent: "Orchestrator",
+      modelProvenance: "agent-default",
     })
   })
 

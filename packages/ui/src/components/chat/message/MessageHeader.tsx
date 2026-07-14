@@ -26,7 +26,7 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, providerID, model
     const { src: logoSrc, onError: handleLogoError, hasLogo } = useProviderLogo(displayProviderID);
     const thinkingLabel = variant ? formatEffortLabel(variant, { providerId: providerID }) : undefined;
     const fastIcon = fastEnabled ? (
-        <RiFlashlightFill className="h-3 w-3 text-[var(--status-warning)]" aria-label="Fast mode" />
+        <RiFlashlightFill className="h-3 w-3 text-[var(--status-warning)]" aria-label="Fast Mode" />
     ) : null;
     // Keep the provider mark inside the model badge so the row reads: Agent, Model, Thinking.
     const modelBadgeIcon = hasLogo && logoSrc ? (

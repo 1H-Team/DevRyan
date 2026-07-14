@@ -377,6 +377,7 @@ const runManagedCouncillor = async ({ bridge, context, prompt, councillor, index
     variant: variant || null,
     label: `Counsellor ${index + 1}: ${modelLabel}`,
     prompt: buildCouncillorPrompt(prompt),
+    deadlineClass: 'council',
     timeoutAt: Date.now() + timeoutMs,
   }, context.abort);
   const taskId = submitted?.task?.taskId;

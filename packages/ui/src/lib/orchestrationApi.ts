@@ -26,6 +26,27 @@ export type ManagedTaskAcknowledgementResponse = {
   followUpTask: ManagedTaskProjection | null;
 };
 
+export type ManagedAgentHandoffRequest = {
+  rootSessionId: string;
+  fromMode: 'orchestrator';
+  toMode: 'builder';
+  confirm: boolean;
+  idempotencyKey?: string;
+};
+
+export type ManagedAgentHandoffResponse = {
+  rootSessionId: string;
+  fromMode: 'orchestrator';
+  toMode: 'builder';
+  state: 'clear' | 'confirmation_required' | 'blocked';
+  tasks: ManagedTaskProjection[];
+  failures: Array<{
+    taskId: string;
+    code: 'cleanup_failed';
+    message: string;
+  }>;
+};
+
 export class ManagedOrchestrationApiError extends Error {
   readonly status: number;
   readonly code: string;
@@ -39,6 +60,7 @@ export class ManagedOrchestrationApiError extends Error {
 }
 
 export type ManagedOrchestrationApi = {
+  handoff(request: ManagedAgentHandoffRequest): Promise<ManagedAgentHandoffResponse>;
   getSnapshot(options?: { rootSessionId?: string }): Promise<ManagedOrchestrationSnapshot>;
   getTask(taskId: string, scope: { rootSessionId: string; directory?: string }): Promise<ManagedTaskProjection>;
   cancelTask(taskId: string, body: {
@@ -117,6 +139,9 @@ export const createManagedOrchestrationApi = (options: {
   });
 
   return {
+    handoff(request) {
+      return postJson<ManagedAgentHandoffResponse>('/api/orchestration/handoff', request);
+    },
     getSnapshot({ rootSessionId }: { rootSessionId?: string } = {}) {
       const query = new URLSearchParams();
       if (rootSessionId?.trim()) query.set('rootSessionId', rootSessionId.trim());

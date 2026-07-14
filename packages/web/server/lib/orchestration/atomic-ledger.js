@@ -19,8 +19,13 @@ const validateSnapshot = (value) => {
   }
 
   const tasks = new Map();
+  const normalizedTasks = [];
   const idempotencyKeys = new Set();
-  for (const task of value.tasks) {
+  for (const candidate of value.tasks) {
+    const task = {
+      ...candidate,
+      dispatchGroupId: candidate?.dispatchGroupId ?? null,
+    };
     validateManagedTaskRecord(task);
     if (tasks.has(task.taskId)) {
       throw new TypeError(`duplicate managed task ${task.taskId}`);
@@ -30,6 +35,7 @@ const validateSnapshot = (value) => {
       throw new TypeError(`duplicate managed idempotency key for root ${task.rootSessionId}`);
     }
     tasks.set(task.taskId, task);
+    normalizedTasks.push(task);
     idempotencyKeys.add(key);
   }
 
@@ -47,7 +53,7 @@ const validateSnapshot = (value) => {
     envelopes.add(envelope.taskId);
   }
 
-  return value;
+  return { ...value, tasks: normalizedTasks };
 };
 
 export const createAtomicManagedOrchestrationLedger = (options = {}) => {
@@ -95,8 +101,7 @@ export const createAtomicManagedOrchestrationLedger = (options = {}) => {
         throw new RangeError(`managed orchestration ledger exceeds ${maxReadBytes} bytes`);
       }
       const parsed = JSON.parse(await fsApi.readFile(filePath, 'utf8'));
-      validateSnapshot(parsed);
-      return parsed;
+      return validateSnapshot(parsed);
     } catch (error) {
       await quarantine(error);
       return null;
@@ -104,8 +109,8 @@ export const createAtomicManagedOrchestrationLedger = (options = {}) => {
   };
 
   const saveNow = async (snapshot) => {
-    validateSnapshot(snapshot);
-    const serialized = `${JSON.stringify(snapshot)}\n`;
+    const validated = validateSnapshot(snapshot);
+    const serialized = `${JSON.stringify(validated)}\n`;
     const directory = path.dirname(filePath);
     const temporaryPath = `${filePath}.${process.pid}.${randomId()}.tmp`;
     let handle = null;

@@ -12,6 +12,7 @@ import {
 
 import { I18nProvider } from '@/lib/i18n';
 import { dict } from '@/lib/i18n/messages/en';
+import { formatAgentLabel } from './mobileControlsUtils';
 import { resolveManagedTaskDispatch } from './managedTaskDispatch';
 import { getManagedTaskWindow, shouldRenderManagedTaskList } from './managedTaskListWindow';
 import { navigateToManagedTaskChild } from './managedTaskNavigation';
@@ -22,6 +23,7 @@ mock.module('@/components/ui/ProviderLogo', () => ({
 }));
 
 const { ManagedTaskRowView } = await import('./ManagedTaskRow');
+const { ManagedTaskPreparingRow } = await import('./ManagedTaskList');
 
 const terminalTask = (status: ManagedTaskStatus) => ({
   ...createManagedTaskRecord({
@@ -143,8 +145,8 @@ describe('managed task presentation', () => {
     expect(html).not.toContain('Abandon');
   });
 
-  test('expands a resumable failed subtask with model recovery controls', () => {
-    const task = terminalTask('failed');
+  test('does not render manual recovery while the grouped agent retry remains', () => {
+    const task = { ...terminalTask('failed'), dispatchGroupId: 'msg_parent' };
     const envelope = createManagedTaskResultEnvelope(task, {
       sequence: 1,
       createdAt: 2_000,
@@ -164,9 +166,52 @@ describe('managed task presentation', () => {
       </I18nProvider>,
     );
 
+    expect(projected.agentRetryAvailable).toBe(true);
+    expect(html).not.toContain('Choose a model to continue this subtask');
+    expect(html).not.toContain('Try Again');
+  });
+
+  test('expands a final grouped failure with enabled model and thinking controls', () => {
+    const task = {
+      ...terminalTask('failed'),
+      dispatchGroupId: 'msg_parent',
+      attempt: 2,
+      priorTaskId: 'dvr_task_failed_initial',
+      executionKind: 'retry' as const,
+    };
+    const envelope = createManagedTaskResultEnvelope(task, {
+      sequence: 1,
+      createdAt: 2_000,
+      resumable: true,
+    });
+    const projected = toManagedTaskEvent(task, envelope).properties.task;
+
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <ManagedTaskRowView
+          task={projected}
+          resultEnvelope={envelope}
+          providers={[{
+            id: 'github-copilot',
+            name: 'GitHub Copilot',
+            models: [{
+              id: 'gpt-4.1',
+              name: 'GPT 4.1',
+              variants: { low: {}, high: {} },
+            }],
+          }]}
+          onOpenChild={() => undefined}
+          onRetryInPlace={() => undefined}
+        />
+      </I18nProvider>,
+    );
+
     expect(html).toContain('Choose a model to continue this subtask');
     expect(html).not.toContain('Provider connection ended');
     expect(html).toContain('github-copilot / gpt-4.1');
+    expect(html).toContain('model-controls__model-trigger');
+    expect(html).toContain('model-controls__variant-trigger');
+    expect(html).not.toContain('disabled=""');
     expect(html).toContain('Try Again');
   });
 
@@ -186,6 +231,19 @@ describe('managed task presentation', () => {
         { agent: 'designer', taskIds: ['dvr_task_2'] },
       ],
     });
+  });
+
+  test('capitalizes the Agent Dispatch heading while preserving its task row', () => {
+    const taskIds = ['dvr_task_explorer'];
+    const window = getManagedTaskWindow(taskIds, 24, () => 'explorer');
+    const source = readFileSync(fileURLToPath(new URL('./ManagedTaskList.tsx', import.meta.url)), 'utf8');
+
+    expect(window.agentGroups).toEqual([{ agent: 'explorer', taskIds }]);
+    expect(formatAgentLabel(window.agentGroups?.[0]?.agent ?? '')).toBe('Explorer');
+    expect(source).toContain('const agentLabel = formatAgentLabel(group.agent);');
+    expect(source).toContain('aria-label={agentLabel}');
+    expect(source).toContain('{agentLabel}</span>');
+    expect(source).toContain('<ManagedTaskRow key={taskId} taskId={taskId}');
   });
 
   test('anchors start and retry tasks while omitting wait-only tool calls', () => {
@@ -222,7 +280,108 @@ describe('managed task presentation', () => {
     expect(resolveManagedTaskDispatch(parts as never)).toEqual({
       anchorPartId: 'start-part',
       taskIds: ['dvr_task_start', 'dvr_task_retry'],
+      pendingDispatches: [],
     });
+  });
+
+  test('surfaces an active managed start before an authoritative task id exists', () => {
+    expect(resolveManagedTaskDispatch([{
+      id: 'start-part',
+      type: 'tool',
+      tool: 'devryan_task',
+      state: {
+        status: 'running',
+        input: { action: 'start', agent: 'explorer', label: 'workspace-surface_map' },
+      },
+    }] as never)).toEqual({
+      anchorPartId: 'start-part',
+      taskIds: [],
+      pendingDispatches: [{
+        partId: 'start-part',
+        agent: 'explorer',
+        label: 'workspace-surface_map',
+      }],
+    });
+  });
+
+  test('replaces provisional dispatch data with the authoritative task id', () => {
+    expect(resolveManagedTaskDispatch([{
+      id: 'start-part',
+      type: 'tool',
+      tool: 'devryan_task',
+      state: {
+        status: 'completed',
+        input: { action: 'start', agent: 'explorer', label: 'workspace-surface_map' },
+        output: JSON.stringify({ task: { taskId: 'dvr_task_start' } }),
+      },
+    }] as never)).toEqual({
+      anchorPartId: 'start-part',
+      taskIds: ['dvr_task_start'],
+      pendingDispatches: [],
+    });
+  });
+
+  test('does not strand a provisional row after a terminal start failure', () => {
+    expect(resolveManagedTaskDispatch([{
+      id: 'start-part',
+      type: 'tool',
+      tool: 'devryan_task',
+      state: {
+        status: 'error',
+        input: { action: 'start', agent: 'explorer', label: 'workspace-surface_map' },
+        error: 'bridge offline',
+      },
+    }] as never)).toEqual({
+      anchorPartId: null,
+      taskIds: [],
+      pendingDispatches: [],
+    });
+  });
+
+  test('keeps parallel active starts distinct and in source order', () => {
+    expect(resolveManagedTaskDispatch([
+      {
+        id: 'explorer-start',
+        type: 'tool',
+        tool: 'devryan_task',
+        state: {
+          status: 'pending',
+          input: { action: 'start', agent: 'explorer', label: 'inspect-runtime' },
+        },
+      },
+      {
+        id: 'designer-start',
+        type: 'tool',
+        tool: 'devryan_task',
+        state: {
+          status: 'running',
+          input: { action: 'start', agent: 'designer', label: 'review-layout' },
+        },
+      },
+    ] as never)).toEqual({
+      anchorPartId: 'explorer-start',
+      taskIds: [],
+      pendingDispatches: [
+        { partId: 'explorer-start', agent: 'explorer', label: 'inspect-runtime' },
+        { partId: 'designer-start', agent: 'designer', label: 'review-layout' },
+      ],
+    });
+  });
+
+  test('renders a provisional dispatch without exposing child navigation', () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <ManagedTaskPreparingRow dispatch={{
+          partId: 'start-part',
+          agent: 'explorer',
+          label: 'workspace-surface_map',
+        }} />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('Workspace surface map');
+    expect(html).toContain('Preparing...');
+    expect(html).not.toContain('Open Subtask');
   });
 
   test('does not repeat the agent name inside every subtask row', () => {
@@ -284,6 +443,20 @@ describe('managed task presentation', () => {
     expect(html).toContain('Running...');
     expect(html).toContain('text-[var(--primary-base)]');
     expect(html).toContain('hover:text-[var(--primary-base)]');
+  });
+
+  test('stacks the open-subtask action when the task card is narrow', () => {
+    const task = toManagedTaskEvent(terminalTask('running')).properties.task;
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <ManagedTaskRowView task={task} onOpenChild={() => undefined} />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('flex-col');
+    expect(html).toContain('sm:flex-row');
+    expect(html).toContain('w-full');
+    expect(html).toContain('sm:w-auto');
   });
 
   test('centers the agent icon and name within a fixed-height header', () => {

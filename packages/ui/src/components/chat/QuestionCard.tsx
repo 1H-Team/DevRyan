@@ -27,9 +27,11 @@ import {
   applyQuestionSubmissionResults,
   createQuestionSubmissionLock,
   filterPendingQuestionRequestAnswerGroups,
+  filterPendingQuestionRequests,
   getQuestionEntryKey,
   getQuestionRequestKey,
   reconcileAcknowledgedQuestionRequestKeys,
+  submitQuestionRequestRejections,
 } from './questionCardSubmission';
 
 interface QuestionCardProps {
@@ -130,7 +132,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
   }, [normalizedRequests, requestSetKey, sessionScopeKey]);
 
   const pendingRequests = React.useMemo(
-    () => normalizedRequests.filter((request) => !acknowledgedRequestKeys.has(getQuestionRequestKey(request))),
+    () => filterPendingQuestionRequests(normalizedRequests, acknowledgedRequestKeys),
     [acknowledgedRequestKeys, normalizedRequests],
   );
 
@@ -324,7 +326,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
     [handleConfirm, handleNext, isLastQuestion, isMobile, requiredSatisfied],
   );
 
-  const handleDismiss = React.useCallback(async () => {
+  const handleSkip = React.useCallback(async () => {
     const submissionLock = submissionLockRef.current;
     if (!submissionLock.tryAcquire()) return;
 
@@ -334,21 +336,14 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
     setRequestErrors({});
 
     try {
-      const settled = await Promise.allSettled(
-        targetRequests.map((request) => rejectQuestion(request.sessionID, request.id)),
-      );
-      const results: QuestionRequestSubmitResult[] = settled.map((result, index) => {
-        const request = targetRequests[index];
-        if (result.status === 'fulfilled') return { status: 'fulfilled', request };
-        return { status: 'rejected', request, reason: result.reason };
-      });
-      applyRelevantSubmissionResults(submissionScope, results, 'Failed to dismiss');
+      const results = await submitQuestionRequestRejections(targetRequests, rejectQuestion);
+      applyRelevantSubmissionResults(submissionScope, results, 'Failed to skip question');
     } catch (error) {
       if (activeScopeRef.current === submissionScope && targetRequests[0]) {
         setRequestErrors({
           [getQuestionRequestKey(targetRequests[0])]: error instanceof Error
             ? error.message
-            : 'Failed to dismiss',
+            : 'Failed to skip question',
         });
       }
     } finally {
@@ -532,7 +527,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
 
             <button
               type="button"
-              onClick={handleDismiss}
+              onClick={handleSkip}
               disabled={isResponding}
               className={cn(
                 'flex items-center gap-1 px-2 py-1 typography-meta font-medium rounded transition-colors',
@@ -541,7 +536,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
               )}
             >
               <RiCloseLine className="h-3 w-3" />
-              {t('chat.questionCard.dismiss')}
+              {t('chat.questionCard.skip')}
             </button>
 
             {isResponding ? (

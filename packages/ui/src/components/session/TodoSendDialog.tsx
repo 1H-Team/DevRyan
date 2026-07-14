@@ -63,7 +63,7 @@ type ThinkingPillProps = {
 
 const ThinkingPill = ({ value, options, providerId, disabled, onChange }: ThinkingPillProps) => {
   const { t } = useI18n();
-  const resolvedValue = resolveThinkingVariant(value, options);
+  const resolvedValue = resolveThinkingVariant(value, options, { providerId });
   const label = resolvedValue ? formatEffortLabel(resolvedValue, { providerId }) : t('chat.modelControls.thinking');
 
   const trigger = (
@@ -73,7 +73,7 @@ const ThinkingPill = ({ value, options, providerId, disabled, onChange }: Thinki
         disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-interactive-hover/30',
       )}
     >
-      <span className="typography-micro whitespace-nowrap font-medium capitalize">{label}</span>
+      <span className="typography-micro whitespace-nowrap font-medium">{label}</span>
       <RiArrowDownSLine className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
     </div>
   );
@@ -90,7 +90,7 @@ const ThinkingPill = ({ value, options, providerId, disabled, onChange }: Thinki
             className="typography-meta"
             onSelect={() => onChange(option)}
           >
-            <span className={cn('font-medium capitalize', resolvedValue === option && 'text-primary')}>
+            <span className={cn('font-medium', resolvedValue === option && 'text-primary')}>
               {formatEffortLabel(option, { providerId })}
             </span>
           </DropdownMenuItem>
@@ -157,7 +157,7 @@ export function TodoSendDialog(props: TodoSendDialogProps) {
   const variantOptions = React.useMemo(() => {
     const provider = providers.find((item) => item.id === execution.providerID);
     const model = provider?.models?.find((item) => item.id === execution.modelID) as { variants?: Record<string, unknown> } | undefined;
-    return getOrderedThinkingVariants(model?.variants);
+    return getOrderedThinkingVariants(model?.variants, { providerId: execution.providerID });
   }, [providers, execution.providerID, execution.modelID]);
 
   const hasVariantOptions = variantOptions.length > 0;
@@ -169,10 +169,14 @@ export function TodoSendDialog(props: TodoSendDialogProps) {
       return;
     }
 
-    const resolvedVariant = resolveThinkingVariant(execution.variant, variantOptions);
+    const resolvedVariant = resolveThinkingVariant(
+      execution.variant,
+      variantOptions,
+      { providerId: execution.providerID },
+    );
     if (!resolvedVariant || execution.variant === resolvedVariant) return;
     setExecution((prev) => ({ ...prev, variant: resolvedVariant }));
-  }, [hasVariantOptions, execution.variant, variantOptions]);
+  }, [hasVariantOptions, execution.providerID, execution.variant, variantOptions]);
 
   const canConfirm = execution.providerID.trim().length > 0 && execution.modelID.trim().length > 0;
 

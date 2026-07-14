@@ -114,6 +114,32 @@ describe('VS Code managed orchestration bridge', () => {
     });
   });
 
+  it('maps handoff requests to the runtime without changing the public body', async () => {
+    const runtime = {
+      getSnapshot: vi.fn(),
+      handleRpc: vi.fn(async ({ method, params }) => ({ method, params })),
+    };
+    const body = {
+      rootSessionId: 'ses_root',
+      fromMode: 'orchestrator',
+      toMode: 'builder',
+      confirm: true,
+      idempotencyKey: 'switch-bridge-01',
+    };
+
+    const response = await handleManagedOrchestrationBridgeMessage({
+      id: 'req_handoff',
+      type: 'api:orchestration:request',
+      payload: { action: 'handoff', body },
+    }, runtime);
+
+    expect(response?.data).toEqual({
+      status: 200,
+      body: { method: 'handoff', params: body },
+    });
+    expect(runtime.handleRpc).toHaveBeenCalledWith({ method: 'handoff', params: body });
+  });
+
   it('preserves deterministic runtime status and error shape', async () => {
     const error = Object.assign(new Error('wrong root'), {
       code: 'task_scope_mismatch',

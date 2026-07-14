@@ -47,7 +47,9 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - If a tool should switch between static vs expandable, change it here.
 
 - `ReasoningPart.tsx`
-  - Thinking block UI (`ReasoningTimelineBlock`), summary + optional duration.
+  - Renders reasoning Markdown directly in the message timeline while streaming and after completion.
+  - Empty active reasoning retains the accessible, reduced-motion-aware `Thinking…` status until text arrives.
+  - The global reasoning visibility setting remains the sole display gate.
 
 - `JustificationBlock.tsx`
   - Justification block wrapper over `ReasoningTimelineBlock`.
@@ -59,7 +61,7 @@ Use this doc when you ask an agent to change tool/header/description behavior.
 - Output-only `write/create/file_write` aliases remain expandable even when no structured diff is available.
 - Terminal tool failures remain visible alongside retained partial output. A genuinely empty terminal payload renders an explicit provider-no-details message instead of an empty expansion.
 - `perplexity` is currently treated as static and grouped into search/web-search style rows (through static grouping + short description extraction).
-- Thinking/Justification duration is hidden in `sorted` mode (handled in `ReasoningPart.tsx` + `JustificationBlock.tsx`).
+- Reasoning remains inline across streaming/completion and respects the global reasoning visibility setting, which controls display only and does not change model reasoning effort or provider output.
 
 ## "I want to change description for Perplexity" (example recipe)
 

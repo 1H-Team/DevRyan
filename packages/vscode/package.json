@@ -2,7 +2,7 @@
   "name": "openchamber",
   "displayName": "DevRyan",
   "description": "AI coding assistant powered by OpenCode",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "publisher": "fedaykindev",
   "private": true,
   "repository": {
@@ -247,7 +247,7 @@
     "@openchamber/cursor-sdk-runtime": "workspace:*",
     "@openchamber/orchestration-runtime": "workspace:*",
     "@openchamber/ui": "workspace:*",
-    "@opencode-ai/sdk": "^1.17.18",
+    "@opencode-ai/sdk": "^1.18.1",
     "adm-zip": "^0.5.16",
     "jsonc-parser": "^3.3.1",
     "react": "^19.1.1",

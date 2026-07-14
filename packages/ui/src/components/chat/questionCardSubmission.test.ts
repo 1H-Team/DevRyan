@@ -5,9 +5,11 @@ import {
   applyQuestionSubmissionResults,
   createQuestionSubmissionLock,
   filterPendingQuestionRequestAnswerGroups,
+  filterPendingQuestionRequests,
   getQuestionEntryKey,
   getQuestionRequestKey,
   reconcileAcknowledgedQuestionRequestKeys,
+  submitQuestionRequestRejections,
 } from "./questionCardSubmission"
 
 const request = (sessionID: string, id: string): QuestionRequest => ({
@@ -54,6 +56,40 @@ describe("question card submission state", () => {
       [group(first), group(second)],
       acknowledged,
     ).map((entry) => entry.request.id)).toEqual(["que_2"])
+  })
+
+  test("Skip rejects each unresolved request once without requiring answers", async () => {
+    const first = request("ses_1", "que_1")
+    const second = request("ses_1", "que_2")
+    const calls: Array<[string, string]> = []
+
+    const results = await submitQuestionRequestRejections([first, second], async (sessionID, requestID) => {
+      calls.push([sessionID, requestID])
+    })
+
+    expect(calls).toEqual([["ses_1", "que_1"], ["ses_1", "que_2"]])
+    expect(results.map((result) => result.status)).toEqual(["fulfilled", "fulfilled"])
+  })
+
+  test("Skip retry never resends requests acknowledged before a partial failure", async () => {
+    const first = request("ses_1", "que_1")
+    const second = request("ses_1", "que_2")
+    const firstAttempt = await submitQuestionRequestRejections([first, second], async (_sessionID, requestID) => {
+      if (requestID === second.id) throw new Error("network failed")
+    })
+    const outcome = applyQuestionSubmissionResults(new Set(), firstAttempt, "Failed to skip question")
+    const retryTargets = filterPendingQuestionRequests([first, second], outcome.acknowledgedRequestKeys)
+    const retryCalls: string[] = []
+
+    const retry = await submitQuestionRequestRejections(retryTargets, async (_sessionID, requestID) => {
+      retryCalls.push(requestID)
+    })
+
+    expect(retryCalls).toEqual([second.id])
+    expect(outcome.errorsByRequestKey).toEqual({
+      [getQuestionRequestKey(second)]: "network failed",
+    })
+    expect(retry).toEqual([{ status: "fulfilled", request: second }])
   })
 
   test("partial success preserves fulfilled request acknowledgements and rejected errors", () => {

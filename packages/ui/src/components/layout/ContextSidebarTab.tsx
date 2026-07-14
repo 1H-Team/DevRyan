@@ -14,6 +14,10 @@ import { useI18n } from '@/lib/i18n';
 import type { ContextUsageSource } from '@/stores/types/sessionTypes';
 import { getContextUsageFromMessages } from '@/stores/utils/contextUsageUtils';
 import { calculateContextUsage } from '@/stores/utils/contextUtils';
+import {
+  resolveModelContextCapacity,
+  type ResolvedModelContextCapacity,
+} from '@/stores/utils/modelContextCapacity';
 import { computeCacheHitRate, extractTokenBreakdownFromMessage, type ExtractedTokenBreakdown } from '@/stores/utils/tokenUtils';
 import { useUIStore } from '@/stores/useUIStore';
 import {
@@ -29,7 +33,8 @@ type SessionMessage = { info: Message; parts: Part[] };
 type ProviderModelLike = {
   id?: string;
   name?: string;
-  limit?: { context?: number; output?: number };
+  limit?: { input?: number; context?: number; output?: number };
+  variants?: Record<string, { limit?: { input?: number; context?: number; output?: number } }>;
 };
 
 type ProviderLike = {
@@ -135,15 +140,15 @@ const resolveProviderAndModel = (
   providers: ProviderLike[],
   providerID: string,
   modelID: string,
-): { providerName: string; modelName: string; contextLimit: number | null; outputLimit: number } => {
+  variant?: string,
+): { providerName: string; modelName: string; capacity: ResolvedModelContextCapacity } => {
   const provider = providers.find((entry) => entry.id === providerID);
   const model = provider?.models?.find((entry) => entry.id === modelID);
 
   return {
     providerName: provider?.name || providerID || '-',
     modelName: model?.name || modelID || '-',
-    contextLimit: typeof model?.limit?.context === 'number' ? model.limit.context : null,
-    outputLimit: typeof model?.limit?.output === 'number' ? model.limit.output : 0,
+    capacity: resolveModelContextCapacity(model, variant),
   };
 };
 
@@ -217,19 +222,19 @@ export const ContextPanelContent: React.FC = () => {
       return sum + cost;
     }, 0);
 
-    const latestAssistantInfo = (contextMessage?.info ?? null) as (Message & { providerID?: string; modelID?: string }) | null;
+    const latestAssistantInfo = (contextMessage?.info ?? null) as (Message & { providerID?: string; modelID?: string; variant?: string }) | null;
     const providerModel = resolveProviderAndModel(
       providers as ProviderLike[],
       latestAssistantInfo?.providerID || '',
       latestAssistantInfo?.modelID || '',
+      latestAssistantInfo?.variant,
     );
 
-    const contextLimit = providerModel.contextLimit;
-    const outputLimit = providerModel.outputLimit;
-    const sourceUsage = getContextUsage(contextLimit ?? 0, outputLimit)
-      ?? getContextUsageFromMessages(sessionMessages, contextLimit ?? 0, outputLimit);
+    const capacity = providerModel.capacity;
+    const sourceUsage = getContextUsage(capacity)
+      ?? getContextUsageFromMessages(sessionMessages, capacity);
     const usagePercent = sourceUsage?.percentage
-      ?? calculateContextUsage(tokenBreakdown.total, contextLimit ?? 0, outputLimit).percentage;
+      ?? calculateContextUsage(tokenBreakdown.total, capacity).percentage;
     const sourceSegments = [...(sourceUsage?.sources ?? [])]
       .filter((source) => source.tokens > 0)
       .sort((a, b) => sourceOrder(a.source) - sourceOrder(b.source))
@@ -272,8 +277,7 @@ export const ContextPanelContent: React.FC = () => {
       cacheHitRate: computeCacheHitRate(tokenBreakdown.input, tokenBreakdown.cacheRead, tokenBreakdown.cacheWrite),
       usagePercent,
       totalAssistantCost,
-      contextLimit,
-      outputLimit,
+      capacity,
       sourceAccuracy: sourceUsage?.sourceAccuracy ?? 'unavailable',
       sourceSegments,
       sourceTotal,
@@ -318,23 +322,61 @@ export const ContextPanelContent: React.FC = () => {
             <span className="typography-micro text-muted-foreground">{t('contextSidebar.section.context')}</span>
             <span className="typography-micro tabular-nums text-muted-foreground/70">
               {formatNumber(viewModel.tokenBreakdown.total)}
-              {viewModel.contextLimit ? ` / ${formatNumber(viewModel.contextLimit)}` : ''}
+              {viewModel.capacity.capacityLimit !== null
+                ? ` / ${formatNumber(viewModel.capacity.capacityLimit)}`
+                : ''}
             </span>
           </div>
           <div className="mt-2.5 flex h-1 w-full overflow-hidden rounded-full bg-[var(--surface-subtle)]">
-            {viewModel.usagePercent > 0 && (
+            {viewModel.usagePercent !== null && viewModel.usagePercent > 0 && (
               <div
                 className="rounded-full transition-all duration-300"
                 style={{
-                  width: `${Math.max(0.5, viewModel.usagePercent)}%`,
+                  width: `${Math.min(100, Math.max(0.5, viewModel.usagePercent))}%`,
                   backgroundColor: viewModel.usagePercent > 80 ? 'var(--status-warning)' : 'var(--primary-base)',
                 }}
               />
             )}
           </div>
           <div className="mt-1.5 typography-micro font-medium tabular-nums text-foreground/80">
-            {t('contextSidebar.context.percentUsed', { percent: viewModel.usagePercent.toFixed(1) })}
+            {viewModel.usagePercent !== null
+              ? t('contextSidebar.context.percentUsed', { percent: viewModel.usagePercent.toFixed(1) })
+              : t('contextUsage.unavailable.title')}
           </div>
+          {viewModel.capacity.capacityLimit !== null ? (
+            <div className="mt-2 space-y-1 typography-micro text-muted-foreground/70">
+              <div className="flex items-center justify-between gap-4">
+                <span>
+                  {viewModel.capacity.capacityBasis === 'input'
+                    ? t('contextUsage.window.usableInputCapacity')
+                    : t('contextUsage.window.contextFallbackCapacity')}
+                </span>
+                <span className="tabular-nums">{formatNumber(viewModel.capacity.capacityLimit)}</span>
+              </div>
+              {viewModel.capacity.contextLimit !== null ? (
+                <div className="flex items-center justify-between gap-4">
+                  <span>{t('contextUsage.mobile.contextLimit')}</span>
+                  <span className="tabular-nums">{formatNumber(viewModel.capacity.contextLimit)}</span>
+                </div>
+              ) : null}
+              {viewModel.capacity.outputLimit !== null ? (
+                <div className="flex items-center justify-between gap-4">
+                  <span>{t('contextUsage.mobile.outputLimit')}</span>
+                  <span className="tabular-nums">{formatNumber(viewModel.capacity.outputLimit)}</span>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="mt-1 space-y-1 typography-micro text-muted-foreground/70">
+              <div>{t('contextUsage.unavailable.description')}</div>
+              {viewModel.capacity.outputLimit !== null ? (
+                <div className="flex items-center justify-between gap-4">
+                  <span>{t('contextUsage.mobile.outputLimit')}</span>
+                  <span className="tabular-nums">{formatNumber(viewModel.capacity.outputLimit)}</span>
+                </div>
+              ) : null}
+            </div>
+          )}
         </div>
 
         {/* ── Stat grid ── */}
@@ -430,8 +472,8 @@ export const ContextPanelContent: React.FC = () => {
                   <div key={session.sessionId} className="flex items-center justify-between gap-4 typography-ui-label text-foreground">
                     <span className="truncate text-muted-foreground">{session.title ?? t('contextSidebar.session.untitled')}</span>
                     <span className="shrink-0 tabular-nums text-muted-foreground">
-                      {session.contextLimit > 0
-                        ? `${formatCompactTokens(session.totalTokens)} / ${formatCompactTokens(session.contextLimit)}`
+                      {session.capacityLimit !== null
+                        ? `${formatCompactTokens(session.totalTokens)} / ${formatCompactTokens(session.capacityLimit)}`
                         : formatCompactTokens(session.totalTokens)}
                     </span>
                   </div>

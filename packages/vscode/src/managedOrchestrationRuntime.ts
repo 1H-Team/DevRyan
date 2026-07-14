@@ -29,6 +29,16 @@ export { createVsCodeManagedOrchestrationHost } from './managedOrchestrationHost
 export { createVsCodeManagedOrchestrationLedger } from './managedOrchestrationPersistence';
 
 const DEFAULT_TASK_TIMEOUT_MS = 30 * 60 * 1_000;
+const COUNCIL_TASK_TIMEOUT_MS = 3 * 60 * 1_000;
+
+const resolveSubmitTimeoutAt = (params: Record<string, unknown>, now: () => number) => {
+  const submittedAt = now();
+  if (params.deadlineClass === 'council') return submittedAt + COUNCIL_TASK_TIMEOUT_MS;
+  const minimumTimeoutAt = submittedAt + DEFAULT_TASK_TIMEOUT_MS;
+  return typeof params.timeoutAt === 'number' && Number.isFinite(params.timeoutAt)
+    ? Math.max(params.timeoutAt, minimumTimeoutAt)
+    : minimumTimeoutAt;
+};
 
 type Logger = Pick<Console, 'warn'>;
 type RuntimeError = Error & { code?: string; statusCode?: number };
@@ -42,9 +52,14 @@ const errorMessage = (error: unknown) => error instanceof Error ? error.message 
 const ERROR_STATUS_BY_CODE: Record<string, number> = {
   child_session_conflict: 409,
   duplicate_idempotency_key: 409,
+  handoff_conflict: 409,
+  handoff_in_progress: 409,
+  invalid_handoff_scope: 400,
   invalid_result_action: 400,
   ledger_capacity_exceeded: 507,
+  managed_retry_limit_reached: 409,
   managed_runtime_unavailable: 503,
+  missing_idempotency_key: 400,
   mode_lease_active: 409,
   mode_lease_conflict: 409,
   parent_not_found: 404,
@@ -113,6 +128,38 @@ const requireResultAction = (value: unknown): ManagedTaskResultAction => {
     throw new TypeError('action must be continue, resume, retry, retry_in_place, or abandon');
   }
   return value;
+};
+
+const normalizeHandoffParams = (params: Record<string, unknown>) => {
+  const rootSessionId = optionalString(params, 'rootSessionId');
+  if (!rootSessionId) {
+    throw createRuntimeError('invalid_handoff_scope', 'rootSessionId is required', 400);
+  }
+  if (params.fromMode !== 'orchestrator' || params.toMode !== 'builder') {
+    throw createRuntimeError(
+      'invalid_handoff_scope',
+      'only orchestrator-to-builder handoff is supported',
+      400,
+    );
+  }
+  if (typeof params.confirm !== 'boolean') {
+    throw createRuntimeError('invalid_handoff_scope', 'confirm must be a boolean', 400);
+  }
+  const idempotencyKey = optionalString(params, 'idempotencyKey');
+  if (params.confirm && !idempotencyKey) {
+    throw createRuntimeError(
+      'missing_idempotency_key',
+      'handoff idempotencyKey is required when confirm is true',
+      400,
+    );
+  }
+  return {
+    rootSessionId,
+    fromMode: 'orchestrator' as const,
+    toMode: 'builder' as const,
+    confirm: params.confirm,
+    ...(idempotencyKey ? { idempotencyKey } : {}),
+  };
 };
 
 export type VsCodeManagedOrchestrationRuntime = {
@@ -264,6 +311,21 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
     };
   };
 
+  const projectHandoffResult = (
+    scope: ReturnType<typeof normalizeHandoffParams>,
+    result: Awaited<ReturnType<ManagedTaskScheduler['inspectAgentHandoff']>>,
+  ) => ({
+    rootSessionId: scope.rootSessionId,
+    fromMode: scope.fromMode,
+    toMode: scope.toMode,
+    state: result.state,
+    tasks: result.taskIds
+      .map((taskId) => scheduler.getTask(taskId))
+      .filter((task): task is NonNullable<typeof task> => Boolean(task))
+      .map(projectTaskResult),
+    failures: result.failures,
+  });
+
   const handleRpcInternal = async (
     request: ManagedOrchestrationRpcRequest,
     context: ManagedOrchestrationRpcContext = {},
@@ -272,12 +334,11 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
     const params = request.params ?? {};
     switch (request.method) {
       case 'submit': {
-        const timeoutAt = typeof params.timeoutAt === 'number' && Number.isFinite(params.timeoutAt)
-          ? params.timeoutAt
-          : now() + DEFAULT_TASK_TIMEOUT_MS;
+        const timeoutAt = resolveSubmitTimeoutAt(params, now);
         const task = await scheduler.submit({
           idempotencyKey: requireString(params, 'idempotencyKey'),
           rootSessionId: requireString(params, 'rootSessionId'),
+          dispatchGroupId: optionalString(params, 'dispatchGroupId'),
           parentTaskId: optionalString(params, 'parentTaskId'),
           childSessionId: optionalString(params, 'childSessionId'),
           directory: requireString(params, 'directory'),
@@ -295,6 +356,29 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
       case 'wait': {
         const task = getScopedTask(params);
         return projectTaskResult(await scheduler.waitForTask(task.taskId, { signal: context.signal }));
+      }
+      case 'barrier':
+        return await scheduler.waitForDispatchBarrier(
+          requireString(params, 'rootSessionId'),
+          { signal: context.signal },
+        );
+      case 'barrier_status':
+        return await scheduler.inspectDispatchBarrier(requireString(params, 'rootSessionId'));
+      case 'handoff': {
+        const scope = normalizeHandoffParams(params);
+        const result = scope.confirm
+          ? await scheduler.confirmAgentHandoff({
+            rootSessionId: scope.rootSessionId,
+            fromMode: scope.fromMode,
+            toMode: scope.toMode,
+            idempotencyKey: scope.idempotencyKey as string,
+          })
+          : await scheduler.inspectAgentHandoff({
+            rootSessionId: scope.rootSessionId,
+            fromMode: scope.fromMode,
+            toMode: scope.toMode,
+          });
+        return projectHandoffResult(scope, result);
       }
       case 'status':
         return projectTaskResult(getScopedTask(params));
@@ -317,6 +401,9 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
         const agent = optionalString(params, 'agent');
         const label = optionalString(params, 'label');
         const prompt = optionalContentString(params, 'prompt');
+        const timeoutAt = typeof params.timeoutAt === 'number' && Number.isFinite(params.timeoutAt)
+          ? params.timeoutAt
+          : now() + DEFAULT_TASK_TIMEOUT_MS;
         const result = await scheduler.acknowledgeResult(task.taskId, {
           action: requireResultAction(params.action),
           idempotencyKey: requireString(params, 'idempotencyKey'),
@@ -326,9 +413,7 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
           ...(params.variant !== undefined ? { variant: optionalString(params, 'variant') } : {}),
           ...(label ? { label } : {}),
           ...(prompt ? { prompt } : {}),
-          ...(typeof params.timeoutAt === 'number' && Number.isFinite(params.timeoutAt)
-            ? { timeoutAt: params.timeoutAt }
-            : {}),
+          timeoutAt,
         });
         return {
           resultEnvelope: result.envelope,

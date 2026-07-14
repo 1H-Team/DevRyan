@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.9] - 2026-07-13
+
+- Sessions: show the active session's net diff summary in the header.
+- OpenCode: update the bundled SDK dependency and managed runtime target to 1.17.19 across web, UI, VS Code, and the workspace lockfile.
+
 ## [1.0.8] - 2026-07-11
 
 - Sync: stop deterministic unavailable-model retry loops after the first provider model-resolution failure, surface the error once, and keep transient provider retries such as rate limits on the normal OpenCode path.

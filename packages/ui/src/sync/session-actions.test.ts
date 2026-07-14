@@ -4,11 +4,19 @@ import type { Message, Part, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { applyDirectoryEvent } from "./event-reducer"
 import { useManagedOrchestrationStore } from "@/stores/useManagedOrchestrationStore"
 
+const actualOpencodeClientModule = await import("@/lib/opencode/client")
+const actualSyncRefsModule = await import("./sync-refs")
+const bunTestHooks = (await import("bun:test")) as unknown as {
+  afterAll: (callback: () => void) => void
+}
+
 // Mock SDK client that records permission.reply / question.reply calls
 const replyCalls: Array<{ method: string; params: Record<string, unknown> }> = []
 const sessionCreateCalls: Array<Record<string, unknown>> = []
 const sessionUpdateCalls: Array<Record<string, unknown>> = []
 const sessionDeleteCalls: Array<Record<string, unknown>> = []
+const sessionUpdateOptions: Array<{ throwOnError?: boolean } | undefined> = []
+const sessionDeleteOptions: Array<{ throwOnError?: boolean } | undefined> = []
 const sessionAbortCalls: Array<Record<string, unknown>> = []
 const sessionMessageCalls: Array<Record<string, unknown>> = []
 const sessionUnrevertCalls: Array<Record<string, unknown>> = []
@@ -47,9 +55,33 @@ const globalRemoveCalls: Array<{ ids: string[] }> = []
 const globalUnarchiveCalls: Array<{ ids: string[] }> = []
 const globalRestoreCalls: Array<{ ids: string[] }> = []
 const globalArchiveSnapshotCalls: Array<{ ids: string[]; archivedAt: number }> = []
+const membershipBeginCalls: Array<Record<string, unknown>> = []
+const membershipSettleCalls: Array<{
+  entries: Array<{ sessionID: string; version: number }>
+  result: { successfulIds: string[]; failedIds: string[] }
+}> = []
+let postMutationRefreshCalls = 0
+let nextMembershipMutationVersion = 0
 let mockGlobalActiveSessions: Session[] = []
 let mockGlobalArchivedSessions: Session[] = []
 let mockConfigStoreState: Record<string, unknown> = {}
+
+const applyThrowOnErrorOption = async (
+  resultPromise: Promise<unknown>,
+  options?: { throwOnError?: boolean },
+): Promise<unknown> => {
+  const result = await resultPromise
+  if (
+    options?.throwOnError
+    && result
+    && typeof result === "object"
+    && "error" in result
+    && (result as { error?: unknown }).error
+  ) {
+    throw (result as { error: unknown }).error
+  }
+  return result
+}
 
 const mockScopedClient = {
   permission: {
@@ -76,13 +108,15 @@ const mockSdk = {
       sessionCreateCalls.push(params)
       return sessionCreateHandler(params)
     }),
-    update: mock((params: Record<string, unknown>) => {
+    update: mock((params: Record<string, unknown>, options?: { throwOnError?: boolean }) => {
       sessionUpdateCalls.push(params)
-      return sessionUpdateHandler(params)
+      sessionUpdateOptions.push(options)
+      return applyThrowOnErrorOption(sessionUpdateHandler(params), options)
     }),
-    delete: mock((params: Record<string, unknown>) => {
+    delete: mock((params: Record<string, unknown>, options?: { throwOnError?: boolean }) => {
       sessionDeleteCalls.push(params)
-      return sessionDeleteHandler(params)
+      sessionDeleteOptions.push(options)
+      return applyThrowOnErrorOption(sessionDeleteHandler(params), options)
     }),
     abort: mock((params: Record<string, unknown>) => {
       sessionAbortCalls.push(params)
@@ -119,9 +153,11 @@ const mockSdk = {
   },
 }
 
-// Mock opencodeClient singleton
-mock.module("@/lib/opencode/client", () => ({
-  opencodeClient: {
+// Keep the real singleton prototype so this process-wide Bun mock remains a
+// complete module when another chat-flow suite imports it later.
+const sessionActionsOpencodeClient = Object.assign(
+  Object.create(actualOpencodeClientModule.opencodeClient) as typeof actualOpencodeClientModule.opencodeClient,
+  {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     getScopedSdkClient: (_: string) => mockScopedClient,
     getDirectory: () => "/test/project",
@@ -130,6 +166,11 @@ mock.module("@/lib/opencode/client", () => ({
       return scopedRevertHandler(sessionId, messageId, directory)
     },
   },
+)
+
+mock.module("@/lib/opencode/client", () => ({
+  ...actualOpencodeClientModule,
+  opencodeClient: sessionActionsOpencodeClient,
 }))
 
 // Mock useConfigStore
@@ -148,67 +189,76 @@ mock.module("@/stores/useConfigStore", () => ({
   },
 }))
 
-// Mock useSessionUIStore
-mock.module("./session-ui-store", () => ({
-  useSessionUIStore: {
-    getState: () => ({
+// Register the narrow UI-store surface session actions need without replacing
+// the complete session-ui-store module for every later suite in this Bun process.
+const sessionActionsSessionUIStore = {
+  getState: () => ({
+    currentSessionId: mockCurrentSessionId,
+    sessionAbortFlags: mockSessionAbortFlags,
+    abortControllers: mockAbortControllers,
+    setCurrentSession: (id: string | null, directory?: string | null) => {
+      setCurrentSessionCalls.push({ id, directory })
+      mockCurrentSessionId = id
+    },
+    setSessionDirectory: (sessionId: string, directory: string | null) => {
+      sessionDirectories[sessionId] = directory
+    },
+    markSessionAsOpenChamberCreated: () => {},
+    getDirectoryForSession: (sessionId: string) => sessionDirectories[sessionId] ?? null,
+    abortPendingSend: (key: string) => {
+      const controller = mockAbortControllers.get(key)
+      if (!controller) return false
+      controller.abort()
+      mockAbortControllers.delete(key)
+      return true
+    },
+    clearSessionTurnCompletion: (sessionId: string) => {
+      clearSessionTurnCompletionCalls.push(sessionId)
+      mockSessionCompletionIndicator.delete(sessionId)
+      mockPendingCompletionIndicatorSessions.delete(sessionId)
+    },
+  }),
+  setState: (
+    partial:
+      | {
+        sessionAbortFlags?: Map<string, { timestamp: number; acknowledged: boolean; reason?: "manual" | "steered"; id?: string }>
+        abortControllers?: Map<string, AbortController>
+      }
+      | ((state: {
+        currentSessionId: string | null
+        sessionAbortFlags: Map<string, { timestamp: number; acknowledged: boolean; reason?: "manual" | "steered"; id?: string }>
+        abortControllers: Map<string, AbortController>
+        getDirectoryForSession: (sessionId: string) => string | null
+      }) => {
+        sessionAbortFlags?: Map<string, { timestamp: number; acknowledged: boolean; reason?: "manual" | "steered"; id?: string }>
+        abortControllers?: Map<string, AbortController>
+      }),
+  ) => {
+    const baseState = {
       currentSessionId: mockCurrentSessionId,
       sessionAbortFlags: mockSessionAbortFlags,
       abortControllers: mockAbortControllers,
-      setCurrentSession: (id: string | null, directory?: string | null) => {
-        setCurrentSessionCalls.push({ id, directory })
-        mockCurrentSessionId = id
-      },
-      setSessionDirectory: (sessionId: string, directory: string | null) => {
-        sessionDirectories[sessionId] = directory
-      },
-      markSessionAsOpenChamberCreated: () => {},
       getDirectoryForSession: (sessionId: string) => sessionDirectories[sessionId] ?? null,
-      abortPendingSend: (key: string) => {
-        const controller = mockAbortControllers.get(key)
-        if (!controller) return false
-        controller.abort()
-        mockAbortControllers.delete(key)
-        return true
-      },
-      clearSessionTurnCompletion: (sessionId: string) => {
-        clearSessionTurnCompletionCalls.push(sessionId)
-        mockSessionCompletionIndicator.delete(sessionId)
-        mockPendingCompletionIndicatorSessions.delete(sessionId)
-      },
-    }),
-    setState: (
-      partial:
-        | {
-          sessionAbortFlags?: Map<string, { timestamp: number; acknowledged: boolean; reason?: "manual" | "steered"; id?: string }>
-          abortControllers?: Map<string, AbortController>
-        }
-        | ((state: {
-          currentSessionId: string | null
-          sessionAbortFlags: Map<string, { timestamp: number; acknowledged: boolean; reason?: "manual" | "steered"; id?: string }>
-          abortControllers: Map<string, AbortController>
-          getDirectoryForSession: (sessionId: string) => string | null
-        }) => {
-          sessionAbortFlags?: Map<string, { timestamp: number; acknowledged: boolean; reason?: "manual" | "steered"; id?: string }>
-          abortControllers?: Map<string, AbortController>
-        }),
-    ) => {
-      const baseState = {
-        currentSessionId: mockCurrentSessionId,
-        sessionAbortFlags: mockSessionAbortFlags,
-        abortControllers: mockAbortControllers,
-        getDirectoryForSession: (sessionId: string) => sessionDirectories[sessionId] ?? null,
-      }
-      const next = typeof partial === "function" ? partial(baseState) : partial
-      if (next.sessionAbortFlags) {
-        mockSessionAbortFlags = next.sessionAbortFlags
-      }
-      if ("abortControllers" in next && next.abortControllers) {
-        mockAbortControllers = next.abortControllers
-      }
-    },
+    }
+    const next = typeof partial === "function" ? partial(baseState) : partial
+    if (next.sessionAbortFlags) {
+      mockSessionAbortFlags = next.sessionAbortFlags
+    }
+    if ("abortControllers" in next && next.abortControllers) {
+      mockAbortControllers = next.abortControllers
+    }
   },
-}))
+}
+
+actualSyncRefsModule.setSessionUIStoreRef(
+  sessionActionsSessionUIStore as unknown as Parameters<typeof actualSyncRefsModule.setSessionUIStoreRef>[0],
+)
+
+bunTestHooks.afterAll(() => {
+  actualSyncRefsModule.clearSessionUIStoreRef(
+    sessionActionsSessionUIStore as unknown as Parameters<typeof actualSyncRefsModule.clearSessionUIStoreRef>[0],
+  )
+})
 
 // Mock useInputStore (imported but not used in permission functions)
 mock.module("./input-store", () => ({
@@ -217,6 +267,7 @@ mock.module("./input-store", () => ({
       inputStoreState = { ...inputStoreState, ...partial }
     },
     getState: () => ({
+      ...inputStoreState,
       setPendingInputText: (text: string | null, mode = "replace") => {
         inputStoreState = {
           ...inputStoreState,
@@ -241,58 +292,107 @@ mock.module("./input-store", () => ({
   },
 }))
 
-mock.module("@/stores/useGlobalSessionsStore", () => ({
-  useGlobalSessionsStore: {
+mock.module("@/stores/useGlobalSessionsStore", () => {
+  const removeGlobalSessions = (ids: Iterable<string>) => {
+    const idList = Array.from(ids)
+    const idSet = new Set(idList)
+    globalRemoveCalls.push({ ids: idList })
+    mockGlobalActiveSessions = mockGlobalActiveSessions.filter((session) => !idSet.has(session.id))
+    mockGlobalArchivedSessions = mockGlobalArchivedSessions.filter((session) => !idSet.has(session.id))
+  }
+  const restoreGlobalSessions = (sessions: Session[]) => {
+    globalRestoreCalls.push({ ids: sessions.map((session) => session.id) })
+    for (const session of sessions) {
+      const idSet = new Set([session.id])
+      mockGlobalActiveSessions = mockGlobalActiveSessions.filter((candidate) => !idSet.has(candidate.id))
+      mockGlobalArchivedSessions = mockGlobalArchivedSessions.filter((candidate) => !idSet.has(candidate.id))
+      if (session.time?.archived) {
+        mockGlobalArchivedSessions = [session, ...mockGlobalArchivedSessions]
+      } else {
+        mockGlobalActiveSessions = [session, ...mockGlobalActiveSessions]
+      }
+    }
+  }
+  const archiveGlobalSnapshots = (sessions: Session[], archivedAt: number) => {
+    globalArchiveSnapshotCalls.push({ ids: sessions.map((session) => session.id), archivedAt })
+    globalArchiveCalls.push({ ids: sessions.map((session) => session.id), archivedAt })
+    const idSet = new Set(sessions.map((session) => session.id))
+    mockGlobalActiveSessions = mockGlobalActiveSessions.filter((session) => !idSet.has(session.id))
+    mockGlobalArchivedSessions = [
+      ...sessions.map((session) => ({
+        ...session,
+        time: { ...session.time, archived: archivedAt },
+      })),
+      ...mockGlobalArchivedSessions.filter((session) => !idSet.has(session.id)),
+    ]
+  }
+
+  return {
+    beginGlobalSessionMembershipMutation: (input: {
+      kind: "archive" | "delete" | "unarchive"
+      sessionIds: string[]
+      snapshots?: Session[]
+      archivedAt?: number
+    }) => {
+      membershipBeginCalls.push(input as unknown as Record<string, unknown>)
+      const entries = input.sessionIds.map((sessionID) => ({
+        sessionID,
+        version: ++nextMembershipMutationVersion,
+      }))
+      if (input.kind === "archive") {
+        archiveGlobalSnapshots(input.snapshots ?? [], input.archivedAt ?? Date.now())
+        const snapshotIds = new Set((input.snapshots ?? []).map((session) => session.id))
+        removeGlobalSessions(input.sessionIds.filter((sessionID) => !snapshotIds.has(sessionID)))
+      } else if (input.kind === "delete") {
+        removeGlobalSessions(input.sessionIds)
+      } else {
+        restoreGlobalSessions((input.snapshots ?? []).map((session) => {
+          const time = { ...session.time }
+          delete time.archived
+          return { ...session, time }
+        }))
+      }
+      return { entries }
+    },
+    settleGlobalSessionMembershipMutation: (
+      handle: { entries: Array<{ sessionID: string; version: number }> },
+      result: { successfulIds: string[]; failedIds: string[] },
+    ) => {
+      membershipSettleCalls.push({ entries: handle.entries, result })
+    },
+    queueGlobalSessionsRefreshAfterMutation: () => {
+      postMutationRefreshCalls += 1
+      return Promise.resolve()
+    },
+    useGlobalSessionsStore: {
     getState: () => ({
       archiveSessions: (ids: Iterable<string>, archivedAt?: number) => {
         const idList = Array.from(ids)
         globalArchiveCalls.push({ ids: idList, archivedAt })
       },
       removeSessions: (ids: Iterable<string>) => {
-        const idList = Array.from(ids)
-        const idSet = new Set(idList)
-        globalRemoveCalls.push({ ids: idList })
-        mockGlobalActiveSessions = mockGlobalActiveSessions.filter((session) => !idSet.has(session.id))
-        mockGlobalArchivedSessions = mockGlobalArchivedSessions.filter((session) => !idSet.has(session.id))
+        removeGlobalSessions(ids)
       },
       unarchiveSessions: (ids: Iterable<string>) => {
         globalUnarchiveCalls.push({ ids: Array.from(ids) })
       },
       restoreSessions: (sessions: Session[]) => {
-        globalRestoreCalls.push({ ids: sessions.map((session) => session.id) })
-        for (const session of sessions) {
-          const idSet = new Set([session.id])
-          mockGlobalActiveSessions = mockGlobalActiveSessions.filter((candidate) => !idSet.has(candidate.id))
-          mockGlobalArchivedSessions = mockGlobalArchivedSessions.filter((candidate) => !idSet.has(candidate.id))
-          if (session.time?.archived) {
-            mockGlobalArchivedSessions = [session, ...mockGlobalArchivedSessions]
-          } else {
-            mockGlobalActiveSessions = [session, ...mockGlobalActiveSessions]
-          }
-        }
+        restoreGlobalSessions(sessions)
       },
       archiveSessionSnapshots: (sessions: Session[], archivedAt: number) => {
-        globalArchiveSnapshotCalls.push({ ids: sessions.map((session) => session.id), archivedAt })
-        globalArchiveCalls.push({ ids: sessions.map((session) => session.id), archivedAt })
-        const idSet = new Set(sessions.map((session) => session.id))
-        mockGlobalActiveSessions = mockGlobalActiveSessions.filter((session) => !idSet.has(session.id))
-        mockGlobalArchivedSessions = [
-          ...sessions.map((session) => ({
-            ...session,
-            time: { ...session.time, archived: archivedAt },
-          })),
-          ...mockGlobalArchivedSessions.filter((session) => !idSet.has(session.id)),
-        ]
+        archiveGlobalSnapshots(sessions, archivedAt)
       },
       upsertSession: () => {},
       activeSessions: mockGlobalActiveSessions,
       archivedSessions: mockGlobalArchivedSessions,
     }),
-  },
-}))
+    },
+  }
+})
 
 // Mock sync-refs (imported but not used in permission functions)
 mock.module("./sync-refs", () => ({
+  ...actualSyncRefsModule,
   registerSessionDirectory: () => {},
   setSyncRefs: () => {},
   getSyncChildStores: () => {
@@ -486,6 +586,8 @@ describe("archiveSessions batch behavior", () => {
     sessionCreateCalls.length = 0
     sessionUpdateCalls.length = 0
     sessionDeleteCalls.length = 0
+    sessionUpdateOptions.length = 0
+    sessionDeleteOptions.length = 0
     sessionAbortCalls.length = 0
     sessionMessageCalls.length = 0
     sessionUnrevertCalls.length = 0
@@ -497,6 +599,9 @@ describe("archiveSessions batch behavior", () => {
     globalUnarchiveCalls.length = 0
     globalRestoreCalls.length = 0
     globalArchiveSnapshotCalls.length = 0
+    membershipBeginCalls.length = 0
+    membershipSettleCalls.length = 0
+    postMutationRefreshCalls = 0
     mockCurrentSessionId = null
     mockConfigStoreState = {}
     mockSessionAbortFlags = new Map()
@@ -754,6 +859,45 @@ describe("archiveSessions batch behavior", () => {
     expect(globalRestoreCalls[0].ids).toEqual(["session-a"])
   })
 
+  test("treats a resolved SDK archive error as a failed mutation", async () => {
+    const sessionA = makeSession("session-a")
+    const store = createStore({}, [sessionA])
+    const childStores = createChildStores([["/test/project", store]])
+    sessionUpdateHandler = () => Promise.resolve({ error: new Error("archive failed") })
+
+    const { setActionRefs, archiveSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    expect(await withMutedConsoleError(() => archiveSessions(["session-a"]))).toEqual({
+      archivedIds: [],
+      failedIds: ["session-a"],
+    })
+    expect(sessionUpdateOptions).toEqual([{ throwOnError: true }])
+    expect(store.getState().session.map((item) => item.id)).toEqual(["session-a"])
+  })
+
+  test("registers and settles archive membership before requesting a fresh global snapshot", async () => {
+    const sessionA = makeSession("session-a")
+    mockGlobalActiveSessions = [sessionA]
+    const store = createStore({}, [sessionA])
+    const childStores = createChildStores([["/test/project", store]])
+
+    const { setActionRefs, archiveSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    expect(await archiveSessions(["session-a"])).toEqual({ archivedIds: ["session-a"], failedIds: [] })
+    expect(membershipBeginCalls.length).toBe(1)
+    expect(membershipBeginCalls[0]?.kind).toBe("archive")
+    expect(membershipBeginCalls[0]?.sessionIds).toEqual(["session-a"])
+    expect(membershipBeginCalls[0]?.snapshots).toEqual([sessionA])
+    expect(typeof membershipBeginCalls[0]?.archivedAt).toBe("number")
+    expect(membershipSettleCalls[0]?.result).toEqual({
+      successfulIds: ["session-a"],
+      failedIds: [],
+    })
+    expect(postMutationRefreshCalls).toBe(1)
+  })
+
   test("archives direct and nested child sessions with the parent", async () => {
     const parent = makeSession("parent")
     const child = makeSession("child", "parent")
@@ -942,9 +1086,13 @@ describe("archiveSessions batch behavior", () => {
 describe("unarchiveSessions cascade behavior", () => {
   beforeEach(() => {
     sessionUpdateCalls.length = 0
+    sessionUpdateOptions.length = 0
     globalUnarchiveCalls.length = 0
     globalRemoveCalls.length = 0
     globalRestoreCalls.length = 0
+    membershipBeginCalls.length = 0
+    membershipSettleCalls.length = 0
+    postMutationRefreshCalls = 0
     mockGlobalActiveSessions = []
     mockGlobalArchivedSessions = []
     for (const key of Object.keys(sessionDirectories)) {
@@ -973,7 +1121,7 @@ describe("unarchiveSessions cascade behavior", () => {
 
     expect(sessionUpdateCalls.map((params) => params.sessionID)).toEqual(["parent", "child", "grandchild"])
     expect(globalRestoreCalls[0].ids).toEqual(["parent", "child", "grandchild"])
-    expect(globalUnarchiveCalls[0].ids).toEqual([])
+    expect(globalUnarchiveCalls).toEqual([])
   })
 
   test("unarchiving a child does not unarchive its parent", async () => {
@@ -991,7 +1139,50 @@ describe("unarchiveSessions cascade behavior", () => {
 
     expect(sessionUpdateCalls.map((params) => params.sessionID)).toEqual(["child"])
     expect(globalRestoreCalls[0].ids).toEqual(["child"])
-    expect(globalUnarchiveCalls[0].ids).toEqual([])
+    expect(globalUnarchiveCalls).toEqual([])
+  })
+
+  test("treats a resolved SDK unarchive error as a failed mutation", async () => {
+    const archived = {
+      ...makeSession("session-a"),
+      time: { created: 1, updated: 1, archived: 10 },
+    } as Session
+    mockGlobalArchivedSessions = [archived]
+    const childStores = createChildStores([])
+    sessionUpdateHandler = () => Promise.resolve({ error: new Error("unarchive failed") })
+
+    const { setActionRefs, unarchiveSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    expect(await withMutedConsoleError(() => unarchiveSessions(["session-a"]))).toEqual({
+      unarchivedIds: [],
+      failedIds: ["session-a"],
+    })
+    expect(sessionUpdateOptions).toEqual([{ throwOnError: true }])
+  })
+
+  test("registers and settles unarchive membership before requesting a fresh global snapshot", async () => {
+    const archived = {
+      ...makeSession("session-a"),
+      time: { created: 1, updated: 1, archived: 10 },
+    } as Session
+    mockGlobalArchivedSessions = [archived]
+    const childStores = createChildStores([])
+
+    const { setActionRefs, unarchiveSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    expect(await unarchiveSessions(["session-a"])).toEqual({ unarchivedIds: ["session-a"], failedIds: [] })
+    expect(membershipBeginCalls).toEqual([{
+      kind: "unarchive",
+      sessionIds: ["session-a"],
+      snapshots: [archived],
+    }])
+    expect(membershipSettleCalls[0]?.result).toEqual({
+      successfulIds: ["session-a"],
+      failedIds: [],
+    })
+    expect(postMutationRefreshCalls).toBe(1)
   })
 })
 
@@ -999,11 +1190,16 @@ describe("deleteSessions archived behavior", () => {
   beforeEach(() => {
     sessionUpdateCalls.length = 0
     sessionDeleteCalls.length = 0
+    sessionUpdateOptions.length = 0
+    sessionDeleteOptions.length = 0
     sessionAbortCalls.length = 0
     setCurrentSessionCalls.length = 0
     globalRemoveCalls.length = 0
     globalRestoreCalls.length = 0
     globalArchiveSnapshotCalls.length = 0
+    membershipBeginCalls.length = 0
+    membershipSettleCalls.length = 0
+    postMutationRefreshCalls = 0
     mockCurrentSessionId = null
     mockGlobalActiveSessions = []
     mockGlobalArchivedSessions = []
@@ -1060,6 +1256,57 @@ describe("deleteSessions archived behavior", () => {
       { sessionID: "archived-session", directory: "/archived/project" },
     ])
     expect(globalRemoveCalls[0]).toEqual({ ids: ["archived-session"] })
+  })
+
+  test("protects a directory-specific delete through the membership mutation lifecycle", async () => {
+    const session = {
+      ...makeSession("directory-session"),
+      directory: "/other/project",
+    } as unknown as Session
+    mockGlobalActiveSessions = [session]
+    const store = createStore({}, [session])
+    const childStores = createChildStores([["/other/project", store]])
+
+    const { deleteSessionInDirectory, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
+
+    expect(await deleteSessionInDirectory("directory-session", "/other/project")).toBe(true)
+
+    expect(sessionDeleteOptions).toEqual([{ throwOnError: true }])
+    expect(membershipBeginCalls.at(-1)?.kind).toBe("delete")
+    expect(membershipBeginCalls.at(-1)?.sessionIds).toEqual(["directory-session"])
+    expect(membershipSettleCalls.at(-1)?.result).toEqual({
+      successfulIds: ["directory-session"],
+      failedIds: [],
+    })
+    expect(postMutationRefreshCalls).toBe(1)
+  })
+
+  test("rolls back a directory-specific delete when the SDK resolves with an error", async () => {
+    const session = {
+      ...makeSession("directory-session"),
+      directory: "/other/project",
+    } as unknown as Session
+    mockGlobalActiveSessions = [session]
+    const store = createStore({}, [session])
+    const childStores = createChildStores([["/other/project", store]])
+    sessionDeleteHandler = () => Promise.resolve({ error: new Error("delete failed") })
+
+    const { deleteSessionInDirectory, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
+
+    expect(await withMutedConsoleError(
+      () => deleteSessionInDirectory("directory-session", "/other/project"),
+    )).toBe(false)
+
+    expect(sessionDeleteOptions).toEqual([{ throwOnError: true }])
+    expect(store.getState().session.map((item) => item.id)).toEqual(["directory-session"])
+    expect(mockGlobalActiveSessions.map((item) => item.id)).toEqual(["directory-session"])
+    expect(membershipSettleCalls.at(-1)?.result).toEqual({
+      successfulIds: [],
+      failedIds: ["directory-session"],
+    })
+    expect(postMutationRefreshCalls).toBe(0)
   })
 
   test("deleting an archived parent cascades to archived descendants", async () => {
@@ -1261,7 +1508,7 @@ describe("deleteSessions archived behavior", () => {
     })
   })
 
-  test("removes successfully deleted archived sessions again after stale global refresh rehydrates them", async () => {
+  test("settles successfully deleted archived sessions after optimistic removal", async () => {
     const archivedA = {
       ...makeSession("archived-a"),
       directory: "/archived/project",
@@ -1288,8 +1535,6 @@ describe("deleteSessions archived behavior", () => {
 
     expect(mockGlobalArchivedSessions.map((session) => session.id)).toEqual([])
 
-    mockGlobalArchivedSessions = [archivedA, archivedB]
-
     deferredA.resolve({ data: true })
     deferredB.resolve({ data: true })
 
@@ -1298,10 +1543,11 @@ describe("deleteSessions archived behavior", () => {
       failedIds: [],
     })
     expect(mockGlobalArchivedSessions.map((session) => session.id)).toEqual([])
-    expect(globalRemoveCalls.map((call) => call.ids)).toEqual([
-      ["archived-a", "archived-b"],
-      ["archived-a", "archived-b"],
-    ])
+    expect(globalRemoveCalls.map((call) => call.ids)).toEqual([["archived-a", "archived-b"]])
+    expect(membershipSettleCalls.at(-1)?.result).toEqual({
+      successfulIds: ["archived-a", "archived-b"],
+      failedIds: [],
+    })
   })
 
   test("restores an optimistically removed archived session when delete fails", async () => {
@@ -1328,6 +1574,55 @@ describe("deleteSessions archived behavior", () => {
     expect(store.getState().session.map((session) => session.id)).toEqual(["archived-session"])
     expect(globalRemoveCalls).toEqual([{ ids: ["archived-session"] }])
     expect(globalRestoreCalls[0].ids).toEqual(["archived-session"])
+  })
+
+  test("treats a resolved SDK delete error as a failed mutation", async () => {
+    const archived = {
+      ...makeSession("archived-session"),
+      directory: "/archived/project",
+      time: { created: 1, updated: 1, archived: 10 },
+    } as unknown as Session
+    mockGlobalArchivedSessions = [archived]
+    const store = createStore({}, [archived])
+    const childStores = createChildStores([["/archived/project", store]])
+    sessionDeleteHandler = () => Promise.resolve({ error: new Error("delete failed") })
+
+    const { setActionRefs, deleteSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
+
+    expect(await withMutedConsoleError(() => deleteSessions(["archived-session"]))).toEqual({
+      deletedIds: [],
+      failedIds: ["archived-session"],
+    })
+    expect(sessionDeleteOptions).toEqual([{ throwOnError: true }])
+    expect(store.getState().session.map((item) => item.id)).toEqual(["archived-session"])
+  })
+
+  test("registers and settles delete membership before requesting a fresh global snapshot", async () => {
+    const archived = {
+      ...makeSession("archived-session"),
+      directory: "/archived/project",
+      time: { created: 1, updated: 1, archived: 10 },
+    } as unknown as Session
+    mockGlobalArchivedSessions = [archived]
+    const childStores = createChildStores([])
+
+    const { setActionRefs, deleteSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
+
+    expect(await deleteSessions(["archived-session"])).toEqual({
+      deletedIds: ["archived-session"],
+      failedIds: [],
+    })
+    expect(membershipBeginCalls).toEqual([{
+      kind: "delete",
+      sessionIds: ["archived-session"],
+    }])
+    expect(membershipSettleCalls[0]?.result).toEqual({
+      successfulIds: ["archived-session"],
+      failedIds: [],
+    })
+    expect(postMutationRefreshCalls).toBe(1)
   })
 })
 
@@ -2326,7 +2621,7 @@ describe("revertToMessage recovery behavior", () => {
     expect(sessionAbortCalls).toEqual([{ sessionID: "session-a", directory: "/test/project" }])
   })
 
-  test("queued-send interrupt records manual aborts after sdk success", async () => {
+  test("queued-send interrupt records steered aborts after sdk success", async () => {
     const userMessage = {
       id: "msg-user",
       sessionID: "session-a",
@@ -2353,7 +2648,7 @@ describe("revertToMessage recovery behavior", () => {
 
     const abortFlag = mockSessionAbortFlags.get("session-a")
     expect(abortFlag?.id).toBe("msg-assistant")
-    expect(abortFlag?.reason).toBe("manual")
+    expect(abortFlag?.reason).toBe("steered")
     expect(abortFlag?.acknowledged).toBe(false)
     expect(typeof abortFlag?.timestamp).toBe("number")
   })

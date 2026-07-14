@@ -1485,4 +1485,108 @@ describe('Cursor SDK worker runtime config', () => {
     expect(records[1].parts.find((part) => part.type === 'text')?.text).toBe('worker ok');
     await runtime.dispose();
   });
+
+  test('passes question MCP configuration through one-shot worker commands', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-question-one-shot-'));
+    const capture = { calls: [], input: null };
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      useNodeWorkerForPrompts: true,
+      usePersistentWorkerForPrompts: false,
+      spawnImpl: createFakeWorkerSpawn(capture),
+      questionRuntime: {
+        getMcpServerConfig: async () => ({
+          identity: 'question-identity',
+          mcpServers: {
+            devryan_question: {
+              type: 'http',
+              url: 'http://127.0.0.1:43123/mcp/scope',
+              headers: { Authorization: 'Bearer worker-secret' },
+            },
+          },
+        }),
+        listPendingQuestions: () => [],
+        replyToQuestion: async () => false,
+        rejectQuestion: async () => false,
+        cancelSession: () => 0,
+        revokeSessionScope: () => true,
+        deleteSession: async () => false,
+        dispose: async () => {},
+      },
+    });
+
+    await runtime.handlePromptAsync({
+      sessionID: 'ses_question_worker',
+      directory: '/tmp/project',
+      body: {
+        model: { providerID: 'cursor-acp', modelID: 'composer-2.5' },
+        agent: 'Builder',
+        messageID: 'msg_question_worker',
+        parts: [{ type: 'text', text: 'ask when ambiguous' }],
+      },
+    });
+
+    await waitFor(() => capture.input);
+    expect(capture.input.mcpServerIdentity).toBe('question-identity');
+    expect(capture.input.mcpServers.devryan_question.headers.Authorization).toBe('Bearer worker-secret');
+    await runtime.dispose();
+  });
+
+  test('passes question MCP configuration through persistent prompt and prewarm commands', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-question-persistent-'));
+    const capture = { calls: [], children: [], commands: [] };
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: { OPENCHAMBER_RUNTIME: 'desktop' },
+      useNodeWorkerForPrompts: true,
+      spawnImpl: createFakePersistentWorkerSpawn(capture),
+      questionRuntime: {
+        getMcpServerConfig: async () => ({
+          identity: 'persistent-question-identity',
+          mcpServers: {
+            devryan_question: {
+              type: 'http',
+              url: 'http://127.0.0.1:43123/mcp/scope',
+              headers: { Authorization: 'Bearer persistent-secret' },
+            },
+          },
+        }),
+        listPendingQuestions: () => [],
+        replyToQuestion: async () => false,
+        rejectQuestion: async () => false,
+        cancelSession: () => 0,
+        revokeSessionScope: () => true,
+        deleteSession: async () => false,
+        dispose: async () => {},
+      },
+    });
+
+    await runtime.prewarmSession({
+      sessionID: 'ses_question_prewarm',
+      directory: '/tmp/project',
+      modelID: 'composer-2.5',
+      agent: 'Orchestrator',
+    });
+    await runtime.handlePromptAsync({
+      sessionID: 'ses_question_prompt',
+      directory: '/tmp/project',
+      body: {
+        model: { providerID: 'cursor-acp', modelID: 'composer-2.5' },
+        agent: 'Builder',
+        messageID: 'msg_question_prompt',
+        parts: [{ type: 'text', text: 'ask when ambiguous' }],
+      },
+    });
+
+    const prepare = await waitFor(() => capture.commands.find((entry) => entry.type === 'prepare'));
+    const prompt = await waitFor(() => capture.commands.find((entry) => entry.type === 'prompt'));
+    for (const command of [prepare, prompt]) {
+      expect(command.mcpServerIdentity).toBe('persistent-question-identity');
+      expect(command.mcpServers.devryan_question.headers.Authorization).toBe('Bearer persistent-secret');
+    }
+    await runtime.dispose();
+  });
 });

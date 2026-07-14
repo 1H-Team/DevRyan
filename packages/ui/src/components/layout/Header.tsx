@@ -50,9 +50,8 @@ import type { RateLimitGroup } from '@/components/layout/usage/types';
 import { DevShutdownMenuItem } from '@/components/layout/DevShutdownMenuItem';
 import { ProjectActionsButton } from '@/components/layout/ProjectActionsButton';
 import { OpenInAppButton } from '@/components/desktop/OpenInAppButton';
-import { SessionChangesBadge } from '@/components/session/SessionChangesBadge';
+import { ActiveSessionChangesBadge } from '@/components/session/ActiveSessionChangesBadge';
 import { isDesktopShell, isVSCodeRuntime, startDesktopWindowDrag } from '@/lib/desktop';
-import { resolveSessionDiffStats } from '@/components/session/sidebar/utils';
 import { useI18n } from '@/lib/i18n';
 import type { Session } from '@opencode-ai/sdk/v2/client';
 import { DESKTOP_LEFT_CHROME_CLUSTER_WIDTH } from '@/components/layout/desktopChromeInsets';
@@ -473,18 +472,6 @@ export const Header: React.FC<HeaderProps> = ({
     });
   }, [activeProjectLabel, currentSession?.title, currentSessionId]);
 
-  const currentSessionDiffStats = React.useMemo(() => {
-    return resolveSessionDiffStats(currentSession?.summary as Parameters<typeof resolveSessionDiffStats>[0]);
-  }, [currentSession?.summary]);
-
-  const currentSessionChanges = React.useMemo(() => {
-    if (currentSessionDiffStats) {
-      return currentSessionDiffStats;
-    }
-    return { additions: 0, deletions: 0 };
-  }, [currentSessionDiffStats]);
-  const hasNonZeroSessionChanges = currentSessionChanges.additions > 0 || currentSessionChanges.deletions > 0;
-
   const actionDirectory = React.useMemo(() => {
     return normalize(openDirectory || activeProject?.path || '');
   }, [activeProject?.path, openDirectory]);
@@ -862,8 +849,11 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="min-w-0 truncate text-left typography-ui-label text-[14px] font-normal leading-tight text-foreground">
                 {currentSessionTitle}
               </div>
-              {hasNonZeroSessionChanges ? (
-                <SessionChangesBadge stats={currentSessionChanges} />
+              {currentSessionId ? (
+                <ActiveSessionChangesBadge
+                  sessionId={currentSessionId}
+                  directory={sessionDirectory || undefined}
+                />
               ) : null}
             </div>
           ) : null}
@@ -1111,13 +1101,13 @@ export const Header: React.FC<HeaderProps> = ({
                       'relative',
                       rightDrawerOpen && 'bg-interactive-selection text-interactive-selection-foreground'
                     )}
-                    aria-label={rightDrawerOpen ? 'Close git sidebar' : 'Open git sidebar'}
+                    aria-label={rightDrawerOpen ? 'Close Git Sidebar' : 'Open Git Sidebar'}
                   >
                     <SidebarRightIcon className="h-5 w-5" chevronDirection={rightDrawerOpen ? 'right' : 'left'} />
                   </button>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>{rightDrawerOpen ? 'Close git sidebar' : 'Open git sidebar'}</p>
+                  <p>{rightDrawerOpen ? 'Close Git Sidebar' : 'Open Git Sidebar'}</p>
                 </TooltipContent>
               </Tooltip>
             ) : null}

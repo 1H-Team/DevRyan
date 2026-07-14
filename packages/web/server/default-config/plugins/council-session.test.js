@@ -393,6 +393,8 @@ describe('CouncilSessionPlugin', () => {
     expect(requests.filter((request) => request.method === 'wait')).toHaveLength(5);
     expect(requests.filter((request) => request.method === 'submit').map((request) => request.params.mode))
       .toEqual(['orchestrator', 'orchestrator', 'orchestrator', 'orchestrator', 'orchestrator']);
+    expect(requests.filter((request) => request.method === 'submit')
+      .every((request) => request.params.deadlineClass === 'council')).toBe(true);
     expect(setup.client.session.create).not.toHaveBeenCalled();
     expect(output).toContain('Councillors requested: 5');
     expect(output).toContain('managed answer 1');

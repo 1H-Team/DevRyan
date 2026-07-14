@@ -175,7 +175,11 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
     const providerModel = provider?.models.find((model: Record<string, unknown>) => (model as { id?: string }).id === modelID) as
       | { variants?: Record<string, unknown> }
       | undefined;
-    return resolveThinkingVariant(undefined, getOrderedThinkingVariants(providerModel?.variants));
+    return resolveThinkingVariant(
+      undefined,
+      getOrderedThinkingVariants(providerModel?.variants, { providerId: providerID }),
+      { providerId: providerID },
+    );
   }, [providers]);
 
   const getTruncatedModelDisplayName = (model: Record<string, unknown>) => {
@@ -535,9 +539,13 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
               const providerModel = provider?.models.find((m: Record<string, unknown>) => (m as { id?: string }).id === model.modelID) as
                 | { variants?: Record<string, unknown> }
                 | undefined;
-              const variantKeys = getOrderedThinkingVariants(providerModel?.variants);
+              const variantKeys = getOrderedThinkingVariants(providerModel?.variants, { providerId: model.providerID });
               const hasVariants = variantKeys.length > 0;
-              const variantValue = resolveThinkingVariant(model.variant, variantKeys);
+              const variantValue = resolveThinkingVariant(
+                model.variant,
+                variantKeys,
+                { providerId: model.providerID },
+              );
 
               return (
                 <div key={model.instanceId} className="flex items-center gap-2 min-w-0">

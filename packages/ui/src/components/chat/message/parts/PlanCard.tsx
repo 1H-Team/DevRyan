@@ -23,9 +23,11 @@ import {
 import type { StreamPhase } from '../types';
 import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
 import PlanCardSkeleton from './PlanCardSkeleton';
+import { usePlanTurnTraceEntry } from '../../usePlanTurnTraceEntry';
 import {
   PLAN_CARD_COLLAPSED_MAX_HEIGHT_PX,
   getPlanCardImplementationKey,
+  getPlanCardActionState,
   getPlanSkeletonRevealState,
   getStableSkeletonLineCount,
   resolvePlanCardDisplayText,
@@ -89,7 +91,16 @@ const PlanCard: React.FC<PlanCardProps> = ({
   const isImplementationRequested = useSessionUIStore(
     (state) => state.implementedPlanRequests.has(implementationKey),
   );
-  const canImplement = streamPhase === 'completed' && planText.trim().length > 0 && !isImplementationRequested;
+  const traceEntry = usePlanTurnTraceEntry(sourceMessageId);
+  const actionState = getPlanCardActionState({
+    streamPhase,
+    hasPlanText: planText.trim().length > 0,
+    isImplementationRequested,
+    isLatestPlan: traceEntry?.isLatestPlan ?? true,
+  });
+  const disabledReasonId = actionState.disabledReason
+    ? `${sourceMessageId}-plan-action-disabled-reason`
+    : undefined;
 
   // Measure the content so the collapsed→expanded max-height transition has a
   // concrete target. Re-measure as the plan streams in or the skeleton grows.
@@ -190,7 +201,7 @@ const PlanCard: React.FC<PlanCardProps> = ({
   }, []);
 
   const handleImplement = React.useCallback(async () => {
-    if (isSubmitting) return;
+    if (isSubmitting || !actionState.canImplement) return;
     setIsSubmitting(true);
     requestChatScrollToBottom(sessionId);
     let implementationMessageId: string | undefined;
@@ -268,7 +279,7 @@ const PlanCard: React.FC<PlanCardProps> = ({
       );
       setIsSubmitting(false);
     }
-  }, [implementationKey, isSubmitting, planText, sessionId, sourceMessageId]);
+  }, [actionState.canImplement, implementationKey, isSubmitting, planText, sessionId, sourceMessageId]);
 
   // The text container's minHeight only matters during the initial skeleton
   // phase, to prevent a height pop the instant the skeleton swaps for the
@@ -278,7 +289,14 @@ const PlanCard: React.FC<PlanCardProps> = ({
   const textMinHeight = !reveal.hasPlanText ? COLLAPSED_MAX_HEIGHT - 32 : undefined;
 
   return (
-    <div ref={cardRef} className="my-4 overflow-hidden rounded-xl border border-border bg-card">
+    <div
+      ref={cardRef}
+      className="my-4 overflow-hidden rounded-xl border border-border bg-card"
+      data-plan-source-message-id={sourceMessageId}
+      data-plan-turn-id={traceEntry?.turnId}
+      data-plan-version={traceEntry?.planVersion}
+      data-plan-state={traceEntry?.isSuperseded ? 'superseded' : actionState.canImplement ? 'actionable' : 'pending'}
+    >
       <div className="flex items-center gap-2 border-b border-border/60 px-5 py-3">
         <RiDraftLine className="size-4 text-muted-foreground" />
         <span className="typography-ui-label text-muted-foreground">Implementation Plan</span>
@@ -326,19 +344,26 @@ const PlanCard: React.FC<PlanCardProps> = ({
             className="oc-plan-expand-button"
             data-expanded={isExpanded ? 'true' : 'false'}
             aria-expanded={isExpanded}
-            aria-label={isExpanded ? 'Collapse plan' : 'Expand plan'}
+            aria-label={isExpanded ? 'Collapse Plan' : 'Expand Plan'}
             onClick={handleToggleExpanded}
           >
             <RiArrowDownSLine className="oc-plan-expand-button-icon size-4" />
           </button>
         ) : null}
       </div>
-      <div className="flex justify-end border-t border-border/60 px-5 py-3">
+      <div className="flex items-center justify-between gap-3 border-t border-border/60 px-5 py-3">
+        {actionState.disabledReason ? (
+          <span id={disabledReasonId} className="typography-ui-meta text-muted-foreground">
+            {actionState.disabledReason}
+          </span>
+        ) : <span />}
         <Button
           variant="default"
           size="sm"
           className="oc-plan-implement-btn normal-case"
-          disabled={isSubmitting || !canImplement}
+          disabled={isSubmitting || !actionState.canImplement}
+          aria-describedby={disabledReasonId}
+          title={actionState.disabledReason ?? undefined}
           onClick={handleImplement}
         >
           Implement Plan

@@ -62,6 +62,13 @@ describe('SessionNodeItem status selectors', () => {
     expect(source).toContain('state.index.session.unseenHasError[sessionId]');
     expect(source).not.toContain('Object.entries(state.index.session.unseenHasError)');
   });
+
+  test('subscribes to one child-session manual recovery leaf', () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'SessionNodeItem.tsx'), 'utf8');
+
+    expect(source).toContain('managedOrchestrationSelectors.manualRecoveryTaskIdForChildSession(session.id)');
+    expect(source).not.toContain('state.tasksById');
+  });
 });
 
 describe('session sidebar quick hover actions', () => {

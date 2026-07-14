@@ -18,7 +18,11 @@ const input = (overrides = {}) => ({
   ...overrides,
 });
 
-const createTerminalHarness = async ({ resumable = true } = {}) => {
+const createTerminalHarness = async ({
+  resumable = true,
+  resumeResult = { status: 'completed', recoverablePreview: 'resumed result' },
+  submitOverrides = {},
+} = {}) => {
   let taskCounter = 0;
   let leaseCounter = 0;
   const starts = [];
@@ -42,7 +46,7 @@ const createTerminalHarness = async ({ resumable = true } = {}) => {
       async resume(task, control) {
         resumes.push(task);
         await control.markAccepted();
-        return { status: 'completed', recoverablePreview: 'resumed result' };
+        return resumeResult;
       },
       async retryInPlace(task, control) {
         inPlaceRetries.push(task);
@@ -57,7 +61,7 @@ const createTerminalHarness = async ({ resumable = true } = {}) => {
     createLeaseToken: () => `dvr_lease_${++leaseCounter}`,
     now: () => 1_000 + taskCounter,
   });
-  const original = await scheduler.submit(input());
+  const original = await scheduler.submit(input(submitOverrides));
   await scheduler.waitForTask(original.taskId);
   return { inPlaceRetries, original: scheduler.getTask(original.taskId), resumes, scheduler, starts };
 };
@@ -90,6 +94,90 @@ describe('managed scheduler parent actions', () => {
       action: 'abandon',
       idempotencyKey: 'different-action',
     })).rejects.toThrow('result is already acknowledged with retry');
+  });
+
+  test('allows one grouped agent retry, rejects another, and leaves manual retry in place available', async () => {
+    const { inPlaceRetries, original, scheduler, starts } = await createTerminalHarness({
+      submitOverrides: { dispatchGroupId: 'msg_parent' },
+    });
+
+    const firstRecovery = await scheduler.acknowledgeResult(original.taskId, {
+      action: 'retry',
+      idempotencyKey: 'grouped-retry-1',
+    });
+    const failedRecovery = await scheduler.waitForTask(firstRecovery.followUpTask.taskId);
+
+    expect(failedRecovery).toMatchObject({ attempt: 2, executionKind: 'retry', status: 'failed' });
+    await expect(scheduler.acknowledgeResult(failedRecovery.taskId, {
+      action: 'retry',
+      idempotencyKey: 'grouped-retry-2',
+    })).rejects.toMatchObject({ code: 'managed_retry_limit_reached' });
+    await expect(scheduler.acknowledgeResult(failedRecovery.taskId, {
+      action: 'resume',
+      idempotencyKey: 'grouped-resume-2',
+    })).rejects.toMatchObject({ code: 'managed_retry_limit_reached' });
+    expect(scheduler.getResultEnvelope(failedRecovery.taskId).action).toBeNull();
+    expect(starts).toHaveLength(2);
+
+    const manualRecovery = await scheduler.acknowledgeResult(failedRecovery.taskId, {
+      action: 'retry_in_place',
+      idempotencyKey: 'manual-retry-in-place',
+      providerId: 'openai',
+      modelId: 'gpt-5.4',
+      variant: 'high',
+    });
+    const settled = await scheduler.waitForTask(manualRecovery.followUpTask.taskId);
+
+    expect(manualRecovery.followUpTask).toMatchObject({
+      attempt: 3,
+      childSessionId: failedRecovery.childSessionId,
+      executionKind: 'retry_in_place',
+      providerId: 'openai',
+      modelId: 'gpt-5.4',
+      variant: 'high',
+    });
+    expect(inPlaceRetries).toHaveLength(1);
+    expect(settled.status).toBe('completed');
+  });
+
+  test('allows one grouped agent resume and rejects a second resume', async () => {
+    const { original, scheduler } = await createTerminalHarness({
+      resumeResult: {
+        status: 'failed',
+        failureReason: 'provider still unavailable',
+        resumable: true,
+      },
+      submitOverrides: { dispatchGroupId: 'msg_parent' },
+    });
+
+    const firstRecovery = await scheduler.acknowledgeResult(original.taskId, {
+      action: 'resume',
+      idempotencyKey: 'grouped-resume-1',
+    });
+    const failedRecovery = await scheduler.waitForTask(firstRecovery.followUpTask.taskId);
+
+    expect(failedRecovery).toMatchObject({ attempt: 2, executionKind: 'resume', status: 'failed' });
+    await expect(scheduler.acknowledgeResult(failedRecovery.taskId, {
+      action: 'resume',
+      idempotencyKey: 'grouped-resume-2',
+    })).rejects.toMatchObject({ code: 'managed_retry_limit_reached' });
+    expect(scheduler.getResultEnvelope(failedRecovery.taskId).action).toBeNull();
+  });
+
+  test('keeps ungrouped retries outside the grouped agent retry ceiling', async () => {
+    const { original, scheduler } = await createTerminalHarness();
+
+    const firstRecovery = await scheduler.acknowledgeResult(original.taskId, {
+      action: 'retry',
+      idempotencyKey: 'ungrouped-retry-1',
+    });
+    const failedRecovery = await scheduler.waitForTask(firstRecovery.followUpTask.taskId);
+    const secondRecovery = await scheduler.acknowledgeResult(failedRecovery.taskId, {
+      action: 'retry',
+      idempotencyKey: 'ungrouped-retry-2',
+    });
+
+    expect(secondRecovery.followUpTask).toMatchObject({ attempt: 3, executionKind: 'retry' });
   });
 
   test('resumes the canonical child without replaying start', async () => {

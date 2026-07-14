@@ -46,62 +46,41 @@ const assistant = (overrides = {}) => ({
 });
 
 describe('managed OpenCode executor', () => {
-  test('stops on the first provider retry and continues the same child with a selected model', async () => {
+  test('keeps the same child live through retry and busy before completing', async () => {
     const calls = [];
     const statuses = [
       { type: 'retry', message: 'out of usage', attempt: 1, next: 5_000 },
-      { type: 'idle' },
-      { type: 'idle' },
       { type: 'busy' },
       { type: 'idle' },
     ];
-    let continued = false;
+    let reads = 0;
     const transport = {
       async createSession() { throw new Error('must not create'); },
-      async promptSession(input) { calls.push(['prompt', input]); continued = true; },
+      async promptSession(input) { calls.push(['prompt', input]); },
       async readSession() { return { id: 'ses_child' }; },
       async readStatus() { return statuses.shift() ?? { type: 'idle' }; },
-      async readMessages() { return continued ? [assistant()] : []; },
+      async readMessages() {
+        reads += 1;
+        return reads === 3 ? [assistant()] : [];
+      },
       async abortSession(input) { calls.push(['abort', input]); return true; },
     };
     const executor = createManagedOpenCodeExecutor({
       transport,
       sleep: async () => undefined,
       idleStablePolls: 1,
-      retryStopPollLimit: 4,
     });
     const original = task({ childSessionId: 'ses_child', status: 'running' });
 
-    const failed = await executor.observe(original, {});
-    expect(failed).toMatchObject({
-      status: 'failed',
-      failureReason: 'out of usage',
-      partial: false,
-      resumable: true,
+    const result = await executor.observe(original, {});
+
+    expect(result).toMatchObject({
+      status: 'completed',
+      recoverablePreview: 'Finished analysis',
     });
+    expect(reads).toBe(3);
     expect(calls.filter(([name]) => name === 'prompt')).toHaveLength(0);
-
-    const control = { async markAccepted() { calls.push(['accepted']); } };
-    const result = await executor.retryInPlace(task({
-      childSessionId: 'ses_child',
-      status: 'starting',
-      executionKind: 'retry_in_place',
-      providerId: 'openai',
-      modelId: 'gpt-5.4',
-      variant: 'high',
-      attempt: 2,
-      priorTaskId: 'dvr_task_original',
-    }), control);
-
-    expect(calls[0][0]).toBe('abort');
-    expect(calls.find(([name]) => name === 'prompt')?.[1]).toMatchObject({
-      sessionId: 'ses_child',
-      providerId: 'openai',
-      modelId: 'gpt-5.4',
-      variant: 'high',
-    });
-    expect(calls.find(([name]) => name === 'prompt')?.[1].prompt).toContain('Continue the task');
-    expect(result.status).toBe('completed');
+    expect(calls.filter(([name]) => name === 'abort')).toHaveLength(0);
   });
 
   test('does not settle an in-place retry from its initial empty assistant placeholder', async () => {
@@ -147,28 +126,214 @@ describe('managed OpenCode executor', () => {
     });
   });
 
-  test('reserves re-aborts for a new retry attempt instead of unchanged sleep snapshots', async () => {
+  test('keeps repeated identical provider retry snapshots live', async () => {
     let abortCount = 0;
+    let reads = 0;
     const retry = { type: 'retry', message: 'rate limited', attempt: 1, next: 5_000 };
-    const statuses = [retry, retry, retry, { type: 'busy' }, { type: 'idle' }];
+    const statuses = [retry, retry, retry, { type: 'idle' }];
     const transport = {
       async createSession() { throw new Error('must not create'); },
       async promptSession() { throw new Error('must not prompt'); },
       async readSession() { return { id: 'ses_child' }; },
       async readStatus() { return statuses.shift() ?? { type: 'idle' }; },
-      async readMessages() { return []; },
+      async readMessages() {
+        reads += 1;
+        return reads === 4 ? [assistant()] : [];
+      },
       async abortSession() { abortCount += 1; return true; },
     };
     const executor = createManagedOpenCodeExecutor({
       transport,
       sleep: async () => undefined,
-      retryStopPollLimit: 6,
     });
 
-    await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {});
-    await new Promise((resolve) => setTimeout(resolve, 1));
+    const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {});
 
-    expect(abortCount).toBe(2);
+    expect(result.status).toBe('completed');
+    expect(reads).toBe(4);
+    expect(abortCount).toBe(0);
+  });
+
+  test('does not settle an assistant error while provider retry remains live', async () => {
+    let reads = 0;
+    const statuses = [{ type: 'retry', message: 'rate limited' }, { type: 'idle' }];
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession() { throw new Error('must not prompt'); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return statuses.shift() ?? { type: 'idle' }; },
+      async readMessages() {
+        reads += 1;
+        if (reads === 1) {
+          return [assistant({
+            info: { finish: 'error', error: { message: 'retryable provider error' } },
+            parts: [{ type: 'text', text: 'Partial work before automatic retry' }],
+          })];
+        }
+        return [assistant({
+          info: { id: 'msg_final', finish: 'stop' },
+          parts: [{ type: 'text', text: 'Completed after automatic retry' }],
+        })];
+      },
+      async abortSession() { throw new Error('must not abort'); },
+    };
+    const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
+
+    const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {});
+
+    expect(result).toMatchObject({
+      status: 'completed',
+      recoverablePreview: 'Completed after automatic retry',
+    });
+    expect(reads).toBe(2);
+  });
+
+  test('fails once and remains resumable when retry is followed by a terminal assistant error', async () => {
+    let reads = 0;
+    let abortCount = 0;
+    const statuses = [{ type: 'retry', message: 'rate limited' }, { type: 'idle' }];
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession() { throw new Error('must not prompt'); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return statuses.shift() ?? { type: 'idle' }; },
+      async readMessages() {
+        reads += 1;
+        if (reads === 1) {
+          return [assistant({
+            info: { finish: 'tool-calls' },
+            parts: [{ type: 'text', text: 'Partial work before retry' }],
+          })];
+        }
+        return [assistant({
+          info: { finish: 'error', error: { message: 'provider failed permanently' } },
+          parts: [],
+        })];
+      },
+      async abortSession() { abortCount += 1; return true; },
+    };
+    const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
+
+    const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {});
+
+    expect(result).toEqual({
+      status: 'failed',
+      failureReason: 'provider failed permanently',
+      partial: false,
+      recoverablePreview: '',
+      canonicalRefs: [{ type: 'message', id: 'msg_assistant' }],
+      resumable: true,
+    });
+    expect(reads).toBe(2);
+    expect(abortCount).toBe(0);
+  });
+
+  test('recovers from repeated observation timeouts without recreating or reprompting the child', async () => {
+    let statusReads = 0;
+    let messageReads = 0;
+    let sleeps = 0;
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession() { throw new Error('must not prompt'); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() {
+        statusReads += 1;
+        if (statusReads <= 2) {
+          const error = new Error('The operation timed out');
+          error.name = 'TimeoutError';
+          throw error;
+        }
+        return { type: 'idle' };
+      },
+      async readMessages() { messageReads += 1; return [assistant()]; },
+      async abortSession() { throw new Error('must not abort'); },
+    };
+    const executor = createManagedOpenCodeExecutor({
+      transport,
+      sleep: async () => { sleeps += 1; },
+    });
+
+    const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {});
+
+    expect(result.status).toBe('completed');
+    expect(statusReads).toBe(3);
+    expect(messageReads).toBe(1);
+    expect(sleeps).toBe(2);
+  });
+
+  test('recovers from transient HTTP and network observation failures', async () => {
+    let statusReads = 0;
+    let sleeps = 0;
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession() { throw new Error('must not prompt'); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() {
+        statusReads += 1;
+        if (statusReads === 1) {
+          const error = new Error('service unavailable');
+          error.status = 503;
+          throw error;
+        }
+        if (statusReads === 2) {
+          const error = new TypeError('fetch failed');
+          error.cause = { code: 'ECONNRESET' };
+          throw error;
+        }
+        return { type: 'idle' };
+      },
+      async readMessages() { return [assistant()]; },
+      async abortSession() { throw new Error('must not abort'); },
+    };
+    const executor = createManagedOpenCodeExecutor({
+      transport,
+      sleep: async () => { sleeps += 1; },
+    });
+
+    const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {});
+
+    expect(result.status).toBe('completed');
+    expect(statusReads).toBe(3);
+    expect(sleeps).toBe(2);
+  });
+
+  test('returns a resumable interruption with the last successful partial observation', async () => {
+    let statusReads = 0;
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession() { throw new Error('must not prompt'); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() {
+        statusReads += 1;
+        if (statusReads === 1) return { type: 'busy' };
+        throw new RangeError('invalid observation payload');
+      },
+      async readMessages() {
+        return [assistant({
+          info: { finish: 'tool-calls' },
+          parts: [
+            { type: 'text', text: 'Retained partial analysis' },
+            { type: 'tool', callID: 'call_partial', state: { status: 'completed' } },
+          ],
+        })];
+      },
+      async abortSession() { throw new Error('must not abort'); },
+    };
+    const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
+
+    const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {});
+
+    expect(result).toEqual({
+      status: 'interrupted',
+      failureReason: 'invalid observation payload',
+      partial: true,
+      recoverablePreview: 'Retained partial analysis',
+      canonicalRefs: [
+        { type: 'message', id: 'msg_assistant' },
+        { type: 'tool', id: 'call_partial', messageId: 'msg_assistant' },
+      ],
+      resumable: true,
+    });
   });
 
   test('waits through intermediate tool calls until a final assistant response', async () => {

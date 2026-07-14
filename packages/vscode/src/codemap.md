@@ -9,12 +9,13 @@ VS Code extension-host implementation: activation lifecycle, command surface, we
 - `bridge.ts` is a dispatcher that routes message types to focused runtime modules (`bridge-fs-runtime`, `bridge-git-runtime`, `bridge-system-runtime`, etc.).
 - `opencode.ts` provides a manager object with explicit connection status and restart/start/stop APIs.
 - `opencodeConfig.ts` owns VS Code-side config entity reads/writes, OpenCode Slim config/agent override parity, Slim-installed global agent prompt composition, and managed agent runtime overlays so saved user-side agent model defaults, plugin filtering, and blocked ambient MCP tombstones apply to the local OpenCode process.
+- `globalAgentsMdRuntime.ts` owns user-global `~/.config/opencode/AGENTS.md` reads/writes, empty-file removal, UTF-8 limits, external-runtime read-only policy, and restart-warning results for the VS Code bridge.
 - `bridge-system-runtime.ts` owns VS Code Cursor SDK auth/status/configure bridge behavior via `@openchamber/cursor-sdk-runtime`; Cursor usage quota remains in `quotaProviders.ts`.
-- `managedOrchestrationRuntime.ts` composes the VS Code-owned scheduler and scoped RPC contract.
-- `managedOrchestrationPersistence.ts` owns the private atomic extension-storage ledger and corrupt-ledger quarantine.
+- `managedOrchestrationRuntime.ts` composes the VS Code-owned scheduler and scoped RPC contract, including root barrier inspection and confirmed agent handoff.
+- `managedOrchestrationPersistence.ts` owns the private atomic extension-storage ledger, legacy dispatch-group hydration, and corrupt-ledger quarantine.
 - `managedOrchestrationHost.ts` owns the bearer-authenticated IPv4 loopback bridge used only by managed OpenCode plugins.
 - `managedOpenCodeExecutor.ts` owns canonical normal-provider and Cursor child-session execution.
-- `bridge-orchestration-runtime.ts` adapts scoped webview requests without exposing private task inputs or bridge credentials.
+- `bridge-orchestration-runtime.ts` adapts scoped webview requests, including safe handoff projections, without exposing private task inputs or bridge credentials.
 
 ## Flow
 1. Extension activates, creates one managed-orchestration owner, then creates/starts OpenCode with a lazily prepared private bridge for managed launches.

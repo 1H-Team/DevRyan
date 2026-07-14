@@ -1,22 +1,16 @@
+import type { ResolvedModelContextCapacity } from "./modelContextCapacity";
+
 export const calculateContextUsage = (
     totalTokens: number,
-    contextLimit: number,
-    outputLimit: number
+    capacity: ResolvedModelContextCapacity,
 ) => {
-    const safeContext = Number.isFinite(contextLimit) ? Math.max(contextLimit, 0) : 0;
-    const hasOutputLimit = Number.isFinite(outputLimit) && outputLimit > 0;
-    const safeOutput = hasOutputLimit ? Math.max(outputLimit, 0) : 0;
-
-    const effectiveOutputReservation = Math.min(hasOutputLimit ? safeOutput : 32000, 32000);
-    const normalizedOutput = Math.min(effectiveOutputReservation, safeContext);
-    const thresholdLimit = safeContext > 0 ? Math.max(safeContext - normalizedOutput, 1) : 0;
-    const percentage = thresholdLimit > 0 ? (totalTokens / thresholdLimit) * 100 : 0;
+    const reportedTokens = Number.isFinite(totalTokens) ? Math.max(totalTokens, 0) : 0;
+    const percentage = capacity.capacityLimit !== null
+        ? (reportedTokens / capacity.capacityLimit) * 100
+        : null;
 
     return {
-        percentage: Math.min(percentage, 100),
-        contextLimit: safeContext,
-        outputLimit: safeOutput,
-        thresholdLimit: thresholdLimit || 1,
-        normalizedOutput
+        ...capacity,
+        percentage,
     };
 };

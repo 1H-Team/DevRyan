@@ -21,6 +21,83 @@ const failedResponse = (status = 404) => ({
   json: async () => ({}),
 });
 
+const fetchUsagePayload = (payload: unknown) => async (url: string) => {
+  if (url.endsWith('/wham/usage')) {
+    return okResponse(payload);
+  }
+  return failedResponse(404);
+};
+
+describe('VS Code Codex quota provider rate-limit windows', () => {
+  test('classifies a weekly primary window by its duration', async () => {
+    const result = await fetchQuotaForProvider('codex', {
+      readAuth,
+      fetchImpl: fetchUsagePayload({
+        rate_limit: {
+          primary_window: {
+            used_percent: 42,
+            limit_window_seconds: 604800,
+            reset_at: 1783944000,
+          },
+        },
+      }),
+    });
+
+    expect(result.usage?.windows['5h']).toBeUndefined();
+    expect(result.usage?.windows.weekly).toMatchObject({
+      usedPercent: 42,
+      windowSeconds: 604800,
+      resetAt: 1783944000000,
+    });
+  });
+
+  test('preserves the standard five-hour and weekly windows', async () => {
+    const result = await fetchQuotaForProvider('codex', {
+      readAuth,
+      fetchImpl: fetchUsagePayload({
+        rate_limit: {
+          primary_window: {
+            used_percent: 25,
+            limit_window_seconds: 18000,
+            reset_at: 1783425600,
+          },
+          secondary_window: {
+            used_percent: 50,
+            limit_window_seconds: 604800,
+            reset_at: 1783944000,
+          },
+        },
+      }),
+    });
+
+    expect(result.usage?.windows['5h']).toMatchObject({
+      usedPercent: 25,
+      windowSeconds: 18000,
+      resetAt: 1783425600000,
+    });
+    expect(result.usage?.windows.weekly).toMatchObject({
+      usedPercent: 50,
+      windowSeconds: 604800,
+      resetAt: 1783944000000,
+    });
+  });
+
+  test('falls back to window position when duration metadata is unusable', async () => {
+    const result = await fetchQuotaForProvider('codex', {
+      readAuth,
+      fetchImpl: fetchUsagePayload({
+        rate_limit: {
+          primary_window: { used_percent: 10 },
+          secondary_window: { used_percent: 20, limit_window_seconds: -1 },
+        },
+      }),
+    });
+
+    expect(result.usage?.windows['5h']).toMatchObject({ usedPercent: 10 });
+    expect(result.usage?.windows.weekly).toMatchObject({ usedPercent: 20 });
+  });
+});
+
 describe('VS Code Codex quota provider reset credits', () => {
   test('uses dedicated reset-credit details instead of the dollar credits row', async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];

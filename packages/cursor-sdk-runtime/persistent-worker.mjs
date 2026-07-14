@@ -264,15 +264,27 @@ const { Agent } = cursorSdk;
 
 writeEvent({ type: 'ready' });
 
-const getAgentCacheKey = (sessionID, directory, model, agents) => `${trimString(sessionID)}\u0000${trimString(directory)}\u0000${stableJson({
+const getAgentCacheKey = (sessionID, directory, model, agents, mcpServerIdentity) => `${trimString(sessionID)}\u0000${trimString(directory)}\u0000${stableJson({
   model: normalizeModelSelection(model),
   agents: normalizeCursorSdkAgentDefinitions(agents),
+  mcpServerIdentity: trimString(mcpServerIdentity),
   settingSources: CURSOR_SETTING_SOURCES ?? null,
 })}`;
 
-const getOrCreateAgent = async ({ apiKey, sessionID, model, directory, agentID, agents, active = false }) => {
+const getOrCreateAgent = async ({
+  apiKey,
+  sessionID,
+  model,
+  directory,
+  agentID,
+  agents,
+  mcpServers,
+  mcpServerIdentity,
+  active = false,
+}) => {
   const normalizedAgents = pinCursorSdkSubagentModels(normalizeCursorSdkAgentDefinitions(agents), model);
-  const key = getAgentCacheKey(sessionID, directory, model, normalizedAgents);
+  const normalizedMcpServers = isPlainObject(mcpServers) ? mcpServers : null;
+  const key = getAgentCacheKey(sessionID, directory, model, normalizedAgents, mcpServerIdentity);
   const cached = agentCache.get(key);
   if (cached) {
     if (active) agentCache.markActive(key);
@@ -289,6 +301,7 @@ const getOrCreateAgent = async ({ apiKey, sessionID, model, directory, agentID, 
     local,
     ...(directory ? { platform: { workspaceRef: directory } } : {}),
     ...(normalizedAgents ? { agents: normalizedAgents } : {}),
+    ...(normalizedMcpServers ? { mcpServers: normalizedMcpServers } : {}),
   };
   let agent = null;
   if (agentID) {
@@ -316,6 +329,8 @@ const handlePrepare = async (command) => {
   const modelID = trimString(command.modelID) || 'auto';
   const model = normalizeModelSelection(command.modelSelection, modelID);
   const agents = normalizeCursorSdkAgentDefinitions(command.agents);
+  const mcpServers = isPlainObject(command.mcpServers) ? command.mcpServers : null;
+  const mcpServerIdentity = trimString(command.mcpServerIdentity);
   const directory = trimString(command.directory);
   const sessionID = trimString(command.sessionID);
   const agentID = trimString(command.agentID);
@@ -333,7 +348,16 @@ const handlePrepare = async (command) => {
 
   try {
     writeTiming('cursor_agent_prepare_started');
-    const prepared = await getOrCreateAgent({ apiKey, sessionID, model, directory, agentID, agents });
+    const prepared = await getOrCreateAgent({
+      apiKey,
+      sessionID,
+      model,
+      directory,
+      agentID,
+      agents,
+      mcpServers,
+      mcpServerIdentity,
+    });
     writeTiming('cursor_agent_prepared', { cacheHit: prepared.cacheHit === true });
     writeRequestEvent(requestID, {
       type: 'prepared',
@@ -386,6 +410,8 @@ const handlePrompt = async (command) => {
   const modelID = trimString(command.modelID) || 'auto';
   const model = normalizeModelSelection(command.modelSelection, modelID);
   const agents = normalizeCursorSdkAgentDefinitions(command.agents);
+  const mcpServers = isPlainObject(command.mcpServers) ? command.mcpServers : null;
+  const mcpServerIdentity = trimString(command.mcpServerIdentity);
   const prompt = trimString(command.prompt);
   const directory = trimString(command.directory);
   const sessionID = trimString(command.sessionID);
@@ -427,6 +453,8 @@ const handlePrompt = async (command) => {
       directory,
       agentID,
       agents,
+      mcpServers,
+      mcpServerIdentity,
       active: true,
     });
     activeAgentCacheKey = prepared.cacheKey;

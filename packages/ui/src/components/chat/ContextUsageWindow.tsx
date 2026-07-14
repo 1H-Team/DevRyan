@@ -21,7 +21,6 @@ type ContextStatRow = {
 
 interface ContextUsageWindowProps {
     usage: SessionContextUsage;
-    displayPercentage: number;
     onClose: () => void;
     onCompact?: () => void;
 }
@@ -77,12 +76,11 @@ const getSourceLabel = (source: ContextUsageSource, t: ReturnType<typeof useI18n
     }
 };
 
-export const ContextUsageWindow: React.FC<ContextUsageWindowProps> = ({ usage, displayPercentage, onClose, onCompact }) => {
+export const ContextUsageWindow: React.FC<ContextUsageWindowProps> = ({ usage, onClose, onCompact }) => {
     const { t } = useI18n();
 
     const {
         segments,
-        usedPercent,
         totalLimitLabel,
         sourceBadgeLabel,
         tokenStats,
@@ -118,12 +116,10 @@ export const ContextUsageWindow: React.FC<ContextUsageWindowProps> = ({ usage, d
         const visibleRows = subagentRows.slice(0, MAX_VISIBLE_SUBAGENTS);
         const hiddenRows = subagentRows.slice(MAX_VISIBLE_SUBAGENTS);
 
-        const contextLimit = usage.contextLimit > 0 ? usage.contextLimit : usage.totalTokens;
         return {
             segments: nextSegments,
-            usedPercent: Math.min(100, Math.max(0, displayPercentage)),
-            totalLimitLabel: contextLimit > 0
-                ? `~${formatTokens(usage.totalTokens)} / ${formatTokens(contextLimit)} ${t('contextUsage.window.tokens')}`
+            totalLimitLabel: usage.capacityLimit !== null
+                ? `~${formatTokens(usage.totalTokens)} / ${formatTokens(usage.capacityLimit)} ${t('contextUsage.window.tokens')}`
                 : `~${formatTokens(usage.totalTokens)} ${t('contextUsage.window.tokens')}`,
             sourceBadgeLabel: usage.sourceAccuracy === 'estimated' ? t('contextUsage.window.sourceEstimated') : null,
             tokenStats: nextTokenStats,
@@ -132,7 +128,7 @@ export const ContextUsageWindow: React.FC<ContextUsageWindowProps> = ({ usage, d
             hiddenSubagentTokens: hiddenRows.reduce((sum, session) => sum + session.totalTokens, 0),
             subagentTotalTokens: usage.relatedSubagentTotalTokens ?? subagentRows.reduce((sum, session) => sum + session.totalTokens, 0),
         };
-    }, [displayPercentage, t, usage.contextLimit, usage.relatedSubagentSessions, usage.relatedSubagentTotalTokens, usage.sourceAccuracy, usage.sources, usage.tokenBreakdown, usage.totalTokens]);
+    }, [t, usage.capacityLimit, usage.relatedSubagentSessions, usage.relatedSubagentTotalTokens, usage.sourceAccuracy, usage.sources, usage.tokenBreakdown, usage.totalTokens]);
 
     const hasSourceSegments = usage.sourceAccuracy !== 'unavailable' && segments.length > 0;
     const hasSubagentRows = visibleSubagentRows.length > 0;
@@ -161,14 +157,54 @@ export const ContextUsageWindow: React.FC<ContextUsageWindowProps> = ({ usage, d
                 </button>
             </div>
             <div className="mb-2 flex items-center justify-between gap-4 typography-micro text-muted-foreground">
-                <span>{t('contextUsage.window.percentFull', { percent: Math.round(displayPercentage).toString() })}</span>
+                <span>
+                    {usage.percentage !== null
+                        ? t('contextUsage.window.percentFull', { percent: usage.percentage.toFixed(1) })
+                        : t('contextUsage.unavailable.title')}
+                </span>
                 <span className="tabular-nums">{totalLimitLabel}</span>
             </div>
+            {usage.capacityLimit !== null ? (
+                <div className="mb-3 space-y-1 rounded-lg bg-[var(--surface-subtle)]/70 px-2.5 py-2 typography-micro text-muted-foreground">
+                    <div className="flex items-center justify-between gap-4">
+                        <span>
+                            {usage.capacityBasis === 'input'
+                                ? t('contextUsage.window.usableInputCapacity')
+                                : t('contextUsage.window.contextFallbackCapacity')}
+                        </span>
+                        <span className="tabular-nums text-foreground">{formatTokens(usage.capacityLimit)}</span>
+                    </div>
+                    {usage.contextLimit !== null ? (
+                        <div className="flex items-center justify-between gap-4">
+                            <span>{t('contextUsage.mobile.contextLimit')}</span>
+                            <span className="tabular-nums text-foreground">{formatTokens(usage.contextLimit)}</span>
+                        </div>
+                    ) : null}
+                    {usage.outputLimit !== null ? (
+                        <div className="flex items-center justify-between gap-4">
+                            <span>{t('contextUsage.mobile.outputLimit')}</span>
+                            <span className="tabular-nums text-foreground">{formatTokens(usage.outputLimit)}</span>
+                        </div>
+                    ) : null}
+                </div>
+            ) : (
+                <div className="mb-3 space-y-1 rounded-lg bg-[var(--surface-subtle)]/70 px-2.5 py-2 typography-micro text-muted-foreground">
+                    <div>{t('contextUsage.unavailable.description')}</div>
+                    {usage.outputLimit !== null ? (
+                        <div className="flex items-center justify-between gap-4">
+                            <span>{t('contextUsage.mobile.outputLimit')}</span>
+                            <span className="tabular-nums text-foreground">{formatTokens(usage.outputLimit)}</span>
+                        </div>
+                    ) : null}
+                </div>
+            )}
             {hasSourceSegments ? (
                 <>
                     <div className="mb-3 flex h-1.5 w-full overflow-hidden rounded-full bg-[var(--surface-subtle)]">
                         {segments.map((segment) => {
-                            const width = usage.thresholdLimit > 0 ? (segment.value / usage.thresholdLimit) * 100 : 0;
+                            const width = usage.capacityLimit !== null
+                                ? (segment.value / usage.capacityLimit) * 100
+                                : 0;
                             if (width <= 0) return null;
                             return (
                                 <div
@@ -178,7 +214,7 @@ export const ContextUsageWindow: React.FC<ContextUsageWindowProps> = ({ usage, d
                                 />
                             );
                         })}
-                        {usedPercent <= 0 ? null : <div className="h-full flex-1" aria-hidden="true" />}
+                        <div className="h-full flex-1" aria-hidden="true" />
                     </div>
                     <div className="space-y-2">
                         {segments.map((segment) => (
@@ -217,8 +253,8 @@ export const ContextUsageWindow: React.FC<ContextUsageWindowProps> = ({ usage, d
                             <div key={session.sessionId} className="flex items-center justify-between gap-4 typography-ui-label text-foreground">
                                 <span className="truncate text-muted-foreground">{session.title ?? t('contextSidebar.session.untitled')}</span>
                                 <span className="shrink-0 tabular-nums text-muted-foreground">
-                                    {session.contextLimit > 0
-                                        ? `${formatTokens(session.totalTokens)} / ${formatTokens(session.contextLimit)}`
+                                    {session.capacityLimit !== null
+                                        ? `${formatTokens(session.totalTokens)} / ${formatTokens(session.capacityLimit)}`
                                         : formatTokens(session.totalTokens)}
                                 </span>
                             </div>

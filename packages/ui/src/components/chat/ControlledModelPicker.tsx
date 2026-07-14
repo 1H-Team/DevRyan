@@ -191,10 +191,15 @@ export function ControlledVariantPicker({
     selected?.model && typeof selected.model.variants === 'object'
       ? selected.model.variants as Record<string, unknown>
       : undefined,
+    { providerId: value.providerId },
   );
   if (variants.length === 0) return null;
 
-  const activeVariant = resolveThinkingVariant(value.variant ?? undefined, variants) ?? variants[0];
+  const activeVariant = resolveThinkingVariant(
+    value.variant ?? undefined,
+    variants,
+    { providerId: value.providerId },
+  ) ?? variants[0];
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>

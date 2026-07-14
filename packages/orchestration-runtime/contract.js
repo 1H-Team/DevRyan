@@ -103,6 +103,7 @@ export const validateManagedTaskRecord = (task) => {
   assertString(task.taskId, 'taskId', { prefix: 'dvr_task_' });
   assertString(task.idempotencyKey, 'idempotencyKey', { maxBytes: 1024 });
   assertString(task.rootSessionId, 'rootSessionId');
+  assertNullableString(task.dispatchGroupId, 'dispatchGroupId', { maxBytes: 1024 });
   assertNullableString(task.parentTaskId, 'parentTaskId', { prefix: 'dvr_task_' });
   assertNullableString(task.childSessionId, 'childSessionId');
   assertString(task.directory, 'directory');
@@ -160,6 +161,7 @@ export const createManagedTaskRecord = (input) => {
     ...input,
     owner: MANAGED_TASK_OWNER,
     status: 'queued',
+    dispatchGroupId: input.dispatchGroupId ?? null,
     childSessionId: input.childSessionId ?? null,
     leaseToken: null,
     startedAt: null,
@@ -198,6 +200,11 @@ const projectTaskForEvent = (task) => ({
   partial: task.partial,
   recoverablePreview: task.recoverablePreview,
   canonicalRefs: task.canonicalRefs,
+  agentRetryAvailable: (
+    task.mode === 'orchestrator'
+    && task.dispatchGroupId !== null
+    && task.attempt < 2
+  ),
 });
 
 export const toManagedTaskEvent = (task, resultEnvelope = null) => {

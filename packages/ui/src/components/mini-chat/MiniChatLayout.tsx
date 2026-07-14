@@ -10,12 +10,12 @@ import { useI18n } from '@/lib/i18n';
 import { invokeDesktop, isElectronShell } from '@/lib/desktop';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessionWorktreeStore } from '@/sync/session-worktree-store';
-import { useSessionMessages, useSessions } from '@/sync/sync-context';
+import { useSessionMessages, useSessionMessagesResolved, useSessions } from '@/sync/sync-context';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
-import { useConfigStore } from '@/stores/useConfigStore';
 import { resolveSessionDiffStats } from '@/components/session/sidebar/utils';
-import type { SessionContextUsage } from '@/stores/types/sessionTypes';
-import { getContextUsageFromMessages, isSameSessionContextUsage } from '@/stores/utils/contextUsageUtils';
+import { getContextUsageFromMessages } from '@/stores/utils/contextUsageUtils';
+import { useStableSessionContextUsage } from '@/hooks/useStableSessionContextUsage';
+import { useSelectedModelContextCapacity } from '@/hooks/useSelectedModelContextCapacity';
 
 type MiniChatMode = 'session' | 'draft';
 
@@ -38,10 +38,9 @@ const MiniChatHeader: React.FC<{ mode: MiniChatMode }> = ({ mode }) => {
   const draftOpen = useSessionUIStore((state) => Boolean(state.currentDraftId && state.newSessionDraft?.open));
   const draftProjectId = useSessionUIStore((state) => state.newSessionDraft?.selectedProjectId ?? null);
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
-  const getCurrentModel = useConfigStore((state) => state.getCurrentModel);
-  const providers = useConfigStore((state) => state.providers);
   const sessions = useSessions();
   const currentSessionMessages = useSessionMessages(currentSessionId ?? '');
+  const currentSessionMessagesResolved = useSessionMessagesResolved(currentSessionId ?? '');
   const worktreePath = useSessionUIStore((state) => currentSessionId ? state.worktreeMetadata.get(currentSessionId)?.path ?? '' : '');
   const worktreeAttachment = useSessionWorktreeStore((state) => currentSessionId ? state.getAttachment(currentSessionId) : undefined);
   const draftDirectory = useSessionUIStore((state) => {
@@ -83,52 +82,19 @@ const MiniChatHeader: React.FC<{ mode: MiniChatMode }> = ({ mode }) => {
   }, [session?.summary]);
   const changes = diffStats ?? { additions: 0, deletions: 0 };
   const hasChanges = changes.additions > 0 || changes.deletions > 0;
-  const currentModel = getCurrentModel();
-  const latestAssistantModel = React.useMemo(() => {
-    for (let i = currentSessionMessages.length - 1; i >= 0; i -= 1) {
-      const message = currentSessionMessages[i] as { role?: unknown; providerID?: unknown; modelID?: unknown };
-      if (message.role !== 'assistant') continue;
-      if (typeof message.providerID !== 'string' || typeof message.modelID !== 'string') continue;
-      const provider = providers.find((entry) => entry.id === message.providerID);
-      const model = provider?.models.find((entry) => entry.id === message.modelID);
-      if (model) return model;
-    }
-    return undefined;
-  }, [currentSessionMessages, providers]);
-  const modelForLimits = currentModel?.limit ? currentModel : latestAssistantModel;
-  const limit = modelForLimits && typeof modelForLimits.limit === 'object' && modelForLimits.limit !== null
-    ? (modelForLimits.limit as Record<string, unknown>)
-    : null;
-  const contextLimit = limit && typeof limit.context === 'number' ? limit.context : 0;
-  const outputLimit = limit && typeof limit.output === 'number' ? limit.output : 0;
-  const contextUsage = React.useMemo<SessionContextUsage | null>(() => {
+  const selectedCapacity = useSelectedModelContextCapacity();
+  const contextUsage = React.useMemo(() => {
     if (!currentSessionId || currentSessionMessages.length === 0) return null;
-    return getContextUsageFromMessages(currentSessionMessages, contextLimit, outputLimit);
-  }, [contextLimit, currentSessionId, currentSessionMessages, outputLimit]);
-  const [stableContextUsage, setStableContextUsage] = React.useState<SessionContextUsage | null>(null);
+    return getContextUsageFromMessages(currentSessionMessages, selectedCapacity);
+  }, [currentSessionId, currentSessionMessages, selectedCapacity]);
+  const stableContextUsage = useStableSessionContextUsage({
+    directory: openDirectory,
+    sessionId: currentSessionId,
+    usage: contextUsage,
+    resolved: !currentSessionId || currentSessionMessagesResolved,
+  });
   const dragRegionStyle = { WebkitAppRegion: 'drag' } as React.CSSProperties;
   const noDragRegionStyle = { WebkitAppRegion: 'no-drag' } as React.CSSProperties;
-
-  React.useEffect(() => {
-    if (!currentSessionId) {
-      setStableContextUsage((prev) => (prev === null ? prev : null));
-      return;
-    }
-
-    if (contextUsage && contextUsage.totalTokens > 0) {
-      setStableContextUsage((prev) => {
-        if (isSameSessionContextUsage(prev, contextUsage)) {
-          return prev;
-        }
-        return contextUsage;
-      });
-      return;
-    }
-
-    setStableContextUsage((prev) => (prev === null ? prev : null));
-  }, [contextUsage, currentSessionId]);
-
-  const displayContextPercentage = stableContextUsage?.percentage ?? 0;
 
   const handleTogglePinned = React.useCallback(() => {
     const nextPinned = !pinned;
@@ -166,11 +132,7 @@ const MiniChatHeader: React.FC<{ mode: MiniChatMode }> = ({ mode }) => {
       </div>
       {stableContextUsage && stableContextUsage.totalTokens > 0 ? (
         <ContextUsageDisplay
-          totalTokens={stableContextUsage.totalTokens}
-          percentage={displayContextPercentage}
-          colorPercentage={stableContextUsage.percentage}
-          contextLimit={stableContextUsage.contextLimit}
-          outputLimit={stableContextUsage.outputLimit ?? 0}
+          usage={stableContextUsage}
           className="h-9 shrink-0 pl-1 pr-1 typography-ui-label"
           valueClassName="font-semibold leading-none"
           hideIcon

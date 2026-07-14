@@ -367,6 +367,159 @@ describe("useConfigStore default agent selection", () => {
     expect(useSelectionStore.getState().getSessionAgentSelection("session-1")).toBe("Builder")
   })
 
+  test("applyDefaultsToCurrent preserves explicit draft model intent", () => {
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      currentDraftId: "draft-explicit",
+      draftsById: {
+        "draft-explicit": {
+          id: "draft-explicit",
+          text: "",
+          createdAt: 1,
+          updatedAt: 1,
+          selectedProjectId: null,
+          directoryOverride: null,
+          parentID: null,
+          sendConfig: {
+            providerID: "anthropic",
+            modelID: "claude",
+            agent: "Orchestrator",
+            modelProvenance: "explicit",
+          },
+        },
+      },
+      draftOrder: ["draft-explicit"],
+      newSessionDraft: {
+        open: true,
+        id: "draft-explicit",
+        directoryOverride: null,
+        parentID: null,
+        sendConfig: {
+          providerID: "anthropic",
+          modelID: "claude",
+          agent: "Orchestrator",
+          modelProvenance: "explicit",
+        },
+      },
+    })
+    useConfigStore.setState({
+      settingsDefaultAgent: "Builder",
+      currentAgentName: "Orchestrator",
+      currentProviderId: "anthropic",
+      currentModelId: "claude",
+      currentVariant: undefined,
+      selectedProviderId: "anthropic",
+    })
+
+    useConfigStore.getState().applyDefaultsToCurrent()
+
+    expect(useConfigStore.getState().currentAgentName).toBe("Builder")
+    expect(useConfigStore.getState().currentProviderId).toBe("anthropic")
+    expect(useConfigStore.getState().currentModelId).toBe("claude")
+  })
+
+  test("applyDefaultsToCurrent preserves legacy draft model without provenance", () => {
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      currentDraftId: "draft-legacy",
+      draftsById: {
+        "draft-legacy": {
+          id: "draft-legacy",
+          text: "",
+          createdAt: 1,
+          updatedAt: 1,
+          selectedProjectId: null,
+          directoryOverride: null,
+          parentID: null,
+          sendConfig: {
+            providerID: "anthropic",
+            modelID: "claude",
+            agent: "Orchestrator",
+          },
+        },
+      },
+      draftOrder: ["draft-legacy"],
+      newSessionDraft: {
+        open: true,
+        id: "draft-legacy",
+        directoryOverride: null,
+        parentID: null,
+        sendConfig: {
+          providerID: "anthropic",
+          modelID: "claude",
+          agent: "Orchestrator",
+        },
+      },
+    })
+    useConfigStore.setState({
+      settingsDefaultAgent: "Builder",
+      currentAgentName: "Orchestrator",
+      currentProviderId: "anthropic",
+      currentModelId: "claude",
+      currentVariant: undefined,
+      selectedProviderId: "anthropic",
+    })
+
+    useConfigStore.getState().applyDefaultsToCurrent()
+
+    expect(useConfigStore.getState().currentProviderId).toBe("anthropic")
+    expect(useConfigStore.getState().currentModelId).toBe("claude")
+  })
+
+  test("applyDefaultsToCurrent does not preserve agent-default draft model", () => {
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      currentDraftId: "draft-agent-default",
+      draftsById: {
+        "draft-agent-default": {
+          id: "draft-agent-default",
+          text: "",
+          createdAt: 1,
+          updatedAt: 1,
+          selectedProjectId: null,
+          directoryOverride: null,
+          parentID: null,
+          sendConfig: {
+            providerID: "anthropic",
+            modelID: "claude",
+            agent: "Builder",
+            variant: "high",
+            modelProvenance: "agent-default",
+          },
+        },
+      },
+      draftOrder: ["draft-agent-default"],
+      newSessionDraft: {
+        open: true,
+        id: "draft-agent-default",
+        directoryOverride: null,
+        parentID: null,
+        sendConfig: {
+          providerID: "anthropic",
+          modelID: "claude",
+          agent: "Builder",
+          variant: "high",
+          modelProvenance: "agent-default",
+        },
+      },
+    })
+    useConfigStore.setState({
+      settingsDefaultAgent: "Builder",
+      currentAgentName: "Builder",
+      currentProviderId: "anthropic",
+      currentModelId: "claude",
+      currentVariant: "high",
+      selectedProviderId: "anthropic",
+    })
+
+    useConfigStore.getState().applyDefaultsToCurrent()
+
+    expect(useConfigStore.getState().currentAgentName).toBe("Builder")
+    expect(useConfigStore.getState().currentProviderId).toBe("opencode")
+    expect(useConfigStore.getState().currentModelId).toBe("builder-model")
+    expect(useConfigStore.getState().currentVariant).toBe("high")
+  })
+
   test("setAgent records explicit active-session selection and applies the agent model", () => {
     useSessionUIStore.setState({ currentSessionId: "session-1" })
 

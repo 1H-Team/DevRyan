@@ -20,6 +20,7 @@ import {
   generateCursorSessionTitle,
   normalizeCursorSessionTitle,
 } from './title-generation.js';
+import { createCursorQuestionRuntime } from './cursor-question-runtime.js';
 
 export const CURSOR_PROVIDER_ID = 'cursor-acp';
 
@@ -843,10 +844,13 @@ export function clearCursorSdkAuth({ readAuth, writeAuth }) {
   return true;
 }
 
-const createCursorModelRecord = ({ id, name, description, options, variants }) => ({
+const createCursorModelRecord = ({ id, name, description, limit, options, variants }) => ({
   id,
   name,
   ...(trimString(description) ? { description: trimString(description) } : {}),
+  ...(Number.isSafeInteger(limit?.context) && limit.context > 0
+    ? { limit: { context: limit.context } }
+    : {}),
   ...(isPlainObject(options) && Object.keys(options).length > 0 ? { options } : {}),
   ...(isPlainObject(variants) && Object.keys(variants).length > 0 ? { variants } : {}),
   capabilities: createCursorModelCapabilities(),
@@ -928,10 +932,20 @@ const cloneCursorSdkAgentDefinitions = (definitions) => {
   return normalized ? sortObjectKeys(normalized) : null;
 };
 
-const createAgentRuntimeFingerprint = ({ directory, model, agents }) => stableJson({
+const cloneCursorMcpServers = (servers) => {
+  if (!isPlainObject(servers)) return null;
+  try {
+    return JSON.parse(JSON.stringify(servers));
+  } catch {
+    return null;
+  }
+};
+
+const createAgentRuntimeFingerprint = ({ directory, model, agents, mcpServerIdentity }) => stableJson({
   directory: trimString(directory),
   model: cloneCursorSdkModelSelection(model),
   agents: cloneCursorSdkAgentDefinitions(agents),
+  mcpServerIdentity: trimString(mcpServerIdentity),
   settingSources: CURSOR_SETTING_SOURCES ?? null,
 });
 
@@ -960,14 +974,21 @@ const createCursorVariantKeyFromParams = (params) => {
   return effort || '';
 };
 
-const getParamMagnitudeScore = (value) => {
+const parseTokenMagnitude = (value) => {
   const normalized = trimString(value).toLowerCase();
   const match = normalized.match(/^(\d+(?:\.\d+)?)([km])$/);
-  if (!match) return 0;
+  if (!match) return null;
   const numeric = Number.parseFloat(match[1]);
-  if (!Number.isFinite(numeric)) return 0;
-  return match[2] === 'm' ? numeric * 1_000_000 : numeric * 1_000;
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  const magnitude = match[2] === 'm' ? numeric * 1_000_000 : numeric * 1_000;
+  return Number.isSafeInteger(magnitude) && magnitude > 0 ? magnitude : null;
 };
+
+const getParamMagnitudeScore = (value) => parseTokenMagnitude(value) ?? 0;
+
+const getCursorContextLimitFromParams = (params) => (
+  parseTokenMagnitude(getModelParamValue(params, CURSOR_MODEL_PARAM_CONTEXT))
+);
 
 const scoreCursorSdkVariant = (sdkVariant) => {
   const params = normalizeModelSelectionParams(sdkVariant?.params);
@@ -991,6 +1012,7 @@ const mergeCursorSdkModelCandidate = (records, candidate) => {
   const variantKey = trimString(candidate.variantKey);
   const cursorSdkModel = createCursorSdkModelSelection(candidate.sdkModelId, candidate.params);
   const score = Number.isFinite(candidate.score) ? candidate.score : 0;
+  const contextLimit = getCursorContextLimitFromParams(candidate.params);
 
   if (variantKey) {
     const existingVariant = variants[variantKey];
@@ -998,6 +1020,7 @@ const mergeCursorSdkModelCandidate = (records, candidate) => {
     if (!existingVariant || score >= existingScore) {
       variants[variantKey] = {
         cursorSdkModel,
+        ...(contextLimit ? { limit: { context: contextLimit } } : {}),
         _cursorSdkScore: score,
       };
     }
@@ -1012,11 +1035,15 @@ const mergeCursorSdkModelCandidate = (records, candidate) => {
         _cursorSdkScore: score,
       }
     : existingOptions;
+  const nextLimit = score >= existingSelectionScore
+    ? (contextLimit ? { context: contextLimit } : undefined)
+    : existing?.limit;
 
   records[id] = createCursorModelRecord({
     id,
     name: trimString(candidate.name) || existing?.name || id,
     description: candidate.description ?? existing?.description,
+    limit: nextLimit,
     options: nextOptions,
     variants,
   });
@@ -1077,9 +1104,13 @@ const addNativeUltraCursorVariants = (records) => {
     if (!replacedEffort) {
       ultraParams.push({ id: CURSOR_MODEL_PARAM_REASONING, value: 'ultra' });
     }
+    const ultraContextLimit = getCursorContextLimitFromParams(ultraParams);
 
     variants.ultra = {
       cursorSdkModel: createCursorSdkModelSelection(sourceSelection.id, ultraParams),
+      ...(ultraContextLimit
+        ? { limit: { context: ultraContextLimit } }
+        : {}),
       _cursorSdkScore: Number.isFinite(maxVariant?._cursorSdkScore) ? maxVariant._cursorSdkScore - 1 : 0,
     };
     record.variants = variants;
@@ -1716,6 +1747,7 @@ export function createCursorSdkRuntime(options = {}) {
     const id = trimString(sessionID);
     if (!id || deletedSessionIds.has(id)) return false;
     deletedSessionIds.add(id);
+    await questionRuntime.deleteSession(id);
     agentsBySession.delete(id);
     sessionStatuses.delete(id);
     const active = activeRuns.get(id);
@@ -1749,6 +1781,12 @@ export function createCursorSdkRuntime(options = {}) {
     });
   };
 
+  const questionRuntime = options.questionRuntime || createCursorQuestionRuntime({
+    emitEvent,
+    logger,
+    ...(isPlainObject(options.questionRuntimeOptions) ? options.questionRuntimeOptions : {}),
+  });
+
   // Maximum time to wait for an underlying run cancel. The cancel runs in the
   // background so this never blocks the caller; the bound only stops a hung
   // cancel from leaking forever.
@@ -1762,18 +1800,25 @@ export function createCursorSdkRuntime(options = {}) {
   // a slow or hung SDK cancel can never wedge the session.
   const releaseActiveRun = (sessionID, { source = 'user_abort', emitIdle = false } = {}) => {
     const active = activeRuns.get(sessionID);
-    if (!active?.run || typeof active.run.cancel !== 'function') return false;
+    if (!active?.run) return false;
     active.markAbortRequested?.(source);
+    questionRuntime.revokeSessionScope(sessionID, {
+      identity: active.questionScopeIdentity,
+      messageID: active.messageID,
+      reason: source === 'superseded' ? 'the prompt was superseded' : 'the Cursor run was aborted',
+    });
     activeRuns.delete(sessionID);
     if (emitIdle) {
       sessionStatuses.set(sessionID, { type: 'idle' });
       emit({ type: 'session.status', properties: { sessionID, status: { type: 'idle' } } }, active.directory);
     }
-    Promise.resolve()
-      .then(() => withTimeout(Promise.resolve(active.run.cancel()), CURSOR_CANCEL_TIMEOUT_MS))
-      .catch((error) => {
-        logger.warn?.('[CursorSDK] background run cancel failed:', error instanceof Error ? error.message : error);
-      });
+    if (typeof active.run.cancel === 'function') {
+      Promise.resolve()
+        .then(() => withTimeout(Promise.resolve(active.run.cancel()), CURSOR_CANCEL_TIMEOUT_MS))
+        .catch((error) => {
+          logger.warn?.('[CursorSDK] background run cancel failed:', error instanceof Error ? error.message : error);
+        });
+    }
     return true;
   };
 
@@ -1919,10 +1964,20 @@ export function createCursorSdkRuntime(options = {}) {
     return selected || createFallbackCursorSdkModelSelection(normalizedModelID);
   };
 
-  const getOrCreateAgentResult = async ({ sessionID, apiKey, modelID, modelSelection, directory, agentDefinitions }) => {
+  const getOrCreateAgentResult = async ({
+    sessionID,
+    apiKey,
+    modelID,
+    modelSelection,
+    directory,
+    agentDefinitions,
+    mcpServers,
+    mcpServerIdentity,
+  }) => {
     const model = cloneCursorSdkModelSelection(modelSelection) || createFallbackCursorSdkModelSelection(modelID);
     const agents = pinCursorSdkSubagentModels(cloneCursorSdkAgentDefinitions(agentDefinitions), model);
-    const fingerprint = createAgentRuntimeFingerprint({ directory, model, agents });
+    const normalizedMcpServers = cloneCursorMcpServers(mcpServers);
+    const fingerprint = createAgentRuntimeFingerprint({ directory, model, agents, mcpServerIdentity });
     const cached = agentsBySession.get(sessionID);
     if (cached?.fingerprint === fingerprint && cached?.agent) {
       agentsBySession.delete(sessionID);
@@ -1942,6 +1997,7 @@ export function createCursorSdkRuntime(options = {}) {
       local,
       ...(trimString(directory) ? { platform: { workspaceRef: directory } } : {}),
       ...(agents ? { agents } : {}),
+      ...(normalizedMcpServers ? { mcpServers: normalizedMcpServers } : {}),
     };
     let agent = null;
     if (state.agentID) {
@@ -1980,9 +2036,29 @@ export function createCursorSdkRuntime(options = {}) {
     await appendOrReplaceRecord(sessionID, record);
   };
 
-  const createDirectPromptRun = async ({ sessionID, apiKey, modelID, modelSelection, prompt, directory, images, agentDefinitions }) => {
+  const createDirectPromptRun = async ({
+    sessionID,
+    apiKey,
+    modelID,
+    modelSelection,
+    prompt,
+    directory,
+    images,
+    agentDefinitions,
+    mcpServers,
+    mcpServerIdentity,
+  }) => {
     const model = cloneCursorSdkModelSelection(modelSelection) || createFallbackCursorSdkModelSelection(modelID);
-    const agent = await getOrCreateAgent({ sessionID, apiKey, modelID, modelSelection: model, directory, agentDefinitions });
+    const agent = await getOrCreateAgent({
+      sessionID,
+      apiKey,
+      modelID,
+      modelSelection: model,
+      directory,
+      agentDefinitions,
+      mcpServers,
+      mcpServerIdentity,
+    });
     const message = Array.isArray(images) && images.length > 0
       ? { text: prompt, images }
       : { text: prompt };
@@ -2195,7 +2271,19 @@ export function createCursorSdkRuntime(options = {}) {
     return title;
   };
 
-  const createNodeWorkerPromptRun = async ({ sessionID, messageID, apiKey, modelID, modelSelection, prompt, directory, images, agentDefinitions }) => {
+  const createNodeWorkerPromptRun = async ({
+    sessionID,
+    messageID,
+    apiKey,
+    modelID,
+    modelSelection,
+    prompt,
+    directory,
+    images,
+    agentDefinitions,
+    mcpServers,
+    mcpServerIdentity,
+  }) => {
     const state = await readSessionState(sessionID);
     const workerStartedAt = now();
     const child = spawnImpl(nodeBinary, [workerPath], {
@@ -2239,6 +2327,8 @@ export function createCursorSdkRuntime(options = {}) {
       modelID,
       modelSelection: cloneCursorSdkModelSelection(modelSelection) || createFallbackCursorSdkModelSelection(modelID),
       agents: cloneCursorSdkAgentDefinitions(agentDefinitions),
+      mcpServers: cloneCursorMcpServers(mcpServers),
+      mcpServerIdentity: trimString(mcpServerIdentity),
       prompt,
       images: Array.isArray(images) ? images : [],
       directory: trimString(directory),
@@ -2783,6 +2873,8 @@ export function createCursorSdkRuntime(options = {}) {
             modelID: input.modelID,
             modelSelection: cloneCursorSdkModelSelection(input.modelSelection) || createFallbackCursorSdkModelSelection(input.modelID),
             agents: cloneCursorSdkAgentDefinitions(input.agentDefinitions),
+            mcpServers: cloneCursorMcpServers(input.mcpServers),
+            mcpServerIdentity: trimString(input.mcpServerIdentity),
             prompt: input.prompt,
             images: Array.isArray(input.images) ? input.images : [],
             directory: trimString(input.directory),
@@ -2895,6 +2987,8 @@ export function createCursorSdkRuntime(options = {}) {
             modelID: input.modelID,
             modelSelection: cloneCursorSdkModelSelection(input.modelSelection) || createFallbackCursorSdkModelSelection(input.modelID),
             agents: cloneCursorSdkAgentDefinitions(input.agentDefinitions),
+            mcpServers: cloneCursorMcpServers(input.mcpServers),
+            mcpServerIdentity: trimString(input.mcpServerIdentity),
             directory: trimString(input.directory),
             agentID: trimString(state.agentID),
           });
@@ -3101,6 +3195,8 @@ export function createCursorSdkRuntime(options = {}) {
     modelSelection,
     directory,
     agentDefinitions,
+    mcpServers,
+    mcpServerIdentity,
   }) => {
     recordCursorTimingMark({
       sessionID,
@@ -3116,6 +3212,8 @@ export function createCursorSdkRuntime(options = {}) {
       modelSelection,
       directory,
       agentDefinitions,
+      mcpServers,
+      mcpServerIdentity,
     });
     const agentID = trimString(prepared.agent?.agentId);
     recordCursorTimingMark({
@@ -3257,6 +3355,12 @@ export function createCursorSdkRuntime(options = {}) {
         modelID,
         modelSelection,
       });
+      const questionMcp = await questionRuntime.getMcpServerConfig({
+        agent: requestedAgent,
+        sessionID,
+        directory,
+        messageID,
+      });
       const result = await prepareCursorSession({
         sessionID,
         messageID,
@@ -3265,6 +3369,8 @@ export function createCursorSdkRuntime(options = {}) {
         modelSelection,
         directory,
         agentDefinitions,
+        mcpServers: cloneCursorMcpServers(questionMcp?.mcpServers),
+        mcpServerIdentity: trimString(questionMcp?.identity),
       });
       recordCursorTimingMark({
         sessionID,
@@ -3350,7 +3456,21 @@ export function createCursorSdkRuntime(options = {}) {
       isPlanModePrompt,
       modelID,
     });
-    const unsupportedMessage = unsupportedAttachmentMessage || unsupportedAgentMessage;
+    let unsupportedMessage = unsupportedAttachmentMessage || unsupportedAgentMessage;
+    let questionMcp = null;
+    if (!unsupportedMessage) {
+      try {
+        questionMcp = await questionRuntime.getMcpServerConfig({
+          agent: requestedAgent,
+          sessionID,
+          directory,
+          messageID: userMessageID,
+        });
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : 'Cursor question bridge failed to start.';
+        unsupportedMessage = `Cursor question bridge error: ${detail}`;
+      }
+    }
     let executionPrompt;
     let agentDefinitions;
     let baselineWorkspaceDiff = '';
@@ -3998,11 +4118,18 @@ export function createCursorSdkRuntime(options = {}) {
         directory,
         images,
         agentDefinitions,
+        mcpServers: cloneCursorMcpServers(questionMcp?.mcpServers),
+        mcpServerIdentity: trimString(questionMcp?.identity),
       });
     } catch (error) {
       const text = error instanceof Error ? error.message : 'Cursor SDK run failed.';
       applyFinalAssistantText(`Cursor SDK error: ${text}`);
       lastError = text;
+      questionRuntime.revokeSessionScope(sessionID, {
+        identity: trimString(questionMcp?.identity),
+        messageID: userMessageID,
+        reason: 'the Cursor provider failed to start',
+      });
       await finalizeAssistantRun('error', now(), text);
       return {
         handled: true,
@@ -4012,6 +4139,8 @@ export function createCursorSdkRuntime(options = {}) {
     }
     activeRuns.set(sessionID, {
       run,
+      messageID: userMessageID,
+      questionScopeIdentity: trimString(questionMcp?.identity),
       assistantMessageID,
       directory,
       markAbortRequested: (source = 'user_abort') => {
@@ -4408,6 +4537,11 @@ export function createCursorSdkRuntime(options = {}) {
         if (activeRuns.get(sessionID)?.run === run) {
           activeRuns.delete(sessionID);
         }
+        questionRuntime.revokeSessionScope(sessionID, {
+          identity: trimString(questionMcp?.identity),
+          messageID: userMessageID,
+          reason: 'the Cursor run ended before the question was answered',
+        });
         await finalizeAssistantRun(finalStatus, now(), runFailureReason);
       }
     })();
@@ -4427,6 +4561,15 @@ export function createCursorSdkRuntime(options = {}) {
   return {
     getRuntimeStatus: getStatus,
     getSessionStatus,
+    listPendingQuestions(options = {}) {
+      return questionRuntime.listPendingQuestions(options);
+    },
+    async replyToQuestion(requestID, answers) {
+      return questionRuntime.replyToQuestion(requestID, answers);
+    },
+    async rejectQuestion(requestID) {
+      return questionRuntime.rejectQuestion(requestID);
+    },
     async verifyConnection() {
       const apiKey = getCursorSdkApiKey({ env, readAuth });
       if (!apiKey) {
@@ -4526,6 +4669,7 @@ export function createCursorSdkRuntime(options = {}) {
       return deleteSessionState(sessionID);
     },
     async dispose() {
+      await questionRuntime.dispose();
       await persistentWorkerRuntime.dispose();
     },
   };

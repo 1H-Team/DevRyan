@@ -113,6 +113,9 @@ export class SessionEditorPanelProvider {
         manager: this._openCodeManager,
         context: this._context,
         managedOrchestrationRuntime: this._managedOrchestrationRuntime,
+        postMessage: (nextMessage) => {
+          void state.panel.webview.postMessage(nextMessage);
+        },
       });
       state.panel.webview.postMessage(response);
 

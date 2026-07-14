@@ -9,12 +9,16 @@ import {
 import { resolveProviderModelVariant } from "@/lib/providers/variantControls"
 import { isProviderModelAvailable, type ProviderModelAvailability } from "@/lib/providers/modelAvailability"
 
+/** Internal draft intent: user-chosen vs agent-configured default. Not sent to OpenCode. */
+export type SendConfigModelProvenance = "explicit" | "agent-default"
+
 export type SendConfig = {
   providerID?: string
   modelID?: string
   agent?: string
   variant?: string
   planMode?: boolean
+  modelProvenance?: SendConfigModelProvenance
 }
 
 export type SendConfigProviderModel = ProviderModelAvailability & {
@@ -63,6 +67,22 @@ export type SendConfigResolverSnapshot = {
 function clean(value?: string | null): string | undefined {
   const trimmed = typeof value === "string" ? value.trim() : ""
   return trimmed.length > 0 ? trimmed : undefined
+}
+
+export function normalizeSendConfigModelProvenance(value: unknown): SendConfigModelProvenance | undefined {
+  return value === "explicit" || value === "agent-default" ? value : undefined
+}
+
+/**
+ * True when a draft model should survive agent/default re-application.
+ * Legacy drafts with provider+model but no provenance count as explicit.
+ */
+export function hasExplicitDraftModelIntent(sendConfig?: SendConfig | null): boolean {
+  const providerID = clean(sendConfig?.providerID)
+  const modelID = clean(sendConfig?.modelID)
+  if (!providerID || !modelID) return false
+  const provenance = normalizeSendConfigModelProvenance(sendConfig?.modelProvenance)
+  return provenance !== "agent-default"
 }
 
 function findProviderModel(providers: SendConfigProvider[], providerID?: string, modelID?: string) {
@@ -133,11 +153,18 @@ export function resolveDraftSendSelection(params: {
   const defaultAgent = findSelectableAgentByName(selectableAgents, defaultAgentName)
   const agent = explicitAgent ?? requested ?? draft ?? current ?? defaultAgent
 
-  const explicitModel = findProviderModel(params.providers, params.draftSendConfig?.providerID, params.draftSendConfig?.modelID)
-  const draftAgentModel = agent
+  // agent-default means live agent config wins over persisted/mapped draft models.
+  // explicit and legacy (no provenance) keep persisted/map precedence.
+  const honorPersistedDraftModel = normalizeSendConfigModelProvenance(params.draftSendConfig?.modelProvenance) !== "agent-default"
+  const explicitModel = honorPersistedDraftModel
+    ? findProviderModel(params.providers, params.draftSendConfig?.providerID, params.draftSendConfig?.modelID)
+    : null
+  const draftAgentModel = honorPersistedDraftModel && agent
     ? findProviderModel(params.providers, params.draftAgentModelSelection?.providerId, params.draftAgentModelSelection?.modelId)
     : null
-  const draftModel = findProviderModel(params.providers, params.draftModelSelection?.providerId, params.draftModelSelection?.modelId)
+  const draftModel = honorPersistedDraftModel
+    ? findProviderModel(params.providers, params.draftModelSelection?.providerId, params.draftModelSelection?.modelId)
+    : null
   const agentModel = findProviderModel(params.providers, agent?.model?.providerID, agent?.model?.modelID)
   const inputModel = findProviderModel(params.providers, params.inputProviderID, params.inputModelID)
   const currentModel = findProviderModel(params.providers, params.currentProviderID, params.currentModelID)

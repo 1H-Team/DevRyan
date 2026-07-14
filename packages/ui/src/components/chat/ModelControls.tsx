@@ -115,8 +115,10 @@ import {
     resolveSelectableAgentOptions,
 } from './modelControlAgentOptions';
 import { applyDraftAwareAgentChange } from './draftAwareAgentChange';
+import type { SendConfigModelProvenance } from '@/sync/send-config';
 import { useI18n } from '@/lib/i18n';
 import { useOpenCodeReadiness } from '@/hooks/useOpenCodeReadiness';
+import { useAgentHandoffGuard } from './agentHandoffGuardContext';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type IconComponent = ComponentType<any>;
@@ -384,6 +386,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     onMobilePanelChange,
 }) => {
     const { t } = useI18n();
+    const { requestAgentChange } = useAgentHandoffGuard();
     const { isReady, isUnavailable } = useOpenCodeReadiness();
     const readinessLabel = isUnavailable ? t('common.unavailable') : t('common.loading');
     const providers = useConfigStore((state) => state.providers);
@@ -879,7 +882,13 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     }, [currentSessionMessagesFromSync]);
 
     const tryApplyModelSelection = React.useCallback(
-        (providerId: string, modelId: string, agentName?: string, variant?: string): ModelApplyResult => {
+        (
+            providerId: string,
+            modelId: string,
+            agentName?: string,
+            variant?: string,
+            options?: { modelProvenance?: SendConfigModelProvenance },
+        ): ModelApplyResult => {
             if (!providerId || !modelId) {
                 return 'model-missing';
             }
@@ -899,6 +908,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 return 'model-missing';
             }
 
+            const draftModelProvenance = options?.modelProvenance ?? 'agent-default';
             const providerMatches = currentProviderId === providerId;
             const modelMatches = currentModelId === modelId;
             if (providerMatches && modelMatches) {
@@ -912,6 +922,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                         modelID: modelId,
                         agent: agentName,
                         variant,
+                        modelProvenance: draftModelProvenance,
                     });
                 }
                 return 'applied';
@@ -934,6 +945,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     modelID: modelId,
                     agent: agentName,
                     variant,
+                    modelProvenance: draftModelProvenance,
                 });
             }
 
@@ -959,7 +971,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const getModelVariantOptions = React.useCallback((providerId: string, modelId: string) => {
         const provider = providers.find((entry) => entry.id === providerId);
         const model = provider?.models.find((entry) => entry.id === modelId) as { variants?: Record<string, unknown> } | undefined;
-        return getOrderedThinkingVariants(model?.variants);
+        return getOrderedThinkingVariants(model?.variants, { providerId });
     }, [providers]);
 
     const resolveModelVariantSelection = React.useCallback((providerId: string, modelId: string) => {
@@ -993,7 +1005,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             }
         }
 
-        return resolveProviderModelVariant(provider, modelId, undefined) ?? resolveThinkingVariant(undefined, variantOptions);
+        return resolveProviderModelVariant(provider, modelId, undefined)
+            ?? resolveThinkingVariant(undefined, variantOptions, { providerId });
     }, [
         currentAgentName,
         currentModelId,
@@ -1026,7 +1039,13 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         return sanitizeAgentName(liveConfigAgentName) || sanitizeAgentName(currentAgentName) || defaultAgentName;
     }, [currentAgentName, currentDraftId, currentSessionId, defaultAgentName, newSessionDraftOpen]);
 
-    const commitVariantSelectionForModel = React.useCallback((providerId: string, modelId: string, variant: string | undefined, agentNameOverride?: string | null) => {
+    const commitVariantSelectionForModel = React.useCallback((
+        providerId: string,
+        modelId: string,
+        variant: string | undefined,
+        agentNameOverride?: string | null,
+        options?: { modelProvenance?: SendConfigModelProvenance },
+    ) => {
         const provider = providers.find((entry) => entry.id === providerId);
         const variantOptions = getModelVariantOptions(providerId, modelId);
         const cursorVariantState = getCursorAcpVariantState(provider, modelId, variant);
@@ -1055,6 +1074,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 modelID: modelId,
                 agent: effectiveAgentName,
                 variant: concreteVariant,
+                modelProvenance: options?.modelProvenance ?? 'agent-default',
             });
         }
     }, [
@@ -1071,14 +1091,20 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         updateNewSessionDraftSendConfig,
     ]);
 
-    const applyModelSelectionWithVariant = React.useCallback((providerId: string, modelId: string, variant: string | undefined, agentNameOverride?: string | null) => {
+    const applyModelSelectionWithVariant = React.useCallback((
+        providerId: string,
+        modelId: string,
+        variant: string | undefined,
+        agentNameOverride?: string | null,
+        options?: { modelProvenance?: SendConfigModelProvenance },
+    ) => {
         const effectiveAgentName = agentNameOverride ?? resolveLiveAgentName() ?? undefined;
-        const result = tryApplyModelSelection(providerId, modelId, effectiveAgentName, variant);
+        const result = tryApplyModelSelection(providerId, modelId, effectiveAgentName, variant, options);
         if (result !== 'applied') {
             return result;
         }
 
-        commitVariantSelectionForModel(providerId, modelId, variant, effectiveAgentName);
+        commitVariantSelectionForModel(providerId, modelId, variant, effectiveAgentName, options);
         return 'applied';
     }, [commitVariantSelectionForModel, resolveLiveAgentName, tryApplyModelSelection]);
 
@@ -1386,7 +1412,11 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             const nextVariant = resolvedCurrentVariant
                 ?? (normalizedVariant && availableVariants.includes(normalizedVariant)
                 ? normalizedVariant
-                : resolveThinkingVariant(currentVariant, availableVariants));
+                : resolveThinkingVariant(
+                    currentVariant,
+                    availableVariants,
+                    { providerId: currentProviderId },
+                ));
             setCurrentVariant(nextVariant);
             return;
         }
@@ -1410,7 +1440,11 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 ? savedVariant
                 : normalizedSavedVariant && availableVariants.includes(normalizedSavedVariant)
                 ? normalizedSavedVariant
-                : resolveThinkingVariant(savedVariant, availableVariants))
+                : resolveThinkingVariant(
+                    savedVariant,
+                    availableVariants,
+                    { providerId: currentProviderId },
+                ))
             : resolveProviderModelVariant(provider, currentModelId, savedVariant);
 
         setCurrentVariant(resolvedSaved);
@@ -1434,47 +1468,56 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
     const handleVariantSelect = React.useCallback((variant: string | undefined) => {
         if (currentProviderId && currentModelId) {
-            commitVariantSelectionForModel(currentProviderId, currentModelId, variant);
+            commitVariantSelectionForModel(currentProviderId, currentModelId, variant, undefined, { modelProvenance: 'explicit' });
         }
     }, [commitVariantSelectionForModel, currentModelId, currentProviderId]);
 
     const handleAgentChange = React.useCallback((agentName: string, options?: { closeModelSelector?: boolean }) => {
-        try {
-            applyDraftAwareAgentChange(
-                agentName,
-                { currentSessionId, currentDraftId, newSessionDraftOpen },
-                {
-                    setAgent,
-                    setProviderModel,
-                    saveSessionAgentSelection,
-                    getDraftAgentModelForSelection,
-                    getDraftAgentModelVariantForSelection,
-                    saveDraftAgentSelection,
-                    saveDraftModelSelection,
-                    saveDraftAgentModelForSelection,
-                    saveDraftAgentModelVariantForSelection,
-                    saveDraftSendConfig: (_draftId, sendConfig) => updateNewSessionDraftSendConfig(sendConfig),
-                },
-            );
-            addRecentAgent(agentName);
-            if (options?.closeModelSelector ?? true) {
-                setAgentMenuOpen(false);
+        void requestAgentChange({
+            sessionId: currentSessionId,
+            currentAgentName: uiAgentName ?? currentAgentName,
+            nextAgentName: agentName,
+            commit: () => {
+                try {
+                    applyDraftAwareAgentChange(
+                        agentName,
+                        { currentSessionId, currentDraftId, newSessionDraftOpen },
+                        {
+                            setAgent,
+                            setProviderModel,
+                            saveSessionAgentSelection,
+                            getDraftAgentModelForSelection,
+                            getDraftAgentModelVariantForSelection,
+                            saveDraftAgentSelection,
+                            saveDraftModelSelection,
+                            saveDraftAgentModelForSelection,
+                            saveDraftAgentModelVariantForSelection,
+                            saveDraftSendConfig: (_draftId, sendConfig) => updateNewSessionDraftSendConfig(sendConfig),
+                        },
+                    );
+                    addRecentAgent(agentName);
+                    if (options?.closeModelSelector ?? true) {
+                        setAgentMenuOpen(false);
+                    }
+                    if (isCompact) {
+                        closeMobilePanel();
+                    }
+                } catch (error) {
+                    console.error('[ModelControls] Handle agent change error:', error);
+                }
             }
-            if (isCompact) {
-                closeMobilePanel();
-            }
-        } catch (error) {
-            console.error('[ModelControls] Handle agent change error:', error);
-        }
+        });
     }, [
         addRecentAgent,
         closeMobilePanel,
+        currentAgentName,
         currentDraftId,
         currentSessionId,
         getDraftAgentModelForSelection,
         getDraftAgentModelVariantForSelection,
         isCompact,
         newSessionDraftOpen,
+        requestAgentChange,
         saveDraftAgentSelection,
         saveDraftAgentModelForSelection,
         saveDraftAgentModelVariantForSelection,
@@ -1484,6 +1527,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         setAgent,
         setAgentMenuOpen,
         updateNewSessionDraftSendConfig,
+        uiAgentName,
     ]);
 
     const handlePlanToggle = React.useCallback(() => {
@@ -1530,9 +1574,10 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 ? options.variant
                 : resolveModelVariantSelection(providerId, modelId);
             const shouldApplyVariant = options?.applyVariant === true || resolvedVariant !== undefined;
+            const explicitIntent = { modelProvenance: 'explicit' as const };
             const result = shouldApplyVariant
-                ? applyModelSelectionWithVariant(providerId, modelId, resolvedVariant, effectiveAgentName)
-                : tryApplyModelSelection(providerId, modelId, effectiveAgentName);
+                ? applyModelSelectionWithVariant(providerId, modelId, resolvedVariant, effectiveAgentName, explicitIntent)
+                : tryApplyModelSelection(providerId, modelId, effectiveAgentName, undefined, explicitIntent);
             if (result !== 'applied') {
                 if (result === 'provider-missing') {
                     console.error('[ModelControls] Provider not available for selection:', providerId);
@@ -1927,7 +1972,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         };
 
         const handleMobileModelApply = (providerId: string, modelId: string, variant: string | undefined) => {
-            const result = applyModelSelectionWithVariant(providerId, modelId, variant);
+            const result = applyModelSelectionWithVariant(providerId, modelId, variant, undefined, { modelProvenance: 'explicit' });
             if (result !== 'applied') {
                 if (result === 'provider-missing') {
                     console.error('[ModelControls] Provider not available for selection:', providerId);
@@ -1983,7 +2028,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     { providerId },
                 );
             const variantFastIcon = (cursorVariantState?.fastEnabled || genericVariantDisplayState?.fastEnabled || genericVariantState?.fastEnabled) ? (
-                <span className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center" aria-label="Fast mode" title="Fast mode">
+                <span className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center" aria-label="Fast Mode" title="Fast Mode">
                     <RiFlashlightFill className="h-3.5 w-3.5 text-[var(--status-warning)]" />
                 </span>
             ) : null;
@@ -2313,7 +2358,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         };
 
         const handleSelect = (variant: string | undefined) => {
-            const result = applyModelSelectionWithVariant(targetProviderId, targetModelId, variant);
+            const result = applyModelSelectionWithVariant(targetProviderId, targetModelId, variant, undefined, { modelProvenance: 'explicit' });
             if (result !== 'applied') {
                 return;
             }
@@ -2330,7 +2375,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 return;
             }
             const selection = resolveCursorAcpVariantSelection(targetProvider, targetModelId, selectedVariant, updates);
-            const result = applyModelSelectionWithVariant(targetProviderId, selection.modelId, selection.variant);
+            const result = applyModelSelectionWithVariant(targetProviderId, selection.modelId, selection.variant, undefined, { modelProvenance: 'explicit' });
             if (result !== 'applied') {
                 return;
             }
@@ -2346,7 +2391,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 return;
             }
             const selection = resolveGenericModelVariantSelection(targetProvider, targetModelId, selectedVariant, updates);
-            const result = applyModelSelectionWithVariant(targetProviderId, selection.modelId, selection.variant);
+            const result = applyModelSelectionWithVariant(targetProviderId, selection.modelId, selection.variant, undefined, { modelProvenance: 'explicit' });
             if (result !== 'applied') {
                 return;
             }
@@ -2650,7 +2695,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     { providerId: providerID },
                 ) ?? '';
             const rowFastIcon = (cursorRowVariantState?.fastEnabled || genericRowVariantDisplayState?.fastEnabled || genericRowVariantState?.fastEnabled) ? (
-                <span className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center" aria-label="Fast mode" title="Fast mode">
+                <span className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center" aria-label="Fast Mode" title="Fast Mode">
                     <RiFlashlightFill className="h-3.5 w-3.5 text-[var(--status-warning)]" />
                 </span>
             ) : null;
@@ -2900,7 +2945,10 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 ? cursorVariantState.visibleVariantOptions.length > 0 || cursorVariantState.canToggleThinking
                 : genericVariantState
                     ? genericVariantState.visibleVariantOptions.length > 0 || genericVariantState.canToggleFast
-                    : modelVariants && getOrderedThinkingVariants(modelVariants).length > 0;
+                    : modelVariants && getOrderedThinkingVariants(
+                        modelVariants,
+                        { providerId: highlightedItem.providerID },
+                    ).length > 0;
         })() : false;
 
         // Handle keyboard navigation
@@ -2974,10 +3022,14 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     return;
                 }
 
-                const variantKeys = getOrderedThinkingVariants(modelVariants);
+                const variantKeys = getOrderedThinkingVariants(modelVariants, { providerId: providerID });
                 if (variantKeys.length === 0) return;
 
-                const resolvedActiveVariant = resolveThinkingVariant(activeModelVariant, variantKeys);
+                const resolvedActiveVariant = resolveThinkingVariant(
+                    activeModelVariant,
+                    variantKeys,
+                    { providerId: providerID },
+                );
                 const currentVariantIndex = resolvedActiveVariant ? variantKeys.indexOf(resolvedActiveVariant) : -1;
                 const safeCurrentIndex = currentVariantIndex >= 0 ? currentVariantIndex : 0;
                 const direction = e.key === 'ArrowRight' ? 1 : -1;
@@ -3497,7 +3549,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         const fastEnabled = Boolean(cursorVariantState?.fastEnabled || genericVariantDisplayState?.fastEnabled || genericVariantState?.fastEnabled);
         const colorClass = displayVariant ? 'text-[color:var(--status-info)]' : 'text-muted-foreground';
         const fastIcon = fastEnabled ? (
-                <span className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center" aria-label="Fast mode" title="Fast mode">
+                <span className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center" aria-label="Fast Mode" title="Fast Mode">
                     <RiFlashlightFill className="h-3.5 w-3.5 text-[var(--status-warning)]" />
             </span>
         ) : null;
@@ -3507,7 +3559,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 return;
             }
             const selection = resolveCursorAcpVariantSelection(currentProvider, currentModelId, currentVariant, updates);
-            applyModelSelectionWithVariant(currentProviderId, selection.modelId, selection.variant);
+            applyModelSelectionWithVariant(currentProviderId, selection.modelId, selection.variant, undefined, { modelProvenance: 'explicit' });
         };
 
         const handleGenericVariantUpdate = (updates: { fastEnabled?: boolean; variant?: string }) => {
@@ -3515,7 +3567,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 return;
             }
             const selection = resolveGenericModelVariantSelection(currentProvider, currentModelId, currentVariant, updates);
-            applyModelSelectionWithVariant(currentProviderId, selection.modelId, selection.variant);
+            applyModelSelectionWithVariant(currentProviderId, selection.modelId, selection.variant, undefined, { modelProvenance: 'explicit' });
         };
 
         if (isCompact) {

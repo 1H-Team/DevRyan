@@ -1,5 +1,6 @@
 import React from 'react';
 import { RiAiAgentLine, RiGitBranchLine, RiRefreshLine } from '@remixicon/react';
+import { formatManagedTaskDisplayName } from '@openchamber/orchestration-runtime';
 
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/i18n';
@@ -9,19 +10,49 @@ import {
   useManagedOrchestrationStore,
 } from '@/stores/useManagedOrchestrationStore';
 import { ManagedTaskRow } from './ManagedTaskRow';
+import type { PendingManagedTaskDispatch } from './managedTaskDispatch';
+import { formatAgentLabel } from './mobileControlsUtils';
 import {
   getManagedTaskWindow,
   MANAGED_TASK_ROW_BATCH,
   shouldRenderManagedTaskList,
 } from './managedTaskListWindow';
 
+const EMPTY_PENDING_DISPATCHES: readonly PendingManagedTaskDispatch[] = [];
+
+export const ManagedTaskPreparingRow = React.memo(({
+  dispatch,
+}: {
+  dispatch: PendingManagedTaskDispatch;
+}) => {
+  const { t } = useI18n();
+  return (
+    <article data-managed-task-pending-id={dispatch.partId}>
+      <div className="flex min-w-0 items-center gap-3 px-3 py-2.5">
+        <div className="min-w-0 flex-1">
+          <h4 className="truncate typography-ui-label font-medium text-foreground">
+            {formatManagedTaskDisplayName(dispatch.label)}
+          </h4>
+          <p role="status" className="truncate typography-meta text-muted-foreground">
+            {t('chat.managedTasks.summary.preparing')}
+          </p>
+        </div>
+      </div>
+    </article>
+  );
+});
+
+ManagedTaskPreparingRow.displayName = 'ManagedTaskPreparingRow';
+
 export const ManagedTaskList = React.memo(({
   rootSessionId,
   taskIds: explicitTaskIds,
+  pendingDispatches = EMPTY_PENDING_DISPATCHES,
   onContentChange,
 }: {
   rootSessionId?: string;
   taskIds?: readonly string[];
+  pendingDispatches?: readonly PendingManagedTaskDispatch[];
   onContentChange?: () => void;
 }) => {
   const { t } = useI18n();
@@ -46,15 +77,48 @@ export const ManagedTaskList = React.memo(({
     visibleLimit,
     (taskId) => useManagedOrchestrationStore.getState().tasksById[taskId]?.agent,
   );
+  const displayGroups = React.useMemo(() => {
+    const groups = new Map<string, {
+      agent: string;
+      taskIds: string[];
+      pendingDispatches: PendingManagedTaskDispatch[];
+    }>();
+
+    for (const group of agentGroups) {
+      groups.set(group.agent.toLocaleLowerCase(), {
+        agent: group.agent,
+        taskIds: group.taskIds,
+        pendingDispatches: [],
+      });
+    }
+
+    for (const dispatch of pendingDispatches) {
+      const key = dispatch.agent.toLocaleLowerCase();
+      const existing = groups.get(key);
+      if (existing) {
+        existing.pendingDispatches.push(dispatch);
+      } else {
+        groups.set(key, {
+          agent: dispatch.agent,
+          taskIds: [],
+          pendingDispatches: [dispatch],
+        });
+      }
+    }
+
+    return Array.from(groups.values());
+  }, [agentGroups, pendingDispatches]);
   const showRuntimeWarnings = rootSessionId !== undefined && explicitTaskIds === undefined;
 
   React.useLayoutEffect(() => {
-    if (taskIds.length > 0 || recoveryWarning || snapshotError) onContentChange?.();
-  }, [onContentChange, recoveryWarning, snapshotError, taskIds, visibleLimit]);
+    if (taskIds.length > 0 || pendingDispatches.length > 0 || recoveryWarning || snapshotError) {
+      onContentChange?.();
+    }
+  }, [onContentChange, pendingDispatches, recoveryWarning, snapshotError, taskIds, visibleLimit]);
 
   if (!shouldRenderManagedTaskList({
     available,
-    taskCount: taskIds.length,
+    taskCount: taskIds.length + pendingDispatches.length,
     recoveryWarning: showRuntimeWarnings ? recoveryWarning : null,
     snapshotError: showRuntimeWarnings ? snapshotError : null,
   })) return null;
@@ -107,25 +171,31 @@ export const ManagedTaskList = React.memo(({
           </div>
         ) : null}
         <div className="divide-y divide-border/70">
-          {agentGroups.map((group) => (
-            <section key={group.agent.toLocaleLowerCase()} aria-label={group.agent}>
-              <div className="flex h-7 items-center bg-muted/25 px-3 typography-meta text-muted-foreground">
-                <span className="inline-flex min-w-0 items-center gap-1.5 leading-none">
-                  <RiAiAgentLine
-                    className="size-3.5 shrink-0"
-                    style={{ color: `var(${getAgentColor(group.agent).var})` }}
-                    aria-hidden="true"
-                  />
-                  <span className="truncate capitalize">{group.agent}</span>
-                </span>
-              </div>
-              <div className="divide-y divide-border/60">
-                {group.taskIds.map((taskId) => (
-                  <ManagedTaskRow key={taskId} taskId={taskId} onContentChange={onContentChange} />
-                ))}
-              </div>
-            </section>
-          ))}
+          {displayGroups.map((group) => {
+            const agentLabel = formatAgentLabel(group.agent);
+            return (
+              <section key={group.agent.toLocaleLowerCase()} aria-label={agentLabel}>
+                <div className="flex h-7 items-center bg-muted/25 px-3 typography-meta text-muted-foreground">
+                  <span className="inline-flex min-w-0 items-center gap-1.5 leading-none">
+                    <RiAiAgentLine
+                      className="size-3.5 shrink-0"
+                      style={{ color: `var(${getAgentColor(group.agent).var})` }}
+                      aria-hidden="true"
+                    />
+                    <span className="truncate">{agentLabel}</span>
+                  </span>
+                </div>
+                <div className="divide-y divide-border/60">
+                  {group.taskIds.map((taskId) => (
+                    <ManagedTaskRow key={taskId} taskId={taskId} onContentChange={onContentChange} />
+                  ))}
+                  {group.pendingDispatches.map((dispatch) => (
+                    <ManagedTaskPreparingRow key={dispatch.partId} dispatch={dispatch} />
+                  ))}
+                </div>
+              </section>
+            );
+          })}
         </div>
       </div>
     </section>

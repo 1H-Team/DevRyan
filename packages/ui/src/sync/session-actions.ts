@@ -6,13 +6,17 @@
 import type { OpencodeClient, Session, Message, Part } from "@opencode-ai/sdk/v2/client"
 import type { StoreApi } from "zustand"
 import { Binary } from "./binary"
-import { useSessionUIStore } from "./session-ui-store"
 import { useInputStore, type RestoredAttachment } from "./input-store"
 import type { ChildStoreManager, DirectoryStore } from "./child-store"
 import { opencodeClient } from "@/lib/opencode/client"
-import { useGlobalSessionsStore } from "@/stores/useGlobalSessionsStore"
+import {
+  beginGlobalSessionMembershipMutation,
+  queueGlobalSessionsRefreshAfterMutation,
+  settleGlobalSessionMembershipMutation,
+  useGlobalSessionsStore,
+} from "@/stores/useGlobalSessionsStore"
 import { useConfigStore } from "@/stores/useConfigStore"
-import { registerSessionDirectory } from "./sync-refs"
+import { getSessionUIStore, registerSessionDirectory } from "./sync-refs"
 import { registerGitGenerationSession } from "@/lib/git/gitGenerationSessions"
 import { isSyntheticPart } from "@/lib/messages/synthetic"
 import { materializeSessionSnapshots } from "./materialization"
@@ -32,6 +36,7 @@ import { hasMessageRecordInfo, unwrapMessageRecordsResult } from "./message-fetc
 import { isSessionWorkingFromState } from "./session-working"
 import { isTransientError, retry } from "./retry"
 import { useManagedOrchestrationStore } from "@/stores/useManagedOrchestrationStore"
+import { createClientMessageId } from "./client-message-id"
 import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
 import {
   clearAbortGuard,
@@ -168,7 +173,7 @@ export async function waitForConnectionOrThrow(): Promise<void> {
 }
 
 function getSessionDirectory(sessionId: string): string | undefined {
-  return useSessionUIStore.getState().getDirectoryForSession(sessionId) || dir()
+  return getSessionUIStore().getState().getDirectoryForSession(sessionId) || dir()
 }
 
 function getSessionStatusForAction(sessionId: string, directoryOverride?: string) {
@@ -247,7 +252,7 @@ function restoreUserMessageInput(parts: Part[], messageText: string): void {
 type AbortDisplayReason = "manual" | "steered"
 
 function markSessionAbort(sessionId: string, reason: AbortDisplayReason, messageId?: string): void {
-  useSessionUIStore.setState((state) => {
+  getSessionUIStore().setState((state) => {
     const flags = new Map(state.sessionAbortFlags)
     const record: { timestamp: number; acknowledged: boolean; reason: AbortDisplayReason; id?: string } = {
       reason,
@@ -828,7 +833,7 @@ async function mutateSessionsInDepthOrder(
 
 function getSessionReplyClient(sessionId?: string): OpencodeClient {
   const directory = sessionId
-    ? useSessionUIStore.getState().getDirectoryForSession(sessionId)
+    ? getSessionUIStore().getState().getDirectoryForSession(sessionId)
     : null
   if (directory) {
     return opencodeClient.getScopedSdkClient(directory)
@@ -856,7 +861,7 @@ function resolveDirectoryForBlockingRequest(
     }
   }
 
-  const sessionDirectory = useSessionUIStore.getState().getDirectoryForSession(sessionId)
+  const sessionDirectory = getSessionUIStore().getState().getDirectoryForSession(sessionId)
   if (sessionDirectory) {
     return sessionDirectory
   }
@@ -982,7 +987,7 @@ export async function createSession(
   if (!session) return null
 
   const sessionDirectory = (session as { directory?: string }).directory ?? directoryOverride ?? null
-  useSessionUIStore.getState().setCurrentSession(session.id, sessionDirectory)
+  getSessionUIStore().getState().setCurrentSession(session.id, sessionDirectory)
   return session
 }
 
@@ -1026,9 +1031,9 @@ export async function createSessionRecord(
     // can be routed to the correct child store.
     if (sessionDirectory) {
       registerSessionDirectory(session.id, sessionDirectory)
-      useSessionUIStore.getState().setSessionDirectory(session.id, sessionDirectory)
+      getSessionUIStore().getState().setSessionDirectory(session.id, sessionDirectory)
     }
-    useSessionUIStore.getState().markSessionAsOpenChamberCreated(session.id)
+    getSessionUIStore().getState().markSessionAsOpenChamberCreated(session.id)
     if (!isHiddenCreatedSession) {
       useGlobalSessionsStore.getState().upsertSession(session)
     }
@@ -1066,9 +1071,12 @@ export async function deleteSessions(sessionIds: string[]): Promise<{ deletedIds
   const depthById = getSessionDepths(ids)
   const sessionSnapshots = getKnownSessionSnapshots(ids)
   await abortWorkingSessionsBeforeRemoval(ids, knownDirectoryById)
+  const membershipMutation = beginGlobalSessionMembershipMutation({
+    kind: "delete",
+    sessionIds: ids,
+  })
   const removalSnapshots = optimisticRemoveSessions(ids, knownDirectoryById)
-  useGlobalSessionsStore.getState().removeSessions(ids)
-  const ui = useSessionUIStore.getState()
+  const ui = getSessionUIStore().getState()
   const previousCurrentSessionId = ui.currentSessionId
   const previousCurrentDirectory = previousCurrentSessionId ? directoryById.get(previousCurrentSessionId) : undefined
   if (previousCurrentSessionId && ids.includes(previousCurrentSessionId)) {
@@ -1079,18 +1087,22 @@ export async function deleteSessions(sessionIds: string[]): Promise<{ deletedIds
     ids,
     depthById,
     async (sessionId) => {
-      await sdk().session.delete({ sessionID: sessionId, directory: directoryById.get(sessionId) })
+      await sdk().session.delete(
+        { sessionID: sessionId, directory: directoryById.get(sessionId) },
+        { throwOnError: true },
+      )
     },
     "deleteSession",
   )
 
-  if (successfulIds.length > 0) {
-    useGlobalSessionsStore.getState().removeSessions(successfulIds)
-  }
+  settleGlobalSessionMembershipMutation(membershipMutation, { successfulIds, failedIds })
   restoreOptimisticallyRemovedSessions(removalSnapshots, failedIds)
   useGlobalSessionsStore.getState().restoreSessions(filterSnapshotsById(sessionSnapshots, failedIds))
   if (previousCurrentSessionId && failedIds.includes(previousCurrentSessionId)) {
-    useSessionUIStore.getState().setCurrentSession(previousCurrentSessionId, previousCurrentDirectory ?? null)
+    getSessionUIStore().getState().setCurrentSession(previousCurrentSessionId, previousCurrentDirectory ?? null)
+  }
+  if (successfulIds.length > 0) {
+    void queueGlobalSessionsRefreshAfterMutation()
   }
 
   return makeBulkResult("deletedIds", successfulIds, failedIds)
@@ -1100,6 +1112,11 @@ export async function deleteSessions(sessionIds: string[]): Promise<{ deletedIds
 export async function deleteSessionInDirectory(sessionId: string, directory: string): Promise<boolean> {
   if (!_childStores) return false
   await abortWorkingSessionsBeforeRemoval([sessionId], new Map([[sessionId, directory]]))
+  const sessionSnapshots = getKnownSessionSnapshots([sessionId])
+  const membershipMutation = beginGlobalSessionMembershipMutation({
+    kind: "delete",
+    sessionIds: [sessionId],
+  })
   const store = _childStores.ensureChild(directory)
   const current = store.getState()
   const sessions = [...current.session]
@@ -1110,15 +1127,27 @@ export async function deleteSessionInDirectory(sessionId: string, directory: str
     sessions.splice(result.index, 1)
     store.setState({ session: sessions })
   }
-  const ui = useSessionUIStore.getState()
+  const ui = getSessionUIStore().getState()
   if (ui.currentSessionId === sessionId) ui.setCurrentSession(null)
   try {
-    await sdk().session.delete({ sessionID: sessionId, directory })
-    useGlobalSessionsStore.getState().removeSessions([sessionId])
+    await sdk().session.delete(
+      { sessionID: sessionId, directory },
+      { throwOnError: true },
+    )
+    settleGlobalSessionMembershipMutation(membershipMutation, {
+      successfulIds: [sessionId],
+      failedIds: [],
+    })
+    void queueGlobalSessionsRefreshAfterMutation()
     return true
   } catch (error) {
     console.error("[session-actions] deleteSessionInDirectory failed", error)
+    settleGlobalSessionMembershipMutation(membershipMutation, {
+      successfulIds: [],
+      failedIds: [sessionId],
+    })
     if (snapshot) store.setState({ session: snapshot })
+    useGlobalSessionsStore.getState().restoreSessions(sessionSnapshots)
     return false
   }
 }
@@ -1145,13 +1174,15 @@ export async function archiveSessions(sessionIds: string[]): Promise<{ archivedI
   const archivedAt = Date.now()
   const directoryById = new Map(ids.map((sessionId) => [sessionId, getSessionDirectoryForMutation(sessionId, knownDirectoryById)]))
   const sessionSnapshots = getKnownSessionSnapshots(ids)
-  const snapshotIds = new Set(sessionSnapshots.map((session) => session.id))
-  const missingSnapshotIds = ids.filter((sessionId) => !snapshotIds.has(sessionId))
   await abortWorkingSessionsBeforeRemoval(ids, knownDirectoryById)
+  const membershipMutation = beginGlobalSessionMembershipMutation({
+    kind: "archive",
+    sessionIds: ids,
+    snapshots: sessionSnapshots,
+    archivedAt,
+  })
   const removalSnapshots = optimisticRemoveSessions(ids, knownDirectoryById)
-  useGlobalSessionsStore.getState().archiveSessionSnapshots(sessionSnapshots, archivedAt)
-  useGlobalSessionsStore.getState().removeSessions(missingSnapshotIds)
-  const ui = useSessionUIStore.getState()
+  const ui = getSessionUIStore().getState()
   const previousCurrentSessionId = ui.currentSessionId
   const previousCurrentDirectory = previousCurrentSessionId ? directoryById.get(previousCurrentSessionId) : undefined
   if (previousCurrentSessionId && ids.includes(previousCurrentSessionId)) {
@@ -1161,11 +1192,15 @@ export async function archiveSessions(sessionIds: string[]): Promise<{ archivedI
   const { successfulIds, failedIds } = await mutateSessionsInParallel(
     ids,
     async (sessionId) => {
-      await sdk().session.update({ sessionID: sessionId, directory: directoryById.get(sessionId), time: { archived: archivedAt } })
+      await sdk().session.update(
+        { sessionID: sessionId, directory: directoryById.get(sessionId), time: { archived: archivedAt } },
+        { throwOnError: true },
+      )
     },
     "archiveSession",
   )
 
+  settleGlobalSessionMembershipMutation(membershipMutation, { successfulIds, failedIds })
   if (successfulIds.length > 0) {
     for (const sessionId of successfulIds) {
       markArchived(sessionId, directoryById.get(sessionId))
@@ -1174,7 +1209,10 @@ export async function archiveSessions(sessionIds: string[]): Promise<{ archivedI
   restoreOptimisticallyRemovedSessions(removalSnapshots, failedIds)
   useGlobalSessionsStore.getState().restoreSessions(filterSnapshotsById(sessionSnapshots, failedIds))
   if (previousCurrentSessionId && failedIds.includes(previousCurrentSessionId)) {
-    useSessionUIStore.getState().setCurrentSession(previousCurrentSessionId, previousCurrentDirectory ?? null)
+    getSessionUIStore().getState().setCurrentSession(previousCurrentSessionId, previousCurrentDirectory ?? null)
+  }
+  if (successfulIds.length > 0) {
+    void queueGlobalSessionsRefreshAfterMutation()
   }
 
   return makeBulkResult("archivedIds", successfulIds, failedIds)
@@ -1197,18 +1235,24 @@ export async function unarchiveSessions(sessionIds: string[]): Promise<{ unarchi
   const sessionSnapshots = getKnownSessionSnapshots(ids)
   const optimisticUnarchivedSnapshots = markSnapshotsUnarchived(sessionSnapshots)
   const optimisticIds = new Set(optimisticUnarchivedSnapshots.map((session) => session.id))
-  useGlobalSessionsStore.getState().restoreSessions(optimisticUnarchivedSnapshots)
+  const membershipMutation = beginGlobalSessionMembershipMutation({
+    kind: "unarchive",
+    sessionIds: ids,
+    snapshots: sessionSnapshots,
+  })
   const { successfulIds, failedIds } = await mutateSessionsInParallel(
     ids,
     async (sessionId) => {
-      await sdk().session.update({ sessionID: sessionId, directory: directoryById.get(sessionId), time: { archived: 0 } })
+      await sdk().session.update(
+        { sessionID: sessionId, directory: directoryById.get(sessionId), time: { archived: 0 } },
+        { throwOnError: true },
+      )
     },
     "unarchiveSession",
   )
 
+  settleGlobalSessionMembershipMutation(membershipMutation, { successfulIds, failedIds })
   if (successfulIds.length > 0) {
-    const missingOptimisticIds = successfulIds.filter((sessionId) => !optimisticIds.has(sessionId))
-    useGlobalSessionsStore.getState().unarchiveSessions(missingOptimisticIds)
     for (const sessionId of successfulIds) {
       markUnarchived(sessionId, directoryById.get(sessionId))
     }
@@ -1217,6 +1261,9 @@ export async function unarchiveSessions(sessionIds: string[]): Promise<{ unarchi
     const failedOptimisticIds = failedIds.filter((sessionId) => optimisticIds.has(sessionId))
     useGlobalSessionsStore.getState().removeSessions(failedOptimisticIds)
     useGlobalSessionsStore.getState().restoreSessions(filterSnapshotsById(sessionSnapshots, failedIds))
+  }
+  if (successfulIds.length > 0) {
+    void queueGlobalSessionsRefreshAfterMutation()
   }
 
   return makeBulkResult("unarchivedIds", successfulIds, failedIds)
@@ -1252,40 +1299,6 @@ export async function unshareSession(sessionId: string): Promise<Session | null>
 // Optimistic message send — insert user message before API call, rollback on error
 // ---------------------------------------------------------------------------
 
-// ID generator matching OpenCode's Identifier.ascending format.
-// Uses BigInt(timestamp) * 0x1000 + counter, encoded as 6 hex bytes + random base62.
-// This ensures client-generated IDs sort correctly with server-generated ones.
-let lastIdTimestamp = 0
-let idCounter = 0
-
-function ascendingId(prefix: string): string {
-  const now = Date.now()
-  if (now !== lastIdTimestamp) {
-    lastIdTimestamp = now
-    idCounter = 0
-  }
-  idCounter += 1
-
-  const value = BigInt(now) * BigInt(0x1000) + BigInt(idCounter)
-  const bytes = new Uint8Array(6)
-  for (let i = 0; i < 6; i++) {
-    bytes[i] = Number((value >> BigInt(40 - 8 * i)) & BigInt(0xff))
-  }
-
-  let hex = ""
-  for (let i = 0; i < bytes.length; i++) {
-    hex += bytes[i].toString(16).padStart(2, "0")
-  }
-
-  const chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-  let rand = ""
-  for (let i = 0; i < 14; i++) {
-    rand += chars[Math.floor(Math.random() * 62)]
-  }
-
-  return `${prefix}_${hex}${rand}`
-}
-
 /**
  * Wraps an async send operation with optimistic user-message insertion.
  * Uses useSync()'s optimistic infrastructure — message + parts are inserted
@@ -1308,6 +1321,7 @@ export async function optimisticSend(input: {
   onMessageRollback?: (messageID: string) => void
   signal?: AbortSignal
   preserveProviderRecovery?: boolean
+  messageID?: string
 }): Promise<void> {
   if (!_optimisticAdd || !_optimisticRemove) {
     throw new Error("Optimistic refs not set — is useSync() mounted?")
@@ -1317,17 +1331,17 @@ export async function optimisticSend(input: {
   await waitForConnectionOrThrow()
   throwIfAborted(input.signal)
 
-  const messageDirectory = input.directory || useSessionUIStore.getState().getDirectoryForSession(input.sessionId) || dir()
+  const messageDirectory = input.directory || getSessionUIStore().getState().getDirectoryForSession(input.sessionId) || dir()
   const storeForMessage = directoryStore(messageDirectory)
-  const messageID = ascendingId("msg")
-  const textPartId = ascendingId("prt")
+  const messageID = input.messageID ?? createClientMessageId("msg")
+  const textPartId = createClientMessageId("prt")
 
   const optimisticParts: Part[] = [
     { id: textPartId, type: "text", text: input.content } as Part,
   ]
   if (input.files) {
     for (const f of input.files) {
-      optimisticParts.push({ id: ascendingId("prt"), type: "file", mime: f.mime, url: f.url, filename: f.filename } as Part)
+      optimisticParts.push({ id: createClientMessageId("prt"), type: "file", mime: f.mime, url: f.url, filename: f.filename } as Part)
     }
   }
   // Include the plan-mode synthetic instruction part so plan-card detection
@@ -1336,7 +1350,7 @@ export async function optimisticSend(input: {
   // not echo client-only metadata, persisted Set may be stale on reload).
   if (input.planMode === true) {
     optimisticParts.push({
-      id: ascendingId("prt"),
+      id: createClientMessageId("prt"),
       type: "text",
       text: "User has requested to enter plan mode.",
       synthetic: true,
@@ -1494,14 +1508,14 @@ async function cancelActiveManagedSubtasks(rootSessionId: string): Promise<void>
 export async function abortCurrentOperation(sessionId: string): Promise<void> {
   if (!sessionId) return
   const sessionDirectory = getSessionDirectory(sessionId)
-  useSessionUIStore.getState().abortPendingSend?.(sessionId)
+  getSessionUIStore().getState().abortPendingSend?.(sessionId)
   await cancelActiveManagedSubtasks(sessionId)
   try {
     postAbortRequestedMark(sessionId, sessionDirectory)
     registerManualAbortGuard(sessionId, sessionDirectory)
     await sdk().session.abort({ sessionID: sessionId, directory: sessionDirectory })
     markManualAbort(sessionId, getLatestAssistantMessageId(sessionId, sessionDirectory))
-    useSessionUIStore.getState().clearSessionTurnCompletion(sessionId)
+    getSessionUIStore().getState().clearSessionTurnCompletion(sessionId)
     forceSessionIdleAfterManualAbort(sessionId, sessionDirectory)
   } catch (error) {
     // The stop never reached the server — do not mask live retry/busy state.
@@ -1542,23 +1556,7 @@ function forceSessionIdleAfterManualAbort(sessionId: string, directoryOverride?:
 }
 
 export async function interruptCurrentOperationForQueuedSend(sessionId: string): Promise<void> {
-  if (!sessionId) return
-  const sessionDirectory = getSessionDirectory(sessionId)
-  const status = getSessionStatusForAction(sessionId, sessionDirectory)
-  if (status?.type === "idle") return
-
-  postAbortRequestedMark(sessionId, sessionDirectory)
-  registerManualAbortGuard(sessionId, sessionDirectory)
-  try {
-    await sdk().session.abort({ sessionID: sessionId, directory: sessionDirectory })
-  } catch (error) {
-    // The interrupt never reached the server — do not mask live status.
-    clearAbortGuard(sessionId)
-    throw error
-  }
-  markManualAbort(sessionId, getLatestAssistantMessageId(sessionId, sessionDirectory))
-  forceSessionIdleAfterManualAbort(sessionId, sessionDirectory)
-  await waitForSessionIdleAfterQueuedInterrupt(sessionId, sessionDirectory)
+  await interruptCurrentOperationForSteeredSend(sessionId)
 }
 
 export async function interruptCurrentOperationForSteeredSend(sessionId: string): Promise<void> {
@@ -1964,7 +1962,7 @@ export async function forkFromMessage(sessionId: string, messageId: string): Pro
   }
 
   // Switch to new session
-  useSessionUIStore.getState().setCurrentSession(forkedSession.id)
+  getSessionUIStore().getState().setCurrentSession(forkedSession.id)
 
   // Restore forked message text and non-synthetic file attachments to input.
   if (shouldRestoreInput) {

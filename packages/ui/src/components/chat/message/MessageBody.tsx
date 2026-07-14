@@ -51,7 +51,11 @@ import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useSessions } from '@/sync/sync-context';
 import { useI18n } from '@/lib/i18n';
 import { extractLoopbackUrls } from '@/lib/url';
-import { filterGroupedActivityReasoning, shouldRenderInlineReasoning } from './reasoningRenderPolicy';
+import {
+    filterGroupedActivityReasoning,
+    getReasoningPartRenderKey,
+    shouldRenderReasoning,
+} from './reasoningRenderPolicy';
 
 const CONTAIN_LAYOUT_STYLE = { contain: 'layout' as const, transform: 'translateZ(0)' };
 const MESSAGE_FOOTER_CONTAINER_STYLE = { containerType: 'inline-size' as const, containerName: 'message-footer' };
@@ -855,8 +859,6 @@ const AssistantMessageBody = React.memo(({
     messageCompletedAt,
     messageCreatedAt,
     providerID,
-    modelID: _modelID,
-
     syntaxTheme,
     isMobile,
     alwaysShowActions,
@@ -891,7 +893,6 @@ const AssistantMessageBody = React.memo(({
     const alwaysShowMessageActions = Boolean(alwaysShowActions ?? isMobile);
     const awaitingMessageCompletion = !isMessageCompleted;
     const animateActivityRows = awaitingMessageCompletion || Boolean(turnGroupingContext?.isWorking);
-
     const visibleParts = React.useMemo(() => {
         return collapseSupersededTodoWrites(parts, turnGroupingContext?.lastTodoToolPartId ?? null)
             .filter((part) => !isEmptyTextPart(part))
@@ -1054,7 +1055,6 @@ const AssistantMessageBody = React.memo(({
     const isLastAssistantInTurn = turnGroupingContext?.isLastAssistantInTurn ?? false;
     const hasStopFinish = messageFinish === 'stop';
     const isCursorAssistantProvider = isCursorProvider(providerID);
-    void _modelID;
 
     const currentSession = React.useMemo(() => {
         if (!currentSessionId) {
@@ -1524,14 +1524,13 @@ const AssistantMessageBody = React.memo(({
             }
 
             if (part.type === 'reasoning') {
-                if (shouldRenderInlineReasoning(showReasoningTraces)) {
+                if (shouldRenderReasoning(showReasoningTraces)) {
                     rendered.push(
                         <ReasoningPart
-                            key={`reasoning-${messageId}-${i}`}
+                            key={getReasoningPartRenderKey(messageId, part.id, i)}
                             part={part}
                             messageId={messageId}
                             onContentChange={onContentChange}
-                            alwaysShowActions={alwaysShowMessageActions}
                         />
                     );
                 }
@@ -1544,11 +1543,18 @@ const AssistantMessageBody = React.memo(({
                 const toolName = normalizeToolName(toolPart.tool);
 
                 if (isManagedTaskToolName(toolName)) {
-                    if (toolPart.id === managedTaskDispatch.anchorPartId && managedTaskDispatch.taskIds.length > 0) {
+                    if (
+                        toolPart.id === managedTaskDispatch.anchorPartId
+                        && (
+                            managedTaskDispatch.taskIds.length > 0
+                            || managedTaskDispatch.pendingDispatches.length > 0
+                        )
+                    ) {
                         rendered.push(
                             <ManagedTaskList
                                 key={`managed-task-dispatch-${messageId}`}
                                 taskIds={managedTaskDispatch.taskIds}
+                                pendingDispatches={managedTaskDispatch.pendingDispatches}
                                 onContentChange={onContentChange}
                             />,
                         );

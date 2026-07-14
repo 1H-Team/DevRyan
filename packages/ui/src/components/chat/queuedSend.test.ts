@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, test } from "bun:test"
+import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import type { AttachedFile } from "@/stores/types/sessionTypes"
 import { useMessageQueueStore } from "@/stores/messageQueueStore"
-import { flushQueuedMessagesForSession, isQueuedMessageFlushInFlight } from "./queuedSend"
+import {
+  flushQueuedMessagesForSession,
+  hasCompletedQueuedTurn,
+  isQueuedMessageFlushInFlight,
+  sendQueuedMessagesNowForSession,
+} from "./queuedSend"
 
 const createAttachment = (filename: string): AttachedFile => ({
   id: filename,
@@ -13,6 +19,20 @@ const createAttachment = (filename: string): AttachedFile => ({
   source: "local",
 })
 
+const assistantMessage = (
+  id: string,
+  parentID: string,
+  completed?: number,
+  finish?: string,
+): Message => ({
+  id,
+  sessionID: "session-a",
+  role: "assistant",
+  parentID,
+  time: completed ? { created: 1, completed } : { created: 1 },
+  finish,
+} as Message)
+
 describe("queued message flushing", () => {
   beforeEach(() => {
     useMessageQueueStore.setState({ queuedMessages: {}, queueModeEnabled: true })
@@ -23,6 +43,7 @@ describe("queued message flushing", () => {
 
     useMessageQueueStore.getState().addToQueue("session-a", {
       content: "first queued",
+      directory: "/repo/at-queue-time",
       sendConfig: {
         providerID: "provider-first",
         modelID: "model-first",
@@ -42,6 +63,9 @@ describe("queued message flushing", () => {
         planMode: false,
       },
     })
+    const queuedRows = useMessageQueueStore.getState().getQueueForSession("session-a")
+    expect(queuedRows.map((message) => message.id)).toHaveLength(2)
+    expect(queuedRows.map((message) => message.messageId)).toEqual([undefined, undefined])
 
     const sentCount = await flushQueuedMessagesForSession({
       sessionId: "session-a",
@@ -71,6 +95,7 @@ describe("queued message flushing", () => {
           variant,
           inputMode,
           planMode,
+          lifecycleCallbacks,
         ] = args
         sends.push({
           sessionId,
@@ -84,12 +109,18 @@ describe("queued message flushing", () => {
           variant,
           inputMode,
           planMode,
+          messageID: lifecycleCallbacks?.messageID,
+          directory: lifecycleCallbacks?.directory,
         })
       },
       waitForReadyToSendNext: async () => {},
     })
 
     expect(sentCount).toBe(2)
+    const dispatchedMessageIds = sends.map((send) => send.messageID as string)
+    expect(dispatchedMessageIds[0]?.startsWith("msg_")).toBe(true)
+    expect(dispatchedMessageIds[1]?.startsWith("msg_")).toBe(true)
+    expect(dispatchedMessageIds[0]).not.toBe(dispatchedMessageIds[1])
     expect(sends).toEqual([
       {
         sessionId: "session-a",
@@ -103,6 +134,8 @@ describe("queued message flushing", () => {
         variant: "fast",
         inputMode: "normal",
         planMode: true,
+        messageID: dispatchedMessageIds[0],
+        directory: "/repo/at-queue-time",
       },
       {
         sessionId: "session-a",
@@ -116,6 +149,8 @@ describe("queued message flushing", () => {
         variant: "careful",
         inputMode: "normal",
         planMode: false,
+        messageID: dispatchedMessageIds[1],
+        directory: undefined,
       },
     ])
     expect(useMessageQueueStore.getState().getQueueForSession("session-a")).toEqual([])
@@ -149,10 +184,14 @@ describe("queued message flushing", () => {
 
     expect(error).toBeInstanceOf(Error)
     expect((error as Error).message).toBe("send failed")
-    expect(useMessageQueueStore.getState().getQueueForSession("session-a").map((message) => message.content)).toEqual([
+    const restoredQueue = useMessageQueueStore.getState().getQueueForSession("session-a")
+    expect(restoredQueue.map((message) => message.content)).toEqual([
       "first queued",
       "second queued",
     ])
+    expect(restoredQueue[0]?.messageId?.startsWith("msg_")).toBe(true)
+    expect(restoredQueue[0]?.messageIdScope).toBe("dispatch")
+    expect(restoredQueue[1]?.messageId).toBe(undefined)
   })
 
   test("restores only unsent queued messages after a later send fails", async () => {
@@ -190,10 +229,14 @@ describe("queued message flushing", () => {
     expect((error as Error).message).toBe("send failed")
 
     expect(sends).toEqual(["first queued", "second queued"])
-    expect(useMessageQueueStore.getState().getQueueForSession("session-a").map((message) => message.content)).toEqual([
+    const restoredQueue = useMessageQueueStore.getState().getQueueForSession("session-a")
+    expect(restoredQueue.map((message) => message.content)).toEqual([
       "second queued",
       "third queued",
     ])
+    expect(restoredQueue[0]?.messageId?.startsWith("msg_")).toBe(true)
+    expect(restoredQueue[0]?.messageIdScope).toBe("dispatch")
+    expect(restoredQueue[1]?.messageId).toBe(undefined)
   })
 
   test("uses the original queued session even when another session is current", async () => {
@@ -227,8 +270,15 @@ describe("queued message flushing", () => {
 
   test("waits for each queued turn before sending the next queued message", async () => {
     const operations: string[] = []
-    useMessageQueueStore.getState().addToQueue("session-a", { content: "first queued" })
+    let dispatchPhase = "before-first-wait"
+    const generatedAt: string[] = []
+    let generatedId = 0
+    useMessageQueueStore.getState().addToQueue("session-a", {
+      content: "first queued",
+      directory: "/repo/queued",
+    })
     useMessageQueueStore.getState().addToQueue("session-a", { content: "second queued" })
+    let firstMessageId: string | undefined
 
     await flushQueuedMessagesForSession({
       sessionId: "session-a",
@@ -244,16 +294,95 @@ describe("queued message flushing", () => {
       sendMessageToSession: async (_sessionId, content) => {
         operations.push(`send:${content}`)
       },
-      waitForReadyToSendNext: async () => {
-        operations.push("wait")
+      createMessageId: () => {
+        generatedAt.push(dispatchPhase)
+        generatedId += 1
+        return `msg_dispatch_${generatedId}`
+      },
+      waitForReadyToSendNext: async (sessionId, messageId, directory) => {
+        firstMessageId = messageId
+        operations.push(`wait:${sessionId}:${messageId}:${directory}`)
+        dispatchPhase = "after-first-wait"
       },
     })
 
+    expect(firstMessageId?.startsWith("msg_")).toBe(true)
+    expect(generatedAt).toEqual(["before-first-wait", "after-first-wait"])
     expect(operations).toEqual([
       "send:first queued",
-      "wait",
+      `wait:session-a:${firstMessageId}:/repo/queued`,
       "send:second queued",
     ])
+  })
+
+  test("waits for the current correlated turn before the first natural auto-send", async () => {
+    const operations: string[] = []
+    useMessageQueueStore.getState().addToQueue("session-a", {
+      content: "first queued",
+      directory: "/repo/queued",
+    })
+    useMessageQueueStore.getState().addToQueue("session-a", { content: "second queued" })
+    let firstQueuedMessageId: string | undefined
+
+    await flushQueuedMessagesForSession({
+      sessionId: "session-a",
+      waitForCurrentTurnBeforeFirstSend: true,
+      getCurrentTurnContext: () => ({
+        messageId: "active-user-message",
+        directory: "/repo/active",
+      }),
+      fallbackSendConfig: {
+        providerID: "provider-a",
+        modelID: "model-a",
+      },
+      prepareQueuedMessage: (message, sendConfig) => ({
+        content: message.content,
+        providerID: sendConfig.providerID,
+        modelID: sendConfig.modelID,
+      }),
+      sendMessageToSession: async (_sessionId, content) => {
+        operations.push(`send:${content}`)
+      },
+      waitForReadyToSendNext: async (_sessionId, messageId, directory) => {
+        if (messageId !== "active-user-message") {
+          firstQueuedMessageId = messageId
+        }
+        operations.push(`wait:${messageId}:${directory}`)
+      },
+    })
+
+    expect(firstQueuedMessageId?.startsWith("msg_")).toBe(true)
+    expect(operations).toEqual([
+      "wait:active-user-message:/repo/active",
+      "send:first queued",
+      `wait:${firstQueuedMessageId}:/repo/queued`,
+      "send:second queued",
+    ])
+  })
+
+  test("settles only from a completed assistant message correlated to the queued user turn", () => {
+    const parts = new Map<string, Part[]>([
+      ["assistant-tool", [{
+        id: "part-tool",
+        sessionID: "session-a",
+        messageID: "assistant-tool",
+        type: "tool",
+        callID: "call-1",
+        tool: "read",
+        state: { status: "running", input: {}, time: { start: 1 } },
+      } as Part]],
+    ])
+    const getParts = (messageId: string) => parts.get(messageId) ?? []
+
+    expect(hasCompletedQueuedTurn([
+      assistantMessage("assistant-wrong-parent", "other-user", 2, "stop"),
+      assistantMessage("assistant-incomplete", "queued-user"),
+      assistantMessage("assistant-tool", "queued-user", 2, "tool-calls"),
+    ], getParts, "queued-user")).toBe(false)
+
+    expect(hasCompletedQueuedTurn([
+      assistantMessage("assistant-complete", "queued-user", 3, "stop"),
+    ], getParts, "queued-user")).toBe(true)
   })
 
   test("keeps claimed queue ownership visible until every claimed turn settles", async () => {
@@ -284,5 +413,113 @@ describe("queued message flushing", () => {
     releaseWait()
     await flush
     expect(isQueuedMessageFlushInFlight("session-a")).toBe(false)
+  })
+
+  test("steers before atomically flushing every queued turn in FIFO order", async () => {
+    const operations: string[] = []
+    useMessageQueueStore.getState().addToQueue("session-a", { content: "first queued" })
+    useMessageQueueStore.getState().addToQueue("session-a", { content: "second queued" })
+
+    const sentCount = await sendQueuedMessagesNowForSession({
+      sessionId: "session-a",
+      interruptBeforeFlush: true,
+      interruptCurrentOperation: async (sessionId) => {
+        operations.push(`steer:${sessionId}`)
+      },
+      fallbackSendConfig: { providerID: "provider-a", modelID: "model-a" },
+      prepareQueuedMessage: (message, sendConfig) => ({
+        content: message.content,
+        providerID: sendConfig.providerID,
+        modelID: sendConfig.modelID,
+      }),
+      sendMessageToSession: async (_sessionId, content) => {
+        operations.push(`send:${content}`)
+      },
+      waitForReadyToSendNext: async () => {
+        operations.push("wait")
+      },
+    })
+
+    expect(sentCount).toBe(2)
+    expect(operations).toEqual([
+      "steer:session-a",
+      "send:first queued",
+      "wait",
+      "send:second queued",
+    ])
+    expect(useMessageQueueStore.getState().getQueueForSession("session-a")).toEqual([])
+  })
+
+  test("leaves the queue untouched when steering fails before the claim", async () => {
+    useMessageQueueStore.getState().addToQueue("session-a", { content: "still queued" })
+
+    let error: unknown
+    try {
+      await sendQueuedMessagesNowForSession({
+        sessionId: "session-a",
+        interruptBeforeFlush: true,
+        interruptCurrentOperation: async () => {
+          throw new Error("abort failed")
+        },
+        fallbackSendConfig: { providerID: "provider-a", modelID: "model-a" },
+        prepareQueuedMessage: (message, sendConfig) => ({
+          content: message.content,
+          providerID: sendConfig.providerID,
+          modelID: sendConfig.modelID,
+        }),
+      })
+    } catch (caught) {
+      error = caught
+    }
+
+    expect(error instanceof Error ? error.message : "").toBe("abort failed")
+
+    expect(useMessageQueueStore.getState().getQueueForSession("session-a").map((message) => message.content)).toEqual([
+      "still queued",
+    ])
+  })
+
+  test("authorizes each captured agent at dispatch time and restores blocked Builder work", async () => {
+    useMessageQueueStore.getState().addToQueue("session-a", {
+      content: "safe orchestrator item",
+      sendConfig: { providerID: "provider-a", modelID: "model-a", agent: "Orchestrator" },
+    })
+    useMessageQueueStore.getState().addToQueue("session-a", {
+      content: "blocked builder item",
+      sendConfig: { providerID: "provider-a", modelID: "model-a", agent: "Builder" },
+    })
+    const sent: string[] = []
+    const authorized: Array<string | null | undefined> = []
+
+    let failureMessage = ""
+    try {
+      await flushQueuedMessagesForSession({
+        sessionId: "session-a",
+        fallbackSendConfig: { providerID: "provider-a", modelID: "model-a" },
+        authorizeSend: async ({ agentName }) => {
+          authorized.push(agentName)
+          return agentName?.toLowerCase() !== "builder"
+        },
+        prepareQueuedMessage: (message, sendConfig) => ({
+          content: message.content,
+          providerID: sendConfig.providerID,
+          modelID: sendConfig.modelID,
+          agent: sendConfig.agent,
+        }),
+        sendMessageToSession: async (_sessionId, content) => {
+          sent.push(content)
+        },
+        waitForReadyToSendNext: async () => undefined,
+      })
+    } catch (error) {
+      failureMessage = error instanceof Error ? error.message : String(error)
+    }
+    expect(failureMessage).toBe("Queued send requires agent handoff confirmation")
+
+    expect(authorized).toEqual(["Orchestrator", "Builder"])
+    expect(sent).toEqual(["safe orchestrator item"])
+    expect(useMessageQueueStore.getState().getQueueForSession("session-a").map((message) => message.content)).toEqual([
+      "blocked builder item",
+    ])
   })
 })

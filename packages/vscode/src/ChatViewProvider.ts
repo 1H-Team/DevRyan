@@ -140,6 +140,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         manager: this._openCodeManager,
         context: this._context,
         managedOrchestrationRuntime: this._managedOrchestrationRuntime,
+        postMessage: (nextMessage) => this.postMessage(nextMessage),
       });
       void this._sendMessageWithRetry(response);
 

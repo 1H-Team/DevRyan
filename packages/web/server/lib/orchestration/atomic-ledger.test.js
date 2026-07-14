@@ -61,6 +61,20 @@ describe('atomic managed orchestration ledger', () => {
     expect((await fs.readdir(path.dirname(ledger.filePath))).filter((name) => name.includes('.tmp'))).toEqual([]);
   });
 
+  it('hydrates legacy tasks without dispatch groups instead of quarantining them', async () => {
+    const dataDirectory = await createTemporaryDirectory();
+    const ledger = createAtomicManagedOrchestrationLedger({ dataDirectory });
+    const legacyTask = { ...queuedTask(1) };
+    delete legacyTask.dispatchGroupId;
+    await fs.mkdir(path.dirname(ledger.filePath), { recursive: true });
+    await fs.writeFile(ledger.filePath, JSON.stringify(snapshot([legacyTask])), { mode: 0o600 });
+
+    const loaded = await ledger.load();
+
+    expect(loaded.tasks[0].dispatchGroupId).toBeNull();
+    expect(ledger.getDiagnostics().quarantinedPath).toBeNull();
+  });
+
   it('serializes overlapping saves in invocation order', async () => {
     const dataDirectory = await createTemporaryDirectory();
     const ledger = createAtomicManagedOrchestrationLedger({ dataDirectory });

@@ -8,6 +8,7 @@ import {
   getPlanSkeletonRevealState,
   getStableSkeletonLineCount,
   getPlanCardCollapsedMaxHeight,
+  getPlanCardActionState,
   resolvePlanCardDisplayText,
 } from './planCardReveal';
 
@@ -107,5 +108,40 @@ describe('getPlanCardImplementationKey', () => {
     expect(getPlanCardImplementationKey('session-a', 'msg_2_assistant')).toBe(
       'session-a:msg_2_assistant:plan:0',
     );
+  });
+});
+
+describe('getPlanCardActionState', () => {
+  test('allows only the latest completed unimplemented plan', () => {
+    expect(getPlanCardActionState({
+      streamPhase: 'completed',
+      hasPlanText: true,
+      isImplementationRequested: false,
+      isLatestPlan: true,
+    })).toEqual({
+      canImplement: true,
+      disabledReason: null,
+    });
+  });
+
+  test('disables a superseded plan with an accessible reason', () => {
+    expect(getPlanCardActionState({
+      streamPhase: 'completed',
+      hasPlanText: true,
+      isImplementationRequested: false,
+      isLatestPlan: false,
+    })).toEqual({
+      canImplement: false,
+      disabledReason: 'Superseded by a newer plan.',
+    });
+  });
+
+  test('keeps the latest plan disabled until its stream completes', () => {
+    expect(getPlanCardActionState({
+      streamPhase: 'streaming',
+      hasPlanText: true,
+      isImplementationRequested: false,
+      isLatestPlan: true,
+    }).canImplement).toBe(false);
   });
 });

@@ -35,6 +35,7 @@ type ResolveSubtaskSidebarIndicatorOptions = {
   isActive: boolean;
   hasUnreadCompletion: boolean;
   hasUnreadError: boolean;
+  hasManualRecovery: boolean;
 };
 
 type ResolveLeadingIndicatorPositionOptions = {
@@ -129,8 +130,11 @@ export function resolveSubtaskSidebarIndicator({
   isActive,
   hasUnreadCompletion,
   hasUnreadError,
+  hasManualRecovery,
 }: ResolveSubtaskSidebarIndicatorOptions): SessionIndicator | null {
-  if (isRootSession || !notifyOnSubtasks || isWorking || isActive) return null;
+  if (isRootSession) return null;
+  if (hasManualRecovery) return ERROR_INDICATOR;
+  if (!notifyOnSubtasks || isWorking || isActive) return null;
   if (hasUnreadError) return ERROR_INDICATOR;
   if (hasUnreadCompletion) return SESSION_COMPLETED_INDICATOR;
   return null;

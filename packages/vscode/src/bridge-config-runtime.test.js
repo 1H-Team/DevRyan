@@ -53,7 +53,7 @@ vi.mock('./skillsCatalog', () => ({
 
 const { handleConfigBridgeMessage } = await import('./bridge-config-runtime');
 
-const createDeps = (openCodeSkills = []) => ({
+const createDeps = (openCodeSkills = [], overrides = {}) => ({
   readSettings: vi.fn(() => ({ hiddenSkills: [] })),
   persistSettings: vi.fn(async (changes) => changes),
   readMagicPromptOverrides: vi.fn(() => ({ version: 1, overrides: {} })),
@@ -62,6 +62,17 @@ const createDeps = (openCodeSkills = []) => ({
   resetAllMagicPromptOverrides: vi.fn(),
   fetchOpenCodeSkillsFromApi: vi.fn(async () => openCodeSkills),
   clientReloadDelayMs: 0,
+  getGlobalAgentsMdRuntime: vi.fn(() => ({
+    read: vi.fn(async () => ({ content: '', exists: false, editable: true })),
+    save: vi.fn(async () => ({
+      success: true,
+      content: '',
+      exists: false,
+      editable: true,
+      runtimeApplied: true,
+    })),
+  })),
+  ...overrides,
 });
 
 const createCtx = (workingDirectory = '/tmp/project') => ({
@@ -70,7 +81,7 @@ const createCtx = (workingDirectory = '/tmp/project') => ({
     restart: vi.fn(async () => {}),
     getDebugInfo: vi.fn(() => ({
       cliPath: '/usr/local/bin/opencode',
-      version: '1.17.18',
+      version: '1.18.1',
     })),
   },
 });
@@ -85,10 +96,73 @@ describe('handleConfigBridgeMessage OpenCode resolution', () => {
 
     expect(response?.success).toBe(true);
     expect(response?.data).toMatchObject({
-      targetVersion: '1.17.18',
-      detectedVersion: '1.17.18',
-      installCommand: 'curl -fsSL https://opencode.ai/install | bash -s -- --version 1.17.18 --no-modify-path',
+      targetVersion: '1.18.1',
+      detectedVersion: '1.18.1',
+      installCommand: 'curl -fsSL https://opencode.ai/install | bash -s -- --version 1.18.1 --no-modify-path',
     });
+  });
+});
+
+describe('handleConfigBridgeMessage global AGENTS.md', () => {
+  it('reads through the injected file runtime', async () => {
+    const read = vi.fn(async () => ({
+      content: '# Global\n',
+      exists: true,
+      editable: true,
+    }));
+    const getGlobalAgentsMdRuntime = vi.fn(() => ({ read, save: vi.fn() }));
+
+    const response = await handleConfigBridgeMessage(
+      { id: 'agents-read', type: 'api:behavior/agents-md:get', payload: {} },
+      createCtx(),
+      createDeps([], { getGlobalAgentsMdRuntime }),
+    );
+
+    expect(response).toEqual({
+      id: 'agents-read',
+      type: 'api:behavior/agents-md:get',
+      success: true,
+      data: { content: '# Global\n', exists: true, editable: true },
+    });
+    expect(getGlobalAgentsMdRuntime).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  it('saves through the injected runtime and preserves refresh warnings', async () => {
+    const save = vi.fn(async () => ({
+      success: true,
+      content: '# Global\n',
+      exists: true,
+      editable: true,
+      runtimeApplied: false,
+      warning: 'restart failed',
+    }));
+    const getGlobalAgentsMdRuntime = vi.fn(() => ({ read: vi.fn(), save }));
+
+    const response = await handleConfigBridgeMessage(
+      {
+        id: 'agents-save',
+        type: 'api:behavior/agents-md:save',
+        payload: { content: '# Global' },
+      },
+      createCtx(),
+      createDeps([], { getGlobalAgentsMdRuntime }),
+    );
+
+    expect(response).toEqual({
+      id: 'agents-save',
+      type: 'api:behavior/agents-md:save',
+      success: true,
+      data: {
+        success: true,
+        content: '# Global\n',
+        exists: true,
+        editable: true,
+        runtimeApplied: false,
+        warning: 'restart failed',
+      },
+    });
+    expect(save).toHaveBeenCalledWith('# Global');
   });
 });
 

@@ -16,10 +16,16 @@ const terminalOldestFirst = (left, right) => (
   || left.taskId.localeCompare(right.taskId)
 );
 
-const collectProtectedTaskIds = (tasks) => {
+const collectProtectedTaskIds = (tasks, envelopes) => {
   const protectedIds = new Set();
+  const unacknowledgedTaskIds = new Set(envelopes
+    .filter((envelope) => envelope.action === null)
+    .map((envelope) => envelope.taskId));
   for (const task of tasks) {
     if (!isTerminalManagedTaskStatus(task.status)) protectedIds.add(task.taskId);
+    if (task.dispatchGroupId !== null && unacknowledgedTaskIds.has(task.taskId)) {
+      protectedIds.add(task.taskId);
+    }
     if (task.priorTaskId) {
       protectedIds.add(task.taskId);
       protectedIds.add(task.priorTaskId);
@@ -40,7 +46,7 @@ export const compactManagedOrchestrationState = (input, options = {}) => {
   const envelopes = Array.isArray(input?.resultEnvelopes)
     ? input.resultEnvelopes.map((envelope) => structuredClone(envelope))
     : [];
-  const protectedIds = collectProtectedTaskIds(tasks);
+  const protectedIds = collectProtectedTaskIds(tasks, envelopes);
   const removable = tasks
     .filter((task) => isTerminalManagedTaskStatus(task.status) && !protectedIds.has(task.taskId))
     .sort(terminalOldestFirst);

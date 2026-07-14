@@ -14,7 +14,10 @@ import type {
   ManagedOrchestrationSnapshot,
   ManagedTaskAcknowledgementResponse,
 } from '@/lib/orchestrationApi';
-import { createManagedOrchestrationStore } from './useManagedOrchestrationStore';
+import {
+  createManagedOrchestrationStore,
+  managedOrchestrationSelectors,
+} from './useManagedOrchestrationStore';
 
 const taskRecord = (
   index: number,
@@ -90,6 +93,7 @@ const deferred = <T>() => {
 };
 
 const fakeApi = (overrides: Partial<ManagedOrchestrationApi> = {}): ManagedOrchestrationApi => ({
+  async handoff() { throw new Error('not implemented'); },
   async getSnapshot() { return emptySnapshot(); },
   async getTask() { throw new Error('not implemented'); },
   async cancelTask() { throw new Error('not implemented'); },
@@ -98,6 +102,129 @@ const fakeApi = (overrides: Partial<ManagedOrchestrationApi> = {}): ManagedOrche
 });
 
 describe('managed orchestration store', () => {
+  test('indexes only final manual recovery and clears or restores it with the envelope lifecycle', () => {
+    const store = createManagedOrchestrationStore({ api: fakeApi() });
+    const firstFailed = {
+      ...taskRecord(1, 'failed', {
+        childSessionId: 'ses_child_initial',
+        failureReason: 'Usage limit',
+      }),
+      dispatchGroupId: 'msg_parent',
+    };
+    const firstEnvelope = createManagedTaskResultEnvelope(firstFailed, {
+      sequence: 1,
+      createdAt: 4_000,
+      resumable: true,
+    });
+    const firstProjected = toManagedTaskEvent(firstFailed, firstEnvelope).properties.task;
+    store.getState().ingestEvent(taskEvent(firstProjected, firstEnvelope));
+
+    expect(firstProjected.agentRetryAvailable).toBe(true);
+    expect(store.getState().manualRecoveryTaskIdByChildSessionId.ses_child_initial).toBe(undefined);
+
+    const finalFailed = {
+      ...taskRecord(2, 'failed', {
+        childSessionId: 'ses_child_final',
+        failureReason: 'Usage limit',
+        attempt: 2,
+        priorTaskId: firstFailed.taskId,
+        executionKind: 'retry',
+      }),
+      dispatchGroupId: 'msg_parent',
+    };
+    const finalEnvelope = createManagedTaskResultEnvelope(finalFailed, {
+      sequence: 2,
+      createdAt: 5_000,
+      resumable: true,
+    });
+    const finalProjected = toManagedTaskEvent(finalFailed, finalEnvelope).properties.task;
+    store.getState().ingestEvent(taskEvent(finalProjected, finalEnvelope));
+
+    expect(finalProjected.agentRetryAvailable).toBe(false);
+    expect(managedOrchestrationSelectors.manualRecoveryTaskIdForChildSession('ses_child_final')(
+      store.getState(),
+    )).toBe(finalFailed.taskId);
+    const recoveryIndex = store.getState().manualRecoveryTaskIdByChildSessionId;
+    const rootIds = store.getState().taskIdsByRootId.ses_root;
+    const finalTaskReference = store.getState().tasksById[finalFailed.taskId];
+
+    store.getState().ingestEvent(taskEvent(projectedTask(9)));
+
+    expect(store.getState().manualRecoveryTaskIdByChildSessionId).toBe(recoveryIndex);
+    expect(store.getState().taskIdsByRootId.ses_root).toBe(rootIds);
+    expect(store.getState().tasksById[finalFailed.taskId]).toBe(finalTaskReference);
+
+    store.getState().ingestEvent(taskEvent(finalProjected, {
+      ...finalEnvelope,
+      acknowledgedAt: 6_000,
+      action: 'retry_in_place',
+      followUpTaskId: 'dvr_task_3',
+    }));
+    expect(store.getState().manualRecoveryTaskIdByChildSessionId.ses_child_final).toBe(undefined);
+
+    const manualRunning = projectedTask(3, 'running', {
+      childSessionId: 'ses_child_final',
+      attempt: 3,
+      priorTaskId: finalFailed.taskId,
+      executionKind: 'retry_in_place',
+      providerId: 'openai',
+      modelId: 'gpt-5.4',
+    });
+    store.getState().ingestEvent(taskEvent(manualRunning));
+    expect(store.getState().manualRecoveryTaskIdByChildSessionId.ses_child_final).toBe(undefined);
+
+    const manualFailed = taskRecord(3, 'failed', {
+      childSessionId: 'ses_child_final',
+      failureReason: 'Replacement model failed',
+      attempt: 3,
+      priorTaskId: finalFailed.taskId,
+      executionKind: 'retry_in_place',
+      providerId: 'openai',
+      modelId: 'gpt-5.4',
+    });
+    const manualEnvelope = createManagedTaskResultEnvelope(manualFailed, {
+      sequence: 3,
+      createdAt: 7_000,
+      resumable: true,
+    });
+    const manualProjected = toManagedTaskEvent(manualFailed, manualEnvelope).properties.task;
+    store.getState().ingestEvent(taskEvent(manualProjected, manualEnvelope));
+    expect(store.getState().manualRecoveryTaskIdByChildSessionId.ses_child_final).toBe(manualFailed.taskId);
+
+    store.getState().ingestEvent(removalEvent(manualProjected));
+    expect(store.getState().manualRecoveryTaskIdByChildSessionId.ses_child_final).toBe(undefined);
+  });
+
+  test('rebuilds the manual recovery index from authoritative snapshots', async () => {
+    const failed = {
+      ...taskRecord(2, 'failed', {
+        childSessionId: 'ses_child_snapshot',
+        failureReason: 'Usage limit',
+        attempt: 2,
+        priorTaskId: 'dvr_task_1',
+        executionKind: 'resume',
+      }),
+      dispatchGroupId: 'msg_parent',
+    };
+    const envelope = createManagedTaskResultEnvelope(failed, {
+      sequence: 2,
+      createdAt: 5_000,
+      resumable: true,
+    });
+    const projected = toManagedTaskEvent(failed, envelope).properties.task;
+    let snapshot = emptySnapshot({ tasks: [projected], resultEnvelopes: [envelope] });
+    const store = createManagedOrchestrationStore({
+      api: fakeApi({ getSnapshot: async () => snapshot }),
+    });
+
+    await store.getState().loadSnapshot();
+    expect(store.getState().manualRecoveryTaskIdByChildSessionId.ses_child_snapshot).toBe(failed.taskId);
+
+    snapshot = emptySnapshot();
+    await store.getState().loadSnapshot();
+    expect(store.getState().manualRecoveryTaskIdByChildSessionId.ses_child_snapshot).toBe(undefined);
+  });
+
   test('preserves unchanged task and unrelated-root references', () => {
     const store = createManagedOrchestrationStore({ api: fakeApi() });
     const rootTask = projectedTask(1);
@@ -669,6 +796,7 @@ describe('managed orchestration store', () => {
     store.getState().reset();
     expect(store.getState().tasksById).toEqual({});
     expect(store.getState().taskIdsByRootId).toEqual({});
+    expect(store.getState().manualRecoveryTaskIdByChildSessionId).toEqual({});
     expect(store.getState().available).toBeNull();
   });
 });

@@ -21,6 +21,11 @@ import {
   type ResponseStylePreset,
 } from '@/lib/responseStyle';
 import type { DesktopSettings } from '@/lib/desktop';
+import {
+  isGlobalAgentsMdSaveWarning,
+  loadGlobalAgentsMd,
+  saveGlobalAgentsMd,
+} from './globalAgentsMdApi';
 
 const AGENTS_MD_PATH = '~/.config/opencode/AGENTS.md';
 
@@ -29,21 +34,15 @@ const readApiError = async (response: Response, fallback: string) => {
   return typeof data?.error === 'string' && data.error.trim() ? data.error : fallback;
 };
 
-const normalizeAgentsMdContent = (content: string) => {
-  return content.length > 0 && !content.endsWith('\n') ? `${content}\n` : content;
-};
-
 type ResponseStyleValue = ResponseStylePreset | 'custom';
 
 type BehaviorSettingsState = {
-  prompt: string;
   responseStyleEnabled: boolean;
   responseStylePreset: ResponseStyleValue;
   responseStyleCustomInstructions: string;
 };
 
 const DEFAULT_BEHAVIOR_SETTINGS: BehaviorSettingsState = {
-  prompt: '',
   responseStyleEnabled: false,
   responseStylePreset: 'concise',
   responseStyleCustomInstructions: '',
@@ -89,81 +88,96 @@ export const BehaviorPage: React.FC = () => {
   const [responseStyleEnabled, setResponseStyleEnabled] = React.useState(DEFAULT_BEHAVIOR_SETTINGS.responseStyleEnabled);
   const [responseStylePreset, setResponseStylePreset] = React.useState<ResponseStyleValue>(DEFAULT_BEHAVIOR_SETTINGS.responseStylePreset);
   const [responseStyleCustomInstructions, setResponseStyleCustomInstructions] = React.useState(DEFAULT_BEHAVIOR_SETTINGS.responseStyleCustomInstructions);
-  const [isLoading, setIsLoading] = React.useState(true);
+  const [isPromptLoading, setIsPromptLoading] = React.useState(true);
+  const [isResponseStyleLoading, setIsResponseStyleLoading] = React.useState(true);
   const [isSaving, setIsSaving] = React.useState(false);
   const [initialPrompt, setInitialPrompt] = React.useState('');
+  const [promptEditable, setPromptEditable] = React.useState(false);
+  const [promptLoadError, setPromptLoadError] = React.useState<string | null>(null);
+  const [unavailableReason, setUnavailableReason] = React.useState<string | null>(null);
   const lastSavedResponseStyleRef = React.useRef<{
     enabled: boolean;
     preset: ResponseStyleValue;
     custom: string;
   } | null>(null);
 
+  const loadPrompt = React.useCallback(async (signal?: AbortSignal) => {
+    setIsPromptLoading(true);
+    setPromptLoadError(null);
+
+    try {
+      const document = await loadGlobalAgentsMd({ signal });
+      if (signal?.aborted) return;
+      setPrompt(document.content);
+      setInitialPrompt(document.content);
+      setPromptEditable(document.editable);
+      setUnavailableReason(document.unavailableReason ?? null);
+    } catch (error) {
+      if (signal?.aborted || (error as Error).name === 'AbortError') return;
+      console.warn('Failed to load global AGENTS.md:', error);
+      setPromptEditable(false);
+      setUnavailableReason(null);
+      setPromptLoadError(error instanceof Error ? error.message : t('settings.behavior.page.loadFailed'));
+    } finally {
+      if (!signal?.aborted) {
+        setIsPromptLoading(false);
+      }
+    }
+  }, [t]);
+
+  React.useEffect(() => {
+    const abort = new AbortController();
+    void loadPrompt(abort.signal);
+    return () => abort.abort();
+  }, [loadPrompt]);
+
   React.useEffect(() => {
     const abort = new AbortController();
 
-    const load = async () => {
+    const loadResponseStyle = async () => {
+      let nextSettings: BehaviorSettingsState = DEFAULT_BEHAVIOR_SETTINGS;
       try {
-        const [settingsRes, agentsMdRes] = await Promise.all([
-          fetch('/api/config/settings', {
-            method: 'GET',
-            headers: { Accept: 'application/json' },
-            signal: abort.signal,
-          }),
-          fetch('/api/behavior/agents-md', {
-            method: 'GET',
-            headers: { Accept: 'application/json' },
-            signal: abort.signal,
-          }),
-        ]);
-
-        let nextSettings: BehaviorSettingsState = DEFAULT_BEHAVIOR_SETTINGS;
-        if (settingsRes.ok) {
-          const data = await settingsRes.json();
-          nextSettings = {
-            ...nextSettings,
-            responseStyleEnabled: data.responseStyleEnabled === true,
-            responseStylePreset: sanitizeResponseStylePreset(data.responseStylePreset),
-            responseStyleCustomInstructions: typeof data.responseStyleCustomInstructions === 'string'
-              ? data.responseStyleCustomInstructions
-              : '',
-          };
-          if (typeof data.globalBehaviorPrompt === 'string') {
-            nextSettings = { ...nextSettings, prompt: data.globalBehaviorPrompt };
-          }
+        const response = await fetch('/api/config/settings', {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+          signal: abort.signal,
+        });
+        if (!response.ok) {
+          throw new Error(await readApiError(response, t('settings.behavior.page.toast.loadResponseStyleFailed')));
         }
 
-        if (!nextSettings.prompt.trim() && agentsMdRes.ok) {
-          const agentsData = await agentsMdRes.json();
-          if (typeof agentsData.content === 'string') {
-            nextSettings = { ...nextSettings, prompt: agentsData.content };
-          }
-        }
-
-        setPrompt(nextSettings.prompt);
-        setResponseStyleEnabled(nextSettings.responseStyleEnabled);
-        setResponseStylePreset(nextSettings.responseStylePreset);
-        setResponseStyleCustomInstructions(nextSettings.responseStyleCustomInstructions);
-        setInitialPrompt(nextSettings.prompt);
-        lastSavedResponseStyleRef.current = {
-          enabled: nextSettings.responseStyleEnabled,
-          preset: nextSettings.responseStylePreset,
-          custom: nextSettings.responseStyleCustomInstructions,
+        const data = await response.json();
+        nextSettings = {
+          responseStyleEnabled: data.responseStyleEnabled === true,
+          responseStylePreset: sanitizeResponseStylePreset(data.responseStylePreset),
+          responseStyleCustomInstructions: typeof data.responseStyleCustomInstructions === 'string'
+            ? data.responseStyleCustomInstructions
+            : '',
         };
       } catch (error) {
-        if ((error as Error).name !== 'AbortError') {
-          console.warn('Failed to load behavior settings:', error);
-        }
+        if (abort.signal.aborted || (error as Error).name === 'AbortError') return;
+        console.warn('Failed to load response style settings:', error);
       } finally {
-        setIsLoading(false);
+        if (!abort.signal.aborted) {
+          setResponseStyleEnabled(nextSettings.responseStyleEnabled);
+          setResponseStylePreset(nextSettings.responseStylePreset);
+          setResponseStyleCustomInstructions(nextSettings.responseStyleCustomInstructions);
+          lastSavedResponseStyleRef.current = {
+            enabled: nextSettings.responseStyleEnabled,
+            preset: nextSettings.responseStylePreset,
+            custom: nextSettings.responseStyleCustomInstructions,
+          };
+          setIsResponseStyleLoading(false);
+        }
       }
     };
 
-    void load();
+    void loadResponseStyle();
     return () => abort.abort();
-  }, []);
+  }, [t]);
 
   React.useEffect(() => {
-    if (isLoading) return;
+    if (isResponseStyleLoading) return;
     const last = lastSavedResponseStyleRef.current;
     if (
       last &&
@@ -195,7 +209,7 @@ export const BehaviorPage: React.FC = () => {
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [responseStyleEnabled, responseStylePreset, responseStyleCustomInstructions, isLoading, t]);
+  }, [responseStyleEnabled, responseStylePreset, responseStyleCustomInstructions, isResponseStyleLoading, t]);
 
   const responseStylePreview = getResponseStylePreview(responseStylePreset, responseStyleCustomInstructions);
   const isPromptDirty = prompt !== initialPrompt;
@@ -203,29 +217,20 @@ export const BehaviorPage: React.FC = () => {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      const content = normalizeAgentsMdContent(prompt);
-      const response = await fetch('/api/behavior/agents-md', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({ content }),
-      });
-
-      if (!response.ok) {
-        throw new Error(await readApiError(response, t('settings.behavior.page.toast.saveFailed')));
+      const result = await saveGlobalAgentsMd(prompt);
+      setPrompt(result.content);
+      setInitialPrompt(result.content);
+      setPromptEditable(result.editable);
+      setUnavailableReason(result.unavailableReason ?? null);
+      if (isGlobalAgentsMdSaveWarning(result)) {
+        toast.warning(t('settings.behavior.page.toast.savedRuntimeWarning'), {
+          description: result.warning,
+        });
+      } else {
+        toast.success(t('settings.behavior.page.toast.saved'));
       }
-
-      await saveBehaviorSetting({
-        globalBehaviorPrompt: content,
-      }, t('settings.behavior.page.toast.saveFailed'));
-
-      setPrompt(content);
-      setInitialPrompt(content);
-      toast.success(t('settings.behavior.page.toast.saved'));
     } catch (error) {
-      console.error('Failed to save behavior:', error);
+      console.error('Failed to save global AGENTS.md:', error);
       const message = error instanceof Error ? error.message : t('settings.behavior.page.toast.saveFailed');
       toast.error(message);
     } finally {
@@ -267,18 +272,56 @@ export const BehaviorPage: React.FC = () => {
           </div>
 
           <section className="px-2 pb-2 pt-0 space-y-3">
+            {promptLoadError && (
+              <div
+                role="alert"
+                className="flex flex-col gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <p className="typography-ui-label text-foreground">
+                    {t('settings.behavior.page.loadFailed')}
+                  </p>
+                  <p className="typography-meta break-words text-muted-foreground">
+                    {promptLoadError}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  className="shrink-0 !font-normal"
+                  onClick={() => void loadPrompt()}
+                  disabled={isPromptLoading}
+                >
+                  {t('settings.behavior.page.actions.retry')}
+                </Button>
+              </div>
+            )}
+            {!promptLoadError && !isPromptLoading && !promptEditable && unavailableReason && (
+              <div
+                role="status"
+                className="rounded-md border border-border bg-[var(--surface-muted)] px-3 py-2"
+              >
+                <p className="typography-ui-label text-foreground">
+                  {t('settings.behavior.page.unavailable.title')}
+                </p>
+                <p className="typography-meta text-muted-foreground">
+                  {unavailableReason}
+                </p>
+              </div>
+            )}
             <Textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder={t('settings.behavior.page.field.systemPromptPlaceholder')}
               rows={12}
-              disabled={isLoading}
+              disabled={isPromptLoading || !promptEditable || Boolean(promptLoadError)}
               outerClassName="min-h-[160px] max-h-[70vh]"
               className="w-full font-mono typography-meta bg-transparent"
             />
             <Button
               onClick={handleSave}
-              disabled={isSaving || !isPromptDirty || isLoading}
+              disabled={isSaving || !isPromptDirty || isPromptLoading || !promptEditable || Boolean(promptLoadError)}
               size="xs"
               className="!font-normal"
             >
@@ -309,7 +352,7 @@ export const BehaviorPage: React.FC = () => {
               <Checkbox
                 checked={responseStyleEnabled}
                 onChange={setResponseStyleEnabled}
-                disabled={isLoading}
+                disabled={isResponseStyleLoading}
                 ariaLabel={t('settings.behavior.page.responseStyle.enableAria')}
               />
               {t('settings.behavior.page.responseStyle.enable')}
@@ -318,7 +361,7 @@ export const BehaviorPage: React.FC = () => {
             <Select<ResponseStyleValue>
               value={responseStylePreset}
               onValueChange={(value) => setResponseStylePreset(value)}
-              disabled={isLoading || !responseStyleEnabled}
+              disabled={isResponseStyleLoading || !responseStyleEnabled}
             >
               <SelectTrigger className="w-full sm:w-56" size="lg">
                 <SelectValue>
@@ -346,7 +389,7 @@ export const BehaviorPage: React.FC = () => {
               onChange={(event) => setResponseStyleCustomInstructions(event.target.value)}
               placeholder={t('settings.behavior.page.responseStyle.customPlaceholder')}
               rows={5}
-              disabled={isLoading || !responseStyleEnabled || responseStylePreset !== 'custom'}
+              disabled={isResponseStyleLoading || !responseStyleEnabled || responseStylePreset !== 'custom'}
               outerClassName="min-h-[120px]"
               className="w-full font-mono typography-meta bg-transparent"
             />

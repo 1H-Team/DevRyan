@@ -98,7 +98,7 @@ export const SortableTabsStrip: React.FC<SortableTabsStripProps> = ({
   inactiveTabsIconOnly = false,
   iconOnlyActiveTab = false,
   animateActivePill,
-  activePillLowercase = true,
+  activePillLowercase = false,
   ariaLabel,
   className,
 }) => {

@@ -7,6 +7,7 @@ Zustand store layer for persisted and session-local client state: UI preferences
 - **Store-per-domain**: each feature has a focused store (`useUIStore`, `useConfigStore`, `useGitStore`, `useSkillsStore`, etc.) to limit cross-feature coupling.
 - **Middleware stack**: many stores use `persist` + `devtools`; persistence uses `getSafeStorage()` for environment-safe access.
 - **Utility-first reducers**: `utils/*` centralizes reusable transforms/projectors (stream debug, message/context utilities, permission helpers).
+- **Authoritative context capacity**: `utils/modelContextCapacity.ts` resolves positive provider limits with `input` precedence, `context` fallback, and an explicit unavailable state; `contextUsageUtils.ts` applies that capacity to provider-reported latest-turn tokens without output reservations or percentage clamping.
 - **Inter-store orchestration**: stores often call other stores via `.getState()` in actions to avoid broad subscriptions.
 - **Quota refresh coordination**: `quota-refresh-coordinator.ts` owns the single 30-minute baseline timer and serialized refresh lifecycle; `useQuotaStore.ts` owns configured-provider discovery, per-provider request deduplication, and last-valid-data retention.
 - **Managed orchestration projection**: `useManagedOrchestrationStore.ts` owns non-persisted, low-frequency safe task/result projections keyed by task and root session. It reconciles snapshots with sequenced events, deduplicates actions, and preserves terminal results and visible failures until authoritative acknowledgement.

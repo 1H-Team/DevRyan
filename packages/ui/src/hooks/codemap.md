@@ -8,6 +8,7 @@ Reusable React hooks for UI behavior orchestration: keyboard shortcuts, session 
 - **Runtime-aware wrappers**: several hooks gate behavior for desktop/web/vscode differences (menu actions, filesystem access, PWA, voice availability).
 - **Stability and hot-path safety**: hooks tend to memoize callbacks/selectors and use refs to avoid frequent effect resubscription.
 - **Manual provider recovery**: `useProviderErrorRecovery.ts` converts terminal transient/model errors into explicit recovery records; it never resends automatically.
+- **Context usage stability**: `useSelectedModelContextCapacity.ts` subscribes to leaf model-selection fields and resolves next-send capacity, while `useStableSessionContextUsage.ts` retains completed usage only for the same directory/session key and clears cross-session bleed synchronously.
 
 ## Flow
 1. Components call hooks with local props/context.

@@ -6,14 +6,32 @@
  */
 
 import type { OpencodeClient } from "@opencode-ai/sdk/v2/client"
+import type { StoreApi } from "zustand"
 import type { ChildStoreManager } from "./child-store"
 import { getSessionMaterializationStatus } from "./materialization"
+import type { SessionUIState } from "./session-ui-store"
 import type { State } from "./types"
 
 let _sdk: OpencodeClient | null = null
 let _childStores: ChildStoreManager | null = null
 let _directory: string = ""
 let _registerSessionDirectory: ((sessionID: string, directory: string) => void) | null = null
+let _sessionUIStore: StoreApi<SessionUIState> | null = null
+
+export function setSessionUIStoreRef(store: StoreApi<SessionUIState>): void {
+  _sessionUIStore = store
+}
+
+export function clearSessionUIStoreRef(store: StoreApi<SessionUIState>): boolean {
+  if (_sessionUIStore !== store) return false
+  _sessionUIStore = null
+  return true
+}
+
+export function getSessionUIStore(): StoreApi<SessionUIState> {
+  if (!_sessionUIStore) throw new Error("Session UI store not initialized")
+  return _sessionUIStore
+}
 
 export function setSyncRefs(
   sdk: OpencodeClient,

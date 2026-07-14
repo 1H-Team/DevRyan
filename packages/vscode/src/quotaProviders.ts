@@ -657,16 +657,24 @@ export const fetchCodexQuota = async (options: FetchQuotaOptions = {}): Promise<
 
     const windows: Record<string, UsageWindow> = {};
     if (primary) {
-      windows['5h'] = toUsageWindow({
+      const windowSeconds = toNumber(primary.limit_window_seconds);
+      const label = windowSeconds !== null && windowSeconds > 0
+        ? resolveWindowLabel(windowSeconds)
+        : '5h';
+      windows[label] = toUsageWindow({
         usedPercent: toNumber(primary.used_percent),
-        windowSeconds: toNumber(primary.limit_window_seconds),
+        windowSeconds,
         resetAt: toTimestamp(primary.reset_at),
       });
     }
     if (secondary) {
-      windows['weekly'] = toUsageWindow({
+      const windowSeconds = toNumber(secondary.limit_window_seconds);
+      const label = windowSeconds !== null && windowSeconds > 0
+        ? resolveWindowLabel(windowSeconds)
+        : 'weekly';
+      windows[label] = toUsageWindow({
         usedPercent: toNumber(secondary.used_percent),
-        windowSeconds: toNumber(secondary.limit_window_seconds),
+        windowSeconds,
         resetAt: toTimestamp(secondary.reset_at),
       });
     }

@@ -115,6 +115,75 @@ describe("send config resolution", () => {
     expect(result.modelID).toBe(undefined)
     expect(result.variant).toBe(undefined)
   })
+
+  test("preserves the OpenAI Luna model and supported reasoning variant", () => {
+    const result = resolveSessionSendConfigSnapshot(snapshot({
+      currentProviderId: "openai",
+      currentModelId: "gpt-5.6-luna",
+      currentVariant: "medium",
+      providers: [{
+        id: "openai",
+        models: [{
+          id: "gpt-5.6-luna",
+          variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {} },
+        }],
+      }],
+    }))
+
+    expect(result).toEqual({
+      providerID: "openai",
+      modelID: "gpt-5.6-luna",
+      agent: "builder",
+      variant: "medium",
+      planMode: false,
+    })
+  })
+
+  test("migrates a stale OpenAI none variant to Light before sending", () => {
+    const result = resolveSessionSendConfigSnapshot(snapshot({
+      currentProviderId: "openai",
+      currentModelId: "gpt-5.6-luna",
+      currentVariant: "none",
+      providers: [{
+        id: "openai",
+        models: [{
+          id: "gpt-5.6-luna",
+          variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {} },
+        }],
+      }],
+    }))
+
+    expect(result).toEqual({
+      providerID: "openai",
+      modelID: "gpt-5.6-luna",
+      agent: "builder",
+      variant: "low",
+      planMode: false,
+    })
+  })
+
+  test("preserves the OpenAI Luna Fast row and supported reasoning variant", () => {
+    const result = resolveSessionSendConfigSnapshot(snapshot({
+      currentProviderId: "openai",
+      currentModelId: "gpt-5.6-luna-fast",
+      currentVariant: "xhigh",
+      providers: [{
+        id: "openai",
+        models: [{
+          id: "gpt-5.6-luna-fast",
+          variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {} },
+        }],
+      }],
+    }))
+
+    expect(result).toEqual({
+      providerID: "openai",
+      modelID: "gpt-5.6-luna-fast",
+      agent: "builder",
+      variant: "xhigh",
+      planMode: false,
+    })
+  })
   beforeEach(() => {
     useConfigStore.setState({
       currentAgentName: undefined,
@@ -322,6 +391,104 @@ describe("send config resolution", () => {
       providerID: "anthropic",
       modelID: "claude-sonnet-4-5",
       variant: "medium",
+    })
+  })
+
+  test("agent-default provenance prefers the selected agent model over persisted draft maps", () => {
+    const result = resolveDraftSendSelection({
+      requestedAgent: undefined,
+      currentAgent: "builder",
+      settingsDefaultAgent: "builder",
+      agents: snapshot().agents,
+      providers: snapshot().providers,
+      inputProviderID: "openai",
+      inputModelID: "gpt-5.5",
+      inputVariant: "medium",
+      currentProviderID: "openai",
+      currentModelID: "gpt-5.5",
+      currentVariant: "medium",
+      draftAgentSelection: "builder",
+      draftModelSelection: { providerId: "openai", modelId: "gpt-5.2" },
+      draftAgentModelSelection: { providerId: "openai", modelId: "gpt-5.2" },
+      draftAgentModelVariant: "low",
+      draftSendConfig: {
+        providerID: "openai",
+        modelID: "gpt-5.2",
+        agent: "builder",
+        variant: "low",
+        modelProvenance: "agent-default",
+      },
+    })
+
+    expect(result).toEqual({
+      agent: "builder",
+      providerID: "anthropic",
+      modelID: "claude-sonnet-4-5",
+      variant: "high",
+    })
+  })
+
+  test("explicit provenance still prefers persisted draft model over the agent default", () => {
+    const result = resolveDraftSendSelection({
+      requestedAgent: undefined,
+      currentAgent: "builder",
+      settingsDefaultAgent: "builder",
+      agents: snapshot().agents,
+      providers: snapshot().providers,
+      inputProviderID: "anthropic",
+      inputModelID: "claude-sonnet-4-5",
+      inputVariant: "high",
+      currentProviderID: "anthropic",
+      currentModelID: "claude-sonnet-4-5",
+      currentVariant: "high",
+      draftAgentSelection: "builder",
+      draftModelSelection: { providerId: "openai", modelId: "gpt-5.2" },
+      draftAgentModelSelection: { providerId: "openai", modelId: "gpt-5.2" },
+      draftAgentModelVariant: "low",
+      draftSendConfig: {
+        providerID: "openai",
+        modelID: "gpt-5.2",
+        agent: "builder",
+        variant: "low",
+        modelProvenance: "explicit",
+      },
+    })
+
+    expect(result).toEqual({
+      agent: "builder",
+      providerID: "openai",
+      modelID: "gpt-5.2",
+      variant: "low",
+    })
+  })
+
+  test("legacy draft send config without provenance still outranks the agent default model", () => {
+    const result = resolveDraftSendSelection({
+      requestedAgent: undefined,
+      currentAgent: "builder",
+      settingsDefaultAgent: "builder",
+      agents: snapshot().agents,
+      providers: snapshot().providers,
+      inputProviderID: "anthropic",
+      inputModelID: "claude-sonnet-4-5",
+      inputVariant: "high",
+      currentProviderID: "anthropic",
+      currentModelID: "claude-sonnet-4-5",
+      currentVariant: "high",
+      draftModelSelection: { providerId: "openai", modelId: "gpt-5.2" },
+      draftSendConfig: {
+        providerID: "openai",
+        modelID: "gpt-5.2",
+        agent: "builder",
+        variant: "low",
+      },
+    })
+
+    expect(result).toEqual({
+      agent: "builder",
+      providerID: "openai",
+      modelID: "gpt-5.2",
+      variant: "low",
     })
   })
 

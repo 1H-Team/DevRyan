@@ -94,6 +94,30 @@ describe('VS Code managed orchestration webview API', () => {
     });
   });
 
+  it('routes the handoff endpoint through the extension bridge', async () => {
+    const send = vi.fn(async (_type: string, payload: unknown) => ({ status: 200, body: payload }));
+    const body = {
+      rootSessionId: 'ses_root',
+      fromMode: 'orchestrator',
+      toMode: 'builder',
+      confirm: true,
+      idempotencyKey: 'switch-webview-01',
+    };
+
+    const response = await handleManagedOrchestrationApiRequest({
+      url: new URL('https://webview.invalid/api/orchestration/handoff'),
+      method: 'POST',
+      readBody: async () => JSON.stringify(body),
+      send,
+    });
+
+    expect(await responseJson(response)).toEqual({
+      status: 200,
+      body: { action: 'handoff', body },
+    });
+    expect(send).toHaveBeenCalledWith('api:orchestration:request', { action: 'handoff', body });
+  });
+
   it('preserves authoritative HTTP errors and rejects malformed or oversized bodies locally', async () => {
     const send = vi.fn(async () => ({
       status: 404,

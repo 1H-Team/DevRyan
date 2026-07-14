@@ -61,6 +61,7 @@ Core model:
 - safe task records keyed by `dvr_task_*` identity
 - root-session task ID arrays with stable references
 - terminal result envelopes keyed by task ID
+- one narrow child-session-to-task index for unacknowledged manual recovery
 - per-task pending action and visible action-error leaves
 - one serialized snapshot load per scope, reconciled against events received
   after that load began in one atomic store update
@@ -87,6 +88,12 @@ Ownership and safety rules:
 9. Identity-only compaction events remove the exact task, result, action state,
    and root index immediately. Active snapshot requests record removals locally
    so a stale response cannot resurrect an evicted projection.
+10. `manualRecoveryTaskIdByChildSessionId` contains only failed/interrupted,
+    resumable, unacknowledged tasks whose `agentRetryAvailable` flag is false.
+    Events, snapshots, acknowledgement responses, and compaction recompute only
+    affected child leaves; unrelated task, root, and index references remain
+    stable. Sidebar rows must consume the one-child selector rather than task or
+    envelope containers.
 
 ### Provider recovery store
 

@@ -45,7 +45,7 @@ const queuedTask = (index: number) => createManagedTaskRecord({
   timeoutAt: null,
 });
 
-const submitParams = (index: number) => ({
+const submitParams = (index: number, overrides: Record<string, unknown> = {}) => ({
   idempotencyKey: `root-message-task-${index}`,
   rootSessionId: 'ses_root',
   parentTaskId: null,
@@ -57,6 +57,7 @@ const submitParams = (index: number) => ({
   variant: null,
   label: `Task ${index}`,
   prompt: `Run task ${index}.`,
+  ...overrides,
 });
 
 const getTask = (value: unknown) => {
@@ -65,7 +66,12 @@ const getTask = (value: unknown) => {
   }
   const task = value.task;
   if (!task || typeof task !== 'object') throw new TypeError('expected task record');
-  return task as { taskId: string; status: string; childSessionId?: string | null };
+  return task as {
+    taskId: string;
+    status: string;
+    childSessionId?: string | null;
+    timeoutAt: number | null;
+  };
 };
 
 const createPersistence = () => {
@@ -89,6 +95,98 @@ afterEach(async () => {
 });
 
 describe('VS Code managed orchestration owner', () => {
+  it('matches the web handoff validation and safe task projection', async () => {
+    const runs: Array<{ result: ReturnType<typeof deferred> }> = [];
+    const runtime = createVsCodeManagedOrchestrationRuntime({
+      storageDirectory: '/unused',
+      persistence: createPersistence(),
+      executor: {
+        start() {
+          const result = deferred();
+          runs.push({ result });
+          return result.promise;
+        },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' as const }; },
+        async readRecoverableResult() { return {}; },
+      },
+      createTaskId: () => 'dvr_task_vscode_handoff',
+      createLeaseToken: () => 'dvr_lease_vscode_handoff',
+      now: () => 1_000,
+    });
+    const submitted = await runtime.handleRpc({
+      method: 'submit',
+      params: submitParams(1, { dispatchGroupId: 'msg_parent' }),
+    });
+
+    const inspection = await runtime.handleRpc({
+      method: 'handoff',
+      params: {
+        rootSessionId: 'ses_root',
+        fromMode: 'orchestrator',
+        toMode: 'builder',
+        confirm: false,
+      },
+    }) as { state: string; tasks: Array<{ task: Record<string, unknown> }> };
+    expect(inspection.state).toBe('confirmation_required');
+    expect(inspection.tasks[0].task.taskId).toBe(getTask(submitted).taskId);
+    expect(inspection.tasks[0].task).not.toHaveProperty('prompt');
+    expect(inspection.tasks[0].task).not.toHaveProperty('idempotencyKey');
+    expect(inspection.tasks[0].task).not.toHaveProperty('dispatchGroupId');
+    expect(inspection.tasks[0].task).not.toHaveProperty('leaseToken');
+
+    const confirmed = await runtime.handleRpc({
+      method: 'handoff',
+      params: {
+        rootSessionId: 'ses_root',
+        fromMode: 'orchestrator',
+        toMode: 'builder',
+        confirm: true,
+        idempotencyKey: 'switch-vscode-01',
+      },
+    }) as { state: string; tasks: Array<{ task: Record<string, unknown> }> };
+    expect(confirmed.state).toBe('clear');
+    expect(confirmed.tasks[0].task).toMatchObject({ status: 'aborted' });
+
+    await expect(runtime.handleRpc({
+      method: 'handoff',
+      params: {
+        rootSessionId: 'ses_root',
+        fromMode: 'builder',
+        toMode: 'orchestrator',
+        confirm: false,
+      },
+    })).rejects.toMatchObject({ code: 'invalid_handoff_scope', statusCode: 400 });
+    await expect(runtime.handleRpc({
+      method: 'handoff',
+      params: {
+        rootSessionId: 'ses_root',
+        fromMode: 'orchestrator',
+        toMode: 'builder',
+        confirm: true,
+      },
+    })).rejects.toMatchObject({ code: 'missing_idempotency_key', statusCode: 400 });
+    await expect(runtime.handleRpc({
+      method: 'handoff',
+      params: {
+        fromMode: 'orchestrator',
+        toMode: 'builder',
+        confirm: false,
+      },
+    })).rejects.toMatchObject({ code: 'invalid_handoff_scope', statusCode: 400 });
+    await expect(runtime.handleRpc({
+      method: 'handoff',
+      params: {
+        rootSessionId: 'ses_root',
+        fromMode: 'orchestrator',
+        toMode: 'builder',
+        confirm: 'false',
+      },
+    })).rejects.toMatchObject({ code: 'invalid_handoff_scope', statusCode: 400 });
+    expect(runs).toHaveLength(1);
+    await runtime.shutdown();
+  });
+
   it('persists a private atomic ledger under extension storage', async () => {
     const storageDirectory = await createTemporaryDirectory();
     const ledger = createVsCodeManagedOrchestrationLedger({ storageDirectory });
@@ -100,6 +198,24 @@ describe('VS Code managed orchestration owner', () => {
     expect(ledger.filePath.startsWith(storageDirectory)).toBe(true);
     expect((await fs.stat(ledger.filePath)).mode & 0o777).toBe(0o600);
     expect((await fs.readdir(path.dirname(ledger.filePath))).filter((name) => name.includes('.tmp'))).toEqual([]);
+  });
+
+  it('hydrates legacy tasks without dispatch groups instead of quarantining them', async () => {
+    const storageDirectory = await createTemporaryDirectory();
+    const ledger = createVsCodeManagedOrchestrationLedger({ storageDirectory });
+    const legacyTask = { ...queuedTask(1) } as Record<string, unknown>;
+    delete legacyTask.dispatchGroupId;
+    await fs.mkdir(path.dirname(ledger.filePath), { recursive: true });
+    await fs.writeFile(ledger.filePath, JSON.stringify({
+      version: 1,
+      tasks: [legacyTask],
+      resultEnvelopes: [],
+    }), { mode: 0o600 });
+
+    const loaded = await ledger.load();
+
+    expect(loaded?.tasks[0].dispatchGroupId).toBeNull();
+    expect(ledger.getDiagnostics?.().quarantinedPath).toBeNull();
   });
 
   it('publishes a visible recovery warning after quarantining an invalid ledger', async () => {
@@ -194,7 +310,7 @@ describe('VS Code managed orchestration owner', () => {
 
     const submitted: unknown[] = [];
     for (let index = 1; index <= 5; index += 1) {
-      const params = submitParams(index);
+      const params = submitParams(index, index === 1 ? { timeoutAt: 1_500 } : {});
       if (index === 1) params.prompt = '  preserve RPC prompt whitespace\n';
       submitted.push(await runtime.handleRpc({ method: 'submit', params }));
     }
@@ -208,12 +324,204 @@ describe('VS Code managed orchestration owner', () => {
     expect(runs[0].prompt).toBe('  preserve RPC prompt whitespace\n');
     expect(getTask(submitted[3]).status).toBe('queued');
     expect(getTask(submitted[4]).status).toBe('queued');
+    expect(submitted.every((result) => getTask(result).timeoutAt === 1_801_000)).toBe(true);
     expect(submitted.every((result) => !('prompt' in getTask(result)))).toBe(true);
     expect(events.length).toBeGreaterThan(0);
 
     runs[0].result.resolve({ status: 'completed', recoverablePreview: 'done' });
     await runtime.flush();
     expect(runs[3].taskId).toBe('dvr_task_vscode_4');
+    await runtime.shutdown();
+  });
+
+  it('waits on a root-scoped private dispatch barrier with web-runtime parity', async () => {
+    const runs: Array<{ result: ReturnType<typeof deferred> }> = [];
+    const runtime = createVsCodeManagedOrchestrationRuntime({
+      storageDirectory: '/unused',
+      persistence: createPersistence(),
+      executor: {
+        start() {
+          const result = deferred();
+          runs.push({ result });
+          return result.promise;
+        },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' as const }; },
+        async readRecoverableResult() { return {}; },
+      },
+      createTaskId: () => 'dvr_task_barrier',
+      createLeaseToken: () => 'dvr_lease_barrier',
+      now: () => 1_000,
+    });
+    const submitted = await runtime.handleRpc({
+      method: 'submit',
+      params: submitParams(1, { dispatchGroupId: 'msg_parent' }),
+    });
+    expect(getTask(submitted)).not.toHaveProperty('dispatchGroupId');
+    expect(await runtime.handleRpc({
+      method: 'barrier',
+      params: { rootSessionId: 'ses_other' },
+    })).toEqual({ state: 'clear', taskIds: [] });
+
+    const barrier = runtime.handleRpc({
+      method: 'barrier',
+      params: { rootSessionId: 'ses_root' },
+    });
+    runs[0].result.resolve({ status: 'completed', recoverablePreview: 'done' });
+    expect(await barrier).toEqual({
+      state: 'awaiting_acknowledgement',
+      taskIds: [getTask(submitted).taskId],
+    });
+
+    await runtime.handleRpc({
+      method: 'acknowledge',
+      params: {
+        taskId: getTask(submitted).taskId,
+        rootSessionId: 'ses_root',
+        action: 'continue',
+        idempotencyKey: 'continue-barrier',
+      },
+    });
+    expect(await runtime.handleRpc({
+      method: 'barrier',
+      params: { rootSessionId: 'ses_root' },
+    })).toEqual({ state: 'clear', taskIds: [] });
+    await runtime.shutdown();
+  });
+
+  it('gives retry, resume, and retry-in-place follow-ups a fresh default deadline', async () => {
+    const runtime = createVsCodeManagedOrchestrationRuntime({
+      storageDirectory: '/unused',
+      persistence: createPersistence(),
+      executor: {
+        async start() {
+          return { status: 'failed', failureReason: 'temporary failure', resumable: true };
+        },
+        async resume() {
+          return { status: 'failed', failureReason: 'temporary failure', resumable: true };
+        },
+        async retryInPlace() {
+          return { status: 'failed', failureReason: 'temporary failure', resumable: true };
+        },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' as const }; },
+        async readRecoverableResult() { return {}; },
+        async shutdown() {},
+      },
+      createTaskId: (() => {
+        let index = 0;
+        return () => `dvr_task_deadline_${++index}`;
+      })(),
+      createLeaseToken: (() => {
+        let index = 0;
+        return () => `dvr_lease_deadline_${++index}`;
+      })(),
+      now: () => 10_000,
+    });
+    const originals: unknown[] = [];
+    for (let index = 1; index <= 3; index += 1) {
+      originals.push(await runtime.handleRpc({
+        method: 'submit',
+        params: submitParams(index, { childSessionId: `ses_child_${index}` }),
+      }));
+    }
+    await runtime.flush();
+
+    const actions = ['retry', 'resume', 'retry_in_place'] as const;
+    for (let index = 0; index < actions.length; index += 1) {
+      const result = await runtime.handleRpc({
+        method: 'acknowledge',
+        params: {
+          taskId: getTask(originals[index]).taskId,
+          rootSessionId: 'ses_root',
+          directory: '/workspace',
+          action: actions[index],
+          idempotencyKey: `ack-${actions[index]}`,
+        },
+      }) as { followUpTask: unknown };
+      expect(getTask(result.followUpTask).timeoutAt).toBe(1_810_000);
+    }
+
+    await runtime.shutdown();
+  });
+
+  it('maps the grouped agent retry ceiling to HTTP 409', async () => {
+    const runtime = createVsCodeManagedOrchestrationRuntime({
+      storageDirectory: '/unused',
+      persistence: createPersistence(),
+      executor: {
+        async start() {
+          return { status: 'failed' as const, failureReason: 'usage limit', resumable: true };
+        },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' as const }; },
+        async readRecoverableResult() { return {}; },
+      },
+      createTaskId: (() => {
+        let index = 0;
+        return () => `dvr_task_retry_limit_${++index}`;
+      })(),
+      createLeaseToken: (() => {
+        let index = 0;
+        return () => `dvr_lease_retry_limit_${++index}`;
+      })(),
+      now: () => 10_000,
+    });
+    const original = await runtime.handleRpc({
+      method: 'submit',
+      params: submitParams(1, { dispatchGroupId: 'msg_parent' }),
+    });
+    await runtime.flush();
+    const firstRecovery = await runtime.handleRpc({
+      method: 'acknowledge',
+      params: {
+        taskId: getTask(original).taskId,
+        rootSessionId: 'ses_root',
+        directory: '/workspace',
+        action: 'retry',
+        idempotencyKey: 'grouped-retry-1',
+      },
+    }) as { followUpTask: unknown };
+    await runtime.flush();
+
+    await expect(runtime.handleRpc({
+      method: 'acknowledge',
+      params: {
+        taskId: getTask(firstRecovery.followUpTask).taskId,
+        rootSessionId: 'ses_root',
+        directory: '/workspace',
+        action: 'retry',
+        idempotencyKey: 'grouped-retry-2',
+      },
+    })).rejects.toMatchObject({ code: 'managed_retry_limit_reached', statusCode: 409 });
+
+    await runtime.shutdown();
+  });
+
+  it('preserves the private Council three-minute deadline class', async () => {
+    const runtime = createVsCodeManagedOrchestrationRuntime({
+      storageDirectory: '/unused',
+      persistence: createPersistence(),
+      executor: {
+        async start() { return await new Promise<ManagedTaskExecutorResult>(() => {}); },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' as const }; },
+        async readRecoverableResult() { return {}; },
+      },
+      createTaskId: () => 'dvr_task_council_deadline',
+      createLeaseToken: () => 'dvr_lease_council_deadline',
+      now: () => 10_000,
+    });
+
+    const submitted = await runtime.handleRpc({
+      method: 'submit',
+      params: submitParams(1, {
+        deadlineClass: 'council',
+        timeoutAt: 190_000,
+      }),
+    });
+
+    expect(getTask(submitted).timeoutAt).toBe(190_000);
     await runtime.shutdown();
   });
 
@@ -234,6 +542,15 @@ describe('VS Code managed orchestration owner', () => {
       code: 'managed_runtime_unavailable',
       statusCode: 503,
     });
+    await expect(runtime.handleRpc({
+      method: 'handoff',
+      params: {
+        rootSessionId: 'ses_root',
+        fromMode: 'orchestrator',
+        toMode: 'builder',
+        confirm: false,
+      },
+    })).rejects.toMatchObject({ code: 'managed_runtime_unavailable', statusCode: 503 });
     expect(await runtime.getSnapshot()).toMatchObject({ available: false, tasks: [] });
     await runtime.shutdown();
   });

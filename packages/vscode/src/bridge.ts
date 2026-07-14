@@ -1,13 +1,16 @@
 import * as vscode from 'vscode';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { type OpenCodeManager } from './opencode';
 import { handleStandardGitBridgeMessage } from './bridge-git-runtime';
 import { handleSpecialGitBridgeMessage } from './bridge-git-special-runtime';
 import { handleFsBridgeMessage } from './bridge-fs-runtime';
 import { handleConfigBridgeMessage } from './bridge-config-runtime';
-import { handleSystemBridgeMessage } from './bridge-system-runtime';
+import { getVsCodeCursorSdkRuntime, handleSystemBridgeMessage } from './bridge-system-runtime';
 import { handleProxyBridgeMessage } from './bridge-proxy-runtime';
 import { handleManagedOrchestrationBridgeMessage } from './bridge-orchestration-runtime';
 import type { VsCodeManagedOrchestrationRuntime } from './managedOrchestrationRuntime';
+import { createGlobalAgentsMdRuntime } from './globalAgentsMdRuntime';
 import {
   fetchOpenCodeSkillsFromApi,
   persistSettings,
@@ -56,6 +59,7 @@ export interface BridgeContext {
   manager?: OpenCodeManager;
   context?: vscode.ExtensionContext;
   managedOrchestrationRuntime?: VsCodeManagedOrchestrationRuntime;
+  postMessage?: (message: unknown) => void | Promise<void>;
 }
 
 const CLIENT_RELOAD_DELAY_MS = 800;
@@ -117,6 +121,13 @@ export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeCo
         resetAllMagicPromptOverrides,
         fetchOpenCodeSkillsFromApi,
         clientReloadDelayMs: CLIENT_RELOAD_DELAY_MS,
+        getGlobalAgentsMdRuntime: (context) => createGlobalAgentsMdRuntime({
+          agentsMdPath: path.join(os.homedir(), '.config', 'opencode', 'AGENTS.md'),
+          refreshRuntime: async () => {
+            await context?.manager?.restart();
+          },
+          isEditable: () => context?.manager?.getDebugInfo()?.mode !== 'external',
+        }),
       },
     );
     if (configResponse) {
@@ -144,6 +155,10 @@ export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeCo
         sanitizeForwardHeaders,
         collectHeaders,
         base64EncodeUtf8,
+        getCachedCursorProvider: () => getVsCodeCursorSdkRuntime().getCachedVirtualProvider(),
+        refreshCursorProvider: async () => {
+          await getVsCodeCursorSdkRuntime().refreshVirtualProvider({ reason: 'providers_route' });
+        },
       },
     );
     if (proxyResponse) {

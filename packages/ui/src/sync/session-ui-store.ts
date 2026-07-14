@@ -32,6 +32,11 @@ import {
   getSubagentContextUsageForSession,
   type ContextUsageMessage,
 } from "@/stores/utils/contextUsageUtils"
+import {
+  resolveModelContextCapacity,
+  UNAVAILABLE_MODEL_CONTEXT_CAPACITY,
+  type ResolvedModelContextCapacity,
+} from "@/stores/utils/modelContextCapacity"
 import { markPendingUserSendAnimation } from "@/lib/userSendAnimation"
 import { flattenAssistantTextParts } from "@/lib/messages/messageText"
 import { EXECUTION_FORK_META_TEXT } from "@/lib/messages/executionMeta"
@@ -39,10 +44,12 @@ import { isSyntheticPart } from "@/lib/messages/synthetic"
 import { waitForWorktreeBootstrap } from "@/lib/worktrees/worktreeBootstrap"
 import { waitForPendingDraftWorktreeRequest } from "@/lib/worktrees/pendingDraftWorktree"
 import { resolveProjectForSessionDirectory } from "@/lib/projectResolution"
-import { postTurnTimingMark, streamDebugMark } from "@/stores/utils/streamDebug"
+import { streamDebugMark } from "@/stores/utils/streamDebug"
 import { isGitGenerationSessionRecord } from "@/lib/git/gitGenerationSessions"
 import { assertPdfAttachmentsSupported } from "@/lib/attachments/attachmentCapabilities"
 import {
+  hasExplicitDraftModelIntent,
+  normalizeSendConfigModelProvenance,
   resolveDraftSendSelection,
   resolveSessionSendConfig,
   type SendConfig,
@@ -59,6 +66,7 @@ import {
   getDirectoryState,
   getSyncChildStores,
   getSyncSessionDirectoryAnyDirectory,
+  setSessionUIStoreRef,
 } from "./sync-refs"
 import { markSessionsViewed } from "./notification-store"
 import { setActiveSession } from "./sync-context"
@@ -104,6 +112,7 @@ const CURSOR_DRAFT_PREWARM_STALE_MS = 24 * 60 * 60 * 1000
 const CROSS_RUNTIME_HANDOFF_MAX_MESSAGES = 8
 const CROSS_RUNTIME_HANDOFF_MAX_CHARS = 6000
 const CROSS_RUNTIME_HANDOFF_MAX_TEXT_CHARS = 1400
+const CROSS_RUNTIME_HANDOFF_OMISSION_MARKER = "[older conversation context omitted]"
 export const SESSION_COMPLETION_INDICATOR_SETTLE_MS = 250
 
 const pendingSessionCompletionTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -235,6 +244,9 @@ async function autoUnarchiveAfterSuccessfulSend(sessionId: string | null | undef
 export const buildPlanModeSyntheticInstruction = (): string => [
   "User has requested to enter plan mode.",
   "Produce an implementation plan only; do not edit files, run modifying commands, or make changes yet.",
+  "Use the authoritative same-session planning history as context. Treat the latest visible user prompt as a revision of the most recent plan unless the user explicitly asks for a separate, independent plan.",
+  "Preserve every prior requirement, decision, constraint, and file reference that the user has not explicitly changed, including useful work from an interrupted or partial planning turn.",
+  "For a revision, emit a complete, self-contained replacement plan containing both the preserved context and the requested changes. Never return only a patch, diff, addendum, or abbreviated delta.",
   "Write the plan as ordinary markdown — no code fences, no plan.md wrapper. Use headings, lists, and bold for structure so the chat UI can render it as typeset prose.",
   "Use the actual plan name as the top heading; do not prefix it with 'Implementation Plan:'.",
   "When the final plan is complete, stop after the Verification section. The plan card provides the implementation action; do not ask for approval in prose or through the question tool.",
@@ -382,6 +394,7 @@ async function routeMessage(params: {
 
     if (isCommand) {
       await optimisticSend({
+        messageID: params.lifecycleCallbacks?.messageID,
         sessionId: params.sessionId,
         content: params.content,
         providerID: params.providerID,
@@ -422,6 +435,7 @@ async function routeMessage(params: {
 
   // Normal prompt — optimistic insert so message appears instantly
   await optimisticSend({
+    messageID: params.lifecycleCallbacks?.messageID,
     sessionId: params.sessionId,
     content: params.content,
     providerID: params.providerID,
@@ -509,6 +523,7 @@ export type StarterAssistantMessage = {
 }
 
 type ProviderModelLimit = {
+  input?: number
   context?: number
   output?: number
 }
@@ -516,6 +531,7 @@ type ProviderModelLimit = {
 type ProviderModelLike = {
   id?: string
   limit?: ProviderModelLimit
+  variants?: Record<string, { limit?: ProviderModelLimit }>
 }
 
 type ProviderLike = {
@@ -527,10 +543,10 @@ const getContextMessageInfo = (message: ContextUsageMessage): Message => {
   return "info" in message ? message.info as Message : message as Message
 }
 
-const resolveContextLimitsFromMessages = (messages: ContextUsageMessage[]): { contextLimit: number; outputLimit: number } => {
+const resolveContextCapacityFromMessages = (messages: ContextUsageMessage[]): ResolvedModelContextCapacity => {
   const providers = useConfigStore.getState().providers as ProviderLike[]
   if (!Array.isArray(providers) || providers.length === 0) {
-    return { contextLimit: 0, outputLimit: 0 }
+    return UNAVAILABLE_MODEL_CONTEXT_CAPACITY
   }
 
   for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -541,14 +557,13 @@ const resolveContextLimitsFromMessages = (messages: ContextUsageMessage[]): { co
 
     const provider = providers.find((entry) => entry.id === info.providerID)
     const model = provider?.models?.find((entry) => entry.id === info.modelID)
-    const limit = model?.limit
-    return {
-      contextLimit: typeof limit?.context === "number" ? limit.context : 0,
-      outputLimit: typeof limit?.output === "number" ? limit.output : 0,
-    }
+    const variant = typeof (info as Message & { variant?: unknown }).variant === "string"
+      ? (info as Message & { variant: string }).variant
+      : undefined
+    return resolveModelContextCapacity(model, variant)
   }
 
-  return { contextLimit: 0, outputLimit: 0 }
+  return UNAVAILABLE_MODEL_CONTEXT_CAPACITY
 }
 
 export type ViewportAnchor = {
@@ -557,6 +572,8 @@ export type ViewportAnchor = {
 }
 
 type SendLifecycleCallbacks = {
+  messageID?: string
+  directory?: string
   onMessageID?: (messageID: string) => void
   onMessageRollback?: (messageID: string) => void
   onSessionReady?: (sessionID: string, directory?: string | null) => void
@@ -664,6 +681,7 @@ async function queuePromptAfterPendingQuestions(params: {
 
   useMessageQueueStore.getState().addToQueue(params.sessionId, {
     content: params.content,
+    directory: params.directory ?? undefined,
     attachments: params.attachments,
     sendConfig: {
       providerID: params.providerID,
@@ -782,7 +800,7 @@ export type SessionUIState = {
   clearError: () => void
   markSessionAsOpenChamberCreated: (sessionId: string) => void
   isOpenChamberCreatedSession: (sessionId: string) => boolean
-  getContextUsage: (contextLimit: number, outputLimit: number) => SessionContextUsage | null
+  getContextUsage: (capacity: ResolvedModelContextCapacity) => SessionContextUsage | null
   initializeNewOpenChamberSession: (sessionId: string, agents: unknown[]) => void
   setWorktreeMetadata: (sessionId: string, metadata: WorktreeMetadata | null) => void
   overrideNewSessionDraftTarget: (options: Record<string, unknown>) => void
@@ -902,28 +920,6 @@ type PersistedCursorDraftPrewarmSession = {
   createdAt: number
 }
 
-type CursorDraftPrewarmTarget = {
-  draftId: string
-  key: string
-  directory: string | null
-  title?: string
-  parentID: string | null
-  modelID: string
-  variant: string
-  agent: string
-}
-
-type CursorDraftPrewarmEntry = CursorDraftPrewarmTarget & {
-  session: Session | null
-  sessionID: string | null
-  createdAt: number
-  ready: boolean
-  abandoned: boolean
-  promise: Promise<void>
-}
-
-const cursorDraftPrewarmByDraftId = new Map<string, CursorDraftPrewarmEntry>()
-
 const readPersistedCursorDraftPrewarmSessions = (): PersistedCursorDraftPrewarmSession[] => {
   try {
     const raw = safeStorage.getItem(CURSOR_DRAFT_PREWARM_STORAGE_KEY)
@@ -960,13 +956,6 @@ const writePersistedCursorDraftPrewarmSessions = (records: PersistedCursorDraftP
   } catch { /* ignored */ }
 }
 
-const persistCursorDraftPrewarmSession = (record: PersistedCursorDraftPrewarmSession): void => {
-  const records = readPersistedCursorDraftPrewarmSessions()
-    .filter((item) => item.sessionID !== record.sessionID && item.draftId !== record.draftId)
-  records.push(record)
-  writePersistedCursorDraftPrewarmSessions(records)
-}
-
 const removePersistedCursorDraftPrewarmSession = (sessionID: string | null | undefined): void => {
   const id = typeof sessionID === "string" ? sessionID.trim() : ""
   if (!id) return
@@ -995,190 +984,6 @@ const cleanupStaleCursorDraftPrewarmSessions = (): void => {
     }
   }
   writePersistedCursorDraftPrewarmSessions(retained)
-}
-
-const resolveCursorDraftPrewarmTarget = (state: SessionUIState): CursorDraftPrewarmTarget | null => {
-  const draft = state.newSessionDraft
-  const draftId = state.currentDraftId ?? draft.id ?? null
-  if (!draft?.open || !draftId || draft.pendingWorktreeRequestId) return null
-
-  const capturedDraft = state.draftsById[draftId] ?? null
-  const draftSendConfig = normalizeDraftSendConfig(capturedDraft?.sendConfig ?? draft.sendConfig)
-  const selectionState = useSelectionStore.getState()
-  const draftAgentSelection = selectionState.getDraftAgentSelection(draftId)
-  const draftModelSelection = selectionState.getDraftModelSelection(draftId)
-  const draftAgentForModel = draftAgentSelection ?? cleanSendConfigString(draftSendConfig?.agent)
-  const draftAgentModelSelection = draftAgentForModel
-    ? selectionState.getDraftAgentModelForSelection(draftId, draftAgentForModel)
-    : null
-  const draftVariantProviderID = draftAgentModelSelection?.providerId ?? draftModelSelection?.providerId ?? draftSendConfig?.providerID
-  const draftVariantModelID = draftAgentModelSelection?.modelId ?? draftModelSelection?.modelId ?? draftSendConfig?.modelID
-  const draftAgentModelVariant = draftAgentForModel && draftVariantProviderID && draftVariantModelID
-    ? selectionState.getDraftAgentModelVariantForSelection(draftId, draftAgentForModel, draftVariantProviderID, draftVariantModelID)
-    : undefined
-  const configState = useConfigStore.getState()
-  const draftSelection = resolveDraftSendSelection({
-    requestedAgent: undefined,
-    currentAgent: configState.currentAgentName,
-    settingsDefaultAgent: configState.settingsDefaultAgent,
-    agents: (configState.agents ?? []) as SendConfigAgent[],
-    providers: (configState.providers ?? []) as SendConfigProvider[],
-    inputProviderID: configState.currentProviderId,
-    inputModelID: configState.currentModelId,
-    inputVariant: configState.currentVariant,
-    currentProviderID: configState.currentProviderId,
-    currentModelID: configState.currentModelId,
-    currentVariant: configState.currentVariant,
-    draftAgentSelection,
-    draftModelSelection,
-    draftAgentModelSelection,
-    draftAgentModelVariant,
-    draftSendConfig,
-  })
-
-  if (draftSelection.providerID !== CURSOR_ACP_PROVIDER_ID || !draftSelection.modelID) {
-    return null
-  }
-
-  const directory = resolveDirectoryForDraftSend(draft)
-  const agent = draftSelection.agent ?? ""
-  const variant = draftSelection.variant ?? ""
-  const parentID = draft.parentID ?? null
-  const title = draft.title
-  const key = JSON.stringify({
-    directory,
-    parentID,
-    title: title ?? null,
-    modelID: draftSelection.modelID,
-    variant,
-    agent,
-  })
-
-  return {
-    draftId,
-    key,
-    directory,
-    title,
-    parentID,
-    modelID: draftSelection.modelID,
-    variant,
-    agent,
-  }
-}
-
-const abandonCursorDraftPrewarm = (draftId: string | null | undefined): void => {
-  const id = typeof draftId === "string" ? draftId.trim() : ""
-  if (!id) return
-  const entry = cursorDraftPrewarmByDraftId.get(id)
-  if (!entry) return
-  entry.abandoned = true
-  cursorDraftPrewarmByDraftId.delete(id)
-  if (entry.sessionID) {
-    void deleteHiddenCursorDraftSession(entry.sessionID, entry.directory)
-    return
-  }
-  entry.promise.finally(() => {
-    if (entry.sessionID) {
-      void deleteHiddenCursorDraftSession(entry.sessionID, entry.directory)
-    }
-  })
-}
-
-const ensureCursorDraftPrewarm = (getState: () => SessionUIState): void => {
-  const state = getState()
-  const draftId = state.currentDraftId ?? state.newSessionDraft.id ?? null
-  const target = resolveCursorDraftPrewarmTarget(state)
-  if (!target) {
-    abandonCursorDraftPrewarm(draftId)
-    return
-  }
-
-  const existing = cursorDraftPrewarmByDraftId.get(target.draftId)
-  if (existing?.key === target.key && !existing.abandoned) return
-  if (existing) abandonCursorDraftPrewarm(target.draftId)
-
-  const entry: CursorDraftPrewarmEntry = {
-    ...target,
-    session: null,
-    sessionID: null,
-    createdAt: Date.now(),
-    ready: false,
-    abandoned: false,
-    promise: Promise.resolve(),
-  }
-  cursorDraftPrewarmByDraftId.set(target.draftId, entry)
-
-  entry.promise = (async () => {
-    postTurnTimingMark({
-      sessionId: `draft:${target.draftId}`,
-      mark: "cursor_draft_session_create_started",
-      directory: target.directory,
-      metadata: {
-        providerID: CURSOR_ACP_PROVIDER_ID,
-        modelID: target.modelID,
-        agent: target.agent || null,
-        variant: target.variant || null,
-      },
-    })
-    const session = await createSessionRecordAction(target.title, target.directory, target.parentID, {
-      isDraftPrewarmSession: true,
-    })
-    if (!session?.id) {
-      cursorDraftPrewarmByDraftId.delete(target.draftId)
-      return
-    }
-    entry.session = session
-    entry.sessionID = session.id
-    persistCursorDraftPrewarmSession({
-      draftId: target.draftId,
-      sessionID: session.id,
-      directory: target.directory,
-      createdAt: entry.createdAt,
-    })
-    postTurnTimingMark({
-      sessionId: session.id,
-      mark: "cursor_draft_session_created",
-      directory: target.directory,
-      metadata: {
-        providerID: CURSOR_ACP_PROVIDER_ID,
-        modelID: target.modelID,
-        agent: target.agent || null,
-        variant: target.variant || null,
-      },
-    })
-    if (entry.abandoned) {
-      await deleteHiddenCursorDraftSession(session.id, target.directory)
-      return
-    }
-
-    const prewarm = await opencodeClient.prewarmCursorSession({
-      sessionID: session.id,
-      directory: target.directory,
-      modelID: target.modelID,
-      variant: target.variant,
-      agent: target.agent,
-    })
-    entry.ready = prewarm.ok !== false
-    if (!entry.ready || entry.abandoned) {
-      await deleteHiddenCursorDraftSession(session.id, target.directory)
-      cursorDraftPrewarmByDraftId.delete(target.draftId)
-    }
-  })().catch((error) => {
-    console.warn("[session-ui-store] Cursor draft prewarm failed", error)
-    if (entry.sessionID) {
-      void deleteHiddenCursorDraftSession(entry.sessionID, entry.directory)
-    }
-    cursorDraftPrewarmByDraftId.delete(target.draftId)
-  })
-}
-
-const takeReadyCursorDraftPrewarm = (target: CursorDraftPrewarmTarget | null): Session | null => {
-  if (!target) return null
-  const entry = cursorDraftPrewarmByDraftId.get(target.draftId)
-  if (!entry || entry.key !== target.key || !entry.ready || !entry.session) return null
-  cursorDraftPrewarmByDraftId.delete(target.draftId)
-  removePersistedCursorDraftPrewarmSession(entry.session.id)
-  return entry.session
 }
 
 cleanupStaleCursorDraftPrewarmSessions()
@@ -1246,7 +1051,7 @@ const buildCrossRuntimeHandoffPart = (params: {
   const messages = getSyncMessages(params.sessionId, params.directory ?? undefined) as Array<Message & Record<string, unknown>>
   if (!Array.isArray(messages) || messages.length === 0) return undefined
 
-  const selected: Array<{ role: "user" | "assistant"; text: string }> = []
+  const candidates: Array<{ role: "user" | "assistant"; text: string }> = []
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
     const role = message?.role
@@ -1256,32 +1061,50 @@ const buildCrossRuntimeHandoffPart = (params: {
 
     const backend = getProviderBackend(getMessageProviderId(message))
     if (backend !== sourceBackend) {
-      if (selected.length > 0) break
+      if (candidates.length > 0) break
       continue
     }
 
     const text = getVisibleTextFromParts(getSyncParts(message.id, params.directory ?? undefined) as Part[])
     if (!text) continue
 
-    selected.push({ role, text: truncateHandoffText(text) })
-    if (selected.length >= CROSS_RUNTIME_HANDOFF_MAX_MESSAGES) break
+    candidates.push({ role, text: truncateHandoffText(text) })
+    if (candidates.length > CROSS_RUNTIME_HANDOFF_MAX_MESSAGES) break
   }
 
-  if (selected.length === 0) return undefined
+  if (candidates.length === 0) return undefined
 
   const sourceLabel = sourceBackend === "cursor" ? "Cursor SDK" : "OpenCode"
   const targetLabel = targetBackend === "cursor" ? "Cursor SDK" : "OpenCode"
-  const lines = [
-    `Conversation context from ${sourceLabel} turns, supplied because this reply is switching to ${targetLabel}:`,
-    "",
-    ...selected.reverse().map((entry) => `${entry.role === "user" ? "User" : "Assistant"}: ${entry.text}`),
-  ]
-  let text = lines.join("\n\n").trim()
-  if (text.length > CROSS_RUNTIME_HANDOFF_MAX_CHARS) {
-    text = `${text.slice(0, CROSS_RUNTIME_HANDOFF_MAX_CHARS).trimEnd()}\n[conversation context truncated]`
+  const header = `Conversation context from ${sourceLabel} turns, supplied because this reply is switching to ${targetLabel}:`
+  const formatEntry = (entry: { role: "user" | "assistant"; text: string }): string => (
+    `${entry.role === "user" ? "User" : "Assistant"}: ${entry.text}`
+  )
+  const boundedCandidates = candidates.slice(0, CROSS_RUNTIME_HANDOFF_MAX_MESSAGES)
+  const formatTranscript = (
+    entriesNewestFirst: Array<{ role: "user" | "assistant"; text: string }>,
+    omitted: boolean,
+  ): string => [
+    header,
+    ...(omitted ? [CROSS_RUNTIME_HANDOFF_OMISSION_MARKER] : []),
+    ...[...entriesNewestFirst].reverse().map(formatEntry),
+  ].join("\n\n").trim()
+
+  const completeText = formatTranscript(boundedCandidates, false)
+  const hasOverflow = candidates.length > CROSS_RUNTIME_HANDOFF_MAX_MESSAGES
+    || completeText.length > CROSS_RUNTIME_HANDOFF_MAX_CHARS
+  if (!hasOverflow) {
+    return { text: completeText, synthetic: true }
   }
 
-  return { text, synthetic: true }
+  const retained: Array<{ role: "user" | "assistant"; text: string }> = []
+  for (const candidate of boundedCandidates) {
+    const next = [...retained, candidate]
+    if (formatTranscript(next, true).length > CROSS_RUNTIME_HANDOFF_MAX_CHARS) break
+    retained.push(candidate)
+  }
+
+  return { text: formatTranscript(retained, true), synthetic: true }
 }
 
 const withCrossRuntimeHandoffContext = <T extends { text: string; synthetic?: boolean }>(
@@ -1516,6 +1339,91 @@ const activateConfigForDirectoryInBackground = (directory: string | null | undef
   })
 }
 
+/**
+ * After selecting an existing draft and activating its directory, restore live
+ * agent/model/variant (and draft selection maps) from that draft's authoritative
+ * resolution so UI, agent switches, prewarm, and first send stay aligned.
+ * No-ops if the user has already switched away from `draftId`.
+ */
+const restoreLiveConfigForSelectedDraft = (draftId: string, getState: () => SessionUIState): void => {
+  const state = getState()
+  if (state.currentDraftId !== draftId) return
+
+  const draft = state.draftsById[draftId]
+  if (!draft) return
+
+  const draftSendConfig = normalizeDraftSendConfig(
+    draft.sendConfig ?? (state.currentDraftId === draftId ? state.newSessionDraft.sendConfig : undefined),
+  )
+  const selectionState = useSelectionStore.getState()
+  const configState = useConfigStore.getState()
+  const draftAgentSelection = selectionState.getDraftAgentSelection(draftId)
+  const draftModelSelection = selectionState.getDraftModelSelection(draftId)
+  const draftAgentForModel = draftAgentSelection ?? cleanSendConfigString(draftSendConfig?.agent)
+  const draftAgentModelSelection = draftAgentForModel
+    ? selectionState.getDraftAgentModelForSelection(draftId, draftAgentForModel)
+    : null
+  const draftVariantProviderID = draftAgentModelSelection?.providerId ?? draftModelSelection?.providerId ?? draftSendConfig?.providerID
+  const draftVariantModelID = draftAgentModelSelection?.modelId ?? draftModelSelection?.modelId ?? draftSendConfig?.modelID
+  const draftAgentModelVariant = draftAgentForModel && draftVariantProviderID && draftVariantModelID
+    ? selectionState.getDraftAgentModelVariantForSelection(draftId, draftAgentForModel, draftVariantProviderID, draftVariantModelID)
+    : undefined
+
+  const draftSelection = resolveDraftSendSelection({
+    requestedAgent: undefined,
+    currentAgent: configState.currentAgentName,
+    settingsDefaultAgent: configState.settingsDefaultAgent,
+    agents: (configState.agents ?? []) as SendConfigAgent[],
+    providers: (configState.providers ?? []) as SendConfigProvider[],
+    inputProviderID: configState.currentProviderId,
+    inputModelID: configState.currentModelId,
+    inputVariant: configState.currentVariant,
+    currentProviderID: configState.currentProviderId,
+    currentModelID: configState.currentModelId,
+    currentVariant: configState.currentVariant,
+    draftAgentSelection,
+    draftModelSelection,
+    draftAgentModelSelection,
+    draftAgentModelVariant,
+    draftSendConfig,
+  })
+
+  if (!draftSelection.agent && !draftSelection.providerID) {
+    useConfigStore.getState().applyDefaultsToCurrent({
+      preserveCurrentModel: hasExplicitDraftModelIntent(draftSendConfig),
+    })
+    return
+  }
+
+  if (draftSelection.agent) {
+    configState.setAgent(draftSelection.agent, {
+      preserveCurrentModel: true,
+      recordSessionSelection: false,
+    })
+    selectionState.saveDraftAgentSelection(draftId, draftSelection.agent)
+  }
+
+  if (draftSelection.providerID && draftSelection.modelID) {
+    configState.setProviderModel(draftSelection.providerID, draftSelection.modelID, draftSelection.variant)
+    selectionState.saveDraftModelSelection(draftId, draftSelection.providerID, draftSelection.modelID)
+    if (draftSelection.agent) {
+      selectionState.saveDraftAgentModelForSelection(
+        draftId,
+        draftSelection.agent,
+        draftSelection.providerID,
+        draftSelection.modelID,
+      )
+      selectionState.saveDraftAgentModelVariantForSelection(
+        draftId,
+        draftSelection.agent,
+        draftSelection.providerID,
+        draftSelection.modelID,
+        draftSelection.variant,
+      )
+    }
+  }
+}
+
 const applyCurrentSessionSideEffects = (
   id: string | null,
   directoryHint: string | null | undefined,
@@ -1578,10 +1486,6 @@ const cleanSendConfigString = (value: unknown): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined
 }
 
-const hasDraftSendModel = (sendConfig: SendConfig | null | undefined): boolean => (
-  !!cleanSendConfigString(sendConfig?.providerID) && !!cleanSendConfigString(sendConfig?.modelID)
-)
-
 const normalizeDraftSendConfig = (sendConfig: SendConfig | null | undefined): SendConfig | undefined => {
   if (!sendConfig) return undefined
   const next: SendConfig = {}
@@ -1589,11 +1493,13 @@ const normalizeDraftSendConfig = (sendConfig: SendConfig | null | undefined): Se
   const modelID = cleanSendConfigString(sendConfig.modelID)
   const agent = cleanSendConfigString(sendConfig.agent)
   const variant = cleanSendConfigString(sendConfig.variant)
+  const modelProvenance = normalizeSendConfigModelProvenance(sendConfig.modelProvenance)
   if (providerID) next.providerID = providerID
   if (modelID) next.modelID = modelID
   if (agent) next.agent = agent
   if (variant) next.variant = variant
   if (typeof sendConfig.planMode === "boolean") next.planMode = sendConfig.planMode
+  if (modelProvenance) next.modelProvenance = modelProvenance
   return Object.keys(next).length > 0 ? next : undefined
 }
 
@@ -1619,6 +1525,15 @@ const mergeDraftSendConfig = (current: SendConfig | null | undefined, patch: Sen
       next.planMode = patch.planMode
     } else {
       delete next.planMode
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, "modelProvenance")) {
+    const provenance = normalizeSendConfigModelProvenance(patch.modelProvenance)
+    if (provenance) {
+      next.modelProvenance = provenance
+    } else {
+      delete next.modelProvenance
     }
   }
 
@@ -1744,7 +1659,6 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // openNewSessionDraft
   // ---------------------------------------------------------------------------
   openNewSessionDraft: (options) => {
-    abandonCursorDraftPrewarm(get().currentDraftId)
     const projectsState = useProjectsStore.getState()
     const projects = projectsState.projects
     const availableWorktreesByProject = get().availableWorktreesByProject
@@ -1811,15 +1725,18 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     }
 
     set((s) => {
-      // Empty inactive drafts are editor placeholders, not saved draft rows.
+      const isPersistableDraft = (existing: ChatDraft): boolean =>
+        existing.text.trim().length > 0 || Boolean(normalizeDraftSendConfig(existing.sendConfig))
+
+      // Empty, unconfigured inactive drafts are editor placeholders, not saved draft rows.
       // Drop them when a new draft is created so they cannot accumulate in storage.
       Object.entries(s.draftsById).forEach(([id, existing]) => {
-        if (id !== s.currentDraftId && existing.text.trim().length === 0) {
+        if (id !== s.currentDraftId && !isPersistableDraft(existing)) {
           removePersistedDraftInput(safeStorage, id)
         }
       })
       const retainedDrafts = Object.fromEntries(
-        Object.entries(s.draftsById).filter(([id, existing]) => id === s.currentDraftId || existing.text.trim().length > 0),
+        Object.entries(s.draftsById).filter(([id, existing]) => id === s.currentDraftId || isPersistableDraft(existing)),
       ) as Record<string, ChatDraft>
       const draftsById = { ...retainedDrafts, [draft.id]: draft }
       const draftOrder = [draft.id, ...s.draftOrder.filter((id) => id !== draft.id && Boolean(retainedDrafts[id]))]
@@ -1845,22 +1762,21 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       const state = get()
       const currentDraftSendConfig = state.draftsById[draft.id]?.sendConfig ?? (state.currentDraftId === draft.id ? state.newSessionDraft.sendConfig : undefined)
       const hasExplicitDraftModel = state.currentDraftId === draft.id
-        && (hasDraftSendModel(currentDraftSendConfig) || !!useSelectionStore.getState().getDraftModelSelection(draft.id))
+        && hasExplicitDraftModelIntent(currentDraftSendConfig)
       useConfigStore.getState().applyDefaultsToCurrent({ preserveCurrentModel: hasExplicitDraftModel })
-      ensureCursorDraftPrewarm(get)
     })
   },
 
   selectNewSessionDraft: (draftId) => {
     const draft = get().draftsById[draftId]
     if (!draft) return
-    if (get().currentDraftId !== draftId) {
-      abandonCursorDraftPrewarm(get().currentDraftId)
-    }
     persistDraftTarget({ projectId: draft.selectedProjectId ?? null, directory: normalizePath(draft.directoryOverride ?? null) })
     set({ currentSessionId: null, currentDraftId: draftId, newSessionDraft: toNewSessionDraftState(draft), error: null })
     setActiveSession("", "")
-    void activateConfigForDirectory(draft.directoryOverride ?? null).then(() => ensureCursorDraftPrewarm(get))
+    void activateConfigForDirectory(draft.directoryOverride ?? null).then(() => {
+      if (get().currentDraftId !== draftId) return
+      restoreLiveConfigForSelectedDraft(draftId, get)
+    })
   },
 
   updateNewSessionDraftText: (draftId, text) => {
@@ -1875,7 +1791,6 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   },
 
   deleteNewSessionDraft: (draftId) => {
-    abandonCursorDraftPrewarm(draftId)
     useSelectionStore.getState().clearDraftSelection(draftId)
     set((s) => {
       if (!s.draftsById[draftId]) return s
@@ -1905,7 +1820,6 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       get().deleteNewSessionDraft(draftId)
       return
     }
-    abandonCursorDraftPrewarm(get().newSessionDraft.id)
     set({
       currentDraftId: null,
       newSessionDraft: {
@@ -1997,7 +1911,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         },
       }
     })
-    void activateConfigForDirectory(nextDirectory).then(() => ensureCursorDraftPrewarm(get))
+    void activateConfigForDirectory(nextDirectory)
   },
 
   updateNewSessionDraftSendConfig: (patch) => {
@@ -2016,7 +1930,6 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         },
       }
     })
-    ensureCursorDraftPrewarm(get)
   },
 
   setDraftPreserveDirectoryOverride: (value) =>
@@ -2058,7 +1971,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
   isOpenChamberCreatedSession: (sessionId) => get().webUICreatedSessions.has(sessionId),
 
-  getContextUsage: (contextLimit: number, outputLimit: number) => {
+  getContextUsage: (capacity: ResolvedModelContextCapacity) => {
     if (get().newSessionDraft?.open) return null
     const sessionId = get().currentSessionId
     if (!sessionId) return null
@@ -2066,14 +1979,14 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const state = getDirectoryState()
     const messages = state?.message[sessionId] ?? getSyncMessages(sessionId)
     if (messages.length === 0) return null
-    const usage = getContextUsageFromMessages(messages, contextLimit, outputLimit)
+    const usage = getContextUsageFromMessages(messages, capacity)
     if (!usage || !state) return usage
 
     const relatedSubagents = getSubagentContextUsageForSession(
       sessionId,
       state.session,
       (childSessionId) => state.message[childSessionId] ?? [],
-      (_session, childMessages) => resolveContextLimitsFromMessages(childMessages),
+      (_session, childMessages) => resolveContextCapacityFromMessages(childMessages),
     )
 
     return attachRelatedSubagentContextUsage(usage, relatedSubagents)
@@ -2130,7 +2043,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       if (updatedDraft) persistDrafts(safeStorage, draftsById, s.draftOrder)
       return { draftsById, newSessionDraft: nextDraft }
     })
-    void activateConfigForDirectory(nextDirectory).then(() => ensureCursorDraftPrewarm(get))
+    void activateConfigForDirectory(nextDirectory)
   },
 
   resolvePendingDraftWorktreeTarget: (requestId, directory, options) =>
@@ -2288,16 +2201,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         throw new Error("Cannot send message: provider or model not selected")
       }
 
-      const cursorDraftPrewarmTarget = effectiveProviderID === CURSOR_ACP_PROVIDER_ID
-        ? resolveCursorDraftPrewarmTarget(get())
-        : null
-      const prewarmedSession = takeReadyCursorDraftPrewarm(cursorDraftPrewarmTarget)
-      if (!prewarmedSession && cursorDraftPrewarmTarget) {
-        abandonCursorDraftPrewarm(cursorDraftPrewarmTarget.draftId)
-      }
-
-      const created = prewarmedSession
-        ?? await createSessionRecordAction(draft.title, draftDirectoryOverride, draft.parentID ?? null)
+      const created = await createSessionRecordAction(draft.title, draftDirectoryOverride, draft.parentID ?? null)
       if (!created?.id) {
         get().clearPendingSendAbort(draftAbortKey, draftAbortController)
         const createError = consumeLastCreateSessionError()
@@ -2305,9 +2209,6 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
           throw createError
         }
         throw new Error("Failed to create session")
-      }
-      if (prewarmedSession) {
-        useGlobalSessionsStore.getState().upsertSession(created)
       }
       const createdDirectory = normalizePath(draftDirectoryOverride ?? created.directory ?? null)
       const promotedAbortController = get().promotePendingSendAbort(draftAbortKey, created.id) ?? draftAbortController
@@ -2616,7 +2517,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       useViewportStore.setState({ sessionMemoryState: newMemState })
     }
 
-    const sessionDirectory = normalizePath(get().getDirectoryForSession(sessionId))
+    const sessionDirectory = normalizePath(
+      lifecycleCallbacks?.directory ?? get().getDirectoryForSession(sessionId),
+    )
 
     const files = attachments?.map((a) => ({
       type: "file" as const,
@@ -3219,3 +3122,5 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     })
   },
 }))
+
+setSessionUIStoreRef(useSessionUIStore)

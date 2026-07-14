@@ -6,6 +6,10 @@ import { getAgentDefaultEditPermission } from "./utils/permissionUtils";
 import { getContextUsageFromMessages, isSameSessionContextUsage } from "./utils/contextUsageUtils";
 import { extractTokenBreakdownFromMessage } from "./utils/tokenUtils";
 import { getSafeStorage } from "./utils/safeStorage";
+import {
+    UNAVAILABLE_MODEL_CONTEXT_CAPACITY,
+    type ResolvedModelContextCapacity,
+} from "./utils/modelContextCapacity";
 
 type ContextUsage = SessionContextUsage;
 
@@ -41,11 +45,11 @@ interface ContextActions {
     getAgentModelVariantForSession: (sessionId: string, agentName: string, providerId: string, modelId: string) => string | undefined;
 
 
-    getContextUsage: (sessionId: string, contextLimit: number, outputLimit: number, messages: Map<string, { info: any; parts: any[] }[]>) => ContextUsage | null;
+    getContextUsage: (sessionId: string, capacity: ResolvedModelContextCapacity, messages: Map<string, { info: any; parts: any[] }[]>) => ContextUsage | null;
 
-    updateSessionContextUsage: (sessionId: string, contextLimit: number, outputLimit: number, messages: Map<string, { info: any; parts: any[] }[]>) => void;
+    updateSessionContextUsage: (sessionId: string, capacity: ResolvedModelContextCapacity, messages: Map<string, { info: any; parts: any[] }[]>) => void;
 
-    initializeSessionContextUsage: (sessionId: string, contextLimit: number, outputLimit: number, messages: Map<string, { info: any; parts: any[] }[]>) => void;
+    initializeSessionContextUsage: (sessionId: string, capacity: ResolvedModelContextCapacity, messages: Map<string, { info: any; parts: any[] }[]>) => void;
 
     pollForTokenUpdates: (sessionId: string, messageId: string, messages: Map<string, { info: any; parts: any[] }[]>, maxAttempts?: number) => void;
 
@@ -191,10 +195,10 @@ export const useContextStore = create<ContextStore>()(
                     return modelMap.get(`${providerId}/${modelId}`);
                 },
  
-                getContextUsage: (sessionId: string, contextLimit: number, outputLimit: number, messages: Map<string, { info: any; parts: any[] }[]>) => {
+                getContextUsage: (sessionId: string, capacity: ResolvedModelContextCapacity, messages: Map<string, { info: any; parts: any[] }[]>) => {
                     if (!sessionId) return null;
                     const sessionMessages = messages.get(sessionId) || [];
-                    const nextUsage = getContextUsageFromMessages(sessionMessages, contextLimit, outputLimit);
+                    const nextUsage = getContextUsageFromMessages(sessionMessages, capacity);
                     if (!nextUsage) return get().sessionContextUsage.get(sessionId) as ContextUsage | undefined || null;
 
                     const scheduleUsageUpdate = (usage: ContextUsage) => {
@@ -230,9 +234,9 @@ export const useContextStore = create<ContextStore>()(
                     return nextUsage;
                 },
 
-                updateSessionContextUsage: (sessionId: string, contextLimit: number, outputLimit: number, messages: Map<string, { info: any; parts: any[] }[]>) => {
+                updateSessionContextUsage: (sessionId: string, capacity: ResolvedModelContextCapacity, messages: Map<string, { info: any; parts: any[] }[]>) => {
                     const sessionMessages = messages.get(sessionId) || [];
-                    const usage = getContextUsageFromMessages(sessionMessages, contextLimit, outputLimit);
+                    const usage = getContextUsageFromMessages(sessionMessages, capacity);
                     if (!usage) return;
 
                     set((state) => {
@@ -244,12 +248,12 @@ export const useContextStore = create<ContextStore>()(
                     });
                 },
 
-                initializeSessionContextUsage: (sessionId: string, contextLimit: number, outputLimit: number, messages: Map<string, { info: any; parts: any[] }[]>) => {
+                initializeSessionContextUsage: (sessionId: string, capacity: ResolvedModelContextCapacity, messages: Map<string, { info: any; parts: any[] }[]>) => {
                     const state = get();
                     const existingUsage = state.sessionContextUsage.get(sessionId);
 
                     if (!existingUsage || existingUsage.totalTokens === 0) {
-                        get().updateSessionContextUsage(sessionId, contextLimit, outputLimit, messages);
+                        get().updateSessionContextUsage(sessionId, capacity, messages);
                     }
                 },
 
@@ -266,7 +270,7 @@ export const useContextStore = create<ContextStore>()(
 
                             if (totalTokens > 0) {
 
-                                get().updateSessionContextUsage(sessionId, 0, 0, messages);
+                                get().updateSessionContextUsage(sessionId, UNAVAILABLE_MODEL_CONTEXT_CAPACITY, messages);
                                 return;
                             }
                         }

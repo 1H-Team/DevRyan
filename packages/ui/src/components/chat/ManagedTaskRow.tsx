@@ -67,12 +67,13 @@ export const ManagedTaskRowView = React.memo(({
     onRetryInPlace
     && resultEnvelope?.resumable
     && resultEnvelope.action === null
+    && !task.agentRetryAvailable
     && (task.status === 'failed' || task.status === 'interrupted'),
   );
 
   return (
     <article data-managed-task-id={task.taskId}>
-      <div className="flex min-w-0 items-center gap-3 px-3 py-2.5">
+      <div className="flex min-w-0 flex-col items-stretch gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3">
         <div className="min-w-0 flex-1">
           <h4 className="truncate typography-ui-label font-medium text-foreground">
             {formatManagedTaskDisplayName(task.label)}
@@ -84,10 +85,10 @@ export const ManagedTaskRowView = React.memo(({
             type="button"
             size="xs"
             variant="ghost"
-            className="normal-case text-[var(--primary-base)] hover:text-[var(--primary-base)]"
+            className="w-full gap-1 px-1 normal-case text-[var(--primary-base)] hover:text-[var(--primary-base)] sm:w-auto sm:px-1.5"
             onClick={onOpenChild}
           >
-            <RiExternalLinkLine className="size-3" />
+            <RiExternalLinkLine className="hidden size-3 sm:block" />
             {t('chat.managedTasks.child.open')}
           </Button>
         ) : null}

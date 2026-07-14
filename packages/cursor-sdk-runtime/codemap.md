@@ -5,6 +5,7 @@ Shared Cursor SDK runtime for DevRyan hosts. It keeps Cursor model execution, SD
 
 ## Design
 - `index.js`: ESM runtime and credential helpers.
+- `cursor-question-runtime.js`: authenticated, loopback-only Streamable HTTP MCP server for primary Builder/Orchestrator question calls. It owns session-scoped credentials with immutable per-run generations, pending request/event lifecycle, answer/Skip settlement, directory filtering, transport-disconnect cleanup, and abort/supersede/provider-failure/run-completion/delete/dispose revocation. Opaque scope-identity matching prevents late cleanup—even for a same-message retry—from invalidating a replacement run.
 - `ripgrep-path.js`: resolves and configures the Cursor SDK platform `rg` binary for direct, one-shot worker, and persistent worker execution without exposing absolute paths in runtime status.
 - `persistent-worker.mjs`: long-lived Node/Electron-as-Node prompt worker that keeps `@cursor/sdk` imported, multiplexes prompt/cancel events by request id, and owns an active-aware Agent cache capped at 16 idle entries with a 30-minute idle TTL. Session deletion releases matching entries, active entries defer release until their run settles, and shutdown closes all retained Agents.
 - `agent-cache.js`: dependency-free count/TTL/LRU ownership policy for in-process Cursor Agent objects, including active-run protection and exactly-once eviction cleanup.
@@ -16,10 +17,12 @@ Shared Cursor SDK runtime for DevRyan hosts. It keeps Cursor model execution, SD
 - Usage/quota auth is intentionally separate and only reads `cursor-acp.usageSessionToken`.
 - Tool-call normalization preserves explicit SDK terminal status. Partial task/tool output survives a later error or cancellation, while provider failure reasons remain attached to the same canonical tool part.
 - Host runtimes may pass `resolveAgentPrompt` and `resolveAgentDefinitions` so Cursor prompts include the selected DevRyan agent markdown and Cursor SDK custom subagents inherit the DevRyan-selected parent model.
+- Primary Builder/Orchestrator prompts receive a per-session Cursor question MCP config in direct, one-shot worker, persistent worker, prewarm, create/resume, and Agent-cache identity paths. Tokens are passed only to SDK execution; status and cache fingerprints use an opaque non-secret identity.
 - Bun and desktop Electron hosts run Cursor prompt work through `node-worker.mjs` instead of the host process. Packaged Electron launches its own executable with `ELECTRON_RUN_AS_NODE=1`; prompt workers use the selected project as their process cwd while the script remains executable from `app.asar`, and persistent workers are reused per directory with a small LRU cap.
 - Local Cursor agents bind both `local.cwd` and the SDK platform `workspaceRef` to the request directory so shell tools and persisted agent state stay scoped to the selected project instead of the worker process directory.
 - Cursor virtual provider models advertise text and image input only; PDF and other non-image attachments are blocked with a visible assistant error instead of being silently dropped.
 - Cursor SDK model parameters are preserved as DevRyan model variants: reasoning/effort/thinking levels become variant keys, SDK `fast` becomes paired `*-fast` rows, and prompt sends resolve the selected row/variant back to SDK `{ id, params }`. GPT-5.6 Sol/Terra retain discovered Max and receive their known native Ultra wire selection; Luna retains Max without Ultra.
+- Valid positive Cursor SDK `context` magnitudes such as `1m`, `272k`, and `200k` are normalized into standard model and variant `limit.context` metadata. Fallback rows and SDK rows without an explicit valid context parameter remain limit-free.
 - Image file parts are forwarded to the Cursor SDK `images` field and preserved on the stored user message for shared UI rendering.
 - The Council agent is blocked in Cursor SDK sessions because it requires OpenCode plugin tools such as `council_session`, which the Cursor bridge cannot expose.
 - Cursor plan-mode prompts keep the selected concrete model pinned through the runtime contract instead of blocking before the SDK run starts; pinned Cursor Orchestrator plan mode preserves the selected agent instructions and adds no-mutation constraints so read-only discovery delegation remains available without model switches.
@@ -29,4 +32,5 @@ Shared Cursor SDK runtime for DevRyan hosts. It keeps Cursor model execution, SD
 ## Integration
 - Web/Electron creates the runtime in `packages/web/server/index.js` and intercepts `cursor-acp` prompt sends before the OpenCode proxy.
 - Web/Electron merges `getSessionStatus()` into `/api/session/status` so Cursor SDK sessions report live busy/idle state alongside OpenCode sessions.
+- Web/Electron consumes `listPendingQuestions()`, `replyToQuestion()`, and `rejectQuestion()` through the focused `/api/question` merge routes. Cursor question events reuse the canonical OpenCode event and card payloads.
 - VS Code uses the shared credential/status/configure helpers through `packages/vscode/src/bridge-system-runtime.ts` and the same prompt/status/message/abort owner for managed Cursor children through `packages/vscode/src/managedOpenCodeExecutor.ts`.

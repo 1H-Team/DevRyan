@@ -69,6 +69,9 @@ export type CursorModelRecord = {
   id: string;
   name: string;
   description?: string;
+  limit?: {
+    context?: number;
+  };
   options?: {
     cursorSdkModel?: {
       id: string;
@@ -76,6 +79,9 @@ export type CursorModelRecord = {
     };
   };
   variants?: Record<string, {
+    limit?: {
+      context?: number;
+    };
     cursorSdkModel?: {
       id: string;
       params?: Array<{ id: string; value: string }>;
@@ -96,6 +102,21 @@ export type CursorSdkAgentDefinition = {
 };
 
 export type CursorSdkAgentDefinitions = Record<string, CursorSdkAgentDefinition>;
+
+export type CursorQuestionRequest = {
+  id: string;
+  sessionID: string;
+  questions: Array<{
+    header: string;
+    question: string;
+    options: Array<{ label: string; description: string }>;
+    multiple?: boolean;
+  }>;
+  tool?: {
+    messageID: string;
+    callID: string;
+  };
+};
 
 export type CursorSdkRuntime = {
   getRuntimeStatus(): CursorRuntimeStatus;
@@ -122,6 +143,9 @@ export type CursorSdkRuntime = {
     directory?: string | null;
   }): Promise<{ handled: boolean; status?: number; body?: Record<string, unknown> }>;
   getSessionStatus(): Record<string, { type: string }>;
+  listPendingQuestions(options?: { directory?: string | null }): CursorQuestionRequest[];
+  replyToQuestion(requestID: string, answers: string[][]): Promise<boolean>;
+  rejectQuestion(requestID: string): Promise<boolean>;
   abortSession(sessionID: string): Promise<boolean>;
   getSessionMessages(sessionID: string): Promise<Array<{ info: Record<string, unknown>; parts: Record<string, unknown>[] }>>;
   deleteSessionState(sessionID: string): Promise<boolean>;

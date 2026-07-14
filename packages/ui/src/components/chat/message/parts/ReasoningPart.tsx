@@ -1,6 +1,7 @@
 import React from 'react';
 import type { Part } from '@opencode-ai/sdk/v2';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
+import { useI18n } from '@/lib/i18n';
 import { useUIStore } from '@/stores/useUIStore';
 import { MarkdownRenderer } from '../../MarkdownRenderer';
 import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
@@ -18,14 +19,7 @@ const cleanReasoningText = (text: string): string => {
         return '';
     }
 
-    const cleaned = text
-        .split('\n')
-        .map((line: string) => line.replace(/^>\s?/, '').trimEnd())
-        .filter((line: string) => line.trim().length > 0)
-        .join('\n')
-        .trim();
-
-    return cleaned;
+    return text.trim();
 };
 
 type ReasoningTimelineBlockProps = {
@@ -37,7 +31,6 @@ type ReasoningTimelineBlockProps = {
     showDuration?: boolean;
     isStreaming?: boolean;
     actions?: React.ReactNode;
-    alwaysShowActions?: boolean;
 };
 
 export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
@@ -49,12 +42,10 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
     showDuration: _showDuration = true,
     isStreaming = false,
     actions,
-    alwaysShowActions: _alwaysShowActions = false,
 }) => {
     void _variant;
     void _time;
     void _showDuration;
-    void _alwaysShowActions;
 
     React.useEffect(() => {
         if (text.trim().length === 0) {
@@ -95,15 +86,14 @@ type ReasoningPartProps = {
     part: Part;
     onContentChange?: (reason?: ContentChangeReason) => void;
     messageId: string;
-    alwaysShowActions?: boolean;
 };
 
 const ReasoningPart = React.memo(({
     part,
     onContentChange,
     messageId,
-    alwaysShowActions = false,
 }: ReasoningPartProps) => {
+    const { t } = useI18n();
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
     const partWithText = part as PartWithText;
     const rawText = partWithText.text || partWithText.content || '';
@@ -129,7 +119,9 @@ const ReasoningPart = React.memo(({
                     aria-live="polite"
                 >
                     <div className="relative pr-2 pb-2 pt-1">
-                        <span className="inline-flex animate-pulse motion-reduce:animate-none">Thinking…</span>
+                        <span className="inline-flex animate-pulse motion-reduce:animate-none">
+                            {t('chat.reasoning.thinking')}
+                        </span>
                     </div>
                 </div>
             );
@@ -137,16 +129,15 @@ const ReasoningPart = React.memo(({
         return null;
     }
 
+    const blockId = part.id || `${messageId}-reasoning`;
+
     return (
         <ReasoningTimelineBlock
             text={throttledText}
             variant="thinking"
             onContentChange={onContentChange}
-            blockId={part.id || `${messageId}-reasoning`}
-            time={time}
-            showDuration={chatRenderMode !== 'sorted'}
+            blockId={blockId}
             isStreaming={isStreaming}
-            alwaysShowActions={alwaysShowActions}
         />
     );
 });

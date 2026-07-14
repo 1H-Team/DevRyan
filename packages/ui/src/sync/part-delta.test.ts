@@ -87,6 +87,12 @@ describe("normalizeAssistantVisibleText", () => {
     expect(normalizeAssistantReasoningText(`${meta}\n\n${reasoning}`)).toBe(`${meta}\n\n${reasoning}`)
   })
 
+  test("preserves a long Anthropic visual-review trace verbatim", () => {
+    const reasoning = "I can't visually parse the PNG binary data from the screenshots, but I have the source code and browser measurements from the task context, so I'll work from those instead. The desktop and mobile measurements show no horizontal overflow. The main non-visual issue is the hardcoded English strings, which should remain an advisory finding rather than being silently removed from the trace."
+
+    expect(normalizeAssistantReasoningText(reasoning)).toBe(reasoning)
+  })
+
   test("preserves provider-authored skill narration in reasoning", () => {
     const noisy = "Considering Supabase skills I think I might need to apply some Supabase skills."
     const reasoning = "The request touches Supabase auth, so the implementation should read the local Supabase helper first."

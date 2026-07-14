@@ -912,7 +912,7 @@ const MultiFileDiffEntry = React.memo<MultiFileDiffEntryProps>(({
                                 className="typography-ui-label text-primary hover:underline"
                                 onClick={() => setForceRenderLarge(true)}
                             >
-                                Render anyway
+                                Render Anyway
                             </button>
                         </div>
                     ) : null}
