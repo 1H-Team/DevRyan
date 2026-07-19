@@ -5,6 +5,19 @@ const warnCacheClearFailure = (log, label, error) => {
   }
 };
 
+export const getElectronRuntimeCacheInfo = async ({ defaultSession } = {}) => {
+  if (typeof defaultSession?.getCacheSize !== 'function') {
+    throw new Error('Electron cache size API is unavailable');
+  }
+
+  const sizeBytes = await defaultSession.getCacheSize();
+  if (!Number.isFinite(sizeBytes) || sizeBytes < 0) {
+    throw new Error('Electron returned an invalid cache size');
+  }
+
+  return { sizeBytes: Math.floor(sizeBytes) };
+};
+
 export const clearElectronRuntimeCaches = async ({ defaultSession, log } = {}) => {
   const errors = [];
 

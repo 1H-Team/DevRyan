@@ -16,10 +16,12 @@ describe('GitView revert actions', () => {
 });
 
 describe('GitView staged changes workflow', () => {
-  test('does not show a success toast after starting commit generation chat', () => {
+  test('does not reference chat-based commit generation', () => {
     const code = source();
 
     expect(code).not.toContain("toast.success(t('gitView.toast.generateCommitChatStarted')");
+    expect(code).not.toContain('buildCommitGenerationChatPromptPayload');
+    expect(code).not.toContain('handleStartCommitGenerationChat');
   });
 
   test('generates a commit message draft without starting a chat session', () => {
@@ -32,6 +34,8 @@ describe('GitView staged changes workflow', () => {
     expect(code).toContain('setCommitMessage(generatedSubject);');
     expect(code).toContain("toast.success(t('gitView.toast.commitMessageGenerated'))");
     expect(code).toContain('commitGenerationRequestRef');
+    expect(code).toContain('if (!isCurrentRequest())');
+    expect(code).toContain('setIsGeneratingCommitMessage(false);');
     expect(code).not.toContain('buildCommitGenerationChatPromptPayload');
     expect(code).not.toContain('handleStartCommitGenerationChat');
     expect(code).not.toContain('createSession(undefined, currentDirectory, null)');

@@ -1,4 +1,27 @@
+import type { ManagedTaskEventRecord } from '@openchamber/orchestration-runtime';
+
 const MANAGED_TASK_ROW_BATCH = 24;
+const SAME_CHILD_EXECUTION_KINDS = new Set(['resume', 'recover_in_place', 'retry_in_place']);
+
+export const collapseManagedTaskLineages = (
+  taskIds: readonly string[],
+  getTask: (taskId: string) => ManagedTaskEventRecord | undefined,
+): readonly string[] => {
+  const hiddenTaskIds = new Set<string>();
+  const availableTaskIds = new Set(taskIds);
+  for (const taskId of taskIds) {
+    const task = getTask(taskId);
+    if (
+      !task?.priorTaskId
+      || !SAME_CHILD_EXECUTION_KINDS.has(task.executionKind)
+      || !availableTaskIds.has(task.priorTaskId)
+    ) continue;
+    hiddenTaskIds.add(task.priorTaskId);
+  }
+  return hiddenTaskIds.size > 0
+    ? taskIds.filter((taskId) => !hiddenTaskIds.has(taskId))
+    : taskIds;
+};
 
 type ManagedTaskWindow = {
   hiddenCount: number;

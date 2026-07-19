@@ -2,7 +2,7 @@ import React from 'react';
 import { RiFolder3Line, RiGitBranchLine } from '@remixicon/react';
 
 import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
-import { GitView } from '@/components/views/GitView';
+import { LazyGitView, LazyViewBoundary } from '@/components/views/lazyViews';
 import { useGitStore } from '@/stores/useGitStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
@@ -73,7 +73,11 @@ export const RightSidebarTabs: React.FC = () => {
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        {rightSidebarTab === 'git' && <GitView />}
+        {rightSidebarTab === 'git' && (
+          <LazyViewBoundary>
+            <LazyGitView />
+          </LazyViewBoundary>
+        )}
         {rightSidebarTab === 'files' && <SidebarFilesTree />}
       </div>
     </div>

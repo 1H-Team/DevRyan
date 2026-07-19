@@ -505,6 +505,12 @@ export const fetchModelsMetadata = async () => {
 };
 
 const getFsAccessRoot = (): string => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || os.homedir();
+const getOpenChamberConfigRoot = (): string => path.join(os.homedir(), '.config', 'openchamber');
+
+const getFileAccessRoots = (): string[] => {
+  const roots = [getFsAccessRoot(), getOpenChamberConfigRoot()].map((root) => path.resolve(root));
+  return Array.from(new Set(roots));
+};
 
 export const getFsMimeType = (filePath: string): string => {
   const ext = path.extname(filePath).toLowerCase();
@@ -535,14 +541,6 @@ export type FsMutationPathResolution =
   | { ok: false; status: number; error: string };
 
 const CANONICAL_ESCAPE_ERROR = 'Access denied';
-
-const resolveCanonicalBase = async (policyBase: string): Promise<string> => {
-  try {
-    return await fs.promises.realpath(policyBase);
-  } catch {
-    return path.resolve(policyBase);
-  }
-};
 
 const appendMissingTail = (canonicalParent: string, missingSegments: string[]): string => {
   let result = canonicalParent;
@@ -589,6 +587,10 @@ const resolveCanonicalPathUnchecked = async (resolvedPath: string): Promise<stri
   throw Object.assign(new Error('Failed to resolve path'), { code: 'ENOENT' });
 };
 
+const resolveCanonicalBase = async (policyBase: string): Promise<string> => {
+  return resolveCanonicalPathUnchecked(policyBase);
+};
+
 const resolveCanonicalTargetPath = async (
   resolvedPath: string,
   canonicalBase: string,
@@ -614,12 +616,32 @@ const resolveLexicalMutationPath = (targetPath: string): FsMutationPathResolutio
     return { ok: false, status: 400, error: 'Path is required' };
   }
 
+  const defaultRoot = getFsAccessRoot();
+  const resolved = resolveUserPath(trimmed, defaultRoot);
+  if (!resolved) {
+    return { ok: false, status: 400, error: 'Path is required' };
+  }
+
+  const absolutePath = path.resolve(resolved);
+  const policyBase = getFileAccessRoots().find((root) => isPathInside(absolutePath, root));
+  if (!policyBase) {
+    return { ok: false, status: 400, error: 'Path is outside of active workspace' };
+  }
+
+  return { ok: true, resolvedPath: absolutePath, canonicalBase: policyBase };
+};
+
+const resolveLexicalWorkspacePath = (targetPath: string): FsMutationPathResolution => {
+  const trimmed = targetPath.trim();
+  if (!trimmed) {
+    return { ok: false, status: 400, error: 'Path is required' };
+  }
+
   const baseRoot = getFsAccessRoot();
   const resolved = resolveUserPath(trimmed, baseRoot);
   if (!resolved) {
     return { ok: false, status: 400, error: 'Path is required' };
   }
-
   if (!isPathInside(path.resolve(resolved), path.resolve(baseRoot))) {
     return { ok: false, status: 400, error: 'Path is outside of active workspace' };
   }
@@ -643,7 +665,7 @@ export const resolveExecCwdPath = async (cwd: string): Promise<FsMutationPathRes
     return { ok: false, status: 400, error: 'Working directory (cwd) is required' };
   }
 
-  const lexical = resolveLexicalMutationPath(trimmed);
+  const lexical = resolveLexicalWorkspacePath(trimmed);
   if (!lexical.ok) {
     return lexical;
   }
@@ -677,16 +699,13 @@ export const resolveFileReadPath = async (targetPath: string): Promise<FsReadPat
     return { ok: false, status: 400, error: 'Path is required' };
   }
 
-  const baseRoot = getFsAccessRoot();
-  const resolved = resolveUserPath(trimmed, baseRoot);
-  if (!resolved) {
-    return { ok: false, status: 400, error: 'Path is required' };
-  }
+  const lexical = resolveLexicalMutationPath(trimmed);
+  if (!lexical.ok) return lexical;
 
   try {
     const [canonicalPath, canonicalBase] = await Promise.all([
-      fs.promises.realpath(resolved),
-      fs.promises.realpath(baseRoot).catch(() => path.resolve(baseRoot)),
+      fs.promises.realpath(lexical.resolvedPath),
+      resolveCanonicalBase(lexical.canonicalBase),
     ]);
 
     if (!isPathInside(canonicalPath, canonicalBase)) {

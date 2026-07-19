@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   discoveredSkills: [],
   getSkillSources: vi.fn(),
+  deleteSkill: vi.fn(),
   readSkillSupportingFile: vi.fn(),
   getSkillsCatalog: vi.fn(),
 }));
@@ -34,6 +35,7 @@ vi.mock('./opencodeConfig', () => ({
   getSkillSources: mocks.getSkillSources,
   createSkill: vi.fn(),
   updateSkill: vi.fn(),
+  deleteSkill: mocks.deleteSkill,
   readSkillSupportingFile: mocks.readSkillSupportingFile,
   writeSkillSupportingFile: vi.fn(),
   deleteSkillSupportingFile: vi.fn(),
@@ -81,7 +83,7 @@ const createCtx = (workingDirectory = '/tmp/project') => ({
     restart: vi.fn(async () => {}),
     getDebugInfo: vi.fn(() => ({
       cliPath: '/usr/local/bin/opencode',
-      version: '1.18.1',
+      version: '1.18.3',
     })),
   },
 });
@@ -96,9 +98,9 @@ describe('handleConfigBridgeMessage OpenCode resolution', () => {
 
     expect(response?.success).toBe(true);
     expect(response?.data).toMatchObject({
-      targetVersion: '1.18.1',
-      detectedVersion: '1.18.1',
-      installCommand: 'curl -fsSL https://opencode.ai/install | bash -s -- --version 1.18.1 --no-modify-path',
+      targetVersion: '1.18.3',
+      detectedVersion: '1.18.3',
+      installCommand: 'curl -fsSL https://opencode.ai/install | bash -s -- --version 1.18.3 --no-modify-path',
     });
   });
 });
@@ -170,6 +172,7 @@ describe('handleConfigBridgeMessage skills discovery', () => {
   beforeEach(() => {
     mocks.discoveredSkills = [];
     mocks.getSkillSources.mockReset();
+    mocks.deleteSkill.mockReset();
     mocks.readSkillSupportingFile.mockReset();
     mocks.getSkillsCatalog.mockReset();
   });
@@ -443,5 +446,184 @@ describe('handleConfigBridgeMessage skills discovery', () => {
       [],
       [localSkill, runtimeSkill],
     );
+  });
+
+  it('hides and restores the exact selected skill path', async () => {
+    const projectSkill = {
+      name: 'lint-helper',
+      path: '/tmp/project/.opencode/skills/lint-helper/SKILL.md',
+      scope: 'project',
+      source: 'opencode',
+    };
+    mocks.discoveredSkills = [projectSkill];
+    mocks.getSkillSources.mockReturnValue({
+      md: {
+        exists: true,
+        path: projectSkill.path,
+        scope: projectSkill.scope,
+        source: projectSkill.source,
+        fields: [],
+        supportingFiles: [],
+      },
+    });
+    const settings = { hiddenSkills: [] };
+    const persistSettings = vi.fn(async (changes) => {
+      Object.assign(settings, changes);
+      return settings;
+    });
+    const ctx = createCtx();
+
+    const hidden = await handleConfigBridgeMessage(
+      { id: 'hide', type: 'api:config/skills:hidden:hide', payload: { name: 'lint-helper', path: projectSkill.path, scope: 'project' } },
+      ctx,
+      createDeps([], { readSettings: () => settings, persistSettings }),
+    );
+    const restored = await handleConfigBridgeMessage(
+      { id: 'restore', type: 'api:config/skills:hidden:restore', payload: { path: projectSkill.path } },
+      ctx,
+      createDeps([], { readSettings: () => settings, persistSettings }),
+    );
+
+    expect(hidden?.success).toBe(true);
+    expect(hidden?.data.message).toContain('hidden successfully');
+    expect(restored?.success).toBe(true);
+    expect(settings.hiddenSkills).toEqual([]);
+    expect(ctx.manager.restart).toHaveBeenCalledTimes(2);
+  });
+
+  it('permanently deletes the exact selected identity and rejects stale paths', async () => {
+    const userSkill = {
+      name: 'lint-helper',
+      path: '/Users/test/.agents/skills/lint-helper/SKILL.md',
+      scope: 'user',
+      source: 'agents',
+    };
+    const projectSkill = {
+      name: 'lint-helper',
+      path: '/tmp/project/.opencode/skills/lint-helper/SKILL.md',
+      scope: 'project',
+      source: 'opencode',
+    };
+    mocks.discoveredSkills = [userSkill, projectSkill];
+    mocks.getSkillSources.mockImplementation((_name, _directory, skill) => ({
+      md: {
+        exists: true,
+        path: skill.path,
+        scope: skill.scope,
+        source: skill.source,
+        fields: [],
+        supportingFiles: [],
+      },
+    }));
+    const deleted = await handleConfigBridgeMessage(
+      { id: 'delete', type: 'api:config/skills', payload: { method: 'DELETE', name: 'lint-helper', path: projectSkill.path, scope: 'project' } },
+      createCtx(),
+      createDeps([], { readSettings: () => ({ hiddenSkills: [{ ...projectSkill }] }) }),
+    );
+    const stale = await handleConfigBridgeMessage(
+      { id: 'stale', type: 'api:config/skills', payload: { method: 'DELETE', name: 'lint-helper', path: '/tmp/stale/SKILL.md' } },
+      createCtx(),
+      createDeps(),
+    );
+
+    expect(deleted?.success).toBe(true);
+    expect(deleted?.data.message).toContain('permanently deleted');
+    expect(deleted?.data).toMatchObject({
+      requiresReload: false,
+      runtimeRefreshPending: true,
+      runtimeApplied: false,
+    });
+    expect(mocks.deleteSkill).toHaveBeenCalledWith('lint-helper', '/tmp/project', expect.objectContaining({ path: projectSkill.path }));
+    expect(stale).toEqual({ id: 'stale', type: 'api:config/skills', success: false, error: 'Skill "lint-helper" not found' });
+  });
+
+  it('returns permanent deletion before the VS Code managed runtime restart settles', async () => {
+    const skill = {
+      name: 'lint-helper',
+      path: '/tmp/project/.opencode/skills/lint-helper/SKILL.md',
+      scope: 'project',
+      source: 'opencode',
+    };
+    mocks.discoveredSkills = [skill];
+    mocks.getSkillSources.mockReturnValue({
+      md: { exists: true, path: skill.path, scope: skill.scope, source: skill.source, fields: [], supportingFiles: [] },
+    });
+    let settleRestart;
+    const restartPromise = new Promise((resolve) => {
+      settleRestart = resolve;
+    });
+    const ctx = createCtx();
+    ctx.manager.restart = vi.fn(() => restartPromise);
+
+    const deleted = await handleConfigBridgeMessage(
+      { id: 'delete-pending', type: 'api:config/skills', payload: { method: 'DELETE', name: skill.name, path: skill.path, scope: skill.scope } },
+      ctx,
+      createDeps(),
+    );
+
+    expect(deleted?.success).toBe(true);
+    expect(ctx.manager.restart).toHaveBeenCalledTimes(1);
+    settleRestart();
+  });
+
+  it('skips restart and returns a warning for external OpenCode', async () => {
+    const skill = {
+      name: 'lint-helper',
+      path: '/tmp/project/.opencode/skills/lint-helper/SKILL.md',
+      scope: 'project',
+      source: 'opencode',
+    };
+    mocks.discoveredSkills = [skill];
+    mocks.getSkillSources.mockReturnValue({
+      md: { exists: true, path: skill.path, scope: skill.scope, source: skill.source, fields: [], supportingFiles: [] },
+    });
+    const ctx = createCtx();
+    ctx.manager.getDebugInfo = vi.fn(() => ({ mode: 'external' }));
+
+    const deleted = await handleConfigBridgeMessage(
+      { id: 'delete-external', type: 'api:config/skills', payload: { method: 'DELETE', name: skill.name, path: skill.path, scope: skill.scope } },
+      ctx,
+      createDeps(),
+    );
+
+    expect(deleted?.data).toMatchObject({
+      runtimeRefreshPending: false,
+      runtimeApplied: false,
+    });
+    expect(deleted?.data.warning).toContain('external OpenCode runtime');
+    expect(ctx.manager.restart).not.toHaveBeenCalled();
+  });
+
+  it('contains a managed runtime restart failure after deletion succeeds', async () => {
+    const skill = {
+      name: 'lint-helper',
+      path: '/tmp/project/.opencode/skills/lint-helper/SKILL.md',
+      scope: 'project',
+      source: 'opencode',
+    };
+    mocks.discoveredSkills = [skill];
+    mocks.getSkillSources.mockReturnValue({
+      md: { exists: true, path: skill.path, scope: skill.scope, source: skill.source, fields: [], supportingFiles: [] },
+    });
+    const ctx = createCtx();
+    ctx.manager.restart = vi.fn(async () => {
+      throw new Error('restart failed');
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const deleted = await handleConfigBridgeMessage(
+      { id: 'delete-restart-failed', type: 'api:config/skills', payload: { method: 'DELETE', name: skill.name, path: skill.path, scope: skill.scope } },
+      ctx,
+      createDeps(),
+    );
+
+    expect(deleted?.success).toBe(true);
+    await vi.waitFor(() => {
+      expect(consoleError).toHaveBeenCalledWith(
+        '[Skill delete] OpenCode refresh failed after deletion:',
+        expect.objectContaining({ message: 'restart failed' }),
+      );
+    });
+    consoleError.mockRestore();
   });
 });

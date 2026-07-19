@@ -15,9 +15,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { RiAddLine, RiDeleteBinLine, RiFileCopyLine, RiMore2Line, RiEditLine, RiBookOpenLine } from '@remixicon/react';
+import { RiAddLine, RiDeleteBinLine, RiFileCopyLine, RiMore2Line, RiEditLine, RiBookOpenLine, RiEyeOffLine } from '@remixicon/react';
 import { getSkillIdentity, useSkillsStore, type DiscoveredSkill } from '@/stores/useSkillsStore';
 import { useSkillsCatalogStore } from '@/stores/useSkillsCatalogStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -65,6 +66,7 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
     setSelectedSkill,
     setSkillDraft,
     createSkill,
+    hideSkill,
     deleteSkill,
     getSkillDetail,
   } = useSkillsStore(useShallow((s) => ({
@@ -74,6 +76,7 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
     setSelectedSkill: s.setSelectedSkill,
     setSkillDraft: s.setSkillDraft,
     createSkill: s.createSkill,
+    hideSkill: s.hideSkill,
     deleteSkill: s.deleteSkill,
     getSkillDetail: s.getSkillDetail,
   })));
@@ -100,8 +103,20 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
 
   };
 
-  const handleDeleteSkill = async (skill: DiscoveredSkill) => {
+  const handleDeleteSkill = (skill: DiscoveredSkill) => {
     setDeleteDialogSkill(skill);
+  };
+
+  const handleHideSkill = async (skill: DiscoveredSkill) => {
+    const success = await hideSkill(skill);
+    if (success) {
+      toast.success(t('settings.skills.sidebar.toast.skillHidden', { name: skill.name }));
+      if (selectedCatalogSourceId) {
+        void loadCatalogSource(selectedCatalogSourceId, { refresh: true });
+      }
+      return;
+    }
+    toast.error(t('settings.skills.sidebar.toast.hideSkillFailed'));
   };
 
   const handleConfirmDeleteSkill = async () => {
@@ -198,7 +213,7 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
 
     if (success) {
       // Delete old skill
-      const deleteSuccess = await deleteSkill(renameDialogSkill.name);
+      const deleteSuccess = await deleteSkill(renameDialogSkill);
       if (deleteSuccess) {
         toast.success(`Skill renamed to "${sanitizedName}"`);
         setSelectedSkill(sanitizedName);
@@ -272,6 +287,7 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
 
                     }}
                     onRename={() => handleOpenRenameDialog(skill)}
+                    onHide={() => void handleHideSkill(skill)}
                     onDelete={() => handleDeleteSkill(skill)}
                     onDuplicate={() => handleDuplicateSkill(skill)}
                     isMenuOpen={openMenuSkill === getSkillIdentity(skill)}
@@ -296,6 +312,7 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
 
                         }}
                         onRename={() => handleOpenRenameDialog(skill)}
+                        onHide={() => void handleHideSkill(skill)}
                         onDelete={() => handleDeleteSkill(skill)}
                         onDuplicate={() => handleDuplicateSkill(skill)}
                         isMenuOpen={openMenuSkill === getSkillIdentity(skill)}
@@ -335,7 +352,7 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
             >
               {t('settings.common.actions.cancel')}
             </Button>
-            <Button size="sm" onClick={handleConfirmDeleteSkill} disabled={isDeletePending}>
+            <Button variant="destructive" size="sm" onClick={handleConfirmDeleteSkill} disabled={isDeletePending}>
               {t('settings.common.actions.remove')}
             </Button>
           </DialogFooter>
@@ -385,6 +402,7 @@ interface SkillListItemProps {
   skill: DiscoveredSkill;
   isSelected: boolean;
   onSelect: () => void;
+  onHide: () => void;
   onDelete: () => void;
   onRename: () => void;
   onDuplicate: () => void;
@@ -396,6 +414,7 @@ const SkillListItem: React.FC<SkillListItemProps> = ({
   skill,
   isSelected,
   onSelect,
+  onHide,
   onDelete,
   onRename,
   onDuplicate,
@@ -439,6 +458,7 @@ const SkillListItem: React.FC<SkillListItemProps> = ({
             <Button size="sm"
               variant="ghost"
               className="h-6 w-6 px-0 flex-shrink-0 -mr-1 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
+              aria-label={t('settings.skills.sidebar.actions.menuAria', { name: skill.name })}
             >
               <RiMore2Line className="h-3.5 w-3.5" />
             </Button>
@@ -464,12 +484,26 @@ const SkillListItem: React.FC<SkillListItemProps> = ({
               {t('settings.common.actions.duplicate')}
             </DropdownMenuItem>
 
+            <DropdownMenuSeparator />
+
             <DropdownMenuItem
+              aria-label={t('settings.skills.sidebar.actions.hideAria', { name: skill.name })}
+              onClick={(e) => {
+                e.stopPropagation();
+                onHide();
+              }}
+            >
+              <RiEyeOffLine className="h-4 w-4 mr-px" />
+              {t('settings.common.actions.hide')}
+            </DropdownMenuItem>
+
+            <DropdownMenuItem
+              aria-label={t('settings.skills.sidebar.actions.removeAria', { name: skill.name })}
               onClick={(e) => {
                 e.stopPropagation();
                 onDelete();
               }}
-              className="text-destructive focus:text-destructive"
+              variant="destructive"
             >
               <RiDeleteBinLine className="h-4 w-4 mr-px" />
               {t('settings.common.actions.remove')}

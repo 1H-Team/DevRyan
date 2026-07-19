@@ -1,3 +1,8 @@
+import {
+  getSessionConfirmedMentionsStorageKey,
+  getSessionInputStorageKey,
+} from "@/sync/session-draft-storage"
+
 export type ComposerDraftTarget =
   | { kind: "session"; id: string }
   | { kind: "draft"; id: string }
@@ -18,13 +23,13 @@ export const getComposerDraftTargetKey = (target: ComposerDraftTarget): string =
 }
 
 export const getComposerDraftStorageKey = (target: ComposerDraftTarget): string | null => {
-  if (target.kind === "session") return `openchamber_chat_input_draft_${target.id}`
+  if (target.kind === "session") return getSessionInputStorageKey(target.id)
   if (target.kind === "draft") return `openchamber_chat_input_draft_draft_${target.id}`
   return null
 }
 
 export const getComposerConfirmedMentionsStorageKey = (target: ComposerDraftTarget): string | null => {
-  if (target.kind === "session") return `openchamber_chat_confirmed_mentions_${target.id}`
+  if (target.kind === "session") return getSessionConfirmedMentionsStorageKey(target.id)
   if (target.kind === "draft") return `openchamber_chat_confirmed_mentions_draft_${target.id}`
   return null
 }
@@ -81,11 +86,11 @@ export const createComposerDraftPersistenceController = (options: {
   storage: Storage
   updateDraftText: (draftId: string, text: string) => void
 }) => {
-  const retiredDraftIds = new Set<string>()
+  const retiredTargetKeys = new Set<string>()
   const lastPersistedDraftByKey = new Map<string, string>()
 
   const isRetired = (target: ComposerDraftTarget): boolean =>
-    target.kind === "draft" && retiredDraftIds.has(target.id)
+    target.kind !== "none" && retiredTargetKeys.has(getComposerDraftTargetKey(target))
 
   const load = (target: ComposerDraftTarget): string =>
     readStorage(options.storage, getComposerDraftStorageKey(target))
@@ -128,15 +133,14 @@ export const createComposerDraftPersistenceController = (options: {
   }
 
   const retire = (target: ComposerDraftTarget): void => {
-    if (target.kind !== "draft") return
-    retiredDraftIds.add(target.id)
+    if (target.kind === "none") return
+    retiredTargetKeys.add(getComposerDraftTargetKey(target))
     clear(target)
   }
 
   const release = (target: ComposerDraftTarget): void => {
-    if (target.kind === "draft") {
-      retiredDraftIds.delete(target.id)
-    }
+    if (target.kind === "none") return
+    retiredTargetKeys.delete(getComposerDraftTargetKey(target))
   }
 
   return {

@@ -1,0 +1,210 @@
+import { consumePrivateToolIntervals } from './tool-evidence.mjs';
+
+const TOOL_FAMILIES = Object.freeze({
+  read: new Set(['read', 'file_read']),
+  search: new Set(['grep', 'glob', 'search', 'find']),
+  test: new Set(['bash', 'shell', 'terminal', 'exec', 'exec_command']),
+  mutation: new Set(['edit', 'write', 'apply_patch', 'patch', 'multiedit']),
+  managed: new Set(['devryan_task']),
+});
+
+const normalizeTool = (value) => (
+  typeof value === 'string' ? value.trim().toLowerCase().replace(/[.-]/g, '_') : ''
+);
+
+const isFinalEvent = (event) => {
+  if (typeof event?.final === 'boolean') return event.final;
+  return ['completed', 'error', 'failed', 'aborted'].includes(
+    typeof event?.status === 'string' ? event.status.toLowerCase() : '',
+  );
+};
+
+const hasFamily = (events, family, { final = false } = {}) => events.some((event) => (
+  TOOL_FAMILIES[family].has(normalizeTool(event?.tool)) && (!final || isFinalEvent(event))
+));
+
+const result = (id, passed) => ({ id, passed: passed === true });
+
+const validInterval = (interval) => (
+  Number.isFinite(interval?.start)
+  && interval.start >= 0
+  && Number.isFinite(interval?.end)
+  && interval.end >= interval.start
+);
+
+const selectCausalRepairChain = (events, intervalByEvent) => {
+  const completionCounts = new Map();
+  for (const event of events) {
+    const completedAt = intervalByEvent.get(event)?.end;
+    if (!Number.isFinite(completedAt) || completedAt < 0) continue;
+    completionCounts.set(completedAt, (completionCounts.get(completedAt) ?? 0) + 1);
+  }
+  const candidates = events
+    .map((event, index) => ({ event, index, interval: intervalByEvent.get(event) }))
+    .filter(({ event, interval }) => (
+      isFinalEvent(event)
+      && validInterval(interval)
+      && completionCounts.get(interval.end) === 1
+    ))
+    .sort((left, right) => (
+      left.interval.end - right.interval.end
+      || left.interval.start - right.interval.start
+      || left.index - right.index
+    ));
+  const reads = candidates.filter(({ event }) => hasFamily([event], 'read', { final: true }));
+  const failingTests = candidates.filter(({ event }) => (
+    hasFamily([event], 'test', { final: true }) && event?.ownedTestOutcome === 'failed'
+  ));
+  const mutations = candidates.filter(({ event }) => (
+    hasFamily([event], 'mutation', { final: true })
+  ));
+  const passingTests = candidates.filter(({ event }) => (
+    hasFamily([event], 'test', { final: true }) && event?.ownedTestOutcome === 'passed'
+  ));
+
+  for (const read of reads) {
+    for (const failingTest of failingTests) {
+      if (read.interval.end > failingTest.interval.start) continue;
+      for (const mutation of mutations) {
+        if (failingTest.interval.end > mutation.interval.start) continue;
+        for (const passingTest of passingTests) {
+          if (mutation.interval.end <= passingTest.interval.start) {
+            return [read.event, failingTest.event, mutation.event, passingTest.event];
+          }
+        }
+      }
+    }
+  }
+  return null;
+};
+
+export const gradeToolRequirements = (caseId, toolEvents = []) => {
+  const events = Array.isArray(toolEvents) ? toolEvents : [];
+  const intervalByEvent = consumePrivateToolIntervals(events);
+  if (caseId === 'inspect') {
+    const passed = hasFamily(events, 'read', { final: true })
+      && hasFamily(events, 'search', { final: true })
+      && hasFamily(events, 'test', { final: true })
+      && !hasFamily(events, 'mutation');
+    return result('inspect.tools', passed);
+  }
+  if (caseId === 'repair-and-test') {
+    for (const event of events) delete event.ordinal;
+    const relevantEvents = events.filter((event) => (
+      hasFamily([event], 'read')
+      || hasFamily([event], 'test')
+      || hasFamily([event], 'mutation')
+    ));
+    if (relevantEvents.some((event) => event?.sessionScope !== 'root')) {
+      return result('repair-and-test.tools', false);
+    }
+    const rootEvents = relevantEvents.filter((event) => event?.sessionScope === 'root');
+    const chain = selectCausalRepairChain(rootEvents, intervalByEvent);
+    if (!chain) return result('repair-and-test.tools', false);
+    chain.forEach((event, index) => { event.ordinal = index + 1; });
+    return result('repair-and-test.tools', true);
+  }
+  if (caseId === 'managed-change') {
+    return result(
+      'managed-change.tools',
+      hasFamily(events, 'managed', { final: true })
+        && hasFamily(events, 'mutation', { final: true })
+        && hasFamily(events, 'test', { final: true }),
+    );
+  }
+  return result('unknown.tools', false);
+};
+
+export const gradeCaseOutcome = (input = {}) => {
+  const caseId = input.caseId;
+  const manifestSafe = input.nonOwnedManifestMatches === true;
+  const finalTestPassed = input.finalTest?.exitCode === 0;
+  if (caseId === 'inspect') {
+    return result(
+      'inspect.filesystem-test',
+      manifestSafe
+        && input.ownedSourceChanged !== true
+        && input.ownedTestChanged !== true
+        && finalTestPassed,
+    );
+  }
+  if (caseId === 'repair-and-test' || caseId === 'managed-change') {
+    return result(
+      `${caseId}.filesystem-test`,
+      manifestSafe
+        && input.ownedSourceChanged === true
+        && input.ownedTestChanged === false
+        && input.baselineTest?.exitCode !== 0
+        && finalTestPassed,
+    );
+  }
+  return result('unknown.filesystem-test', false);
+};
+
+export const gradeManagedTaskOutcome = (input = {}) => {
+  const rootSessionId = typeof input.rootSessionId === 'string' ? input.rootSessionId : '';
+  const rawChildIds = Array.isArray(input.childSessionIds) ? input.childSessionIds : [];
+  const childIds = new Set(rawChildIds);
+  const snapshot = input.snapshot && typeof input.snapshot === 'object' ? input.snapshot : {};
+  if (snapshot.available === false) return result('managed.task-disposition', false);
+  const tasks = (Array.isArray(snapshot.tasks) ? snapshot.tasks : [])
+    .filter((task) => task?.rootSessionId === rootSessionId);
+  const envelopes = Array.isArray(snapshot.resultEnvelopes)
+    ? snapshot.resultEnvelopes
+    : Array.isArray(snapshot.results)
+      ? snapshot.results
+      : [];
+  const taskIds = tasks.map((task) => task?.taskId);
+  const taskChildIds = tasks.map((task) => task?.childSessionId);
+  const envelopeTaskIds = envelopes.map((envelope) => envelope?.taskId);
+  const uniqueTaskIds = new Set(taskIds);
+  const uniqueTaskChildIds = new Set(taskChildIds);
+  const uniqueEnvelopeTaskIds = new Set(envelopeTaskIds);
+  const validIds = (values) => values.every((value) => typeof value === 'string' && value);
+  const sameMembers = (left, right) => (
+    left.size === right.size && [...left].every((value) => right.has(value))
+  );
+  const passed = rawChildIds.length > 0
+    && validIds(rawChildIds)
+    && childIds.size === rawChildIds.length
+    && tasks.length === rawChildIds.length
+    && validIds(taskIds)
+    && uniqueTaskIds.size === tasks.length
+    && validIds(taskChildIds)
+    && uniqueTaskChildIds.size === tasks.length
+    && sameMembers(childIds, uniqueTaskChildIds)
+    && envelopes.length === tasks.length
+    && validIds(envelopeTaskIds)
+    && uniqueEnvelopeTaskIds.size === envelopes.length
+    && sameMembers(uniqueTaskIds, uniqueEnvelopeTaskIds)
+    && tasks.every((task) => (
+      task?.status === 'completed'
+    ))
+    && envelopes.every((envelope) => (
+      envelope?.status === 'completed' && envelope?.action === 'continue'
+    ));
+  return result('managed.task-disposition', passed);
+};
+
+export const summarizeGraders = (graders = []) => {
+  const byId = {};
+  let passed = 0;
+  let failed = 0;
+  for (const grader of graders) {
+    if (!grader || typeof grader.id !== 'string' || !grader.id) continue;
+    if (!byId[grader.id]) byId[grader.id] = { passed: 0, failed: 0 };
+    if (grader.passed === true) {
+      byId[grader.id].passed += 1;
+      passed += 1;
+    } else {
+      byId[grader.id].failed += 1;
+      failed += 1;
+    }
+  }
+  return {
+    total: passed + failed,
+    passed,
+    failed,
+    byId: Object.fromEntries(Object.entries(byId).sort(([left], [right]) => left.localeCompare(right))),
+  };
+};

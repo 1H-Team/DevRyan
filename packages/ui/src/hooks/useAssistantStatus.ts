@@ -10,6 +10,7 @@ import { postRendererTurnTimingMark } from '@/stores/utils/streamDebug';
 import { getAssistantToolStatusPhrase } from './assistantStatusFormatting';
 import { useSessionActivity } from './useSessionActivity';
 import { useRetryVisibility } from '@/components/chat/lib/turns/retryVisibility';
+import { useAgentRuntimeWarmupStore } from '@/stores/useAgentRuntimeWarmupStore';
 
 export type AssistantActivity = 'idle' | 'streaming' | 'tooling' | 'cooldown' | 'permission';
 
@@ -276,6 +277,7 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
         ),
     );
     const effectiveDirectory = directoryOverride ?? storedDirectory;
+    const warmingDirectory = useAgentRuntimeWarmupStore((state) => state.warmingDirectory);
 
     const rawSessionMessages = useDirectorySync(
         React.useCallback((state) => {
@@ -451,6 +453,10 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
         const isStreaming = activityPhase === 'busy';
         const isCooldown = false;
         const isRetry = activityPhase === 'retry';
+        const isPreparingProject = isWorking
+            && parsedStatus.isGenericStatus
+            && Boolean(effectiveDirectory)
+            && warmingDirectory === effectiveDirectory;
 
         let activity: AssistantActivity = 'idle';
         if (isWorking) {
@@ -473,7 +479,9 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
             isStreaming,
             isCooldown,
             lifecyclePhase: isStreaming ? 'streaming' : isCooldown ? 'cooldown' : null,
-            statusText: isWorking ? parsedStatus.statusText : null,
+            statusText: isWorking
+                ? (isPreparingProject ? 'preparing project' : parsedStatus.statusText)
+                : null,
             isGenericStatus: isWorking ? parsedStatus.isGenericStatus : true,
             isWaitingForPermission: false,
             canAbort: isWorking,
@@ -486,7 +494,7 @@ export function useAssistantStatus(sessionId?: string | null, directoryOverride?
             isComplete: false,
             retryInfo,
         };
-    }, [activityPhase, isPhaseWorking, parsedStatus, abortState, sessionRetryAttempt, sessionRetryNext, sessionRetryMessage, visibleRetryStatus]);
+    }, [activityPhase, isPhaseWorking, parsedStatus, abortState, sessionRetryAttempt, sessionRetryNext, sessionRetryMessage, visibleRetryStatus, effectiveDirectory, warmingDirectory]);
 
     const forming = React.useMemo<FormingSummary>(() => {
 

@@ -3,11 +3,20 @@ import { existsSync, statSync } from 'fs';
 import { CLAUDE_CODE_STATUS_PATH } from './claude-code-status.js';
 
 export const CLAUDE_CODE_REFRESH_FAILED_CODE = 'claude_code_refresh_failed';
+export const CLAUDE_CODE_SESSION_LIMIT_CODE = 'claude_code_session_limit';
 
 const DEFAULT_REFRESH_PROMPT = 'Reply with exactly: OK';
 const DEFAULT_REFRESH_TIMEOUT_MS = 45000;
 const DEFAULT_STATUS_WAIT_MS = 2000;
 const STATUS_POLL_INTERVAL_MS = 100;
+const OUTPUT_LIMIT = 2000;
+
+const appendBoundedOutput = (current, chunk) => {
+  const next = `${current}${String(chunk)}`;
+  return next.length > OUTPUT_LIMIT ? next.slice(-OUTPUT_LIMIT) : next;
+};
+
+const isSessionLimitMessage = (message) => /(?:hit|reached|exceeded)[\s\S]{0,80}(?:session|usage)[\s\S]{0,40}limit/i.test(message);
 
 const getStatusMtimeMs = (statusPath) => {
   try {
@@ -48,6 +57,7 @@ export const refreshClaudeCodeStatusUsage = ({
   env = process.env,
 } = {}) => new Promise((resolve) => {
   let settled = false;
+  let stdout = '';
   let stderr = '';
   const previousMtimeMs = getStatusMtimeMs(statusPath);
 
@@ -62,7 +72,7 @@ export const refreshClaudeCodeStatusUsage = ({
 
   const child = spawnImpl(command, args, {
     env,
-    stdio: ['ignore', 'ignore', 'pipe'],
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
 
   const timer = setTimeout(() => {
@@ -70,15 +80,15 @@ export const refreshClaudeCodeStatusUsage = ({
     finish({
       ok: false,
       code: CLAUDE_CODE_REFRESH_FAILED_CODE,
-      error: 'Timed out while refreshing Claude Code usage with the Claude CLI.',
+      error: 'Timed out while refreshing Claude Code usage.',
     });
   }, timeoutMs);
 
+  child.stdout?.on?.('data', (chunk) => {
+    stdout = appendBoundedOutput(stdout, chunk);
+  });
   child.stderr?.on?.('data', (chunk) => {
-    stderr += String(chunk);
-    if (stderr.length > 2000) {
-      stderr = stderr.slice(-2000);
-    }
+    stderr = appendBoundedOutput(stderr, chunk);
   });
 
   child.on?.('error', (error) => {
@@ -86,10 +96,10 @@ export const refreshClaudeCodeStatusUsage = ({
       ok: false,
       code: CLAUDE_CODE_REFRESH_FAILED_CODE,
       error: error?.code === 'ENOENT'
-        ? 'Claude CLI was not found on PATH, so OpenChamber could not refresh Claude Code usage automatically.'
+        ? 'Claude Code was not found on PATH, so DevRyan could not refresh usage automatically.'
         : error instanceof Error
           ? error.message
-          : 'Failed to refresh Claude Code usage with the Claude CLI.',
+          : 'Failed to refresh Claude Code usage.',
     });
   });
 
@@ -104,15 +114,18 @@ export const refreshClaudeCodeStatusUsage = ({
       finish({
         ok: false,
         code: CLAUDE_CODE_REFRESH_FAILED_CODE,
-        error: 'Claude CLI ran successfully, but Claude Code did not emit fresh usage data for OpenChamber to read.',
+        error: 'Claude Code ran successfully, but did not emit fresh usage data for DevRyan to read.',
       });
       return;
     }
 
+    const detail = stderr.trim() || stdout.trim();
     finish({
       ok: false,
-      code: CLAUDE_CODE_REFRESH_FAILED_CODE,
-      error: stderr.trim() || `Claude CLI exited with code ${code}.`,
+      code: isSessionLimitMessage(detail)
+        ? CLAUDE_CODE_SESSION_LIMIT_CODE
+        : CLAUDE_CODE_REFRESH_FAILED_CODE,
+      error: detail || `Claude Code exited with code ${code}.`,
     });
   });
 });

@@ -5,7 +5,7 @@ import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useTerminalStore } from '@/stores/useTerminalStore';
-import { quotaRefreshCoordinator, useQuotaStore } from '@/stores/useQuotaStore';
+import { quotaRefreshCoordinator } from '@/stores/useQuotaStore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -30,6 +30,10 @@ import {
 } from '@/lib/providers/modelVisibility';
 import { parseProvidersPayload, type ProviderOption } from './providerOptions';
 import { getProviderModelsForDisplay } from './providerSorting';
+import {
+  ManagedQuotaCredentials,
+  type ManagedQuotaProviderId,
+} from './ManagedQuotaCredentials';
 import type { ModelMetadata } from '@/types';
 import { useI18n } from '@/lib/i18n';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
@@ -38,9 +42,7 @@ const ADD_PROVIDER_ID = '__add_provider__';
 const ANTIGRAVITY_PROVIDER_ID = 'antigravity';
 const GOOGLE_PROVIDER_ID = 'google';
 const OPENCODE_GO_PROVIDER_ID = 'opencode-go';
-const CURSOR_USAGE_TOKEN_INPUT_ID = 'cursor-usage-session-token';
-const OPENCODE_GO_WORKSPACE_INPUT_ID = 'opencode-go-usage-workspace-id';
-const OPENCODE_GO_AUTH_COOKIE_INPUT_ID = 'opencode-go-usage-auth-cookie';
+const OLLAMA_CLOUD_PROVIDER_ID = 'ollama-cloud';
 const AUTH_PROVIDER_ID_KEY = '__authProviderId';
 const AUTH_METHOD_INDEX_KEY = '__authMethodIndex';
 
@@ -70,6 +72,11 @@ interface ProviderSources {
 interface ClaudeCliStatus {
   installed: boolean;
   path?: string | null;
+  loggedIn?: boolean;
+  authStatus?: 'authenticated' | 'signed_out' | 'unavailable' | 'error';
+  authMethod?: string;
+  subscriptionType?: string;
+  error?: string;
 }
 
 interface CursorAcpRuntimeStatus {
@@ -170,15 +177,7 @@ export const ProvidersPage: React.FC = () => {
   const [showAuthPanel, setShowAuthPanel] = React.useState(false);
   const [claudeCliStatus, setClaudeCliStatus] = React.useState<ClaudeCliStatus | null>(null);
   const [claudeCliStatusLoading, setClaudeCliStatusLoading] = React.useState(false);
-  const [cursorUsageTokenInput, setCursorUsageTokenInput] = React.useState('');
-  const [cursorUsageAuthConfigured, setCursorUsageAuthConfigured] = React.useState(false);
-  const [cursorUsageAuthLoading, setCursorUsageAuthLoading] = React.useState(false);
-  const [openCodeGoWorkspaceIdInput, setOpenCodeGoWorkspaceIdInput] = React.useState('');
-  const [openCodeGoAuthCookieInput, setOpenCodeGoAuthCookieInput] = React.useState('');
-  const [openCodeGoUsageAuthConfigured, setOpenCodeGoUsageAuthConfigured] = React.useState(false);
-  const [openCodeGoUsageAuthLoading, setOpenCodeGoUsageAuthLoading] = React.useState(false);
   const [cursorRuntimeStatus, setCursorRuntimeStatus] = React.useState<CursorAcpRuntimeStatus | null>(null);
-  const cursorUsageTokenInputRef = React.useRef<HTMLInputElement | null>(null);
 
   React.useEffect(() => {
     void loadProviders({ directory: null });
@@ -302,11 +301,13 @@ export const ProvidersPage: React.FC = () => {
     }
     return selectedProviderId === CURSOR_ACP_PROVIDER_ID ? selectedProviderId : null;
   }, [candidateProviderId, selectedProviderId]);
-  const activeOpenCodeGoProviderId = React.useMemo(() => {
-    if (selectedProviderId === ADD_PROVIDER_ID) {
-      return candidateProviderId === OPENCODE_GO_PROVIDER_ID ? candidateProviderId : null;
-    }
-    return selectedProviderId === OPENCODE_GO_PROVIDER_ID ? selectedProviderId : null;
+  const activeManagedQuotaProviderId = React.useMemo<ManagedQuotaProviderId | null>(() => {
+    const providerId = selectedProviderId === ADD_PROVIDER_ID ? candidateProviderId : selectedProviderId;
+    return providerId === CURSOR_ACP_PROVIDER_ID
+      || providerId === OPENCODE_GO_PROVIDER_ID
+      || providerId === OLLAMA_CLOUD_PROVIDER_ID
+      ? providerId
+      : null;
   }, [candidateProviderId, selectedProviderId]);
 
   const refreshClaudeCliStatus = React.useCallback(async () => {
@@ -329,10 +330,15 @@ export const ProvidersPage: React.FC = () => {
       setClaudeCliStatus({
         installed: Boolean(payload?.installed),
         path: typeof payload?.path === 'string' ? payload.path : null,
+        loggedIn: payload?.loggedIn === true,
+        authStatus: typeof payload?.authStatus === 'string' ? payload.authStatus : undefined,
+        authMethod: typeof payload?.authMethod === 'string' ? payload.authMethod : undefined,
+        subscriptionType: typeof payload?.subscriptionType === 'string' ? payload.subscriptionType : undefined,
+        error: typeof payload?.error === 'string' ? payload.error : undefined,
       });
     } catch (error) {
-      console.error('Failed to check Claude CLI availability:', error);
-      setClaudeCliStatus({ installed: false, path: null });
+      console.error('Failed to check Claude Code availability:', error);
+      setClaudeCliStatus({ installed: false, path: null, loggedIn: false, authStatus: 'error' });
       toast.error(t('settings.providers.page.toast.claudeCliCheckFailed'));
     } finally {
       setClaudeCliStatusLoading(false);
@@ -342,68 +348,6 @@ export const ProvidersPage: React.FC = () => {
   React.useEffect(() => {
     void refreshClaudeCliStatus();
   }, [refreshClaudeCliStatus]);
-
-  const refreshCursorUsageAuthStatus = React.useCallback(async () => {
-    if (!activeCursorAcpProviderId) {
-      setCursorUsageAuthConfigured(false);
-      setCursorUsageAuthLoading(false);
-      return;
-    }
-
-    setCursorUsageAuthLoading(true);
-    try {
-      const response = await fetch('/api/provider/cursor-acp/usage-auth/status', {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(payload?.error || t('settings.providers.page.toast.cursorUsageStatusFailed'));
-      }
-      setCursorUsageAuthConfigured(Boolean(payload?.configured));
-    } catch (error) {
-      console.error('Failed to load Cursor usage auth status:', error);
-      setCursorUsageAuthConfigured(false);
-    } finally {
-      setCursorUsageAuthLoading(false);
-    }
-  }, [activeCursorAcpProviderId, t]);
-
-  React.useEffect(() => {
-    void refreshCursorUsageAuthStatus();
-  }, [refreshCursorUsageAuthStatus]);
-
-  const refreshOpenCodeGoUsageAuthStatus = React.useCallback(async () => {
-    if (!activeOpenCodeGoProviderId) {
-      setOpenCodeGoUsageAuthConfigured(false);
-      setOpenCodeGoUsageAuthLoading(false);
-      setOpenCodeGoWorkspaceIdInput('');
-      return;
-    }
-
-    setOpenCodeGoUsageAuthLoading(true);
-    try {
-      const response = await fetch('/api/provider/opencode-go/usage-auth/status', {
-        method: 'GET',
-        headers: { Accept: 'application/json' },
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(payload?.error || t('settings.providers.page.toast.openCodeGoUsageStatusFailed'));
-      }
-      setOpenCodeGoUsageAuthConfigured(Boolean(payload?.configured));
-      setOpenCodeGoWorkspaceIdInput(typeof payload?.workspaceId === 'string' ? payload.workspaceId : '');
-    } catch (error) {
-      console.error('Failed to load OpenCode Go usage auth status:', error);
-      setOpenCodeGoUsageAuthConfigured(false);
-    } finally {
-      setOpenCodeGoUsageAuthLoading(false);
-    }
-  }, [activeOpenCodeGoProviderId, t]);
-
-  React.useEffect(() => {
-    void refreshOpenCodeGoUsageAuthStatus();
-  }, [refreshOpenCodeGoUsageAuthStatus]);
 
   const refreshCursorRuntimeStatus = React.useCallback(async () => {
     if (!activeCursorAcpProviderId) {
@@ -732,7 +676,7 @@ export const ProvidersPage: React.FC = () => {
     try {
       await runCommandInTerminal({
         label: t('settings.providers.page.auth.claudeLoginTerminalLabel'),
-        command: 'claude /login',
+        command: 'claude auth login',
         startedToast: t('settings.providers.page.toast.claudeLoginStarted'),
         failedToast: t('settings.providers.page.toast.claudeLoginFailed'),
       });
@@ -763,7 +707,12 @@ export const ProvidersPage: React.FC = () => {
       const resolvedProviderId = 'anthropic';
       setSelectedProvider(resolvedProviderId);
       await loadProviderSources(resolvedProviderId);
-      await quotaRefreshCoordinator.refreshNow({ forceRefresh: true, rediscover: true });
+      await refreshClaudeCliStatus();
+      try {
+        await quotaRefreshCoordinator.refreshNow({ forceRefresh: true, rediscover: true });
+      } catch (quotaError) {
+        console.warn('Claude Code was configured, but usage refresh failed:', quotaError);
+      }
     } catch (error) {
       console.error('Failed to check Claude OAuth:', error);
       toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.claudeOAuthCheckFailed'));
@@ -810,182 +759,6 @@ export const ProvidersPage: React.FC = () => {
     } catch (error) {
       console.error('Failed to configure Cursor:', error);
       toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.cursorConfigureFailed'));
-    } finally {
-      setAuthBusyKey(null);
-    }
-  };
-
-  const handleSaveCursorUsageAuth = async () => {
-    const domTokenInput = typeof document === 'undefined'
-      ? null
-      : document.getElementById(CURSOR_USAGE_TOKEN_INPUT_ID);
-    const domTokenValue = domTokenInput instanceof HTMLInputElement ? domTokenInput.value : '';
-    const sessionToken = (cursorUsageTokenInput || cursorUsageTokenInputRef.current?.value || domTokenValue).trim();
-    if (!sessionToken) {
-      toast.error(t('settings.providers.page.toast.cursorUsageTokenRequired'));
-      return;
-    }
-
-    const busyKey = 'cursor-usage-save';
-    setAuthBusyKey(busyKey);
-    try {
-      const response = await fetch('/api/provider/cursor-acp/usage-auth', {
-        method: 'PUT',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ sessionToken }),
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(payload?.error || t('settings.providers.page.toast.cursorUsageSaveFailed'));
-      }
-      setCursorUsageTokenInput('');
-      setCursorUsageAuthConfigured(true);
-      toast.success(t('settings.providers.page.toast.cursorUsageSaved'));
-      await quotaRefreshCoordinator.refreshNow({ forceRefresh: true, rediscover: true });
-    } catch (error) {
-      console.error('Failed to save Cursor usage token:', error);
-      toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.cursorUsageSaveFailed'));
-    } finally {
-      setAuthBusyKey(null);
-    }
-  };
-
-  const handleClearCursorUsageAuth = async () => {
-    const busyKey = 'cursor-usage-clear';
-    setAuthBusyKey(busyKey);
-    try {
-      const response = await fetch('/api/provider/cursor-acp/usage-auth', {
-        method: 'DELETE',
-        headers: { Accept: 'application/json' },
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(payload?.error || t('settings.providers.page.toast.cursorUsageClearFailed'));
-      }
-      setCursorUsageTokenInput('');
-      setCursorUsageAuthConfigured(false);
-      toast.success(t('settings.providers.page.toast.cursorUsageCleared'));
-      await quotaRefreshCoordinator.refreshNow({ forceRefresh: true, rediscover: true });
-    } catch (error) {
-      console.error('Failed to clear Cursor usage token:', error);
-      toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.cursorUsageClearFailed'));
-    } finally {
-      setAuthBusyKey(null);
-    }
-  };
-
-  const handleRefreshCursorUsage = async () => {
-    if (!cursorUsageAuthConfigured) {
-      toast.error(t('settings.providers.page.toast.cursorUsageTokenRequired'));
-      return;
-    }
-
-    const busyKey = 'cursor-usage-refresh';
-    setAuthBusyKey(busyKey);
-    try {
-      await quotaRefreshCoordinator.refreshNow({ forceRefresh: true });
-      const quotaState = useQuotaStore.getState();
-      const result = quotaState.results.find((entry) => entry.providerId === CURSOR_ACP_PROVIDER_ID);
-      const refreshError = quotaState.providerRefreshState[CURSOR_ACP_PROVIDER_ID]?.refreshError;
-      if (refreshError || (result && !result.ok)) {
-        throw new Error(refreshError || result?.error || t('settings.providers.page.toast.cursorUsageRefreshFailed'));
-      }
-      toast.success(t('settings.providers.page.toast.cursorUsageRefreshed'));
-    } catch (error) {
-      console.error('Failed to refresh Cursor usage:', error);
-      toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.cursorUsageRefreshFailed'));
-    } finally {
-      setAuthBusyKey(null);
-    }
-  };
-
-  const handleSaveOpenCodeGoUsageAuth = async () => {
-    const workspaceId = openCodeGoWorkspaceIdInput.trim();
-    const authCookie = openCodeGoAuthCookieInput.trim();
-    if (!workspaceId) {
-      toast.error(t('settings.providers.page.toast.openCodeGoWorkspaceRequired'));
-      return;
-    }
-    if (!authCookie) {
-      toast.error(t('settings.providers.page.toast.openCodeGoAuthCookieRequired'));
-      return;
-    }
-
-    const busyKey = 'opencode-go-usage-save';
-    setAuthBusyKey(busyKey);
-    try {
-      const response = await fetch('/api/provider/opencode-go/usage-auth', {
-        method: 'PUT',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ workspaceId, authCookie }),
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(payload?.error || t('settings.providers.page.toast.openCodeGoUsageSaveFailed'));
-      }
-      setOpenCodeGoAuthCookieInput('');
-      setOpenCodeGoUsageAuthConfigured(true);
-      toast.success(t('settings.providers.page.toast.openCodeGoUsageSaved'));
-      await quotaRefreshCoordinator.refreshNow({ forceRefresh: true, rediscover: true });
-    } catch (error) {
-      console.error('Failed to save OpenCode Go usage auth:', error);
-      toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.openCodeGoUsageSaveFailed'));
-    } finally {
-      setAuthBusyKey(null);
-    }
-  };
-
-  const handleClearOpenCodeGoUsageAuth = async () => {
-    const busyKey = 'opencode-go-usage-clear';
-    setAuthBusyKey(busyKey);
-    try {
-      const response = await fetch('/api/provider/opencode-go/usage-auth', {
-        method: 'DELETE',
-        headers: { Accept: 'application/json' },
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(payload?.error || t('settings.providers.page.toast.openCodeGoUsageClearFailed'));
-      }
-      setOpenCodeGoWorkspaceIdInput('');
-      setOpenCodeGoAuthCookieInput('');
-      setOpenCodeGoUsageAuthConfigured(false);
-      toast.success(t('settings.providers.page.toast.openCodeGoUsageCleared'));
-      await quotaRefreshCoordinator.refreshNow({ forceRefresh: true, rediscover: true });
-    } catch (error) {
-      console.error('Failed to clear OpenCode Go usage auth:', error);
-      toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.openCodeGoUsageClearFailed'));
-    } finally {
-      setAuthBusyKey(null);
-    }
-  };
-
-  const handleRefreshOpenCodeGoUsage = async () => {
-    if (!openCodeGoUsageAuthConfigured) {
-      toast.error(t('settings.providers.page.toast.openCodeGoUsageAuthRequired'));
-      return;
-    }
-
-    const busyKey = 'opencode-go-usage-refresh';
-    setAuthBusyKey(busyKey);
-    try {
-      await quotaRefreshCoordinator.refreshNow({ forceRefresh: true });
-      const quotaState = useQuotaStore.getState();
-      const result = quotaState.results.find((entry) => entry.providerId === OPENCODE_GO_PROVIDER_ID);
-      const refreshError = quotaState.providerRefreshState[OPENCODE_GO_PROVIDER_ID]?.refreshError;
-      if (refreshError || (result && !result.ok)) {
-        throw new Error(refreshError || result?.error || t('settings.providers.page.toast.openCodeGoUsageRefreshFailed'));
-      }
-      toast.success(t('settings.providers.page.toast.openCodeGoUsageRefreshed'));
-    } catch (error) {
-      console.error('Failed to refresh OpenCode Go usage:', error);
-      toast.error(error instanceof Error ? error.message : t('settings.providers.page.toast.openCodeGoUsageRefreshFailed'));
     } finally {
       setAuthBusyKey(null);
     }
@@ -1046,120 +819,97 @@ export const ProvidersPage: React.FC = () => {
     );
   };
 
-  const renderCursorUsageTracking = () => (
-    <div className="space-y-2 border-t border-[var(--surface-subtle)] pt-3">
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <div className="typography-ui-label text-foreground">{t('settings.providers.page.auth.cursorUsageTitle')}</div>
-          <div className="typography-meta whitespace-pre-line text-muted-foreground">{t('settings.providers.page.auth.cursorUsageDescription')}</div>
-        </div>
-        <span className={cn(
-          'typography-micro shrink-0',
-          cursorUsageAuthConfigured ? 'text-[var(--status-success)]' : 'text-muted-foreground',
-        )}>
-          {cursorUsageAuthLoading
-            ? t('settings.providers.page.auth.cursorUsageChecking')
-            : cursorUsageAuthConfigured
-              ? t('settings.providers.page.auth.cursorUsageConfigured')
-              : t('settings.providers.page.auth.cursorUsageNotConfigured')}
-        </span>
-      </div>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <Input
-          id={CURSOR_USAGE_TOKEN_INPUT_ID}
-          ref={cursorUsageTokenInputRef}
-          type="password"
-          value={cursorUsageTokenInput}
-          onChange={(event) => setCursorUsageTokenInput(event.target.value)}
-          onInput={(event) => setCursorUsageTokenInput(event.currentTarget.value)}
-          placeholder={t('settings.providers.page.auth.cursorUsageTokenPlaceholder')}
-          className="flex-1 font-mono text-xs"
-          autoComplete="off"
-        />
-        <div className="flex shrink-0 flex-wrap gap-1">
-          <Button
-            size="xs"
-            className="!font-normal"
-            onClick={handleSaveCursorUsageAuth}
-            disabled={authBusyKey === 'cursor-usage-save'}
-          >
-            {authBusyKey === 'cursor-usage-save' ? t('settings.providers.page.actions.saving') : t('settings.providers.page.actions.save')}
-          </Button>
-          <Button
-            variant="outline"
-            size="xs"
-            className="!font-normal"
-            onClick={handleClearCursorUsageAuth}
-            disabled={authBusyKey === 'cursor-usage-clear' || (!cursorUsageAuthConfigured && !cursorUsageTokenInput)}
-          >
-            {authBusyKey === 'cursor-usage-clear' ? t('settings.providers.page.actions.saving') : t('settings.providers.page.actions.clear')}
-          </Button>
-          <Button
-            variant="outline"
-            size="xs"
-            className="!font-normal"
-            onClick={handleRefreshCursorUsage}
-            disabled={authBusyKey === 'cursor-usage-refresh' || !cursorUsageAuthConfigured}
-          >
-            {authBusyKey === 'cursor-usage-refresh'
-              ? t('settings.providers.page.actions.refreshing')
-              : t('settings.providers.page.actions.refreshUsage')}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
+  const renderClaudeCodeAuth = () => {
+    let status: 'loading' | 'unavailable' | 'error' | 'authenticated' | 'signed_out';
+    if (claudeCliStatusLoading || !claudeCliStatus) {
+      status = 'loading';
+    } else if (claudeCliStatus.authStatus === 'error') {
+      status = 'error';
+    } else if (!claudeCliStatus.installed) {
+      status = 'unavailable';
+    } else if (claudeCliStatus.loggedIn) {
+      status = 'authenticated';
+    } else {
+      status = 'signed_out';
+    }
+    const titleKey = {
+      loading: 'settings.providers.page.auth.checkingClaudeCliTitle',
+      unavailable: 'settings.providers.page.auth.claudeCliMissingTitle',
+      error: 'settings.providers.page.auth.claudeStatusErrorTitle',
+      authenticated: 'settings.providers.page.auth.claudeAuthenticatedTitle',
+      signed_out: 'settings.providers.page.auth.claudeLoginTitle',
+    }[status] as Parameters<typeof t>[0];
+    const descriptionKey = {
+      loading: 'settings.providers.page.auth.checkingClaudeCliDescription',
+      unavailable: 'settings.providers.page.auth.claudeCliMissingDescription',
+      error: 'settings.providers.page.auth.claudeStatusErrorDescription',
+      authenticated: 'settings.providers.page.auth.claudeAuthenticatedDescription',
+      signed_out: 'settings.providers.page.auth.claudeLoginDescription',
+    }[status] as Parameters<typeof t>[0];
 
-  const renderOpenCodeGoUsageTracking = () => (
-    <div className="space-y-2 border-t border-[var(--surface-subtle)] pt-3">
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <div className="typography-ui-label text-foreground">{t('settings.providers.page.auth.openCodeGoUsageTitle')}</div>
-          <div className="typography-meta whitespace-pre-line text-muted-foreground">{t('settings.providers.page.auth.openCodeGoUsageDescription')}</div>
+    return (
+      <div className="flex items-center justify-between gap-3 py-1.5">
+        <div>
+          <div className="typography-ui-label text-foreground">{t(titleKey)}</div>
+          <div className="typography-meta text-muted-foreground">
+            {status === 'error' && claudeCliStatus?.error ? claudeCliStatus.error : t(descriptionKey)}
+          </div>
         </div>
-        <span className={cn(
-          'typography-micro shrink-0',
-          openCodeGoUsageAuthConfigured ? 'text-[var(--status-success)]' : 'text-muted-foreground',
-        )}>
-          {openCodeGoUsageAuthLoading
-            ? t('settings.providers.page.auth.openCodeGoUsageChecking')
-            : openCodeGoUsageAuthConfigured
-              ? t('settings.providers.page.auth.openCodeGoUsageConfigured')
-              : t('settings.providers.page.auth.openCodeGoUsageNotConfigured')}
-        </span>
+        {status === 'loading' ? null : status === 'unavailable' ? (
+          <div className="flex shrink-0 gap-1">
+            <Button
+              variant="outline"
+              size="xs"
+              className="!font-normal"
+              onClick={handleInstallClaudeCli}
+              disabled={authBusyKey === 'claude-install'}
+            >
+              {authBusyKey === 'claude-install' ? t('settings.providers.page.actions.openingTerminal') : t('settings.providers.page.actions.installClaudeCli')}
+            </Button>
+            <Button variant="ghost" size="xs" className="!font-normal" onClick={refreshClaudeCliStatus}>
+              {t('settings.providers.page.actions.refresh')}
+            </Button>
+          </div>
+        ) : status === 'authenticated' ? (
+          <div className="flex shrink-0 gap-1">
+            <Button
+              variant="outline"
+              size="xs"
+              className="!font-normal"
+              onClick={handleLaunchClaudeLogin}
+              disabled={authBusyKey === 'claude-login'}
+            >
+              {authBusyKey === 'claude-login' ? t('settings.providers.page.actions.openingTerminal') : t('settings.providers.page.actions.reconnect')}
+            </Button>
+            <Button
+              variant="outline"
+              size="xs"
+              className="!font-normal"
+              onClick={handleCheckClaudeOAuth}
+              disabled={authBusyKey === 'claude-check-oauth'}
+            >
+              {authBusyKey === 'claude-check-oauth' ? t('settings.providers.page.actions.checkingOAuth') : t('settings.providers.page.actions.configure')}
+            </Button>
+          </div>
+        ) : (
+          <div className="flex shrink-0 gap-1">
+            <Button
+              variant="outline"
+              size="xs"
+              className="!font-normal"
+              onClick={handleLaunchClaudeLogin}
+              disabled={authBusyKey === 'claude-login'}
+            >
+              {authBusyKey === 'claude-login' ? t('settings.providers.page.actions.openingTerminal') : t('settings.providers.page.actions.authenticate')}
+            </Button>
+            <Button variant="ghost" size="xs" className="!font-normal" onClick={refreshClaudeCliStatus}>
+              {t('settings.providers.page.actions.refresh')}
+            </Button>
+          </div>
+        )}
       </div>
-      <div className="grid gap-2 sm:grid-cols-[minmax(0,0.45fr)_minmax(0,0.55fr)]">
-        <Input
-          id={OPENCODE_GO_WORKSPACE_INPUT_ID}
-          value={openCodeGoWorkspaceIdInput}
-          onChange={(event) => setOpenCodeGoWorkspaceIdInput(event.target.value)}
-          placeholder={t('settings.providers.page.auth.openCodeGoWorkspacePlaceholder')}
-          className="font-mono text-xs"
-          autoComplete="off"
-        />
-        <Input
-          id={OPENCODE_GO_AUTH_COOKIE_INPUT_ID}
-          type="password"
-          value={openCodeGoAuthCookieInput}
-          onChange={(event) => setOpenCodeGoAuthCookieInput(event.target.value)}
-          placeholder={t('settings.providers.page.auth.openCodeGoAuthCookiePlaceholder')}
-          className="font-mono text-xs"
-          autoComplete="off"
-        />
-      </div>
-      <div className="flex flex-wrap gap-1">
-        <Button size="xs" className="!font-normal" onClick={handleSaveOpenCodeGoUsageAuth} disabled={authBusyKey === 'opencode-go-usage-save'}>
-          {authBusyKey === 'opencode-go-usage-save' ? t('settings.providers.page.actions.saving') : t('settings.providers.page.actions.save')}
-        </Button>
-        <Button variant="outline" size="xs" className="!font-normal" onClick={handleClearOpenCodeGoUsageAuth} disabled={authBusyKey === 'opencode-go-usage-clear' || (!openCodeGoUsageAuthConfigured && !openCodeGoWorkspaceIdInput && !openCodeGoAuthCookieInput)}>
-          {authBusyKey === 'opencode-go-usage-clear' ? t('settings.providers.page.actions.saving') : t('settings.providers.page.actions.clear')}
-        </Button>
-        <Button variant="outline" size="xs" className="!font-normal" onClick={handleRefreshOpenCodeGoUsage} disabled={authBusyKey === 'opencode-go-usage-refresh' || !openCodeGoUsageAuthConfigured}>
-          {authBusyKey === 'opencode-go-usage-refresh' ? t('settings.providers.page.actions.refreshing') : t('settings.providers.page.actions.refreshUsage')}
-        </Button>
-      </div>
-    </div>
-  );
+    );
+  };
 
   if (!isAddMode && providers.length === 0) {
     return (
@@ -1324,61 +1074,7 @@ export const ProvidersPage: React.FC = () => {
                   )}
 
                   {isAnthropicOAuthProviderId(candidateProviderId) && (
-                    <div className="flex items-center justify-between gap-3 py-1.5">
-                      <div>
-                        <div className="typography-ui-label text-foreground">
-                          {claudeCliStatusLoading
-                            ? t('settings.providers.page.auth.checkingClaudeCliTitle')
-                            : claudeCliStatus?.installed
-                              ? t('settings.providers.page.auth.claudeLoginTitle')
-                              : t('settings.providers.page.auth.claudeCliMissingTitle')}
-                        </div>
-                        <div className="typography-meta text-muted-foreground">
-                          {claudeCliStatusLoading
-                            ? t('settings.providers.page.auth.checkingClaudeCliDescription')
-                            : claudeCliStatus?.installed
-                              ? t('settings.providers.page.auth.claudeLoginDescription')
-                              : t('settings.providers.page.auth.claudeCliMissingDescription')}
-                        </div>
-                      </div>
-                      {claudeCliStatusLoading ? null : claudeCliStatus?.installed ? (
-                        <div className="flex shrink-0 gap-1">
-                          <Button
-                            variant="outline"
-                            size="xs"
-                            className="!font-normal"
-                            onClick={handleLaunchClaudeLogin}
-                            disabled={authBusyKey === 'claude-login'}
-                          >
-                            {authBusyKey === 'claude-login' ? t('settings.providers.page.actions.openingTerminal') : t('settings.providers.page.actions.authenticate')}
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="xs"
-                            className="!font-normal"
-                            onClick={handleCheckClaudeOAuth}
-                            disabled={authBusyKey === 'claude-check-oauth'}
-                          >
-                            {authBusyKey === 'claude-check-oauth' ? t('settings.providers.page.actions.checkingOAuth') : t('settings.providers.page.actions.checkOAuth')}
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="flex shrink-0 gap-1">
-                          <Button
-                            variant="outline"
-                            size="xs"
-                            className="!font-normal"
-                            onClick={handleInstallClaudeCli}
-                            disabled={authBusyKey === 'claude-install'}
-                          >
-                            {authBusyKey === 'claude-install' ? t('settings.providers.page.actions.openingTerminal') : t('settings.providers.page.actions.installClaudeCli')}
-                          </Button>
-                          <Button variant="ghost" size="xs" className="!font-normal" onClick={refreshClaudeCliStatus}>
-                            {t('settings.providers.page.actions.refresh')}
-                          </Button>
-                        </div>
-                      )}
-                    </div>
+                    renderClaudeCodeAuth()
                   )}
 
                   {activeCursorAcpProviderId === candidateProviderId && (
@@ -1397,9 +1093,9 @@ export const ProvidersPage: React.FC = () => {
 
                   {activeCursorAcpProviderId === candidateProviderId && renderCursorRuntimeNotice()}
 
-                  {activeCursorAcpProviderId === candidateProviderId && renderCursorUsageTracking()}
-
-                  {activeOpenCodeGoProviderId === candidateProviderId && renderOpenCodeGoUsageTracking()}
+                  {activeManagedQuotaProviderId === candidateProviderId && (
+                    <ManagedQuotaCredentials providerId={activeManagedQuotaProviderId} />
+                  )}
 
                   {(() => {
                     const candidateSupportsApiKey = providerSupportsApiKey(candidateProviderId);
@@ -1623,61 +1319,7 @@ export const ProvidersPage: React.FC = () => {
                 )}
 
                 {isAnthropicOAuthProviderId(selectedProvider.id) && (
-                  <div className="flex items-center justify-between gap-3 py-1.5">
-                    <div>
-                      <div className="typography-ui-label text-foreground">
-                        {claudeCliStatusLoading
-                          ? t('settings.providers.page.auth.checkingClaudeCliTitle')
-                          : claudeCliStatus?.installed
-                            ? t('settings.providers.page.auth.claudeLoginTitle')
-                            : t('settings.providers.page.auth.claudeCliMissingTitle')}
-                      </div>
-                      <div className="typography-meta text-muted-foreground">
-                        {claudeCliStatusLoading
-                          ? t('settings.providers.page.auth.checkingClaudeCliDescription')
-                          : claudeCliStatus?.installed
-                            ? t('settings.providers.page.auth.claudeLoginDescription')
-                            : t('settings.providers.page.auth.claudeCliMissingDescription')}
-                      </div>
-                    </div>
-                    {claudeCliStatusLoading ? null : claudeCliStatus?.installed ? (
-                      <div className="flex shrink-0 gap-1">
-                        <Button
-                          variant="outline"
-                          size="xs"
-                          className="!font-normal"
-                          onClick={handleLaunchClaudeLogin}
-                          disabled={authBusyKey === 'claude-login'}
-                        >
-                          {authBusyKey === 'claude-login' ? t('settings.providers.page.actions.openingTerminal') : t('settings.providers.page.actions.authenticate')}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="xs"
-                          className="!font-normal"
-                          onClick={handleCheckClaudeOAuth}
-                          disabled={authBusyKey === 'claude-check-oauth'}
-                        >
-                          {authBusyKey === 'claude-check-oauth' ? t('settings.providers.page.actions.checkingOAuth') : t('settings.providers.page.actions.checkOAuth')}
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex shrink-0 gap-1">
-                        <Button
-                          variant="outline"
-                          size="xs"
-                          className="!font-normal"
-                          onClick={handleInstallClaudeCli}
-                          disabled={authBusyKey === 'claude-install'}
-                        >
-                          {authBusyKey === 'claude-install' ? t('settings.providers.page.actions.openingTerminal') : t('settings.providers.page.actions.installClaudeCli')}
-                        </Button>
-                        <Button variant="ghost" size="xs" className="!font-normal" onClick={refreshClaudeCliStatus}>
-                          {t('settings.providers.page.actions.refresh')}
-                        </Button>
-                      </div>
-                    )}
-                  </div>
+                  renderClaudeCodeAuth()
                 )}
 
                 {activeCursorAcpProviderId === selectedProvider.id && (
@@ -1696,9 +1338,9 @@ export const ProvidersPage: React.FC = () => {
 
                 {activeCursorAcpProviderId === selectedProvider.id && renderCursorRuntimeNotice()}
 
-                {activeCursorAcpProviderId === selectedProvider.id && renderCursorUsageTracking()}
-
-                {activeOpenCodeGoProviderId === selectedProvider.id && renderOpenCodeGoUsageTracking()}
+                {activeManagedQuotaProviderId === selectedProvider.id && (
+                  <ManagedQuotaCredentials providerId={activeManagedQuotaProviderId} />
+                )}
 
                 {visibleOAuthAuthMethods.length > 0 && (
                   <div className={cn('space-y-4', selectedProviderSupportsApiKey && 'border-t border-[var(--surface-subtle)] pt-2')}>

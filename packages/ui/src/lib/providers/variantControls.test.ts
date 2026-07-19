@@ -122,8 +122,8 @@ describe('provider variant controls', () => {
       models: [
         { id: 'gpt-5.6-sol', variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {}, max: {}, ultra: {} } },
         { id: 'gpt-5.6-sol-fast', variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {}, max: {}, ultra: {} } },
-        { id: 'gpt-5.6-luna', variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {} } },
-        { id: 'gpt-5.6-luna-fast', variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {} } },
+        { id: 'gpt-5.6-luna', variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {}, max: {} } },
+        { id: 'gpt-5.6-luna-fast', variants: { none: {}, low: {}, medium: {}, high: {}, xhigh: {}, max: {} } },
       ],
     };
 
@@ -135,15 +135,20 @@ describe('provider variant controls', () => {
       modelId: 'gpt-5.6-sol',
       variant: 'ultra',
     });
-    expect(getModelVariantControlState(provider, 'gpt-5.6-luna', 'xhigh')?.visibleVariantOptions).toEqual([
+    expect(getModelVariantControlState(provider, 'gpt-5.6-luna', 'max')?.visibleVariantOptions).toEqual([
       'low',
       'medium',
       'high',
       'xhigh',
+      'max',
     ]);
-    expect(resolveModelVariantSelection(provider, 'gpt-5.6-luna', 'medium', { fastEnabled: true })).toEqual({
+    expect(resolveModelVariantSelection(provider, 'gpt-5.6-luna', 'max', { fastEnabled: true })).toEqual({
       modelId: 'gpt-5.6-luna-fast',
-      variant: 'medium',
+      variant: 'max',
+    });
+    expect(resolveModelVariantSelection(provider, 'gpt-5.6-luna-fast', 'max', { fastEnabled: false })).toEqual({
+      modelId: 'gpt-5.6-luna',
+      variant: 'max',
     });
   });
 

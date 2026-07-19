@@ -1,5 +1,4 @@
 import { createProjectIdFromPath } from '../projects/project-id.js';
-import { spawn } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -21,6 +20,7 @@ import { createStandardSessionTitleRuntime } from './standard-session-title-runt
 import { registerQuestionRoutes } from './question-routes.js';
 import { createGlobalAgentsMdRuntime } from './global-agents-md-runtime.js';
 import { registerGlobalAgentsMdRoutes } from './global-agents-md-routes.js';
+import { runClaudeCodeAuthStatus } from './claude-auth-status.js';
 
 const ANTHROPIC_PROVIDER_IDS = new Set(['anthropic', 'claude', 'anthropic-oauth', 'opencode-with-claude']);
 const ANTIGRAVITY_PROVIDER_ID = 'antigravity';
@@ -29,8 +29,6 @@ const CURSOR_USAGE_TOKEN_MAX_LENGTH = 16_384;
 const OPENCODE_GO_PROVIDER_ID = 'opencode-go';
 const OPENCODE_GO_WORKSPACE_ID_PATTERN = /^wrk_[a-zA-Z0-9]+$/;
 const OPENCODE_GO_USAGE_COOKIE_MAX_LENGTH = 16_384;
-const CLAUDE_AUTH_CHECK_TIMEOUT_MS = 45000;
-const CLAUDE_AUTH_CHECK_PROMPT = 'Reply with exactly: OK';
 
 const getAntigravityAccountsSource = async () => {
   const { ANTIGRAVITY_ACCOUNTS_PATHS, readJsonFile } = await import('../quota/utils/index.js');
@@ -103,58 +101,6 @@ const searchPathForExecutable = (binaryName, pathValue) => {
   }
   return null;
 };
-
-const runClaudeCliAuthCheck = ({ executable, pathValue, spawnImpl = spawn }) => new Promise((resolve) => {
-  let settled = false;
-  let stderr = '';
-  let timer = null;
-  const finish = (result) => {
-    if (settled) return;
-    settled = true;
-    if (timer) clearTimeout(timer);
-    resolve(result);
-  };
-
-  const child = spawnImpl(executable, ['-p', CLAUDE_AUTH_CHECK_PROMPT, '--output-format', 'text'], {
-    env: { ...process.env, PATH: pathValue },
-    stdio: ['ignore', 'ignore', 'pipe'],
-  });
-
-  timer = setTimeout(() => {
-    child.kill?.('SIGTERM');
-    finish({ ok: false, error: 'Timed out while checking Claude OAuth.' });
-  }, CLAUDE_AUTH_CHECK_TIMEOUT_MS);
-
-  child.stderr?.on?.('data', (chunk) => {
-    stderr += String(chunk);
-    if (stderr.length > 2000) {
-      stderr = stderr.slice(-2000);
-    }
-  });
-
-  child.on?.('error', (error) => {
-    finish({
-      ok: false,
-      error: error?.code === 'ENOENT'
-        ? 'Claude CLI was not found on PATH.'
-        : error instanceof Error
-          ? error.message
-          : 'Failed to check Claude OAuth with the Claude CLI.',
-    });
-  });
-
-  child.on?.('close', (code) => {
-    if (code === 0) {
-      finish({ ok: true });
-      return;
-    }
-
-    finish({
-      ok: false,
-      error: stderr.trim() || `Claude CLI exited with code ${code}.`,
-    });
-  });
-});
 
 export const registerOpenCodeRoutes = (app, dependencies) => {
   const {
@@ -470,10 +416,36 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         ? buildAugmentedPath()
         : process.env.PATH || '';
       const executable = searchPathForExecutable('claude', pathValue);
-      return res.json({ installed: Boolean(executable), path: executable });
+      if (!executable) {
+        return res.json({
+          installed: false,
+          path: null,
+          loggedIn: false,
+          authStatus: 'unavailable',
+        });
+      }
+
+      const authCheck = await runClaudeCodeAuthStatus({ executable, pathValue });
+      const auth = authCheck.auth ?? null;
+      return res.json({
+        installed: true,
+        path: executable,
+        loggedIn: authCheck.ok,
+        authStatus: authCheck.ok
+          ? 'authenticated'
+          : authCheck.code === 'claude_not_authenticated'
+            ? 'signed_out'
+            : 'error',
+        ...(auth?.authMethod ? { authMethod: auth.authMethod } : {}),
+        ...(auth?.apiProvider ? { apiProvider: auth.apiProvider } : {}),
+        ...(auth?.subscriptionType ? { subscriptionType: auth.subscriptionType } : {}),
+        ...(!authCheck.ok && authCheck.code !== 'claude_not_authenticated'
+          ? { error: authCheck.error, errorCode: authCheck.code }
+          : {}),
+      });
     } catch (error) {
-      console.error('Failed to check Claude CLI availability:', error);
-      return res.status(500).json({ error: error.message || 'Failed to check Claude CLI availability' });
+      console.error('Failed to check Claude Code availability:', error);
+      return res.status(500).json({ error: error.message || 'Failed to check Claude Code availability' });
     }
   });
 
@@ -486,15 +458,18 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       if (!executable) {
         return res.status(400).json({
           code: 'claude_cli_unavailable',
-          error: 'Claude CLI is not installed or is not available on PATH.',
+          error: 'Claude Code is not installed or is not available on PATH.',
         });
       }
 
-      const authCheck = await runClaudeCliAuthCheck({ executable, pathValue });
+      const authCheck = await runClaudeCodeAuthStatus({ executable, pathValue });
       if (!authCheck.ok) {
         return res.status(400).json({
-          code: 'claude_cli_unauthenticated',
-          error: authCheck.error || 'Claude OAuth check failed.',
+          code: authCheck.code === 'claude_not_authenticated'
+            ? 'claude_cli_unauthenticated'
+            : 'claude_cli_auth_check_failed',
+          reason: authCheck.code,
+          error: authCheck.error || 'Claude Code authentication check failed.',
         });
       }
 
@@ -524,6 +499,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         path: result.path,
         requiresReload: result.changed,
         reloadDelayMs: result.changed ? clientReloadDelayMs : undefined,
+        auth: authCheck.auth,
       });
     } catch (error) {
       console.error('Failed to check Claude OAuth:', error);

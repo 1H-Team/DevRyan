@@ -6,6 +6,8 @@ import yaml from 'yaml';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
+const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 16_432;
 
 const LOCAL_PATH_PATTERNS = [
   /(^|[\s"'`])\/Users\//,
@@ -18,6 +20,10 @@ const LOCAL_PATH_PATTERNS = [
 
 function containsLocalMachinePath(value) {
   return LOCAL_PATH_PATTERNS.some((pattern) => pattern.test(value));
+}
+
+function countOccurrences(value, needle) {
+  return value.split(needle).length - 1;
 }
 
 function readPackagedAgent(name) {
@@ -95,12 +101,168 @@ describe('packaged agent defaults', () => {
     );
   });
 
+  it('puts correctness and reliability gates before efficiency and cost', () => {
+    const { body } = readPackagedAgent('orchestrator');
+    const correctnessGate = 'Correctness and reliability are hard gates.';
+    const efficiencyPriority = 'Once both hold, optimize latency and resource efficiency, then cost.';
+
+    expect(body).toContain(correctnessGate);
+    expect(body).toContain(efficiencyPriority);
+    expect(body.indexOf(correctnessGate)).toBeLessThan(body.indexOf(efficiencyPriority));
+    expect(body).not.toContain('optimizing for quality, speed, cost, and reliability — in that order');
+  });
+
+  it('keeps one authoritative occurrence of each consolidated prompt policy', () => {
+    const { body } = readPackagedAgent('orchestrator');
+    const canonicalRules = [
+      '**Question routing.**',
+      '**Skill announcement rule.**',
+      '**Visible reasoning rule.**',
+      '**Plan approval.**',
+    ];
+
+    for (const rule of canonicalRules) {
+      expect(countOccurrences(body, rule), rule).toBe(1);
+    }
+
+    expect(countOccurrences(body, 'structured question tool')).toBe(1);
+    expect(countOccurrences(body, 'Skill announcements are tool activity only')).toBe(1);
+    expect(countOccurrences(body, 'Honor the DevRyan rationale-display reminder captured in the first user turn')).toBe(1);
+    expect(countOccurrences(body, 'Explain why instead of merely repeating the tool action')).toBe(1);
+    expect(countOccurrences(body, 'Never expose or claim to expose private chain-of-thought')).toBe(1);
+    expect(countOccurrences(body, 'Approval belongs only to the plan card lifecycle')).toBe(1);
+    expect(body).toContain('Do not guess user-owned intent, ask about trivial, reversible mechanics, or request permission for already-approved mechanical steps; when the next step is clear, take it.');
+    expect(body).not.toContain('**Clarify unresolved user intent.**');
+    expect(body).not.toContain('**Formulating questions.**');
+  });
+
+  it('gives grounded implementation decisions precedence over user-owned question routing', () => {
+    const { body } = readPackagedAgent('orchestrator');
+    const questionRule = body.split('\n').find((line) => line.startsWith('**Question routing.**')) ?? '';
+    const planApprovalRule = body.split('\n').find((line) => line.startsWith('- **Plan approval.**')) ?? '';
+    const planModeStart = body.indexOf('<Plan Mode>');
+    const planModeEnd = body.indexOf('</Plan Mode>');
+    const planMode = body.slice(planModeStart, planModeEnd);
+
+    expect(`${questionRule}\n${planApprovalRule}`).toMatch(
+      /Ask through the structured question tool only when unresolved user-owned intent, requirements, preferences, or choices would materially change scope, the user-visible outcome, external effects, or an irreversible tradeoff[\s\S]*Do not ask the user to ratify an implementation approach or plan already grounded by the requested outcome; defer to the Plan approval rule\.[\s\S]*\n- \*\*Plan approval\.\*\* When the requested outcome already provides sufficient intent to ground a design, implementation approach, or plan, do not ask the user to ratify it through assistant prose or a question tool in normal mode; take the grounded next step\./,
+    );
+    expect(questionRule).not.toContain('competing implementation approaches');
+    expect(body.indexOf(planApprovalRule)).toBeLessThan(planModeStart);
+    expect(planMode).toContain('Follow the canonical Plan approval rule above.');
+  });
+
+  it('requires mutually exclusive options for every structured question', () => {
+    const { body } = readPackagedAgent('orchestrator');
+    const questionRule = body.split('\n').find((line) => line.startsWith('**Question routing.**')) ?? '';
+
+    expect(questionRule).toContain('Batch 1–3 focused questions, each with 2–3 mutually exclusive, concrete, decision-ready options.');
+    expect(questionRule).not.toContain('Batch 1–3 focused questions with 2–3');
+  });
+
+  it('preserves the complete Orchestrator frontmatter and always-on execution contracts', () => {
+    const { body, frontmatter } = readPackagedAgent('orchestrator');
+
+    expect(frontmatter).toEqual({
+      mode: 'primary',
+      description: 'AI coding orchestrator that delegates tasks to specialist agents for optimal quality, speed, and cost',
+      model: 'openai/gpt-5.5',
+      variant: 'medium',
+      temperature: 0.1,
+      permission: {
+        '*': 'allow',
+        doom_loop: 'ask',
+        external_directory: { '*': 'ask' },
+        plan_enter: 'deny',
+        plan_exit: 'deny',
+        question: 'allow',
+        'question_*': 'allow',
+        read: {
+          '*.env': 'ask',
+          '*.env.*': 'ask',
+          '*.env.example': 'allow',
+        },
+        task: {
+          '*': 'deny',
+          explorer: 'allow',
+          librarian: 'allow',
+          oracle: 'allow',
+          designer: 'allow',
+          fixer: 'allow',
+          council: 'allow',
+        },
+        council_session: 'deny',
+        devryan_task: 'allow',
+        skill: {
+          'agent-browser': 'allow',
+          'browser-testing-with-devtools': 'allow',
+          'code-simplification': 'allow',
+          'debugging-and-error-recovery': 'allow',
+          'deprecation-and-migration': 'allow',
+          'frontend-design': 'allow',
+          'dashboard-design': 'allow',
+          'component-patterns': 'allow',
+          accessibility: 'allow',
+          'frontend-ui-engineering': 'allow',
+          'planning-and-task-breakdown': 'allow',
+          'dispatching-parallel-agents': 'allow',
+          supabase: 'allow',
+          'supabase-postgres-best-practices': 'allow',
+          'using-agent-skills': 'allow',
+        },
+      },
+      modelRefs: ['openai/gpt-5.5'],
+    });
+
+    for (const contract of [
+      '**DevRyan-managed delegation.**',
+      'at most one managed recovery',
+      '**Managed dispatch barrier.**',
+      'Only after every result is dispositioned may you resume local work.',
+      'Allowed subagents: `explorer`, `librarian`, `oracle`, `designer`, `fixer`, `council`.',
+      '<Git Command Boundary>',
+      'Do not run git commands as a default finalization or safety routine.',
+      '<Completion Contract>',
+      'Always finish every completed work turn with a concise user-facing final response.',
+      '<Routing>',
+      '- `explorer`:',
+      '- `librarian`:',
+      '- `oracle`:',
+      '- `designer`:',
+      '- `fixer`:',
+      '- `council`:',
+      '<Plan Mode>',
+      'When the user asks only for a plan, do not edit files.',
+      'Once the plan is finished, stop after presenting it.',
+      'Ask every delegated subagent to end with exactly one terminal status marker: `<status>complete</status>` or `<status>blocked</status>`.',
+      'Use only real runtime tools.',
+      'A managed failure never authorizes `task`.',
+      'Never use `general-purpose`.',
+    ]) {
+      expect(body, contract).toContain(contract);
+    }
+  });
+
+  it('records exact pre-task and tightened Orchestrator UTF-8 byte counts', () => {
+    const { content } = readPackagedAgent('orchestrator');
+    const afterBytes = Buffer.byteLength(content, 'utf8');
+
+    expect({
+      beforeBytes: PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES,
+      afterBytes,
+    }).toEqual({
+      beforeBytes: 15_902,
+      afterBytes: EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES,
+    });
+    expect(new TextEncoder().encode(content).byteLength).toBe(EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES);
+  });
+
   it('grants managed delegation only to orchestrator and keeps provider-native work distinct', () => {
     const orchestrator = readPackagedAgent('orchestrator');
     expect(orchestrator.frontmatter.permission.devryan_task).toBe('allow');
     expect(orchestrator.content).toContain('DevRyan-managed delegation');
     expect(orchestrator.content).toContain('provider-native');
-    expect(orchestrator.content).toContain('no more than three');
+    expect(orchestrator.content).toContain('does not impose an artificial managed concurrency cap');
 
     for (const agentName of ['builder', 'council', 'designer', 'explorer', 'fixer', 'librarian', 'oracle', 'plan']) {
       expect(readPackagedAgent(agentName).frontmatter.permission.devryan_task, agentName).toBe('deny');
@@ -113,28 +275,45 @@ describe('packaged agent defaults', () => {
     expect(content).toContain('Start all independent managed tasks first');
     expect(content).toContain('wait for every dispatched task');
     expect(content).toContain('Disposition every collected result');
+    expect(content).toContain(
+      'If `wait` returns `queued`, `starting`, or `running`, immediately call `wait` again',
+    );
     expect(content).toContain('Only after every result is dispositioned may you resume local work');
     expect(content).toContain('successful result requires `continue` after `wait`');
+  });
+
+  it('requires managed deadlines to match delegated scope', () => {
+    const content = readPackagedAgent('orchestrator').content;
+
+    expect(content).toContain('Size `timeout_seconds` to the delegated work');
+    expect(content).toContain('1,800 seconds for read-only discovery and small bounded fixes');
+    expect(content).toContain('3,600 seconds for multi-file implementation plus tests');
+    expect(content).toContain('7,200 seconds when the same child also owns builds');
   });
 
   it('never presents provider-native delegation as a managed-failure fallback', () => {
     const content = readPackagedAgent('orchestrator').content;
 
     expect(content).toContain('consume its partial output');
-    expect(content).toContain('at most one managed retry');
+    expect(content).toContain('at most one managed recovery');
+    expect(content).toContain('Prefer `resume` only for a resumable timed-out or interrupted result');
     expect(content).toContain('Never invoke provider-native `task` as an automatic fallback');
     expect(content).toContain('explicit current-user request');
     expect(content).not.toMatch(/managed (?:failure|timeout)[^\n]{0,120}(?:fall back|fallback) to (?:the )?`?task`?/i);
   });
 
-  it('builder and orchestrator ask on unresolved user-answerable ambiguity without over-analyzing', () => {
+  it('keeps Builder ambiguity handling while scoping Orchestrator questions to material user-owned choices', () => {
     const builder = fs.readFileSync(path.join(AGENTS_DIR, 'builder.md'), 'utf8');
     const content = fs.readFileSync(path.join(AGENTS_DIR, 'orchestrator.md'), 'utf8');
 
+    expect(builder).toContain('Inspect repository and system facts that could resolve the ambiguity before asking.');
+    expect(builder).toContain('multiple plausible interpretations remain and the user can resolve them');
+    expect(builder).toContain('even when the ambiguity is not a hard blocker');
+    expect(content).toContain('Inspect repository and system facts that could resolve uncertainty before asking.');
+    expect(content).toContain('unresolved user-owned intent, requirements, preferences, or choices would materially change');
+    expect(content).toContain('even when work is not otherwise blocked');
+
     for (const prompt of [builder, content]) {
-      expect(prompt).toContain('Inspect repository and system facts that could resolve the ambiguity before asking.');
-      expect(prompt).toContain('multiple plausible interpretations remain and the user can resolve them');
-      expect(prompt).toContain('even when the ambiguity is not a hard blocker');
       expect(prompt).toContain('If the user skips a question, continue with best judgment and explicitly state the assumption.');
       expect(prompt).not.toContain('Ask only when truly blocked');
     }
@@ -142,8 +321,19 @@ describe('packaged agent defaults', () => {
     expect(content).not.toContain('Clarify intent before consequential choices.');
     expect(content).toContain('Do not build long speculative option trees');
     expect(content).toContain('Do not re-litigate settled decisions');
-    expect(content).toContain('Ask one focused structured question before analyzing branches that depend on the missing answer.');
+    expect(content).toContain('**Question routing.**');
     expect(content).toContain('Pick exactly one next action: ask, inspect, delegate, implement, verify, or finish.');
+  });
+
+  it('requires Builder task generation and prevents completion with unfinished todos', () => {
+    const builder = fs.readFileSync(path.join(AGENTS_DIR, 'builder.md'), 'utf8');
+
+    expect(builder).toContain('create the complete todo list for every implementation request');
+    expect(builder).toContain('ordinary work that did not come from a saved implementation plan');
+    expect(builder).toContain('Do not invent phases or prefix tasks with `Phase`');
+    expect(builder).toContain('exactly one todo per numbered task');
+    expect(builder).toContain('Never produce a completion response while any todo remains `pending` or `in_progress`');
+    expect(builder).toContain('Do not delete, merge, reorder, cancel, or replace unfinished todos');
   });
 
   it('orchestrator owns planning and asks Explorer only for context locations', () => {
@@ -213,8 +403,8 @@ describe('packaged agent defaults', () => {
     }
   });
 
-  it('agents that load skills avoid self-referential visible reasoning status lines', () => {
-    for (const agentName of ['orchestrator', 'builder', 'designer', 'explorer', 'fixer', 'oracle']) {
+  it('delegated agents that load skills avoid self-referential visible reasoning status lines', () => {
+    for (const agentName of ['builder', 'designer', 'explorer', 'fixer', 'oracle']) {
       const content = fs.readFileSync(path.join(AGENTS_DIR, `${agentName}.md`), 'utf8');
 
       expect(content).toContain('Skill announcements are tool activity only');

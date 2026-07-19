@@ -5,9 +5,13 @@ import {
   clearLegacyNewDraftInput,
   getDraftConfirmedMentionsStorageKey,
   getDraftInputStorageKey,
+  getSessionConfirmedMentionsStorageKey,
+  getSessionInputStorageKey,
   persistDrafts,
   readPersistedDrafts,
   removePersistedDraftInput,
+  removePersistedSessionInput,
+  subscribePersistedSessionInputRemoval,
 } from "./session-draft-storage"
 
 const createMemoryStorage = (): Storage => {
@@ -236,5 +240,26 @@ describe("session draft storage", () => {
     expect(storage.getItem(getDraftInputStorageKey("draft-send"))).toBeNull()
     expect(storage.getItem(getDraftConfirmedMentionsStorageKey("draft-send"))).toBeNull()
     expect(storage.getItem(LEGACY_NEW_INPUT_DRAFT_KEY)).toBeNull()
+  })
+
+  test("removes one session's composer storage and synchronously announces retirement", () => {
+    const removedSessionIds: string[] = []
+    const unsubscribe = subscribePersistedSessionInputRemoval((sessionId) => {
+      removedSessionIds.push(sessionId)
+    })
+    storage.setItem(getSessionInputStorageKey("session-delete"), "unsent text")
+    storage.setItem(getSessionConfirmedMentionsStorageKey("session-delete"), JSON.stringify(["README.md"]))
+    storage.setItem(getSessionInputStorageKey("session-keep"), "keep text")
+
+    try {
+      removePersistedSessionInput("session-delete", storage)
+
+      expect(storage.getItem(getSessionInputStorageKey("session-delete"))).toBeNull()
+      expect(storage.getItem(getSessionConfirmedMentionsStorageKey("session-delete"))).toBeNull()
+      expect(storage.getItem(getSessionInputStorageKey("session-keep"))).toBe("keep text")
+      expect(removedSessionIds).toEqual(["session-delete"])
+    } finally {
+      unsubscribe()
+    }
   })
 })

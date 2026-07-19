@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import type { Message, Part, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import { registerManualAbortGuard, resetAbortGuardState } from "./abort-retry-guard"
 import { INITIAL_STATE, type State } from "./types"
 import { updateStreamingState, useStreamingStore } from "./streaming"
 
@@ -52,6 +53,7 @@ const stateWithMessages = (
 
 describe("updateStreamingState", () => {
   beforeEach(() => {
+    resetAbortGuardState()
     useStreamingStore.setState({
       streamingMessageIds: new Map(),
       messageStreamStates: new Map(),
@@ -131,6 +133,23 @@ describe("updateStreamingState", () => {
 
     expect(useStreamingStore.getState().streamingMessageIds.get("ses_1")).toBe("msg_assistant_1")
     expect(useStreamingStore.getState().messageStreamStates.get("msg_assistant_1")?.phase).toBe("streaming")
+  })
+
+  test("completes a tracked assistant stream when guarded idle follows a manual retry abort", () => {
+    updateStreamingState(stateWithMessages([
+      message("msg_user_1", "user"),
+      message("msg_assistant_1", "assistant"),
+    ]))
+    expect(useStreamingStore.getState().streamingMessageIds.get("ses_1")).toBe("msg_assistant_1")
+
+    registerManualAbortGuard("ses_1")
+    updateStreamingState(stateWithMessages([
+      message("msg_user_1", "user"),
+      message("msg_assistant_1", "assistant"),
+    ], { type: "idle" } as SessionStatus))
+
+    expect(useStreamingStore.getState().streamingMessageIds.get("ses_1")).toBeNull()
+    expect(useStreamingStore.getState().messageStreamStates.get("msg_assistant_1")?.phase).toBe("completed")
   })
 
   test("completes a tracked assistant stream when a new user turn becomes trailing after idle", () => {

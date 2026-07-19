@@ -39,8 +39,8 @@ describe('web managed OpenCode executor transport', () => {
       idleStablePolls: 1,
     });
     const control = {
-      setChildSessionId: vi.fn(async () => undefined),
-      markAccepted: vi.fn(async () => undefined),
+      setChildSessionId: vi.fn(async () => true),
+      markAccepted: vi.fn(async () => true),
     };
     const task = {
       taskId: 'dvr_task_1',
@@ -61,7 +61,7 @@ describe('web managed OpenCode executor transport', () => {
     expect(control.setChildSessionId).toHaveBeenCalledWith('ses_child');
     expect(requests[0].url).toBe('http://127.0.0.1:4096/session?directory=%2Fworkspace+with+spaces');
     expect(JSON.parse(requests[0].init.body)).toEqual({
-      title: 'Managed child',
+      title: 'Managed Child',
       parentID: 'ses_root',
     });
     const prompt = requests.find((request) => new URL(request.url).pathname.endsWith('/prompt_async'));
@@ -77,6 +77,51 @@ describe('web managed OpenCode executor transport', () => {
     expect(requests.every((request) => request.init.headers.authorization === 'Basic opaque')).toBe(true);
   });
 
+  it('aborts and deletes a normal-provider child when the scheduler rejects its ownership checkpoint', async () => {
+    const requests = [];
+    const fetchImpl = vi.fn(async (url, init = {}) => {
+      requests.push({ url: String(url), init });
+      const pathname = new URL(url).pathname;
+      if (pathname === '/session' && init.method === 'POST') {
+        return jsonResponse({ id: 'ses_stale_normal' });
+      }
+      if (pathname === '/session/ses_stale_normal/abort' && init.method === 'POST') {
+        return new Response(null, { status: 204 });
+      }
+      if (pathname === '/session/ses_stale_normal' && init.method === 'DELETE') {
+        return new Response(null, { status: 204 });
+      }
+      throw new Error(`Unexpected request ${init.method} ${pathname}`);
+    });
+    const executor = createWebManagedOpenCodeExecutor({
+      buildOpenCodeUrl: (pathname) => `http://127.0.0.1:4096${pathname}`,
+      getOpenCodeAuthHeaders: () => ({ authorization: 'Basic opaque' }),
+      fetchImpl,
+    });
+
+    await expect(executor.start({
+      taskId: 'dvr_task_stale_normal',
+      rootSessionId: 'ses_root',
+      childSessionId: null,
+      directory: '/workspace',
+      providerId: 'openai',
+      modelId: 'gpt-5',
+      agent: 'explorer',
+      variant: null,
+      label: 'Stale normal child',
+      prompt: 'Must not run.',
+    }, {
+      async setChildSessionId() { return false; },
+      async markAccepted() { throw new Error('must not accept'); },
+    })).rejects.toThrow('lost launch ownership before provider prompt');
+
+    expect(requests.map(({ url, init }) => [new URL(url).pathname, init.method])).toEqual([
+      ['/session', 'POST'],
+      ['/session/ses_stale_normal/abort', 'POST'],
+      ['/session/ses_stale_normal', 'DELETE'],
+    ]);
+  });
+
   it('routes Cursor prompt, status, messages, and abort through the virtual provider owner', async () => {
     const cursorSdkRuntime = {
       handlePromptAsync: vi.fn(async () => ({ handled: true, status: 204 })),
@@ -86,6 +131,7 @@ describe('web managed OpenCode executor transport', () => {
         parts: [{ type: 'text', text: 'cursor result' }],
       }]),
       abortSession: vi.fn(async () => true),
+      deleteSessionState: vi.fn(async () => true),
     };
     const fetchImpl = vi.fn(async (url, init = {}) => {
       const pathname = new URL(url).pathname;
@@ -133,6 +179,30 @@ describe('web managed OpenCode executor transport', () => {
     expect(await executor.abort({ ...task, childSessionId })).toEqual({ aborted: true });
     expect(cursorSdkRuntime.abortSession).toHaveBeenCalledWith('ses_cursor');
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the scheduler abort signal for a normal-provider abort request', async () => {
+    const requests = [];
+    const fetchImpl = vi.fn(async (url, init = {}) => {
+      requests.push({ url: String(url), init });
+      return new Response(null, { status: 204 });
+    });
+    const executor = createWebManagedOpenCodeExecutor({
+      buildOpenCodeUrl: (pathname) => `http://127.0.0.1:4096${pathname}`,
+      getOpenCodeAuthHeaders: () => ({ authorization: 'Basic opaque' }),
+      fetchImpl,
+    });
+    const controller = new AbortController();
+
+    await expect(executor.abort({
+      taskId: 'dvr_task_abort_signal',
+      childSessionId: 'ses_abort_signal',
+      directory: '/workspace',
+      providerId: 'openai',
+    }, { signal: controller.signal })).resolves.toEqual({ aborted: true });
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0].init.signal).toBe(controller.signal);
   });
 
   it('surfaces bounded upstream failures without exposing a response body as success', async () => {

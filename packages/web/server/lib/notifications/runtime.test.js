@@ -28,6 +28,18 @@ const createStatusPayload = (type) => ({
   },
 });
 
+const createTodoPayload = (statuses) => ({
+  type: 'todo.updated',
+  properties: {
+    sessionID: 'ses_1',
+    todos: statuses.map((status, index) => ({
+      content: `Task ${index + 1}`,
+      priority: 'medium',
+      status,
+    })),
+  },
+});
+
 const createSessionPayload = (parentID) => ({
   type: 'session.created',
   properties: {
@@ -142,6 +154,40 @@ describe('notification trigger runtime completion gating', () => {
 
     expect(calls.desktop).toHaveLength(0);
     expect(calls.push).toHaveLength(0);
+  });
+
+  it('does not notify at 3/5 and waits for a later 5/5 Builder completion', async () => {
+    const { runtime, calls } = createRuntime();
+
+    await runtime.maybeSendPushForTrigger(createStatusPayload('busy'));
+    await runtime.maybeSendPushForTrigger(createTodoPayload([
+      'completed',
+      'completed',
+      'completed',
+      'in_progress',
+      'pending',
+    ]));
+    await runtime.maybeSendPushForTrigger(createCompletionPayload());
+    await runtime.maybeSendPushForTrigger(createStatusPayload('idle'));
+
+    expect(calls.desktop).toHaveLength(0);
+    expect(calls.ui).toHaveLength(0);
+    expect(calls.push).toHaveLength(0);
+
+    await runtime.maybeSendPushForTrigger(createStatusPayload('busy'));
+    await runtime.maybeSendPushForTrigger(createTodoPayload([
+      'completed',
+      'completed',
+      'completed',
+      'completed',
+      'completed',
+    ]));
+    await runtime.maybeSendPushForTrigger(createCompletionPayload({ info: { id: 'msg_2' } }));
+    await runtime.maybeSendPushForTrigger(createStatusPayload('idle'));
+
+    expect(calls.desktop).toHaveLength(1);
+    expect(calls.ui).toHaveLength(1);
+    expect(calls.push).toHaveLength(1);
   });
 
   it('does not send subtask completion notifications when subtask notifications are disabled', async () => {

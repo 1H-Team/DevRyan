@@ -4,7 +4,11 @@ import { useConfigStore } from '@/stores/useConfigStore';
 import { parseAgentMentions } from '@/lib/messages/agentMentions';
 import { getSyncSessionStatusAnyDirectory, getSyncBlockingRequestCountAnyDirectory } from '@/sync/sync-refs';
 import { useAllSessionStatuses } from '@/sync/sync-context';
-import { resolveQueuedAutoSendStatusType, type SessionStatusType } from './queuedMessageAutoSendStatus';
+import {
+  resolveQueuedAutoSendStatusType,
+  shouldDispatchQueuedSession,
+  type SessionStatusType,
+} from './queuedMessageAutoSendStatus';
 import { resolveSessionSendConfig } from '@/sync/send-config';
 import { getPdfAttachmentValidation } from '@/lib/attachments/attachmentCapabilities';
 import { toast } from '@/components/ui';
@@ -19,12 +23,17 @@ export function useQueuedMessageAutoSend(enabledOrOptions?: boolean | { enabled?
   const { t } = useI18n();
   const enabled = typeof enabledOrOptions === 'boolean' ? enabledOrOptions : (enabledOrOptions?.enabled ?? true);
   const queuedMessages = useMessageQueueStore((state) => state.queuedMessages);
+  const isConnected = useConfigStore((state) => state.isConnected);
   const sessionStatusRecord = useAllSessionStatuses(enabled);
 
   const inFlightSessionsRef = React.useRef<Set<string>>(new Set());
   const previousStatusRef = React.useRef<Map<string, SessionStatusType>>(new Map());
+  const previousConnectionStateRef = React.useRef<boolean | undefined>(undefined);
 
   React.useEffect(() => {
+    const previousConnectionState = previousConnectionStateRef.current;
+    previousConnectionStateRef.current = isConnected;
+
     if (!enabled) {
       return;
     }
@@ -122,15 +131,14 @@ export function useQueuedMessageAutoSend(enabledOrOptions?: boolean | { enabled?
         getSyncBlockingRequestCountAnyDirectory(sessionId),
       );
       const previousStatusType = previousStatusRef.current.get(sessionId);
-      const becameIdle =
-        (previousStatusType === 'busy'
-          || previousStatusType === 'retry'
-          || previousStatusType === 'blocked'
-          || previousStatusType === 'unknown')
-        && currentStatusType === 'idle';
-      const firstSeenIdle = previousStatusType === undefined && currentStatusType === 'idle';
 
-      if (queue.length > 0 && (becameIdle || firstSeenIdle)) {
+      if (shouldDispatchQueuedSession({
+        queueLength: queue.length,
+        currentStatus: currentStatusType,
+        previousStatus: previousStatusType,
+        isConnected,
+        previousConnectionState,
+      })) {
         void dispatchSessionQueue(sessionId, queue);
       }
 
@@ -138,5 +146,5 @@ export function useQueuedMessageAutoSend(enabledOrOptions?: boolean | { enabled?
     });
 
     previousStatusRef.current = nextStatusMap;
-  }, [enabled, queuedMessages, sessionStatusRecord, t]);
+  }, [enabled, isConnected, queuedMessages, sessionStatusRecord, t]);
 }

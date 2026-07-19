@@ -8,6 +8,12 @@ const TRAILING_FIX_REFERENCE_PATTERN = /\b(fix|repair|resolve|debug|diagnose)\s+
 
 const normalizeTitleWhitespace = (value: string): string => value.replace(/\s+/g, " ").trim()
 
+const collapseAdjacentDuplicateTitleWords = (value: string): string => (
+  value.split(" ").filter((word, index, words) => (
+    index === 0 || word.toLocaleLowerCase() !== words[index - 1]?.toLocaleLowerCase()
+  )).join(" ")
+)
+
 const normalizeTitleQuotes = (value: string): string => value
   .replace(/[“”]/g, "\"")
   .replace(/[‘’]/g, "'")
@@ -147,7 +153,9 @@ export const resolveDisplaySessionTitle = ({
   latestUserText?: string | null
   fallback?: string
 }): string => {
-  const normalizedTitle = typeof title === "string" ? title.trim() : ""
+  const normalizedTitle = typeof title === "string"
+    ? collapseAdjacentDuplicateTitleWords(normalizeTitleWhitespace(title))
+    : ""
   if (!normalizedTitle || isCursorAcpErrorTitle(normalizedTitle) || isGeneratedNewSessionTitle(normalizedTitle)) {
     return deriveSessionTitleFromUserText(latestUserText, fallback)
   }

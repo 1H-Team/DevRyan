@@ -1,7 +1,7 @@
 # Git Module Documentation
 
 ## Purpose
-This module provides Git repository operations for the web server runtime, including repository management, branch/worktree operations, status/diff queries, commit handling, conventional commit template setup, and merge/rebase workflows.
+This module provides Git repository operations for the web server runtime, including repository management, branch/worktree operations, status/diff queries, commit handling, direct commit-message generation, conventional commit template setup, and merge/rebase workflows.
 
 ## Entrypoints and structure
 - `packages/web/server/lib/git/`: Git module directory containing all Git-related functionality.
@@ -9,6 +9,7 @@ This module provides Git repository operations for the web server runtime, inclu
   - `routes.js`: Express route registration for `/api/git/*` endpoints.
   - `template-routes.js`: Conventional commit template and global `commit-msg` hook setup routes.
   - `service.js`: Core Git operations (repository, branch, worktree, commit, merge/rebase, status/diff, log).
+  - `commit-message.js`: Session-free commit-subject prompt, normalization, validation, and direct Zen utility-model generation.
   - `credentials.js`: Git credentials management.
   - `identity-storage.js`: Git identity (user.name, user.email) storage.
 
@@ -56,6 +57,11 @@ The following functions are exported and used by the web server:
 - `pull(directory, options)`: Pull changes from remote.
 - `push(directory, options)`: Push changes to remote (auto-sets upstream if needed).
 - `fetch(directory, options)`: Fetch changes from remote.
+
+### Commit Message Generation
+- `POST /api/git/commit-message`: Accept bounded, pre-collected worktree context plus optional wording guidance and return `{ message: { subject, highlights } }`.
+- Generation uses the commit-specific free Zen model `deepseek-v4-flash-free` through the direct `opencode.ai/zen` API, with a 60-second request deadline. Explicit API model overrides remain supported, and the web runtime validates the preferred model against the live free-model catalog before falling back to another available free model. It never creates, prompts, switches, or deletes an OpenCode session.
+- Subjects must match the repository Conventional Commit types, remain at or below 72 characters, and omit trailing punctuation. The route does not stage, commit, or otherwise mutate Git state.
 - `removeRemote(directory, options)`: Remove a configured remote (except `origin`).
 - `deleteRemoteBranch(directory, options)`: Delete a remote branch.
 

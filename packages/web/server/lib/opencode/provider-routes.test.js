@@ -182,7 +182,11 @@ describe('OpenCode provider routes', () => {
     const fakeBinDir = join(tempDir, 'bin');
     const fakeClaude = join(fakeBinDir, 'claude');
     mkdirSync(fakeBinDir, { recursive: true });
-    writeFileSync(fakeClaude, '#!/bin/sh\nexit 0\n', 'utf8');
+    writeFileSync(
+      fakeClaude,
+      '#!/bin/sh\n[ "$1 $2" = "auth status" ] || exit 9\necho \'{"loggedIn":true,"authMethod":"claude.ai","subscriptionType":"pro"}\'\n',
+      'utf8',
+    );
     chmodSync(fakeClaude, 0o755);
 
     const ensureAnthropicOAuthProviderConfig = vi.fn(() => ({
@@ -206,7 +210,7 @@ describe('OpenCode provider routes', () => {
   it('returns a deterministic code when Claude CLI OAuth is unavailable', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'openchamber-claude-route-'));
     const fakeClaude = join(tempDir, 'claude');
-    writeFileSync(fakeClaude, '#!/bin/sh\necho "not logged in" >&2\nexit 1\n', 'utf8');
+    writeFileSync(fakeClaude, '#!/bin/sh\necho \'{"loggedIn":false}\'\nexit 1\n', 'utf8');
     chmodSync(fakeClaude, 0o755);
     const { app } = createApp({ buildAugmentedPath: vi.fn(() => tempDir) });
 
@@ -216,7 +220,8 @@ describe('OpenCode provider routes', () => {
 
     expect(response.body).toEqual({
       code: 'claude_cli_unauthenticated',
-      error: 'not logged in',
+      error: 'Claude Code is not signed in. Run `claude auth login` and try again.',
+      reason: 'claude_not_authenticated',
     });
   });
 

@@ -5,7 +5,6 @@ import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { toast } from '@/components/ui';
 import { useI18n, type I18nKey } from '@/lib/i18n';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,
   SelectContent,
@@ -16,9 +15,10 @@ import {
 import { RiInformationLine } from '@remixicon/react';
 import {
   getResponseStylePresetInstructions,
-  isResponseStylePreset,
-  RESPONSE_STYLE_PRESETS,
-  type ResponseStylePreset,
+  isResponseStyleLevel,
+  resolveResponseStyleLevel,
+  RESPONSE_STYLE_LEVELS,
+  type ResponseStyleLevel,
 } from '@/lib/responseStyle';
 import type { DesktopSettings } from '@/lib/desktop';
 import {
@@ -34,37 +34,26 @@ const readApiError = async (response: Response, fallback: string) => {
   return typeof data?.error === 'string' && data.error.trim() ? data.error : fallback;
 };
 
-type ResponseStyleValue = ResponseStylePreset | 'custom';
-
 type BehaviorSettingsState = {
-  responseStyleEnabled: boolean;
-  responseStylePreset: ResponseStyleValue;
-  responseStyleCustomInstructions: string;
+  responseStyleLevel: ResponseStyleLevel;
 };
 
 const DEFAULT_BEHAVIOR_SETTINGS: BehaviorSettingsState = {
-  responseStyleEnabled: false,
-  responseStylePreset: 'concise',
-  responseStyleCustomInstructions: '',
+  responseStyleLevel: 'provider',
 };
 
-const getResponseStylePreview = (preset: ResponseStyleValue, customInstructions: string) => {
-  return preset === 'custom' ? customInstructions : getResponseStylePresetInstructions(preset);
-};
-
-const sanitizeResponseStylePreset = (value: unknown): ResponseStyleValue => {
-  if (value === 'custom') return 'custom';
-  return isResponseStylePreset(value) ? value : 'concise';
-};
-
-const RESPONSE_STYLE_OPTION_LABEL_KEYS: Record<ResponseStylePreset, I18nKey> = {
+const RESPONSE_STYLE_OPTION_LABEL_KEYS: Record<ResponseStyleLevel, I18nKey> = {
+  provider: 'settings.behavior.page.responseStyle.option.provider',
+  actions: 'settings.behavior.page.responseStyle.option.actions',
   concise: 'settings.behavior.page.responseStyle.option.concise',
   detailed: 'settings.behavior.page.responseStyle.option.detailed',
-  mentor: 'settings.behavior.page.responseStyle.option.mentor',
-  pushback: 'settings.behavior.page.responseStyle.option.pushback',
-  noFiller: 'settings.behavior.page.responseStyle.option.noFiller',
-  matchEnergy: 'settings.behavior.page.responseStyle.option.matchEnergy',
-  warmPeer: 'settings.behavior.page.responseStyle.option.warmPeer',
+};
+
+const RESPONSE_STYLE_OPTION_DESCRIPTION_KEYS: Record<ResponseStyleLevel, I18nKey> = {
+  provider: 'settings.behavior.page.responseStyle.description.provider',
+  actions: 'settings.behavior.page.responseStyle.description.actions',
+  concise: 'settings.behavior.page.responseStyle.description.concise',
+  detailed: 'settings.behavior.page.responseStyle.description.detailed',
 };
 
 const saveBehaviorSetting = async (settings: Partial<DesktopSettings>, fallbackError: string) => {
@@ -85,9 +74,7 @@ const saveBehaviorSetting = async (settings: Partial<DesktopSettings>, fallbackE
 export const BehaviorPage: React.FC = () => {
   const { t } = useI18n();
   const [prompt, setPrompt] = React.useState('');
-  const [responseStyleEnabled, setResponseStyleEnabled] = React.useState(DEFAULT_BEHAVIOR_SETTINGS.responseStyleEnabled);
-  const [responseStylePreset, setResponseStylePreset] = React.useState<ResponseStyleValue>(DEFAULT_BEHAVIOR_SETTINGS.responseStylePreset);
-  const [responseStyleCustomInstructions, setResponseStyleCustomInstructions] = React.useState(DEFAULT_BEHAVIOR_SETTINGS.responseStyleCustomInstructions);
+  const [responseStyleLevel, setResponseStyleLevel] = React.useState<ResponseStyleLevel>(DEFAULT_BEHAVIOR_SETTINGS.responseStyleLevel);
   const [isPromptLoading, setIsPromptLoading] = React.useState(true);
   const [isResponseStyleLoading, setIsResponseStyleLoading] = React.useState(true);
   const [isSaving, setIsSaving] = React.useState(false);
@@ -96,9 +83,7 @@ export const BehaviorPage: React.FC = () => {
   const [promptLoadError, setPromptLoadError] = React.useState<string | null>(null);
   const [unavailableReason, setUnavailableReason] = React.useState<string | null>(null);
   const lastSavedResponseStyleRef = React.useRef<{
-    enabled: boolean;
-    preset: ResponseStyleValue;
-    custom: string;
+    level: ResponseStyleLevel;
   } | null>(null);
 
   const loadPrompt = React.useCallback(async (signal?: AbortSignal) => {
@@ -148,24 +133,16 @@ export const BehaviorPage: React.FC = () => {
 
         const data = await response.json();
         nextSettings = {
-          responseStyleEnabled: data.responseStyleEnabled === true,
-          responseStylePreset: sanitizeResponseStylePreset(data.responseStylePreset),
-          responseStyleCustomInstructions: typeof data.responseStyleCustomInstructions === 'string'
-            ? data.responseStyleCustomInstructions
-            : '',
+          responseStyleLevel: resolveResponseStyleLevel(data),
         };
       } catch (error) {
         if (abort.signal.aborted || (error as Error).name === 'AbortError') return;
         console.warn('Failed to load response style settings:', error);
       } finally {
         if (!abort.signal.aborted) {
-          setResponseStyleEnabled(nextSettings.responseStyleEnabled);
-          setResponseStylePreset(nextSettings.responseStylePreset);
-          setResponseStyleCustomInstructions(nextSettings.responseStyleCustomInstructions);
+          setResponseStyleLevel(nextSettings.responseStyleLevel);
           lastSavedResponseStyleRef.current = {
-            enabled: nextSettings.responseStyleEnabled,
-            preset: nextSettings.responseStylePreset,
-            custom: nextSettings.responseStyleCustomInstructions,
+            level: nextSettings.responseStyleLevel,
           };
           setIsResponseStyleLoading(false);
         }
@@ -179,27 +156,17 @@ export const BehaviorPage: React.FC = () => {
   React.useEffect(() => {
     if (isResponseStyleLoading) return;
     const last = lastSavedResponseStyleRef.current;
-    if (
-      last &&
-      last.enabled === responseStyleEnabled &&
-      last.preset === responseStylePreset &&
-      last.custom === responseStyleCustomInstructions
-    ) {
+    if (last?.level === responseStyleLevel) {
       return;
     }
 
-    const next = {
-      enabled: responseStyleEnabled,
-      preset: responseStylePreset,
-      custom: responseStyleCustomInstructions,
-    };
+    const next = { level: responseStyleLevel };
 
     const timer = setTimeout(async () => {
       try {
         await saveBehaviorSetting({
-          responseStyleEnabled: next.enabled,
-          responseStylePreset: next.preset,
-          responseStyleCustomInstructions: next.custom,
+          responseStyleEnabled: next.level !== 'provider',
+          responseStylePreset: next.level === 'provider' ? 'concise' : next.level,
         }, t('settings.behavior.page.toast.saveFailed'));
         lastSavedResponseStyleRef.current = next;
       } catch (error) {
@@ -209,9 +176,8 @@ export const BehaviorPage: React.FC = () => {
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [responseStyleEnabled, responseStylePreset, responseStyleCustomInstructions, isResponseStyleLoading, t]);
+  }, [responseStyleLevel, isResponseStyleLoading, t]);
 
-  const responseStylePreview = getResponseStylePreview(responseStylePreset, responseStyleCustomInstructions);
   const isPromptDirty = prompt !== initialPrompt;
 
   const handleSave = async () => {
@@ -348,51 +314,38 @@ export const BehaviorPage: React.FC = () => {
           </div>
 
           <section className="px-2 pb-2 pt-0 space-y-3">
-            <label className="flex items-center gap-2 typography-ui-label text-foreground">
-              <Checkbox
-                checked={responseStyleEnabled}
-                onChange={setResponseStyleEnabled}
-                disabled={isResponseStyleLoading}
-                ariaLabel={t('settings.behavior.page.responseStyle.enableAria')}
-              />
-              {t('settings.behavior.page.responseStyle.enable')}
-            </label>
-
-            <Select<ResponseStyleValue>
-              value={responseStylePreset}
-              onValueChange={(value) => setResponseStylePreset(value)}
-              disabled={isResponseStyleLoading || !responseStyleEnabled}
+            <Select<ResponseStyleLevel>
+              value={responseStyleLevel}
+              onValueChange={setResponseStyleLevel}
+              disabled={isResponseStyleLoading}
             >
-              <SelectTrigger className="w-full sm:w-56" size="lg">
+              <SelectTrigger className="w-full" size="lg" aria-label={t('settings.behavior.page.responseStyle.preset')}>
                 <SelectValue>
-                  {(value) => {
-                    if (value === 'custom') return t('settings.behavior.page.responseStyle.option.custom');
-                    if (isResponseStylePreset(value)) return t(RESPONSE_STYLE_OPTION_LABEL_KEYS[value]);
-                    return null;
-                  }}
+                  {(value) => isResponseStyleLevel(value) ? t(RESPONSE_STYLE_OPTION_LABEL_KEYS[value]) : null}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                {RESPONSE_STYLE_PRESETS.map((preset) => (
-                  <SelectItem key={preset} value={preset}>
-                    {t(RESPONSE_STYLE_OPTION_LABEL_KEYS[preset])}
+                {RESPONSE_STYLE_LEVELS.map((level) => (
+                  <SelectItem key={level} value={level}>
+                    {t(RESPONSE_STYLE_OPTION_LABEL_KEYS[level])}
                   </SelectItem>
                 ))}
-                <SelectItem value="custom">
-                  {t('settings.behavior.page.responseStyle.option.custom')}
-                </SelectItem>
               </SelectContent>
             </Select>
 
-            <Textarea
-              value={responseStylePreview}
-              onChange={(event) => setResponseStyleCustomInstructions(event.target.value)}
-              placeholder={t('settings.behavior.page.responseStyle.customPlaceholder')}
-              rows={5}
-              disabled={isResponseStyleLoading || !responseStyleEnabled || responseStylePreset !== 'custom'}
-              outerClassName="min-h-[120px]"
-              className="w-full font-mono typography-meta bg-transparent"
-            />
+            <div className="rounded-md border border-border/70 bg-[var(--surface-muted)] px-3 py-2.5">
+              <p className="typography-ui-label text-foreground">
+                {t(RESPONSE_STYLE_OPTION_LABEL_KEYS[responseStyleLevel])}
+              </p>
+              <p className="typography-meta mt-0.5 text-muted-foreground">
+                {t(RESPONSE_STYLE_OPTION_DESCRIPTION_KEYS[responseStyleLevel])}
+              </p>
+              {responseStyleLevel !== 'provider' ? (
+                <p className="typography-meta mt-2 border-t border-border/60 pt-2 text-muted-foreground/80">
+                  {getResponseStylePresetInstructions(responseStyleLevel)}
+                </p>
+              ) : null}
+            </div>
           </section>
         </div>
 

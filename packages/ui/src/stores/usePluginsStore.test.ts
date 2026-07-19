@@ -5,6 +5,19 @@ import { usePluginsStore } from "./usePluginsStore";
 const originalFetch = globalThis.fetch;
 
 const pluginsResponse = () => Response.json({
+  defaults: [
+    {
+      id: "devryan-default:opencode-with-claude",
+      pluginId: "opencode-with-claude",
+      displayName: "OpenCode with Claude",
+      shippedSpec: "opencode-with-claude@1.6.18",
+      effectiveSpec: "opencode-with-claude@1.6.18",
+      version: "1.6.18",
+      delivery: "npm",
+      sourcePath: "default-config/user-profile/package.json",
+      kind: "default",
+    },
+  ],
   entries: [
     {
       id: "config-user-plugin-one",
@@ -32,6 +45,7 @@ describe("usePluginsStore", () => {
     globalThis.fetch = originalFetch;
     opencodeClient.setDirectory(`/tmp/devryan-plugins-store-${Date.now()}-${Math.random()}`);
     usePluginsStore.setState({
+      defaults: [],
       entries: [],
       files: [],
       errors: [],
@@ -55,6 +69,7 @@ describe("usePluginsStore", () => {
     await usePluginsStore.getState().loadPlugins({ refresh: true });
     const firstEntries = usePluginsStore.getState().entries;
     const firstFiles = usePluginsStore.getState().files;
+    const firstDefaults = usePluginsStore.getState().defaults;
 
     await usePluginsStore.getState().loadPlugins({ refresh: true });
 
@@ -63,6 +78,8 @@ describe("usePluginsStore", () => {
     expect(decodeURIComponent(calls[0])).toContain("directory=/tmp/devryan-plugins-store-");
     expect(usePluginsStore.getState().entries).toBe(firstEntries);
     expect(usePluginsStore.getState().files).toBe(firstFiles);
+    expect(usePluginsStore.getState().defaults).toBe(firstDefaults);
+    expect(usePluginsStore.getState().getById("devryan-default:opencode-with-claude")?.kind).toBe("default");
   });
 
   test("loads Slim status and installs the managed runtime through explicit actions", async () => {
@@ -111,6 +128,7 @@ describe("usePluginsStore", () => {
     const keys = Object.keys(usePluginsStore.getState()).sort();
 
     expect(keys).toEqual([
+      "defaults",
       "entries",
       "errors",
       "files",

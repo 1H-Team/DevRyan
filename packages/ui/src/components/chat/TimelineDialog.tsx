@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useSessionMessageRecords } from '@/sync/sync-context';
+import { useSessionMessageRecords, useSessionRevertPending } from '@/sync/sync-context';
 import { RiLoader4Line, RiSearchLine, RiTimeLine, RiGitBranchLine, RiArrowGoBackLine } from '@remixicon/react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from '@/components/ui';
@@ -34,6 +34,7 @@ export const TimelineDialog: React.FC<TimelineDialogProps> = ({
 }) => {
     const { t } = useI18n();
     const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
+    const isRevertPending = useSessionRevertPending(currentSessionId ?? '');
     const messages = useSessionMessageRecords(currentSessionId ?? '');
     const revertToMessage = useSessionUIStore((state) => state.revertToMessage);
     const forkFromMessage = useSessionUIStore((state) => state.forkFromMessage);
@@ -231,10 +232,10 @@ export const TimelineDialog: React.FC<TimelineDialogProps> = ({
                                                     <button
                                                         type="button"
                                                         className="h-5 w-5 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-                                                        disabled={Boolean(revertingMessageId)}
+                                                        disabled={Boolean(revertingMessageId) || isRevertPending}
                                                         onClick={async (e) => {
                                                             e.stopPropagation();
-                                                            if (revertingMessageId) return;
+                                                            if (revertingMessageId || isRevertPending) return;
                                                             setRevertingMessageId(message.info.id);
                                                             try {
                                                                 await revertToMessage(currentSessionId, message.info.id);

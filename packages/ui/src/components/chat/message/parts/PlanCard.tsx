@@ -31,7 +31,10 @@ import {
   getPlanSkeletonRevealState,
   getStableSkeletonLineCount,
   resolvePlanCardDisplayText,
+  shouldPersistPlanCard,
 } from './planCardReveal';
+import { persistSessionPlanRevision } from '@/lib/plans/sessionPlanPersistence';
+import { useSessionPlanFileStore } from '@/stores/useSessionPlanFileStore';
 
 const COLLAPSED_MAX_HEIGHT = PLAN_CARD_COLLAPSED_MAX_HEIGHT_PX;
 const EXPAND_AFFORDANCE_THRESHOLD_PX = 8;
@@ -45,6 +48,9 @@ interface PlanCardProps {
   sourceMessageId: string;
   streamPhase: StreamPhase;
   planText: string;
+  projectPath: string | null;
+  sessionCreated: number | null;
+  sessionSlug: string | null;
 }
 
 const PlanCard: React.FC<PlanCardProps> = ({
@@ -52,6 +58,9 @@ const PlanCard: React.FC<PlanCardProps> = ({
   sourceMessageId,
   streamPhase,
   planText,
+  projectPath,
+  sessionCreated,
+  sessionSlug,
 }) => {
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const [isExpanded, setIsExpanded] = React.useState(false);
@@ -92,15 +101,51 @@ const PlanCard: React.FC<PlanCardProps> = ({
     (state) => state.implementedPlanRequests.has(implementationKey),
   );
   const traceEntry = usePlanTurnTraceEntry(sourceMessageId);
+  const isLatestPlan = traceEntry?.isLatestPlan === true;
+  const planFileRecord = useSessionPlanFileStore((state) => state.recordsBySession[sessionId]);
+  const currentPlanFileRecord = planFileRecord?.sourceMessageId === sourceMessageId
+    ? planFileRecord
+    : undefined;
   const actionState = getPlanCardActionState({
     streamPhase,
     hasPlanText: planText.trim().length > 0,
     isImplementationRequested,
     isLatestPlan: traceEntry?.isLatestPlan ?? true,
   });
-  const disabledReasonId = actionState.disabledReason
+  const shouldPersist = shouldPersistPlanCard({
+    streamPhase,
+    hasPlanText: planText.trim().length > 0,
+    isLatestPlan,
+  });
+  const isPlanFileReady = currentPlanFileRecord?.status === 'saved' && Boolean(currentPlanFileRecord.path);
+  const canImplement = actionState.canImplement && isPlanFileReady;
+  const planFileDisabledReason = actionState.canImplement && !isPlanFileReady
+    ? currentPlanFileRecord?.status === 'error'
+      ? 'Save the plan file before implementing.'
+      : 'The plan file must finish saving before implementation.'
+    : null;
+  const implementDisabledReason = actionState.disabledReason ?? planFileDisabledReason;
+  const disabledReasonId = implementDisabledReason
     ? `${sourceMessageId}-plan-action-disabled-reason`
     : undefined;
+
+  const persistPlan = React.useCallback(async (retry = false) => {
+    await persistSessionPlanRevision({
+      sessionId,
+      identity: {
+        projectPath: projectPath ?? '',
+        sessionCreated: sessionCreated ?? 0,
+        sessionSlug: sessionSlug ?? '',
+        sourceMessageId,
+      },
+      markdown: planText,
+    }, { retry });
+  }, [planText, projectPath, sessionCreated, sessionId, sessionSlug, sourceMessageId]);
+
+  React.useEffect(() => {
+    if (!shouldPersist || currentPlanFileRecord) return;
+    void persistPlan();
+  }, [currentPlanFileRecord, persistPlan, shouldPersist]);
 
   // Measure the content so the collapsed→expanded max-height transition has a
   // concrete target. Re-measure as the plan streams in or the skeleton grows.
@@ -201,7 +246,8 @@ const PlanCard: React.FC<PlanCardProps> = ({
   }, []);
 
   const handleImplement = React.useCallback(async () => {
-    if (isSubmitting || !actionState.canImplement) return;
+    const planPath = currentPlanFileRecord?.status === 'saved' ? currentPlanFileRecord.path : null;
+    if (isSubmitting || !actionState.canImplement || !planPath) return;
     setIsSubmitting(true);
     requestChatScrollToBottom(sessionId);
     let implementationMessageId: string | undefined;
@@ -215,7 +261,7 @@ const PlanCard: React.FC<PlanCardProps> = ({
       });
       const instructions = await renderMagicPrompt(
         getPlanSendInstructionsPromptId(action),
-        buildPlanSendPromptVariables({ action, title, path: '', body: planText }),
+        buildPlanSendPromptVariables({ action, title, path: planPath }),
       );
       const syntheticParts = [{ synthetic: true as const, text: instructions }];
 
@@ -279,7 +325,7 @@ const PlanCard: React.FC<PlanCardProps> = ({
       );
       setIsSubmitting(false);
     }
-  }, [actionState.canImplement, implementationKey, isSubmitting, planText, sessionId, sourceMessageId]);
+  }, [actionState.canImplement, currentPlanFileRecord?.path, currentPlanFileRecord?.status, implementationKey, isSubmitting, planText, sessionId, sourceMessageId]);
 
   // The text container's minHeight only matters during the initial skeleton
   // phase, to prevent a height pop the instant the skeleton swaps for the
@@ -295,7 +341,7 @@ const PlanCard: React.FC<PlanCardProps> = ({
       data-plan-source-message-id={sourceMessageId}
       data-plan-turn-id={traceEntry?.turnId}
       data-plan-version={traceEntry?.planVersion}
-      data-plan-state={traceEntry?.isSuperseded ? 'superseded' : actionState.canImplement ? 'actionable' : 'pending'}
+      data-plan-state={traceEntry?.isSuperseded ? 'superseded' : canImplement ? 'actionable' : 'pending'}
     >
       <div className="flex items-center gap-2 border-b border-border/60 px-5 py-3">
         <RiDraftLine className="size-4 text-muted-foreground" />
@@ -352,18 +398,33 @@ const PlanCard: React.FC<PlanCardProps> = ({
         ) : null}
       </div>
       <div className="flex items-center justify-between gap-3 border-t border-border/60 px-5 py-3">
-        {actionState.disabledReason ? (
-          <span id={disabledReasonId} className="typography-ui-meta text-muted-foreground">
-            {actionState.disabledReason}
-          </span>
-        ) : <span />}
+        <div className="flex min-w-0 items-center gap-2 typography-ui-meta text-muted-foreground">
+          {currentPlanFileRecord?.status === 'saving' ? <span>Saving plan…</span> : null}
+          {currentPlanFileRecord?.status === 'error' ? (
+            <>
+              <span title={currentPlanFileRecord.error ?? undefined}>Couldn’t save plan.</span>
+              <button
+                type="button"
+                className="text-foreground underline-offset-2 hover:underline"
+                onClick={() => { void persistPlan(true); }}
+              >
+                Retry
+              </button>
+            </>
+          ) : null}
+          {implementDisabledReason ? (
+            <span id={disabledReasonId} className="sr-only">
+              {implementDisabledReason}
+            </span>
+          ) : null}
+        </div>
         <Button
           variant="default"
           size="sm"
           className="oc-plan-implement-btn normal-case"
-          disabled={isSubmitting || !actionState.canImplement}
+          disabled={isSubmitting || !canImplement}
           aria-describedby={disabledReasonId}
-          title={actionState.disabledReason ?? undefined}
+          title={implementDisabledReason ?? undefined}
           onClick={handleImplement}
         >
           Implement Plan

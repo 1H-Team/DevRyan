@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, test } from "bun:test"
-import { useInputStore } from "./input-store"
+import {
+  getSessionComposerRevision,
+  markSessionComposerEdited,
+  setActiveComposerSession,
+  useInputStore,
+} from "./input-store"
 
 class MockFileReader {
   result: string | ArrayBuffer | null = null
@@ -21,11 +26,13 @@ describe("input-store attachments", () => {
   beforeEach(() => {
     pendingReaders.length = 0
     globalThis.FileReader = MockFileReader as unknown as typeof FileReader
+    setActiveComposerSession(null)
     useInputStore.setState({
       pendingInputText: null,
       pendingInputMode: "replace",
       pendingSyntheticParts: null,
       activeEditorFile: null,
+      pendingRestoredInputs: new Map(),
     })
     useInputStore.getState().setAttachedFiles([])
   })
@@ -39,6 +46,18 @@ describe("input-store attachments", () => {
     await addPromise
 
     expect(useInputStore.getState().attachedFiles).toEqual([])
+  })
+
+  test("claims composer ownership before an asynchronous attachment read settles", async () => {
+    const sessionId = "session-pending-attachment"
+    const beforeRevision = getSessionComposerRevision(sessionId)
+    setActiveComposerSession(sessionId)
+
+    const addPromise = useInputStore.getState().addAttachedFile(new File(["hello"], "hello.txt", { type: "text/plain" }))
+
+    expect(getSessionComposerRevision(sessionId)).toBe(beforeRevision + 1)
+    resolveReader(pendingReaders[0], "data:text/plain;base64,aGVsbG8=")
+    await addPromise
   })
 
   test("does not attach a local file after attached files are replaced", async () => {
@@ -106,5 +125,33 @@ describe("input-store attachments", () => {
       size: 5,
       source: "server",
     }])
+  })
+
+  test("keeps restored input scoped to its session until that session consumes it", () => {
+    useInputStore.getState().queueRestoredInput({
+      sessionId: "session-restored-target",
+      text: "restored prompt",
+      attachments: [],
+      expectedComposerRevision: 0,
+    })
+
+    expect(useInputStore.getState().consumeRestoredInput("session-other", 0)).toBeNull()
+    expect(useInputStore.getState().consumeRestoredInput("session-restored-target", 0)?.text).toBe("restored prompt")
+    expect(useInputStore.getState().pendingRestoredInputs.size).toBe(0)
+  })
+
+  test("discards restored input when its composer changed after revert began", () => {
+    const sessionId = "session-edited-during-revert"
+    const expectedComposerRevision = getSessionComposerRevision(sessionId)
+    useInputStore.getState().queueRestoredInput({
+      sessionId,
+      text: "stale restored prompt",
+      attachments: [],
+      expectedComposerRevision,
+    })
+
+    const editedRevision = markSessionComposerEdited(sessionId)
+    expect(useInputStore.getState().consumeRestoredInput(sessionId, editedRevision)).toBeNull()
+    expect(useInputStore.getState().pendingRestoredInputs.size).toBe(0)
   })
 })

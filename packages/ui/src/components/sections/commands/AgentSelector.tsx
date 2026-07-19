@@ -6,10 +6,11 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useAgentsStore, filterVisibleAgents } from '@/stores/useAgentsStore';
+import { useAgentsStore, filterVisibleAgentSelectorOptions } from '@/stores/useAgentsStore';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useDeviceInfo } from '@/lib/device';
+import { formatAgentDisplayName } from '@/lib/agentDisplay';
 import { RiArrowDownSLine, RiLoader4Line, RiRobot2Line } from '@remixicon/react';
 import { cn } from '@/lib/utils';
 import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
@@ -36,13 +37,13 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
     const loadAgentsStore = useAgentsStore((state) => state.loadAgents);
     const loadConfigAgents = useConfigStore((state) => state.loadAgents);
     const agents = React.useMemo(() => {
-        const fromConfig = filterVisibleAgents(Array.isArray(configAgents) ? configAgents : []);
+        const fromConfig = filterVisibleAgentSelectorOptions(Array.isArray(configAgents) ? configAgents : []);
         const filteredConfig = filter ? fromConfig.filter(filter) : fromConfig;
         if (filteredConfig.length > 0) {
             return filteredConfig;
         }
 
-        const fromStore = filterVisibleAgents(Array.isArray(agentsStoreAgents) ? agentsStoreAgents : []);
+        const fromStore = filterVisibleAgentSelectorOptions(Array.isArray(agentsStoreAgents) ? agentsStoreAgents : []);
         return filter ? fromStore.filter(filter) : fromStore;
     }, [agentsStoreAgents, configAgents, filter]);
     const isMobile = useUIStore(state => state.isMobile);
@@ -106,7 +107,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
                                 }}
                             >
                                 <div className="flex flex-col">
-                                    <span className="typography-meta font-medium">{agent.name}</span>
+                                    <span className="typography-meta font-medium">{formatAgentDisplayName(agent.name)}</span>
                                     {agent.description && (
                                         <span className="typography-micro text-muted-foreground">
                                             {agent.description}
@@ -147,7 +148,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
                             <>
                                 <RiRobot2Line className="h-3.5 w-3.5 text-muted-foreground" />
                                 <span className="typography-meta font-medium text-foreground">
-                                    {agentName || t('settings.commands.agentSelector.selectAgentPlaceholder')}
+                                    {agentName ? formatAgentDisplayName(agentName) : t('settings.commands.agentSelector.selectAgentPlaceholder')}
                                 </span>
                             </>
                         )}
@@ -173,7 +174,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
                         )}>
                             <RiRobot2Line className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
                             <span className="typography-micro font-medium whitespace-nowrap">
-                                {agentName || t('settings.commands.agentSelector.notSelected')}
+                                {agentName ? formatAgentDisplayName(agentName) : t('settings.commands.agentSelector.notSelected')}
                             </span>
                             <RiArrowDownSLine className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
                         </div>
@@ -191,7 +192,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
                                 className="typography-meta"
                                 onSelect={() => handleAgentChange(agent.name)}
                             >
-                                <span className="font-medium">{agent.name}</span>
+                                <span className="font-medium">{formatAgentDisplayName(agent.name)}</span>
                             </DropdownMenuItem>
                         ))}
                     </DropdownMenuContent>

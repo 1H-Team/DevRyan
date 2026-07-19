@@ -478,6 +478,64 @@ describe("createEventPipeline", () => {
     expect(reconnectCount).toBe(1)
   })
 
+  test("does not report an SSE reconnect before the stream yields its first event", async () => {
+    let rejectStream!: () => void
+    const streamRejected = new Promise<void>((resolve) => {
+      rejectStream = resolve
+    })
+    let disconnected!: () => void
+    const disconnectedOnce = new Promise<void>((resolve) => {
+      disconnected = resolve
+    })
+    let reconnectCount = 0
+    const disconnectReasons: string[] = []
+    const originalConsoleError = console.error
+    console.error = () => {}
+
+    const sdk = {
+      global: {
+        event: async () => ({
+          stream: {
+            [Symbol.asyncIterator]() {
+              return {
+                next: async () => {
+                  rejectStream()
+                  throw new Error("SSE failed: 500 Internal Server Error")
+                },
+              }
+            },
+          },
+        }),
+      },
+    } as unknown as OpencodeClient
+
+    const pipeline = createEventPipeline({
+      sdk,
+      transport: "sse",
+      reconnectDelayMs: 1_000,
+      heartbeatTimeoutMs: 1_000,
+      onEvent: () => {},
+      onDisconnect: (reason) => {
+        disconnectReasons.push(reason)
+        disconnected()
+      },
+      onReconnect: () => {
+        reconnectCount += 1
+      },
+    })
+
+    try {
+      await Promise.race([streamRejected, failAfter(500)])
+      await Promise.race([disconnectedOnce, failAfter(500)])
+    } finally {
+      pipeline.cleanup()
+      console.error = originalConsoleError
+    }
+
+    expect(disconnectReasons).toEqual(["sse_error:SSE failed: 500 Internal Server Error"])
+    expect(reconnectCount).toBe(0)
+  })
+
   test("uses SSE directly for VS Code runtime auto transport", async () => {
     installBrowserStubs({ isVSCode: true })
 

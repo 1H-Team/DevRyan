@@ -456,7 +456,7 @@ describe('Packaged OpenChamber agents', () => {
 
     expect(orchestrator?.prompt).toContain('calling `devryan_task`');
     expect(orchestrator?.prompt).toContain('provider-native delegation means calling `task`');
-    expect(orchestrator?.prompt).toContain('at most one managed retry');
+    expect(orchestrator?.prompt).toContain('at most one managed recovery');
     expect(orchestrator?.prompt).toContain('Never invoke provider-native `task` as an automatic fallback');
     expect(orchestrator?.prompt).toContain('explicit current-user request');
     expect(orchestrator?.prompt).toContain('If Explorer remains unavailable after the one managed recovery');
@@ -488,9 +488,10 @@ describe('Packaged OpenChamber agents', () => {
     const orchestrator = listPackagedAgents().find((agent) => agent.name === 'orchestrator');
     const plan = listPackagedAgents().find((agent) => agent.name === 'plan');
 
-    expect(orchestrator?.prompt).toContain('Plan approval belongs only to the plan card lifecycle');
-    expect(orchestrator?.prompt).toContain('Do not use the structured question tool to ask for approval of a design or plan');
-    expect(orchestrator?.prompt).toContain('Do not ask for design, approach, or plan approval through plain prose or the structured question tool in normal mode.');
+    expect(orchestrator?.prompt).toContain('**Plan approval.**');
+    expect(orchestrator?.prompt).toContain('When the requested outcome already provides sufficient intent to ground a design, implementation approach, or plan');
+    expect(orchestrator?.prompt).toContain('do not ask the user to ratify it through assistant prose or a question tool in normal mode; take the grounded next step.');
+    expect(orchestrator?.prompt).toContain('Approval belongs only to the plan card lifecycle.');
     expect(plan?.prompt).toContain('The plan card provides the implementation action');
     expect(plan?.prompt).not.toContain('End the message with a single approval question');
   });
@@ -498,8 +499,8 @@ describe('Packaged OpenChamber agents', () => {
   it('asks for design intent before Designer delegation when the intent is missing', () => {
     const orchestrator = listPackagedAgents().find((agent) => agent.name === 'orchestrator');
 
-    expect(orchestrator?.prompt).toContain('If design intent is missing, ask one focused structured question before delegating to `designer`.');
-    expect(orchestrator?.prompt).toContain('If the user already gave a clear design choice or sufficient requirements, treat that as enough to proceed without approval loops.');
+    expect(orchestrator?.prompt).toContain('missing design intent before `designer` delegation');
+    expect(orchestrator?.prompt).toContain('Clear user requirements are sufficient for `designer` delegation; missing design intent follows the question-routing rule.');
     expect(orchestrator?.prompt).not.toContain('After Explorer returns files for normal-mode design-quality UI work, immediately delegate the implementation or review to @designer.');
     expect(orchestrator?.prompt).not.toContain('Do not present design options, design directions, wireframes, or implementation approaches for user approval before calling @designer.');
   });
@@ -507,9 +508,9 @@ describe('Packaged OpenChamber agents', () => {
   it('keeps Orchestrator question-first for unresolved user-answerable ambiguity', () => {
     const orchestrator = listPackagedAgents().find((agent) => agent.name === 'orchestrator');
 
-    expect(orchestrator?.prompt).toContain('Inspect repository and system facts that could resolve the ambiguity before asking.');
-    expect(orchestrator?.prompt).toContain('multiple plausible interpretations remain and the user can resolve them');
-    expect(orchestrator?.prompt).toContain('even when the ambiguity is not a hard blocker');
+    expect(orchestrator?.prompt).toContain('Inspect repository and system facts that could resolve uncertainty before asking.');
+    expect(orchestrator?.prompt).toContain('unresolved user-owned intent, requirements, preferences, or choices would materially change');
+    expect(orchestrator?.prompt).toContain('even when work is not otherwise blocked');
     expect(orchestrator?.prompt).toContain('Infer only trivial, reversible implementation details');
     expect(orchestrator?.prompt).not.toContain('Clarify intent before consequential choices.');
     expect(orchestrator?.prompt).toContain('Do not build long speculative option trees');
@@ -609,8 +610,10 @@ describe('Packaged OpenChamber agents', () => {
     expect(orchestrator?.prompt).toContain('structured question tool');
     expect(orchestrator?.prompt).toContain('Skill announcements are tool activity only');
     expect(orchestrator?.prompt).toContain('do not write assistant text to announce skill use');
-    expect(orchestrator?.prompt).toContain('Do not write visible reasoning about balancing skill instructions against developer or agent instructions');
-    expect(orchestrator?.prompt).toContain('the tool activity already shows skill loading, file inspection, and specialist routing');
+    expect(orchestrator?.prompt).toContain('**Visible reasoning rule.**');
+    expect(orchestrator?.prompt).toContain('Honor the DevRyan rationale-display reminder captured in the first user turn');
+    expect(orchestrator?.prompt).toContain('Explain why instead of merely repeating the tool action');
+    expect(orchestrator?.prompt).toContain('Never expose or claim to expose private chain-of-thought');
     expect(orchestrator?.prompt).toContain('If the user skips a question, continue with best judgment and explicitly state the assumption.');
     expect(orchestrator?.frontmatter.permission.skill['dispatching-parallel-agents']).toBe('allow');
     expect(orchestrator?.frontmatter.permission).toMatchObject({
@@ -926,6 +929,57 @@ describe('OpenCode config agent routes', () => {
           status: 'success',
           summary: 'MCP server "linear" create completed',
         }));
+      });
+  });
+
+  it('reports an MCP runtime refresh as deferred while an agent is active', async () => {
+    projectDirectory = await makeTempProject();
+    const app = express();
+    app.use(express.json());
+    registerConfigEntityRoutes(app, {
+      resolveProjectDirectory: async () => ({ directory: projectDirectory }),
+      resolveOptionalProjectDirectory: async () => ({ directory: projectDirectory }),
+      refreshOpenCodeAfterConfigChange: async () => ({
+        runtimeApplied: false,
+        requiresReload: false,
+        restartDeferred: true,
+        runtimeMessage: 'Configuration saved. OpenCode will restart after the active agent finishes.',
+      }),
+      clientReloadDelayMs: 25,
+      getAgentSources: () => ({ md: { exists: false }, json: { exists: false } }),
+      getAgentConfig,
+      listAgentModelOverrides,
+      writeAgentModelOverride,
+      deleteAgentModelOverride,
+      listConfigAgents,
+      getCommandSources: () => ({ md: { exists: false }, json: { exists: false } }),
+      createCommand: () => {},
+      updateCommand: () => ({ authReset: { ok: true, removed: false } }),
+      deleteCommand: () => {},
+      listMcpConfigs: () => [],
+      getMcpConfig: () => ({ name: 'linear' }),
+      createMcpConfig: () => {},
+      updateMcpConfig: () => ({ authReset: { ok: true, removed: false } }),
+      deleteMcpConfig: () => {},
+      recoverMcpConfigs: () => ({ migrated: [], skipped: [] }),
+    });
+
+    await request(app)
+      .patch('/api/config/mcp/linear')
+      .send({ enabled: false })
+      .expect(200)
+      .expect((res) => {
+        expect(res.body).toEqual(expect.objectContaining({
+          success: true,
+          requiresReload: false,
+          runtimeApplied: false,
+          restartDeferred: true,
+          message: 'Configuration saved. OpenCode will restart after the active agent finishes.',
+        }));
+        expect(res.body.reloadDelayMs).toBeUndefined();
+        expect(res.body.harness.nextActions).toEqual([
+          'Let active agents finish before testing the MCP server',
+        ]);
       });
   });
 

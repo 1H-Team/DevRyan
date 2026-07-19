@@ -9,6 +9,8 @@ Workspace package for the shared React UI runtime used by web, Electron, and VS 
 - **Managed-task isolation**: low-frequency DevRyan-owned scheduler projections live in `src/stores/useManagedOrchestrationStore.ts`; they never enter provider-native tool projection or high-frequency session/message stores.
 - **Thin entrypoint**: `src/main.tsx` wires providers, hydration side effects, and mounts `App`.
 - **Header usage composition**: reusable provider-tab and selected-provider quota panels live under `src/components/layout/usage/` and are shared by the desktop/mobile header menus plus the VS Code header surface.
+- **Authoritative plan files**: `src/lib/plans/sessionPlanFile.ts` creates revision-specific Markdown under `~/.config/openchamber/projects/<project-id>/plans`; `src/lib/plans/sessionPlanPersistence.ts` deduplicates lifecycle/card saves and updates `src/stores/useSessionPlanFileStore.ts`, which exposes only the latest in-memory session pointer and save status to plan UI surfaces.
+- **User-facing session visibility**: `src/lib/sessionVisibility.ts` centralizes exact internal-session classification for navigation surfaces, composing DevRyan-owned Git helper registration with external SmartFetch secondary-model helper titles while leaving authoritative sync state untouched.
 
 ## Flow
 1. Host runtime injects runtime APIs and loads UI entrypoint.

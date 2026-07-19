@@ -15,6 +15,8 @@ const groupLabelKey = (group: PluginSidebarGroup) => {
   switch (group.key) {
     case "project-entries":
       return "settings.plugins.sidebar.group.projectEntries";
+    case "devryan-defaults":
+      return "settings.plugins.sidebar.group.devryanDefaults";
     case "project-files":
       return "settings.plugins.sidebar.group.projectFiles";
     case "user-entries":
@@ -26,6 +28,7 @@ const groupLabelKey = (group: PluginSidebarGroup) => {
 
 export const PluginsSidebar: React.FC<PluginsSidebarProps> = ({ onItemSelect }) => {
   const { t } = useI18n();
+  const defaults = usePluginsStore((state) => state.defaults);
   const entries = usePluginsStore((state) => state.entries);
   const files = usePluginsStore((state) => state.files);
   const errors = usePluginsStore((state) => state.errors);
@@ -34,8 +37,8 @@ export const PluginsSidebar: React.FC<PluginsSidebarProps> = ({ onItemSelect }) 
   const isLoading = usePluginsStore((state) => state.isLoading);
   const lastError = usePluginsStore((state) => state.lastError);
 
-  const grouped = React.useMemo(() => groupPluginsForSidebar({ entries, files }), [entries, files]);
-  const total = entries.length + files.length;
+  const grouped = React.useMemo(() => groupPluginsForSidebar({ defaults, entries, files }), [defaults, entries, files]);
+  const total = React.useMemo(() => grouped.reduce((count, group) => count + group.items.length, 0), [grouped]);
 
   return (
     <SettingsSidebarLayout
@@ -85,11 +88,20 @@ export const PluginsSidebar: React.FC<PluginsSidebarProps> = ({ onItemSelect }) 
           <div className="typography-micro px-1 pt-2 text-muted-foreground">{t(groupLabelKey(group))}</div>
           {group.items.map((item) => {
             const Icon = item.kind === "file" ? RiFileTextLine : item.parsedKind === "path" ? RiFolderLine : RiCodeBoxLine;
+            const metadata = item.kind === "default"
+              ? item.version
+                ? t("settings.plugins.sidebar.kind.includedVersion", { version: item.version })
+                : t("settings.plugins.sidebar.kind.includedBundled")
+              : item.kind === "file"
+                ? t("settings.plugins.sidebar.kind.file")
+                : item.parsedKind === "path"
+                  ? t("settings.plugins.sidebar.kind.path")
+                  : t("settings.plugins.sidebar.kind.npm");
             return (
               <SettingsSidebarItem
                 key={item.id}
                 title={item.label}
-                metadata={item.kind === "file" ? t("settings.plugins.sidebar.kind.file") : item.parsedKind === "path" ? t("settings.plugins.sidebar.kind.path") : t("settings.plugins.sidebar.kind.npm")}
+                metadata={metadata}
                 selected={selectedId === item.id}
                 onSelect={() => {
                   setSelected(item.id);

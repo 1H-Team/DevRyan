@@ -9,6 +9,7 @@ import { createManagedOrchestrationPrivateHost } from './private-host.js';
 
 const DEFAULT_TASK_TIMEOUT_MS = 30 * 60 * 1_000;
 const COUNCIL_TASK_TIMEOUT_MS = 3 * 60 * 1_000;
+const MAX_WAIT_TIMEOUT_MS = 25_000;
 
 const resolveSubmitTimeoutAt = (params, now) => {
   const submittedAt = now();
@@ -17,6 +18,14 @@ const resolveSubmitTimeoutAt = (params, now) => {
   return Number.isFinite(params.timeoutAt)
     ? Math.max(params.timeoutAt, minimumTimeoutAt)
     : minimumTimeoutAt;
+};
+
+const resolveWaitTimeoutMs = (params) => {
+  if (params.waitTimeoutMs === undefined) return undefined;
+  if (!Number.isSafeInteger(params.waitTimeoutMs) || params.waitTimeoutMs < 1) {
+    throw new TypeError('waitTimeoutMs must be a positive safe integer');
+  }
+  return Math.min(params.waitTimeoutMs, MAX_WAIT_TIMEOUT_MS);
 };
 
 const ERROR_STATUS_BY_CODE = Object.freeze({
@@ -29,6 +38,7 @@ const ERROR_STATUS_BY_CODE = Object.freeze({
   ledger_capacity_exceeded: 507,
   managed_retry_limit_reached: 409,
   managed_runtime_unavailable: 503,
+  missing_recovery_model: 400,
   missing_idempotency_key: 400,
   mode_lease_active: 409,
   mode_lease_conflict: 409,
@@ -37,6 +47,7 @@ const ERROR_STATUS_BY_CODE = Object.freeze({
   result_already_acknowledged: 409,
   result_already_acknowledging: 409,
   result_not_found: 404,
+  result_not_provider_usage_limited: 409,
   result_not_resumable: 409,
   rpc_method_not_found: 404,
   scheduler_shut_down: 503,
@@ -123,7 +134,6 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   const scheduler = options.scheduler ?? createManagedTaskScheduler({
     executor,
     persistence,
-    maxConcurrency: 3,
     now,
     publishEvent,
     logger,
@@ -259,7 +269,11 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       }
       case 'wait': {
         const task = getScopedTask(params);
-        const settled = await scheduler.waitForTask(task.taskId, { signal: context.signal });
+        const waitTimeoutMs = resolveWaitTimeoutMs(params);
+        const settled = await scheduler.waitForTask(task.taskId, {
+          signal: context.signal,
+          ...(waitTimeoutMs === undefined ? {} : { timeoutMs: waitTimeoutMs }),
+        });
         return projectTaskResult(settled);
       }
       case 'barrier': {

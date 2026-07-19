@@ -34,6 +34,16 @@ export interface PlanCardActionState {
   disabledReason: string | null;
 }
 
+export const shouldPersistPlanCard = ({
+  streamPhase,
+  hasPlanText,
+  isLatestPlan,
+}: {
+  streamPhase: StreamPhase;
+  hasPlanText: boolean;
+  isLatestPlan: boolean;
+}): boolean => streamPhase === 'completed' && hasPlanText && isLatestPlan;
+
 export const getPlanCardActionState = ({
   streamPhase,
   hasPlanText,

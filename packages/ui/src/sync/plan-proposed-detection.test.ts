@@ -76,6 +76,7 @@ describe("detectPlanProposedCandidate", () => {
       sourceMessageId: "msg_2_assistant",
       originatingUserMessageId: "msg_1_user",
       implementationKey: `${SESSION_ID}:msg_2_assistant:plan:0`,
+      markdown: "# Plan\n\nDo the work.",
     })
   })
 
@@ -157,7 +158,9 @@ describe("detectPlanProposedCandidate", () => {
       },
     })
 
-    expect(detect(state, { recorded: new Set(["msg_1_user"]) })?.sourceMessageId).toBe("msg_2_assistant")
+    const candidate = detect(state, { recorded: new Set(["msg_1_user"]) })
+    expect(candidate?.sourceMessageId).toBe("msg_2_assistant")
+    expect(candidate?.markdown).toBe(structuredPlanBody)
   })
 
   test("returns null for completed plan-mode replies without a plan card sentinel", () => {

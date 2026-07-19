@@ -8,7 +8,7 @@ Shared non-React application logic for the UI package: API clients, routing/seri
 - **Client abstraction**: `opencode/client.ts` wraps SDK usage, directory scoping, retries/circuit checks, and path normalization so features avoid direct transport logic.
 - **Pure helper bias**: many modules expose deterministic transforms/serializers to keep component/store code thin.
 - **Runtime capability gates**: desktop/vscode/web differences are centralized (e.g., `desktop.ts`, runtime API detection helpers).
-- **Startup readiness**: `startup/readiness.ts` defines the low-frequency phase contract shared by web, Electron, and VS Code chat boot gates; `startup/*-warmup.ts` contains non-fatal chunk/runtime warmups used before dismissing startup.
+- **Startup readiness and recovery**: `startup/readiness.ts` defines the low-frequency phase contract shared by web, Electron, and VS Code chat boot gates and coordinates a managed OpenCode restart before client reinitialization when health reports the runtime down; `startup/*-warmup.ts` contains non-fatal chunk/runtime warmups used before dismissing startup.
 - **Tool manifest helpers**: `tools/manifest.ts` normalizes runtime tool IDs and permission alias groups for web/VS Code runtime API parity.
 
 ## Flow

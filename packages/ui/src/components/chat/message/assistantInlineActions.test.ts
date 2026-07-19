@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  isAssistantStatusAnnouncementText,
   shouldRenderAssistantCopyButton,
   shouldRenderStandaloneAssistantActionsForTextGroup,
   shouldSuppressIntermediateAssistantStatusText,
@@ -109,6 +110,31 @@ describe('shouldRenderStandaloneAssistantActionsForTextGroup', () => {
 });
 
 describe('shouldSuppressIntermediateAssistantStatusText', () => {
+  test('hides dispatch-status narration only for intermediate tool-call messages', () => {
+    expect(isAssistantStatusAnnouncementText('Waiting on dispatch status')).toBe(true);
+    expect(isAssistantStatusAnnouncementText('Waiting on the dispatch status...')).toBe(true);
+    expect(isAssistantStatusAnnouncementText('Waiting for subagent output')).toBe(false);
+    expect(isAssistantStatusAnnouncementText('Waiting on dispatch status can reveal scheduler latency.')).toBe(false);
+
+    expect(shouldSuppressIntermediateAssistantStatusText({
+      messageFinish: 'tool-calls',
+      hasToolParts: true,
+      text: 'Waiting on dispatch status',
+    })).toBe(true);
+
+    expect(shouldSuppressIntermediateAssistantStatusText({
+      messageFinish: 'stop',
+      hasToolParts: true,
+      text: 'Waiting on dispatch status',
+    })).toBe(false);
+
+    expect(shouldSuppressIntermediateAssistantStatusText({
+      messageFinish: 'tool-calls',
+      hasToolParts: false,
+      text: 'Waiting on dispatch status',
+    })).toBe(false);
+  });
+
   test('hides skill and subagent narration in intermediate tool-call messages', () => {
     expect(shouldSuppressIntermediateAssistantStatusText({
       messageFinish: 'tool-calls',

@@ -11,6 +11,28 @@ function part(id: string, messageID: string, type = "text"): Part {
 }
 
 describe("mergeOptimisticPage", () => {
+  test("confirms an echoed message without re-merging client-only part IDs", () => {
+    const serverMessage = message("msg_1", "user")
+    const serverPart = part("prt_server", "msg_1")
+    const optimisticPart = part("prt_client", "msg_1")
+
+    const result = mergeOptimisticPage(
+      {
+        session: [serverMessage],
+        part: [{ id: "msg_1", part: [serverPart] }],
+        complete: true,
+      },
+      [{
+        message: message("msg_1", "user"),
+        parts: [optimisticPart],
+      }],
+    )
+
+    expect(result.confirmed).toEqual(["msg_1"])
+    expect(result.session).toEqual([serverMessage])
+    expect(result.part).toEqual([{ id: "msg_1", part: [serverPart] }])
+  })
+
   test("preserves fetched server part order while merging optimistic messages", () => {
     const serverParts = [
       part("msg_1_assistant_text", "msg_1", "text"),
@@ -34,5 +56,10 @@ describe("mergeOptimisticPage", () => {
     expect(result.part.find((item) => item.id === "msg_1")?.part.map((item) => item.id)).toEqual(
       serverParts.map((item) => item.id),
     )
+    expect(result.session.map((item) => item.id)).toEqual(["msg_1", "msg_2"])
+    expect(result.part.find((item) => item.id === "msg_2")?.part.map((item) => item.id)).toEqual([
+      "msg_2_user_text",
+    ])
+    expect(result.confirmed).toEqual([])
   })
 })

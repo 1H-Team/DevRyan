@@ -35,12 +35,6 @@ export type MessagePage = {
   complete: boolean
 }
 
-const hasParts = (parts: Part[] | undefined, want: Part[]) => {
-  if (!parts) return want.length === 0
-  const ids = new Set(parts.map((part) => part.id))
-  return want.every((part) => ids.has(part.id))
-}
-
 const mergeParts = (parts: Part[] | undefined, want: Part[]) => {
   if (!parts) return filterRenderableParts(want)
   const next = [...parts]
@@ -66,14 +60,13 @@ export function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) 
   for (const item of items) {
     const result = Binary.search(session, item.message.id, (message) => message.id)
     const found = result.found
-    if (!found) session.splice(result.index, 0, item.message)
-
-    const current = part.get(item.message.id)
-    if (found && hasParts(current, item.parts)) {
+    if (found) {
       confirmed.push(item.message.id)
       continue
     }
 
+    session.splice(result.index, 0, item.message)
+    const current = part.get(item.message.id)
     part.set(item.message.id, mergeParts(current, item.parts))
   }
 

@@ -1,4 +1,5 @@
 import type { Message, Part } from '@opencode-ai/sdk/v2';
+import type { ResponseStyleLevel } from '@/lib/responseStyle';
 
 export interface ChatMessageEntry {
     info: Message;
@@ -22,6 +23,7 @@ export interface TurnPartRecord {
     part: Part;
     partIndex: number;
     endedAt?: number;
+    providerID?: string;
 }
 
 export interface TurnActivityRecord extends TurnPartRecord {
@@ -128,6 +130,7 @@ export type Turn = Pick<TurnRecord, 'turnId' | 'userMessage' | 'assistantMessage
 
 export interface TurnGroupingContext {
     turnId: string;
+    responseStyleLevel?: ResponseStyleLevel;
     activityOwnerMessageId?: string;
     isFirstAssistantInTurn: boolean;
     isLastAssistantInTurn: boolean;

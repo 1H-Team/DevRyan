@@ -756,4 +756,157 @@ describe('turn timing runtime', () => {
     });
     expect(JSON.stringify(record)).not.toContain('secret');
   });
+
+  it('projects ordered tool-call instances and updates repeated states in place without payloads or identities', () => {
+    const runtime = createTurnTimingRuntime();
+    runtime.recordClientMark({ sessionId: 'ses_tools', messageId: 'msg_user', mark: 'send_started' });
+    runtime.processOpenCodeEvent({
+      type: 'message.updated',
+      properties: {
+        info: {
+          id: 'msg_assistant',
+          sessionID: 'ses_tools',
+          role: 'assistant',
+          parentID: 'msg_user',
+          time: { created: 1 },
+        },
+      },
+    });
+
+    for (const status of ['pending', 'running', 'completed']) {
+      runtime.processOpenCodeEvent({
+        type: 'message.part.updated',
+        properties: {
+          part: {
+            id: 'part_secret_one',
+            callID: 'call_secret_one',
+            messageID: 'msg_assistant',
+            sessionID: 'ses_tools',
+            type: 'tool',
+            tool: 'runtime.EditFileToolCall:1',
+            state: {
+              status,
+              input: { path: '/private/first.ts' },
+              output: 'private first output',
+            },
+          },
+        },
+      });
+    }
+    runtime.processOpenCodeEvent({
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'part_secret_two',
+          callID: 'call_secret_two',
+          messageID: 'msg_assistant',
+          sessionID: 'ses_tools',
+          type: 'tool',
+          tool: 'runtime.EditFileToolCall:2',
+          state: {
+            status: 'error',
+            input: { path: '/private/second.ts' },
+            error: 'private second error',
+          },
+        },
+      },
+    });
+
+    const toolCalls = runtime.getRecentTimings({ sessionId: 'ses_tools' })
+      .records[0]
+      .diagnostics
+      .toolCalls;
+
+    expect(toolCalls).toEqual([
+      { ordinal: 1, tool: 'edit', status: 'completed', final: true },
+      { ordinal: 2, tool: 'edit', status: 'error', final: true },
+    ]);
+    expect(toolCalls.every((toolCall) => Object.keys(toolCall).length === 4)).toBe(true);
+    expect(JSON.stringify(toolCalls)).not.toContain('secret');
+    expect(JSON.stringify(toolCalls)).not.toContain('private');
+  });
+
+  it('caps the ordered tool-call projection while retaining updates for tracked calls', () => {
+    const runtime = createTurnTimingRuntime({ maxToolCalls: 2 });
+    runtime.recordClientMark({ sessionId: 'ses_cap', messageId: 'msg_user', mark: 'send_started' });
+    runtime.processOpenCodeEvent({
+      type: 'message.updated',
+      properties: {
+        info: {
+          id: 'msg_assistant',
+          sessionID: 'ses_cap',
+          role: 'assistant',
+          parentID: 'msg_user',
+          time: { created: 1 },
+        },
+      },
+    });
+    const updateTool = (id, tool, status) => runtime.processOpenCodeEvent({
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: `part_${id}`,
+          callID: `call_${id}`,
+          messageID: 'msg_assistant',
+          sessionID: 'ses_cap',
+          type: 'tool',
+          tool,
+          state: { status, input: {} },
+        },
+      },
+    });
+
+    updateTool('one', 'read', 'running');
+    updateTool('two', 'write', 'completed');
+    updateTool('three', 'bash', 'completed');
+    updateTool('one', 'read', 'completed');
+
+    const toolCalls = runtime.getRecentTimings({ sessionId: 'ses_cap' })
+      .records[0]
+      .diagnostics
+      .toolCalls;
+
+    expect(toolCalls).toEqual([
+      { ordinal: 1, tool: 'read', status: 'completed', final: true },
+      { ordinal: 2, tool: 'write', status: 'completed', final: true },
+    ]);
+  });
+
+  it('keeps terminal tool-call finality when a stale active state arrives later', () => {
+    const runtime = createTurnTimingRuntime();
+    runtime.recordClientMark({ sessionId: 'ses_stale', messageId: 'msg_user', mark: 'send_started' });
+    runtime.processOpenCodeEvent({
+      type: 'message.updated',
+      properties: {
+        info: {
+          id: 'msg_assistant',
+          sessionID: 'ses_stale',
+          role: 'assistant',
+          parentID: 'msg_user',
+          time: { created: 1 },
+        },
+      },
+    });
+    const updateStatus = (status) => runtime.processOpenCodeEvent({
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'part_one',
+          callID: 'call_one',
+          messageID: 'msg_assistant',
+          sessionID: 'ses_stale',
+          type: 'tool',
+          tool: 'read',
+          state: { status, input: {} },
+        },
+      },
+    });
+
+    updateStatus('completed');
+    updateStatus('running');
+
+    expect(runtime.getRecentTimings({ sessionId: 'ses_stale' }).records[0].diagnostics.toolCalls).toEqual([
+      { ordinal: 1, tool: 'read', status: 'completed', final: true },
+    ]);
+  });
 });

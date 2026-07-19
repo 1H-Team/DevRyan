@@ -7,6 +7,7 @@ Defines settings-domain feature sections (providers, agents, MCP, skills, plugin
 - **Section module pattern**: each section folder commonly exposes `*Sidebar` + `*Page` components consumed by `SettingsView`.
 - **Shared settings scaffolding**: `shared/*` centralizes layout primitives (sidebar/header/layout/page wrappers) to keep section UIs consistent.
 - **Metadata-driven navigation**: section availability and routing are coordinated through settings metadata (`lib/settings/metadata`) rather than hardcoded branching inside each section.
+- **Managed quota credentials**: `providers/ManagedQuotaCredentials.tsx` is the shared, secret-non-prefilling editor for OpenCode Go, Ollama Cloud, and Cursor dashboard/OAuth quota credentials; it reuses the single quota refresh coordinator.
 
 ## Flow
 1. `SettingsView` resolves active settings slug.

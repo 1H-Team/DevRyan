@@ -1,4 +1,5 @@
 import { getToolMetadata } from "@/lib/toolHelpers";
+import { normalizeToolName } from "@/components/chat/message/parts/toolRenderUtils";
 
 const TOOL_STATUS_PHRASES: Record<string, string> = {
     read: "reading file",
@@ -25,7 +26,7 @@ const TOOL_STATUS_PHRASES: Record<string, string> = {
 
 export function getAssistantToolStatusPhrase(toolName: string): string {
     const rawToolName = toolName.trim();
-    const normalizedToolName = rawToolName.toLowerCase();
+    const normalizedToolName = normalizeToolName(rawToolName);
 
     if (TOOL_STATUS_PHRASES[normalizedToolName]) {
         return TOOL_STATUS_PHRASES[normalizedToolName];

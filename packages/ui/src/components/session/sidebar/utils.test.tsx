@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { buildArchivedSessionTree } from './hooks/useSessionGrouping';
-import { addMissingCollapsedGroupKeys, collectArchivedActionSessions, compareArchivedSessionsByParentAssistantActivity, compareSessionsByPinnedAndTime, discardPendingArchiveRevealSessionIds, getArchivedGroupKeys, reconcileArchivedGroupCollapse, resolveArchivedFolderName, resolveSessionDiffStats, selectVisibleChatDrafts } from './utils';
+import { addMissingCollapsedGroupKeys, collectArchivedActionSessions, compareArchivedSessionsByParentAssistantActivity, compareSessionsByPinnedAndTime, discardPendingArchiveRevealSessionIds, getArchivedGroupKeys, reconcileArchivedGroupCollapse, resolveArchivedFolderName, resolveSessionDiffStats, resolveSessionRoutingDirectory, selectVisibleChatDrafts } from './utils';
 import type { SessionNode } from './types';
 
 const session = (id: string, created: number, updated = created, parentID?: string): Session => ({
@@ -32,6 +32,22 @@ const draft = (id: string, text: string, createdAt: number) => ({
   selectedProjectId: null,
   directoryOverride: null,
   parentID: null,
+});
+
+describe('resolveSessionRoutingDirectory', () => {
+  test('prefers the per-session routing hint over a server-returned path alias', () => {
+    expect(resolveSessionRoutingDirectory(
+      '/tmp/test-project',
+      '/private/tmp/test-project',
+      '/private/tmp/test-project',
+    )).toBe('/tmp/test-project');
+  });
+
+  test('preserves server and group-directory fallbacks when no hint is available', () => {
+    expect(resolveSessionRoutingDirectory(null, '/private/tmp/test-project/', '/group')).toBe('/private/tmp/test-project');
+    expect(resolveSessionRoutingDirectory(null, null, '/group/')).toBe('/group');
+    expect(resolveSessionRoutingDirectory(null, null, null)).toBeNull();
+  });
 });
 
 describe('selectVisibleChatDrafts', () => {

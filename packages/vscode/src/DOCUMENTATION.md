@@ -1,6 +1,8 @@
 # VS Code Backend Modules
 
-Managed OpenCode startup provisions the same sanitized repository-owned user profile used by web/Electron before generating runtime overlays. It resolves `default-config/user-profile` from the extension bundle, preserves user-modified managed files, installs missing declared plugins into the user's OpenCode config directory, and fails visibly when required package installation cannot complete. Configured external OpenCode URLs remain read-only.
+Managed OpenCode startup provisions the same sanitized repository-owned user profile used by web/Electron before generating runtime overlays. It resolves `default-config/user-profile` from the extension bundle, preserves user-modified managed files, installs missing declared plugins into the user's OpenCode config directory, and fails visibly when required package installation cannot complete. When OpenAI is active through auth, `OPENAI_API_KEY`, or provider config, the managed overlay adds a 60-second response-header timeout while preserving explicit numeric values or `false`; it removes the generated row when OpenAI becomes inactive and never creates model availability. Configured external OpenCode URLs remain read-only.
+
+The extension copies root `opencode.json`, agents, runtime-safe plugins, and sanitized profile assets through the web-owned default-config asset policy. Its packaged VSIX gate SHA-verifies that inventory and smoke-tests provisioning/overlay behavior from the extracted artifact; configured external runtimes are never provisioned or rewritten.
 
 This document describes backend runtime modules used by the VS Code extension bridge (`packages/vscode/src/bridge.ts`).
 
@@ -18,7 +20,8 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Standard Git message handlers.
 
 - `bridge-git-special-runtime.ts`
-  - Specialized Git flows (`pr-description`, `conflict-details`) and generation helpers.
+  - Specialized Git flows (`commit-message`, `pr-description`, `conflict-details`) and generation helpers.
+  - Commit-message generation sends bounded worktree context directly to the commit-specific free Zen model `deepseek-v4-flash-free` with a 60-second request deadline and returns one validated Conventional Commit subject without creating an OpenCode session. Explicit model overrides remain supported; PR generation retains its separate existing flow.
 
 - `bridge-git-process-runtime.ts`
   - Git process execution and environment setup (`execGit`), including SSH agent socket resolution.
@@ -35,6 +38,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
     - file read path safety checks
     - dropped-file parsing and attachment reading
     - models metadata fetch helper
+  - File reads and mutations are canonicalized against the active workspace plus the narrow compatibility config root `~/.config/openchamber`. Other home-directory paths remain denied, command execution remains workspace-only, and symlink escapes from either allowed root are rejected.
 
 - `bridge-localfs-proxy-runtime.ts`
   - Local `/api/fs/read` and `/api/fs/raw` proxy helpers and shared proxy utility helpers.
@@ -47,12 +51,13 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 - `bridge-config-runtime.ts`
   - Config and skills message handlers (`api:config/*`).
   - Includes OpenCode resolution diagnostics parity handler used by shared UI (`/api/config/opencode-resolution`).
+  - Uses `opencodeConfig.ts` to expose the shared three-item DevRyan default-plugin catalog plus read-only plugin entries and both singular `plugin/` and plural `plugins/` user/project files. Matching entries/files carry their default identity so Settings can preserve effective overrides without duplicate rows.
   - Delegates `/api/behavior/agents-md` bridge reads and saves to the injected `globalAgentsMdRuntime.ts`, keeping the actual global file authoritative while matching web/Electron read-only and partial-refresh semantics.
   - Routes agent model/variant defaults through OpenCode Slim config when `oh-my-opencode-slim` owns the active agent catalog, using Slim-installed global `agents/*.md` prompts plus Slim preset/root model metadata.
   - Passes Slim's active preset into managed OpenCode with `OH_MY_OPENCODE_SLIM_PRESET`, copies the active Slim config into the runtime overlay `OPENCODE_CONFIG_DIR`, and keeps background subagents enabled for Slim orchestration.
 
 - `opencodeVersionPolicy.ts`
-  - Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.1 and exposes the upstream install command in diagnostics while still using the user/system `opencode` binary.
+  - Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.3 and exposes the upstream install command in diagnostics while still using the user/system `opencode` binary.
 
 - `bridge-settings-runtime.ts`
   - Settings read/write and OpenCode skills discovery via API for bridge consumers.
@@ -61,10 +66,24 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - System/editor/provider/quota/notification/update-check message handlers.
   - Includes session activity snapshot bridge handler used by webview parity routes (`/api/session-activity`).
   - Includes Zen utility model parity handler used by shared notification settings (`/api/zen/models`).
+  - Mirrors web/Electron Claude Code status and configuration with `claude auth status --json`, avoiding model requests during authentication checks and returning structured signed-in, signed-out, unavailable, and execution-error states.
+  - Hosts the HTTP-shaped managed quota credential contract for the webview, including independent host-side 16 KB enforcement and the same safe error/status shapes as web/Electron.
+
+- `anthropicOAuthPlugin.ts` and `claudeAuthStatus.ts`
+  - Own VS Code parity for the reviewed Claude proxy plugin spec and safe Claude Code authentication-status parsing. Bare DevRyan-managed specs migrate to `opencode-with-claude@1.6.18`; explicit user pins are preserved.
+
+- `quotaCredentials.ts`
+  - Owns VS Code's contract-equivalent managed quota credential files for `opencode-go`, `ollama-cloud`, and canonical `cursor-acp` (`cursor` is an API alias only).
+  - Uses allowlisted paths under `${OPENCHAMBER_DATA_DIR ?? ~/.config/openchamber}/quota`, `0700` directories, atomic `0600` files, exact payload normalization, fixed masking, and explicit read-only macOS Cursor import.
+  - Does not read Cursor storage automatically and never modifies Cursor's database, environment/token files, OpenCode auth fields, or Cursor SDK execution credentials.
+
+- `quotaProviders.ts`
+  - Resolves quota credentials with web parity: OpenCode Go environment → managed → legacy; Cursor environment/token-file OAuth → managed OAuth/dashboard → legacy dashboard token; Ollama managed → legacy cookie file.
+  - Persists a refreshed Cursor OAuth access token only when its source is managed.
 
 - `managedOrchestrationRuntime.ts`
   - Composes the one VS Code-owned `@openchamber/orchestration-runtime` scheduler.
-  - Enforces a maximum of three running DevRyan-managed children, a minimum 30-minute ordinary start deadline, the private Council three-minute deadline class, fresh default deadlines for retry/resume/retry-in-place, scoped task access, abortable root `barrier` plus non-blocking `barrier_status` RPCs, inspection-first confirmed agent handoff, deterministic queueing/cancellation, recovery-envelope acknowledgement (including same-child `retry_in_place` model overrides), and external-runtime unavailability.
+  - Immediately admits every eligible DevRyan-managed child without an artificial concurrency cap, enforces a minimum 30-minute ordinary start deadline, preserves the private Council three-minute deadline class, gives retry/resume/recovery-in-place/retry-in-place fresh default deadlines, preserves timeout causes with bounded abort-request cancellation and same-child resumability after failed immediate recovery, scopes task access, clamps optional positive-safe-integer wait slices to 25 seconds, exposes abortable unbounded root `barrier` plus non-blocking `barrier_status` RPCs, performs inspection-first confirmed agent handoff, preserves deterministic admission/cancellation, acknowledges recovery envelopes (including automatic same-child `recover_in_place` and user `retry_in_place` model overrides), and reports external-runtime unavailability.
   - Publishes safe task projections without private dispatch groups, identity-only compaction removals, and corrupt-ledger recovery warnings to open webviews.
 
 - `managedOrchestrationPersistence.ts`
@@ -76,7 +95,8 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 
 - `managedOpenCodeExecutor.ts`
   - Creates canonical OpenCode child sessions and routes normal providers through OpenCode HTTP.
-  - Routes `cursor-acp` prompts, status, messages, and aborts through the shared Cursor SDK owner.
+  - Routes `cursor-acp` prompts, status, messages, aborts, and stale-child state cleanup through the shared Cursor SDK owner.
+  - Enforces scheduler lease checkpoints before prompt and after provider acceptance; a stale fresh child is aborted and deleted from OpenCode instead of being prompted or left orphaned.
   - Applies the shared Copilot prompt-tool policy through `@openchamber/orchestration-runtime`, whose observer keeps provider retries live, recovers transient polling failures against the same child, and retains partial output on non-retryable interruption.
 
 - `bridge-orchestration-runtime.ts`
@@ -84,7 +104,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Returns HTTP-shaped status/body results inside successful bridge responses so authoritative failures remain visible and retryable.
 
 - `opencode.ts`
-  - Managed launches retain config-origin bundled plugins, including GitHub Copilot Auto/picker fallback and exact OpenAI GPT-5.6 Max/Ultra enrichment, and receive a validated private bridge URL/token pair. The plugins only enrich model rows advertised by that managed runtime.
+  - Managed launches retain config-origin bundled plugins, including GitHub Copilot Auto/picker fallback and exact OpenAI GPT-5.6 Max/Ultra enrichment, and receive a validated private bridge URL/token pair. The OpenAI plugin also upgrades advertised reasoning-summary defaults from `auto` to `detailed` while preserving explicit provider values and provider reasoning text. The plugins only enrich model rows advertised by that managed runtime. Configuration restarts coalesce while sessions are busy; the explicit Restart API command retains a forced recovery path.
   - Ambient bridge variables are stripped; incomplete or non-IPv4-loopback pairs are rejected.
 
 ## Extension guideline
@@ -94,6 +114,10 @@ When adding new bridge route families:
 1. Prefer creating or extending a domain runtime module under `packages/vscode/src/bridge-*-runtime.ts`.
 2. Keep `bridge.ts` focused on delegation order and minimal fallthrough behavior.
 3. Inject dependencies into runtimes instead of reaching into unrelated modules directly.
+
+## Quota credential parity
+
+The webview maps `GET`, `PUT`, `POST validate`, `POST import`, and `DELETE` under `/api/quota/credentials/:providerId` to one `api:quota:credentials` bridge message. It checks the 16 KB body limit before crossing the bridge; the extension host recomputes and enforces the limit again. The bridge returns an HTTP-shaped `{ status, body }` result so the shared settings UI receives the same canonical provider IDs, safe metadata, and stable error codes in web, Electron, and VS Code. The shared UI continues to use the single existing quota refresh coordinator after save, delete, or import.
 
 ## Managed orchestration lifecycle
 

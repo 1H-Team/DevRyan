@@ -28,9 +28,13 @@ describe('read-only plugin config model', () => {
     writeJson(projectConfig, {
       plugin: ['@scope/project-plugin@2.0.0'],
     });
+    fs.mkdirSync(path.join(home, '.config', 'opencode', 'plugin'), { recursive: true });
     fs.mkdirSync(path.join(home, '.config', 'opencode', 'plugins'), { recursive: true });
+    fs.mkdirSync(path.join(project, '.opencode', 'plugin'), { recursive: true });
     fs.mkdirSync(path.join(project, '.opencode', 'plugins'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.config', 'opencode', 'plugin', 'user-file.js'), '', 'utf8');
     fs.writeFileSync(path.join(home, '.config', 'opencode', 'plugins', 'user-file.js'), '', 'utf8');
+    fs.writeFileSync(path.join(project, '.opencode', 'plugin', 'project-legacy.mjs'), '', 'utf8');
     fs.writeFileSync(path.join(project, '.opencode', 'plugins', 'project-file.ts'), '', 'utf8');
     fs.writeFileSync(path.join(project, '.opencode', 'plugins', 'ignore.txt'), '', 'utf8');
 
@@ -44,6 +48,11 @@ describe('read-only plugin config model', () => {
 
       const result = model.listPlugins(project);
 
+      expect(result.defaults.map((plugin) => plugin.pluginId)).toEqual([
+        'oh-my-opencode-slim',
+        'opencode-with-claude',
+        'openai-tool-schema-sanitizer',
+      ]);
       expect(result.entries.map((plugin) => `${plugin.scope}:${plugin.spec}:${plugin.parsedKind}`)).toEqual([
         'user:user-plugin@1.0.0:npm',
         'user:./local-user-plugin.js:path',
@@ -52,9 +61,43 @@ describe('read-only plugin config model', () => {
       expect(result.entries[1].options).toEqual({ enabled: true });
       expect(result.files.map((pluginFile) => `${pluginFile.scope}:${pluginFile.fileName}`)).toEqual([
         'user:user-file.js',
+        'user:user-file.js',
+        'project:project-legacy.mjs',
         'project:project-file.ts',
       ]);
+      expect(result.files.slice(0, 2).map((pluginFile) => pluginFile.absolutePath)).toEqual([
+        path.join(home, '.config', 'opencode', 'plugin', 'user-file.js'),
+        path.join(home, '.config', 'opencode', 'plugins', 'user-file.js'),
+      ]);
       expect(result.errors).toEqual([]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('annotates effective default plugin overrides without classifying unrelated project entries', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-plugins-defaults-'));
+    const home = path.join(root, 'home');
+    const project = path.join(root, 'project');
+    writeJson(path.join(home, '.config', 'opencode', 'opencode.json'), {
+      plugin: ['opencode-with-claude@1.6.17', './plugins/devryan-oh-my-opencode-slim.mjs'],
+    });
+    writeJson(path.join(project, '.opencode', 'opencode.json'), {
+      plugin: ['project-plugin@1.0.0'],
+    });
+
+    try {
+      const result = createPluginReadModel({ fs, path, homedir: () => home, env: {} }).listPlugins(project);
+      const claude = result.defaults.find((plugin) => plugin.pluginId === 'opencode-with-claude');
+      expect(claude).toMatchObject({
+        effectiveSpec: 'opencode-with-claude@1.6.17',
+        configuredSourcePath: path.join(home, '.config', 'opencode', 'opencode.json'),
+      });
+      expect(result.entries.slice(0, 2).map((entry) => entry.defaultPluginId)).toEqual([
+        'opencode-with-claude',
+        'oh-my-opencode-slim',
+      ]);
+      expect(result.entries[2]).not.toHaveProperty('defaultPluginId');
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

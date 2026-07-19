@@ -20,6 +20,7 @@ export const registerSkillRoutes = (app, dependencies) => {
     sanitizeHiddenSkills,
     isUnsafeSkillRelativePath,
     refreshOpenCodeAfterConfigChange,
+    isExternalOpenCode = () => false,
     clientReloadDelayMs,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
@@ -28,6 +29,7 @@ export const registerSkillRoutes = (app, dependencies) => {
     discoverSkills,
     createSkill,
     updateSkill,
+    deleteSkill,
     readSkillSupportingFile,
     writeSkillSupportingFile,
     deleteSkillSupportingFile,
@@ -142,7 +144,7 @@ export const registerSkillRoutes = (app, dependencies) => {
     return skills.filter((skill) => skill?.scope === scope);
   };
 
-  const findSkillByIdentity = (skills, skillName, requestedPath, scope = 'all') => {
+  const findSkillByIdentity = (skills, skillName, requestedPath, scope = 'all', strictPath = false) => {
     const normalizedRequestedPath = normalizeSkillPath(requestedPath);
     if (normalizedRequestedPath) {
       const byPath = skills.find((skill) => (
@@ -152,6 +154,9 @@ export const registerSkillRoutes = (app, dependencies) => {
       ));
       if (byPath) {
         return { ...byPath, preferDiscoveredPath: true };
+      }
+      if (strictPath) {
+        return null;
       }
     }
 
@@ -1122,6 +1127,60 @@ export const registerSkillRoutes = (app, dependencies) => {
     }
   });
 
+  app.post('/api/config/skills/:name/hide', async (req, res) => {
+    try {
+      const skillName = req.params.name;
+      const { directory, error } = await resolveOptionalProjectDirectory(req);
+      if (error) {
+        return res.status(400).json({ error });
+      }
+      const scope = normalizeSkillScopeFilter(req.query.scope);
+      const requestedPath = typeof req.query.path === 'string' ? req.query.path : '';
+      const discoveredSkill = findSkillByIdentity(
+        await resolveDiscoveredSkills(directory),
+        skillName,
+        requestedPath,
+        scope,
+        true,
+      );
+      if (!discoveredSkill) {
+        return res.status(404).json({ error: 'Skill not found' });
+      }
+      const sources = getSkillSources(skillName, directory, discoveredSkill);
+      if (!sources.md.exists || !sources.md.path || (scope !== 'all' && sources.md.scope !== scope)) {
+        return res.status(404).json({ error: 'Skill not found' });
+      }
+
+      const settings = await readSettingsFromDisk();
+      const hiddenSkills = getHiddenSkillsFromSettings(settings);
+      const skillPath = normalizeSkillPath(sources.md.path);
+      if (!hiddenSkills.some((skill) => normalizeSkillPath(skill?.path) === skillPath)) {
+        await persistSettings({
+          hiddenSkills: [
+            ...hiddenSkills,
+            {
+              name: skillName,
+              path: skillPath,
+              ...(sources.md.scope ? { scope: sources.md.scope } : {}),
+              ...(sources.md.source ? { source: sources.md.source } : {}),
+            },
+          ],
+        });
+      }
+      await refreshOpenCodeAfterConfigChange('skill hide');
+
+      res.json({
+        success: true,
+        requiresReload: true,
+        message: `Skill ${skillName} hidden successfully. Reloading interface…`,
+        reloadDelayMs: clientReloadDelayMs,
+      });
+    } catch (error) {
+      console.error('Failed to hide skill:', error);
+      res.status(500).json({ error: error.message || 'Failed to hide skill' });
+    }
+  });
+
   app.delete('/api/config/skills/:name', async (req, res) => {
     try {
       const skillName = req.params.name;
@@ -1137,7 +1196,11 @@ export const registerSkillRoutes = (app, dependencies) => {
         skillName,
         requestedPath,
         scope,
+        true,
       );
+      if (!discoveredSkill) {
+        return res.status(404).json({ error: 'Skill not found' });
+      }
       const sources = getSkillSources(skillName, directory, discoveredSkill);
       if (!sources.md.exists || !sources.md.path) {
         return res.status(404).json({ error: 'Skill not found' });
@@ -1146,31 +1209,47 @@ export const registerSkillRoutes = (app, dependencies) => {
         return res.status(404).json({ error: 'Skill not found' });
       }
 
+      const skillPath = normalizeSkillPath(sources.md.path);
       const settings = await readSettingsFromDisk();
       const hiddenSkills = getHiddenSkillsFromSettings(settings);
-      const skillPath = normalizeSkillPath(sources.md.path);
-      const alreadyHidden = hiddenSkills.some((skill) => normalizeSkillPath(skill?.path) === skillPath);
+      const normalizedHiddenSkills = hiddenSkills.map((skill) => ({
+        ...skill,
+        path: normalizeSkillPath(skill?.path),
+      }));
+      const nextHiddenSkills = normalizedHiddenSkills.filter((skill) => skill.path !== skillPath);
 
-      if (!alreadyHidden) {
-        await persistSettings({
-          hiddenSkills: [
-            ...hiddenSkills,
-            {
-              name: skillName,
-              path: skillPath,
-              ...(sources.md.scope ? { scope: sources.md.scope } : {}),
-              ...(sources.md.source ? { source: sources.md.source } : {}),
-            },
-          ],
-        });
+      deleteSkill(skillName, directory, discoveredSkill);
+
+      let warning;
+      if (nextHiddenSkills.length !== hiddenSkills.length) {
+        try {
+          await persistSettings({ hiddenSkills: nextHiddenSkills });
+        } catch (settingsError) {
+          warning = `The skill was deleted, but its hidden-skill settings entry could not be removed: ${formatErrorMessage(settingsError, 'Failed to update settings')}`;
+          console.warn('[API:Skill delete] Failed to remove stale hidden-skill settings entry:', settingsError);
+        }
       }
-      await refreshOpenCodeAfterConfigChange('skill remove');
+
+      const externalRuntime = isExternalOpenCode();
+      if (!externalRuntime) {
+        void Promise.resolve()
+          .then(() => refreshOpenCodeAfterConfigChange('skill delete'))
+          .catch((refreshError) => {
+            console.error('[API:Skill delete] OpenCode refresh failed after deletion:', refreshError);
+          });
+      } else {
+        warning = warning
+          ? `${warning} Restart the external OpenCode runtime before relying on the updated skill list.`
+          : 'Restart the external OpenCode runtime before relying on the updated skill list.';
+      }
 
       res.json({
         success: true,
-        requiresReload: true,
-        message: `Skill ${skillName} removed successfully. Reloading interface…`,
-        reloadDelayMs: clientReloadDelayMs,
+        requiresReload: false,
+        runtimeRefreshPending: !externalRuntime,
+        runtimeApplied: false,
+        message: `Skill ${skillName} permanently deleted.`,
+        ...(warning ? { warning } : {}),
       });
     } catch (error) {
       console.error('Failed to remove skill:', error);

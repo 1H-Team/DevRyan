@@ -37,6 +37,37 @@ So:
 - Use the **global sessions store** for cold/global session coverage (especially archived pages and unopened directories)
 - Use **aggregated child-store snapshots** for live session/status truth across already initialized directories
 
+## Directory subscription bootstrap authority
+
+Creating a directory store and bootstrapping its OpenCode runtime are separate
+operations. `useDirectoryStore()` and explicit-directory `useSession()` reads
+grant bootstrap authority only when the normalized requested directory equals
+the current `SyncProvider` directory. Inactive session rows may therefore create
+passive stores seeded from persisted cache without issuing directory-scoped API
+requests.
+
+The provider's current-directory effect and imperative operations such as
+explicit session materialization retain normal bootstrap authority. Provider
+configuration, reconnect, visibility recovery, server reconnect events, and
+replay-gap recovery select only the normalized current-directory store; they
+must not turn passive stores into active OpenCode directory contexts.
+
+## Snapshot materialization non-regression
+
+`materialization.ts` merges bounded HTTP message snapshots into the existing
+directory cache; it does not interpret omitted historical messages as deleted.
+The merge preserves live streaming text and enforces monotonic same-ID terminal
+state: an incomplete assistant snapshot cannot reopen an already terminal
+assistant message, and an in-flight tool snapshot cannot restart an already
+finalized tool part. Forward progress from incomplete/in-flight state to a
+terminal snapshot remains authoritative.
+
+Linked child-session polling in `ToolPart.tsx` uses this same materializer for
+both regular polling and its final settlement fetch. A response captured before
+a child terminal event therefore cannot regress the newer SSE state or remove
+older cached child activity when the response's fetch limit is smaller than the
+loaded history.
+
 ## Ownership map
 
 | Layer / Store | Owns | Scope |
@@ -49,6 +80,74 @@ So:
 | `input-store.ts` | Draft input state, attached files, synthetic parts | App UI state |
 | `selection-store.ts` | Model/agent/variant selections | App UI state |
 | `voice-store.ts` | Voice state | App UI state |
+
+`selection-store.ts` retains reversible archive context, but permanent
+`session.deleted` events clear every selection keyed by the deleted session:
+model, agent, plan mode, per-agent model, and module-local variant choices.
+Cleanup happens on the authoritative event rather than optimistic delete
+initiation, so failed deletes and archived sessions keep their selections.
+That same permanent-delete boundary clears the deleted session's persisted
+message queue while preserving queues for archived and unrelated sessions.
+It clears all seven session-keyed maps in the persisted `contextStore` while
+preserving unrelated rows and the global edit-mode fallback. Context usage
+microtasks and token-poll timers are canceled before removal so a delayed writer
+cannot recreate deleted state; completed work releases its cancellation record.
+The exact session's persisted permission auto-accept override is also removed.
+Its final `enabled: false` host mirror is serialized after any older
+same-session hydration/toggle request, so stale client work cannot recreate
+server notification suppression after the host processes deletion.
+It also removes the session's persisted composer text and confirmed mentions.
+Mounted composers receive that removal synchronously, cancel pending persistence,
+and retire the matching target until the target-switch save boundary passes, so
+the normal old-target save cannot recreate deleted data. Archive and failed
+optimistic deletion do not enter this path. If that authoritative deletion was
+initiated by another renderer or runtime, the same boundary synchronously
+clears `currentSessionId` only when it still names the deleted session. The
+non-throwing optional UI-store ref in `sync-refs.ts` keeps headless sync use
+valid and avoids an asynchronous frame where composer/actions target a missing
+session. Background-session deletion preserves the current selection, and no
+replacement session is guessed.
+
+The same authoritative boundary calls `session-ui-store.ts`
+`retireDeletedSession()`. That action cancels exact-session completion timers,
+aborts and removes a pending send controller, and retires worktree routing,
+creation/abort flags, plan lifecycle, starter context, and pending-changes UI
+entries. It also removes the session-owned plan message and delimiter-prefixed
+implementation requests from compact persistence, clears a legacy Cursor draft
+prewarm record, and removes the exact authoritative worktree attachment.
+Unrelated collection references remain stable when their entries do not change.
+Archive preserves all of this reversible state.
+
+## Plan proposal persistence
+
+Completed plan proposals are detected from authoritative session/message state
+after reduction. The lifecycle marks the proposed indicator immediately, then
+uses `lib/plans/sessionPlanPersistence.ts` to save the exact detected Markdown
+without requiring the chat or `PlanCard` to be mounted. The coordinator
+deduplicates same-revision work, protects the latest session pointer from stale
+completions, and leaves failures stable until the Plan Card requests an explicit
+retry. Persisted-indicator restoration awaits the same save after materializing
+messages, so a reload repopulates the in-memory saved path in the background.
+
+Before reducing an authoritative `session.deleted` event, `sync-context.tsx`
+also retires exact `(directory, session)` recovery ownership. It cancels a
+queued snapshot retry, invalidates in-flight message, persisted-indicator,
+blocking-request, child-session, and prefetch generations, and removes buffered
+part deltas owned by the session's indexed messages. Existing materializers
+verify their captured map identity or token immediately before committing, so a
+response accepted before deletion cannot restore the deleted session, messages,
+parts, plan indicators, or retry state afterward. The same boundary clears the
+exact abort-retry guard and live-recovery timestamps. Archive does not retire
+these owners, so reversible sessions can finish hydration normally.
+
+Unexpected-abort message reconciliation is owned separately by
+`session-actions.ts`. Its exact `(directory, session)` promise identity is
+checked after the message response resolves and before snapshot materialization.
+Permanent deletion removes only that exact owner, while directory disposal
+removes every owner for the directory; late responses therefore cannot restore
+deleted messages or write into a disposed store. A reconciliation requested
+after deletion is ignored once both the live session and cached message branch
+are absent. Archive does not release this reversible recovery work.
 
 ## Directory disposal ownership
 
@@ -70,9 +169,9 @@ The ownership callback releases all ephemeral directory-scoped resources:
 - reconnect/activity timestamps, abort guards, toast dedupe keys, and
   imperative SDK/store references on provider shutdown.
 
-Async loaders compare both their generation token and child-store identity
-before committing. A late request from an evicted directory therefore cannot
-write into a replacement store or repopulate a cleared cache. Provider teardown
+Async loaders compare their generation token, promise identity, or child-store
+identity before committing. A late request from an evicted directory therefore
+cannot write into a replacement store or repopulate a cleared cache. Provider teardown
 is deferred by one microtask and generation-checked so React Strict Mode's
 development cleanup/restart cycle does not dispose stores still referenced by
 mounted hooks; a real unmount still deterministically calls `disposeAll()`.
@@ -172,7 +271,42 @@ guarantees a new post-mutation refresh. Concurrent completions are coalesced, wi
 when a later mutation completes during reconciliation. Do not replace this with a direct
 `loadSessions()` call, because that may reuse a stale in-flight promise.
 
+Directory-store rollback after optimistic archive/delete removal is additive.
+`restoreOptimisticallyRemovedSessions()` restores only failed target sessions that
+are still absent from the current store. It must not replace a captured session
+array: `session.created` or `session.updated` can add a newer target record or
+unrelated sessions while the mutation request is pending. Directory-specific
+delete uses the same reconciliation helper as batch archive/delete rollback.
+
+Failed scoped reverts immediately restore the optimistic session marker, message,
+and part snapshots, then start a version-owned bounded authoritative message refetch,
+including when the session was idle before the
+request. A pending revert intentionally suppresses suffix `message.updated`
+events, so the pre-request snapshot cannot recover a concurrent turn created by
+another client.
+
+While a scoped revert transaction is pending, the shared session mutation guard
+rejects sends (including shell, slash-command, and active-subtask routes), undo,
+and redo for that session. Confirmed or rolled-back transactions immediately
+release the guard; other sessions are unaffected. Send routes recheck this guard
+immediately before each transport request, after attachment conversion and
+worktree bootstrap, so a revert that begins during asynchronous preflight cannot
+be raced by an already-admitted send.
+
+Optimistic message reconciliation uses the echoed client-generated message ID
+as its confirmation boundary. Once a REST message page contains that ID, the
+fetched message and server-generated part IDs remain authoritative and the
+shadow entry is cleared. Client-only part IDs are merged only while the message
+itself is absent from the fetched page; requiring server parts to echo those IDs
+would reintroduce duplicate optimistic content and retain the shadow forever.
+
 Live activity/status indicators must not depend on this cache. They must derive from aggregated child-store state.
+
+After both the initial directory status snapshot and session list load successfully,
+bootstrap materializes an explicit `idle` status for every listed session absent
+from the snapshot. Existing `busy`/`retry` entries are preserved so a newer live
+event still wins. This makes an empty authoritative snapshot after an OpenCode
+restart settle stale incomplete message history instead of reviving it as live work.
 
 ## Session action rules
 
@@ -180,15 +314,16 @@ Session actions live in `session-actions.ts` and are the canonical place for SDK
 
 Rules:
 
-1. If an action mutates session list membership or visible session metadata, update `useGlobalSessionsStore` there. Canonical manual archive/delete/unarchive actions must use the versioned membership lifecycle rather than direct list helpers.
+1. If an action mutates session list membership or visible session metadata, update `useGlobalSessionsStore` there. Canonical manual archive/delete/unarchive actions must use the versioned membership lifecycle rather than direct list helpers. Unarchive also removes the archived timestamp from matching loaded directory-store records before awaiting transport so the sidebar cannot prefer a stale live record over the optimistic global membership. Failed requests restore only the exact optimistic objects they still own; a newer event or mutation wins by replacing that reference.
 2. If an action targets a session by ID, resolve the **session's own directory**. Do not assume the current directory is correct.
 3. `session-ui-store.ts` should delegate to `session-actions.ts` for these mutations instead of duplicating SDK calls.
-4. Revert/fork input restoration belongs in `session-actions.ts`; for safe scoped revert, restore the clicked prompt/attachments only after the server acknowledges the revert so failed reverts do not leave the input out of sync with visible history.
+4. Revert/fork input restoration belongs in `session-actions.ts`; for safe scoped revert, queue the clicked prompt/attachments only after the server acknowledges the revert so failed reverts do not leave the input out of sync with visible history. Revert restoration is keyed to the target session and the composer revision captured when the revert began: navigation cannot overwrite another chat, and a user edit made while the request is pending invalidates the stale restoration. After any scoped-revert failure, roll back immediately and launch (without awaiting) a bounded message reconciliation regardless of the pre-request live status because the pending transaction may have suppressed concurrent suffix events. The reconciliation must retain transaction/directory ownership so a late response cannot overwrite a newer revert or a disposed store.
 5. Draft sends must resolve and validate provider/model/agent selection before creating the backend session. A missing model should keep the draft intact and avoid creating an empty chat.
 6. A foreground send must always target a real session ID. If the UI has no current session and no open draft, `session-ui-store.ts` creates and selects a normal session before optimistic send/routing; never route a prompt with an empty session ID.
 7. Backend session creation retries transient 5xx/startup responses in `createSessionRecord()`. The managed OpenCode server can still be warming up when the web UI is already interactive, so a single `503 OpenCode is restarting` must not strand the user's first prompt.
 8. Automatic session titles have exactly one owner. Standard-provider sessions are created without a title, then the server-side standard title runtime generates and persists the authoritative Zen summary after an accepted proxied prompt; the sync layer consumes the resulting `session.updated` event and must not persist a prompt-derived fallback. Cursor sessions remain owned by the separate server-side Cursor title runtime, and explicit custom draft titles remain authoritative for every provider.
-9. `session-actions.ts` resolves the UI store through the registered reference in `sync-refs.ts`; `session-ui-store.ts` registers the completed Zustand store after initialization. Tests that need a narrow UI store must register and release that reference instead of replacing the entire `session-ui-store` module, because Bun module mocks are process-wide and can leak into later chat-flow suites.
+9. `session-actions.ts` resolves the UI store through the registered reference in `sync-refs.ts`; `session-ui-store.ts` registers the completed Zustand store after initialization. Authoritative deletion may use the optional ref read to invalidate an exact selected session synchronously, while headless consumers no-op when no UI store is registered. Tests that need a narrow UI store must register and release that reference instead of replacing the entire `session-ui-store` module, because Bun module mocks are process-wide and can leak into later chat-flow suites.
+10. When session creation has an explicit directory, that requested directory is the UI routing authority even if OpenCode returns an equivalent filesystem alias (for example `/tmp/project` as `/private/tmp/project`). Keep the returned value on the session as server metadata, but register/select the explicit path and expose it through the narrow per-session routing hint so every live consumer uses one child store.
 
 Examples of global-store updates performed in `session-actions.ts`:
 
@@ -197,6 +332,22 @@ Examples of global-store updates performed in `session-actions.ts`:
 - `shareSession()` / `unshareSession()` -> `upsertSession(result.data)`
 - `archiveSession()` -> `archiveSessions([id], archivedAt)`
 - `deleteSession()` -> `removeSessions([id])`
+
+Session summary updates are monotonic by finite `time.updated`, falling back to
+finite `time.created`. Only strictly older records are rejected; equal or
+incomparable timestamps remain eligible. The sync handler performs this gate
+before cloning any directory-store branch, the reducer repeats it at its
+mutation boundary, and global upserts use the same comparator. Successful
+direct title updates are mirrored into the exact loaded directory child store
+and the global snapshot, both freshness-aware, so a delayed SSE or REST echo
+cannot restore an older title or archive state.
+
+URL routing resolves a session directory dynamically from live routing hints
+and then the global active/archived snapshot, including parent lineage for
+no-directory children. Cold deep links retain their original
+session/tab/settings/diff parameters while metadata is loading and reconcile
+once an authoritative directory appears; they never bind an unknown session to
+the ambient current directory.
 
 Cursor ACP title repair is a narrow sync-side exception: `sync-context.tsx`
 observes live idle/message/session events and calls `session-actions.updateSessionTitle()`
@@ -270,32 +421,52 @@ Completion indicators combine a settled lifecycle record with unread state; neit
 
 Proposed-plan and unread-completion state are restored after startup from authoritative materialized messages. Restoration is narrowed by the persisted session-to-plan-mode-message ownership map and compact completion identity/read records, processed sequentially per directory, and re-runs normal lifecycle detection after each snapshot load. Only completion identity, directory/session/message IDs, timestamp, and read state are persisted; provider errors and response content are not. This avoids treating arbitrary historical output as active while preserving yellow/green background indicators across reload and reconnect.
 
+Authoritative permanent deletion removes only the deleted session's notification rows, rewrites compact completion persistence, and delegates to the session UI retirement action to cancel pending normal/plan completion-settlement timers before they can repopulate indicator state. Archive remains reversible and preserves those completion records and timers.
+
 Plan revision and actionability remain derived from canonical message history rather than a second ledger. Plan-mode user turns are ordered by their canonical user message IDs/turn projection, assistant sources attach through `parentID`, and completed plan cards receive monotonic versions. A newer plan-mode user turn immediately supersedes older cards even before its replacement card is complete; history remains visible, but only the latest completed and unimplemented source is actionable. Unchanged plan trace indexes preserve reference identity while text streams.
 
 A trailing assistant message can settle stale `busy`/`retry` status to `idle` only when it is terminal, has no running tool parts, has no pending permission or question, and is not `finish: "tool-calls"`. This keeps the session working spinner visible between tool calls while OpenCode is still running and prevents an intermediate tool-call shell from hiding the final summary stream.
 
 Accepted `busy`/`retry` status is treated as a new-work edge. When the sync store still contains `busy`/`retry` after reducing a status event, `sync-context.tsx` clears pending and visible completion indicators for that session. Delayed completion timers in `session-ui-store.ts` also re-check live status before writing so a green dot cannot appear after the session has started working again.
 
-When OpenCode emits `message.part.updated` before the owning `message.updated`, the reducer may insert a provisional assistant message so live output renders immediately. This is intentionally narrow: reasoning parts preserve the existing provisional path, while text/tool parts only provisionalize for an actively busy/retrying session. The real `message.updated` later replaces the provisional message by ID, and buffered `message.part.delta` events replay once the part exists.
+When OpenCode emits `message.part.updated` before the owning `message.updated`, the reducer may insert a provisional assistant message so live output renders immediately. This is intentionally narrow: reasoning parts preserve the existing provisional path, while text/tool parts only provisionalize for an actively busy/retrying session. The real `message.updated` later replaces the provisional message by ID; the lightweight no-op gate compares `parentID` so a non-terminal owning update cannot leave the provisional assistant orphaned. Buffered `message.part.delta` events replay once the part exists.
 
 ## Active-session recovery watchdog
 
 `sync-context.tsx` tracks the last observed `session.status` and message/part output event per `directory + sessionID`. A 5-second watchdog checks only the active viewed session; when that session remains `busy` or `retry` without fresh status or output activity for 20 seconds, it runs a targeted reconnect resync for that session only. A 15-second per-session cooldown prevents repeated recovery calls.
 
+Reconnect recovery treats its status response as a snapshot, not a live event.
+For every candidate it captures the complete current status before requesting the
+snapshot and merges the response only while that baseline is unchanged. Because
+the same snapshot is reconsidered after message and blocking-request recovery,
+that second merge uses a new post-merge baseline. A newer live status event in
+either async window therefore remains authoritative; unchanged candidates still
+receive normal snapshot and terminal-message reconciliation. All baselines stay
+scoped to the existing `directory + sessionID` candidates.
+
 ## Manual provider recovery and stop-during-retry guard
+
+Subtask composer sends preserve the agent assigned by the child's original user
+message. A later continuation cannot silently replace that child identity with
+the globally selected primary agent; root sessions continue restoring their
+latest user-selected agent and model.
 
 OpenCode ignores `session.abort` while a session sleeps between provider retry attempts (out of usage / rate limit) and keeps emitting `session.status: retry` — it never emits `session.idle`/`session.error` from inside the loop. `abort-retry-guard.ts` makes a manual Stop stick:
 
 - Every user-initiated abort path (`abortCurrentOperation`, queued-send interrupt, archive/delete pre-abort, revert/unrevert) registers a per-session guard via `registerManualAbortGuard`.
 - An unguarded provider `retry` remains authoritative so OpenCode can apply its retry policy; observing a live retry does not create a recovery record or abort the active turn.
-- While active (60s TTL), `filterSessionStatusThroughAbortGuard` coerces incoming `retry` statuses to `idle` (event reducer and reconnect status merge both route through it) and schedules bounded, debounced re-aborts (max 3) so the server loop is cancelled the moment its next attempt creates an abortable in-flight request.
-- The guard clears on authoritative idle (`session.idle`, `session.error`, idle `session.status`) and on any new local send (`optimisticSend`, `usePromptSubmit`), so a legitimate new turn is never suppressed or re-aborted.
+- The guard starts with a 60-second base window. When the stopped status is `retry`, it is seeded from the authoritative `attempt`/`next` identity and remains active through that normalized retry target plus the same settlement window. New retry identities can advance the deadline, while duplicate relative deadlines reuse their first normalized target instead of sliding forever.
+- While active, `filterSessionStatusThroughAbortGuard` coerces incoming `retry` statuses to `idle` (live event reduction, reconnect status merge, and directory bootstrap snapshots all route through it) and schedules bounded, debounced re-aborts (max 3) so the server loop is cancelled when its next attempt creates an abortable in-flight request. Snapshot filtering preserves the original status-map reference when no guard changes a value.
+- Streaming derivation does not retain an incomplete assistant shell across that guarded `idle`; the manual-abort guard disables only the narrow premature-idle streaming exception for the stopped session, so the composer unlocks without changing ordinary out-of-order idle handling.
+- The guard clears on authoritative idle (`session.idle`, `session.error`, idle `session.status`), on any new local send (`optimisticSend`, `usePromptSubmit`), and when an authoritative user message advances the cached user-turn boundary and proves that another connected surface started new work. Historical replay into an empty or newer cache cannot clear it.
 - `useProviderErrorRecovery` creates recovery records only after an authoritative active-to-idle transition ends with a matching retryable terminal assistant error. Manual recovery waits for guard settlement before sending the selected model, preventing an explicitly stopped retry loop from overlapping the replacement turn.
-- When the TTL expires without idle, live server state wins again — the guard never permanently masks real activity.
+- When the current retry deadline plus its settlement window expires without idle, live server state wins again — the guard never permanently masks real activity.
 
-`abortCurrentOperation` first cancels the active top-level DevRyan-managed tasks for the parent session with scheduler cascade enabled, then aborts the parent OpenCode session. This stops queued and running managed descendants without emitting cancellation tool calls into chat. It additionally settles a local `retry` status to `idle` right after the abort request (narrow optimistic transition mirroring `revertToMessage`), so the input and model picker unlock immediately.
+`abortCurrentOperation` first cancels the active top-level DevRyan-managed tasks for the parent session with scheduler cascade enabled, then aborts the parent OpenCode session. This stops queued and running managed descendants without emitting cancellation tool calls into chat. It additionally settles a local `retry` status to `idle` right after the abort request (narrow optimistic transition mirroring `revertToMessage`); guarded streaming derivation completes the stopped assistant shell so the input and model picker unlock immediately.
 
 Direct steering and queued **send now** share the same successful-abort path and record abort display reason `steered`; the explicit Stop action remains `manual`. Send-now performs the steer before claiming the queue, then atomically flushes every claimed item FIFO. Natural idle auto-send never aborts and waits for the pre-existing user turn to have a terminal, parent-correlated assistant response before its first send. Before every later item, the flush likewise requires a terminal assistant message whose `parentID` matches the prior queued transport message ID while live status is idle; an early idle event cannot advance the queue. Queue rows capture a stable queue-item ID, session directory, provider/model/agent/variant/plan mode, and attachments at enqueue time. An OpenCode-compatible, time-sortable transport message ID is assigned immediately before each individual FIFO dispatch—after the preceding assistant turn—and is then preserved across rollback and ambiguous retries. Later, unattempted claimed rows remain without a transport ID until their turn; legacy queue-time IDs without dispatch scope are refreshed before dispatch. Missing directories use the authoritative session lookup.
+
+If an auto-send fails while the transport disconnects, the claimed rows are restored with their dispatch identity intact. The queue hook never dispatches while disconnected and grants that restored idle queue exactly one new attempt on the authoritative disconnected-to-connected edge. A WS-to-SSE switch preserves the current connection state because selecting a fallback transport does not prove that it connected. The SSE SDK also constructs its stream wrapper before opening the response, so SSE publishes recovery only after its first parsed or yielded event; an error response cannot create a transient connected pulse. A steady connected state is not a retry signal, so persistent validation, authorization, or provider failures cannot create an automatic retry loop.
 
 ## Selector hygiene
 

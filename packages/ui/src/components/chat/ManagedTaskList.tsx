@@ -4,7 +4,7 @@ import { formatManagedTaskDisplayName } from '@openchamber/orchestration-runtime
 
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/i18n';
-import { getAgentColor } from '@/lib/agentColors';
+import { getAgentIconColor } from '@/lib/agentColors';
 import {
   managedOrchestrationSelectors,
   useManagedOrchestrationStore,
@@ -13,6 +13,7 @@ import { ManagedTaskRow } from './ManagedTaskRow';
 import type { PendingManagedTaskDispatch } from './managedTaskDispatch';
 import { formatAgentLabel } from './mobileControlsUtils';
 import {
+  collapseManagedTaskLineages,
   getManagedTaskWindow,
   MANAGED_TASK_ROW_BATCH,
   shouldRenderManagedTaskList,
@@ -61,6 +62,13 @@ export const ManagedTaskList = React.memo(({
     [rootSessionId],
   ));
   const taskIds = explicitTaskIds ?? rootTaskIds;
+  const visibleTaskIds = React.useMemo(
+    () => collapseManagedTaskLineages(
+      taskIds,
+      (taskId) => useManagedOrchestrationStore.getState().tasksById[taskId],
+    ),
+    [taskIds],
+  );
   const available = useManagedOrchestrationStore((state) => state.available);
   const recoveryWarning = useManagedOrchestrationStore((state) => state.recoveryWarning);
   const snapshotError = useManagedOrchestrationStore((state) => state.snapshotError);
@@ -73,7 +81,7 @@ export const ManagedTaskList = React.memo(({
     : MANAGED_TASK_ROW_BATCH;
 
   const { hiddenCount, agentGroups = [] } = getManagedTaskWindow(
-    taskIds,
+    visibleTaskIds,
     visibleLimit,
     (taskId) => useManagedOrchestrationStore.getState().tasksById[taskId]?.agent,
   );
@@ -111,14 +119,14 @@ export const ManagedTaskList = React.memo(({
   const showRuntimeWarnings = rootSessionId !== undefined && explicitTaskIds === undefined;
 
   React.useLayoutEffect(() => {
-    if (taskIds.length > 0 || pendingDispatches.length > 0 || recoveryWarning || snapshotError) {
+    if (visibleTaskIds.length > 0 || pendingDispatches.length > 0 || recoveryWarning || snapshotError) {
       onContentChange?.();
     }
-  }, [onContentChange, pendingDispatches, recoveryWarning, snapshotError, taskIds, visibleLimit]);
+  }, [onContentChange, pendingDispatches, recoveryWarning, snapshotError, visibleTaskIds, visibleLimit]);
 
   if (!shouldRenderManagedTaskList({
     available,
-    taskCount: taskIds.length + pendingDispatches.length,
+    taskCount: visibleTaskIds.length + pendingDispatches.length,
     recoveryWarning: showRuntimeWarnings ? recoveryWarning : null,
     snapshotError: showRuntimeWarnings ? snapshotError : null,
   })) return null;
@@ -176,10 +184,10 @@ export const ManagedTaskList = React.memo(({
             return (
               <section key={group.agent.toLocaleLowerCase()} aria-label={agentLabel}>
                 <div className="flex h-7 items-center bg-muted/25 px-3 typography-meta text-muted-foreground">
-                  <span className="inline-flex min-w-0 items-center gap-1.5 leading-none">
+                  <span className="inline-flex min-w-0 translate-y-1 items-center gap-1.5 leading-none">
                     <RiAiAgentLine
                       className="size-3.5 shrink-0"
-                      style={{ color: `var(${getAgentColor(group.agent).var})` }}
+                      style={{ color: `var(${getAgentIconColor(group.agent).var})` }}
                       aria-hidden="true"
                     />
                     <span className="truncate">{agentLabel}</span>

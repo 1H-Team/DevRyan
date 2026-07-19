@@ -12,6 +12,12 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { getProviderIntegrationLookupIds } from './provider-integrations.js';
+import {
+  ANTHROPIC_OAUTH_PLUGIN_PACKAGE,
+  ANTHROPIC_OAUTH_PLUGIN_SPEC,
+  isAnthropicOAuthPluginSpec,
+  reconcileAnthropicOAuthPluginSpecs,
+} from './anthropic-oauth-plugin.js';
 
 const ANTHROPIC_OAUTH_PROVIDER_IDS = new Set([
   'anthropic',
@@ -20,7 +26,7 @@ const ANTHROPIC_OAUTH_PROVIDER_IDS = new Set([
   'opencode-with-claude',
 ]);
 const ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID = 'anthropic';
-const ANTHROPIC_OAUTH_PLUGIN_NAME = 'opencode-with-claude';
+const ANTHROPIC_OAUTH_PLUGIN_NAME = ANTHROPIC_OAUTH_PLUGIN_PACKAGE;
 const ANTHROPIC_OAUTH_DEFAULT_BASE_URL = 'http://127.0.0.1:3456';
 const CURSOR_ACP_PROVIDER_ID = 'cursor-acp';
 const CURSOR_ACP_PLUGIN_NAME = '@rama_nigg/open-cursor@latest';
@@ -98,7 +104,7 @@ function hasAnyProviderConfig(config, providerIds) {
 
 function hasAnthropicOAuthPlugin(config) {
   const plugins = Array.isArray(config?.plugin) ? config.plugin : [];
-  return plugins.some((entry) => entry === ANTHROPIC_OAUTH_PLUGIN_NAME);
+  return plugins.some(isAnthropicOAuthPluginSpec);
 }
 
 function hasAnthropicOAuthOptions(config) {
@@ -220,10 +226,6 @@ function resolveActiveProviderSource(providerSources, officialUserConfigPath = O
   };
 }
 
-function ensureStringArray(value) {
-  return Array.isArray(value) ? value.filter((entry) => typeof entry === 'string') : [];
-}
-
 function ensureAnthropicOAuthProviderConfig({
   workingDirectory = null,
   baseURL = ANTHROPIC_OAUTH_DEFAULT_BASE_URL,
@@ -232,10 +234,8 @@ function ensureAnthropicOAuthProviderConfig({
   const targetPath = workingDirectory ? layers.paths.projectPath : layers.paths.userPath;
   const targetConfig = workingDirectory ? layers.projectConfig : layers.userConfig;
 
-  const plugin = ensureStringArray(targetConfig.plugin);
-  const nextPlugin = plugin.includes(ANTHROPIC_OAUTH_PLUGIN_NAME)
-    ? plugin
-    : [...plugin, ANTHROPIC_OAUTH_PLUGIN_NAME];
+  const plugin = Array.isArray(targetConfig.plugin) ? [...targetConfig.plugin] : [];
+  const nextPlugin = reconcileAnthropicOAuthPluginSpecs(plugin);
 
   const provider = isPlainObject(targetConfig.provider) ? targetConfig.provider : {};
   const existingAnthropic = isPlainObject(provider[ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID])
@@ -260,6 +260,8 @@ function ensureAnthropicOAuthProviderConfig({
 
   const changed =
     !hadOAuthPlugin ||
+    plugin.length !== nextPlugin.length ||
+    plugin.some((entry, index) => entry !== nextPlugin[index]) ||
     !hadOAuthOptions ||
     !Array.isArray(targetConfig.plugin) ||
     !isPlainObject(targetConfig.provider) ||
@@ -1164,6 +1166,7 @@ function removeProviderConfig(providerId, workingDirectory, scope = 'user') {
 export {
   ANTHROPIC_OAUTH_DEFAULT_BASE_URL,
   ANTHROPIC_OAUTH_PLUGIN_NAME,
+  ANTHROPIC_OAUTH_PLUGIN_SPEC,
   CURSOR_ACP_DEFAULT_BASE_URL,
   CURSOR_ACP_PLUGIN_NAME,
   CURSOR_ACP_PROXY_HEALTH_URL,

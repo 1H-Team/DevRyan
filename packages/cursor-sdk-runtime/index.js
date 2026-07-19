@@ -104,6 +104,15 @@ const isPlainObject = (value) => (
   value !== null && typeof value === 'object' && !Array.isArray(value)
 );
 
+const SYNTHETIC_WORKSPACE_PATCH_METADATA_KEY = 'syntheticWorkspacePatch';
+
+const sanitizeProviderToolMetadata = (value) => {
+  if (!isPlainObject(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value).filter(([key]) => key !== SYNTHETIC_WORKSPACE_PATCH_METADATA_KEY),
+  );
+};
+
 const importRuntimeModule = (specifier) => {
   const importer = new Function('specifier', 'return import(specifier)');
   return importer(specifier);
@@ -3821,6 +3830,7 @@ export function createCursorSdkRuntime(options = {}) {
           metadata: {
             patchText,
             files,
+            [SYNTHETIC_WORKSPACE_PATCH_METADATA_KEY]: true,
           },
           time: {
             start: created,
@@ -4462,8 +4472,8 @@ export function createCursorSdkRuntime(options = {}) {
               : '';
             const toolFailureReason = providerFailureReason || existingFailureReason;
             const metadata = {
-              ...(isPlainObject(existingState.metadata) ? existingState.metadata : {}),
-              ...(isPlainObject(message.metadata) ? message.metadata : {}),
+              ...sanitizeProviderToolMetadata(existingState.metadata),
+              ...sanitizeProviderToolMetadata(message.metadata),
               ...(existingSummary ? { cursorTaskSummary: existingSummary } : {}),
             };
             const toolPart = {

@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test"
 import type { Message, Part, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import type { Session } from "@opencode-ai/sdk/v2"
 import {
+  captureSessionStatusBaseline,
+  filterUnchangedSessionStatusCandidates,
   getReconnectCandidateSessionIds,
   mergeAuthoritativeSessionStatuses,
   mergeRecoveredSessionStatuses,
@@ -42,6 +44,22 @@ function createState(overrides: Partial<State> = {}): State {
 }
 
 describe("getReconnectCandidateSessionIds", () => {
+  test("keeps only candidates whose complete status contract matches the captured baseline", () => {
+    const baseline = captureSessionStatusBaseline({
+      stable: { type: "idle" } as SessionStatus,
+      changed: { type: "retry", attempt: 1, message: "retrying", next: 100 } as SessionStatus,
+    }, ["stable", "changed", "missing"])
+
+    expect(filterUnchangedSessionStatusCandidates({
+      current: {
+        stable: { type: "idle" } as SessionStatus,
+        changed: { type: "retry", attempt: 2, message: "retrying", next: 100 } as SessionStatus,
+      },
+      candidateSessionIds: ["stable", "changed", "missing"],
+      baseline,
+    })).toEqual(["stable", "missing"])
+  })
+
   test("includes non-idle, incomplete assistant, and parent sessions", () => {
     const busyStatus = { type: "busy" } as SessionStatus
 

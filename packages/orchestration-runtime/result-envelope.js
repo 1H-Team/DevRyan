@@ -7,7 +7,7 @@ import {
 } from './contract.js';
 
 const textEncoder = new TextEncoder();
-const ACTIONS = new Set(['continue', 'resume', 'retry', 'retry_in_place', 'abandon']);
+const ACTIONS = new Set(['continue', 'resume', 'retry', 'recover_in_place', 'retry_in_place', 'abandon']);
 
 const assertString = (value, field, { prefix, allowEmpty = false, maxBytes } = {}) => {
   if (typeof value !== 'string' || (!allowEmpty && value.trim().length === 0)) {
@@ -55,7 +55,7 @@ export const validateManagedTaskResultEnvelope = (envelope) => {
     throw new TypeError('result attempt must be a positive integer');
   }
   assertNullableString(envelope.priorTaskId, 'priorTaskId', { prefix: 'dvr_task_' });
-  if (!['start', 'retry', 'resume', 'retry_in_place'].includes(envelope.executionKind)) {
+  if (!['start', 'retry', 'resume', 'recover_in_place', 'retry_in_place'].includes(envelope.executionKind)) {
     throw new TypeError('result executionKind is invalid');
   }
   assertString(envelope.recoverablePreview, 'recoverablePreview', {

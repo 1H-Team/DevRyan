@@ -5,6 +5,7 @@ import { join } from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createCursorSdkRuntime } from '@openchamber/cursor-sdk-runtime';
+import { collectSanitizedTools } from '../../../../../scripts/agent-evals/client.mjs';
 
 const waitFor = async (predicate) => {
   for (let index = 0; index < 25; index += 1) {
@@ -3306,6 +3307,10 @@ describe('Cursor SDK runtime', () => {
               status: 'completed',
               args: { path: 'src/a.ts' },
               result: 'edited',
+              metadata: {
+                syntheticWorkspacePatch: true,
+                providerDetail: 'retained',
+              },
             },
           };
           yield {
@@ -3339,10 +3344,13 @@ describe('Cursor SDK runtime', () => {
     });
 
     const patchTool = records?.[1]?.parts?.find((part) => part.type === 'tool' && part.tool === 'apply_patch');
+    const editTool = records?.[1]?.parts?.find((part) => part.type === 'tool' && part.tool === 'edit');
+    expect(editTool?.state?.metadata).toEqual({ providerDetail: 'retained' });
     expect(patchTool?.state).toMatchObject({
       status: 'completed',
       output: 'Applied 1 patch.',
       metadata: {
+        syntheticWorkspacePatch: true,
         files: [
           {
             relativePath: 'src/a.ts',
@@ -3353,6 +3361,17 @@ describe('Cursor SDK runtime', () => {
       },
     });
     expect(patchTool?.state?.metadata?.patchText).toContain('+line');
+    expect(collectSanitizedTools([{
+      sessionId: 'ses_1',
+      messages: records,
+    }], {
+      rootSessionId: 'ses_1',
+    })).toEqual([{
+      tool: 'edit',
+      status: 'completed',
+      final: true,
+      sessionScope: 'root',
+    }]);
   });
 
   it('adds scoped diff summary metadata to Cursor user messages when the workspace changes', async () => {

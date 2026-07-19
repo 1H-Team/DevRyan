@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { DEFAULT_PROFILE_ROOT, createUserProfileProvisioningRuntime } from './user-profile-provisioning.js';
+import { listDefaultConfigAssets } from './default-config-assets.js';
 
 const readJson = (filePath) => JSON.parse(fs.readFileSync(filePath, 'utf8'));
 const writeJson = (filePath, value) => {
@@ -53,7 +54,7 @@ describe('user profile provisioning', () => {
       'opencode-antigravity-auth@latest',
       '@rama_nigg/open-cursor@latest',
       'cursor-acp',
-      'opencode-with-claude',
+      'opencode-with-claude@1.6.18',
       'superpowers@git+https://github.com/obra/superpowers.git',
       './plugins/devryan-oh-my-opencode-slim.mjs',
     ]);
@@ -62,10 +63,13 @@ describe('user profile provisioning', () => {
       '@ai-sdk/openai-compatible': '^2.0.47',
       '@opencode-ai/plugin': '1.17.11',
       'oh-my-opencode-slim': '2.0.5',
+      'opencode-with-claude': '1.6.18',
     });
     expect(JSON.stringify(slim)).not.toContain('"mcps"');
     expect(fs.existsSync(path.join(configDir, 'agents', 'orchestrator.md'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-oh-my-opencode-slim.mjs'))).toBe(true);
+    expect(fs.existsSync(path.join(configDir, 'node_modules', 'oh-my-opencode-slim'))).toBe(true);
+    expect(fs.existsSync(path.join(configDir, 'node_modules', 'opencode-with-claude'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'skills', 'superpowers', 'README.md'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, '.openchamber', 'user-profile-manifest.json'))).toBe(true);
@@ -82,6 +86,25 @@ describe('user profile provisioning', () => {
       expect(relative.endsWith('.lock')).toBe(false);
       expect(relative.endsWith('.DS_Store')).toBe(false);
       expect(relative.split(path.sep).some((segment) => prohibitedSegments.has(segment.toLowerCase()))).toBe(false);
+    }
+
+    const defaultConfigRoot = path.dirname(DEFAULT_PROFILE_ROOT);
+    const expectedManagedFiles = (await listDefaultConfigAssets(defaultConfigRoot))
+      .flatMap((relativePath) => {
+        if (relativePath.startsWith('agents/')) return [relativePath];
+        if (relativePath === 'plugins/devryan-oh-my-opencode-slim.mjs') return [relativePath];
+        if (relativePath.startsWith('user-profile/')) return [relativePath];
+        return [];
+      })
+      .map((relativePath) => relativePath
+        .replace(/^user-profile\//, '')
+        .replace(/^plugins\//, 'plugins/'))
+      .sort();
+    const manifest = readJson(path.join(configDir, '.openchamber', 'user-profile-manifest.json'));
+
+    expect(Object.keys(manifest.files).sort()).toEqual(expectedManagedFiles);
+    for (const relativePath of expectedManagedFiles) {
+      expect(fs.existsSync(path.join(configDir, relativePath))).toBe(true);
     }
   });
 
@@ -104,6 +127,24 @@ describe('user profile provisioning', () => {
     expect(config.agent.custom).toEqual({ description: 'keep' });
     expect(config.plugin).toContain('custom-plugin');
     expect(commands).toHaveLength(1);
+  });
+
+  it('migrates the old managed Claude plugin while preserving explicit user pins', async () => {
+    const configPath = path.join(home, '.config', 'opencode', 'opencode.json');
+    writeJson(configPath, { plugin: ['opencode-with-claude'] });
+
+    await createRuntime().provision();
+    expect(readJson(configPath).plugin).toContain('opencode-with-claude@1.6.18');
+    expect(readJson(configPath).plugin).not.toContain('opencode-with-claude');
+
+    const pinnedHome = path.join(root, 'pinned-home');
+    const pinnedPath = path.join(pinnedHome, '.config', 'opencode', 'opencode.json');
+    writeJson(pinnedPath, { plugin: ['opencode-with-claude@1.6.17'] });
+    home = pinnedHome;
+
+    await createRuntime().provision();
+    const pinned = readJson(pinnedPath).plugin.filter((entry) => entry.startsWith('opencode-with-claude'));
+    expect(pinned).toEqual(['opencode-with-claude@1.6.17']);
   });
 
   it('preserves and reports a user-modified managed file', async () => {

@@ -20,6 +20,10 @@ import {
 } from '@/lib/theme/themes';
 import { ThemeSystemContext, type ThemeContextValue } from './theme-system-context';
 import type { VSCodeThemePayload } from '@/lib/theme/vscode/adapter';
+import {
+  migrateThemeCatalogLocalStorage,
+  THEME_CATALOG_VERSION,
+} from '@/lib/theme/catalogMigration';
 
 type ThemePreferences = {
   themeMode: ThemeMode;
@@ -144,6 +148,7 @@ const buildInitialPreferences = (defaultThemeId?: string): ThemePreferences => {
   let themeMode: ThemeMode = 'system';
 
   if (typeof window !== 'undefined') {
+    migrateThemeCatalogLocalStorage(localStorage);
     const storedMode = localStorage.getItem('themeMode');
     const storedLightId = localStorage.getItem('lightThemeId');
     const storedDarkId = localStorage.getItem('darkThemeId');
@@ -564,6 +569,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
 
     void updateDesktopSettings({
       themeId: currentTheme.metadata.id,
+      themeCatalogVersion: THEME_CATALOG_VERSION,
       themeVariant: currentTheme.metadata.variant === 'light' ? 'light' : 'dark',
       useSystemTheme: preferences.themeMode === 'system',
       lightThemeId: preferences.lightThemeId,

@@ -34,6 +34,7 @@ const formatTime = (timestamp: number | null) => {
 };
 
 const CLAUDE_CODE_USAGE_PENDING_CODE = 'claude_code_usage_pending';
+const CLAUDE_CODE_SESSION_LIMIT_CODE = 'claude_code_session_limit';
 
 interface ModelInfo {
   name: string;
@@ -99,6 +100,7 @@ export const UsagePage: React.FC = () => {
     selectedRefreshStatus.isStale || hasRetainedUsageAfterFailure
   ));
   const isClaudeUsagePending = selectedResult?.errorCode === CLAUDE_CODE_USAGE_PENDING_CODE;
+  const isClaudeSessionLimited = selectedResult?.errorCode === CLAUDE_CODE_SESSION_LIMIT_CODE;
   const showInDropdown = selectedProviderId ? dropdownProviderIds.includes(selectedProviderId) : false;
   const handleDropdownToggle = React.useCallback((enabled: boolean) => {
     if (!selectedProviderId) {
@@ -297,7 +299,14 @@ export const UsagePage: React.FC = () => {
           </div>
         )}
 
-        {showSelectedProviderError && !isClaudeUsagePending && (
+        {isClaudeSessionLimited && showSelectedProviderError && (
+          <div className="mb-8 rounded-lg border border-[var(--status-warning-border)] bg-[var(--status-warning-background)] px-4 py-3">
+            <p className="typography-ui-label font-medium text-[var(--status-warning)]">{t('settings.usage.page.state.claudeSessionLimitTitle')}</p>
+            <p className="typography-meta text-[var(--status-warning)]/80 mt-1">{selectedProviderError}</p>
+          </div>
+        )}
+
+        {showSelectedProviderError && !isClaudeUsagePending && !isClaudeSessionLimited && (
           <div className="mb-8 rounded-lg border border-[var(--status-error-border)] bg-[var(--status-error-background)] px-4 py-3">
             <p className="typography-ui-label font-medium text-[var(--status-error)]">{t('settings.usage.page.state.providerErrorTitle')}</p>
             <p className="typography-meta text-[var(--status-error)]/80 mt-1">{selectedProviderError}</p>

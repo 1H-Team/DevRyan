@@ -1,5 +1,6 @@
 import { resolveProviderPromptTools } from './provider-prompt-tools.js';
 import { formatManagedTaskDisplayName } from './contract.js';
+import { isDefiniteProviderUsageLimit } from './provider-retry-policy.js';
 
 const LIVE_STATUS_TYPES = new Set(['busy', 'retry']);
 export const MANAGED_RETRY_IN_PLACE_PROMPT = 'Continue the task from the existing progress. The previous provider could not continue. Do not repeat completed work.';
@@ -265,6 +266,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     'readStatus',
     'readMessages',
     'abortSession',
+    'deleteSession',
   ];
   for (const method of requiredMethods) {
     if (typeof transport?.[method] !== 'function') {
@@ -321,6 +323,74 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     directory: task.directory,
     providerId: task.providerId,
   });
+
+  const discardStaleChild = async (task, childSessionId, { deleteSession }) => {
+    const input = {
+      sessionId: childSessionId,
+      directory: task.directory,
+      providerId: task.providerId,
+    };
+    let abortFailure = null;
+    try {
+      const aborted = await transport.abortSession(input);
+      if (aborted === false) {
+        abortFailure = new Error(`Provider did not confirm abort for stale child ${childSessionId}`);
+      }
+    } catch (error) {
+      abortFailure = error instanceof Error ? error : new Error(String(error));
+    }
+    let deleteFailure = null;
+    let deletionConfirmed = false;
+    if (deleteSession) {
+      try {
+        const deleted = await transport.deleteSession(input);
+        if (deleted === false) {
+          deleteFailure = new Error(`OpenCode did not confirm deletion of stale child ${childSessionId}`);
+        } else {
+          deletionConfirmed = true;
+        }
+      } catch (error) {
+        deleteFailure = error instanceof Error ? error : new Error(String(error));
+      }
+    }
+    if (deletionConfirmed) return;
+    const failures = [abortFailure, deleteFailure].filter(Boolean);
+    if (failures.length > 0) {
+      throw new AggregateError(
+        failures,
+        `Failed to fully discard stale managed child ${childSessionId}`,
+      );
+    }
+  };
+
+  const retainCheckpoint = async ({
+    task,
+    childSessionId,
+    checkpoint,
+    stage,
+    deleteSession,
+  }) => {
+    let checkpointError = null;
+    try {
+      const retained = await checkpoint();
+      if (retained !== false) return;
+      checkpointError = new Error(
+        `Managed task ${task.taskId} lost launch ownership ${stage}`,
+      );
+    } catch (error) {
+      checkpointError = error instanceof Error ? error : new Error(String(error));
+    }
+
+    try {
+      await discardStaleChild(task, childSessionId, { deleteSession });
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [checkpointError, cleanupError],
+        `${checkpointError.message}; stale child cleanup also failed`,
+      );
+    }
+    throw checkpointError;
+  };
 
   const retryStatusIdentity = (status) => [
     trimString(status?.message),
@@ -404,6 +474,25 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
           resumable: true,
         };
       }
+      if (
+        observation.statusType === 'retry'
+        && isDefiniteProviderUsageLimit(observation.statusMessage)
+      ) {
+        void startRetryStop(task, {
+          type: observation.statusType,
+          message: observation.statusMessage,
+          attempt: observation.statusAttempt,
+          next: observation.statusNext,
+        });
+        return {
+          status: 'failed',
+          failureReason: observation.statusMessage,
+          partial: observation.hasUsefulWork,
+          recoverablePreview: observation.recoverablePreview,
+          canonicalRefs: observation.canonicalRefs,
+          resumable: true,
+        };
+      }
       const terminal = toTerminalResult(observation);
       if (terminal) {
         const isEmptyTerminal = terminal.status === 'failed'
@@ -434,7 +523,13 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     if (!childSessionId) {
       throw new Error('OpenCode did not return a managed child session ID');
     }
-    await control.setChildSessionId(childSessionId);
+    await retainCheckpoint({
+      task,
+      childSessionId,
+      checkpoint: () => control.setChildSessionId(childSessionId),
+      stage: 'before provider prompt',
+      deleteSession: true,
+    });
     const runningTask = { ...task, childSessionId };
     await transport.promptSession({
       sessionId: childSessionId,
@@ -446,7 +541,13 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       prompt: task.prompt,
       tools: resolveProviderPromptTools(task.providerId),
     });
-    await control.markAccepted();
+    await retainCheckpoint({
+      task,
+      childSessionId,
+      checkpoint: () => control.markAccepted(),
+      stage: 'after provider prompt',
+      deleteSession: true,
+    });
     return await waitForTerminal(runningTask);
   };
 
@@ -468,7 +569,13 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       prompt: MANAGED_RETRY_IN_PLACE_PROMPT,
       tools: resolveProviderPromptTools(task.providerId),
     });
-    await control.markAccepted();
+    await retainCheckpoint({
+      task,
+      childSessionId: task.childSessionId,
+      checkpoint: () => control.markAccepted(),
+      stage: 'after retry-in-place prompt',
+      deleteSession: false,
+    });
     return await waitForTerminal(task, { deferEmptyTerminal: true });
   };
 
@@ -520,12 +627,13 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     resume: observe,
     retryInPlace,
     observe,
-    async abort(task) {
+    async abort(task, options = {}) {
       if (!task.childSessionId) return { aborted: false, failureReason: 'Managed task has no child session' };
       const aborted = await transport.abortSession({
         sessionId: task.childSessionId,
         directory: task.directory,
         providerId: task.providerId,
+        signal: options.signal,
       });
       return {
         aborted: aborted !== false,

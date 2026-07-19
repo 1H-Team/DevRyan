@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { listDefaultConfigAssets } from '../../web/server/lib/opencode/default-config-assets.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,7 +13,9 @@ const desktopTauriDir = path.join(repoRoot, 'packages', 'desktop', 'src-tauri');
 
 const resourcesDir = path.join(desktopTauriDir, 'resources');
 const resourcesWebDistDir = path.join(resourcesDir, 'web-dist');
+const resourcesDefaultConfigDir = path.join(resourcesDir, 'default-config');
 const webDistDir = path.join(webDir, 'dist');
+const defaultConfigDir = path.join(webDir, 'server', 'default-config');
 
 const sidecarsDir = path.join(desktopTauriDir, 'sidecars');
 
@@ -109,6 +112,13 @@ console.log('[desktop] preparing tauri resources...');
 await fs.mkdir(resourcesDir, { recursive: true });
 await fs.rm(resourcesWebDistDir, { recursive: true, force: true });
 await copyDir(webDistDir, resourcesWebDistDir);
+await fs.rm(resourcesDefaultConfigDir, { recursive: true, force: true });
+for (const relativePath of await listDefaultConfigAssets(defaultConfigDir)) {
+  const sourcePath = path.join(defaultConfigDir, relativePath);
+  const targetPath = path.join(resourcesDefaultConfigDir, relativePath);
+  await fs.mkdir(path.dirname(targetPath), { recursive: true });
+  await fs.copyFile(sourcePath, targetPath);
+}
 
 console.log('[desktop] building openchamber-server sidecar...');
 await fs.mkdir(sidecarsDir, { recursive: true });
@@ -133,3 +143,4 @@ if (process.platform !== 'win32') {
 
 console.log(`[desktop] sidecar ready: ${sidecarOutPath}`);
 console.log(`[desktop] web assets ready: ${resourcesWebDistDir}`);
+console.log(`[desktop] default config ready: ${resourcesDefaultConfigDir}`);

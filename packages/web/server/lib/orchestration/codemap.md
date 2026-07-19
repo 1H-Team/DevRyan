@@ -6,9 +6,9 @@ Web/Electron owner adapter for the transport-neutral DevRyan-managed task schedu
 
 ## Files
 
-- `runtime.js`: composes one scheduler, safe scoped RPC projection including barrier inspection and confirmed agent handoff, external-runtime gate, event publication, and shutdown.
+- `runtime.js`: composes one scheduler, safe scoped RPC projection including validated 25-second maximum wait slices, barrier inspection and confirmed agent handoff, external-runtime gate, event publication, and shutdown.
 - `atomic-ledger.js`: private atomic JSON persistence, legacy dispatch-group hydration, and corrupt-ledger quarantine.
-- `open-code-executor.js`: managed OpenCode HTTP transport and Cursor SDK routing for the shared executor state machine.
+- `open-code-executor.js`: managed OpenCode HTTP transport and Cursor SDK routing for the shared executor state machine, including cross-owner stale-child abort/deletion cleanup.
 - `private-host.js`: authenticated IPv4-loopback RPC listener with bounded bodies and deterministic close.
 - `routes.js`: authenticated UI snapshot, task, cancellation, acknowledgement, and Orchestrator-to-Builder handoff endpoints.
 - `*.test.js`: focused owner, transport, persistence, security, and lifecycle coverage.

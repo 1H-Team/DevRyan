@@ -1,5 +1,5 @@
 import React from 'react';
-import { AgentManagerView } from '@/components/views/agent-manager';
+import { LazyAgentManagerView, LazyViewBoundary } from '@/components/views/lazyViews';
 import { FireworksProvider } from '@/contexts/FireworksContext';
 import { RuntimeAPIProvider } from '@/contexts/RuntimeAPIProvider';
 import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
@@ -388,7 +388,9 @@ export function VSCodeApp({ apis }: VSCodeAppProps) {
               <div className="h-full text-foreground bg-background">
                 <VSCodeStartupReadyDispatcher currentDirectory={currentDirectory} bypassChatReadiness />
                 <SyncAppEffects embeddedBackgroundWorkEnabled={true} />
-                <AgentManagerView />
+                <LazyViewBoundary>
+                  <LazyAgentManagerView />
+                </LazyViewBoundary>
                 <Toaster />
               </div>
             </TooltipProvider>

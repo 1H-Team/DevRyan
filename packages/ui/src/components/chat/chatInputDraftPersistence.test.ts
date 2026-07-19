@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   createComposerDraftPersistenceController,
+  getComposerConfirmedMentionsStorageKey,
   getComposerDraftStorageKey,
   resolveComposerDraftTarget,
 } from "./chatInputDraftPersistence"
@@ -74,5 +75,23 @@ describe("chat input draft persistence", () => {
     controller.save(session, "unsent session text", new Set())
 
     expect(storage.getItem("openchamber_chat_input_draft_session-a")).toBe("unsent session text")
+  })
+
+  test("retired session targets suppress target-switch writeback of text and mentions", () => {
+    const storage = createMemoryStorage()
+    const controller = createComposerDraftPersistenceController({
+      storage,
+      updateDraftText: () => {
+        throw new Error("session targets must not update draft state")
+      },
+    })
+    const session = resolveComposerDraftTarget("session-delete", null)
+
+    controller.save(session, "unsent @README.md", new Set(["README.md"]))
+    controller.retire(session)
+    controller.save(session, "resurrected @README.md", new Set(["README.md"]))
+
+    expect(storage.getItem(getComposerDraftStorageKey(session)!)).toBeNull()
+    expect(storage.getItem(getComposerConfirmedMentionsStorageKey(session)!)).toBeNull()
   })
 })

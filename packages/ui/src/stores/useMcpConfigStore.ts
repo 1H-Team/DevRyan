@@ -8,6 +8,7 @@ import {
 import { refreshAfterOpenCodeRestart } from '@/stores/useAgentsStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { opencodeClient } from '@/lib/opencode/client';
+import { useMcpStore } from '@/stores/useMcpStore';
 
 export type McpScope = 'user' | 'project';
 
@@ -352,6 +353,7 @@ export const useMcpConfigStore = create<McpConfigStore>()(
             if (get().selectedMcpName === name) {
               set({ selectedMcpName: null });
             }
+            useMcpStore.getState().clearIssue(name, configDirectory);
             await get().loadMcpConfigs({ force: true });
             return {
               ok: true,

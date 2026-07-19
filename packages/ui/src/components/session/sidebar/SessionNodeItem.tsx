@@ -37,15 +37,16 @@ import { canUseElectronDesktopIPC, invokeDesktop, isVSCodeRuntime } from '@/lib/
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { buildExportFilename, downloadAsMarkdown, formatSessionAsMarkdown, getExportRevealLabelKey, revealExportedMarkdown, saveAsMarkdownDesktop } from '@/lib/exportSession';
+import { buildExportFilename, formatSessionAsMarkdown, getExportRevealLabelKey, revealExportedMarkdown } from '@/lib/exportSession';
 import type { ChildSessionExport } from '@/lib/exportSession';
+import { saveSessionExportMarkdown } from '@/lib/sessionExportSave';
 import { buildSessionMessageRecordsSnapshot, useDirectoryStore, useDirectorySync, useIsSessionWorking, useSession, useSessionPermissions } from '@/sync/sync-context';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSync } from '@/sync/use-sync';
 import { useViewportStore } from '@/sync/viewport-store';
 import { DraggableSessionRow } from './sessionFolderDnd';
 import type { SessionNode, SessionSummaryMeta } from './types';
-import { formatSessionCompactDateLabel, normalizePath, renderHighlightedText, resolveSessionDiffStats } from './utils';
+import { formatSessionCompactDateLabel, normalizePath, renderHighlightedText, resolveSessionDiffStats, resolveSessionRoutingDirectory } from './utils';
 import { useSessionMultiSelectStore } from '@/stores/useSessionMultiSelectStore';
 import {
   managedOrchestrationSelectors,
@@ -59,6 +60,7 @@ import type { SessionIndicator } from './sessionIndicator';
 import { useSessionLifecycleStatus } from '@/hooks/useSessionLifecycleStatus';
 import { SidebarSpinner } from './SidebarSpinner';
 import { resolveSessionRowInteractionClasses } from './sessionRowInteractionClasses';
+import { resolveSessionRowAuxAction } from './sessionRowAuxAction';
 import { hasTreeExpansionStateChange } from './sessionNodeMemo';
 import { SessionSidebarMotionRow } from './SessionSidebarMotionRow';
 
@@ -70,6 +72,8 @@ type SecondaryMeta = {
   projectLabel?: string | null;
   branchLabel?: string | null;
 };
+
+class EmptySessionExportError extends Error {}
 
 type Props = {
   node: SessionNode;
@@ -319,10 +323,18 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const [isTouchPressed, setIsTouchPressed] = React.useState(false);
   const liveSession = useSession(session.id);
   const resolvedSession = liveSession ?? session;
+  const sessionDirectoryHint = useSessionUIStore(
+    React.useCallback(
+      (state) => state.sessionDirectoryHints.get(session.id) ?? null,
+      [session.id],
+    ),
+  );
 
-  const sessionDirectory =
-    normalizePath((session as Session & { directory?: string | null }).directory ?? null)
-    ?? normalizePath(groupDirectory ?? null);
+  const sessionDirectory = resolveSessionRoutingDirectory(
+    sessionDirectoryHint,
+    (session as Session & { directory?: string | null }).directory ?? null,
+    groupDirectory,
+  );
   const directoryStore = useDirectoryStore(sessionDirectory ?? undefined);
   const sync = useSync();
 
@@ -347,6 +359,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
 
   const [exportDialogOpen, setExportDialogOpen] = React.useState(false);
   const [exportIncludeSubtasks, setExportIncludeSubtasks] = React.useState(true);
+  const exportInFlightRef = React.useRef(false);
 
   const menuInstanceKey = `${renderContext}:${archivedBucket ? 'archived' : 'active'}:${session.id}`;
   const isZombie = useViewportStore(
@@ -469,51 +482,90 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   }, [t]);
 
   const doExportSession = React.useCallback(async (includeSubtasks: boolean) => {
+    if (exportInFlightRef.current) return;
+
     if (!sessionDirectory) {
       toast.error(t('sessions.sidebar.session.export.nothingToExport'));
       return;
     }
 
-    await sync.ensureSessionRenderable(session.id);
+    exportInFlightRef.current = true;
+    const preparingToastId = `session-export-preparing-${session.id}`;
+    toast.loading(t('sessions.sidebar.session.export.preparing'), { id: preparingToastId });
 
-    const records = buildSessionMessageRecordsSnapshot(directoryStore.getState(), session.id).list;
-    if (records.length === 0) {
-      toast.error(t('sessions.sidebar.session.export.nothingToExport'));
-      return;
-    }
+    try {
+      const preparedExportPromise = (async () => {
+        await sync.ensureSessionRenderable(session.id);
 
-    let childExports: ChildSessionExport[] | undefined;
-    let skippedSubtaskCount = 0;
-    if (includeSubtasks && node.children.length > 0) {
-      const collected = await collectChildExports(node.children);
-      childExports = collected.children;
-      skippedSubtaskCount = collected.skipped;
-    }
+        const records = buildSessionMessageRecordsSnapshot(directoryStore.getState(), session.id).list;
+        if (records.length === 0) {
+          throw new EmptySessionExportError();
+        }
 
-    const markdown = formatSessionAsMarkdown(records, resolvedSession.title ?? null, childExports);
-    const filename = buildExportFilename(resolvedSession.title ?? null);
-    const savedPath = await saveAsMarkdownDesktop(markdown, filename);
+        let childExports: ChildSessionExport[] | undefined;
+        let skippedSubtaskCount = 0;
+        if (includeSubtasks && node.children.length > 0) {
+          const collected = await collectChildExports(node.children);
+          childExports = collected.children;
+          skippedSubtaskCount = collected.skipped;
+        }
 
-    if (savedPath) {
-      toast.success(t('sessions.sidebar.session.export.success'), {
-        action: {
-          label: t(getExportRevealLabelKey()),
-          onClick: () => {
-            void revealExportedMarkdown(savedPath).then((revealed) => {
-              if (!revealed) {
-                toast.error(t('sessions.sidebar.session.export.failedRevealPath'));
-              }
-            });
+        return {
+          markdown: formatSessionAsMarkdown(records, resolvedSession.title ?? null, childExports),
+          skippedSubtaskCount,
+        };
+      })();
+
+      const filename = buildExportFilename(resolvedSession.title ?? null);
+      const saveResult = await saveSessionExportMarkdown(
+        preparedExportPromise.then((prepared) => prepared.markdown),
+        filename,
+      );
+
+      if (saveResult.status === 'canceled') {
+        return;
+      }
+
+      const preparedExport = await preparedExportPromise;
+
+      if (saveResult.status === 'downloaded') {
+        toast.success(t('sessions.sidebar.session.export.downloaded'));
+        showSkippedSubtasksWarning(preparedExport.skippedSubtaskCount);
+        return;
+      }
+
+      if (saveResult.status === 'saved' && saveResult.path) {
+        const savedPath = saveResult.path;
+        toast.success(t('sessions.sidebar.session.export.success'), {
+          action: {
+            label: t(getExportRevealLabelKey()),
+            onClick: () => {
+              void revealExportedMarkdown(savedPath).then((revealed) => {
+                if (!revealed) {
+                  toast.error(t('sessions.sidebar.session.export.failedRevealPath'));
+                }
+              });
+            },
           },
-        },
-      });
-      showSkippedSubtasksWarning(skippedSubtaskCount);
-      return;
-    }
+        });
+        showSkippedSubtasksWarning(preparedExport.skippedSubtaskCount);
+        return;
+      }
 
-    downloadAsMarkdown(markdown, filename);
-    toast.success(t('sessions.sidebar.session.export.success'));
-    showSkippedSubtasksWarning(skippedSubtaskCount);
+      toast.success(t('sessions.sidebar.session.export.success'));
+      showSkippedSubtasksWarning(preparedExport.skippedSubtaskCount);
+    } catch (error) {
+      if (error instanceof EmptySessionExportError) {
+        toast.error(t('sessions.sidebar.session.export.nothingToExport'));
+        return;
+      }
+      toast.error(t('sessions.sidebar.session.export.failed'), {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      toast.dismiss(preparingToastId);
+      exportInFlightRef.current = false;
+    }
   }, [collectChildExports, directoryStore, node.children, resolvedSession.title, session.id, sessionDirectory, showSkippedSubtasksWarning, sync, t]);
   const handleExportSession = React.useCallback(async () => {
     if (node.children.length > 0) {
@@ -752,7 +804,8 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   };
 
   const handleRowMouseDown = (event: React.MouseEvent<HTMLButtonElement>) => {
-    if (event.button === 1 && !archivedBucket) {
+    const auxAction = resolveSessionRowAuxAction(event.button, archivedBucket, isArchiveAncestorOnly);
+    if (auxAction) {
       event.preventDefault();
       event.stopPropagation();
       return;
@@ -772,10 +825,15 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   };
 
   const handleRowAuxClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-    if (event.button !== 1 || archivedBucket) return;
+    const auxAction = resolveSessionRowAuxAction(event.button, archivedBucket, isArchiveAncestorOnly);
+    if (!auxAction) return;
     event.preventDefault();
     event.stopPropagation();
     setOpenSidebarMenuKey(null);
+    if (auxAction === 'delete') {
+      handleDeleteSession(session, { archivedBucket: true });
+      return;
+    }
     handleArchiveSession(session);
   };
 

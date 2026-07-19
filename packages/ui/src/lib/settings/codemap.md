@@ -4,7 +4,7 @@
 Settings-domain helpers for defaults, migration, and persistence shaping.
 
 ## Design
-Separates settings schema logic from view components.
+Separates settings schema logic from view components. `navigation-icons.ts` owns the lightweight, exhaustive settings-page icon map shared by Settings and command navigation so consumers do not import the heavyweight Settings view.
 
 ## Flow
 Settings UI reads defaults/current values, applies edits, then persists normalized payloads.

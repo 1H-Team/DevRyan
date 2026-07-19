@@ -8,6 +8,7 @@ This module fetches quota and usage signals for supported providers in the web s
 - `packages/web/server/lib/quota/routes.js`: Express route registration for quota endpoints.
 - `packages/web/server/lib/quota/providers/index.js`: provider registry, configured-provider list, and provider dispatcher.
 - `packages/web/server/lib/quota/providers/interface.js`: JSDoc provider contract used as implementation reference.
+- `packages/web/server/lib/quota/credentials/`: allowlisted managed-credential normalization, private atomic storage, and explicit Cursor import.
 - `packages/web/server/lib/quota/providers/google/`: Google/Gemini and Antigravity auth-source-specific API and transform modules.
 - `packages/web/server/lib/quota/utils/`: shared auth, transform, and formatting helpers.
 
@@ -19,7 +20,7 @@ These provider IDs are currently dispatchable via `fetchQuotaForProvider(provide
 | --- | --- | --- | --- |
 | `claude` | Anthropic | `providers/claude.js` | `anthropic`, `claude`, `anthropic-oauth`, `opencode-with-claude` |
 | `codex` | ChatGPT | `providers/codex.js` | `openai`, `codex`, `chatgpt` |
-| `cursor-acp` | Cursor | `providers/cursor-acp.js` | `cursor-acp.usageSessionToken` |
+| `cursor-acp` | Cursor | `providers/cursor-acp.js` | Environment/token-file OAuth, managed OAuth/dashboard credential, then legacy `cursor-acp.usageSessionToken`; API alias `cursor` |
 | `google` | Google | `providers/google/index.js` | `google`, `google.oauth` |
 | `antigravity` | Antigravity | `providers/google/index.js` | Antigravity accounts file |
 | `github-copilot` | GitHub Copilot | `providers/copilot.js` | `github-copilot`, `copilot` |
@@ -27,12 +28,12 @@ These provider IDs are currently dispatchable via `fetchQuotaForProvider(provide
 | `kimi-for-coding` | Kimi for Coding | `providers/kimi.js` | `kimi-for-coding`, `kimi` |
 | `nano-gpt` | NanoGPT | `providers/nanogpt.js` | `nano-gpt`, `nanogpt`, `nano_gpt` |
 | `openrouter` | OpenRouter | `providers/openrouter.js` | `openrouter` |
-| `opencode-go` | OpenCode Go | `providers/opencode-go.js` | `opencode-go`, `opencodego`, `go`; usage credentials from `OPENCODE_GO_WORKSPACE_ID` + `OPENCODE_GO_AUTH_COOKIE` or auth fields `usageWorkspaceId` + `usageAuthCookie` |
+| `opencode-go` | OpenCode Go | `providers/opencode-go.js` | `opencode-go`, `opencodego`, `go`; environment pair, managed credential, then legacy auth usage fields |
 | `zai-coding-plan` | z.ai | `providers/zai.js` | `zai-coding-plan`, `zai`, `z.ai` |
 | `zhipuai-coding-plan` | Zhipu AI Coding Plan | `providers/zhipuai-coding-plan.js` | `zhipuai-coding-plan`, `zhipuai`, `zhipu` |
 | `minimax-coding-plan` | MiniMax Coding Plan (minimax.io) | `providers/minimax-coding-plan.js` | `minimax-coding-plan` |
 | `minimax-cn-coding-plan` | MiniMax Coding Plan (minimaxi.com) | `providers/minimax-cn-coding-plan.js` | `minimax-cn-coding-plan` |
-| `ollama-cloud` | Ollama Cloud | `providers/ollama-cloud.js` | Cookie file at `~/.config/ollama-quota/cookie` (raw session cookie string) |
+| `ollama-cloud` | Ollama Cloud | `providers/ollama-cloud.js` | Managed cookie, then legacy `~/.config/ollama-quota/cookie` fallback |
 
 ## Codex reset-bank credits
 
@@ -52,11 +53,37 @@ The reset-credit endpoint is undocumented and can change independently of the st
 The Claude provider has two usage data sources, in priority order:
 
 1. When OpenCode auth contains an Anthropic OAuth access token, `providers/claude.js` calls Anthropic's OAuth usage endpoint (`https://api.anthropic.com/api/oauth/usage`) and maps `five_hour`, `seven_day`, and model-specific seven-day windows into the shared quota response shape.
-2. When no token exists but the local `opencode-with-claude` proxy config is detected, `providers/claude.js` self-heals the Claude Code status-line bridge and reads Claude Code's status JSON. This path reports the overall 5-hour and 7-day windows from Claude Code `rate_limits` data. If Claude Code has not emitted a status-line payload yet, OpenChamber runs `claude -p "Reply with exactly: OK" --output-format text` to force a minimal non-interactive Claude Code response, then reads the status JSON again. If the CLI is missing, unauthenticated, or still does not emit status-line usage, the provider returns a configured error with deterministic guidance.
+2. When no token exists but a bare or versioned local `opencode-with-claude` proxy config is detected, `providers/claude.js` self-heals the Claude Code status-line bridge and reads Claude Code's status JSON. This path reports the overall 5-hour and 7-day windows from Claude Code `rate_limits` data. If Claude Code has not emitted a status-line payload yet, DevRyan runs `claude -p "Reply with exactly: OK" --output-format text` only to refresh usage, then reads the status JSON again. This usage refresh is separate from authentication, which uses the non-billable `claude auth status --json` path. Refresh output is captured from both stdout and stderr; a Claude session/usage-limit response is returned as `claude_code_session_limit` instead of being mislabeled as invalid authentication or a generic exit-code failure.
 
 ## OpenCode Go usage source
 
-OpenCode Go usage is dashboard-backed because OpenCode documents Go model endpoints but not a stable usage API. `providers/opencode-go.js` reads `OPENCODE_GO_WORKSPACE_ID` + `OPENCODE_GO_AUTH_COOKIE` first, then falls back to `auth["opencode-go"].usageWorkspaceId` + `auth["opencode-go"].usageAuthCookie`. It fetches `https://opencode.ai/workspace/<workspaceId>/go` with the `auth` cookie and parses the server-rendered `rollingUsage`, `weeklyUsage`, and `monthlyUsage` fields into the shared quota window shape. The provider is considered configured when either the Go API key or usage credentials exist; if only the API key exists, the quota result returns a configured setup error instead of hiding the provider.
+OpenCode Go usage is dashboard-backed because OpenCode documents Go model endpoints but not a stable usage API. `providers/opencode-go.js` resolves a complete environment credential first, then the managed credential, then `auth["opencode-go"].usageWorkspaceId` + `auth["opencode-go"].usageAuthCookie`. It fetches `https://opencode.ai/workspace/<workspaceId>/go` with manual redirect handling and parses the server-rendered `rollingUsage`, `weeklyUsage`, and `monthlyUsage` fields into the shared quota window shape. The provider is considered configured when either the Go API key or usage credentials exist; if only the API key exists, the quota result returns a configured setup error instead of hiding the provider.
+
+## Managed quota credentials
+
+The managed layer is additive and does not replace or mutate existing provider auth. Canonical provider IDs are `opencode-go`, `ollama-cloud`, and `cursor-acp`; HTTP callers may use `cursor` as an alias for `cursor-acp`, but discovery exposes only the canonical row.
+
+- Files live under `${OPENCHAMBER_DATA_DIR ?? ~/.config/openchamber}/quota/<provider>.json`.
+- Provider IDs are allowlisted before path construction. Directories use mode `0700`; temporary and final files use `0600`; writes use same-directory atomic rename with exact temporary-file cleanup.
+- Payloads are bounded to 16 KB in the route and storage host, use exact provider-specific shapes, and reject CR/LF/NUL injection, unknown fields, mixed Cursor dashboard/OAuth forms, and invalid workspace IDs.
+- Status responses contain only `configured`, optional safe metadata (`workspaceId`, `credentialKind`, `hasRefreshToken`, `effectiveSource`), and a fixed mask. Secrets and secret fragments are never returned or logged.
+- `configured` describes only the managed file. `effectiveSource` may still report an environment, token-file, or legacy fallback after deletion.
+
+Routes are registered before the generic provider route:
+
+- `GET /api/quota/credentials/:providerId`
+- `PUT /api/quota/credentials/:providerId` (validate before write)
+- `POST /api/quota/credentials/:providerId/validate`
+- `POST /api/quota/credentials/:providerId/import` (Cursor on macOS only)
+- `DELETE /api/quota/credentials/:providerId`
+
+Stable error codes are `UNSUPPORTED_PROVIDER`, `INVALID_CREDENTIAL`, `NOT_CONFIGURED`, `IMPORT_UNAVAILABLE`, and `PAYLOAD_TOO_LARGE`. Cursor import performs a fixed, read-only SQLite query through an argument array and never writes Cursor's database. Cursor OAuth access-token refresh persists only when the source is the managed file; environment variables, token files, Cursor storage, legacy OpenCode auth fields, and the Cursor SDK execution key are never modified.
+
+Credential precedence is intentional:
+
+1. OpenCode Go: explicit environment pair → managed credential → legacy OpenCode auth usage fields.
+2. Cursor: explicit environment OAuth → explicit token-file OAuth → managed OAuth/dashboard → legacy dashboard session token.
+3. Ollama Cloud: managed cookie → legacy cookie file.
 
 ## Response contract
 All providers should return results via shared helpers to preserve API shape:

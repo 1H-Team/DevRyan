@@ -102,12 +102,72 @@ const fakeApi = (overrides: Partial<ManagedOrchestrationApi> = {}): ManagedOrche
 });
 
 describe('managed orchestration store', () => {
+  test('reserves an initial grouped usage-limit failure for automatic recovery, then indexes its failure', () => {
+    const store = createManagedOrchestrationStore({ api: fakeApi() });
+    const failed = {
+      ...taskRecord(1, 'failed', {
+        childSessionId: 'ses_child_exhausted',
+        failureReason: 'Usage limit reached',
+      }),
+      dispatchGroupId: 'msg_parent',
+    };
+    const envelope = createManagedTaskResultEnvelope(failed, {
+      sequence: 1,
+      createdAt: 4_000,
+      resumable: true,
+    });
+    const projected = toManagedTaskEvent(failed, envelope).properties.task;
+
+    store.getState().ingestEvent(taskEvent(projected, envelope));
+
+    expect(projected.agentRetryAvailable).toBe(true);
+    expect(projected.failureKind).toBe('provider_usage_limit');
+    expect(managedOrchestrationSelectors.manualRecoveryTaskIdForChildSession('ses_child_exhausted')(
+      store.getState(),
+    )).toBe(undefined);
+
+    store.getState().ingestEvent(taskEvent(projected, {
+      ...envelope,
+      acknowledgedAt: 5_000,
+      action: 'recover_in_place',
+      followUpTaskId: 'dvr_task_2',
+    }));
+    expect(store.getState().manualRecoveryTaskIdByChildSessionId.ses_child_exhausted).toBe(undefined);
+
+    const replacementFailed = {
+      ...taskRecord(2, 'failed', {
+        childSessionId: 'ses_child_exhausted',
+        failureReason: 'Replacement model failed',
+        attempt: 2,
+        priorTaskId: failed.taskId,
+        executionKind: 'recover_in_place',
+        providerId: 'openai',
+        modelId: 'gpt-5.4',
+      }),
+      dispatchGroupId: 'msg_parent',
+    };
+    const replacementEnvelope = createManagedTaskResultEnvelope(replacementFailed, {
+      sequence: 2,
+      createdAt: 6_000,
+      resumable: true,
+    });
+    const replacementProjected = toManagedTaskEvent(
+      replacementFailed,
+      replacementEnvelope,
+    ).properties.task;
+
+    store.getState().ingestEvent(taskEvent(replacementProjected, replacementEnvelope));
+    expect(store.getState().manualRecoveryTaskIdByChildSessionId.ses_child_exhausted).toBe(
+      replacementFailed.taskId,
+    );
+  });
+
   test('indexes only final manual recovery and clears or restores it with the envelope lifecycle', () => {
     const store = createManagedOrchestrationStore({ api: fakeApi() });
     const firstFailed = {
       ...taskRecord(1, 'failed', {
         childSessionId: 'ses_child_initial',
-        failureReason: 'Usage limit',
+        failureReason: 'Provider connection ended',
       }),
       dispatchGroupId: 'msg_parent',
     };
@@ -125,7 +185,7 @@ describe('managed orchestration store', () => {
     const finalFailed = {
       ...taskRecord(2, 'failed', {
         childSessionId: 'ses_child_final',
-        failureReason: 'Usage limit',
+        failureReason: 'Provider connection ended',
         attempt: 2,
         priorTaskId: firstFailed.taskId,
         executionKind: 'retry',
@@ -300,6 +360,37 @@ describe('managed orchestration store', () => {
 
     store.getState().ingestEvent(taskEvent(projectedTask(1, 'running', { childSessionId: 'ses_child' })));
     expect(store.getState().tasksById.dvr_task_1.status).toBe('running');
+  });
+
+  test('keeps the root barrier locked through active work and undispositioned terminal results', () => {
+    const store = createManagedOrchestrationStore({ api: fakeApi() });
+    const selector = managedOrchestrationSelectors.hasUndispositionedTasksForRoot('ses_root');
+
+    expect(selector(store.getState())).toBe(false);
+    store.getState().ingestEvent(taskEvent(projectedTask(1, 'running', {
+      childSessionId: 'ses_child',
+    })));
+    expect(selector(store.getState())).toBe(true);
+
+    const completedRecord = taskRecord(1, 'completed', {
+      childSessionId: 'ses_child',
+      finishedAt: 2_000,
+    });
+    const completed = toManagedTaskEvent(completedRecord).properties.task;
+    const envelope = createManagedTaskResultEnvelope(completedRecord, {
+      sequence: 1,
+      createdAt: 2_000,
+      resumable: false,
+    });
+    store.getState().ingestEvent(taskEvent(completed, envelope));
+    expect(selector(store.getState())).toBe(true);
+
+    store.getState().ingestEvent(taskEvent(completed, {
+      ...envelope,
+      action: 'continue',
+      acknowledgedAt: 2_100,
+    }));
+    expect(selector(store.getState())).toBe(false);
   });
 
   test('reconciles a late snapshot without overwriting a newer event', async () => {

@@ -30,6 +30,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   spawnMock.mockReset();
   globalThis.fetch = originalFetch;
   while (tempDirs.length > 0) {
@@ -572,6 +573,292 @@ describe('OpenCode lifecycle', () => {
 
     expect(spawnMock).toHaveBeenCalledTimes(2);
     await server.close();
+  });
+
+  it('fires the restart callback after a successful restart', async () => {
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+    const onOpenCodeRestarted = vi.fn();
+    const runtime = createRuntime({
+      initialState: { openCodePort: 45678 },
+      onOpenCodeRestarted,
+    });
+
+    await runtime.restartOpenCode();
+
+    expect(onOpenCodeRestarted).toHaveBeenCalledOnce();
+    await runtime.__testState.openCodeProcess.close();
+  });
+
+  it('does not fire the restart callback after a failed restart', async () => {
+    const onOpenCodeRestarted = vi.fn();
+    const runtime = createRuntime({
+      initialState: { openCodePort: 45678 },
+      provisionUserProfile: vi.fn(async () => ({ ok: false, error: 'profile unavailable' })),
+      onOpenCodeRestarted,
+    });
+
+    await expect(runtime.restartOpenCode()).rejects.toThrow('profile unavailable');
+
+    expect(onOpenCodeRestarted).not.toHaveBeenCalled();
+  });
+
+  it('defers a config refresh without stopping or spawning OpenCode while a session is active', async () => {
+    vi.useFakeTimers();
+    const existingProcess = {
+      exitCode: null,
+      signalCode: null,
+      close: vi.fn(async () => {}),
+      hasExited: vi.fn(() => false),
+    };
+    const applyOpencodeBinaryFromSettings = vi.fn(async () => null);
+    const runtime = createRuntime({
+      initialState: {
+        openCodeProcess: existingProcess,
+        openCodePort: 45678,
+        isOpenCodeReady: true,
+      },
+      getActiveSessionCount: vi.fn(() => 1),
+      applyOpencodeBinaryFromSettings,
+    });
+
+    const result = await runtime.refreshOpenCodeAfterConfigChange('agent fixer model override');
+
+    expect(result).toMatchObject({
+      runtimeApplied: false,
+      requiresReload: false,
+      restartDeferred: true,
+    });
+    expect(result.runtimeMessage).toContain('the active agent finishes');
+    expect(existingProcess.close).not.toHaveBeenCalled();
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(applyOpencodeBinaryFromSettings).not.toHaveBeenCalled();
+    expect(runtime.__testState.isOpenCodeReady).toBe(true);
+    expect(runtime.__testState.isRestartingOpenCode).toBe(false);
+  });
+
+  it('awaits the authoritative session count before deciding whether to refresh configuration', async () => {
+    vi.useFakeTimers();
+    let resolveAuthoritativeCount;
+    const authoritativeCount = new Promise((resolve) => {
+      resolveAuthoritativeCount = resolve;
+    });
+    const existingProcess = {
+      exitCode: null,
+      signalCode: null,
+      close: vi.fn(async () => {}),
+      hasExited: vi.fn(() => false),
+    };
+    const getAuthoritativeActiveSessionCount = vi.fn(() => authoritativeCount);
+    const runtime = createRuntime({
+      initialState: {
+        openCodeProcess: existingProcess,
+        openCodePort: 45678,
+        isOpenCodeReady: true,
+      },
+      getActiveSessionCount: vi.fn(() => 0),
+      getAuthoritativeActiveSessionCount,
+    });
+
+    let refreshSettled = false;
+    const refreshPromise = runtime.refreshOpenCodeAfterConfigChange('mcp update').then((result) => {
+      refreshSettled = true;
+      return result;
+    });
+    await Promise.resolve();
+
+    expect(getAuthoritativeActiveSessionCount).toHaveBeenCalledTimes(1);
+    expect(refreshSettled).toBe(false);
+    expect(existingProcess.close).not.toHaveBeenCalled();
+    expect(spawnMock).not.toHaveBeenCalled();
+
+    resolveAuthoritativeCount(1);
+    await expect(refreshPromise).resolves.toMatchObject({
+      runtimeApplied: false,
+      requiresReload: false,
+      restartDeferred: true,
+    });
+    expect(existingProcess.close).not.toHaveBeenCalled();
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('keeps a deferred refresh queued while the authoritative session count remains active', async () => {
+    vi.useFakeTimers();
+    let authoritativeActiveSessionCount = 1;
+    let resolveRestarted;
+    const restarted = new Promise((resolve) => {
+      resolveRestarted = resolve;
+    });
+    const existingProcess = {
+      exitCode: null,
+      signalCode: null,
+      close: vi.fn(async () => {}),
+      hasExited: vi.fn(() => false),
+    };
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+    globalThis.fetch = vi.fn(async (url) => ({
+      ok: true,
+      json: async () => (String(url).endsWith('/agent') ? [] : {}),
+    }));
+    const getAuthoritativeActiveSessionCount = vi.fn(async () => authoritativeActiveSessionCount);
+    const runtime = createRuntime({
+      initialState: {
+        openCodeProcess: existingProcess,
+        openCodePort: null,
+        isOpenCodeReady: true,
+      },
+      getActiveSessionCount: vi.fn(() => 0),
+      getAuthoritativeActiveSessionCount,
+      onOpenCodeRestarted: vi.fn(() => resolveRestarted()),
+    });
+
+    await expect(runtime.refreshOpenCodeAfterConfigChange('mcp update')).resolves.toMatchObject({
+      restartDeferred: true,
+    });
+
+    vi.advanceTimersByTime(1000);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(getAuthoritativeActiveSessionCount).toHaveBeenCalledTimes(2);
+    expect(existingProcess.close).not.toHaveBeenCalled();
+    expect(spawnMock).not.toHaveBeenCalled();
+
+    authoritativeActiveSessionCount = 0;
+    vi.advanceTimersByTime(1000);
+    await restarted;
+
+    expect(existingProcess.close).toHaveBeenCalledTimes(1);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    await runtime.__testState.openCodeProcess.close();
+  });
+
+  it('coalesces deferred config changes into one restart after session activity becomes idle', async () => {
+    vi.useFakeTimers();
+    let activeSessionCount = 1;
+    let resolveRestarted;
+    const restarted = new Promise((resolve) => {
+      resolveRestarted = resolve;
+    });
+    const existingProcess = {
+      exitCode: null,
+      signalCode: null,
+      close: vi.fn(async () => {}),
+      hasExited: vi.fn(() => false),
+    };
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+    globalThis.fetch = vi.fn(async (url) => ({
+      ok: true,
+      json: async () => (String(url).endsWith('/agent') ? [] : {}),
+    }));
+    const runtime = createRuntime({
+      initialState: {
+        openCodeProcess: existingProcess,
+        openCodePort: null,
+        isOpenCodeReady: true,
+      },
+      getActiveSessionCount: vi.fn(() => activeSessionCount),
+      onOpenCodeRestarted: vi.fn(() => resolveRestarted()),
+    });
+
+    await expect(runtime.refreshOpenCodeAfterConfigChange('mcp update')).resolves.toMatchObject({
+      restartDeferred: true,
+    });
+    await expect(runtime.refreshOpenCodeAfterConfigChange('command update')).resolves.toMatchObject({
+      restartDeferred: true,
+    });
+    expect(existingProcess.close).not.toHaveBeenCalled();
+    expect(spawnMock).not.toHaveBeenCalled();
+
+    activeSessionCount = 0;
+    vi.advanceTimersByTime(1000);
+    await restarted;
+
+    expect(existingProcess.close).toHaveBeenCalledTimes(1);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(runtime.__testState.isOpenCodeReady).toBe(true);
+
+    vi.advanceTimersByTime(5000);
+    expect(existingProcess.close).toHaveBeenCalledTimes(1);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    await runtime.__testState.openCodeProcess.close();
+  });
+
+  it('preserves a live managed child across repeated failed health checks while a session stays busy', async () => {
+    vi.useFakeTimers();
+    const existingProcess = {
+      exitCode: null,
+      signalCode: null,
+      close: vi.fn(async () => {}),
+      hasExited: vi.fn(() => false),
+    };
+    globalThis.fetch = vi.fn(async () => ({ ok: false }));
+    const runtime = createRuntime({
+      initialState: {
+        openCodeProcess: existingProcess,
+        openCodePort: 45678,
+        isOpenCodeReady: true,
+      },
+      getActiveSessionCount: vi.fn(() => 1),
+    });
+
+    await runtime.triggerHealthCheck();
+    vi.advanceTimersByTime(24 * 60 * 60 * 1000);
+    await runtime.triggerHealthCheck();
+
+    expect(existingProcess.close).not.toHaveBeenCalled();
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(runtime.__testState.openCodeProcess).toBe(existingProcess);
+    expect(runtime.__testState.isOpenCodeReady).toBe(true);
+  });
+
+  it('restarts a definitely exited managed child even when session activity is still marked busy', async () => {
+    const existingProcess = {
+      exitCode: 1,
+      signalCode: null,
+      close: vi.fn(async () => {}),
+      hasExited: vi.fn(() => true),
+    };
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+    globalThis.fetch = vi.fn(async () => ({ ok: false }));
+    const runtime = createRuntime({
+      initialState: {
+        openCodeProcess: existingProcess,
+        openCodePort: 45678,
+        isOpenCodeReady: true,
+      },
+      getActiveSessionCount: vi.fn(() => 1),
+    });
+
+    await runtime.triggerHealthCheck();
+
+    expect(existingProcess.close).toHaveBeenCalledTimes(1);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(runtime.__testState.openCodeProcess).not.toBe(existingProcess);
+    expect(runtime.__testState.isOpenCodeReady).toBe(true);
+    await runtime.__testState.openCodeProcess.close();
   });
 
   it('syncs packaged agents before spawning managed OpenCode', async () => {

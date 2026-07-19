@@ -47,6 +47,52 @@ export const getDraftInputStorageKey = (draftId: string): string =>
 export const getDraftConfirmedMentionsStorageKey = (draftId: string): string =>
   `openchamber_chat_confirmed_mentions_draft_${draftId}`
 
+export const getSessionInputStorageKey = (sessionId: string): string =>
+  `openchamber_chat_input_draft_${sessionId}`
+
+export const getSessionConfirmedMentionsStorageKey = (sessionId: string): string =>
+  `openchamber_chat_confirmed_mentions_${sessionId}`
+
+type PersistedSessionInputRemovalListener = (sessionId: string) => void
+
+const persistedSessionInputRemovalListeners = new Set<PersistedSessionInputRemovalListener>()
+
+export const subscribePersistedSessionInputRemoval = (
+  listener: PersistedSessionInputRemovalListener,
+): (() => void) => {
+  persistedSessionInputRemovalListeners.add(listener)
+  return () => {
+    persistedSessionInputRemovalListeners.delete(listener)
+  }
+}
+
+export const removePersistedSessionInput = (
+  sessionId: string,
+  storage: Storage = getSafeStorage(),
+): void => {
+  const normalizedSessionId = sessionId.trim()
+  if (!normalizedSessionId) return
+
+  for (const key of [
+    getSessionInputStorageKey(normalizedSessionId),
+    getSessionConfirmedMentionsStorageKey(normalizedSessionId),
+  ]) {
+    try {
+      storage.removeItem(key)
+    } catch {
+      // Continue so one failed key removal cannot suppress the other cleanup.
+    }
+  }
+
+  for (const listener of Array.from(persistedSessionInputRemovalListeners)) {
+    try {
+      listener(normalizedSessionId)
+    } catch {
+      // Storage cleanup remains authoritative even if a mounted consumer fails.
+    }
+  }
+}
+
 export const clearLegacyNewDraftInput = (storage: Storage = getSafeStorage()): void => {
   try {
     storage.removeItem(LEGACY_NEW_INPUT_DRAFT_KEY)

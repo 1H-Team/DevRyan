@@ -375,6 +375,37 @@ type Todo = {
     priority?: 'high' | 'medium' | 'low';
 };
 
+const TODO_STATUSES = new Set<Todo['status']>(['in_progress', 'pending', 'completed', 'cancelled']);
+const TODO_PRIORITIES = new Set<NonNullable<Todo['priority']>>(['high', 'medium', 'low']);
+
+export const normalizeTodoItems = (value: unknown): Todo[] => {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return value.flatMap((entry) => {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+            return [];
+        }
+        const record = entry as Record<string, unknown>;
+        if (typeof record.content !== 'string' || !record.content.trim()) {
+            return [];
+        }
+        if (typeof record.status !== 'string' || !TODO_STATUSES.has(record.status as Todo['status'])) {
+            return [];
+        }
+        const priority = typeof record.priority === 'string' && TODO_PRIORITIES.has(record.priority as NonNullable<Todo['priority']>)
+            ? record.priority as NonNullable<Todo['priority']>
+            : undefined;
+        return [{
+            ...(typeof record.id === 'string' && record.id ? { id: record.id } : {}),
+            content: record.content,
+            status: record.status as Todo['status'],
+            ...(priority ? { priority } : {}),
+        }];
+    });
+};
+
 export const renderTodoOutput = (
     output: string,
     labels: {
@@ -387,10 +418,12 @@ export const renderTodoOutput = (
     options?: { unstyled?: boolean },
 ) => {
     try {
-        const todos = JSON.parse(output) as Todo[];
-        if (!Array.isArray(todos)) {
+        const parsed: unknown = JSON.parse(output);
+        if (!Array.isArray(parsed)) {
             return null;
         }
+        const todos = normalizeTodoItems(parsed);
+        if (todos.length === 0) return null;
 
         const todosByStatus = todos.reduce((acc, t) => {
             const status = t.status as keyof typeof acc;

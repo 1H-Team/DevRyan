@@ -43,6 +43,7 @@ export const createNotificationTriggerRuntime = (deps) => {
   const sessionStatusById = new Map();
   const sessionStatusEventOrderById = new Map();
   const completionCandidatesBySessionId = new Map();
+  const sessionsWithIncompleteTodos = new Set();
   let triggerEventOrder = 0;
 
   const rememberNotifiedPermissionRequest = (requestKey) => {
@@ -74,6 +75,7 @@ export const createNotificationTriggerRuntime = (deps) => {
     sessionStatusById.delete(sessionId);
     sessionStatusEventOrderById.delete(sessionId);
     completionCandidatesBySessionId.delete(sessionId);
+    sessionsWithIncompleteTodos.delete(sessionId);
     sessionParentIdCache.delete(sessionId);
     autoAcceptingSessions.delete(sessionId);
     const prefix = `${sessionId}:`;
@@ -449,7 +451,11 @@ export const createNotificationTriggerRuntime = (deps) => {
   };
 
   const maybeSendPendingCompletionForIdleSession = async (sessionId) => {
-    if (!sessionId || sessionStatusById.get(sessionId) !== 'idle') {
+    if (
+      !sessionId
+      || sessionStatusById.get(sessionId) !== 'idle'
+      || sessionsWithIncompleteTodos.has(sessionId)
+    ) {
       return;
     }
 
@@ -480,6 +486,22 @@ export const createNotificationTriggerRuntime = (deps) => {
       forgetSession(sessionId);
       return;
     }
+    if (payload.type === 'todo.updated' && sessionId) {
+      const todos = Array.isArray(payload.properties?.todos) ? payload.properties.todos : [];
+      const hasIncompleteTodos = todos.some((todo) => {
+        const status = typeof todo?.status === 'string'
+          ? todo.status.trim().toLowerCase().replaceAll(' ', '_')
+          : '';
+        return status === 'pending' || status === 'in_progress';
+      });
+      if (hasIncompleteTodos) {
+        sessionsWithIncompleteTodos.add(sessionId);
+        completionCandidatesBySessionId.delete(sessionId);
+      } else {
+        sessionsWithIncompleteTodos.delete(sessionId);
+      }
+      return;
+    }
     if (payload.type === 'session.status' && sessionId) {
       const status = getSessionStatusFromPayload(payload);
       if (status) {
@@ -494,7 +516,11 @@ export const createNotificationTriggerRuntime = (deps) => {
 
     if (payload.type === 'message.updated') {
       const info = payload.properties?.info;
-      if (sessionId && isCompletedAssistantMessage(payload)) {
+      if (
+        sessionId
+        && !sessionsWithIncompleteTodos.has(sessionId)
+        && isCompletedAssistantMessage(payload)
+      ) {
         completionCandidatesBySessionId.set(sessionId, { payload, sessionId, eventOrder: triggerEventOrder });
         await maybeSendPendingCompletionForIdleSession(sessionId);
       }

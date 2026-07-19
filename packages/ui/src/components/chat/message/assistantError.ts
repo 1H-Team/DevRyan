@@ -3,7 +3,11 @@ import {
   isLikelyProviderModelNotFound,
   PROVIDER_MODEL_NOT_FOUND_MESSAGE,
 } from "@/lib/messages/providerModelNotFound"
-import { isLikelyTransientStreamFailure, stripWrappedJsonQuotes } from "@/lib/messages/transientStreamError"
+import {
+  isLikelyCertificateVerificationFailure,
+  isLikelyTransientStreamFailure,
+  stripWrappedJsonQuotes,
+} from "@/lib/messages/transientStreamError"
 
 export type AssistantErrorInfo = {
   data?: { message?: unknown }
@@ -103,6 +107,14 @@ export function classifyAssistantError(
       text: "The turn stopped before completion. Reconnecting session state…",
       variant: "info",
       abortKind: "unexpected",
+    }
+  }
+
+  if (isLikelyCertificateVerificationFailure(detail)) {
+    return {
+      text: `The secure connection to the model provider could not be verified. Retry after your connection is stable. If this keeps happening, check VPN, proxy, or certificate settings.\n\`${detail}\``,
+      variant: "error",
+      retryable: true,
     }
   }
 

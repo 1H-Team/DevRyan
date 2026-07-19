@@ -3,6 +3,7 @@ import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import type { AttachedFile } from "@/stores/types/sessionTypes"
 import { useMessageQueueStore } from "@/stores/messageQueueStore"
 import {
+  dispatchQueuedMessageForSession,
   flushQueuedMessagesForSession,
   hasCompletedQueuedTurn,
   isQueuedMessageFlushInFlight,
@@ -192,6 +193,127 @@ describe("queued message flushing", () => {
     expect(restoredQueue[0]?.messageId?.startsWith("msg_")).toBe(true)
     expect(restoredQueue[0]?.messageIdScope).toBe("dispatch")
     expect(restoredQueue[1]?.messageId).toBe(undefined)
+  })
+
+  test("retries one manually dispatched row with the same identity after an ambiguous failure", async () => {
+    useMessageQueueStore.getState().addToQueue("session-a", { content: "queued before" })
+    useMessageQueueStore.getState().addToQueue("session-a", {
+      content: "accepted before the response was lost",
+      directory: "/repo/queued",
+    })
+    useMessageQueueStore.getState().addToQueue("session-a", { content: "queued after" })
+    const original = useMessageQueueStore.getState().getQueueForSession("session-a")[1]
+    const observedMessageIds: Array<string | undefined> = []
+    let createdMessageIdCount = 0
+    const createMessageId = () => {
+      createdMessageIdCount += 1
+      return `msg_dispatch_${createdMessageIdCount}`
+    }
+
+    let firstError: unknown
+    try {
+      await dispatchQueuedMessageForSession({
+        sessionId: "session-a",
+        queuedMessageId: original.id,
+        createMessageId,
+        dispatch: async (message) => {
+          observedMessageIds.push(message.messageId)
+          throw new Error("response lost after acceptance")
+        },
+      })
+    } catch (error) {
+      firstError = error
+    }
+
+    expect(firstError instanceof Error ? firstError.message : "").toBe("response lost after acceptance")
+    const restoredQueue = useMessageQueueStore.getState().getQueueForSession("session-a")
+    expect(restoredQueue.map((message) => message.content)).toEqual([
+      "queued before",
+      "accepted before the response was lost",
+      "queued after",
+    ])
+    const restored = restoredQueue[1]
+    expect(restored.id).toBe(original.id)
+    expect(restored.createdAt).toBe(original.createdAt)
+    expect(restored.messageId).toBe("msg_dispatch_1")
+    expect(restored.messageIdScope).toBe("dispatch")
+    expect(restored.directory).toBe("/repo/queued")
+
+    const dispatched = await dispatchQueuedMessageForSession({
+      sessionId: "session-a",
+      queuedMessageId: restored.id,
+      createMessageId,
+      dispatch: async (message) => {
+        observedMessageIds.push(message.messageId)
+      },
+    })
+
+    expect(dispatched).toBe(true)
+    expect(observedMessageIds).toEqual(["msg_dispatch_1", "msg_dispatch_1"])
+    expect(createdMessageIdCount).toBe(1)
+    expect(useMessageQueueStore.getState().getQueueForSession("session-a").map((message) => message.content)).toEqual([
+      "queued before",
+      "queued after",
+    ])
+  })
+
+  test("lets only one sender claim a manually dispatched queue row", async () => {
+    useMessageQueueStore.getState().addToQueue("session-a", { content: "send once" })
+    const original = useMessageQueueStore.getState().getQueueForSession("session-a")[0]
+    let releaseFirstDispatch!: () => void
+    const firstDispatchPending = new Promise<void>((resolve) => {
+      releaseFirstDispatch = resolve
+    })
+    let dispatchCount = 0
+
+    const firstDispatch = dispatchQueuedMessageForSession({
+      sessionId: "session-a",
+      queuedMessageId: original.id,
+      createMessageId: () => "msg_dispatch_once",
+      dispatch: async () => {
+        dispatchCount += 1
+        await firstDispatchPending
+      },
+    })
+    await Promise.resolve()
+
+    const secondDispatch = await dispatchQueuedMessageForSession({
+      sessionId: "session-a",
+      queuedMessageId: original.id,
+      createMessageId: () => "msg_dispatch_duplicate",
+      dispatch: async () => {
+        dispatchCount += 1
+      },
+    })
+
+    expect(secondDispatch).toBe(false)
+    expect(dispatchCount).toBe(1)
+    releaseFirstDispatch()
+    expect(await firstDispatch).toBe(true)
+  })
+
+  test("restores a manually claimed row when dispatch identity creation fails", async () => {
+    useMessageQueueStore.getState().addToQueue("session-a", { content: "preserve on identity failure" })
+    const original = useMessageQueueStore.getState().getQueueForSession("session-a")[0]
+
+    let failure: unknown
+    try {
+      await dispatchQueuedMessageForSession({
+        sessionId: "session-a",
+        queuedMessageId: original.id,
+        createMessageId: () => {
+          throw new Error("identity unavailable")
+        },
+        dispatch: async () => {
+          throw new Error("dispatch must not run")
+        },
+      })
+    } catch (error) {
+      failure = error
+    }
+
+    expect(failure instanceof Error ? failure.message : "").toBe("identity unavailable")
+    expect(useMessageQueueStore.getState().getQueueForSession("session-a")).toEqual([original])
   })
 
   test("restores only unsent queued messages after a later send fails", async () => {

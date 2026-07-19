@@ -19,6 +19,7 @@ DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtim
 - `packages/vscode/src/extension.ts`: VS Code extension activation and provider registration.
 - `packages/vscode/webview/main.tsx`: VS Code webview bootstrap for shared UI.
 - `scripts/validate.mjs`: changed-file-aware validation planner used by quick/affected/full checks.
+- `scripts/check-bundle-budgets.mjs`: deterministic Vite-manifest startup graph and bundle-budget verifier for web and VS Code builds.
 
 ## Repository Directory Map
 
@@ -27,7 +28,7 @@ DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtim
 | `packages/` | Workspace package boundary for runtime packages and shared UI/server layers. | [packages/codemap.md](packages/codemap.md) |
 | `packages/ui/` | Shared React UI runtime, feature components, Zustand stores, and event-sync pipeline used by all shells. | [packages/ui/codemap.md](packages/ui/codemap.md) |
 | `packages/web/` | Browser app, Express/OpenCode server runtime, and `openchamber` CLI. | [packages/web/codemap.md](packages/web/codemap.md) |
-| `packages/cursor-sdk-runtime/` | Shared Cursor SDK runtime used by web/Electron and VS Code while quota remains in existing provider-specific usage code. | [packages/cursor-sdk-runtime/codemap.md](packages/cursor-sdk-runtime/codemap.md) |
+| `packages/cursor-sdk-runtime/` | Shared Cursor SDK execution runtime used by web/Electron and VS Code; quota credentials remain deliberately separate in each surface's quota module. | [packages/cursor-sdk-runtime/codemap.md](packages/cursor-sdk-runtime/codemap.md) |
 | `packages/orchestration-runtime/` | Dependency-free DevRyan-managed task contract, dispatch-barrier, and scheduler policy shared by web/Electron and VS Code owners. | [packages/orchestration-runtime/codemap.md](packages/orchestration-runtime/codemap.md) |
 | `packages/electron/` | Primary desktop shell with in-process web server, native OS integrations, and IPC bridge. | [packages/electron/codemap.md](packages/electron/codemap.md) |
 | `packages/desktop/` | Legacy Tauri desktop shell retained for existing-install migration compatibility. | [packages/desktop/codemap.md](packages/desktop/codemap.md) |
@@ -66,3 +67,7 @@ DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtim
 - Shared UI is runtime-agnostic by contract; branch on capability APIs rather than shell identity wherever possible.
 - High-frequency session/message state is handled through the UI sync pipeline rather than broad Zustand store fanout.
 - Keep this root atlas and the nearest subdirectory `codemap.md` updated when moving entrypoints, package ownership, or cross-runtime contracts.
+
+## Operational Evidence
+
+- [ECC performance and agent-evaluation pass](docs/audits/2026-07-15-ecc-performance-and-agent-eval-pass.md): sanitized startup-graph measurements, live provider/evaluation coverage, Electron UI evidence, explicit unavailable checks, and final verification for the context-efficiency and agent-evaluation workstream.

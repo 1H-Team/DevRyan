@@ -23,6 +23,16 @@ const createTestHelpers = (overrides = {}) => createSettingsHelpers({
 });
 
 describe('settings helpers', () => {
+  it('accepts a non-negative theme catalog version', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ themeCatalogVersion: 2 })).toEqual({
+      themeCatalogVersion: 2,
+    });
+    expect(helpers.sanitizeSettingsUpdate({ themeCatalogVersion: -1 })).toEqual({});
+    expect(helpers.sanitizeSettingsUpdate({ themeCatalogVersion: 2.5 })).toEqual({});
+  });
+
   it('accepts messageStreamTransport as a persisted shared setting', () => {
     const helpers = createTestHelpers();
 
@@ -35,6 +45,25 @@ describe('settings helpers', () => {
     expect(helpers.sanitizeSettingsUpdate({ messageStreamTransport: 'auto' })).toEqual({
       messageStreamTransport: 'auto',
     });
+  });
+
+  it('accepts rationale-depth presets while keeping legacy values readable', () => {
+    const helpers = createTestHelpers();
+
+    for (const responseStylePreset of [
+      'actions',
+      'concise',
+      'detailed',
+      'mentor',
+      'pushback',
+      'noFiller',
+      'matchEnergy',
+      'warmPeer',
+      'custom',
+    ]) {
+      expect(helpers.sanitizeSettingsUpdate({ responseStylePreset })).toEqual({ responseStylePreset });
+    }
+    expect(helpers.sanitizeSettingsUpdate({ responseStylePreset: 'provider' })).toEqual({});
   });
 
   it('rejects invalid messageStreamTransport values', () => {

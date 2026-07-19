@@ -45,11 +45,59 @@ const assistant = (overrides = {}) => ({
   parts: overrides.parts ?? [{ type: 'text', text: 'Finished analysis' }],
 });
 
+const deleteSession = async () => true;
+
 describe('managed OpenCode executor', () => {
-  test('keeps the same child live through retry and busy before completing', async () => {
+  test('settles exhausted usage immediately while preserving partial work and stopping the retry loop', async () => {
     const calls = [];
     const statuses = [
       { type: 'retry', message: 'out of usage', attempt: 1, next: 5_000 },
+      { type: 'idle' },
+    ];
+    let reads = 0;
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession() { throw new Error('must not prompt'); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return statuses.shift() ?? { type: 'idle' }; },
+      async readMessages() {
+        reads += 1;
+        if (reads === 1) {
+          return [assistant({
+            info: { finish: 'tool-calls' },
+            parts: [{ type: 'text', text: 'Useful partial analysis' }],
+          })];
+        }
+        return [assistant()];
+      },
+      async abortSession(input) { calls.push(['abort', input]); return true; },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({
+      transport,
+      sleep: async () => undefined,
+      retryStopPollLimit: 4,
+    });
+
+    const result = await executor.observe(task({ childSessionId: 'ses_child', status: 'running' }), {});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(result).toEqual({
+      status: 'failed',
+      failureReason: 'out of usage',
+      partial: true,
+      recoverablePreview: 'Useful partial analysis',
+      canonicalRefs: [{ type: 'message', id: 'msg_assistant' }],
+      resumable: true,
+    });
+    expect(reads).toBe(1);
+    expect(calls.filter(([name]) => name === 'abort')).toHaveLength(1);
+  });
+
+  test('keeps the same child live through a transient rate limit and busy before completing', async () => {
+    const calls = [];
+    const statuses = [
+      { type: 'retry', message: 'rate limited', attempt: 1, next: 5_000 },
       { type: 'busy' },
       { type: 'idle' },
     ];
@@ -64,6 +112,7 @@ describe('managed OpenCode executor', () => {
         return reads === 3 ? [assistant()] : [];
       },
       async abortSession(input) { calls.push(['abort', input]); return true; },
+      deleteSession,
     };
     const executor = createManagedOpenCodeExecutor({
       transport,
@@ -105,6 +154,7 @@ describe('managed OpenCode executor', () => {
         })];
       },
       async abortSession() { return true; },
+      deleteSession,
     };
     const executor = createManagedOpenCodeExecutor({
       transport,
@@ -141,6 +191,7 @@ describe('managed OpenCode executor', () => {
         return reads === 4 ? [assistant()] : [];
       },
       async abortSession() { abortCount += 1; return true; },
+      deleteSession,
     };
     const executor = createManagedOpenCodeExecutor({
       transport,
@@ -176,6 +227,7 @@ describe('managed OpenCode executor', () => {
         })];
       },
       async abortSession() { throw new Error('must not abort'); },
+      deleteSession,
     };
     const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
 
@@ -211,6 +263,7 @@ describe('managed OpenCode executor', () => {
         })];
       },
       async abortSession() { abortCount += 1; return true; },
+      deleteSession,
     };
     const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
 
@@ -247,6 +300,7 @@ describe('managed OpenCode executor', () => {
       },
       async readMessages() { messageReads += 1; return [assistant()]; },
       async abortSession() { throw new Error('must not abort'); },
+      deleteSession,
     };
     const executor = createManagedOpenCodeExecutor({
       transport,
@@ -284,6 +338,7 @@ describe('managed OpenCode executor', () => {
       },
       async readMessages() { return [assistant()]; },
       async abortSession() { throw new Error('must not abort'); },
+      deleteSession,
     };
     const executor = createManagedOpenCodeExecutor({
       transport,
@@ -318,6 +373,7 @@ describe('managed OpenCode executor', () => {
         })];
       },
       async abortSession() { throw new Error('must not abort'); },
+      deleteSession,
     };
     const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
 
@@ -360,6 +416,7 @@ describe('managed OpenCode executor', () => {
         })];
       },
       async abortSession() { return true; },
+      deleteSession,
     };
     const executor = createManagedOpenCodeExecutor({
       transport,
@@ -385,6 +442,7 @@ describe('managed OpenCode executor', () => {
       async readStatus() { return { type: reads === 0 ? 'busy' : 'idle' }; },
       async readMessages() { reads += 1; return [assistant()]; },
       async abortSession() { return true; },
+      deleteSession,
     };
     const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
 
@@ -415,6 +473,7 @@ describe('managed OpenCode executor', () => {
         })];
       },
       async abortSession() { return true; },
+      deleteSession,
     };
     const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
 
@@ -451,6 +510,7 @@ describe('managed OpenCode executor', () => {
         })];
       },
       async abortSession() { return true; },
+      deleteSession,
     };
     const executor = createManagedOpenCodeExecutor({
       transport,
@@ -477,6 +537,7 @@ describe('managed OpenCode executor', () => {
         })];
       },
       async abortSession() { return true; },
+      deleteSession,
     };
     const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
 
@@ -503,6 +564,7 @@ describe('managed OpenCode executor', () => {
         return statuses.length === 0 ? [assistant()] : [];
       },
       async abortSession() { return true; },
+      deleteSession,
     };
     const control = {
       async setChildSessionId(id) { calls.push(['child', id]); },
@@ -514,13 +576,13 @@ describe('managed OpenCode executor', () => {
       idleStablePolls: 1,
     });
 
-    const result = await executor.start(task({ label: 'inspect-auth_flow' }), control);
+    const result = await executor.start(task({ label: 'locate-chat_ui' }), control);
 
     expect(calls.map(([name]) => name)).toEqual(['create', 'child', 'prompt', 'accepted']);
     expect(calls[0][1]).toEqual({
       directory: '/workspace',
       parentSessionId: 'ses_root',
-      title: 'Inspect auth flow',
+      title: 'Locate Chat UI',
     });
     expect(calls[2][1]).toMatchObject({
       sessionId: 'ses_child',
@@ -545,6 +607,96 @@ describe('managed OpenCode executor', () => {
     });
   });
 
+  test('discards a fresh child when prompt acceptance loses task ownership', async () => {
+    const calls = [];
+    const transport = {
+      async createSession() {
+        calls.push('create');
+        return { id: 'ses_stale_after_prompt' };
+      },
+      async promptSession() { calls.push('prompt'); },
+      async readSession() { throw new Error('must not read session'); },
+      async readStatus() { throw new Error('must not observe status'); },
+      async readMessages() { throw new Error('must not observe messages'); },
+      async abortSession() { calls.push('abort'); return true; },
+      async deleteSession() { calls.push('delete'); return true; },
+    };
+    const executor = createManagedOpenCodeExecutor({ transport });
+
+    await expect(executor.start(task(), {
+      async setChildSessionId() { return true; },
+      async markAccepted() { return false; },
+    })).rejects.toThrow('lost launch ownership after provider prompt');
+
+    expect(calls).toEqual(['create', 'prompt', 'abort', 'delete']);
+  });
+
+  test('accepts confirmed child deletion when stale-child abort cleanup fails', async () => {
+    const calls = [];
+    const transport = {
+      async createSession() { calls.push('create'); return { id: 'ses_cleanup_failure' }; },
+      async promptSession() { throw new Error('must not prompt'); },
+      async readSession() { throw new Error('must not read session'); },
+      async readStatus() { throw new Error('must not observe status'); },
+      async readMessages() { throw new Error('must not observe messages'); },
+      async abortSession() { calls.push('abort'); throw new Error('abort cleanup failed'); },
+      async deleteSession() { calls.push('delete'); return true; },
+    };
+    const executor = createManagedOpenCodeExecutor({ transport });
+
+    await expect(executor.start(task(), {
+      async setChildSessionId() { return false; },
+      async markAccepted() { throw new Error('must not accept'); },
+    })).rejects.toThrow('lost launch ownership before provider prompt');
+
+    expect(calls).toEqual(['create', 'abort', 'delete']);
+  });
+
+  test('reports stale-child cleanup failure when deletion is not confirmed', async () => {
+    const calls = [];
+    const transport = {
+      async createSession() { calls.push('create'); return { id: 'ses_delete_failure' }; },
+      async promptSession() { throw new Error('must not prompt'); },
+      async readSession() { throw new Error('must not read session'); },
+      async readStatus() { throw new Error('must not observe status'); },
+      async readMessages() { throw new Error('must not observe messages'); },
+      async abortSession() { calls.push('abort'); return true; },
+      async deleteSession() { calls.push('delete'); return false; },
+    };
+    const executor = createManagedOpenCodeExecutor({ transport });
+
+    await expect(executor.start(task(), {
+      async setChildSessionId() { return false; },
+      async markAccepted() { throw new Error('must not accept'); },
+    })).rejects.toThrow('stale child cleanup also failed');
+
+    expect(calls).toEqual(['create', 'abort', 'delete']);
+  });
+
+  test('aborts but preserves a canonical child when retry-in-place ownership is lost', async () => {
+    const calls = [];
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession() { calls.push('prompt'); },
+      async readSession() { throw new Error('must not read session'); },
+      async readStatus() { calls.push('status'); return { type: 'idle' }; },
+      async readMessages() { throw new Error('must not observe messages'); },
+      async abortSession() { calls.push('abort'); return true; },
+      async deleteSession() { calls.push('delete'); return true; },
+    };
+    const executor = createManagedOpenCodeExecutor({ transport });
+
+    await expect(executor.retryInPlace(task({
+      childSessionId: 'ses_canonical',
+      executionKind: 'retry_in_place',
+    }), {
+      async setChildSessionId() { throw new Error('must not set child'); },
+      async markAccepted() { return false; },
+    })).rejects.toThrow('lost launch ownership after retry-in-place prompt');
+
+    expect(calls).toEqual(['status', 'prompt', 'abort']);
+  });
+
   test('retains text and tool references when a provider fails after useful work', async () => {
     const transport = {
       async createSession() { return { id: 'ses_partial' }; },
@@ -564,6 +716,7 @@ describe('managed OpenCode executor', () => {
         })];
       },
       async abortSession() { return true; },
+      deleteSession,
     };
     const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
 
@@ -608,6 +761,7 @@ describe('managed OpenCode executor', () => {
         ];
       },
       async abortSession() { return true; },
+      deleteSession,
     };
     const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
 
@@ -640,6 +794,7 @@ describe('managed OpenCode executor', () => {
         })];
       },
       async abortSession() { return true; },
+      deleteSession,
     };
     const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
 
@@ -667,6 +822,7 @@ describe('managed OpenCode executor', () => {
       async readStatus() { return state === 'live' ? { type: 'busy' } : { type: 'idle' }; },
       async readMessages() { return state === 'terminal' ? [assistant()] : []; },
       async abortSession() { return true; },
+      deleteSession,
     };
     const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
     const existing = task({ childSessionId: 'ses_child', status: 'running' });
@@ -693,6 +849,7 @@ describe('managed OpenCode executor', () => {
       async readStatus() { return { type: 'idle' }; },
       async readMessages() { return [assistant()]; },
       async abortSession(input) { calls.push(input); return true; },
+      deleteSession,
     };
     const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
     const existing = task({
@@ -715,6 +872,7 @@ describe('managed OpenCode executor', () => {
       async readStatus() { return { type: 'busy' }; },
       async readMessages() { return []; },
       async abortSession() { throw new Error('shutdown must not abort child'); },
+      deleteSession,
     };
     const executor = createManagedOpenCodeExecutor({
       transport,

@@ -157,6 +157,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     getManagedOpenCodeShellEnvSnapshot,
     getManagedOrchestrationEnvironment = async () => ({}),
     getActiveSessionCount = () => 0,
+    getAuthoritativeActiveSessionCount = async () => getActiveSessionCount(),
     provisionUserProfile = async () => ({ ok: true, changed: false, conflicts: [] }),
     syncPackagedAgents = async () => ({ changed: false, conflicts: [] }),
     syncRuntimeAgentOverlays = async () => ({ changed: false, targetConfigDirectory: null }),
@@ -164,7 +165,78 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     sanitizeProjects = (value) => (Array.isArray(value) ? value : []),
     sanitizeHiddenSkills = (value) => (Array.isArray(value) ? value : []),
     discoverSkills = () => [],
+    onOpenCodeRestarted = () => {},
   } = deps;
+
+  const DEFERRED_CONFIG_REFRESH_POLL_MS = 1000;
+  let pendingConfigRefresh = null;
+  let pendingConfigRefreshTimer = null;
+  let activeSessionCheckWarningShown = false;
+
+  const getConfigRefreshActiveSessionCount = async () => {
+    const snapshotCount = getActiveSessionCount();
+    try {
+      const liveCount = await getAuthoritativeActiveSessionCount();
+      if (!Number.isFinite(liveCount) || liveCount < 0) {
+        throw new Error('Active-session query returned an invalid count');
+      }
+      activeSessionCheckWarningShown = false;
+      return Math.max(snapshotCount, Math.trunc(liveCount));
+    } catch (error) {
+      if (!activeSessionCheckWarningShown) {
+        activeSessionCheckWarningShown = true;
+        console.warn(
+          '[OpenCode] Could not verify live session status; preserving the current process until status is available:',
+          error instanceof Error ? error.message : error,
+        );
+      }
+      return Math.max(snapshotCount, 1);
+    }
+  };
+
+  const schedulePendingConfigRefreshCheck = () => {
+    if (pendingConfigRefreshTimer || state.isShuttingDown) return;
+
+    pendingConfigRefreshTimer = setTimeout(async () => {
+      pendingConfigRefreshTimer = null;
+      if (state.isShuttingDown || !pendingConfigRefresh) return;
+
+      if (state.currentRestartPromise) {
+        schedulePendingConfigRefreshCheck();
+        return;
+      }
+
+      const activeSessionCount = await getConfigRefreshActiveSessionCount();
+      if (activeSessionCount > 0) {
+        schedulePendingConfigRefreshCheck();
+        return;
+      }
+
+      const pending = pendingConfigRefresh;
+      pendingConfigRefresh = null;
+      const reason = [...pending.reasons].join(', ');
+      console.log(`[OpenCode] Applying deferred configuration refresh after active sessions became idle: ${reason}`);
+
+      try {
+        await refreshOpenCodeAfterConfigChange(reason, pending.options);
+      } catch (error) {
+        console.error('[OpenCode] Deferred configuration refresh failed:', error instanceof Error ? error.message : error);
+      }
+    }, DEFERRED_CONFIG_REFRESH_POLL_MS);
+    pendingConfigRefreshTimer.unref?.();
+  };
+
+  const deferConfigRefresh = (reason, options) => {
+    if (!pendingConfigRefresh) {
+      pendingConfigRefresh = {
+        reasons: new Set(),
+        options: {},
+      };
+    }
+    pendingConfigRefresh.reasons.add(reason);
+    pendingConfigRefresh.options = { ...pendingConfigRefresh.options, ...options };
+    schedulePendingConfigRefreshCheck();
+  };
 
   let managedOrphanReapDone = false;
   const reapManagedOpenCodeOrphansOnce = async () => {
@@ -181,7 +253,12 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     return result;
   };
 
-  const hasChildProcessExited = (child) => !child || child.exitCode !== null || child.signalCode !== null;
+  const hasChildProcessExited = (child) => {
+    if (!child) return true;
+    if (typeof child.hasExited === 'function') return child.hasExited();
+    return child.exitCode !== null && child.exitCode !== undefined
+      || child.signalCode !== null && child.signalCode !== undefined;
+  };
 
   const waitForChildProcessClose = (child, timeoutMs) => new Promise((resolve) => {
     if (!child || hasChildProcessExited(child)) {
@@ -524,6 +601,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
     return {
       url,
+      hasExited: () => hasChildProcessExited(child),
       async close() {
         const closed = await closeManagedOpenCodeChild(child);
         if (closed) {
@@ -947,6 +1025,13 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
     try {
       await state.currentRestartPromise;
+      try {
+        void Promise.resolve(onOpenCodeRestarted()).catch((error) => {
+          console.warn(`OpenCode restart callback failed: ${error?.message || error}`);
+        });
+      } catch (error) {
+        console.warn(`OpenCode restart callback failed: ${error?.message || error}`);
+      }
     } catch (error) {
       console.error(`Failed to restart OpenCode: ${error.message}`);
       state.lastOpenCodeError = error.message;
@@ -1116,6 +1201,24 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       };
     }
 
+    const activeSessionCount = state.currentRestartPromise
+      ? getActiveSessionCount()
+      : await getConfigRefreshActiveSessionCount();
+    if (activeSessionCount > 0 || state.currentRestartPromise) {
+      deferConfigRefresh(reason, options);
+      const activeLabel = activeSessionCount === 1 ? '1 active agent' : `${activeSessionCount} active agents`;
+      const waitReason = activeSessionCount > 0 ? `${activeLabel} must finish first` : 'a restart is already in progress';
+      console.log(`[OpenCode] Deferred configuration refresh after ${reason}; ${waitReason}`);
+      return {
+        runtimeApplied: false,
+        requiresReload: false,
+        restartDeferred: true,
+        runtimeMessage: activeSessionCount > 0
+          ? `Configuration saved. OpenCode will restart after ${activeSessionCount === 1 ? 'the active agent finishes' : 'the active agents finish'}.`
+          : 'Configuration saved. OpenCode will restart after the current restart finishes.',
+      };
+    }
+
     clearResolvedOpenCodeBinary();
     await applyOpencodeBinaryFromSettings();
 
@@ -1230,33 +1333,21 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
    * Skips restart when sessions are actively busy — a busy server under
    * concurrent load can fail the health check timeout without actually
    * being dead (the health endpoint competes with LLM work).
-   * Forces restart if sessions stay "busy" and the server stays unhealthy
-   * for over 2 minutes (staleness guard against stuck session state).
+   * A managed child that has actually exited is safe to restart immediately.
+   * A live child reporting busy is never killed on a health timeout because
+   * long-running model/tool work can starve the health endpoint.
    */
-  const STALE_BUSY_GRACE_MS = 2 * 60 * 1000;
-  let lastUnhealthyWithBusySessionsAt = 0;
-
   const shouldSkipRestartForBusySessions = () => {
     const activeCount = getActiveSessionCount();
     if (activeCount === 0) {
-      lastUnhealthyWithBusySessionsAt = 0;
       return false;
     }
 
-    const now = Date.now();
-    if (!lastUnhealthyWithBusySessionsAt) {
-      lastUnhealthyWithBusySessionsAt = now;
-      return true;
-    }
-
-    if (now - lastUnhealthyWithBusySessionsAt >= STALE_BUSY_GRACE_MS) {
-      console.warn(
-        `[lifecycle] OpenCode unhealthy with ${activeCount} busy session(s) for > 2 min — forcing restart`
-      );
-      lastUnhealthyWithBusySessionsAt = 0;
+    if (hasChildProcessExited(state.openCodeProcess)) {
       return false;
     }
 
+    console.warn(`[lifecycle] OpenCode health check failed with ${activeCount} busy session(s); preserving the live process`);
     return true;
   };
 
@@ -1269,8 +1360,6 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         if (shouldSkipRestartForBusySessions()) return;
         console.log('[lifecycle] immediate health check: OpenCode not healthy, restarting...');
         await restartOpenCode();
-      } else {
-        lastUnhealthyWithBusySessionsAt = 0;
       }
     } catch (error) {
       console.error(`[lifecycle] immediate health check error: ${error.message}`);
@@ -1291,8 +1380,6 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
           if (shouldSkipRestartForBusySessions()) return;
           console.log('OpenCode process not running, restarting...');
           await restartOpenCode();
-        } else {
-          lastUnhealthyWithBusySessionsAt = 0;
         }
       } catch (error) {
         console.error(`Health check error: ${error.message}`);

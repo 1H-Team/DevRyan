@@ -4,6 +4,7 @@ import { join } from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  ANTHROPIC_OAUTH_PLUGIN_SPEC,
   ensureAnthropicOAuthProviderConfig,
   getProviderSources,
 } from './providers.js';
@@ -32,7 +33,7 @@ describe('provider config helpers', () => {
     expect(result.path).toBe(join(projectDir, '.opencode', 'opencode.json'));
 
     const config = JSON.parse(readFileSync(result.path, 'utf8'));
-    expect(config.plugin).toContain('opencode-with-claude');
+    expect(config.plugin).toContain(ANTHROPIC_OAUTH_PLUGIN_SPEC);
     expect(config.provider.anthropic.options).toEqual({
       baseURL: 'http://127.0.0.1:3456',
       apiKey: 'dummy',
@@ -81,6 +82,31 @@ describe('provider config helpers', () => {
     const result = ensureAnthropicOAuthProviderConfig({ workingDirectory: projectDir });
 
     expect(result.changed).toBe(false);
+  });
+
+  it('migrates a bare managed plugin but preserves an explicit user pin', () => {
+    const projectDir = makeProjectDir();
+    const configPath = join(projectDir, '.opencode', 'opencode.json');
+    mkdirSync(join(projectDir, '.opencode'), { recursive: true });
+    writeFileSync(configPath, JSON.stringify({
+      plugin: ['opencode-with-claude'],
+      provider: {
+        anthropic: {
+          options: { baseURL: 'http://127.0.0.1:3456', apiKey: 'dummy' },
+        },
+      },
+    }), 'utf8');
+
+    const migrated = ensureAnthropicOAuthProviderConfig({ workingDirectory: projectDir });
+    expect(migrated.changed).toBe(true);
+    expect(JSON.parse(readFileSync(configPath, 'utf8')).plugin).toEqual([ANTHROPIC_OAUTH_PLUGIN_SPEC]);
+
+    const explicitlyPinned = JSON.parse(readFileSync(configPath, 'utf8'));
+    explicitlyPinned.plugin = ['opencode-with-claude@1.6.17'];
+    writeFileSync(configPath, JSON.stringify(explicitlyPinned), 'utf8');
+    const preserved = ensureAnthropicOAuthProviderConfig({ workingDirectory: projectDir });
+    expect(preserved.changed).toBe(false);
+    expect(JSON.parse(readFileSync(configPath, 'utf8')).plugin).toEqual(['opencode-with-claude@1.6.17']);
   });
 
   it('detects an existing Cursor provider source without generating an open-cursor config', () => {

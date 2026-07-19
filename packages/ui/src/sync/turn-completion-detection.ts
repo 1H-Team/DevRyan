@@ -2,6 +2,7 @@ import type { Message } from "@opencode-ai/sdk/v2/client"
 import type { PlanIndicatorEntry } from "./plan-indicator"
 import { filterMessagesForRevert, getEffectiveSessionRevertMessageID } from "./revert-transactions"
 import { isFinalAssistantSummaryMessage } from "./session-working"
+import { hasIncompleteTodos } from "./todo-completion"
 import type { State } from "./types"
 
 export type TurnCompletedCandidate = {
@@ -12,7 +13,7 @@ export type TurnCompletedCandidate = {
 
 type TurnCompletionDetectionState = Pick<
   State,
-  "message" | "part" | "question" | "session" | "revert_transaction"
+  "message" | "part" | "question" | "session" | "todo" | "revert_transaction"
 >
 
 export function detectTurnCompletedCandidate({
@@ -26,6 +27,8 @@ export function detectTurnCompletedCandidate({
   isRecordedPlanModeUserMessage: (messageId: string) => boolean
   planEntry?: PlanIndicatorEntry | null
 }): TurnCompletedCandidate | null {
+  if (hasIncompleteTodos(state.todo[sessionID])) return null
+
   const pendingQuestions = state.question[sessionID]
   if (pendingQuestions && pendingQuestions.length > 0) return null
 

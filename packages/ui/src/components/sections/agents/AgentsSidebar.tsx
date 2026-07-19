@@ -1,5 +1,5 @@
 import React from 'react';
-import { RiAiAgentFill, RiAiAgentLine, RiRobot2Line, RiRobotLine } from '@remixicon/react';
+import { RiAiAgentLine, RiRobot2Line } from '@remixicon/react';
 import { useShallow } from 'zustand/react/shallow';
 import type { Agent } from '@opencode-ai/sdk/v2';
 import { useAgentsStore, filterVisibleSettingsAgents } from '@/stores/useAgentsStore';
@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { useI18n } from '@/lib/i18n';
 import { formatAgentDisplayName } from '@/lib/agentDisplay';
+import { getAgentIconColor } from '@/lib/agentColors';
 
 interface AgentsSidebarProps {
   onItemSelect?: () => void;
@@ -29,19 +30,6 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
   React.useEffect(() => {
     loadAgents();
   }, [loadAgents]);
-
-  const getAgentModeIcon = (mode?: string) => {
-    switch (mode) {
-      case 'primary':
-        return <RiAiAgentLine className="h-3 w-3 text-primary" />;
-      case 'all':
-        return <RiAiAgentFill className="h-3 w-3 text-primary" />;
-      case 'subagent':
-        return <RiRobotLine className="h-3 w-3 text-primary" />;
-      default:
-        return null;
-    }
-  };
 
   const visibleAgents = filterVisibleSettingsAgents(agents);
   const isPrimaryAgent = (agent: Agent) => agent.mode === 'primary' || agent.mode === 'all';
@@ -73,7 +61,6 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
         setSelectedAgent(agent.name);
         onItemSelect?.();
       }}
-      getAgentModeIcon={getAgentModeIcon}
       spacious={options.spacious}
     />
   );
@@ -150,7 +137,6 @@ interface AgentListItemProps {
   agent: Agent;
   isSelected: boolean;
   onSelect: () => void;
-  getAgentModeIcon: (mode?: string) => React.ReactNode;
   spacious?: boolean;
 }
 
@@ -158,7 +144,6 @@ const AgentListItem: React.FC<AgentListItemProps> = ({
   agent,
   isSelected,
   onSelect,
-  getAgentModeIcon,
   spacious = false,
 }) => {
   return (
@@ -175,14 +160,17 @@ const AgentListItem: React.FC<AgentListItemProps> = ({
         tabIndex={0}
       >
         <div className="flex items-center gap-1.5">
+          <RiAiAgentLine
+            className="h-3.5 w-3.5 flex-shrink-0"
+            style={{ color: `var(${getAgentIconColor(agent.name).var})` }}
+          />
           <span className="typography-ui-label font-normal truncate text-foreground">
             {formatAgentDisplayName(agent.name)}
           </span>
-          {getAgentModeIcon(agent.mode)}
         </div>
 
         {agent.description && (
-          <div className="typography-micro text-muted-foreground/60 truncate leading-tight">
+          <div className="typography-micro text-muted-foreground/60 truncate leading-tight pl-[1.25rem]">
             {agent.description}
           </div>
         )}

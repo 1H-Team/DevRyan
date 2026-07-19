@@ -4,6 +4,7 @@ import { SESSION_LEADING_INDICATOR_CLIP_GUTTER_PX } from './sessionIndicator';
 
 type SessionSidebarMotionRowProps = {
   children: React.ReactNode;
+  withLeadingIndicatorGutter?: boolean;
 };
 
 const rowEase = [0.33, 1, 0.68, 1] as const;
@@ -31,7 +32,10 @@ const rowTransition = {
   },
 } as const;
 
-export function SessionSidebarMotionRow({ children }: SessionSidebarMotionRowProps): React.ReactElement {
+export function SessionSidebarMotionRow({
+  children,
+  withLeadingIndicatorGutter = true,
+}: SessionSidebarMotionRowProps): React.ReactElement {
   const shouldReduceMotion = useReducedMotion();
 
   if (shouldReduceMotion) {
@@ -47,11 +51,13 @@ export function SessionSidebarMotionRow({ children }: SessionSidebarMotionRowPro
       style={{
         display: 'grid',
         overflow: 'hidden',
-        // Keep leading session indicators inside this wrapper's clipping box
-        // while still clipping vertically during the grid-track-collapse
-        // animation.
-        marginLeft: -SESSION_LEADING_INDICATOR_CLIP_GUTTER_PX,
-        paddingLeft: SESSION_LEADING_INDICATOR_CLIP_GUTTER_PX,
+        ...(withLeadingIndicatorGutter ? {
+          // Keep leading session indicators inside this wrapper's clipping box
+          // while still clipping vertically during the grid-track-collapse
+          // animation. Section bodies disable this row-specific gutter.
+          marginLeft: -SESSION_LEADING_INDICATOR_CLIP_GUTTER_PX,
+          paddingLeft: SESSION_LEADING_INDICATOR_CLIP_GUTTER_PX,
+        } : {}),
       }}
     >
       {/* minHeight: 0 allows the grid item to shrink below its content

@@ -6,7 +6,11 @@
 import type { OpencodeClient, Session, Message, Part } from "@opencode-ai/sdk/v2/client"
 import type { StoreApi } from "zustand"
 import { Binary } from "./binary"
-import { useInputStore, type RestoredAttachment } from "./input-store"
+import {
+  getSessionComposerRevision,
+  useInputStore,
+  type RestoredAttachment,
+} from "./input-store"
 import type { ChildStoreManager, DirectoryStore } from "./child-store"
 import { opencodeClient } from "@/lib/opencode/client"
 import {
@@ -43,6 +47,7 @@ import {
   registerManualAbortGuard,
   setAbortGuardExecutor,
 } from "./abort-retry-guard"
+import { areSessionRecordsEqual, isStrictlyOlderSession } from "./session-recency"
 
 const MESSAGE_REFETCH_LIMIT = 200
 const MESSAGE_REFETCH_SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
@@ -53,7 +58,16 @@ const SESSION_CREATE_RETRY_ATTEMPTS = 6
 const SESSION_CREATE_RETRY_DELAY_MS = 250
 const SESSION_CREATE_RETRY_MAX_DELAY_MS = 1000
 let revertTransactionVersion = 0
-const unexpectedAbortReconcileInFlight = new Map<string, Promise<void>>()
+type UnexpectedAbortReconcileOwner = {
+  promise: Promise<void>
+  token: symbol
+}
+const unexpectedAbortReconcileInFlight = new Map<string, UnexpectedAbortReconcileOwner>()
+const failedRevertReconcileOwners = new Map<string, symbol>()
+
+const unexpectedAbortReconcileKey = (directory: string | undefined, sessionId: string): string => (
+  `${directory ?? ""}\0${sessionId}`
+)
 
 function createAbortError(): Error {
   if (typeof DOMException !== "undefined") {
@@ -94,6 +108,7 @@ export function clearActionRefs(childStores: ChildStoreManager): boolean {
   _getDirectory = () => ""
   _optimisticAdd = null
   _optimisticRemove = null
+  failedRevertReconcileOwners.clear()
   return true
 }
 
@@ -105,6 +120,17 @@ export function releaseSessionActionDirectory(directory: string): void {
       unexpectedAbortReconcileInFlight.delete(key)
     }
   }
+  for (const key of failedRevertReconcileOwners.keys()) {
+    if (key.startsWith(prefix)) {
+      failedRevertReconcileOwners.delete(key)
+    }
+  }
+}
+
+export function releaseSessionActionSession(directory: string, sessionId: string): void {
+  if (!directory || !sessionId) return
+  unexpectedAbortReconcileInFlight.delete(unexpectedAbortReconcileKey(directory, sessionId))
+  failedRevertReconcileOwners.delete(unexpectedAbortReconcileKey(directory, sessionId))
 }
 
 export function setOptimisticRefs(
@@ -176,12 +202,56 @@ function getSessionDirectory(sessionId: string): string | undefined {
   return getSessionUIStore().getState().getDirectoryForSession(sessionId) || dir()
 }
 
+const mirrorSessionIntoDirectoryStore = (session: Session, directory: string | undefined): void => {
+  if (!directory || !_childStores) return
+  const store = _childStores.children.get(directory)
+  if (!store) return
+
+  store.setState((state) => {
+    const result = Binary.search(state.session, session.id, (candidate) => candidate.id)
+    if (result.found) {
+      const current = state.session[result.index]
+      if (isStrictlyOlderSession(session, current)) return state
+      const merged = {
+        ...current,
+        ...session,
+        time: { ...current.time, ...session.time },
+      } as Session
+      if (areSessionRecordsEqual(current, merged)) return state
+      const next = [...state.session]
+      next[result.index] = merged
+      return { session: next }
+    }
+
+    const next = [...state.session]
+    next.splice(result.index, 0, session)
+    return {
+      session: next,
+      ...(!session.parentID ? { sessionTotal: state.sessionTotal + 1 } : {}),
+    }
+  })
+}
+
 function getSessionStatusForAction(sessionId: string, directoryOverride?: string) {
   try {
     return directoryStore(directoryOverride).getState().session_status[sessionId]
   } catch {
     return undefined
   }
+}
+
+function hasPendingSessionRevert(store: StoreApi<DirectoryStore>, sessionId: string): boolean {
+  return store.getState().revert_transaction[sessionId]?.status === "pending"
+}
+
+export function assertSessionRevertMutationAllowed(
+  sessionId: string,
+  directoryOverride: string | undefined,
+  mutation: "send" | "undo" | "redo",
+): void {
+  const store = directoryStore(directoryOverride)
+  if (!hasPendingSessionRevert(store, sessionId)) return
+  throw new Error(`Cannot ${mutation} while this chat is being reverted`)
 }
 
 async function waitForSessionIdleAfterQueuedInterrupt(sessionId: string, directoryOverride?: string): Promise<void> {
@@ -247,6 +317,22 @@ function restoreUserMessageInput(parts: Part[], messageText: string): void {
   if (messageText) {
     input.setPendingInputText(messageText, "replace")
   }
+}
+
+function queueRevertedUserMessageInput(
+  sessionId: string,
+  parts: Part[],
+  messageText: string,
+  expectedComposerRevision: number,
+): void {
+  const attachments = getRestorableFileAttachments(parts)
+  if (!messageText && attachments.length === 0) return
+  useInputStore.getState().queueRestoredInput({
+    sessionId,
+    text: messageText,
+    attachments,
+    expectedComposerRevision,
+  })
 }
 
 type AbortDisplayReason = "manual" | "steered"
@@ -343,6 +429,10 @@ function rollbackRevertCommit(
   }
 
   const state = store.getState()
+  const currentTransaction = state.revert_transaction[sessionId]
+  if (currentTransaction && currentTransaction !== rollback.previousTransaction) {
+    return
+  }
   const patch: Partial<DirectoryStore> = {}
   if (rollback.sessionIndex >= 0 && state.session[rollback.sessionIndex]?.id === sessionId) {
     const sessions = [...state.session]
@@ -370,6 +460,17 @@ function rollbackRevertCommit(
 type OptimisticSessionRemovalSnapshot = {
   directory: string
   session: Session[]
+}
+
+type OptimisticSessionUnarchiveEntry = {
+  sessionId: string
+  original: Session
+  optimistic: Session
+}
+
+type OptimisticSessionUnarchiveSnapshot = {
+  directory: string
+  entries: OptimisticSessionUnarchiveEntry[]
 }
 
 type BulkMutationResult<K extends string> = Record<K, string[]> & { failedIds: string[] }
@@ -580,16 +681,140 @@ function filterSnapshotsById(snapshots: Session[], ids: Iterable<string>): Sessi
   return snapshots.filter((session) => idSet.has(session.id))
 }
 
+function markSnapshotUnarchived(session: Session): Session {
+  const time = { ...session.time }
+  delete time.archived
+  return { ...session, time }
+}
+
 function markSnapshotsUnarchived(snapshots: Session[]): Session[] {
-  return snapshots.map((session) => {
-    const time = { ...session.time }
-    delete time.archived
-    return { ...session, time }
-  })
+  return snapshots.map(markSnapshotUnarchived)
 }
 
 function getSessionDirectoryForMutation(sessionId: string, knownDirectoryById?: Map<string, string>): string | undefined {
   return knownDirectoryById?.get(sessionId) ?? getSessionDirectory(sessionId)
+}
+
+function optimisticallyUnarchiveDirectorySessions(
+  sessionIds: string[],
+  knownDirectoryById: Map<string, string | undefined>,
+): OptimisticSessionUnarchiveSnapshot[] {
+  if (!_childStores || sessionIds.length === 0) {
+    return []
+  }
+
+  const pendingIds = new Set(sessionIds)
+  const idsByDirectory = new Map<string, Set<string>>()
+  const snapshots: OptimisticSessionUnarchiveSnapshot[] = []
+
+  for (const sessionId of sessionIds) {
+    const directory = knownDirectoryById.get(sessionId)
+    if (!directory) {
+      continue
+    }
+    const ids = idsByDirectory.get(directory) ?? new Set<string>()
+    ids.add(sessionId)
+    idsByDirectory.set(directory, ids)
+  }
+
+  const unarchiveInDirectory = (directory: string, ids: Set<string>) => {
+    const store = _childStores?.children.get(directory)
+    if (!store || ids.size === 0) {
+      return
+    }
+
+    const current = store.getState().session
+    let next = current
+    const entries: OptimisticSessionUnarchiveEntry[] = []
+
+    for (let index = 0; index < current.length; index += 1) {
+      const session = current[index]
+      if (!ids.has(session.id)) {
+        continue
+      }
+
+      pendingIds.delete(session.id)
+      if (!session.time?.archived) {
+        continue
+      }
+
+      if (next === current) {
+        next = [...current]
+      }
+      const optimistic = markSnapshotUnarchived(session)
+      next[index] = optimistic
+      entries.push({ sessionId: session.id, original: session, optimistic })
+    }
+
+    if (next === current) {
+      return
+    }
+
+    store.setState({ session: next })
+    snapshots.push({ directory, entries })
+  }
+
+  for (const [directory, ids] of idsByDirectory) {
+    unarchiveInDirectory(directory, ids)
+  }
+
+  if (pendingIds.size > 0) {
+    for (const [directory, store] of _childStores.children) {
+      const idsInDirectory = new Set<string>()
+      for (const session of store.getState().session) {
+        if (pendingIds.has(session.id)) {
+          idsInDirectory.add(session.id)
+        }
+      }
+      unarchiveInDirectory(directory, idsInDirectory)
+      if (pendingIds.size === 0) {
+        break
+      }
+    }
+  }
+
+  return snapshots
+}
+
+function restoreOptimisticallyUnarchivedDirectorySessions(
+  snapshots: OptimisticSessionUnarchiveSnapshot[],
+  sessionIds: Iterable<string>,
+): void {
+  if (!_childStores || snapshots.length === 0) {
+    return
+  }
+
+  const ids = new Set(sessionIds)
+  if (ids.size === 0) {
+    return
+  }
+
+  for (const snapshot of snapshots) {
+    const store = _childStores.children.get(snapshot.directory)
+    if (!store) {
+      continue
+    }
+
+    const current = store.getState().session
+    let next = current
+    for (const entry of snapshot.entries) {
+      if (!ids.has(entry.sessionId)) {
+        continue
+      }
+      const index = current.findIndex((session) => session.id === entry.sessionId)
+      if (index < 0 || current[index] !== entry.optimistic) {
+        continue
+      }
+      if (next === current) {
+        next = [...current]
+      }
+      next[index] = entry.original
+    }
+
+    if (next !== current) {
+      store.setState({ session: next })
+    }
+  }
 }
 
 const makeBulkResult = <K extends string>(successKey: K, successfulIds: string[], failedIds: string[]): BulkMutationResult<K> => {
@@ -779,8 +1004,9 @@ async function abortWorkingSessionsBeforeRemoval(
       }
 
       const state = store.getState()
+      const status = state.session_status[sessionId]
       const isWorking = isSessionWorkingFromState({
-        status: state.session_status[sessionId],
+        status,
         permissions: state.permission[sessionId] ?? [],
         messages: state.message[sessionId] ?? [],
       })
@@ -790,7 +1016,7 @@ async function abortWorkingSessionsBeforeRemoval(
 
       try {
         postAbortRequestedMark(sessionId, directory)
-        registerManualAbortGuard(sessionId, directory)
+        registerManualAbortGuard(sessionId, directory, status)
         await sdk().session.abort({ sessionID: sessionId, directory })
         markManualAbort(sessionId, getLatestAssistantMessageId(sessionId, directory))
       } catch (error) {
@@ -986,7 +1212,7 @@ export async function createSession(
   const session = await createSessionRecord(title, directoryOverride, parentID)
   if (!session) return null
 
-  const sessionDirectory = (session as { directory?: string }).directory ?? directoryOverride ?? null
+  const sessionDirectory = directoryOverride ?? (session as { directory?: string }).directory ?? null
   getSessionUIStore().getState().setCurrentSession(session.id, sessionDirectory)
   return session
 }
@@ -1013,7 +1239,7 @@ export async function createSessionRecord(
       },
     )
 
-    const sessionDirectory = (session as { directory?: string }).directory ?? directoryOverride ?? null
+    const sessionDirectory = directoryOverride ?? (session as { directory?: string }).directory ?? null
     // Register hidden-session intent BEFORE upserting into the global store so
     // sidebar/list selectors that filter on `isGitGenerationSession` never see
     // the session even for a frame.
@@ -1146,7 +1372,9 @@ export async function deleteSessionInDirectory(sessionId: string, directory: str
       successfulIds: [],
       failedIds: [sessionId],
     })
-    if (snapshot) store.setState({ session: snapshot })
+    if (snapshot) {
+      restoreOptimisticallyRemovedSessions([{ directory, session: snapshot }], [sessionId])
+    }
     useGlobalSessionsStore.getState().restoreSessions(sessionSnapshots)
     return false
   }
@@ -1240,6 +1468,7 @@ export async function unarchiveSessions(sessionIds: string[]): Promise<{ unarchi
     sessionIds: ids,
     snapshots: sessionSnapshots,
   })
+  const optimisticDirectorySnapshots = optimisticallyUnarchiveDirectorySessions(ids, directoryById)
   const { successfulIds, failedIds } = await mutateSessionsInParallel(
     ids,
     async (sessionId) => {
@@ -1258,6 +1487,7 @@ export async function unarchiveSessions(sessionIds: string[]): Promise<{ unarchi
     }
   }
   if (failedIds.length > 0) {
+    restoreOptimisticallyUnarchivedDirectorySessions(optimisticDirectorySnapshots, failedIds)
     const failedOptimisticIds = failedIds.filter((sessionId) => optimisticIds.has(sessionId))
     useGlobalSessionsStore.getState().removeSessions(failedOptimisticIds)
     useGlobalSessionsStore.getState().restoreSessions(filterSnapshotsById(sessionSnapshots, failedIds))
@@ -1273,6 +1503,7 @@ export async function updateSessionTitle(sessionId: string, title: string): Prom
   const sessionDirectory = getSessionDirectory(sessionId)
   const result = await sdk().session.update({ sessionID: sessionId, directory: sessionDirectory, title })
   if (result.data) {
+    mirrorSessionIntoDirectoryStore(result.data, sessionDirectory)
     useGlobalSessionsStore.getState().upsertSession(result.data)
   }
 }
@@ -1333,6 +1564,7 @@ export async function optimisticSend(input: {
 
   const messageDirectory = input.directory || getSessionUIStore().getState().getDirectoryForSession(input.sessionId) || dir()
   const storeForMessage = directoryStore(messageDirectory)
+  assertSessionRevertMutationAllowed(input.sessionId, messageDirectory, "send")
   const messageID = input.messageID ?? createClientMessageId("msg")
   const textPartId = createClientMessageId("prt")
 
@@ -1508,11 +1740,12 @@ async function cancelActiveManagedSubtasks(rootSessionId: string): Promise<void>
 export async function abortCurrentOperation(sessionId: string): Promise<void> {
   if (!sessionId) return
   const sessionDirectory = getSessionDirectory(sessionId)
+  const status = getSessionStatusForAction(sessionId, sessionDirectory)
   getSessionUIStore().getState().abortPendingSend?.(sessionId)
   await cancelActiveManagedSubtasks(sessionId)
   try {
     postAbortRequestedMark(sessionId, sessionDirectory)
-    registerManualAbortGuard(sessionId, sessionDirectory)
+    registerManualAbortGuard(sessionId, sessionDirectory, status)
     await sdk().session.abort({ sessionID: sessionId, directory: sessionDirectory })
     markManualAbort(sessionId, getLatestAssistantMessageId(sessionId, sessionDirectory))
     getSessionUIStore().getState().clearSessionTurnCompletion(sessionId)
@@ -1566,7 +1799,7 @@ export async function interruptCurrentOperationForSteeredSend(sessionId: string)
   if (status?.type === "idle") return
 
   postAbortRequestedMark(sessionId, sessionDirectory)
-  registerManualAbortGuard(sessionId, sessionDirectory)
+  registerManualAbortGuard(sessionId, sessionDirectory, status)
   try {
     await sdk().session.abort({ sessionID: sessionId, directory: sessionDirectory })
   } catch (error) {
@@ -1671,7 +1904,7 @@ export async function rejectQuestion(
  * 2. Extract text from the target message for prompt restoration
  * 3. Optimistically set revert marker so messages hide immediately
  * 4. Call OpenChamber's scoped session revert and merge returned session
- * 5. Set pendingInputText so the reverted message text appears in the input
+ * 5. Queue a session- and revision-owned composer restoration after acknowledgement
  */
 export async function revertToMessage(sessionId: string, messageId: string): Promise<void> {
   if (!messageId) {
@@ -1701,6 +1934,7 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
     targetParts = state.part[messageId] ?? []
     messageText = getRestorableText(targetParts)
   }
+  const expectedComposerRevision = getSessionComposerRevision(sessionId)
 
   // Optimistically remove reverted messages + set marker. The transaction is
   // committed before aborting any in-flight generation so abort-triggered SSE
@@ -1725,7 +1959,7 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
 
   const transaction: RevertTransaction = {
     messageID: messageId,
-    hiddenMessageIDs: removedMessages.map((message) => message.id),
+    hiddenMessageIDs: new Set(removedMessages.map((message) => message.id)),
     version: ++revertTransactionVersion,
     status: "pending",
     startedAt: Date.now(),
@@ -1753,7 +1987,7 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
   const status = state.session_status[sessionId]
   if (status && status.type !== "idle") {
     try {
-      registerManualAbortGuard(sessionId, sessionDirectory)
+      registerManualAbortGuard(sessionId, sessionDirectory, status)
       await sdk().session.abort({ sessionID: sessionId, directory: sessionDirectory })
       store.setState((current) => {
         const currentTransaction = current.revert_transaction[sessionId]
@@ -1802,7 +2036,7 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
       // Restore reverted message text and non-synthetic file attachments only
       // after the safe scoped revert is acknowledged. If the server rejects the
       // revert, the visible messages and the user's existing draft stay aligned.
-      restoreUserMessageInput(targetParts, messageText)
+      queueRevertedUserMessageInput(sessionId, targetParts, messageText, expectedComposerRevision)
     }
   } catch (err) {
     // Rollback: restore removed messages + revert marker
@@ -1833,17 +2067,58 @@ export async function revertToMessage(sessionId: string, messageId: string): Pro
       if (!updateSessionUserActivityFromMessages(draft, sessionId)) return nextState
       return { session_user_activity: draft.session_user_activity }
     })
-    if (status && status.type !== "idle") {
-      await refetchSessionMessages(sessionId, sessionDirectory).catch(() => undefined)
-    }
+    // The pending transaction intentionally suppresses suffix events. A second
+    // client can add a message while even an initially idle revert is in
+    // flight, so every failed revert launches a bounded authoritative refresh.
+    // It is deliberately detached: rollback and the user-facing error must not
+    // wait for a slow message fetch.
+    scheduleFailedRevertReconciliation({
+      sessionId,
+      directory: sessionDirectory,
+      expectedTransaction: prevTransaction,
+      store,
+    })
     throw err
   }
 }
 
-export async function refetchSessionMessages(sessionId: string, directoryOverride?: string): Promise<void> {
+function scheduleFailedRevertReconciliation({
+  sessionId,
+  directory,
+  expectedTransaction,
+  store,
+}: {
+  sessionId: string
+  directory?: string
+  expectedTransaction: RevertTransaction | undefined
+  store: StoreApi<DirectoryStore>
+}): void {
+  const key = unexpectedAbortReconcileKey(directory, sessionId)
+  const token = Symbol(key)
+  failedRevertReconcileOwners.set(key, token)
+
+  void refetchSessionMessages(sessionId, directory, () => {
+    if (failedRevertReconcileOwners.get(key) !== token) return false
+    const currentTransaction = store.getState().revert_transaction[sessionId]
+    return expectedTransaction
+      ? currentTransaction?.version === expectedTransaction.version
+      : currentTransaction === undefined
+  }).catch(() => undefined).finally(() => {
+    if (failedRevertReconcileOwners.get(key) === token) {
+      failedRevertReconcileOwners.delete(key)
+    }
+  })
+}
+
+export async function refetchSessionMessages(
+  sessionId: string,
+  directoryOverride?: string,
+  isCurrent: () => boolean = () => true,
+): Promise<void> {
   const store = directoryStore(directoryOverride)
   const directory = directoryOverride || dir()
   const result = await sdk().session.messages({ sessionID: sessionId, directory, limit: MESSAGE_REFETCH_LIMIT })
+  if (!isCurrent()) return
   const records = unwrapMessageRecordsResult(result).filter(hasMessageRecordInfo)
   if (records.length === 0) return
 
@@ -1875,16 +2150,30 @@ export async function refetchSessionMessages(sessionId: string, directoryOverrid
 
 export function reconcileUnexpectedAbort(sessionId: string, directoryOverride?: string): Promise<void> {
   const sessionDirectory = directoryOverride ?? getSessionDirectory(sessionId)
-  const key = `${sessionDirectory ?? ""}\0${sessionId}`
-  const existing = unexpectedAbortReconcileInFlight.get(key)
-  if (existing) return existing
+  const store = directoryStore(sessionDirectory)
+  const state = store.getState()
+  if (
+    !state.session.some((session) => session.id === sessionId)
+    && !Object.prototype.hasOwnProperty.call(state.message, sessionId)
+  ) {
+    return Promise.resolve()
+  }
 
-  const promise = refetchSessionMessages(sessionId, sessionDirectory).finally(() => {
-    if (unexpectedAbortReconcileInFlight.get(key) === promise) {
+  const key = unexpectedAbortReconcileKey(sessionDirectory, sessionId)
+  const existing = unexpectedAbortReconcileInFlight.get(key)
+  if (existing) return existing.promise
+
+  const token = Symbol(key)
+  const promise = refetchSessionMessages(
+    sessionId,
+    sessionDirectory,
+    () => unexpectedAbortReconcileInFlight.get(key)?.token === token,
+  ).finally(() => {
+    if (unexpectedAbortReconcileInFlight.get(key)?.token === token) {
       unexpectedAbortReconcileInFlight.delete(key)
     }
   })
-  unexpectedAbortReconcileInFlight.set(key, promise)
+  unexpectedAbortReconcileInFlight.set(key, { promise, token })
   return promise
 }
 
@@ -1897,11 +2186,13 @@ export async function unrevertSession(sessionId: string): Promise<void> {
   const store = directoryStore(sessionDirectory)
   const state = store.getState()
 
+  assertSessionRevertMutationAllowed(sessionId, sessionDirectory, "redo")
+
   // Abort if busy
   const status = state.session_status[sessionId]
   if (status && status.type !== "idle") {
     try {
-      registerManualAbortGuard(sessionId, sessionDirectory)
+      registerManualAbortGuard(sessionId, sessionDirectory, status)
       await sdk().session.abort({ sessionID: sessionId, directory: sessionDirectory })
     } catch {
       // ignore abort errors; the abort never reached the server, so stop

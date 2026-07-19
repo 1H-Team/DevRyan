@@ -2428,6 +2428,7 @@ async fn spawn_local_server(app: &tauri::AppHandle) -> Result<String> {
     candidates.push(None);
 
     let dist_dir = resolve_web_dist_dir(app)?;
+    let default_config_dir = resolve_default_config_dir(app)?;
     let no_proxy = "localhost,127.0.0.1";
 
     // macOS app launch env often lacks user PATH entries.
@@ -2556,6 +2557,7 @@ async fn spawn_local_server(app: &tauri::AppHandle) -> Result<String> {
             .args(["--port", &port.to_string()])
             .env("OPENCHAMBER_HOST", sidecar_bind_host)
             .env("OPENCHAMBER_DIST_DIR", dist_dir.clone())
+            .env("DEVRYAN_DEFAULT_CONFIG_ROOT", default_config_dir.clone())
             .env("OPENCHAMBER_RUNTIME", "desktop")
             .env("OPENCHAMBER_DESKTOP_NOTIFY", "true")
             .env("OPENCHAMBER_SKIP_API_COMPRESSION", "true")
@@ -2659,6 +2661,28 @@ fn resolve_web_dist_dir(app: &tauri::AppHandle) -> Result<PathBuf> {
 
     Err(anyhow!(
         "Web assets missing in app resources (expected index.html under web-dist)"
+    ))
+}
+
+fn resolve_default_config_dir(app: &tauri::AppHandle) -> Result<PathBuf> {
+    let candidates = ["default-config", "resources/default-config"];
+    for candidate in candidates {
+        let path = app
+            .path()
+            .resolve(candidate, tauri::path::BaseDirectory::Resource)
+            .map_err(|err| anyhow!("Failed to resolve '{candidate}' resources: {err}"))?;
+        let required = [
+            path.join("opencode.json"),
+            path.join("user-profile/package.json"),
+            path.join("plugins/openai-tool-schema-sanitizer.mjs"),
+        ];
+        if required.iter().all(|required_path| fs::metadata(required_path).is_ok()) {
+            return Ok(path);
+        }
+    }
+
+    Err(anyhow!(
+        "DevRyan default config missing in app resources (expected default-config)"
     ))
 }
 

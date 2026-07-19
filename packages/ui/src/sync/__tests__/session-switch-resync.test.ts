@@ -7,6 +7,8 @@ const listPendingPermissionsCalls: Array<{ directories?: Array<string | null | u
 const sessionStatusCalls: Array<Record<string, never>> = []
 const sessionGetCalls: Array<{ sessionID?: string }> = []
 const sessionMessagesCalls: Array<{ sessionID?: string; limit?: number }> = []
+let sessionStatusGate: Promise<void> | null = null
+let sessionMessagesGate: Promise<void> | null = null
 let pendingQuestionsResponse: QuestionRequest[] = []
 let pendingPermissionsResponse: PermissionRequest[] = []
 let sessionStatusResponse: Record<string, { type: "idle" | "busy" | "retry" }> = {}
@@ -17,6 +19,14 @@ let sessionGetResponse: Record<string, State["session"][number] | null> = {}
 let sessionMessagesResponse: Record<string, Array<{ info: State["message"][string][number]; parts?: State["part"][string] }>> = {}
 let autoAcceptingSessions = new Set<string>()
 const respondToPermissionCalls: Array<{ sessionID: string; requestID: string; reply: string }> = []
+
+const deferred = () => {
+  let resolve!: () => void
+  const promise = new Promise<void>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
 
 mock.module("@/lib/opencode/client", () => ({
   opencodeClient: {
@@ -36,7 +46,7 @@ mock.module("@/lib/opencode/client", () => ({
         status: mock(() => {
           sessionStatusCalls.push({})
           if (sessionStatusError) throw sessionStatusError
-          return Promise.resolve({ data: sessionStatusResponse })
+          return (sessionStatusGate ?? Promise.resolve()).then(() => ({ data: sessionStatusResponse }))
         }),
         get: mock((params: { sessionID?: string }) => {
           sessionGetCalls.push(params)
@@ -44,7 +54,9 @@ mock.module("@/lib/opencode/client", () => ({
         }),
         messages: mock((params: { sessionID?: string; limit?: number }) => {
           sessionMessagesCalls.push(params)
-          return Promise.resolve({ data: sessionMessagesResponse[String(params.sessionID)] ?? [] })
+          return (sessionMessagesGate ?? Promise.resolve()).then(() => ({
+            data: sessionMessagesResponse[String(params.sessionID)] ?? [],
+          }))
         }),
       },
     }),
@@ -122,6 +134,8 @@ describe("resyncBlockingRequestsForDirectory", () => {
     sessionStatusCalls.length = 0
     sessionGetCalls.length = 0
     sessionMessagesCalls.length = 0
+    sessionStatusGate = null
+    sessionMessagesGate = null
     pendingQuestionsResponse = []
     pendingPermissionsResponse = []
     sessionStatusResponse = {}
@@ -255,6 +269,8 @@ describe("resyncDirectoryAfterReconnect", () => {
     sessionStatusCalls.length = 0
     sessionGetCalls.length = 0
     sessionMessagesCalls.length = 0
+    sessionStatusGate = null
+    sessionMessagesGate = null
     pendingQuestionsResponse = []
     pendingPermissionsResponse = []
     sessionStatusResponse = {}
@@ -331,5 +347,65 @@ describe("resyncDirectoryAfterReconnect", () => {
     expect(store.getState().session_status.ses_a).toEqual({ type: "busy" })
     expect(store.getState().question.ses_a).toEqual([existingQuestion])
     expect(store.getState().permission.ses_a).toEqual([existingPermission])
+  })
+
+  test("preserves a newer live status while the reconnect status snapshot is delayed", async () => {
+    const delayedStatus = deferred()
+    sessionStatusGate = delayedStatus.promise
+    sessionStatusResponse = { ses_a: { type: "busy" } }
+    const store = createDirectoryStore({
+      session_status: { ses_a: { type: "busy" } },
+    })
+    const routingIndex = {
+      sessionDirectoryById: new Map<string, string>(),
+      messageSessionById: new Map<string, string>(),
+      sessionMessageIdsById: new Map<string, Set<string>>(),
+    }
+
+    const { resyncDirectoryAfterReconnect } = await import("../sync-context")
+    const resync = resyncDirectoryAfterReconnect("/repo", store, routingIndex as never, {
+      candidateSessionIds: ["ses_a"],
+    })
+    await Promise.resolve()
+    expect(sessionStatusCalls).toHaveLength(1)
+
+    store.setState({ session_status: { ses_a: { type: "idle" } } })
+    delayedStatus.resolve()
+    await resync
+
+    expect(store.getState().session_status.ses_a).toEqual({ type: "idle" })
+  })
+
+  test("does not reapply a reconnect status snapshot over a later live event", async () => {
+    const delayedMessages = deferred()
+    sessionMessagesGate = delayedMessages.promise
+    sessionStatusResponse = { ses_a: { type: "busy" } }
+    sessionGetResponse = {
+      ses_a: { id: "ses_a", title: "ses_a", time: { created: 1, updated: 2 }, version: "1" } as State["session"][number],
+    }
+    const store = createDirectoryStore({
+      session_status: { ses_a: { type: "idle" } },
+    })
+    const routingIndex = {
+      sessionDirectoryById: new Map<string, string>(),
+      messageSessionById: new Map<string, string>(),
+      sessionMessageIdsById: new Map<string, Set<string>>(),
+    }
+
+    const { resyncDirectoryAfterReconnect } = await import("../sync-context")
+    const resync = resyncDirectoryAfterReconnect("/repo", store, routingIndex as never, {
+      candidateSessionIds: ["ses_a"],
+    })
+    for (let attempt = 0; attempt < 10 && sessionMessagesCalls.length === 0; attempt += 1) {
+      await Promise.resolve()
+    }
+    expect(sessionMessagesCalls).toEqual([{ sessionID: "ses_a", limit: 30 }])
+    expect(store.getState().session_status.ses_a).toEqual({ type: "busy" })
+
+    store.setState({ session_status: { ses_a: { type: "idle" } } })
+    delayedMessages.resolve()
+    await resync
+
+    expect(store.getState().session_status.ses_a).toEqual({ type: "idle" })
   })
 })

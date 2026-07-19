@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { CodeMirrorEditor } from '@/components/ui/CodeMirrorEditor';
 import { PreviewToggleButton } from './PreviewToggleButton';
 import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
@@ -29,6 +30,7 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useSelectionStore } from '@/sync/selection-store';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
+import { useSessionPlanFileStore } from '@/stores/useSessionPlanFileStore';
 import { useGitStore } from '@/stores/useGitStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
@@ -48,9 +50,12 @@ import {
   getPlanSendVisiblePromptId,
   type PlanSendAction,
 } from './planSend';
+import { getPlanViewCandidatePaths } from './planViewPaths';
 
 type PlanViewProps = {
   targetPath?: string | null;
+  presentation?: 'standalone' | 'context-panel';
+  headerActionsTarget?: HTMLElement | null;
 };
 
 type PlanSendTarget = 'session' | 'worktree';
@@ -149,9 +154,18 @@ type SelectedLineRange = {
   end: number;
 };
 
-export const PlanView: React.FC<PlanViewProps> = ({ targetPath = null }) => {
+export const PlanView: React.FC<PlanViewProps> = ({
+  targetPath = null,
+  presentation = 'standalone',
+  headerActionsTarget = null,
+}) => {
   const { t } = useI18n();
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
+  const sessionPlanPath = useSessionPlanFileStore((state) => {
+    if (!currentSessionId) return null;
+    const record = state.recordsBySession[currentSessionId];
+    return record?.status === 'saved' ? record.path : null;
+  });
   const createSession = useSessionUIStore((state) => state.createSession);
   const initializeNewOpenChamberSession = useSessionUIStore((state) => state.initializeNewOpenChamberSession);
   const sendMessage = useSessionUIStore((state) => state.sendMessage);
@@ -179,6 +193,8 @@ export const PlanView: React.FC<PlanViewProps> = ({ targetPath = null }) => {
     const raw = typeof session?.directory === 'string' ? session.directory : '';
     return normalize(raw || '');
   }, [session?.directory]);
+  const sessionSlug = session?.slug ?? null;
+  const sessionCreated = session?.time?.created ?? null;
   const projectDirectory = React.useMemo(
     () => normalize(effectiveDirectory || sessionDirectory),
     [effectiveDirectory, sessionDirectory],
@@ -215,36 +231,17 @@ export const PlanView: React.FC<PlanViewProps> = ({ targetPath = null }) => {
   const sendPromptTitle = React.useMemo(() => parsedTitle.trim() || t('planView.title.default'), [parsedTitle, t]);
   const [loading, setLoading] = React.useState(false);
   const [copiedContent, setCopiedContent] = React.useState(false);
-  const [mdViewMode, setMdViewMode] = React.useState<'preview' | 'edit'>('edit');
+  const [mdViewMode, setMdViewMode] = React.useState<'preview' | 'edit'>('preview');
   const copiedContentTimeoutRef = React.useRef<number | null>(null);
 
   const [lineSelection, setLineSelection] = React.useState<SelectedLineRange | null>(null);
   const editorViewRef = React.useRef<EditorView | null>(null);
   const editorWrapperRef = React.useRef<HTMLDivElement | null>(null);
 
-  const MD_VIEWER_MODE_KEY = 'openchamber:plan:md-viewer-mode';
-
   React.useEffect(() => {
-    try {
-      const stored = localStorage.getItem(MD_VIEWER_MODE_KEY);
-      if (!stored) return;
-      const parsed = JSON.parse(stored) as unknown;
-      if (parsed === 'preview' || parsed === 'edit') {
-        setMdViewMode(parsed);
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
+    setMdViewMode('preview');
+  }, [currentSessionId, sessionPlanPath, targetPath]);
 
-  const saveMdViewMode = React.useCallback((mode: 'preview' | 'edit') => {
-    setMdViewMode(mode);
-    try {
-      localStorage.setItem(MD_VIEWER_MODE_KEY, JSON.stringify(mode));
-    } catch {
-      // ignore
-    }
-  }, []);
   const isSelectingRef = React.useRef(false);
   const selectionStartRef = React.useRef<number | null>(null);
   const [isDragging, setIsDragging] = React.useState(false);
@@ -357,7 +354,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ targetPath = null }) => {
 
   React.useEffect(() => {
     // Saved project plans opened via context panel should work even when session plan mode is off.
-    if (!planModeEnabled && !targetPath) {
+    if (!planModeEnabled && !targetPath && !sessionPlanPath) {
       setResolvedPath(null);
       setContent('');
       setLoading(false);
@@ -393,49 +390,30 @@ export const PlanView: React.FC<PlanViewProps> = ({ targetPath = null }) => {
       setContent('');
       setSaveError(null);
 
-      if (targetPath) {
-        setLoading(true);
-        try {
-          const text = await readText(targetPath);
-          if (cancelled) return;
-          setResolvedPath(targetPath);
-          setContent(text);
-        } catch {
-          if (cancelled) return;
-          setResolvedPath(null);
-          setContent('');
-        } finally {
-          if (!cancelled) setLoading(false);
-        }
-        return;
-      }
-
-      if (!session?.slug || !session?.time?.created || !sessionDirectory) {
-        setResolvedPath(null);
-        setContent('');
-        return;
-      }
-
       setLoading(true);
 
       try {
-        const repoPath = buildRepoPlanPath(sessionDirectory, session.time.created, session.slug);
-        const homePath = resolveTilde(buildHomePlanPath(session.time.created, session.slug), homeDirectory || null);
+        const repoPath = sessionSlug && sessionCreated && sessionDirectory
+          ? buildRepoPlanPath(sessionDirectory, sessionCreated, sessionSlug)
+          : null;
+        const homePath = sessionSlug && sessionCreated && sessionDirectory
+          ? resolveTilde(buildHomePlanPath(sessionCreated, sessionSlug), homeDirectory || null)
+          : null;
+        const candidates = getPlanViewCandidatePaths({
+          explicitTargetPath: targetPath,
+          sessionPlanPath,
+          repoPlanPath: repoPath,
+          homePlanPath: homePath,
+        });
 
         let resolved: string | null = null;
         let text: string | null = null;
 
-        try {
-          text = await readText(repoPath);
-          resolved = repoPath;
-        } catch {
-          // ignore
-        }
-
-        if (!resolved) {
+        for (const candidate of candidates) {
           try {
-            text = await readText(homePath);
-            resolved = homePath;
+            text = await readText(candidate);
+            resolved = candidate;
+            break;
           } catch {
             // ignore
           }
@@ -465,7 +443,34 @@ export const PlanView: React.FC<PlanViewProps> = ({ targetPath = null }) => {
     return () => {
       cancelled = true;
     };
-  }, [homeDirectory, planModeEnabled, runtimeApis.files, sessionDirectory, session?.slug, session?.time?.created, targetPath]);
+  }, [homeDirectory, planModeEnabled, runtimeApis.files, sessionCreated, sessionDirectory, sessionPlanPath, sessionSlug, targetPath]);
+
+  const savePlanContent = React.useCallback(async (): Promise<boolean> => {
+    if (!resolvedPath) return false;
+
+    try {
+      setSaveError(null);
+      if (runtimeApis.files?.writeFile) {
+        const result = await runtimeApis.files.writeFile(resolvedPath, content);
+        if (!result?.success) {
+          throw new Error(t('planView.error.writeFailed'));
+        }
+      } else {
+        const response = await fetch('/api/fs/write', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: resolvedPath, content }),
+        });
+        if (!response.ok) {
+          throw new Error(t('planView.error.writePlanFileFailed', { status: response.status }));
+        }
+      }
+      return true;
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : t('planView.error.saveFailed'));
+      return false;
+    }
+  }, [content, resolvedPath, runtimeApis.files, t]);
 
   React.useEffect(() => {
     if (!resolvedPath) {
@@ -473,33 +478,14 @@ export const PlanView: React.FC<PlanViewProps> = ({ targetPath = null }) => {
       return;
     }
 
-    const controller = window.setTimeout(async () => {
-      setSaveError(null);
-      try {
-        if (runtimeApis.files?.writeFile) {
-          const result = await runtimeApis.files.writeFile(resolvedPath, content);
-          if (!result?.success) {
-            throw new Error(t('planView.error.writeFailed'));
-          }
-        } else {
-          const response = await fetch('/api/fs/write', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ path: resolvedPath, content }),
-          });
-          if (!response.ok) {
-            throw new Error(t('planView.error.writePlanFileFailed', { status: response.status }));
-          }
-        }
-      } catch (error) {
-        setSaveError(error instanceof Error ? error.message : t('planView.error.saveFailed'));
-      }
+    const controller = window.setTimeout(() => {
+      void savePlanContent();
     }, 350);
 
     return () => {
       window.clearTimeout(controller);
     };
-  }, [content, resolvedPath, runtimeApis.files, t]);
+  }, [resolvedPath, savePlanContent]);
 
   React.useEffect(() => {
     return () => {
@@ -519,6 +505,9 @@ export const PlanView: React.FC<PlanViewProps> = ({ targetPath = null }) => {
       if (!currentProjectRef || !pendingPlanSend) {
         return;
       }
+      if (!resolvedPath || !(await savePlanContent())) {
+        return;
+      }
 
       const visiblePrompt = await renderMagicPrompt(
         getPlanSendVisiblePromptId(pendingPlanSend.action),
@@ -531,8 +520,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ targetPath = null }) => {
         buildPlanSendPromptVariables({
           action: pendingPlanSend.action,
           title: sendPromptTitle,
-          path: resolvedPath ?? '',
-          body: content,
+          path: resolvedPath,
         }),
       );
       const syntheticParts = [{ synthetic: true as const, text: instructionsText }];
@@ -601,7 +589,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ targetPath = null }) => {
         setIsPlanSendSubmitting(false);
       }
     },
-    [canCreateWorktree, content, createSession, currentProjectRef, initializeNewOpenChamberSession, pendingPlanSend, resolvedPath, routeToChat, sendMessage, sendPromptTitle, setCurrentSession]
+    [canCreateWorktree, createSession, currentProjectRef, initializeNewOpenChamberSession, pendingPlanSend, resolvedPath, routeToChat, savePlanContent, sendMessage, sendPromptTitle, setCurrentSession]
   );
 
   const blockWidgets = React.useMemo(() => {
@@ -624,111 +612,127 @@ export const PlanView: React.FC<PlanViewProps> = ({ targetPath = null }) => {
     });
   }, [commentText, deleteDraft, editingDraftId, handleCancelComment, handleSaveComment, isDragging, lineSelection, planFileDrafts, planFileLabel, startEdit]);
 
+  const planActions = resolvedPath ? (
+    <div className="flex shrink-0 items-center gap-1" data-plan-view-actions="true">
+      <DropdownMenu>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-5 w-5 p-0"
+                aria-label={t('planView.actions.improvePlanAria')}
+                disabled={!content.trim()}
+              >
+                <RiLoopRightAiLine className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent sideOffset={8}>{t('planView.actions.improve')}</TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => setPendingPlanSend({ action: 'improve', target: 'session' })}>
+            {t('planView.actions.sendToNewSession')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => setPendingPlanSend({ action: 'improve', target: 'worktree' })}
+            disabled={!canCreateWorktree}
+          >
+            {t('planView.actions.sendToNewWorktreeSession')}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <DropdownMenu>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-5 w-5 p-0"
+                aria-label={t('planView.actions.implementPlanAria')}
+                disabled={!content.trim()}
+              >
+                <RiCodeAiLine className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent sideOffset={8}>{t('planView.actions.implement')}</TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => setPendingPlanSend({ action: 'implement', target: 'session' })}>
+            {t('planView.actions.sendToNewSession')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => setPendingPlanSend({ action: 'implement', target: 'worktree' })}
+            disabled={!canCreateWorktree}
+          >
+            {t('planView.actions.sendToNewWorktreeSession')}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <PreviewToggleButton
+        currentMode={mdViewMode}
+        onToggle={() => setMdViewMode(mdViewMode === 'preview' ? 'edit' : 'preview')}
+      />
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={async () => {
+          const result = await copyTextToClipboard(content);
+          if (result.ok) {
+            setCopiedContent(true);
+            if (copiedContentTimeoutRef.current !== null) {
+              window.clearTimeout(copiedContentTimeoutRef.current);
+            }
+            copiedContentTimeoutRef.current = window.setTimeout(() => {
+              setCopiedContent(false);
+            }, 1200);
+          } else {
+            // ignored
+          }
+        }}
+        className="h-5 w-5 p-0"
+        title={t('planView.actions.copyPlanContents')}
+        aria-label={t('planView.actions.copyPlanContents')}
+      >
+        {copiedContent ? (
+          <RiCheckLine className="h-4 w-4 text-[color:var(--status-success)]" />
+        ) : (
+          <RiClipboardLine className="h-4 w-4" />
+        )}
+      </Button>
+    </div>
+  ) : null;
+
+  const contextPanelActions = presentation === 'context-panel' && headerActionsTarget && planActions
+    ? createPortal(planActions, headerActionsTarget)
+    : null;
+
   return (
     <div className="relative flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden bg-background">
-      <div className="flex min-w-0 items-center gap-2 border-b border-border/40 px-3 py-1.5 flex-shrink-0">
-        <div className="min-w-0 flex-1">
-          <div className="typography-ui-label font-medium truncate">{parsedTitle}</div>
-          {saveError ? (
-            <div className="typography-micro text-[color:var(--status-error)] truncate" title={saveError}>
-              {t('planView.error.saveFailed')}
-            </div>
-          ) : null}
-        </div>
-        {resolvedPath ? (
-          <div className="flex items-center gap-1">
-            <DropdownMenu>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-5 w-5 p-0"
-                      aria-label={t('planView.actions.improvePlanAria')}
-                      disabled={!content.trim()}
-                    >
-                      <RiLoopRightAiLine className="size-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                </TooltipTrigger>
-                <TooltipContent sideOffset={8}>{t('planView.actions.improve')}</TooltipContent>
-              </Tooltip>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setPendingPlanSend({ action: 'improve', target: 'session' })}>
-                  {t('planView.actions.sendToNewSession')}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setPendingPlanSend({ action: 'improve', target: 'worktree' })}
-                  disabled={!canCreateWorktree}
-                >
-                  {t('planView.actions.sendToNewWorktreeSession')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <DropdownMenu>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-5 w-5 p-0"
-                      aria-label={t('planView.actions.implementPlanAria')}
-                      disabled={!content.trim()}
-                    >
-                      <RiCodeAiLine className="size-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                </TooltipTrigger>
-                <TooltipContent sideOffset={8}>{t('planView.actions.implement')}</TooltipContent>
-              </Tooltip>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setPendingPlanSend({ action: 'implement', target: 'session' })}>
-                  {t('planView.actions.sendToNewSession')}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => setPendingPlanSend({ action: 'implement', target: 'worktree' })}
-                  disabled={!canCreateWorktree}
-                >
-                  {t('planView.actions.sendToNewWorktreeSession')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <PreviewToggleButton
-              currentMode={mdViewMode}
-              onToggle={() => saveMdViewMode(mdViewMode === 'preview' ? 'edit' : 'preview')}
-            />
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={async () => {
-                const result = await copyTextToClipboard(content);
-                if (result.ok) {
-                  setCopiedContent(true);
-                  if (copiedContentTimeoutRef.current !== null) {
-                    window.clearTimeout(copiedContentTimeoutRef.current);
-                  }
-                  copiedContentTimeoutRef.current = window.setTimeout(() => {
-                    setCopiedContent(false);
-                  }, 1200);
-                } else {
-                  // ignored
-                }
-              }}
-              className="h-5 w-5 p-0"
-              title={t('planView.actions.copyPlanContents')}
-              aria-label={t('planView.actions.copyPlanContents')}
-            >
-              {copiedContent ? (
-                <RiCheckLine className="h-4 w-4 text-[color:var(--status-success)]" />
-              ) : (
-                <RiClipboardLine className="h-4 w-4" />
-              )}
-            </Button>
+      {contextPanelActions}
+      {presentation === 'standalone' ? (
+        <div className="flex min-w-0 flex-shrink-0 items-center gap-2 border-b border-border/40 px-3 py-1.5">
+          <div className="min-w-0 flex-1">
+            <div className="typography-ui-label truncate font-medium">{parsedTitle}</div>
+            {saveError ? (
+              <div className="typography-micro truncate text-[color:var(--status-error)]" title={saveError}>
+                {t('planView.error.saveFailed')}
+              </div>
+            ) : null}
           </div>
-        ) : null}
-      </div>
+          {planActions}
+        </div>
+      ) : saveError ? (
+        <div
+          className="typography-micro flex-shrink-0 truncate border-b border-border/40 px-3 py-1 text-[color:var(--status-error)]"
+          title={saveError}
+        >
+          {t('planView.error.saveFailed')}
+        </div>
+      ) : null}
 
       <TodoSendDialog
         open={pendingPlanSend !== null}

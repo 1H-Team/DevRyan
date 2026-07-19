@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { opencodeClient } from "@/lib/opencode/client";
-import { useSkillsStore } from "./useSkillsStore";
+import { getSkillIdentity, useSkillsStore } from "./useSkillsStore";
 
 const originalFetch = globalThis.fetch;
 const originalCheckHealth = opencodeClient.checkHealth.bind(opencodeClient);
@@ -55,6 +55,7 @@ describe("useSkillsStore", () => {
     opencodeClient.setDirectory(`/tmp/devryan-skills-store-${Date.now()}-${Math.random()}`);
     useSkillsStore.setState({
       selectedSkillName: null,
+      selectedSkillIdentity: null,
       skills: [],
       isLoading: false,
       skillDraft: null,
@@ -262,37 +263,105 @@ describe("useSkillsStore", () => {
     expect(fetchCalls[1]).toContain(`path=${encodeURIComponent(projectSkill.path)}`);
   });
 
-  test("deleteSkill clears the selected skill when the server requires reload", async () => {
+  test("deleteSkill removes the exact selected identity without waiting for runtime health or reconciliation", async () => {
     const fetchCalls: string[] = [];
+    const reconciliation = new Promise<Response>(() => {});
     globalThis.fetch = (async (input, init) => {
       fetchCalls.push(`${init?.method || "GET"} ${String(input)}`);
       if (init?.method === "DELETE") {
         return Response.json({
           success: true,
-          requiresReload: true,
-          reloadDelayMs: 0,
+          requiresReload: false,
+          runtimeRefreshPending: true,
+          runtimeApplied: false,
         });
+      }
+      return reconciliation;
+    }) as typeof fetch;
+    let healthChecks = 0;
+    opencodeClient.checkHealth = (async () => {
+      healthChecks += 1;
+      return true;
+    }) as typeof opencodeClient.checkHealth;
+
+    const selectedSkill = {
+      name: "lint-helper",
+      path: "/tmp/project/.opencode/skills/lint-helper/SKILL.md",
+      scope: "project" as const,
+      source: "opencode" as const,
+    };
+    const sameNameUserSkill = {
+      name: "lint-helper",
+      path: "/tmp/user/.agents/skills/lint-helper/SKILL.md",
+      scope: "user" as const,
+      source: "agents" as const,
+    };
+    useSkillsStore.setState({
+      selectedSkillName: "lint-helper",
+      selectedSkillIdentity: getSkillIdentity(selectedSkill),
+      skills: [sameNameUserSkill, selectedSkill],
+    });
+
+    const removed = await useSkillsStore.getState().deleteSkill(selectedSkill);
+
+    expect(removed).toBe(true);
+    expect(useSkillsStore.getState().selectedSkillName).toBe(null);
+    expect(useSkillsStore.getState().skills).toEqual([sameNameUserSkill]);
+    expect(healthChecks).toBe(0);
+    const deleteCall = fetchCalls.find((call) => call.startsWith("DELETE /api/config/skills/lint-helper"));
+    expect(deleteCall).toContain("scope=project");
+    expect(deleteCall).toContain(`path=${encodeURIComponent(selectedSkill.path)}`);
+  });
+
+  test("hideSkill posts the exact selected skill identity and clears it after reload", async () => {
+    const fetchCalls: string[] = [];
+    globalThis.fetch = (async (input, init) => {
+      fetchCalls.push(`${init?.method || "GET"} ${String(input)}`);
+      if (init?.method === "POST") {
+        return Response.json({ success: true, requiresReload: true, reloadDelayMs: 0 });
       }
       return Response.json({ skills: [] });
     }) as typeof fetch;
     opencodeClient.checkHealth = (async () => true) as typeof opencodeClient.checkHealth;
 
+    const selectedSkill = {
+      name: "lint-helper",
+      path: "/tmp/user/.agents/skills/lint-helper/SKILL.md",
+      scope: "user" as const,
+      source: "agents" as const,
+    };
     useSkillsStore.setState({
-      selectedSkillName: "lint-helper",
-      skills: [
-        {
-          name: "lint-helper",
-          path: "/tmp/lint-helper/SKILL.md",
-          scope: "user",
-          source: "opencode",
-        },
-      ],
+      selectedSkillName: selectedSkill.name,
+      selectedSkillIdentity: getSkillIdentity(selectedSkill),
+      skills: [selectedSkill],
     });
 
-    const removed = await useSkillsStore.getState().deleteSkill("lint-helper");
+    const hidden = await useSkillsStore.getState().hideSkill(selectedSkill);
 
-    expect(removed).toBe(true);
+    expect(hidden).toBe(true);
     expect(useSkillsStore.getState().selectedSkillName).toBe(null);
-    expect(fetchCalls.some((call) => call.startsWith("DELETE /api/config/skills/lint-helper"))).toBe(true);
+    const hideCall = fetchCalls.find((call) => call.startsWith("POST /api/config/skills/lint-helper/hide"));
+    expect(hideCall).toContain("scope=user");
+    expect(hideCall).toContain(`path=${encodeURIComponent(selectedSkill.path)}`);
+  });
+
+  test("failed hide and delete requests preserve the selected skill", async () => {
+    globalThis.fetch = (async () => Response.json({ error: "denied" }, { status: 500 })) as typeof fetch;
+    const selectedSkill = {
+      name: "lint-helper",
+      path: "/tmp/lint-helper/SKILL.md",
+      scope: "user" as const,
+      source: "opencode" as const,
+    };
+    useSkillsStore.setState({
+      selectedSkillName: selectedSkill.name,
+      selectedSkillIdentity: getSkillIdentity(selectedSkill),
+      skills: [selectedSkill],
+    });
+
+    expect(await useSkillsStore.getState().hideSkill(selectedSkill)).toBe(false);
+    expect(await useSkillsStore.getState().deleteSkill(selectedSkill)).toBe(false);
+    expect(useSkillsStore.getState().selectedSkillName).toBe(selectedSkill.name);
+    expect(useSkillsStore.getState().selectedSkillIdentity).not.toBe(null);
   });
 });

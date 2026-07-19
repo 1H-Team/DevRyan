@@ -149,6 +149,7 @@ const areTurnDiffStatsEqual = (left?: TurnDiffStats, right?: TurnDiffStats): boo
 const areTurnActivityRecordsEqual = (left: TurnActivityRecord, right: TurnActivityRecord): boolean => {
   return left.id === right.id
     && left.messageId === right.messageId
+    && left.providerID === right.providerID
     && left.kind === right.kind
     && left.partIndex === right.partIndex
     && left.endedAt === right.endedAt
@@ -260,6 +261,7 @@ export const areRelevantTurnGroupingContextsEqual = (
   }
 
   if (left.turnId !== right.turnId) return false;
+  if (left.responseStyleLevel !== right.responseStyleLevel) return false;
   if (left.isFirstAssistantInTurn !== right.isFirstAssistantInTurn) return false;
   if (left.isLastAssistantInTurn !== right.isLastAssistantInTurn) return false;
   if (left.isWorking !== right.isWorking) return false;

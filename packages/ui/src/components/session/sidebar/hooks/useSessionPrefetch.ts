@@ -2,6 +2,10 @@ import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { getSyncSessionMaterializationStatus } from '@/sync/sync-refs';
+import {
+  getSidebarSessionDirectory,
+  isActiveSidebarHydrationDirectory,
+} from './sidebarHydrationUtils';
 
 const SESSION_PREFETCH_HOVER_DELAY_MS = 180;
 const SESSION_PREFETCH_SETTLE_MS = 600;
@@ -10,11 +14,35 @@ const SESSION_PREFETCH_PENDING_LIMIT = 6;
 
 type Args = {
   currentSessionId: string | null;
+  currentDirectory: string | null;
   sortedSessions: Session[];
   ensureSessionRenderable: (sessionId: string) => Promise<unknown>;
 };
 
-export const useSessionPrefetch = ({ currentSessionId, sortedSessions, ensureSessionRenderable }: Args): void => {
+export const selectSessionPrefetchNeighborIds = (input: {
+  currentSessionId: string | null;
+  currentDirectory: string | null;
+  sortedSessions: Session[];
+}): string[] => {
+  if (!input.currentSessionId || !input.currentDirectory) return [];
+  const activeSessions = input.sortedSessions.filter((session) => (
+    isActiveSidebarHydrationDirectory(
+      getSidebarSessionDirectory(session),
+      input.currentDirectory,
+    )
+  ));
+  const currentIndex = activeSessions.findIndex((session) => session.id === input.currentSessionId);
+  if (currentIndex < 0) return [];
+  return [activeSessions[currentIndex - 1]?.id, activeSessions[currentIndex + 1]?.id]
+    .filter((sessionId): sessionId is string => typeof sessionId === 'string');
+};
+
+export const useSessionPrefetch = ({
+  currentSessionId,
+  currentDirectory,
+  sortedSessions,
+  ensureSessionRenderable,
+}: Args): void => {
   const sessionPrefetchTimersRef = React.useRef<Map<string, number>>(new Map());
   const sessionPrefetchQueueRef = React.useRef<string[]>([]);
   const sessionPrefetchInFlightRef = React.useRef<Set<string>>(new Set());
@@ -92,13 +120,15 @@ export const useSessionPrefetch = ({ currentSessionId, sortedSessions, ensureSes
       return;
     }
     const timer = window.setTimeout(() => {
-      const currentIndex = sortedSessions.findIndex((session) => session.id === currentSessionId);
-      if (currentIndex < 0) return;
-      scheduleSessionPrefetch(sortedSessions[currentIndex - 1]?.id);
-      scheduleSessionPrefetch(sortedSessions[currentIndex + 1]?.id);
+      const neighborIds = selectSessionPrefetchNeighborIds({
+        currentSessionId,
+        currentDirectory,
+        sortedSessions,
+      });
+      neighborIds.forEach(scheduleSessionPrefetch);
     }, SESSION_PREFETCH_SETTLE_MS);
     return () => window.clearTimeout(timer);
-  }, [currentSessionId, scheduleSessionPrefetch, sortedSessions]);
+  }, [currentDirectory, currentSessionId, scheduleSessionPrefetch, sortedSessions]);
 
   React.useEffect(() => {
     const prefetchTimers = sessionPrefetchTimersRef.current;

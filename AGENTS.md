@@ -13,6 +13,13 @@ DevRyan provides UI runtimes (web/desktop/VS Code) for interacting with an OpenC
 - Existing local names such as `@openchamber/web`, `openchamber`, `OPENCHAMBER_*`, and config paths are implementation compatibility names. They are not permission to consult upstream OpenChamber.
 - `OpenCode` is the external runtime dependency and remains valid context; do not confuse it with the forbidden upstream OpenChamber repository.
 
+## Release branding (MANDATORY)
+
+- All brand-bearing public GitHub Release asset filenames must use `DevRyan`. Distributable workflow artifacts exposed for direct download must also use `DevRyan`; internal handoff artifacts and tool-mandated neutral metadata such as `latest-mac.yml` may retain their required functional names. Never publish a user-facing asset with an `OpenChamber` or `openchamber` filename prefix.
+- Keep compatibility identifiers unchanged unless the user explicitly requests and approves a migration. This includes `@openchamber/*` npm packages, the `openchamber` CLI, `OPENCHAMBER_*` environment variables, `openchamber://`, config paths, IPC/event names, and VS Code extension IDs.
+- When a build tool derives an output filename from a compatibility identifier, copy it to a deterministic `DevRyan-*` staging filename before uploading it to GitHub Releases. Marketplace and npm publication may continue using the compatibility package identity.
+- Release verification must require the branded filenames and reject legacy-prefixed public assets.
+
 ## Runtime architecture (IMPORTANT)
 
 - `Desktop` (Electron) boots the web server **in the same Node process** as the Electron main, then loads the web UI from `http://127.0.0.1:<port>`. No sidecar subprocess.

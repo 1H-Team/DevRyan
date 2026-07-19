@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { readAuthFile } from '../../opencode/auth.js';
 import { fetchQuotaForProvider } from './index.js';
+import { fetchCursorAcpQuota, resolveCursorQuotaCredential } from './cursor-acp.js';
 
 vi.mock('../../opencode/auth.js', () => ({
   readAuthFile: vi.fn(() => ({})),
@@ -177,5 +178,62 @@ describe('Cursor ACP quota provider', () => {
       configured: true,
       error: 'Cursor usage response did not include plan usage buckets.',
     });
+  });
+
+  it('resolves OAuth environment and token files before managed and legacy dashboard credentials', () => {
+    const common = {
+      readAuth: () => ({ 'cursor-acp': { usageSessionToken: 'legacy' } }),
+      readManagedCredential: () => ({ sessionToken: 'managed' }),
+    };
+    expect(resolveCursorQuotaCredential({
+      ...common,
+      env: { CURSOR_ACCESS_TOKEN: 'environment' },
+      readTokenFile: () => 'file',
+    })).toMatchObject({ kind: 'oauth', source: 'environment', credential: { accessToken: 'environment' } });
+    expect(resolveCursorQuotaCredential({
+      ...common,
+      env: { CURSOR_TOKEN_FILE: '/token' },
+      readTokenFile: () => 'file',
+    })).toMatchObject({ kind: 'oauth', source: 'token-file', credential: { accessToken: 'file' } });
+    expect(resolveCursorQuotaCredential({ ...common, env: {}, readTokenFile: () => '' })).toMatchObject({
+      kind: 'dashboard',
+      source: 'managed',
+      credential: { sessionToken: 'managed' },
+    });
+  });
+
+  it('persists refreshed OAuth access tokens only for managed credentials', async () => {
+    const expiredToken = `header.${Buffer.from(JSON.stringify({ exp: 1 })).toString('base64url')}.signature`;
+    const fetchImpl = vi.fn(async (url) => {
+      if (url.endsWith('/oauth/token')) {
+        return { ok: true, status: 200, json: async () => ({ access_token: 'refreshed' }) };
+      }
+      return { ok: true, status: 200, json: async () => makeUsageSummary() };
+    });
+    const writeManagedCredential = vi.fn();
+
+    const managedResult = await fetchCursorAcpQuota({
+      env: {},
+      readAuth: () => ({}),
+      readManagedCredential: () => ({ accessToken: expiredToken, refreshToken: 'refresh' }),
+      writeManagedCredential,
+      fetchImpl,
+    });
+    expect(managedResult.ok).toBe(true);
+    expect(writeManagedCredential).toHaveBeenCalledWith('cursor-acp', {
+      accessToken: 'refreshed',
+      refreshToken: 'refresh',
+    });
+
+    writeManagedCredential.mockClear();
+    const environmentResult = await fetchCursorAcpQuota({
+      env: { CURSOR_ACCESS_TOKEN: expiredToken, CURSOR_REFRESH_TOKEN: 'refresh' },
+      readAuth: () => ({}),
+      readManagedCredential: () => null,
+      writeManagedCredential,
+      fetchImpl,
+    });
+    expect(environmentResult.ok).toBe(true);
+    expect(writeManagedCredential).not.toHaveBeenCalled();
   });
 });

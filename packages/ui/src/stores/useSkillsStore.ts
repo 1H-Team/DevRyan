@@ -139,6 +139,7 @@ interface SkillsStore {
   getSkillDetail: (name: string) => Promise<SkillDetail | null>;
   createSkill: (config: SkillConfig) => Promise<boolean>;
   updateSkill: (name: string, config: Partial<SkillConfig>) => Promise<boolean>;
+  hideSkill: (skill: string | Pick<DiscoveredSkill, 'name' | 'path' | 'scope' | 'source'>) => Promise<boolean>;
   deleteSkill: (skill: string | Pick<DiscoveredSkill, 'name' | 'path' | 'scope' | 'source'>) => Promise<boolean>;
   listHiddenSkills: () => Promise<HiddenSkill[]>;
   restoreHiddenSkill: (path: string) => Promise<boolean>;
@@ -492,8 +493,7 @@ export const useSkillsStore = create<SkillsStore>()(
         },
 
         deleteSkill: async (skill) => {
-          startConfigUpdate("Removing skill...");
-          let requiresReload = false;
+          startConfigUpdate("Deleting skill...");
           try {
             const currentDirectory = getCurrentDirectory();
             const skillName = typeof skill === 'string' ? skill : skill.name;
@@ -510,12 +510,64 @@ export const useSkillsStore = create<SkillsStore>()(
 
             const payload = await response.json().catch(() => null);
             if (!response.ok) {
-              const message = payload?.error || 'Failed to remove skill';
+              const message = payload?.error || 'Failed to delete skill';
+              throw new Error(message);
+            }
+
+            const selectedIdentity = get().selectedSkillIdentity;
+            const targetIdentity = selectedSkill ? getSkillIdentity(selectedSkill) : null;
+            set((state) => {
+              const skills = targetIdentity
+                ? state.skills.filter((entry) => getSkillIdentity(entry) !== targetIdentity)
+                : state.skills.filter((entry) => entry.name !== skillName);
+              const clearsSelection = (targetIdentity && selectedIdentity === targetIdentity)
+                || (!selectedIdentity && state.selectedSkillName === skillName);
+
+              return {
+                skills,
+                ...(clearsSelection
+                  ? { selectedSkillName: null, selectedSkillIdentity: null }
+                  : {}),
+              };
+            });
+
+            emitConfigChange("skills", { source: CONFIG_EVENT_SOURCE });
+            void get().loadSkills({ refresh: true });
+            return true;
+          } catch {
+            return false;
+          } finally {
+            finishConfigUpdate();
+          }
+        },
+
+        hideSkill: async (skill) => {
+          startConfigUpdate("Hiding skill...");
+          let requiresReload = false;
+          try {
+            const currentDirectory = getCurrentDirectory();
+            const skillName = typeof skill === 'string' ? skill : skill.name;
+            const selectedSkill = typeof skill === 'string' ? getSkillRequestTarget(get(), skill) : skill;
+            const queryParams = buildSkillsQueryString({
+              directory: currentDirectory,
+              scope: selectedSkill?.scope,
+              path: selectedSkill?.path,
+            });
+
+            const response = await fetch(`/api/config/skills/${encodeURIComponent(skillName)}/hide${queryParams}`, {
+              method: 'POST',
+            });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok) {
+              const message = payload?.error || 'Failed to hide skill';
               throw new Error(message);
             }
 
             const needsReload = payload?.requiresReload ?? false;
-            if (get().selectedSkillName === skillName) {
+            const selectedIdentity = get().selectedSkillIdentity;
+            const targetIdentity = selectedSkill ? getSkillIdentity(selectedSkill) : null;
+            if ((targetIdentity && selectedIdentity === targetIdentity)
+              || (!selectedIdentity && get().selectedSkillName === skillName)) {
               set({ selectedSkillName: null, selectedSkillIdentity: null });
             }
 
@@ -532,7 +584,6 @@ export const useSkillsStore = create<SkillsStore>()(
             if (loaded) {
               emitConfigChange("skills", { source: CONFIG_EVENT_SOURCE });
             }
-
             return loaded;
           } catch {
             return false;

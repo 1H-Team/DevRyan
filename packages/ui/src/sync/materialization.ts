@@ -3,7 +3,9 @@ import {
   normalizeChatOwnedDiffSummary,
   type SessionSummaryDiffStats,
 } from "@/lib/sessionDiffStats"
+import { getToolLifecycleState } from "@/lib/toolStatus"
 import { filterMessagesForRevert, getEffectiveSessionRevertMessageID, type RevertTransaction } from "./revert-transactions"
+import { isAssistantTurnComplete } from "./session-working"
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 const STREAMING_PART_FIELDS = ["text", "output"] as const
@@ -65,6 +67,19 @@ function haveEquivalentMessageSnapshots(left: Message, right: Message): boolean 
   return JSON.stringify(left) === JSON.stringify(right)
 }
 
+function mergeMaterializedMessage(existing: Message, next: Message): Message {
+  if (
+    existing.role === "assistant"
+    && next.role === "assistant"
+    && isAssistantTurnComplete(existing)
+    && !isAssistantTurnComplete(next)
+  ) {
+    return existing
+  }
+
+  return next
+}
+
 function mergeMaterializedMessages(existing: readonly Message[], nextMessages: readonly Message[]): Message[] {
   if (existing.length === 0) return [...nextMessages]
   if (nextMessages.length === 0) return existing as Message[]
@@ -80,11 +95,12 @@ function mergeMaterializedMessages(existing: readonly Message[], nextMessages: r
       continue
     }
 
-    if (haveEquivalentMessageSnapshots(current, nextMessage)) {
+    const mergedMessage = mergeMaterializedMessage(current, nextMessage)
+    if (mergedMessage === current || haveEquivalentMessageSnapshots(current, mergedMessage)) {
       continue
     }
 
-    merged.set(nextMessage.id, nextMessage)
+    merged.set(nextMessage.id, mergedMessage)
     changed = true
   }
 
@@ -117,6 +133,14 @@ function hasLiveStreamingField(part: Part): boolean {
 
 function mergeMaterializedPart(existing: Part | undefined, next: Part): Part {
   if (!existing || getPartEndTime(next) !== undefined) return next
+
+  if (existing.type === "tool" && next.type === "tool") {
+    const existingState = (existing as { state?: { status?: unknown; time?: { start?: unknown; end?: unknown } } }).state
+    const nextState = (next as { state?: { status?: unknown; time?: { start?: unknown; end?: unknown } } }).state
+    if (getToolLifecycleState(existingState).isFinalized && getToolLifecycleState(nextState).isInFlight) {
+      return existing
+    }
+  }
 
   let merged: Part = next
   for (const field of STREAMING_PART_FIELDS) {

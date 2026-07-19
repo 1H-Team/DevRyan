@@ -24,6 +24,16 @@ export function stripWrappedJsonQuotes(detail: string): string {
   }
 }
 
+export function isLikelyCertificateVerificationFailure(detail: unknown): boolean {
+  if (typeof detail !== "string") return false
+
+  const normalizedDetail = stripWrappedJsonQuotes(detail).toLowerCase()
+  return normalizedDetail.includes("certificate verification")
+    || normalizedDetail.includes("certificate verify failed")
+    || normalizedDetail.includes("unable to verify the first certificate")
+    || normalizedDetail.includes("unable to get local issuer certificate")
+}
+
 export function isLikelyTransientStreamFailure(name: unknown, detail: unknown): boolean {
   if (typeof detail !== "string") {
     return false

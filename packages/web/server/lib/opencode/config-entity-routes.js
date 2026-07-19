@@ -134,16 +134,21 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     const authResetFields = authResetWarningFields(mutationResult);
 
     try {
-      await refreshOpenCodeAfterConfigChange(`mcp ${action}`);
+      const refreshResult = await refreshOpenCodeAfterConfigChange(`mcp ${action}`);
+      const requiresReload = refreshResult?.requiresReload !== false;
       return res.json(withHarnessResult({
         success: true,
-        requiresReload: true,
-        message: `MCP server "${name}" ${action}d. Reloading interface…`,
-        reloadDelayMs: clientReloadDelayMs,
+        requiresReload,
+        runtimeApplied: refreshResult?.runtimeApplied !== false,
+        restartDeferred: refreshResult?.restartDeferred === true,
+        message: refreshResult?.runtimeMessage || `MCP server "${name}" ${action}d. Reloading interface…`,
+        ...(requiresReload ? { reloadDelayMs: clientReloadDelayMs } : {}),
         ...authResetFields,
       }, createHarnessSuccess({
         summary: `MCP server "${name}" ${action} completed`,
-        nextActions: ['Wait for OpenCode reload before testing the MCP server'],
+        nextActions: requiresReload
+          ? ['Wait for OpenCode reload before testing the MCP server']
+          : ['Let active agents finish before testing the MCP server'],
         artifacts: [name],
       })));
     } catch (error) {

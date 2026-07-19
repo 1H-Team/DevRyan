@@ -8,6 +8,7 @@ export type PlanProposedCandidate = {
   sourceMessageId: string
   originatingUserMessageId: string
   implementationKey: string
+  markdown: string
 }
 
 type PlanProposedDetectionState = Pick<
@@ -50,7 +51,8 @@ export function detectPlanProposedCandidate({
   if (!isPlanModeUserMessage(userMessage, userParts, recordedPlanMode)) return null
   const assistantParts = state.part[assistantMessage.id] ?? []
   if (hasRunningToolPart(assistantParts)) return null
-  if (!hasPresentedPlanCard(assistantParts)) return null
+  const markdown = getPresentedPlanMarkdown(assistantParts)
+  if (!markdown) return null
 
   const implementationKey = getPlanImplementationKey(
     sessionID,
@@ -63,12 +65,14 @@ export function detectPlanProposedCandidate({
     sourceMessageId: assistantMessage.id,
     originatingUserMessageId: userMessage.id,
     implementationKey,
+    markdown,
   }
 }
 
-function hasPresentedPlanCard(parts: readonly Part[]): boolean {
+function getPresentedPlanMarkdown(parts: readonly Part[]): string | null {
   const split = resolveMessagePlanCard(parts, { isPlanModeSource: true })
-  return Boolean(split && split.planText.trim().length > 0)
+  const markdown = split?.planText ?? ""
+  return markdown.trim().length > 0 ? markdown : null
 }
 
 function hasRunningToolPart(parts: readonly Part[]): boolean {

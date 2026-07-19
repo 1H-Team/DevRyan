@@ -15,6 +15,7 @@ import { sessionEvents } from '@/lib/sessionEvents';
 import type { MainTab } from '@/stores/useUIStore';
 import { SessionFolderItem } from '../SessionFolderItem';
 import { DroppableFolderWrapper, SessionFolderDndScope } from './sessionFolderDnd';
+import { SessionSidebarMotionRow } from './SessionSidebarMotionRow';
 import type { SortableDragHandleProps } from './sortableItems';
 import type { GroupSearchData, SessionGroup, SessionNode } from './types';
 import { collectArchivedActionSessions, compareArchivedSessionsByParentAssistantActivity, compareSessionsByPinnedAndTime, isBranchDifferentFromLabel, normalizePath, renderHighlightedText, resolveArchivedFolderDisplayNodes } from './utils';
@@ -299,6 +300,8 @@ export function SessionGroupSection(props: Props): React.ReactNode {
       ? ungroupedSessions
       : (isExpanded ? ungroupedSessions : ungroupedSessions.slice(0, maxVisible));
   const remainingCount = totalSessions - visibleSessions.length;
+  const isVisibleSessionCountDropping = visibleSessions.length < prevVisibleCountRef.current;
+  const shouldDeferNoChats = !group.isArchivedBucket && isVisibleSessionCountDropping;
 
   // Detect when a session was removed from this group (count dropped) so we
   // can gate the empty-state render until the exit animation finishes. Only
@@ -519,7 +522,7 @@ export function SessionGroupSection(props: Props): React.ReactNode {
   const emptyState = shouldReduceMotion ? emptyStateContent : (
     <motion.div
       key="group-empty-state"
-      initial={{ gridTemplateRows: '0fr', opacity: 0, y: -2 }}
+      initial={group.isArchivedBucket ? { gridTemplateRows: '0fr', opacity: 0, y: -2 } : false}
       animate={{ gridTemplateRows: '1fr', opacity: 1, y: 0 }}
       exit={{ gridTemplateRows: '0fr', opacity: 0, y: -2 }}
       transition={emptyStateTransition}
@@ -548,7 +551,7 @@ export function SessionGroupSection(props: Props): React.ReactNode {
       </AnimatePresence>
       {group.isArchivedBucket ? renderFolderItems() : null}
       <AnimatePresence initial={false}>
-        {totalSessions === 0 && allFoldersForGroup.length === 0 && draftCount === 0 && !isExitAnimating ? (
+        {totalSessions === 0 && allFoldersForGroup.length === 0 && draftCount === 0 && !isExitAnimating && !shouldDeferNoChats ? (
           <React.Fragment key="group-empty-state-presence">
             {emptyState}
           </React.Fragment>
@@ -578,6 +581,7 @@ export function SessionGroupSection(props: Props): React.ReactNode {
   );
 
   const groupBodyPaddingClass = compactBodyPadding ? 'pb-2 pl-1' : 'pb-3 pl-3.5';
+  const groupBody = <div className={cn('oc-group-body', groupBodyPaddingClass)}>{body}</div>;
 
   if (hideGroupLabel) {
     return <div className="oc-group"><div className={cn('oc-group-body', groupBodyPaddingClass)}>{body}</div></div>;
@@ -843,7 +847,18 @@ export function SessionGroupSection(props: Props): React.ReactNode {
            </div>
          ) : null}
       </div>
-      {!isCollapsed ? <div className={cn('oc-group-body', groupBodyPaddingClass)}>{body}</div> : null}
+      {group.isArchivedBucket ? (
+        <AnimatePresence initial={false}>
+          {!isCollapsed ? (
+            <SessionSidebarMotionRow
+              key={`archived-group-body:${groupKey}`}
+              withLeadingIndicatorGutter={false}
+            >
+              {groupBody}
+            </SessionSidebarMotionRow>
+          ) : null}
+        </AnimatePresence>
+      ) : (!isCollapsed ? groupBody : null)}
     </div>
   );
 }

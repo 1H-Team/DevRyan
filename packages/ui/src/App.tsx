@@ -52,6 +52,7 @@ import { SyncAppEffects } from '@/apps/AppEffects';
 import { useAppFontEffects } from '@/apps/useAppFontEffects';
 import {
   createStartupReadinessSnapshot,
+  recoverStartupInitialization,
   shouldShowStartupReadinessScreen,
   summarizeStartupReadiness,
   withStartupReadinessPhase,
@@ -61,6 +62,7 @@ import {
 import { warmAgentRuntime } from '@/lib/startup/agent-runtime-warmup';
 import { warmChatRuntime } from '@/lib/startup/chat-runtime-warmup';
 import { primeWorktreeBootstrap } from '@/lib/worktrees/worktreeBootstrap';
+import { useAgentRuntimeWarmupStore } from '@/stores/useAgentRuntimeWarmupStore';
 
 // Lazy-loaded heavy views — loaded on demand to reduce initial bundle size.
 const OnboardingScreen = lazyWithChunkRecovery(() =>
@@ -395,13 +397,23 @@ const StartupReadinessGate: React.FC<{
 
   React.useEffect(() => {
     let cancelled = false;
+    const warmupDirectory = currentDirectory || null;
+    const clearWarmingDirectory = () => {
+      const warmupState = useAgentRuntimeWarmupStore.getState();
+      if (warmupState.warmingDirectory === warmupDirectory) {
+        warmupState.setWarmingDirectory(null);
+      }
+    };
+
     if (!isConnected) {
+      clearWarmingDirectory();
       setAgentRuntimePhase({ status: 'idle', error: null });
       return;
     }
 
+    useAgentRuntimeWarmupStore.getState().setWarmingDirectory(warmupDirectory);
     setAgentRuntimePhase({ status: 'loading', error: null });
-    void warmAgentRuntime({ directory: currentDirectory || null })
+    void warmAgentRuntime({ directory: warmupDirectory })
       .then((result) => {
         if (result.timedOut) {
           console.warn('[startup] agent runtime warmup timed out; continuing startup.');
@@ -417,10 +429,12 @@ const StartupReadinessGate: React.FC<{
         if (!cancelled) {
           setAgentRuntimePhase({ status: 'ready', error: null });
         }
-      });
+      })
+      .finally(clearWarmingDirectory);
 
     return () => {
       cancelled = true;
+      clearWarmingDirectory();
     };
   }, [currentDirectory, isConnected]);
 
@@ -1032,7 +1046,25 @@ function App({ apis }: AppProps) {
     setInitRetryExhausted(false);
     setManualInitRetrying(true);
     try {
-      await useConfigStore.getState().initializeApp();
+      const recovery = await recoverStartupInitialization({
+        loadHealth: async () => {
+          const response = await fetch('/health', {
+            method: 'GET',
+            headers: { Accept: 'application/json' },
+            cache: 'no-store',
+          });
+          if (!response.ok) return null;
+          return await response.json() as {
+            openCodeRunning?: unknown;
+            isOpenCodeReady?: unknown;
+          };
+        },
+        restartOpenCode: apis.settings.restartOpenCode,
+        initializeApp: () => useConfigStore.getState().initializeApp(),
+      });
+      if (recovery.restartError) {
+        console.warn('[startup] OpenCode recovery restart failed:', recovery.restartError);
+      }
     } finally {
       setManualInitRetrying(false);
     }
@@ -1040,7 +1072,7 @@ function App({ apis }: AppProps) {
     if (!useConfigStore.getState().isInitialized) {
       setInitRetryEpoch((value) => value + 1);
     }
-  }, [manualInitRetrying]);
+  }, [apis.settings.restartOpenCode, manualInitRetrying]);
 
   // Map boot outcome kind to recovery variant
   const mapBootViewToRecoveryVariant = (view: DesktopBootView): RecoveryVariant | undefined => {

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { fetchQuotaMock, fetchOpenCodeGoQuotaMock } = vi.hoisted(() => ({
+const { fetchQuotaMock, fetchOpenCodeGoQuotaMock, fetchCursorQuotaMock } = vi.hoisted(() => ({
   fetchQuotaMock: vi.fn(async () => ({
     providerId: 'zhipuai-coding-plan',
     providerName: 'Zhipu AI Coding Plan',
@@ -16,7 +16,15 @@ const { fetchQuotaMock, fetchOpenCodeGoQuotaMock } = vi.hoisted(() => ({
     configured: true,
     usage: { windows: {} },
     fetchedAt: 1
-  }))
+  })),
+  fetchCursorQuotaMock: vi.fn(async () => ({
+    providerId: 'cursor-acp',
+    providerName: 'Cursor',
+    ok: true,
+    configured: true,
+    usage: { windows: {} },
+    fetchedAt: 1,
+  })),
 }));
 
 vi.mock('./zhipuai-coding-plan.js', () => ({
@@ -31,6 +39,13 @@ vi.mock('./opencode-go.js', () => ({
   providerName: 'OpenCode Go',
   isConfigured: () => true,
   fetchQuota: fetchOpenCodeGoQuotaMock
+}));
+
+vi.mock('./cursor-acp.js', () => ({
+  providerId: 'cursor-acp',
+  providerName: 'Cursor',
+  isConfigured: () => true,
+  fetchQuota: fetchCursorQuotaMock,
 }));
 
 import { fetchQuotaForProvider } from './index.js';
@@ -52,5 +67,12 @@ describe('quota provider registry', () => {
 
     expect(result.providerId).toBe('opencode-go');
     expect(fetchOpenCodeGoQuotaMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes the Cursor API alias to the canonical provider without adding another registry row', async () => {
+    const result = await fetchQuotaForProvider('cursor');
+
+    expect(result.providerId).toBe('cursor-acp');
+    expect(fetchCursorQuotaMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -236,7 +236,7 @@ const TaskToolSummaryGroupRow: React.FC<{
         () => getToolActivityGroupSummaryCount(groupInfo.kind, parts, (part) => part),
         [groupInfo.kind, parts]
     );
-    const label = t(getToolActivityGroupLabelKey(groupInfo.kind, summaryCount), { count: summaryCount });
+    const label = t(getToolActivityGroupLabelKey(groupInfo, summaryCount), { count: summaryCount });
     const icon = getToolIcon(groupInfo.representativeToolName);
 
     const pathEntries = React.useMemo(

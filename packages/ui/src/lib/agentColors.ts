@@ -11,8 +11,15 @@ const AGENT_COLOR_PALETTE = [
   { var: '--syntax-variable', class: 'agent-variable' },
 ];
 
-export function getAgentColor(agentName: string | undefined) {
+const FIXED_AGENT_ICON_COLORS: Readonly<Record<string, { readonly var: string }>> = {
+  designer: { var: '--agent-icon-designer-color' },
+  fixer: { var: '--agent-icon-fixer-color' },
+  explorer: { var: '--agent-icon-explorer-color' },
+  librarian: { var: '--agent-icon-librarian-color' },
+  oracle: { var: '--agent-icon-oracle-color' },
+};
 
+export function getAgentColor(agentName: string | undefined) {
   if (!agentName) {
     return AGENT_COLOR_PALETTE[0];
   }
@@ -32,6 +39,18 @@ export function getAgentColor(agentName: string | undefined) {
 
   const paletteIndex = 1 + (Math.abs(hash) % (AGENT_COLOR_PALETTE.length - 1));
   return AGENT_COLOR_PALETTE[paletteIndex];
+}
+
+export function getAgentIconColor(agentName: string | undefined) {
+  const normalizedAgentName = agentName?.trim().toLowerCase();
+  if (normalizedAgentName) {
+    const fixedColor = FIXED_AGENT_ICON_COLORS[normalizedAgentName];
+    if (fixedColor) {
+      return fixedColor;
+    }
+  }
+
+  return getAgentColor(agentName);
 }
 
 export function getAgentColorPalette() {

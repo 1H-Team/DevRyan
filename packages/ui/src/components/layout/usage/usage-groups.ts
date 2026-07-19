@@ -11,12 +11,22 @@ export const resolveActiveUsageProviderId = (
   return groups[0]?.providerId ?? null;
 };
 
+const providerNameCollator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: 'base',
+});
+
 export const buildUsageProviderTabs = (groups: RateLimitGroup[]) => (
-  groups.map((group) => ({
-    id: group.providerId,
-    label: group.providerName,
-    title: group.providerName,
-  }))
+  groups
+    .map((group) => ({
+      id: group.providerId,
+      label: group.providerName,
+      title: group.providerName,
+    }))
+    .sort((left, right) => (
+      providerNameCollator.compare(left.label, right.label)
+      || left.id.localeCompare(right.id)
+    ))
 );
 
 export const getVisibleUsageEntries = (group: RateLimitGroup) => {

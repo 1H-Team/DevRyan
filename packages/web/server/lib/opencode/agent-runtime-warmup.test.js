@@ -209,7 +209,7 @@ describe('agent runtime warmup', () => {
     }));
   });
 
-  it('waits for MCP status before command discovery', async () => {
+  it('runs MCP status and command discovery concurrently', async () => {
     const events = [];
     const warmup = createAgentRuntimeWarmup({
       buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
@@ -234,6 +234,77 @@ describe('agent runtime warmup', () => {
 
     expect(events.indexOf('mcp-end')).toBeGreaterThanOrEqual(0);
     expect(events.indexOf('command-start')).toBeGreaterThanOrEqual(0);
-    expect(events.indexOf('mcp-end')).toBeLessThan(events.indexOf('command-start'));
+    expect(events.indexOf('command-start')).toBeLessThan(events.indexOf('mcp-end'));
+  });
+
+  it('shares one in-flight warmup for concurrent calls to the same directory', async () => {
+    let releaseFetch;
+    const fetchGate = new Promise((resolve) => {
+      releaseFetch = resolve;
+    });
+    const fetchImpl = vi.fn(async () => {
+      await fetchGate;
+      return Response.json({});
+    });
+    const warmup = createAgentRuntimeWarmup({
+      buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      fetchImpl,
+      discoverSkills: () => [],
+      readSkillFile: vi.fn(),
+    });
+
+    const first = warmup.warm({ directory: ' /project ', timeoutMs: 1_000 });
+    const second = warmup.warm({ directory: '/project', timeoutMs: 5_000 });
+
+    expect(second).toBe(first);
+    expect(fetchImpl).toHaveBeenCalledTimes(8);
+    releaseFetch();
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(secondResult).toBe(firstResult);
+  });
+
+  it('allows different directories to warm concurrently', async () => {
+    const mcpStarts = [];
+    let releaseMcp;
+    const mcpGate = new Promise((resolve) => {
+      releaseMcp = resolve;
+    });
+    const warmup = createAgentRuntimeWarmup({
+      buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      fetchImpl: vi.fn(async (url) => {
+        if (String(url).includes('/mcp?')) {
+          mcpStarts.push(new URL(String(url)).searchParams.get('directory'));
+          await mcpGate;
+        }
+        return Response.json({});
+      }),
+      discoverSkills: () => [],
+      readSkillFile: vi.fn(),
+    });
+
+    const first = warmup.warm({ directory: '/project-a', timeoutMs: 1_000 });
+    const second = warmup.warm({ directory: '/project-b', timeoutMs: 1_000 });
+
+    expect(mcpStarts).toEqual(['/project-a', '/project-b']);
+    releaseMcp();
+    await Promise.all([first, second]);
+  });
+
+  it('executes a new warmup after the previous call settles', async () => {
+    const fetchImpl = vi.fn(async () => Response.json({}));
+    const warmup = createAgentRuntimeWarmup({
+      buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      fetchImpl,
+      discoverSkills: () => [],
+      readSkillFile: vi.fn(),
+    });
+
+    await warmup.warm({ directory: '/project', timeoutMs: 1_000 });
+    await warmup.warm({ directory: '/project', timeoutMs: 1_000 });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(16);
   });
 });

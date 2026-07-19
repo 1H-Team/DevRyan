@@ -20,8 +20,8 @@ import {
   DEFAULT_MANAGED_TERMINAL_MAX_RECORDS,
   compactManagedOrchestrationState,
 } from './persistence.js';
+import { isDefiniteProviderUsageLimit } from './provider-retry-policy.js';
 
-const DEFAULT_MAX_CONCURRENCY = 3;
 const ACTIVE_STATUSES = new Set(['starting', 'running']);
 const TERMINAL_RESULT_STATUSES = new Set(['completed', 'failed', 'aborted', 'interrupted']);
 
@@ -66,11 +66,6 @@ export const createManagedTaskScheduler = (options = {}) => {
   const executor = options.executor;
   if (!executor || typeof executor.start !== 'function') {
     throw new TypeError('executor.start is required');
-  }
-
-  const maxConcurrency = options.maxConcurrency ?? DEFAULT_MAX_CONCURRENCY;
-  if (!Number.isSafeInteger(maxConcurrency) || maxConcurrency < 1 || maxConcurrency > DEFAULT_MAX_CONCURRENCY) {
-    throw new RangeError(`maxConcurrency must be between 1 and ${DEFAULT_MAX_CONCURRENCY}`);
   }
 
   const persistence = options.persistence ?? createDefaultPersistence();
@@ -382,14 +377,6 @@ export const createManagedTaskScheduler = (options = {}) => {
     return sequence + 1;
   };
 
-  const countActiveLocked = () => {
-    let count = 0;
-    for (const task of tasks.values()) {
-      if (ACTIVE_STATUSES.has(task.status)) count += 1;
-    }
-    return count;
-  };
-
   const finishTask = async (taskId, leaseToken, result, fallbackStatus = 'failed') => {
     if (shutDown) return;
     let changed = false;
@@ -430,28 +417,30 @@ export const createManagedTaskScheduler = (options = {}) => {
 
   const createTaskControl = (taskId, leaseToken) => ({
     async setChildSessionId(childSessionId) {
-      if (shutDown) return;
-      await runExclusive(async () => {
+      if (shutDown) return false;
+      return await runExclusive(async () => {
         const previous = tasks.get(taskId);
-        if (!previous || isTerminalManagedTaskStatus(previous.status)) return;
-        if (previous.leaseToken !== leaseToken) return;
+        if (!previous || isTerminalManagedTaskStatus(previous.status)) return false;
+        if (previous.leaseToken !== leaseToken) return false;
         if (previous.childSessionId && previous.childSessionId !== childSessionId) {
           throw new ManagedOrchestrationError(
             'child_session_conflict',
             `task ${taskId} already owns child session ${previous.childSessionId}`,
           );
         }
-        if (previous.childSessionId === childSessionId) return;
+        if (previous.childSessionId === childSessionId) return true;
         const next = { ...previous, childSessionId };
         await commitTaskUpdateLocked(previous, next);
+        return true;
       });
     },
     async markAccepted() {
-      if (shutDown) return;
-      await runExclusive(async () => {
+      if (shutDown) return false;
+      return await runExclusive(async () => {
         const previous = tasks.get(taskId);
-        if (!previous || previous.leaseToken !== leaseToken) return;
-        if (previous.status === 'running' || isTerminalManagedTaskStatus(previous.status)) return;
+        if (!previous || previous.leaseToken !== leaseToken) return false;
+        if (previous.status === 'running') return true;
+        if (isTerminalManagedTaskStatus(previous.status)) return false;
         if (previous.status !== 'starting') {
           throw new ManagedOrchestrationError(
             'invalid_acceptance_state',
@@ -461,6 +450,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         const next = { ...previous, status: 'running' };
         await commitTaskUpdateLocked(previous, next);
         clearStartingLease(taskId);
+        return true;
       });
     },
   });
@@ -473,13 +463,13 @@ export const createManagedTaskScheduler = (options = {}) => {
       try {
         const method = task.executionKind === 'resume'
           ? executor.resume
-          : task.executionKind === 'retry_in_place'
+          : task.executionKind === 'retry_in_place' || task.executionKind === 'recover_in_place'
             ? executor.retryInPlace
             : executor.start;
         if (typeof method !== 'function') {
           const methodName = task.executionKind === 'resume'
             ? 'resume'
-            : task.executionKind === 'retry_in_place'
+            : task.executionKind === 'retry_in_place' || task.executionKind === 'recover_in_place'
               ? 'retryInPlace'
               : 'start';
           throw new Error(`executor.${methodName} is required`);
@@ -592,8 +582,6 @@ export const createManagedTaskScheduler = (options = {}) => {
     if (shutDown) return;
     const admitted = [];
     await runExclusive(async () => {
-      let available = maxConcurrency - countActiveLocked();
-      if (available <= 0) return;
       const queued = [...tasks.values()]
         .filter((task) => (
           task.status === 'queued'
@@ -604,7 +592,6 @@ export const createManagedTaskScheduler = (options = {}) => {
         ))
         .sort(compareManagedTaskQueueOrder);
       for (const previous of queued) {
-        if (available <= 0) break;
         const next = {
           ...previous,
           status: 'starting',
@@ -614,7 +601,6 @@ export const createManagedTaskScheduler = (options = {}) => {
         await commitTaskUpdateLocked(previous, next);
         scheduleStartingLease(next);
         admitted.push(cloneTask(next));
-        available -= 1;
       }
     });
     for (const task of admitted) launchTask(task);
@@ -627,6 +613,7 @@ export const createManagedTaskScheduler = (options = {}) => {
     await cancelSingleTask(taskId, {
       reason,
       terminalStatus: task.status === 'queued' ? 'aborted' : 'failed',
+      resumableOnUnconfirmedAbort: task.status !== 'queued',
     });
   };
 
@@ -871,10 +858,13 @@ export const createManagedTaskScheduler = (options = {}) => {
     });
   };
 
-  const raceAbortWithTimeout = async (abortPromise) => {
+  const raceAbortWithTimeout = async (abortPromise, onTimeout) => {
     let timer;
     const timeout = new Promise((resolve) => {
-      timer = unrefTimer(scheduleTimeout(() => resolve({ timedOut: true }), abortTimeoutMs));
+      timer = unrefTimer(scheduleTimeout(() => {
+        resolve({ timedOut: true });
+        onTimeout?.();
+      }, abortTimeoutMs));
     });
     try {
       return await Promise.race([
@@ -892,6 +882,7 @@ export const createManagedTaskScheduler = (options = {}) => {
   const cancelSingleTask = async (taskId, {
     reason = 'Cancelled by parent orchestrator',
     terminalStatus = 'aborted',
+    resumableOnUnconfirmedAbort = false,
   } = {}) => {
     const existingCancellation = cancellationPromises.get(taskId);
     if (existingCancellation) return await existingCancellation;
@@ -921,8 +912,14 @@ export const createManagedTaskScheduler = (options = {}) => {
 
       let abortResult = null;
       let abortFailure = null;
+      const abortController = new AbortController();
       try {
-        const outcome = await raceAbortWithTimeout(executor.abort(cloneTask(task)));
+        const outcome = await raceAbortWithTimeout(
+          executor.abort(cloneTask(task), { signal: abortController.signal }),
+          () => abortController.abort(new Error(
+            `Managed task abort exceeded ${abortTimeoutMs}ms`,
+          )),
+        );
         if (outcome.timedOut) {
           abortFailure = `Provider abort did not settle within ${abortTimeoutMs}ms`;
         } else if (outcome.error) {
@@ -942,15 +939,29 @@ export const createManagedTaskScheduler = (options = {}) => {
         ? recovery.canonicalRefs.map((reference) => ({ ...reference }))
         : [];
       const abortConfirmed = !abortFailure && abortResult?.aborted !== false;
+      if (!abortConfirmed) {
+        logger.warn?.('[ManagedOrchestration] Provider abort cleanup was not confirmed', {
+          taskId,
+          primaryReason: reason,
+          cleanupFailure: abortFailure || abortResult?.failureReason || 'Provider did not confirm abort',
+        });
+      }
       await finishTask(taskId, task.leaseToken, {
         status: abortConfirmed ? terminalStatus : 'interrupted',
-        failureReason: abortFailure || abortResult?.failureReason || reason,
+        failureReason: reason,
         partial: typeof recovery.partial === 'boolean'
           ? recovery.partial
           : Boolean(recoverablePreview || canonicalRefs.length > 0),
         recoverablePreview,
         canonicalRefs,
-        resumable: Boolean(recovery.resumable),
+        resumable: Boolean(
+          recovery.resumable
+          || (
+            resumableOnUnconfirmedAbort
+            && !abortConfirmed
+            && task.childSessionId
+          )
+        ),
       });
       return cloneTask(tasks.get(taskId));
     })();
@@ -1075,7 +1086,11 @@ export const createManagedTaskScheduler = (options = {}) => {
     return cancelled;
   };
 
-  const waitForTask = async (taskId, { signal } = {}) => {
+  const waitForTask = async (taskId, { signal, timeoutMs } = {}) => {
+    const hasTimeout = timeoutMs !== undefined;
+    if (hasTimeout && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
+      throw new RangeError('timeoutMs must be a positive finite number');
+    }
     await ensureInitialized();
     if (shutDown) {
       throw new ManagedOrchestrationError(
@@ -1091,20 +1106,48 @@ export const createManagedTaskScheduler = (options = {}) => {
     if (signal?.aborted) throw signal.reason ?? new Error('Task wait aborted');
     return await new Promise((resolve, reject) => {
       const waiters = taskWaiters.get(taskId) ?? new Set();
+      let settled = false;
+      let waitTimer;
+      let waitTimerScheduled = false;
+      const clearWaitTimer = () => {
+        if (!waitTimerScheduled) return;
+        waitTimerScheduled = false;
+        cancelTimeout(waitTimer);
+      };
+      const settle = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        signal?.removeEventListener('abort', onAbort);
+        clearWaitTimer();
+        callback(value);
+      };
+      const removeWaiter = () => {
+        waiters.delete(waiter);
+        if (waiters.size === 0) taskWaiters.delete(taskId);
+      };
       const waiter = {
         resolve(value) {
-          signal?.removeEventListener('abort', onAbort);
-          resolve(value);
+          settle(resolve, value);
         },
         reject(error) {
-          signal?.removeEventListener('abort', onAbort);
-          reject(error);
+          settle(reject, error);
         },
       };
       const onAbort = () => {
-        waiters.delete(waiter);
-        if (waiters.size === 0) taskWaiters.delete(taskId);
+        removeWaiter();
         waiter.reject(signal.reason ?? new Error('Task wait aborted'));
+      };
+      const onWaitTimeout = () => {
+        removeWaiter();
+        const latest = tasks.get(taskId);
+        if (!latest) {
+          waiter.reject(new ManagedOrchestrationError(
+            'task_not_found',
+            `managed task ${taskId} was not found`,
+          ));
+          return;
+        }
+        waiter.resolve(cloneTask(latest));
       };
       /*
        * Register synchronously after the terminal check. JavaScript cannot run
@@ -1113,6 +1156,11 @@ export const createManagedTaskScheduler = (options = {}) => {
       waiters.add(waiter);
       taskWaiters.set(taskId, waiters);
       signal?.addEventListener('abort', onAbort, { once: true });
+      if (hasTimeout) {
+        waitTimer = unrefTimer(scheduleTimeout(onWaitTimeout, timeoutMs));
+        waitTimerScheduled = true;
+        if (settled) clearWaitTimer();
+      }
     });
   };
 
@@ -1209,7 +1257,7 @@ export const createManagedTaskScheduler = (options = {}) => {
   const acknowledgeResult = async (taskId, actionOptions = {}) => {
     await ensureInitialized();
     const action = actionOptions.action;
-    if (!['continue', 'resume', 'retry', 'retry_in_place', 'abandon'].includes(action)) {
+    if (!['continue', 'resume', 'retry', 'recover_in_place', 'retry_in_place', 'abandon'].includes(action)) {
       throw new ManagedOrchestrationError('invalid_result_action', 'result action is invalid');
     }
     if (typeof actionOptions.idempotencyKey !== 'string' || !actionOptions.idempotencyKey.trim()) {
@@ -1249,7 +1297,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       }
 
       if (
-        (action === 'retry' || action === 'resume')
+        (action === 'retry' || action === 'resume' || action === 'recover_in_place')
         && sourceTask.mode === 'orchestrator'
         && sourceTask.dispatchGroupId !== null
         && sourceTask.attempt >= 2
@@ -1260,18 +1308,33 @@ export const createManagedTaskScheduler = (options = {}) => {
         );
       }
 
-      if ((action === 'resume' || action === 'retry_in_place') && !currentEnvelope.resumable) {
+      if ((action === 'resume' || action === 'recover_in_place' || action === 'retry_in_place') && !currentEnvelope.resumable) {
         throw new ManagedOrchestrationError('result_not_resumable', 'result cannot be resumed');
       }
 
+      if (action === 'recover_in_place') {
+        if (!sourceTask.childSessionId || !isDefiniteProviderUsageLimit(sourceTask.failureReason)) {
+          throw new ManagedOrchestrationError(
+            'result_not_provider_usage_limited',
+            'automatic in-place recovery requires a provider usage-limit result with a canonical child session',
+          );
+        }
+        if (!actionOptions.providerId?.trim() || !actionOptions.modelId?.trim()) {
+          throw new ManagedOrchestrationError(
+            'missing_recovery_model',
+            'automatic in-place recovery requires an authoritative replacement provider and model',
+          );
+        }
+      }
+
       let followUpTask = null;
-      if (action === 'retry' || action === 'resume' || action === 'retry_in_place') {
+      if (action === 'retry' || action === 'resume' || action === 'recover_in_place' || action === 'retry_in_place') {
         followUpTask = await submit({
           idempotencyKey: actionOptions.idempotencyKey,
           rootSessionId: sourceTask.rootSessionId,
           dispatchGroupId: sourceTask.dispatchGroupId,
           parentTaskId: sourceTask.parentTaskId,
-          childSessionId: action === 'resume' || action === 'retry_in_place'
+          childSessionId: action === 'resume' || action === 'recover_in_place' || action === 'retry_in_place'
             ? sourceTask.childSessionId
             : null,
           directory: sourceTask.directory,

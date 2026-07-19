@@ -10,6 +10,7 @@ import { deleteAgentModelOverride, writeAgentModelOverride } from './agents.js';
 import * as authModule from './auth.js';
 import { GITHUB_COPILOT_AUTO_MODEL } from './github-copilot-models.js';
 import { syncRuntimeAgentOverlays } from './runtime-agent-overlays.js';
+import { listRuntimePluginAssets } from './default-config-assets.js';
 import { DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE, DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC } from './slim-config.js';
 
 const writeAgent = async (agentDirectory, name, frontmatterLines, prompt) => {
@@ -78,6 +79,7 @@ describe('syncRuntimeAgentOverlays', () => {
   let manifestPath;
   let targetConfigDirectory;
   let readAuthSpy;
+  let originalOpenAIApiKey;
 
   beforeEach(async () => {
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-runtime-agent-overlays-'));
@@ -87,6 +89,8 @@ describe('syncRuntimeAgentOverlays', () => {
     overlayRoot = path.join(tempRoot, 'runtime-overlays');
     manifestPath = path.join(overlayRoot, 'manifest.json');
     targetConfigDirectory = path.join(overlayRoot, crypto.createHash('sha256').update(projectDirectory).digest('hex'));
+    originalOpenAIApiKey = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
     // Keep suite hermetic: real machine Copilot auth must not leak into overlay expectations.
     readAuthSpy = vi.spyOn(authModule, 'readAuthFile').mockReturnValue({});
   });
@@ -94,6 +98,12 @@ describe('syncRuntimeAgentOverlays', () => {
   afterEach(async () => {
     readAuthSpy?.mockRestore();
     readAuthSpy = undefined;
+    if (originalOpenAIApiKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = originalOpenAIApiKey;
+    }
+    originalOpenAIApiKey = undefined;
     if (tempRoot) {
       await fs.rm(tempRoot, { recursive: true, force: true });
     }
@@ -448,7 +458,7 @@ describe('syncRuntimeAgentOverlays', () => {
       .resolves.toContain('"preset": "openai"');
     await expect(fs.readFile(path.join(result.targetConfigDirectory, 'plugins', DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE), 'utf8'))
       .resolves.toBe(wrapperSource);
-    expect(overlayConfig.plugin).toContain(DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC);
+    expect(overlayConfig.plugin).toBeUndefined();
     expect(overlay.prompt).toBe('Packaged DevRyan fixer prompt');
     expect(overlay.frontmatter.model).toBe('openai/gpt-5.6-terra');
     expect(overlay.frontmatter.modelRefs).toEqual(['openai/gpt-5.6-terra']);
@@ -1034,6 +1044,11 @@ describe('syncRuntimeAgentOverlays', () => {
       'utf8',
     );
     await fs.writeFile(
+      path.join(packagedPluginDirectory, 'openai-gpt-5-6-models.mjs'),
+      'export default async () => ({ "chat.params": async () => {} });\n',
+      'utf8',
+    );
+    await fs.writeFile(
       path.join(packagedPluginDirectory, 'openai-tool-schema-sanitizer.test.mjs'),
       'throw new Error("test files must not be loaded as runtime plugins");\n',
       'utf8',
@@ -1080,11 +1095,13 @@ describe('syncRuntimeAgentOverlays', () => {
     });
 
     await expect(fs.readdir(result.targetPluginDirectory).then((files) => files.sort()))
-      .resolves.toEqual(['council-session.js', 'openai-tool-schema-sanitizer.mjs']);
+      .resolves.toEqual(['council-session.js', 'openai-gpt-5-6-models.mjs', 'openai-tool-schema-sanitizer.mjs']);
     await expect(fs.readFile(path.join(result.targetConfigDirectory, 'plugins', 'council-session.js'), 'utf8'))
       .resolves.toContain('council_session');
     await expect(fs.readFile(path.join(result.targetConfigDirectory, 'plugins', 'openai-tool-schema-sanitizer.mjs'), 'utf8'))
       .resolves.toContain('tool.definition');
+    await expect(fs.readFile(path.join(result.targetConfigDirectory, 'plugins', 'openai-gpt-5-6-models.mjs'), 'utf8'))
+      .resolves.toContain('chat.params');
     await expect(fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8')
       .then((content) => JSON.parse(content)))
       .resolves.toEqual({
@@ -1100,6 +1117,7 @@ describe('syncRuntimeAgentOverlays', () => {
         plugin: [
           'opencode-with-claude',
           './plugins/council-session.js',
+          './plugins/openai-gpt-5-6-models.mjs',
           './plugins/openai-tool-schema-sanitizer.mjs',
         ],
         provider: {
@@ -1111,7 +1129,11 @@ describe('syncRuntimeAgentOverlays', () => {
           },
         },
       });
-    expect(result.pluginsWritten).toEqual(['council-session.js', 'openai-tool-schema-sanitizer.mjs']);
+    expect(result.pluginsWritten).toEqual([
+      'council-session.js',
+      'openai-gpt-5-6-models.mjs',
+      'openai-tool-schema-sanitizer.mjs',
+    ]);
   });
 
   it('filters active user plugin entries through the managed runtime allowlist while adding packaged runtime plugins', async () => {
@@ -1156,6 +1178,50 @@ describe('syncRuntimeAgentOverlays', () => {
           './plugins/council-session.js',
         ],
       });
+  });
+
+  it('does not re-register a source-owned local plugin from the packaged runtime overlay', async () => {
+    const wrapperSource = 'export default async function wrapper() { return {}; }\n';
+    await fs.mkdir(packagedPluginDirectory, { recursive: true });
+    await fs.writeFile(
+      path.join(packagedPluginDirectory, DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE),
+      wrapperSource,
+      'utf8',
+    );
+
+    let activeConfig = {
+      plugin: ['cursor-acp', DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC],
+    };
+    const syncOptions = {
+      workingDirectory: projectDirectory,
+      packagedAgentDirectory,
+      packagedPluginDirectory,
+      overlayRoot,
+      manifestPath,
+      readConfig: () => activeConfig,
+      readOpenCodeConfig: () => ({}),
+      listMcpConfigs: () => [],
+    };
+
+    const sourceOwned = await syncRuntimeAgentOverlays(syncOptions);
+    const sourceOwnedConfig = JSON.parse(
+      await fs.readFile(path.join(sourceOwned.targetConfigDirectory, 'opencode.json'), 'utf8'),
+    );
+    expect(sourceOwnedConfig.plugin).toEqual(['cursor-acp']);
+    await expect(fs.readFile(
+      path.join(sourceOwned.targetPluginDirectory, DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE),
+      'utf8',
+    )).resolves.toBe(wrapperSource);
+
+    activeConfig = { plugin: ['cursor-acp'] };
+    const packagedFallback = await syncRuntimeAgentOverlays(syncOptions);
+    const packagedFallbackConfig = JSON.parse(
+      await fs.readFile(path.join(packagedFallback.targetConfigDirectory, 'opencode.json'), 'utf8'),
+    );
+    expect(packagedFallbackConfig.plugin).toEqual([
+      'cursor-acp',
+      DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC,
+    ]);
   });
 
   it('writes GitHub Copilot provider models into the runtime overlay when auth exists', async () => {
@@ -1231,6 +1297,158 @@ describe('syncRuntimeAgentOverlays', () => {
     expect(runtimeConfig.provider?.anthropic).toBeUndefined();
   });
 
+  it('adds the bounded OpenAI header timeout for OAuth auth while preserving other runtime overlays', async () => {
+    const result = await syncRuntimeAgentOverlays({
+      workingDirectory: projectDirectory,
+      packagedAgentDirectory,
+      packagedPluginDirectory,
+      overlayRoot,
+      manifestPath,
+      readAuthFile: () => ({ openai: { type: 'oauth', access: 'oauth-token' } }),
+      writeAuthFile: () => {},
+      readConfig: () => ({
+        plugin: ['opencode-antigravity-auth@latest', 'opencode-with-claude'],
+        provider: {
+          anthropic: {
+            options: {
+              apiKey: 'dummy',
+              baseURL: 'http://127.0.0.1:3456',
+            },
+          },
+        },
+      }),
+      listMcpConfigs: () => ([{
+        name: 'remote-tools',
+        scope: 'user',
+        type: 'remote',
+        url: 'https://example.com/mcp',
+        enabled: true,
+      }]),
+    });
+
+    const runtimeConfig = JSON.parse(await fs.readFile(
+      path.join(result.targetConfigDirectory, 'opencode.json'),
+      'utf8',
+    ));
+    expect(runtimeConfig.provider?.openai).toEqual({
+      options: { headerTimeout: 60_000 },
+    });
+    expect(runtimeConfig.provider.openai.models).toBeUndefined();
+    expect(runtimeConfig.provider.anthropic.options.baseURL).toBe('http://127.0.0.1:3456');
+    expect(runtimeConfig.plugin).toContain('opencode-antigravity-auth@latest');
+    expect(runtimeConfig.mcp['remote-tools']).toMatchObject({
+      type: 'remote',
+      url: 'https://example.com/mcp',
+      timeout: 5_000,
+    });
+  });
+
+  it('adds the bounded OpenAI header timeout for an API-key environment', async () => {
+    process.env.OPENAI_API_KEY = 'test-api-key';
+
+    const result = await syncRuntimeAgentOverlays({
+      workingDirectory: projectDirectory,
+      packagedAgentDirectory,
+      packagedPluginDirectory,
+      overlayRoot,
+      manifestPath,
+      readAuthFile: () => ({}),
+      writeAuthFile: () => {},
+      readConfig: () => ({}),
+      listMcpConfigs: () => [],
+    });
+
+    const runtimeConfig = JSON.parse(await fs.readFile(
+      path.join(result.targetConfigDirectory, 'opencode.json'),
+      'utf8',
+    ));
+    expect(runtimeConfig.provider?.openai?.options?.headerTimeout).toBe(60_000);
+  });
+
+  it('adds the bounded OpenAI header timeout for an existing provider configuration', async () => {
+    const result = await syncRuntimeAgentOverlays({
+      workingDirectory: projectDirectory,
+      packagedAgentDirectory,
+      packagedPluginDirectory,
+      overlayRoot,
+      manifestPath,
+      readAuthFile: () => ({}),
+      writeAuthFile: () => {},
+      readConfig: () => ({
+        provider: {
+          openai: {
+            options: { baseURL: 'https://api.openai.com/v1' },
+          },
+        },
+      }),
+      listMcpConfigs: () => [],
+    });
+
+    const runtimeConfig = JSON.parse(await fs.readFile(
+      path.join(result.targetConfigDirectory, 'opencode.json'),
+      'utf8',
+    ));
+    expect(runtimeConfig.provider?.openai).toEqual({
+      options: { headerTimeout: 60_000 },
+    });
+  });
+
+  it.each([30_000, false])('preserves an explicit OpenAI header timeout of %s', async (headerTimeout) => {
+    const result = await syncRuntimeAgentOverlays({
+      workingDirectory: projectDirectory,
+      packagedAgentDirectory,
+      packagedPluginDirectory,
+      overlayRoot,
+      manifestPath,
+      readAuthFile: () => ({}),
+      writeAuthFile: () => {},
+      readConfig: () => ({
+        provider: {
+          openai: {
+            options: { headerTimeout },
+          },
+        },
+      }),
+      listMcpConfigs: () => [],
+    });
+
+    const runtimeConfig = JSON.parse(await fs.readFile(
+      path.join(result.targetConfigDirectory, 'opencode.json'),
+      'utf8',
+    ));
+    expect(runtimeConfig.provider?.openai?.options?.headerTimeout).toBe(headerTimeout);
+  });
+
+  it('removes a stale generated OpenAI timeout after auth is removed', async () => {
+    let auth = { openai: { type: 'oauth', access: 'oauth-token' } };
+    const syncOptions = {
+      workingDirectory: projectDirectory,
+      packagedAgentDirectory,
+      packagedPluginDirectory,
+      overlayRoot,
+      manifestPath,
+      readAuthFile: () => auth,
+      writeAuthFile: () => {},
+      readConfig: () => ({}),
+      listMcpConfigs: () => [],
+    };
+
+    const initial = await syncRuntimeAgentOverlays(syncOptions);
+    expect(JSON.parse(await fs.readFile(
+      path.join(initial.targetConfigDirectory, 'opencode.json'),
+      'utf8',
+    )).provider?.openai?.options?.headerTimeout).toBe(60_000);
+
+    auth = {};
+    const updated = await syncRuntimeAgentOverlays(syncOptions);
+    const runtimeConfig = JSON.parse(await fs.readFile(
+      path.join(updated.targetConfigDirectory, 'opencode.json'),
+      'utf8',
+    ));
+    expect(updated.configUpdated).toBe(true);
+    expect(runtimeConfig.provider?.openai).toBeUndefined();
+  });
+
   it('writes GitHub Copilot provider models using auth-module fallback when readAuthFile is omitted', async () => {
     readAuthSpy.mockReturnValue({
       'github-copilot': { access: 'copilot-token' },
@@ -1262,5 +1480,29 @@ describe('syncRuntimeAgentOverlays', () => {
       npm: '@ai-sdk/github-copilot',
     });
     expect(readAuthSpy).toHaveBeenCalled();
+  });
+
+  it('copies and registers every canonical runtime plugin from the repository default-config source', async () => {
+    const defaultConfigRoot = path.resolve(process.cwd(), 'server', 'default-config');
+    const expectedPlugins = await listRuntimePluginAssets(defaultConfigRoot);
+    const result = await syncRuntimeAgentOverlays({
+      workingDirectory: projectDirectory,
+      packagedAgentDirectory: path.join(defaultConfigRoot, 'agents'),
+      packagedPluginDirectory: path.join(defaultConfigRoot, 'plugins'),
+      overlayRoot,
+      manifestPath,
+      readAuthFile: () => ({}),
+      writeAuthFile: () => {},
+      readConfig: () => ({}),
+      listMcpConfigs: () => [],
+    });
+    const config = JSON.parse(await fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8'));
+
+    expect(expectedPlugins).not.toEqual([]);
+    expect(config.plugin).toEqual(expect.arrayContaining(expectedPlugins.map((relativePath) => `./${relativePath}`)));
+    for (const relativePath of expectedPlugins) {
+      await expect(fs.readFile(path.join(result.targetConfigDirectory, relativePath), 'utf8'))
+        .resolves.toBe(await fs.readFile(path.join(defaultConfigRoot, relativePath), 'utf8'));
+    }
   });
 });

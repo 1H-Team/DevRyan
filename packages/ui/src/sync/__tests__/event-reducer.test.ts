@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Event, Message, Part, PermissionRequest, QuestionRequest, Session, SessionStatus, Todo } from "@opencode-ai/sdk/v2/client"
-import { registerManualAbortGuard, resetAbortGuardState } from "../abort-retry-guard"
+import { isAbortGuardActive, registerManualAbortGuard, resetAbortGuardState } from "../abort-retry-guard"
 import { applyDirectoryEvent } from "../event-reducer"
 import { INITIAL_STATE, type State } from "../types"
 
@@ -192,6 +192,24 @@ describe("applyDirectoryEvent", () => {
         partID: "prt_1",
       },
     })
+  })
+
+  test("hydrates parent identity when an owning message follows a provisional part", () => {
+    const draft = state({
+      session_status: { ses_1: { type: "busy" } as SessionStatus },
+    })
+
+    expect(applyDirectoryEvent(draft, partUpdatedEvent())).not.toBe(false)
+    const provisional = draft.message.ses_1[0]
+    expect((provisional as { parentID?: string }).parentID).toBe(undefined)
+    const owning = {
+      ...provisional,
+      parentID: "msg_user_1",
+    } as Message
+
+    expect(applyDirectoryEvent(draft, messageUpdatedEvent(owning))).toBe(true)
+    expect(draft.message.ses_1[0]).toBe(owning)
+    expect((draft.message.ses_1[0] as { parentID?: string }).parentID).toBe("msg_user_1")
   })
 
   test("does not create a provisional assistant message for orphan text when the session is not active", () => {
@@ -537,6 +555,84 @@ describe("applyDirectoryEvent", () => {
     expect(draft.session[0]?.title).toBe("Fix OpenAI session titles")
   })
 
+  test("ignores an older title echo without replacing the current session", () => {
+    const current = {
+      ...testSession("ses_1"),
+      title: "Newest title",
+      time: { created: 1, updated: 10 },
+    } as Session
+    const sessions = [current]
+    const draft = state({ session: sessions })
+
+    const result = applyDirectoryEvent(draft, {
+      type: "session.updated",
+      properties: {
+        info: {
+          ...current,
+          title: "Older title",
+          time: { created: 1, updated: 9 },
+        },
+      },
+    } as Event)
+
+    expect(result).toBe(false)
+    expect(draft.session).toBe(sessions)
+    expect(draft.session[0]).toBe(current)
+  })
+
+  test("ignores an older archive echo and retains the active session", () => {
+    const current = {
+      ...testSession("ses_1"),
+      time: { created: 1, updated: 10 },
+    } as Session
+    const draft = state({ session: [current], sessionTotal: 1 })
+
+    const result = applyDirectoryEvent(draft, {
+      type: "session.updated",
+      properties: {
+        info: {
+          ...current,
+          time: { created: 1, updated: 9, archived: 9 },
+        },
+      },
+    } as Event)
+
+    expect(result).toBe(false)
+    expect(draft.session).toEqual([current])
+    expect(draft.sessionTotal).toBe(1)
+  })
+
+  test("keeps equal and missing timestamps eligible while duplicate updates are no-ops", () => {
+    const current = {
+      ...testSession("ses_1"),
+      title: "Before",
+      time: { created: 1, updated: 10 },
+    } as Session
+    const draft = state({ session: [current] })
+
+    const equalResult = applyDirectoryEvent(draft, {
+      type: "session.updated",
+      properties: { info: { ...current, title: "Equal", time: { created: 1, updated: 10 } } },
+    } as Event)
+    expect(equalResult).toBe(true)
+    expect(draft.session[0]?.title).toBe("Equal")
+
+    const missingResult = applyDirectoryEvent(draft, {
+      type: "session.updated",
+      properties: { info: { ...current, title: "Missing", time: {} } },
+    } as Event)
+    expect(missingResult).toBe(true)
+    expect(draft.session[0]?.title).toBe("Missing")
+
+    const duplicate = draft.session[0]
+    const duplicateResult = applyDirectoryEvent(draft, {
+      type: "session.updated",
+      properties: { info: { ...duplicate, time: { ...duplicate.time } } },
+    } as Event)
+    expect(duplicateResult).toBe(false)
+    expect(draft.session[0]).toBe(duplicate)
+  })
+
   test("strips untrusted diff totals from raw session created snapshots without cached messages", () => {
     const draft = state()
 
@@ -795,6 +891,63 @@ describe("applyDirectoryEvent", () => {
     }
   })
 
+  test("an authoritative user message clears a prior abort guard for the new turn", () => {
+    try {
+      registerManualAbortGuard("ses_1")
+      const draft = state({
+        session: [testSession("ses_1")],
+        session_status: { ses_1: { type: "idle" } as SessionStatus },
+        message: {
+          ses_1: [
+            testMessage("msg_user_old", "ses_1", "user", 1),
+            testMessage("msg_assistant_old", "ses_1", "assistant", 1.5),
+          ],
+        },
+      })
+
+      expect(applyDirectoryEvent(
+        draft,
+        messageUpdatedEvent(testMessage("msg_user_new", "ses_1", "user", 2)),
+      )).toBe(true)
+      expect(isAbortGuardActive("ses_1")).toBe(false)
+
+      const retryEvent = {
+        type: "session.status",
+        properties: {
+          sessionID: "ses_1",
+          status: { type: "retry", attempt: 1, message: "rate limited", next: 10 } as SessionStatus,
+        },
+      } as Event
+      expect(applyDirectoryEvent(draft, retryEvent)).toBe(true)
+      expect(draft.session_status.ses_1).toEqual({
+        type: "retry",
+        attempt: 1,
+        message: "rate limited",
+        next: 10,
+      })
+    } finally {
+      resetAbortGuardState()
+    }
+  })
+
+  test("a historical user replay cannot clear an abort guard without a newer cached turn", () => {
+    try {
+      registerManualAbortGuard("ses_1")
+      const draft = state({
+        session: [testSession("ses_1")],
+        session_status: { ses_1: { type: "idle" } as SessionStatus },
+      })
+
+      expect(applyDirectoryEvent(
+        draft,
+        messageUpdatedEvent(testMessage("msg_user_historical", "ses_1", "user", 1)),
+      )).toBe(true)
+      expect(isAbortGuardActive("ses_1")).toBe(true)
+    } finally {
+      resetAbortGuardState()
+    }
+  })
+
   test("indexes root user message timestamps for sidebar ordering", () => {
     const draft = state({ session: [testSession("ses_1")], session_user_activity: {} })
 
@@ -850,7 +1003,7 @@ describe("applyDirectoryEvent", () => {
       revert_transaction: {
         ses_1: {
           messageID: "msg_3",
-          hiddenMessageIDs: ["msg_3", "msg_4"],
+          hiddenMessageIDs: new Set(["msg_3", "msg_4"]),
           version: 1,
           status: "pending",
           startedAt: 1,
@@ -862,6 +1015,39 @@ describe("applyDirectoryEvent", () => {
     expect(applyDirectoryEvent(draft, messageUpdatedEvent(testMessage("msg_3", "ses_1", "user", 300)))).toBe(false)
     expect(draft.message.ses_1.map((message) => message.id)).toEqual(["msg_1"])
     expect(draft.session_user_activity).toEqual({ ses_1: 100 })
+  })
+
+  test("performs one revert lookup for session-less streaming parts", () => {
+    const transaction = {
+      messageID: "msg_hidden",
+      hiddenMessageIDs: new Set(["msg_hidden"]),
+      version: 1,
+      status: "pending" as const,
+      startedAt: 1,
+    }
+    const draft = state({ session: [], message: {}, part: {} })
+    let transactionReads = 0
+    Object.defineProperty(draft, "revert_transaction", {
+      configurable: true,
+      get: () => {
+        transactionReads += 1
+        return { ses_1: transaction }
+      },
+      set: () => {},
+    })
+
+    expect(applyDirectoryEvent(draft, {
+      type: "message.part.updated",
+      properties: {
+        part: {
+          id: "prt_hidden",
+          messageID: "msg_hidden",
+          type: "text",
+          text: "hidden",
+        },
+      },
+    } as Event)).toBe(false)
+    expect(transactionReads).toBe(1)
   })
 
   test("archives active session metadata without dropping recent message cache", () => {

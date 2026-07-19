@@ -8,7 +8,7 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { cn, formatDirectoryName } from '@/lib/utils';
 import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
-import { isGitGenerationSession } from '@/lib/git/gitGenerationSessions';
+import { filterUserVisibleSessions } from '@/lib/sessionVisibility';
 import { getAgentColor } from '@/lib/agentColors';
 import { RiAddLine, RiFolderLine, RiLoader4Line } from '@remixicon/react';
 import { PROJECT_COLOR_MAP, PROJECT_ICON_MAP, getProjectIconImageUrl } from '@/lib/projectMeta';
@@ -553,7 +553,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
   const { currentTheme } = useThemeSystem();
   const allSessions = useSessions();
   const sessions = React.useMemo(
-    () => allSessions.filter((session) => !isGitGenerationSession(session.id)),
+    () => filterUserVisibleSessions(allSessions),
     [allSessions],
   );
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);

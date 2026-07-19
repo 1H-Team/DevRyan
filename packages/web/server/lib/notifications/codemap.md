@@ -5,7 +5,7 @@ Notification subsystem for browser push and in-app streaming: subscription lifec
 
 ## Design
 - **Route + runtime separation**: `routes.js` handles HTTP/SSE contracts; runtime/template/push modules encapsulate generation and delivery logic.
-- **Session-aware delivery**: visibility and activity state prevents noisy notifications when UI is foregrounded.
+- **Session-aware delivery**: visibility and activity state prevents noisy notifications when UI is foregrounded, and authoritative todo progress suppresses ready notifications while tasks remain pending or in progress.
 - **Template pipeline**: optional summarization/model-based message shaping before push dispatch.
 
 ## Flow

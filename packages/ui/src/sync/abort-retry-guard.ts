@@ -26,11 +26,17 @@ export const ABORT_GUARD_TTL_MS = 60_000
 export const ABORT_GUARD_MAX_REABORTS = 3
 export const ABORT_GUARD_REABORT_DEBOUNCE_MS = 1_000
 
+const EPOCH_SECONDS_THRESHOLD = 1_000_000_000
+const EPOCH_MILLISECONDS_THRESHOLD = 1_000_000_000_000
+
 interface AbortGuardRecord {
   directory?: string
-  requestedAt: number
+  expiresAt: number
   reabortCount: number
   lastReabortAt: number
+  retryAttempt?: number
+  retryNext?: number
+  retryTargetAt?: number
 }
 
 type AbortGuardExecutor = (sessionId: string, directory?: string) => Promise<unknown>
@@ -46,15 +52,59 @@ export function setAbortGuardExecutor(executor: AbortGuardExecutor | null): void
   abortExecutor = executor
 }
 
+function addWithSafeUpperBound(value: number, amount: number): number {
+  if (value >= Number.MAX_SAFE_INTEGER - amount) {
+    return Number.MAX_SAFE_INTEGER
+  }
+  return value + amount
+}
+
+function normalizeRetryTargetAt(next: number, now: number): number | undefined {
+  if (!Number.isFinite(next) || next <= 0) return undefined
+  if (next >= EPOCH_MILLISECONDS_THRESHOLD) return next
+  if (next >= EPOCH_SECONDS_THRESHOLD) {
+    const milliseconds = next * 1_000
+    return Number.isFinite(milliseconds) ? milliseconds : undefined
+  }
+  return addWithSafeUpperBound(now, next)
+}
+
+function extendGuardThroughRetry(record: AbortGuardRecord, status: SessionStatus, now: number): void {
+  if (status.type !== "retry") return
+
+  let retryTargetAt = record.retryTargetAt
+  if (record.retryAttempt !== status.attempt || record.retryNext !== status.next || retryTargetAt === undefined) {
+    retryTargetAt = normalizeRetryTargetAt(status.next, now)
+    record.retryAttempt = status.attempt
+    record.retryNext = status.next
+    record.retryTargetAt = retryTargetAt
+  }
+  if (retryTargetAt === undefined) return
+
+  record.expiresAt = Math.max(
+    record.expiresAt,
+    addWithSafeUpperBound(retryTargetAt, ABORT_GUARD_TTL_MS),
+  )
+}
+
 /** Record that the user, a user-initiated flow, or manual provider recovery stopped this session. */
-export function registerManualAbortGuard(sessionId: string, directory?: string): void {
+export function registerManualAbortGuard(
+  sessionId: string,
+  directory?: string,
+  status?: SessionStatus,
+  now: number = Date.now(),
+): void {
   if (!sessionId) return
-  records.set(sessionId, {
+  const record: AbortGuardRecord = {
     directory,
-    requestedAt: Date.now(),
+    expiresAt: addWithSafeUpperBound(now, ABORT_GUARD_TTL_MS),
     reabortCount: 0,
     lastReabortAt: 0,
-  })
+  }
+  if (status) {
+    extendGuardThroughRetry(record, status, now)
+  }
+  records.set(sessionId, record)
 }
 
 /** Clear the guard — authoritative idle arrived or a new local send started. */
@@ -76,7 +126,7 @@ export function resetAbortGuardState(): void {
 export function isAbortGuardActive(sessionId: string, now: number = Date.now()): boolean {
   const record = records.get(sessionId)
   if (!record) return false
-  if (now - record.requestedAt > ABORT_GUARD_TTL_MS) {
+  if (now > record.expiresAt) {
     records.delete(sessionId)
     return false
   }
@@ -144,6 +194,7 @@ export function filterSessionStatusThroughAbortGuard(
 
   const record = records.get(sessionId)
   if (record) {
+    extendGuardThroughRetry(record, status, now)
     scheduleReabort(sessionId, record, now)
   }
 
@@ -152,4 +203,22 @@ export function filterSessionStatusThroughAbortGuard(
   }
 
   return status
+}
+
+/** Apply the manual-abort policy to an authoritative status snapshot. */
+export function filterSessionStatusSnapshotThroughAbortGuard(
+  statuses: Record<string, SessionStatus>,
+  now: number = Date.now(),
+): Record<string, SessionStatus> {
+  let next: Record<string, SessionStatus> | undefined
+
+  for (const [sessionId, status] of Object.entries(statuses)) {
+    const filtered = filterSessionStatusThroughAbortGuard(sessionId, status, now)
+    if (filtered === status) continue
+
+    next ??= { ...statuses }
+    next[sessionId] = filtered
+  }
+
+  return next ?? statuses
 }

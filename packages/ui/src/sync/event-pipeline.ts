@@ -714,10 +714,19 @@ export function createEventPipeline(input: EventPipelineInput) {
   }
 
   const runSseAttempt = async (signal: AbortSignal) => {
+    let connected = false
+    const markSseConnected = () => {
+      if (connected) return
+      // The SDK creates its stream wrapper before opening the response. A
+      // parsed/yielded event is the first authoritative proof of connectivity.
+      connected = true
+      markConnected()
+    }
     const events = await sdk.global.event({
       signal,
       ...(lastEventId && lastEventId.length > 0 ? { headers: { "Last-Event-ID": lastEventId } } : {}),
       onSseEvent: (event: { id?: unknown }) => {
+        markSseConnected()
         resetHeartbeat()
         if (typeof event.id === "string" && event.id.length > 0) {
           lastEventId = event.id
@@ -731,12 +740,11 @@ export function createEventPipeline(input: EventPipelineInput) {
       },
     })
 
-    markConnected()
-
     let yielded = Date.now()
     resetHeartbeat()
 
     for await (const event of events.stream) {
+      markSseConnected()
       resetHeartbeat()
       streamErrorLogged = false
 

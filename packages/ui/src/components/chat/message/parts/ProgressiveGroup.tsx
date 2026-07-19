@@ -4,6 +4,7 @@ import type { TurnActivityRecord as TurnActivityPart } from '../../lib/turns/typ
 import type { ToolPart as ToolPartType } from '@opencode-ai/sdk/v2';
 import type { StreamPhase } from '../types';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
+import type { ResponseStyleLevel } from '@/lib/responseStyle';
 import type { ToolPopupContent } from '../types';
 import ToolPart from './ToolPart';
 import { MinDurationShineText } from './MinDurationShineText';
@@ -72,6 +73,8 @@ interface ProgressiveGroupProps {
     animateRows?: boolean;
     animatedToolIds?: Set<string>;
     renderJustificationActions?: (activity: TurnActivityPart) => React.ReactNode;
+    providerID?: string | null;
+    responseStyleLevel?: ResponseStyleLevel;
 }
 
 /**
@@ -293,7 +296,7 @@ const GroupedToolActivityRowInner: React.FC<GroupedToolActivityRowProps> = ({
     const summaryCount = React.useMemo(() => {
         return getToolActivityGroupSummaryCount(groupInfo.kind, activities, getActivityToolPart);
     }, [activities, groupInfo.kind]);
-    const label = t(getToolActivityGroupLabelKey(groupInfo.kind, summaryCount), { count: summaryCount });
+    const label = t(getToolActivityGroupLabelKey(groupInfo, summaryCount), { count: summaryCount });
     const icon = getToolIcon(groupInfo.representativeToolName);
 
     const patchFiles = React.useMemo(() => {
@@ -564,14 +567,18 @@ const aggregateRows = (parts: TurnActivityPart[]): AggregatedRow[] => {
 /**
  * Inline reasoning text block — rendered as dimmed italic markdown.
  */
-const InlineReasoningBlock = React.memo(({ activity, onContentChange }: {
+const InlineReasoningBlock = React.memo(({ activity, onContentChange, providerID, responseStyleLevel }: {
     activity: TurnActivityPart;
     onContentChange?: (reason?: ContentChangeReason) => void;
+    providerID?: string | null;
+    responseStyleLevel?: ResponseStyleLevel;
 }) => {
     return (
         <ReasoningPart
             part={activity.part}
             messageId={activity.messageId}
+            providerID={activity.providerID ?? providerID}
+            responseStyleLevel={responseStyleLevel}
             onContentChange={onContentChange}
         />
     );
@@ -611,6 +618,8 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     animateRows = true,
     animatedToolIds,
     renderJustificationActions,
+    providerID,
+    responseStyleLevel,
 }) => {
     void _streamPhase;
     const previewCount = showHeader && !isExpanded
@@ -667,6 +676,8 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         <InlineReasoningBlock
                             activity={row.activity}
                             onContentChange={onContentChange}
+                            providerID={providerID}
+                            responseStyleLevel={responseStyleLevel}
                         />
                     </>
                 );

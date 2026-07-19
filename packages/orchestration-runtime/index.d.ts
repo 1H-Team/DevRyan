@@ -11,8 +11,9 @@ export type ManagedTaskStatus =
 
 export type ManagedTaskTerminalStatus = Extract<ManagedTaskStatus, 'completed' | 'failed' | 'aborted' | 'interrupted'>;
 export type ManagedTaskMode = 'builder' | 'orchestrator';
-export type ManagedTaskExecutionKind = 'start' | 'retry' | 'resume' | 'retry_in_place';
-export type ManagedTaskResultAction = 'continue' | 'resume' | 'retry' | 'retry_in_place' | 'abandon';
+export type ManagedTaskExecutionKind = 'start' | 'retry' | 'resume' | 'recover_in_place' | 'retry_in_place';
+export type ManagedTaskResultAction = 'continue' | 'resume' | 'retry' | 'recover_in_place' | 'retry_in_place' | 'abandon';
+export type ManagedTaskFailureKind = 'provider_usage_limit' | null;
 
 export interface ManagedTaskCanonicalRef {
   type: string;
@@ -54,6 +55,7 @@ export interface ManagedTaskRecord {
 
 export type ManagedTaskEventRecord = Omit<ManagedTaskRecord,
   'prompt' | 'idempotencyKey' | 'dispatchGroupId' | 'leaseToken'> & {
+    failureKind: ManagedTaskFailureKind;
     agentRetryAvailable: boolean;
   };
 
@@ -134,8 +136,8 @@ export interface ManagedTaskExecutorResult {
 }
 
 export interface ManagedTaskControl {
-  setChildSessionId(childSessionId: string): Promise<void>;
-  markAccepted(): Promise<void>;
+  setChildSessionId(childSessionId: string): Promise<boolean>;
+  markAccepted(): Promise<boolean>;
 }
 
 export type ManagedTaskReconciliation =
@@ -152,7 +154,10 @@ export interface ManagedTaskExecutor {
   resume?(task: ManagedTaskRecord, control: ManagedTaskControl): Promise<ManagedTaskExecutorResult>;
   retryInPlace?(task: ManagedTaskRecord, control: ManagedTaskControl): Promise<ManagedTaskExecutorResult>;
   observe?(task: ManagedTaskRecord, control: ManagedTaskControl): Promise<ManagedTaskExecutorResult>;
-  abort(task: ManagedTaskRecord): Promise<{ aborted: boolean; failureReason?: string }>;
+  abort(task: ManagedTaskRecord, options?: { signal?: AbortSignal }): Promise<{
+    aborted: boolean;
+    failureReason?: string;
+  }>;
   reconcile(task: ManagedTaskRecord): Promise<ManagedTaskReconciliation>;
   readRecoverableResult(task: ManagedTaskRecord): Promise<Omit<ManagedTaskExecutorResult, 'status'>>;
   shutdown?(): Promise<void>;
@@ -188,7 +193,8 @@ export interface ManagedOpenCodeTransport {
     info?: Record<string, unknown>;
     parts?: Record<string, unknown>[];
   }>>;
-  abortSession(input: ManagedOpenCodeTransportInput): Promise<boolean>;
+  abortSession(input: ManagedOpenCodeTransportInput & { signal?: AbortSignal }): Promise<boolean>;
+  deleteSession(input: ManagedOpenCodeTransportInput): Promise<boolean>;
 }
 
 export interface ManagedOpenCodeExecutorOptions {
@@ -214,7 +220,6 @@ export interface ManagedOrchestrationPersistence {
 export interface ManagedTaskSchedulerOptions {
   executor: ManagedTaskExecutor;
   persistence?: ManagedOrchestrationPersistence;
-  maxConcurrency?: number;
   now?: () => number;
   createTaskId?: () => string;
   createLeaseToken?: () => string;
@@ -264,7 +269,10 @@ export interface ManagedTaskScheduler {
   submit(input: ManagedTaskSubmitInput): Promise<ManagedTaskRecord>;
   cancelTask(taskId: string, options?: { cascade?: false; reason?: string }): Promise<ManagedTaskRecord>;
   cancelTask(taskId: string, options: { cascade: true; reason?: string }): Promise<ManagedTaskRecord[]>;
-  waitForTask(taskId: string, options?: { signal?: AbortSignal }): Promise<ManagedTaskRecord>;
+  waitForTask(taskId: string, options?: {
+    signal?: AbortSignal;
+    timeoutMs?: number;
+  }): Promise<ManagedTaskRecord>;
   waitForDispatchBarrier(rootSessionId: string, options?: { signal?: AbortSignal }): Promise<{
     state: 'clear' | 'awaiting_acknowledgement';
     taskIds: string[];
@@ -310,11 +318,14 @@ export const MAX_MANAGED_TASK_LABEL_BYTES: number;
 export const MAX_MANAGED_TASK_PROMPT_BYTES: number;
 export const MAX_MANAGED_TASK_PREVIEW_BYTES: number;
 export const MAX_MANAGED_TASK_FAILURE_BYTES: number;
+export const PROVIDER_USAGE_LIMIT_FAILURE_KIND: 'provider_usage_limit';
 export const DEFAULT_MANAGED_TERMINAL_MAX_RECORDS: number;
 export const DEFAULT_MANAGED_TERMINAL_MAX_AGE_MS: number;
 export const DEFAULT_MANAGED_LEDGER_MAX_BYTES: number;
 
 export function formatManagedTaskDisplayName(label: string): string;
+export function classifyProviderRetryFailure(value: unknown): ManagedTaskFailureKind;
+export function isDefiniteProviderUsageLimit(value: unknown): boolean;
 export function truncateManagedText(value: unknown, maxBytes: number): string;
 export function isTerminalManagedTaskStatus(status: unknown): status is ManagedTaskTerminalStatus;
 export function validateManagedTaskRecord(task: unknown): ManagedTaskRecord;

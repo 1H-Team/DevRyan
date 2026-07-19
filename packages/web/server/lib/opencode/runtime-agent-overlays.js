@@ -21,6 +21,8 @@ import {
   GITHUB_COPILOT_PROVIDER_ID,
   GITHUB_COPILOT_PROVIDER_NAME,
 } from './provider-integrations.js';
+import { isAnthropicOAuthPluginSpec } from './anthropic-oauth-plugin.js';
+import { isRuntimePluginFileName } from './default-config-assets.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_CONFIG_DIR = path.resolve(__dirname, '../../default-config');
@@ -29,7 +31,7 @@ const DEFAULT_PACKAGED_PLUGIN_DIR = path.join(DEFAULT_CONFIG_DIR, 'plugins');
 const DEFAULT_RUNTIME_AGENT_OVERLAY_ROOT = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'runtime-agent-overlays');
 const DEFAULT_RUNTIME_AGENT_OVERLAY_MANIFEST_PATH = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'runtime-agent-overlays.json');
 const DEFAULT_REMOTE_MCP_TIMEOUT_MS = 5_000;
-const ANTHROPIC_OAUTH_PLUGIN_NAME = 'opencode-with-claude';
+const DEFAULT_OPENAI_HEADER_TIMEOUT_MS = 60_000;
 const ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID = 'anthropic';
 const SLIM_CONFIG_FILE_NAMES = ['oh-my-opencode-slim.jsonc', 'oh-my-opencode-slim.json'];
 
@@ -171,7 +173,8 @@ const buildAnthropicOAuthProxyOverlay = (workingDirectory, options = {}) => {
   const plugin = Array.isArray(config?.plugin)
     ? config.plugin.filter((entry) => typeof entry === 'string')
     : [];
-  if (!plugin.includes(ANTHROPIC_OAUTH_PLUGIN_NAME)) {
+  const anthropicPlugin = plugin.find(isAnthropicOAuthPluginSpec);
+  if (!anthropicPlugin) {
     return null;
   }
 
@@ -185,7 +188,7 @@ const buildAnthropicOAuthProxyOverlay = (workingDirectory, options = {}) => {
   }
 
   return {
-    plugin: [ANTHROPIC_OAUTH_PLUGIN_NAME],
+    plugin: [anthropicPlugin],
     provider: {
       [ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID]: {
         ...anthropic,
@@ -269,16 +272,73 @@ const buildPackagedPluginOverlay = (pluginSpecs = []) => {
   return plugin.length > 0 ? { plugin } : null;
 };
 
-const buildActivePluginOverlay = (workingDirectory, options = {}) => {
+const getPluginEntrySpec = (entry) => {
+  if (typeof entry === 'string') {
+    return entry.trim();
+  }
+  if (Array.isArray(entry) && typeof entry[0] === 'string') {
+    return entry[0].trim();
+  }
+  return '';
+};
+
+const getLocalPluginFileName = (entry) => {
+  const spec = getPluginEntrySpec(entry);
+  if (!spec) {
+    return null;
+  }
+
+  let localPath = null;
+  if (spec.startsWith('file:')) {
+    try {
+      localPath = fileURLToPath(spec);
+    } catch {
+      return null;
+    }
+  } else if (
+    spec.startsWith('./')
+    || spec.startsWith('../')
+    || path.isAbsolute(spec)
+    || /^[A-Za-z]:[\\/]/.test(spec)
+  ) {
+    localPath = spec;
+  }
+
+  if (!localPath) {
+    return null;
+  }
+  const fileName = path.posix.basename(localPath.replace(/\\/g, '/'));
+  return isRuntimePluginFileName(fileName) ? fileName : null;
+};
+
+const buildActivePluginPlan = (workingDirectory, options = {}) => {
   const readActiveConfig = typeof options.readConfig === 'function' ? options.readConfig : readConfig;
   const config = readActiveConfig(workingDirectory);
-  const plugin = Array.isArray(config?.plugin)
+  const allowedPlugins = Array.isArray(config?.plugin)
     ? filterManagedRuntimePluginEntries(config.plugin.filter((entry) => (
       (typeof entry === 'string' && entry.trim())
       || (Array.isArray(entry) && typeof entry[0] === 'string' && entry[0].trim())
     )))
     : [];
-  return plugin.length > 0 ? { plugin } : null;
+  const sourceOwnedPluginFileNames = new Set();
+  const plugin = [];
+
+  for (const entry of allowedPlugins) {
+    // OpenCode also loads the source config and resolves relative plugin paths
+    // against that file. Repeating the path here creates a second file URL and
+    // executes the same plugin twice instead of deduplicating it.
+    const fileName = getLocalPluginFileName(entry);
+    if (fileName) {
+      sourceOwnedPluginFileNames.add(fileName);
+      continue;
+    }
+    plugin.push(entry);
+  }
+
+  return {
+    overlay: plugin.length > 0 ? { plugin } : null,
+    sourceOwnedPluginFileNames,
+  };
 };
 
 const buildGitHubCopilotProviderOverlay = async (options = {}) => {
@@ -318,6 +378,53 @@ const buildGitHubCopilotProviderOverlay = async (options = {}) => {
       [GITHUB_COPILOT_PROVIDER_ID]: {
         name: GITHUB_COPILOT_PROVIDER_NAME,
         models,
+      },
+    },
+  };
+};
+
+const buildOpenAIHeaderTimeoutOverlay = async (workingDirectory, options = {}) => {
+  const readActiveConfig = typeof options.readConfig === 'function' ? options.readConfig : readConfig;
+  const config = readActiveConfig(workingDirectory);
+  const providers = isPlainObject(config?.provider) ? config.provider : {};
+  const openAIProvider = isPlainObject(providers.openai) ? providers.openai : null;
+  let readAuthFile = typeof options.readAuthFile === 'function' ? options.readAuthFile : null;
+  let hasOpenAIAuth = false;
+
+  if (!readAuthFile) {
+    try {
+      const authModule = await import('./auth.js');
+      readAuthFile = authModule.readAuthFile;
+    } catch (error) {
+      console.warn('[OpenCode] Failed to load provider auth for the OpenAI timeout overlay:', error);
+    }
+  }
+
+  if (readAuthFile) {
+    try {
+      const auth = readAuthFile();
+      hasOpenAIAuth = isPlainObject(auth)
+        && Object.prototype.hasOwnProperty.call(auth, 'openai');
+    } catch (error) {
+      console.warn('[OpenCode] Failed to read provider auth for the OpenAI timeout overlay:', error);
+    }
+  }
+
+  const hasOpenAIApiKey = typeof process.env.OPENAI_API_KEY === 'string'
+    && Boolean(process.env.OPENAI_API_KEY.trim());
+  if (!hasOpenAIAuth && !hasOpenAIApiKey && !openAIProvider) {
+    return null;
+  }
+
+  const providerOptions = isPlainObject(openAIProvider?.options) ? openAIProvider.options : {};
+  const headerTimeout = Object.prototype.hasOwnProperty.call(providerOptions, 'headerTimeout')
+    ? providerOptions.headerTimeout
+    : DEFAULT_OPENAI_HEADER_TIMEOUT_MS;
+
+  return {
+    provider: {
+      openai: {
+        options: { headerTimeout },
       },
     },
   };
@@ -365,13 +472,21 @@ const mergeProviderRecords = (left, right) => {
 };
 
 const buildRuntimeConfigOverlay = (workingDirectory, options = {}) => {
+  const activePluginPlan = buildActivePluginPlan(workingDirectory, options);
+  const packagedPluginSpecs = Array.isArray(options.packagedPluginSpecs)
+    ? options.packagedPluginSpecs.filter((entry) => {
+        const fileName = getLocalPluginFileName(entry);
+        return !fileName || !activePluginPlan.sourceOwnedPluginFileNames.has(fileName);
+      })
+    : [];
   const overlays = [
     options.githubCopilotProviderOverlay,
+    options.openAIHeaderTimeoutOverlay,
     buildRemoteMcpTimeoutOverlay(workingDirectory, options),
     buildBlockedMcpOverlay(workingDirectory, options),
-    buildActivePluginOverlay(workingDirectory, options),
+    activePluginPlan.overlay,
     buildAnthropicOAuthProxyOverlay(workingDirectory, options),
-    buildPackagedPluginOverlay(options.packagedPluginSpecs),
+    buildPackagedPluginOverlay(packagedPluginSpecs),
   ].filter(Boolean);
 
   if (overlays.length === 0) {
@@ -502,13 +617,6 @@ const listAgentFiles = async (agentRoot, scope) => {
   return Array.from(agentsByName.values()).sort((a, b) => a.name.localeCompare(b.name));
 };
 
-const isPackagedPluginFile = (entry) => (
-  entry.isFile()
-  && !entry.name.endsWith('.d.ts')
-  && !/(^|[.-])(test|spec)\./.test(entry.name)
-  && ['.js', '.mjs', '.cjs', '.ts'].includes(path.extname(entry.name))
-);
-
 const listPackagedPluginFiles = async (pluginRoot) => {
   let entries;
   try {
@@ -522,7 +630,7 @@ const listPackagedPluginFiles = async (pluginRoot) => {
 
   const plugins = [];
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-    if (!isPackagedPluginFile(entry)) {
+    if (!entry.isFile() || !isRuntimePluginFileName(entry.name)) {
       continue;
     }
     const content = await fs.readFile(path.join(pluginRoot, entry.name), 'utf8');
@@ -704,10 +812,12 @@ export const syncRuntimeAgentOverlays = async (options = {}) => {
   }
 
   const githubCopilotProviderOverlay = await buildGitHubCopilotProviderOverlay(runtimeOptions);
+  const openAIHeaderTimeoutOverlay = await buildOpenAIHeaderTimeoutOverlay(workingDirectory, runtimeOptions);
   const desiredRuntimeConfig = buildRuntimeConfigOverlay(workingDirectory, {
     ...options,
     packagedPluginSpecs: packagedPlugins.map((plugin) => plugin.spec),
     githubCopilotProviderOverlay,
+    openAIHeaderTimeoutOverlay,
   });
 
   if (desiredRuntimeConfig) {

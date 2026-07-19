@@ -37,14 +37,14 @@ jobs:
         id: archive
         run: |
           mkdir -p artifacts
-          ARCHIVE_NAME="openchamber-docs-source-${GITHUB_SHA::8}.tar.gz"
+          ARCHIVE_NAME="DevRyan-docs-source-${GITHUB_SHA::8}.tar.gz"
           tar -czf "artifacts/${ARCHIVE_NAME}" -C packages/docs .
           echo "archive_name=${ARCHIVE_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: docs-source
+          name: DevRyan-docs-source
           path: artifacts/${{ steps.archive.outputs.archive_name }}
           retention-days: 14
 

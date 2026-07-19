@@ -1,46 +1,99 @@
-export const RESPONSE_STYLE_PRESETS = ['concise', 'detailed', 'mentor', 'pushback', 'noFiller', 'matchEnergy', 'warmPeer'] as const;
-export type ResponseStylePreset = typeof RESPONSE_STYLE_PRESETS[number];
+import type { Part } from '@opencode-ai/sdk/v2';
+
+export const RESPONSE_STYLE_LEVELS = ['provider', 'actions', 'concise', 'detailed'] as const;
+export type ResponseStyleLevel = typeof RESPONSE_STYLE_LEVELS[number];
+export type ResponseStylePreset = Exclude<ResponseStyleLevel, 'provider'>;
+
+const LEGACY_CONCISE_PRESETS = new Set(['concise', 'noFiller', 'matchEnergy']);
+const LEGACY_DETAILED_PRESETS = new Set(['detailed', 'mentor', 'pushback', 'warmPeer']);
+const RESPONSE_STYLE_MARKER_PATTERN = /<system-reminder\s+data-devryan-response-style="(actions|concise|detailed)">/;
+
+export const isResponseStyleLevel = (value: unknown): value is ResponseStyleLevel => (
+  typeof value === 'string' && RESPONSE_STYLE_LEVELS.includes(value as ResponseStyleLevel)
+);
 
 export const isResponseStylePreset = (value: unknown): value is ResponseStylePreset => (
-  typeof value === 'string' && RESPONSE_STYLE_PRESETS.includes(value as ResponseStylePreset)
+  value === 'actions' || value === 'concise' || value === 'detailed'
 );
+
+export const resolveResponseStyleLevel = (settings: unknown): ResponseStyleLevel => {
+  const candidate = settings as {
+    responseStyleEnabled?: unknown;
+    responseStylePreset?: unknown;
+  } | null | undefined;
+
+  if (candidate?.responseStyleEnabled !== true) return 'provider';
+  if (candidate.responseStylePreset === 'actions') return 'actions';
+  if (LEGACY_DETAILED_PRESETS.has(String(candidate.responseStylePreset))) return 'detailed';
+  if (LEGACY_CONCISE_PRESETS.has(String(candidate.responseStylePreset))) return 'concise';
+
+  // Removed custom and unknown presets cannot be mapped safely to a rationale
+  // depth, so preserve provider behavior until the user selects a level.
+  return 'provider';
+};
 
 export const getResponseStylePresetInstructions = (preset: ResponseStylePreset): string => {
   switch (preset) {
+    case 'actions':
+      return 'Show only a short action or status summary for each major step. Do not add a separate rationale. Write every visible summary as a complete, punctuated sentence.';
     case 'concise':
-      return "Keep replies short. Answer first, no preamble or recap of the question. Write like you're texting a colleague who already has the context — plain sentences, not headings or bullets. Reach for a list only when the content is genuinely a list; never use one to look organised.";
+      return 'For each major step, include one concise user-facing sentence that explains why it is the right next action. Do not expose private chain-of-thought. Write every visible summary as a complete, punctuated sentence.';
     case 'detailed':
-      return "Take the space you need to actually explain things. Walk through what's going on, why it matters, and where the real tradeoffs are. Prefer flowing prose over bullet points and headings — structure the answer with paragraphs and let the reasoning carry it. Lists are fine when something really is enumerable, but don't fragment a normal explanation into bullets.";
-    case 'mentor':
-      return "Talk like a patient senior engineer pairing with someone less experienced. Explain the underlying idea before the answer, think out loud about how you'd approach it, and drop in a small concrete example when it actually helps. Keep it conversational — no lecture format, no checklists, no numbered steps unless the task literally is a sequence.";
-    case 'pushback':
-      return "Don't agree automatically. If something I say sounds off — a wrong assumption, a flawed approach, a request that won't actually do what I think it will — push back first. Explain what you disagree with and why, and only proceed once I've responded. Disagreement is welcome; sycophancy is not. Don't soften it with 'you might want to consider' — just say it.";
-    case 'noFiller':
-      return "Cut the filler. No 'Great question', no 'Certainly', no 'I'll help you with that', no restating what I just asked. No closing summary of what you did when the diff or output already shows it. No trailing 'let me know if you need anything else'. Open with the actual content and stop when you're done.";
-    case 'matchEnergy':
-      return "Mirror the size and register of my message. A one-line question gets a one-line answer. A casual aside gets a casual reply, not a structured breakdown. If I write three words, don't respond with three paragraphs. Match the tone too — informal stays informal, technical stays technical. Don't inflate small asks into full essays.";
-    case 'warmPeer':
-      return "Talk like a colleague, not an assistant. First person is fine and encouraged — 'I'd do this', 'I don't love that approach', 'that was sloppy of me'. Have actual opinions and share them. Push back when you disagree. Admit when you screwed up without grovelling. Skip the corporate helpfulness and performative politeness — just be a person.";
+      return 'For each major step, provide a short user-facing paragraph summarizing the evidence, rationale, and relevant tradeoffs before taking action. Do not expose private chain-of-thought. Write every visible summary as complete, punctuated prose.';
   }
 };
 
 export const buildResponseStyleInstruction = ({
   enabled,
   preset,
-  customInstructions,
 }: {
   enabled?: boolean;
   preset?: unknown;
   customInstructions?: unknown;
 }): string | null => {
-  if (!enabled) return null;
-  if (preset === 'custom') {
-    const custom = typeof customInstructions === 'string' ? customInstructions.trim() : '';
-    return custom || null;
-  }
-  if (!isResponseStylePreset(preset)) return null;
-  return getResponseStylePresetInstructions(preset);
+  const level = resolveResponseStyleLevel({ responseStyleEnabled: enabled, responseStylePreset: preset });
+  return level === 'provider' ? null : getResponseStylePresetInstructions(level);
 };
+
+export const wrapResponseStyleReminder = (
+  level: ResponseStyleLevel,
+  instruction: string,
+): string => {
+  if (level === 'provider' || !instruction.trim()) return '';
+  return `<system-reminder data-devryan-response-style="${level}">\n${instruction.trim()}\n</system-reminder>`;
+};
+
+export const readResponseStyleLevelFromParts = (parts: Part[]): ResponseStyleLevel => {
+  for (const part of parts) {
+    const candidate = part as { type?: unknown; text?: unknown; synthetic?: unknown };
+    if (candidate.type !== 'text' || candidate.synthetic !== true || typeof candidate.text !== 'string') {
+      continue;
+    }
+    const match = RESPONSE_STYLE_MARKER_PATTERN.exec(candidate.text);
+    if (match && isResponseStylePreset(match[1])) return match[1];
+  }
+  return 'provider';
+};
+
+export const readSessionResponseStyleLevel = (
+  messages: readonly { parts: Part[] }[],
+): ResponseStyleLevel => {
+  for (const message of messages) {
+    const level = readResponseStyleLevelFromParts(message.parts);
+    if (level !== 'provider') return level;
+  }
+  return 'provider';
+};
+
+export const shouldAttachResponseStyleReminder = ({
+  isNewSessionDraft,
+  hasExistingSession,
+  existingSessionHasUserMessages,
+}: {
+  isNewSessionDraft: boolean;
+  hasExistingSession: boolean;
+  existingSessionHasUserMessages: boolean;
+}): boolean => isNewSessionDraft || (hasExistingSession && !existingSessionHasUserMessages);
 
 type ResponseStyleSettings = {
   responseStyleEnabled?: unknown;
@@ -49,25 +102,28 @@ type ResponseStyleSettings = {
 };
 
 let cachedResponseStyleInstruction: string | null = null;
+let cachedResponseStyleLevel: ResponseStyleLevel = 'provider';
 let responseStyleInstructionLoaded = false;
 
 export const cacheResponseStyleInstructionFromSettings = (settings: unknown): string | null => {
   const payload = settings as ResponseStyleSettings | null | undefined;
-  cachedResponseStyleInstruction = buildResponseStyleInstruction({
-    enabled: payload?.responseStyleEnabled === true,
-    preset: payload?.responseStylePreset,
-    customInstructions: payload?.responseStyleCustomInstructions,
-  });
+  cachedResponseStyleLevel = resolveResponseStyleLevel(payload);
+  cachedResponseStyleInstruction = cachedResponseStyleLevel === 'provider'
+    ? null
+    : getResponseStylePresetInstructions(cachedResponseStyleLevel);
   responseStyleInstructionLoaded = true;
   return cachedResponseStyleInstruction;
 };
 
 export const getCachedResponseStyleInstruction = (): string | null => cachedResponseStyleInstruction;
 
+export const getCachedResponseStyleLevel = (): ResponseStyleLevel => cachedResponseStyleLevel;
+
 export const isResponseStyleInstructionLoaded = (): boolean => responseStyleInstructionLoaded;
 
 export const clearResponseStyleInstructionCacheForTests = (): void => {
   cachedResponseStyleInstruction = null;
+  cachedResponseStyleLevel = 'provider';
   responseStyleInstructionLoaded = false;
 };
 

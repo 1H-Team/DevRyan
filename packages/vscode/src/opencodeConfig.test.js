@@ -3,7 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { discoverSkills, getSkillSources } from './opencodeConfig';
+import { listRuntimePluginAssets } from '../../web/server/lib/opencode/default-config-assets.js';
+import { deleteSkill, discoverSkills, getSkillSources } from './opencodeConfig';
 
 const writeJson = (filePath, data) => {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -73,6 +74,32 @@ describe('VS Code skill discovery', () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it('permanently deletes only the supplied discovered skill directory', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-skills-delete-'));
+    const userSkill = path.join(root, '.agents', 'skills', 'lint-helper');
+    const projectSkill = path.join(root, '.opencode', 'skills', 'lint-helper');
+    const userSkillPath = path.join(userSkill, 'SKILL.md');
+    const projectSkillPath = path.join(projectSkill, 'SKILL.md');
+    fs.mkdirSync(userSkill, { recursive: true });
+    fs.mkdirSync(projectSkill, { recursive: true });
+    fs.writeFileSync(userSkillPath, '---\nname: lint-helper\n---\n');
+    fs.writeFileSync(projectSkillPath, '---\nname: lint-helper\n---\n');
+
+    try {
+      deleteSkill('lint-helper', root, {
+        name: 'lint-helper',
+        path: projectSkillPath,
+        scope: 'project',
+        source: 'opencode',
+      });
+
+      expect(fs.existsSync(projectSkill)).toBe(false);
+      expect(fs.existsSync(userSkill)).toBe(true);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('VS Code plugin discovery', () => {
@@ -107,14 +134,23 @@ describe('VS Code plugin discovery', () => {
     const projectConfigPath = path.join(projectDir, '.opencode', 'opencode.json');
     writeJson(userConfigPath, { plugin: ['user-plugin@1.0.0'] });
     writeJson(projectConfigPath, { plugin: [['./project-plugin.js', { local: true }]] });
+    fs.mkdirSync(path.join(tempHome, '.config', 'opencode', 'plugin'), { recursive: true });
     fs.mkdirSync(path.join(tempHome, '.config', 'opencode', 'plugins'), { recursive: true });
+    fs.mkdirSync(path.join(projectDir, '.opencode', 'plugin'), { recursive: true });
     fs.mkdirSync(path.join(projectDir, '.opencode', 'plugins'), { recursive: true });
+    fs.writeFileSync(path.join(tempHome, '.config', 'opencode', 'plugin', 'user-file.mjs'), '', 'utf8');
     fs.writeFileSync(path.join(tempHome, '.config', 'opencode', 'plugins', 'user-file.mjs'), '', 'utf8');
+    fs.writeFileSync(path.join(projectDir, '.opencode', 'plugin', 'project-legacy.js'), '', 'utf8');
     fs.writeFileSync(path.join(projectDir, '.opencode', 'plugins', 'project-file.ts'), '', 'utf8');
 
     try {
       const result = listReadonlyPlugins(projectDir);
 
+      expect(result.defaults.map((plugin) => plugin.pluginId)).toEqual([
+        'oh-my-opencode-slim',
+        'opencode-with-claude',
+        'openai-tool-schema-sanitizer',
+      ]);
       expect(result.entries.map((plugin) => `${plugin.scope}:${plugin.spec}:${plugin.parsedKind}`)).toEqual([
         'user:user-plugin@1.0.0:npm',
         'project:./project-plugin.js:path',
@@ -122,7 +158,13 @@ describe('VS Code plugin discovery', () => {
       expect(result.entries[1].options).toEqual({ local: true });
       expect(result.files.map((pluginFile) => `${pluginFile.scope}:${pluginFile.fileName}`)).toEqual([
         'user:user-file.mjs',
+        'user:user-file.mjs',
+        'project:project-legacy.js',
         'project:project-file.ts',
+      ]);
+      expect(result.files.slice(0, 2).map((pluginFile) => pluginFile.absolutePath)).toEqual([
+        path.join(tempHome, '.config', 'opencode', 'plugin', 'user-file.mjs'),
+        path.join(tempHome, '.config', 'opencode', 'plugins', 'user-file.mjs'),
       ]);
       expect(readJson(userConfigPath)).toEqual({ plugin: ['user-plugin@1.0.0'] });
     } finally {
@@ -135,6 +177,8 @@ describe('VS Code Cursor SDK config handling', () => {
   let tempHome;
   let originalHome;
   let originalSlimPreset;
+  let originalOpenAIApiKey;
+  let originalOpenCodeConfigDirectory;
 
   afterEach(() => {
     if (originalHome === undefined) {
@@ -147,11 +191,23 @@ describe('VS Code Cursor SDK config handling', () => {
     } else {
       process.env.OH_MY_OPENCODE_SLIM_PRESET = originalSlimPreset;
     }
+    if (originalOpenAIApiKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = originalOpenAIApiKey;
+    }
+    if (originalOpenCodeConfigDirectory === undefined) {
+      delete process.env.OPENCODE_CONFIG_DIR;
+    } else {
+      process.env.OPENCODE_CONFIG_DIR = originalOpenCodeConfigDirectory;
+    }
     if (tempHome) {
       fs.rmSync(tempHome, { recursive: true, force: true });
     }
     tempHome = undefined;
     originalSlimPreset = undefined;
+    originalOpenAIApiKey = undefined;
+    originalOpenCodeConfigDirectory = undefined;
     vi.resetModules();
   });
 
@@ -159,8 +215,12 @@ describe('VS Code Cursor SDK config handling', () => {
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-cursor-provider-'));
     originalHome = process.env.HOME;
     originalSlimPreset = process.env.OH_MY_OPENCODE_SLIM_PRESET;
+    originalOpenAIApiKey = process.env.OPENAI_API_KEY;
+    originalOpenCodeConfigDirectory = process.env.OPENCODE_CONFIG_DIR;
     process.env.HOME = tempHome;
     delete process.env.OH_MY_OPENCODE_SLIM_PRESET;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENCODE_CONFIG_DIR;
     vi.resetModules();
     return import('./opencodeConfig');
   };
@@ -212,9 +272,114 @@ describe('VS Code Cursor SDK config handling', () => {
     }
   });
 
+  it('adds the bounded OpenAI header timeout for OAuth auth while preserving plugin and MCP overlays', async () => {
+    const { syncRuntimeAgentOverlays } = await loadRuntime();
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-openai-oauth-'));
+    writeJson(path.join(tempHome, '.local', 'share', 'opencode', 'auth.json'), {
+      openai: { type: 'oauth', access: 'oauth-token' },
+    });
+    writeJson(path.join(tempHome, '.config', 'opencode', 'opencode.json'), {
+      plugin: ['opencode-antigravity-auth@latest'],
+    });
+
+    try {
+      const result = syncRuntimeAgentOverlays(projectDir);
+      const overlayConfig = readJson(path.join(result.targetConfigDirectory, 'opencode.json'));
+      expect(overlayConfig.provider?.openai).toEqual({
+        options: { headerTimeout: 60_000 },
+      });
+      expect(overlayConfig.provider.openai.models).toBeUndefined();
+      expect(overlayConfig.plugin).toContain('opencode-antigravity-auth@latest');
+      expect(overlayConfig.mcp.ghgrep).toEqual({ enabled: false });
+    } finally {
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('adds the bounded OpenAI header timeout for an API-key environment', async () => {
+    const { syncRuntimeAgentOverlays } = await loadRuntime();
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-openai-env-'));
+    process.env.OPENAI_API_KEY = 'test-api-key';
+
+    try {
+      const result = syncRuntimeAgentOverlays(projectDir);
+      const overlayConfig = readJson(path.join(result.targetConfigDirectory, 'opencode.json'));
+      expect(overlayConfig.provider?.openai?.options?.headerTimeout).toBe(60_000);
+    } finally {
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('adds the bounded OpenAI header timeout for an existing provider configuration', async () => {
+    const { syncRuntimeAgentOverlays } = await loadRuntime();
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-openai-provider-'));
+    writeJson(path.join(projectDir, 'opencode.json'), {
+      provider: {
+        openai: {
+          options: { baseURL: 'https://api.openai.com/v1' },
+        },
+      },
+    });
+
+    try {
+      const result = syncRuntimeAgentOverlays(projectDir);
+      const overlayConfig = readJson(path.join(result.targetConfigDirectory, 'opencode.json'));
+      expect(overlayConfig.provider?.openai).toEqual({
+        options: { headerTimeout: 60_000 },
+      });
+    } finally {
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([30_000, false])('preserves an explicit OpenAI header timeout of %s', async (headerTimeout) => {
+    const { syncRuntimeAgentOverlays } = await loadRuntime();
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-openai-explicit-'));
+    writeJson(path.join(projectDir, 'opencode.json'), {
+      provider: {
+        openai: {
+          options: { headerTimeout },
+        },
+      },
+    });
+
+    try {
+      const result = syncRuntimeAgentOverlays(projectDir);
+      const overlayConfig = readJson(path.join(result.targetConfigDirectory, 'opencode.json'));
+      expect(overlayConfig.provider?.openai?.options?.headerTimeout).toBe(headerTimeout);
+    } finally {
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('removes a stale generated OpenAI timeout after auth is removed', async () => {
+    const { syncRuntimeAgentOverlays } = await loadRuntime();
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-openai-cleanup-'));
+    const authPath = path.join(tempHome, '.local', 'share', 'opencode', 'auth.json');
+    writeJson(authPath, {
+      openai: { type: 'oauth', access: 'oauth-token' },
+    });
+
+    try {
+      const initial = syncRuntimeAgentOverlays(projectDir);
+      expect(readJson(path.join(initial.targetConfigDirectory, 'opencode.json'))
+        .provider?.openai?.options?.headerTimeout).toBe(60_000);
+
+      fs.unlinkSync(authPath);
+      const updated = syncRuntimeAgentOverlays(projectDir);
+      const overlayConfig = readJson(path.join(updated.targetConfigDirectory, 'opencode.json'));
+      expect(updated.changed).toBe(true);
+      expect(overlayConfig.provider?.openai).toBeUndefined();
+    } finally {
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
   it('copies and registers packaged runtime plugins in managed overlays', async () => {
     const { syncRuntimeAgentOverlays } = await loadRuntime();
     const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-packaged-plugins-'));
+    const defaultConfigRoot = path.resolve(process.cwd(), '..', 'web', 'server', 'default-config');
+    const expectedPlugins = await listRuntimePluginAssets(defaultConfigRoot);
 
     try {
       const result = syncRuntimeAgentOverlays(projectDir);
@@ -222,13 +387,16 @@ describe('VS Code Cursor SDK config handling', () => {
       const pluginDirectory = path.join(result.targetConfigDirectory, 'plugins');
       const config = readJson(overlayConfigPath);
       const pluginFiles = fs.readdirSync(pluginDirectory).sort();
+      const expectedPluginSpecs = expectedPlugins.map((relativePath) => `./${relativePath}`);
+      const expectedPluginFiles = expectedPlugins.map((relativePath) => path.basename(relativePath));
 
-      expect(config.plugin).toContain('./plugins/council-session.js');
-      expect(config.plugin).toContain('./plugins/openai-gpt-5-6-models.mjs');
-      expect(config.plugin).toContain('./plugins/openai-tool-schema-sanitizer.mjs');
-      expect(pluginFiles).toContain('council-session.js');
-      expect(pluginFiles).toContain('openai-gpt-5-6-models.mjs');
-      expect(pluginFiles).toContain('openai-tool-schema-sanitizer.mjs');
+      expect(expectedPlugins).not.toEqual([]);
+      expect(config.plugin).toEqual(expect.arrayContaining(expectedPluginSpecs));
+      expect(pluginFiles).toEqual(expect.arrayContaining(expectedPluginFiles));
+      for (const relativePath of expectedPlugins) {
+        expect(fs.readFileSync(path.join(pluginDirectory, path.basename(relativePath)), 'utf8'))
+          .toBe(fs.readFileSync(path.join(defaultConfigRoot, relativePath), 'utf8'));
+      }
       expect(pluginFiles.some((fileName) => fileName.includes('.test.') || fileName.includes('.spec.') || fileName.endsWith('.d.ts'))).toBe(false);
     } finally {
       fs.rmSync(projectDir, { recursive: true, force: true });

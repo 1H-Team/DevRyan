@@ -4,7 +4,7 @@
 Hosts app-shell entry compositions for different runtime surfaces.
 
 ## Design
-Thin composition roots that wire providers, routes, top-level views, and gated runtime effects such as queued sends, transient stream recovery, and the single quota-refresh lifecycle owner.
+Thin composition roots that wire providers, routes, top-level views, and gated runtime effects such as queued sends, transient stream recovery, and the single quota-refresh lifecycle owner. The VS Code composition keeps normal chat synchronous while resolving the Agent Manager view through the shared recovery-aware lazy registry only for `agentManager` panels.
 
 ## Flow
 Runtime selects an app entry, mounts providers, then renders feature components.

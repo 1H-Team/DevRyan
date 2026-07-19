@@ -1,7 +1,7 @@
 import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
 import type { WorktreeMetadata } from '@/types/worktree';
-import { dedupeSessionsById, getArchivedScopeKey, isSessionRelatedToProject, normalizePath, resolveArchivedFolderName } from '../utils';
+import { dedupeSessionsById, getArchivedScopeKey, isSessionOwnedByProject, normalizePath, resolveArchivedFolderName, type SessionProjectOwnership } from '../utils';
 
 export type ProjectForArchivedFolders = {
   normalizedPath: string;
@@ -24,22 +24,15 @@ type Args = {
   createFolder: (scopeKey: string, name: string, parentId?: string | null) => FolderEntry;
   addSessionToFolder: (scopeKey: string, folderId: string, sessionId: string) => void;
   cleanupSessions: (scopeKey: string, existingSessionIds: Set<string>) => void;
+  sessionProjectOwnership: SessionProjectOwnership;
 };
 
 const getArchivedSessionsForProject = (
   project: ProjectForArchivedFolders,
-  params: Pick<Args, 'sessions' | 'archivedSessions' | 'availableWorktreesByProject' | 'isVSCode'>,
+  params: Pick<Args, 'sessions' | 'archivedSessions' | 'sessionProjectOwnership'>,
 ): Session[] => {
-  const worktreesForProject = params.isVSCode ? [] : (params.availableWorktreesByProject.get(project.normalizedPath) ?? []);
-  const validDirectories = new Set<string>([
-    project.normalizedPath,
-    ...worktreesForProject
-      .map((meta) => normalizePath(meta.path) ?? meta.path)
-      .filter((value): value is string => Boolean(value)),
-  ]);
-
   const collect = (input: Session[]): Session[] => input.filter((session) =>
-    isSessionRelatedToProject(session, project.normalizedPath, validDirectories),
+    isSessionOwnedByProject(session, project.normalizedPath, params.sessionProjectOwnership),
   );
 
   const archived = collect(params.archivedSessions);
@@ -51,7 +44,7 @@ const getArchivedSessionsForProject = (
     if (sessionDirectory) {
       return false;
     }
-    return isSessionRelatedToProject(session, project.normalizedPath, validDirectories);
+    return isSessionOwnedByProject(session, project.normalizedPath, params.sessionProjectOwnership);
   });
 
   return dedupeSessionsById([...archived, ...unassignedLive]);
@@ -69,6 +62,7 @@ export const useArchivedAutoFolders = (args: Args): void => {
     createFolder,
     addSessionToFolder,
     cleanupSessions,
+    sessionProjectOwnership,
   } = args;
 
   React.useEffect(() => {
@@ -82,8 +76,7 @@ export const useArchivedAutoFolders = (args: Args): void => {
       const projectArchivedSessions = getArchivedSessionsForProject(project, {
         sessions,
         archivedSessions,
-        availableWorktreesByProject,
-        isVSCode,
+        sessionProjectOwnership,
       });
       const existingFolders = foldersMap[scopeKey] ?? [];
       const folderByName = new Map(existingFolders.map((folder) => [folder.name.toLowerCase(), folder]));
@@ -120,5 +113,6 @@ export const useArchivedAutoFolders = (args: Args): void => {
     createFolder,
     addSessionToFolder,
     cleanupSessions,
+    sessionProjectOwnership,
   ]);
 };

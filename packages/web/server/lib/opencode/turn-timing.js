@@ -8,6 +8,7 @@ import {
 
 const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_MAX_AGE_MS = 30 * 60 * 1000;
+const DEFAULT_MAX_TOOL_CALLS = 20;
 const MALFORMED_TOOL_CALL_MARKER = 'Skipped malformed tool call "';
 const TOOL_LOOP_GUARD_MARKER = 'Tool loop guard stopped repeated schema-invalid calls to "';
 
@@ -347,6 +348,9 @@ function createTurnTimingRuntime(options = {}) {
   const maxAgeMs = Number.isFinite(options.maxAgeMs) && options.maxAgeMs > 0
     ? Math.trunc(options.maxAgeMs)
     : DEFAULT_MAX_AGE_MS;
+  const maxToolCalls = Number.isFinite(options.maxToolCalls) && options.maxToolCalls > 0
+    ? Math.trunc(options.maxToolCalls)
+    : DEFAULT_MAX_TOOL_CALLS;
 
   const records = [];
   const recordsByUserMessage = new Map();
@@ -435,6 +439,7 @@ function createTurnTimingRuntime(options = {}) {
         cursorWorkspaceRepair: null,
         mutatingToolCalls: [],
       },
+      toolCalls: [],
       lastTextDeltaSignaturesByPart: {},
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -533,6 +538,42 @@ function createTurnTimingRuntime(options = {}) {
     record.diagnostics.mutatingToolCalls.push(entry);
   };
 
+  const recordToolCall = (record, part, properties, toolName, status) => {
+    const callId = normalizeString(part.callID || part.callId || properties.callID || properties.callId);
+    const partId = normalizeString(part.id || properties.partID || properties.partId);
+    const identities = [
+      callId ? `call:${callId}` : '',
+      partId ? `part:${partId}` : '',
+    ].filter(Boolean);
+    if (identities.length === 0) return;
+
+    let entry = record.toolCalls.find((toolCall) => (
+      identities.some((identity) => toolCall.identities.has(identity))
+    ));
+    if (!entry) {
+      if (record.toolCalls.length >= maxToolCalls) return;
+      entry = {
+        identities: new Set(),
+        ordinal: record.toolCalls.length + 1,
+        tool: '',
+        status: null,
+        final: false,
+      };
+      record.toolCalls.push(entry);
+    }
+    for (const identity of identities) entry.identities.add(identity);
+
+    const tool = normalizeToolName(toolName);
+    const normalizedStatus = normalizeToolStatus(status);
+    if (tool) entry.tool = tool;
+    if (normalizedStatus && (!entry.final || isFinalToolStatus(normalizedStatus))) {
+      entry.status = normalizedStatus;
+      entry.final = isFinalToolStatus(normalizedStatus);
+    }
+    record.updatedAt = now();
+    pruneRecords();
+  };
+
   const processSessionStatus = (properties) => {
     const sessionId = normalizeString(properties.sessionID || properties.sessionId);
     const statusType = getStatusType(properties).toLowerCase();
@@ -629,6 +670,7 @@ function createTurnTimingRuntime(options = {}) {
     if (partType !== 'tool') return;
     const toolName = part.tool || part.name || properties.tool;
     const status = getToolStateStatus(part);
+    recordToolCall(record, part, properties, toolName, status);
     recordMutatingToolCall(record, toolName, status);
     if (isActiveToolStatus(status)) {
       setMark(record, 'first_tool_started', { partId: normalizeString(part.id || properties.partID || properties.partId), status });
@@ -700,6 +742,12 @@ function createTurnTimingRuntime(options = {}) {
         ? { ...record.diagnostics.cursorWorkspaceRepair }
         : null,
       mutatingToolCalls: record.diagnostics.mutatingToolCalls.map((item) => ({ ...item })),
+      toolCalls: record.toolCalls.map((item) => ({
+        ordinal: item.ordinal,
+        tool: item.tool,
+        status: item.status,
+        final: item.final,
+      })),
     },
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,

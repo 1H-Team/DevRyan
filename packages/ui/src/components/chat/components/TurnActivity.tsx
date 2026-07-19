@@ -5,6 +5,7 @@ import type { TurnActivityRecord } from '../lib/turns/types';
 import type { ToolPopupContent } from '../message/types';
 import type { StreamPhase } from '../message/types';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
+import type { ResponseStyleLevel } from '@/lib/responseStyle';
 
 interface DiffStats {
     additions: number;
@@ -29,6 +30,8 @@ interface TurnActivityProps {
     animatedToolIds?: Set<string>;
     diffStats?: DiffStats;
     renderJustificationActions?: (activity: TurnActivityRecord) => React.ReactNode;
+    providerID?: string | null;
+    responseStyleLevel?: ResponseStyleLevel;
 }
 
 const TurnActivity: React.FC<TurnActivityProps> = (props) => {

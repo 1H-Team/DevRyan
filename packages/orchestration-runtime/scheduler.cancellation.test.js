@@ -61,7 +61,7 @@ const createHarness = async () => {
 };
 
 describe('managed scheduler cancellation', () => {
-  test('cancels a queued task without touching a running child', async () => {
+  test('cancels one of four concurrent tasks without touching the others', async () => {
     const { aborts, scheduler } = await createHarness();
     const tasks = [];
     for (let index = 1; index <= 4; index += 1) {
@@ -74,7 +74,7 @@ describe('managed scheduler cancellation', () => {
 
     expect(cancelled.status).toBe('aborted');
     expect(cancelled.failureReason).toBe('No longer needed');
-    expect(aborts).toEqual([]);
+    expect(aborts).toEqual([tasks[3].taskId]);
     expect(scheduler.listTasks().slice(0, 3).every((task) => task.status === 'running')).toBe(true);
     expect(scheduler.getResultEnvelope(tasks[3].taskId).status).toBe('aborted');
   });

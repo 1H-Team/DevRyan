@@ -5,6 +5,8 @@ import { useI18n } from '@/lib/i18n';
 import { useUIStore } from '@/stores/useUIStore';
 import { MarkdownRenderer } from '../../MarkdownRenderer';
 import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
+import type { ResponseStyleLevel } from '@/lib/responseStyle';
+import { formatReasoningText } from './reasoningSummaryDisplay';
 
 type PartWithText = Part & {
     text?: string;
@@ -13,14 +15,6 @@ type PartWithText = Part & {
 };
 
 export type ReasoningVariant = 'thinking' | 'justification';
-
-const cleanReasoningText = (text: string): string => {
-    if (typeof text !== 'string' || text.trim().length === 0) {
-        return '';
-    }
-
-    return text.trim();
-};
 
 type ReasoningTimelineBlockProps = {
     text: string;
@@ -86,18 +80,25 @@ type ReasoningPartProps = {
     part: Part;
     onContentChange?: (reason?: ContentChangeReason) => void;
     messageId: string;
+    providerID?: string | null;
+    responseStyleLevel?: ResponseStyleLevel;
 };
 
 const ReasoningPart = React.memo(({
     part,
     onContentChange,
     messageId,
+    providerID,
+    responseStyleLevel = 'provider',
 }: ReasoningPartProps) => {
     const { t } = useI18n();
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
     const partWithText = part as PartWithText;
     const rawText = partWithText.text || partWithText.content || '';
-    const textContent = React.useMemo(() => cleanReasoningText(rawText), [rawText]);
+    const textContent = React.useMemo(
+        () => formatReasoningText(rawText, providerID, responseStyleLevel),
+        [providerID, rawText, responseStyleLevel],
+    );
     const time = partWithText.time;
     const isActive = typeof time?.end !== 'number';
     const isStreaming = chatRenderMode === 'live' && isActive;
@@ -141,8 +142,5 @@ const ReasoningPart = React.memo(({
         />
     );
 });
-
-// eslint-disable-next-line react-refresh/only-export-components
-export const formatReasoningText = (text: string): string => cleanReasoningText(text);
 
 export default ReasoningPart;

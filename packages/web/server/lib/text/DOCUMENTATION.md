@@ -1,7 +1,7 @@
 # Text Module Documentation
 
 ## Purpose
-This module provides shared text transformation helpers that are not owned by a single product surface. Today it contains the shared summarization pipeline used by TTS, notifications, and note distillation flows.
+This module provides shared text transformation and direct Zen generation helpers that are not owned by a single product surface. It contains the summarization pipeline used by TTS, notifications, and note distillation flows plus a session-free text-generation transport used by Git utilities.
 
 ## Entrypoints and structure
 - `packages/web/server/lib/text/summarization.js`: Shared summarize + sanitize helpers backed by opencode.ai zen API.
@@ -9,6 +9,7 @@ This module provides shared text transformation helpers that are not owned by a 
 ## Public exports
 
 ### Summarization (summarization.js)
+- `generateZenText({ prompt, zenModel, timeoutMs })`: Send one non-streaming prompt directly to the appropriate Zen Responses or Chat Completions endpoint and return extracted text. This helper does not use OpenCode sessions.
 - `summarizeText({ text, threshold, maxLength, zenModel, mode })`: Shared summarization entrypoint.
 - `sanitizeForTTS(text)`: Sanitizes text for speech output.
 - `sanitizeForNotification(text)`: Sanitizes text for compact notification output.

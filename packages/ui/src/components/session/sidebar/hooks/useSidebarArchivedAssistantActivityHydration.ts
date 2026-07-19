@@ -4,18 +4,15 @@ import { opencodeClient } from '@/lib/opencode/client';
 import { getLastVisibleAssistantResponseAt, type SessionAssistantActivity } from '@/sync/session-assistant-activity';
 import { stripMessageDiffSnapshots } from '@/sync/sanitize';
 import { useChildStoreManager } from '@/sync/sync-context';
-import { normalizePath } from '../utils';
-import { isSessionNotFoundHydrationError } from './sidebarHydrationUtils';
+import {
+  getSidebarSessionDirectory,
+  isActiveSidebarHydrationDirectory,
+  isSessionNotFoundHydrationError,
+} from './sidebarHydrationUtils';
 
 const PAGE_SIZE = 50;
 const MAX_PAGES_PER_SESSION = 8;
 const MAX_CONCURRENT_REQUESTS = 3;
-
-const getSessionDirectory = (session: Session): string | null => {
-  const explicitDirectory = normalizePath((session as Session & { directory?: string | null }).directory ?? null);
-  const projectWorktree = normalizePath((session as Session & { project?: { worktree?: string | null } | null }).project?.worktree ?? null);
-  return explicitDirectory ?? projectWorktree;
-};
 
 const getParentSessionId = (session: Session): string => {
   return (session as Session & { parentID?: string | null }).parentID || session.id;
@@ -30,6 +27,7 @@ type CollectHydrationCandidatesInput = {
   archivedSessions: Session[];
   activityByParentSessionId: SessionAssistantActivity;
   getCachedMessages: (directory: string, parentSessionId: string) => Message[] | undefined;
+  activeDirectory: string | null;
   resolvedKeys: Set<string>;
   inFlightKeys: Set<string>;
 };
@@ -39,6 +37,7 @@ const collectHydrationCandidates = ({
   archivedSessions,
   activityByParentSessionId,
   getCachedMessages,
+  activeDirectory,
   resolvedKeys,
   inFlightKeys,
 }: CollectHydrationCandidatesInput): { cached: Extract<HydrationCandidate, { type: 'cached' }>[]; fetch: Extract<HydrationCandidate, { type: 'fetch' }>[] } => {
@@ -56,7 +55,8 @@ const collectHydrationCandidates = ({
     if (activityByParentSessionId[parentSessionId] !== undefined) return;
 
     const parentSession = sessionsById.get(parentSessionId);
-    const directory = (parentSession ? getSessionDirectory(parentSession) : null) ?? getSessionDirectory(session);
+    const directory = (parentSession ? getSidebarSessionDirectory(parentSession) : null)
+      ?? getSidebarSessionDirectory(session);
     if (!directory) return;
 
     const key = `${directory}\n${parentSessionId}`;
@@ -70,6 +70,7 @@ const collectHydrationCandidates = ({
       return;
     }
 
+    if (!isActiveSidebarHydrationDirectory(directory, activeDirectory)) return;
     fetch.push({ type: 'fetch', parentSessionId, parentSession, directory, key });
   });
 
@@ -101,6 +102,7 @@ async function fetchLastAssistantResponseAt(input: {
 export function useSidebarArchivedAssistantActivityHydration(
   activeSessions: Session[],
   archivedSessions: Session[],
+  activeDirectory: string | null,
 ): SessionAssistantActivity {
   const childStores = useChildStoreManager();
   const [activityByParentSessionId, setActivityByParentSessionId] = React.useState<SessionAssistantActivity>({});
@@ -117,6 +119,7 @@ export function useSidebarArchivedAssistantActivityHydration(
       archivedSessions,
       activityByParentSessionId,
       getCachedMessages: (directory, parentSessionId) => childStores.getState(directory)?.message[parentSessionId],
+      activeDirectory,
       resolvedKeys,
       inFlightKeys,
     });
@@ -186,7 +189,7 @@ export function useSidebarArchivedAssistantActivityHydration(
       cancelled = true;
       pendingKeys.forEach((key) => inFlightKeys.delete(key));
     };
-  }, [activeSessions, activityByParentSessionId, archivedSessions, childStores]);
+  }, [activeDirectory, activeSessions, activityByParentSessionId, archivedSessions, childStores]);
 
   return activityByParentSessionId;
 }

@@ -4,8 +4,9 @@ import { managedOrchestrationApi } from '@/lib/orchestrationApi';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
-import { AgentHandoffDialog } from './AgentHandoffDialog';
 import { createAgentHandoffCoordinator } from './agentHandoffCoordinator';
+import { DeferredChatDialog, LazyAgentHandoffDialog } from './lazyChatDialogs';
+import { LazyViewBoundary } from '@/components/views/lazyViews';
 import {
   AgentHandoffGuardContext,
   registerQueuedBuilderSendGuard,
@@ -114,12 +115,16 @@ export const AgentHandoffGuardProvider: React.FC<React.PropsWithChildren> = ({ c
   return (
     <AgentHandoffGuardContext.Provider value={value}>
       {children}
-      <AgentHandoffDialog
-        state={state}
-        onCancel={() => { coordinator.cancel(); }}
-        onConfirm={() => { void coordinator.confirm(); }}
-        onRetry={() => { void coordinator.retry(); }}
-      />
+      <DeferredChatDialog active={state.open}>
+        <LazyViewBoundary>
+          <LazyAgentHandoffDialog
+            state={state}
+            onCancel={() => { coordinator.cancel(); }}
+            onConfirm={() => { void coordinator.confirm(); }}
+            onRetry={() => { void coordinator.retry(); }}
+          />
+        </LazyViewBoundary>
+      </DeferredChatDialog>
     </AgentHandoffGuardContext.Provider>
   );
 };

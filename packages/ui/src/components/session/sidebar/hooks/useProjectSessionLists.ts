@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
-import { dedupeSessionsById, isSessionRelatedToProject, normalizePath } from '../utils';
+import { dedupeSessionsById, isSessionOwnedByProject, normalizePath, type SessionProjectOwnership } from '../utils';
 
 type WorktreeMeta = { path: string };
 
@@ -9,6 +9,7 @@ type Args = {
   sessions: Session[];
   archivedSessions: Session[];
   availableWorktreesByProject: Map<string, WorktreeMeta[]>;
+  sessionProjectOwnership: SessionProjectOwnership;
 };
 
 type SessionWithProject = Session & {
@@ -81,22 +82,8 @@ export const useProjectSessionLists = (args: Args) => {
     sessions,
     archivedSessions,
     availableWorktreesByProject,
+    sessionProjectOwnership,
   } = args;
-
-  const archivedSessionsByDirectory = React.useMemo(() => {
-    const next = new Map<string, Session[]>();
-    archivedSessions.forEach((session) => {
-      const directory = resolveSessionDirectory(session);
-      if (!directory) {
-        return;
-      }
-
-      const collection = next.get(directory) ?? [];
-      collection.push(session);
-      next.set(directory, collection);
-    });
-    return next;
-  }, [archivedSessions]);
 
   const getSessionsForProject = React.useCallback(
     (project: { normalizedPath: string }) => {
@@ -115,57 +102,9 @@ export const useProjectSessionLists = (args: Args) => {
 
   const getArchivedSessionsForProject = React.useCallback(
     (project: { normalizedPath: string }) => {
-      if (isVSCode) {
-        const archived = archivedSessions.filter((session) => {
-          const sessionDirectory = normalizePath((session as Session & { directory?: string | null }).directory ?? null);
-          const projectWorktree = normalizePath((session as Session & { project?: { worktree?: string | null } | null }).project?.worktree ?? null);
-
-          if (sessionDirectory) {
-            return sessionDirectory === project.normalizedPath;
-          }
-
-          return projectWorktree === project.normalizedPath;
-        });
-
-        const unassignedLive = sessions.filter((session) => {
-          if (session.time?.archived) {
-            return false;
-          }
-          const sessionDirectory = normalizePath((session as Session & { directory?: string | null }).directory ?? null);
-          if (sessionDirectory) {
-            return false;
-          }
-          const projectWorktree = normalizePath((session as Session & { project?: { worktree?: string | null } | null }).project?.worktree ?? null);
-          return projectWorktree === project.normalizedPath;
-        });
-
-        return dedupeSessionsById([...archived, ...unassignedLive]);
-      }
-
-      const worktreesForProject = isVSCode ? [] : (availableWorktreesByProject.get(project.normalizedPath) ?? []);
-      const validDirectories = new Set<string>([
-        project.normalizedPath,
-        ...worktreesForProject
-          .map((meta) => normalizePath(meta.path) ?? meta.path)
-          .filter((value): value is string => Boolean(value)),
-      ]);
-
-      const archived: Session[] = [];
-      archivedSessionsByDirectory.forEach((sessionsForDirectory, directory) => {
-        if (
-          !validDirectories.has(directory)
-          && directory !== project.normalizedPath
-          && !directory.startsWith(`${project.normalizedPath}/`)
-        ) {
-          return;
-        }
-
-        sessionsForDirectory.forEach((session) => {
-          if (isSessionRelatedToProject(session, project.normalizedPath, validDirectories)) {
-            archived.push(session);
-          }
-        });
-      });
+      const archived = archivedSessions.filter((session) => (
+        isSessionOwnedByProject(session, project.normalizedPath, sessionProjectOwnership)
+      ));
       const unassignedLive = sessions.filter((session) => {
         if (session.time?.archived) {
           return false;
@@ -174,16 +113,12 @@ export const useProjectSessionLists = (args: Args) => {
         if (sessionDirectory) {
           return false;
         }
-        const projectWorktree = normalizePath((session as Session & { project?: { worktree?: string | null } | null }).project?.worktree ?? null);
-        if (!projectWorktree) {
-          return false;
-        }
-        return projectWorktree === project.normalizedPath || projectWorktree.startsWith(`${project.normalizedPath}/`);
+        return isSessionOwnedByProject(session, project.normalizedPath, sessionProjectOwnership);
       });
 
       return dedupeSessionsById([...archived, ...unassignedLive]);
     },
-    [archivedSessions, archivedSessionsByDirectory, availableWorktreesByProject, isVSCode, sessions],
+    [archivedSessions, sessionProjectOwnership, sessions],
   );
 
   return {

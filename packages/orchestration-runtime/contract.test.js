@@ -40,8 +40,15 @@ const validInput = (overrides = {}) => ({
 describe('managed orchestration contract', () => {
   test('formats one shared display name without changing durable labels', () => {
     expect(typeof contract.formatManagedTaskDisplayName).toBe('function');
-    expect(contract.formatManagedTaskDisplayName('  workspace-surface_map  ')).toBe('Workspace surface map');
+    expect(contract.formatManagedTaskDisplayName('  workspace-surface_map  ')).toBe('Workspace Surface Map');
+    expect(contract.formatManagedTaskDisplayName('locate chat ui')).toBe('Locate Chat UI');
+    expect(contract.formatManagedTaskDisplayName('locate-chat_ui')).toBe('Locate Chat UI');
+    expect(contract.formatManagedTaskDisplayName('review api and json for the cli')).toBe('Review API and JSON for the CLI');
+    expect(contract.formatManagedTaskDisplayName('OpenCode HTTP MCP')).toBe('OpenCode HTTP MCP');
+    expect(contract.formatManagedTaskDisplayName('keep MIXEDCase and ALLCAPS')).toBe('Keep MIXEDCase and ALLCAPS');
+    expect(contract.formatManagedTaskDisplayName('constructor')).toBe('Constructor');
     expect(contract.formatManagedTaskDisplayName('Already Humanized')).toBe('Already Humanized');
+    expect(contract.formatManagedTaskDisplayName('review_review_privacy')).toBe('Review Privacy');
     expect(contract.formatManagedTaskDisplayName('---')).toBe('');
     expect(contract.formatManagedTaskDisplayName('')).toBe('');
 
@@ -181,6 +188,27 @@ describe('managed orchestration contract', () => {
     expect(toManagedTaskEvent(ungrouped).properties.task.agentRetryAvailable).toBe(false);
     expect(toManagedTaskEvent(groupedBuilder).properties.task.agentRetryAvailable).toBe(false);
     expect(toManagedTaskEvent(groupedRecovery).properties.task).not.toHaveProperty('dispatchGroupId');
+  });
+
+  test('keeps the single grouped agent recovery available for exhausted usage', () => {
+    const initial = createManagedTaskRecord(validInput());
+    const terminal = (failureReason) => ({
+      ...initial,
+      childSessionId: 'ses_child',
+      status: 'failed',
+      startedAt: 1_100,
+      finishedAt: 1_200,
+      failureReason,
+    });
+
+    expect(toManagedTaskEvent(terminal('Provider connection ended')).properties.task.agentRetryAvailable).toBe(true);
+    expect(toManagedTaskEvent(terminal('out of usage')).properties.task.agentRetryAvailable).toBe(true);
+    expect(toManagedTaskEvent(terminal('Usage limit reached')).properties.task.agentRetryAvailable).toBe(true);
+    expect(toManagedTaskEvent(terminal("You've hit your session limit · resets 7:30pm")).properties.task.agentRetryAvailable).toBe(true);
+    expect(toManagedTaskEvent(terminal('quota exceeded')).properties.task.agentRetryAvailable).toBe(true);
+    expect(toManagedTaskEvent(terminal('insufficient quota')).properties.task.agentRetryAvailable).toBe(true);
+    expect(toManagedTaskEvent(terminal('rate limited')).properties.task.agentRetryAvailable).toBe(true);
+    expect(toManagedTaskEvent(terminal('concurrent session limit temporarily reached')).properties.task.agentRetryAvailable).toBe(true);
   });
 
   test('projects compaction as a safe identity-only removal event', () => {

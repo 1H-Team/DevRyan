@@ -116,6 +116,16 @@ export const normalizePath = (value?: string | null) => {
   return normalized.length === 0 ? '/' : normalized;
 };
 
+export const resolveSessionRoutingDirectory = (
+  routingHint?: string | null,
+  sessionDirectory?: string | null,
+  groupDirectory?: string | null,
+): string | null => (
+  normalizePath(routingHint)
+  ?? normalizePath(sessionDirectory)
+  ?? normalizePath(groupDirectory)
+);
+
 export const normalizeForBranchComparison = (value: string): string => {
   return value
     .toLowerCase()
@@ -463,6 +473,129 @@ export const isSessionRelatedToProject = (
   }
   return sessionDirectory === projectRoot || sessionDirectory.startsWith(`${projectRoot}/`);
 };
+
+export type SessionProjectOwnership = ReadonlyMap<string, string>;
+
+type ProjectOwnershipInput = {
+  normalizedPath: string;
+};
+
+type ProjectDirectoryOwner = {
+  directory: string;
+  projectRoot: string;
+  isRegisteredProject: boolean;
+};
+
+const resolveDirectoryOwner = (
+  directory: string,
+  directoryOwners: readonly ProjectDirectoryOwner[],
+): string | null => {
+  for (const owner of directoryOwners) {
+    if (directory === owner.directory || directory.startsWith(`${owner.directory}/`)) {
+      return owner.projectRoot;
+    }
+  }
+  return null;
+};
+
+/**
+ * Resolve every session to exactly one registered project. Explicit session
+ * directories are authoritative; broad project metadata is only consulted
+ * when that field is absent, and parent lineage is the final fallback.
+ */
+export const buildSessionProjectOwnership = (
+  projects: readonly ProjectOwnershipInput[],
+  availableWorktreesByProject: ReadonlyMap<string, readonly { path: string }[]>,
+  sessions: readonly Session[],
+  isVSCode: boolean,
+): Map<string, string> => {
+  const ownerByDirectory = new Map<string, ProjectDirectoryOwner>();
+
+  for (const project of projects) {
+    const projectRoot = normalizePath(project.normalizedPath);
+    if (!projectRoot) continue;
+    ownerByDirectory.set(projectRoot, {
+      directory: projectRoot,
+      projectRoot,
+      isRegisteredProject: true,
+    });
+  }
+
+  if (!isVSCode) {
+    for (const [rawProjectRoot, worktrees] of availableWorktreesByProject.entries()) {
+      const projectRoot = normalizePath(rawProjectRoot);
+      if (!projectRoot || !ownerByDirectory.has(projectRoot)) continue;
+      for (const worktree of worktrees) {
+        const directory = normalizePath(worktree.path);
+        if (!directory) continue;
+        const existing = ownerByDirectory.get(directory);
+        if (existing?.isRegisteredProject) continue;
+        ownerByDirectory.set(directory, {
+          directory,
+          projectRoot,
+          isRegisteredProject: false,
+        });
+      }
+    }
+  }
+
+  const directoryOwners = [...ownerByDirectory.values()].sort((left, right) => (
+    right.directory.length - left.directory.length
+    || Number(right.isRegisteredProject) - Number(left.isRegisteredProject)
+  ));
+
+  const sessionsById = new Map<string, Session>();
+  for (const session of sessions) {
+    const previous = sessionsById.get(session.id);
+    const previousDirectory = normalizePath((previous as (Session & { directory?: string | null }) | undefined)?.directory ?? null);
+    const nextDirectory = normalizePath((session as Session & { directory?: string | null }).directory ?? null);
+    if (!previous || (!previousDirectory && nextDirectory)) {
+      sessionsById.set(session.id, session);
+    }
+  }
+
+  const ownership = new Map<string, string>();
+  const resolving = new Set<string>();
+  const resolveSession = (session: Session): string | null => {
+    const cached = ownership.get(session.id);
+    if (cached) return cached;
+    if (resolving.has(session.id)) return null;
+    resolving.add(session.id);
+
+    const record = session as Session & {
+      directory?: string | null;
+      parentID?: string | null;
+      project?: { worktree?: string | null } | null;
+    };
+    const explicitDirectory = normalizePath(record.directory ?? null);
+    const projectWorktree = normalizePath(record.project?.worktree ?? null);
+
+    let owner: string | null = null;
+    if (explicitDirectory) {
+      owner = resolveDirectoryOwner(explicitDirectory, directoryOwners);
+    } else if (projectWorktree) {
+      owner = resolveDirectoryOwner(projectWorktree, directoryOwners);
+    } else if (record.parentID) {
+      const parent = sessionsById.get(record.parentID);
+      owner = parent ? resolveSession(parent) : null;
+    }
+
+    resolving.delete(session.id);
+    if (owner) ownership.set(session.id, owner);
+    return owner;
+  };
+
+  for (const session of sessionsById.values()) {
+    resolveSession(session);
+  }
+  return ownership;
+};
+
+export const isSessionOwnedByProject = (
+  session: Session,
+  projectRoot: string,
+  ownership: SessionProjectOwnership,
+): boolean => ownership.get(session.id) === normalizePath(projectRoot);
 
 export const formatProjectLabel = (label: string): string => {
   return label

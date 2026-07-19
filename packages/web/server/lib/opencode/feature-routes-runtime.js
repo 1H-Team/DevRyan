@@ -232,6 +232,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       sanitizeHiddenSkills,
       isUnsafeSkillRelativePath,
       refreshOpenCodeAfterConfigChange,
+      isExternalOpenCode,
       clientReloadDelayMs,
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
@@ -262,7 +263,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
 
     registerQuotaRoutes(app, { getQuotaProviders, resolveProjectDirectory });
     registerGitHubRoutes(app);
-    registerGitRoutes(app);
+    registerGitRoutes(app, { resolveZenModel });
     registerMagicPromptRoutes(app, {
       fsPromises,
       path,

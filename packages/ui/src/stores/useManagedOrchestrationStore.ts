@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import {
   canTransitionManagedTaskStatus,
+  classifyProviderRetryFailure,
   isTerminalManagedTaskStatus,
   MAX_MANAGED_TASK_FAILURE_BYTES,
   MAX_MANAGED_TASK_LABEL_BYTES,
@@ -145,12 +146,13 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskEventRecord | n
     && Number.isSafeInteger(value.attempt)
     && Number(value.attempt) > 0
     && isNullableString(value.priorTaskId)
-    && (value.executionKind === 'start' || value.executionKind === 'retry' || value.executionKind === 'resume' || value.executionKind === 'retry_in_place')
+    && (value.executionKind === 'start' || value.executionKind === 'retry' || value.executionKind === 'resume' || value.executionKind === 'recover_in_place' || value.executionKind === 'retry_in_place')
     && isTimestamp(value.createdAt)
     && isNullableTimestamp(value.startedAt)
     && isNullableTimestamp(value.finishedAt)
     && isNullableTimestamp(value.timeoutAt)
     && isNullableString(value.failureReason)
+    && (value.failureKind === undefined || value.failureKind === null || value.failureKind === 'provider_usage_limit')
     && typeof value.partial === 'boolean'
     && typeof value.recoverablePreview === 'string'
     && Array.isArray(value.canonicalRefs)
@@ -182,6 +184,9 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskEventRecord | n
     failureReason: value.failureReason === null
       ? null
       : truncateManagedText(value.failureReason, MAX_MANAGED_TASK_FAILURE_BYTES),
+    failureKind: value.failureKind === 'provider_usage_limit'
+      ? value.failureKind
+      : classifyProviderRetryFailure(value.failureReason),
     partial: value.partial as boolean,
     recoverablePreview: truncateManagedText(value.recoverablePreview, MAX_MANAGED_TASK_PREVIEW_BYTES),
     canonicalRefs: (value.canonicalRefs as Array<{ type: string; id: string }>)
@@ -974,6 +979,18 @@ export const managedOrchestrationSelectors = {
   taskIdsForRoot: (rootSessionId: string) => (state: ManagedOrchestrationStore) => (
     state.taskIdsByRootId[rootSessionId] ?? EMPTY_TASK_IDS
   ),
+  hasUndispositionedTasksForRoot: (rootSessionId: string) => (
+    state: ManagedOrchestrationStore
+  ) => {
+    const taskIds = state.taskIdsByRootId[rootSessionId] ?? EMPTY_TASK_IDS;
+    return taskIds.some((taskId) => {
+      const task = state.tasksById[taskId];
+      if (!task) return false;
+      if (!isTerminalManagedTaskStatus(task.status)) return true;
+      const envelope = state.resultEnvelopesByTaskId[taskId];
+      return !envelope || envelope.action === null;
+    });
+  },
   task: (taskId: string) => (state: ManagedOrchestrationStore) => state.tasksById[taskId],
   resultEnvelope: (taskId: string) => (state: ManagedOrchestrationStore) => (
     state.resultEnvelopesByTaskId[taskId]

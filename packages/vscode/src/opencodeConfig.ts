@@ -4,6 +4,16 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import yaml from 'yaml';
 import { parse as parseJsonc } from 'jsonc-parser';
+import { readAuthFile } from './opencodeAuth';
+import {
+  isAnthropicOAuthPluginSpec,
+  reconcileAnthropicOAuthPluginSpecs,
+} from './anthropicOAuthPlugin';
+import {
+  buildDevRyanDefaultPluginInventory,
+  type DevRyanDefaultPlugin,
+  type DevRyanDefaultPluginId,
+} from '../../web/server/lib/opencode/default-plugins.js';
 
 const OPENCODE_CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode');
 const AGENT_DIR = path.join(OPENCODE_CONFIG_DIR, 'agents');
@@ -16,6 +26,7 @@ const OPENCHAMBER_SIDECAR_PATH = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 
 const MCP_RECOVERY_MANIFEST_PATH = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'mcp-recovery-vscode.json');
 const RUNTIME_AGENT_OVERLAY_ROOT = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'runtime-agent-overlays');
 const RUNTIME_AGENT_OVERLAY_MANIFEST_PATH = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'runtime-agent-overlays-vscode.json');
+const DEFAULT_OPENAI_HEADER_TIMEOUT_MS = 60_000;
 const CUSTOM_CONFIG_FILE = process.env.OPENCODE_CONFIG
   ? path.resolve(process.env.OPENCODE_CONFIG)
   : null;
@@ -34,7 +45,6 @@ const ANTHROPIC_OAUTH_PROVIDER_IDS = new Set([
   'opencode-with-claude',
 ]);
 const ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID = 'anthropic';
-const ANTHROPIC_OAUTH_PLUGIN_NAME = 'opencode-with-claude';
 const ANTHROPIC_OAUTH_DEFAULT_BASE_URL = 'http://127.0.0.1:3456';
 const AGENT_WRITE_DISABLED_MESSAGE = 'Agent configuration is read-only. Edit project .opencode/agents/*.md files directly.';
 const OPENCHAMBER_CONFIG_KEY = 'openchamber';
@@ -89,7 +99,6 @@ const ALLOWED_MANAGED_RUNTIME_PLUGIN_SPEC_PREFIXES = [
 const ALLOWED_MANAGED_RUNTIME_PLUGIN_SPECS = new Set([
   'cursor-acp',
   'oh-my-opencode-slim',
-  'opencode-with-claude',
   DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC,
 ]);
 const BLOCKED_MANAGED_RUNTIME_MCP_NAMES = [
@@ -127,6 +136,7 @@ export type PluginEntry = {
   kind: 'config';
   parsedKind: PluginParsedKind;
   sourcePath: string;
+  defaultPluginId?: DevRyanDefaultPluginId;
 };
 
 export type PluginFile = {
@@ -135,6 +145,7 @@ export type PluginFile = {
   scope: PluginScope;
   kind: 'file';
   absolutePath: string;
+  defaultPluginId?: DevRyanDefaultPluginId;
 };
 
 export type PluginConfigError = {
@@ -145,6 +156,7 @@ export type PluginConfigError = {
 };
 
 export type PluginsListResponse = {
+  defaults: DevRyanDefaultPlugin[];
   entries: PluginEntry[];
   files: PluginFile[];
   errors: PluginConfigError[];
@@ -829,7 +841,7 @@ export const listReadonlyPlugins = (workingDirectory?: string): PluginsListRespo
   const errors: PluginConfigError[] = [];
   const userConfigPath = layers.paths.customPath || layers.paths.userPath;
   const userConfig = layers.paths.customPath ? layers.customConfig : layers.userConfig;
-  const userPluginDir = path.join(layers.paths.customPath ? path.dirname(layers.paths.customPath) : OPENCODE_CONFIG_DIR, 'plugins');
+  const userPluginRoot = layers.paths.customPath ? path.dirname(layers.paths.customPath) : OPENCODE_CONFIG_DIR;
 
   const sources: Array<{ scope: PluginScope; path: string; config: Record<string, unknown> }> = [
     { scope: 'user', path: userConfigPath, config: userConfig },
@@ -838,14 +850,19 @@ export const listReadonlyPlugins = (workingDirectory?: string): PluginsListRespo
     sources.push({ scope: 'project', path: layers.paths.projectPath, config: layers.projectConfig });
   }
 
-  return {
-    entries: sources.flatMap((source) => listReadonlyPluginEntriesFromSource(source, errors)),
-    files: [
-      ...listReadonlyPluginFilesForScope('user', userPluginDir),
-      ...(workingDirectory ? listReadonlyPluginFilesForScope('project', path.join(workingDirectory, '.opencode', 'plugins')) : []),
-    ],
-    errors,
-  };
+  const entries = sources.flatMap((source) => listReadonlyPluginEntriesFromSource(source, errors));
+  const files = [
+      ...listReadonlyPluginFilesForScope('user', path.join(userPluginRoot, 'plugin')),
+      ...listReadonlyPluginFilesForScope('user', path.join(userPluginRoot, 'plugins')),
+      ...(workingDirectory
+        ? [
+            ...listReadonlyPluginFilesForScope('project', path.join(workingDirectory, '.opencode', 'plugin')),
+            ...listReadonlyPluginFilesForScope('project', path.join(workingDirectory, '.opencode', 'plugins')),
+          ]
+        : []),
+    ];
+
+  return { ...buildDevRyanDefaultPluginInventory({ entries, files }), errors };
 };
 
 const getAncestors = (startDir?: string, stopDir?: string): string[] => {
@@ -2172,6 +2189,9 @@ const isAllowedManagedRuntimePluginSpec = (spec: string): boolean => {
   if (ALLOWED_MANAGED_RUNTIME_PLUGIN_SPECS.has(normalized)) {
     return true;
   }
+  if (isAnthropicOAuthPluginSpec(normalized)) {
+    return true;
+  }
   return ALLOWED_MANAGED_RUNTIME_PLUGIN_SPEC_PREFIXES.some((prefix) => normalized.startsWith(prefix));
 };
 
@@ -2204,6 +2224,44 @@ const buildBlockedManagedRuntimeMcpOverlay = (workingDirectory?: string): Record
   return Object.keys(mcp).length > 0 ? { mcp } : null;
 };
 
+const buildOpenAIHeaderTimeoutOverlay = (activeConfig: Record<string, unknown>): Record<string, unknown> | null => {
+  const providers = isPlainObject(activeConfig.provider)
+    ? activeConfig.provider as Record<string, unknown>
+    : {};
+  const openAIProvider = isPlainObject(providers.openai)
+    ? providers.openai as Record<string, unknown>
+    : null;
+  let hasOpenAIAuth = false;
+
+  try {
+    const auth = readAuthFile();
+    hasOpenAIAuth = Object.prototype.hasOwnProperty.call(auth, 'openai');
+  } catch (error) {
+    console.warn('[OpenCode] Failed to read provider auth for the OpenAI timeout overlay:', error);
+  }
+
+  const hasOpenAIApiKey = typeof process.env.OPENAI_API_KEY === 'string'
+    && Boolean(process.env.OPENAI_API_KEY.trim());
+  if (!hasOpenAIAuth && !hasOpenAIApiKey && !openAIProvider) {
+    return null;
+  }
+
+  const providerOptions = isPlainObject(openAIProvider?.options)
+    ? openAIProvider.options as Record<string, unknown>
+    : {};
+  const headerTimeout = Object.prototype.hasOwnProperty.call(providerOptions, 'headerTimeout')
+    ? providerOptions.headerTimeout
+    : DEFAULT_OPENAI_HEADER_TIMEOUT_MS;
+
+  return {
+    provider: {
+      openai: {
+        options: { headerTimeout },
+      },
+    },
+  };
+};
+
 const buildRuntimeConfigOverlay = (workingDirectory?: string, packagedPluginSpecs: string[] = []): Record<string, unknown> | null => {
   const activeConfig = readConfig(workingDirectory);
   const activePlugins = Array.isArray(activeConfig.plugin)
@@ -2228,6 +2286,10 @@ const buildRuntimeConfigOverlay = (workingDirectory?: string, packagedPluginSpec
   }
   if (plugin.length > 0) {
     overlay.plugin = plugin;
+  }
+  const openAIHeaderTimeoutOverlay = buildOpenAIHeaderTimeoutOverlay(activeConfig);
+  if (openAIHeaderTimeoutOverlay) {
+    Object.assign(overlay, openAIHeaderTimeoutOverlay);
   }
   return Object.keys(overlay).length > 0 ? overlay : null;
 };
@@ -2816,7 +2878,7 @@ export const getProviderSources = (providerId: string, workingDirectory?: string
     const plugins = Array.isArray((config as Record<string, unknown> | null)?.plugin)
       ? (config as Record<string, unknown>).plugin as unknown[]
       : [];
-    return plugins.some((entry) => entry === ANTHROPIC_OAUTH_PLUGIN_NAME);
+    return plugins.some(isAnthropicOAuthPluginSpec);
   };
   const hasAnthropicOAuthOptions = (config: unknown) => {
     const providers = isPlainObject((config as Record<string, unknown> | null)?.provider)
@@ -2876,10 +2938,10 @@ export const ensureAnthropicOAuthProviderConfig = ({
   const targetPath = workingDirectory ? layers.paths.projectPath : layers.paths.userPath;
   const targetConfig = workingDirectory ? layers.projectConfig : layers.userConfig;
   const plugin = Array.isArray((targetConfig as Record<string, unknown>).plugin)
-    ? ((targetConfig as Record<string, unknown>).plugin as unknown[]).filter((entry): entry is string => typeof entry === 'string')
+    ? [...(targetConfig as Record<string, unknown>).plugin as unknown[]]
     : [];
-  const hadPlugin = plugin.includes(ANTHROPIC_OAUTH_PLUGIN_NAME);
-  const nextPlugin = hadPlugin ? plugin : [...plugin, ANTHROPIC_OAUTH_PLUGIN_NAME];
+  const hadPlugin = plugin.some(isAnthropicOAuthPluginSpec);
+  const nextPlugin = reconcileAnthropicOAuthPluginSpecs(plugin);
   const provider = isPlainObject((targetConfig as Record<string, unknown>).provider)
     ? (targetConfig as Record<string, unknown>).provider as Record<string, unknown>
     : {};
@@ -2891,6 +2953,8 @@ export const ensureAnthropicOAuthProviderConfig = ({
     : {};
   const changed =
     !hadPlugin ||
+    plugin.length !== nextPlugin.length ||
+    plugin.some((entry, index) => entry !== nextPlugin[index]) ||
     !isPlainObject((targetConfig as Record<string, unknown>).provider) ||
     !isPlainObject(provider[ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID]) ||
     !isPlainObject(existingAnthropic.options) ||
@@ -3551,46 +3615,18 @@ export const updateSkill = (
   }
 };
 
-export const deleteSkill = (skillName: string, workingDirectory?: string): void => {
-  let deleted = false;
-  
-  // Check and delete from all locations
-  if (workingDirectory) {
-    // Project level .opencode/skill/
-    const projectDir = getProjectSkillDir(workingDirectory, skillName);
-    if (fs.existsSync(projectDir)) {
-      fs.rmSync(projectDir, { recursive: true, force: true });
-      deleted = true;
-    }
-    
-    // Claude-compat .claude/skills/
-    const claudeDir = getClaudeSkillDir(workingDirectory, skillName);
-    if (fs.existsSync(claudeDir)) {
-      fs.rmSync(claudeDir, { recursive: true, force: true });
-      deleted = true;
-    }
+export const deleteSkill = (skillName: string, workingDirectory?: string, discoveredSkill?: DiscoveredSkill | null): void => {
+  const existing = discoveredSkill?.name === skillName && discoveredSkill.path
+    ? discoveredSkill
+    : getSkillScope(skillName, workingDirectory);
 
-    const projectAgentsDir = getProjectAgentsSkillDir(workingDirectory, skillName);
-    if (fs.existsSync(projectAgentsDir)) {
-      fs.rmSync(projectAgentsDir, { recursive: true, force: true });
-      deleted = true;
-    }
-  }
-  
-  // User level
-  const userDir = getUserSkillDir(skillName);
-  if (fs.existsSync(userDir)) {
-    fs.rmSync(userDir, { recursive: true, force: true });
-    deleted = true;
-  }
-
-  const userAgentsDir = getUserAgentsSkillDir(skillName);
-  if (fs.existsSync(userAgentsDir)) {
-    fs.rmSync(userAgentsDir, { recursive: true, force: true });
-    deleted = true;
-  }
-  
-  if (!deleted) {
+  if (
+    !existing?.path
+    || path.basename(existing.path).toLowerCase() !== 'skill.md'
+    || !isExistingFile(existing.path)
+  ) {
     throw new Error(`Skill "${skillName}" not found`);
   }
+
+  fs.rmSync(path.dirname(existing.path), { recursive: true, force: true });
 };

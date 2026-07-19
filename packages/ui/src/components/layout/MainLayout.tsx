@@ -23,8 +23,18 @@ import { useDeviceInfo } from '@/lib/device';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { isDesktopShell } from '@/lib/desktop';
-import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { getSettingsFullPageOverlayClassName } from '@/components/views/SettingsView.styles';
+import {
+    DeferredLazyView,
+    LazyDiffView,
+    LazyFilesView,
+    LazyGitView,
+    LazyMultiRunWindow,
+    LazyPlanView,
+    LazySettingsView,
+    LazyTerminalView,
+    LazyViewBoundary,
+} from '@/components/views/lazyViews';
 
 import { ChatView } from '@/components/views/ChatView';
 import {
@@ -32,15 +42,6 @@ import {
     getResponsivePanelDecision,
     type ResponsivePanelAction,
 } from './responsivePanels';
-
-// Heavy views loaded on-demand to reduce initial bundle parse time.
-const PlanView = lazyWithChunkRecovery(() => import('@/components/views/PlanView').then(m => ({ default: m.PlanView })));
-const GitView = lazyWithChunkRecovery(() => import('@/components/views/GitView').then(m => ({ default: m.GitView })));
-const DiffView = lazyWithChunkRecovery(() => import('@/components/views/DiffView').then(m => ({ default: m.DiffView })));
-const TerminalView = lazyWithChunkRecovery(() => import('@/components/views/TerminalView').then(m => ({ default: m.TerminalView })));
-const FilesView = lazyWithChunkRecovery(() => import('@/components/views/FilesView').then(m => ({ default: m.FilesView })));
-const SettingsView = lazyWithChunkRecovery(() => import('@/components/views/SettingsView').then(m => ({ default: m.SettingsView })));
-const MultiRunWindow = lazyWithChunkRecovery(() => import('@/components/views/MultiRunWindow').then(m => ({ default: m.MultiRunWindow })));
 
 // Mobile drawer width as screen percentage
 const MOBILE_DRAWER_WIDTH_PERCENT = 85;
@@ -322,15 +323,15 @@ export const MainLayout: React.FC = () => {
     const secondaryView = React.useMemo(() => {
         switch (activeMainTab) {
             case 'plan':
-                return <React.Suspense fallback={null}><PlanView /></React.Suspense>;
+                return <LazyViewBoundary><LazyPlanView /></LazyViewBoundary>;
             case 'git':
-                return <React.Suspense fallback={null}><GitView /></React.Suspense>;
+                return <LazyViewBoundary><LazyGitView /></LazyViewBoundary>;
             case 'diff':
-                return <React.Suspense fallback={null}><DiffView /></React.Suspense>;
+                return <LazyViewBoundary><LazyDiffView /></LazyViewBoundary>;
             case 'terminal':
-                return <React.Suspense fallback={null}><TerminalView /></React.Suspense>;
+                return <LazyViewBoundary><LazyTerminalView /></LazyViewBoundary>;
             case 'files':
-                return <React.Suspense fallback={null}><FilesView /></React.Suspense>;
+                return <LazyViewBoundary><LazyFilesView /></LazyViewBoundary>;
             default:
                 return null;
         }
@@ -659,11 +660,9 @@ export const MainLayout: React.FC = () => {
                                 </div>
                                 <BottomTerminalDock isOpen={isBottomTerminalOpen} isMobile={isMobile}>
                                     {isBottomTerminalOpen ? (
-                                        <ErrorBoundary>
-                                            <React.Suspense fallback={null}>
-                                                <TerminalView />
-                                            </React.Suspense>
-                                        </ErrorBoundary>
+                                        <LazyViewBoundary>
+                                            <LazyTerminalView />
+                                        </LazyViewBoundary>
                                     ) : null}
                                 </BottomTerminalDock>
                             </div>
@@ -677,13 +676,15 @@ export const MainLayout: React.FC = () => {
                         </div>
 
                     </div>
-                    <React.Suspense fallback={null}>
-                        <MultiRunWindow
-                            open={isMultiRunLauncherOpen}
-                            onOpenChange={setMultiRunLauncherOpen}
-                            initialPrompt={multiRunLauncherPrefillPrompt}
-                        />
-                    </React.Suspense>
+                    <DeferredLazyView active={isMultiRunLauncherOpen}>
+                        <LazyViewBoundary>
+                            <LazyMultiRunWindow
+                                open={isMultiRunLauncherOpen}
+                                onOpenChange={setMultiRunLauncherOpen}
+                                initialPrompt={multiRunLauncherPrefillPrompt}
+                            />
+                        </LazyViewBoundary>
+                    </DeferredLazyView>
                 </>
             )}
 
@@ -692,11 +693,9 @@ export const MainLayout: React.FC = () => {
                         className={getSettingsFullPageOverlayClassName()}
                         style={isMobile ? { paddingTop: 'var(--oc-safe-area-top, 0px)' } : undefined}
                     >
-                        <ErrorBoundary>
-                            <React.Suspense fallback={null}>
-                                <SettingsView onClose={() => setSettingsDialogOpen(false)} />
-                            </React.Suspense>
-                        </ErrorBoundary>
+                        <LazyViewBoundary>
+                            <LazySettingsView onClose={() => setSettingsDialogOpen(false)} />
+                        </LazyViewBoundary>
                     </div>
                 )}
 

@@ -103,6 +103,18 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
+      - name: Verify packaged Tauri default plugins
+        run: |
+          set -euo pipefail
+          APP_PATH=$(find packages/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos -maxdepth 1 -name "*.app" -print -quit)
+          test -n "$APP_PATH"
+          ARTIFACT_ROOT=$(find "$APP_PATH/Contents/Resources" -type d -name default-config -print -quit)
+          test -n "$ARTIFACT_ROOT"
+          node scripts/verify-default-config-artifact.mjs \
+            --source packages/web/server/default-config \
+            --artifact-root "$ARTIFACT_ROOT"
+          node scripts/smoke-packaged-orchestration-config.mjs --config-root "$ARTIFACT_ROOT"
+
       - name: Prepare DMG artifact
         run: |
           set -euo pipefail
@@ -110,7 +122,7 @@ jobs:
           DMG_PATH="packages/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg"
           if ls $DMG_PATH 1> /dev/null 2>&1; then
             DMG_FILE=$(ls $DMG_PATH | head -n 1)
-            DMG_NAME="OpenChamber_${{ inputs.macos_version }}_arm64.dmg"
+            DMG_NAME="DevRyan_${{ inputs.macos_version }}_arm64.dmg"
             cp "$DMG_FILE" "artifacts/$DMG_NAME"
           else
             echo "Error: DMG file not found at $DMG_PATH"
@@ -186,7 +198,7 @@ jobs:
           DMG_PATH="packages/electron/dist/*.dmg"
           if ls $DMG_PATH 1> /dev/null 2>&1; then
             DMG_FILE=$(ls $DMG_PATH | head -n 1)
-            DMG_NAME="OpenChamber_Electron_${{ inputs.macos_version }}_arm64.dmg"
+            DMG_NAME="DevRyan_Electron_${{ inputs.macos_version }}_arm64.dmg"
             cp "$DMG_FILE" "artifacts/$DMG_NAME"
           else
             echo "Error: DMG file not found at $DMG_PATH"

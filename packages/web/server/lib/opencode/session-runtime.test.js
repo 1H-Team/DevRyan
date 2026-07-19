@@ -143,4 +143,29 @@ describe('session runtime', () => {
     vi.advanceTimersByTime(1);
     expect(activityPhases()).toEqual(['busy', 'cooldown', 'idle']);
   });
+
+  it('clears deleted session activity so it cannot block lifecycle work', () => {
+    const runtime = createSessionRuntime({
+      writeSseEvent() {},
+      getNotificationClients: () => new Set(),
+      broadcastEvent() {},
+    });
+    runtimes.push(runtime);
+
+    runtime.processOpenCodeSsePayload({
+      type: 'session.status',
+      properties: {
+        sessionID: 'deleted-session',
+        status: { type: 'busy' },
+      },
+    });
+
+    expect(runtime.getSessionActivitySnapshot()).toEqual({
+      'deleted-session': { type: 'busy' },
+    });
+    expect(runtime.clearSessionActivity('deleted-session')).toBe(true);
+    expect(runtime.getSessionActivitySnapshot()).toEqual({});
+    expect(runtime.getSessionState('deleted-session')).toBeNull();
+    expect(runtime.getSessionAttentionState('deleted-session')).toBeNull();
+  });
 });

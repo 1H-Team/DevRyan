@@ -6,7 +6,6 @@ const ALLOWED_MANAGED_RUNTIME_PLUGIN_SPEC_PREFIXES = [
 const ALLOWED_MANAGED_RUNTIME_PLUGIN_SPECS = new Set([
   'cursor-acp',
   'oh-my-opencode-slim',
-  'opencode-with-claude',
   './plugins/devryan-oh-my-opencode-slim.mjs',
 ]);
 
@@ -45,6 +44,9 @@ const isAllowedManagedRuntimePluginSpec = (spec) => {
     return false;
   }
   if (ALLOWED_MANAGED_RUNTIME_PLUGIN_SPECS.has(normalized)) {
+    return true;
+  }
+  if (isAnthropicOAuthPluginSpec(normalized)) {
     return true;
   }
   return ALLOWED_MANAGED_RUNTIME_PLUGIN_SPEC_PREFIXES.some((prefix) => normalized.startsWith(prefix));
@@ -98,3 +100,4 @@ export {
   isBlockedManagedRuntimeMcpName,
   isForbiddenManagedRuntimeToolId,
 };
+import { isAnthropicOAuthPluginSpec } from './anthropic-oauth-plugin.js';

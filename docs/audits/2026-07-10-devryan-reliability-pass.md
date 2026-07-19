@@ -414,3 +414,86 @@ The principal architecture decisions are:
   task failure/abort preservation; and
 - make shutdown ownership deterministic from HMR through packaged Electron,
   including detached process-group reaping and an awaited Electron quit barrier.
+
+## 2026-07-15 Targeted Reliability Follow-up
+
+This follow-up applied 27 additional regression-first changes in the isolated
+`codex/mcp-warmup-singleflight` worktree. Each confirmed issue received a red
+test before implementation, focused verification immediately after the change,
+the affected user journey through the production UI, and the applicable
+repository validation tier. No dependency was added and no provider prompt,
+model, reasoning setting, or output limit was changed.
+
+| Area | Confirmed defects closed |
+| --- | --- |
+| Background and payload efficiency | Inactive-directory sidebar hydration could start directory-owned runtime services; managed task results duplicated large terminal payloads; a source-owned local plugin and its packaged fallback could both register. |
+| Managed orchestration and plugins | A launch could outlive lost scheduler ownership; a pre-execution hook failure could strand pending-start barriers; the read-only plugin catalog missed OpenCode's singular `plugin/` directory. |
+| Reconnect and retry | Bootstrap could restore a manually stopped retry; reconnect could reapply a stale status snapshot over a newer SSE event; restored idle queues did not retry on connection recovery; fixed abort-guard TTL could expire before an advertised retry deadline. |
+| Message, queue, and revert delivery | Bounded child polls could regress terminal state and omit cached history; failed directory delete could replace newer session state; failed revert could discard a concurrent turn; manual queued dispatch lacked stable retry identity; authoritative message echo could retain/remerge optimistic part IDs; provisional assistant messages could remain parentless; filesystem aliases could misroute newly created sessions. |
+| Permanent session deletion | External deletion could strand the selected session; selection, queue, composer, context, permission-auto-accept, notification/timer, UI/worktree/abort, materialization/lifecycle/blocking-request, and unexpected-abort reconciliation owners could survive or write back after permanent deletion. Archive remains reversible and preserves all of these owners. |
+
+### Follow-up Measurements
+
+| Measurement | Before | After | Interpretation |
+| --- | ---: | ---: | --- |
+| Inactive-directory runtime expansion | 7 processes / about 0.95 GiB to 13 processes / about 1.83 GiB after one second-directory message read | Automatic inactive-directory reads are suppressed; active Test selection and normal bootstrap remain functional | Removes a reproduced source of avoidable MCP/runtime fanout; no general OpenCode process-reduction claim is made. |
+| Managed terminal result serialization | Two copies of a 60,014-byte preview; original production-shaped capture was 121,212 bytes | Current deterministic shape is 120,373 to 60,260 bytes, one preview, 49.94% smaller | Only model-facing tool output is compacted; ledger, RPC, UI, and acknowledgement records remain complete. |
+| Duplicate plugin tool schemas | OpenAI 285 schemas / 270,507 characters; other measured providers 288 / 272,966 | OpenAI 281 / 266,464; other measured providers 284 / 268,923 | Removes exactly four schemas and 4,043 characters attributable to duplicate Slim registration; unrelated duplicates are not misattributed. |
+| Raw streaming delivery probe | Model hypothesis predicted 1,000 reducer/React deliveries | 1,000 roughly 1 ms raw deltas produced 56 reducer deliveries through the 24 ms coalescing frame | Rejected the proposed per-delta render regression; no production batching change was made. |
+| Final full validation | Earlier ledger baseline: 77.41 seconds / 1.38 GB peak for the smaller historical suite | 100.99 seconds / 1.20 GB peak; 2,803 tests plus workspace lint and type-check | Suite size and cache state differ, so this is a release-gate endpoint rather than a speed claim. |
+| Final production build | Earlier ledger baseline: 42.84 seconds / 2.15 GB peak | 138.83 seconds / 2.08 GB peak | Cold/cache conditions differed materially. Existing `import.meta`, dynamic-chunk, dependency `eval`, and large-chunk warnings remain visible; no build-speed improvement is claimed. |
+
+### Provider And Runtime Coverage
+
+- OpenAI was exercised through DevRyan for read-only Test-repository review and
+  successive independent hypotheses, including `openai/gpt-5.6-terra-fast`.
+- The protected live matrix already records GitHub Copilot GPT-4.1/GPT-4o/
+  GPT-4o mini, Cursor, and OpenCode Zen journeys. This follow-up preserved those
+  provider-specific paths and re-ran the complete shared runtime suites.
+- Current discovery still reports Anthropic, Google, and OpenCode Go as
+  connected. Their shared request, schema, selection, sync, queue, retry, and
+  runtime contracts are covered; this follow-up did not manufacture new
+  billable live completions merely to turn contract evidence into a stronger
+  claim.
+- Web/Electron and VS Code share the managed plugin, orchestration executor,
+  selection, queue, reconnect, and deletion contracts touched here. The final
+  full gate and production build passed both runtime owners. Legacy Tauri
+  received no new feature work.
+
+### Final Verification And Visual Evidence
+
+- `bun run validate:full`: pass. Counts were 17 script, 107 orchestration, 111
+  Cursor runtime, 40 Electron, 1,625 UI, 808 web, and 95 VS Code tests.
+- `bun run build`: pass for web, Electron, and VS Code with only the existing
+  warning categories listed above.
+- The final focused unexpected-abort suites passed independently at 84/84 and
+  47/47, avoiding their known process-global Bun mock-order conflict.
+- Twenty-one named visual captures are retained under
+  `/Users/zoubair/.codex/visualizations/2026/07/14/019f62f4-16c6-7063-92ea-0608c34c405c/`.
+  Backend-heavy transitions without a meaningful static comparison were still
+  exercised through their consuming production UI during their focused loop.
+- The final unexpected-abort replay held the exact `limit=200` reconciliation,
+  emitted authoritative deletion, released the late response, and proved no
+  stale text returned. It recorded no console/runtime errors or blocked
+  mutations while retaining the OpenAI hypothesis response.
+
+### Rejected Findings And Residual Risk
+
+Source inspection or deterministic replay rejected model hypotheses about
+queued cancellation after slot admission, cross-session poll overwrite,
+asynchronous notification acknowledgement, a nonexistent delayed parent-child
+activity event, one React commit per delta, whole-record archive rollback, and
+stale indicator-loop restoration. These were not converted into speculative
+production changes.
+
+No confirmed high-severity regression remains. Residual work is limited to:
+
+- the broader repeated tool-schema provenance outside the four schemas owned by
+  duplicate Slim registration; presentation-layer deduplication would hide
+  duplicate hook execution and is therefore unsafe without stronger OpenCode or
+  user-configuration provenance;
+- a fresh billable live-completion repeat for every connected provider, which
+  was not required by a provider-specific production change in this follow-up;
+- the existing large bundle/chunk warnings and provider-retry heap-growth
+  classification, neither of which has a reproducible regression attributable
+  to these changes.

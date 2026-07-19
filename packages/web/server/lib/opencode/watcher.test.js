@@ -93,6 +93,39 @@ describe('createOpenCodeWatcherRuntime', () => {
     ]);
   });
 
+  it('retries readiness after an initial failure and starts the shared hub exactly once', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const waitForOpenCodePort = vi.fn()
+      .mockRejectedValueOnce(new Error('OpenCode port not ready'))
+      .mockResolvedValueOnce(undefined);
+    const unsubscribeEvent = vi.fn();
+    const unsubscribeStatus = vi.fn();
+    const globalEventHub = {
+      start: vi.fn(),
+      subscribeEvent: vi.fn(() => unsubscribeEvent),
+      subscribeStatus: vi.fn(() => unsubscribeStatus),
+    };
+    const watcher = createOpenCodeWatcherRuntime({
+      waitForOpenCodePort,
+      buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      globalEventHub,
+      onPayload() {},
+      upstreamReconnectDelayMs: 0,
+    });
+
+    await watcher.start();
+
+    expect(waitForOpenCodePort).toHaveBeenCalledTimes(2);
+    expect(globalEventHub.subscribeEvent).toHaveBeenCalledTimes(1);
+    expect(globalEventHub.subscribeStatus).toHaveBeenCalledTimes(1);
+    expect(globalEventHub.start).toHaveBeenCalledTimes(1);
+
+    watcher.stop();
+    expect(unsubscribeEvent).toHaveBeenCalledTimes(1);
+    expect(unsubscribeStatus).toHaveBeenCalledTimes(1);
+  });
+
   it('resumes watcher reconnects with Last-Event-ID after a stalled upstream stream', async () => {
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const fetchLastEventIds = [];

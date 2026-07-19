@@ -5,6 +5,28 @@ import { parseRoute, updateBrowserURL, hasRouteParams } from '@/lib/router';
 import type { RouteState, AppRouteState } from '@/lib/router';
 import type { MainTab } from '@/stores/useUIStore';
 import { resolveSettingsSlug } from '@/lib/settings/metadata';
+import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
+import { resolveRoutedSessionDirectory } from '@/lib/router/routedSessionDirectory';
+
+let pendingRoutedSessionId: string | null = null;
+
+const applyRoutedSessionSelection = (sessionId: string): boolean => {
+  const sessionState = useSessionUIStore.getState();
+  const globalState = useGlobalSessionsStore.getState();
+  const directory = resolveRoutedSessionDirectory(
+    sessionId,
+    sessionState.getDirectoryForSession(sessionId),
+    [...globalState.activeSessions, ...globalState.archivedSessions],
+  );
+  if (!directory) {
+    pendingRoutedSessionId = sessionId;
+    return false;
+  }
+
+  pendingRoutedSessionId = null;
+  sessionState.setCurrentSession(sessionId, directory);
+  return true;
+};
 
 /**
  * Check if running in VS Code webview context.
@@ -38,7 +60,6 @@ export function useRouter(): void {
   const isApplyingRouteRef = React.useRef(false);
 
   // Get store actions (stable references)
-  const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
   const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
   const setSettingsDialogOpen = useUIStore((state) => state.setSettingsDialogOpen);
   const setSettingsPage = useUIStore((state) => state.setSettingsPage);
@@ -48,9 +69,9 @@ export function useRouter(): void {
    * Apply a parsed route state to the application stores.
    */
   const applyRoute = React.useCallback(
-    async (route: RouteState) => {
+    async (route: RouteState): Promise<boolean> => {
       if (isApplyingRouteRef.current) {
-        return;
+        return false;
       }
 
       isApplyingRouteRef.current = true;
@@ -59,9 +80,14 @@ export function useRouter(): void {
         // 1. Apply session first (may trigger async operations)
         if (route.sessionId) {
           const currentSessionId = useSessionUIStore.getState().currentSessionId;
-          if (route.sessionId !== currentSessionId) {
-            await setCurrentSession(route.sessionId);
+          const currentDirectory = useSessionUIStore.getState().getDirectoryForSession(route.sessionId);
+          if (route.sessionId !== currentSessionId || !currentDirectory) {
+            applyRoutedSessionSelection(route.sessionId);
+          } else {
+            pendingRoutedSessionId = null;
           }
+        } else {
+          pendingRoutedSessionId = null;
         }
 
         // 2. Handle settings (takes precedence over tabs - it's a full-screen overlay)
@@ -69,7 +95,7 @@ export function useRouter(): void {
           setSettingsPage(resolveSettingsSlug(route.settingsPath));
           setSettingsDialogOpen(true);
           // Don't process tab when settings is open
-          return;
+          return pendingRoutedSessionId === null;
         }
 
         // Close settings if URL has no settings section
@@ -86,11 +112,12 @@ export function useRouter(): void {
         if (route.diffFile && (route.tab === 'diff' || !route.tab)) {
           navigateToDiff(route.diffFile);
         }
+        return pendingRoutedSessionId === null;
       } finally {
         isApplyingRouteRef.current = false;
       }
     },
-    [setCurrentSession, setActiveMainTab, setSettingsDialogOpen, setSettingsPage, navigateToDiff]
+    [setActiveMainTab, setSettingsDialogOpen, setSettingsPage, navigateToDiff]
   );
 
   /**
@@ -141,16 +168,41 @@ export function useRouter(): void {
 
     // Apply the initial route
     const initializeRoute = async () => {
-      await applyRoute(route);
+      const sessionResolved = await applyRoute(route);
 
       // After applying, update URL to normalized form (use replaceState)
-      if (!isVSCode) {
+      if (!isVSCode && sessionResolved) {
         syncURLFromState({ replace: true });
       }
     };
 
     void initializeRoute();
   }, [applyRoute, isVSCode, syncURLFromState]);
+
+  // Cold deep links can arrive before the global session snapshot. Reconcile
+  // the pending identity as soon as either global metadata or a routing hint
+  // becomes authoritative, without temporarily rewriting the URL.
+  React.useEffect(() => {
+    const reconcilePendingSession = () => {
+      const sessionId = pendingRoutedSessionId;
+      if (!sessionId) return;
+      isApplyingRouteRef.current = true;
+      try {
+        if (!applyRoutedSessionSelection(sessionId)) return;
+      } finally {
+        isApplyingRouteRef.current = false;
+      }
+      if (!isVSCode) syncURLFromState({ replace: true });
+    };
+
+    reconcilePendingSession();
+    const unsubscribeGlobal = useGlobalSessionsStore.subscribe(reconcilePendingSession);
+    const unsubscribeSession = useSessionUIStore.subscribe(reconcilePendingSession);
+    return () => {
+      unsubscribeGlobal();
+      unsubscribeSession();
+    };
+  }, [isVSCode, syncURLFromState]);
 
   // Subscribe to session changes
   React.useEffect(() => {
@@ -169,6 +221,7 @@ export function useRouter(): void {
       }
 
       prevSessionId = sessionId;
+      pendingRoutedSessionId = null;
       syncURLFromState();
     });
 
@@ -226,6 +279,7 @@ export function useRouter(): void {
       if (hasRouteParams()) {
         void applyRoute(route);
       } else {
+        pendingRoutedSessionId = null;
         // URL has no route params - this might be a "back to home" navigation
         // Close settings if open, keep current session
         const uiState = useUIStore.getState();
@@ -261,7 +315,7 @@ export function navigateToRoute(route: Partial<RouteState>): void {
   if (win.__VSCODE_CONFIG__ !== undefined) {
     // In VS Code, just apply state changes directly
     if (route.sessionId) {
-      void useSessionUIStore.getState().setCurrentSession(route.sessionId);
+      applyRoutedSessionSelection(route.sessionId);
     }
     if (route.settingsPath) {
       useUIStore.getState().setSettingsPage(resolveSettingsSlug(route.settingsPath));
@@ -300,7 +354,7 @@ export function navigateToRoute(route: Partial<RouteState>): void {
 
   // Also apply to state
   if (route.sessionId) {
-    void useSessionUIStore.getState().setCurrentSession(route.sessionId);
+    applyRoutedSessionSelection(route.sessionId);
   }
   if (route.settingsPath) {
     useUIStore.getState().setSettingsPage(resolveSettingsSlug(route.settingsPath));

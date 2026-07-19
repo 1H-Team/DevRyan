@@ -6,6 +6,7 @@ import {
   createManagedTaskRecord,
   type ManagedOrchestrationState,
   type ManagedTaskExecutorResult,
+  type ManagedTaskScheduler,
 } from '@openchamber/orchestration-runtime';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -95,6 +96,55 @@ afterEach(async () => {
 });
 
 describe('VS Code managed orchestration owner', () => {
+  it('matches web validation and clamping for private wait slices', async () => {
+    const task = queuedTask(1);
+    const waitForTask = vi.fn<ManagedTaskScheduler['waitForTask']>(async () => task);
+    const scheduler = {
+      initialize: vi.fn(async () => undefined),
+      getTask: vi.fn(() => task),
+      getResultEnvelope: vi.fn(() => null),
+      waitForTask,
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    } as unknown as ManagedTaskScheduler;
+    const runtime = createVsCodeManagedOrchestrationRuntime({
+      storageDirectory: '/unused',
+      scheduler,
+      persistence: createPersistence(),
+      executor: {
+        async start() { throw new Error('must not start'); },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' as const }; },
+        async readRecoverableResult() { return {}; },
+      },
+    });
+    const waitParams = {
+      taskId: task.taskId,
+      rootSessionId: 'ses_root',
+      directory: '/workspace',
+    };
+
+    await runtime.handleRpc({ method: 'wait', params: waitParams });
+    await runtime.handleRpc({ method: 'wait', params: { ...waitParams, waitTimeoutMs: 1 } });
+    await runtime.handleRpc({ method: 'wait', params: { ...waitParams, waitTimeoutMs: 30_000 } });
+
+    expect(waitForTask.mock.calls.map(([, options]) => options)).toEqual([
+      { signal: undefined },
+      { signal: undefined, timeoutMs: 1 },
+      { signal: undefined, timeoutMs: 25_000 },
+    ]);
+
+    for (const waitTimeoutMs of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, null, '1000', Number.MAX_SAFE_INTEGER + 1]) {
+      await expect(runtime.handleRpc({
+        method: 'wait',
+        params: { ...waitParams, waitTimeoutMs },
+      })).rejects.toMatchObject({ code: 'invalid_request', statusCode: 400 });
+    }
+    expect(waitForTask).toHaveBeenCalledTimes(3);
+    await runtime.shutdown();
+  });
+
   it('matches the web handoff validation and safe task projection', async () => {
     const runs: Array<{ result: ReturnType<typeof deferred> }> = [];
     const runtime = createVsCodeManagedOrchestrationRuntime({
@@ -279,7 +329,7 @@ describe('VS Code managed orchestration owner', () => {
     await expect(fetch(environment.DEVRYAN_ORCHESTRATION_URL)).rejects.toThrow();
   });
 
-  it('owns one three-slot scheduler and keeps projections prompt-free', async () => {
+  it('owns one unbounded scheduler with immediate admission and prompt-free projections', async () => {
     const runs: Array<{ taskId: string; prompt: string; result: ReturnType<typeof deferred> }> = [];
     const events: unknown[] = [];
     const runtime = createVsCodeManagedOrchestrationRuntime({
@@ -314,23 +364,69 @@ describe('VS Code managed orchestration owner', () => {
       if (index === 1) params.prompt = '  preserve RPC prompt whitespace\n';
       submitted.push(await runtime.handleRpc({ method: 'submit', params }));
     }
+    submitted.push(await runtime.handleRpc({
+      method: 'submit',
+      params: submitParams(6, { rootSessionId: 'ses_second_root' }),
+    }));
     await runtime.flush();
 
     expect(runs.map((run) => run.taskId)).toEqual([
       'dvr_task_vscode_1',
       'dvr_task_vscode_2',
       'dvr_task_vscode_3',
+      'dvr_task_vscode_4',
+      'dvr_task_vscode_5',
+      'dvr_task_vscode_6',
     ]);
     expect(runs[0].prompt).toBe('  preserve RPC prompt whitespace\n');
-    expect(getTask(submitted[3]).status).toBe('queued');
-    expect(getTask(submitted[4]).status).toBe('queued');
+    expect(getTask(submitted[3]).status).toBe('starting');
+    expect(getTask(submitted[4]).status).toBe('starting');
+    expect(getTask(submitted[5]).status).toBe('starting');
     expect(submitted.every((result) => getTask(result).timeoutAt === 1_801_000)).toBe(true);
     expect(submitted.every((result) => !('prompt' in getTask(result)))).toBe(true);
     expect(events.length).toBeGreaterThan(0);
 
     runs[0].result.resolve({ status: 'completed', recoverablePreview: 'done' });
     await runtime.flush();
-    expect(runs[3].taskId).toBe('dvr_task_vscode_4');
+    expect(runs).toHaveLength(6);
+    await runtime.shutdown();
+  });
+
+  it('projects exhausted usage as immediate manual recovery with web-runtime parity', async () => {
+    const runtime = createVsCodeManagedOrchestrationRuntime({
+      storageDirectory: '/unused',
+      persistence: createPersistence(),
+      executor: {
+        async start() { return { status: 'failed' as const, failureReason: 'out of usage', resumable: true }; },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' as const }; },
+        async readRecoverableResult() { return {}; },
+      },
+      createTaskId: () => 'dvr_task_usage_limit',
+      createLeaseToken: () => 'dvr_lease_usage_limit',
+      now: () => 1_000,
+    });
+    const submitted = await runtime.handleRpc({
+      method: 'submit',
+      params: submitParams(1, {
+        childSessionId: 'ses_child_usage_limit',
+        dispatchGroupId: 'msg_parent',
+      }),
+    });
+    await runtime.flush();
+
+    const status = await runtime.handleRpc({
+      method: 'status',
+      params: { taskId: getTask(submitted).taskId, rootSessionId: 'ses_root' },
+    }) as { task: Record<string, unknown>; resultEnvelope: Record<string, unknown> };
+
+    expect(status.task).toMatchObject({
+      status: 'failed',
+      failureReason: 'out of usage',
+      failureKind: 'provider_usage_limit',
+      agentRetryAvailable: true,
+    });
+    expect(status.resultEnvelope).toMatchObject({ resumable: true, action: null });
     await runtime.shutdown();
   });
 
@@ -565,6 +661,7 @@ describe('VS Code managed orchestration owner', () => {
         parts: [{ type: 'text', text: 'cursor result' }],
       }]),
       abortSession: vi.fn(async () => true),
+      deleteSessionState: vi.fn(async () => true),
     };
     const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
@@ -594,7 +691,10 @@ describe('VS Code managed orchestration owner', () => {
       pollIntervalMs: 0,
       idleStablePolls: 1,
     });
-    const control = { async setChildSessionId() {}, async markAccepted() {} };
+    const control = {
+      async setChildSessionId() { return true; },
+      async markAccepted() { return true; },
+    };
 
     const normal = await executor.start({
       ...queuedTask(1),
@@ -617,5 +717,79 @@ describe('VS Code managed orchestration owner', () => {
     }, control);
     expect(cursor.recoverablePreview).toBe('cursor result');
     expect(cursorSdkRuntime.handlePromptAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the scheduler abort signal for a normal-provider abort request', async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      requests.push({ url: String(input), init });
+      return new Response(null, { status: 204 });
+    });
+    const executor = createVsCodeManagedOpenCodeExecutor({
+      manager: {
+        getApiUrl: () => 'http://127.0.0.1:4096',
+        getOpenCodeAuthHeaders: () => ({ authorization: 'Basic opaque' }),
+      },
+      fetchImpl,
+    });
+    const controller = new AbortController();
+
+    await expect(executor.abort({
+      ...queuedTask(3),
+      childSessionId: 'ses_abort_signal',
+    }, { signal: controller.signal })).resolves.toEqual({ aborted: true });
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0].init?.signal).toBe(controller.signal);
+  });
+
+  it('discards a stale Cursor child through both authoritative owners before prompting', async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const cursorSdkRuntime = {
+      handlePromptAsync: vi.fn(async () => ({ handled: true, status: 204 })),
+      getSessionStatus: vi.fn(() => ({})),
+      getSessionMessages: vi.fn(async () => []),
+      abortSession: vi.fn(async () => true),
+      deleteSessionState: vi.fn(async () => true),
+    };
+    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      requests.push({ url, init });
+      const pathname = new URL(url).pathname;
+      if (pathname === '/session' && init?.method === 'POST') {
+        return new Response(JSON.stringify({ id: 'ses_stale_cursor' }), { status: 200 });
+      }
+      if (pathname === '/session/ses_stale_cursor' && init?.method === 'DELETE') {
+        return new Response(null, { status: 204 });
+      }
+      throw new Error(`unexpected request ${init?.method} ${pathname}`);
+    });
+    const executor = createVsCodeManagedOpenCodeExecutor({
+      manager: {
+        getApiUrl: () => 'http://127.0.0.1:4096',
+        getOpenCodeAuthHeaders: () => ({ authorization: 'Basic opaque' }),
+      },
+      cursorSdkRuntime,
+      fetchImpl,
+    });
+
+    await expect(executor.start({
+      ...queuedTask(3),
+      providerId: 'cursor-acp',
+      modelId: 'composer-2',
+      agent: 'builder',
+      label: 'Stale Cursor child',
+    }, {
+      async setChildSessionId() { return false; },
+      async markAccepted() { throw new Error('must not accept'); },
+    })).rejects.toThrow('lost launch ownership before provider prompt');
+
+    expect(cursorSdkRuntime.handlePromptAsync).not.toHaveBeenCalled();
+    expect(cursorSdkRuntime.abortSession).toHaveBeenCalledWith('ses_stale_cursor');
+    expect(cursorSdkRuntime.deleteSessionState).toHaveBeenCalledWith('ses_stale_cursor');
+    expect(requests.map(({ url, init }) => [new URL(url).pathname, init?.method])).toEqual([
+      ['/session', 'POST'],
+      ['/session/ses_stale_cursor', 'DELETE'],
+    ]);
   });
 });

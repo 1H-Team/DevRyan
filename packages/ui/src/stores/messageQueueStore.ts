@@ -25,6 +25,11 @@ export interface QueuedMessage {
     };
 }
 
+export interface QueuedMessageClaim {
+    message: QueuedMessage;
+    index: number;
+}
+
 interface MessageQueueState {
     queuedMessages: Record<string, QueuedMessage[]>; // sessionId → queue
     queueModeEnabled: boolean; // global toggle
@@ -33,6 +38,8 @@ interface MessageQueueState {
 interface MessageQueueActions {
     addToQueue: (sessionId: string, message: Omit<QueuedMessage, 'id' | 'createdAt'>) => void;
     removeFromQueue: (sessionId: string, messageId: string) => void;
+    claimMessageForSession: (sessionId: string, messageId: string) => QueuedMessageClaim | null;
+    restoreClaimedMessage: (sessionId: string, claim: QueuedMessageClaim) => void;
     claimQueueForSession: (sessionId: string) => QueuedMessage[];
     restoreClaimedQueue: (sessionId: string, messages: QueuedMessage[]) => void;
     popToInput: (sessionId: string, messageId: string) => QueuedMessage | null;
@@ -88,6 +95,53 @@ export const useMessageQueueStore = create<MessageQueueStore>()(
                             queuedMessages: {
                                 ...state.queuedMessages,
                                 [sessionId]: newQueue,
+                            },
+                        };
+                    });
+                },
+
+                claimMessageForSession: (sessionId, messageId) => {
+                    let claim: QueuedMessageClaim | null = null;
+                    set((state) => {
+                        const currentQueue = state.queuedMessages[sessionId] ?? [];
+                        const index = currentQueue.findIndex((message) => message.id === messageId);
+                        if (index < 0) {
+                            return state;
+                        }
+
+                        const message = currentQueue[index];
+                        claim = { message, index };
+                        const newQueue = currentQueue.filter((_, queueIndex) => queueIndex !== index);
+                        if (newQueue.length === 0) {
+                            const { [sessionId]: _removed, ...rest } = state.queuedMessages;
+                            void _removed;
+                            return { queuedMessages: rest };
+                        }
+
+                        return {
+                            queuedMessages: {
+                                ...state.queuedMessages,
+                                [sessionId]: newQueue,
+                            },
+                        };
+                    });
+                    return claim;
+                },
+
+                restoreClaimedMessage: (sessionId, claim) => {
+                    set((state) => {
+                        const currentQueue = state.queuedMessages[sessionId] ?? [];
+                        if (currentQueue.some((message) => message.id === claim.message.id)) {
+                            return state;
+                        }
+
+                        const insertionIndex = Math.min(Math.max(claim.index, 0), currentQueue.length);
+                        const restoredQueue = [...currentQueue];
+                        restoredQueue.splice(insertionIndex, 0, claim.message);
+                        return {
+                            queuedMessages: {
+                                ...state.queuedMessages,
+                                [sessionId]: restoredQueue,
                             },
                         };
                     });

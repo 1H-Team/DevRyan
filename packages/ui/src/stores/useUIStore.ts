@@ -27,6 +27,7 @@ type ContextPanelTab = {
   id: string;
   mode: ContextPanelMode;
   targetPath: string | null;
+  displayUrl: string | null;
   dedupeKey: string;
   label: string | null;
   touchedAt: number;
@@ -46,6 +47,13 @@ type ContextPanelDirectoryState = {
   activeTabId: string | null;
   width: number;
   touchedAt: number;
+};
+
+type ContextPlanMotionRequest = {
+  id: number;
+  directory: string;
+  direction: 'enter' | 'exit';
+  closeTabID?: string;
 };
 
 type PendingFileNavigation = {
@@ -244,6 +252,7 @@ const createContextPanelTab = (descriptor: ContextPanelTabDescriptor): ContextPa
     id: buildContextPanelTabID(descriptor.mode, dedupeKey),
     mode: descriptor.mode,
     targetPath: normalizedTargetPath,
+    displayUrl: descriptor.mode === 'preview' ? normalizedTargetPath : null,
     dedupeKey,
     label: normalizeContextTabLabel(descriptor.label),
     touchedAt: Date.now(),
@@ -282,6 +291,7 @@ const sanitizeContextPanelTabs = (tabs: unknown): ContextPanelTab[] => {
     const candidate = entry as {
       mode?: unknown;
       targetPath?: unknown;
+      displayUrl?: unknown;
       dedupeKey?: unknown;
       label?: unknown;
       touchedAt?: unknown;
@@ -307,6 +317,9 @@ const sanitizeContextPanelTabs = (tabs: unknown): ContextPanelTab[] => {
       id,
       mode: candidate.mode,
       targetPath,
+      displayUrl: candidate.mode === 'preview'
+        ? normalizeContextTargetPath(typeof candidate.displayUrl === 'string' ? candidate.displayUrl : targetPath)
+        : null,
       dedupeKey,
       label: normalizeContextTabLabel(typeof candidate.label === 'string' ? candidate.label : null),
       touchedAt: typeof candidate.touchedAt === 'number' && Number.isFinite(candidate.touchedAt)
@@ -365,6 +378,7 @@ const upsertContextPanelTab = (
           ...tab,
           mode: nextTab.mode,
           targetPath: nextTab.targetPath,
+          displayUrl: nextTab.displayUrl,
           dedupeKey: nextTab.dedupeKey,
           label: nextTab.label,
           touchedAt: Date.now(),
@@ -521,6 +535,8 @@ interface UIStore {
   hasManuallyResizedRightSidebar: boolean;
   rightSidebarTab: RightSidebarTab;
   contextPanelByDirectory: Record<string, ContextPanelDirectoryState>;
+  contextPlanMotionRequest: ContextPlanMotionRequest | null;
+  contextPlanMotionSequence: number;
   isBottomTerminalOpen: boolean;
   isBottomTerminalExpanded: boolean;
   bottomTerminalHeight: number;
@@ -642,8 +658,13 @@ interface UIStore {
   openContextFile: (directory: string, filePath: string) => void;
   openContextFileAtLine: (directory: string, filePath: string, line: number, column?: number) => void;
   openContextOverview: (directory: string) => void;
-  openContextPlan: (directory: string) => void;
+  openContextPlan: (directory: string, targetPath?: string | null) => void;
+  toggleContextPlan: (directory: string, targetPath?: string | null) => void;
+  requestContextPanelClose: (directory: string) => void;
+  requestContextPanelTabClose: (directory: string, tabID: string) => void;
+  consumeContextPlanMotionRequest: (requestID: number) => void;
   openContextPreview: (directory: string, url: string) => void;
+  setContextPreviewDisplayUrl: (directory: string, tabID: string, url: string) => void;
   setActiveContextPanelTab: (directory: string, tabID: string) => void;
   reorderContextPanelTabs: (directory: string, activeTabID: string, overTabID: string) => void;
   closeContextPanelTab: (directory: string, tabID: string) => void;
@@ -784,6 +805,8 @@ export const useUIStore = create<UIStore>()(
         hasManuallyResizedRightSidebar: false,
         rightSidebarTab: 'git',
         contextPanelByDirectory: {},
+        contextPlanMotionRequest: null,
+        contextPlanMotionSequence: 0,
         isBottomTerminalOpen: false,
         isBottomTerminalExpanded: false,
         bottomTerminalHeight: 300,
@@ -1047,13 +1070,143 @@ export const useUIStore = create<UIStore>()(
           get().openContextPanelTab(normalizedDirectory, { mode: 'context' });
         },
 
-        openContextPlan: (directory) => {
+        openContextPlan: (directory, targetPath) => {
           const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
           if (!normalizedDirectory) {
             return;
           }
 
-          get().openContextPanelTab(normalizedDirectory, { mode: 'plan' });
+          set((state) => {
+            const prev = state.contextPanelByDirectory[normalizedDirectory];
+            const current = touchContextPanelState(prev);
+            const wasVisible = current.isOpen && current.activeTabId !== null && current.tabs.length > 0;
+            const byDirectory = {
+              ...state.contextPanelByDirectory,
+              [normalizedDirectory]: upsertContextPanelTab(current, { mode: 'plan', targetPath }),
+            };
+
+            if (wasVisible) {
+              return { contextPanelByDirectory: clampContextPanelRoots(byDirectory, 20) };
+            }
+
+            const nextSequence = state.contextPlanMotionSequence + 1;
+            return {
+              contextPanelByDirectory: clampContextPanelRoots(byDirectory, 20),
+              contextPlanMotionRequest: {
+                id: nextSequence,
+                directory: normalizedDirectory,
+                direction: 'enter',
+              },
+              contextPlanMotionSequence: nextSequence,
+            };
+          });
+        },
+
+        toggleContextPlan: (directory, targetPath) => {
+          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          if (!normalizedDirectory) {
+            return;
+          }
+
+          const panelState = get().contextPanelByDirectory[normalizedDirectory];
+          const activeTab = panelState?.tabs.find((tab) => tab.id === panelState.activeTabId)
+            ?? panelState?.tabs[panelState.tabs.length - 1]
+            ?? null;
+          if (panelState?.isOpen && activeTab?.mode === 'plan') {
+            get().requestContextPanelClose(normalizedDirectory);
+            return;
+          }
+
+          get().openContextPlan(normalizedDirectory, targetPath);
+        },
+
+        requestContextPanelClose: (directory) => {
+          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          if (!normalizedDirectory) {
+            return;
+          }
+
+          set((state) => {
+            const prev = state.contextPanelByDirectory[normalizedDirectory];
+            if (!prev || !prev.isOpen) {
+              return state;
+            }
+
+            const current = touchContextPanelState(prev);
+            const activeTab = current.tabs.find((tab) => tab.id === current.activeTabId)
+              ?? current.tabs[current.tabs.length - 1]
+              ?? null;
+            if (activeTab?.mode !== 'plan') {
+              const byDirectory = {
+                ...state.contextPanelByDirectory,
+                [normalizedDirectory]: {
+                  ...current,
+                  isOpen: false,
+                },
+              };
+              return { contextPanelByDirectory: clampContextPanelRoots(byDirectory, 20) };
+            }
+
+            const nextSequence = state.contextPlanMotionSequence + 1;
+            return {
+              contextPlanMotionRequest: {
+                id: nextSequence,
+                directory: normalizedDirectory,
+                direction: 'exit',
+              },
+              contextPlanMotionSequence: nextSequence,
+            };
+          });
+        },
+
+        requestContextPanelTabClose: (directory, tabID) => {
+          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedTabID = (tabID || '').trim();
+          if (!normalizedDirectory || !normalizedTabID) {
+            return;
+          }
+
+          set((state) => {
+            const prev = state.contextPanelByDirectory[normalizedDirectory];
+            const current = touchContextPanelState(prev);
+            const targetTab = current.tabs.find((tab) => tab.id === normalizedTabID);
+            if (!targetTab) {
+              return state;
+            }
+
+            const shouldAnimatePanelExit = current.isOpen
+              && current.tabs.length === 1
+              && current.activeTabId === normalizedTabID
+              && targetTab.mode === 'plan';
+            if (!shouldAnimatePanelExit) {
+              const byDirectory = {
+                ...state.contextPanelByDirectory,
+                [normalizedDirectory]: closeContextPanelTab(current, normalizedTabID),
+              };
+              return { contextPanelByDirectory: clampContextPanelRoots(byDirectory, 20) };
+            }
+
+            const nextSequence = state.contextPlanMotionSequence + 1;
+            return {
+              contextPlanMotionRequest: {
+                id: nextSequence,
+                directory: normalizedDirectory,
+                direction: 'exit',
+                closeTabID: normalizedTabID,
+              },
+              contextPlanMotionSequence: nextSequence,
+            };
+          });
+        },
+
+        consumeContextPlanMotionRequest: (requestID) => {
+          set((state) => {
+            if (state.contextPlanMotionRequest?.id !== requestID) {
+              return state;
+            }
+
+            return { contextPlanMotionRequest: null };
+          });
         },
 
         openContextPreview: (directory, url) => {
@@ -1078,6 +1231,38 @@ export const useUIStore = create<UIStore>()(
             targetPath: normalizedUrl,
             dedupeKey: normalizedUrl,
             label,
+          });
+        },
+
+        setContextPreviewDisplayUrl: (directory, tabID, url) => {
+          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedTabID = (tabID || '').trim();
+          const normalizedUrl = normalizeContextTargetPath(url);
+          if (!normalizedDirectory || !normalizedTabID || !normalizedUrl) {
+            return;
+          }
+
+          set((state) => {
+            const current = state.contextPanelByDirectory[normalizedDirectory];
+            if (!current) {
+              return state;
+            }
+
+            const tabIndex = current.tabs.findIndex((tab) => tab.id === normalizedTabID && tab.mode === 'preview');
+            const currentTab = current.tabs[tabIndex];
+            if (tabIndex === -1 || !currentTab || currentTab.displayUrl === normalizedUrl) {
+              return state;
+            }
+
+            const tabs = current.tabs.map((tab, index) => (
+              index === tabIndex ? { ...tab, displayUrl: normalizedUrl } : tab
+            ));
+            return {
+              contextPanelByDirectory: {
+                ...state.contextPanelByDirectory,
+                [normalizedDirectory]: { ...current, tabs },
+              },
+            };
           });
         },
 

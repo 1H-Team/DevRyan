@@ -12,7 +12,7 @@ import { promisify } from 'node:util';
 import updaterPkg from 'electron-updater';
 import { ElectronSshManager } from './ssh-manager.mjs';
 import { MacosSpeechManager } from './speech-manager.mjs';
-import { clearElectronRuntimeCaches } from './cache-maintenance.mjs';
+import { clearElectronRuntimeCaches, getElectronRuntimeCacheInfo } from './cache-maintenance.mjs';
 import { createKeepAwakeController } from './keep-awake-controller.mjs';
 import { finishQuitAfterCleanup } from './quit-cleanup.mjs';
 import { persistWindowState } from './window-state-persistence.mjs';
@@ -1939,12 +1939,19 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
     case 'desktop_macos_speech_cancel':
       return speechManager.cancel();
 
-    case 'desktop_clear_cache':
-      await session.defaultSession.clearStorageData();
-      for (const browserWindow of BrowserWindow.getAllWindows()) {
-        browserWindow.webContents.reload();
+    case 'desktop_get_cache_info':
+      return getElectronRuntimeCacheInfo({ defaultSession: session.defaultSession });
+
+    case 'desktop_clear_cache': {
+      const result = await clearElectronRuntimeCaches({
+        defaultSession: session.defaultSession,
+        log,
+      });
+      if (!result.ok) {
+        throw new Error('Failed to clear application cache');
       }
-      return null;
+      return getElectronRuntimeCacheInfo({ defaultSession: session.defaultSession });
+    }
 
     case 'desktop_open_path': {
       const targetPath = typeof args.path === 'string' ? args.path.trim() : '';
@@ -2455,7 +2462,14 @@ const buildMacMenu = () => {
         { label: 'Keyboard Shortcuts', accelerator: 'Cmd+.', click: () => dispatchAction('help-dialog') },
         { label: 'Show Diagnostics', accelerator: 'Cmd+Shift+L', click: () => dispatchAction('download-logs') },
         { type: 'separator' },
-        { label: 'Clear Cache', click: () => void handleInvoke(null, 'desktop_clear_cache') },
+        {
+          label: 'Clear Cache',
+          click: () => {
+            void handleInvoke(null, 'desktop_clear_cache').catch((error) => {
+              log.warn('[electron] failed to clear cache from menu:', error);
+            });
+          },
+        },
         { type: 'separator' },
         { label: 'Report a Bug', click: () => shell.openExternal(GITHUB_BUG_REPORT_URL) },
         { label: 'Request a Feature', click: () => shell.openExternal(GITHUB_FEATURE_REQUEST_URL) },

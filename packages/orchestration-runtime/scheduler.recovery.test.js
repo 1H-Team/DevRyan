@@ -172,7 +172,7 @@ describe('managed scheduler restart recovery', () => {
     expect(task.recoverablePreview).toBe('work recovered before restart');
   });
 
-  test('keeps queued order and only dispatches up to capacity after restart', async () => {
+  test('keeps queued order and dispatches every recovered task after restart', async () => {
     const starts = [];
     const never = new Promise(() => {});
     const scheduler = createManagedTaskScheduler({
@@ -201,9 +201,15 @@ describe('managed scheduler restart recovery', () => {
 
     await scheduler.initialize();
 
-    expect(starts).toEqual(['dvr_task_1', 'dvr_task_2', 'dvr_task_3']);
-    expect(scheduler.getTask('dvr_task_4').status).toBe('queued');
-    expect(scheduler.getTask('dvr_task_5').status).toBe('queued');
+    expect(starts).toEqual([
+      'dvr_task_1',
+      'dvr_task_2',
+      'dvr_task_3',
+      'dvr_task_4',
+      'dvr_task_5',
+    ]);
+    expect(scheduler.getTask('dvr_task_4').status).toBe('starting');
+    expect(scheduler.getTask('dvr_task_5').status).toBe('starting');
   });
 
   test('does not publish or retain a task when its durable save fails', async () => {

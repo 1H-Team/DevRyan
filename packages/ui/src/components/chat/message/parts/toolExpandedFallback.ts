@@ -1,3 +1,5 @@
+import { coerceRuntimeText } from './runtimeText';
+
 export type ToolExpandedPrimaryKind = 'structured' | 'input' | 'output' | 'failure' | 'empty';
 
 export type ToolExpandedDetails = {
@@ -52,11 +54,12 @@ const readFailureReason = (error: unknown): string | undefined => {
     const record = error as Record<string, unknown>;
     for (const key of ['message', 'error', 'reason']) {
         const value = record[key];
-        if (typeof value === 'string' && value.trim()) {
-            return value.trim();
+        const text = coerceRuntimeText(value).trim();
+        if (text) {
+            return text;
         }
     }
-    return undefined;
+    return coerceRuntimeText(error).trim() || undefined;
 };
 
 const hasText = (value: unknown): boolean => typeof value === 'string' && value.trim().length > 0;

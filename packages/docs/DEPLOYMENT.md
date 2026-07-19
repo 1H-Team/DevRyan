@@ -17,7 +17,7 @@ Triggers:
 Outputs:
 
 - validates docs (`bun run docs:validate`)
-- creates `openchamber-docs-source-<sha>.tar.gz`
+- creates `DevRyan-docs-source-<sha>.tar.gz`
 - uploads archive as workflow artifact
 - on release/manual with tag, uploads archive to release assets
 

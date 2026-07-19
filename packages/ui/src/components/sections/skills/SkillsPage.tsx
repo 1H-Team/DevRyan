@@ -5,7 +5,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui';
 import { useSkillsStore, type SkillConfig, type SupportingFile, type PendingFile } from '@/stores/useSkillsStore';
 import { useShallow } from 'zustand/react/shallow';
-import { RiAddLine, RiBookOpenLine, RiDeleteBinLine, RiFileLine, RiUser3Line } from '@remixicon/react';
+import { RiAddLine, RiBookOpenLine, RiDeleteBinLine, RiFileLine, RiFolderReceivedLine, RiUser3Line } from '@remixicon/react';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import {
   Dialog,
@@ -22,6 +22,8 @@ import {
   type SkillLocationValue,
 } from './skillLocations';
 import { useI18n } from '@/lib/i18n';
+import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
+import { revealSkillPath } from './skillPathReveal';
 
 export interface SkillsPageProps {
   view?: 'installed' | 'catalog';
@@ -42,6 +44,7 @@ const SkillsCatalogStandalone: React.FC = () => {
 
 const SkillsInstalledPage: React.FC = () => {
   const { t } = useI18n();
+  const { files } = useRuntimeAPIs();
   const {
     selectedSkillName,
     getSelectedSkill,
@@ -95,6 +98,7 @@ const SkillsInstalledPage: React.FC = () => {
   const [originalFileContent, setOriginalFileContent] = React.useState('');
   const [deleteFilePath, setDeleteFilePath] = React.useState<string | null>(null);
   const [isDeletingFile, setIsDeletingFile] = React.useState(false);
+  const [isRevealingPath, setIsRevealingPath] = React.useState(false);
   
   const hasSkillChanges = isNewSkill 
     ? (draftName.trim() !== '' || description.trim() !== '' || instructions.trim() !== '' || pendingFiles.length > 0)
@@ -211,6 +215,25 @@ const SkillsInstalledPage: React.FC = () => {
       toast.error(t('settings.skills.page.toast.saveUnexpectedError'));
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleRevealPath = async () => {
+    const skillPath = selectedSkill?.path;
+    const revealPath = files.revealPath;
+    if (!skillPath || !revealPath || isRevealingPath) {
+      return;
+    }
+
+    setIsRevealingPath(true);
+    try {
+      await revealSkillPath(
+        (path) => revealPath(path),
+        skillPath,
+        () => toast.error(t('settings.skills.page.toast.openPathFailed')),
+      );
+    } finally {
+      setIsRevealingPath(false);
     }
   };
 
@@ -414,10 +437,25 @@ const SkillsInstalledPage: React.FC = () => {
             {!isNewSkill && selectedSkill?.path && (
               <div className="py-1.5">
                 <span className="typography-ui-label text-foreground">{t('settings.skills.page.field.path')}</span>
-                <div className="mt-1.5 rounded-md border border-border/50 bg-muted/40 px-2 py-1.5">
-                  <p className="typography-meta break-all text-muted-foreground">
-                    {formatSkillPath(selectedSkill.path)}
-                  </p>
+                <div className="mt-1.5 flex items-start gap-2 max-[800px]:flex-col max-[800px]:items-stretch">
+                  <div className="min-w-0 flex-1 rounded-md border border-border/50 bg-muted/40 px-2 py-1.5">
+                    <p className="typography-meta min-w-0 [overflow-wrap:anywhere] text-muted-foreground">
+                      {formatSkillPath(selectedSkill.path)}
+                    </p>
+                  </div>
+                  {files.revealPath && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      className="!font-normal max-[800px]:self-end"
+                      onClick={() => void handleRevealPath()}
+                      disabled={isRevealingPath}
+                    >
+                      <RiFolderReceivedLine />
+                      {t('settings.skills.page.actions.openPath')}
+                    </Button>
+                  )}
                 </div>
               </div>
             )}

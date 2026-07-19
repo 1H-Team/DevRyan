@@ -1,7 +1,26 @@
 import { describe, expect, test } from "bun:test"
-import { ChildStoreManager } from "./child-store"
+import {
+  ChildStoreManager,
+  getActiveDirectoryStoreKeys,
+  shouldBootstrapDirectorySubscription,
+} from "./child-store"
 
 describe("ChildStoreManager status subscriptions", () => {
+  test("grants bootstrap authority only to current-directory subscriptions", () => {
+    expect(shouldBootstrapDirectorySubscription(undefined, "/repo/active")).toBe(true)
+    expect(shouldBootstrapDirectorySubscription("/REPO/ACTIVE/", "/repo/active")).toBe(true)
+    expect(shouldBootstrapDirectorySubscription("C:\\Work\\Repo", "c:/work/repo/")).toBe(true)
+    expect(shouldBootstrapDirectorySubscription("/repo/inactive", "/repo/active")).toBe(false)
+    expect(shouldBootstrapDirectorySubscription("/repo/inactive", "")).toBe(false)
+  })
+
+  test("selects only the normalized active directory for provider recovery", () => {
+    const directories = ["/repo/inactive", "/REPO/ACTIVE/", "/repo/other"]
+
+    expect(getActiveDirectoryStoreKeys(directories, "/repo/active")).toEqual(["/REPO/ACTIVE/"])
+    expect(getActiveDirectoryStoreKeys(directories, "")).toEqual([])
+  })
+
   test("notifies for session status changes but not unrelated streaming state", () => {
     const childStores = new ChildStoreManager()
     const store = childStores.ensureChild("/test/project", { bootstrap: false })

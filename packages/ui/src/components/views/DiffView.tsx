@@ -30,6 +30,7 @@ import { getContextFileOpenFailureMessage, validateContextFileOpen } from '@/lib
 import { sessionEvents } from '@/lib/sessionEvents';
 import { useI18n } from '@/lib/i18n';
 import type { I18nKey } from '@/lib/i18n/store';
+import { getFirstChangedModifiedLineFromPatch } from '@/lib/diff/firstChangedLine';
 
 // Minimum width for side-by-side diff view (px)
 const SIDE_BY_SIDE_MIN_WIDTH = 1100;
@@ -155,24 +156,6 @@ const getFirstChangedModifiedLine = (original: string, modified: string): number
     }
 
     return 1;
-};
-
-const getFirstVisibleModifiedLineFromPatch = (patch: string): number | null => {
-    if (!patch) {
-        return null;
-    }
-
-    const match = patch.match(/@@\s*-\d+(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s*@@/m);
-    if (!match) {
-        return null;
-    }
-
-    const parsed = Number.parseInt(match[1], 10);
-    if (!Number.isFinite(parsed) || parsed < 1) {
-        return null;
-    }
-
-    return parsed;
 };
 
 const formatDiffTotals = (insertions?: number, deletions?: number) => {
@@ -1445,7 +1428,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
                         staged: selectedFileStaged && filePath === selectedFile,
                         contextLines: 3,
                     });
-                    targetLine = getFirstVisibleModifiedLineFromPatch(patchResponse.diff);
+                    targetLine = getFirstChangedModifiedLineFromPatch(patchResponse.diff);
                 } catch {
                     targetLine = null;
                 }

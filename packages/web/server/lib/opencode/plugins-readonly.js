@@ -1,6 +1,7 @@
 import os from 'os';
 import path from 'path';
 
+import { buildDevRyanDefaultPluginInventory } from './default-plugins.js';
 import { readConfigFile as defaultReadConfigFile } from './shared.js';
 
 const PLUGIN_FILE_NAME_PATTERN = /^[a-z0-9][a-z0-9-_.]*\.(js|ts|mjs|cjs)$/;
@@ -165,13 +166,17 @@ export const createPluginReadModel = (dependencies = {}) => {
     });
 
     const files = [
+      ...listPluginFilesForScope(fs, pathApi, 'user', pathApi.join(userConfigDir, 'plugin')),
       ...listPluginFilesForScope(fs, pathApi, 'user', pathApi.join(userConfigDir, 'plugins')),
       ...(workingDirectory
-        ? listPluginFilesForScope(fs, pathApi, 'project', pathApi.join(workingDirectory, '.opencode', 'plugins'))
+        ? [
+            ...listPluginFilesForScope(fs, pathApi, 'project', pathApi.join(workingDirectory, '.opencode', 'plugin')),
+            ...listPluginFilesForScope(fs, pathApi, 'project', pathApi.join(workingDirectory, '.opencode', 'plugins')),
+          ]
         : []),
     ];
 
-    return { entries, files, errors };
+    return { ...buildDevRyanDefaultPluginInventory({ entries, files }), errors };
   };
 
   return { listPlugins };

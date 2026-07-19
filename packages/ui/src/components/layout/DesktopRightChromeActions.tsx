@@ -33,6 +33,7 @@ import { desktopHostsGet, locationMatchesHost, redactSensitiveUrl } from '@/lib/
 import { useI18n } from '@/lib/i18n';
 import { DesktopServicesMenu } from '@/components/layout/DesktopServicesMenu';
 import { DESKTOP_HEADER_ICON_BUTTON_CLASS, HeaderIconActionButton } from '@/components/layout/headerIconButton';
+import { useSessionPlanFileStore } from '@/stores/useSessionPlanFileStore';
 
 const SidebarRightExpandIcon = (props: React.ComponentProps<typeof SidebarRightIcon>) => (
   <SidebarRightIcon {...props} chevronDirection="left" />
@@ -62,12 +63,16 @@ export const DesktopRightChromeActions: React.FC = () => {
   const toggleBottomTerminal = useUIStore((state) => state.toggleBottomTerminal);
   const toggleRightSidebar = useUIStore((state) => state.toggleRightSidebar);
   const isRightSidebarOpen = useUIStore((state) => state.isRightSidebarOpen);
-  const openContextPlan = useUIStore((state) => state.openContextPlan);
-  const closeContextPanel = useUIStore((state) => state.closeContextPanel);
+  const toggleContextPlan = useUIStore((state) => state.toggleContextPlan);
   const contextPanelByDirectory = useUIStore((state) => state.contextPanelByDirectory);
   const shortcutOverrides = useUIStore((state) => state.shortcutOverrides);
 
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
+  const savedPlanPath = useSessionPlanFileStore((state) => {
+    if (!currentSessionId) return null;
+    const record = state.recordsBySession[currentSessionId];
+    return record?.status === 'saved' ? record.path : null;
+  });
   const worktreePath = useSessionUIStore((state) => {
     if (!currentSessionId) return '';
     return state.worktreeMetadata.get(currentSessionId)?.path ?? '';
@@ -301,14 +306,8 @@ export const DesktopRightChromeActions: React.FC = () => {
       return;
     }
 
-    const panelState = contextPanelByDirectory[directory];
-    if (getActiveContextMode(panelState) === 'plan') {
-      closeContextPanel(directory);
-      return;
-    }
-
-    openContextPlan(directory);
-  }, [closeContextPanel, contextPanelByDirectory, openContextPlan, openDirectory]);
+    toggleContextPlan(directory, savedPlanPath);
+  }, [openDirectory, savedPlanPath, toggleContextPlan]);
 
   const isContextPlanActive = React.useMemo(() => {
     const directory = normalize(openDirectory || '');
@@ -326,10 +325,10 @@ export const DesktopRightChromeActions: React.FC = () => {
   const servicesTabs = React.useMemo(() => {
     const base: Array<{ value: 'instance' | 'usage' | 'mcp'; label: string; icon: RemixiconComponentType }> = [];
     base.push({ value: 'usage', label: t('layout.services.usage'), icon: RiBarChartLine });
+    base.push({ value: 'mcp', label: 'MCP', icon: McpIcon as unknown as RemixiconComponentType });
     if (isDesktopApp) {
       base.push({ value: 'instance', label: t('layout.services.instance'), icon: RiServerLine });
     }
-    base.push({ value: 'mcp', label: 'MCP', icon: McpIcon as unknown as RemixiconComponentType });
     return base;
   }, [isDesktopApp, t]);
 

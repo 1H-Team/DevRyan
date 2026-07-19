@@ -155,6 +155,7 @@ interface NotificationStore {
   markSessionViewed: (sessionId: string) => void
   markSessionsViewed: (sessionIds: string[]) => void
   markSessionCompletionsViewed: (sessionId: string) => void
+  removeSession: (sessionId: string) => void
   markProjectViewed: (directory: string) => void
 
   // Selectors
@@ -217,6 +218,16 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
     const next = current.list.map((n) =>
       n.session === sessionId && n.type === "turn-complete" && !n.viewed ? { ...n, viewed: true } : n,
     )
+    set({ list: next, index: buildIndex(next) })
+    persistCompletionNotifications(next)
+  },
+
+  removeSession: (sessionId) => {
+    if (!sessionId) return
+    const current = get()
+    const next = current.list.filter((notification) => notification.session !== sessionId)
+    if (next.length === current.list.length) return
+
     set({ list: next, index: buildIndex(next) })
     persistCompletionNotifications(next)
   },

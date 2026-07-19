@@ -6,6 +6,7 @@ import {
   ABORT_GUARD_TTL_MS,
   clearAbortGuard,
   clearAbortGuards,
+  filterSessionStatusSnapshotThroughAbortGuard,
   filterSessionStatusThroughAbortGuard,
   isAbortGuardActive,
   registerManualAbortGuard,
@@ -26,6 +27,22 @@ beforeEach(() => {
 })
 
 describe("filterSessionStatusThroughAbortGuard", () => {
+  test("preserves untouched status snapshots and only replaces guarded retries", () => {
+    const statuses = {
+      "ses_1": retryStatus,
+      "ses_2": busyStatus,
+    }
+
+    expect(filterSessionStatusSnapshotThroughAbortGuard(statuses)).toBe(statuses)
+
+    registerManualAbortGuard("ses_1")
+    const filtered = filterSessionStatusSnapshotThroughAbortGuard(statuses)
+
+    expect(filtered).not.toBe(statuses)
+    expect(filtered["ses_1"]).toEqual({ type: "idle" })
+    expect(filtered["ses_2"]).toBe(busyStatus)
+  })
+
   test("passes statuses through when no guard is registered", () => {
     expect(filterSessionStatusThroughAbortGuard("ses_1", retryStatus)).toBe(retryStatus)
     expect(filterSessionStatusThroughAbortGuard("ses_1", busyStatus)).toBe(busyStatus)
@@ -123,6 +140,50 @@ describe("filterSessionStatusThroughAbortGuard", () => {
     const afterTtl = Date.now() + ABORT_GUARD_TTL_MS + 1
     expect(filterSessionStatusThroughAbortGuard("ses_1", retryStatus, afterTtl)).toBe(retryStatus)
     expect(isAbortGuardActive("ses_1")).toBe(false)
+  })
+
+  test("keeps a stopped long-backoff retry guarded through its advertised deadline", async () => {
+    const calls: string[] = []
+    setAbortGuardExecutor(async (sessionId) => {
+      calls.push(sessionId)
+    })
+    const base = Date.now()
+    const longRetry = {
+      type: "retry",
+      attempt: 3,
+      message: "rate limited",
+      next: ABORT_GUARD_TTL_MS * 2,
+    } as SessionStatus
+
+    registerManualAbortGuard("ses_long", "/dir", longRetry, base)
+
+    const afterFixedWindow = base + ABORT_GUARD_TTL_MS + 1
+    expect(isAbortGuardActive("ses_long", afterFixedWindow)).toBe(true)
+    expect(filterSessionStatusThroughAbortGuard("ses_long", busyStatus, afterFixedWindow)).toBe(busyStatus)
+    await flushDeferred()
+    expect(calls).toEqual(["ses_long"])
+
+    const afterRetrySettlementWindow = base + ABORT_GUARD_TTL_MS * 3 + 1
+    expect(isAbortGuardActive("ses_long", afterRetrySettlementWindow)).toBe(false)
+  })
+
+  test("does not slide a relative retry deadline when the same status is repeated", () => {
+    const base = Date.now()
+    const longRetry = {
+      type: "retry",
+      attempt: 4,
+      message: "rate limited",
+      next: ABORT_GUARD_TTL_MS * 2,
+    } as SessionStatus
+
+    registerManualAbortGuard("ses_repeat", "/dir", longRetry, base)
+    expect(filterSessionStatusThroughAbortGuard(
+      "ses_repeat",
+      longRetry,
+      base + ABORT_GUARD_TTL_MS,
+    )).toEqual({ type: "idle" })
+
+    expect(isAbortGuardActive("ses_repeat", base + ABORT_GUARD_TTL_MS * 3 + 1)).toBe(false)
   })
 
   test("skips deferred re-abort when guard cleared before the timer fires", async () => {

@@ -1,4 +1,5 @@
-import type { OpencodeClient, PermissionRequest, Project, QuestionRequest } from "@opencode-ai/sdk/v2/client"
+import type { OpencodeClient, PermissionRequest, Project, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import { filterSessionStatusSnapshotThroughAbortGuard } from "./abort-retry-guard"
 import { isTransientError, retry } from "./retry"
 import { requestSignature } from "./request-signature"
 import type { GlobalState, State } from "./types"
@@ -220,7 +221,10 @@ export async function bootstrapDirectory(input: {
         if (next) set({ project: next })
       }),
     ),
-    retry(() => sdk.session.status().then((x) => set({ session_status: unwrap(x, "session.status") }))),
+    retry(() => sdk.session.status().then((x) => {
+      const statuses = unwrap(x, "session.status")
+      set({ session_status: filterSessionStatusSnapshotThroughAbortGuard(statuses) })
+    })),
   ])
 
   const phase1Errors = phase1Results
@@ -304,10 +308,22 @@ export async function bootstrapDirectory(input: {
   set({ sessionListStatus: "loading", sessionListError: undefined })
   try {
     await Promise.resolve(input.loadSessions(directory))
+    const loadedState = getState()
+    let reconciledStatuses = loadedState.session_status
+    for (const session of loadedState.session) {
+      if (!session?.id || Object.hasOwn(reconciledStatuses, session.id)) continue
+      if (reconciledStatuses === loadedState.session_status) {
+        reconciledStatuses = { ...loadedState.session_status }
+      }
+      reconciledStatuses[session.id] = { type: "idle" } as SessionStatus
+    }
     set({
       status: "complete",
       sessionListStatus: "ready",
       sessionListError: undefined,
+      ...(reconciledStatuses === loadedState.session_status
+        ? {}
+        : { session_status: reconciledStatuses }),
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

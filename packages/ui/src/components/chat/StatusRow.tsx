@@ -23,7 +23,11 @@ import { WorkingPlaceholder } from "./message/parts/WorkingPlaceholder";
 import { isVSCodeRuntime } from "@/lib/desktop";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/lib/i18n";
-import { buildTodoSummary } from "./lib/todoSummary";
+import { buildTodoSummary, getCurrentTodoOrdinal, parsePlanTodoContent } from "./lib/todoSummary";
+import { useSessionPlanFileStore } from '@/stores/useSessionPlanFileStore';
+import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
+import { getStatusRowPlanActionState, hasPlanTaskTrackingContext } from './statusRowPlanAction';
+import { preloadPlanView } from '@/components/views/planViewLoader';
 
 const STATUS_ROW_CONTAINER_STYLE = { containerType: "inline-size" as const, containerName: "status-row" };
 
@@ -164,6 +168,12 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   const { t } = useI18n();
   const [isExpanded, setIsExpanded] = React.useState(false);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
+  const isSessionPlanAvailable = useSessionUIStore((state) => (
+    currentSessionId ? state.sessionPlanAvailable.get(currentSessionId) === true : false
+  ));
+  const sessionPlanRecord = useSessionPlanFileStore((state) => (
+    currentSessionId ? state.recordsBySession[currentSessionId] : undefined
+  ));
   const todosRecord = useDirectorySync((state) => state.todo);
   const persistedSessionTodos = useTodosPersistStore(
     React.useCallback(
@@ -178,7 +188,26 @@ export const StatusRow: React.FC<StatusRowProps> = ({
     return persistedSessionTodos ?? EMPTY_TODOS;
   }, [todosRecord, persistedSessionTodos, currentSessionId]);
   const isMobile = useUIStore((state) => state.isMobile);
-  const isCompact = isMobile || isVSCodeRuntime();
+  const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
+  const toggleContextPlan = useUIStore((state) => state.toggleContextPlan);
+  const effectiveDirectory = useEffectiveDirectory() ?? '';
+  const isVSCode = isVSCodeRuntime();
+  const isCompact = isMobile || isVSCode;
+  const planActionState = getStatusRowPlanActionState({
+    showTodos,
+    isPlanAvailable: isSessionPlanAvailable,
+    isVSCode,
+    record: sessionPlanRecord,
+  });
+  const hasPlanTaskContext = hasPlanTaskTrackingContext({
+    isPlanAvailable: isSessionPlanAvailable,
+    record: sessionPlanRecord,
+  });
+
+  React.useEffect(() => {
+    if (!planActionState.enabled) return;
+    void preloadPlanView().catch(() => undefined);
+  }, [planActionState.enabled]);
 
   const todoSummary = React.useMemo(() => buildTodoSummary(todos), [todos]);
   const visibleTodos = todoSummary.visibleTodos;
@@ -198,6 +227,12 @@ export const StatusRow: React.FC<StatusRowProps> = ({
     total: todoSummary.total,
   }), [todoSummary.completed, todoSummary.total]);
 
+  const planTodo = React.useMemo(() => {
+    if (!hasPlanTaskContext) return null;
+    const progressTodo = activeTodo ?? visibleTodos[visibleTodos.length - 1];
+    return parsePlanTodoContent(progressTodo?.content);
+  }, [activeTodo, hasPlanTaskContext, visibleTodos]);
+
   const hasTodoContent = showTodos && progress.total > 0;
   const hasAssistantContent = showAssistantStatus && (
     isWorking ||
@@ -208,10 +243,15 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   // Original logic from ChatInput
   const shouldRenderPlaceholder = !showAbortStatus && (wasAborted || !abortActive);
 
-  const hasContent = hasAssistantContent || hasTodoContent || hasLeftAccessory;
+  const hasContent = hasAssistantContent || hasTodoContent || hasLeftAccessory || planActionState.visible;
   // Compact surfaces still show the active task: the counter is short, and the
   // task text truncates before it can crowd out progress or the chevron.
-  const todoTitle = activeTodo?.content ?? t('chat.statusRow.tasksTitle');
+  const todoTitle = planTodo
+    ? t('chat.statusRow.planTaskTitle', { phase: planTodo.phase })
+    : activeTodo?.content ?? t('chat.statusRow.tasksTitle');
+  const displayedProgress = planTodo
+    ? getCurrentTodoOrdinal(visibleTodos, activeTodo)
+    : progress.completed;
 
   // Close popover when clicking outside
   const popoverRef = React.useRef<HTMLDivElement>(null);
@@ -231,7 +271,7 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   const toggleExpanded = () => setIsExpanded((prev) => !prev);
   const todoSummaryLabel = t('chat.statusRow.summary.progress', {
     task: todoTitle,
-    completed: progress.completed,
+    completed: displayedProgress,
     total: progress.total,
   });
 
@@ -265,10 +305,41 @@ export const StatusRow: React.FC<StatusRowProps> = ({
         {todoTitle}
       </span>
       <span className="typography-meta flex-shrink-0 tabular-nums" aria-hidden="true">
-        {progress.completed}/{progress.total}
+        {displayedProgress}/{progress.total}
       </span>
       <RiArrowUpSLine className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
     </button>
+  ) : null;
+
+  const handleViewPlan = React.useCallback(() => {
+    if (!planActionState.enabled || !sessionPlanRecord?.path) return;
+    if (isMobile) {
+      setActiveMainTab('plan');
+      return;
+    }
+    if (!effectiveDirectory) return;
+    toggleContextPlan(effectiveDirectory, sessionPlanRecord.path);
+  }, [effectiveDirectory, isMobile, planActionState.enabled, sessionPlanRecord?.path, setActiveMainTab, toggleContextPlan]);
+
+  const viewPlanButton = planActionState.visible ? (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="shrink-0" tabIndex={planActionState.enabled ? undefined : 0}>
+          <button
+            type="button"
+            className="typography-ui-label shrink-0 text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!planActionState.enabled}
+            aria-label={t('chat.statusRow.actions.viewPlan')}
+            onClick={handleViewPlan}
+          >
+            {t('chat.statusRow.actions.viewPlan')}
+          </button>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" sideOffset={6}>
+        {planActionState.disabledReason ?? t('chat.statusRow.actions.viewPlanTooltip')}
+      </TooltipContent>
+    </Tooltip>
   ) : null;
 
   // Don't render if nothing to show
@@ -303,10 +374,11 @@ export const StatusRow: React.FC<StatusRowProps> = ({
           ) : null}
         </div>
 
-        {/* Right: Abort (mobile only) + Todo */}
+        {/* Right: Abort (mobile only) + Todo + View Plan */}
         <div className={cn("relative flex items-center gap-2 flex-shrink-0", hasLeftAccessory ? "pr-1.5" : "-mr-3")} ref={popoverRef}>
           {abortButton}
           {todoTrigger}
+          {viewPlanButton}
 
           {/* Popover dropdown */}
           {isExpanded && hasTodoContent && (

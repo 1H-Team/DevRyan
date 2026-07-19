@@ -11,6 +11,30 @@ export type DirectoryStore = State & {
   replace: (next: State) => void
 }
 
+const getDirectorySubscriptionKey = (value?: string | null): string | null => {
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const normalized = trimmed.replace(/\\/g, "/").replace(/\/+$/, "") || "/"
+  return normalized.toLowerCase()
+}
+
+export const shouldBootstrapDirectorySubscription = (
+  requestedDirectory: string | undefined,
+  activeDirectory: string,
+): boolean => {
+  const activeKey = getDirectorySubscriptionKey(activeDirectory)
+  const requestedKey = getDirectorySubscriptionKey(requestedDirectory ?? activeDirectory)
+  return activeKey !== null && requestedKey !== null && activeKey === requestedKey
+}
+
+export const getActiveDirectoryStoreKeys = (
+  directories: Iterable<string>,
+  activeDirectory: string,
+): string[] => Array.from(directories).filter((directory) => (
+  shouldBootstrapDirectorySubscription(directory, activeDirectory)
+))
+
 function createDirectoryStore(directory: string): StoreApi<DirectoryStore> {
   // Restore cached metadata from localStorage
   const cached = readDirCache(directory)

@@ -60,3 +60,23 @@ describe("clarifying-question prompts use the structured question tool", () => {
     }
   })
 })
+
+describe("plan task tracking prompts", () => {
+  test("plan generation requires numbered phase headings", () => {
+    const def = MAGIC_PROMPT_DEFINITIONS.find((entry) => entry.id === "plan.todo.instructions")
+    if (!def) throw new Error("plan.todo.instructions definition missing")
+
+    expect(def.template).toContain("### Phase 1: <name>")
+    expect(def.template).toContain("numbered actionable tasks")
+  })
+
+  test("saved-plan implementation preserves a one-to-one phase todo list and N/N completion gate", () => {
+    const def = MAGIC_PROMPT_DEFINITIONS.find((entry) => entry.id === "plan.implement.instructions")
+    if (!def) throw new Error("plan.implement.instructions definition missing")
+
+    expect(def.template).toContain("exactly one todo per plan task")
+    expect(def.template).toContain("Prefix every todo with `Phase <number>: `")
+    expect(def.template).toContain("Do not remove, merge, reorder, cancel, or replace plan todos")
+    expect(def.template).toContain("counter reaches N/N")
+  })
+})

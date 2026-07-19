@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { summarizeText } from './summarization.js';
+import { generateZenText, summarizeText } from './summarization.js';
 
 const originalFetch = globalThis.fetch;
 
@@ -91,6 +91,45 @@ describe('text summarization zen requests', () => {
       }),
     );
     expect(result.summary).toBe('Chat summary');
+  });
+
+  it('returns direct text from responses without creating a session request', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        output: [{
+          type: 'message',
+          content: [{ type: 'output_text', text: 'fix(ui): generate commit subject' }],
+        }],
+      }),
+    }));
+    stubFetch(fetchMock);
+
+    const result = await generateZenText({
+      prompt: 'Generate a commit subject',
+      zenModel: 'gpt-5-nano',
+    });
+
+    expect(result).toBe('fix(ui): generate commit subject');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe('https://opencode.ai/zen/v1/responses');
+    expect(String(fetchMock.mock.calls[0][0])).not.toMatch(/session|prompt_async/);
+  });
+
+  it('returns direct text from chat completions', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: 'chore: update generated files' } }],
+      }),
+    }));
+    stubFetch(fetchMock);
+
+    await expect(generateZenText({
+      prompt: 'Generate a commit subject',
+      zenModel: 'big-pickle',
+    })).resolves.toBe('chore: update generated files');
+    expect(fetchMock.mock.calls[0][0]).toBe('https://opencode.ai/zen/v1/chat/completions');
   });
 
   it('clamps successful model summaries to the requested max length', async () => {

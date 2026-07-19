@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Session } from '@opencode-ai/sdk/v2';
+import { isStrictlyOlderSession } from '@/sync/session-recency';
 import { opencodeClient } from '@/lib/opencode/client';
 import { listGlobalSessionPages } from '@/stores/globalSessions';
 
@@ -155,6 +156,9 @@ const upsertSessionIntoList = (sessions: Session[], session: Session): Session[]
   const index = sessions.findIndex((candidate) => candidate.id === session.id);
   if (index === -1) {
     return [session, ...sessions];
+  }
+  if (isStrictlyOlderSession(session, sessions[index])) {
+    return sessions;
   }
   if (getSessionSignature(sessions[index]) === getSessionSignature(session)) {
     return sessions;
@@ -500,6 +504,11 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
 
   upsertSession: (session) => {
     set((state) => {
+      const currentSession = state.activeSessions.find((candidate) => candidate.id === session.id)
+        ?? state.archivedSessions.find((candidate) => candidate.id === session.id);
+      if (currentSession && isStrictlyOlderSession(session, currentSession)) {
+        return state;
+      }
       const isArchived = Boolean(session.time?.archived);
       const removedActiveSession = isArchived
         ? state.activeSessions.find((candidate) => candidate.id === session.id)

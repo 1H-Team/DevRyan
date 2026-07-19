@@ -5,10 +5,15 @@ import { join } from 'path';
 import { afterEach } from 'vitest';
 import { describe, expect, it } from 'vitest';
 
-import { CLAUDE_CODE_REFRESH_FAILED_CODE, refreshClaudeCodeStatusUsage } from './claude-code-status-refresh.js';
+import {
+  CLAUDE_CODE_REFRESH_FAILED_CODE,
+  CLAUDE_CODE_SESSION_LIMIT_CODE,
+  refreshClaudeCodeStatusUsage,
+} from './claude-code-status-refresh.js';
 
 const createChild = () => {
   const child = new EventEmitter();
+  child.stdout = new EventEmitter();
   child.stderr = new EventEmitter();
   child.kill = () => {};
   return child;
@@ -47,7 +52,7 @@ describe('refreshClaudeCodeStatusUsage', () => {
     expect(result).toEqual({ ok: true });
     expect(calls[0].command).toBe('claude');
     expect(calls[0].args).toEqual(['-p', 'Reply with exactly: OK', '--output-format', 'text']);
-    expect(calls[0].options.stdio).toEqual(['ignore', 'ignore', 'pipe']);
+    expect(calls[0].options.stdio).toEqual(['ignore', 'pipe', 'pipe']);
   });
 
   it('returns a deterministic error when Claude CLI exits without fresh status data', async () => {
@@ -76,7 +81,7 @@ describe('refreshClaudeCodeStatusUsage', () => {
 
     expect(result.ok).toBe(false);
     expect(result.code).toBe(CLAUDE_CODE_REFRESH_FAILED_CODE);
-    expect(result.error).toContain('Claude CLI was not found');
+    expect(result.error).toContain('Claude Code was not found');
   });
 
   it('includes stderr when Claude CLI exits unsuccessfully', async () => {
@@ -94,5 +99,22 @@ describe('refreshClaudeCodeStatusUsage', () => {
     expect(result.ok).toBe(false);
     expect(result.code).toBe(CLAUDE_CODE_REFRESH_FAILED_CODE);
     expect(result.error).toBe('not authenticated');
+  });
+
+  it('classifies a Claude Code session limit reported on stdout', async () => {
+    const child = createChild();
+    const spawnImpl = () => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', "You've hit your session limit · resets 2:10am");
+        child.emit('close', 1);
+      });
+      return child;
+    };
+
+    const result = await refreshClaudeCodeStatusUsage({ spawnImpl });
+
+    expect(result.ok).toBe(false);
+    expect(result.code).toBe(CLAUDE_CODE_SESSION_LIMIT_CODE);
+    expect(result.error).toContain('session limit');
   });
 });

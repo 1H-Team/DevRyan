@@ -1,7 +1,7 @@
 # packages/web/server/lib/git/
 
 ## Responsibility
-Git service layer for repository operations, auth credential persistence, git identity storage, and conventional commit template setup used by UI and automation routes.
+Git service layer for repository operations, direct commit-message generation, auth credential persistence, git identity storage, and conventional commit template setup used by UI and automation routes.
 
 ## Design
 - **Facade export**: `index.js` re-exports service, credential, and identity modules as a single API.
@@ -10,6 +10,7 @@ Git service layer for repository operations, auth credential persistence, git id
   - `credentials.js`: credential retrieval/storage flows
   - `identity-storage.js`: author identity persistence
   - `template-routes.js`: global commit template/hook status, install, uninstall, and content endpoints
+  - `commit-message.js`: session-free direct Zen generation and conventional-subject validation
 - **Route adapter**: `routes.js` maps HTTP requests to service operations.
 
 ## Flow

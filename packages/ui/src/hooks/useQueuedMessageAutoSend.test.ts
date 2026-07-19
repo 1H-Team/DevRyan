@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { resolveQueuedAutoSendStatusType, resolveQueuedSessionStatusType } from "./queuedMessageAutoSendStatus"
+import {
+  resolveQueuedAutoSendStatusType,
+  resolveQueuedSessionStatusType,
+  shouldDispatchQueuedSession,
+} from "./queuedMessageAutoSendStatus"
 
 describe("queued message auto-send status resolution", () => {
   test("uses aggregated live status for sessions outside the current directory", () => {
@@ -36,5 +40,44 @@ describe("queued message auto-send status resolution", () => {
     expect(resolveQueuedAutoSendStatusType("session-a", {
       "session-a": { type: "idle" },
     }, { type: "idle" }, 1)).toBe("blocked")
+  })
+})
+
+describe("queued message auto-send dispatch edges", () => {
+  test("retries one restored idle queue when the connection returns", () => {
+    expect(shouldDispatchQueuedSession({
+      queueLength: 1,
+      currentStatus: "idle",
+      previousStatus: "idle",
+      isConnected: true,
+      previousConnectionState: false,
+    })).toBe(true)
+  })
+
+  test("does not retry again while the connection remains steadily connected", () => {
+    expect(shouldDispatchQueuedSession({
+      queueLength: 1,
+      currentStatus: "idle",
+      previousStatus: "idle",
+      isConnected: true,
+      previousConnectionState: true,
+    })).toBe(false)
+  })
+
+  test("never dispatches while disconnected or blocked", () => {
+    expect(shouldDispatchQueuedSession({
+      queueLength: 1,
+      currentStatus: "idle",
+      previousStatus: "busy",
+      isConnected: false,
+      previousConnectionState: true,
+    })).toBe(false)
+    expect(shouldDispatchQueuedSession({
+      queueLength: 1,
+      currentStatus: "blocked",
+      previousStatus: "blocked",
+      isConnected: true,
+      previousConnectionState: false,
+    })).toBe(false)
   })
 })

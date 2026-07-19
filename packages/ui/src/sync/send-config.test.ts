@@ -232,6 +232,55 @@ describe("send config resolution", () => {
     })
   })
 
+  test("uses the canonical builder model for a legacy build default", () => {
+    const result = resolveDraftSendSelection({
+      requestedAgent: undefined,
+      currentAgent: undefined,
+      settingsDefaultAgent: "build",
+      agents: [
+        {
+          name: "build",
+          mode: "primary",
+          model: { providerID: "openai", modelID: "legacy-build-model" },
+          variant: "low",
+        },
+        {
+          name: "builder",
+          mode: "primary",
+          model: { providerID: "openai", modelID: "builder-model" },
+          variant: "high",
+        },
+        {
+          name: "orchestrator",
+          mode: "primary",
+          model: { providerID: "openai", modelID: "orchestrator-model" },
+          variant: "medium",
+        },
+      ],
+      providers: [{
+        id: "openai",
+        models: [
+          { id: "legacy-build-model", variants: { low: {} } },
+          { id: "builder-model", variants: { high: {} } },
+          { id: "orchestrator-model", variants: { medium: {} } },
+        ],
+      }],
+      inputProviderID: "missing-provider",
+      inputModelID: "missing-model",
+      inputVariant: undefined,
+      currentProviderID: "missing-current-provider",
+      currentModelID: "missing-current-model",
+      currentVariant: undefined,
+    })
+
+    expect(result).toEqual({
+      agent: "builder",
+      providerID: "openai",
+      modelID: "builder-model",
+      variant: "high",
+    })
+  })
+
   test("uses the selected agent model before the retained current model", () => {
     const result = resolveDraftSendSelection({
       requestedAgent: undefined,

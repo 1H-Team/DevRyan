@@ -4,10 +4,11 @@
 Browser-side bootstrap for the VS Code-hosted DevRyan UI. It initializes runtime APIs backed by the extension bridge, manages startup/loading UX, and adapts VS Code theme/connection state into the shared React app.
 
 ## Design
-- **Adapter pattern**: `main.tsx` builds VS Code-specific runtime APIs and assigns them to `window.__OPENCHAMBER_RUNTIME_APIS__` consumed by shared UI.
+- **Adapter pattern**: `main.tsx` builds VS Code-specific runtime APIs and assigns them to `window.__OPENCHAMBER_RUNTIME_APIS__` consumed by shared UI, including the Claude Code authentication-status bridge route used by provider settings.
 - **Bridge client modules** (`api/*`): narrow wrappers for git/files/settings/notifications/permissions/editor/proxy calls to extension host.
 - **Bootstrap resilience**: connection status state machine + overlay logic tolerates delayed API readiness and partial fetch failures.
 - **Theme translation**: VS Code palette is converted into shared theme token shape before app mount.
+- **Stable startup diagnostics**: `main.tsx` logs startup and runtime configuration state but intentionally omits nonfunctional build-time metadata from the measured entry bundle.
 - **SSE tunneling**: stream start/stop requests go through extension messaging rather than direct unrestricted sockets.
 - **Managed-orchestration adapter**: `api/orchestration.ts` maps the shared HTTP-shaped snapshot/status/cancel/acknowledge/handoff surface to the extension host, preserves authoritative status codes, and enforces the UI body limit.
 

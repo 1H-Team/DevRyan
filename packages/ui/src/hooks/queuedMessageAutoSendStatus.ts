@@ -2,6 +2,26 @@ import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 
 export type SessionStatusType = "idle" | "busy" | "retry" | "blocked" | "unknown"
 
+export type QueuedSessionDispatchState = {
+  queueLength: number
+  currentStatus: SessionStatusType
+  previousStatus?: SessionStatusType
+  isConnected: boolean
+  previousConnectionState?: boolean
+}
+
+export function shouldDispatchQueuedSession(state: QueuedSessionDispatchState): boolean {
+  if (state.queueLength === 0 || !state.isConnected || state.currentStatus !== "idle") {
+    return false
+  }
+
+  const firstSeenIdle = state.previousStatus === undefined
+  const becameIdle = state.previousStatus !== undefined && state.previousStatus !== "idle"
+  const connectionRestored = state.previousConnectionState === false
+
+  return firstSeenIdle || becameIdle || connectionRestored
+}
+
 export function resolveQueuedSessionStatusType(
   sessionId: string,
   liveStatuses: Record<string, SessionStatus | undefined>,

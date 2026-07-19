@@ -144,7 +144,7 @@ export const TOOL_METADATA: Record<string, ToolMetadata> = {
    },
 
    todowrite: {
-     displayName: 'Update Todo List',
+     displayName: 'Update Todo List:',
      category: 'system',
      outputLanguage: 'json',
      inputFields: [
@@ -206,6 +206,7 @@ export const TOOL_METADATA: Record<string, ToolMetadata> = {
 function formatFallbackToolDisplayName(toolName: string): string {
   return toolName
     .trim()
+    .replace(/^mcp__/, '')
     .replace(/[-_]+/g, ' ')
     .replace(/\s+/g, ' ')
     .split(' ')

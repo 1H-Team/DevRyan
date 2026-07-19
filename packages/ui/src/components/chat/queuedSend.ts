@@ -67,6 +67,13 @@ export type SendQueuedMessagesNowOptions = FlushQueuedMessagesOptions & {
   interruptCurrentOperation: (sessionId: string) => Promise<void>
 }
 
+export type DispatchQueuedMessageOptions = {
+  sessionId: string
+  queuedMessageId: string
+  dispatch: (message: QueuedMessage) => Promise<void>
+  createMessageId?: () => string
+}
+
 const resolveSendConfig = (
   queuedMessage: QueuedMessage,
   fallbackSendConfig: QueuedSendConfig,
@@ -89,6 +96,19 @@ const delay = (ms: number): Promise<void> => new Promise((resolve) => {
 
 const queuedMessageFlushCounts = new Map<string, number>()
 
+const withDispatchIdentity = (
+  message: QueuedMessage,
+  createMessageId: () => string,
+): QueuedMessage => (
+  message.messageId && message.messageIdScope === "dispatch"
+    ? message
+    : {
+        ...message,
+        messageId: createMessageId(),
+        messageIdScope: "dispatch",
+      }
+)
+
 export class QueuedSendAuthorizationRequiredError extends Error {
   constructor() {
     super("Queued send requires agent handoff confirmation")
@@ -98,6 +118,36 @@ export class QueuedSendAuthorizationRequiredError extends Error {
 
 export function isQueuedMessageFlushInFlight(sessionId: string): boolean {
   return (queuedMessageFlushCounts.get(sessionId) ?? 0) > 0
+}
+
+export async function dispatchQueuedMessageForSession(
+  options: DispatchQueuedMessageOptions,
+): Promise<boolean> {
+  const claim = useMessageQueueStore.getState().claimMessageForSession(
+    options.sessionId,
+    options.queuedMessageId,
+  )
+  if (!claim) {
+    return false
+  }
+
+  let dispatchClaim = claim
+
+  try {
+    const dispatchedMessage = withDispatchIdentity(
+      claim.message,
+      options.createMessageId ?? (() => createClientMessageId("msg")),
+    )
+    dispatchClaim = {
+      ...claim,
+      message: dispatchedMessage,
+    }
+    await options.dispatch(dispatchedMessage)
+    return true
+  } catch (error) {
+    useMessageQueueStore.getState().restoreClaimedMessage(options.sessionId, dispatchClaim)
+    throw error
+  }
 }
 
 export function hasCompletedQueuedTurn(
@@ -207,13 +257,7 @@ export async function flushQueuedMessagesForSession(options: FlushQueuedMessages
 
     while (nextMessageIndex < claimedMessages.length) {
       const claimedMessage = claimedMessages[nextMessageIndex]
-      const queuedMessage = claimedMessage.messageId && claimedMessage.messageIdScope === "dispatch"
-        ? claimedMessage
-        : {
-            ...claimedMessage,
-            messageId: createMessageId(),
-            messageIdScope: "dispatch" as const,
-          }
+      const queuedMessage = withDispatchIdentity(claimedMessage, createMessageId)
       claimedMessages[nextMessageIndex] = queuedMessage
       const sendConfig = resolveSendConfig(queuedMessage, options.fallbackSendConfig)
       if (options.authorizeSend && !await options.authorizeSend({

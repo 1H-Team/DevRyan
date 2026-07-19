@@ -145,6 +145,11 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
             const activity: TurnActivityRecord = {
                 ...buildTurnPartRecord(input.turnId, message.info.id, part, partIndex),
                 kind,
+                ...(
+                    typeof (message.info as { providerID?: unknown }).providerID === 'string'
+                        ? { providerID: (message.info as { providerID: string }).providerID }
+                        : {}
+                ),
             };
             activityParts.push(activity);
 

@@ -61,7 +61,6 @@ const createHarness = async ({ abortGate = null, abortResponses = [], abortTimeo
     },
     createTaskId: () => `dvr_task_${++taskCounter}`,
     createLeaseToken: () => `dvr_lease_${++leaseCounter}`,
-    maxConcurrency: 1,
     ...(abortTimeoutMs ? { abortTimeoutMs } : {}),
     now: () => 1_000 + taskCounter,
   });
@@ -120,7 +119,7 @@ describe('managed scheduler orchestrator-to-builder handoff', () => {
       taskIds: [first.taskId, second.taskId],
       failures: [],
     });
-    expect(aborts).toEqual([first.taskId]);
+    expect(aborts).toEqual([first.taskId, second.taskId]);
     expect(scheduler.getTask(first.taskId).status).toBe('aborted');
     expect(scheduler.getTask(second.taskId).status).toBe('aborted');
     expect(scheduler.getResultEnvelope(first.taskId).action).toBe('abandon');

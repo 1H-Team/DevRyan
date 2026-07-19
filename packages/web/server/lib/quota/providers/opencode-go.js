@@ -1,4 +1,5 @@
 import { readAuthFile } from '../../opencode/auth.js';
+import { readManagedQuotaCredential } from '../credentials/providers.js';
 import {
   getAuthEntry,
   normalizeAuthEntry,
@@ -80,23 +81,48 @@ const parseObjectLiteral = (objectLiteral) => {
   }
 };
 
-const resolveCredentials = ({ readAuth = readAuthFile, env = process.env } = {}) => {
+export const resolveOpenCodeGoCredentials = ({
+  readAuth = readAuthFile,
+  readManagedCredential = readManagedQuotaCredential,
+  env = process.env,
+} = {}) => {
   const auth = readAuth();
   const entry = normalizeAuthEntry(getAuthEntry(auth, aliases));
   const apiKey = trimString(entry?.key) || trimString(entry?.token) || trimString(entry?.access);
-  const workspaceId = trimString(env.OPENCODE_GO_WORKSPACE_ID) || trimString(entry?.usageWorkspaceId);
-  const authCookie = trimString(env.OPENCODE_GO_AUTH_COOKIE) || trimString(entry?.usageAuthCookie);
+  const environmentWorkspaceId = trimString(env.OPENCODE_GO_WORKSPACE_ID);
+  const environmentAuthCookie = trimString(env.OPENCODE_GO_AUTH_COOKIE);
+  const managed = readManagedCredential(providerId);
+  const legacyWorkspaceId = trimString(entry?.usageWorkspaceId);
+  const legacyAuthCookie = trimString(entry?.usageAuthCookie);
+
+  let workspaceId = '';
+  let authCookie = '';
+  let source = null;
+  if (environmentWorkspaceId || environmentAuthCookie) {
+    workspaceId = environmentWorkspaceId;
+    authCookie = environmentAuthCookie;
+    source = 'environment';
+  } else if (managed) {
+    workspaceId = managed.workspaceId;
+    authCookie = managed.authCookie;
+    source = 'managed';
+  } else if (legacyWorkspaceId || legacyAuthCookie) {
+    workspaceId = legacyWorkspaceId;
+    authCookie = legacyAuthCookie;
+    source = 'legacy';
+  }
 
   return {
     apiConfigured: Boolean(apiKey),
     usageConfigured: Boolean(workspaceId && authCookie),
     workspaceId,
     authCookie,
+    source,
   };
 };
 
 export const isConfigured = (options = {}) => {
-  const credentials = resolveCredentials(options);
+  const credentials = resolveOpenCodeGoCredentials(options);
   return credentials.apiConfigured || credentials.usageConfigured;
 };
 
@@ -148,12 +174,41 @@ export const parseOpenCodeGoUsageHtml = (html, now = Date.now()) => {
   return { windows };
 };
 
+export const fetchOpenCodeGoUsage = async (
+  credential,
+  fetchImpl = globalThis.fetch,
+) => {
+  if (!credential || !WORKSPACE_ID_PATTERN.test(trimString(credential.workspaceId))) {
+    throw new Error('Invalid OpenCode Go workspace ID format.');
+  }
+  const authCookie = trimString(credential.authCookie);
+  if (!authCookie) throw new Error('OpenCode Go auth cookie is required.');
+
+  const response = await fetchImpl(`https://opencode.ai/workspace/${encodeURIComponent(credential.workspaceId)}/go`, {
+    method: 'GET',
+    headers: {
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      Cookie: `auth=${authCookie}`,
+      'User-Agent': 'DevRyan quota provider',
+    },
+    redirect: 'manual',
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  if (response.status === 401 || response.status === 403 || (response.status >= 300 && response.status < 400)) {
+    throw new Error(AUTH_COOKIE_ERROR);
+  }
+  if (!response.ok) throw new Error(`OpenCode Go dashboard request failed: ${response.status}`);
+  return parseOpenCodeGoUsageHtml(await response.text());
+};
+
 export const fetchQuota = async ({
   readAuth = readAuthFile,
+  readManagedCredential = readManagedQuotaCredential,
   fetchImpl = globalThis.fetch,
   env = process.env,
 } = {}) => {
-  const credentials = resolveCredentials({ readAuth, env });
+  const credentials = resolveOpenCodeGoCredentials({ readAuth, readManagedCredential, env });
 
   if (!credentials.apiConfigured && !credentials.usageConfigured) {
     return buildResult({
@@ -186,28 +241,7 @@ export const fetchQuota = async ({
   }
 
   try {
-    const response = await fetchImpl(`https://opencode.ai/workspace/${encodeURIComponent(credentials.workspaceId)}/go`, {
-      method: 'GET',
-      headers: {
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        Cookie: `auth=${credentials.authCookie}`,
-      },
-    });
-
-    if (!response.ok) {
-      return buildResult({
-        providerId,
-        providerName,
-        ok: false,
-        configured: true,
-        error: response.status === 401 || response.status === 403
-          ? AUTH_COOKIE_ERROR
-          : `OpenCode Go dashboard request failed: ${response.status}`,
-      });
-    }
-
-    const html = await response.text();
-    const usage = parseOpenCodeGoUsageHtml(html);
+    const usage = await fetchOpenCodeGoUsage(credentials, fetchImpl);
 
     return buildResult({
       providerId,

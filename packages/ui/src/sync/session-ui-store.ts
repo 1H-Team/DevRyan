@@ -25,6 +25,7 @@ import { useSessionFoldersStore } from "@/stores/useSessionFoldersStore"
 import { useCommandsStore } from "@/stores/useCommandsStore"
 import { useMessageQueueStore } from "@/stores/messageQueueStore"
 import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
+import { useSessionPlanFileStore } from "@/stores/useSessionPlanFileStore"
 import { getSafeStorage } from "@/stores/utils/safeStorage"
 import {
   attachRelatedSubagentContextUsage,
@@ -45,7 +46,7 @@ import { waitForWorktreeBootstrap } from "@/lib/worktrees/worktreeBootstrap"
 import { waitForPendingDraftWorktreeRequest } from "@/lib/worktrees/pendingDraftWorktree"
 import { resolveProjectForSessionDirectory } from "@/lib/projectResolution"
 import { streamDebugMark } from "@/stores/utils/streamDebug"
-import { isGitGenerationSessionRecord } from "@/lib/git/gitGenerationSessions"
+import { isUserVisibleSessionRecord } from "@/lib/sessionVisibility"
 import { assertPdfAttachmentsSupported } from "@/lib/attachments/attachmentCapabilities"
 import {
   hasExplicitDraftModelIntent,
@@ -83,6 +84,7 @@ import {
   shareSession as shareSessionAction,
   unshareSession as unshareSessionAction,
   abortCurrentOperation as abortCurrentOperationAction,
+  assertSessionRevertMutationAllowed,
   rejectQuestion as rejectQuestionAction,
   optimisticSend,
   refetchSessionMessages,
@@ -94,6 +96,7 @@ import { useSelectionStore } from "./selection-store"
 import { useViewportStore } from "./viewport-store"
 import { useSessionWorktreeStore } from "./session-worktree-store"
 import { getAttachedSessionDirectory } from "./session-worktree-contract"
+import { resolveSubtaskAgentFromMessages } from "./subtask-agent"
 import { nextPlanIndicatorEntry, type PlanIndicatorEntry } from "./plan-indicator"
 import { hasSettledTerminalAssistantTurn } from "./plan-idle-settlement"
 import {
@@ -133,6 +136,30 @@ const clearPendingPlanCompletionTimer = (sessionId: string) => {
 const clearPendingCompletionTimers = (sessionId: string) => {
   clearPendingSessionCompletionTimer(sessionId)
   clearPendingPlanCompletionTimer(sessionId)
+}
+
+const deleteMapKey = <K, V>(source: Map<K, V>, key: K): Map<K, V> => {
+  if (!source.has(key)) return source
+  const next = new Map(source)
+  next.delete(key)
+  return next
+}
+
+const deleteSetValue = <T,>(source: Set<T>, value: T | undefined): Set<T> => {
+  if (value === undefined || !source.has(value)) return source
+  const next = new Set(source)
+  next.delete(value)
+  return next
+}
+
+const deleteSetMatches = <T,>(source: Set<T>, matches: (value: T) => boolean): Set<T> => {
+  let next: Set<T> | null = null
+  for (const value of source) {
+    if (!matches(value)) continue
+    next ??= new Set(source)
+    next.delete(value)
+  }
+  return next ?? source
 }
 
 const isLiveSessionWorking = (sessionId: string): boolean => {
@@ -276,7 +303,7 @@ export const buildPlanModeSyntheticInstruction = (): string => [
   "",
   "## Implementation",
   "",
-  "Numbered steps grouped into meaningful phases. Each step is concrete and actionable. Include short code or markdown snippets inline only where the exact shape of a change matters (function signature, JSX wiring, schema, etc.). Do not paste whole files. Reference existing functions/utilities by file path with line numbers so the implementer can navigate directly.",
+  "Use sequential third-level headings in the exact form `### Phase 1: <name>`, `### Phase 2: <name>`, and so on. Under each phase, write a numbered list of concrete, actionable implementation tasks. Each phase must contain multiple related tasks; merge a phase that would contain only one task. Include short code or markdown snippets inline only where the exact shape of a change matters (function signature, JSX wiring, schema, etc.). Do not paste whole files. Reference existing functions/utilities by file path with line numbers so the implementer can navigate directly.",
   "Count only actionable implementation tasks as tasks. Keep acceptance criteria, files, risks, and verification separate from task counts.",
   "",
   "## Visual details",
@@ -310,20 +337,30 @@ async function routeMessage(params: {
   lifecycleCallbacks?: SendLifecycleCallbacks
 }): Promise<boolean> {
   throwIfAborted(params.lifecycleCallbacks?.signal)
+  const messageDirectory = normalizePath(params.directory ?? useSessionUIStore.getState().getDirectoryForSession(params.sessionId) ?? opencodeClient.getDirectory() ?? null)
+  const session = getAllSyncSessions().find((candidate) => candidate.id === params.sessionId)
+  const isSubtaskSession = Boolean((session as (Session & { parentID?: string | null }) | undefined)?.parentID)
+  const effectiveAgent = isSubtaskSession
+    ? resolveSubtaskAgentFromMessages(getSyncMessages(params.sessionId, messageDirectory ?? undefined)) ?? params.agent
+    : params.agent
+  const assertTransportAllowed = () => {
+    assertSessionRevertMutationAllowed(params.sessionId, messageDirectory ?? undefined, "send")
+  }
+  assertTransportAllowed()
   if (!params.lifecycleCallbacks?.preserveProviderRecovery) {
     useProviderRecoveryStore.getState().clearRecovery(params.sessionId)
   }
-  const messageDirectory = normalizePath(params.directory ?? useSessionUIStore.getState().getDirectoryForSession(params.sessionId) ?? opencodeClient.getDirectory() ?? null)
   if (params.inputMode === "shell") {
     if (messageDirectory) {
       await waitForWorktreeBootstrap(messageDirectory)
     }
     throwIfAborted(params.lifecycleCallbacks?.signal)
+    assertTransportAllowed()
     const sdk = opencodeClient.getSdkClient()
     await sdk.session.shell({
       sessionID: params.sessionId,
       directory: messageDirectory || undefined,
-      agent: params.agent,
+      agent: effectiveAgent,
       model: { providerID: params.providerID, modelID: params.modelID },
       command: params.content,
     })
@@ -354,8 +391,6 @@ async function routeMessage(params: {
     ],
   })
 
-  const session = getAllSyncSessions().find((candidate) => candidate.id === params.sessionId)
-  const isSubtaskSession = Boolean((session as (Session & { parentID?: string | null }) | undefined)?.parentID)
   const sessionStatus = getSyncSessionStatus(params.sessionId, messageDirectory ?? undefined)
   const isActiveSubtaskSession = isSubtaskSession && (sessionStatus?.type === "busy" || sessionStatus?.type === "retry")
 
@@ -374,6 +409,7 @@ async function routeMessage(params: {
       additionalParts,
       directory: messageDirectory,
       signal: params.lifecycleCallbacks?.signal,
+      beforeTransport: assertTransportAllowed,
     })
     await refetchSessionMessages(params.sessionId)
     await autoUnarchiveAfterSuccessfulSend(params.sessionId)
@@ -399,7 +435,7 @@ async function routeMessage(params: {
         content: params.content,
         providerID: params.providerID,
         modelID: params.modelID,
-        agent: params.agent,
+        agent: effectiveAgent,
         files: params.files,
         directory: messageDirectory,
         planMode: params.planMode,
@@ -420,12 +456,13 @@ async function routeMessage(params: {
           modelID: params.modelID,
           command: cmdName,
           arguments: tail.join(" "),
-          agent: params.agent,
+          agent: effectiveAgent,
           variant: params.variant,
           files: params.files,
           messageId: messageID,
           directory: messageDirectory,
           signal: params.lifecycleCallbacks?.signal,
+          beforeTransport: assertTransportAllowed,
         }).then(() => {}),
       })
       await autoUnarchiveAfterSuccessfulSend(params.sessionId)
@@ -440,7 +477,7 @@ async function routeMessage(params: {
     content: params.content,
     providerID: params.providerID,
     modelID: params.modelID,
-    agent: params.agent,
+    agent: effectiveAgent,
     files: params.files,
     directory: messageDirectory,
     planMode: params.planMode,
@@ -462,13 +499,14 @@ async function routeMessage(params: {
       text: params.content,
       prefaceText: planModePrefaceText,
       prefaceTextSynthetic: planModePrefaceText ? true : undefined,
-      agent: params.agent,
+      agent: effectiveAgent,
       variant: params.variant,
       files: params.files,
       additionalParts,
       messageId: messageID,
       directory: messageDirectory,
       signal: params.lifecycleCallbacks?.signal,
+      beforeTransport: assertTransportAllowed,
     }).then(() => {}),
   })
   await autoUnarchiveAfterSuccessfulSend(params.sessionId)
@@ -763,6 +801,7 @@ export type SessionUIState = {
   hasPendingSendAbort: (key: string) => boolean
   markSessionTurnCompleted: (sessionId: string, messageId: string, completedAt?: number) => void
   clearSessionTurnCompletion: (sessionId: string) => void
+  retireDeletedSession: (sessionId: string) => void
   clearViewedPlanCompletion: (sessionId: string) => void
   clearReadCompletionIndicators: (sessionIds: string[]) => void
   rollbackPlanImplementation: (
@@ -959,9 +998,10 @@ const writePersistedCursorDraftPrewarmSessions = (records: PersistedCursorDraftP
 const removePersistedCursorDraftPrewarmSession = (sessionID: string | null | undefined): void => {
   const id = typeof sessionID === "string" ? sessionID.trim() : ""
   if (!id) return
-  writePersistedCursorDraftPrewarmSessions(
-    readPersistedCursorDraftPrewarmSessions().filter((item) => item.sessionID !== id),
-  )
+  const current = readPersistedCursorDraftPrewarmSessions()
+  const retained = current.filter((item) => item.sessionID !== id)
+  if (retained.length === current.length) return
+  writePersistedCursorDraftPrewarmSessions(retained)
 }
 
 const deleteHiddenCursorDraftSession = async (sessionID: string, directory: string | null): Promise<void> => {
@@ -2641,6 +2681,11 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // handleSlashUndo — reads from sync
   // ---------------------------------------------------------------------------
   handleSlashUndo: async (sessionId) => {
+    assertSessionRevertMutationAllowed(
+      sessionId,
+      getSyncSessionDirectoryAnyDirectory(sessionId) ?? opencodeClient.getDirectory(),
+      "undo",
+    )
     const messages = getSyncMessages(sessionId)
     const sessions = getSyncSessions()
     const currentSession = sessions.find((s) => s.id === sessionId)
@@ -2674,6 +2719,11 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // handleSlashRedo — reads from sync
   // ---------------------------------------------------------------------------
   handleSlashRedo: async (sessionId) => {
+    assertSessionRevertMutationAllowed(
+      sessionId,
+      getSyncSessionDirectoryAnyDirectory(sessionId) ?? opencodeClient.getDirectory(),
+      "redo",
+    )
     const sessions = getSyncSessions()
     const currentSession = sessions.find((s) => s.id === sessionId)
     const revertToId = currentSession?.revert?.messageID
@@ -2803,7 +2853,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const nd = normalizePath(directory)
     if (!nd) return []
     const sessions = getAllSyncSessions()
-    return sessions.filter((s) => resolveDirectoryKey(s) === nd && !isGitGenerationSessionRecord(s))
+    return sessions.filter((s) => resolveDirectoryKey(s) === nd && isUserVisibleSessionRecord(s))
   },
 
   getDirectoryForSession: (sessionId) => {
@@ -3041,6 +3091,84 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       return {
         ...(nextCompletion ? { sessionCompletionIndicator: nextCompletion } : {}),
         ...(nextPlanIndicator ? { sessionPlanIndicator: nextPlanIndicator } : {}),
+      }
+    })
+  },
+
+  retireDeletedSession: (sessionId) => {
+    const id = sessionId.trim()
+    if (!id) return
+
+    clearPendingCompletionTimers(id)
+    get().abortControllers.get(id)?.abort()
+    removePersistedCursorDraftPrewarmSession(id)
+
+    const worktreeStore = useSessionWorktreeStore.getState()
+    if (worktreeStore.attachments.has(id)) {
+      worktreeStore.clearAttachment(id)
+    }
+    useSessionPlanFileStore.getState().clearSession(id)
+
+    set((state) => {
+      const worktreeMetadata = deleteMapKey(state.worktreeMetadata, id)
+      const sessionDirectoryHints = deleteMapKey(state.sessionDirectoryHints, id)
+      const webUICreatedSessions = deleteSetValue(state.webUICreatedSessions, id)
+      const sessionAbortFlags = deleteMapKey(state.sessionAbortFlags, id)
+      const abortControllers = deleteMapKey(state.abortControllers, id)
+      const sessionPlanAvailable = deleteMapKey(state.sessionPlanAvailable, id)
+      const sessionPlanIndicator = deleteMapKey(state.sessionPlanIndicator, id)
+      const sessionCompletionIndicator = deleteMapKey(state.sessionCompletionIndicator, id)
+      const ownedPlanMessageId = state.planModeUserMessagesBySession.get(id)
+      const planModeUserMessages = deleteSetValue(state.planModeUserMessages, ownedPlanMessageId)
+      const planModeUserMessagesBySession = deleteMapKey(state.planModeUserMessagesBySession, id)
+      const implementedPlanRequests = deleteSetMatches(
+        state.implementedPlanRequests,
+        (planKey) => planKey.startsWith(`${id}:`),
+      )
+      const starterAssistantMessages = deleteMapKey(state.starterAssistantMessages, id)
+      const pendingChangesBarDismissed = deleteMapKey(state.pendingChangesBarDismissed, id)
+      const clearsAbortPrompt = state.abortPromptSessionId === id
+      const planStateChanged = (
+        planModeUserMessages !== state.planModeUserMessages
+        || planModeUserMessagesBySession !== state.planModeUserMessagesBySession
+        || implementedPlanRequests !== state.implementedPlanRequests
+      )
+
+      if (planStateChanged) {
+        persistPlanMessageState(planModeUserMessages, implementedPlanRequests, planModeUserMessagesBySession)
+      }
+
+      const changed = (
+        worktreeMetadata !== state.worktreeMetadata
+        || sessionDirectoryHints !== state.sessionDirectoryHints
+        || webUICreatedSessions !== state.webUICreatedSessions
+        || sessionAbortFlags !== state.sessionAbortFlags
+        || abortControllers !== state.abortControllers
+        || sessionPlanAvailable !== state.sessionPlanAvailable
+        || sessionPlanIndicator !== state.sessionPlanIndicator
+        || sessionCompletionIndicator !== state.sessionCompletionIndicator
+        || planStateChanged
+        || starterAssistantMessages !== state.starterAssistantMessages
+        || pendingChangesBarDismissed !== state.pendingChangesBarDismissed
+        || clearsAbortPrompt
+      )
+      if (!changed) return state
+
+      return {
+        ...(worktreeMetadata !== state.worktreeMetadata ? { worktreeMetadata } : {}),
+        ...(sessionDirectoryHints !== state.sessionDirectoryHints ? { sessionDirectoryHints } : {}),
+        ...(webUICreatedSessions !== state.webUICreatedSessions ? { webUICreatedSessions } : {}),
+        ...(sessionAbortFlags !== state.sessionAbortFlags ? { sessionAbortFlags } : {}),
+        ...(abortControllers !== state.abortControllers ? { abortControllers } : {}),
+        ...(sessionPlanAvailable !== state.sessionPlanAvailable ? { sessionPlanAvailable } : {}),
+        ...(sessionPlanIndicator !== state.sessionPlanIndicator ? { sessionPlanIndicator } : {}),
+        ...(sessionCompletionIndicator !== state.sessionCompletionIndicator ? { sessionCompletionIndicator } : {}),
+        ...(planModeUserMessages !== state.planModeUserMessages ? { planModeUserMessages } : {}),
+        ...(planModeUserMessagesBySession !== state.planModeUserMessagesBySession ? { planModeUserMessagesBySession } : {}),
+        ...(implementedPlanRequests !== state.implementedPlanRequests ? { implementedPlanRequests } : {}),
+        ...(starterAssistantMessages !== state.starterAssistantMessages ? { starterAssistantMessages } : {}),
+        ...(pendingChangesBarDismissed !== state.pendingChangesBarDismissed ? { pendingChangesBarDismissed } : {}),
+        ...(clearsAbortPrompt ? { abortPromptSessionId: null, abortPromptExpiresAt: null } : {}),
       }
     })
   },

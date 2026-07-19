@@ -301,6 +301,19 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
     }
   };
 
+  const clearSessionActivity = (sessionId) => {
+    if (!sessionId || typeof sessionId !== 'string') return false;
+    const cooldown = sessionActivityCooldowns.get(sessionId);
+    if (cooldown) {
+      clearTimeout(cooldown);
+      sessionActivityCooldowns.delete(sessionId);
+    }
+    const removed = sessionActivityPhases.delete(sessionId);
+    sessionStates.delete(sessionId);
+    sessionAttentionStates.delete(sessionId);
+    return removed;
+  };
+
   const cleanupOldSessionStates = () => {
     const now = Date.now();
     for (const [sessionId, data] of sessionStates) {
@@ -354,6 +367,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
     markSessionUnviewed,
     markUserMessageSent,
     resetAllSessionActivityToIdle,
+    clearSessionActivity,
     dispose,
   };
 };

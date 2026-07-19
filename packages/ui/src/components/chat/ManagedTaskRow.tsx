@@ -4,7 +4,6 @@ import {
   formatManagedTaskDisplayName,
   type ManagedTaskEventRecord,
   type ManagedTaskResultEnvelope,
-  type ManagedTaskStatus,
 } from '@openchamber/orchestration-runtime';
 
 import { Button } from '@/components/ui/button';
@@ -12,6 +11,7 @@ import { useI18n } from '@/lib/i18n';
 import { useConfigStore } from '@/stores/useConfigStore';
 import type { ProviderRecoverySelection } from '@/stores/useProviderRecoveryStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { useSessionStatus } from '@/sync/sync-context';
 import {
   managedOrchestrationSelectors,
   useManagedOrchestrationStore,
@@ -22,23 +22,50 @@ import { ModelRecoveryCard } from './ModelRecoveryCard';
 import type { ControlledModelPickerProvider } from './ControlledModelPicker';
 
 const getStatusPresentation = (
-  status: ManagedTaskStatus,
+  task: Pick<ManagedTaskEventRecord, 'executionKind' | 'status'>,
   t: ReturnType<typeof useI18n>['t'],
 ) => {
-  if (status === 'completed') {
+  if (
+    task.executionKind === 'recover_in_place'
+    && (task.status === 'queued' || task.status === 'starting' || task.status === 'running')
+  ) {
+    return { label: t('chat.managedTasks.summary.recovering'), className: 'text-[var(--status-warning)]' };
+  }
+  if (task.status === 'completed') {
     return { label: t('chat.managedTasks.summary.complete'), className: 'text-[var(--status-success)]' };
   }
-  if (status === 'failed' || status === 'aborted' || status === 'interrupted') {
+  if (task.status === 'failed' || task.status === 'aborted' || task.status === 'interrupted') {
     return { label: t('chat.managedTasks.summary.error'), className: 'text-[var(--status-error)]' };
+  }
+  if (task.status === 'queued') {
+    return { label: t('chat.managedTasks.summary.queued'), className: 'text-muted-foreground' };
+  }
+  if (task.status === 'starting') {
+    return { label: t('chat.managedTasks.summary.preparing'), className: 'text-muted-foreground' };
   }
   return { label: t('chat.managedTasks.summary.running'), className: 'text-muted-foreground' };
 };
 
+const providerModelLabel = (
+  task: Pick<ManagedTaskEventRecord, 'modelId' | 'providerId'>,
+  providers: ControlledModelPickerProvider[],
+) => {
+  const provider = providers.find((entry) => entry.id === task.providerId);
+  const model = provider?.models?.find((entry) => entry.id === task.modelId);
+  return {
+    provider: provider?.name ?? task.providerId,
+    model: model?.name ?? task.modelId,
+    combined: `${provider?.name ?? task.providerId} / ${model?.name ?? task.modelId}`,
+  };
+};
+
 export type ManagedTaskRowViewProps = {
   task: ManagedTaskEventRecord;
+  recoverySourceTask?: ManagedTaskEventRecord;
   onOpenChild(): void;
   resultEnvelope?: ManagedTaskResultEnvelope;
   pending?: boolean;
+  childActive?: boolean;
   actionError?: string | null;
   providers?: ControlledModelPickerProvider[];
   onRetryInPlace?(selection: ProviderRecoverySelection): void | Promise<void>;
@@ -46,15 +73,53 @@ export type ManagedTaskRowViewProps = {
 
 export const ManagedTaskRowView = React.memo(({
   task,
+  recoverySourceTask,
   onOpenChild,
   resultEnvelope,
   pending = false,
+  childActive = false,
   actionError = null,
   providers = [],
   onRetryInPlace,
 }: ManagedTaskRowViewProps) => {
   const { t } = useI18n();
-  const status = getStatusPresentation(task.status, t);
+  const presentedTask = childActive && (
+    task.status === 'failed' || task.status === 'aborted' || task.status === 'interrupted'
+  )
+    ? { ...task, status: 'running' as const }
+    : task;
+  const status = getStatusPresentation(presentedTask, t);
+  const failedUsageTask = task.failureKind === 'provider_usage_limit'
+    ? task
+    : recoverySourceTask?.failureKind === 'provider_usage_limit'
+      ? recoverySourceTask
+      : null;
+  const failedModel = failedUsageTask
+    ? providerModelLabel(failedUsageTask, providers)
+    : null;
+  const recoveryModel = providerModelLabel(task, providers);
+  const providerLimitMessage = failedModel
+    ? task.executionKind === 'recover_in_place'
+      ? task.status === 'completed'
+        ? t('chat.managedTasks.providerLimit.recovered', {
+          provider: failedModel.provider,
+          recoveryModel: recoveryModel.combined,
+        })
+        : task.status === 'failed' || task.status === 'aborted' || task.status === 'interrupted'
+          ? t('chat.managedTasks.providerLimit.recoveryFailed', {
+            provider: failedModel.provider,
+            failedModel: failedModel.model,
+          })
+          : t('chat.managedTasks.providerLimit.recovering', {
+            provider: failedModel.provider,
+            failedModel: failedModel.model,
+            recoveryModel: recoveryModel.combined,
+          })
+      : t('chat.managedTasks.providerLimit.reached', {
+        provider: failedModel.provider,
+        model: failedModel.model,
+      })
+    : null;
   const [selection, setSelection] = React.useState<ProviderRecoverySelection>(() => ({
     providerId: task.providerId,
     modelId: task.modelId,
@@ -65,6 +130,7 @@ export const ManagedTaskRowView = React.memo(({
   }, [task.taskId, task.providerId, task.modelId, task.variant]);
   const showRecovery = Boolean(
     onRetryInPlace
+    && !childActive
     && resultEnvelope?.resumable
     && resultEnvelope.action === null
     && !task.agentRetryAvailable
@@ -79,6 +145,11 @@ export const ManagedTaskRowView = React.memo(({
             {formatManagedTaskDisplayName(task.label)}
           </h4>
           <p className={`truncate typography-meta ${status.className}`}>{status.label}</p>
+          {providerLimitMessage ? (
+            <p role="alert" className="mt-1 typography-micro text-[var(--status-warning)]">
+              {providerLimitMessage}
+            </p>
+          ) : null}
         </div>
         {task.childSessionId ? (
           <Button
@@ -137,7 +208,13 @@ export const ManagedTaskRow = React.memo(({
     [taskId],
   ));
   const providers = useConfigStore((state) => state.providers);
+  const recoverySourceTask = useManagedOrchestrationStore(React.useMemo(
+    () => managedOrchestrationSelectors.task(task?.priorTaskId ?? ''),
+    [task?.priorTaskId],
+  ));
   const retryFollowUpTaskId = getRetryInPlaceFollowUpTaskId(resultEnvelope);
+  const childStatus = useSessionStatus(task?.childSessionId ?? '', task?.directory ?? undefined);
+  const childActive = childStatus?.type === 'busy' || childStatus?.type === 'retry';
 
   React.useLayoutEffect(() => {
     if (!didMountRef.current) {
@@ -154,8 +231,10 @@ export const ManagedTaskRow = React.memo(({
   return (
     <ManagedTaskRowView
       task={task}
+      recoverySourceTask={recoverySourceTask}
       resultEnvelope={resultEnvelope}
       pending={pendingAction === 'retry_in_place'}
+      childActive={childActive}
       actionError={actionError}
       providers={providers}
       onRetryInPlace={(selection) => useManagedOrchestrationStore.getState().acknowledgeTask(

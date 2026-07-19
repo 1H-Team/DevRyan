@@ -14,6 +14,11 @@ describe("getAssistantToolStatusPhrase", () => {
         expect(getAssistantToolStatusPhrase("apply_patch")).toBe("applying patch");
     });
 
+    test("normalizes compatibility tool names before formatting status", () => {
+        expect(getAssistantToolStatusPhrase("oc_bash")).toBe("running command");
+        expect(getAssistantToolStatusPhrase("oc_read")).toBe("reading file");
+    });
+
     test("uses the subagent waiting phrase for managed task tools case-insensitively", () => {
         expect(getAssistantToolStatusPhrase("devryan_task")).toBe("waiting for subagent output");
         expect(getAssistantToolStatusPhrase("DEVRYAN_TASK")).toBe("waiting for subagent output");

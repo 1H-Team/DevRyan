@@ -18,8 +18,6 @@ import { useUIStore } from '@/stores/useUIStore';
 import { getSafeStorage } from '@/stores/utils/safeStorage';
 import { useGitStore, useGitAllBranches, useGitRepoStatusMap } from '@/stores/useGitStore';
 import { isVSCodeRuntime } from '@/lib/desktop';
-import { NewWorktreeDialog } from './NewWorktreeDialog';
-import { ScheduledTasksDialog } from './ScheduledTasksDialog';
 import { useSessionFoldersStore } from '@/stores/useSessionFoldersStore';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { useArchivedAutoFolders } from './sidebar/hooks/useArchivedAutoFolders';
@@ -35,31 +33,47 @@ import { useSessionFolderCleanup } from './sidebar/hooks/useSessionFolderCleanup
 import { useStickyProjectHeaders } from './sidebar/hooks/useStickyProjectHeaders';
 import { useSidebarArchivedAssistantActivityHydration } from './sidebar/hooks/useSidebarArchivedAssistantActivityHydration';
 import { useSidebarUserActivityHydration } from './sidebar/hooks/useSidebarUserActivityHydration';
+import {
+  collectSidebarChildHydrationTargets,
+  type SidebarChildHydrationTarget,
+} from './sidebar/sidebarChildHydration';
 import { getGitHubPrStatusKey, usePrVisualSummaryByKeys, useGitHubPrStatusStore } from '@/stores/useGitHubPrStatusStore';
-import { ProjectEditDialog } from '@/components/layout/ProjectEditDialog';
 import { SessionGroupSection } from './sidebar/SessionGroupSection';
 import { SidebarHeader } from './sidebar/SidebarHeader';
 import { SidebarFooter } from './sidebar/SidebarFooter';
 import { SidebarProjectsList } from './sidebar/SidebarProjectsList';
 import { SessionNodeItem } from './sidebar/SessionNodeItem';
-import { SessionSearchDialog, type SessionSearchDialogItem } from './sidebar/SessionSearchDialog';
+import type { SessionSearchDialogItem } from './sidebar/SessionSearchDialog';
 import { listProjectWorktrees } from '@/lib/worktrees/worktreeManager';
-import { isGitGenerationSession } from '@/lib/git/gitGenerationSessions';
+import {
+  filterUserVisibleSessions,
+  isUserVisibleSessionRecord,
+} from '@/lib/sessionVisibility';
 import type { WorktreeMetadata } from '@/types/worktree';
 import type { SortableDragHandleProps } from './sidebar/sortableItems';
-import {
-  BulkSessionDeleteConfirmDialog,
-  FolderDeleteConfirmDialog,
-  SessionDeleteConfirmDialog,
-  type BulkDeleteSessionsConfirmState,
-  type DeleteFolderConfirmState,
-  type DeleteSessionConfirmState,
+import type {
+  BulkDeleteSessionsConfirmState,
+  DeleteFolderConfirmState,
+  DeleteSessionConfirmState,
 } from './sidebar/ConfirmDialogs';
+import {
+  DeferredSessionDialog,
+  LazyBulkSessionDeleteConfirmDialog,
+  LazyFolderDeleteConfirmDialog,
+  LazyNewWorktreeDialog,
+  LazyProjectEditDialog,
+  LazyScheduledTasksDialog,
+  LazySessionDeleteConfirmDialog,
+  LazySessionSearchDialog,
+} from './sidebar/lazySessionDialogs';
+import { LazyViewBoundary } from '@/components/views/lazyViews';
 import { BulkActionBar } from './sidebar/BulkActionBar';
 import { useSessionMultiSelectStore } from '@/stores/useSessionMultiSelectStore';
 import { type SessionGroup, type SessionNode } from './sidebar/types';
 import {
   compareSessionsByPinnedAndTime,
+  buildSessionProjectOwnership,
+  dedupeSessionsById,
   discardPendingArchiveRevealSessionIds,
   formatProjectLabel,
   normalizePath,
@@ -221,14 +235,6 @@ const DraftSidebarList: React.FC<DraftSidebarListProps> = ({
   );
 };
 
-const SIDEBAR_CHILD_HYDRATION_LIMIT = 40;
-
-type SidebarChildHydrationTarget = {
-  sessionId: string;
-  directory: string;
-  refreshKey: string;
-};
-
 const SidebarSessionChildrenHydrationItem: React.FC<{ target: SidebarChildHydrationTarget }> = ({ target }) => {
   useEnsureSessionChildren(target.sessionId, target.directory, true, target.refreshKey);
   return null;
@@ -368,6 +374,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const openContextPanelTab = useUIStore((state) => state.openContextPanelTab);
   const setSettingsDialogOpen = useUIStore((state) => state.setSettingsDialogOpen);
   const setSessionSwitcherOpen = useUIStore((state) => state.setSessionSwitcherOpen);
+  const isScheduledTasksDialogOpen = useUIStore((state) => state.isScheduledTasksDialogOpen);
   const setScheduledTasksDialogOpen = useUIStore((state) => state.setScheduledTasksDialogOpen);
   const setMultiRunLauncherOpen = useUIStore((state) => state.setMultiRunLauncherOpen);
   const toggleSidebar = useUIStore((state) => state.toggleSidebar);
@@ -405,7 +412,11 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const sessionUserActivity = useAllSessionUserActivity();
   const hasLoadedGlobalSessions = useGlobalSessionsStore((state) => state.hasLoaded);
   const globalActiveSessions = useGlobalSessionsStore((state) => state.activeSessions);
-  const archivedSessions = useGlobalSessionsStore((state) => state.archivedSessions);
+  const globalArchivedSessions = useGlobalSessionsStore((state) => state.archivedSessions);
+  const archivedSessions = React.useMemo(
+    () => filterUserVisibleSessions(globalArchivedSessions),
+    [globalArchivedSessions],
+  );
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const currentDraftId = useSessionUIStore((state) => state.currentDraftId);
   const draftOrder = useSessionUIStore((state) => state.draftOrder);
@@ -444,12 +455,16 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
 
     return merged.filter((session) => (
       isKnownActiveSessionDirectory(session, knownSessionDirectories)
-      && !isGitGenerationSession(session.id)
+      && isUserVisibleSessionRecord(session)
     ));
   }, [globalActiveSessions, knownSessionDirectories, liveSessions]);
 
-  useSidebarUserActivityHydration(sessions, sessionUserActivity);
-  const archivedAssistantActivity = useSidebarArchivedAssistantActivityHydration(sessions, archivedSessions);
+  useSidebarUserActivityHydration(sessions, sessionUserActivity, currentDirectory);
+  const archivedAssistantActivity = useSidebarArchivedAssistantActivityHydration(
+    sessions,
+    archivedSessions,
+    currentDirectory,
+  );
 
   const liveSessionStructureSignature = React.useMemo(
     () => liveSessions
@@ -888,15 +903,23 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   }, [github, isSwitchingGitHubAccount, setGitHubAuthStatus]);
 
   const isSessionsLoading = useSessionUIStore((state) => state.isLoading);
+  const sessionProjectOwnership = React.useMemo(
+    () => buildSessionProjectOwnership(
+      normalizedProjects,
+      availableWorktreesByProject,
+      dedupeSessionsById([...sessions, ...archivedSessions]),
+      isVSCode,
+    ),
+    [archivedSessions, availableWorktreesByProject, isVSCode, normalizedProjects, sessions],
+  );
   useSessionFolderCleanup({
     isSessionsLoading,
     hasLoadedGlobalSessions,
     sessions,
     archivedSessions,
     normalizedProjects,
-    isVSCode,
-    availableWorktreesByProject,
     cleanupSessions,
+    sessionProjectOwnership,
   });
 
   const { getSessionsForProject, getArchivedSessionsForProject } = useProjectSessionLists({
@@ -904,6 +927,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     sessions,
     archivedSessions,
     availableWorktreesByProject,
+    sessionProjectOwnership,
   });
 
   useArchivedAutoFolders({
@@ -917,6 +941,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     createFolder,
     addSessionToFolder,
     cleanupSessions,
+    sessionProjectOwnership,
   });
 
   // Keep last-known repo status to avoid UI jiggling during project switch
@@ -946,78 +971,17 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   });
 
   const sidebarChildHydrationTargets = React.useMemo<SidebarChildHydrationTarget[]>(() => {
-    const targets = new Map<string, SidebarChildHydrationTarget>();
-    const addRootSession = (session: Session, directoryHint?: string | null) => {
-      if ((session as Session & { parentID?: string | null }).parentID) {
-        return;
-      }
-      const directory = normalizePath(resolveGlobalSessionDirectory(session) ?? directoryHint ?? null);
-      if (!directory) {
-        return;
-      }
-      const key = `${directory}:${session.id}`;
-      if (targets.has(key)) {
-        return;
-      }
-      targets.set(key, {
-        sessionId: session.id,
-        directory,
-        refreshKey: [
-          session.time?.created ?? 0,
-          session.time?.updated ?? 0,
-          session.time?.archived ?? 0,
-        ].join(':'),
-      });
-    };
-
-    const visitNodes = (nodes: SessionNode[], directoryHint?: string | null) => {
-      for (const node of nodes) {
-        if (targets.size >= SIDEBAR_CHILD_HYDRATION_LIMIT) {
-          return;
-        }
-        addRootSession(node.session, directoryHint);
-        if (node.children.length > 0) {
-          visitNodes(node.children, directoryHint);
-        }
-      }
-    };
-
-    for (const section of sectionsForRender) {
-      if (collapsedProjects.has(section.project.id)) {
-        continue;
-      }
-      for (const group of section.groups) {
-        if (group.isArchivedBucket) {
-          continue;
-        }
-        visitNodes(group.sessions, group.directory);
-        if (targets.size >= SIDEBAR_CHILD_HYDRATION_LIMIT) {
-          break;
-        }
-      }
-      if (targets.size >= SIDEBAR_CHILD_HYDRATION_LIMIT) {
-        break;
-      }
-    }
-
-    const sessionById = new Map(sessions.map((session) => [session.id, session]));
-    let currentSession = currentSessionId ? sessionById.get(currentSessionId) ?? null : null;
-    const seenCurrentChain = new Set<string>();
-    while (currentSession) {
-      if (seenCurrentChain.has(currentSession.id)) {
-        break;
-      }
-      seenCurrentChain.add(currentSession.id);
-      const parentID = (currentSession as Session & { parentID?: string | null }).parentID;
-      if (!parentID) {
-        addRootSession(currentSession);
-        break;
-      }
-      currentSession = sessionById.get(parentID) ?? null;
-    }
-
-    return Array.from(targets.values());
-  }, [collapsedProjects, currentSessionId, sectionsForRender, sessions]);
+    return collectSidebarChildHydrationTargets({
+      sections: sectionsForRender.map((section) => ({
+        projectId: section.project.id,
+        groups: section.groups,
+      })),
+      collapsedProjectIds: collapsedProjects,
+      currentSessionId,
+      sessions,
+      activeDirectory: currentDirectory,
+    });
+  }, [collapsedProjects, currentDirectory, currentSessionId, sectionsForRender, sessions]);
 
   const searchEmptyState = (
     <div className="py-6 text-center text-muted-foreground">
@@ -1180,6 +1144,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
 
   useSessionPrefetch({
     currentSessionId,
+    currentDirectory,
     sortedSessions,
     ensureSessionRenderable: sync.ensureSessionRenderable,
   });
@@ -1797,17 +1762,21 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         reserveExternalDesktopChromeRow={isDesktopShellRuntime && !mobileVariant && !isVSCode}
       />
 
-      <SessionSearchDialog
-        open={isSessionSearchOpen}
-        onOpenChange={setIsSessionSearchOpen}
-        query={sessionSearchQuery}
-        onQueryChange={setSessionSearchQuery}
-        items={sessionSearchDialogItems}
-        recentItems={sessionSearchDialogItems}
-        currentSessionId={currentSessionId}
-        inputRef={sessionSearchInputRef}
-        onSelect={handleSessionSearchSelect}
-      />
+      <DeferredSessionDialog active={isSessionSearchOpen}>
+        <LazyViewBoundary>
+          <LazySessionSearchDialog
+            open={isSessionSearchOpen}
+            onOpenChange={setIsSessionSearchOpen}
+            query={sessionSearchQuery}
+            onQueryChange={setSessionSearchQuery}
+            items={sessionSearchDialogItems}
+            recentItems={sessionSearchDialogItems}
+            currentSessionId={currentSessionId}
+            inputRef={sessionSearchInputRef}
+            onSelect={handleSessionSearchSelect}
+          />
+        </LazyViewBoundary>
+      </DeferredSessionDialog>
 
       <SidebarSessionChildrenHydrator targets={sidebarChildHydrationTargets} />
 
@@ -1872,63 +1841,87 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         handleOpenDirectoryDialog={handleOpenDirectoryDialog}
       />
 
-      {editingProject ? (
-        <ProjectEditDialog
-          open={Boolean(editingProject)}
-          onOpenChange={(open) => {
-            if (!open) {
-              setEditingProjectDialogId(null);
-            }
-          }}
-          projectId={editingProject.id}
-          projectName={editingProject.label || formatDirectoryName(editingProject.path, homeDirectory)}
-          projectPath={editingProject.path}
-          initialIcon={editingProject.icon}
-          initialColor={editingProject.color}
-          initialIconBackground={editingProject.iconBackground}
-          onSave={handleSaveProjectEdit}
-        />
-      ) : null}
+      <DeferredSessionDialog active={Boolean(editingProject)}>
+        {editingProject ? (
+          <LazyViewBoundary>
+            <LazyProjectEditDialog
+              open={Boolean(editingProject)}
+              onOpenChange={(open) => {
+                if (!open) {
+                  setEditingProjectDialogId(null);
+                }
+              }}
+              projectId={editingProject.id}
+              projectName={editingProject.label || formatDirectoryName(editingProject.path, homeDirectory)}
+              projectPath={editingProject.path}
+              initialIcon={editingProject.icon}
+              initialColor={editingProject.color}
+              initialIconBackground={editingProject.iconBackground}
+              onSave={handleSaveProjectEdit}
+            />
+          </LazyViewBoundary>
+        ) : null}
+      </DeferredSessionDialog>
 
-      <NewWorktreeDialog
-        open={newWorktreeDialogOpen}
-        onOpenChange={setNewWorktreeDialogOpen}
-        onWorktreeCreated={(worktreePath, options) => {
-          setActiveMainTab('chat');
-          if (mobileVariant) {
-            setSessionSwitcherOpen(false);
-          }
-          if (options?.sessionId) {
-            setCurrentSession(options.sessionId);
-            return;
-          }
-          openNewSessionDraft({ directoryOverride: worktreePath });
-        }}
-      />
+      <DeferredSessionDialog active={newWorktreeDialogOpen}>
+        <LazyViewBoundary>
+          <LazyNewWorktreeDialog
+            open={newWorktreeDialogOpen}
+            onOpenChange={setNewWorktreeDialogOpen}
+            onWorktreeCreated={(worktreePath, options) => {
+              setActiveMainTab('chat');
+              if (mobileVariant) {
+                setSessionSwitcherOpen(false);
+              }
+              if (options?.sessionId) {
+                setCurrentSession(options.sessionId);
+                return;
+              }
+              openNewSessionDraft({ directoryOverride: worktreePath });
+            }}
+          />
+        </LazyViewBoundary>
+      </DeferredSessionDialog>
 
-      <ScheduledTasksDialog />
+      <DeferredSessionDialog active={isScheduledTasksDialogOpen}>
+        <LazyViewBoundary>
+          <LazyScheduledTasksDialog />
+        </LazyViewBoundary>
+      </DeferredSessionDialog>
 
-      <SessionDeleteConfirmDialog
-        value={deleteSessionConfirm}
-        setValue={setDeleteSessionConfirm}
-        showDeletionDialog={showDeletionDialog}
-        setShowDeletionDialog={setShowDeletionDialog}
-        onConfirm={confirmDeleteSession}
-      />
+      <DeferredSessionDialog active={Boolean(deleteSessionConfirm)}>
+        <LazyViewBoundary>
+          <LazySessionDeleteConfirmDialog
+            value={deleteSessionConfirm}
+            setValue={setDeleteSessionConfirm}
+            showDeletionDialog={showDeletionDialog}
+            setShowDeletionDialog={setShowDeletionDialog}
+            onConfirm={confirmDeleteSession}
+          />
+        </LazyViewBoundary>
+      </DeferredSessionDialog>
 
-      <FolderDeleteConfirmDialog
-        value={deleteFolderConfirm}
-        setValue={setDeleteFolderConfirm}
-        onConfirm={confirmDeleteFolder}
-      />
+      <DeferredSessionDialog active={Boolean(deleteFolderConfirm)}>
+        <LazyViewBoundary>
+          <LazyFolderDeleteConfirmDialog
+            value={deleteFolderConfirm}
+            setValue={setDeleteFolderConfirm}
+            onConfirm={confirmDeleteFolder}
+          />
+        </LazyViewBoundary>
+      </DeferredSessionDialog>
 
-      <BulkSessionDeleteConfirmDialog
-        value={bulkDeleteConfirm}
-        setValue={setBulkDeleteConfirm}
-        showDeletionDialog={showDeletionDialog}
-        setShowDeletionDialog={setShowDeletionDialog}
-        onConfirm={confirmBulkDelete}
-      />
+      <DeferredSessionDialog active={Boolean(bulkDeleteConfirm)}>
+        <LazyViewBoundary>
+          <LazyBulkSessionDeleteConfirmDialog
+            value={bulkDeleteConfirm}
+            setValue={setBulkDeleteConfirm}
+            showDeletionDialog={showDeletionDialog}
+            setShowDeletionDialog={setShowDeletionDialog}
+            onConfirm={confirmBulkDelete}
+          />
+        </LazyViewBoundary>
+      </DeferredSessionDialog>
     </div>
   );
 };

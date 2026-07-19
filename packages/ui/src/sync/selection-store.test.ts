@@ -76,6 +76,42 @@ describe("selection-store agent model selections", () => {
     })
   })
 
+  test("clears every selection owned by one permanently deleted session", () => {
+    const targetSession = "session-delete"
+    const retainedSession = "session-keep"
+    const store = useSelectionStore.getState() as SelectionState & {
+      clearSessionSelection?: (sessionId: string) => void
+    }
+
+    store.saveSessionModelSelection(targetSession, "openai", "gpt-5.5")
+    store.saveSessionAgentSelection(targetSession, "builder")
+    store.setSessionPlanMode(targetSession, true)
+    store.saveAgentModelForSession(targetSession, "builder", "anthropic", "claude")
+    store.saveAgentModelVariantForSession(targetSession, "builder", "anthropic", "claude", "high")
+
+    store.saveSessionModelSelection(retainedSession, "openai", "gpt-5.6")
+    store.saveSessionAgentSelection(retainedSession, "reviewer")
+    store.setSessionPlanMode(retainedSession, true)
+    store.saveAgentModelForSession(retainedSession, "reviewer", "openai", "gpt-5.6")
+    store.saveAgentModelVariantForSession(retainedSession, "reviewer", "openai", "gpt-5.6", "medium")
+
+    expect(typeof store.clearSessionSelection).toBe("function")
+    store.clearSessionSelection?.(targetSession)
+
+    const next = useSelectionStore.getState()
+    expect(next.getSessionModelSelection(targetSession)).toBe(null)
+    expect(next.getSessionAgentSelection(targetSession)).toBe(null)
+    expect(next.getSessionPlanMode(targetSession)).toBe(false)
+    expect(next.getAgentModelForSession(targetSession, "builder")).toBe(null)
+    expect(next.getAgentModelVariantForSession(targetSession, "builder", "anthropic", "claude")).toBe(undefined)
+
+    expect(next.getSessionModelSelection(retainedSession)).toEqual({ providerId: "openai", modelId: "gpt-5.6" })
+    expect(next.getSessionAgentSelection(retainedSession)).toBe("reviewer")
+    expect(next.getSessionPlanMode(retainedSession)).toBe(true)
+    expect(next.getAgentModelForSession(retainedSession, "reviewer")).toEqual({ providerId: "openai", modelId: "gpt-5.6" })
+    expect(next.getAgentModelVariantForSession(retainedSession, "reviewer", "openai", "gpt-5.6")).toBe("medium")
+  })
+
   test("promotes draft selections into a real session and clears the draft", () => {
     const store = useSelectionStore.getState() as SelectionState & {
       saveDraftAgentSelection?: (draftId: string, agentName: string) => void

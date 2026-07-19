@@ -41,26 +41,33 @@ const WORKER_POOL_CONFIG: Record<WorkerPoolStyle, { poolSize: number; totalASTLR
 let unifiedWorkerPool: WorkerPoolManager | undefined;
 let splitWorkerPool: WorkerPoolManager | undefined;
 
-const createWorkerPool = (style: WorkerPoolStyle) => {
-  const config = WORKER_POOL_CONFIG[style];
-  const pool = new WorkerPoolManager(
-    {
-      workerFactory,
-      poolSize: config.poolSize,
-      totalASTLRUCacheSize: config.totalASTLRUCacheSize,
-    },
-    {
-      theme: {
-        light: 'pierre-light',
-        dark: 'pierre-dark',
+const createWorkerPool = (style: WorkerPoolStyle): WorkerPoolManager | undefined => {
+  try {
+    const config = WORKER_POOL_CONFIG[style];
+    const pool = new WorkerPoolManager(
+      {
+        workerFactory,
+        poolSize: config.poolSize,
+        totalASTLRUCacheSize: config.totalASTLRUCacheSize,
       },
-      langs: PRELOAD_LANGS,
-      lineDiffType: config.lineDiffType,
-      preferredHighlighter: 'shiki-wasm',
-    }
-  );
-  void pool.initialize();
-  return pool;
+      {
+        theme: {
+          light: 'pierre-light',
+          dark: 'pierre-dark',
+        },
+        langs: PRELOAD_LANGS,
+        lineDiffType: config.lineDiffType,
+        preferredHighlighter: 'shiki-wasm',
+      }
+    );
+    void pool.initialize().catch((error) => {
+      console.error('Failed to initialize Shiki diff worker pool:', error);
+    });
+    return pool;
+  } catch (error) {
+    console.error('Failed to create Shiki diff worker pool:', error);
+    return undefined;
+  }
 };
 
 const getWorkerPool = (style: WorkerPoolStyle): WorkerPoolManager | undefined => {

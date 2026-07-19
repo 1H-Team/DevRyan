@@ -4,7 +4,7 @@
 Application shell/layout components (panes, headers, split views, containers).
 
 ## Design
-Structural components define composition boundaries between navigation, chat, and side panels.
+Structural components define composition boundaries between navigation, chat, and side panels. `MainLayout`, `RightSidebarTabs`, `ContextPanel`, and `VSCodeLayout` consume heavyweight views through `components/views/lazyViews.tsx`; they must not statically import those implementations. `ContextPanel` treats an open plan as session-bound presentation and collapses it synchronously when the selected session or draft changes, preventing a directory-shared plan tab from leaking stale content across chats.
 
 ## Flow
 App entry mounts layout; feature regions receive data via context/hooks.

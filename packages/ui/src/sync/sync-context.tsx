@@ -7,13 +7,22 @@ import { useStore } from "zustand"
 import type { OpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { createEventPipeline } from "./event-pipeline"
 import {
+  resolveEventPipelineConnectionUpdate,
+  type EventPipelineConnectionEvent,
+} from "./event-pipeline-connection-state"
+import {
   reduceGlobalEvent,
   applyGlobalProject,
   applyDirectoryEvent,
   shouldSettleTerminalAssistantMessageStatus,
 } from "./event-reducer"
 import { useGlobalSyncStore, type GlobalSyncStore } from "./global-sync-store"
-import { ChildStoreManager, type DirectoryStore } from "./child-store"
+import {
+  ChildStoreManager,
+  getActiveDirectoryStoreKeys,
+  shouldBootstrapDirectorySubscription,
+  type DirectoryStore,
+} from "./child-store"
 import {
   aggregateLiveSessions,
   aggregateLiveSessionStatuses,
@@ -26,13 +35,20 @@ import { bootstrapGlobal, bootstrapDirectory } from "./bootstrap"
 import { retry } from "./retry"
 import { updateStreamingState, useStreamingStore } from "./streaming"
 import { isSessionWorkingFromState } from "./session-working"
-import { clearActionRefs, releaseSessionActionDirectory, setActionRefs } from "./session-actions"
-import { clearSyncRefs, setSyncRefs } from "./sync-refs"
+import {
+  clearActionRefs,
+  releaseSessionActionDirectory,
+  releaseSessionActionSession,
+  setActionRefs,
+} from "./session-actions"
+import { clearSyncRefs, getSessionUIStoreIfInitialized, setSyncRefs } from "./sync-refs"
 import { stripMessageDiffSnapshots, stripSessionDiffSnapshots } from "./sanitize"
 import { syncDebug } from "./debug"
 import {
   ACTIVE_SESSION_RECOVERY_COOLDOWN_MS,
   ACTIVE_SESSION_STATUS_STALE_MS,
+  captureSessionStatusBaseline,
+  filterUnchangedSessionStatusCandidates,
   getReconnectCandidateSessionIds,
   mergeRecoveredSessionStatuses,
   shouldRecoverStaleActiveSession,
@@ -43,6 +59,7 @@ import {
   addPendingPartDelta,
   applyPendingPartDeltasToState,
   clearPendingPartDeltasForDirectory,
+  clearPendingPartDeltasForMessages,
   consumePendingPartDeltas,
   hasPendingPartDeltasForMessages,
   readPendingPartDeltaFromEvent,
@@ -54,6 +71,8 @@ import { useConfigStore } from "@/stores/useConfigStore"
 import { useTodosPersistStore } from "@/stores/useTodosPersistStore"
 import { useUIStore } from "@/stores/useUIStore"
 import { useManagedOrchestrationStore } from "@/stores/useManagedOrchestrationStore"
+import { useMessageQueueStore } from "@/stores/messageQueueStore"
+import { useContextStore } from "@/stores/contextStore"
 import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
 import {
   postRendererTurnTimingMark,
@@ -63,8 +82,9 @@ import {
   streamDebugMark,
 } from "@/stores/utils/streamDebug"
 import { toast } from "@/components/ui"
-import { clearAbortGuards } from "./abort-retry-guard"
+import { clearAbortGuard, clearAbortGuards } from "./abort-retry-guard"
 import { appendNotification, useNotificationStore } from "./notification-store"
+import { useSelectionStore } from "./selection-store"
 import type { State } from "./types"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import type { PermissionRequest } from "@/types/permission"
@@ -85,6 +105,9 @@ import {
 } from "./session-materializer"
 import { detectPlanCompletedCandidate } from "./plan-completion-detection"
 import { detectPlanProposedCandidate } from "./plan-proposed-detection"
+import { persistSessionPlanRevision } from "@/lib/plans/sessionPlanPersistence"
+import { resolveProjectForSessionDirectory } from "@/lib/projectResolution"
+import { isStrictlyOlderSession } from "./session-recency"
 import {
   isSessionTurnSettledForCompletion,
   shouldSettlePlanProposalStatus,
@@ -104,7 +127,8 @@ import {
   type SessionChildrenFetchCacheEntry,
   type SessionChildrenHookStatus,
 } from "./session-children"
-import { clearSessionPrefetchDirectory } from "./session-prefetch-cache"
+import { clearSessionPrefetch, clearSessionPrefetchDirectory } from "./session-prefetch-cache"
+import { removePersistedSessionInput } from "./session-draft-storage"
 import {
   clearDirectoryMaterializations,
   clearDirectoryPrefixedEntries,
@@ -124,6 +148,13 @@ const EMPTY_MESSAGES: Message[] = []
 const EMPTY_PARTS: Part[] = []
 const EMPTY_PERMISSION_REQUESTS: PermissionRequest[] = []
 const EMPTY_QUESTION_REQUESTS: QuestionRequest[] = []
+
+function applyEventPipelineConnectionEvent(event: EventPipelineConnectionEvent): void {
+  const update = resolveEventPipelineConnectionUpdate(useConfigStore.getState(), event)
+  if (update) {
+    useConfigStore.setState(update)
+  }
+}
 const FIRST_ASSISTANT_DELTA_MARK_LIMIT = 1_000
 const firstAssistantDeltaMarkedMessages = new Set<string>()
 const sessionChildrenFetches = new Map<string, SessionChildrenFetchCacheEntry>()
@@ -1020,6 +1051,56 @@ const dropPendingToastKeysForSession = (sessionID: string) => {
   }
 }
 
+const retireDeletedSessionSyncOwnership = (
+  directory: string,
+  sessionID: string,
+  state: State,
+  routingIndex: EventRoutingIndex,
+) => {
+  if (!directory || directory === "global" || !sessionID) return
+
+  const pendingKey = materializationKey(directory, sessionID)
+  const pendingMaterialization = pendingSessionMaterializations.get(pendingKey)
+  if (pendingMaterialization?.retryTimer) {
+    clearTimeout(pendingMaterialization.retryTimer)
+  }
+  pendingSessionMaterializations.delete(pendingKey)
+
+  const lifecycleKey = `${directory}\u0000${sessionID}`
+  const lifecycleRestoration = lifecycleRestorationsBySession.get(lifecycleKey)
+  if (lifecycleRestoration) {
+    lifecycleRestoration.cancelled = true
+    lifecycleRestorationsBySession.delete(lifecycleKey)
+  }
+
+  blockingRequestSessionMaterializationsInFlight.delete(`${directory}\n${sessionID}`)
+  releaseSessionActionSession(directory, sessionID)
+  sessionChildrenFetches.delete(getSessionChildrenFetchKey(directory, sessionID))
+  clearSessionPrefetch(directory, [sessionID])
+
+  const messageIDs = new Set(routingIndex.sessionMessageIdsById.get(sessionID) ?? [])
+  for (const message of state.message[sessionID] ?? EMPTY_MESSAGES) {
+    messageIDs.add(message.id)
+  }
+  clearPendingPartDeltasForMessages(pendingPartDeltas, directory, messageIDs)
+  for (const messageID of messageIDs) {
+    firstAssistantDeltaMarkedMessages.delete(messageID)
+  }
+
+  const trackingKey = statusTrackingKey(directory, sessionID)
+  externallyViewedSessions.delete(trackingKey)
+  lastStatusEventAtBySessionKey.delete(trackingKey)
+  lastOutputEventAtBySessionKey.delete(trackingKey)
+  lastRecoveryAtBySessionKey.delete(trackingKey)
+  clearAbortGuard(sessionID)
+  clearCommittedRevertResendsForSessions([sessionID])
+
+  if (_activeDirectory === directory && _activeSession === sessionID) {
+    _activeSession = ""
+    _activeSessionTrackingKey = ""
+  }
+}
+
 const releaseDirectoryOwnedSyncState = (
   directory: string,
   snapshot: State,
@@ -1246,6 +1327,35 @@ async function detectAndMarkPlanLifecycle(
         [sessionID]: { type: "idle" as const },
       },
     }
+  })
+
+  // Saving is owned by the lifecycle rather than the rendered PlanCard so a
+  // completed background chat has its authoritative file ready before opening.
+  const { useProjectsStore } = await import("@/stores/useProjectsStore")
+  if (!isCurrent()) return
+  const candidateSession = store.getState().session.find((session) => session.id === sessionID)
+  if (!candidateSession) return
+  const sessionCreated = candidateSession.time?.created
+  const sessionSlug = candidateSession.slug
+  const sessionDirectory = typeof candidateSession.directory === "string"
+    ? candidateSession.directory
+    : directory
+  const project = resolveProjectForSessionDirectory(
+    useProjectsStore.getState().projects,
+    useSessionUIStore.getState().availableWorktreesByProject,
+    sessionDirectory,
+  )
+  if (!project || typeof sessionCreated !== "number" || !sessionSlug) return
+
+  await persistSessionPlanRevision({
+    sessionId: sessionID,
+    identity: {
+      projectPath: project.path,
+      sessionCreated,
+      sessionSlug,
+      sourceMessageId: candidate.sourceMessageId,
+    },
+    markdown: candidate.markdown,
   })
 }
 
@@ -1954,16 +2064,27 @@ export async function resyncDirectoryAfterReconnect(
   if (candidateSessionIds.size === 0) return
 
   const scopedClient = opencodeClient.getScopedSdkClient(directory)
+  const statusBaselineBeforeRequest = captureSessionStatusBaseline(
+    store.getState().session_status ?? {},
+    candidateSessionIds,
+  )
   const nextStatuses = await retry(async () => {
     const result = await scopedClient.session.status()
     return unwrapSdkResult(result, "session.status")
   }).catch(() => null)
 
+  let statusSnapshotCandidates: string[] = []
+  let statusBaselineAfterFirstMerge: ReadonlyMap<string, SessionStatus | undefined> = new Map()
   if (nextStatuses) {
     const currentStatuses = store.getState().session_status ?? {}
-    const mergedStatuses = mergeRecoveredSessionStatuses({
+    statusSnapshotCandidates = filterUnchangedSessionStatusCandidates({
       current: currentStatuses,
       candidateSessionIds,
+      baseline: statusBaselineBeforeRequest,
+    })
+    const mergedStatuses = mergeRecoveredSessionStatuses({
+      current: currentStatuses,
+      candidateSessionIds: statusSnapshotCandidates,
       authoritative: nextStatuses,
       state: store.getState(),
     })
@@ -1972,7 +2093,7 @@ export async function resyncDirectoryAfterReconnect(
       store.setState((state: DirectoryStore) => {
         const latestMerged = mergeRecoveredSessionStatuses({
           current: state.session_status ?? {},
-          candidateSessionIds,
+          candidateSessionIds: statusSnapshotCandidates,
           authoritative: nextStatuses,
           state,
         })
@@ -1982,6 +2103,10 @@ export async function resyncDirectoryAfterReconnect(
         return { session_status: latestMerged }
       })
     }
+    statusBaselineAfterFirstMerge = captureSessionStatusBaseline(
+      store.getState().session_status ?? {},
+      statusSnapshotCandidates,
+    )
   }
 
   await Promise.all(Array.from(candidateSessionIds).map(async (sessionId) => {
@@ -2065,9 +2190,14 @@ export async function resyncDirectoryAfterReconnect(
 
   if (nextStatuses) {
     store.setState((state: DirectoryStore) => {
+      const finalStatusSnapshotCandidates = filterUnchangedSessionStatusCandidates({
+        current: state.session_status ?? {},
+        candidateSessionIds: statusSnapshotCandidates,
+        baseline: statusBaselineAfterFirstMerge,
+      })
       const latestMerged = mergeRecoveredSessionStatuses({
         current: state.session_status ?? {},
-        candidateSessionIds,
+        candidateSessionIds: finalStatusSnapshotCandidates,
         authoritative: nextStatuses,
         state,
       })
@@ -2086,6 +2216,7 @@ function handleEvent(
   payload: Event,
   childStores: ChildStoreManager,
   routingIndex: EventRoutingIndex,
+  activeDirectory: string,
 ) {
   const directory = resolveDirectoryFromRoutingIndex(routingIndex, rawDirectory, payload, childStores)
 
@@ -2105,11 +2236,11 @@ function handleEvent(
         projects: applyGlobalProject(current, result.project).projects,
       })
     }
-    // On server.connected / global.disposed, re-bootstrap all directories
-    // but only if not during recent boot
+    // On server.connected / global.disposed, re-bootstrap the active directory
+    // but only if not during recent boot. Passive stores must remain cache-only.
     if (payload.type === "server.connected" || payload.type === "global.disposed") {
       if (!recent) {
-        for (const dir of childStores.children.keys()) {
+        for (const dir of getActiveDirectoryStoreKeys(childStores.children.keys(), activeDirectory)) {
           const store = childStores.getChild(dir)
           if (store && store.getState().status !== "loading") {
             // Mark as loading to trigger re-bootstrap
@@ -2152,6 +2283,18 @@ function handleEvent(
       })
     }
     return
+  }
+
+  if (payload.type === "session.created" || payload.type === "session.updated") {
+    const incoming = (payload.properties as { info?: Session }).info
+    const currentSession = incoming
+      ? store.getState().session.find((session) => session.id === incoming.id)
+      : undefined
+    if (incoming && currentSession && isStrictlyOlderSession(incoming, currentSession)) {
+      responsivenessPerfCount("sync.event.noop")
+      syncDebug.dispatch.eventNoChange(payload.type, incoming.id, undefined)
+      return
+    }
   }
 
   childStores.mark(resolvedDirectory)
@@ -2243,8 +2386,20 @@ function handleEvent(
     const info = (payload.properties as { info?: { id?: string } }).info
     const sessionID = info?.id
     if (sessionID) {
+      retireDeletedSessionSyncOwnership(resolvedDirectory, sessionID, store.getState(), routingIndex)
       dropPendingToastKeysForSession(sessionID)
+      removePersistedSessionInput(sessionID)
+      useContextStore.getState().clearSessionContext(sessionID)
+      void usePermissionStore.getState().clearSessionAutoAccept(sessionID)
+      useNotificationStore.getState().removeSession(sessionID)
+      const sessionUI = getSessionUIStoreIfInitialized()?.getState()
+      if (sessionUI?.currentSessionId === sessionID) {
+        sessionUI.setCurrentSession(null)
+      }
+      sessionUI?.retireDeletedSession(sessionID)
       useProviderRecoveryStore.getState().clearRecovery(sessionID)
+      useMessageQueueStore.getState().clearQueue(sessionID)
+      useSelectionStore.getState().clearSessionSelection(sessionID)
     }
   }
 
@@ -2494,8 +2649,9 @@ export function applySyncEventForTest(
   payload: Event,
   childStores: ChildStoreManager,
   routingIndex: EventRoutingIndex,
+  activeDirectory = "",
 ) {
-  handleEvent(rawDirectory, payload, childStores, routingIndex)
+  handleEvent(rawDirectory, payload, childStores, routingIndex, activeDirectory)
 }
 
 // ---------------------------------------------------------------------------
@@ -2514,6 +2670,8 @@ export function SyncProvider(props: {
   const routingIndexRef = useRef<EventRoutingIndex | null>(null)
   if (!routingIndexRef.current) routingIndexRef.current = createEventRoutingIndex()
   const routingIndex = routingIndexRef.current
+  const activeDirectoryRef = useRef(props.directory)
+  activeDirectoryRef.current = props.directory
   const releaseEventPipelineDirectoryRef = useRef<(directory: string) => void>(() => undefined)
   const activateOwnershipCleanupRef = useRef<(() => () => void) | null>(null)
   if (!activateOwnershipCleanupRef.current) {
@@ -2663,8 +2821,9 @@ export function SyncProvider(props: {
       isBooting: (directory) => bootingDirs.has(directory),
       isLoadingSessions: () => false,
     })
-    for (const [directory, store] of childStores.children) {
-      if (store.getState().status !== "complete") {
+    for (const directory of getActiveDirectoryStoreKeys(childStores.children.keys(), activeDirectoryRef.current)) {
+      const store = childStores.children.get(directory)
+      if (store && store.getState().status !== "complete") {
         childStores.ensureChild(directory)
       }
     }
@@ -2770,15 +2929,15 @@ export function SyncProvider(props: {
         // Transient failure during targeted stale recovery; cooldown keeps retries bounded.
       })
     }
-    const triggerAllRecovery = () => {
-      for (const dir of childStores.children.keys()) {
+    const triggerActiveDirectoryRecovery = () => {
+      for (const dir of getActiveDirectoryStoreKeys(childStores.children.keys(), activeDirectoryRef.current)) {
         triggerReconnectMaterialization(dir)
       }
     }
     const onVisible = () => {
       if (typeof document === "undefined") return
       if (document.visibilityState !== "visible") return
-      triggerAllRecovery()
+      triggerActiveDirectoryRecovery()
     }
     const activeRecoveryWatchdog = setInterval(triggerActiveSessionRecovery, ACTIVE_SESSION_RECOVERY_CHECK_MS)
     ;(activeRecoveryWatchdog as { unref?: () => void }).unref?.()
@@ -2793,46 +2952,33 @@ export function SyncProvider(props: {
         return resolveDirectoryFromRoutingIndex(routingIndex, directory, payload, childStores)
       },
       onEvent: (directory, payload) => {
-        handleEvent(directory, payload, childStores, routingIndex)
+        handleEvent(directory, payload, childStores, routingIndex, activeDirectoryRef.current)
       },
       onManagedOrchestrationEvent: (payload) => {
         useManagedOrchestrationStore.getState().ingestEvent(payload)
       },
       onReconnect: () => {
-        useConfigStore.setState({
-          isConnected: true,
-          hasEverConnected: true,
-          connectionPhase: "connected",
-        })
-        triggerAllRecovery()
+        applyEventPipelineConnectionEvent({ type: "reconnected" })
+        triggerActiveDirectoryRecovery()
         void useManagedOrchestrationStore.getState().loadSnapshot()
       },
       onDisconnect: (reason) => {
-        const { hasEverConnected } = useConfigStore.getState()
-        useConfigStore.setState({
-          isConnected: false,
-          connectionPhase: hasEverConnected ? "reconnecting" : "connecting",
-          lastDisconnectReason: reason,
-        })
+        applyEventPipelineConnectionEvent({ type: "disconnected", reason })
       },
       onTransportSwitch: () => {
         // Transport switched (e.g. WS timeout → SSE fallback) without a full
-        // disconnect. If the active session missed the transition into a busy
-        // turn, force a targeted resync for the viewed directory.
-        useConfigStore.setState({
-          isConnected: true,
-          hasEverConnected: true,
-          connectionPhase: "connected",
-        })
-        if (_activeDirectory) {
-          triggerReconnectMaterialization(_activeDirectory)
-        }
+        // connection. Preserve the current connection state until the fallback
+        // stream actually connects; a switch alone does not prove reachability.
+        applyEventPipelineConnectionEvent({ type: "transport-switched" })
+        // If the active session missed the transition into a busy turn, force
+        // a targeted resync for the viewed directory.
+        triggerActiveDirectoryRecovery()
       },
       onReplayGap: () => {
         // Server's replay buffer rolled past our lastEventId, so cached state
-        // is potentially stale. Re-fetch every directory we currently have a
-        // store for. Cheaper than triggering a full re-bootstrap.
-        triggerAllRecovery()
+        // is potentially stale. Re-fetch the active directory; passive stores
+        // hydrate only when their directory becomes active.
+        triggerActiveDirectoryRecovery()
         void useManagedOrchestrationStore.getState().loadSnapshot()
       },
     })
@@ -2906,7 +3052,9 @@ export function useGlobalSyncSelector<T>(selector: (state: GlobalSyncStore) => T
 export function useDirectoryStore(directory?: string): StoreApi<DirectoryStore> {
   const system = useSyncSystem()
   const dir = directory ?? system.directory
-  return system.childStores.ensureChild(dir)
+  return system.childStores.ensureChild(dir, {
+    bootstrap: shouldBootstrapDirectorySubscription(directory, system.directory),
+  })
 }
 
 /** Select from the current directory's store */
@@ -2987,6 +3135,17 @@ export function useSessionRevertMessageID(sessionID: string, directory?: string)
       const session = state.session.find((s) => s.id === sessionID)
       return getEffectiveSessionRevertMessageID(state, sessionID, session)
     }, [sessionID]),
+    directory,
+  )
+}
+
+/** Select only whether this session has an in-flight scoped revert. */
+export function useSessionRevertPending(sessionID: string, directory?: string): boolean {
+  return useDirectorySync(
+    useCallback(
+      (state: State) => state.revert_transaction[sessionID]?.status === "pending",
+      [sessionID],
+    ),
     directory,
   )
 }
@@ -3188,7 +3347,7 @@ export function useSidebarSessions(directory?: string): Session[] {
 
 /** Get one session by id for a directory */
 export function useSession(sessionID?: string | null, directory?: string) {
-  const { childStores } = useSyncSystem()
+  const { childStores, directory: activeDirectory } = useSyncSystem()
   const getSnapshot = useCallback(() => {
     if (directory) {
       return childStores.getChild(directory)?.getState().session.find((session) => session.id === sessionID)
@@ -3198,10 +3357,12 @@ export function useSession(sessionID?: string | null, directory?: string) {
 
   const subscribe = useCallback((notify: () => void) => {
     if (directory) {
-      return childStores.ensureChild(directory).subscribe(notify)
+      return childStores.ensureChild(directory, {
+        bootstrap: shouldBootstrapDirectorySubscription(directory, activeDirectory),
+      }).subscribe(notify)
     }
     return childStores.subscribeAll(notify)
-  }, [childStores, directory])
+  }, [activeDirectory, childStores, directory])
 
   return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }

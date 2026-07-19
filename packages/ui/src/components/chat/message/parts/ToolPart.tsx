@@ -25,6 +25,7 @@ import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import type { ToolPopupContent } from '../types';
 import { ensurePierreThemeRegistered } from '@/lib/shiki/appThemeRegistry';
 import { getDefaultTheme } from '@/lib/theme/themes';
+import { getFirstChangedModifiedLineFromPatch } from '@/lib/diff/firstChangedLine';
 
 import {
     formatEditOutput,
@@ -50,6 +51,7 @@ import { getToolPartDiffStatsFromToolPart } from './tool-activity/targets';
 import {
     buildTaskSessionMessagesSignature,
     buildTaskSummaryEntriesFromSession,
+    materializeTaskSessionSnapshot,
     normalizeTaskSummaryEntries,
     parseTaskMetadataBlock,
     readTaskSessionIdFromOutput,
@@ -59,8 +61,9 @@ import {
 } from './taskToolUtils';
 import { getDiffPatchEntries, resolveRawPatchFallback } from './toolPartDiffEntries';
 import { resolveToolExpandedDetails } from './toolExpandedFallback';
+import { coerceRuntimeText } from './runtimeText';
 
-type ToolStateWithMetadata = ToolStateUnion & { metadata?: Record<string, unknown>; input?: Record<string, unknown>; output?: string; error?: string; time?: { start: number; end?: number } };
+type ToolStateWithMetadata = ToolStateUnion & { metadata?: Record<string, unknown>; input?: Record<string, unknown>; output?: string; error?: unknown; time?: { start: number; end?: number } };
 
 interface ToolPartProps {
     part: ToolPartType;
@@ -196,54 +199,6 @@ const parseWriteLineCount = (input?: Record<string, unknown>): number | null => 
     return lines.length;
 };
 
-const extractFirstChangedLineFromDiff = (diffText: string): number | undefined => {
-    if (!diffText || typeof diffText !== 'string') {
-        return undefined;
-    }
-
-    const lines = diffText.split('\n');
-    let currentNewLine: number | undefined;
-    let firstHunkStart: number | undefined;
-
-    for (const rawLine of lines) {
-        const line = rawLine.replace(/\r$/, '');
-        const hunkMatch = line.match(/^@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/);
-        if (hunkMatch) {
-            const parsed = Number.parseInt(hunkMatch[1] ?? '', 10);
-            if (Number.isFinite(parsed)) {
-                currentNewLine = Math.max(1, parsed);
-                if (!Number.isFinite(firstHunkStart)) {
-                    firstHunkStart = currentNewLine;
-                }
-            }
-            continue;
-        }
-
-        if (currentNewLine === undefined || !Number.isFinite(currentNewLine)) {
-            continue;
-        }
-
-        if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('diff ')) {
-            continue;
-        }
-
-        if (line.startsWith('+')) {
-            return currentNewLine;
-        }
-
-        if (line.startsWith(' ')) {
-            currentNewLine += 1;
-            continue;
-        }
-
-        if (line.startsWith('-') || line.startsWith('\\')) {
-            continue;
-        }
-    }
-
-    return firstHunkStart;
-};
-
 const getPatchText = (value: unknown): string | undefined => {
     if (typeof value === 'string') {
         const trimmed = value.trim();
@@ -317,8 +272,8 @@ const getFirstChangedLineFromMetadata = (tool: string, metadata?: Record<string,
         ?? getPatchText(metadata.diff)
         ?? getPatchText(metadata.changes);
     if (topLevelPatch) {
-        const line = extractFirstChangedLineFromDiff(topLevelPatch);
-        if (Number.isFinite(line)) {
+        const line = getFirstChangedModifiedLineFromPatch(topLevelPatch);
+        if (line !== null) {
             return line;
         }
     }
@@ -330,8 +285,8 @@ const getFirstChangedLineFromMetadata = (tool: string, metadata?: Record<string,
         ?? getPatchText(firstFile?.diff)
         ?? getPatchText(firstFile?.changes);
     if (filePatch) {
-        const line = extractFirstChangedLineFromDiff(filePatch);
-        if (Number.isFinite(line)) {
+        const line = getFirstChangedModifiedLineFromPatch(filePatch);
+        if (line !== null) {
             return line;
         }
     }
@@ -1179,11 +1134,25 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
             // Show question content from input whenever available, whether the tool is
             // pending/running or completed without parseable output. This ensures question
             // text persists across refreshes even if the QuestionCard store data is lost.
-            const questionInput = input as { questions?: Array<{ question?: string; header?: string; options?: Array<{ label: string; description: string }>; multiple?: boolean }> } | undefined;
-            if (questionInput?.questions && Array.isArray(questionInput.questions) && questionInput.questions.length > 0) {
+            const rawQuestions = input && typeof input === 'object' && Array.isArray((input as { questions?: unknown }).questions)
+                ? (input as { questions: unknown[] }).questions
+                : [];
+            const questions = rawQuestions
+                .filter((question): question is Record<string, unknown> => Boolean(question) && typeof question === 'object' && !Array.isArray(question))
+                .map((question) => ({
+                    header: coerceRuntimeText(question.header),
+                    question: coerceRuntimeText(question.question, t('chat.toolPart.awaitingResponse')),
+                    options: Array.isArray(question.options)
+                        ? question.options
+                            .filter((option): option is Record<string, unknown> => Boolean(option) && typeof option === 'object' && !Array.isArray(option))
+                            .map((option) => coerceRuntimeText(option.label))
+                            .filter(Boolean)
+                        : [],
+                }));
+            if (questions.length > 0) {
                 return renderScrollableBlock(
                     <div className="space-y-2">
-                        {questionInput.questions.map((q, index) => (
+                        {questions.map((q, index) => (
                             <div key={index} className="space-y-0.5">
                                 {q.header ? (
                                     <div className="typography-micro text-muted-foreground">{q.header}</div>
@@ -1191,9 +1160,9 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                                 <div className="typography-meta text-foreground">{q.question}</div>
                                 {Array.isArray(q.options) && q.options.length > 0 ? (
                                     <div className="flex flex-wrap gap-1 mt-0.5">
-                                        {q.options.map((opt) => (
-                                            <span key={opt.label} className="typography-micro px-1.5 py-0.5 rounded bg-muted/30 border border-border/30 text-muted-foreground">
-                                                {opt.label}
+                                        {q.options.map((label, optionIndex) => (
+                                            <span key={`${label}:${optionIndex}`} className="typography-micro px-1.5 py-0.5 rounded bg-muted/30 border border-border/30 text-muted-foreground">
+                                                {label}
                                             </span>
                                         ))}
                                     </div>
@@ -1734,14 +1703,7 @@ const ToolPart: React.FC<ToolPartProps> = ({
                     const childStores = getSyncChildStores();
                     childStores.update(currentDirectory, (prev) => {
                         const records = messages as SessionMessageWithParts[];
-                        const partPatch: Record<string, import('@opencode-ai/sdk/v2').Part[]> = { ...prev.part };
-                        for (const rec of records) {
-                            partPatch[rec.info.id] = rec.parts;
-                        }
-                        return {
-                            message: { ...prev.message, [capturedSessionId]: records.map((r) => r.info) as import('@opencode-ai/sdk/v2').Message[] },
-                            part: partPatch,
-                        };
+                        return materializeTaskSessionSnapshot(prev, capturedSessionId, records);
                     });
                 }
 
@@ -1885,14 +1847,7 @@ const ToolPart: React.FC<ToolPartProps> = ({
                 const childStores = getSyncChildStores();
                 childStores.update(currentDirectory, (prev) => {
                     const records = messages as SessionMessageWithParts[];
-                    const partPatch: Record<string, import('@opencode-ai/sdk/v2').Part[]> = { ...prev.part };
-                    for (const rec of records) {
-                        partPatch[rec.info.id] = rec.parts;
-                    }
-                    return {
-                        message: { ...prev.message, [taskSessionId]: records.map((r) => r.info) as import('@opencode-ai/sdk/v2').Message[] },
-                        part: partPatch,
-                    };
+                    return materializeTaskSessionSnapshot(prev, taskSessionId, records);
                 });
             } catch {
                 // Ignore transient subagent fetch errors.

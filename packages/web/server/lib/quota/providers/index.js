@@ -128,6 +128,7 @@ const providerAliases = new Map([
   ['opencode-with-claude', 'claude'],
   ['zhipuai', 'zhipuai-coding-plan'],
   ['zhipu', 'zhipuai-coding-plan'],
+  ['cursor', 'cursor-acp'],
 ]);
 
 const resolveProviderId = (providerId) => providerAliases.get(providerId) ?? providerId;

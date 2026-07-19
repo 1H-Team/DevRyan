@@ -412,6 +412,29 @@ export interface GeneratedCommitMessage {
   files?: string[];
 }
 
+export interface GitCommitMessageFileContext {
+  path: string;
+  index: string;
+  workingDir: string;
+  diff?: string;
+  diffNote?: string;
+}
+
+export interface GitCommitMessageContext {
+  branch: string;
+  tracking: string | null;
+  scope: 'staged-only' | 'staged-and-unstaged';
+  stagedOnly: boolean;
+  selectedFiles: GitCommitMessageFileContext[];
+  recentCommitSubjects: string[];
+}
+
+export interface GenerateGitCommitMessageRequest {
+  context: GitCommitMessageContext;
+  guidance?: string;
+  zenModel?: string;
+}
+
 export interface GeneratedCommitWorkflowResult {
   status: 'complete' | 'blocked';
   commits: GeneratedCommitMessage[];
@@ -450,7 +473,7 @@ export interface GitAPI {
   deleteGitBranch(directory: string, payload: GitDeleteBranchPayload): Promise<{ success: boolean }>;
   deleteRemoteBranch(directory: string, payload: GitDeleteRemoteBranchPayload): Promise<{ success: boolean }>;
   removeRemote(directory: string, payload: GitRemoveRemotePayload): Promise<{ success: boolean }>;
-  generateCommitMessage(directory: string, files: string[], options?: { zenModel?: string; providerId?: string; modelId?: string }): Promise<GeneratedCommitWorkflowResult>;
+  generateCommitMessage(directory: string, request: GenerateGitCommitMessageRequest): Promise<GeneratedCommitMessage>;
   generatePullRequestDescription(
     directory: string,
     payload: { base: string; head: string; context?: string; zenModel?: string; providerId?: string; modelId?: string }
@@ -1100,6 +1123,20 @@ export type RuntimeAPISelector<TValue> = (apis: RuntimeAPIs) => TValue;
 
 export type PluginScope = 'user' | 'project';
 export type PluginParsedKind = 'npm' | 'path';
+export type DevRyanDefaultPluginId = 'oh-my-opencode-slim' | 'opencode-with-claude' | 'openai-tool-schema-sanitizer';
+
+export interface DevRyanDefaultPlugin {
+  id: string;
+  pluginId: DevRyanDefaultPluginId;
+  displayName: string;
+  shippedSpec: string;
+  effectiveSpec: string;
+  version: string | null;
+  delivery: 'npm' | 'bundled-file';
+  sourcePath: string;
+  configuredSourcePath?: string;
+  kind: 'default';
+}
 
 export interface PluginEntry {
   id: string;
@@ -1109,6 +1146,7 @@ export interface PluginEntry {
   kind: 'config';
   parsedKind: PluginParsedKind;
   sourcePath: string;
+  defaultPluginId?: DevRyanDefaultPluginId;
 }
 
 export interface PluginFile {
@@ -1117,6 +1155,7 @@ export interface PluginFile {
   scope: PluginScope;
   kind: 'file';
   absolutePath: string;
+  defaultPluginId?: DevRyanDefaultPluginId;
 }
 
 export interface PluginConfigError {
@@ -1127,6 +1166,7 @@ export interface PluginConfigError {
 }
 
 export interface PluginsListResponse {
+  defaults: DevRyanDefaultPlugin[];
   entries: PluginEntry[];
   files: PluginFile[];
   errors: PluginConfigError[];

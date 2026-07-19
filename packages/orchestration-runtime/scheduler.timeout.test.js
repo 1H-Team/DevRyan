@@ -87,7 +87,7 @@ describe('managed scheduler timeouts', () => {
     expect(clock.count()).toBe(0);
   });
 
-  test('expires a queued task without aborting an unrelated child', async () => {
+  test('times out one of four concurrent tasks without aborting unrelated children', async () => {
     const clock = createClock();
     const aborts = [];
     const never = new Promise(() => {});
@@ -116,24 +116,29 @@ describe('managed scheduler timeouts', () => {
     await scheduler.flush();
 
     expect(scheduler.getTask(tasks[3].taskId)).toMatchObject({
-      status: 'aborted',
+      status: 'failed',
       failureReason: 'Managed task timed out at 1250',
     });
-    expect(aborts).toEqual([]);
+    expect(aborts).toEqual([tasks[3].taskId]);
   });
 
   test('bounds a hung provider abort and settles interrupted instead of deadlocking', async () => {
     const never = new Promise(() => {});
+    let abortSignal = null;
     const scheduler = createManagedTaskScheduler({
       executor: {
         async start(_task, control) { await control.markAccepted(); return await never; },
-        async abort() { return await never; },
+        async abort(_task, options) {
+          abortSignal = options.signal;
+          return await never;
+        },
         async reconcile() { return { state: 'unavailable' }; },
         async readRecoverableResult() { return {}; },
       },
       abortTimeoutMs: 10,
       createTaskId: () => 'dvr_task_hung_abort',
       createLeaseToken: () => 'dvr_lease_hung_abort',
+      logger: { warn() {} },
       now: () => 1_000,
     });
     const task = await scheduler.submit(input(1));
@@ -141,6 +146,94 @@ describe('managed scheduler timeouts', () => {
     const settled = await scheduler.cancelTask(task.taskId, { reason: 'Manual stop' });
 
     expect(settled.status).toBe('interrupted');
-    expect(settled.failureReason).toBe('Provider abort did not settle within 10ms');
+    expect(settled.failureReason).toBe('Manual stop');
+    expect(abortSignal.aborted).toBe(true);
+  });
+
+  test('keeps a timed-out canonical child resumable when abort and recovery do not settle', async () => {
+    const clock = createClock();
+    const never = new Promise(() => {});
+    const warnings = [];
+    const resumedTasks = [];
+    let abortSignal = null;
+    let taskCounter = 0;
+    let leaseCounter = 0;
+    const scheduler = createManagedTaskScheduler({
+      executor: {
+        async start(_task, control) {
+          await control.setChildSessionId('ses_timeout_child');
+          await control.markAccepted();
+          return await never;
+        },
+        async resume(task, control) {
+          resumedTasks.push(task);
+          await control.markAccepted();
+          return {
+            status: 'completed',
+            recoverablePreview: 'late tool output recovered from canonical child',
+          };
+        },
+        async abort(_task, options) {
+          abortSignal = options.signal;
+          return await never;
+        },
+        async reconcile() { return { state: 'unavailable' }; },
+        async readRecoverableResult() {
+          throw new Error('The operation was aborted due to timeout');
+        },
+      },
+      abortTimeoutMs: 10,
+      now: clock.now,
+      scheduleTimeout: clock.schedule,
+      cancelTimeout: clock.cancel,
+      createTaskId: () => `dvr_task_timeout_recovery_${++taskCounter}`,
+      createLeaseToken: () => `dvr_lease_timeout_recovery_${++leaseCounter}`,
+      logger: { warn: (...args) => warnings.push(args) },
+    });
+
+    const task = await scheduler.submit(input(1, { timeoutAt: 1_500 }));
+    await clock.advance(500);
+    await clock.advance(10);
+    const settled = await scheduler.waitForTask(task.taskId);
+    const envelope = scheduler.getResultEnvelope(task.taskId);
+
+    expect(abortSignal.aborted).toBe(true);
+    expect(settled).toMatchObject({
+      childSessionId: 'ses_timeout_child',
+      status: 'interrupted',
+      failureReason: 'Managed task timed out at 1500',
+      partial: false,
+    });
+    expect(envelope).toMatchObject({
+      childSessionId: 'ses_timeout_child',
+      failureReason: 'Managed task timed out at 1500',
+      resumable: true,
+    });
+    expect(warnings).toContainEqual([
+      '[ManagedOrchestration] Provider abort cleanup was not confirmed',
+      {
+        taskId: task.taskId,
+        primaryReason: 'Managed task timed out at 1500',
+        cleanupFailure: 'Provider abort did not settle within 10ms',
+      },
+    ]);
+
+    const recovery = await scheduler.acknowledgeResult(task.taskId, {
+      action: 'resume',
+      idempotencyKey: 'resume-timeout-child',
+    });
+    const recovered = await scheduler.waitForTask(recovery.followUpTask.taskId);
+
+    expect(recovery.followUpTask).toMatchObject({
+      childSessionId: 'ses_timeout_child',
+      executionKind: 'resume',
+      priorTaskId: task.taskId,
+    });
+    expect(resumedTasks).toHaveLength(1);
+    expect(resumedTasks[0].childSessionId).toBe('ses_timeout_child');
+    expect(recovered).toMatchObject({
+      status: 'completed',
+      recoverablePreview: 'late tool output recovered from canonical child',
+    });
   });
 });

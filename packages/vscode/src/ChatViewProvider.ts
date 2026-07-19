@@ -399,7 +399,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const filePath = normalizeWindowsDriveLetter(editor.document.uri.fsPath);
     const rawFileName = editor.document.uri.fsPath;
     const fileName = rawFileName.replace(/\\/g, '/').split('/').pop() || '';
-    const relativePath = vscode.workspace.asRelativePath(editor.document.uri, false);
+    const relativePath = vscode.workspace.asRelativePath(editor.document.uri, false).replace(/\\/g, '/');
 
     let fileSize: number | null = null;
     try {

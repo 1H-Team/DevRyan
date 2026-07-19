@@ -1,3 +1,5 @@
+import type { ToolPart } from '@opencode-ai/sdk/v2';
+
 const EXPANDABLE_TOOL_NAMES = new Set<string>([
     'edit', 'multiedit', 'apply_patch', 'str_replace', 'str_replace_based_edit_tool',
     'bash', 'shell', 'cmd', 'terminal',
@@ -40,6 +42,11 @@ const TOOL_NAME_ALIASES = new Map<string, string>([
     ['read_file', 'read'],
     ['file_read', 'file_read'],
     ['view_file', 'view'],
+    ['oc_write', 'write'],
+    ['oc_edit', 'edit'],
+    ['oc_read', 'read'],
+    ['oc_bash', 'bash'],
+    ['stat', 'read'],
     ['shell_command', 'bash'],
     ['terminal_command', 'bash'],
     ['run_command', 'bash'],
@@ -56,6 +63,7 @@ const TOOL_NAME_ALIASES = new Map<string, string>([
 ]);
 
 export type ToolActivityGroupKind = 'search' | 'read' | 'edit' | 'fetch' | 'patch' | 'shell';
+export type ToolFileMutationAction = 'created' | 'edited' | 'wrote';
 
 const PASSIVE_ROLLUP_GROUP_KINDS = new Set<ToolActivityGroupKind>(['search', 'read', 'fetch', 'edit', 'patch']);
 
@@ -63,13 +71,18 @@ export interface ToolActivityGroupInfo {
     key: string;
     kind: ToolActivityGroupKind;
     representativeToolName: string;
+    fileMutationAction?: ToolFileMutationAction;
 }
 
 export type ToolActivityAggregation<T> =
     | { type: 'group'; groupInfo: ToolActivityGroupInfo; items: T[] }
     | { type: 'item'; item: T };
 
-export const getToolActivityGroupLabelKey = (kind: ToolActivityGroupKind, count: number) => {
+export const getToolActivityGroupLabelKey = (
+    group: ToolActivityGroupKind | ToolActivityGroupInfo,
+    count: number,
+) => {
+    const kind = typeof group === 'string' ? group : group.kind;
     if (kind === 'search') {
         return count === 1 ? 'chat.toolGroup.searchedFileSingle' : 'chat.toolGroup.searchedFilePlural';
     }
@@ -77,6 +90,13 @@ export const getToolActivityGroupLabelKey = (kind: ToolActivityGroupKind, count:
         return count === 1 ? 'chat.toolGroup.appliedPatchSingle' : 'chat.toolGroup.appliedPatchPlural';
     }
     if (kind === 'edit') {
+        const action = typeof group === 'string' ? 'edited' : group.fileMutationAction ?? 'edited';
+        if (action === 'created') {
+            return count === 1 ? 'chat.toolGroup.createdFileSingle' : 'chat.toolGroup.createdFilePlural';
+        }
+        if (action === 'wrote') {
+            return count === 1 ? 'chat.toolGroup.wroteFileSingle' : 'chat.toolGroup.wroteFilePlural';
+        }
         return count === 1 ? 'chat.toolGroup.editedFileSingle' : 'chat.toolGroup.editedFilePlural';
     }
     if (kind === 'read') {
@@ -86,6 +106,43 @@ export const getToolActivityGroupLabelKey = (kind: ToolActivityGroupKind, count:
         return count === 1 ? 'chat.toolGroup.ranCommandSingle' : 'chat.toolGroup.ranCommandPlural';
     }
     return count === 1 ? 'chat.toolGroup.fetchedUrlSingle' : 'chat.toolGroup.fetchedUrlPlural';
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+    return typeof value === 'object' && value !== null;
+};
+
+const getWriteTargetPreviouslyExisted = (part: ToolPart | undefined): boolean | undefined => {
+    if (!part) {
+        return undefined;
+    }
+    const partRecord = part as ToolPart & { metadata?: unknown };
+    const stateValue: unknown = part.state;
+    const state = isRecord(stateValue) ? stateValue : undefined;
+    const metadata = isRecord(state?.metadata)
+        ? state.metadata
+        : isRecord(partRecord.metadata)
+            ? partRecord.metadata
+            : undefined;
+    return typeof metadata?.exists === 'boolean' ? metadata.exists : undefined;
+};
+
+export const getToolFileMutationAction = (
+    toolName: unknown,
+    part?: ToolPart,
+): ToolFileMutationAction | undefined => {
+    const normalized = normalizeToolName(toolName);
+    if (normalized === 'create') {
+        return 'created';
+    }
+    if (normalized === 'write' || normalized === 'file_write') {
+        const existed = getWriteTargetPreviouslyExisted(part);
+        return existed === false ? 'created' : existed === true ? 'edited' : 'wrote';
+    }
+    if (EDIT_TOOL_NAMES.has(normalized)) {
+        return 'edited';
+    }
+    return undefined;
 };
 
 export const normalizeToolName = (toolName: unknown): string => {
@@ -172,7 +229,7 @@ export const getStaticGroupToolName = (toolName: string): string => {
     return normalized;
 };
 
-export const getToolActivityGroupInfo = (toolName: unknown): ToolActivityGroupInfo | null => {
+export const getToolActivityGroupInfo = (toolName: unknown, part?: ToolPart): ToolActivityGroupInfo | null => {
     const normalized = normalizeToolName(toolName);
     if (!normalized || isStandaloneTool(normalized)) {
         return null;
@@ -195,7 +252,13 @@ export const getToolActivityGroupInfo = (toolName: unknown): ToolActivityGroupIn
     }
 
     if (EDIT_TOOL_NAMES.has(normalized)) {
-        return { key: 'edit', kind: 'edit', representativeToolName: 'edit' };
+        const fileMutationAction = getToolFileMutationAction(normalized, part) ?? 'edited';
+        return {
+            key: `edit:${fileMutationAction}`,
+            kind: 'edit',
+            representativeToolName: fileMutationAction === 'edited' ? 'edit' : 'write',
+            fileMutationAction,
+        };
     }
 
     if (FETCH_TOOL_NAMES.has(normalized)) {

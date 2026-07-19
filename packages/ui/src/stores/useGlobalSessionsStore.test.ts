@@ -86,6 +86,47 @@ describe('useGlobalSessionsStore snapshot helpers', () => {
     expect(state.sessionsByDirectory.get('/repo')?.map((item) => item.id)).toEqual(['active-failed']);
   });
 
+  test('keeps newer global metadata when an older title or archive echo arrives', () => {
+    const current = {
+      ...session('fresh', '/repo'),
+      title: 'Newest title',
+      time: { created: 1, updated: 10 },
+    } as Session;
+    useGlobalSessionsStore.getState().applySnapshot([current], []);
+    const before = useGlobalSessionsStore.getState();
+
+    useGlobalSessionsStore.getState().upsertSession({
+      ...current,
+      title: 'Older title',
+      time: { created: 1, updated: 9 },
+    } as Session);
+    useGlobalSessionsStore.getState().upsertSession({
+      ...current,
+      time: { created: 1, updated: 9, archived: 9 },
+    } as Session);
+
+    const after = useGlobalSessionsStore.getState();
+    expect(after.activeSessions).toBe(before.activeSessions);
+    expect(after.archivedSessions).toBe(before.archivedSessions);
+    expect(after.activeSessions[0]).toBe(current);
+  });
+
+  test('allows an equal-timestamp archive update to change membership', () => {
+    const current = {
+      ...session('equal-archive', '/repo'),
+      time: { created: 1, updated: 10 },
+    } as Session;
+    useGlobalSessionsStore.getState().applySnapshot([current], []);
+
+    useGlobalSessionsStore.getState().upsertSession({
+      ...current,
+      time: { created: 1, updated: 10, archived: 10 },
+    } as Session);
+
+    expect(useGlobalSessionsStore.getState().activeSessions).toEqual([]);
+    expect(useGlobalSessionsStore.getState().archivedSessions.map((item) => item.id)).toEqual([current.id]);
+  });
+
   test('keeps a successfully archived session archived when a stale snapshot resolves last', () => {
     const active = session('archive-race', '/repo');
     const optimisticArchived = session('archive-race', '/repo', undefined, 100);

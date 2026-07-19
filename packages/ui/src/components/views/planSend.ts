@@ -10,17 +10,22 @@ export const buildPlanSendPromptVariables = ({
   action,
   title,
   path,
-  body,
 }: {
   action: PlanSendAction;
   title: string;
   path: string;
-  body: string;
-}) => ({
-  plan_title: title,
-  plan_path: path,
-  ...(action === 'implement' ? { plan_body: body } : {}),
-});
+  body?: string;
+}) => {
+  const planPath = path.trim();
+  if (action === 'implement' && !planPath) {
+    throw new Error('A saved plan file path is required to implement a plan');
+  }
+
+  return {
+    plan_title: title,
+    plan_path: planPath,
+  };
+};
 
 export const getPlanSendPlanMode = (action: PlanSendAction): boolean | undefined =>
   action === 'implement' ? false : undefined;

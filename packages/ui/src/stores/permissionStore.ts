@@ -18,6 +18,7 @@ interface PermissionState {
 interface PermissionActions {
     isSessionAutoAccepting: (sessionId: string) => boolean;
     setSessionAutoAccept: (sessionId: string, enabled: boolean) => Promise<void>;
+    clearSessionAutoAccept: (sessionId: string) => Promise<void>;
 }
 
 type PermissionStore = PermissionState & PermissionActions;
@@ -141,6 +142,35 @@ const autoRespondsPermissionBySession = (
 
 const getStorage = () => createJSONStorage(() => getSafeStorage());
 
+const autoAcceptMirrorTailBySession = new Map<string, Promise<void>>();
+
+const postAutoAcceptMirror = async (sessionId: string, enabled: boolean): Promise<void> => {
+    try {
+        await fetch('/api/notifications/auto-accept', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId, enabled }),
+        });
+    } catch {
+        // Best-effort mirror. Persisted client state remains authoritative for rehydration.
+    }
+};
+
+const mirrorSessionAutoAccept = (sessionId: string, enabled: boolean): Promise<void> => {
+    const previous = autoAcceptMirrorTailBySession.get(sessionId);
+    const next = previous
+        ? previous.then(() => postAutoAcceptMirror(sessionId, enabled))
+        : postAutoAcceptMirror(sessionId, enabled);
+
+    autoAcceptMirrorTailBySession.set(sessionId, next);
+    void next.finally(() => {
+        if (autoAcceptMirrorTailBySession.get(sessionId) === next) {
+            autoAcceptMirrorTailBySession.delete(sessionId);
+        }
+    });
+    return next;
+};
+
 export const usePermissionStore = create<PermissionStore>()(
     devtools(
         persist(
@@ -154,6 +184,28 @@ export const usePermissionStore = create<PermissionStore>()(
 
                     const sessions = getAllSyncSessions();
                     return autoRespondsPermissionBySession(get().autoAccept, sessions, sessionId);
+                },
+
+                clearSessionAutoAccept: (sessionId: string) => {
+                    if (!sessionId) {
+                        return Promise.resolve();
+                    }
+
+                    let removed = false;
+                    set((state) => {
+                        if (!Object.prototype.hasOwnProperty.call(state.autoAccept, sessionId)) {
+                            return state;
+                        }
+
+                        const autoAccept = { ...state.autoAccept };
+                        delete autoAccept[sessionId];
+                        removed = true;
+                        return { autoAccept };
+                    });
+
+                    return removed
+                        ? mirrorSessionAutoAccept(sessionId, false)
+                        : Promise.resolve();
                 },
 
                 setSessionAutoAccept: async (sessionId: string, enabled: boolean) => {
@@ -176,11 +228,7 @@ export const usePermissionStore = create<PermissionStore>()(
                     // round-trip. Send known descendants too; server-side
                     // ancestry lookup can lag OpenCode session indexing.
                     for (const scopedSessionId of sessionScope) {
-                        void fetch('/api/notifications/auto-accept', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ sessionId: scopedSessionId, enabled }),
-                        }).catch(() => { /* best-effort */ });
+                        void mirrorSessionAutoAccept(scopedSessionId, enabled);
                     }
 
                     if (!enabled) {
@@ -282,11 +330,7 @@ export const usePermissionStore = create<PermissionStore>()(
                     // survives page reloads / server restarts.
                     for (const [sid, enabled] of Object.entries(state.autoAccept || {})) {
                         if (enabled === true) {
-                            void fetch('/api/notifications/auto-accept', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ sessionId: sid, enabled: true }),
-                            }).catch(() => { /* best-effort */ });
+                            void mirrorSessionAutoAccept(sid, true);
                         }
                     }
                 },

@@ -4,7 +4,7 @@ export type RevertTransactionStatus = "pending" | "confirmed" | "failed"
 
 export type RevertTransaction = {
   messageID: string
-  hiddenMessageIDs?: string[]
+  hiddenMessageIDs?: ReadonlySet<string>
   version: number
   status: RevertTransactionStatus
   startedAt: number
@@ -93,7 +93,7 @@ export function isMessageHiddenByAnyActiveRevert(
   if (!transactions) return false
   for (const [sessionID, transaction] of Object.entries(transactions)) {
     if (!transaction || transaction.status === "failed") continue
-    if (transaction.hiddenMessageIDs?.includes(messageID)) {
+    if (transaction.hiddenMessageIDs?.has(messageID)) {
       const session = state.session?.find((candidate) => candidate.id === sessionID)
       if (!session || getEffectiveSessionRevertMessageID(state, sessionID, session) === transaction.messageID) {
         return true

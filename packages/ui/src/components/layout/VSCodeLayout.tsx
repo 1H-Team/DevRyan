@@ -20,7 +20,6 @@ import { useI18n } from '@/lib/i18n';
 import { QUOTA_PROVIDERS } from '@/lib/quota';
 import { quotaRefreshCoordinator, useQuotaStore } from '@/stores/useQuotaStore';
 import { useUpdateStore } from '@/stores/useUpdateStore';
-import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import type { UsageWindow } from '@/types';
 import { UsageProviderPanel } from '@/components/layout/usage/UsageProviderPanel';
 import { UsageProviderTabs } from '@/components/layout/usage/UsageProviderTabs';
@@ -30,8 +29,13 @@ import { getContextUsageFromMessages } from '@/stores/utils/contextUsageUtils';
 import { useStableSessionContextUsage } from '@/hooks/useStableSessionContextUsage';
 import { useSelectedModelContextCapacity } from '@/hooks/useSelectedModelContextCapacity';
 import { RiAddLine, RiArrowLeftLine, RiRobot2Line, RiSettings3Line, RiTimerLine } from '@remixicon/react';
-
-const SettingsView = lazyWithChunkRecovery(() => import('@/components/views/SettingsView').then(m => ({ default: m.SettingsView })));
+import { LazySettingsView, LazyViewBoundary } from '@/components/views/lazyViews';
+import {
+  rememberViewBeforeSettings,
+  resolveViewAfterSettings,
+  type VSCodeContentView,
+  type VSCodeView,
+} from './vscodeViewHistory';
 
 const formatTime = (timestamp: number | null) => {
   if (!timestamp) return '-';
@@ -53,8 +57,6 @@ const EXPANDED_LAYOUT_THRESHOLD = 1400;
 const SESSIONS_SIDEBAR_WIDTH = 280;
 const SESSIONS_SIDEBAR_MIN_WIDTH = Math.round(SESSIONS_SIDEBAR_WIDTH * 0.7);
 const SESSIONS_SIDEBAR_MAX_WIDTH = 520;
-
-type VSCodeView = 'sessions' | 'chat' | 'settings';
 
 export const VSCodeLayout: React.FC = () => {
   const { t } = useI18n();
@@ -126,6 +128,12 @@ export const VSCodeLayout: React.FC = () => {
   }, []);
 
   const [currentView, setCurrentView] = React.useState<VSCodeView>(() => (bootDraftOpen ? 'chat' : 'sessions'));
+  const currentViewRef = React.useRef<VSCodeView>(bootDraftOpen ? 'chat' : 'sessions');
+  const viewBeforeSettingsRef = React.useRef<VSCodeContentView | null>(null);
+  const navigateToView = React.useCallback((view: VSCodeView) => {
+    currentViewRef.current = view;
+    setCurrentView(view);
+  }, []);
   const [containerWidth, setContainerWidth] = React.useState<number>(0);
   const [expandedSidebarWidth, setExpandedSidebarWidth] = React.useState<number>(SESSIONS_SIDEBAR_WIDTH);
   const [isResizingExpandedSidebar, setIsResizingExpandedSidebar] = React.useState(false);
@@ -172,9 +180,9 @@ export const VSCodeLayout: React.FC = () => {
   // Navigate to chat when a session is selected
   React.useEffect(() => {
     if (currentSessionId) {
-      setCurrentView('chat');
+      navigateToView('chat');
     }
-  }, [currentSessionId]);
+  }, [currentSessionId, navigateToView]);
 
   React.useEffect(() => {
     const vscodeApi = runtimeApis.vscode;
@@ -207,18 +215,18 @@ export const VSCodeLayout: React.FC = () => {
       const stillActiveWork = false; // sync bootstrap tracks session status
 
       if (stillNoSession && draftStillClosed && !stillSyncing && !stillActiveWork) {
-        setCurrentView('sessions');
+        navigateToView('sessions');
       }
     }, 900);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [currentSessionId, newSessionDraftOpen, currentView, viewMode, isSyncingMessages, hasActiveSessionWork]);
+  }, [currentSessionId, newSessionDraftOpen, currentView, viewMode, isSyncingMessages, hasActiveSessionWork, navigateToView]);
 
   const handleBackToSessions = React.useCallback(() => {
-    setCurrentView('sessions');
-  }, []);
+    navigateToView('sessions');
+  }, [navigateToView]);
 
 
   // Listen for connection status changes
@@ -250,16 +258,20 @@ export const VSCodeLayout: React.FC = () => {
       const detail = (event as CustomEvent<{ view?: string }>).detail;
       const view = detail?.view;
       if (view === 'settings') {
-        setCurrentView('settings');
+        viewBeforeSettingsRef.current = rememberViewBeforeSettings(
+          currentViewRef.current,
+          viewBeforeSettingsRef.current,
+        );
+        navigateToView('settings');
       } else if (view === 'chat') {
-        setCurrentView('chat');
+        navigateToView('chat');
       } else if (view === 'sessions') {
-        setCurrentView('sessions');
+        navigateToView('sessions');
       }
     };
     window.addEventListener('openchamber:navigate', handler as EventListener);
     return () => window.removeEventListener('openchamber:navigate', handler as EventListener);
-  }, []);
+  }, [navigateToView]);
 
   // Bootstrap config and sessions when connected
   React.useEffect(() => {
@@ -414,9 +426,9 @@ export const VSCodeLayout: React.FC = () => {
   // Navigate to chat automatically when expanded layout is enabled and we're on sessions view
   React.useEffect(() => {
     if (usesExpandedLayout && currentView === 'sessions' && viewMode === 'sidebar') {
-      setCurrentView('chat');
+      navigateToView('chat');
     }
-  }, [usesExpandedLayout, currentView, viewMode]);
+  }, [usesExpandedLayout, currentView, viewMode, navigateToView]);
 
   return (
     <div ref={containerRef} className="h-full w-full bg-background text-foreground flex flex-col">
@@ -437,12 +449,17 @@ export const VSCodeLayout: React.FC = () => {
         </div>
       ) : currentView === 'settings' ? (
         // Settings view
-        <React.Suspense fallback={null}>
-          <SettingsView
-            onClose={() => setCurrentView(usesExpandedLayout ? 'chat' : 'sessions')}
+        <LazyViewBoundary>
+          <LazySettingsView
+            onClose={() => {
+              const fallback: VSCodeContentView = usesExpandedLayout ? 'chat' : 'sessions';
+              const target = resolveViewAfterSettings(viewBeforeSettingsRef.current, fallback);
+              viewBeforeSettingsRef.current = null;
+              navigateToView(target);
+            }}
             forceMobile={usesMobileLayout}
           />
-        </React.Suspense>
+        </LazyViewBoundary>
       ) : usesExpandedLayout ? (
         // Expanded layout: sessions sidebar + chat side by side
         <div className="flex h-full">
@@ -500,7 +517,7 @@ export const VSCodeLayout: React.FC = () => {
               <SessionSidebar
                 mobileVariant
                 allowReselect
-                onSessionSelected={() => setCurrentView('chat')}
+                onSessionSelected={() => navigateToView('chat')}
                 hideDirectoryControls
                 showOnlyMainWorkspace
               />

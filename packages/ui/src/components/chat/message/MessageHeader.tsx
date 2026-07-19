@@ -1,7 +1,7 @@
 import React from 'react';
 import { RiAiAgentLine, RiBrainAi3Line, RiFlashlightFill, RiUser3Line } from '@remixicon/react';
 import { cn } from '@/lib/utils';
-import { getAgentColor } from '@/lib/agentColors';
+import { getAgentColor, getAgentIconColor } from '@/lib/agentColors';
 import { useProviderLogo } from '@/hooks/useProviderLogo';
 import { ChatMetadataBadge } from '../ChatMetadataBadge';
 import { formatAgentLabel, formatEffortLabel } from '../mobileControlsUtils';
@@ -68,7 +68,7 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, providerID, model
                                     >
                                         <RiAiAgentLine
                                             className="h-4 w-4 flex-shrink-0 -translate-y-[1px]"
-                                            style={{ color: `var(${getAgentColor(agentName).var})` }}
+                                            style={{ color: `var(${getAgentIconColor(agentName).var})` }}
                                         />
                                         <span className="min-w-0 max-w-[180px] truncate text-foreground">{formatAgentLabel(agentName)}</span>
                                     </div>

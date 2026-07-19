@@ -14,6 +14,10 @@ import {
   resolveModelPrefsFromSettingsSnapshot,
   type ModelPrefsSnapshot,
 } from '@/lib/modelPrefsSync';
+import {
+  migrateThemeCatalogSettings,
+  THEME_CATALOG_VERSION,
+} from '@/lib/theme/catalogMigration';
 
 const persistToLocalStorage = (settings: DesktopSettings) => {
   if (typeof window === 'undefined') {
@@ -22,6 +26,9 @@ const persistToLocalStorage = (settings: DesktopSettings) => {
 
   if (settings.themeId) {
     localStorage.setItem('selectedThemeId', settings.themeId);
+  }
+  if (typeof settings.themeCatalogVersion === 'number' && settings.themeCatalogVersion >= THEME_CATALOG_VERSION) {
+    localStorage.setItem('themeCatalogVersion', String(settings.themeCatalogVersion));
   }
   if (settings.themeVariant) {
     localStorage.setItem('selectedThemeVariant', settings.themeVariant);
@@ -374,6 +381,9 @@ const applyDesktopUiPreferences = (
   if (typeof settings.showReasoningTraces === 'boolean' && settings.showReasoningTraces !== store.showReasoningTraces) {
     store.setShowReasoningTraces(settings.showReasoningTraces);
   }
+  if (typeof settings.showDeletionDialog === 'boolean' && settings.showDeletionDialog !== store.showDeletionDialog) {
+    store.setShowDeletionDialog(settings.showDeletionDialog);
+  }
   if (typeof settings.autoDeleteEnabled === 'boolean' && settings.autoDeleteEnabled !== store.autoDeleteEnabled) {
     store.setAutoDeleteEnabled(settings.autoDeleteEnabled);
   }
@@ -628,6 +638,11 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
 
   if (typeof candidate.themeId === 'string' && candidate.themeId.length > 0) {
     result.themeId = candidate.themeId;
+  }
+  if (typeof candidate.themeCatalogVersion === 'number'
+    && Number.isSafeInteger(candidate.themeCatalogVersion)
+    && candidate.themeCatalogVersion >= 0) {
+    result.themeCatalogVersion = candidate.themeCatalogVersion;
   }
   if (candidate.useSystemTheme === true || candidate.useSystemTheme === false) {
     result.useSystemTheme = candidate.useSystemTheme;
@@ -1085,7 +1100,8 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   }
   if (
     typeof candidate.responseStylePreset === 'string'
-    && (candidate.responseStylePreset === 'concise'
+    && (candidate.responseStylePreset === 'actions'
+      || candidate.responseStylePreset === 'concise'
       || candidate.responseStylePreset === 'detailed'
       || candidate.responseStylePreset === 'mentor'
       || candidate.responseStylePreset === 'pushback'
@@ -1196,7 +1212,9 @@ export const syncDesktopSettings = async (): Promise<void> => {
   // Each step is wrapped in try/catch so a failure in one side-effect (e.g.
   // a TypeError from writing to a contextBridge-protected global) doesn't
   // prevent server settings from reaching the Zustand store.
-  const applySettings = async (settings: DesktopSettings) => {
+  const applySettings = async (incomingSettings: DesktopSettings) => {
+    const migration = migrateThemeCatalogSettings(incomingSettings);
+    const settings = migration.settings;
     try {
       persistToLocalStorage(settings);
     } catch (error) {
@@ -1211,6 +1229,15 @@ export const syncDesktopSettings = async (): Promise<void> => {
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent<DesktopSettings>('openchamber:settings-synced', { detail: settings }));
+    }
+
+    if (migration.changed) {
+      void updateDesktopSettings({
+        themeId: settings.themeId,
+        lightThemeId: settings.lightThemeId,
+        darkThemeId: settings.darkThemeId,
+        themeCatalogVersion: THEME_CATALOG_VERSION,
+      });
     }
   };
 
@@ -1238,10 +1265,12 @@ const persistSettingsChanges = async (changes: Partial<DesktopSettings>): Promis
     try {
       const updated = await runtimeSettings.save(changes);
       if (updated) {
-        persistToLocalStorage(updated);
-        applyDesktopUiPreferences(updated, { modelPrefsBaseline });
+        const migrated = migrateThemeCatalogSettings(updated).settings;
+        persistToLocalStorage(migrated);
+        applyDesktopUiPreferences(migrated, { modelPrefsBaseline });
+        return migrated;
       }
-      return updated ?? null;
+      return null;
     } catch (error) {
       console.warn('Failed to update settings via runtime settings API:', error);
     }
@@ -1264,12 +1293,14 @@ const persistSettingsChanges = async (changes: Partial<DesktopSettings>): Promis
 
     const updated = (await response.json().catch(() => null)) as DesktopSettings | null;
     if (updated) {
-      persistToLocalStorage(updated);
-      applyDesktopUiPreferences(updated, { modelPrefsBaseline });
+      const migrated = migrateThemeCatalogSettings(updated).settings;
+      persistToLocalStorage(migrated);
+      applyDesktopUiPreferences(migrated, { modelPrefsBaseline });
       // Invalidate GET cache so next read sees the fresh data
       _settingsCache = null;
+      return migrated;
     }
-    return updated;
+    return null;
   } catch (error) {
     console.warn('Failed to update shared settings via API:', error);
     return null;

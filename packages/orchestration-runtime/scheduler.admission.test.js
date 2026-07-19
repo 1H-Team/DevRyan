@@ -61,7 +61,7 @@ const submitInput = (index, overrides = {}) => ({
 });
 
 describe('managed scheduler admission', () => {
-  test('enforces three starting/running slots and deterministically admits the fourth', async () => {
+  test('admits every submitted task immediately without a scheduler concurrency cap', async () => {
     const { runs, scheduler } = await createHarness();
 
     const tasks = [];
@@ -73,27 +73,44 @@ describe('managed scheduler admission', () => {
       'dvr_task_1',
       'dvr_task_2',
       'dvr_task_3',
+      'dvr_task_4',
+      'dvr_task_5',
     ]);
     expect(scheduler.getTask('dvr_task_1').status).toBe('starting');
     expect(scheduler.getTask('dvr_task_3').status).toBe('starting');
-    expect(scheduler.getTask('dvr_task_4').status).toBe('queued');
-    expect(scheduler.getTask('dvr_task_5').status).toBe('queued');
+    expect(scheduler.getTask('dvr_task_4').status).toBe('starting');
+    expect(scheduler.getTask('dvr_task_5').status).toBe('starting');
 
     await runs[1].taskControl.markAccepted();
     expect(scheduler.getTask('dvr_task_2').status).toBe('running');
-    expect(scheduler.getTask('dvr_task_4').status).toBe('queued');
-
-    runs[0].result.resolve({ status: 'failed', failureReason: 'provider failed' });
-    await scheduler.flush();
-
-    expect(runs.map((run) => run.task.taskId)).toEqual([
-      'dvr_task_1',
-      'dvr_task_2',
-      'dvr_task_3',
-      'dvr_task_4',
-    ]);
     expect(scheduler.getTask('dvr_task_4').status).toBe('starting');
-    expect(scheduler.getTask('dvr_task_5').status).toBe('queued');
+  });
+
+  test('admits every child across independent roots without cross-root coordination', async () => {
+    const { runs, scheduler } = await createHarness();
+
+    await Promise.all([
+      ...Array.from({ length: 4 }, (_, index) => (
+        scheduler.submit(submitInput(index + 1))
+      )),
+      ...Array.from({ length: 4 }, (_, index) => (
+        scheduler.submit(submitInput(index + 5, {
+          rootSessionId: 'ses_second_root',
+        }))
+      )),
+    ]);
+
+    expect(runs.map((run) => run.task.rootSessionId)).toEqual([
+      'ses_root',
+      'ses_root',
+      'ses_root',
+      'ses_root',
+      'ses_second_root',
+      'ses_second_root',
+      'ses_second_root',
+      'ses_second_root',
+    ]);
+    expect(scheduler.listTasks().every((task) => task.status === 'starting')).toBe(true);
   });
 
   test('returns one task and dispatch for repeated idempotency keys', async () => {
@@ -109,18 +126,18 @@ describe('managed scheduler admission', () => {
     expect(runs).toHaveLength(1);
   });
 
-  test('does not oversubscribe when submissions race', async () => {
+  test('starts every task when many submissions race', async () => {
     const { runs, scheduler } = await createHarness();
 
     await Promise.all(Array.from({ length: 20 }, (_, index) => (
       scheduler.submit(submitInput(index + 1))
     )));
 
-    expect(runs).toHaveLength(3);
-    expect(scheduler.listTasks().filter((task) => task.status === 'queued')).toHaveLength(17);
+    expect(runs).toHaveLength(20);
+    expect(scheduler.listTasks().every((task) => task.status === 'starting')).toBe(true);
   });
 
-  test('does not let a newer root graph jump ahead of an older queued task', async () => {
+  test('launches later roots without waiting for earlier work to settle', async () => {
     const { runs, scheduler } = await createHarness();
 
     for (let index = 1; index <= 4; index += 1) {
@@ -131,11 +148,15 @@ describe('managed scheduler admission', () => {
       idempotencyKey: 'newer-root-task',
     }));
 
-    runs[0].result.resolve({ status: 'failed', failureReason: 'release a slot' });
-    await scheduler.flush();
-
-    expect(runs[3].task.taskId).toBe('dvr_task_4');
-    expect(scheduler.getTask('dvr_task_5').status).toBe('queued');
+    expect(runs.map((run) => run.task.taskId)).toEqual([
+      'dvr_task_1',
+      'dvr_task_2',
+      'dvr_task_3',
+      'dvr_task_4',
+      'dvr_task_5',
+    ]);
+    expect(scheduler.getTask('dvr_task_4').status).toBe('starting');
+    expect(scheduler.getTask('dvr_task_5').status).toBe('starting');
   });
 
   test('isolates builder and orchestrator graph ownership until live work settles', async () => {

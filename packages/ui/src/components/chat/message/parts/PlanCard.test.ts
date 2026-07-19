@@ -9,6 +9,7 @@ import {
   getStableSkeletonLineCount,
   getPlanCardCollapsedMaxHeight,
   getPlanCardActionState,
+  shouldPersistPlanCard,
   resolvePlanCardDisplayText,
 } from './planCardReveal';
 
@@ -143,5 +144,27 @@ describe('getPlanCardActionState', () => {
       isImplementationRequested: false,
       isLatestPlan: true,
     }).canImplement).toBe(false);
+  });
+});
+
+describe('shouldPersistPlanCard', () => {
+  test('persists only the latest completed plan with Markdown content', () => {
+    expect(shouldPersistPlanCard({
+      streamPhase: 'completed',
+      hasPlanText: true,
+      isLatestPlan: true,
+    })).toBe(true);
+
+    expect(shouldPersistPlanCard({
+      streamPhase: 'streaming',
+      hasPlanText: true,
+      isLatestPlan: true,
+    })).toBe(false);
+
+    expect(shouldPersistPlanCard({
+      streamPhase: 'completed',
+      hasPlanText: true,
+      isLatestPlan: false,
+    })).toBe(false);
   });
 });

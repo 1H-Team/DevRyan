@@ -21,7 +21,8 @@ import {
     type ContentChangeReason,
 } from '@/hooks/useChatAutoFollow';
 import { useChatTimelineController } from './hooks/useChatTimelineController';
-import { TimelineDialog } from './TimelineDialog';
+import { DeferredChatDialog, LazyTimelineDialog } from './lazyChatDialogs';
+import { LazyViewBoundary } from '@/components/views/lazyViews';
 import { useChatTurnNavigation } from './hooks/useChatTurnNavigation';
 import { useDeviceInfo } from '@/lib/device';
 import { Button } from '@/components/ui/button';
@@ -938,13 +939,17 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
                 <ChatInput scrollToBottom={resumeToLatestInstant} />
             </div>
 
-            <TimelineDialog
-                open={isTimelineDialogOpen}
-                onOpenChange={setTimelineDialogOpen}
-                onScrollToMessage={timelineController.scrollToMessage}
-                onScrollByTurnOffset={navigation.scrollByTurnOffset}
-                onResumeToLatest={resumeToLatestInstant}
-            />
+            <DeferredChatDialog active={isTimelineDialogOpen}>
+                <LazyViewBoundary>
+                    <LazyTimelineDialog
+                        open={isTimelineDialogOpen}
+                        onOpenChange={setTimelineDialogOpen}
+                        onScrollToMessage={timelineController.scrollToMessage}
+                        onScrollByTurnOffset={navigation.scrollByTurnOffset}
+                        onResumeToLatest={resumeToLatestInstant}
+                    />
+                </LazyViewBoundary>
+            </DeferredChatDialog>
         </div>
     );
 };

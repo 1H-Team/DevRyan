@@ -4,21 +4,41 @@ import { opencodeClient } from '@/lib/opencode/client';
 import { useChildStoreManager } from '@/sync/sync-context';
 import { getLastVisibleUserMessageAt } from '@/sync/session-user-activity';
 import { stripMessageDiffSnapshots } from '@/sync/sanitize';
-import { normalizePath } from '../utils';
-import { isSessionNotFoundHydrationError } from './sidebarHydrationUtils';
+import {
+  getSidebarSessionDirectory,
+  isActiveSidebarHydrationDirectory,
+  isSessionNotFoundHydrationError,
+} from './sidebarHydrationUtils';
 
 const PAGE_SIZE = 50;
 const MAX_PAGES_PER_SESSION = 8;
 const MAX_CONCURRENT_REQUESTS = 3;
 
-const getSessionDirectory = (session: Session): string | null => {
-  const explicitDirectory = normalizePath((session as Session & { directory?: string | null }).directory ?? null);
-  const projectWorktree = normalizePath((session as Session & { project?: { worktree?: string | null } | null }).project?.worktree ?? null);
-  return explicitDirectory ?? projectWorktree;
-};
-
 const isRootSession = (session: Session): boolean => {
   return !((session as Session & { parentID?: string | null }).parentID);
+};
+
+type UserActivityHydrationCandidate = {
+  session: Session;
+  directory: string;
+  key: string;
+};
+
+const collectUserActivityHydrationCandidates = (input: {
+  sessions: Session[];
+  activityBySessionId: Record<string, number>;
+  activeDirectory: string | null;
+  resolvedKeys: Set<string>;
+  inFlightKeys: Set<string>;
+}): UserActivityHydrationCandidate[] => {
+  return input.sessions.flatMap((session) => {
+    if (!isRootSession(session) || input.activityBySessionId[session.id] !== undefined) return [];
+    const directory = getSidebarSessionDirectory(session);
+    if (!directory || !isActiveSidebarHydrationDirectory(directory, input.activeDirectory)) return [];
+    const key = `${directory}\n${session.id}`;
+    if (input.resolvedKeys.has(key) || input.inFlightKeys.has(key)) return [];
+    return [{ session, directory, key }];
+  });
 };
 
 async function fetchLastUserMessageAt(session: Session, directory: string): Promise<number | undefined> {
@@ -42,6 +62,7 @@ async function fetchLastUserMessageAt(session: Session, directory: string): Prom
 export function useSidebarUserActivityHydration(
   sessions: Session[],
   activityBySessionId: Record<string, number>,
+  activeDirectory: string | null,
 ) {
   const childStores = useChildStoreManager();
   const inFlightRef = React.useRef(new Set<string>());
@@ -52,13 +73,12 @@ export function useSidebarUserActivityHydration(
     const inFlightKeys = inFlightRef.current;
     const resolvedKeys = resolvedRef.current;
 
-    const candidates = sessions.flatMap((session) => {
-      if (!isRootSession(session) || activityBySessionId[session.id] !== undefined) return [];
-      const directory = getSessionDirectory(session);
-      if (!directory) return [];
-      const key = `${directory}\n${session.id}`;
-      if (resolvedKeys.has(key) || inFlightKeys.has(key)) return [];
-      return [{ session, directory, key }];
+    const candidates = collectUserActivityHydrationCandidates({
+      sessions,
+      activityBySessionId,
+      activeDirectory,
+      resolvedKeys,
+      inFlightKeys,
     });
 
     if (candidates.length === 0) return;
@@ -140,5 +160,9 @@ export function useSidebarUserActivityHydration(
       cancelled = true;
       pendingKeys.forEach((key) => inFlightKeys.delete(key));
     };
-  }, [activityBySessionId, childStores, sessions]);
+  }, [activeDirectory, activityBySessionId, childStores, sessions]);
 }
+
+export const __testUserActivityHydration = {
+  collectCandidates: collectUserActivityHydrationCandidates,
+};

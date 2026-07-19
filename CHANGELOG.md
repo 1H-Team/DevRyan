@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.10] - 2026-07-15
+
+- Sessions: harden deletion cleanup, reconnect recovery, sidebar hydration, optimistic reconciliation, and queued-message delivery across web and VS Code runtimes.
+- Orchestration: strengthen managed task launch ownership, lease recovery, pending-start cleanup, and result payload projection.
+- OpenCode: deduplicate managed runtime plugin registration, preserve legacy plugin discovery, and bound stalled OpenAI response-header retries.
+
 ## [1.0.9] - 2026-07-13
 
 - Sessions: show the active session's net diff summary in the header.

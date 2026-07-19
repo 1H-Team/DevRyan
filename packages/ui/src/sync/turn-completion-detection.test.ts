@@ -28,11 +28,12 @@ const textPart = (messageID: string, text: string): Part => ({
 const stateWithMessages = (
   messages: Message[],
   part: Pick<State, "part">["part"] = {},
-): Pick<State, "message" | "part" | "question" | "session" | "revert_transaction"> => ({
+): Pick<State, "message" | "part" | "question" | "session" | "todo" | "revert_transaction"> => ({
   message: { ses_1: messages },
   part,
   question: {},
   session: [],
+  todo: {},
   revert_transaction: {},
 })
 
@@ -62,6 +63,31 @@ describe("detectTurnCompletedCandidate", () => {
       userMessage("msg_user", 1),
       assistantMessage("msg_assistant", 2),
     ])
+
+    expect(detectTurnCompletedCandidate({
+      sessionID: "ses_1",
+      state,
+      isRecordedPlanModeUserMessage: () => false,
+      planEntry: null,
+    })).toBeNull()
+  })
+
+  test("does not classify a final response as completed while todos remain incomplete", () => {
+    const state = {
+      ...stateWithMessages([
+        userMessage("msg_user", 1),
+        assistantMessage("msg_assistant", 2, 3),
+      ], {
+        msg_assistant: [textPart("msg_assistant", "Done early.")],
+      }),
+      todo: {
+        ses_1: [
+          { content: "Task 1", priority: "medium", status: "completed" },
+          { content: "Task 2", priority: "medium", status: "in_progress" },
+          { content: "Task 3", priority: "medium", status: "pending" },
+        ],
+      },
+    } as Pick<State, "message" | "part" | "question" | "session" | "todo" | "revert_transaction">
 
     expect(detectTurnCompletedCandidate({
       sessionID: "ses_1",
@@ -110,7 +136,7 @@ describe("detectTurnCompletedCandidate", () => {
         assistantMessage("msg_assistant", 2, 3),
       ]),
       question: { ses_1: [{ id: "q_1", sessionID: "ses_1", questions: [] }] },
-    } as Pick<State, "message" | "part" | "question" | "session" | "revert_transaction">
+    } as Pick<State, "message" | "part" | "question" | "session" | "todo" | "revert_transaction">
 
     expect(detectTurnCompletedCandidate({
       sessionID: "ses_1",

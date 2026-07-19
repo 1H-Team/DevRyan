@@ -270,17 +270,6 @@ type CommitGenerationOptions = {
   commitMessageGuidance?: string;
 };
 
-export type CommitGenerationChatPromptPayload =
-  | {
-    status: 'ready';
-    visiblePrompt: string;
-    syntheticParts: Array<{ text: string; synthetic: true }>;
-  }
-  | {
-    status: 'blocked';
-    message: string;
-  };
-
 const COMMIT_PLAN_PREVIEW_DISABLED_TOOLS: Record<string, boolean> = {
   bash: false,
   read: false,
@@ -300,12 +289,6 @@ const COMMIT_GENERATION_PROMPTS: CommitGenerationPromptIds = {
   visible: 'git.commit.generate.visible',
   instructions: 'git.commit.generate.instructions',
 };
-
-const buildCommitDraftOutputContract = (): string => `Output contract for a single commit message draft:
-Return exactly one JSON array and nothing else.
-
-The JSON array must contain one object:
-[{"subject": string, "highlights": string[]}]`;
 
 const buildCommitPlanPreviewOutputContract = (): string => `Output contract for a commit plan preview:
 Return either:
@@ -327,73 +310,44 @@ Plan preview grouping rules:
 - combine tiny related changes when they serve the same user-facing feature or fix.
 - files must only contain paths from the selected-files allowlist.`;
 
-const buildCommitGenerationPromptVariables = (
-  logKind: 'draft' | 'plan',
-  selectedFilesText: string,
-): Record<string, string> => ({
-  generation_mode: logKind === 'draft' ? 'draft' : 'plan_preview',
+const buildCommitPlanPromptVariables = (selectedFilesText: string): Record<string, string> => ({
+  generation_mode: 'plan_preview',
   selected_files: selectedFilesText,
   git_context: '__GIT_CONTEXT_PLACEHOLDER__',
-  output_contract: logKind === 'draft'
-    ? buildCommitDraftOutputContract()
-    : buildCommitPlanPreviewOutputContract(),
-  safety_rules: logKind === 'plan' ? buildCommitPlanPreviewSafetyInstructions(selectedFilesText) : '',
+  output_contract: buildCommitPlanPreviewOutputContract(),
+  safety_rules: buildCommitPlanPreviewSafetyInstructions(selectedFilesText),
 });
-
-const appendCommitInputGuidance = (hiddenPrompt: string, guidance?: string): string => {
-  const trimmed = typeof guidance === 'string' ? guidance.trim() : '';
-  if (!trimmed) {
-    return hiddenPrompt;
-  }
-
-  return `${hiddenPrompt}
-
-Commit input guidance:
-${trimmed}
-
-This guidance is optional. It may influence wording, but it must not override the git context, selected files, safety rules, or JSON output contract.`;
-};
 
 const runCommitPlanStyleGeneration = async ({
   directory,
   files,
   options,
-  prompts,
-  logKind,
-  applyAllowlist,
 }: {
   directory: string;
   files: string[];
   options?: CommitGenerationOptions;
-  prompts: CommitGenerationPromptIds;
-  logKind: 'draft' | 'plan';
-  applyAllowlist: boolean;
 }): Promise<import('./api/types').GeneratedCommitWorkflowResult> => {
   const startedAt = Date.now();
   const selectedFilesText = files.map((file) => `- ${file}`).join('\n');
-  const allowlist = applyAllowlist
-    ? new Set(files.map((file) => file.replace(/\\/g, '/').replace(/^\.\/+/, '').trim()).filter(Boolean))
-    : undefined;
+  const allowlist = new Set(files.map((file) => file.replace(/\\/g, '/').replace(/^\.\/+/, '').trim()).filter(Boolean));
 
   // Run context collection, prompt rendering, and session creation in parallel.
   // These are independent network round trips; sequencing them was the biggest
   // source of latency before the LLM call even started.
   const contextStartedAt = Date.now();
-  const contextLimits = logKind === 'draft' ? COMMIT_DRAFT_CONTEXT_LIMITS : undefined;
   const [contextResult, generationSession, visiblePrompt, instructionsTemplate] = await Promise.all([
     buildCommitPlanContext(directory, files, {
       stagedOnly: options?.stagedOnly === true,
-      limits: contextLimits,
     }),
     resolveCommitGenerationContext(directory),
-    renderMagicPrompt(prompts.visible),
-    renderMagicPrompt(prompts.instructions, buildCommitGenerationPromptVariables(logKind, selectedFilesText)),
+    renderMagicPrompt(COMMIT_GENERATION_PROMPTS.visible),
+    renderMagicPrompt(COMMIT_GENERATION_PROMPTS.instructions, buildCommitPlanPromptVariables(selectedFilesText)),
   ]);
   const contextElapsedMs = Date.now() - contextStartedAt;
 
   if (contextResult.status === 'blocked') {
     console.info('[git-generation][browser] blocked during context collection', {
-      kind: logKind,
+      kind: 'plan',
       elapsedMs: Date.now() - startedAt,
       contextElapsedMs,
       message: contextResult.message,
@@ -411,7 +365,7 @@ const runCommitPlanStyleGeneration = async ({
 
   console.info('[git-generation][browser] request', {
     transport: 'session',
-    kind: logKind,
+    kind: 'plan',
     directory,
     selectedFiles: files.length,
     contextElapsedMs,
@@ -423,10 +377,7 @@ const runCommitPlanStyleGeneration = async ({
     stagedOnly: options?.stagedOnly === true,
   });
 
-  const hiddenPrompt = appendCommitInputGuidance(
-    instructionsTemplate.replace('__GIT_CONTEXT_PLACEHOLDER__', gitContextText),
-    logKind === 'draft' ? options?.commitMessageGuidance : undefined,
-  );
+  const hiddenPrompt = instructionsTemplate.replace('__GIT_CONTEXT_PLACEHOLDER__', gitContextText);
 
   const promptStartedAt = Date.now();
   try {
@@ -441,15 +392,12 @@ const runCommitPlanStyleGeneration = async ({
     const promptElapsedMs = Date.now() - promptStartedAt;
 
     const parseStartedAt = Date.now();
-    const result = normalizeCommitWorkflowResult(structured, allowlist);
-    const finalResult = logKind === 'draft' && result.status === 'complete'
-      ? { ...result, commits: result.commits.slice(0, 1) }
-      : result;
+    const finalResult = normalizeCommitWorkflowResult(structured, allowlist);
     const parseElapsedMs = Date.now() - parseStartedAt;
 
     console.info('[git-generation][browser] success', {
       transport: 'session',
-      kind: logKind,
+      kind: 'plan',
       elapsedMs: Date.now() - startedAt,
       contextElapsedMs,
       promptElapsedMs,
@@ -462,7 +410,7 @@ const runCommitPlanStyleGeneration = async ({
     if (isGitGenerationCancelledError(error)) {
       console.info('[git-generation][browser] cancelled', {
         transport: 'session',
-        kind: logKind,
+        kind: 'plan',
         elapsedMs: Date.now() - startedAt,
         contextElapsedMs,
         promptElapsedMs: Date.now() - promptStartedAt,
@@ -471,7 +419,7 @@ const runCommitPlanStyleGeneration = async ({
     }
     console.error('[git-generation][browser] failed', {
       transport: 'session',
-      kind: logKind,
+      kind: 'plan',
       elapsedMs: Date.now() - startedAt,
       contextElapsedMs,
       promptElapsedMs: Date.now() - promptStartedAt,
@@ -486,12 +434,11 @@ const runCommitPlanStyleGeneration = async ({
   }
 };
 
-export async function buildCommitGenerationChatPromptPayload(
+export async function generateCommitMessageDraft(
   directory: string,
   files: string[],
-  options?: Pick<CommitGenerationOptions, 'stagedOnly'>,
-): Promise<CommitGenerationChatPromptPayload> {
-  const selectedFilesText = files.map((file) => `- ${file}`).join('\n');
+  options?: CommitGenerationOptions
+): Promise<import('./api/types').GeneratedCommitWorkflowResult> {
   const contextResult = await buildCommitPlanContext(directory, files, {
     stagedOnly: options?.stagedOnly === true,
     limits: COMMIT_DRAFT_CONTEXT_LIMITS,
@@ -500,46 +447,27 @@ export async function buildCommitGenerationChatPromptPayload(
   if (contextResult.status === 'blocked') {
     return {
       status: 'blocked',
+      commits: [],
       message: contextResult.message,
     };
   }
 
-  const [visiblePrompt, instructionsTemplate] = await Promise.all([
-    renderMagicPrompt(COMMIT_GENERATION_PROMPTS.visible),
-    renderMagicPrompt(
-      COMMIT_GENERATION_PROMPTS.instructions,
-      buildCommitGenerationPromptVariables('draft', selectedFilesText),
-    ),
-  ]);
+  const request: import('./api/types').GenerateGitCommitMessageRequest = {
+    context: contextResult.context,
+    ...(options?.commitMessageGuidance?.trim()
+      ? { guidance: options.commitMessageGuidance.trim() }
+      : {}),
+    ...(options?.zenModel?.trim() ? { zenModel: options.zenModel.trim() } : {}),
+  };
+  const runtime = getRuntimeGit();
+  const message = runtime
+    ? await runtime.generateCommitMessage(directory, request)
+    : await gitHttp.generateCommitMessage(directory, request);
 
   return {
-    status: 'ready',
-    visiblePrompt,
-    syntheticParts: [
-      {
-        synthetic: true,
-        text: instructionsTemplate.replace(
-          '__GIT_CONTEXT_PLACEHOLDER__',
-          serializeCommitPlanContext(contextResult.context),
-        ),
-      },
-    ],
+    status: 'complete',
+    commits: [message],
   };
-}
-
-export async function generateCommitMessageDraft(
-  directory: string,
-  files: string[],
-  options?: CommitGenerationOptions
-): Promise<import('./api/types').GeneratedCommitWorkflowResult> {
-  return runCommitPlanStyleGeneration({
-    directory,
-    files,
-    options,
-    prompts: COMMIT_GENERATION_PROMPTS,
-    logKind: 'draft',
-    applyAllowlist: false,
-  });
 }
 
 export async function generateCommitPlanPreview(
@@ -551,9 +479,6 @@ export async function generateCommitPlanPreview(
     directory,
     files,
     options,
-    prompts: COMMIT_GENERATION_PROMPTS,
-    logKind: 'plan',
-    applyAllowlist: true,
   });
 }
 

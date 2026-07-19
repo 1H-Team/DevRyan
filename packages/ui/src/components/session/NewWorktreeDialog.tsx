@@ -563,12 +563,16 @@ export function NewWorktreeDialog({
         return;
       }
 
-      const issueRes = await github.issueGet(projectDirectory, args.issue.number);
+      const issueRes = await github.issueGet(projectDirectory, args.issue.number, {
+        sourceRepo: args.issue.sourceRepo ?? null,
+      });
       if (issueRes.connected === false || !issueRes.repo || !issueRes.issue) {
         throw new Error('Failed to load issue context');
       }
 
-      const commentsRes = await github.issueComments(projectDirectory, args.issue.number);
+      const commentsRes = await github.issueComments(projectDirectory, args.issue.number, {
+        sourceRepo: args.issue.sourceRepo ?? null,
+      });
       if (commentsRes.connected === false) {
         throw new Error('Failed to load issue comments');
       }
@@ -608,6 +612,7 @@ export function NewWorktreeDialog({
       const prContext = await github.prContext(projectDirectory, args.pr.number, {
         includeDiff: args.includeDiff,
         includeCheckDetails: false,
+        sourceRepo: args.pr.sourceRepo ?? null,
       });
       if (prContext.connected === false || !prContext.repo || !prContext.pr) {
         throw new Error('Failed to load PR context');

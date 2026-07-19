@@ -3,6 +3,7 @@ import type { PlanIndicatorEntry } from "./plan-indicator"
 import { getPlanBlockId, getPlanImplementationKey, isPlanModeUserMessage, resolveMessagePlanCard } from "@/lib/messages/actionablePlan"
 import { filterMessagesForRevert, getEffectiveSessionRevertMessageID } from "./revert-transactions"
 import { isFinalAssistantSummaryMessage } from "./session-working"
+import { hasIncompleteTodos } from "./todo-completion"
 import type { State } from "./types"
 
 export type PlanCompletedCandidate = {
@@ -14,7 +15,7 @@ export type PlanCompletedCandidate = {
 
 type PlanCompletionDetectionState = Pick<
   State,
-  "message" | "part" | "session" | "revert_transaction"
+  "message" | "part" | "session" | "todo" | "revert_transaction"
 >
 
 export function detectPlanCompletedCandidate({
@@ -30,6 +31,8 @@ export function detectPlanCompletedCandidate({
   isRecordedPlanModeUserMessage?: (messageId: string) => boolean
   implementedPlanRequests?: ReadonlySet<string>
 }): PlanCompletedCandidate | null {
+  if (hasIncompleteTodos(state.todo[sessionID])) return null
+
   const rawMessages = state.message[sessionID]
   if (!rawMessages || rawMessages.length === 0) return null
 
@@ -116,7 +119,7 @@ function findCompletedAssistantAfter(
   messages: readonly Message[],
   startIndex: number,
 ): Message | null {
-  for (let index = startIndex + 1; index < messages.length; index += 1) {
+  for (let index = messages.length - 1; index > startIndex; index -= 1) {
     const message = messages[index]
     if (message.role !== "assistant") continue
     if (!isFinalAssistantSummaryMessage(message, state.part[message.id])) continue

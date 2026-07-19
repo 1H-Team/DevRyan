@@ -1,6 +1,10 @@
 import { registerCommitTemplateRoutes } from './template-routes.js';
+import {
+  COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
+  generateCommitMessageDirect,
+} from './commit-message.js';
 
-export function registerGitRoutes(app) {
+export function registerGitRoutes(app, { resolveZenModel = async (override) => override || 'gpt-5-nano' } = {}) {
   registerCommitTemplateRoutes(app);
 
   let gitLibraries = null;
@@ -669,6 +673,32 @@ export function registerGitRoutes(app) {
     } catch (error) {
       console.error('Failed to commit:', error);
       res.status(500).json({ error: error.message || 'Failed to create commit' });
+    }
+  });
+
+  app.post('/api/git/commit-message', async (req, res) => {
+    try {
+      const directory = typeof req.query.directory === 'string' ? req.query.directory.trim() : '';
+      if (!directory) {
+        return res.status(400).json({ error: 'directory parameter is required' });
+      }
+
+      const { context, guidance, zenModel: requestedZenModel } = req.body || {};
+      if (!context || !Array.isArray(context.selectedFiles) || context.selectedFiles.length === 0) {
+        return res.status(400).json({ error: 'worktree context is required' });
+      }
+
+      const requestedModel = typeof requestedZenModel === 'string' ? requestedZenModel.trim() : '';
+      const zenModel = await resolveZenModel(requestedModel || COMMIT_GENERATION_DEFAULT_ZEN_MODEL);
+      const message = await generateCommitMessageDirect({
+        context,
+        guidance: typeof guidance === 'string' ? guidance : undefined,
+        zenModel,
+      });
+      res.json({ message });
+    } catch (error) {
+      console.error('Failed to generate commit message:', error);
+      res.status(500).json({ error: error.message || 'Failed to generate commit message' });
     }
   });
 

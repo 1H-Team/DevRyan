@@ -33,6 +33,8 @@ interface ContextState {
 
 interface ContextActions {
 
+    clearSessionContext: (sessionId: string) => void;
+
     saveSessionModelSelection: (sessionId: string, providerId: string, modelId: string) => void;
     getSessionModelSelection: (sessionId: string) => { providerId: string; modelId: string } | null;
     saveSessionAgentSelection: (sessionId: string, agentName: string) => void;
@@ -65,6 +67,72 @@ type ContextStore = ContextState & ContextActions;
 const EDIT_PERMISSION_SEQUENCE: EditPermissionMode[] = ['ask', 'allow', 'full'];
 const GLOBAL_EDIT_MODE_SESSION_ID = '__global__';
 
+type DeferredContextWork = {
+    cancelled: boolean;
+    timers: Set<ReturnType<typeof setTimeout>>;
+};
+
+const deferredContextWorkBySession = new Map<string, Set<DeferredContextWork>>();
+
+const registerDeferredContextWork = (sessionId: string): DeferredContextWork => {
+    const work: DeferredContextWork = {
+        cancelled: false,
+        timers: new Set(),
+    };
+    const sessionWork = deferredContextWorkBySession.get(sessionId) ?? new Set();
+    sessionWork.add(work);
+    deferredContextWorkBySession.set(sessionId, sessionWork);
+    return work;
+};
+
+const releaseDeferredContextWork = (sessionId: string, work: DeferredContextWork) => {
+    const sessionWork = deferredContextWorkBySession.get(sessionId);
+    if (!sessionWork) return;
+
+    sessionWork.delete(work);
+    if (sessionWork.size === 0) {
+        deferredContextWorkBySession.delete(sessionId);
+    }
+};
+
+const scheduleDeferredContextTimer = (
+    work: DeferredContextWork,
+    callback: () => void,
+    delay: number,
+) => {
+    if (work.cancelled) return;
+
+    const timer = setTimeout(() => {
+        work.timers.delete(timer);
+        if (!work.cancelled) {
+            callback();
+        }
+    }, delay);
+    work.timers.add(timer);
+};
+
+const cancelDeferredContextWork = (sessionId: string) => {
+    const sessionWork = deferredContextWorkBySession.get(sessionId);
+    if (!sessionWork) return;
+
+    for (const work of sessionWork) {
+        work.cancelled = true;
+        for (const timer of work.timers) {
+            clearTimeout(timer);
+        }
+        work.timers.clear();
+    }
+    deferredContextWorkBySession.delete(sessionId);
+};
+
+const withoutSession = <Value>(source: Map<string, Value>, sessionId: string): Map<string, Value> => {
+    if (!source.has(sessionId)) return source;
+
+    const next = new Map(source);
+    next.delete(sessionId);
+    return next;
+};
+
 export const useContextStore = create<ContextStore>()(
     devtools(
         persist(
@@ -78,6 +146,43 @@ export const useContextStore = create<ContextStore>()(
                 sessionContextUsage: new Map(),
                 sessionAgentEditModes: new Map(),
                 hasHydrated: typeof window === "undefined",
+
+                clearSessionContext: (sessionId: string) => {
+                    if (!sessionId || sessionId === GLOBAL_EDIT_MODE_SESSION_ID) return;
+
+                    cancelDeferredContextWork(sessionId);
+                    set((state) => {
+                        const sessionModelSelections = withoutSession(state.sessionModelSelections, sessionId);
+                        const sessionAgentSelections = withoutSession(state.sessionAgentSelections, sessionId);
+                        const sessionAgentModelSelections = withoutSession(state.sessionAgentModelSelections, sessionId);
+                        const sessionAgentModelVariantSelections = withoutSession(state.sessionAgentModelVariantSelections, sessionId);
+                        const currentAgentContext = withoutSession(state.currentAgentContext, sessionId);
+                        const sessionContextUsage = withoutSession(state.sessionContextUsage, sessionId);
+                        const sessionAgentEditModes = withoutSession(state.sessionAgentEditModes, sessionId);
+
+                        if (
+                            sessionModelSelections === state.sessionModelSelections
+                            && sessionAgentSelections === state.sessionAgentSelections
+                            && sessionAgentModelSelections === state.sessionAgentModelSelections
+                            && sessionAgentModelVariantSelections === state.sessionAgentModelVariantSelections
+                            && currentAgentContext === state.currentAgentContext
+                            && sessionContextUsage === state.sessionContextUsage
+                            && sessionAgentEditModes === state.sessionAgentEditModes
+                        ) {
+                            return state;
+                        }
+
+                        return {
+                            sessionModelSelections,
+                            sessionAgentSelections,
+                            sessionAgentModelSelections,
+                            sessionAgentModelVariantSelections,
+                            currentAgentContext,
+                            sessionContextUsage,
+                            sessionAgentEditModes,
+                        };
+                    });
+                },
 
                 saveSessionModelSelection: (sessionId: string, providerId: string, modelId: string) => {
                     set((state) => {
@@ -202,25 +307,29 @@ export const useContextStore = create<ContextStore>()(
                     if (!nextUsage) return get().sessionContextUsage.get(sessionId) as ContextUsage | undefined || null;
 
                     const scheduleUsageUpdate = (usage: ContextUsage) => {
+                        const work = registerDeferredContextWork(sessionId);
                         const runUpdate = () => {
-                            set((state) => {
-                                const existing = state.sessionContextUsage.get(sessionId) as ContextUsage | undefined;
-                                if (isSameSessionContextUsage(existing, usage)) {
-                                    return state;
-                                }
+                            try {
+                                if (work.cancelled) return;
+                                set((state) => {
+                                    const existing = state.sessionContextUsage.get(sessionId) as ContextUsage | undefined;
+                                    if (isSameSessionContextUsage(existing, usage)) {
+                                        return state;
+                                    }
 
-                                const newContextUsage = new Map(state.sessionContextUsage);
-                                newContextUsage.set(sessionId, usage);
-                                return { sessionContextUsage: newContextUsage };
-                            });
+                                    const newContextUsage = new Map(state.sessionContextUsage);
+                                    newContextUsage.set(sessionId, usage);
+                                    return { sessionContextUsage: newContextUsage };
+                                });
+                            } finally {
+                                releaseDeferredContextWork(sessionId, work);
+                            }
                         };
 
                         if (typeof queueMicrotask === 'function') {
                             queueMicrotask(runUpdate);
-                        } else if (typeof window !== 'undefined') {
-                            window.setTimeout(runUpdate, 0);
                         } else {
-                            setTimeout(runUpdate, 0);
+                            scheduleDeferredContextTimer(work, runUpdate, 0);
                         }
                     };
 
@@ -259,6 +368,7 @@ export const useContextStore = create<ContextStore>()(
 
                 pollForTokenUpdates: (sessionId: string, messageId: string, messages: Map<string, { info: any; parts: any[] }[]>, maxAttempts: number = 10) => {
                     let attempts = 0;
+                    const work = registerDeferredContextWork(sessionId);
 
                     const poll = () => {
                         attempts++;
@@ -271,16 +381,19 @@ export const useContextStore = create<ContextStore>()(
                             if (totalTokens > 0) {
 
                                 get().updateSessionContextUsage(sessionId, UNAVAILABLE_MODEL_CONTEXT_CAPACITY, messages);
+                                releaseDeferredContextWork(sessionId, work);
                                 return;
                             }
                         }
 
                         if (attempts < maxAttempts) {
-                            setTimeout(poll, 1000);
+                            scheduleDeferredContextTimer(work, poll, 1000);
+                        } else {
+                            releaseDeferredContextWork(sessionId, work);
                         }
                     };
 
-                    setTimeout(poll, 2000);
+                    scheduleDeferredContextTimer(work, poll, 2000);
                 },
 
                 getCurrentAgent: (sessionId: string) => {

@@ -1,6 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import {
+  type CursorDashboardCredential,
+  type CursorOAuthCredential,
+  type ManagedQuotaCredential,
+  type OllamaCloudCredential,
+  type OpenCodeGoCredential,
+  readManagedQuotaCredential,
+  writeManagedQuotaCredential,
+} from './quotaCredentials';
 
 type AuthEntry = Record<string, unknown> | string;
 type AuthFile = Record<string, AuthEntry>;
@@ -53,6 +62,11 @@ type QuotaFetch = (
 type FetchQuotaOptions = {
   readAuth?: () => AuthFile;
   fetchImpl?: QuotaFetch;
+  env?: NodeJS.ProcessEnv;
+  readManagedCredential?: (providerId: string) => ManagedQuotaCredential | null;
+  writeManagedCredential?: (providerId: string, credential: ManagedQuotaCredential) => unknown;
+  readTokenFile?: (filePath: string) => string;
+  readLegacyOllamaCookie?: () => string | null;
 };
 
 type OpenAiUsagePayload = {
@@ -159,6 +173,11 @@ const AUTH_FILE = path.join(OPENCODE_DATA_DIR, 'auth.json');
 const OLLAMA_CLOUD_COOKIE_PATH = path.join(os.homedir(), '.config', 'ollama-quota', 'cookie');
 const CURSOR_CURRENT_PERIOD_USAGE_URL = 'https://cursor.com/api/dashboard/get-current-period-usage';
 const CURSOR_DASHBOARD_URL = 'https://cursor.com/dashboard?tab=spending';
+const CURSOR_OAUTH_BASE_URL = 'https://api2.cursor.sh';
+const CURSOR_OAUTH_USAGE_URL = `${CURSOR_OAUTH_BASE_URL}/aiserver.v1.DashboardService/GetCurrentPeriodUsage`;
+const CURSOR_OAUTH_REFRESH_URL = `${CURSOR_OAUTH_BASE_URL}/oauth/token`;
+const CURSOR_OAUTH_CLIENT_ID = 'KbZUR41cY7W6zRSdpSUJ7I7mLYBKOCmB';
+const CURSOR_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 const CURSOR_AUTO_COMPOSER_DESCRIPTION = 'Additional usage beyond limits consumes API quota or on-demand spend.';
 const CURSOR_API_DESCRIPTION = 'Additional usage beyond limits consumes on-demand spend.';
 const COPILOT_AI_CREDITS_DESCRIPTION = 'AI Credits are consumed from token usage, including input, output, and cached tokens.';
@@ -467,25 +486,12 @@ export const listConfiguredQuotaProviders = () => {
     configured.add('codex');
   }
 
-  const opencodeGoAuth = normalizeAuthEntry(getAuthEntry(auth, OPENCODE_GO_ALIASES));
-  if (
-    opencodeGoAuth &&
-    (
-      (opencodeGoAuth as Record<string, unknown>).key ||
-      (opencodeGoAuth as Record<string, unknown>).token ||
-      (opencodeGoAuth as Record<string, unknown>).access ||
-      (
-        (opencodeGoAuth as Record<string, unknown>).usageWorkspaceId &&
-        (opencodeGoAuth as Record<string, unknown>).usageAuthCookie
-      )
-    )
-  ) {
-    configured.add('opencode-go');
-  } else if (process.env.OPENCODE_GO_WORKSPACE_ID && process.env.OPENCODE_GO_AUTH_COOKIE) {
+  const openCodeGo = resolveOpenCodeGoCredentials({ readAuth: () => auth });
+  if (openCodeGo.apiConfigured || openCodeGo.usageConfigured) {
     configured.add('opencode-go');
   }
 
-  if (getCursorUsageSessionToken(auth)) {
+  if (resolveCursorQuotaCredential({ readAuth: () => auth }).credential) {
     configured.add('cursor-acp');
   }
 
@@ -537,7 +543,7 @@ export const listConfiguredQuotaProviders = () => {
     configured.add('github-copilot-addon');
   }
 
-  if (readTextFile(OLLAMA_CLOUD_COOKIE_PATH)) {
+  if (resolveOllamaCloudCredential().credential) {
     configured.add('ollama-cloud');
   }
 
@@ -715,20 +721,40 @@ export const fetchCodexQuota = async (options: FetchQuotaOptions = {}): Promise<
   }
 };
 
-const resolveOpenCodeGoCredentials = (options: FetchQuotaOptions = {}) => {
+export const resolveOpenCodeGoCredentials = (options: FetchQuotaOptions = {}) => {
   const auth = options.readAuth?.() ?? readAuthFile();
   const entry = normalizeAuthEntry(getAuthEntry(auth, OPENCODE_GO_ALIASES)) as Record<string, unknown> | null;
   const apiKey = asNonEmptyString(entry?.key) ?? asNonEmptyString(entry?.token) ?? asNonEmptyString(entry?.access);
-  const workspaceId = asNonEmptyString(process.env.OPENCODE_GO_WORKSPACE_ID)
-    ?? asNonEmptyString(entry?.usageWorkspaceId);
-  const authCookie = asNonEmptyString(process.env.OPENCODE_GO_AUTH_COOKIE)
-    ?? asNonEmptyString(entry?.usageAuthCookie);
+  const env = options.env ?? process.env;
+  const environmentWorkspaceId = asNonEmptyString(env.OPENCODE_GO_WORKSPACE_ID);
+  const environmentAuthCookie = asNonEmptyString(env.OPENCODE_GO_AUTH_COOKIE);
+  const managed = (options.readManagedCredential ?? readManagedQuotaCredential)('opencode-go') as OpenCodeGoCredential | null;
+  const legacyWorkspaceId = asNonEmptyString(entry?.usageWorkspaceId);
+  const legacyAuthCookie = asNonEmptyString(entry?.usageAuthCookie);
+
+  let workspaceId: string | null = null;
+  let authCookie: string | null = null;
+  let source: 'environment' | 'managed' | 'legacy' | null = null;
+  if (environmentWorkspaceId || environmentAuthCookie) {
+    workspaceId = environmentWorkspaceId;
+    authCookie = environmentAuthCookie;
+    source = 'environment';
+  } else if (managed) {
+    workspaceId = managed.workspaceId;
+    authCookie = managed.authCookie;
+    source = 'managed';
+  } else if (legacyWorkspaceId || legacyAuthCookie) {
+    workspaceId = legacyWorkspaceId;
+    authCookie = legacyAuthCookie;
+    source = 'legacy';
+  }
 
   return {
     apiConfigured: Boolean(apiKey),
     usageConfigured: Boolean(workspaceId && authCookie),
     workspaceId,
     authCookie,
+    source,
   };
 };
 
@@ -818,6 +844,33 @@ const buildOpenCodeGoUsage = (html: string): ProviderUsage => {
   return { windows };
 };
 
+export const validateOpenCodeGoQuotaCredential = async (
+  credential: OpenCodeGoCredential,
+  fetchImpl: QuotaFetch = fetch,
+): Promise<ProviderUsage> => {
+  if (!OPENCODE_GO_WORKSPACE_ID_PATTERN.test(credential.workspaceId)) {
+    throw new Error('Invalid OpenCode Go workspace ID format.');
+  }
+  const response = await fetchImpl(`https://opencode.ai/workspace/${encodeURIComponent(credential.workspaceId)}/go`, {
+    method: 'GET',
+    headers: {
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      Cookie: `auth=${credential.authCookie}`,
+      'User-Agent': 'DevRyan quota provider',
+    },
+    redirect: 'manual',
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (response.status === 401 || response.status === 403 || (response.status >= 300 && response.status < 400)) {
+    throw new Error(OPENCODE_GO_AUTH_COOKIE_ERROR);
+  }
+  if (!response.ok) throw new Error(`OpenCode Go dashboard request failed: ${response.status}`);
+  if (typeof response.text !== 'function') {
+    throw new Error('OpenCode Go dashboard response did not include HTML content.');
+  }
+  return buildOpenCodeGoUsage(await response.text());
+};
+
 export const fetchOpenCodeGoQuota = async (options: FetchQuotaOptions = {}): Promise<ProviderResult> => {
   const fetchImpl = options.fetchImpl ?? fetch;
   const credentials = resolveOpenCodeGoCredentials(options);
@@ -851,38 +904,26 @@ export const fetchOpenCodeGoQuota = async (options: FetchQuotaOptions = {}): Pro
       error: 'Invalid OpenCode Go workspace ID format.',
     });
   }
+  if (!credentials.authCookie) {
+    return buildResult({
+      providerId: 'opencode-go',
+      providerName: 'OpenCode Go',
+      ok: false,
+      configured: true,
+      error: OPENCODE_GO_DASHBOARD_USAGE_ERROR,
+    });
+  }
 
   try {
-    const response = await fetchImpl(`https://opencode.ai/workspace/${encodeURIComponent(credentials.workspaceId)}/go`, {
-      method: 'GET',
-      headers: {
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        Cookie: `auth=${credentials.authCookie}`,
-      },
-    });
-
-    if (!response.ok) {
-      return buildResult({
-        providerId: 'opencode-go',
-        providerName: 'OpenCode Go',
-        ok: false,
-        configured: true,
-        error: response.status === 401 || response.status === 403
-          ? OPENCODE_GO_AUTH_COOKIE_ERROR
-          : `OpenCode Go dashboard request failed: ${response.status}`,
-      });
-    }
-
-    if (typeof response.text !== 'function') {
-      throw new Error('OpenCode Go dashboard response did not include HTML content.');
-    }
-
     return buildResult({
       providerId: 'opencode-go',
       providerName: 'OpenCode Go',
       ok: true,
       configured: true,
-      usage: buildOpenCodeGoUsage(await response.text()),
+      usage: await validateOpenCodeGoQuotaCredential({
+        workspaceId: credentials.workspaceId,
+        authCookie: credentials.authCookie,
+      }, fetchImpl),
     });
   } catch (error) {
     return buildResult({
@@ -898,6 +939,79 @@ export const fetchOpenCodeGoQuota = async (options: FetchQuotaOptions = {}): Pro
 const getCursorUsageSessionToken = (auth: AuthFile): string | null => {
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['cursor-acp']));
   return asNonEmptyString(entry?.usageSessionToken);
+};
+
+const defaultReadTokenFile = (filePath: string): string => {
+  if (!filePath) return '';
+  try {
+    return fs.readFileSync(filePath, 'utf8').trim();
+  } catch {
+    return '';
+  }
+};
+
+export const resolveCursorQuotaCredential = (options: FetchQuotaOptions = {}) => {
+  const env = options.env ?? process.env;
+  const environmentAccessToken = asNonEmptyString(env.CURSOR_TOKEN)
+    ?? asNonEmptyString(env.CURSOR_ACCESS_TOKEN);
+  const environmentRefreshToken = asNonEmptyString(env.CURSOR_REFRESH_TOKEN);
+  if (environmentAccessToken || environmentRefreshToken) {
+    return {
+      kind: 'oauth' as const,
+      source: 'environment' as const,
+      credential: {
+        ...(environmentAccessToken ? { accessToken: environmentAccessToken } : {}),
+        ...(environmentRefreshToken ? { refreshToken: environmentRefreshToken } : {}),
+      } satisfies CursorOAuthCredential,
+    };
+  }
+
+  const readTokenFile = options.readTokenFile ?? defaultReadTokenFile;
+  const fileAccessToken = readTokenFile(asNonEmptyString(env.CURSOR_TOKEN_FILE) ?? '');
+  const fileRefreshToken = readTokenFile(asNonEmptyString(env.CURSOR_REFRESH_TOKEN_FILE) ?? '');
+  if (fileAccessToken || fileRefreshToken) {
+    return {
+      kind: 'oauth' as const,
+      source: 'token-file' as const,
+      credential: {
+        ...(fileAccessToken ? { accessToken: fileAccessToken } : {}),
+        ...(fileRefreshToken ? { refreshToken: fileRefreshToken } : {}),
+      } satisfies CursorOAuthCredential,
+    };
+  }
+
+  const managed = (options.readManagedCredential ?? readManagedQuotaCredential)('cursor-acp');
+  const managedRecord = asObject(managed);
+  const managedSessionToken = asNonEmptyString(managedRecord?.sessionToken);
+  if (managedSessionToken) {
+    return {
+      kind: 'dashboard' as const,
+      source: 'managed' as const,
+      credential: { sessionToken: managedSessionToken } satisfies CursorDashboardCredential,
+    };
+  }
+  const managedAccessToken = asNonEmptyString(managedRecord?.accessToken);
+  const managedRefreshToken = asNonEmptyString(managedRecord?.refreshToken);
+  if (managedAccessToken || managedRefreshToken) {
+    return {
+      kind: 'oauth' as const,
+      source: 'managed' as const,
+      credential: {
+        ...(managedAccessToken ? { accessToken: managedAccessToken } : {}),
+        ...(managedRefreshToken ? { refreshToken: managedRefreshToken } : {}),
+      } satisfies CursorOAuthCredential,
+    };
+  }
+
+  const auth = options.readAuth?.() ?? readAuthFile();
+  const legacySessionToken = getCursorUsageSessionToken(auth);
+  return legacySessionToken
+    ? {
+        kind: 'dashboard' as const,
+        source: 'legacy' as const,
+        credential: { sessionToken: legacySessionToken } satisfies CursorDashboardCredential,
+      }
+    : { kind: null, source: null, credential: null };
 };
 
 const getCursorUsageSessionTokenCandidates = (sessionToken: string): string[] => {
@@ -987,16 +1101,124 @@ const buildCursorUsageRequests = (sessionToken: string): Array<{ url: string; in
         Cookie: `WorkosCursorSessionToken=${sessionToken}`,
       },
       body: '{}',
+      redirect: 'manual',
+      signal: AbortSignal.timeout(15_000),
     },
   },
 ];
 
-export const fetchCursorAcpQuota = async (options: FetchQuotaOptions = {}): Promise<ProviderResult> => {
-  const readAuth = options.readAuth ?? readAuthFile;
-  const fetchImpl = options.fetchImpl ?? fetch;
-  const sessionToken = getCursorUsageSessionToken(readAuth());
+const fetchCursorDashboardPayload = async (sessionToken: string, fetchImpl: QuotaFetch) => {
+  let response: Awaited<ReturnType<QuotaFetch>> | null = null;
+  for (const tokenCandidate of getCursorUsageSessionTokenCandidates(sessionToken)) {
+    for (const request of buildCursorUsageRequests(tokenCandidate)) {
+      response = await fetchImpl(request.url, request.init);
+      if (response.ok || (response.status >= 300 && response.status < 400)) break;
+    }
+    if (response?.ok || (response && response.status >= 300 && response.status < 400)) break;
+  }
+  if (!response?.ok) {
+    throw new Error(response?.status === 401 || response?.status === 403 || (response && response.status >= 300 && response.status < 400)
+      ? 'Cursor session expired. Update the Cursor usage session token.'
+      : `Cursor usage API error: ${response?.status ?? 'unknown'}`);
+  }
+  const payload = await response.json();
+  buildCursorUsage(payload);
+  return payload;
+};
 
-  if (!sessionToken) {
+const readCursorJwtExpiry = (token: string): number | null => {
+  try {
+    const payload = token.split('.')[1];
+    if (!payload) return null;
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as unknown;
+    const record = asObject(parsed);
+    return typeof record?.exp === 'number' && Number.isFinite(record.exp) ? record.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+};
+
+const cursorAccessTokenNeedsRefresh = (accessToken: string | undefined) => {
+  if (!accessToken) return true;
+  const expiresAt = readCursorJwtExpiry(accessToken);
+  return expiresAt !== null && expiresAt - Date.now() <= CURSOR_REFRESH_BUFFER_MS;
+};
+
+const refreshCursorAccessToken = async (refreshToken: string, fetchImpl: QuotaFetch) => {
+  const response = await fetchImpl(CURSOR_OAUTH_REFRESH_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      grant_type: 'refresh_token',
+      client_id: CURSOR_OAUTH_CLIENT_ID,
+      refresh_token: refreshToken,
+    }),
+    redirect: 'manual',
+    signal: AbortSignal.timeout(15_000),
+  });
+  const payload = asObject(await response.json().catch(() => null));
+  if (!response.ok || (response.status >= 300 && response.status < 400)) {
+    throw new Error('Cursor OAuth session expired. Update or import the Cursor credential.');
+  }
+  const accessToken = asNonEmptyString(payload?.access_token);
+  if (!accessToken) throw new Error('Cursor refresh response did not include an access token.');
+  return accessToken;
+};
+
+const resolveCursorOAuthAccessToken = async (credential: CursorOAuthCredential, fetchImpl: QuotaFetch) => {
+  const currentAccessToken = credential.accessToken;
+  if (currentAccessToken && !cursorAccessTokenNeedsRefresh(currentAccessToken)) {
+    return { accessToken: currentAccessToken, credential, refreshed: false };
+  }
+  if (!credential.refreshToken) throw new Error('Cursor access token is required.');
+  const accessToken = await refreshCursorAccessToken(credential.refreshToken, fetchImpl);
+  return {
+    accessToken,
+    credential: { accessToken, refreshToken: credential.refreshToken } satisfies CursorOAuthCredential,
+    refreshed: true,
+  };
+};
+
+const fetchCursorOAuthPayload = async (accessToken: string, fetchImpl: QuotaFetch) => {
+  const response = await fetchImpl(CURSOR_OAUTH_USAGE_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      'Connect-Protocol-Version': '1',
+    },
+    body: '{}',
+    redirect: 'manual',
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok || (response.status >= 300 && response.status < 400)) {
+    throw new Error(response.status === 401 || response.status === 403
+      ? 'Cursor OAuth session expired. Update or import the Cursor credential.'
+      : `Cursor usage API error: ${response.status}`);
+  }
+  const payload = await response.json();
+  buildCursorUsage(payload);
+  return payload;
+};
+
+export const validateCursorQuotaCredential = async (
+  credential: CursorDashboardCredential | CursorOAuthCredential,
+  fetchImpl: QuotaFetch = fetch,
+): Promise<CursorDashboardCredential | CursorOAuthCredential> => {
+  if ('sessionToken' in credential) {
+    await fetchCursorDashboardPayload(credential.sessionToken, fetchImpl);
+    return credential;
+  }
+  const resolved = await resolveCursorOAuthAccessToken(credential, fetchImpl);
+  await fetchCursorOAuthPayload(resolved.accessToken, fetchImpl);
+  return resolved.credential;
+};
+
+export const fetchCursorAcpQuota = async (options: FetchQuotaOptions = {}): Promise<ProviderResult> => {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const resolved = resolveCursorQuotaCredential(options);
+
+  if (!resolved.credential) {
     return buildResult({
       providerId: 'cursor-acp',
       providerName: 'Cursor',
@@ -1007,29 +1229,15 @@ export const fetchCursorAcpQuota = async (options: FetchQuotaOptions = {}): Prom
   }
 
   try {
-    let response: Awaited<ReturnType<QuotaFetch>> | null = null;
-    for (const tokenCandidate of getCursorUsageSessionTokenCandidates(sessionToken)) {
-      for (const request of buildCursorUsageRequests(tokenCandidate)) {
-        response = await fetchImpl(request.url, request.init);
-        if (response.ok) {
-          break;
-        }
+    let payload: unknown;
+    if (resolved.kind === 'dashboard') {
+      payload = await fetchCursorDashboardPayload(resolved.credential.sessionToken, fetchImpl);
+    } else {
+      const oauth = await resolveCursorOAuthAccessToken(resolved.credential, fetchImpl);
+      payload = await fetchCursorOAuthPayload(oauth.accessToken, fetchImpl);
+      if (oauth.refreshed && resolved.source === 'managed') {
+        (options.writeManagedCredential ?? writeManagedQuotaCredential)('cursor-acp', oauth.credential);
       }
-      if (response?.ok) {
-        break;
-      }
-    }
-
-    if (!response?.ok) {
-      return buildResult({
-        providerId: 'cursor-acp',
-        providerName: 'Cursor',
-        ok: false,
-        configured: true,
-        error: response?.status === 401
-          ? 'Cursor session expired. Update the Cursor usage session token.'
-          : `Cursor usage API error: ${response?.status ?? 'unknown'}`,
-      });
     }
 
     return buildResult({
@@ -1037,7 +1245,7 @@ export const fetchCursorAcpQuota = async (options: FetchQuotaOptions = {}): Prom
       providerName: 'Cursor',
       ok: true,
       configured: true,
-      usage: buildCursorUsage(await response.json()),
+      usage: buildCursorUsage(payload),
     });
   } catch (error) {
     return buildResult({
@@ -1867,7 +2075,7 @@ export const fetchMiniMaxCnCodingPlanQuota = () => fetchMiniMaxQuota({
   usageFieldsAreRemaining: true,
 });
 
-const parseOllamaSettingsHtml = (html: string) => {
+export const parseOllamaSettingsHtml = (html: string) => {
   const windows: Record<string, UsageWindow> = {};
   const sessionMatch = html.match(/Session\s+usage[^0-9]*([0-9.]+)%/i);
   if (sessionMatch) {
@@ -1903,10 +2111,54 @@ const parseOllamaSettingsHtml = (html: string) => {
   return windows;
 };
 
-export const fetchOllamaCloudQuota = async (): Promise<ProviderResult> => {
-  const cookie = readTextFile(OLLAMA_CLOUD_COOKIE_PATH);
+export const resolveOllamaCloudCredential = (options: FetchQuotaOptions = {}) => {
+  const managed = (options.readManagedCredential ?? readManagedQuotaCredential)('ollama-cloud');
+  const managedRecord = asObject(managed);
+  const managedCookie = asNonEmptyString(managedRecord?.cookie);
+  if (managedCookie) {
+    return {
+      credential: { cookie: managedCookie } satisfies OllamaCloudCredential,
+      source: 'managed' as const,
+    };
+  }
+  const legacyCookie = options.readLegacyOllamaCookie
+    ? options.readLegacyOllamaCookie()
+    : readTextFile(OLLAMA_CLOUD_COOKIE_PATH);
+  return legacyCookie
+    ? {
+        credential: { cookie: legacyCookie } satisfies OllamaCloudCredential,
+        source: 'legacy' as const,
+      }
+    : { credential: null, source: null };
+};
 
-  if (!cookie) {
+export const validateOllamaCloudQuotaCredential = async (
+  credential: OllamaCloudCredential,
+  fetchImpl: QuotaFetch = fetch,
+) => {
+  const response = await fetchImpl('https://ollama.com/settings', {
+    method: 'GET',
+    headers: {
+      Cookie: credential.cookie,
+      'User-Agent': 'DevRyan quota provider',
+    },
+    redirect: 'manual',
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (response.status === 401 || response.status === 403 || (response.status >= 300 && response.status < 400)) {
+    throw new Error('Ollama Cloud authentication failed');
+  }
+  if (!response.ok) throw new Error(`Ollama Cloud returned HTTP ${response.status}`);
+  if (typeof response.text !== 'function') throw new Error('Ollama Cloud response did not include HTML content');
+  const windows = parseOllamaSettingsHtml(await response.text());
+  if (Object.keys(windows).length === 0) throw new Error('Ollama Cloud usage data could not be parsed');
+  return windows;
+};
+
+export const fetchOllamaCloudQuota = async (options: FetchQuotaOptions = {}): Promise<ProviderResult> => {
+  const { credential } = resolveOllamaCloudCredential(options);
+
+  if (!credential) {
     return buildResult({
       providerId: 'ollama-cloud',
       providerName: 'Ollama Cloud',
@@ -1917,30 +2169,12 @@ export const fetchOllamaCloudQuota = async (): Promise<ProviderResult> => {
   }
 
   try {
-    const response = await fetch('https://ollama.com/settings', {
-      method: 'GET',
-      headers: {
-        Cookie: cookie,
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-      },
-    });
-
-    if (!response.ok) {
-      return buildResult({
-        providerId: 'ollama-cloud',
-        providerName: 'Ollama Cloud',
-        ok: false,
-        configured: true,
-        error: `API error: ${response.status}`,
-      });
-    }
-
     return buildResult({
       providerId: 'ollama-cloud',
       providerName: 'Ollama Cloud',
       ok: true,
       configured: true,
-      usage: { windows: parseOllamaSettingsHtml(await response.text()) },
+      usage: { windows: await validateOllamaCloudQuotaCredential(credential, options.fetchImpl ?? fetch) },
     });
   } catch (error) {
     return buildResult({
@@ -2321,6 +2555,7 @@ export const fetchQuotaForProvider = async (providerId: string, options: FetchQu
     case 'opencode-go':
       return fetchOpenCodeGoQuota(options);
     case 'cursor-acp':
+    case 'cursor':
       return fetchCursorAcpQuota(options);
     case 'github-copilot':
       return fetchCopilotQuota(options);
@@ -2339,7 +2574,7 @@ export const fetchQuotaForProvider = async (providerId: string, options: FetchQu
     case 'minimax-cn-coding-plan':
       return fetchMiniMaxCnCodingPlanQuota();
     case 'ollama-cloud':
-      return fetchOllamaCloudQuota();
+      return fetchOllamaCloudQuota(options);
     case 'openrouter':
       return fetchOpenRouterQuota();
     case 'zai-coding-plan':

@@ -85,6 +85,49 @@ type RawSessionStatus = {
   next?: unknown
 }
 
+export type SessionStatusBaseline = ReadonlyMap<string, SessionStatus | undefined>
+
+const cloneSessionStatus = (status: SessionStatus | undefined): SessionStatus | undefined => (
+  status ? { ...status } as SessionStatus : undefined
+)
+
+const haveEquivalentSessionStatus = (
+  left: SessionStatus | undefined,
+  right: SessionStatus | undefined,
+): boolean => {
+  if (left === right) return true
+  if (!left || !right || left.type !== right.type) return false
+  if (left.type !== "retry" || right.type !== "retry") return true
+  return left.attempt === right.attempt
+    && left.message === right.message
+    && left.next === right.next
+}
+
+export function captureSessionStatusBaseline(
+  current: Record<string, SessionStatus>,
+  candidateSessionIds: Iterable<string>,
+): SessionStatusBaseline {
+  const baseline = new Map<string, SessionStatus | undefined>()
+  for (const sessionId of candidateSessionIds) {
+    baseline.set(sessionId, cloneSessionStatus(current[sessionId]))
+  }
+  return baseline
+}
+
+export function filterUnchangedSessionStatusCandidates(input: {
+  current: Record<string, SessionStatus>
+  candidateSessionIds: Iterable<string>
+  baseline: SessionStatusBaseline
+}): string[] {
+  const eligible = new Set<string>()
+  for (const sessionId of input.candidateSessionIds) {
+    if (!input.baseline.has(sessionId)) continue
+    if (!haveEquivalentSessionStatus(input.current[sessionId], input.baseline.get(sessionId))) continue
+    eligible.add(sessionId)
+  }
+  return [...eligible]
+}
+
 export function toAuthoritativeSessionStatus(status: RawSessionStatus | undefined): SessionStatus | undefined {
   if (!status) return undefined
   if (status.type === "idle" || status.type === "busy") {

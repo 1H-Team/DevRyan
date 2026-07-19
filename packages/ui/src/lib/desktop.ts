@@ -46,6 +46,7 @@ export type ManagedRemoteTunnelPreset = {
 
 export type DesktopSettings = {
   themeId?: string;
+  themeCatalogVersion?: number;
   useSystemTheme?: boolean;
   themeVariant?: 'light' | 'dark';
   lightThemeId?: string;
@@ -178,7 +179,7 @@ export type DesktopSettings = {
   // Global behavior prompt — synced to ~/.config/opencode/AGENTS.md
   globalBehaviorPrompt?: string;
   responseStyleEnabled?: boolean;
-  responseStylePreset?: 'concise' | 'detailed' | 'mentor' | 'pushback' | 'noFiller' | 'matchEnergy' | 'warmPeer' | 'custom';
+  responseStylePreset?: 'actions' | 'concise' | 'detailed' | 'mentor' | 'pushback' | 'noFiller' | 'matchEnergy' | 'warmPeer' | 'custom';
   responseStyleCustomInstructions?: string;
   sttProvider?: 'browser' | 'server' | 'macos';
   sttServerUrl?: string;
@@ -619,30 +620,40 @@ export const revealDesktopPath = async (path: string): Promise<boolean> => {
   }
 };
 
+export type DesktopMarkdownSaveResult =
+  | { status: 'saved'; path: string }
+  | { status: 'canceled' }
+  | { status: 'unavailable' };
+
 export const saveDesktopMarkdownFile = async (
   defaultFileName: string,
-  content: string,
-): Promise<string | null> => {
+  content: string | Promise<string>,
+): Promise<DesktopMarkdownSaveResult> => {
   if (!isTauriShell() || !isDesktopLocalOriginActive()) {
-    return null;
+    return { status: 'unavailable' };
   }
 
   const trimmedFileName = defaultFileName?.trim();
   if (!trimmedFileName) {
-    return null;
+    throw new Error('Default file name is required');
   }
 
-  try {
-    const tauri = (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__;
-    const result = await tauri?.core?.invoke?.('desktop_save_markdown_file', {
-      defaultFileName: trimmedFileName,
-      content,
-    });
-    return typeof result === 'string' && result.trim().length > 0 ? result : null;
-  } catch (error) {
-    console.warn('Failed to save markdown file (tauri)', error);
-    return null;
+  const resolvedContent = await content;
+  const tauri = (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__;
+  const invoke = tauri?.core?.invoke;
+  if (typeof invoke !== 'function') {
+    return { status: 'unavailable' };
   }
+
+  const result = await invoke('desktop_save_markdown_file', {
+    defaultFileName: trimmedFileName,
+    content: resolvedContent,
+  });
+  if (typeof result === 'string' && result.trim().length > 0) {
+    return { status: 'saved', path: result.trim() };
+  }
+
+  return { status: 'canceled' };
 };
 
 export const openDesktopProjectInApp = async (
@@ -821,17 +832,39 @@ export const fetchDesktopInstalledApps = async (
   }
 };
 
-export const clearDesktopCache = async (): Promise<boolean> => {
-  if (!isTauriShell() || !isDesktopLocalOriginActive()) {
-    return false;
+export type DesktopCacheInfo = {
+  sizeBytes: number;
+};
+
+const parseDesktopCacheInfo = (value: unknown): DesktopCacheInfo => {
+  if (!value || typeof value !== 'object') {
+    throw new Error('Desktop cache information is unavailable');
   }
 
-  try {
-    const tauri = (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__;
-    await tauri?.core?.invoke?.('desktop_clear_cache');
-    return true;
-  } catch (error) {
-    console.warn('Failed to clear cache', error);
-    return false;
+  const sizeBytes = (value as { sizeBytes?: unknown }).sizeBytes;
+  if (typeof sizeBytes !== 'number' || !Number.isFinite(sizeBytes) || sizeBytes < 0) {
+    throw new Error('Desktop returned an invalid cache size');
   }
+
+  return { sizeBytes: Math.floor(sizeBytes) };
+};
+
+const canUseDesktopCacheIPC = (): boolean => canUseElectronDesktopIPC() && isDesktopLocalOriginActive();
+
+export const getDesktopCacheInfo = async (): Promise<DesktopCacheInfo | null> => {
+  if (!canUseDesktopCacheIPC()) {
+    return null;
+  }
+
+  const result = await invokeDesktop<unknown>('desktop_get_cache_info');
+  return parseDesktopCacheInfo(result);
+};
+
+export const clearDesktopCache = async (): Promise<DesktopCacheInfo | null> => {
+  if (!canUseDesktopCacheIPC()) {
+    return null;
+  }
+
+  const result = await invokeDesktop<unknown>('desktop_clear_cache');
+  return parseDesktopCacheInfo(result);
 };

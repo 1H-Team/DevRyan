@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { createManagedOpenCodeExecutor } from './open-code-executor.js';
 import { createManagedTaskScheduler } from './scheduler.js';
 
 const input = {
@@ -15,6 +16,14 @@ const input = {
   label: 'Lease task',
   prompt: 'Test the starting lease.',
   timeoutAt: null,
+};
+
+const deferred = () => {
+  let resolve;
+  const promise = new Promise((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
 };
 
 const createClock = () => {
@@ -114,6 +123,71 @@ describe('managed scheduler starting leases and shutdown', () => {
       partial: true,
       recoverablePreview: 'partial before lost ownership',
     });
+  });
+
+  test('discards a child created after its starting lease loses ownership without prompting it', async () => {
+    const clock = createClock();
+    const creation = deferred();
+    const lateSideEffect = deferred();
+    const calls = [];
+    const executor = createManagedOpenCodeExecutor({
+      transport: {
+        async createSession() {
+          calls.push('create');
+          return await creation.promise;
+        },
+        async promptSession() {
+          calls.push('prompt');
+          lateSideEffect.resolve();
+        },
+        async readSession() { return null; },
+        async readStatus() { return { type: 'idle' }; },
+        async readMessages() {
+          return [{
+            info: {
+              id: 'msg_late',
+              role: 'assistant',
+              finish: 'stop',
+              time: { completed: 2_000 },
+            },
+            parts: [{ type: 'text', text: 'must not run' }],
+          }];
+        },
+        async abortSession() {
+          calls.push('abort');
+          return true;
+        },
+        async deleteSession() {
+          calls.push('delete');
+          lateSideEffect.resolve();
+          return true;
+        },
+      },
+      sleep: async () => undefined,
+      idleStablePolls: 1,
+    });
+    const scheduler = createManagedTaskScheduler({
+      executor,
+      now: clock.now,
+      scheduleTimeout: clock.schedule,
+      cancelTimeout: clock.cancel,
+      createTaskId: () => 'dvr_task_late_child',
+      createLeaseToken: () => 'dvr_lease_late_child',
+    });
+    const task = await scheduler.submit({
+      ...input,
+      idempotencyKey: 'late-child',
+    });
+
+    await clock.advance(60_000);
+    await scheduler.flush();
+    expect(scheduler.getTask(task.taskId).status).toBe('interrupted');
+
+    creation.resolve({ id: 'ses_late_child' });
+    await lateSideEffect.promise;
+
+    expect(calls).toEqual(['create', 'abort', 'delete']);
+    expect(scheduler.getTask(task.taskId).status).toBe('interrupted');
   });
 
   test('shutdown clears owned timers/waiters and preserves active records for restart', async () => {

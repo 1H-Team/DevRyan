@@ -441,49 +441,22 @@ function updateSkill(skillName, updates, workingDirectory, discoveredSkill = nul
   console.log(`Updated skill: ${skillName} (path: ${mdPath})`);
 }
 
-function deleteSkill(skillName, workingDirectory) {
-  let deleted = false;
+function deleteSkill(skillName, workingDirectory, discoveredSkill = null) {
+  const existing = discoveredSkill?.name === skillName && discoveredSkill.path
+    ? discoveredSkill
+    : getSkillScope(skillName, workingDirectory);
 
-  if (workingDirectory) {
-    const projectDir = getProjectSkillDir(workingDirectory, skillName);
-    if (fs.existsSync(projectDir)) {
-      fs.rmSync(projectDir, { recursive: true, force: true });
-      console.log(`Deleted project-level skill directory: ${projectDir}`);
-      deleted = true;
-    }
-    
-    const claudeDir = getClaudeSkillDir(workingDirectory, skillName);
-    if (fs.existsSync(claudeDir)) {
-      fs.rmSync(claudeDir, { recursive: true, force: true });
-      console.log(`Deleted claude-compat skill directory: ${claudeDir}`);
-      deleted = true;
-    }
-
-    const projectAgentsDir = getProjectAgentsSkillDir(workingDirectory, skillName);
-    if (fs.existsSync(projectAgentsDir)) {
-      fs.rmSync(projectAgentsDir, { recursive: true, force: true });
-      console.log(`Deleted project-level agents skill directory: ${projectAgentsDir}`);
-      deleted = true;
-    }
-  }
-
-  const userDir = getUserSkillDir(skillName);
-  if (fs.existsSync(userDir)) {
-    fs.rmSync(userDir, { recursive: true, force: true });
-    console.log(`Deleted user-level skill directory: ${userDir}`);
-    deleted = true;
-  }
-
-  const userAgentsDir = getUserAgentsSkillDir(skillName);
-  if (fs.existsSync(userAgentsDir)) {
-    fs.rmSync(userAgentsDir, { recursive: true, force: true });
-    console.log(`Deleted user-level agents skill directory: ${userAgentsDir}`);
-    deleted = true;
-  }
-
-  if (!deleted) {
+  if (
+    !existing?.path
+    || path.basename(existing.path).toLowerCase() !== 'skill.md'
+    || !isExistingFile(existing.path)
+  ) {
     throw new Error(`Skill "${skillName}" not found`);
   }
+
+  const skillDirectory = path.dirname(existing.path);
+  fs.rmSync(skillDirectory, { recursive: true, force: true });
+  console.log(`Deleted skill directory: ${skillDirectory}`);
 }
 
 export {

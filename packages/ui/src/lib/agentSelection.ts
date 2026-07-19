@@ -70,6 +70,15 @@ export const findSelectableAgentByName = <T extends AgentSelectionOption>(agents
     return undefined
   }
   const normalizedAgentName = normalizeAgentName(agentName)
+
+  if (isBuilderAgentName(normalizedAgentName)) {
+    return agents.find((agent) => (
+      normalizeAgentName(agent.name) === "builder" && isSelectablePrimaryAgentOption(agent)
+    )) ?? agents.find((agent) => (
+      isBuilderAgentName(agent.name) && isSelectablePrimaryAgentOption(agent)
+    ))
+  }
+
   return agents.find((agent) => normalizeAgentName(agent.name) === normalizedAgentName && isSelectablePrimaryAgentOption(agent))
 }
 

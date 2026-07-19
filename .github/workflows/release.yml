@@ -126,7 +126,7 @@ jobs:
           tag_name: v${{ steps.get_version.outputs.version }}
           draft: true
           generate_release_notes: false
-          name: release v${{ steps.get_version.outputs.version }}
+          name: DevRyan v${{ steps.get_version.outputs.version }}
           body_path: ${{ steps.release_notes.outputs.path }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -156,11 +156,40 @@ jobs:
         working-directory: packages/web
         run: npm pack
 
+      - name: Verify npm packaged orchestration config
+        run: |
+          set -euo pipefail
+          TARBALL=$(find packages/web -maxdepth 1 -type f -name '*.tgz' -print -quit)
+          test -n "$TARBALL"
+          EXTRACT_ROOT="$RUNNER_TEMP/devryan-web-npm"
+          rm -rf "$EXTRACT_ROOT"
+          mkdir -p "$EXTRACT_ROOT"
+          tar -xzf "$TARBALL" -C "$EXTRACT_ROOT"
+          ARTIFACT_ROOT="$EXTRACT_ROOT/package/server/default-config"
+          node scripts/verify-default-config-artifact.mjs \
+            --source packages/web/server/default-config \
+            --artifact-root "$ARTIFACT_ROOT"
+          node scripts/smoke-packaged-orchestration-config.mjs --config-root "$ARTIFACT_ROOT"
+
+      - name: Stage branded npm tarball for GitHub Release
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          mapfile -t TARBALLS < <(find packages/web -maxdepth 1 -type f -name '*.tgz' -print)
+          if [ "${#TARBALLS[@]}" -ne 1 ]; then
+            echo "Error: expected exactly one npm tarball, found ${#TARBALLS[@]}."
+            printf '%s\n' "${TARBALLS[@]}"
+            exit 1
+          fi
+          mkdir -p artifacts
+          cp "${TARBALLS[0]}" "artifacts/DevRyan-web-${VERSION}.tgz"
+
       - name: Upload npm tarball to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ needs.create-release.outputs.version }}
-          files: packages/web/*.tgz
+          files: artifacts/*.tgz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -303,6 +332,33 @@ jobs:
             find "$APP_PATH/Contents/Resources/app.asar.unpacked/node_modules/@cursor" -maxdepth 4 -print 2>/dev/null || true
             exit 1
           fi
+
+      - name: Verify packaged Electron orchestration config
+        run: |
+          set -euo pipefail
+
+          case "${{ matrix.arch }}" in
+            arm64) APP_DIR="packages/electron/dist/mac-arm64" ;;
+            x64) APP_DIR="packages/electron/dist/mac" ;;
+            *) echo "Error: unsupported Electron architecture: ${{ matrix.arch }}"; exit 1 ;;
+          esac
+          APP_PATH=$(find "$APP_DIR" -maxdepth 2 -name "*.app" -print -quit)
+          test -n "$APP_PATH"
+          ASAR_PATH="$APP_PATH/Contents/Resources/app.asar"
+          test -f "$ASAR_PATH"
+          EXTRACT_ROOT="$RUNNER_TEMP/devryan-electron-asar-${{ matrix.arch }}"
+          rm -rf "$EXTRACT_ROOT"
+          ASAR_CLI=$(find node_modules/.bun -path '*/@electron+asar@*/node_modules/@electron/asar/bin/asar.js' -print -quit)
+          if [ -z "$ASAR_CLI" ]; then
+            echo "Error: installed Electron asar CLI not found in the Bun dependency tree."
+            exit 1
+          fi
+          node "$ASAR_CLI" extract "$ASAR_PATH" "$EXTRACT_ROOT"
+          ARTIFACT_ROOT="$EXTRACT_ROOT/node_modules/@openchamber/web/server/default-config"
+          node scripts/verify-default-config-artifact.mjs \
+            --source packages/web/server/default-config \
+            --artifact-root "$ARTIFACT_ROOT"
+          node scripts/smoke-packaged-orchestration-config.mjs --config-root "$ARTIFACT_ROOT"
 
       - name: Verify Electron macOS usage descriptions
         run: |

@@ -2,9 +2,10 @@ import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 import { opencodeClient } from "@/lib/opencode/client";
 import { useProjectsStore } from "@/stores/useProjectsStore";
-import type { PluginConfigError, PluginEntry, PluginFile, PluginsListResponse, SlimSetupIssue, SlimSetupStatus } from "@/lib/api/types";
+import type { DevRyanDefaultPlugin, DevRyanDefaultPluginId, PluginConfigError, PluginEntry, PluginFile, PluginsListResponse, SlimSetupIssue, SlimSetupStatus } from "@/lib/api/types";
 
 interface PluginsStore {
+  defaults: DevRyanDefaultPlugin[];
   entries: PluginEntry[];
   files: PluginFile[];
   errors: PluginConfigError[];
@@ -21,7 +22,7 @@ interface PluginsStore {
   loadSlimStatus: () => Promise<boolean>;
   installSlimRuntime: () => Promise<boolean>;
   repairSlimRuntime: () => Promise<boolean>;
-  getById: (id: string) => PluginEntry | PluginFile | undefined;
+  getById: (id: string) => DevRyanDefaultPlugin | PluginEntry | PluginFile | undefined;
 }
 
 const PLUGINS_LOAD_CACHE_TTL_MS = 5000;
@@ -70,6 +71,7 @@ const normalizePluginEntry = (value: unknown): PluginEntry | null => {
   const options = candidate.options && typeof candidate.options === "object" && !Array.isArray(candidate.options)
     ? candidate.options as Record<string, unknown>
     : undefined;
+  const defaultPluginId = normalizeDefaultPluginId(candidate.defaultPluginId);
 
   if (!id || !spec || !scope || !parsedKind || !sourcePath || candidate.kind !== "config") {
     return null;
@@ -83,6 +85,46 @@ const normalizePluginEntry = (value: unknown): PluginEntry | null => {
     kind: "config",
     parsedKind,
     sourcePath,
+    ...(defaultPluginId ? { defaultPluginId } : {}),
+  };
+};
+
+const normalizeDefaultPluginId = (value: unknown): DevRyanDefaultPluginId | null => (
+  value === "oh-my-opencode-slim"
+    || value === "opencode-with-claude"
+    || value === "openai-tool-schema-sanitizer"
+    ? value
+    : null
+);
+
+const normalizeDefaultPlugin = (value: unknown): DevRyanDefaultPlugin | null => {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Record<string, unknown>;
+  const id = typeof candidate.id === "string" ? candidate.id : "";
+  const pluginId = normalizeDefaultPluginId(candidate.pluginId);
+  const displayName = typeof candidate.displayName === "string" ? candidate.displayName : "";
+  const shippedSpec = typeof candidate.shippedSpec === "string" ? candidate.shippedSpec : "";
+  const effectiveSpec = typeof candidate.effectiveSpec === "string" ? candidate.effectiveSpec : "";
+  const version = typeof candidate.version === "string" ? candidate.version : candidate.version === null ? null : undefined;
+  const delivery = candidate.delivery === "npm" ? "npm" : candidate.delivery === "bundled-file" ? "bundled-file" : null;
+  const sourcePath = typeof candidate.sourcePath === "string" ? candidate.sourcePath : "";
+  const configuredSourcePath = typeof candidate.configuredSourcePath === "string" ? candidate.configuredSourcePath : undefined;
+
+  if (!id || !pluginId || !displayName || !shippedSpec || !effectiveSpec || version === undefined || !delivery || !sourcePath || candidate.kind !== "default") {
+    return null;
+  }
+
+  return {
+    id,
+    pluginId,
+    displayName,
+    shippedSpec,
+    effectiveSpec,
+    version,
+    delivery,
+    sourcePath,
+    ...(configuredSourcePath ? { configuredSourcePath } : {}),
+    kind: "default",
   };
 };
 
@@ -93,6 +135,7 @@ const normalizePluginFile = (value: unknown): PluginFile | null => {
   const fileName = typeof candidate.fileName === "string" ? candidate.fileName : "";
   const scope = candidate.scope === "project" ? "project" : candidate.scope === "user" ? "user" : null;
   const absolutePath = typeof candidate.absolutePath === "string" ? candidate.absolutePath : "";
+  const defaultPluginId = normalizeDefaultPluginId(candidate.defaultPluginId);
 
   if (!id || !fileName || !scope || !absolutePath || candidate.kind !== "file") {
     return null;
@@ -104,6 +147,7 @@ const normalizePluginFile = (value: unknown): PluginFile | null => {
     scope,
     kind: "file",
     absolutePath,
+    ...(defaultPluginId ? { defaultPluginId } : {}),
   };
 };
 
@@ -127,6 +171,7 @@ const normalizePluginError = (value: unknown): PluginConfigError | null => {
 const normalizePluginsResponse = (payload: unknown): PluginsListResponse => {
   const candidate = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
   return {
+    defaults: Array.isArray(candidate.defaults) ? candidate.defaults.map(normalizeDefaultPlugin).filter((plugin): plugin is DevRyanDefaultPlugin => plugin !== null) : [],
     entries: Array.isArray(candidate.entries) ? candidate.entries.map(normalizePluginEntry).filter((entry): entry is PluginEntry => entry !== null) : [],
     files: Array.isArray(candidate.files) ? candidate.files.map(normalizePluginFile).filter((file): file is PluginFile => file !== null) : [],
     errors: Array.isArray(candidate.errors) ? candidate.errors.map(normalizePluginError).filter((error): error is PluginConfigError => error !== null) : [],
@@ -181,6 +226,7 @@ const normalizeSlimStatus = (payload: unknown): SlimSetupStatus => {
 
 const buildPluginsSignature = (data: PluginsListResponse): string => {
   return JSON.stringify({
+    defaults: data.defaults,
     entries: data.entries.map((entry) => ({
       id: entry.id,
       spec: entry.spec,
@@ -188,12 +234,14 @@ const buildPluginsSignature = (data: PluginsListResponse): string => {
       scope: entry.scope,
       parsedKind: entry.parsedKind,
       sourcePath: entry.sourcePath,
+      defaultPluginId: entry.defaultPluginId ?? null,
     })),
     files: data.files.map((file) => ({
       id: file.id,
       fileName: file.fileName,
       scope: file.scope,
       absolutePath: file.absolutePath,
+      defaultPluginId: file.defaultPluginId ?? null,
     })),
     errors: data.errors,
   });
@@ -202,6 +250,7 @@ const buildPluginsSignature = (data: PluginsListResponse): string => {
 export const usePluginsStore = create<PluginsStore>()(
   devtools(
     (set, get) => ({
+      defaults: [],
       entries: [],
       files: [],
       errors: [],
@@ -220,7 +269,7 @@ export const usePluginsStore = create<PluginsStore>()(
         const cacheKey = getPluginsCacheKey(directory);
         const now = Date.now();
         const loadedAt = pluginsLastLoadedAt.get(cacheKey) ?? 0;
-        const hasCachedPlugins = get().entries.length > 0 || get().files.length > 0 || get().errors.length > 0;
+        const hasCachedPlugins = get().defaults.length > 0 || get().entries.length > 0 || get().files.length > 0 || get().errors.length > 0;
 
         if (!options?.refresh && hasCachedPlugins && now - loadedAt < PLUGINS_LOAD_CACHE_TTL_MS) {
           return true;
@@ -243,6 +292,7 @@ export const usePluginsStore = create<PluginsStore>()(
             const next = normalizePluginsResponse(await response.json().catch(() => ({})));
             const current = get();
             const currentSignature = buildPluginsSignature({
+              defaults: current.defaults,
               entries: current.entries,
               files: current.files,
               errors: current.errors,
@@ -345,7 +395,9 @@ export const usePluginsStore = create<PluginsStore>()(
       },
 
       getById: (id) => {
-        return get().entries.find((entry) => entry.id === id) || get().files.find((file) => file.id === id);
+        return get().defaults.find((plugin) => plugin.id === id)
+          || get().entries.find((entry) => entry.id === id)
+          || get().files.find((file) => file.id === id);
       },
     }),
     { name: "plugins-store" },

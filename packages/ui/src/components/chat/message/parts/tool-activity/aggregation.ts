@@ -256,7 +256,7 @@ export const collectToolActivityBurst = <T>(
         return null;
     }
 
-    const firstInfo = getToolActivityGroupInfo(getToolName(firstItem));
+    const firstInfo = getToolActivityGroupInfo(getToolName(firstItem), options?.getToolPart?.(firstItem));
     if (!firstInfo) {
         return null;
     }
@@ -281,7 +281,7 @@ export const collectToolActivityBurst = <T>(
             break;
         }
 
-        const info = getToolActivityGroupInfo(toolName);
+        const info = getToolActivityGroupInfo(toolName, options?.getToolPart?.(item));
         if (!info) {
             break;
         }
@@ -375,7 +375,7 @@ export const collectToolActivityRows = <T>(
             continue;
         }
 
-        const groupInfo = getToolActivityGroupInfo(toolName);
+        const groupInfo = getToolActivityGroupInfo(toolName, options.getToolPart?.(item));
         if (!groupInfo) {
             closeBurstGroups();
             pushItem(item);
@@ -407,6 +407,30 @@ export const collectToolActivityRows = <T>(
     });
 };
 
+export const collectCrossMessageFileActivityGroups = <T>(
+    items: readonly T[],
+    options: {
+        getToolName: (item: T) => unknown;
+        getToolPart?: (item: T) => ToolPart | undefined;
+        getMessageId: (item: T) => string;
+        isReasoningOrJustification?: (item: T) => boolean;
+        isStandalone?: (item: T) => boolean;
+    },
+): Array<{ groupInfo: ToolActivityGroupInfo; items: T[] }> => {
+    return collectToolActivityRows(items, options).flatMap((row) => {
+        if (row.type !== 'group' || (row.groupInfo.kind !== 'edit' && row.groupInfo.kind !== 'read')) {
+            return [];
+        }
+
+        const messageIds = new Set(row.items.map(options.getMessageId));
+        if (messageIds.size < 2) {
+            return [];
+        }
+
+        return [{ groupInfo: row.groupInfo, items: row.items }];
+    });
+};
+
 export const collectToolActivityRowsFromToolParts = (
     parts: readonly ToolPart[],
 ): ToolActivityAggregation<ToolPart>[] => {
@@ -419,9 +443,13 @@ export const collectToolActivityRowsFromToolParts = (
 export const collectConsecutiveToolActivityGroup = <T>(
     items: readonly T[],
     startIndex: number,
-    getToolName: (item: T) => unknown
+    getToolName: (item: T) => unknown,
+    getToolPart?: (item: T) => ToolPart | undefined,
 ): { groupInfo: ToolActivityGroupInfo; items: T[]; endIndex: number } | null => {
-    const firstInfo = getToolActivityGroupInfo(getToolName(items[startIndex]));
+    const firstItem = items[startIndex];
+    const firstInfo = firstItem === undefined
+        ? null
+        : getToolActivityGroupInfo(getToolName(firstItem), getToolPart?.(firstItem));
     if (!firstInfo) {
         return null;
     }
@@ -430,7 +458,7 @@ export const collectConsecutiveToolActivityGroup = <T>(
     let index = startIndex;
     while (index < items.length) {
         const item = items[index];
-        const info = getToolActivityGroupInfo(getToolName(item));
+        const info = getToolActivityGroupInfo(getToolName(item), getToolPart?.(item));
         if (!info || info.key !== firstInfo.key) {
             break;
         }

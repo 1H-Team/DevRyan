@@ -3,7 +3,12 @@ import { ChatViewProvider } from './ChatViewProvider';
 import { AgentManagerPanelProvider } from './AgentManagerPanelProvider';
 import { SessionEditorPanelProvider } from './SessionEditorPanelProvider';
 import { createOpenCodeManager, type OpenCodeManager } from './opencode';
-import { startGlobalEventWatcher, stopGlobalEventWatcher, setChatViewProvider } from './sessionActivityWatcher';
+import {
+  getSessionActivitySnapshot,
+  startGlobalEventWatcher,
+  stopGlobalEventWatcher,
+  setChatViewProvider,
+} from './sessionActivityWatcher';
 import { resolveWorkspaceFolders } from './workspaceResolver';
 import { getVsCodeCursorSdkRuntime } from './bridge-system-runtime';
 import {
@@ -125,6 +130,8 @@ export async function activate(context: vscode.ExtensionContext) {
   // The private orchestration bridge must exist before managed OpenCode loads its
   // tool plugins, while the executor itself needs the manager's eventual URL.
   openCodeManager = createOpenCodeManager(context, {
+    getActiveSessionCount: () => Object.values(getSessionActivitySnapshot())
+      .filter((entry) => entry.type !== 'idle').length,
     getManagedOrchestrationEnvironment: async () => {
       if (!managedOrchestrationRuntime) {
         throw new Error('Managed orchestration runtime is unavailable during OpenCode startup');
@@ -266,7 +273,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('openchamber.restartApi', async () => {
       try {
-        await openCodeManager?.restart();
+        await openCodeManager?.restart({ force: true });
         vscode.window.showInformationMessage('DevRyan: API connection restarted');
       } catch (e) {
         vscode.window.showErrorMessage(`DevRyan: Failed to restart API - ${e}`);
@@ -291,7 +298,7 @@ export async function activate(context: vscode.ExtensionContext) {
       }
 
       // Get file info for context
-      const filePath = vscode.workspace.asRelativePath(editor.document.uri);
+      const filePath = vscode.workspace.asRelativePath(editor.document.uri, false).replace(/\\/g, '/');
       const languageId = editor.document.languageId;
       
       // Get line numbers (1-based for display)
@@ -380,7 +387,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
       const selection = editor.selection;
       const selectedText = editor.document.getText(selection);
-      const filePath = vscode.workspace.asRelativePath(editor.document.uri);
+      const filePath = vscode.workspace.asRelativePath(editor.document.uri, false).replace(/\\/g, '/');
       const languageId = editor.document.languageId;
 
       let prompt: string;
@@ -418,7 +425,7 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      const filePath = vscode.workspace.asRelativePath(editor.document.uri);
+      const filePath = vscode.workspace.asRelativePath(editor.document.uri, false).replace(/\\/g, '/');
       const languageId = editor.document.languageId;
       const startLine = selection.start.line + 1;
       const endLine = selection.end.line + 1;

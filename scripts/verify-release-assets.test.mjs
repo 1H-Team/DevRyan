@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  legacyBrandedReleaseAssetNames,
   missingRequiredReleaseAssets,
   requiredReleaseAssetNames,
 } from './verify-release-assets.mjs';
@@ -18,7 +19,7 @@ describe('release asset verification', () => {
       'DevRyan-1.1.1-x64.zip',
       'DevRyan-1.1.1-x64.zip.blockmap',
       'latest-mac.yml',
-      'openchamber-web-1.1.1.tgz',
+      'DevRyan-web-1.1.1.tgz',
     ]);
   });
 
@@ -39,7 +40,24 @@ describe('release asset verification', () => {
     assert.deepEqual(missing, [
       'DevRyan-1.1.1-x64.zip',
       'DevRyan-1.1.1-x64.zip.blockmap',
-      'openchamber-web-1.1.1.tgz',
+      'DevRyan-web-1.1.1.tgz',
     ]);
+  });
+
+  it('rejects public release assets with the legacy product prefix', () => {
+    assert.deepEqual(
+      legacyBrandedReleaseAssetNames([
+        'DevRyan-1.1.1-arm64.dmg',
+        'openchamber-web-1.1.1.tgz',
+        'OpenChamber_1.1.1_arm64.dmg',
+        'OPENCHAMBER-legacy.zip',
+        'latest-mac.yml',
+      ]),
+      [
+        'openchamber-web-1.1.1.tgz',
+        'OpenChamber_1.1.1_arm64.dmg',
+        'OPENCHAMBER-legacy.zip',
+      ],
+    );
   });
 });

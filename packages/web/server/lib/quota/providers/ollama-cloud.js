@@ -2,6 +2,7 @@ import { homedir } from 'os';
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { buildResult, toUsageWindow, toNumber } from '../utils/index.js';
+import { readManagedQuotaCredential } from '../credentials/providers.js';
 
 const COOKIE_PATH = join(homedir(), '.config', 'ollama-quota', 'cookie');
 
@@ -9,10 +10,10 @@ export const providerId = 'ollama-cloud';
 export const providerName = 'Ollama Cloud';
 export const aliases = ['ollama-cloud', 'ollamacloud'];
 
-const readCookieFile = () => {
+const readCookieFile = ({ exists = existsSync, readFile = readFileSync } = {}) => {
   try {
-    if (!existsSync(COOKIE_PATH)) return null;
-    const content = readFileSync(COOKIE_PATH, 'utf-8');
+    if (!exists(COOKIE_PATH)) return null;
+    const content = readFile(COOKIE_PATH, 'utf-8');
     const trimmed = content.trim();
     return trimmed || null;
   } catch {
@@ -20,7 +21,7 @@ const readCookieFile = () => {
   }
 };
 
-const parseOllamaSettingsHtml = (html) => {
+export const parseOllamaSettingsHtml = (html) => {
   const windows = {};
   const sessionMatch = html.match(/Session\s+usage[^0-9]*([0-9.]+)%/i);
   if (sessionMatch) {
@@ -53,15 +54,52 @@ const parseOllamaSettingsHtml = (html) => {
   return windows;
 };
 
-export const isConfigured = () => {
-  const cookie = readCookieFile();
-  return Boolean(cookie);
+export const resolveOllamaCloudCredential = ({
+  readManagedCredential = readManagedQuotaCredential,
+  readLegacyCookie = readCookieFile,
+} = {}) => {
+  const managed = readManagedCredential(providerId);
+  if (managed) return { credential: managed, source: 'managed' };
+  const cookie = readLegacyCookie();
+  return cookie
+    ? { credential: { cookie }, source: 'legacy' }
+    : { credential: null, source: null };
 };
 
-export const fetchQuota = async () => {
-  const cookie = readCookieFile();
+export const isConfigured = (options = {}) => {
+  return Boolean(resolveOllamaCloudCredential(options).credential);
+};
 
-  if (!cookie) {
+export const fetchOllamaCloudUsage = async (credential, fetchImpl = globalThis.fetch) => {
+  const response = await fetchImpl('https://ollama.com/settings', {
+    method: 'GET',
+    headers: {
+      Cookie: credential.cookie,
+      'User-Agent': 'DevRyan quota provider',
+    },
+    redirect: 'manual',
+    signal: AbortSignal.timeout(15_000),
+  });
+
+  if (response.status === 401 || response.status === 403 || (response.status >= 300 && response.status < 400)) {
+    throw new Error('Ollama Cloud authentication failed');
+  }
+  if (!response.ok) throw new Error(`Ollama Cloud returned HTTP ${response.status}`);
+  const windows = parseOllamaSettingsHtml(await response.text());
+  if (Object.keys(windows).length === 0) {
+    throw new Error('Ollama Cloud usage data could not be parsed');
+  }
+  return windows;
+};
+
+export const fetchQuota = async ({
+  fetchImpl = globalThis.fetch,
+  readManagedCredential = readManagedQuotaCredential,
+  readLegacyCookie = readCookieFile,
+} = {}) => {
+  const { credential } = resolveOllamaCloudCredential({ readManagedCredential, readLegacyCookie });
+
+  if (!credential) {
     return buildResult({
       providerId,
       providerName,
@@ -72,26 +110,7 @@ export const fetchQuota = async () => {
   }
 
   try {
-    const response = await fetch('https://ollama.com/settings', {
-      method: 'GET',
-      headers: {
-        Cookie: cookie,
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-      }
-    });
-
-    if (!response.ok) {
-      return buildResult({
-        providerId,
-        providerName,
-        ok: false,
-        configured: true,
-        error: `API error: ${response.status}`
-      });
-    }
-
-    const html = await response.text();
-    const windows = parseOllamaSettingsHtml(html);
+    const windows = await fetchOllamaCloudUsage(credential, fetchImpl);
 
     return buildResult({
       providerId,

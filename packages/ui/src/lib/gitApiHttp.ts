@@ -10,7 +10,8 @@ import type {
   GitDeleteBranchPayload,
   GitDeleteRemoteBranchPayload,
   GitRemoveRemotePayload,
-  GeneratedCommitWorkflowResult,
+  GenerateGitCommitMessageRequest,
+  GeneratedCommitMessage,
   GitWorktreeInfo,
   CreateGitWorktreePayload,
   GitWorktreeCreateResult,
@@ -388,28 +389,16 @@ export async function removeRemote(directory: string, payload: GitRemoveRemotePa
 
 export async function generateCommitMessage(
   directory: string,
-  files: string[],
-  options?: { zenModel?: string; providerId?: string; modelId?: string }
-): Promise<GeneratedCommitWorkflowResult> {
-  if (!Array.isArray(files) || files.length === 0) {
-    throw new Error('No files provided to generate commit message');
-  }
-
-  const body: Record<string, unknown> = { files };
-  if (options?.zenModel) {
-    body.zenModel = options.zenModel;
-  }
-  if (options?.providerId) {
-    body.providerId = options.providerId;
-  }
-  if (options?.modelId) {
-    body.modelId = options.modelId;
+  request: GenerateGitCommitMessageRequest,
+): Promise<GeneratedCommitMessage> {
+  if (!request?.context || !Array.isArray(request.context.selectedFiles) || request.context.selectedFiles.length === 0) {
+    throw new Error('No worktree context provided to generate commit message');
   }
 
   const response = await fetch(buildUrl(`${API_BASE}/commit-message`, directory), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(request),
   });
 
   if (!response.ok) {
@@ -442,13 +431,7 @@ export async function generateCommitMessage(
         .map((item) => (item as string).trim())
     : [];
 
-  return {
-    status: 'complete',
-    commits: [{
-      subject,
-      highlights,
-    }],
-  };
+  return { subject, highlights };
 }
 
 export async function generatePullRequestDescription(

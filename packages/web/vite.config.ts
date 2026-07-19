@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { VitePWA } from 'vite-plugin-pwa';
 import { themeStoragePlugin } from '../../vite-theme-plugin';
+import { resolveVendorChunkName } from './vite-chunking';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageJson = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf-8'));
@@ -99,6 +100,7 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, 'dist'),
     emptyOutDir: true,
+    manifest: true,
     chunkSizeWarningLimit: 500,
     rollupOptions: {
       input: {
@@ -107,26 +109,7 @@ export default defineConfig({
       },
       external: ['node:child_process', 'node:fs', 'node:path', 'node:url'],
       output: {
-        manualChunks(id) {
-          if (!id.includes('node_modules')) return undefined;
-
-          const match = id.split('node_modules/')[1];
-          if (!match) return undefined;
-
-          const segments = match.split('/');
-          const packageName = match.startsWith('@') ? `${segments[0]}/${segments[1]}` : segments[0];
-
-          if (packageName === 'react' || packageName === 'react-dom') return 'vendor-react';
-          if (packageName === 'zustand' || packageName === 'zustand/middleware') return 'vendor-zustand';
-
-          if (packageName === '@opencode-ai/sdk') return 'vendor-opencode-sdk';
-          if (packageName.includes('remark') || packageName.includes('rehype') || packageName === 'react-markdown') return 'vendor-markdown';
-          if (packageName === '@base-ui/react' || packageName.startsWith('@base-ui')) return 'vendor-base-ui';
-          if (packageName.includes('react-syntax-highlighter') || packageName.includes('highlight.js')) return 'vendor-syntax';
-
-          const sanitized = packageName.replace(/^@/, '').replace(/\//g, '-');
-          return `vendor-${sanitized}`;
-        },
+        manualChunks: resolveVendorChunkName,
       },
     },
   },

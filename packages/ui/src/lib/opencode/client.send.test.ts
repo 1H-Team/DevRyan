@@ -2,11 +2,12 @@ import { beforeEach, describe, expect, mock, test } from "bun:test"
 
 const waitForWorktreeBootstrapCalls: string[] = []
 const fetchCalls: Array<{ url: string; init?: RequestInit; request?: Request }> = []
+let waitForWorktreeBootstrapHandler: (directory: string) => Promise<void> = () => Promise.resolve()
 
 mock.module("@/lib/worktrees/worktreeBootstrap", () => ({
   waitForWorktreeBootstrap: mock((directory: string) => {
     waitForWorktreeBootstrapCalls.push(directory)
-    return Promise.resolve()
+    return waitForWorktreeBootstrapHandler(directory)
   }),
 }))
 
@@ -17,7 +18,7 @@ mock.module("@/lib/worktrees/worktreeBootstrap", () => ({
   },
 } as unknown as Window & typeof globalThis
 
-const { createNoStoreApiFetch, opencodeClient } = await import("./client")
+const { createNoStoreApiFetch, opencodeClient, requestScopedSessionRevert } = await import("./client")
 
 const getPromptBody = () => {
   const promptRequest = fetchCalls.find((call) => call.url.includes("/prompt_async"))
@@ -28,6 +29,7 @@ describe("opencode client sends", () => {
   beforeEach(() => {
     waitForWorktreeBootstrapCalls.length = 0
     fetchCalls.length = 0
+    waitForWorktreeBootstrapHandler = () => Promise.resolve()
     opencodeClient.setDirectory(undefined)
     ;(opencodeClient as unknown as { baseUrl: string }).baseUrl = "http://127.0.0.1:5180/api"
     globalThis.fetch = mock((url: string | URL | Request, init?: RequestInit) => {
@@ -35,6 +37,60 @@ describe("opencode client sends", () => {
       fetchCalls.push({ url: request?.url ?? String(url), init, request })
       return Promise.resolve(new Response(null, { status: 204 }))
     }) as typeof fetch
+  })
+
+  test("times out scoped reverts even when the fetch adapter ignores AbortSignal", async () => {
+    let capturedSignal: AbortSignal | undefined
+    const ignoredFetch = mock((_url: string | URL | Request, init?: RequestInit) => {
+      capturedSignal = init?.signal ?? undefined
+      return new Promise<Response>(() => {})
+    }) as typeof fetch
+
+    const startedAt = Date.now()
+    let thrown: unknown = null
+    try {
+      await requestScopedSessionRevert({
+        baseUrl: "http://127.0.0.1:5180/api",
+        sessionId: "session-a",
+        messageId: "msg-a",
+        directory: "/repo/project",
+        timeoutMs: 20,
+        fetchImpl: ignoredFetch,
+      })
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown instanceof Error ? thrown.message : String(thrown)).toBe("Scoped session revert timed out")
+    expect(Date.now() - startedAt).toBeLessThan(500)
+    expect(capturedSignal?.aborted).toBe(true)
+    expect((capturedSignal?.reason as { code?: string } | undefined)?.code).toBe("SCOPED_REVERT_TIMEOUT")
+  })
+
+  test("keeps the scoped revert watchdog active while parsing the response", async () => {
+    const stalledResponse = new Response("{}", { status: 200 })
+    Object.defineProperty(stalledResponse, "json", {
+      value: () => new Promise<never>(() => {}),
+    })
+    const stalledBodyFetch = mock(() => Promise.resolve(stalledResponse)) as typeof fetch
+
+    const request = requestScopedSessionRevert({
+      baseUrl: "http://127.0.0.1:5180/api",
+      sessionId: "session-a",
+      messageId: "msg-a",
+      timeoutMs: 20,
+      fetchImpl: stalledBodyFetch,
+    }).then(
+      () => "resolved",
+      (error: unknown) => error instanceof Error ? error.message : String(error),
+    )
+
+    const outcome = await Promise.race([
+      request,
+      new Promise<string>((resolve) => setTimeout(() => resolve("body parser remained pending"), 200)),
+    ])
+
+    expect(outcome).toBe("Scoped session revert timed out")
   })
 
   test("forces generated SDK GET requests to bypass the browser HTTP cache", async () => {
@@ -89,6 +145,39 @@ describe("opencode client sends", () => {
     expect(waitForWorktreeBootstrapCalls).toEqual(["/repo/project"])
     expect(fetchCalls[0]?.url).toContain("/api/session/session-a/command")
     expect(fetchCalls[0]?.url).toContain("directory=%2Frepo%2Fproject")
+  })
+
+  test("rechecks send admission after stalled preflight before starting transport", async () => {
+    let releaseBootstrap: (() => void) | undefined
+    waitForWorktreeBootstrapHandler = () => new Promise<void>((resolve) => {
+      releaseBootstrap = resolve
+    })
+    let revertPending = false
+
+    const send = opencodeClient.sendMessage({
+      id: "session-racing-revert",
+      providerID: "openai",
+      modelID: "gpt-5.6",
+      text: "must not reach transport",
+      directory: "/repo/project",
+      beforeTransport: () => {
+        if (revertPending) throw new Error("Cannot send while this chat is being reverted")
+      },
+    })
+    while (!releaseBootstrap) {
+      await Promise.resolve()
+    }
+    revertPending = true
+    releaseBootstrap()
+
+    let thrown: unknown = null
+    try {
+      await send
+    } catch (error) {
+      thrown = error
+    }
+    expect(thrown instanceof Error ? thrown.message : String(thrown)).toBe("Cannot send while this chat is being reverted")
+    expect(fetchCalls).toHaveLength(0)
   })
 
   test("sends Cursor SDK prompts without workspace repair", async () => {

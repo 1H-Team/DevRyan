@@ -44,6 +44,10 @@ export const isAssistantStatusAnnouncementText = (text: string | undefined): boo
     return true;
   }
 
+  if (/^Waiting on (?:the )?dispatch status(?:[.!?…]+)?$/i.test(plain)) {
+    return true;
+  }
+
   if (/^I(?:'m| am)\s+using\s+the\s+[A-Za-z0-9 /:_-]{1,80}\s+skill\s+to\s+.+[.!?]?$/.test(plain)) {
     return true;
   }

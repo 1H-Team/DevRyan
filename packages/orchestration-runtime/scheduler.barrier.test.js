@@ -31,7 +31,7 @@ const input = (index, overrides = {}) => ({
   ...overrides,
 });
 
-const createHarness = async ({ maxConcurrency = 3 } = {}) => {
+const createHarness = async () => {
   let taskCounter = 0;
   let leaseCounter = 0;
   const runs = [];
@@ -48,7 +48,6 @@ const createHarness = async ({ maxConcurrency = 3 } = {}) => {
     },
     createTaskId: () => `dvr_task_${++taskCounter}`,
     createLeaseToken: () => `dvr_lease_${++leaseCounter}`,
-    maxConcurrency,
     now: () => 1_000 + taskCounter,
   });
   await scheduler.initialize();
@@ -88,17 +87,15 @@ describe('managed scheduler dispatch barrier', () => {
     });
   });
 
-  test('waits through queued overflow and returns every unacknowledged result in queue order', async () => {
-    const { runs, scheduler } = await createHarness({ maxConcurrency: 1 });
+  test('waits through concurrent work and returns every unacknowledged result in queue order', async () => {
+    const { runs, scheduler } = await createHarness();
     const first = await scheduler.submit(input(1));
     const second = await scheduler.submit(input(2));
     const barrier = scheduler.waitForDispatchBarrier('ses_root');
 
-    expect(runs).toHaveLength(1);
+    expect(runs).toHaveLength(2);
     runs[0].result.resolve({ status: 'completed' });
     await scheduler.waitForTask(first.taskId);
-    await scheduler.flush();
-    expect(runs).toHaveLength(2);
     runs[1].result.resolve({ status: 'failed', failureReason: 'expected failure' });
 
     expect(await barrier).toEqual({

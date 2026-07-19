@@ -59,6 +59,11 @@ let gitFileDiffResponse = {
 }
 const gitDiffCalls: Array<{ path: string; staged?: boolean }> = []
 const gitFileDiffCalls: Array<{ path: string; staged?: boolean }> = []
+const directGenerationRequests: Array<Record<string, unknown>> = []
+let directGeneratedMessage = {
+  subject: "feat: run commit workflow",
+  highlights: [] as string[],
+}
 
 mock.module("@/sync/session-ui-store", () => ({
   useSessionUIStore: {
@@ -94,6 +99,10 @@ mock.module("./gitApiHttp", () => ({
   getGitFileDiff: mock(async (_directory: string, options: { path: string; staged?: boolean }) => {
     gitFileDiffCalls.push({ path: options.path, staged: options.staged })
     return gitFileDiffResponse
+  }),
+  generateCommitMessage: mock(async (_directory: string, request: Record<string, unknown>) => {
+    directGenerationRequests.push(request)
+    return directGeneratedMessage
   }),
   getCommitFiles: mock(async () => ({
     files: [
@@ -189,7 +198,6 @@ mock.module("./opencode/client", () => ({
 }))
 
 const {
-  buildCommitGenerationChatPromptPayload,
   generateCommitMessageDraft,
   generateCommitPlanPreview,
   generatePullRequestDescription,
@@ -238,7 +246,7 @@ async function generateQuietly<T>(callback: () => Promise<T>) {
   }
 }
 
-describe("generateCommitMessage session routing", () => {
+describe("git generation routing", () => {
   beforeEach(() => {
     createSessionCalls.length = 0
     deleteSessionCalls.length = 0
@@ -282,69 +290,11 @@ describe("generateCommitMessage session routing", () => {
     }
     gitDiffCalls.length = 0
     gitFileDiffCalls.length = 0
-  })
-
-  test.skip("creates an isolated workflow session without switching the active session", async () => {
-    currentSessionId = "active-session"
-    sessionModelSelections.set("active-session", {
-      providerId: "provider-active",
-      modelId: "model-active",
-    })
-
-    expect(currentSessionId).toBe("active-session")
-    expect(promptCalls).toHaveLength(1)
-    expect(promptCalls[0]?.sessionID).toBe("generated-1")
-    expect(promptCalls[0]?.sessionID).not.toBe("active-session")
-    expect(promptCalls[0]?.model).toEqual({
-      providerID: "provider-current",
-      modelID: "model-current",
-    })
-    expect(promptCalls[0]?.agent).toBe("build-agent")
-    expect(promptCalls[0]?.tools).toBe(undefined)
-    expect(promptCalls[0]?.format).toBe(undefined)
-    expect(deleteSessionCalls).toEqual([{ sessionID: "generated-1", directory: "/repo" }])
-  })
-
-  test.skip("generates a draft commit message with draft prompts", async () => {
-    gitStatusResponse = {
-      ...gitStatusResponse,
-      files: [{ path: "src/app.ts", index: "M", working_dir: " " }],
-      diffStats: { "src/app.ts": { insertions: 2, deletions: 0 } },
+    directGenerationRequests.length = 0
+    directGeneratedMessage = {
+      subject: "feat: run commit workflow",
+      highlights: [],
     }
-    promptResponseText = "```json\n[{\"subject\":\"feat(ui): fill commit message\",\"highlights\":[\"Summarizes scoped changes\"]}]\n```"
-
-    const result = await generateCommitMessageDraftQuietly("/repo", ["src/app.ts"])
-
-    expect(result).toEqual({
-      status: "complete",
-      commits: [
-        {
-          subject: "feat(ui): fill commit message",
-          highlights: ["Summarizes scoped changes"],
-        },
-      ],
-    })
-    const text = promptCalls[0]?.parts?.map((part) => part.text).join("\n") ?? ""
-    expect(text).toContain("visible draft prompt")
-    expect(text).toContain("hidden draft prompt")
-    expect(text).toContain("- src/app.ts")
-    expect(text).toContain("recentCommitSubjects")
-    const format = promptCalls[0]?.format as { type?: string; schema?: unknown; retryCount?: number } | undefined
-    expect(format?.type).toBe("json_schema")
-    expect(promptCalls[0]?.tools).toEqual({
-      bash: false,
-      read: false,
-      write: false,
-      edit: false,
-      multiedit: false,
-      apply_patch: false,
-      grep: false,
-      glob: false,
-      list: false,
-      task: false,
-      webfetch: false,
-      question: false,
-    })
   })
 
   test("parses structured-output tool parts for commit plan preview", async () => {
@@ -378,25 +328,25 @@ describe("generateCommitMessage session routing", () => {
     })
   })
 
-  test("draft generation renders shared commit generation prompts", async () => {
+  test("draft generation delegates bounded worktree context without chat or magic prompts", async () => {
     gitStatusResponse = {
       ...gitStatusResponse,
       files: [{ path: "src/app.ts", index: "M", working_dir: " " }],
       diffStats: { "src/app.ts": { insertions: 2, deletions: 0 } },
     }
 
-    await generateCommitMessageDraftQuietly("/repo", ["src/app.ts"])
+    const result = await generateCommitMessageDraftQuietly("/repo", ["src/app.ts"])
 
-    expect(renderMagicPromptCalls.map((call) => call.key)).toEqual([
-      "git.commit.generate.visible",
-      "git.commit.generate.instructions",
-    ])
-    expect(renderMagicPromptCalls[1]?.variables?.generation_mode).toBe("draft")
-    expect(renderMagicPromptCalls[1]?.variables?.selected_files).toBe("- src/app.ts")
-    const text = promptCalls[0]?.parts?.map((part) => part.text).join("\n") ?? ""
-    expect(text).toContain("visible commit prompt")
-    expect(text).toContain("hidden commit prompt")
-    expect(text).toContain("single commit message draft")
+    expect(result.commits[0]?.subject).toBe("feat: run commit workflow")
+    expect(directGenerationRequests).toHaveLength(1)
+    const context = directGenerationRequests[0]?.context as { stagedOnly?: boolean; selectedFiles?: Array<{ path?: string; diff?: string }> }
+    expect(context.stagedOnly).toBe(false)
+    expect(context.selectedFiles?.[0]?.path).toBe("src/app.ts")
+    expect(context.selectedFiles?.[0]?.diff).toContain("export const updated")
+    expect(renderMagicPromptCalls).toHaveLength(0)
+    expect(createSessionCalls).toHaveLength(0)
+    expect(promptCalls).toHaveLength(0)
+    expect(deleteSessionCalls).toHaveLength(0)
   })
 
   test("draft generation includes commit input guidance without making it authoritative", async () => {
@@ -410,11 +360,9 @@ describe("generateCommitMessage session routing", () => {
       commitMessageGuidance: "Prefer fix(auth): wording",
     })
 
-    const text = promptCalls[0]?.parts?.map((part) => part.text).join("\n") ?? ""
-    expect(text).toContain("Commit input guidance")
-    expect(text).toContain("Prefer fix(auth): wording")
-    expect(text).toContain("This guidance is optional")
-    expect(text).toContain("must not override the git context")
+    expect(directGenerationRequests[0]?.guidance).toBe("Prefer fix(auth): wording")
+    expect(renderMagicPromptCalls).toHaveLength(0)
+    expect(promptCalls).toHaveLength(0)
   })
 
   test("draft generation returns only the first generated commit subject", async () => {
@@ -423,7 +371,10 @@ describe("generateCommitMessage session routing", () => {
       files: [{ path: "src/app.ts", index: "M", working_dir: " " }],
       diffStats: { "src/app.ts": { insertions: 2, deletions: 0 } },
     }
-    promptResponseText = "```json\n[{\"subject\":\"fix(ui): fill commit input\",\"highlights\":[\"Uses draft\"]},{\"subject\":\"chore: extra subject\",\"highlights\":[\"Ignored\"]}]\n```"
+    directGeneratedMessage = {
+      subject: "fix(ui): fill commit input",
+      highlights: ["Uses draft"],
+    }
 
     const result = await generateCommitMessageDraftQuietly("/repo", ["src/app.ts"])
 
@@ -436,53 +387,6 @@ describe("generateCommitMessage session routing", () => {
         },
       ],
     })
-  })
-
-  test("builds visible chat prompt payload for commit generation without creating hidden sessions", async () => {
-    gitStatusResponse = {
-      ...gitStatusResponse,
-      files: [{ path: "src/app.ts", index: "M", working_dir: " " }],
-      diffStats: { "src/app.ts": { insertions: 2, deletions: 0 } },
-    }
-
-    const result = await buildCommitGenerationChatPromptPayload("/repo", ["src/app.ts"], { stagedOnly: true })
-
-    expect(result.status).toBe("ready")
-    if (result.status !== "ready") return
-    expect(result.visiblePrompt).toBe("visible commit prompt")
-    expect(result.syntheticParts).toHaveLength(1)
-    expect(result.syntheticParts[0]?.synthetic).toBe(true)
-    expect(result.syntheticParts[0]?.text).toContain("hidden commit prompt")
-    expect(result.syntheticParts[0]?.text).toContain("draft")
-    expect(result.syntheticParts[0]?.text).toContain("single commit message draft")
-    expect(result.syntheticParts[0]?.text).toContain("- src/app.ts")
-    expect(result.syntheticParts[0]?.text).toContain("recentCommitSubjects")
-    expect(result.syntheticParts[0]?.text).toContain("staged-only")
-    expect(renderMagicPromptCalls.map((call) => call.key)).toEqual([
-      "git.commit.generate.visible",
-      "git.commit.generate.instructions",
-    ])
-    expect(createSessionCalls).toEqual([])
-    expect(deleteSessionCalls).toEqual([])
-    expect(promptCalls).toEqual([])
-    expect(gitDiffCalls).toEqual([{ path: "src/app.ts", staged: true }])
-  })
-
-  test("returns blocked chat prompt payload before creating a chat when git context is unsafe", async () => {
-    gitStatusResponse = {
-      ...gitStatusResponse,
-      files: [{ path: "src/conflict.ts", index: "UU", working_dir: "UU" }],
-      diffStats: { "src/conflict.ts": { insertions: 1, deletions: 1 } },
-    }
-
-    const result = await buildCommitGenerationChatPromptPayload("/repo", ["src/conflict.ts"])
-
-    expect(result.status).toBe("blocked")
-    if (result.status !== "blocked") return
-    expect(result.message).toContain("conflict")
-    expect(createSessionCalls).toEqual([])
-    expect(deleteSessionCalls).toEqual([])
-    expect(promptCalls).toEqual([])
   })
 
   test("plan preview renders shared commit generation prompts with plan safety rules", async () => {

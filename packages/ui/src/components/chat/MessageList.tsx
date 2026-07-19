@@ -9,6 +9,7 @@ import TurnItem from './components/TurnItem';
 import type { AnimationHandlers, ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import { filterSyntheticParts } from '@/lib/messages/synthetic';
 import type { ChatMessageEntry, TurnRecord, TurnGroupingContext } from './lib/turns/types';
+import { readSessionResponseStyleLevel, type ResponseStyleLevel } from '@/lib/responseStyle';
 import { useTurnRecords } from './hooks/useTurnRecords';
 import { applyRetryOverlay } from './lib/turns/applyRetryOverlay';
 import { useUIStore } from '@/stores/useUIStore';
@@ -17,7 +18,7 @@ import { hasPendingUserSendAnimation, consumePendingUserSendAnimation } from '@/
 import { streamPerfCount, streamPerfMeasure, streamPerfObserve } from '@/stores/utils/streamDebug';
 import type { StreamPhase } from './message/types';
 import { normalizeParts } from './message/partUtils';
-import { normalizeToolName } from './message/parts/toolRenderUtils';
+import { getToolActivityGroupInfo, normalizeToolName } from './message/parts/toolRenderUtils';
 import { normalizeToolStatus } from '@/lib/toolStatus';
 import { useDirectorySync, useEnsureSessionChildren } from '@/sync/sync-context';
 import { useSessionUIStore } from '@/sync/session-ui-store';
@@ -451,6 +452,7 @@ MessageRow.displayName = 'MessageRow';
 
 interface TurnBlockProps {
     turn: TurnRecord;
+    responseStyleLevel: ResponseStyleLevel;
     latestRawMessageId: string | null;
     isLastTurn: boolean;
     sessionIsWorking: boolean;
@@ -470,6 +472,7 @@ interface TurnBlockProps {
 
 const TurnBlock = React.memo(({
     turn,
+    responseStyleLevel,
     latestRawMessageId,
     isLastTurn,
     sessionIsWorking,
@@ -660,6 +663,7 @@ const TurnBlock = React.memo(({
         }
         return {
             turnId: turn.turnId,
+            responseStyleLevel,
             summaryBody: turn.summaryText,
             summarySourceMessageId: turn.summary.sourceMessageId,
             summarySourcePartId: turn.summary.sourcePartId,
@@ -674,7 +678,7 @@ const TurnBlock = React.memo(({
             isPlanModeSource: isPlanModeSourceTurn,
             lastTodoToolPartId,
         };
-    }, [isPlanModeSourceTurn, turn.diffStats, turn.hasReasoning, turn.hasTools, turn.headerMessageId, turn.summary.sourceMessageId, turn.summary.sourcePartId, turn.summaryText, turn.turnId, turn.userMessage.info, visibleActivityParts, visibleActivitySegments]);
+    }, [isPlanModeSourceTurn, responseStyleLevel, turn.diffStats, turn.hasReasoning, turn.hasTools, turn.headerMessageId, turn.summary.sourceMessageId, turn.summary.sourcePartId, turn.summaryText, turn.turnId, turn.userMessage.info, visibleActivityParts, visibleActivitySegments]);
 
     const renderMessage = React.useCallback(
         (message: ChatMessageEntry) => {
@@ -686,10 +690,17 @@ const TurnBlock = React.memo(({
             const isFirstAssistant = assistantIndex === 0;
             const isLastAssistant = assistantIndex === visibleAssistantMessages.length - 1;
             const isActivityOwner = Boolean(activityOwnerMessageId) && message.info.id === activityOwnerMessageId;
+            const hasFileActivityTool = message.parts.some((part) => {
+                if (part.type !== 'tool') {
+                    return false;
+                }
+                const groupInfo = getToolActivityGroupInfo(part.tool, part);
+                return groupInfo?.kind === 'edit' || groupInfo?.kind === 'read';
+            });
             const isTurnWorking = isLastTurn && sessionIsWorking && turnIsInActiveStream;
             const shouldAttachFullTurnContext = chatRenderMode === 'sorted'
                 ? isAssistantMessage
-                : (isActivityOwner || isFirstAssistant || isLastAssistant);
+                : (isActivityOwner || isFirstAssistant || isLastAssistant || hasFileActivityTool);
             const assistantHeaderMessageId = visibleAssistantMessages[0]?.info.id ?? turn.headerMessageId;
 
             const previousMessage = isUserMessage
@@ -706,6 +717,7 @@ const TurnBlock = React.memo(({
             const turnGroupingContext = isAssistantMessage
                 ? {
                     turnId: turn.turnId,
+                    responseStyleLevel: turnGroupingContextBase.responseStyleLevel,
                     activityOwnerMessageId,
                     isFirstAssistantInTurn: isFirstAssistant,
                     isLastAssistantInTurn: isLastAssistant,
@@ -844,6 +856,7 @@ UngroupedMessageRow.displayName = 'UngroupedMessageRow';
 
 interface MessageListEntryProps {
     entry: RenderEntry;
+    responseStyleLevel: ResponseStyleLevel;
     latestRawMessageId: string | null;
     onMessageContentChange: (reason?: ContentChangeReason) => void;
     getAnimationHandlers: (messageId: string) => AnimationHandlers;
@@ -874,6 +887,7 @@ const turnContainsMessageId = (turn: TurnRecord, messageId: string | null | unde
 
 const MessageListEntry = React.memo(({
     entry,
+    responseStyleLevel,
     latestRawMessageId,
     onMessageContentChange,
     getAnimationHandlers,
@@ -910,6 +924,7 @@ const MessageListEntry = React.memo(({
     return (
         <TurnBlock
             turn={entry.turn}
+            responseStyleLevel={responseStyleLevel}
             latestRawMessageId={latestRawMessageId}
             isLastTurn={entry.isLastTurn}
             sessionIsWorking={sessionIsWorking}
@@ -934,6 +949,7 @@ MessageListEntry.displayName = 'MessageListEntry';
 // Inner component that renders staged turn entries.
 const StaticHistoryList: React.FC<{
     entries: RenderEntry[];
+    responseStyleLevel: ResponseStyleLevel;
     latestRawMessageId: string | null;
     shouldVirtualize: boolean;
     virtualRows: VirtualItem[];
@@ -951,12 +967,13 @@ const StaticHistoryList: React.FC<{
     shouldAnimateUserMessage: (message: ChatMessageEntry) => boolean;
     onUserAnimationConsumed: (messageId: string) => void;
     activeStreamingPhase?: StreamPhase | null;
-}> = ({ entries, latestRawMessageId, shouldVirtualize, virtualRows, totalSize, measureElement, contentRef, onMessageContentChange, getAnimationHandlers, scrollToBottom, stickyUserHeader, defaultActivityExpanded, turnUiStates, onToggleTurnGroup, chatRenderMode, shouldAnimateUserMessage, onUserAnimationConsumed, activeStreamingPhase }) => {
+}> = ({ entries, responseStyleLevel, latestRawMessageId, shouldVirtualize, virtualRows, totalSize, measureElement, contentRef, onMessageContentChange, getAnimationHandlers, scrollToBottom, stickyUserHeader, defaultActivityExpanded, turnUiStates, onToggleTurnGroup, chatRenderMode, shouldAnimateUserMessage, onUserAnimationConsumed, activeStreamingPhase }) => {
     const renderEntry = React.useCallback((entry: RenderEntry) => {
         return (
             <MessageListEntry
                 key={entry.key}
                 entry={entry}
+                responseStyleLevel={responseStyleLevel}
                 latestRawMessageId={latestRawMessageId}
                 onMessageContentChange={onMessageContentChange}
                 getAnimationHandlers={getAnimationHandlers}
@@ -973,7 +990,7 @@ const StaticHistoryList: React.FC<{
                 activeStreamingPhase={activeStreamingPhase}
             />
         );
-    }, [activeStreamingPhase, chatRenderMode, defaultActivityExpanded, getAnimationHandlers, latestRawMessageId, onMessageContentChange, onToggleTurnGroup, onUserAnimationConsumed, scrollToBottom, shouldAnimateUserMessage, stickyUserHeader, turnUiStates]);
+    }, [activeStreamingPhase, chatRenderMode, defaultActivityExpanded, getAnimationHandlers, latestRawMessageId, onMessageContentChange, onToggleTurnGroup, onUserAnimationConsumed, responseStyleLevel, scrollToBottom, shouldAnimateUserMessage, stickyUserHeader, turnUiStates]);
 
     const paddingTop = shouldVirtualize && virtualRows.length > 0
         ? virtualRows[0]?.start ?? 0
@@ -1026,6 +1043,7 @@ StaticHistoryList.displayName = 'StaticHistoryList';
 
 const StreamingTailContent: React.FC<{
     entry: RenderEntry;
+    responseStyleLevel: ResponseStyleLevel;
     latestRawMessageId: string | null;
     onMessageContentChange: (reason?: ContentChangeReason) => void;
     getAnimationHandlers: (messageId: string) => AnimationHandlers;
@@ -1042,6 +1060,7 @@ const StreamingTailContent: React.FC<{
     activeStreamingPhase?: StreamPhase | null;
 }> = ({
     entry,
+    responseStyleLevel,
     latestRawMessageId,
     onMessageContentChange,
     getAnimationHandlers,
@@ -1060,6 +1079,7 @@ const StreamingTailContent: React.FC<{
     return (
         <MessageListEntry
             entry={entry}
+            responseStyleLevel={responseStyleLevel}
             latestRawMessageId={latestRawMessageId}
             onMessageContentChange={onMessageContentChange}
             getAnimationHandlers={getAnimationHandlers}
@@ -1107,6 +1127,10 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     const defaultActivityExpanded = activityRenderMode === 'summary';
     const recordedPlanModeMessageIds = useSessionUIStore((state) => state.planModeUserMessages);
     const latestRawMessageId = messages.at(-1)?.info.id ?? null;
+    const responseStyleLevel = React.useMemo(
+        () => readSessionResponseStyleLevel(messages),
+        [messages],
+    );
     const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
     const taskInvocations = React.useMemo(() => {
         const invocations = [];
@@ -1683,6 +1707,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                     <div className="relative w-full">
                         <StaticHistoryList
                             entries={historyEntries}
+                            responseStyleLevel={responseStyleLevel}
                             latestRawMessageId={latestRawMessageId}
                             shouldVirtualize={shouldVirtualizeHistory}
                             virtualRows={historyVirtualRows}
@@ -1704,6 +1729,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                         {trailingStreamingEntry ? (
                             <StreamingTailContent
                                 entry={trailingStreamingEntry}
+                                responseStyleLevel={responseStyleLevel}
                                 latestRawMessageId={latestRawMessageId}
                                 onMessageContentChange={stableTailContentChange}
                                 getAnimationHandlers={stableGetAnimationHandlers}

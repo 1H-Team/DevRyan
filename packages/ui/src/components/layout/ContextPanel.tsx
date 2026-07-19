@@ -1,12 +1,16 @@
 import React from 'react';
 import { RiArrowLeftRightLine, RiChat4Line, RiCloseLine, RiDonutChartFill, RiFileTextLine, RiFullscreenExitLine, RiFullscreenLine, RiGlobalLine, RiRefreshLine, RiExternalLinkLine, RiTerminalBoxLine, RiCursorLine } from '@remixicon/react';
+import { useReducedMotion } from 'motion/react';
 
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { Button } from '@/components/ui/button';
 import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
-import { DiffView } from '@/components/views/DiffView';
-import { FilesView } from '@/components/views/FilesView';
-import { PlanView } from '@/components/views/PlanView';
+import {
+  LazyDiffView,
+  LazyFilesView,
+  LazyPlanView,
+  LazyViewBoundary,
+} from '@/components/views/lazyViews';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { openExternalUrl } from '@/lib/url';
 import { copyTextToClipboard } from '@/lib/clipboard';
@@ -20,12 +24,27 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useInputStore } from '@/sync/input-store';
 import { ContextPanelContent } from './ContextSidebarTab';
 import { toast } from '@/components/ui';
+import {
+  buildPreviewFrameKey,
+  isPreviewLoopbackHost,
+  parsePreviewHttpUrl,
+  resolvePreviewReloadUrl,
+} from './previewLifecycle';
+import { shouldCollapseContextPlanForSessionChange } from './contextPlanSessionLifecycle';
 
 const CONTEXT_PANEL_MIN_WIDTH = 360;
 const CONTEXT_PANEL_MAX_WIDTH = 1400;
 const CONTEXT_PANEL_DEFAULT_WIDTH = 600;
 const CONTEXT_TAB_LABEL_MAX_CHARS = 24;
+const CONTEXT_PLAN_ENTER_ANIMATION_NAME = 'oc-context-plan-panel-enter';
+const CONTEXT_PLAN_EXIT_ANIMATION_NAME = 'oc-context-plan-panel-exit';
 type TranslateFn = ReturnType<typeof useI18n>['t'];
+
+type ActiveContextPlanMotion = {
+  requestID: number;
+  direction: 'enter' | 'exit';
+  closeTabID?: string;
+};
 
 type PreviewConsoleEvent = {
   id: number;
@@ -334,6 +353,7 @@ const buildEmbeddedSessionChatURL = (sessionID: string, directory: string | null
 
   const url = new URL(window.location.pathname, window.location.origin);
   url.searchParams.set('ocPanel', 'session-chat');
+  url.searchParams.set('surface', 'desktop');
   url.searchParams.set('sessionId', sessionID);
   if (directory && directory.trim().length > 0) {
     url.searchParams.set('directory', directory);
@@ -354,8 +374,11 @@ const truncateTabLabel = (value: string, maxChars: number): string => {
 };
 
 type PreviewPaneProps = {
-  rawUrl: string;
-  onNavigate: (url: string) => void;
+  tabID: string;
+  targetUrl: string;
+  displayUrl: string;
+  onDisplayNavigate: (url: string) => void;
+  onTargetNavigate: (url: string) => void;
 };
 
 type PreviewProxyState =
@@ -385,11 +408,22 @@ const getCachedProxyTarget = (url: string): CachedProxyTarget | null => {
   return entry;
 };
 
-const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
+const PreviewPane: React.FC<PreviewPaneProps> = ({
+  tabID,
+  targetUrl,
+  displayUrl,
+  onDisplayNavigate,
+  onTargetNavigate,
+}) => {
   const { t } = useI18n();
   const { currentTheme } = useThemeSystem();
   const [reloadNonce, bumpReload] = React.useReducer((x: number) => x + 1, 0);
+  const [probeNonce, bumpProbe] = React.useReducer((x: number) => x + 1, 0);
   const [proxyRegistrationNonce, bumpProxyRegistration] = React.useReducer((x: number) => x + 1, 0);
+  const [frameRequest, setFrameRequest] = React.useState(() => ({
+    ownerTargetUrl: targetUrl,
+    url: targetUrl,
+  }));
   const [proxyState, setProxyState] = React.useState<PreviewProxyState>({ status: 'idle' });
   const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
   const nextConsoleEventIdRef = React.useRef(1);
@@ -405,28 +439,15 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
   const addInlineCommentDraft = useInlineCommentDraftStore((state) => state.addDraft);
   const addAttachedFile = useInputStore((state) => state.addAttachedFile);
 
-  let parsedUrl: URL | null = null;
-  try {
-    parsedUrl = rawUrl ? new URL(rawUrl) : null;
-  } catch {
-    parsedUrl = null;
-  }
-
-  const isLoopback = parsedUrl
-    ? (parsedUrl.hostname === 'localhost'
-        || parsedUrl.hostname === '127.0.0.1'
-        || parsedUrl.hostname === '::1'
-        || parsedUrl.hostname === '[::1]'
-        || parsedUrl.hostname === '0.0.0.0')
-    : false;
-
-  const normalizedUrl = parsedUrl
-    ? (parsedUrl.hostname === '0.0.0.0'
-        ? new URL(parsedUrl.toString().replace('0.0.0.0', '127.0.0.1'))
-        : parsedUrl)
-    : null;
+  const normalizedUrl = parsePreviewHttpUrl(targetUrl);
+  const frameUrl = frameRequest.ownerTargetUrl === targetUrl
+    ? resolvePreviewReloadUrl(targetUrl, frameRequest.url)
+    : normalizedUrl;
+  const isLoopback = normalizedUrl ? isPreviewLoopbackHost(normalizedUrl.hostname) : false;
 
   const targetKey = normalizedUrl ? normalizedUrl.toString() : '';
+  const currentDisplayUrl = displayUrl || targetUrl || frameUrl?.toString() || '';
+  const intentionalFrameKey = buildPreviewFrameKey(tabID, targetKey, reloadNonce);
   const previewColorScheme = currentTheme.metadata.variant;
 
   React.useEffect(() => {
@@ -494,26 +515,29 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
     };
   }, [isLoopback, proxyRegistrationNonce, t, targetKey]);
 
-  const directSrc = normalizedUrl
-    && (normalizedUrl.protocol === 'http:' || normalizedUrl.protocol === 'https:')
-    ? normalizedUrl.toString()
-    : '';
+  const directSrc = frameUrl?.toString() ?? '';
 
-  const proxySrc = isLoopback && proxyState.status === 'ready' && normalizedUrl
+  const proxySrc = isLoopback && proxyState.status === 'ready' && frameUrl
     ? (() => {
-      const path = normalizedUrl.pathname || '/';
-      const searchParams = new URLSearchParams(normalizedUrl.search);
+      const path = frameUrl.pathname || '/';
+      const searchParams = new URLSearchParams(frameUrl.search);
       searchParams.set('ocPreview', String(reloadNonce));
       const search = searchParams.toString();
-      const hash = normalizedUrl.hash || '';
+      const hash = frameUrl.hash || '';
       return `${proxyState.proxyBasePath}${path}${search ? `?${search}` : ''}${hash}`;
     })()
     : '';
 
   const effectiveSrc = isLoopback ? proxySrc : directSrc;
-  const headerSrc = effectiveSrc || directSrc;
+  const externalSrc = parsePreviewHttpUrl(currentDisplayUrl)?.toString() || directSrc;
   const showLoading = isLoopback && (proxyState.status === 'loading' || proxyState.status === 'idle');
   const showError = isLoopback && proxyState.status === 'error';
+
+  const reloadPreview = React.useCallback(() => {
+    setFrameRequest({ ownerTargetUrl: targetUrl, url: currentDisplayUrl || targetUrl });
+    bumpReload();
+    bumpProbe();
+  }, [currentDisplayUrl, targetUrl]);
 
   const attachPreviewAnnotation = React.useCallback((target: PreviewElementMetadata) => {
     const sessionKey = currentSessionId ?? (currentDraftId ? `draft:${currentDraftId}` : newSessionDraftOpen ? 'draft' : null);
@@ -522,7 +546,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
       return;
     }
 
-    const pageUrl = rawUrl || effectiveSrc || '';
+    const pageUrl = currentDisplayUrl || effectiveSrc || '';
     const viewport = typeof window !== 'undefined'
       ? { width: window.innerWidth, height: window.innerHeight }
       : { width: 0, height: 0 };
@@ -560,7 +584,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
       });
       toast.success(t('contextPanel.preview.inspect.attached'));
     })();
-  }, [addAttachedFile, addInlineCommentDraft, currentDraftId, currentSessionId, effectiveSrc, newSessionDraftOpen, rawUrl, t]);
+  }, [addAttachedFile, addInlineCommentDraft, currentDisplayUrl, currentDraftId, currentSessionId, effectiveSrc, newSessionDraftOpen, t]);
 
   React.useEffect(() => {
     setBridgeReady(false);
@@ -570,7 +594,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
     setInspectMode(false);
     setHoverTarget(null);
     nextConsoleEventIdRef.current = 1;
-  }, [effectiveSrc]);
+  }, [intentionalFrameKey]);
 
   React.useEffect(() => {
     const frameWindow = iframeRef.current?.contentWindow;
@@ -648,6 +672,8 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
 
       if (data.type === 'ready') {
         setBridgeReady(true);
+        const nextUrl = typeof data.url === 'string' ? data.url : '';
+        if (nextUrl) onDisplayNavigate(nextUrl);
         return;
       }
 
@@ -707,13 +733,21 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
 
       if (data.type === 'navigate-preview') {
         const nextUrl = typeof data.url === 'string' ? data.url : '';
-        const navigation = data.navigation === 'external' ? 'external' : 'proxy';
+        const navigation = data.navigation === 'external'
+          ? 'external'
+          : data.navigation === 'target'
+            ? 'target'
+            : 'display';
         if (nextUrl && navigation === 'external') {
           void openExternalUrl(nextUrl);
           return;
         }
         if (nextUrl) {
-          onNavigate(nextUrl);
+          if (navigation === 'target') {
+            onTargetNavigate(nextUrl);
+          } else {
+            onDisplayNavigate(nextUrl);
+          }
         }
       }
     };
@@ -722,14 +756,14 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
     return () => {
       window.removeEventListener('message', handler);
     };
-  }, [attachPreviewAnnotation, isLoopback, onNavigate, t]);
+  }, [attachPreviewAnnotation, isLoopback, onDisplayNavigate, onTargetNavigate, t]);
 
   const consoleErrorCount = consoleEvents.filter((event) => event.level === 'error' || event.level === 'runtime' || event.level === 'resource').length;
   const filteredConsoleEvents = consoleEvents.filter((event) => getPreviewConsoleFilterMatch(event, consoleFilter));
 
   const copyConsoleEvents = React.useCallback(() => {
     const header = [
-      `Preview URL: ${rawUrl || effectiveSrc || ''}`,
+      `Preview URL: ${currentDisplayUrl || effectiveSrc || ''}`,
       `Events: ${consoleEvents.length}`,
       '',
     ].join('\n');
@@ -746,7 +780,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
         toast.error(t('contextPanel.preview.console.copyFailed'));
       }
     });
-  }, [consoleEvents, effectiveSrc, rawUrl, t]);
+  }, [consoleEvents, currentDisplayUrl, effectiveSrc, t]);
 
   const attachConsoleEvents = React.useCallback(() => {
     const sessionKey = currentSessionId ?? (currentDraftId ? `draft:${currentDraftId}` : newSessionDraftOpen ? 'draft' : null);
@@ -756,7 +790,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
     }
 
     const header = [
-      `Preview URL: ${rawUrl || effectiveSrc || ''}`,
+      `Preview URL: ${currentDisplayUrl || effectiveSrc || ''}`,
       `Events: ${consoleEvents.length}`,
       '',
     ].join('\n');
@@ -769,7 +803,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
     addInlineCommentDraft({
       sessionKey,
       source: 'preview-console',
-      fileLabel: rawUrl || effectiveSrc || 'preview',
+      fileLabel: currentDisplayUrl || effectiveSrc || 'preview',
       startLine: 1,
       endLine: Math.max(1, consoleEvents.length),
       code: `${header}${text}`,
@@ -777,7 +811,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
       text: t('contextPanel.preview.console.attachAnnotation'),
     });
     toast.success(t('contextPanel.preview.console.attached'));
-  }, [addInlineCommentDraft, consoleEvents, currentDraftId, currentSessionId, effectiveSrc, newSessionDraftOpen, rawUrl, t]);
+  }, [addInlineCommentDraft, consoleEvents, currentDisplayUrl, currentDraftId, currentSessionId, effectiveSrc, newSessionDraftOpen, t]);
 
   // Out-of-band upstream probe: iframes don't expose HTTP status to the parent,
   // so when the proxy returns a 502 (upstream dev server is offline) the iframe
@@ -853,7 +887,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
         const delay = Math.min(2000, 250 * Math.pow(2, Math.min(4, attempt)));
         setTimeout(() => {
           if (!cancelled) {
-            bumpReload();
+            bumpProbe();
           }
         }, delay).unref?.();
         return;
@@ -865,7 +899,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
     return () => {
       cancelled = true;
     };
-  }, [proxySrc, reloadNonce, targetKey]);
+  }, [probeNonce, proxySrc, targetKey]);
 
   const showUpstreamStarting = isLoopback
     && proxyState.status === 'ready'
@@ -907,15 +941,15 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
   return (
     <div className="absolute inset-0 flex flex-col">
       <div className="flex items-center gap-1 border-b border-border/40 bg-[var(--surface-background)] px-2 py-1">
-        <div className="min-w-0 flex-1 truncate typography-micro text-muted-foreground" title={headerSrc || rawUrl}>
-          {headerSrc || rawUrl || t('contextPanel.preview.empty')}
+        <div className="min-w-0 flex-1 truncate typography-micro text-muted-foreground" title={currentDisplayUrl}>
+          {currentDisplayUrl || t('contextPanel.preview.empty')}
         </div>
         <Button
           type="button"
           size="sm"
           variant="ghost"
           className="h-7 w-7 p-0"
-          onClick={() => bumpReload()}
+          onClick={reloadPreview}
           title={t('contextPanel.preview.actions.reload')}
           aria-label={t('contextPanel.preview.actions.reload')}
           disabled={!effectiveSrc}
@@ -928,12 +962,12 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
           variant="ghost"
           className="h-7 w-7 p-0"
           onClick={() => {
-            if (!directSrc) return;
-            void openExternalUrl(directSrc);
+            if (!externalSrc) return;
+            void openExternalUrl(externalSrc);
           }}
           title={t('contextPanel.preview.actions.openExternal')}
           aria-label={t('contextPanel.preview.actions.openExternal')}
-          disabled={!directSrc}
+          disabled={!externalSrc}
         >
           <RiExternalLinkLine className="h-3.5 w-3.5" />
         </Button>
@@ -983,7 +1017,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
               type="button"
               size="sm"
               variant="outline"
-              onClick={() => bumpReload()}
+              onClick={reloadPreview}
             >
               {t('contextPanel.preview.actions.retry')}
             </Button>
@@ -992,7 +1026,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
           <div className="relative h-full w-full">
             <iframe
               ref={iframeRef}
-              key={`${effectiveSrc}:${reloadNonce}`}
+              key={intentionalFrameKey}
               src={effectiveSrc}
               title={t('contextPanel.preview.iframeTitle')}
               className="h-full w-full border-0"
@@ -1121,10 +1155,15 @@ export const ContextPanel: React.FC = () => {
   const { t } = useI18n();
   const effectiveDirectory = useEffectiveDirectory() ?? '';
   const directoryKey = React.useMemo(() => normalizeDirectoryKey(effectiveDirectory), [effectiveDirectory]);
+  const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
 
   const panelState = useUIStore((state) => (directoryKey ? state.contextPanelByDirectory[directoryKey] : undefined));
+  const contextPlanMotionRequest = useUIStore((state) => state.contextPlanMotionRequest);
   const closeContextPanel = useUIStore((state) => state.closeContextPanel);
   const closeContextPanelTab = useUIStore((state) => state.closeContextPanelTab);
+  const requestContextPanelClose = useUIStore((state) => state.requestContextPanelClose);
+  const requestContextPanelTabClose = useUIStore((state) => state.requestContextPanelTabClose);
+  const consumeContextPlanMotionRequest = useUIStore((state) => state.consumeContextPlanMotionRequest);
   const toggleContextPanelExpanded = useUIStore((state) => state.toggleContextPanelExpanded);
   const setContextPanelWidth = useUIStore((state) => state.setContextPanelWidth);
   const setActiveContextPanelTab = useUIStore((state) => state.setActiveContextPanelTab);
@@ -1132,15 +1171,23 @@ export const ContextPanel: React.FC = () => {
   const setPendingDiffFile = useUIStore((state) => state.setPendingDiffFile);
   const setSelectedFilePath = useFilesViewTabsStore((state) => state.setSelectedPath);
   const openContextPreview = useUIStore((state) => state.openContextPreview);
+  const setContextPreviewDisplayUrl = useUIStore((state) => state.setContextPreviewDisplayUrl);
   const { themeMode, lightThemeId, darkThemeId, currentTheme } = useThemeSystem();
 
   const tabs = React.useMemo(() => panelState?.tabs ?? [], [panelState?.tabs]);
   const activeTab = tabs.find((tab) => tab.id === panelState?.activeTabId) ?? tabs[tabs.length - 1] ?? null;
+  const activePreviewTabID = activeTab?.mode === 'preview' ? activeTab.id : null;
   const isOpen = Boolean(panelState?.isOpen && activeTab);
   const isExpanded = Boolean(isOpen && panelState?.expanded);
   const width = clampWidth(panelState?.width ?? CONTEXT_PANEL_DEFAULT_WIDTH);
+  const shouldReduceMotion = useReducedMotion() === true
+    || (typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   const [isResizing, setIsResizing] = React.useState(false);
+  const [planHeaderActionsTarget, setPlanHeaderActionsTarget] = React.useState<HTMLDivElement | null>(null);
+  const [activePlanMotion, setActivePlanMotion] = React.useState<ActiveContextPlanMotion | null>(null);
   const startXRef = React.useRef(0);
   const startWidthRef = React.useRef(width);
   const resizingWidthRef = React.useRef<number | null>(null);
@@ -1148,6 +1195,93 @@ export const ContextPanel: React.FC = () => {
   const panelRef = React.useRef<HTMLElement | null>(null);
   const chatFrameRefs = React.useRef<Map<string, HTMLIFrameElement>>(new Map());
   const wasOpenRef = React.useRef(false);
+  const previousSessionIdRef = React.useRef<string | null | undefined>(undefined);
+
+  const finalizePlanExit = React.useCallback((motion: ActiveContextPlanMotion) => {
+    if (!directoryKey) {
+      return;
+    }
+
+    if (motion.closeTabID) {
+      closeContextPanelTab(directoryKey, motion.closeTabID);
+      return;
+    }
+
+    closeContextPanel(directoryKey);
+  }, [closeContextPanel, closeContextPanelTab, directoryKey]);
+
+  React.useLayoutEffect(() => {
+    if (!contextPlanMotionRequest || contextPlanMotionRequest.directory !== directoryKey) {
+      return;
+    }
+
+    consumeContextPlanMotionRequest(contextPlanMotionRequest.id);
+
+    if (!isOpen || activeTab?.mode !== 'plan') {
+      setActivePlanMotion(null);
+      return;
+    }
+
+    const motion: ActiveContextPlanMotion = {
+      requestID: contextPlanMotionRequest.id,
+      direction: contextPlanMotionRequest.direction,
+      closeTabID: contextPlanMotionRequest.closeTabID,
+    };
+
+    if (shouldReduceMotion) {
+      setActivePlanMotion(null);
+      if (motion.direction === 'exit') {
+        finalizePlanExit(motion);
+      }
+      return;
+    }
+
+    setActivePlanMotion(motion);
+  }, [
+    activeTab?.mode,
+    consumeContextPlanMotionRequest,
+    contextPlanMotionRequest,
+    directoryKey,
+    finalizePlanExit,
+    isOpen,
+    shouldReduceMotion,
+  ]);
+
+  React.useLayoutEffect(() => {
+    if (!activePlanMotion) {
+      return;
+    }
+
+    if (!isOpen || activeTab?.mode !== 'plan') {
+      setActivePlanMotion(null);
+      return;
+    }
+
+    if (!shouldReduceMotion) {
+      return;
+    }
+
+    setActivePlanMotion(null);
+    if (activePlanMotion.direction === 'exit') {
+      finalizePlanExit(activePlanMotion);
+    }
+  }, [activePlanMotion, activeTab?.mode, finalizePlanExit, isOpen, shouldReduceMotion]);
+
+  React.useLayoutEffect(() => {
+    const previousSessionId = previousSessionIdRef.current;
+    previousSessionIdRef.current = currentSessionId;
+
+    if (!directoryKey || !shouldCollapseContextPlanForSessionChange({
+      previousSessionId,
+      currentSessionId,
+      isPanelOpen: isOpen,
+      activeMode: activeTab?.mode ?? null,
+    })) {
+      return;
+    }
+
+    closeContextPanel(directoryKey);
+  }, [activeTab?.mode, closeContextPanel, currentSessionId, directoryKey, isOpen]);
 
   React.useEffect(() => {
     if (!isOpen || wasOpenRef.current) {
@@ -1235,8 +1369,26 @@ export const ContextPanel: React.FC = () => {
     if (!directoryKey) {
       return;
     }
-    closeContextPanel(directoryKey);
-  }, [closeContextPanel, directoryKey]);
+    requestContextPanelClose(directoryKey);
+  }, [directoryKey, requestContextPanelClose]);
+
+  const handlePlanMotionEnd = React.useCallback((event: React.AnimationEvent<HTMLElement>) => {
+    if (!activePlanMotion || event.currentTarget !== event.target) {
+      return;
+    }
+
+    const expectedAnimationName = activePlanMotion.direction === 'enter'
+      ? CONTEXT_PLAN_ENTER_ANIMATION_NAME
+      : CONTEXT_PLAN_EXIT_ANIMATION_NAME;
+    if (event.animationName !== expectedAnimationName) {
+      return;
+    }
+
+    setActivePlanMotion(null);
+    if (activePlanMotion.direction === 'exit') {
+      finalizePlanExit(activePlanMotion);
+    }
+  }, [activePlanMotion, finalizePlanExit]);
 
   const handleToggleExpanded = React.useCallback(() => {
     if (!directoryKey) {
@@ -1269,6 +1421,16 @@ export const ContextPanel: React.FC = () => {
       setPendingDiffFile(activeTab.targetPath);
     }
   }, [activeTab, directoryKey, setPendingDiffFile, setSelectedFilePath]);
+
+  const handlePreviewDisplayNavigate = React.useCallback((url: string) => {
+    if (!directoryKey || !activePreviewTabID) return;
+    setContextPreviewDisplayUrl(directoryKey, activePreviewTabID, url);
+  }, [activePreviewTabID, directoryKey, setContextPreviewDisplayUrl]);
+
+  const handlePreviewTargetNavigate = React.useCallback((url: string) => {
+    if (!directoryKey) return;
+    openContextPreview(directoryKey, url);
+  }, [directoryKey, openContextPreview]);
 
   const activeChatTabID = activeTab?.mode === 'chat' ? activeTab.id : null;
 
@@ -1372,13 +1534,33 @@ export const ContextPanel: React.FC = () => {
   }), [effectiveDirectory, t, tabs]);
 
   const activeNonChatContent = activeTab?.mode === 'diff'
-    ? <DiffView hideStackedFileSidebar stackedDefaultCollapsedAll hideFileSelector pinSelectedFileHeaderToTopOnNavigate showOpenInEditorAction />
+    ? (
+      <LazyViewBoundary>
+        <LazyDiffView hideStackedFileSidebar stackedDefaultCollapsedAll hideFileSelector pinSelectedFileHeaderToTopOnNavigate showOpenInEditorAction />
+      </LazyViewBoundary>
+    )
     : activeTab?.mode === 'context'
         ? <ContextPanelContent />
         : activeTab?.mode === 'plan'
-            ? <PlanView targetPath={activeTab.targetPath} />
+            ? (
+              <LazyViewBoundary>
+                <LazyPlanView
+                  targetPath={activeTab.targetPath}
+                  presentation="context-panel"
+                  headerActionsTarget={planHeaderActionsTarget}
+                />
+              </LazyViewBoundary>
+            )
             : activeTab?.mode === 'preview'
-                ? <PreviewPane rawUrl={activeTab.targetPath ?? ''} onNavigate={(url) => openContextPreview(effectiveDirectory, url)} />
+                ? (
+                  <PreviewPane
+                    tabID={activeTab.id}
+                    targetUrl={activeTab.targetPath ?? ''}
+                    displayUrl={activeTab.displayUrl ?? activeTab.targetPath ?? ''}
+                    onDisplayNavigate={handlePreviewDisplayNavigate}
+                    onTargetNavigate={handlePreviewTargetNavigate}
+                  />
+                )
                 : (
                   <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
                     <RiGlobalLine className="h-12 w-12 text-muted-foreground/50" />
@@ -1413,7 +1595,7 @@ export const ContextPanel: React.FC = () => {
           if (!directoryKey) {
             return;
           }
-          closeContextPanelTab(directoryKey, tabID);
+          requestContextPanelTabClose(directoryKey, tabID);
         }}
         onReorder={(activeTabID, overTabID) => {
           if (!directoryKey) {
@@ -1425,6 +1607,13 @@ export const ContextPanel: React.FC = () => {
         variant="default"
       />
       <div className="flex items-center gap-1 px-1.5">
+        {activeTab?.mode === 'plan' ? (
+          <div
+            ref={setPlanHeaderActionsTarget}
+            className="flex min-w-0 shrink-0 items-center"
+            data-context-plan-actions="true"
+          />
+        ) : null}
         <Button
           type="button"
           variant="ghost"
@@ -1473,6 +1662,7 @@ export const ContextPanel: React.FC = () => {
     <aside
       ref={panelRef}
       data-context-panel="true"
+      data-plan-motion={activePlanMotion?.direction}
       tabIndex={-1}
       className={cn(
         'flex min-h-0 flex-col overflow-hidden bg-background',
@@ -1483,6 +1673,7 @@ export const ContextPanel: React.FC = () => {
         isResizing ? 'transition-none' : 'transition-[width] duration-200 ease-in-out'
       )}
       onKeyDownCapture={handlePanelKeyDownCapture}
+      onAnimationEnd={handlePlanMotionEnd}
       style={panelStyle}
     >
       {!isExpanded && (
@@ -1500,48 +1691,60 @@ export const ContextPanel: React.FC = () => {
           aria-label={t('contextPanel.actions.resizePanelAria')}
         />
       )}
-      {header}
-      <div className={cn('relative min-h-0 flex-1 overflow-hidden', isResizing && 'pointer-events-none')}>
-        {hasFileTabs ? (
-          <div className={cn('absolute inset-0', isFileTabActive ? 'block' : 'hidden')}>
-            <FilesView mode="editor-only" />
-          </div>
-        ) : null}
-        {chatTabs.map((tab) => {
-          const sessionID = getSessionIDFromDedupeKey(tab.dedupeKey);
-          if (!sessionID) {
-            return null;
-          }
+      <div
+        data-context-panel-content="true"
+        className={cn(
+          'flex min-h-0 flex-1 flex-col',
+          activePlanMotion?.direction === 'exit' && 'pointer-events-none'
+        )}
+      >
+        {header}
+        <div className={cn('relative min-h-0 flex-1 overflow-hidden', isResizing && 'pointer-events-none')}>
+          {hasFileTabs ? (
+            <div className={cn('absolute inset-0', isFileTabActive ? 'block' : 'hidden')}>
+              <LazyViewBoundary>
+                <LazyFilesView mode="editor-only" />
+              </LazyViewBoundary>
+            </div>
+          ) : null}
+          {chatTabs.map((tab) => {
+            const sessionID = getSessionIDFromDedupeKey(tab.dedupeKey);
+            if (!sessionID) {
+              return null;
+            }
 
-          const src = buildEmbeddedSessionChatURL(sessionID, directoryKey || null);
-          if (!src) {
-            return null;
-          }
+            const src = buildEmbeddedSessionChatURL(sessionID, directoryKey || null);
+            if (!src) {
+              return null;
+            }
 
-          return (
-            <iframe
-              key={tab.id}
-              ref={(node) => {
-                if (!node) {
-                  chatFrameRefs.current.delete(tab.id);
-                  return;
-                }
-                chatFrameRefs.current.set(tab.id, node);
-              }}
-              src={src}
-              title={t('contextPanel.iframe.sessionChatTitle', { sessionID })}
-              className={cn(
-                'absolute inset-0 h-full w-full border-0 bg-background',
-                activeChatTabID === tab.id ? 'block' : 'hidden'
-              )}
-              onLoad={() => {
-                postThemeSyncToEmbeddedChat();
-                postEmbeddedVisibilityToChats();
-              }}
-            />
-          );
-        })}
-        {activeTab?.mode !== 'chat' && !isFileTabActive ? activeNonChatContent : null}
+            return (
+              <iframe
+                key={tab.id}
+                ref={(node) => {
+                  if (!node) {
+                    chatFrameRefs.current.delete(tab.id);
+                    return;
+                  }
+                  chatFrameRefs.current.set(tab.id, node);
+                }}
+                src={src}
+                title={t('contextPanel.iframe.sessionChatTitle', { sessionID })}
+                className={cn(
+                  'absolute inset-0 h-full w-full border-0 bg-background',
+                  activeChatTabID === tab.id ? 'block' : 'hidden'
+                )}
+                onLoad={() => {
+                  postThemeSyncToEmbeddedChat();
+                  postEmbeddedVisibilityToChats();
+                }}
+              />
+            );
+          })}
+          {activeTab?.mode !== 'chat' && !isFileTabActive
+            ? activeNonChatContent
+            : null}
+        </div>
       </div>
     </aside>
   );

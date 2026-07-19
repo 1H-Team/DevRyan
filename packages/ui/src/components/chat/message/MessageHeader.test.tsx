@@ -11,6 +11,7 @@ describe('MessageHeader', () => {
         const code = source();
 
         expect(code).toContain('<RiAiAgentLine');
+        expect(code).toContain('style={{ color: `var(${getAgentIconColor(agentName).var})` }}');
         expect(code).toContain('style={{ color: `var(${getAgentColor(agentName).var})` }}');
         expect(code).toContain('className="min-w-0 max-w-[180px] truncate text-foreground"');
         expect(code).not.toContain(

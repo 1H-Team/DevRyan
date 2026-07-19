@@ -55,7 +55,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useIsVSCodeRuntime } from '@/hooks/useRuntimeAPIs';
 import { isDesktopShell } from '@/lib/desktop';
-import { getAgentColor } from '@/lib/agentColors';
+import { getAgentColor, getAgentIconColor } from '@/lib/agentColors';
 import { useDeviceInfo } from '@/lib/device';
 import { getEditModeColors } from '@/lib/permissions/editModeColors';
 import { cn, fuzzyMatch } from '@/lib/utils';
@@ -63,9 +63,10 @@ import { useContextStore } from '@/stores/contextStore';
 import { useConfigStore, useVisibleConfigAgents } from '@/stores/useConfigStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
-import { useDirectorySync, useSessionMessages } from '@/sync/sync-context';
+import { useDirectorySync, useSession, useSessionMessages } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
 import { getSessionMaterializationStatus } from '@/sync/materialization';
+import { resolveSubtaskAgentFromMessages } from '@/sync/subtask-agent';
 import { useUIStore } from '@/stores/useUIStore';
 import { useModelLists } from '@/hooks/useModelLists';
 import {
@@ -841,6 +842,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const latestLoadedUserChoiceRestoreRef = React.useRef<string | null>(null);
 
     const currentSessionDirectory = currentSessionId ? getDirectoryForSession(currentSessionId) : undefined;
+    const currentSession = useSession(currentSessionId);
+    const currentSessionIsSubtask = Boolean((currentSession as { parentID?: string | null } | undefined)?.parentID);
     const hasRenderableCurrentSessionSnapshot = useDirectorySync(
         React.useCallback(
             (state) => (currentSessionId ? getSessionMaterializationStatus(state, currentSessionId).renderable : false),
@@ -880,6 +883,12 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         }
         return null;
     }, [currentSessionMessagesFromSync]);
+    const assignedSubtaskAgent = React.useMemo(
+        () => currentSessionIsSubtask
+            ? resolveSubtaskAgentFromMessages(currentSessionMessagesFromSync)
+            : undefined,
+        [currentSessionIsSubtask, currentSessionMessagesFromSync],
+    );
 
     const tryApplyModelSelection = React.useCallback(
         (
@@ -1177,6 +1186,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             currentSessionId,
             latestLoadedUserChoice.id,
             latestLoadedUserChoice.agent ?? '',
+            assignedSubtaskAgent ?? '',
             latestLoadedUserChoice.providerID,
             latestLoadedUserChoice.modelID,
             latestLoadedUserChoice.variant ?? '',
@@ -1186,24 +1196,25 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             return;
         }
 
-        if (latestLoadedUserChoice.agent && currentAgentName !== latestLoadedUserChoice.agent) {
-            setAgent(latestLoadedUserChoice.agent);
+        const restoredAgent = assignedSubtaskAgent ?? latestLoadedUserChoice.agent;
+        if (restoredAgent && currentAgentName !== restoredAgent) {
+            setAgent(restoredAgent);
         }
 
         const applyResult = tryApplyModelSelection(
             latestLoadedUserChoice.providerID,
             latestLoadedUserChoice.modelID,
-            latestLoadedUserChoice.agent || currentAgentName || undefined,
+            restoredAgent || currentAgentName || undefined,
         );
         if (applyResult !== 'applied') {
             return;
         }
 
-        if (latestLoadedUserChoice.agent) {
-            saveSessionAgentSelection(currentSessionId, latestLoadedUserChoice.agent);
+        if (restoredAgent) {
+            saveSessionAgentSelection(currentSessionId, restoredAgent);
             saveAgentModelVariantForSession(
                 currentSessionId,
-                latestLoadedUserChoice.agent,
+                restoredAgent,
                 latestLoadedUserChoice.providerID,
                 latestLoadedUserChoice.modelID,
                 latestLoadedUserChoice.variant,
@@ -1219,6 +1230,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         providers,
         hasRenderableCurrentSessionSnapshot,
         latestLoadedUserChoice,
+        assignedSubtaskAgent,
         setAgent,
         tryApplyModelSelection,
         saveSessionAgentSelection,
@@ -3338,9 +3350,11 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                             <div className="px-3 pt-1 pb-1.5 border-t border-border/40 typography-micro text-muted-foreground">
                                 <div className="flex items-center gap-x-2 whitespace-nowrap overflow-hidden">
                                     <span>{t('chat.modelControls.keyboardHintNavigate')}</span>
+                                    <span aria-hidden="true">|</span>
                                     <span>{t('chat.modelControls.keyboardHintSwitchAgent')}</span>
-                                    <span className={cn(!highlightedSupportsThinking && 'invisible')}>
-                                        {t('chat.modelControls.keyboardHintThinking')}
+                                    <span className={cn('inline-flex items-center gap-x-2', !highlightedSupportsThinking && 'invisible')}>
+                                        <span aria-hidden="true">|</span>
+                                        <span>{t('chat.modelControls.keyboardHintThinking')}</span>
                                     </span>
                                 </div>
                             </div>
@@ -3788,7 +3802,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                                         'flex-shrink-0',
                                                         uiAgentName ? '' : 'text-muted-foreground'
                                                     )}
-                                                    style={isPlanModeSelected ? PLAN_MODE_AGENT_STYLE : uiAgentName ? { color: `var(${getAgentColor(uiAgentName).var})` } : undefined}
+                                                    style={isPlanModeSelected ? PLAN_MODE_AGENT_STYLE : uiAgentName ? { color: `var(${getAgentIconColor(uiAgentName).var})` } : undefined}
                                                 />
                                                 <span
                                                     className={cn(
@@ -3936,7 +3950,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                 'flex-shrink-0',
                                 uiAgentName ? '' : 'text-muted-foreground'
                             )}
-                            style={isPlanModeSelected ? PLAN_MODE_AGENT_STYLE : uiAgentName ? { color: `var(${getAgentColor(uiAgentName).var})` } : undefined}
+                            style={isPlanModeSelected ? PLAN_MODE_AGENT_STYLE : uiAgentName ? { color: `var(${getAgentIconColor(uiAgentName).var})` } : undefined}
                         />
                         <span
                             className={cn(

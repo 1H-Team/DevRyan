@@ -30,6 +30,7 @@ export { createVsCodeManagedOrchestrationLedger } from './managedOrchestrationPe
 
 const DEFAULT_TASK_TIMEOUT_MS = 30 * 60 * 1_000;
 const COUNCIL_TASK_TIMEOUT_MS = 3 * 60 * 1_000;
+const MAX_WAIT_TIMEOUT_MS = 25_000;
 
 const resolveSubmitTimeoutAt = (params: Record<string, unknown>, now: () => number) => {
   const submittedAt = now();
@@ -38,6 +39,15 @@ const resolveSubmitTimeoutAt = (params: Record<string, unknown>, now: () => numb
   return typeof params.timeoutAt === 'number' && Number.isFinite(params.timeoutAt)
     ? Math.max(params.timeoutAt, minimumTimeoutAt)
     : minimumTimeoutAt;
+};
+
+const resolveWaitTimeoutMs = (params: Record<string, unknown>) => {
+  const value = params.waitTimeoutMs;
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1) {
+    throw new TypeError('waitTimeoutMs must be a positive safe integer');
+  }
+  return Math.min(value, MAX_WAIT_TIMEOUT_MS);
 };
 
 type Logger = Pick<Console, 'warn'>;
@@ -59,6 +69,7 @@ const ERROR_STATUS_BY_CODE: Record<string, number> = {
   ledger_capacity_exceeded: 507,
   managed_retry_limit_reached: 409,
   managed_runtime_unavailable: 503,
+  missing_recovery_model: 400,
   missing_idempotency_key: 400,
   mode_lease_active: 409,
   mode_lease_conflict: 409,
@@ -67,6 +78,7 @@ const ERROR_STATUS_BY_CODE: Record<string, number> = {
   result_already_acknowledged: 409,
   result_already_acknowledging: 409,
   result_not_found: 404,
+  result_not_provider_usage_limited: 409,
   result_not_resumable: 409,
   rpc_method_not_found: 404,
   scheduler_shut_down: 503,
@@ -124,8 +136,8 @@ const requireMode = (value: unknown): ManagedTaskMode => {
 };
 
 const requireResultAction = (value: unknown): ManagedTaskResultAction => {
-  if (value !== 'continue' && value !== 'resume' && value !== 'retry' && value !== 'retry_in_place' && value !== 'abandon') {
-    throw new TypeError('action must be continue, resume, retry, retry_in_place, or abandon');
+  if (value !== 'continue' && value !== 'resume' && value !== 'retry' && value !== 'recover_in_place' && value !== 'retry_in_place' && value !== 'abandon') {
+    throw new TypeError('action must be continue, resume, retry, recover_in_place, retry_in_place, or abandon');
   }
   return value;
 };
@@ -215,7 +227,6 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
   const scheduler = options.scheduler ?? createManagedTaskScheduler({
     executor,
     persistence,
-    maxConcurrency: 3,
     now,
     publishEvent,
     logger,
@@ -355,7 +366,11 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
       }
       case 'wait': {
         const task = getScopedTask(params);
-        return projectTaskResult(await scheduler.waitForTask(task.taskId, { signal: context.signal }));
+        const waitTimeoutMs = resolveWaitTimeoutMs(params);
+        return projectTaskResult(await scheduler.waitForTask(task.taskId, {
+          signal: context.signal,
+          ...(waitTimeoutMs === undefined ? {} : { timeoutMs: waitTimeoutMs }),
+        }));
       }
       case 'barrier':
         return await scheduler.waitForDispatchBarrier(

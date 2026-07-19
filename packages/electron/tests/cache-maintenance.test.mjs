@@ -1,7 +1,28 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { clearElectronRuntimeCaches } from '../cache-maintenance.mjs';
+import { clearElectronRuntimeCaches, getElectronRuntimeCacheInfo } from '../cache-maintenance.mjs';
+
+test('Electron cache maintenance reports the current cache size', async () => {
+  const result = await getElectronRuntimeCacheInfo({
+    defaultSession: {
+      getCacheSize: async () => 12_345.9,
+    },
+  });
+
+  assert.deepEqual(result, { sizeBytes: 12_345 });
+});
+
+test('Electron cache maintenance rejects invalid cache sizes', async () => {
+  await assert.rejects(
+    getElectronRuntimeCacheInfo({
+      defaultSession: {
+        getCacheSize: async () => Number.NaN,
+      },
+    }),
+    /invalid cache size/,
+  );
+});
 
 test('Electron cache maintenance clears HTTP and code caches without storage data', async () => {
   const calls = [];

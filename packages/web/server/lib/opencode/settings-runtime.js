@@ -7,6 +7,14 @@ const DEFAULT_NOTIFICATION_TEMPLATES = {
   subtask: { title: '{agent_name} is ready', message: '{model_name} completed the task' },
 };
 
+const THEME_CATALOG_VERSION = 2;
+const DEFAULT_LIGHT_THEME_ID = 'devryan-default-light';
+const DEFAULT_DARK_THEME_ID = 'devryan-default-dark';
+const LEGACY_DEFAULT_THEME_IDS = {
+  'onedarkpro-light': DEFAULT_LIGHT_THEME_ID,
+  'carbonfox-dark': DEFAULT_DARK_THEME_ID,
+};
+
 const ensureNotificationTemplateShape = (templates) => {
   const input = templates && typeof templates === 'object' ? templates : {};
   let changed = false;
@@ -520,8 +528,8 @@ export const createSettingsRuntime = (deps) => {
       return { settings, changed: false };
     }
 
-    const defaultLight = 'carbonfox-light';
-    const defaultDark = 'carbonfox-dark';
+    const defaultLight = DEFAULT_LIGHT_THEME_ID;
+    const defaultDark = DEFAULT_DARK_THEME_ID;
 
     let nextLightThemeId = hasLight ? settings.lightThemeId : undefined;
     let nextDarkThemeId = hasDark ? settings.darkThemeId : undefined;
@@ -549,6 +557,32 @@ export const createSettingsRuntime = (deps) => {
     });
 
     return { settings: merged, changed: true };
+  };
+
+  const migrateSettingsThemeCatalog = async (current) => {
+    const settings = current && typeof current === 'object' ? current : {};
+    if (Number.isSafeInteger(settings.themeCatalogVersion)
+      && settings.themeCatalogVersion >= THEME_CATALOG_VERSION) {
+      return { settings, changed: false };
+    }
+
+    const migrateId = (themeId) => {
+      if (typeof themeId !== 'string') {
+        return themeId;
+      }
+      return LEGACY_DEFAULT_THEME_IDS[themeId] || themeId;
+    };
+
+    return {
+      settings: {
+        ...settings,
+        themeId: migrateId(settings.themeId),
+        lightThemeId: migrateId(settings.lightThemeId),
+        darkThemeId: migrateId(settings.darkThemeId),
+        themeCatalogVersion: THEME_CATALOG_VERSION,
+      },
+      changed: true,
+    };
   };
 
   const migrateSettingsFromLegacyCollapsedProjects = async (current) => {
@@ -689,15 +723,16 @@ export const createSettingsRuntime = (deps) => {
     const current = await readSettingsFromDisk();
     const migration1 = await migrateSettingsFromLegacyLastDirectory(current);
     const migration2 = await migrateSettingsFromLegacyThemePreferences(migration1.settings);
-    const migration3 = await migrateSettingsFromLegacyCollapsedProjects(migration2.settings);
-    const migration4 = await migrateSettingsNotificationDefaults(migration3.settings);
-    const migration5 = await migrateSettingsFromLegacyNamedTunnelKeys(migration4.settings);
-    const migration6 = normalizeSettingsPaths(migration5.settings);
-    const migration7 = await migrateSettingsToDeterministicProjectIds(migration6.settings);
-    if (migration1.changed || migration2.changed || migration3.changed || migration4.changed || migration5.changed || migration6.changed || migration7.changed) {
-      await writeSettingsToDisk(migration7.settings);
+    const migration3 = await migrateSettingsThemeCatalog(migration2.settings);
+    const migration4 = await migrateSettingsFromLegacyCollapsedProjects(migration3.settings);
+    const migration5 = await migrateSettingsNotificationDefaults(migration4.settings);
+    const migration6 = await migrateSettingsFromLegacyNamedTunnelKeys(migration5.settings);
+    const migration7 = normalizeSettingsPaths(migration6.settings);
+    const migration8 = await migrateSettingsToDeterministicProjectIds(migration7.settings);
+    if (migration1.changed || migration2.changed || migration3.changed || migration4.changed || migration5.changed || migration6.changed || migration7.changed || migration8.changed) {
+      await writeSettingsToDisk(migration8.settings);
     }
-    return migration7.settings;
+    return migration8.settings;
   };
 
   const persistSettings = async (changes) => {

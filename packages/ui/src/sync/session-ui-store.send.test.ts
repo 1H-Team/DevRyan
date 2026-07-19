@@ -125,6 +125,7 @@ mock.module("@/stores/useGlobalSessionsStore", () => ({
 }))
 
 mock.module("./session-actions", () => ({
+  assertSessionRevertMutationAllowed: mock(() => {}),
   setActionRefs: mock(() => {}),
   setOptimisticRefs: mock(() => {}),
   waitForConnectionOrThrow: mock(() => Promise.resolve()),
@@ -432,6 +433,7 @@ mock.module("./sync-context", () => ({
   setActiveSession: mock((directory: string, sessionId: string) => {
     activeSessionCalls.push({ directory, sessionId })
   }),
+  useSessionStatus: () => undefined,
 }))
 
 const { opencodeClient: testOpencodeClient } = await import("@/lib/opencode/client")
@@ -512,9 +514,12 @@ const { useInputStore } = await import("./input-store")
 const { useNotificationStore } = await import("./notification-store")
 const { useProjectsStore } = await import("@/stores/useProjectsStore")
 const { getSafeStorage } = await import("@/stores/utils/safeStorage")
+const { useSessionWorktreeStore } = await import("./session-worktree-store")
+const { useSessionPlanFileStore } = await import("@/stores/useSessionPlanFileStore")
 
 const SESSION_COMPLETION_INDICATOR_SETTLE_MS = 250
 const CURSOR_DRAFT_PREWARM_STORAGE_KEY = "openchamber.cursorDraftPrewarmSessions.v1"
+const PLAN_MESSAGE_STATE_STORAGE_KEY = "openchamber_plan_message_state"
 
 bunTestHooks.afterEach(() => {
   restoreOpencodeClientMock()
@@ -534,6 +539,8 @@ const expectPlanModeInstructionContract = (text: string) => {
   expect(text).toContain("**Files modified**")
   expect(text).toContain("**Files read (no edit) for behavior reuse**")
   expect(text).toContain("## Implementation")
+  expect(text).toContain("### Phase 1: <name>")
+  expect(text).toContain("Each phase must contain multiple related tasks")
   expect(text).toContain("Count only actionable implementation tasks as tasks")
   expect(text).toContain("## Verification")
   expect(text).toContain("The plan card provides the implementation action")
@@ -617,6 +624,7 @@ describe("session-ui-store send routing", () => {
     deferredActivateDirectoryResolve = null
     const storage = getSafeStorage()
     storage.removeItem(CURSOR_DRAFT_PREWARM_STORAGE_KEY)
+    storage.removeItem(PLAN_MESSAGE_STATE_STORAGE_KEY)
     storage.removeItem(CHAT_DRAFTS_STORAGE_KEY)
     storage.removeItem(LEGACY_NEW_INPUT_DRAFT_KEY)
     storage.removeItem(getDraftInputStorageKey("draft-send"))
@@ -631,6 +639,9 @@ describe("session-ui-store send routing", () => {
       newSessionDraft: { open: false, directoryOverride: null, parentID: null },
       pendingChangesBarDismissed: new Map(),
       worktreeMetadata: new Map(),
+      sessionDirectoryHints: new Map(),
+      webUICreatedSessions: new Set(),
+      sessionAbortFlags: new Map(),
       starterAssistantMessages: new Map(),
       sessionPlanAvailable: new Map(),
       sessionPlanIndicator: new Map(),
@@ -639,7 +650,11 @@ describe("session-ui-store send routing", () => {
       planModeUserMessages: new Set(),
       planModeUserMessagesBySession: new Map(),
       abortControllers: new Map(),
+      abortPromptSessionId: null,
+      abortPromptExpiresAt: null,
     })
+    useSessionWorktreeStore.setState({ attachments: new Map() })
+    useSessionPlanFileStore.setState({ recordsBySession: {} })
     useInputStore.setState({ pendingInputText: null, pendingInputMode: "replace" })
     useMessageQueueStore.setState({ queuedMessages: {}, queueModeEnabled: true })
     useProjectsStore.setState({ projects: [], activeProjectId: null })
@@ -1249,6 +1264,220 @@ describe("session-ui-store send routing", () => {
       implementationMessageId: "msg-implementation-user",
     })
     expect(state.sessionPlanAvailable.get("session-a")).toBe(true)
+  })
+
+  test("retireDeletedSession removes only exact session UI ownership and persisted plan state", () => {
+    const targetController = new AbortController()
+    const retainedController = new AbortController()
+    const targetWorktree = {
+      path: "/repo/session-a",
+      projectDirectory: "/repo",
+      branch: "target",
+      label: "Target",
+    }
+    const retainedWorktree = {
+      path: "/repo/session-b",
+      projectDirectory: "/repo",
+      branch: "retained",
+      label: "Retained",
+    }
+    const retainedStarter = {
+      sessionId: "session-b",
+      sourceMessageId: "msg-source-b",
+      messageId: "msg-starter-b",
+      partId: "prt-starter-b",
+      text: "Retained starter",
+      createdAt: 2,
+      pendingContext: true,
+    }
+
+    useSessionUIStore.setState({
+      abortPromptSessionId: "session-a",
+      abortPromptExpiresAt: 123,
+      worktreeMetadata: new Map([
+        ["session-a", targetWorktree],
+        ["session-b", retainedWorktree],
+      ]),
+      sessionDirectoryHints: new Map([
+        ["session-a", "/repo/session-a"],
+        ["session-b", "/repo/session-b"],
+      ]),
+      webUICreatedSessions: new Set(["session-a", "session-b"]),
+      sessionAbortFlags: new Map([
+        ["session-a", { timestamp: 1, acknowledged: false }],
+        ["session-b", { timestamp: 2, acknowledged: true }],
+      ]),
+      abortControllers: new Map([
+        ["session-a", targetController],
+        ["session-b", retainedController],
+      ]),
+      sessionPlanAvailable: new Map([
+        ["session-a", true],
+        ["session-b", true],
+      ]),
+      sessionPlanIndicator: new Map([
+        ["session-a", { state: "proposed", sourceMessageId: "msg-plan-a" }],
+        ["session-b", { state: "implementing", sourceMessageId: "msg-plan-b" }],
+      ]),
+      sessionCompletionIndicator: new Map([
+        ["session-a", { messageId: "msg-complete-a", completedAt: 10 }],
+        ["session-b", { messageId: "msg-complete-b", completedAt: 20 }],
+      ]),
+      planModeUserMessages: new Set(["msg-plan-user-a", "msg-plan-user-b"]),
+      planModeUserMessagesBySession: new Map([
+        ["session-a", "msg-plan-user-a"],
+        ["session-b", "msg-plan-user-b"],
+      ]),
+      implementedPlanRequests: new Set([
+        "session-a:msg-plan-a:plan:0",
+        "session-a-other:msg-near-prefix:plan:0",
+        "session-b:msg-plan-b:plan:0",
+      ]),
+      starterAssistantMessages: new Map([
+        ["session-a", {
+          sessionId: "session-a",
+          sourceMessageId: "msg-source-a",
+          messageId: "msg-starter-a",
+          partId: "prt-starter-a",
+          text: "Target starter",
+          createdAt: 1,
+          pendingContext: true,
+        }],
+        ["session-b", retainedStarter],
+      ]),
+      pendingChangesBarDismissed: new Map([
+        ["session-a", "sig-a"],
+        ["session-b", "sig-b"],
+      ]),
+    })
+    useSessionWorktreeStore.setState({
+      attachments: new Map([
+        ["session-a", {
+          worktreeRoot: "/repo/session-a",
+          cwd: "/repo/session-a",
+          branch: "target",
+          headState: "branch",
+          worktreeStatus: "ready",
+          worktreeSource: "existing",
+          legacy: false,
+          degraded: false,
+        }],
+        ["session-b", {
+          worktreeRoot: "/repo/session-b",
+          cwd: "/repo/session-b",
+          branch: "retained",
+          headState: "branch",
+          worktreeStatus: "ready",
+          worktreeSource: "existing",
+          legacy: false,
+          degraded: false,
+        }],
+      ]),
+    })
+    useSessionPlanFileStore.getState().beginSaving("session-a", "msg-plan-a")
+    useSessionPlanFileStore.getState().markSaved("session-a", "msg-plan-a", "/plans/a.md")
+    useSessionPlanFileStore.getState().beginSaving("session-b", "msg-plan-b")
+    useSessionPlanFileStore.getState().markSaved("session-b", "msg-plan-b", "/plans/b.md")
+    const storage = getSafeStorage()
+    storage.setItem(PLAN_MESSAGE_STATE_STORAGE_KEY, JSON.stringify({
+      planModeUserMessages: ["msg-plan-user-a", "msg-plan-user-b"],
+      planModeUserMessagesBySession: [
+        ["session-a", "msg-plan-user-a"],
+        ["session-b", "msg-plan-user-b"],
+      ],
+      implementedPlanRequests: [
+        "session-a:msg-plan-a:plan:0",
+        "session-a-other:msg-near-prefix:plan:0",
+        "session-b:msg-plan-b:plan:0",
+      ],
+    }))
+    storage.setItem(CURSOR_DRAFT_PREWARM_STORAGE_KEY, JSON.stringify([
+      { draftId: "draft-a", sessionID: "session-a", directory: "/repo/session-a", createdAt: 1 },
+      { draftId: "draft-b", sessionID: "session-b", directory: "/repo/session-b", createdAt: 2 },
+    ]))
+
+    type SessionUIStateWithRetirement = ReturnType<typeof useSessionUIStore.getState> & {
+      retireDeletedSession?: (sessionId: string) => void
+    }
+    const retireDeletedSession = (useSessionUIStore.getState() as SessionUIStateWithRetirement).retireDeletedSession
+    expect(typeof retireDeletedSession).toBe("function")
+    retireDeletedSession?.("session-a")
+
+    const state = useSessionUIStore.getState()
+    expect(targetController.signal.aborted).toBe(true)
+    expect(retainedController.signal.aborted).toBe(false)
+    expect(state.abortPromptSessionId).toBe(null)
+    expect(state.abortPromptExpiresAt).toBe(null)
+    expect(state.worktreeMetadata.has("session-a")).toBe(false)
+    expect(state.worktreeMetadata.get("session-b")).toBe(retainedWorktree)
+    expect(state.sessionDirectoryHints).toEqual(new Map([["session-b", "/repo/session-b"]]))
+    expect(state.webUICreatedSessions).toEqual(new Set(["session-b"]))
+    expect(state.sessionAbortFlags.has("session-a")).toBe(false)
+    expect(state.abortControllers.has("session-a")).toBe(false)
+    expect(state.sessionPlanAvailable.has("session-a")).toBe(false)
+    expect(state.sessionPlanIndicator.has("session-a")).toBe(false)
+    expect(state.sessionCompletionIndicator.has("session-a")).toBe(false)
+    expect(state.planModeUserMessages).toEqual(new Set(["msg-plan-user-b"]))
+    expect(state.planModeUserMessagesBySession).toEqual(new Map([["session-b", "msg-plan-user-b"]]))
+    expect(state.implementedPlanRequests).toEqual(new Set([
+      "session-a-other:msg-near-prefix:plan:0",
+      "session-b:msg-plan-b:plan:0",
+    ]))
+    expect(state.starterAssistantMessages.has("session-a")).toBe(false)
+    expect(state.starterAssistantMessages.get("session-b")).toBe(retainedStarter)
+    expect(state.pendingChangesBarDismissed).toEqual(new Map([["session-b", "sig-b"]]))
+    expect(useSessionWorktreeStore.getState().attachments.has("session-a")).toBe(false)
+    expect(useSessionWorktreeStore.getState().attachments.has("session-b")).toBe(true)
+    expect(useSessionPlanFileStore.getState().recordsBySession["session-a"]).toBe(undefined)
+    expect(useSessionPlanFileStore.getState().recordsBySession["session-b"]?.path).toBe("/plans/b.md")
+
+    const persistedPlanState = JSON.parse(storage.getItem(PLAN_MESSAGE_STATE_STORAGE_KEY) ?? "{}") as {
+      planModeUserMessages?: string[]
+      planModeUserMessagesBySession?: Array<[string, string]>
+      implementedPlanRequests?: string[]
+    }
+    expect(persistedPlanState).toEqual({
+      planModeUserMessages: ["msg-plan-user-b"],
+      planModeUserMessagesBySession: [["session-b", "msg-plan-user-b"]],
+      implementedPlanRequests: [
+        "session-a-other:msg-near-prefix:plan:0",
+        "session-b:msg-plan-b:plan:0",
+      ],
+    })
+    expect(JSON.parse(storage.getItem(CURSOR_DRAFT_PREWARM_STORAGE_KEY) ?? "[]")).toEqual([
+      { draftId: "draft-b", sessionID: "session-b", directory: "/repo/session-b", createdAt: 2 },
+    ])
+  })
+
+  test("retireDeletedSession no-ops without replacing unrelated collection references", () => {
+    const before = useSessionUIStore.getState()
+    const collectionReferences = {
+      worktreeMetadata: before.worktreeMetadata,
+      sessionDirectoryHints: before.sessionDirectoryHints,
+      webUICreatedSessions: before.webUICreatedSessions,
+      sessionAbortFlags: before.sessionAbortFlags,
+      abortControllers: before.abortControllers,
+      sessionPlanAvailable: before.sessionPlanAvailable,
+      sessionPlanIndicator: before.sessionPlanIndicator,
+      sessionCompletionIndicator: before.sessionCompletionIndicator,
+      planModeUserMessages: before.planModeUserMessages,
+      planModeUserMessagesBySession: before.planModeUserMessagesBySession,
+      implementedPlanRequests: before.implementedPlanRequests,
+      starterAssistantMessages: before.starterAssistantMessages,
+      pendingChangesBarDismissed: before.pendingChangesBarDismissed,
+    }
+
+    type SessionUIStateWithRetirement = ReturnType<typeof useSessionUIStore.getState> & {
+      retireDeletedSession?: (sessionId: string) => void
+    }
+    const retireDeletedSession = (before as SessionUIStateWithRetirement).retireDeletedSession
+    expect(typeof retireDeletedSession).toBe("function")
+    retireDeletedSession?.("missing-session")
+
+    const after = useSessionUIStore.getState()
+    for (const [key, reference] of Object.entries(collectionReferences)) {
+      expect(after[key as keyof typeof collectionReferences]).toBe(reference)
+    }
   })
 
   test("sendMessageToSession exposes implementation send message ids", async () => {
@@ -2229,6 +2458,7 @@ describe("session-ui-store send routing", () => {
 
     expect(optimisticCalls).toHaveLength(0)
     expect(sendMessageCalls).toHaveLength(0)
+    expect(typeof sendImmediateSubtaskPromptCalls[0]?.beforeTransport).toBe("function")
     expect(sendImmediateSubtaskPromptCalls).toEqual([{
       id: "session-child",
       text: "continue from here",
@@ -2237,6 +2467,7 @@ describe("session-ui-store send routing", () => {
       agentMentions: [{ name: "reviewer" }],
       additionalParts: undefined,
       signal: undefined,
+      beforeTransport: sendImmediateSubtaskPromptCalls[0]?.beforeTransport,
     }])
     expect(refetchSessionMessagesCalls).toEqual(["session-child"])
     expect(pendingAnimationCalls).toEqual(["session-child"])
@@ -2303,13 +2534,29 @@ describe("session-ui-store send routing", () => {
         "session-child": { type: "idle" },
       },
     }
+    mockSyncMessages = [
+      {
+        id: "msg_original_assignment",
+        role: "user",
+        agent: "oracle",
+        model: { providerID: "openai", modelID: "gpt-5.6-sol" },
+        time: { created: 1 },
+      },
+      {
+        id: "msg_bad_continuation",
+        role: "user",
+        agent: "orchestrator",
+        model: { providerID: "openai", modelID: "gpt-5.6-sol" },
+        time: { created: 2 },
+      },
+    ]
     useSessionUIStore.setState({ currentSessionId: "session-child" })
 
     await useSessionUIStore.getState().sendMessage(
       "new idle turn",
       "anthropic",
       "claude-sonnet-4-5",
-      undefined,
+      "orchestrator",
       undefined,
       undefined,
       undefined,
@@ -2320,6 +2567,8 @@ describe("session-ui-store send routing", () => {
     expect(optimisticCalls).toHaveLength(1)
     expect(sendMessageCalls[0]?.id).toBe("session-child")
     expect(sendMessageCalls[0]?.text).toBe("new idle turn")
+    expect(optimisticCalls[0]?.agent).toBe("oracle")
+    expect(sendMessageCalls[0]?.agent).toBe("oracle")
     expect(sendImmediateSubtaskPromptCalls).toHaveLength(0)
     expect(refetchSessionMessagesCalls).toEqual([])
   })
@@ -2654,15 +2903,14 @@ describe("session-ui-store send routing", () => {
     ])
   })
 
-  test("PlanCard implementation send keeps the inline plan body synthetic without file attachments", async () => {
+  test("PlanCard implementation send keeps the saved plan path synthetic without file attachments", async () => {
     useSessionUIStore.setState({ currentSessionId: "session-b" })
 
-    const inlinePlanInstructions = [
+    const savedPlanInstructions = [
       "Implement the approved plan.",
       "",
-      "# Fix auth email carryover",
-      "",
-      "- Inline the exported Markdown context before sending.",
+      "Read the authoritative plan file first:",
+      "/home/.config/openchamber/projects/project-a/plans/session-msg.md",
     ].join("\n")
 
     await useSessionUIStore.getState().sendMessage(
@@ -2672,7 +2920,7 @@ describe("session-ui-store send routing", () => {
       undefined,
       undefined,
       undefined,
-      [{ text: inlinePlanInstructions, synthetic: true }],
+      [{ text: savedPlanInstructions, synthetic: true }],
       "variant-b",
       undefined,
       false,
@@ -2681,10 +2929,10 @@ describe("session-ui-store send routing", () => {
     expect(sendMessageCalls[0]?.text).toBe("Implement Plan: Fix auth email carryover")
     expect(sendMessageCalls[0]?.files).toBe(undefined)
     expect(sendMessageCalls[0]?.additionalParts).toEqual([
-      { text: inlinePlanInstructions, synthetic: true, files: undefined },
+      { text: savedPlanInstructions, synthetic: true, files: undefined },
     ])
     expect(String((sendMessageCalls[0]?.additionalParts as Array<Record<string, unknown>> | undefined)?.[0]?.text))
-      .toContain("# Fix auth email carryover")
+      .toContain("/home/.config/openchamber/projects/project-a/plans/session-msg.md")
   })
 
   test("queue cleanup can remove only the original queued session", () => {

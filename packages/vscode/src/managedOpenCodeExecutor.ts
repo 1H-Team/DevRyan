@@ -24,6 +24,7 @@ export type VsCodeCursorSdkRuntimeAdapter = {
     parts?: Record<string, unknown>[];
   }>>;
   abortSession(sessionId: string): Promise<boolean>;
+  deleteSessionState?(sessionId: string): Promise<boolean>;
 };
 
 export type VsCodeManagedOpenCodeManagerAdapter = Pick<
@@ -68,6 +69,7 @@ export const createVsCodeManagedOpenCodeExecutor = (options: {
       body?: unknown;
       label?: string;
       allowNotFound?: boolean;
+      signal?: AbortSignal;
     } = {},
   ) => {
     const baseUrl = options.manager.getApiUrl();
@@ -85,7 +87,7 @@ export const createVsCodeManagedOpenCodeExecutor = (options: {
         ...options.manager.getOpenCodeAuthHeaders(),
       },
       ...(requestOptions.body === undefined ? {} : { body: JSON.stringify(requestOptions.body) }),
-      signal: AbortSignal.timeout(requestTimeoutMs),
+      signal: requestOptions.signal ?? AbortSignal.timeout(requestTimeoutMs),
     });
     if (requestOptions.allowNotFound && response.status === 404) return null;
     if (!response.ok) {
@@ -194,8 +196,34 @@ export const createVsCodeManagedOpenCodeExecutor = (options: {
       }
       await requestJson(
         appendDirectory(`/session/${encodeURIComponent(input.sessionId)}/abort`, input.directory),
-        { method: 'POST', label: 'session.abort' },
+        { method: 'POST', label: 'session.abort', signal: input.signal },
       );
+      return true;
+    },
+    async deleteSession(input) {
+      const failures: Error[] = [];
+      if (input.providerId === CURSOR_PROVIDER_ID && cursorSdkRuntime?.deleteSessionState) {
+        try {
+          await cursorSdkRuntime.deleteSessionState(input.sessionId);
+        } catch (error) {
+          failures.push(error instanceof Error ? error : new Error(String(error)));
+        }
+      }
+      try {
+        await requestJson(
+          appendDirectory(`/session/${encodeURIComponent(input.sessionId)}`, input.directory),
+          {
+            method: 'DELETE',
+            allowNotFound: true,
+            label: 'session.delete',
+          },
+        );
+      } catch (error) {
+        failures.push(error instanceof Error ? error : new Error(String(error)));
+      }
+      if (failures.length > 0) {
+        throw new AggregateError(failures, `Failed to delete managed child ${input.sessionId}`);
+      }
       return true;
     },
   };

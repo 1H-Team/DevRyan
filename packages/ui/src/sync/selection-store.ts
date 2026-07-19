@@ -42,6 +42,7 @@ export type SelectionState = {
   saveDraftAgentModelVariantForSelection: (draftId: string, agentName: string, providerId: string, modelId: string, variant: string | undefined) => void
   getDraftAgentModelVariantForSelection: (draftId: string, agentName: string, providerId: string, modelId: string) => string | undefined
   clearDraftSelection: (draftId: string) => void
+  clearSessionSelection: (sessionId: string) => void
   promoteDraftSelectionToSession: (draftId: string, sessionId: string) => void
   clearAgentModelSelections: (agentName: string) => void
 }
@@ -277,6 +278,45 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
         draftAgentModelVariantSelections,
       }
     }),
+
+  clearSessionSelection: (sessionId) => {
+    const normalizedSessionId = sessionId.trim()
+    if (!normalizedSessionId) return
+
+    agentModelVariantSelections.delete(normalizedSessionId)
+    set((s) => {
+      const hasModel = s.sessionModelSelections.has(normalizedSessionId)
+      const hasAgent = s.sessionAgentSelections.has(normalizedSessionId)
+      const hasPlanMode = s.sessionPlanModeSelections.has(normalizedSessionId)
+      const hasAgentModels = s.sessionAgentModelSelections.has(normalizedSessionId)
+      if (!hasModel && !hasAgent && !hasPlanMode && !hasAgentModels) return s
+
+      const sessionModelSelections = hasModel
+        ? new Map(s.sessionModelSelections)
+        : s.sessionModelSelections
+      const sessionAgentSelections = hasAgent
+        ? new Map(s.sessionAgentSelections)
+        : s.sessionAgentSelections
+      const sessionPlanModeSelections = hasPlanMode
+        ? new Map(s.sessionPlanModeSelections)
+        : s.sessionPlanModeSelections
+      const sessionAgentModelSelections = hasAgentModels
+        ? new Map(s.sessionAgentModelSelections)
+        : s.sessionAgentModelSelections
+
+      sessionModelSelections.delete(normalizedSessionId)
+      sessionAgentSelections.delete(normalizedSessionId)
+      sessionPlanModeSelections.delete(normalizedSessionId)
+      sessionAgentModelSelections.delete(normalizedSessionId)
+
+      return {
+        sessionModelSelections,
+        sessionAgentSelections,
+        sessionPlanModeSelections,
+        sessionAgentModelSelections,
+      }
+    })
+  },
 
   promoteDraftSelectionToSession: (draftId, sessionId) =>
     set((s) => {

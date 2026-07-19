@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { PluginEntry, PluginFile, SlimSetupStatus } from '@/lib/api/types';
+import type { DevRyanDefaultPlugin, PluginEntry, PluginFile, SlimSetupStatus } from '@/lib/api/types';
 import { getSlimActions, isSlimPlugin } from './pluginSlimPresentation';
 
 const entry = (spec: string): PluginEntry => ({
@@ -19,6 +19,18 @@ const file = (fileName: string): PluginFile => ({
   absolutePath: `/tmp/${fileName}`,
 });
 
+const defaultPlugin: DevRyanDefaultPlugin = {
+  id: 'devryan-default:oh-my-opencode-slim',
+  pluginId: 'oh-my-opencode-slim',
+  displayName: 'Oh My OpenCode Slim',
+  shippedSpec: 'oh-my-opencode-slim@2.0.5',
+  effectiveSpec: './plugins/devryan-oh-my-opencode-slim.mjs',
+  version: '2.0.5',
+  delivery: 'npm',
+  sourcePath: 'default-config/user-profile/package.json',
+  kind: 'default',
+};
+
 describe('Slim plugin presentation', () => {
   test('identifies only raw or DevRyan-wrapped Slim entries and files', () => {
     expect(isSlimPlugin(entry('opencode-with-claude'))).toBe(false);
@@ -26,6 +38,7 @@ describe('Slim plugin presentation', () => {
     expect(isSlimPlugin(entry('oh-my-opencode-slim@2.0.5'))).toBe(true);
     expect(isSlimPlugin(entry('./plugins/devryan-oh-my-opencode-slim.mjs'))).toBe(true);
     expect(isSlimPlugin(file('devryan-oh-my-opencode-slim.mjs'))).toBe(true);
+    expect(isSlimPlugin(defaultPlugin)).toBe(true);
   });
 
   test('offers install only for missing setup and repair for existing setup', () => {

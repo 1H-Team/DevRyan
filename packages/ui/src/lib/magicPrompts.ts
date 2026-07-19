@@ -56,16 +56,16 @@ export const MAGIC_PROMPT_DEFINITIONS: readonly MagicPromptDefinition[] = [
     id: 'git.commit.generate.visible',
     title: 'Commit Generation Visible Prompt',
     group: 'Git',
-    description: 'Visible user message for commit message drafts and commit plan previews.',
+    description: 'Visible user message for non-mutating commit plan previews.',
     template: 'Generate commit metadata for the selected git changes. Return JSON only.',
   },
   {
     id: 'git.commit.generate.instructions',
     title: 'Commit Generation Instructions',
     group: 'Git',
-    description: 'Hidden instructions for commit message drafts and non-mutating commit plan previews.',
+    description: 'Hidden instructions for non-mutating commit plan previews.',
     placeholders: [
-      { key: 'generation_mode', description: 'Commit generation mode: draft or plan_preview.' },
+      { key: 'generation_mode', description: 'Commit generation mode: plan_preview.' },
       { key: 'selected_files', description: 'Bullet list of currently scoped file paths.' },
       { key: 'git_context', description: 'Pre-collected git status, recent commits, and bounded diffs for selected files.' },
       { key: 'output_contract', description: 'Mode-specific JSON output contract.' },
@@ -439,7 +439,7 @@ Alignment:
 
 Final plan:
 7. Once aligned, deliver the concrete implementation plan grounded in the repo context. Make remaining assumptions and missing context explicit.
-8. Write the plan as ordinary markdown — no code fences, no plan.md wrapper. Use the actual plan name as the top heading, without an "Implementation Plan:" prefix. Use headings, lists, and bold for structure so the chat UI can render it as typeset prose. Organize phases so each phase contains multiple related implementation tasks; merge any phase that would contain only one task. Keep verification, acceptance criteria, files, and risks separate from actionable implementation tasks so task counts stay accurate. Emit the final plan and stop; the plan card provides the implementation action.`,
+8. Write the plan as ordinary markdown — no code fences, no plan.md wrapper. Use the actual plan name as the top heading, without an "Implementation Plan:" prefix. Use headings, lists, and bold for structure so the chat UI can render it as typeset prose. Under \`## Implementation\`, use sequential \`### Phase 1: <name>\`, \`### Phase 2: <name>\` headings and numbered actionable tasks. Organize phases so each phase contains multiple related implementation tasks; merge any phase that would contain only one task. Keep verification, acceptance criteria, files, and risks separate from actionable implementation tasks so task counts stay accurate. Emit the final plan and stop; the plan card provides the implementation action.`,
   },
   {
     id: 'plan.improve.visible',
@@ -499,20 +499,21 @@ Final step:
     placeholders: [
       { key: 'plan_title', description: 'Current plan title.' },
       { key: 'plan_path', description: 'Absolute path to the saved plan file.' },
-      { key: 'plan_body', description: 'Inline plan body when implementing a detected chat plan.' },
     ],
     template: `You are starting from an existing implementation plan.
 Plan title: {{plan_title}}
-This plan may be stored in a file or provided inline below.
-
-Plan file path, when available: {{plan_path}}
-
-Inline plan body, when provided:
-{{plan_body}}
-
-If an inline plan body is provided, treat that inline body as the source of truth. Otherwise, read the plan file first and treat its current contents as the source of truth for the plan. The plan is already agreed; implement it end-to-end without deviating from it.
+This plan is stored in the file: {{plan_path}}
+Read that file first and treat its current contents as the source of truth for the plan. The plan is already agreed; implement it end-to-end without deviating from it.
 
 Before and during implementation, build a deep understanding of the project — relevant files, module docs, existing patterns, nearby code, conventions — so your choices fit the repo's style.
+
+Task tracking is part of the implementation contract:
+1. Read the complete \`## Implementation\` section and identify every numbered actionable task under its sequential phase headings.
+2. Before editing any file, create the complete todo list with exactly one todo per plan task. Preserve the plan's phase order and task wording. Prefix every todo with \`Phase <number>: \` so the UI can show which saved-plan phase is active.
+3. Do not add todos for Context, Critical files, Visual details, acceptance criteria, risks, or the separate Verification checklist. Do not remove, merge, reorder, cancel, or replace plan todos while implementing them.
+4. Keep exactly one todo \`in_progress\`. Mark a task \`completed\` only after its implementation and focused checks are complete. If later verification finds a regression, reopen the relevant task.
+5. Keep the final plan task \`in_progress\` while running every applicable item in the plan's \`## Verification\` section. Mark it complete only after those checks pass or an unavailable check is explicitly justified.
+6. Do not emit a completion response while any todo is \`pending\` or \`in_progress\`. A successful implementation finishes only when the counter reaches N/N. If genuinely blocked, explain the blocker and leave the affected todo incomplete instead of claiming completion.
 
 Do the implementation work continuously. When a plan step is ambiguous, do not stop to ask — make the best judgment call consistent with the plan's intent and the repo's conventions, and briefly note the decision inline so it is visible on review. Prefer forward progress over interrupting me.
 

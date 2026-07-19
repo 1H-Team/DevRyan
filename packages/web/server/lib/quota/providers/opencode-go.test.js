@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { readAuthFile } from '../../opencode/auth.js';
-import { fetchQuota, isConfigured } from './opencode-go.js';
+import { fetchQuota, isConfigured, resolveOpenCodeGoCredentials } from './opencode-go.js';
 
 vi.mock('../../opencode/auth.js', () => ({
   readAuthFile: vi.fn(() => ({})),
@@ -181,6 +181,40 @@ describe('OpenCode Go quota provider', () => {
       ok: false,
       configured: true,
       error: 'Invalid OpenCode Go workspace ID format.',
+    });
+  });
+
+  it('uses environment, managed, then legacy usage credentials without mixing sources', () => {
+    const readAuth = () => ({
+      'opencode-go': {
+        usageWorkspaceId: 'wrk_legacy',
+        usageAuthCookie: 'legacy-cookie',
+      },
+    });
+    const readManagedCredential = () => ({
+      workspaceId: 'wrk_managed',
+      authCookie: 'managed-cookie',
+    });
+
+    expect(resolveOpenCodeGoCredentials({ readAuth, readManagedCredential, env: {} })).toMatchObject({
+      workspaceId: 'wrk_managed',
+      authCookie: 'managed-cookie',
+      source: 'managed',
+    });
+    expect(resolveOpenCodeGoCredentials({
+      readAuth,
+      readManagedCredential,
+      env: { OPENCODE_GO_WORKSPACE_ID: 'wrk_environment' },
+    })).toMatchObject({
+      workspaceId: 'wrk_environment',
+      authCookie: '',
+      usageConfigured: false,
+      source: 'environment',
+    });
+    expect(resolveOpenCodeGoCredentials({ readAuth, readManagedCredential: () => null, env: {} })).toMatchObject({
+      workspaceId: 'wrk_legacy',
+      authCookie: 'legacy-cookie',
+      source: 'legacy',
     });
   });
 });

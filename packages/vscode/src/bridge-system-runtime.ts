@@ -3,7 +3,6 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { randomUUID } from 'crypto';
-import { spawn } from 'child_process';
 import {
   removeProviderConfig,
   getProviderSources,
@@ -12,7 +11,31 @@ import {
   listConfigAgents,
 } from './opencodeConfig';
 import { getProviderAuth, readAuthFile, removeProviderAuth, writeAuthFile } from './opencodeAuth';
-import { fetchQuotaForProvider, listConfiguredQuotaProviders } from './quotaProviders';
+import {
+  fetchQuotaForProvider,
+  listConfiguredQuotaProviders,
+  resolveCursorQuotaCredential,
+  resolveOllamaCloudCredential,
+  resolveOpenCodeGoCredentials,
+  validateCursorQuotaCredential,
+  validateOllamaCloudQuotaCredential,
+  validateOpenCodeGoQuotaCredential,
+} from './quotaProviders';
+import {
+  MAX_QUOTA_CREDENTIAL_PAYLOAD_BYTES,
+  assertManagedQuotaCredential,
+  canonicalizeManagedQuotaProviderId,
+  deleteManagedQuotaCredential,
+  getManagedQuotaCredentialStatus,
+  importCursorManagedCredential,
+  readManagedQuotaCredential,
+  writeManagedQuotaCredential,
+  type CursorDashboardCredential,
+  type CursorOAuthCredential,
+  type ManagedQuotaCredential,
+  type OllamaCloudCredential,
+  type OpenCodeGoCredential,
+} from './quotaCredentials';
 import { getSessionActivitySnapshot } from './sessionActivityWatcher';
 import type { BridgeContext, BridgeResponse } from './bridge';
 import {
@@ -21,6 +44,7 @@ import {
   CURSOR_PROVIDER_ID,
   saveCursorSdkAuth,
 } from '@openchamber/cursor-sdk-runtime';
+import { runClaudeCodeAuthStatus } from './claudeAuthStatus';
 
 type BridgeMessageInput = {
   id: string;
@@ -50,8 +74,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const ZEN_MODELS_URL = 'https://opencode.ai/zen/v1/models';
 const ZEN_MODELS_CACHE_TTL_MS = 5 * 60 * 1000;
-const CLAUDE_AUTH_CHECK_TIMEOUT_MS = 25000;
-const CLAUDE_AUTH_CHECK_PROMPT = 'Reply with exactly: OK';
 const CURSOR_ACP_PROVIDER_ID = 'cursor-acp';
 const CURSOR_USAGE_TOKEN_MAX_LENGTH = 16_384;
 const OPENCODE_GO_PROVIDER_ID = 'opencode-go';
@@ -122,50 +144,6 @@ const cursorSdkRuntime = createCursorSdkRuntime({
 });
 
 export const getVsCodeCursorSdkRuntime = () => cursorSdkRuntime;
-
-const runClaudeCliAuthCheck = () => new Promise<{ ok: boolean; error?: string }>((resolve) => {
-  let settled = false;
-  let stderr = '';
-  let timer: NodeJS.Timeout | null = null;
-  const finish = (result: { ok: boolean; error?: string }) => {
-    if (settled) return;
-    settled = true;
-    if (timer) clearTimeout(timer);
-    resolve(result);
-  };
-
-  const child = spawn(process.env.CLAUDE_CODE_CLI || 'claude', ['-p', CLAUDE_AUTH_CHECK_PROMPT, '--output-format', 'text'], {
-    env: process.env,
-    stdio: ['ignore', 'ignore', 'pipe'],
-  });
-
-  timer = setTimeout(() => {
-    child.kill?.('SIGTERM');
-    finish({ ok: false, error: 'Timed out while checking Claude OAuth.' });
-  }, CLAUDE_AUTH_CHECK_TIMEOUT_MS);
-
-  child.stderr?.on?.('data', (chunk) => {
-    stderr += String(chunk);
-    if (stderr.length > 2000) stderr = stderr.slice(-2000);
-  });
-
-  child.on?.('error', (error: NodeJS.ErrnoException) => {
-    finish({
-      ok: false,
-      error: error.code === 'ENOENT'
-        ? 'Claude CLI was not found on PATH.'
-        : error.message || 'Failed to check Claude OAuth with the Claude CLI.',
-    });
-  });
-
-  child.on?.('close', (code) => {
-    if (code === 0) {
-      finish({ ok: true });
-      return;
-    }
-    finish({ ok: false, error: stderr.trim() || `Claude CLI exited with code ${code}.` });
-  });
-});
 
 const getOpenChamberConfigDir = (): string => {
   if (process.platform === 'win32') {
@@ -283,6 +261,137 @@ const readOpenCodeGoUsageAuthStatus = () => {
     configured: Boolean(workspaceId && authCookie),
     workspaceId,
   };
+};
+
+type QuotaCredentialResponse = {
+  status: number;
+  body: Record<string, unknown>;
+};
+
+const quotaCredentialError = (
+  code: 'UNSUPPORTED_PROVIDER' | 'INVALID_CREDENTIAL' | 'NOT_CONFIGURED' | 'IMPORT_UNAVAILABLE' | 'PAYLOAD_TOO_LARGE',
+  status: number,
+): QuotaCredentialResponse => ({
+  status,
+  body: {
+    code,
+    error: {
+      UNSUPPORTED_PROVIDER: 'Unsupported credential provider',
+      INVALID_CREDENTIAL: 'Credential validation failed',
+      NOT_CONFIGURED: 'Managed credential is not configured',
+      IMPORT_UNAVAILABLE: 'Credential import is unavailable',
+      PAYLOAD_TOO_LARGE: 'Credential payload is too large',
+    }[code],
+  },
+});
+
+const getManagedQuotaEffectiveSource = (providerId: string) => {
+  if (providerId === 'opencode-go') return resolveOpenCodeGoCredentials().source;
+  if (providerId === 'ollama-cloud') return resolveOllamaCloudCredential().source;
+  return resolveCursorQuotaCredential().source;
+};
+
+const getSafeManagedQuotaStatus = (providerId: string) => ({
+  ...getManagedQuotaCredentialStatus(providerId),
+  effectiveSource: getManagedQuotaEffectiveSource(providerId) ?? null,
+});
+
+const validateManagedQuotaCredential = async (
+  providerId: string,
+  credential: ManagedQuotaCredential,
+): Promise<ManagedQuotaCredential> => {
+  const record = asObject(credential) ?? {};
+  if (providerId === 'opencode-go') {
+    const normalized: OpenCodeGoCredential = {
+      workspaceId: String(record.workspaceId ?? ''),
+      authCookie: String(record.authCookie ?? ''),
+    };
+    await validateOpenCodeGoQuotaCredential(normalized);
+    return normalized;
+  }
+  if (providerId === 'ollama-cloud') {
+    const normalized: OllamaCloudCredential = { cookie: String(record.cookie ?? '') };
+    await validateOllamaCloudQuotaCredential(normalized);
+    return normalized;
+  }
+  const normalized: CursorDashboardCredential | CursorOAuthCredential = typeof record.sessionToken === 'string'
+    ? { sessionToken: record.sessionToken }
+    : {
+        ...(typeof record.accessToken === 'string' ? { accessToken: record.accessToken } : {}),
+        ...(typeof record.refreshToken === 'string' ? { refreshToken: record.refreshToken } : {}),
+      };
+  return validateCursorQuotaCredential(normalized);
+};
+
+const handleQuotaCredentialRequest = async (payload: unknown): Promise<QuotaCredentialResponse> => {
+  const request = asObject(payload) ?? {};
+  const method = typeof request.method === 'string' ? request.method.toUpperCase() : 'GET';
+  const action = typeof request.action === 'string' ? request.action : '';
+  const body = request.body;
+  let providerId: string;
+  try {
+    providerId = canonicalizeManagedQuotaProviderId(request.providerId);
+  } catch {
+    return quotaCredentialError('UNSUPPORTED_PROVIDER', 404);
+  }
+
+  if (method === 'GET' && !action) {
+    return { status: 200, body: getSafeManagedQuotaStatus(providerId) };
+  }
+
+  let serializedBody = '';
+  try {
+    serializedBody = body === undefined ? '' : JSON.stringify(body);
+  } catch {
+    return quotaCredentialError('INVALID_CREDENTIAL', 400);
+  }
+  if (Buffer.byteLength(serializedBody, 'utf8') > MAX_QUOTA_CREDENTIAL_PAYLOAD_BYTES) {
+    return quotaCredentialError('PAYLOAD_TOO_LARGE', 413);
+  }
+
+  if (method === 'PUT' && !action) {
+    try {
+      const { credential } = assertManagedQuotaCredential(providerId, body);
+      const validated = await validateManagedQuotaCredential(providerId, credential);
+      writeManagedQuotaCredential(providerId, validated);
+      return { status: 200, body: getSafeManagedQuotaStatus(providerId) };
+    } catch {
+      return quotaCredentialError('INVALID_CREDENTIAL', 400);
+    }
+  }
+
+  if (method === 'POST' && action === 'validate') {
+    try {
+      const hasBody = isRecord(body) && Object.keys(body).length > 0;
+      const credential = hasBody
+        ? assertManagedQuotaCredential(providerId, body).credential
+        : readManagedQuotaCredential(providerId);
+      if (!credential) return quotaCredentialError('NOT_CONFIGURED', 404);
+      await validateManagedQuotaCredential(providerId, credential);
+      return { status: 200, body: { valid: true } };
+    } catch {
+      return quotaCredentialError('INVALID_CREDENTIAL', 400);
+    }
+  }
+
+  if (method === 'POST' && action === 'import') {
+    if (providerId !== 'cursor-acp') return quotaCredentialError('IMPORT_UNAVAILABLE', 404);
+    try {
+      const imported = importCursorManagedCredential();
+      const validated = await validateManagedQuotaCredential(providerId, imported);
+      writeManagedQuotaCredential(providerId, validated);
+      return { status: 200, body: getSafeManagedQuotaStatus(providerId) };
+    } catch {
+      return quotaCredentialError('IMPORT_UNAVAILABLE', 400);
+    }
+  }
+
+  if (method === 'DELETE' && !action) {
+    deleteManagedQuotaCredential(providerId);
+    return { status: 200, body: getSafeManagedQuotaStatus(providerId) };
+  }
+
+  return quotaCredentialError('INVALID_CREDENTIAL', 400);
 };
 
 const ensureVirtualDiffProviderRegistered = (ctx?: BridgeContext): void => {
@@ -724,15 +833,49 @@ export async function handleSystemBridgeMessage(
       }
     }
 
+    case 'api:provider/anthropic/claude-code-status': {
+      const authCheck = await runClaudeCodeAuthStatus();
+      const auth = authCheck.auth ?? null;
+      const unavailable = !authCheck.ok && authCheck.code === 'claude_cli_unavailable';
+      return {
+        id,
+        type,
+        success: true,
+        data: {
+          installed: !unavailable,
+          path: typeof process.env.CLAUDE_CODE_CLI === 'string' ? process.env.CLAUDE_CODE_CLI : null,
+          loggedIn: authCheck.ok,
+          authStatus: authCheck.ok
+            ? 'authenticated'
+            : unavailable
+              ? 'unavailable'
+              : authCheck.code === 'claude_not_authenticated'
+                ? 'signed_out'
+                : 'error',
+          ...(auth?.authMethod ? { authMethod: auth.authMethod } : {}),
+          ...(auth?.apiProvider ? { apiProvider: auth.apiProvider } : {}),
+          ...(auth?.subscriptionType ? { subscriptionType: auth.subscriptionType } : {}),
+          ...(!authCheck.ok && authCheck.code !== 'claude_not_authenticated' && !unavailable
+            ? { error: authCheck.error, errorCode: authCheck.code }
+            : {}),
+        },
+      };
+    }
+
     case 'api:provider/anthropic/check-oauth': {
       const { directory } = (payload || {}) as { directory?: string };
       const workingDirectory = typeof directory === 'string' && directory.trim().length > 0
         ? directory.trim()
         : ctx?.manager?.getWorkingDirectory();
       try {
-        const authCheck = await runClaudeCliAuthCheck();
+        const authCheck = await runClaudeCodeAuthStatus();
         if (!authCheck.ok) {
-          return { id, type, success: false, error: authCheck.error || 'Claude OAuth check failed.' };
+          return {
+            id,
+            type,
+            success: false,
+            error: authCheck.error || 'Claude Code authentication check failed.',
+          };
         }
 
         const result = ensureAnthropicOAuthProviderConfig({ workingDirectory });
@@ -750,6 +893,7 @@ export async function handleSystemBridgeMessage(
             path: result.path,
             requiresReload: result.changed,
             reloadDelayMs: result.changed ? deps.clientReloadDelayMs : undefined,
+            auth: authCheck.auth,
           },
         };
       } catch (error) {
@@ -963,6 +1107,24 @@ export async function handleSystemBridgeMessage(
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         return { id, type, success: false, error: errorMessage };
+      }
+    }
+
+    case 'api:quota:credentials': {
+      try {
+        return {
+          id,
+          type,
+          success: true,
+          data: await handleQuotaCredentialRequest(payload),
+        };
+      } catch {
+        return {
+          id,
+          type,
+          success: true,
+          data: quotaCredentialError('INVALID_CREDENTIAL', 400),
+        };
       }
     }
 

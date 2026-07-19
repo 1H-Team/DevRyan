@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import express from 'express';
 import request from '../../test-supertest.js';
@@ -368,5 +371,610 @@ describe('harness preflight', () => {
         summary: 'Harness preflight failed',
       }),
     }));
+  });
+
+  it('rejects incomplete model selectors before running preflight diagnostics', async () => {
+    const app = express();
+    app.use(express.json());
+    let runCount = 0;
+    registerHarnessPreflightRoute(app, {
+      run: async () => {
+        runCount += 1;
+        return { ok: true };
+      },
+    });
+
+    const getResponse = await request(app)
+      .get('/api/diagnostics/harness/preflight')
+      .query({ directory: '/repo', providerID: 'openai' });
+    const postResponse = await request(app)
+      .post('/api/diagnostics/harness/preflight')
+      .send({ directory: '/repo', modelID: 'gpt-5.6' });
+
+    expect(getResponse.status).toBe(400);
+    expect(postResponse.status).toBe(400);
+    expect(getResponse.body.error).toEqual(expect.objectContaining({
+      kind: 'invalidModelSelector',
+    }));
+    expect(postResponse.body.error).toEqual(expect.objectContaining({
+      kind: 'invalidModelSelector',
+    }));
+    expect(runCount).toBe(0);
+  });
+
+  it('passes complete GET and POST model selectors to preflight diagnostics', async () => {
+    const app = express();
+    app.use(express.json());
+    const contexts = [];
+    registerHarnessPreflightRoute(app, {
+      run: async (context) => {
+        contexts.push(context);
+        return { ok: true, context };
+      },
+    });
+
+    await request(app)
+      .get('/api/diagnostics/harness/preflight')
+      .query({ directory: '/get-repo', providerID: 'openai', modelID: 'gpt-5.6' })
+      .expect(200);
+    await request(app)
+      .post('/api/diagnostics/harness/preflight')
+      .send({ directory: '/post-repo', providerID: 'anthropic', modelID: 'claude-opus-4-6' })
+      .expect(200);
+
+    expect(contexts).toEqual([
+      { directory: '/get-repo', providerID: 'openai', modelID: 'gpt-5.6' },
+      { directory: '/post-repo', providerID: 'anthropic', modelID: 'claude-opus-4-6' },
+    ]);
+  });
+
+  it('loads IDs-only runtime diagnostics lazily and preserves duplicate tool IDs', async () => {
+    const urls = [];
+    const toolIds = ['read', 'read', 'é_tool'];
+    const preflight = createHarnessPreflight({
+      getAgents: () => [],
+      getSkills: () => [],
+      getHiddenSkills: () => [],
+      getStaleOverrides: () => [],
+      getPackagedAgents: () => [],
+      buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
+      getOpenCodeAuthHeaders: () => ({ authorization: 'Basic test' }),
+      fetchImpl: async (url) => {
+        urls.push(String(url));
+        return new Response(JSON.stringify(toolIds), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+    });
+
+    expect(urls).toEqual([]);
+
+    const result = await preflight.run({ directory: '/repo' });
+
+    expect(urls).toHaveLength(1);
+    expect(new URL(urls[0]).pathname).toBe('/experimental/tool/ids');
+    expect(new URL(urls[0]).searchParams.get('directory')).toBe('/repo');
+    expect(result.toolManifest.toolIds).toEqual(toolIds);
+    expect(result.toolManifest.tools.map((tool) => tool.id)).toEqual(toolIds);
+    expect(result.contextBudget.tools).toEqual(expect.objectContaining({
+      label: 'runtimeCatalogUpperBound',
+      mode: 'idsOnly',
+      duplicatesRetained: true,
+      ids: expect.objectContaining({
+        availability: 'available',
+        itemCount: 3,
+        byteCount: Buffer.byteLength(toolIds.join(''), 'utf8'),
+        duplicateIds: [{ id: 'read', occurrences: 2 }],
+      }),
+      descriptions: expect.objectContaining({ availability: 'notRequested', byteCount: null }),
+      parameters: expect.objectContaining({ availability: 'notRequested', byteCount: null }),
+    }));
+  });
+
+  it('loads the selected model catalog and reports exact description, parameter, and duplicate measurements', async () => {
+    const urls = [];
+    const toolIds = ['é_tool', 'write', 'write'];
+    const sharedSchema = { type: 'object', properties: { value: { type: 'string' } } };
+    const catalog = [
+      { id: 'é_tool', description: 'café', parameters: sharedSchema },
+      { id: 'write', description: '写入', parameters: sharedSchema },
+      { id: 'write', description: 'other', parameters: { type: 'object', properties: {} } },
+    ];
+    const preflight = createHarnessPreflight({
+      getAgents: () => [],
+      getSkills: () => [],
+      getHiddenSkills: () => [],
+      getStaleOverrides: () => [],
+      getPackagedAgents: () => [],
+      buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
+      fetchImpl: async (url) => {
+        urls.push(String(url));
+        const pathname = new URL(url).pathname;
+        const payload = pathname.endsWith('/ids') ? toolIds : catalog;
+        return new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+    });
+
+    const result = await preflight.run({
+      directory: '/repo',
+      providerID: 'openai',
+      modelID: 'gpt-5.6',
+    });
+
+    expect(urls).toHaveLength(2);
+    const catalogUrl = new URL(urls.find((url) => new URL(url).pathname === '/experimental/tool'));
+    expect(Object.fromEntries(catalogUrl.searchParams)).toEqual({
+      directory: '/repo',
+      provider: 'openai',
+      model: 'gpt-5.6',
+    });
+    expect(result.toolManifest.tools.map((tool) => tool.id)).toEqual(['é_tool', 'write', 'write']);
+    expect(result.contextBudget.tools).toEqual(expect.objectContaining({
+      label: 'runtimeCatalogUpperBound',
+      mode: 'providerModel',
+      descriptions: {
+        availability: 'available',
+        itemCount: 3,
+        byteCount: Buffer.byteLength(catalog.map((tool) => tool.description).join(''), 'utf8'),
+      },
+      parameters: {
+        availability: 'available',
+        itemCount: 3,
+        byteCount: catalog.reduce(
+          (total, tool) => total + Buffer.byteLength(JSON.stringify(tool.parameters), 'utf8'),
+          0,
+        ),
+      },
+      duplicateCatalogIds: [{ id: 'write', occurrences: 2 }],
+      duplicateSchemas: [expect.objectContaining({
+        occurrences: 2,
+        toolIds: ['é_tool', 'write'],
+        fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+      })],
+    }));
+  });
+
+  it('reports an unavailable IDs measurement instead of zero bytes when OpenCode rejects the request', async () => {
+    const preflight = createHarnessPreflight({
+      getAgents: () => [],
+      getSkills: () => [],
+      getHiddenSkills: () => [],
+      getStaleOverrides: () => [],
+      getPackagedAgents: () => [],
+      buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
+      fetchImpl: async () => new Response(null, { status: 503 }),
+    });
+
+    const result = await preflight.run({ directory: '/repo' });
+
+    expect(result.ok).toBe(true);
+    expect(result.toolManifest.availability.ids).toEqual({
+      availability: 'unavailable',
+      error: { kind: 'httpError', httpStatus: 503 },
+    });
+    expect(result.contextBudget.tools.ids).toEqual({
+      availability: 'unavailable',
+      itemCount: null,
+      byteCount: null,
+      duplicateIds: null,
+      error: { kind: 'httpError', httpStatus: 503 },
+    });
+    expect(result.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ruleId: 'runtime-tool-ids-unavailable' }),
+    ]));
+    expect(result.harness.status).toBe('warning');
+  });
+
+  it('preserves available IDs while marking a rejected model catalog unavailable', async () => {
+    const preflight = createHarnessPreflight({
+      getAgents: () => [],
+      getSkills: () => [],
+      getHiddenSkills: () => [],
+      getStaleOverrides: () => [],
+      getPackagedAgents: () => [],
+      buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
+      fetchImpl: async (url) => (
+        new URL(url).pathname.endsWith('/ids')
+          ? new Response(JSON.stringify(['read']), {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            })
+          : new Response(null, { status: 502 })
+      ),
+    });
+
+    const result = await preflight.run({
+      directory: '/repo',
+      providerID: 'openai',
+      modelID: 'gpt-5.6',
+    });
+
+    expect(result.contextBudget.tools.ids).toEqual(expect.objectContaining({
+      availability: 'available',
+      itemCount: 1,
+      byteCount: 4,
+    }));
+    expect(result.contextBudget.tools.descriptions).toEqual({
+      availability: 'unavailable',
+      itemCount: null,
+      byteCount: null,
+      error: { kind: 'httpError', httpStatus: 502 },
+    });
+    expect(result.contextBudget.tools.parameters).toEqual({
+      availability: 'unavailable',
+      itemCount: null,
+      byteCount: null,
+      error: { kind: 'httpError', httpStatus: 502 },
+    });
+    expect(result.contextBudget.tools.duplicateCatalogIds).toBe(null);
+    expect(result.contextBudget.tools.duplicateSchemas).toBe(null);
+    expect(result.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ruleId: 'runtime-tool-catalog-unavailable' }),
+    ]));
+  });
+
+  it('reports a missing live tool reader as unavailable instead of an empty successful catalog', async () => {
+    const preflight = createHarnessPreflight({
+      getAgents: () => [],
+      getSkills: () => [],
+      getHiddenSkills: () => [],
+      getStaleOverrides: () => [],
+      getPackagedAgents: () => [],
+    });
+
+    const result = await preflight.run({ directory: '/repo' });
+
+    expect(result.toolManifest.availability).toEqual({
+      ids: {
+        availability: 'unavailable',
+        error: { kind: 'sourceUnavailable' },
+      },
+      catalog: { availability: 'notRequested' },
+    });
+    expect(result.contextBudget.tools.ids).toEqual({
+      availability: 'unavailable',
+      itemCount: null,
+      byteCount: null,
+      duplicateIds: null,
+      error: { kind: 'sourceUnavailable' },
+    });
+    expect(result.contextBudget.tools.duplicateCatalogIds).toBe(null);
+    expect(result.contextBudget.tools.duplicateSchemas).toBe(null);
+    expect(result.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ruleId: 'runtime-tool-ids-unavailable' }),
+    ]));
+  });
+
+  it('bounds a never-settling IDs request and returns a redacted timeout measurement', async () => {
+    const deadline = Symbol('deadline');
+    let requestSignal = null;
+    const preflight = createHarnessPreflight({
+      getAgents: () => [],
+      getSkills: () => [],
+      getHiddenSkills: () => [],
+      getStaleOverrides: () => [],
+      getPackagedAgents: () => [],
+      buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
+      getOpenCodeAuthHeaders: () => ({ authorization: 'Bearer secret-timeout-token' }),
+      toolRequestTimeoutMs: 5,
+      fetchImpl: async (_url, options = {}) => {
+        requestSignal = options.signal || null;
+        return new Promise((resolve, reject) => {
+          if (!options.signal) return;
+          options.signal.addEventListener('abort', () => {
+            reject(new DOMException('aborted', 'AbortError'));
+          }, { once: true });
+        });
+      },
+    });
+
+    const result = await Promise.race([
+      preflight.run({ directory: '/repo' }),
+      new Promise((resolve) => setTimeout(() => resolve(deadline), 100)),
+    ]);
+
+    expect(result).not.toBe(deadline);
+    expect(requestSignal).toBeInstanceOf(AbortSignal);
+    expect(requestSignal.aborted).toBe(true);
+    expect(result.toolManifest.availability.ids).toEqual({
+      availability: 'unavailable',
+      error: { kind: 'timeout' },
+    });
+    expect(result.contextBudget.tools.ids).toEqual(expect.objectContaining({
+      availability: 'unavailable',
+      itemCount: null,
+      byteCount: null,
+      duplicateIds: null,
+      error: { kind: 'timeout' },
+    }));
+    expect(JSON.stringify(result)).not.toContain('secret-timeout-token');
+    expect(JSON.stringify(result)).not.toContain('opencode.test');
+  });
+
+  it('times out only the never-settling full catalog endpoint while preserving IDs', async () => {
+    const deadline = Symbol('deadline');
+    const signals = new Map();
+    const preflight = createHarnessPreflight({
+      getAgents: () => [],
+      getSkills: () => [],
+      getHiddenSkills: () => [],
+      getStaleOverrides: () => [],
+      getPackagedAgents: () => [],
+      buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
+      toolRequestTimeoutMs: 5,
+      fetchImpl: async (url, options = {}) => {
+        const pathname = new URL(url).pathname;
+        signals.set(pathname, options.signal || null);
+        if (pathname.endsWith('/ids')) {
+          return new Response(JSON.stringify(['read']), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        return new Promise((resolve, reject) => {
+          if (!options.signal) return;
+          options.signal.addEventListener('abort', () => {
+            reject(new DOMException('aborted', 'AbortError'));
+          }, { once: true });
+        });
+      },
+    });
+
+    const result = await Promise.race([
+      preflight.run({
+        directory: '/repo',
+        providerID: 'openai',
+        modelID: 'gpt-5.6',
+      }),
+      new Promise((resolve) => setTimeout(() => resolve(deadline), 100)),
+    ]);
+
+    expect(result).not.toBe(deadline);
+    expect(signals.get('/experimental/tool/ids')).toBeInstanceOf(AbortSignal);
+    expect(signals.get('/experimental/tool/ids').aborted).toBe(false);
+    expect(signals.get('/experimental/tool')).toBeInstanceOf(AbortSignal);
+    expect(signals.get('/experimental/tool').aborted).toBe(true);
+    expect(result.contextBudget.tools.ids).toEqual(expect.objectContaining({
+      availability: 'available',
+      itemCount: 1,
+      byteCount: 4,
+      duplicateIds: [],
+    }));
+    expect(result.toolManifest.availability.catalog).toEqual({
+      availability: 'unavailable',
+      error: { kind: 'timeout' },
+    });
+    expect(result.contextBudget.tools.descriptions).toEqual(expect.objectContaining({
+      availability: 'unavailable',
+      itemCount: null,
+      byteCount: null,
+      error: { kind: 'timeout' },
+    }));
+    expect(result.contextBudget.tools.duplicateCatalogIds).toBe(null);
+    expect(result.contextBudget.tools.duplicateSchemas).toBe(null);
+  });
+
+  it('counts packaged prompts and visible skill metadata and bodies without returning their content', async () => {
+    const prompt = 'private prompt é';
+    const visibleBody = 'private skill body 步骤';
+    const readSkills = [];
+    const preflight = createHarnessPreflight({
+      getAgents: () => [],
+      getSkills: () => [
+        {
+          name: 'visible-é',
+          description: 'résumé helper',
+          path: '/skills/visible/SKILL.md',
+          parseOk: true,
+        },
+        {
+          name: 'hidden',
+          description: 'must stay hidden',
+          path: '/skills/hidden/SKILL.md',
+          parseOk: true,
+        },
+      ],
+      getHiddenSkills: () => [{ name: 'hidden', path: '/skills/hidden/SKILL.md' }],
+      getStaleOverrides: () => [],
+      getPackagedAgents: () => [{ name: 'builder', path: '/agents/builder.md', content: prompt }],
+      getToolManifest: () => ({
+        tools: [],
+        toolIds: [],
+        aliases: {},
+        sourceRuntime: 'server',
+        selector: { mode: 'idsOnly', providerID: null, modelID: null },
+        availability: {
+          ids: { availability: 'available' },
+          catalog: { availability: 'notRequested' },
+        },
+      }),
+      readSkillBody: async (skill) => {
+        readSkills.push(skill.name);
+        return visibleBody;
+      },
+    });
+
+    const result = await preflight.run({ directory: '/repo' });
+
+    expect(readSkills).toEqual(['visible-é']);
+    expect(result.contextBudget.packagedAgentPrompts).toEqual({
+      availability: 'available',
+      itemCount: 1,
+      byteCount: Buffer.byteLength(prompt, 'utf8'),
+      items: [{
+        name: 'builder',
+        path: '/agents/builder.md',
+        byteCount: Buffer.byteLength(prompt, 'utf8'),
+        source: 'contentFallback',
+      }],
+    });
+    expect(result.contextBudget.visibleSkillCatalogMetadata).toEqual({
+      availability: 'available',
+      itemCount: 1,
+      byteCount: Buffer.byteLength('visible-érésumé helper', 'utf8'),
+      items: [{
+        name: 'visible-é',
+        path: '/skills/visible/SKILL.md',
+        byteCount: Buffer.byteLength('visible-érésumé helper', 'utf8'),
+      }],
+    });
+    expect(result.contextBudget.visibleOnDemandSkillBodies).toEqual({
+      availability: 'available',
+      itemCount: 1,
+      byteCount: Buffer.byteLength(visibleBody, 'utf8'),
+      items: [{
+        name: 'visible-é',
+        path: '/skills/visible/SKILL.md',
+        availability: 'available',
+        byteCount: Buffer.byteLength(visibleBody, 'utf8'),
+      }],
+    });
+    expect(JSON.stringify(result)).not.toContain(prompt);
+    expect(JSON.stringify(result)).not.toContain(visibleBody);
+    expect(JSON.stringify(result)).not.toContain('must stay hidden');
+  });
+
+  it('measures the parsed packaged prompt body instead of production full-file content', async () => {
+    const prompt = 'authoritative prompt é';
+    const content = `---\ndescription: private frontmatter\n---\n${prompt}`;
+    const preflight = createHarnessPreflight({
+      getAgents: () => [],
+      getSkills: () => [],
+      getHiddenSkills: () => [],
+      getStaleOverrides: () => [],
+      getPackagedAgents: () => [{
+        name: 'builder',
+        path: '/agents/builder.md',
+        content,
+        prompt,
+      }],
+      getToolManifest: () => ({
+        tools: [],
+        toolIds: [],
+        aliases: {},
+        sourceRuntime: 'server',
+        selector: { mode: 'idsOnly', providerID: null, modelID: null },
+        availability: {
+          ids: { availability: 'available' },
+          catalog: { availability: 'notRequested' },
+        },
+      }),
+    });
+
+    const result = await preflight.run({ directory: '/repo' });
+
+    expect(result.contextBudget.packagedAgentPrompts).toEqual({
+      availability: 'available',
+      itemCount: 1,
+      byteCount: Buffer.byteLength(prompt, 'utf8'),
+      items: [{
+        name: 'builder',
+        path: '/agents/builder.md',
+        byteCount: Buffer.byteLength(prompt, 'utf8'),
+        source: 'prompt',
+      }],
+    });
+    expect(JSON.stringify(result)).not.toContain(prompt);
+    expect(JSON.stringify(result)).not.toContain('private frontmatter');
+  });
+
+  it('keeps a same-name skill visible when only a different path is hidden', async () => {
+    const visiblePath = '/skills/visible/SKILL.md';
+    const hiddenPath = '/skills/hidden/SKILL.md';
+    const readPaths = [];
+    const preflight = createHarnessPreflight({
+      getAgents: () => [],
+      getSkills: () => [
+        { name: 'duplicate', description: 'visible copy', path: visiblePath, parseOk: true },
+        { name: 'duplicate', description: 'hidden copy', path: hiddenPath, parseOk: true },
+      ],
+      getHiddenSkills: () => [{ name: 'duplicate', path: hiddenPath }],
+      getStaleOverrides: () => [],
+      getPackagedAgents: () => [],
+      getToolManifest: () => ({
+        tools: [],
+        toolIds: [],
+        aliases: {},
+        sourceRuntime: 'server',
+        selector: { mode: 'idsOnly', providerID: null, modelID: null },
+        availability: {
+          ids: { availability: 'available' },
+          catalog: { availability: 'notRequested' },
+        },
+      }),
+      readSkillBody: async (skill) => {
+        readPaths.push(skill.path);
+        return `body:${skill.path}`;
+      },
+    });
+
+    const result = await preflight.run({ directory: '/repo' });
+
+    expect(readPaths).toEqual([visiblePath]);
+    expect(result.contextBudget.visibleSkillCatalogMetadata.items).toEqual([
+      expect.objectContaining({ name: 'duplicate', path: visiblePath }),
+    ]);
+    expect(result.contextBudget.visibleOnDemandSkillBodies.items).toEqual([
+      expect.objectContaining({ name: 'duplicate', path: visiblePath, availability: 'available' }),
+    ]);
+  });
+
+  it('uses canonical paths so a hidden symlink suppresses its real skill target', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'harness-context-skill-'));
+    const hiddenRealDir = path.join(root, 'real', 'hidden-skill');
+    const hiddenLinkDir = path.join(root, 'linked', 'hidden-skill');
+    const visibleDir = path.join(root, 'real', 'visible-skill');
+    fs.mkdirSync(hiddenRealDir, { recursive: true });
+    fs.mkdirSync(visibleDir, { recursive: true });
+    fs.mkdirSync(path.dirname(hiddenLinkDir), { recursive: true });
+    fs.writeFileSync(path.join(hiddenRealDir, 'SKILL.md'), 'hidden body', 'utf8');
+    fs.writeFileSync(path.join(visibleDir, 'SKILL.md'), 'visible body', 'utf8');
+    fs.symlinkSync(hiddenRealDir, hiddenLinkDir, 'dir');
+
+    const hiddenRealPath = path.join(hiddenRealDir, 'SKILL.md');
+    const hiddenLinkPath = path.join(hiddenLinkDir, 'SKILL.md');
+    const visiblePath = path.join(visibleDir, 'SKILL.md');
+    const readPaths = [];
+
+    try {
+      const preflight = createHarnessPreflight({
+        getAgents: () => [],
+        getSkills: () => [
+          { name: 'hidden-target', description: 'hidden', path: hiddenRealPath, parseOk: true },
+          { name: 'visible-target', description: 'visible', path: visiblePath, parseOk: true },
+        ],
+        getHiddenSkills: () => [{ name: 'different-name', path: hiddenLinkPath }],
+        getStaleOverrides: () => [],
+        getPackagedAgents: () => [],
+        getToolManifest: () => ({
+          tools: [],
+          toolIds: [],
+          aliases: {},
+          sourceRuntime: 'server',
+          selector: { mode: 'idsOnly', providerID: null, modelID: null },
+          availability: {
+            ids: { availability: 'available' },
+            catalog: { availability: 'notRequested' },
+          },
+        }),
+        readSkillBody: async (skill) => {
+          readPaths.push(skill.path);
+          return fs.promises.readFile(skill.path, 'utf8');
+        },
+      });
+
+      const result = await preflight.run({ directory: root });
+
+      expect(readPaths).toEqual([visiblePath]);
+      expect(result.contextBudget.visibleSkillCatalogMetadata.items.map((item) => item.path)).toEqual([
+        visiblePath,
+      ]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

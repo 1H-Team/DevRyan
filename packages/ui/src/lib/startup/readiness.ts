@@ -33,6 +33,22 @@ export interface StartupReadinessSummary {
   error?: string
 }
 
+export interface StartupRecoveryHealth {
+  openCodeRunning?: unknown
+  isOpenCodeReady?: unknown
+}
+
+export interface StartupRecoveryDependencies {
+  loadHealth: () => Promise<StartupRecoveryHealth | null>
+  restartOpenCode?: () => Promise<unknown>
+  initializeApp: () => Promise<void>
+}
+
+export interface StartupRecoveryResult {
+  restartAttempted: boolean
+  restartError: unknown | null
+}
+
 const clonePhase = (phase: StartupPhaseSnapshot): StartupPhaseSnapshot => ({
   status: phase.status,
   error: phase.error ?? null,
@@ -84,3 +100,38 @@ export const shouldShowStartupReadinessScreen = (
   summary: StartupReadinessSummary,
   hasCompletedStartup: boolean,
 ): boolean => !hasCompletedStartup && !summary.ready
+
+export const shouldRestartOpenCodeForStartupRecovery = (
+  health: StartupRecoveryHealth | null,
+): boolean => health?.openCodeRunning === false || health?.isOpenCodeReady === false
+
+export const recoverStartupInitialization = async (
+  dependencies: StartupRecoveryDependencies,
+): Promise<StartupRecoveryResult> => {
+  let health: StartupRecoveryHealth | null = null
+  try {
+    health = await dependencies.loadHealth()
+  } catch {
+    // If DevRyan's health route is unavailable, retain the existing client-only retry.
+  }
+
+  const restartAttempted = Boolean(
+    dependencies.restartOpenCode
+    && shouldRestartOpenCodeForStartupRecovery(health),
+  )
+  let restartError: unknown | null = null
+
+  if (restartAttempted) {
+    try {
+      await dependencies.restartOpenCode?.()
+    } catch (error) {
+      restartError = error
+    }
+  }
+
+  // Always retry client initialization so the recovery screen refreshes its
+  // authoritative error even when the managed runtime restart fails.
+  await dependencies.initializeApp()
+
+  return { restartAttempted, restartError }
+}

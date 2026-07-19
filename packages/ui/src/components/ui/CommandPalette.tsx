@@ -45,12 +45,13 @@ import { createWorktreeSession } from '@/lib/worktreeSessionCreator';
 import { formatShortcutForDisplay, getEffectiveShortcutCombo } from '@/lib/shortcuts';
 import { canUseElectronDesktopIPC, invokeDesktop, isDesktopShell, isVSCodeRuntime, isWebRuntime } from '@/lib/desktop';
 import { SETTINGS_PAGE_METADATA, type SettingsRuntimeContext } from '@/lib/settings/metadata';
-import { getSettingsNavIcon } from '@/components/views/SettingsView';
+import { getSettingsNavIcon } from '@/lib/settings/navigation-icons';
 import { scoreByFuzzyQuery } from '@/lib/search/fuzzySearch';
 import { truncatePathMiddle } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { useProjectsStore } from '@/stores/useProjectsStore';
+import { filterUserVisibleSessions } from '@/lib/sessionVisibility';
 
 type CommandEntry = {
   id: string;
@@ -95,6 +96,10 @@ export const CommandPalette: React.FC = () => {
   const setCurrentSession = useSessionUIStore((s) => s.setCurrentSession);
 
   const activeSessions = useGlobalSessionsStore((s) => s.activeSessions);
+  const navigableActiveSessions = React.useMemo(
+    () => filterUserVisibleSessions(activeSessions),
+    [activeSessions],
+  );
   const currentDirectory = useDirectoryStore((s) => s.currentDirectory);
   const activeProject = useProjectsStore((s) => s.getActiveProject());
   const effectiveDirectory = useEffectiveDirectory();
@@ -127,7 +132,7 @@ export const CommandPalette: React.FC = () => {
     if (!isCommandPaletteOpen || !gitApi) return;
     const handle = setTimeout(() => {
       const seen = new Set<string>();
-      for (const session of activeSessions) {
+      for (const session of navigableActiveSessions) {
         const dir = resolveGlobalSessionDirectory(session);
         if (!dir || seen.has(dir)) continue;
         seen.add(dir);
@@ -135,7 +140,7 @@ export const CommandPalette: React.FC = () => {
       }
     }, 0);
     return () => clearTimeout(handle);
-  }, [isCommandPaletteOpen, activeSessions, gitApi, ensureGitStatus]);
+  }, [isCommandPaletteOpen, navigableActiveSessions, gitApi, ensureGitStatus]);
 
   const close = React.useCallback(() => setCommandPaletteOpen(false), [setCommandPaletteOpen]);
   const run = React.useCallback(
@@ -305,8 +310,8 @@ export const CommandPalette: React.FC = () => {
     const getUpdated = (s: Session) =>
       (typeof s.time?.updated === 'number' ? s.time.updated : 0) ||
       (typeof s.time?.created === 'number' ? s.time.created : 0);
-    return [...activeSessions].sort((a, b) => getUpdated(b) - getUpdated(a));
-  }, [activeSessions]);
+    return [...navigableActiveSessions].sort((a, b) => getUpdated(b) - getUpdated(a));
+  }, [navigableActiveSessions]);
 
   const allBranches = useGitAllBranches();
   const worktreeMetadata = useSessionUIStore((s) => s.worktreeMetadata);

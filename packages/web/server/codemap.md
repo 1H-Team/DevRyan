@@ -9,12 +9,12 @@ Primary backend runtime for DevRyan web/desktop: starts Express, wires OpenCode 
 - **Protocol-aware transport**: explicit handling for SSE, WS, proxy timeouts, and compression exclusions for streaming routes.
 - **Local cache policy**: `lib/http-cache-policy.js` marks dynamic `/api/*` responses as `no-store` so Electron/Chromium profiles do not persist session/message/git/preview API payloads.
 - **Cross-surface support**: same backend serves standalone web and embedded desktop runtime.
-- **Cursor SDK split**: `index.js` composes `@openchamber/cursor-sdk-runtime`; `lib/opencode/routes.js` intercepts `cursor-acp` prompt sends and virtual provider discovery while quota routes keep using the existing dashboard usage token.
+- **Cursor SDK split**: `index.js` composes `@openchamber/cursor-sdk-runtime`; `lib/opencode/routes.js` intercepts `cursor-acp` prompt sends and virtual provider discovery, while quota routes independently resolve environment/token-file, managed OAuth/dashboard, and legacy dashboard credentials.
 - **Question route ownership**: `lib/opencode/question-routes.js` is registered before the generic OpenCode proxy. It merges OpenCode and Cursor pending cards, resolves Cursor replies/Skip locally, translates verified OpenCode Skip requests into ordered best-judgment replies so the active turn resumes, forwards unknown IDs unchanged, and marks Cursor-only partial snapshots for bounded UI recovery.
 - **Cursor title ownership**: `lib/opencode/cursor-session-title-runtime.js` schedules guarded, asynchronous Cursor Auto titles after intercepted prompts and preserves manual session renames.
 - **Standard-provider title ownership**: `lib/opencode/standard-session-title-runtime.js` schedules guarded, asynchronous Zen summaries after successful proxied prompts; it captures the session identity before the generic proxy clears Express route params and preserves explicit/manual session names.
 - **Loopback-safe route tests**: `test-supertest.js` targets the address family actually bound by each ephemeral test server, preventing unrelated IPv4 listeners from receiving requests when Node selects an IPv6 port with the same number.
-- **Managed orchestration owner**: `lib/orchestration/` owns one durable three-slot scheduler for web and in-process Electron, an authenticated private OpenCode bridge, safe UI routes/events, and deterministic shutdown. See `lib/orchestration/DOCUMENTATION.md`.
+- **Managed orchestration owner**: `lib/orchestration/` owns one durable, immediately admitting scheduler without an artificial concurrency cap for web and in-process Electron, an authenticated private OpenCode bridge, safe UI routes/events, and deterministic shutdown. See `lib/orchestration/DOCUMENTATION.md`.
 
 ## Flow
 1. Parse CLI/runtime options (`lib/opencode/cli-options.js`) and initialize config/state runtimes.

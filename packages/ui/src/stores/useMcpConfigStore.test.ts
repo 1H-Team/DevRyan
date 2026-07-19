@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, test } from "bun:test";
+import { opencodeClient } from "@/lib/opencode/client";
+import { useProjectsStore } from "./useProjectsStore";
 import { useMcpConfigStore } from "./useMcpConfigStore";
+import { useMcpStore } from "./useMcpStore";
 
 const originalFetch = globalThis.fetch;
 
@@ -16,11 +19,20 @@ const mcpResponse = (name: string) => Response.json([
 describe("useMcpConfigStore", () => {
   beforeEach(() => {
     globalThis.fetch = originalFetch;
+    opencodeClient.setDirectory(undefined);
+    useProjectsStore.setState({ projects: [], activeProjectId: null });
     useMcpConfigStore.setState({
       mcpServers: [],
       selectedMcpName: null,
       isLoading: false,
       mcpDraft: null,
+    });
+    useMcpStore.setState({
+      byDirectory: {},
+      diagnosticsByDirectory: {},
+      issueKindsByDirectory: {},
+      loadingKeys: {},
+      lastErrorKeys: {},
     });
   });
 
@@ -88,5 +100,29 @@ describe("useMcpConfigStore", () => {
       `PATCH /api/config/mcp/linear?directory=${encodeURIComponent("/repo/project")} {"Content-Type":"application/json","x-opencode-directory":"/repo/project"} {"enabled":true}`,
       `GET /api/config/mcp?directory=${encodeURIComponent("/repo/project")} {"x-opencode-directory":"/repo/project"} `,
     ]);
+  });
+
+  test("clears only the deleted server's remembered issue after deletion succeeds", async () => {
+    opencodeClient.setDirectory("/repo/delete");
+    useMcpStore.setState({
+      issueKindsByDirectory: {
+        "/repo/delete": { linear: "failed", github: "needs_auth" },
+        "/repo/other": { linear: "needs_client_registration" },
+      },
+    });
+    globalThis.fetch = (async (_input, init) => {
+      if (init?.method === "DELETE") {
+        return Response.json({ success: true, requiresReload: false });
+      }
+      return Response.json([]);
+    }) as typeof fetch;
+
+    const result = await useMcpConfigStore.getState().deleteMcp("linear");
+
+    expect(result.ok).toBe(true);
+    expect(useMcpStore.getState().issueKindsByDirectory).toEqual({
+      "/repo/delete": { github: "needs_auth" },
+      "/repo/other": { linear: "needs_client_registration" },
+    });
   });
 });

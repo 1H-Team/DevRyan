@@ -7,19 +7,29 @@ import os from 'os';
 
 import { registerSkillRoutes } from './skill-routes.js';
 
-const createApp = ({ skillDir, settingsRef, discoverSkillsOverride, directoryOverride, getOpenCodePortOverride }) => {
+const createApp = ({
+  skillDir,
+  settingsRef,
+  discoverSkillsOverride,
+  directoryOverride,
+  getOpenCodePortOverride,
+  deleteSkillOverride,
+  persistSettingsOverride,
+  refreshOpenCodeAfterConfigChangeOverride,
+  isExternalOpenCodeOverride,
+}) => {
   const app = express();
   app.use(express.json());
 
   const skillPath = path.join(skillDir, 'SKILL.md');
-  const persistSettings = vi.fn(async (changes) => {
+  const persistSettings = vi.fn(persistSettingsOverride || (async (changes) => {
     settingsRef.current = {
       ...settingsRef.current,
       ...changes,
     };
     return settingsRef.current;
-  });
-  const refreshOpenCodeAfterConfigChange = vi.fn(async () => {});
+  }));
+  const refreshOpenCodeAfterConfigChange = vi.fn(refreshOpenCodeAfterConfigChangeOverride || (async () => {}));
 
   registerSkillRoutes(app, {
     fs,
@@ -33,6 +43,7 @@ const createApp = ({ skillDir, settingsRef, discoverSkillsOverride, directoryOve
     sanitizeHiddenSkills: (value) => (Array.isArray(value) ? value : []),
     isUnsafeSkillRelativePath: () => false,
     refreshOpenCodeAfterConfigChange,
+    isExternalOpenCode: isExternalOpenCodeOverride || (() => false),
     clientReloadDelayMs: 0,
     buildOpenCodeUrl: () => 'http://127.0.0.1:4096/skill',
     getOpenCodeAuthHeaders: () => ({}),
@@ -65,8 +76,8 @@ const createApp = ({ skillDir, settingsRef, discoverSkillsOverride, directoryOve
     ]),
     createSkill: vi.fn(),
     updateSkill: vi.fn(),
-    deleteSkill: vi.fn(() => {
-      throw new Error('deleteSkill should not be called for non-destructive removal');
+    deleteSkill: deleteSkillOverride || vi.fn((_name, _directory, discoveredSkill) => {
+      fs.rmSync(path.dirname(discoveredSkill.path), { recursive: true, force: true });
     }),
     readSkillSupportingFile: vi.fn(),
     writeSkillSupportingFile: vi.fn(),
@@ -518,7 +529,7 @@ describe('skill routes', () => {
     });
 
     const removed = await request(app)
-      .delete('/api/config/skills/lint-helper')
+      .post('/api/config/skills/lint-helper/hide')
       .query({ directory: tempRoot, scope: 'user', path: userSkillPath });
 
     expect(removed.status).toBe(200);
@@ -549,7 +560,7 @@ describe('skill routes', () => {
     expect(initial.status).toBe(200);
     expect(initial.body.skills.map((skill) => skill.name)).toEqual(['lint-helper']);
 
-    const removed = await request(app).delete('/api/config/skills/lint-helper').query({ directory: tempRoot });
+    const removed = await request(app).post('/api/config/skills/lint-helper/hide').query({ directory: tempRoot });
     expect(removed.status).toBe(200);
     expect(removed.body.success).toBe(true);
     expect(fs.existsSync(skillDir)).toBe(true);
@@ -584,6 +595,186 @@ describe('skill routes', () => {
     const visibleAfterRestore = await request(app).get('/api/config/skills').query({ directory: tempRoot });
     expect(visibleAfterRestore.status).toBe(200);
     expect(visibleAfterRestore.body.skills.map((skill) => skill.name)).toEqual(['lint-helper']);
+  });
+
+  it('permanently deletes only the selected same-name skill path and removes its stale hidden entry', async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const userSkillDir = path.join(tempRoot, '.agents', 'skills', 'lint-helper');
+    const projectSkillDir = path.join(tempRoot, '.opencode', 'skills', 'lint-helper');
+    const userSkillPath = path.join(userSkillDir, 'SKILL.md');
+    const projectSkillPath = path.join(projectSkillDir, 'SKILL.md');
+    fs.mkdirSync(userSkillDir, { recursive: true });
+    fs.mkdirSync(projectSkillDir, { recursive: true });
+    fs.writeFileSync(userSkillPath, '---\nname: lint-helper\n---\n', 'utf8');
+    fs.writeFileSync(projectSkillPath, '---\nname: lint-helper\n---\n', 'utf8');
+
+    const settingsRef = {
+      current: {
+        hiddenSkills: [
+          { name: 'lint-helper', path: projectSkillPath, scope: 'project', source: 'opencode' },
+          { name: 'lint-helper', path: userSkillPath, scope: 'user', source: 'agents' },
+        ],
+      },
+    };
+    const { app, persistSettings } = createApp({
+      skillDir: userSkillDir,
+      settingsRef,
+      discoverSkillsOverride: () => [
+        { name: 'lint-helper', path: userSkillPath, scope: 'user', source: 'agents' },
+        { name: 'lint-helper', path: projectSkillPath, scope: 'project', source: 'opencode' },
+      ],
+    });
+
+    const removed = await request(app)
+      .delete('/api/config/skills/lint-helper')
+      .query({ directory: tempRoot, scope: 'project', path: projectSkillPath });
+
+    expect(removed.status).toBe(200);
+    expect(removed.body.message).toContain('permanently deleted');
+    expect(fs.existsSync(projectSkillDir)).toBe(false);
+    expect(fs.existsSync(userSkillDir)).toBe(true);
+    expect(persistSettings).toHaveBeenCalledWith({
+      hiddenSkills: [
+        expect.objectContaining({ path: fs.realpathSync(userSkillPath) }),
+      ],
+    });
+    expect(removed.body).toMatchObject({
+      requiresReload: false,
+      runtimeRefreshPending: true,
+      runtimeApplied: false,
+    });
+  });
+
+  it('returns permanent deletion before the managed runtime refresh settles', async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const skillDir = path.join(tempRoot, 'lint-helper');
+    const skillPath = path.join(skillDir, 'SKILL.md');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(skillPath, '---\nname: lint-helper\n---\n', 'utf8');
+    let settleRefresh;
+    const refreshPromise = new Promise((resolve) => {
+      settleRefresh = resolve;
+    });
+    const settingsRef = { current: { hiddenSkills: [] } };
+    const { app, refreshOpenCodeAfterConfigChange } = createApp({
+      skillDir,
+      settingsRef,
+      refreshOpenCodeAfterConfigChangeOverride: () => refreshPromise,
+    });
+
+    const removed = await request(app)
+      .delete('/api/config/skills/lint-helper')
+      .query({ directory: tempRoot, path: skillPath });
+
+    expect(removed.status).toBe(200);
+    expect(fs.existsSync(skillDir)).toBe(false);
+    expect(refreshOpenCodeAfterConfigChange).toHaveBeenCalledWith('skill delete');
+    settleRefresh();
+  });
+
+  it('skips automatic refresh for external runtimes and warns after a committed deletion', async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const skillDir = path.join(tempRoot, 'lint-helper');
+    const skillPath = path.join(skillDir, 'SKILL.md');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(skillPath, '---\nname: lint-helper\n---\n', 'utf8');
+    const settingsRef = { current: { hiddenSkills: [] } };
+    const { app, refreshOpenCodeAfterConfigChange } = createApp({
+      skillDir,
+      settingsRef,
+      isExternalOpenCodeOverride: () => true,
+    });
+
+    const removed = await request(app)
+      .delete('/api/config/skills/lint-helper')
+      .query({ directory: tempRoot, path: skillPath });
+
+    expect(removed.body).toMatchObject({
+      success: true,
+      requiresReload: false,
+      runtimeRefreshPending: false,
+      runtimeApplied: false,
+    });
+    expect(removed.body.warning).toContain('external OpenCode runtime');
+    expect(refreshOpenCodeAfterConfigChange).not.toHaveBeenCalled();
+  });
+
+  it('contains a managed runtime refresh failure after deletion succeeds', async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const skillDir = path.join(tempRoot, 'lint-helper');
+    const skillPath = path.join(skillDir, 'SKILL.md');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(skillPath, '---\nname: lint-helper\n---\n', 'utf8');
+    const settingsRef = { current: { hiddenSkills: [] } };
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { app } = createApp({
+      skillDir,
+      settingsRef,
+      refreshOpenCodeAfterConfigChangeOverride: async () => {
+        throw new Error('restart failed');
+      },
+    });
+
+    const removed = await request(app)
+      .delete('/api/config/skills/lint-helper')
+      .query({ directory: tempRoot, path: skillPath });
+
+    expect(removed.status).toBe(200);
+    await vi.waitFor(() => {
+      expect(consoleError).toHaveBeenCalledWith(
+        '[API:Skill delete] OpenCode refresh failed after deletion:',
+        expect.objectContaining({ message: 'restart failed' }),
+      );
+    });
+    consoleError.mockRestore();
+  });
+
+  it('reports settings cleanup failure as a warning after the skill directory is deleted', async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const skillDir = path.join(tempRoot, 'lint-helper');
+    const skillPath = path.join(skillDir, 'SKILL.md');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(skillPath, '---\nname: lint-helper\n---\n', 'utf8');
+    const settingsRef = {
+      current: { hiddenSkills: [{ name: 'lint-helper', path: skillPath, scope: 'user', source: 'opencode' }] },
+    };
+    const { app } = createApp({
+      skillDir,
+      settingsRef,
+      persistSettingsOverride: async () => {
+        throw new Error('settings unavailable');
+      },
+    });
+
+    const removed = await request(app)
+      .delete('/api/config/skills/lint-helper')
+      .query({ directory: tempRoot, path: skillPath });
+
+    expect(removed.status).toBe(200);
+    expect(removed.body.success).toBe(true);
+    expect(removed.body.warning).toContain('settings unavailable');
+    expect(fs.existsSync(skillDir)).toBe(false);
+  });
+
+  it('rejects stale skill paths instead of falling back to a same-name skill', async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
+    const skillDir = path.join(tempRoot, 'lint-helper');
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: lint-helper\n---\n', 'utf8');
+    const settingsRef = { current: { hiddenSkills: [] } };
+    const { app, persistSettings } = createApp({ skillDir, settingsRef });
+
+    const hidden = await request(app)
+      .post('/api/config/skills/lint-helper/hide')
+      .query({ directory: tempRoot, path: path.join(tempRoot, 'stale', 'SKILL.md') });
+    const deleted = await request(app)
+      .delete('/api/config/skills/lint-helper')
+      .query({ directory: tempRoot, path: path.join(tempRoot, 'stale', 'SKILL.md') });
+
+    expect(hidden.status).toBe(404);
+    expect(deleted.status).toBe(404);
+    expect(fs.existsSync(skillDir)).toBe(true);
+    expect(persistSettings).not.toHaveBeenCalled();
   });
 
   it('keeps persisted hidden skills visible in the hidden list when discovery is delayed', async () => {
@@ -626,7 +817,7 @@ describe('skill routes', () => {
     ]);
   });
 
-  it('does not duplicate hidden skill settings when a skill is removed twice', async () => {
+  it('does not duplicate hidden skill settings when a skill is hidden twice', async () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
     const skillDir = path.join(tempRoot, 'lint-helper');
     fs.mkdirSync(skillDir, { recursive: true });
@@ -636,8 +827,8 @@ describe('skill routes', () => {
     const { app, persistSettings, skillPath } = createApp({ skillDir, settingsRef });
     const canonicalSkillPath = fs.realpathSync(skillPath);
 
-    const firstRemove = await request(app).delete('/api/config/skills/lint-helper').query({ directory: tempRoot });
-    const secondRemove = await request(app).delete('/api/config/skills/lint-helper').query({ directory: tempRoot });
+    const firstRemove = await request(app).post('/api/config/skills/lint-helper/hide').query({ directory: tempRoot });
+    const secondRemove = await request(app).post('/api/config/skills/lint-helper/hide').query({ directory: tempRoot });
 
     expect(firstRemove.status).toBe(200);
     expect(secondRemove.status).toBe(200);

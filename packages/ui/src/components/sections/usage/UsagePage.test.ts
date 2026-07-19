@@ -96,14 +96,15 @@ describe('UsagePage model rows', () => {
     expect(persistenceSource).not.toContain('result.usageShowPredValues = candidate.usageShowPredValues ??');
   });
 
-  test('Providers page contains OpenCode Go usage auth controls', () => {
+  test('Providers page uses the reusable managed quota credential controls', () => {
     const providersPageSource = repoSource('packages/ui/src/components/sections/providers/ProvidersPage.tsx');
+    const managedCredentialsSource = repoSource('packages/ui/src/components/sections/providers/ManagedQuotaCredentials.tsx');
     const messages = repoSource('packages/ui/src/lib/i18n/messages/en.settings.ts');
 
-    expect(providersPageSource).toContain('/api/provider/opencode-go/usage-auth/status');
-    expect(providersPageSource).toContain('/api/provider/opencode-go/usage-auth');
-    expect(providersPageSource).toContain('renderOpenCodeGoUsageTracking');
+    expect(providersPageSource).toContain('ManagedQuotaCredentials');
+    expect(managedCredentialsSource).toContain('/api/quota/credentials/');
+    expect(managedCredentialsSource).toContain("'opencode-go' | 'ollama-cloud' | 'cursor-acp'");
     expect(messages).toContain('settings.providers.page.auth.openCodeGoUsageTitle');
-    expect(messages).toContain('settings.providers.page.toast.openCodeGoUsageSaved');
+    expect(messages).toContain('settings.providers.page.auth.ollamaCloudUsageTitle');
   });
 });

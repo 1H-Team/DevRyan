@@ -60,6 +60,7 @@ import type {
   GitRemote,
 } from '@/lib/api/types';
 import { useI18n } from '@/lib/i18n';
+import { resolveGitHubSourceRepo } from '@/lib/github/sourceRepo';
 
 type MergeMethod = 'merge' | 'squash' | 'rebase';
 type DetectedUpstream = { owner: string; repo: string; url: string; defaultBranch?: string; defaultBranchSha?: string | null; remoteName?: string | null };
@@ -405,6 +406,12 @@ export const PullRequestSection: React.FC<{
 
   const isLoading = statusEntry?.isLoading ?? false;
   const status = statusEntry?.status ?? null;
+  const statusRepoOwner = status?.repo?.owner;
+  const statusRepoName = status?.repo?.repo;
+  const sourceRepo = React.useMemo(
+    () => resolveGitHubSourceRepo({ owner: statusRepoOwner, repo: statusRepoName }),
+    [statusRepoName, statusRepoOwner],
+  );
   const error = statusEntry?.error ?? null;
   const isInitialStatusResolved = statusEntry?.isInitialStatusResolved ?? false;
 
@@ -511,7 +518,8 @@ export const PullRequestSection: React.FC<{
   }, [useDetectedUpstream, detectedUpstream?.defaultBranch]);
 
   const pr = status?.pr ?? null;
-  const currentPrBodyHydrationKey = pr ? `${directory}#${pr.number}` : null;
+  const sourceRepoKey = sourceRepo ? `${sourceRepo.owner}/${sourceRepo.repo}` : '';
+  const currentPrBodyHydrationKey = pr ? `${directory}#${sourceRepoKey}#${pr.number}` : null;
   const isHydratingCurrentPrBody = Boolean(
     currentPrBodyHydrationKey && hydratingPrBodyKey === currentPrBodyHydrationKey,
   );
@@ -525,7 +533,7 @@ export const PullRequestSection: React.FC<{
       return;
     }
 
-    const hydrationKey = `${directory}#${pr.number}`;
+    const hydrationKey = `${directory}#${sourceRepoKey}#${pr.number}`;
     if (attemptedBodyHydrationRef.current.has(hydrationKey)) {
       return;
     }
@@ -533,7 +541,11 @@ export const PullRequestSection: React.FC<{
     setHydratingPrBodyKey(hydrationKey);
 
     let cancelled = false;
-    void github.prContext(directory, pr.number, { includeDiff: false, includeCheckDetails: false })
+    void github.prContext(directory, pr.number, {
+      includeDiff: false,
+      includeCheckDetails: false,
+      sourceRepo,
+    })
       .then((ctx) => {
         if (cancelled) {
           return;
@@ -566,7 +578,7 @@ export const PullRequestSection: React.FC<{
     return () => {
       cancelled = true;
     };
-  }, [directory, github, pr, prStatusKey, updatePrStatus]);
+  }, [directory, github, pr, prStatusKey, sourceRepo, sourceRepoKey, updatePrStatus]);
 
   React.useEffect(() => {
     if (!pr) {
@@ -606,6 +618,7 @@ export const PullRequestSection: React.FC<{
       const ctx = await github.prContext(directory, pr.number, {
         includeDiff: false,
         includeCheckDetails: true,
+        sourceRepo,
       });
       setCheckDetails(ctx);
     } catch (e) {
@@ -614,7 +627,7 @@ export const PullRequestSection: React.FC<{
     } finally {
       setIsLoadingCheckDetails(false);
     }
-  }, [directory, github, pr, t]);
+  }, [directory, github, pr, sourceRepo, t]);
 
   const openCommentsDialog = React.useCallback(async () => {
     if (!github?.prContext) {
@@ -629,6 +642,7 @@ export const PullRequestSection: React.FC<{
       const ctx = await github.prContext(directory, pr.number, {
         includeDiff: false,
         includeCheckDetails: false,
+        sourceRepo,
       });
       setCommentsDetails(ctx);
     } catch (e) {
@@ -637,7 +651,7 @@ export const PullRequestSection: React.FC<{
     } finally {
       setIsLoadingCommentsDetails(false);
     }
-  }, [directory, github, pr, t]);
+  }, [directory, github, pr, sourceRepo, t]);
 
   const formatTimestamp = React.useCallback((value?: string) => {
     if (!value) return '';
@@ -896,7 +910,11 @@ export const PullRequestSection: React.FC<{
     }
 
     try {
-      const context = await github.prContext(directory, pr.number, { includeDiff: false, includeCheckDetails: true });
+      const context = await github.prContext(directory, pr.number, {
+        includeDiff: false,
+        includeCheckDetails: true,
+        sourceRepo,
+      });
       const runs = context.checkRuns ?? [];
       const failed = runs.filter((r) => {
         const conclusion = typeof r.conclusion === 'string' ? r.conclusion.toLowerCase() : '';
@@ -936,7 +954,7 @@ export const PullRequestSection: React.FC<{
       const message = e instanceof Error ? e.message : String(e);
       toast.error(t('gitView.pr.toast.loadChecksFailed'), { description: message });
     }
-  }, [directory, dispatchSyntheticPrompt, github, pr, resolveChatDispatchTarget, setActiveMainTab, t]);
+  }, [directory, dispatchSyntheticPrompt, github, pr, resolveChatDispatchTarget, setActiveMainTab, sourceRepo, t]);
 
   const sendCommentsToChat = React.useCallback(async () => {
     setActiveMainTab('chat');
@@ -952,7 +970,11 @@ export const PullRequestSection: React.FC<{
     }
 
     try {
-      const context = await github.prContext(directory, pr.number, { includeDiff: false, includeCheckDetails: false });
+      const context = await github.prContext(directory, pr.number, {
+        includeDiff: false,
+        includeCheckDetails: false,
+        sourceRepo,
+      });
       const issueComments = context.issueComments ?? [];
       const reviewComments = context.reviewComments ?? [];
       const total = issueComments.length + reviewComments.length;
@@ -975,7 +997,7 @@ export const PullRequestSection: React.FC<{
       const message = e instanceof Error ? e.message : String(e);
       toast.error(t('gitView.pr.toast.loadPrCommentsFailed'), { description: message });
     }
-  }, [directory, dispatchSyntheticPrompt, github, pr, resolveChatDispatchTarget, setActiveMainTab, t]);
+  }, [directory, dispatchSyntheticPrompt, github, pr, resolveChatDispatchTarget, setActiveMainTab, sourceRepo, t]);
 
   const sendSingleCommentToChat = React.useCallback(async (comment: TimelineCommentItem) => {
     setCommentsDialogOpen(false);

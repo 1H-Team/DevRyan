@@ -17,6 +17,23 @@ export const createOpenCodeWatcherRuntime = (deps) => {
   let unsubscribeEvent = null;
   let unsubscribeStatus = null;
 
+  const waitForRetryDelay = (signal) => new Promise((resolve) => {
+    if (upstreamReconnectDelayMs <= 0 || signal.aborted) {
+      resolve();
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, upstreamReconnectDelayMs);
+    timer.unref?.();
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+
   const unwrapGlobalEventPayload = (eventData) => {
     if (!eventData || typeof eventData !== 'object') {
       return null;
@@ -34,10 +51,20 @@ export const createOpenCodeWatcherRuntime = (deps) => {
       return;
     }
 
-    await waitForOpenCodePort();
-
     abortController = new AbortController();
     const signal = abortController.signal;
+
+    while (!signal.aborted) {
+      try {
+        await waitForOpenCodePort();
+        break;
+      } catch (error) {
+        if (signal.aborted) return;
+        console.warn('[PushWatcher] OpenCode is not ready; retrying watcher startup', error?.message ?? error);
+        await waitForRetryDelay(signal);
+      }
+    }
+    if (signal.aborted) return;
 
     if (globalEventHub) {
       unsubscribeEvent = globalEventHub.subscribeEvent((event) => {

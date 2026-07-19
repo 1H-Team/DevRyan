@@ -1,14 +1,12 @@
 import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { useSessionFoldersStore } from '@/stores/useSessionFoldersStore';
-import { dedupeSessionsById, getArchivedScopeKey, isSessionRelatedToProject, normalizePath } from '../utils';
+import { dedupeSessionsById, getArchivedScopeKey, isSessionOwnedByProject, normalizePath, type SessionProjectOwnership } from '../utils';
 
 type NormalizedProject = {
   id: string;
   normalizedPath: string;
 };
-
-type WorktreeMeta = { path: string };
 
 type Args = {
   isSessionsLoading: boolean;
@@ -16,9 +14,8 @@ type Args = {
   sessions: Session[];
   archivedSessions: Session[];
   normalizedProjects: NormalizedProject[];
-  isVSCode: boolean;
-  availableWorktreesByProject: Map<string, WorktreeMeta[]>;
   cleanupSessions: (scopeKey: string, validSessionIds: Set<string>) => void;
+  sessionProjectOwnership: SessionProjectOwnership;
 };
 
 export const useSessionFolderCleanup = (args: Args): void => {
@@ -28,9 +25,8 @@ export const useSessionFolderCleanup = (args: Args): void => {
     sessions,
     archivedSessions,
     normalizedProjects,
-    isVSCode,
-    availableWorktreesByProject,
     cleanupSessions,
+    sessionProjectOwnership,
   } = args;
 
   React.useEffect(() => {
@@ -54,14 +50,6 @@ export const useSessionFolderCleanup = (args: Args): void => {
 
     normalizedProjects.forEach((project) => {
       const scopeKey = getArchivedScopeKey(project.normalizedPath);
-      const worktreesForProject = isVSCode ? [] : (availableWorktreesByProject.get(project.normalizedPath) ?? []);
-      const validDirectories = new Set<string>([
-        project.normalizedPath,
-        ...worktreesForProject
-          .map((meta) => normalizePath(meta.path) ?? meta.path)
-          .filter((value): value is string => Boolean(value)),
-      ]);
-
       const archivedForProject = dedupeSessionsById([
         ...archivedSessions,
         ...sessions.filter((session) => {
@@ -72,9 +60,9 @@ export const useSessionFolderCleanup = (args: Args): void => {
           if (sessionDirectory) {
             return false;
           }
-          return isSessionRelatedToProject(session, project.normalizedPath, validDirectories);
+          return isSessionOwnedByProject(session, project.normalizedPath, sessionProjectOwnership);
         }),
-      ]).filter((session) => isSessionRelatedToProject(session, project.normalizedPath, validDirectories));
+      ]).filter((session) => isSessionOwnedByProject(session, project.normalizedPath, sessionProjectOwnership));
 
       idsByScope.set(scopeKey, new Set(archivedForProject.map((session) => session.id)));
     });
@@ -86,12 +74,11 @@ export const useSessionFolderCleanup = (args: Args): void => {
     });
   }, [
     archivedSessions,
-    availableWorktreesByProject,
     cleanupSessions,
     hasLoadedGlobalSessions,
     isSessionsLoading,
-    isVSCode,
     normalizedProjects,
+    sessionProjectOwnership,
     sessions,
   ]);
 };

@@ -15,15 +15,14 @@ import { cn } from '@/lib/utils';
 import { collapseExactDuplicateAdjacentTextParts, collapseSupersededTodoWrites, isEmptyTextPart, extractTextContent } from './partUtils';
 import { FadeInOnReveal } from './FadeInOnReveal';
 import { Button } from '@/components/ui/button';
-import { SaveProjectPlanDialog } from '@/components/session/SaveProjectPlanDialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { RiCheckLine, RiFileCopyLine, RiChatNewLine, RiArrowGoBackLine, RiGitBranchLine, RiHourglassLine, RiTimeLine, RiVolumeUpLine, RiStopLine, RiErrorWarningLine, RiBookletLine, RiGlobalLine, RiInformationLine } from '@remixicon/react';
+import { RiCheckLine, RiFileCopyLine, RiChatNewLine, RiArrowGoBackLine, RiGitBranchLine, RiHourglassLine, RiTimeLine, RiVolumeUpLine, RiStopLine, RiErrorWarningLine, RiGlobalLine, RiInformationLine } from '@remixicon/react';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
 
 import { SimpleMarkdownRenderer } from '../MarkdownRenderer';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
-import { flattenAssistantTextParts, suggestPlanTitleFromText } from '@/lib/messages/messageText';
+import { flattenAssistantTextParts } from '@/lib/messages/messageText';
 import { resolveMessagePlanCard } from '@/lib/messages/actionablePlan';
 import { buildPlanCardRenderSegments, shouldSuppressPostPlanText } from '@/lib/messages/planCardRender';
 import { isOrphanNarrationFragment } from '@/lib/messages/orphanNarration';
@@ -34,18 +33,29 @@ import { TextSelectionMenu } from './TextSelectionMenu';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { useChatSurfaceMode } from '@/components/chat/useChatSurfaceMode';
 import { isVSCodeRuntime } from '@/lib/desktop';
-import { toast } from '@/components/ui';
 import { formatTimestampForDisplay } from './timeFormat';
 import { ToolRevealOnMount } from './parts/ToolRevealOnMount';
 import { GroupedToolActivityRow } from './parts/ProgressiveGroup';
 import { StaticToolRow } from './parts/StaticToolRow';
-import { collectToolActivityBurst, isExpandableTool, isHiddenTool, isManagedTaskToolName, isStandaloneTool, normalizeToolName } from './parts/toolRenderUtils';
+import {
+    collectCrossMessageFileActivityGroups,
+    collectToolActivityBurst,
+    isExpandableTool,
+    isHiddenTool,
+    isManagedTaskToolName,
+    isStandaloneTool,
+    normalizeToolName,
+    type ToolActivityGroupInfo,
+} from './parts/toolRenderUtils';
 import { ManagedTaskList } from '../ManagedTaskList';
 import { resolveManagedTaskDispatch } from '../managedTaskDispatch';
+import {
+    managedOrchestrationSelectors,
+    useManagedOrchestrationStore,
+} from '@/stores/useManagedOrchestrationStore';
 import { isCursorProvider, shouldRenderAssistantCopyButton, shouldRenderStandaloneAssistantActionsForTextGroup } from './assistantInlineActions';
 import { isToolPartFinalizedForDisplay } from './parts/toolDisplayState';
 import TurnActivity from '../components/TurnActivity';
-import { createProjectPlanFile } from '@/lib/openchamberConfig';
 import { resolveProjectForSessionDirectory } from '@/lib/projectResolution';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useSessions } from '@/sync/sync-context';
@@ -923,6 +933,14 @@ const AssistantMessageBody = React.memo(({
         () => resolveManagedTaskDispatch(visibleParts),
         [visibleParts],
     );
+    const managedBarrierLocked = useManagedOrchestrationStore(React.useMemo(
+        () => managedOrchestrationSelectors.hasUndispositionedTasksForRoot(sessionId ?? ''),
+        [sessionId],
+    ));
+    const suppressLiveManagedControlReasoning = managedBarrierLocked
+        && !isMessageCompleted
+        && managedTaskDispatch.taskIds.length === 0
+        && managedTaskDispatch.pendingDispatches.length === 0;
 
     const toolParts = React.useMemo(() => {
         return visibleParts.filter((part): part is ToolPartType => part.type === 'tool');
@@ -1008,7 +1026,6 @@ const AssistantMessageBody = React.memo(({
         return visibleParts.filter((part) => part.type === 'text');
     }, [visibleParts]);
     const assistantPlanText = React.useMemo(() => flattenAssistantTextParts(assistantTextParts), [assistantTextParts]);
-    const suggestedPlanTitle = React.useMemo(() => suggestPlanTitleFromText(assistantPlanText), [assistantPlanText]);
 
     const openContextPreview = useUIStore((state) => state.openContextPreview);
 
@@ -1045,8 +1062,6 @@ const AssistantMessageBody = React.memo(({
     const projects = useProjectsStore((state) => state.projects);
     const effectiveDirectory = useEffectiveDirectory();
     const sessions = useSessions();
-    const [isPlanDialogOpen, setIsPlanDialogOpen] = React.useState(false);
-    const [isSavingPlan, setIsSavingPlan] = React.useState(false);
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
     const showSplitAssistantMessageActions = useUIStore((state) => state.showSplitAssistantMessageActions);
     const isSortedRenderMode = chatRenderMode === 'sorted';
@@ -1063,13 +1078,23 @@ const AssistantMessageBody = React.memo(({
         return sessions.find((session) => session.id === currentSessionId) ?? null;
     }, [currentSessionId, sessions]);
 
+    const messageSession = React.useMemo(() => {
+        if (!sessionId) {
+            return null;
+        }
+        return sessions.find((session) => session.id === sessionId) ?? null;
+    }, [sessionId, sessions]);
+
     const availableWorktreesByProject = useSessionUIStore((state) => state.availableWorktreesByProject);
-    const currentProjectRef = React.useMemo(() => {
-        const directory = effectiveDirectory
-            ?? (typeof currentSession?.directory === 'string' ? currentSession.directory : '');
+    const messageProjectRef = React.useMemo(() => {
+        const directory = typeof messageSession?.directory === 'string'
+            ? messageSession.directory
+            : sessionId === currentSessionId
+                ? effectiveDirectory ?? ''
+                : '';
         const resolved = resolveProjectForSessionDirectory(projects, availableWorktreesByProject, directory);
         return resolved ? { id: resolved.id, path: resolved.path } : null;
-    }, [availableWorktreesByProject, currentSession?.directory, effectiveDirectory, projects]);
+    }, [availableWorktreesByProject, currentSessionId, effectiveDirectory, messageSession?.directory, projects, sessionId]);
 
 
     const hasTools = toolParts.length > 0;
@@ -1190,50 +1215,6 @@ const AssistantMessageBody = React.memo(({
         [createSessionFromAssistantMessage, messageId]
     );
 
-    const handleSaveAsPlanClick = React.useCallback(
-        (event: React.MouseEvent<HTMLButtonElement>) => {
-            event.stopPropagation();
-            event.preventDefault();
-            if (!assistantPlanText.trim()) {
-                return;
-            }
-            setIsPlanDialogOpen(true);
-        },
-        [assistantPlanText]
-    );
-
-    const handleConfirmSaveAsPlan = React.useCallback(
-        async (title: string) => {
-            if (!assistantPlanText.trim()) {
-                return;
-            }
-            if (!currentProjectRef) {
-                toast.error(t('chat.messageBody.toast.noProject'));
-                return;
-            }
-
-            setIsSavingPlan(true);
-            try {
-                const created = await createProjectPlanFile(currentProjectRef, {
-                    title,
-                    body: assistantPlanText,
-                });
-                if (!created) {
-                    toast.error(t('chat.messageBody.toast.savePlanFailed'));
-                    return;
-                }
-                window.dispatchEvent(new CustomEvent('openchamber:project-plan-saved', {
-                    detail: { projectId: currentProjectRef.id },
-                }));
-                setIsPlanDialogOpen(false);
-                toast.success(t('chat.messageBody.toast.planSaved'));
-            } finally {
-                setIsSavingPlan(false);
-            }
-        },
-        [assistantPlanText, currentProjectRef, t]
-    );
-
     const activityPartsForTurn = React.useMemo(() => {
         const all = turnGroupingContext?.activityParts;
         if (!isSortedRenderMode || !all) {
@@ -1249,6 +1230,43 @@ const AssistantMessageBody = React.memo(({
         }
         return all.filter((segment) => segment.anchorMessageId === messageId);
     }, [isSortedRenderMode, messageId, turnGroupingContext?.activityGroupSegments]);
+
+    const liveFileActivityGroupByPartId = React.useMemo(() => {
+        const byPartId = new Map<string, {
+            ownerPartId: string;
+            groupInfo: ToolActivityGroupInfo;
+            activities: NonNullable<TurnGroupingContext['activityParts']>;
+        }>();
+        if (isSortedRenderMode) {
+            return byPartId;
+        }
+
+        for (const segment of turnGroupingContext?.activityGroupSegments ?? []) {
+            const groups = collectCrossMessageFileActivityGroups(segment.parts, {
+                getToolName: (activity) => activity.kind === 'tool'
+                    ? (activity.part as ToolPartType).tool
+                    : '',
+                getToolPart: (activity) => activity.kind === 'tool'
+                    ? activity.part as ToolPartType
+                    : undefined,
+                getMessageId: (activity) => activity.messageId,
+                isReasoningOrJustification: (activity) => activity.kind === 'reasoning' || activity.kind === 'justification',
+                isStandalone: (activity) => activity.kind === 'tool'
+                    && isStandaloneTool((activity.part as ToolPartType).tool),
+            });
+            groups.forEach((group) => {
+                const activities = group.items.filter((activity) => activity.kind === 'tool');
+                const ownerPartId = activities[0]?.id;
+                if (!ownerPartId) {
+                    return;
+                }
+                const descriptor = { ownerPartId, groupInfo: group.groupInfo, activities };
+                activities.forEach((activity) => byPartId.set(activity.id, descriptor));
+            });
+        }
+
+        return byPartId;
+    }, [isSortedRenderMode, turnGroupingContext?.activityGroupSegments]);
 
     const hasAnchoredActivitySegments = activityGroupSegmentsForMessage.length > 0;
 
@@ -1316,8 +1334,8 @@ const AssistantMessageBody = React.memo(({
         }
 
         let lastIndex = -1;
-        for (let index = 0; index < visibleParts.length; index += 1) {
-            const part = visibleParts[index];
+        for (let index = 0; index < managedTaskDispatch.contentParts.length; index += 1) {
+            const part = managedTaskDispatch.contentParts[index];
             if (!part || part.type !== 'text') {
                 continue;
             }
@@ -1332,7 +1350,7 @@ const AssistantMessageBody = React.memo(({
         }
 
         return lastIndex;
-    }, [activityByPart, shouldDeferSortedInlineText, shouldShowStandaloneMessageActions, visibleParts]);
+    }, [activityByPart, managedTaskDispatch.contentParts, shouldDeferSortedInlineText, shouldShowStandaloneMessageActions]);
 
     const shouldRenderStandaloneActionsAfterContent = shouldShowStandaloneMessageActions
         && !isCursorAssistantProvider
@@ -1370,6 +1388,8 @@ const AssistantMessageBody = React.memo(({
                             animateRows={animateActivityRows}
                             animatedToolIds={animatedToolIdsLookup}
                             diffStats={turnGroupingContext.diffStats}
+                            providerID={providerID}
+                            responseStyleLevel={turnGroupingContext.responseStyleLevel}
                         />
                     </div>
                 );
@@ -1379,13 +1399,14 @@ const AssistantMessageBody = React.memo(({
         // Flat rendering: iterate parts in natural order.
         // Group consecutive static tools (read, grep, glob, etc.) into compact rows.
         // Expandable tools (bash, edit, task) get individual rows.
-        // Text and reasoning render inline at their natural position.
+        // Text and reasoning retain their natural order. Managed task tools are
+        // projected separately into the single Agent Dispatch tail below.
         let i = 0;
         let hasRenderedPlanCard = false;
         let globalTextGroupOffset = 0;
         let hasSeenTextGroup = false;
-        while (i < visibleParts.length) {
-            const part = visibleParts[i];
+        while (i < managedTaskDispatch.contentParts.length) {
+            const part = managedTaskDispatch.contentParts[i];
 
             if (part.type === 'text') {
                 const activity = activityByPart.get(part);
@@ -1399,8 +1420,8 @@ const AssistantMessageBody = React.memo(({
                 }
                 const textGroup: Part[] = [part];
                 let groupEndIndex = i;
-                while (groupEndIndex + 1 < visibleParts.length) {
-                    const nextPart = visibleParts[groupEndIndex + 1];
+                while (groupEndIndex + 1 < managedTaskDispatch.contentParts.length) {
+                    const nextPart = managedTaskDispatch.contentParts[groupEndIndex + 1];
                     if (!nextPart || nextPart.type !== 'text') {
                         break;
                     }
@@ -1468,6 +1489,9 @@ const AssistantMessageBody = React.memo(({
                                     sourceMessageId={messageId}
                                     streamPhase={streamPhase}
                                     planText={messagePlan.planText.trimStart()}
+                                    projectPath={messageProjectRef?.path ?? null}
+                                    sessionCreated={messageSession?.time?.created ?? null}
+                                    sessionSlug={messageSession?.slug ?? null}
                                 />
                             </div>
                         );
@@ -1492,8 +1516,8 @@ const AssistantMessageBody = React.memo(({
                     .map((textPart) => (textPart as { id?: unknown }).id)
                     .filter((id): id is string => typeof id === 'string' && id.length > 0);
                 let hasToolAfterTextGroup = false;
-                for (let partIndex = groupEndIndex + 1; partIndex < visibleParts.length; partIndex += 1) {
-                    if (visibleParts[partIndex]?.type === 'tool') {
+                for (let partIndex = groupEndIndex + 1; partIndex < managedTaskDispatch.contentParts.length; partIndex += 1) {
+                    if (managedTaskDispatch.contentParts[partIndex]?.type === 'tool') {
                         hasToolAfterTextGroup = true;
                         break;
                     }
@@ -1524,12 +1548,14 @@ const AssistantMessageBody = React.memo(({
             }
 
             if (part.type === 'reasoning') {
-                if (shouldRenderReasoning(showReasoningTraces)) {
+                if (shouldRenderReasoning(showReasoningTraces) && !suppressLiveManagedControlReasoning) {
                     rendered.push(
                         <ReasoningPart
                             key={getReasoningPartRenderKey(messageId, part.id, i)}
                             part={part}
                             messageId={messageId}
+                            providerID={providerID}
+                            responseStyleLevel={turnGroupingContext?.responseStyleLevel}
                             onContentChange={onContentChange}
                         />
                     );
@@ -1541,27 +1567,6 @@ const AssistantMessageBody = React.memo(({
             if (part.type === 'tool') {
                 const toolPart = part as ToolPartType;
                 const toolName = normalizeToolName(toolPart.tool);
-
-                if (isManagedTaskToolName(toolName)) {
-                    if (
-                        toolPart.id === managedTaskDispatch.anchorPartId
-                        && (
-                            managedTaskDispatch.taskIds.length > 0
-                            || managedTaskDispatch.pendingDispatches.length > 0
-                        )
-                    ) {
-                        rendered.push(
-                            <ManagedTaskList
-                                key={`managed-task-dispatch-${messageId}`}
-                                taskIds={managedTaskDispatch.taskIds}
-                                pendingDispatches={managedTaskDispatch.pendingDispatches}
-                                onContentChange={onContentChange}
-                            />,
-                        );
-                    }
-                    i += 1;
-                    continue;
-                }
 
                 if (isSortedRenderMode && !isActivityOwnerMessage) {
                     i += 1;
@@ -1576,6 +1581,29 @@ const AssistantMessageBody = React.memo(({
 
                 if (!shouldShowTool(toolPart)) {
                     i++;
+                    continue;
+                }
+
+                const liveFileActivityGroup = liveFileActivityGroupByPartId.get(toolPart.id);
+                if (liveFileActivityGroup) {
+                    if (liveFileActivityGroup.ownerPartId === toolPart.id) {
+                        rendered.push(
+                            <GroupedToolActivityRow
+                                key={`live-file-group-${liveFileActivityGroup.groupInfo.key}-${toolPart.id}`}
+                                groupInfo={liveFileActivityGroup.groupInfo}
+                                activities={liveFileActivityGroup.activities}
+                                syntaxTheme={syntaxTheme}
+                                isMobile={isMobile}
+                                expandedTools={expandedTools}
+                                onToggleTool={onToggleTool}
+                                onShowPopup={onShowPopup}
+                                onContentChange={onContentChange}
+                                animateTailText={liveFileActivityGroup.activities.some((activity) => animatedToolIdsLookup.has(activity.id))}
+                                animateRows={true}
+                            />
+                        );
+                    }
+                    i += 1;
                     continue;
                 }
 
@@ -1623,7 +1651,7 @@ const AssistantMessageBody = React.memo(({
                     );
                 };
 
-                const burst = collectToolActivityBurst(visibleParts, i, (candidate: Part) => {
+                const burst = collectToolActivityBurst(managedTaskDispatch.contentParts, i, (candidate: Part) => {
                     if (candidate.type !== 'tool') {
                         return null;
                     }
@@ -1740,11 +1768,15 @@ const AssistantMessageBody = React.memo(({
         isMobile,
         isActivityOwnerMessage,
         isSortedRenderMode,
+        liveFileActivityGroupByPartId,
         providerID,
         lastRenderableTextPartIndex,
         messageId,
         messageActionButtons,
         messagePlan,
+        messageProjectRef?.path,
+        messageSession?.slug,
+        messageSession?.time?.created,
         managedTaskDispatch,
         sessionId,
         onContentChange,
@@ -1756,10 +1788,10 @@ const AssistantMessageBody = React.memo(({
         streamPhase,
         showReasoningTraces,
         shouldDeferSortedInlineText,
+        suppressLiveManagedControlReasoning,
         syntaxTheme,
         toggleActivityGroup,
         turnGroupingContext,
-        visibleParts,
     ]);
 
     const turnDurationText = React.useMemo(() => {
@@ -1811,27 +1843,6 @@ const AssistantMessageBody = React.memo(({
                     <TooltipContent sideOffset={6}>{t('chat.messageBody.actions.openPreview')}</TooltipContent>
                 </Tooltip>
             ) : null}
-            {!isMiniChatSurface && !isVSCode ? (
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button
-                            type="button"
-                            size="icon"
-                            variant="ghost"
-                            disabled={!hasCopyableText || !currentProjectRef}
-                            className={cn(
-                                'h-8 w-8 text-muted-foreground bg-transparent hover:text-foreground hover:!bg-transparent active:!bg-transparent focus-visible:!bg-transparent focus-visible:ring-2 focus-visible:ring-primary/50',
-                                (!hasCopyableText || !currentProjectRef) && 'opacity-50'
-                            )}
-                            onPointerDown={(event) => event.stopPropagation()}
-                            onClick={handleSaveAsPlanClick}
-                        >
-                            <RiBookletLine className="h-4 w-4" />
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent sideOffset={6}>{t('chat.messageBody.actions.saveAsPlan')}</TooltipContent>
-                </Tooltip>
-            ) : null}
             {!isMiniChatSurface ? <Tooltip>
                 <TooltipTrigger asChild>
                     <Button
@@ -1860,14 +1871,6 @@ const AssistantMessageBody = React.memo(({
               style={CONTAIN_LAYOUT_STYLE}
           >
               <TextSelectionMenu containerRef={messageContentRef} />
-             <SaveProjectPlanDialog
-                 open={isPlanDialogOpen}
-                 onOpenChange={setIsPlanDialogOpen}
-                 initialTitle={suggestedPlanTitle}
-                 sourceText={assistantPlanText}
-                 saving={isSavingPlan}
-                 onSave={handleConfirmSaveAsPlan}
-             />
               <div>
                  <div
                      className="message-content-text leading-relaxed overflow-hidden text-foreground/90 [&_p:last-child]:mb-0 [&_ul:last-child]:mb-0 [&_ol:last-child]:mb-0"
@@ -1923,17 +1926,6 @@ const AssistantMessageBody = React.memo(({
                             {finalTurnActionButtons}
                         </div>
                         <div className="flex items-center gap-1.5">
-                            {turnDurationText ? (
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <span className="text-sm text-muted-foreground/60 tabular-nums flex items-center gap-1">
-                                            <RiHourglassLine className="h-3.5 w-3.5" />
-                                            <span className="message-footer__label">{turnDurationText}</span>
-                                        </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent>{turnDurationText}</TooltipContent>
-                                </Tooltip>
-                            ) : null}
                             {footerTimestamp ? (
                                 <Tooltip>
                                     <TooltipTrigger asChild>
@@ -1948,12 +1940,30 @@ const AssistantMessageBody = React.memo(({
                                     <TooltipContent>{footerTimestamp}</TooltipContent>
                                 </Tooltip>
                             ) : null}
+                            {turnDurationText ? (
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <span className="text-sm text-muted-foreground/60 tabular-nums flex items-center gap-1">
+                                            <RiHourglassLine className="h-3.5 w-3.5" />
+                                            <span className="message-footer__label">{turnDurationText}</span>
+                                        </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>{turnDurationText}</TooltipContent>
+                                </Tooltip>
+                            ) : null}
                             {!isMiniChatSurface && isLastAssistantInTurn && hasStopFinish ? (
                                 <TurnChangedFilesDropdown activityParts={turnGroupingContext?.activityParts} />
                             ) : null}
                         </div>
                     </div>
                 )}
+                {(managedTaskDispatch.taskIds.length > 0 || managedTaskDispatch.pendingDispatches.length > 0) ? (
+                    <ManagedTaskList
+                        taskIds={managedTaskDispatch.taskIds}
+                        pendingDispatches={managedTaskDispatch.pendingDispatches}
+                        onContentChange={onContentChange}
+                    />
+                ) : null}
 
             </div>
         </div>

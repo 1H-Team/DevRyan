@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { usePluginsStore } from "@/stores/usePluginsStore";
-import type { PluginEntry, PluginFile } from "@/lib/api/types";
+import type { DevRyanDefaultPlugin, PluginEntry, PluginFile } from "@/lib/api/types";
 import { getSlimActions, isSlimPlugin } from "./pluginSlimPresentation";
 
 const formatOptions = (options: Record<string, unknown> | undefined): string => {
@@ -31,6 +31,18 @@ const ScopeBadge: React.FC<{ scope: "user" | "project"; label: string }> = ({ sc
     {label}
   </span>
 );
+
+const DefaultBadge: React.FC = () => {
+  const { t } = useI18n();
+  return (
+    <span
+      className="typography-micro rounded-full border border-[var(--interactive-border)] bg-[var(--surface-elevated)] px-2 py-0.5 font-medium text-foreground"
+      data-scope="default"
+    >
+      {t("settings.plugins.default.badge")}
+    </span>
+  );
+};
 
 const SlimStatusPanel: React.FC = () => {
   const { t } = useI18n();
@@ -173,6 +185,47 @@ const FileDetails: React.FC<{ file: PluginFile }> = ({ file }) => {
   );
 };
 
+const DefaultDetails: React.FC<{ plugin: DevRyanDefaultPlugin }> = ({ plugin }) => {
+  const { t } = useI18n();
+  const effectiveDiffers = plugin.effectiveSpec !== plugin.shippedSpec;
+
+  return (
+    <>
+      <div className="flex items-center gap-3">
+        <RiCodeBoxLine className="h-5 w-5 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="typography-ui-header truncate font-semibold text-foreground">{plugin.displayName}</h2>
+            <DefaultBadge />
+          </div>
+          <p className="typography-meta text-muted-foreground">{t("settings.plugins.default.readOnly")}</p>
+        </div>
+      </div>
+
+      <SettingsSection title={t("settings.plugins.default.section.package")}>
+        <DetailRow label={t("settings.plugins.default.field.shippedSpec")} value={plugin.shippedSpec} mono />
+        {effectiveDiffers ? (
+          <DetailRow label={t("settings.plugins.default.field.effectiveSpec")} value={plugin.effectiveSpec} mono />
+        ) : null}
+        <DetailRow
+          label={t("settings.plugins.default.field.version")}
+          value={plugin.version ?? t("settings.plugins.default.value.bundled")}
+          mono={plugin.version !== null}
+        />
+        <DetailRow
+          label={t("settings.plugins.default.field.delivery")}
+          value={plugin.delivery === "npm" ? t("settings.plugins.default.value.npm") : t("settings.plugins.default.value.bundledFile")}
+        />
+        <DetailRow
+          label={t("settings.plugins.default.field.source")}
+          value={plugin.configuredSourcePath ?? plugin.sourcePath}
+          mono
+        />
+      </SettingsSection>
+    </>
+  );
+};
+
 export const PluginsPage: React.FC = () => {
   const { t } = useI18n();
   const selectedId = usePluginsStore((state) => state.selectedId);
@@ -197,7 +250,9 @@ export const PluginsPage: React.FC = () => {
   return (
     <SettingsPageLayout>
       {isSlimPlugin(selected) ? <SlimStatusPanel /> : null}
-      {selected.kind === "config"
+      {selected.kind === "default"
+        ? <DefaultDetails plugin={selected} />
+        : selected.kind === "config"
         ? <EntryDetails entry={selected} />
         : <FileDetails file={selected} />}
     </SettingsPageLayout>

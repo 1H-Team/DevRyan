@@ -4,6 +4,7 @@ import type { Session } from "@opencode-ai/sdk/v2/client"
 const respondCalls: Array<{ sessionID: string; requestID: string; reply: string }> = []
 const listPendingPermissionsCalls: Array<{ directories?: Array<string | null | undefined> }> = []
 const fetchCalls: Array<{ url: string; body: unknown }> = []
+const PERMISSION_STORE_KEY = "permission-store"
 let listPendingPermissionsError: unknown = null
 let listPendingPermissionsResponse: Array<{ id: string; sessionID?: string }> = []
 let sessions: Session[] = []
@@ -44,6 +45,11 @@ mock.module("@/sync/session-ui-store", () => ({
 }))
 
 const { usePermissionStore } = await import("./permissionStore")
+const { getSafeStorage } = await import("./utils/safeStorage")
+
+type PermissionStoreWithCleanup = ReturnType<typeof usePermissionStore.getState> & {
+  clearSessionAutoAccept?: (sessionId: string) => Promise<void>
+}
 
 describe("permissionStore auto-accept", () => {
   beforeEach(() => {
@@ -108,5 +114,67 @@ describe("permissionStore auto-accept", () => {
       { sessionId: "parent", enabled: false },
       { sessionId: "child", enabled: false },
     ])
+  })
+
+  test("removes only the permanently deleted session from persisted auto-accept state", async () => {
+    const deletedSessionID = "session-delete"
+    const retainedEnabledSessionID = "session-keep-enabled"
+    const retainedDisabledSessionID = "session-keep-disabled"
+    usePermissionStore.setState({
+      autoAccept: {
+        [deletedSessionID]: true,
+        [retainedEnabledSessionID]: true,
+        [retainedDisabledSessionID]: false,
+      },
+    })
+    const store = usePermissionStore.getState() as PermissionStoreWithCleanup
+
+    expect(typeof store.clearSessionAutoAccept).toBe("function")
+    await store.clearSessionAutoAccept?.(deletedSessionID)
+
+    expect(usePermissionStore.getState().autoAccept).toEqual({
+      [retainedEnabledSessionID]: true,
+      [retainedDisabledSessionID]: false,
+    })
+    const persisted = getSafeStorage().getItem(PERMISSION_STORE_KEY)
+    expect(persisted).not.toContain(deletedSessionID)
+    expect(persisted).toContain(retainedEnabledSessionID)
+    expect(persisted).toContain(retainedDisabledSessionID)
+    expect(fetchCalls.at(-1)?.body).toEqual({ sessionId: deletedSessionID, enabled: false })
+  })
+
+  test("orders deletion disable after an older in-flight enable mirror", async () => {
+    const sessionID = "session-mirror-race"
+    sessions = [{ id: sessionID, title: "Race", time: { created: 1, updated: 1 } } as Session]
+    permissionMap = {}
+    let resolveEnable: ((response: Response) => void) | undefined
+    globalThis.fetch = mock((input: RequestInfo | URL, init?: RequestInit) => {
+      const rawBody = typeof init?.body === "string" ? JSON.parse(init.body) : init?.body
+      fetchCalls.push({ url: String(input), body: rawBody })
+      if (fetchCalls.length === 1) {
+        return new Promise<Response>((resolve) => {
+          resolveEnable = resolve
+        })
+      }
+      return Promise.resolve(new Response(null, { status: 204 }))
+    }) as typeof fetch
+
+    await usePermissionStore.getState().setSessionAutoAccept(sessionID, true)
+    const store = usePermissionStore.getState() as PermissionStoreWithCleanup
+    expect(typeof store.clearSessionAutoAccept).toBe("function")
+    const clearPromise = store.clearSessionAutoAccept?.(sessionID) ?? Promise.resolve()
+
+    expect(fetchCalls.map((call) => call.body)).toEqual([
+      { sessionId: sessionID, enabled: true },
+    ])
+
+    resolveEnable?.(new Response(null, { status: 204 }))
+    await clearPromise
+
+    expect(fetchCalls.map((call) => call.body)).toEqual([
+      { sessionId: sessionID, enabled: true },
+      { sessionId: sessionID, enabled: false },
+    ])
+    expect(usePermissionStore.getState().autoAccept).toEqual({})
   })
 })

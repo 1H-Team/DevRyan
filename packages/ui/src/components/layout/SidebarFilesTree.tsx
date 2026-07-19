@@ -51,6 +51,12 @@ import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { getContextFileOpenFailureMessage, validateContextFileOpen } from '@/lib/contextFileOpenGuard';
 import { useI18n } from '@/lib/i18n';
 import { shouldShowSidebarFileRowActions } from './sidebarFilesTreeRuntime';
+import {
+  AsyncTaskLimiter,
+  loadDirectoriesInDepthBatches,
+  runOwnedDirectoryLoad,
+  type DirectoryLoadRegistry,
+} from './sidebarFilesTreeRefresh';
 import type { FileReadOptions } from '@/lib/api/types';
 
 type FileNode = {
@@ -349,7 +355,10 @@ export const SidebarFilesTree: React.FC = () => {
 
   const [childrenByDir, setChildrenByDir] = React.useState<Record<string, FileNode[]>>({});
   const loadedDirsRef = React.useRef<Set<string>>(new Set());
-  const inFlightDirsRef = React.useRef<Set<string>>(new Set());
+  const inFlightDirsRef = React.useRef<DirectoryLoadRegistry>(new Map());
+  const refreshGenerationRef = React.useRef(0);
+  const directoryRevisionRef = React.useRef<Map<string, number>>(new Map());
+  const expandedLoadLimiterRef = React.useRef(new AsyncTaskLimiter(3));
 
   const EMPTY_PATHS: string[] = React.useMemo(() => [], []);
   const EMPTY_CONTEXT_TABS: Array<{ mode: string; targetPath: string | null }> = React.useMemo(() => [], []);
@@ -422,57 +431,71 @@ export const SidebarFilesTree: React.FC = () => {
     return sortNodes(nodes);
   }, [showGitignored, showHidden]);
 
-  const loadDirectory = React.useCallback(async (dirPath: string) => {
+  const loadDirectory = React.useCallback(async (
+    dirPath: string,
+    generation = refreshGenerationRef.current,
+    directoryRevision?: number,
+  ) => {
     const normalizedDir = normalizePath(dirPath.trim());
     if (!normalizedDir) return;
-
-    if (loadedDirsRef.current.has(normalizedDir) || inFlightDirsRef.current.has(normalizedDir)) return;
-
-    inFlightDirsRef.current = new Set(inFlightDirsRef.current);
-    inFlightDirsRef.current.add(normalizedDir);
+    const revision = directoryRevision ?? (directoryRevisionRef.current.get(normalizedDir) ?? 0);
 
     const respectGitignore = !showGitignored;
-    const listPromise = runtime.isDesktop
-      ? files.listDirectory(normalizedDir, { respectGitignore }).then((result) => result.entries.map((entry) => ({
-        name: entry.name,
-        path: entry.path,
-        isDirectory: entry.isDirectory,
-      })))
-      : opencodeClient.listLocalDirectory(normalizedDir, { respectGitignore }).then((result) => result.map((entry) => ({
-        name: entry.name,
-        path: entry.path,
-        isDirectory: entry.isDirectory,
-      })));
-
-    await listPromise
-      .then((entries) => {
+    await runOwnedDirectoryLoad({
+      directory: normalizedDir,
+      inFlight: inFlightDirsRef.current,
+      shouldStart: () => (
+        generation === refreshGenerationRef.current
+        && revision === (directoryRevisionRef.current.get(normalizedDir) ?? 0)
+        && !loadedDirsRef.current.has(normalizedDir)
+      ),
+      request: () => runtime.isDesktop
+        ? files.listDirectory(normalizedDir, { respectGitignore }).then((result) => result.entries.map((entry) => ({
+          name: entry.name,
+          path: entry.path,
+          isDirectory: entry.isDirectory,
+        })))
+        : opencodeClient.listLocalDirectory(normalizedDir, { respectGitignore }).then((result) => result.map((entry) => ({
+          name: entry.name,
+          path: entry.path,
+          isDirectory: entry.isDirectory,
+        }))),
+      shouldCommit: () => (
+        generation === refreshGenerationRef.current
+        && revision === (directoryRevisionRef.current.get(normalizedDir) ?? 0)
+      ),
+      commit: (entries) => {
         const mapped = mapDirectoryEntries(normalizedDir, entries);
-
         loadedDirsRef.current = new Set(loadedDirsRef.current);
         loadedDirsRef.current.add(normalizedDir);
         setChildrenByDir((prev) => ({ ...prev, [normalizedDir]: mapped }));
-      })
-      .catch(() => {
-        setChildrenByDir((prev) => ({
-          ...prev,
-          [normalizedDir]: prev[normalizedDir] ?? [],
-        }));
-      })
-      .finally(() => {
-        inFlightDirsRef.current = new Set(inFlightDirsRef.current);
-        inFlightDirsRef.current.delete(normalizedDir);
-      });
+      },
+      // Preserve cached children and leave the loaded marker clear so a later
+      // user action or expansion can retry.
+      onError: () => undefined,
+    });
   }, [files, mapDirectoryEntries, runtime.isDesktop, showGitignored]);
 
   const refreshRoot = React.useCallback(async () => {
     if (!root) return;
+    const generation = refreshGenerationRef.current + 1;
+    refreshGenerationRef.current = generation;
+    const expandedDirectories = expandedPaths
+      .map(normalizePath)
+      .filter((directory) => directory && directory !== root && directory.startsWith(`${root}/`));
+    const refreshDirectories = [root, ...expandedDirectories];
+    const nextLoaded = new Set(loadedDirsRef.current);
+    refreshDirectories.forEach((directory) => nextLoaded.delete(directory));
+    loadedDirsRef.current = nextLoaded;
 
-    loadedDirsRef.current = new Set();
-    inFlightDirsRef.current = new Set();
-    setChildrenByDir((prev) => (Object.keys(prev).length === 0 ? prev : {}));
-
-    await loadDirectory(root);
-  }, [loadDirectory, root]);
+    await loadDirectory(root, generation);
+    if (generation !== refreshGenerationRef.current) return;
+    await loadDirectoriesInDepthBatches(
+      expandedDirectories,
+      (directory) => expandedLoadLimiterRef.current.run(() => loadDirectory(directory, generation)),
+      () => generation === refreshGenerationRef.current,
+    );
+  }, [expandedPaths, loadDirectory, root]);
 
   /**
    * Incrementally refresh a single directory without nuking the rest of the
@@ -485,21 +508,28 @@ export const SidebarFilesTree: React.FC = () => {
       return;
     }
     const normalized = normalizePath(dirPath);
-    loadedDirsRef.current = new Set(loadedDirsRef.current);
-    loadedDirsRef.current.delete(normalized);
-    inFlightDirsRef.current = new Set(inFlightDirsRef.current);
-    inFlightDirsRef.current.delete(normalized);
-    await loadDirectory(normalized);
+    const revision = (directoryRevisionRef.current.get(normalized) ?? 0) + 1;
+    directoryRevisionRef.current.set(normalized, revision);
+    const nextLoaded = new Set(loadedDirsRef.current);
+    nextLoaded.delete(normalized);
+    loadedDirsRef.current = nextLoaded;
+    await loadDirectory(normalized, refreshGenerationRef.current, revision);
   }, [loadDirectory, refreshRoot]);
 
   React.useEffect(() => {
-    if (!root) return;
-
+    const generation = refreshGenerationRef.current + 1;
+    refreshGenerationRef.current = generation;
     loadedDirsRef.current = new Set();
-    inFlightDirsRef.current = new Set();
-    setChildrenByDir((prev) => (Object.keys(prev).length === 0 ? prev : {}));
-    void loadDirectory(root);
+    directoryRevisionRef.current = new Map();
+    if (!root) return;
+    void loadDirectory(root, generation);
   }, [loadDirectory, root, showHidden, showGitignored]);
+
+  React.useEffect(() => () => {
+    // Invalidate ownership without cancelling shared in-flight requests. Their
+    // promises clean themselves out of the registry, but may no longer commit.
+    refreshGenerationRef.current += 1;
+  }, []);
 
   React.useEffect(() => {
     if (!root || expandedPaths.length === 0) return;
@@ -518,14 +548,13 @@ export const SidebarFilesTree: React.FC = () => {
 
     if (toLoad.length === 0) return;
 
-    // Load with concurrency limit to avoid API stampede on startup
+    const generation = refreshGenerationRef.current;
     let cancelled = false;
-    void (async () => {
-      for (let i = 0; i < toLoad.length && !cancelled; i += 3) {
-        const batch = toLoad.slice(i, i + 3);
-        await Promise.all(batch.map((dir) => loadDirectory(dir)));
-      }
-    })();
+    void loadDirectory(root, generation).then(() => loadDirectoriesInDepthBatches(
+      toLoad,
+      (directory) => expandedLoadLimiterRef.current.run(() => loadDirectory(directory, generation)),
+      () => !cancelled && generation === refreshGenerationRef.current,
+    ));
     return () => { cancelled = true; };
   }, [expandedPaths, loadDirectory, root]);
 

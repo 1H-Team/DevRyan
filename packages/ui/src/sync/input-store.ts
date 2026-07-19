@@ -9,11 +9,37 @@ import type { AttachedFile } from "@/stores/types/sessionTypes"
 const FILE_URI_PREFIX = "file://"
 const pendingVSCodeSelectionKeys = new Set<string>()
 let attachmentReadGeneration = 0
+const sessionComposerRevisions = new Map<string, number>()
+let activeComposerSessionId: string | null = null
 
 export type RestoredAttachment = {
   url: string
   mimeType: string
   filename: string
+}
+
+export type PendingRestoredInput = {
+  sessionId: string
+  text: string
+  attachments: RestoredAttachment[]
+  expectedComposerRevision: number
+}
+
+export const getSessionComposerRevision = (sessionId: string): number =>
+  sessionComposerRevisions.get(sessionId) ?? 0
+
+export const markSessionComposerEdited = (sessionId: string): number => {
+  const revision = getSessionComposerRevision(sessionId) + 1
+  sessionComposerRevisions.set(sessionId, revision)
+  return revision
+}
+
+export const setActiveComposerSession = (sessionId: string | null): void => {
+  activeComposerSessionId = sessionId
+}
+
+const claimActiveComposerEdit = (): void => {
+  if (activeComposerSessionId) markSessionComposerEdited(activeComposerSessionId)
 }
 
 const encodeFilePath = (filepath: string): string => {
@@ -104,6 +130,7 @@ export type InputState = {
   pendingSyntheticParts: SyntheticContextPart[] | null
   attachedFiles: AttachedFile[]
   activeEditorFile: VSCodeActiveEditorFile | null
+  pendingRestoredInputs: ReadonlyMap<string, PendingRestoredInput>
 
   setPendingInputText: (text: string | null, mode?: PendingInputMode, payload?: Partial<Omit<PendingInputPayload, "text" | "mode">>) => void
   consumePendingInputText: () => PendingInputPayload | null
@@ -117,6 +144,8 @@ export type InputState = {
   addVSCodeFileAttachment: (path: string, name: string, fileSize: number | null) => void
   addVSCodeSelectionAttachment: (path: string, file: File) => Promise<void>
   setActiveEditorFile: (file: VSCodeActiveEditorFile | null) => void
+  queueRestoredInput: (input: PendingRestoredInput) => void
+  consumeRestoredInput: (sessionId: string, composerRevision: number) => PendingRestoredInput | null
 }
 
 export const useInputStore = create<InputState>()((set, get) => ({
@@ -126,6 +155,7 @@ export const useInputStore = create<InputState>()((set, get) => ({
   pendingSyntheticParts: null,
   attachedFiles: [],
   activeEditorFile: null,
+  pendingRestoredInputs: new Map(),
 
   setPendingInputText: (text, mode = "replace", payload) =>
     set({
@@ -152,6 +182,7 @@ export const useInputStore = create<InputState>()((set, get) => ({
   },
 
   addAttachedFile: async (file: File) => {
+    claimActiveComposerEdit()
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
     const generation = attachmentReadGeneration
     const dataUrl = await new Promise<string>((resolve) => {
@@ -173,6 +204,7 @@ export const useInputStore = create<InputState>()((set, get) => ({
   },
 
   addRestoredAttachment: (attachment) => {
+    claimActiveComposerEdit()
     attachmentReadGeneration += 1
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
     const attached: AttachedFile = {
@@ -187,15 +219,19 @@ export const useInputStore = create<InputState>()((set, get) => ({
     set((s) => ({ attachedFiles: [...s.attachedFiles, attached] }))
   },
 
-  removeAttachedFile: (id) =>
-    set((s) => ({ attachedFiles: s.attachedFiles.filter((f) => f.id !== id) })),
+  removeAttachedFile: (id) => {
+    claimActiveComposerEdit()
+    set((s) => ({ attachedFiles: s.attachedFiles.filter((f) => f.id !== id) }))
+  },
 
   setAttachedFiles: (files) => {
+    claimActiveComposerEdit()
     attachmentReadGeneration += 1
     set({ attachedFiles: files })
   },
 
   clearAttachedFiles: () => {
+    claimActiveComposerEdit()
     attachmentReadGeneration += 1
     set({ attachedFiles: [] })
   },
@@ -206,6 +242,7 @@ export const useInputStore = create<InputState>()((set, get) => ({
       (f) => f.source === 'vscode' && f.vscodeSource === 'file' && (f.vscodePath || '') === path
     )
     if (isDuplicate) return
+    claimActiveComposerEdit()
     const dataUrl = toFileUrl(path)
     // `file://` URLs are the same contract used by server-source attachments.
     // The submission path passes `dataUrl` as `url` directly to the OpenCode
@@ -232,6 +269,7 @@ export const useInputStore = create<InputState>()((set, get) => ({
       (f) => f.source === 'vscode' && f.vscodeSource === 'selection' && f.filename === file.name && f.vscodePath === path
     )
     if (isDuplicate || pendingVSCodeSelectionKeys.has(selectionKey)) return
+    claimActiveComposerEdit()
     pendingVSCodeSelectionKeys.add(selectionKey)
     let dataUrl: string
     try {
@@ -261,5 +299,25 @@ export const useInputStore = create<InputState>()((set, get) => ({
   setActiveEditorFile: (file) => {
     if (isSameVSCodeActiveEditorFile(get().activeEditorFile, file)) return
     set({ activeEditorFile: file })
+  },
+
+  queueRestoredInput: (input) => {
+    set((state) => {
+      const pendingRestoredInputs = new Map(state.pendingRestoredInputs)
+      pendingRestoredInputs.set(input.sessionId, input)
+      return { pendingRestoredInputs }
+    })
+  },
+
+  consumeRestoredInput: (sessionId, composerRevision) => {
+    const pending = get().pendingRestoredInputs.get(sessionId)
+    if (!pending) return null
+    set((state) => {
+      if (!state.pendingRestoredInputs.has(sessionId)) return state
+      const pendingRestoredInputs = new Map(state.pendingRestoredInputs)
+      pendingRestoredInputs.delete(sessionId)
+      return { pendingRestoredInputs }
+    })
+    return pending.expectedComposerRevision === composerRevision ? pending : null
   },
 }))

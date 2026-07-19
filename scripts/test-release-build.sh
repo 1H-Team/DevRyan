@@ -211,6 +211,25 @@ run_native_build() {
 
         bun run --cwd packages/desktop tauri build $TAURI_ARGS
 
+        if [[ "$NO_BUNDLE" == false ]]; then
+            local APP_PATH
+            APP_PATH=$(find "packages/desktop/src-tauri/target/$target/release/bundle/macos" -maxdepth 1 -name "*.app" -print -quit)
+            if [[ -z "$APP_PATH" ]]; then
+                log_error "Tauri app bundle not found for default-plugin verification"
+                exit 1
+            fi
+            local DEFAULT_CONFIG_PATH
+            DEFAULT_CONFIG_PATH=$(find "$APP_PATH/Contents/Resources" -type d -name default-config -print -quit)
+            if [[ -z "$DEFAULT_CONFIG_PATH" ]]; then
+                log_error "Tauri default config resource not found"
+                exit 1
+            fi
+            node scripts/verify-default-config-artifact.mjs \
+                --source packages/web/server/default-config \
+                --artifact-root "$DEFAULT_CONFIG_PATH"
+            node scripts/smoke-packaged-orchestration-config.mjs --config-root "$DEFAULT_CONFIG_PATH"
+        fi
+
         log_success "Successfully built for $target"
     done
 

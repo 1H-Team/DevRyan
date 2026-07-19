@@ -53,7 +53,7 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
       ...(requestOptions.body === undefined
         ? {}
         : { body: JSON.stringify(requestOptions.body) }),
-      signal: AbortSignal.timeout(requestTimeoutMs),
+      signal: requestOptions.signal ?? AbortSignal.timeout(requestTimeoutMs),
     });
     if (requestOptions.allowNotFound && response.status === 404) return null;
     if (!response.ok) throw await createHttpError(response, requestOptions.label ?? 'OpenCode request');
@@ -172,8 +172,39 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
         {
           method: 'POST',
           label: 'session.abort',
+          signal: input.signal,
         },
       );
+      return true;
+    },
+    async deleteSession(input) {
+      const failures = [];
+      if (
+        input.providerId === CURSOR_PROVIDER_ID
+        && cursorSdkRuntime
+        && typeof cursorSdkRuntime.deleteSessionState === 'function'
+      ) {
+        try {
+          await cursorSdkRuntime.deleteSessionState(input.sessionId);
+        } catch (error) {
+          failures.push(error instanceof Error ? error : new Error(String(error)));
+        }
+      }
+      try {
+        await requestJson(
+          appendDirectory(`/session/${encodeURIComponent(input.sessionId)}`, input.directory),
+          {
+            method: 'DELETE',
+            allowNotFound: true,
+            label: 'session.delete',
+          },
+        );
+      } catch (error) {
+        failures.push(error instanceof Error ? error : new Error(String(error)));
+      }
+      if (failures.length > 0) {
+        throw new AggregateError(failures, `Failed to delete managed child ${input.sessionId}`);
+      }
       return true;
     },
   };

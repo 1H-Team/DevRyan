@@ -10,6 +10,17 @@ const vscodeFsMocks = vi.hoisted(() => ({
   delete: vi.fn(async () => {}),
   rename: vi.fn(async () => {}),
 }));
+const osMocks = vi.hoisted(() => ({
+  homedir: vi.fn(),
+}));
+
+vi.mock('os', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    homedir: osMocks.homedir,
+  };
+});
 
 vi.mock('vscode', () => ({
   workspace: {
@@ -69,18 +80,58 @@ const createDeps = () => ({
 describe('handleFsBridgeMessage mutation safety', () => {
   let workspace = '';
   let outsideDir = '';
+  let fakeHome = '';
   let cleanup = [];
 
   beforeEach(async () => {
     vi.clearAllMocks();
     workspace = await mkdtemp(path.join(os.tmpdir(), 'devryan-vscode-workspace-'));
     outsideDir = await mkdtemp(path.join(os.tmpdir(), 'devryan-vscode-outside-'));
-    cleanup = [workspace, outsideDir];
+    fakeHome = await mkdtemp(path.join(os.tmpdir(), 'devryan-vscode-home-'));
+    cleanup = [workspace, outsideDir, fakeHome];
+    osMocks.homedir.mockReturnValue(fakeHome);
     vscode.workspace.workspaceFolders = [{ uri: { fsPath: workspace } }];
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await Promise.all(cleanup.map((dir) => rm(dir, { recursive: true, force: true })));
+  });
+
+  it('allows plan reads and writes only under the canonical OpenChamber config root', async () => {
+    const configRoot = path.join(fakeHome, '.config', 'openchamber');
+    const planPath = path.join(configRoot, 'projects', 'project-a', 'plans', 'plan.md');
+    const otherHomePath = path.join(fakeHome, 'Documents', 'private.md');
+    const deps = createDeps();
+
+    const writeResponse = await handleFsBridgeMessage(
+      { id: 'config-write', type: 'api:fs:write', payload: { path: planPath, content: '# Plan' } },
+      deps,
+    );
+    expect(writeResponse?.error).toBeUndefined();
+    expect(writeResponse?.success).toBe(true);
+    expect(vscodeFsMocks.writeFile).toHaveBeenCalledOnce();
+
+    const deniedResponse = await handleFsBridgeMessage(
+      { id: 'home-write', type: 'api:fs:write', payload: { path: otherHomePath, content: 'nope' } },
+      deps,
+    );
+    expect(deniedResponse?.success).toBe(false);
+
+    await mkdir(path.dirname(planPath), { recursive: true });
+    await writeFile(planPath, '# Existing plan', 'utf8');
+    const readResolution = await resolveFileReadPath(planPath);
+    expect(readResolution).toMatchObject({ ok: true, resolvedPath: await fs.promises.realpath(planPath) });
+  });
+
+  it('rejects symlink escapes from the canonical OpenChamber config root', async () => {
+    const configRoot = path.join(fakeHome, '.config', 'openchamber');
+    await mkdir(configRoot, { recursive: true });
+    const linkPath = path.join(configRoot, 'escape-link');
+    await symlink(outsideDir, linkPath);
+
+    const resolution = await resolveFileMutationPath(path.join(linkPath, 'plan.md'));
+    expect(resolution).toMatchObject({ ok: false, status: 403 });
   });
 
   it('rejects write/delete/rename/exec with direct outside-root paths', async () => {
@@ -184,5 +235,54 @@ describe('handleFsBridgeMessage mutation safety', () => {
     expect(vscodeFsMocks.delete).not.toHaveBeenCalled();
     expect(vscodeFsMocks.rename).not.toHaveBeenCalled();
     expect(await readFile(outsideFile, 'utf8')).toBe('untouched');
+  });
+
+  it('reports markdown export cancellation without writing a file', async () => {
+    vscode.window.showSaveDialog.mockResolvedValueOnce(undefined);
+
+    const response = await handleFsBridgeMessage(
+      {
+        id: 'export-canceled',
+        type: 'api:files/save-markdown',
+        payload: { fileName: 'chat.md', content: '# Chat' },
+      },
+      createDeps(),
+    );
+
+    expect(response).toEqual({
+      id: 'export-canceled',
+      type: 'api:files/save-markdown',
+      success: true,
+      data: { saved: false, canceled: true },
+    });
+    expect(vscodeFsMocks.writeFile).not.toHaveBeenCalled();
+  });
+
+  it('writes exported markdown as UTF-8 and returns the selected path', async () => {
+    const selectedPath = path.join(workspace, 'exports', 'chat.md');
+    vscode.window.showSaveDialog.mockResolvedValueOnce({
+      fsPath: selectedPath,
+      path: selectedPath,
+    });
+
+    const response = await handleFsBridgeMessage(
+      {
+        id: 'export-saved',
+        type: 'api:files/save-markdown',
+        payload: { fileName: 'chat.md', content: '# Chat\n\nHello' },
+      },
+      createDeps(),
+    );
+
+    expect(response).toEqual({
+      id: 'export-saved',
+      type: 'api:files/save-markdown',
+      success: true,
+      data: { saved: true, path: selectedPath },
+    });
+    expect(vscodeFsMocks.writeFile).toHaveBeenCalledTimes(1);
+    const [saveUri, bytes] = vscodeFsMocks.writeFile.mock.calls[0];
+    expect(saveUri).toEqual({ fsPath: selectedPath, path: selectedPath });
+    expect(Buffer.from(bytes).toString('utf8')).toBe('# Chat\n\nHello');
   });
 });

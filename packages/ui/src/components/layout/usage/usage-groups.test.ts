@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { UsageWindow } from '@/types';
 import {
+  buildUsageProviderTabs,
   getVisibleUsageEntries,
   resolveActiveUsageProviderId,
   sortResetCredits,
@@ -24,6 +25,28 @@ const group = (providerId: string, entries: RateLimitGroup['entries'] = [['5h', 
 });
 
 describe('usage dropdown group helpers', () => {
+  test('sorts provider tabs by display name without mutating the source groups', () => {
+    const groups: RateLimitGroup[] = [
+      { ...group('provider-10'), providerName: 'Provider 10' },
+      { ...group('same-b'), providerName: 'same' },
+      { ...group('alpha'), providerName: 'alpha' },
+      { ...group('same-a'), providerName: 'Same' },
+      { ...group('provider-2'), providerName: 'Provider 2' },
+    ];
+    const sourceOrder = groups.map((entry) => entry.providerId);
+
+    const tabs = buildUsageProviderTabs(groups);
+
+    expect(tabs.map((entry) => entry.id)).toEqual([
+      'alpha',
+      'provider-2',
+      'provider-10',
+      'same-a',
+      'same-b',
+    ]);
+    expect(groups.map((entry) => entry.providerId)).toEqual(sourceOrder);
+  });
+
   test('keeps active provider when it is still present', () => {
     expect(resolveActiveUsageProviderId([group('claude'), group('codex')], 'codex')).toBe('codex');
   });

@@ -8,6 +8,7 @@
 
 import { create } from "zustand"
 import type { Message, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import { isAbortGuardActive } from "./abort-retry-guard"
 import {
   hasTerminalAssistantFinish,
   hasToolCallAssistantFinish,
@@ -101,6 +102,7 @@ export function updateStreamingState(state: State) {
       const currentStreamingId = currentStreamingIds.get(sessionID)
       if (
         currentStreamingId
+        && !isAbortGuardActive(sessionID)
         && streamingCandidate?.id === currentStreamingId
         && isLiveAssistantMessage(streamingCandidate, streamingCandidateParts)
       ) {

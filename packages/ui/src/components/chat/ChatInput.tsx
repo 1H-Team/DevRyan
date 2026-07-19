@@ -21,11 +21,22 @@ import { getSafeStorage } from '@/stores/utils/safeStorage';
 import { useMessageQueueStore, type QueuedMessage } from '@/stores/messageQueueStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
-import { useInputStore } from '@/sync/input-store';
+import {
+    getSessionComposerRevision,
+    markSessionComposerEdited,
+    setActiveComposerSession,
+    useInputStore,
+} from '@/sync/input-store';
+import { subscribePersistedSessionInputRemoval } from '@/sync/session-draft-storage';
 import { resolveCurrentDraftSendConfig, resolveCurrentSendConfig } from '@/sync/send-config';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
 import * as sessionActions from '@/sync/session-actions';
-import { useSession, useSessionMessagesResolved, useUserMessageHistory } from '@/sync/sync-context';
+import {
+    useSession,
+    useSessionMessagesResolved,
+    useSessionRevertPending,
+    useUserMessageHistory,
+} from '@/sync/sync-context';
 import { useInlineCommentDraftStore, type InlineCommentDraft } from '@/stores/useInlineCommentDraftStore';
 import { appendInlineComments } from '@/lib/messages/inlineComments';
 import { renderMagicPrompt } from '@/lib/magicPrompts';
@@ -58,8 +69,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
-import { GitHubIssuePickerDialog } from '@/components/session/GitHubIssuePickerDialog';
-import { GitHubPrPickerDialog } from '@/components/session/GitHubPrPickerDialog';
 import { useChatSearchDirectory } from '@/hooks/useChatSearchDirectory';
 import { opencodeClient } from '@/lib/opencode/client';
 import { useProjectsStore } from '@/stores/useProjectsStore';
@@ -77,11 +86,14 @@ import {
     buildDraftLocalBranchOptions,
     decodeDraftBranchOptionValue,
 } from './chatInputBranchOptions';
-import { StashDialog } from '@/components/views/git/StashDialog';
 import { usePermissionStore } from '@/stores/permissionStore';
 import { useI18n } from '@/lib/i18n';
-import { getCachedResponseStyleInstruction } from '@/lib/responseStyle';
-import { wrapSystemReminder } from '@/lib/systemReminder';
+import {
+    getCachedResponseStyleInstruction,
+    getCachedResponseStyleLevel,
+    shouldAttachResponseStyleReminder,
+    wrapResponseStyleReminder,
+} from '@/lib/responseStyle';
 import { getSyncMessages } from '@/sync/sync-refs';
 import { ContextUsageDisplay } from '@/components/ui/ContextUsageDisplay';
 import { ContextUsageWindow } from './ContextUsageWindow';
@@ -92,6 +104,13 @@ import { useStableSessionContextUsage } from '@/hooks/useStableSessionContextUsa
 import { useSelectedModelContextCapacity } from '@/hooks/useSelectedModelContextCapacity';
 import { getEditableComposerTargetKey } from './chatInputFocusTarget';
 import {
+    DeferredChatDialog,
+    LazyGitHubIssuePickerDialog,
+    LazyGitHubPrPickerDialog,
+    LazyStashDialog,
+} from './lazyChatDialogs';
+import { LazyViewBoundary } from '@/components/views/lazyViews';
+import {
     createComposerDraftPersistenceController,
     getComposerDraftTargetKey,
     resolveComposerDraftTarget,
@@ -100,6 +119,7 @@ import {
 import { clearCommittedComposerText, clearSubmittedComposerAfterSend } from './chatInputSubmitCleanup';
 import { isAbortableSessionPhase, shouldInterruptBeforeSubmit } from './submitInterrupt';
 import {
+    dispatchQueuedMessageForSession,
     QueuedSendAuthorizationRequiredError,
     sendQueuedMessagesNowForSession,
 } from './queuedSend';
@@ -274,8 +294,6 @@ type ComposerAttachmentControlsProps = {
     isVSCode: boolean;
     footerIconButtonClass: string;
     iconSizeClass: string;
-    fileInputRef: React.RefObject<HTMLInputElement | null>;
-    handleLocalFileSelect: (event: React.ChangeEvent<HTMLInputElement>) => void | Promise<void>;
     handlePickLocalFiles: () => void;
     openIssuePicker: () => void;
     openPrPicker: () => void;
@@ -288,8 +306,6 @@ const ComposerAttachmentControls = React.memo(function ComposerAttachmentControl
         isVSCode,
         footerIconButtonClass,
         iconSizeClass,
-        fileInputRef,
-        handleLocalFileSelect,
         handlePickLocalFiles,
         openIssuePicker,
         openPrPicker,
@@ -298,15 +314,6 @@ const ComposerAttachmentControls = React.memo(function ComposerAttachmentControl
 
     return (
         <div className="flex items-center gap-x-1.5">
-            <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                className="hidden"
-                onChange={handleLocalFileSelect}
-                accept="*/*"
-            />
-
             <div className="relative inline-flex">
                 {isVSCode ? (
                     <button
@@ -682,6 +689,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const currentSessionDirectory = useSessionUIStore((s) =>
         currentSessionId ? s.getDirectoryForSession(currentSessionId) : null,
     );
+    const isCurrentSessionRevertPending = useSessionRevertPending(
+        currentSessionId ?? '',
+        currentSessionDirectory ?? undefined,
+    );
     const currentSession = useSession(currentSessionId, currentSessionDirectory ?? undefined);
     const currentSessionIsSubtask = Boolean((currentSession as { parentID?: string | null } | undefined)?.parentID);
     const currentSessionMessagesResolved = useSessionMessagesResolved(
@@ -703,6 +714,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const attachedFiles = useInputStore((s) => s.attachedFiles);
     const addAttachedFile = useInputStore((s) => s.addAttachedFile);
     const clearAttachedFiles = useInputStore((s) => s.clearAttachedFiles);
+    const pendingRestoredInput = useInputStore((s) => (
+        currentSessionId ? s.pendingRestoredInputs.get(currentSessionId) ?? null : null
+    ));
+    const consumeRestoredInput = useInputStore((s) => s.consumeRestoredInput);
     const saveSessionAgentSelection = useSelectionStore((s) => s.saveSessionAgentSelection);
     const getDraftAgentModelForSelection = useSelectionStore((s) => s.getDraftAgentModelForSelection);
     const getDraftAgentModelVariantForSelection = useSelectionStore((s) => s.getDraftAgentModelVariantForSelection);
@@ -1037,6 +1052,36 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         messageRef.current = message;
     }, [message]);
 
+    const composerRevisionSnapshotRef = React.useRef({
+        targetKey: activeDraftTargetKey,
+        message,
+        attachedFiles,
+    });
+    const skipNextComposerRevisionRef = React.useRef(false);
+    React.useLayoutEffect(() => {
+        const previous = composerRevisionSnapshotRef.current;
+        const targetChanged = previous.targetKey !== activeDraftTargetKey;
+        if (skipNextComposerRevisionRef.current) {
+            skipNextComposerRevisionRef.current = false;
+        } else if (
+            currentSessionId
+            && !targetChanged
+            && (previous.message !== message || previous.attachedFiles !== attachedFiles)
+        ) {
+            markSessionComposerEdited(currentSessionId);
+        }
+        composerRevisionSnapshotRef.current = {
+            targetKey: activeDraftTargetKey,
+            message,
+            attachedFiles,
+        };
+    }, [activeDraftTargetKey, attachedFiles, currentSessionId, message]);
+
+    React.useLayoutEffect(() => {
+        setActiveComposerSession(currentSessionId);
+        return () => setActiveComposerSession(null);
+    }, [currentSessionId]);
+
     React.useEffect(() => {
         currentDraftTargetRef.current = activeDraftTarget;
     }, [activeDraftTarget]);
@@ -1064,6 +1109,13 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         clearTimeout(draftPersistTimerRef.current);
         draftPersistTimerRef.current = null;
     }, []);
+
+    React.useEffect(() => subscribePersistedSessionInputRemoval((sessionId) => {
+        const target = currentDraftTargetRef.current;
+        if (target.kind !== 'session' || target.id !== sessionId) return;
+        clearPendingDraftPersist();
+        draftPersistence.retire(target);
+    }), [clearPendingDraftPersist, draftPersistence]);
 
     // Handle initial draft restoration and text selection
     const hasHandledInitialDraftRef = React.useRef(false);
@@ -1105,6 +1157,9 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 // Restore draft for the session/draft we're entering.
                 const state = useSessionUIStore.getState();
                 const newDraft = draftPersistence.load(activeDraftTarget) || (state.currentDraftId ? state.draftsById[state.currentDraftId]?.text ?? '' : '');
+                if (newDraft !== messageRef.current) {
+                    skipNextComposerRevisionRef.current = true;
+                }
                 setMessage(newDraft);
                 confirmedMentionsRef.current = draftPersistence.loadConfirmedMentions(activeDraftTarget);
                 if (newDraft) {
@@ -1114,9 +1169,13 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 }
             } else {
                 // Persist disabled: clear input without saving
+                if (messageRef.current !== '') {
+                    skipNextComposerRevisionRef.current = true;
+                }
                 setMessage('');
                 confirmedMentionsRef.current = new Set();
             }
+            draftPersistence.release(oldTarget);
         }
     }, [activeDraftTarget, activeDraftTargetKey, clearPendingDraftPersist, draftPersistence, persistChatDraft, persistDraftImmediately]);
 
@@ -1249,9 +1308,26 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         }
     }, [pendingInputText, consumePendingInputText]);
 
+    React.useEffect(() => {
+        if (!currentSessionId || !pendingRestoredInput) return;
+        const restored = consumeRestoredInput(
+            currentSessionId,
+            getSessionComposerRevision(currentSessionId),
+        );
+        if (!restored) return;
+
+        const input = useInputStore.getState();
+        input.clearAttachedFiles();
+        for (const attachment of restored.attachments) {
+            input.addRestoredAttachment(attachment);
+        }
+        setMessage(restored.text);
+        requestAnimationFrame(() => textareaRef.current?.focus());
+    }, [consumeRestoredInput, currentSessionId, pendingRestoredInput]);
+
     const hasContent = message.trim().length > 0 || sendableAttachedFiles.length > 0 || hasDrafts;
     const hasQueuedMessages = queuedMessages.length > 0;
-    const canSend = hasContent || hasQueuedMessages;
+    const canSend = !isCurrentSessionRevertPending && (hasContent || hasQueuedMessages);
 
     const pendingSendAbortKey = currentSessionId ?? (currentDraftId && newSessionDraftOpen ? `draft:${currentDraftId}` : null);
     const hasPendingSendAbort = useSessionUIStore((state) =>
@@ -1392,45 +1468,41 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             return;
         }
 
-        // Remove first so the idle auto-send hook can't dispatch the same item concurrently.
-        useMessageQueueStore.getState().removeFromQueue(sessionId, queuedMessage.id);
-
         try {
-            const shouldInterruptCurrentTurn = shouldInterruptBeforeSubmit({
-                currentSessionId: sessionId,
-                sessionPhase,
-                queuedMessageCount: 1,
-                queuedOnly: true,
-                isSubtaskSession: currentSessionIsSubtask,
-            });
-            if (shouldInterruptCurrentTurn) {
-                await sessionActions.interruptCurrentOperationForQueuedSend(sessionId);
-            }
-
-            const messageID = queuedMessage.messageId;
-            const directory = queuedMessage.directory;
-            await useSessionUIStore.getState().sendMessageToSession(
+            await dispatchQueuedMessageForSession({
                 sessionId,
-                messageText,
-                providerID,
-                modelID,
-                agent,
-                attachments,
-                mention?.name,
-                undefined,
-                variant,
-                'normal',
-                planMode,
-                (messageID || directory) ? { messageID, directory } : undefined,
-            );
-        } catch (error) {
-            // Re-queue on failure so the message isn't lost.
-            useMessageQueueStore.getState().addToQueue(sessionId, {
-                content: queuedMessage.content,
-                directory: queuedMessage.directory,
-                attachments: queuedMessage.attachments,
-                sendConfig: queuedMessage.sendConfig,
+                queuedMessageId: queuedMessage.id,
+                dispatch: async (dispatchedMessage) => {
+                    const shouldInterruptCurrentTurn = shouldInterruptBeforeSubmit({
+                        currentSessionId: sessionId,
+                        sessionPhase,
+                        queuedMessageCount: 1,
+                        queuedOnly: true,
+                        isSubtaskSession: currentSessionIsSubtask,
+                    });
+                    if (shouldInterruptCurrentTurn) {
+                        await sessionActions.interruptCurrentOperationForQueuedSend(sessionId);
+                    }
+
+                    const messageID = dispatchedMessage.messageId;
+                    const directory = dispatchedMessage.directory;
+                    await useSessionUIStore.getState().sendMessageToSession(
+                        sessionId,
+                        messageText,
+                        providerID,
+                        modelID,
+                        agent,
+                        attachments,
+                        mention?.name,
+                        undefined,
+                        variant,
+                        'normal',
+                        planMode,
+                        (messageID || directory) ? { messageID, directory } : undefined,
+                    );
+                },
             });
+        } catch (error) {
             const rawMessage = error instanceof Error ? error.message : String(error ?? '');
             console.error('Queued message send failed:', rawMessage || error);
             toast.error(rawMessage || t('chat.chatInput.toast.messageSendFailed'));
@@ -1465,6 +1537,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     }, [t]);
 
     const handleSubmit = async (options?: SubmitOptions) => {
+        if (isCurrentSessionRevertPending) return;
         if (submitInFlightRef.current) return;
         submitInFlightRef.current = true;
 
@@ -1763,12 +1836,18 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         }
 
         const sessionDirectoryForSend = currentSessionDirectory ?? currentDirectory;
-        const shouldAddResponseStyle = newSessionDraftOpen || (currentSessionId ? !hasUserMessages(currentSessionId, sessionDirectoryForSend) : false);
+        const shouldAddResponseStyle = shouldAttachResponseStyleReminder({
+            isNewSessionDraft: newSessionDraftOpen,
+            hasExistingSession: Boolean(currentSessionId),
+            existingSessionHasUserMessages: currentSessionId
+                ? hasUserMessages(currentSessionId, sessionDirectoryForSend)
+                : false,
+        });
         if (shouldAddResponseStyle) {
             const responseStyleInstruction = getCachedResponseStyleInstruction();
             if (responseStyleInstruction) {
                 additionalParts.push({
-                    text: wrapSystemReminder(responseStyleInstruction),
+                    text: wrapResponseStyleReminder(getCachedResponseStyleLevel(), responseStyleInstruction),
                     synthetic: true,
                 });
             }
@@ -3797,6 +3876,15 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
     return (
         <>
+        <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={handleLocalFileSelect}
+            accept="*/*"
+            data-composer-file-input="true"
+        />
         <form
             onSubmit={(e) => { e.preventDefault(); handlePrimaryAction(); }}
             className={cn(
@@ -4293,8 +4381,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                             isVSCode={isVSCode}
                                             footerIconButtonClass={footerIconButtonClass}
                                             iconSizeClass={iconSizeClass}
-                                            fileInputRef={fileInputRef}
-                                            handleLocalFileSelect={handleLocalFileSelect}
                                             handlePickLocalFiles={handlePickLocalFiles}
                                             openIssuePicker={openIssuePicker}
                                             openPrPicker={openPrPicker}
@@ -4348,8 +4434,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                         isVSCode={isVSCode}
                                         footerIconButtonClass={footerIconButtonClass}
                                         iconSizeClass={iconSizeClass}
-                                        fileInputRef={fileInputRef}
-                                        handleLocalFileSelect={handleLocalFileSelect}
                                         handlePickLocalFiles={handlePickLocalFiles}
                                         openIssuePicker={openIssuePicker}
                                         openPrPicker={openPrPicker}
@@ -4404,55 +4488,66 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             </div>
         </form>
 
-        {/* Issue Picker Dialog */}
-        <GitHubIssuePickerDialog
-            open={issuePickerOpen}
-            onOpenChange={setIssuePickerOpen}
-            mode="select"
-            onSelect={(issue) => {
-                setLinkedIssue(issue);
-                setLinkedPr(null);
-            }}
-        />
-        <GitHubPrPickerDialog
-            open={prPickerOpen}
-            onOpenChange={setPrPickerOpen}
-            onSelect={(pr) => {
-                setLinkedPr(pr);
-                setLinkedIssue(null);
-            }}
-        />
-        <StashDialog
-            open={draftCheckoutDialog !== null}
-            onOpenChange={(open) => {
-                if (!open) {
-                    setDraftCheckoutDialog(null);
-                }
-            }}
-            operation="checkout"
-            targetBranch={draftCheckoutDialog?.branch ?? ''}
-            onConfirm={async (restoreAfter) => {
-                const pending = draftCheckoutDialog;
-                if (!pending) {
-                    return;
-                }
-                await handleDraftBranchCheckout(pending.branch, {
-                    stashConfirmed: true,
-                    restoreAfter,
-                    projectId: pending.projectId,
-                    projectRoot: pending.projectRoot,
-                });
-            }}
-            finishBranchAction={canFinishDraftCheckoutIntoMain ? {
-                onConfirm: async (restoreAfter) => {
-                    const pending = draftCheckoutDialog;
-                    if (!pending) {
-                        return;
-                    }
-                    await handleDraftFinishCurrentBranchIntoMain(pending, restoreAfter);
-                },
-            } : undefined}
-        />
+        <DeferredChatDialog active={issuePickerOpen}>
+            <LazyViewBoundary>
+                <LazyGitHubIssuePickerDialog
+                    open={issuePickerOpen}
+                    onOpenChange={setIssuePickerOpen}
+                    mode="select"
+                    onSelect={(issue) => {
+                        setLinkedIssue(issue);
+                        setLinkedPr(null);
+                    }}
+                />
+            </LazyViewBoundary>
+        </DeferredChatDialog>
+        <DeferredChatDialog active={prPickerOpen}>
+            <LazyViewBoundary>
+                <LazyGitHubPrPickerDialog
+                    open={prPickerOpen}
+                    onOpenChange={setPrPickerOpen}
+                    onSelect={(pr) => {
+                        setLinkedPr(pr);
+                        setLinkedIssue(null);
+                    }}
+                />
+            </LazyViewBoundary>
+        </DeferredChatDialog>
+        <DeferredChatDialog active={draftCheckoutDialog !== null}>
+            <LazyViewBoundary>
+                <LazyStashDialog
+                    open={draftCheckoutDialog !== null}
+                    onOpenChange={(open) => {
+                        if (!open) {
+                            setDraftCheckoutDialog(null);
+                        }
+                    }}
+                    operation="checkout"
+                    targetBranch={draftCheckoutDialog?.branch ?? ''}
+                    onConfirm={async (restoreAfter) => {
+                        const pending = draftCheckoutDialog;
+                        if (!pending) {
+                            return;
+                        }
+                        await handleDraftBranchCheckout(pending.branch, {
+                            stashConfirmed: true,
+                            restoreAfter,
+                            projectId: pending.projectId,
+                            projectRoot: pending.projectRoot,
+                        });
+                    }}
+                    finishBranchAction={canFinishDraftCheckoutIntoMain ? {
+                        onConfirm: async (restoreAfter) => {
+                            const pending = draftCheckoutDialog;
+                            if (!pending) {
+                                return;
+                            }
+                            await handleDraftFinishCurrentBranchIntoMain(pending, restoreAfter);
+                        },
+                    } : undefined}
+                />
+            </LazyViewBoundary>
+        </DeferredChatDialog>
         </>
     );
 };

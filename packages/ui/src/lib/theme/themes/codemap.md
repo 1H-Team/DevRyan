@@ -1,7 +1,7 @@
 # packages/ui/src/lib/theme/themes/
 
 ## Responsibility
-Defines concrete theme palettes/token sets consumed by the UI theming engine.
+Defines the DevRyan Default palettes and the pinned built-in palette catalog consumed by the UI theming engine. Catalog composition swaps the dark Default and JetBrains presentation payloads while preserving their stable IDs and metadata.
 
 ## Design
 Theme-per-file exports with semantic token naming rather than component-specific colors.

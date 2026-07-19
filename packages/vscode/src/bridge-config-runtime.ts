@@ -17,6 +17,7 @@ import {
   getSkillSources,
   createSkill,
   updateSkill,
+  deleteSkill,
   readSkillSupportingFile,
   writeSkillSupportingFile,
   deleteSkillSupportingFile,
@@ -199,6 +200,7 @@ const findSkillByIdentity = (
   skillName: string,
   requestedPath: unknown,
   scope: SkillScope | 'all',
+  strictPath = false,
 ): DiscoveredSkill | null => {
   const normalizedRequestedPath = normalizeSkillPath(requestedPath);
   if (normalizedRequestedPath) {
@@ -209,6 +211,9 @@ const findSkillByIdentity = (
     ));
     if (byPath) {
       return { ...byPath, preferDiscoveredPath: true } as DiscoveredSkill;
+    }
+    if (strictPath) {
+      return null;
     }
   }
 
@@ -827,7 +832,11 @@ export async function handleConfigBridgeMessage(
           skillName,
           requestedPath,
           scope,
+          true,
         );
+        if (!discoveredSkill) {
+          return { id, type, success: false, error: `Skill "${skillName}" not found` };
+        }
         const sources = getSkillSources(skillName, workingDirectory, discoveredSkill);
         if (!sources.md.exists || !sources.md.path) {
           return { id, type, success: false, error: `Skill "${skillName}" not found` };
@@ -837,35 +846,101 @@ export async function handleConfigBridgeMessage(
         }
 
         const skillPath = normalizeSkillPath(sources.md.path);
-        const alreadyHidden = hiddenSkills.some((skill) => normalizeSkillPath(skill.path) === skillPath);
-        if (!alreadyHidden) {
-          await deps.persistSettings({
-            hiddenSkills: [
-              ...hiddenSkills,
-              {
-                name: skillName,
-                path: skillPath,
-                ...(sources.md.scope ? { scope: sources.md.scope } : {}),
-                ...(sources.md.source ? { source: sources.md.source } : {}),
-              },
-            ],
-          }, ctx);
+        deleteSkill(skillName, workingDirectory, discoveredSkill);
+        const nextHiddenSkills = hiddenSkills.filter((skill) => normalizeSkillPath(skill.path) !== skillPath);
+        let warning: string | undefined;
+        if (nextHiddenSkills.length !== hiddenSkills.length) {
+          try {
+            await deps.persistSettings({ hiddenSkills: nextHiddenSkills }, ctx);
+          } catch (settingsError) {
+            const message = settingsError instanceof Error ? settingsError.message : 'Failed to update settings';
+            warning = `The skill was deleted, but its hidden-skill settings entry could not be removed: ${message}`;
+            console.warn('[Skill delete] Failed to remove stale hidden-skill settings entry:', settingsError);
+          }
         }
-        await ctx?.manager?.restart();
+        const externalRuntime = ctx?.manager?.getDebugInfo()?.mode === 'external';
+        const managedRuntimeAvailable = !externalRuntime && Boolean(ctx?.manager);
+        if (managedRuntimeAvailable) {
+          void Promise.resolve()
+            .then(() => ctx?.manager?.restart())
+            .catch((refreshError) => {
+              console.error('[Skill delete] OpenCode refresh failed after deletion:', refreshError);
+            });
+        } else {
+          const restartWarning = externalRuntime
+            ? 'Restart the external OpenCode runtime before relying on the updated skill list.'
+            : 'OpenCode is unavailable; restart it before relying on the updated skill list.';
+          warning = warning ? `${warning} ${restartWarning}` : restartWarning;
+        }
         return {
           id,
           type,
           success: true,
           data: {
             success: true,
-            requiresReload: true,
-            message: `Skill ${skillName} removed successfully. Reloading interface…`,
-            reloadDelayMs: deps.clientReloadDelayMs,
+            requiresReload: false,
+            runtimeRefreshPending: managedRuntimeAvailable,
+            runtimeApplied: false,
+            message: `Skill ${skillName} permanently deleted.`,
+            ...(warning ? { warning } : {}),
           },
         };
       }
 
       return { id, type, success: false, error: `Unsupported method: ${normalizedMethod}` };
+    }
+
+    case 'api:config/skills:hidden:hide': {
+      const { name, path: requestedPath, scope: rawScope } = (payload || {}) as { name?: unknown; path?: unknown; scope?: unknown };
+      const skillName = typeof name === 'string' ? name.trim() : '';
+      if (!skillName) {
+        return { id, type, success: false, error: 'Skill name is required' };
+      }
+      const workingDirectory = ctx?.manager?.getWorkingDirectory() || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const scope = normalizeSkillScopeFilter(rawScope);
+      const discoveredSkill = findSkillByIdentity(
+        await resolveDiscoveredSkills(ctx, workingDirectory, deps),
+        skillName,
+        requestedPath,
+        scope,
+        true,
+      );
+      if (!discoveredSkill) {
+        return { id, type, success: false, error: `Skill "${skillName}" not found` };
+      }
+      const sources = getSkillSources(skillName, workingDirectory, discoveredSkill);
+      if (!sources.md.exists || !sources.md.path || (scope !== 'all' && sources.md.scope !== scope)) {
+        return { id, type, success: false, error: `Skill "${skillName}" not found` };
+      }
+
+      const settings = deps.readSettings(ctx);
+      const hiddenSkills = sanitizeHiddenSkills((settings as { hiddenSkills?: unknown }).hiddenSkills);
+      const skillPath = normalizeSkillPath(sources.md.path);
+      if (!hiddenSkills.some((skill) => normalizeSkillPath(skill.path) === skillPath)) {
+        await deps.persistSettings({
+          hiddenSkills: [
+            ...hiddenSkills,
+            {
+              name: skillName,
+              path: skillPath,
+              ...(sources.md.scope ? { scope: sources.md.scope } : {}),
+              ...(sources.md.source ? { source: sources.md.source } : {}),
+            },
+          ],
+        }, ctx);
+      }
+      await ctx?.manager?.restart();
+      return {
+        id,
+        type,
+        success: true,
+        data: {
+          success: true,
+          requiresReload: true,
+          message: `Skill ${skillName} hidden successfully. Reloading interface…`,
+          reloadDelayMs: deps.clientReloadDelayMs,
+        },
+      };
     }
 
     case 'api:config/skills:hidden:restore': {

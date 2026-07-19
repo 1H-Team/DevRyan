@@ -19,12 +19,20 @@ const group = (providerId: string, providerName: string): RateLimitGroup => ({
 });
 
 const groups: RateLimitGroup[] = [
-  group('anthropic', 'Anthropic'),
-  group('codex', 'ChatGPT'),
-  group('cursor', 'Cursor'),
-  group('github-copilot', 'GitHub Copilot'),
   group('gemini', 'Gemini'),
+  group('cursor', 'Cursor'),
+  group('anthropic', 'Anthropic'),
+  group('github-copilot', 'GitHub Copilot'),
+  group('codex', 'ChatGPT'),
 ];
+
+const expectProviderLabelsInAlphabeticalOrder = (markup: string) => {
+  const labelPositions = ['Anthropic', 'ChatGPT', 'Cursor', 'Gemini', 'GitHub Copilot']
+    .map((label) => markup.indexOf(label));
+
+  expect(labelPositions.every((position) => position >= 0)).toBe(true);
+  expect(labelPositions).toEqual([...labelPositions].sort((left, right) => left - right));
+};
 
 const renderTabs = (mobile = false) => renderToStaticMarkup(
   <I18nProvider>
@@ -45,6 +53,7 @@ describe('UsageProviderTabs', () => {
     expect(markup).toContain('grid-cols-3');
     expect(markup).toContain('aria-selected="true"');
     expect(markup).toContain('Cursor');
+    expectProviderLabelsInAlphabeticalOrder(markup);
     expect(markup).not.toContain('overflow-x-auto');
     expect(markup).not.toContain('scrollbar-none');
   });
@@ -55,6 +64,7 @@ describe('UsageProviderTabs', () => {
     expect(markup).toContain('role="tablist"');
     expect(markup).toContain('grid-cols-2');
     expect(markup).toContain('GitHub Copilot');
+    expectProviderLabelsInAlphabeticalOrder(markup);
     expect(markup).not.toContain('overflow-x-auto');
     expect(markup).not.toContain('scrollbar-none');
   });

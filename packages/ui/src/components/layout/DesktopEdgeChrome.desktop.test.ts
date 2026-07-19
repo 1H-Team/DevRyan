@@ -38,6 +38,17 @@ describe('DesktopEdgeChrome desktop drag regions', () => {
     expect(source).toContain('<div className="app-region-no-drag flex items-center gap-1.5">');
   });
 
+  test('orders service tabs as Usage, MCP, Instance', () => {
+    const source = readSource('DesktopRightChromeActions.tsx');
+    const usageIndex = source.indexOf("base.push({ value: 'usage'");
+    const mcpIndex = source.indexOf("base.push({ value: 'mcp'");
+    const instanceIndex = source.indexOf("base.push({ value: 'instance'");
+
+    expect(usageIndex).toBeGreaterThan(-1);
+    expect(mcpIndex).toBeGreaterThan(usageIndex);
+    expect(instanceIndex).toBeGreaterThan(mcpIndex);
+  });
+
   test('hides both action clusters for settings while preserving the drag filler', () => {
     const chromeSource = readSource('DesktopEdgeChrome.tsx');
     const layoutSource = readSource('MainLayout.tsx');

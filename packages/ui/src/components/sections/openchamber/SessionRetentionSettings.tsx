@@ -8,6 +8,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useUIStore } from '@/stores/useUIStore';
 import { useSessionAutoCleanup } from '@/hooks/useSessionAutoCleanup';
 import { useI18n } from '@/lib/i18n';
+import { clearDesktopCache, getDesktopCacheInfo, isDesktopLocalOriginActive, isElectronShell } from '@/lib/desktop';
+import { formatCacheSize } from './applicationCache';
 
 const MIN_DAYS = 1;
 const MAX_DAYS = 365;
@@ -16,6 +18,101 @@ const RETENTION_ACTION_OPTIONS = [
   { value: 'archive', labelKey: 'settings.openchamber.sessionRetention.action.archive' },
   { value: 'delete', labelKey: 'settings.openchamber.sessionRetention.action.delete' },
 ] as const;
+
+type CacheSizeStatus = 'loading' | 'ready' | 'unavailable';
+
+const ApplicationCacheCleanup: React.FC = () => {
+  const { t } = useI18n();
+  const isAvailable = isElectronShell() && isDesktopLocalOriginActive();
+  const [sizeBytes, setSizeBytes] = React.useState(0);
+  const [sizeStatus, setSizeStatus] = React.useState<CacheSizeStatus>('loading');
+  const [isClearing, setIsClearing] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!isAvailable) return;
+
+    let isActive = true;
+    void getDesktopCacheInfo()
+      .then((info) => {
+        if (!isActive) return;
+        if (!info) {
+          setSizeStatus('unavailable');
+          return;
+        }
+        setSizeBytes(info.sizeBytes);
+        setSizeStatus('ready');
+      })
+      .catch((error) => {
+        console.warn('Failed to load application cache size', error);
+        if (isActive) setSizeStatus('unavailable');
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [isAvailable]);
+
+  const handleClearCache = React.useCallback(async () => {
+    setIsClearing(true);
+    try {
+      const info = await clearDesktopCache();
+      if (!info) {
+        setSizeStatus('unavailable');
+        toast.error(t('settings.openchamber.sessionRetention.applicationCache.toast.clearFailed'));
+        return;
+      }
+      setSizeBytes(info.sizeBytes);
+      setSizeStatus('ready');
+      toast.success(t('settings.openchamber.sessionRetention.applicationCache.toast.cleared'));
+    } catch (error) {
+      console.warn('Failed to clear application cache', error);
+      setSizeStatus('unavailable');
+      toast.error(t('settings.openchamber.sessionRetention.applicationCache.toast.clearFailed'));
+    } finally {
+      setIsClearing(false);
+    }
+  }, [t]);
+
+  if (!isAvailable) return null;
+
+  let sizeLabel: string;
+  if (sizeStatus === 'loading') {
+    sizeLabel = t('settings.openchamber.sessionRetention.applicationCache.state.loadingSize');
+  } else if (sizeStatus === 'unavailable') {
+    sizeLabel = t('settings.openchamber.sessionRetention.applicationCache.state.sizeUnavailable');
+  } else {
+    sizeLabel = t('settings.openchamber.sessionRetention.applicationCache.state.size', {
+      size: formatCacheSize(sizeBytes),
+    });
+  }
+
+  return (
+    <div className="pt-2 space-y-1">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-8">
+        <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
+          <p className="typography-meta text-foreground font-medium">
+            {t('settings.openchamber.sessionRetention.applicationCache.title')}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 sm:w-fit">
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            onClick={handleClearCache}
+            disabled={isClearing}
+            className="!font-normal normal-case"
+          >
+            {isClearing
+              ? t('settings.openchamber.sessionRetention.applicationCache.actions.clearing')
+              : t('settings.openchamber.sessionRetention.applicationCache.actions.clear')}
+          </Button>
+        </div>
+      </div>
+      <p className="typography-meta text-muted-foreground">{sizeLabel}</p>
+    </div>
+  );
+};
 
 export const SessionRetentionSettings: React.FC = () => {
   const { t } = useI18n();
@@ -170,6 +267,7 @@ export const SessionRetentionSettings: React.FC = () => {
             ? t('settings.openchamber.sessionRetention.manualCleanup.eligibleArchiveNow', { count: pendingCount })
             : t('settings.openchamber.sessionRetention.manualCleanup.eligibleDeleteNow', { count: pendingCount })}
         </p>
+        <ApplicationCacheCleanup />
       </div>
     </div>
   );

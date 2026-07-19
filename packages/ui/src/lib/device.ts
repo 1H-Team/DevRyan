@@ -44,6 +44,17 @@ const getNavigatorDeviceHints = (maxTouchPoints: number) => {
   return { isExplicitTablet: isIPad || isAndroidTablet || isGenericTablet };
 };
 
+export const isExplicitDesktopSurface = (search: string): boolean => {
+  try {
+    return new URLSearchParams(search).get('surface') === 'desktop';
+  } catch {
+    return false;
+  }
+};
+
+const isDesktopSurfaceRuntime = (): boolean => isDesktopShell()
+  || (typeof window !== 'undefined' && isExplicitDesktopSurface(window.location.search));
+
 const setRootDeviceAttributes = (
   isTauriShellRuntime: boolean,
   deviceType: DeviceType,
@@ -97,7 +108,7 @@ export function getDeviceInfo(): DeviceInfo {
   const prefersCoarsePointer = pointerQuery?.matches ?? false;
   const noHover = hoverQuery?.matches ?? false;
   const maxTouchPoints = typeof navigator !== 'undefined' ? navigator.maxTouchPoints ?? 0 : 0;
-  const isDesktopShellRuntime = isDesktopShell();
+  const isDesktopShellRuntime = isDesktopSurfaceRuntime();
   const { isExplicitTablet } = getNavigatorDeviceHints(maxTouchPoints);
 
   const hasTouchInput = prefersCoarsePointer || noHover || maxTouchPoints > 0;
@@ -149,7 +160,7 @@ export function getDeviceInfo(): DeviceInfo {
 export function isMobileDeviceViaCSS(): boolean {
   if (typeof window === 'undefined') return false;
 
-  if (typeof window !== 'undefined' && isDesktopShell()) {
+  if (isDesktopSurfaceRuntime()) {
     return false;
   }
 
@@ -172,7 +183,7 @@ export const isStandalonePwaRuntime = (): boolean => {
 };
 
 export const isTabletStandalonePwaRuntime = (): boolean => {
-  if (typeof window === 'undefined' || isDesktopShell()) return false;
+  if (typeof window === 'undefined' || isDesktopSurfaceRuntime()) return false;
 
   const maxTouchPoints = typeof navigator !== 'undefined' ? navigator.maxTouchPoints ?? 0 : 0;
   return isStandalonePwaRuntime() && maxTouchPoints > 0 && window.innerWidth > BREAKPOINTS.md;

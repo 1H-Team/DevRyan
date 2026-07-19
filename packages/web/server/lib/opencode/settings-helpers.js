@@ -66,6 +66,9 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.themeId === 'string' && candidate.themeId.length > 0) {
       result.themeId = candidate.themeId;
     }
+    if (Number.isSafeInteger(candidate.themeCatalogVersion) && candidate.themeCatalogVersion >= 0) {
+      result.themeCatalogVersion = candidate.themeCatalogVersion;
+    }
     if (typeof candidate.themeVariant === 'string' && (candidate.themeVariant === 'light' || candidate.themeVariant === 'dark')) {
       result.themeVariant = candidate.themeVariant;
     }
@@ -612,7 +615,7 @@ export const createSettingsHelpers = (dependencies) => {
 
     if (
       typeof candidate.responseStylePreset === 'string' &&
-      ['concise', 'detailed', 'mentor', 'pushback', 'noFiller', 'matchEnergy', 'warmPeer', 'custom'].includes(candidate.responseStylePreset)
+      ['actions', 'concise', 'detailed', 'mentor', 'pushback', 'noFiller', 'matchEnergy', 'warmPeer', 'custom'].includes(candidate.responseStylePreset)
     ) {
       result.responseStylePreset = candidate.responseStylePreset;
     }

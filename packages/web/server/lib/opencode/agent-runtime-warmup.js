@@ -123,6 +123,7 @@ function createAgentRuntimeWarmup(dependencies = {}) {
   const readSkillFile = typeof dependencies.readSkillFile === 'function' ? dependencies.readSkillFile : () => '';
   const cursorPrewarm = typeof dependencies.cursorPrewarm === 'function' ? dependencies.cursorPrewarm : null;
   const now = typeof dependencies.now === 'function' ? dependencies.now : () => Date.now();
+  const inflightByDirectory = new Map();
   let latestResult = null;
 
   const buildHarness = (result) => {
@@ -199,9 +200,17 @@ function createAgentRuntimeWarmup(dependencies = {}) {
   };
 
   return {
-    async warm(options = {}) {
-      const timestamp = now();
+    warm(options = {}) {
       const directory = normalizeDirectory(options.directory);
+      const directoryKey = directory ?? '';
+      const existing = inflightByDirectory.get(directoryKey);
+      if (existing) {
+        // Joiners intentionally inherit the first caller's timeout configuration.
+        return existing;
+      }
+
+      const warmPromise = (async () => {
+      const timestamp = now();
       const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
         ? Math.trunc(options.timeoutMs)
         : DEFAULT_TIMEOUT_MS;
@@ -326,17 +335,19 @@ function createAgentRuntimeWarmup(dependencies = {}) {
         task: taskConfig.task,
         timeoutMs,
       })));
-      const mcpResult = await runTask({
-        name: mcpTask.name,
-        task: mcpTask.task,
-        timeoutMs: mcpTask.timeoutMs,
-      });
-      const commandResult = await runTask({
-        name: commandTask.name,
-        task: commandTask.task,
-        timeoutMs: commandTask.timeoutMs,
-      });
-      const coreResults = await coreResultsPromise;
+      const [coreResults, mcpResult, commandResult] = await Promise.all([
+        coreResultsPromise,
+        runTask({
+          name: mcpTask.name,
+          task: mcpTask.task,
+          timeoutMs: mcpTask.timeoutMs,
+        }),
+        runTask({
+          name: commandTask.name,
+          task: commandTask.task,
+          timeoutMs: commandTask.timeoutMs,
+        }),
+      ]);
       const results = [
         ...coreResults.slice(0, cursorPrewarm ? 7 : 6),
         mcpResult,
@@ -350,6 +361,15 @@ function createAgentRuntimeWarmup(dependencies = {}) {
         timedOut: results.some((task) => task.status === 'timeout'),
         tasks: results,
       });
+      })();
+
+      const sharedPromise = warmPromise.finally(() => {
+        if (inflightByDirectory.get(directoryKey) === sharedPromise) {
+          inflightByDirectory.delete(directoryKey);
+        }
+      });
+      inflightByDirectory.set(directoryKey, sharedPromise);
+      return sharedPromise;
     },
 
     getLatestResult() {

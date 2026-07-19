@@ -32,6 +32,7 @@ const ABSOLUTE_URL_PATTERN = /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//;
 const NO_STORE_CACHE_METHODS = new Set(["GET", "HEAD"]);
 const ID_RANDOM_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 const ID_RANDOM_LENGTH = 14;
+const SCOPED_REVERT_CLIENT_TIMEOUT_MS = 35_000;
 const TEXT_ATTACHMENT_MIME_TYPES = new Set([
   'application/atom+xml',
   'application/javascript',
@@ -357,6 +358,67 @@ const getDesktopFilesApi = (): FilesAPI | null => {
   }
   return null;
 };
+
+export async function requestScopedSessionRevert({
+  baseUrl,
+  sessionId,
+  messageId,
+  directory,
+  timeoutMs = SCOPED_REVERT_CLIENT_TIMEOUT_MS,
+  fetchImpl = globalThis.fetch,
+}: {
+  baseUrl: string;
+  sessionId: string;
+  messageId: string;
+  directory?: string;
+  timeoutMs?: number;
+  fetchImpl?: typeof fetch;
+}): Promise<Session> {
+  const base = baseUrl.replace(/\/$/, "");
+  const url = new URL(`${base}/openchamber/session/${encodeURIComponent(sessionId)}/scoped-revert`);
+  if (directory && directory.length > 0) {
+    url.searchParams.set("directory", directory);
+  }
+
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const watchdog = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      const error = new Error("Scoped session revert timed out") as Error & { code?: string };
+      error.code = "SCOPED_REVERT_TIMEOUT";
+      controller.abort(error);
+      reject(error);
+    }, timeoutMs);
+  });
+
+  const request = async (): Promise<Session> => {
+    const response = await fetchImpl(url.toString(), {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ messageID: messageId }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null;
+      const detail = payload?.error ? `: ${payload.error}` : "";
+      throw new Error(`Failed to revert session safely (${response.status})${detail}`);
+    }
+
+    const session = await response.json().catch(() => null) as Session | null;
+    if (!session) throw new Error("Failed to revert session safely");
+    return session;
+  };
+
+  try {
+    return await Promise.race([request(), watchdog]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
+}
 
 class OpencodeService {
   private client: OpencodeClient;
@@ -954,6 +1016,7 @@ class OpencodeService {
     additionalParts?: Array<ImmediateSubtaskAdditionalPart>;
     directory?: string | null;
     signal?: AbortSignal;
+    beforeTransport?: () => void;
   }): Promise<void> {
     const textSegments: string[] = [];
     const visibleText = typeof params.text === 'string' ? params.text.trim() : '';
@@ -1016,6 +1079,7 @@ class OpencodeService {
     if (params.signal?.aborted) {
       throw new DOMException('Aborted', 'AbortError');
     }
+    params.beforeTransport?.();
 
     const base = this.baseUrl.replace(/\/+$/, '');
     const url = new URL(`${base}/session/${encodeURIComponent(params.id)}/prompt`);
@@ -1077,6 +1141,7 @@ class OpencodeService {
     };
     directory?: string | null;
     signal?: AbortSignal;
+    beforeTransport?: () => void;
   }): Promise<string> {
     // Reuse one client-side message ID across retries. The server accepts this
     // as the real user message ID, making ambiguous network retries idempotent.
@@ -1234,6 +1299,7 @@ class OpencodeService {
 
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
+        params.beforeTransport?.();
         response = await fetch(url.toString(), {
           method: 'POST',
           headers: {
@@ -1330,6 +1396,7 @@ class OpencodeService {
     messageId?: string;
     directory?: string | null;
     signal?: AbortSignal;
+    beforeTransport?: () => void;
   }): Promise<string> {
     const tempMessageId = params.messageId ?? ascendingId("msg");
 
@@ -1350,6 +1417,7 @@ class OpencodeService {
     if (params.signal?.aborted) {
       throw new DOMException('Aborted', 'AbortError');
     }
+    params.beforeTransport?.();
 
     const payload: Record<string, unknown> = {
       command: params.command,
@@ -1407,33 +1475,18 @@ class OpencodeService {
     return response.data;
   }
 
-  async revertSessionScoped(sessionId: string, messageId: string, directory?: string): Promise<Session> {
-    const base = this.baseUrl.replace(/\/$/, "");
-    const url = new URL(`${base}/openchamber/session/${encodeURIComponent(sessionId)}/scoped-revert`);
+  async revertSessionScoped(
+    sessionId: string,
+    messageId: string,
+    directory?: string,
+  ): Promise<Session> {
     const targetDirectory = directory || this.currentDirectory;
-
-    if (targetDirectory && targetDirectory.length > 0) {
-      url.searchParams.set("directory", targetDirectory);
-    }
-
-    const response = await fetch(url.toString(), {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ messageID: messageId }),
+    return requestScopedSessionRevert({
+      baseUrl: this.baseUrl,
+      sessionId,
+      messageId,
+      directory: targetDirectory,
     });
-
-    if (!response.ok) {
-      const payload = await response.json().catch(() => null) as { error?: string } | null;
-      const detail = payload?.error ? `: ${payload.error}` : "";
-      throw new Error(`Failed to revert session safely (${response.status})${detail}`);
-    }
-
-    const session = await response.json().catch(() => null) as Session | null;
-    if (!session) throw new Error("Failed to revert session safely");
-    return session;
   }
 
   async unrevertSession(sessionId: string): Promise<Session> {

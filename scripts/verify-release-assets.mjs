@@ -13,13 +13,17 @@ export function requiredReleaseAssetNames(version) {
   return [
     ...appAssets,
     'latest-mac.yml',
-    `openchamber-web-${version}.tgz`,
+    `DevRyan-web-${version}.tgz`,
   ];
 }
 
 export function missingRequiredReleaseAssets(assetNames, version) {
   const available = new Set(assetNames);
   return requiredReleaseAssetNames(version).filter((name) => !available.has(name));
+}
+
+export function legacyBrandedReleaseAssetNames(assetNames) {
+  return assetNames.filter((name) => /^openchamber[_-]/i.test(name));
 }
 
 async function fetchJson(url, token) {
@@ -70,6 +74,11 @@ async function main() {
 
   if (missing.length > 0) {
     throw new Error(`Release ${tag} is missing required assets:\n${missing.map((name) => `- ${name}`).join('\n')}`);
+  }
+
+  const legacyBranded = legacyBrandedReleaseAssetNames(assetNames);
+  if (legacyBranded.length > 0) {
+    throw new Error(`Release ${tag} contains legacy-branded public assets:\n${legacyBranded.map((name) => `- ${name}`).join('\n')}`);
   }
 
   console.log(`Release ${tag} has all required app package assets.`);

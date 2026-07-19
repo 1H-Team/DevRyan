@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { createManagedTaskRecord } from '@openchamber/orchestration-runtime';
+
 import { createWebManagedOrchestrationRuntime } from './runtime.js';
 
 const deferred = () => {
@@ -31,7 +33,75 @@ const createPersistence = () => {
   };
 };
 
+const createWaitScheduler = () => {
+  const task = createManagedTaskRecord({
+    taskId: 'dvr_task_wait_rpc',
+    idempotencyKey: 'wait-rpc',
+    rootSessionId: 'ses_root',
+    parentTaskId: null,
+    directory: '/workspace',
+    sequence: 1,
+    mode: 'orchestrator',
+    providerId: 'github-copilot',
+    modelId: 'gpt-4.1',
+    agent: 'explorer',
+    variant: null,
+    label: 'Wait RPC',
+    prompt: 'Wait for this task.',
+    attempt: 1,
+    priorTaskId: null,
+    executionKind: 'start',
+    createdAt: 1_000,
+    timeoutAt: null,
+  });
+  return {
+    task,
+    scheduler: {
+      initialize: vi.fn(async () => undefined),
+      getTask: vi.fn(() => task),
+      getResultEnvelope: vi.fn(() => null),
+      waitForTask: vi.fn(async () => task),
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    },
+  };
+};
+
 describe('web managed orchestration runtime', () => {
+  it('validates and clamps private wait slices before forwarding them to the scheduler', async () => {
+    const { scheduler } = createWaitScheduler();
+    const runtime = createWebManagedOrchestrationRuntime({
+      scheduler,
+      persistence: createPersistence(),
+      executor: { async start() { throw new Error('must not start'); } },
+    });
+    const waitParams = {
+      taskId: 'dvr_task_wait_rpc',
+      rootSessionId: 'ses_root',
+      directory: '/workspace',
+    };
+
+    await runtime.handleRpc({ method: 'wait', params: waitParams });
+    await runtime.handleRpc({ method: 'wait', params: { ...waitParams, waitTimeoutMs: 1 } });
+    await runtime.handleRpc({ method: 'wait', params: { ...waitParams, waitTimeoutMs: 30_000 } });
+
+    expect(scheduler.waitForTask.mock.calls.map(([, options]) => options)).toEqual([
+      { signal: undefined },
+      { signal: undefined, timeoutMs: 1 },
+      { signal: undefined, timeoutMs: 25_000 },
+    ]);
+
+    for (const waitTimeoutMs of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, null, '1000', Number.MAX_SAFE_INTEGER + 1]) {
+      await expect(runtime.handleRpc({
+        method: 'wait',
+        params: { ...waitParams, waitTimeoutMs },
+      })).rejects.toMatchObject({ code: 'invalid_request', statusCode: 400 });
+    }
+    expect(scheduler.waitForTask).toHaveBeenCalledTimes(3);
+    await runtime.shutdown();
+  });
+
   it('inspects and confirms a safe orchestrator-to-builder handoff', async () => {
     const runs = [];
     const runtime = createWebManagedOrchestrationRuntime({
@@ -219,7 +289,7 @@ describe('web managed orchestration runtime', () => {
     await runtime.shutdown();
   });
 
-  it('owns one three-slot scheduler, deterministic queue, and safe event projection', async () => {
+  it('owns one unbounded scheduler with immediate admission and safe event projection', async () => {
     const runs = [];
     const events = [];
     const runtime = createWebManagedOrchestrationRuntime({
@@ -255,22 +325,67 @@ describe('web managed orchestration runtime', () => {
         params: submitParams(index, index === 1 ? { timeoutAt: 1_500 } : {}),
       }));
     }
+    submitted.push(await runtime.handleRpc({
+      method: 'submit',
+      params: submitParams(6, { rootSessionId: 'ses_second_root' }),
+    }));
     await runtime.flush();
 
     expect(runs.map((run) => run.task.taskId)).toEqual([
       'dvr_task_web_1',
       'dvr_task_web_2',
       'dvr_task_web_3',
+      'dvr_task_web_4',
+      'dvr_task_web_5',
+      'dvr_task_web_6',
     ]);
-    expect(submitted[3].task.status).toBe('queued');
-    expect(submitted[4].task.status).toBe('queued');
+    expect(submitted[3].task.status).toBe('starting');
+    expect(submitted[4].task.status).toBe('starting');
+    expect(submitted[5].task.status).toBe('starting');
     expect(submitted.every(({ task }) => task.timeoutAt === 1_801_000)).toBe(true);
     expect(submitted.every(({ task }) => !('prompt' in task))).toBe(true);
     expect(events.every((event) => !('prompt' in event.properties.task))).toBe(true);
 
     runs[0].result.resolve({ status: 'completed', recoverablePreview: 'done' });
     await runtime.flush();
-    expect(runs[3].task.taskId).toBe('dvr_task_web_4');
+    expect(runs).toHaveLength(6);
+    await runtime.shutdown();
+  });
+
+  it('projects exhausted usage as immediate manual recovery on web and Electron', async () => {
+    const runtime = createWebManagedOrchestrationRuntime({
+      persistence: createPersistence(),
+      executor: {
+        async start() { return { status: 'failed', failureReason: 'out of usage', resumable: true }; },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' }; },
+        async readRecoverableResult() { return {}; },
+      },
+      createTaskId: () => 'dvr_task_usage_limit',
+      createLeaseToken: () => 'dvr_lease_usage_limit',
+      now: () => 1_000,
+    });
+    const submitted = await runtime.handleRpc({
+      method: 'submit',
+      params: submitParams(1, {
+        childSessionId: 'ses_child_usage_limit',
+        dispatchGroupId: 'msg_parent',
+      }),
+    });
+    await runtime.flush();
+
+    const status = await runtime.handleRpc({
+      method: 'status',
+      params: { taskId: submitted.task.taskId, rootSessionId: 'ses_root' },
+    });
+
+    expect(status.task).toMatchObject({
+      status: 'failed',
+      failureReason: 'out of usage',
+      failureKind: 'provider_usage_limit',
+      agentRetryAvailable: true,
+    });
+    expect(status.resultEnvelope).toMatchObject({ resumable: true, action: null });
     await runtime.shutdown();
   });
 

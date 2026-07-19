@@ -556,6 +556,8 @@ export const registerOpenCodeProxy = (app, deps) => {
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     openCodeSnapshotRoot: deps.openCodeSnapshotRoot,
+    scopedRevertTimeoutMs: deps.scopedRevertTimeoutMs,
+    scopedRevertSlowOperationMs: deps.scopedRevertSlowOperationMs,
   });
 
   app.post('/api/mcp/:name/:action', forwardMcpActionRequest);

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { classifyPreviewNavigation, classifyPreviewResourceError, rewritePreviewBody } from './proxy-runtime.js';
+import {
+  classifyPreviewNavigation,
+  classifyPreviewResourceError,
+  createPreviewBridgeScript,
+  rewritePreviewBody,
+} from './proxy-runtime.js';
 
 const rewrite = (bodyText, kind) => rewritePreviewBody({
   bodyText,
@@ -140,5 +145,29 @@ describe('preview navigation policy', () => {
       action: 'allow',
       url: 'mailto:test@example.com',
     });
+  });
+});
+
+describe('preview bridge lifecycle', () => {
+  it('reports history navigation without asking the parent to rebuild the iframe', () => {
+    const script = createPreviewBridgeScript({
+      proxyBasePath: '/api/preview/proxy/abc123',
+      targetOrigin: 'http://127.0.0.1:3000',
+    });
+
+    expect(script).toContain('window.__openchamberPreviewConfig=');
+    expect(script).toContain("navigation: 'display'");
+    expect(script).toContain("for (const method of ['pushState', 'replaceState'])");
+    expect(script).toContain("navigation: 'target'");
+  });
+
+  it('escapes markup in injected configuration', () => {
+    const script = createPreviewBridgeScript({
+      proxyBasePath: '/api/preview/proxy/abc123',
+      targetOrigin: 'http://127.0.0.1:3000/<script>',
+    });
+
+    expect(script).not.toContain('3000/<script>');
+    expect(script).toContain('3000/\\u003cscript>');
   });
 });

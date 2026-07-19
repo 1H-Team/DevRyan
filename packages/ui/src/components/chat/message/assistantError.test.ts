@@ -42,6 +42,17 @@ describe("classifyAssistantError", () => {
     })
   })
 
+  test("classifies certificate verification failures as retryable connection errors", () => {
+    expect(classifyAssistantError({
+      name: "UnknownError",
+      data: { message: "unknown certificate verification error" },
+    })).toEqual({
+      text: "The secure connection to the model provider could not be verified. Retry after your connection is stable. If this keeps happening, check VPN, proxy, or certificate settings.\n`unknown certificate verification error`",
+      variant: "error",
+      retryable: true,
+    })
+  })
+
   test("removes wrapped JSON quotes from generic fallback details", () => {
     expect(classifyAssistantError({
       name: "UnknownError",

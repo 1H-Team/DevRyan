@@ -1,8 +1,16 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test"
 
+const clearSessionAutoAcceptCalls: string[] = []
+
 mock.module("@/stores/permissionStore", () => ({
   usePermissionStore: {
-    getState: () => ({ isSessionAutoAccepting: () => false }),
+    getState: () => ({
+      isSessionAutoAccepting: () => false,
+      clearSessionAutoAccept: (sessionId: string) => {
+        clearSessionAutoAcceptCalls.push(sessionId)
+        return Promise.resolve()
+      },
+    }),
   },
 }))
 
@@ -17,6 +25,7 @@ mock.module("@/components/ui", () => ({
 import type { Event, Message, Part, Session, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { ChildStoreManager } from "./child-store"
 import { INITIAL_STATE } from "./types"
+import { opencodeClient } from "@/lib/opencode/client"
 import { useSessionUIStore } from "./session-ui-store"
 import {
   applySyncEventForTest,
@@ -25,7 +34,16 @@ import {
   setExternallyViewedSession,
 } from "./sync-context"
 import { useNotificationStore } from "./notification-store"
-import { isAbortGuardActive, resetAbortGuardState } from "./abort-retry-guard"
+import { isAbortGuardActive, registerManualAbortGuard, resetAbortGuardState } from "./abort-retry-guard"
+import { useSelectionStore } from "./selection-store"
+import { useMessageQueueStore } from "@/stores/messageQueueStore"
+import { useContextStore } from "@/stores/contextStore"
+import type { EditPermissionMode, SessionContextUsage } from "@/stores/types/sessionTypes"
+import { getSafeStorage } from "@/stores/utils/safeStorage"
+import { useSessionWorktreeStore } from "./session-worktree-store"
+import { useSessionPlanFileStore } from "@/stores/useSessionPlanFileStore"
+import { useProjectsStore } from "@/stores/useProjectsStore"
+import * as sessionActions from "./session-actions"
 
 const DIRECTORY = "/repo"
 const SESSION_ID = "ses_1"
@@ -156,8 +174,7 @@ const routingIndexFor = (messageIds: string[] = [USER_MESSAGE_ID, ASSISTANT_MESS
 })
 
 const flushAsync = async () => {
-  await Promise.resolve()
-  await Promise.resolve()
+  await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 const SESSION_COMPLETION_INDICATOR_SETTLE_MS = 250
@@ -166,18 +183,50 @@ const waitForCompletionIndicatorSettlement = async () => {
   await new Promise((resolve) => setTimeout(resolve, SESSION_COMPLETION_INDICATOR_SETTLE_MS + 20))
 }
 
+const contextUsage = (totalTokens: number): SessionContextUsage => ({
+  totalTokens,
+  percentage: totalTokens / 100,
+  capacityLimit: 10_000,
+  capacityBasis: "context",
+  inputLimit: null,
+  contextLimit: 10_000,
+  outputLimit: null,
+  tokenBreakdown: {
+    input: totalTokens,
+    output: 0,
+    reasoning: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    total: totalTokens,
+  },
+  hasTokenBreakdown: true,
+  sourceAccuracy: "unavailable",
+})
+
 describe("sync plan lifecycle on message.part.delta", () => {
   beforeEach(() => {
+    clearSessionAutoAcceptCalls.length = 0
     resetAbortGuardState()
     useSessionUIStore.setState({
+      currentSessionId: null,
+      abortPromptSessionId: null,
+      abortPromptExpiresAt: null,
+      worktreeMetadata: new Map(),
+      sessionDirectoryHints: new Map(),
+      webUICreatedSessions: new Set(),
       sessionPlanIndicator: new Map(),
       sessionPlanAvailable: new Map(),
       sessionCompletionIndicator: new Map(),
       sessionAbortFlags: new Map(),
+      abortControllers: new Map(),
       implementedPlanRequests: new Set(),
       planModeUserMessages: new Set(),
       planModeUserMessagesBySession: new Map(),
+      starterAssistantMessages: new Map(),
+      pendingChangesBarDismissed: new Map(),
     })
+    useSessionWorktreeStore.setState({ attachments: new Map() })
+    useSessionPlanFileStore.setState({ recordsBySession: {} })
     setActiveSession("", "")
     setExternallyViewedSession(DIRECTORY, SESSION_ID, false)
     useNotificationStore.setState({
@@ -187,6 +236,45 @@ describe("sync plan lifecycle on message.part.delta", () => {
         project: { unseenCount: {}, unseenHasError: {}, unseenHasCompletion: {} },
       },
     })
+    useMessageQueueStore.getState().clearAllQueues()
+    useContextStore.setState({
+      sessionModelSelections: new Map(),
+      sessionAgentSelections: new Map(),
+      sessionAgentModelSelections: new Map(),
+      sessionAgentModelVariantSelections: new Map(),
+      currentAgentContext: new Map(),
+      sessionContextUsage: new Map(),
+      sessionAgentEditModes: new Map(),
+    })
+  })
+
+  test("drops a stale session update before allocating replacement store branches", () => {
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    const current = {
+      id: SESSION_ID,
+      title: "Newest title",
+      time: { created: 1, updated: 10 },
+    } as Session
+    store.setState({ session: [current], sessionTotal: 1 })
+    const before = store.getState()
+
+    applySyncEventForTest(DIRECTORY, {
+      type: "session.updated",
+      properties: {
+        info: {
+          ...current,
+          title: "Stale title",
+          time: { created: 1, updated: 9 },
+        },
+      },
+    } as Event, childStores, routingIndexFor(), DIRECTORY)
+
+    expect(store.getState()).toBe(before)
+    expect(store.getState().session[0]).toBe(current)
+    expect(store.getState().permission).toBe(before.permission)
+    expect(store.getState().todo).toBe(before.todo)
+    expect(store.getState().part).toBe(before.part)
   })
 
   test("keeps an unguarded provider retry authoritative at the sync event boundary", () => {
@@ -209,6 +297,764 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     expect(isAbortGuardActive(SESSION_ID)).toBe(false)
     expect(store.getState().session_status[SESSION_ID]).toEqual(retryStatus)
+  })
+
+  test("does not resurrect a deleted session from late blocking-request materialization", async () => {
+    const deletedSessionID = "ses_late_permission_materialization"
+    const deletedSession = {
+      id: deletedSessionID,
+      parentID: "ses_parent",
+      title: "Delete while materializing",
+      time: { created: 1, updated: 2 },
+    } as Session
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    store.setState({ ...INITIAL_STATE })
+
+    let markSessionGetStarted!: () => void
+    let resolveSessionGet!: (value: { data: Session }) => void
+    const sessionGetStarted = new Promise<void>((resolve) => {
+      markSessionGetStarted = resolve
+    })
+    const sessionGetResult = new Promise<{ data: Session }>((resolve) => {
+      resolveSessionGet = resolve
+    })
+    const originalGetScopedSdkClient = opencodeClient.getScopedSdkClient
+    Object.defineProperty(opencodeClient, "getScopedSdkClient", {
+      configurable: true,
+      value: () => ({
+        session: {
+          get: () => {
+            markSessionGetStarted()
+            return sessionGetResult
+          },
+        },
+      }),
+    })
+
+    try {
+      const routingIndex = {
+        sessionDirectoryById: new Map<string, string>(),
+        messageSessionById: new Map<string, string>(),
+        sessionMessageIdsById: new Map<string, Set<string>>(),
+      }
+      applySyncEventForTest(DIRECTORY, {
+        type: "permission.asked",
+        properties: { id: "perm_late", sessionID: deletedSessionID },
+      } as Event, childStores, routingIndex)
+      await sessionGetStarted
+
+      applySyncEventForTest(DIRECTORY, {
+        type: "session.deleted",
+        properties: { sessionID: deletedSessionID, info: deletedSession },
+      } as Event, childStores, routingIndex)
+      resolveSessionGet({ data: deletedSession })
+      await flushAsync()
+      await flushAsync()
+
+      expect(store.getState().session.some((session) => session.id === deletedSessionID)).toBe(false)
+      expect(store.getState().permission[deletedSessionID]).toBe(undefined)
+    } finally {
+      Object.defineProperty(opencodeClient, "getScopedSdkClient", {
+        configurable: true,
+        value: originalGetScopedSdkClient,
+      })
+    }
+  })
+
+  test("does not restore deleted messages from late snapshot materialization", async () => {
+    const deletedSessionID = "ses_late_message_materialization"
+    const deletedMessageID = "msg_late_message_materialization"
+    const deletedSession = {
+      id: deletedSessionID,
+      title: "Delete while loading messages",
+      time: { created: 1, updated: 2 },
+    } as Session
+    const deletedMessage = {
+      id: deletedMessageID,
+      sessionID: deletedSessionID,
+      role: "assistant",
+      time: { created: 2, completed: 3 },
+    } as Message
+    const deletedPart = {
+      id: "prt_late_message_materialization",
+      sessionID: deletedSessionID,
+      messageID: deletedMessageID,
+      type: "text",
+      text: "A stale snapshot must not return.",
+    } as Part
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    store.setState({
+      ...INITIAL_STATE,
+      session: [deletedSession],
+      sessionTotal: 1,
+    })
+
+    let markMessagesStarted!: () => void
+    let resolveMessages!: (value: { data: Array<{ info: Message; parts: Part[] }> }) => void
+    const messagesStarted = new Promise<void>((resolve) => {
+      markMessagesStarted = resolve
+    })
+    const messagesResult = new Promise<{ data: Array<{ info: Message; parts: Part[] }> }>((resolve) => {
+      resolveMessages = resolve
+    })
+    const originalGetScopedSdkClient = opencodeClient.getScopedSdkClient
+    Object.defineProperty(opencodeClient, "getScopedSdkClient", {
+      configurable: true,
+      value: () => ({
+        session: {
+          messages: () => {
+            markMessagesStarted()
+            return messagesResult
+          },
+        },
+      }),
+    })
+
+    try {
+      const routingIndex = {
+        sessionDirectoryById: new Map([[deletedSessionID, DIRECTORY]]),
+        messageSessionById: new Map<string, string>(),
+        sessionMessageIdsById: new Map<string, Set<string>>(),
+      }
+      applySyncEventForTest(DIRECTORY, {
+        type: "message.updated",
+        properties: { sessionID: deletedSessionID, info: deletedMessage },
+      } as Event, childStores, routingIndex)
+      await messagesStarted
+
+      applySyncEventForTest(DIRECTORY, {
+        type: "session.deleted",
+        properties: { sessionID: deletedSessionID, info: deletedSession },
+      } as Event, childStores, routingIndex)
+      resolveMessages({ data: [{ info: deletedMessage, parts: [deletedPart] }] })
+      await flushAsync()
+      await flushAsync()
+
+      expect(store.getState().message[deletedSessionID]).toBe(undefined)
+      expect(store.getState().part[deletedMessageID]).toBe(undefined)
+    } finally {
+      Object.defineProperty(opencodeClient, "getScopedSdkClient", {
+        configurable: true,
+        value: originalGetScopedSdkClient,
+      })
+    }
+  })
+
+  test("does not restore deleted messages from late unexpected-abort reconciliation", async () => {
+    const deletedSessionID = "ses_late_unexpected_abort_reconciliation"
+    const deletedMessageID = "msg_late_unexpected_abort_reconciliation"
+    const deletedSession = {
+      id: deletedSessionID,
+      title: "Delete while reconciling an unexpected abort",
+      time: { created: 1, updated: 2 },
+    } as Session
+    const deletedMessage = {
+      id: deletedMessageID,
+      sessionID: deletedSessionID,
+      role: "assistant",
+      time: { created: 2, completed: 3 },
+    } as Message
+    const deletedPart = {
+      id: "prt_late_unexpected_abort_reconciliation",
+      sessionID: deletedSessionID,
+      messageID: deletedMessageID,
+      type: "text",
+      text: "A stale abort reconciliation must not return.",
+    } as Part
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    store.setState({
+      ...INITIAL_STATE,
+      session: [deletedSession],
+      sessionTotal: 1,
+    })
+
+    let markMessagesStarted!: () => void
+    let resolveMessages!: (value: { data: Array<{ info: Message; parts: Part[] }> }) => void
+    const messagesStarted = new Promise<void>((resolve) => {
+      markMessagesStarted = resolve
+    })
+    const messagesResult = new Promise<{ data: Array<{ info: Message; parts: Part[] }> }>((resolve) => {
+      resolveMessages = resolve
+    })
+    const fakeSdk = {
+      session: {
+        messages: () => {
+          markMessagesStarted()
+          return messagesResult
+        },
+      },
+    }
+    sessionActions.setActionRefs(
+      fakeSdk as unknown as Parameters<typeof sessionActions.setActionRefs>[0],
+      childStores,
+      () => DIRECTORY,
+    )
+
+    try {
+      const reconciliation = sessionActions.reconcileUnexpectedAbort(deletedSessionID, DIRECTORY)
+      await messagesStarted
+
+      applySyncEventForTest(DIRECTORY, {
+        type: "session.deleted",
+        properties: { sessionID: deletedSessionID, info: deletedSession },
+      } as Event, childStores, routingIndexFor([]))
+      resolveMessages({ data: [{ info: deletedMessage, parts: [deletedPart] }] })
+      await reconciliation
+
+      expect(store.getState().message[deletedSessionID]).toBe(undefined)
+      expect(store.getState().part[deletedMessageID]).toBe(undefined)
+    } finally {
+      sessionActions.clearActionRefs(childStores)
+    }
+  })
+
+  test("cancels late plan lifecycle restoration for a deleted session", async () => {
+    const deletedSessionID = "ses_late_plan_restoration"
+    const deletedUserMessageID = "msg_late_plan_user"
+    const deletedAssistantMessageID = "msg_late_plan_assistant"
+    const deletedSession = {
+      id: deletedSessionID,
+      title: "Delete while restoring a plan",
+      time: { created: 1, updated: 2 },
+    } as Session
+    const deletedUserMessage = {
+      id: deletedUserMessageID,
+      sessionID: deletedSessionID,
+      role: "user",
+      time: { created: 2 },
+    } as Message
+    const deletedAssistantMessage = {
+      id: deletedAssistantMessageID,
+      sessionID: deletedSessionID,
+      parentID: deletedUserMessageID,
+      role: "assistant",
+      providerID: "cursor-acp",
+      time: { created: 3, completed: 4 },
+    } as Message
+    const deletedUserPart = {
+      id: "prt_late_plan_user",
+      sessionID: deletedSessionID,
+      messageID: deletedUserMessageID,
+      type: "text",
+      text: "User has requested to enter plan mode.",
+      synthetic: true,
+    } as Part
+    const deletedAssistantPart = {
+      id: "prt_late_plan_assistant",
+      sessionID: deletedSessionID,
+      messageID: deletedAssistantMessageID,
+      type: "text",
+      text: `<!--plan-->\n${structuredPlanBody}`,
+    } as Part
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    store.setState({
+      ...INITIAL_STATE,
+      session: [deletedSession],
+      sessionTotal: 1,
+    })
+    useSessionUIStore.setState({
+      planModeUserMessages: new Set([deletedUserMessageID]),
+      planModeUserMessagesBySession: new Map([[deletedSessionID, deletedUserMessageID]]),
+    })
+
+    let markMessagesStarted!: () => void
+    let resolveMessages!: (value: { data: Array<{ info: Message; parts: Part[] }> }) => void
+    const messagesStarted = new Promise<void>((resolve) => {
+      markMessagesStarted = resolve
+    })
+    const messagesResult = new Promise<{ data: Array<{ info: Message; parts: Part[] }> }>((resolve) => {
+      resolveMessages = resolve
+    })
+    const originalGetScopedSdkClient = opencodeClient.getScopedSdkClient
+    Object.defineProperty(opencodeClient, "getScopedSdkClient", {
+      configurable: true,
+      value: () => ({
+        session: {
+          messages: () => {
+            markMessagesStarted()
+            return messagesResult
+          },
+        },
+      }),
+    })
+
+    try {
+      const restoration = restorePersistedSessionIndicatorsForDirectory(DIRECTORY, store)
+      await messagesStarted
+
+      applySyncEventForTest(DIRECTORY, {
+        type: "session.deleted",
+        properties: { sessionID: deletedSessionID, info: deletedSession },
+      } as Event, childStores, {
+        sessionDirectoryById: new Map([[deletedSessionID, DIRECTORY]]),
+        messageSessionById: new Map<string, string>(),
+        sessionMessageIdsById: new Map<string, Set<string>>(),
+      })
+      resolveMessages({
+        data: [
+          { info: deletedUserMessage, parts: [deletedUserPart] },
+          { info: deletedAssistantMessage, parts: [deletedAssistantPart] },
+        ],
+      })
+      await restoration
+      await flushAsync()
+
+      expect(store.getState().message[deletedSessionID]).toBe(undefined)
+      expect(store.getState().part[deletedAssistantMessageID]).toBe(undefined)
+      expect(useSessionUIStore.getState().sessionPlanIndicator.get(deletedSessionID)).toBe(undefined)
+    } finally {
+      Object.defineProperty(opencodeClient, "getScopedSdkClient", {
+        configurable: true,
+        value: originalGetScopedSdkClient,
+      })
+    }
+  })
+
+  test("retires an exact abort-retry guard only on permanent deletion", () => {
+    const deletedSessionID = "ses_deleted_abort_guard"
+    const deletedSession = {
+      id: deletedSessionID,
+      title: "Delete guarded retry",
+      time: { created: 1, updated: 2 },
+    } as Session
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    store.setState({
+      ...INITIAL_STATE,
+      session: [deletedSession],
+      sessionTotal: 1,
+    })
+    const routingIndex = {
+      sessionDirectoryById: new Map([[deletedSessionID, DIRECTORY]]),
+      messageSessionById: new Map<string, string>(),
+      sessionMessageIdsById: new Map<string, Set<string>>(),
+    }
+
+    registerManualAbortGuard(deletedSessionID, DIRECTORY, { type: "retry", attempt: 1, message: "wait", next: 1_000 })
+    applySyncEventForTest(DIRECTORY, {
+      type: "session.updated",
+      properties: {
+        sessionID: deletedSessionID,
+        info: { ...deletedSession, time: { ...deletedSession.time, archived: 3 } },
+      },
+    } as Event, childStores, routingIndex)
+    expect(isAbortGuardActive(deletedSessionID)).toBe(true)
+
+    applySyncEventForTest(DIRECTORY, {
+      type: "session.deleted",
+      properties: { sessionID: deletedSessionID, info: deletedSession },
+    } as Event, childStores, routingIndex)
+    expect(isAbortGuardActive(deletedSessionID)).toBe(false)
+  })
+
+  test("clears per-session selections when an authoritative delete event lands", () => {
+    const deletedSessionID = "ses_selection_delete"
+    const retainedSessionID = "ses_selection_keep"
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    const deletedSession = {
+      id: deletedSessionID,
+      title: "Delete me",
+      time: { created: 1, updated: 2 },
+    } as Session
+    store.setState({
+      ...INITIAL_STATE,
+      session: [deletedSession],
+    })
+
+    const selections = useSelectionStore.getState()
+    selections.saveSessionModelSelection(deletedSessionID, "openai", "gpt-5.5")
+    selections.saveSessionAgentSelection(deletedSessionID, "builder")
+    selections.setSessionPlanMode(deletedSessionID, true)
+    selections.saveAgentModelForSession(deletedSessionID, "builder", "openai", "gpt-5.5")
+    selections.saveAgentModelVariantForSession(deletedSessionID, "builder", "openai", "gpt-5.5", "high")
+    selections.saveSessionModelSelection(retainedSessionID, "anthropic", "claude")
+
+    applySyncEventForTest(DIRECTORY, {
+      type: "session.deleted",
+      properties: { sessionID: deletedSessionID, info: deletedSession },
+    } as Event, childStores, {
+      sessionDirectoryById: new Map([[deletedSessionID, DIRECTORY]]),
+      messageSessionById: new Map(),
+      sessionMessageIdsById: new Map(),
+    })
+
+    const next = useSelectionStore.getState()
+    expect(store.getState().session).toEqual([])
+    expect(next.getSessionModelSelection(deletedSessionID)).toBe(null)
+    expect(next.getSessionAgentSelection(deletedSessionID)).toBe(null)
+    expect(next.getSessionPlanMode(deletedSessionID)).toBe(false)
+    expect(next.getAgentModelForSession(deletedSessionID, "builder")).toBe(null)
+    expect(next.getAgentModelVariantForSession(deletedSessionID, "builder", "openai", "gpt-5.5")).toBe(undefined)
+    expect(next.getSessionModelSelection(retainedSessionID)).toEqual({ providerId: "anthropic", modelId: "claude" })
+  })
+
+  test("clears only the deleted session from persisted context state", () => {
+    const deletedSessionID = "ses_context_delete"
+    const retainedSessionID = "ses_context_keep"
+    const globalEditModeID = "__global__"
+    const deletedSession = {
+      id: deletedSessionID,
+      title: "Delete persisted context",
+      time: { created: 1, updated: 2 },
+    } as Session
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    store.setState({
+      ...INITIAL_STATE,
+      session: [deletedSession],
+    })
+
+    useContextStore.setState({
+      sessionModelSelections: new Map([
+        [deletedSessionID, { providerId: "openai", modelId: "gpt-5.5" }],
+        [retainedSessionID, { providerId: "anthropic", modelId: "claude" }],
+      ]),
+      sessionAgentSelections: new Map([
+        [deletedSessionID, "builder"],
+        [retainedSessionID, "planner"],
+      ]),
+      sessionAgentModelSelections: new Map([
+        [deletedSessionID, new Map([["builder", { providerId: "openai", modelId: "gpt-5.5" }]])],
+        [retainedSessionID, new Map([["planner", { providerId: "anthropic", modelId: "claude" }]])],
+      ]),
+      sessionAgentModelVariantSelections: new Map([
+        [deletedSessionID, new Map([["builder", new Map([["openai/gpt-5.5", "high"]])]])],
+        [retainedSessionID, new Map([["planner", new Map([["anthropic/claude", "fast"]])]])],
+      ]),
+      currentAgentContext: new Map([
+        [deletedSessionID, "builder"],
+        [retainedSessionID, "planner"],
+      ]),
+      sessionContextUsage: new Map([
+        [deletedSessionID, contextUsage(100)],
+        [retainedSessionID, contextUsage(200)],
+      ]),
+      sessionAgentEditModes: new Map<string, Map<string, EditPermissionMode>>([
+        [deletedSessionID, new Map([["builder", "full"]])],
+        [retainedSessionID, new Map([["planner", "allow"]])],
+        [globalEditModeID, new Map([["builder", "ask"]])],
+      ]),
+    })
+
+    applySyncEventForTest(DIRECTORY, {
+      type: "session.deleted",
+      properties: { sessionID: deletedSessionID, info: deletedSession },
+    } as Event, childStores, {
+      sessionDirectoryById: new Map([[deletedSessionID, DIRECTORY]]),
+      messageSessionById: new Map(),
+      sessionMessageIdsById: new Map(),
+    })
+
+    const next = useContextStore.getState()
+    const sessionMaps = [
+      next.sessionModelSelections,
+      next.sessionAgentSelections,
+      next.sessionAgentModelSelections,
+      next.sessionAgentModelVariantSelections,
+      next.currentAgentContext,
+      next.sessionContextUsage,
+      next.sessionAgentEditModes,
+    ]
+
+    expect(store.getState().session).toEqual([])
+    for (const sessionMap of sessionMaps) {
+      expect(sessionMap.has(deletedSessionID)).toBe(false)
+      expect(sessionMap.has(retainedSessionID)).toBe(true)
+    }
+    expect(next.sessionAgentEditModes.get(globalEditModeID)?.get("builder")).toBe("ask")
+    const persistedContext = getSafeStorage().getItem("context-store")
+    expect(persistedContext).not.toContain(deletedSessionID)
+    expect(persistedContext).toContain(retainedSessionID)
+    expect(persistedContext).toContain(globalEditModeID)
+  })
+
+  test("retires permission auto-accept only after authoritative deletion", () => {
+    const deletedSessionID = "ses_permission_delete"
+    const deletedSession = {
+      id: deletedSessionID,
+      title: "Delete permission policy",
+      time: { created: 1, updated: 2 },
+    } as Session
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    store.setState({
+      ...INITIAL_STATE,
+      session: [deletedSession],
+    })
+
+    applySyncEventForTest(DIRECTORY, {
+      type: "session.updated",
+      properties: {
+        info: { ...deletedSession, time: { ...deletedSession.time, archived: Date.now() } },
+      },
+    } as Event, childStores, {
+      sessionDirectoryById: new Map([[deletedSessionID, DIRECTORY]]),
+      messageSessionById: new Map(),
+      sessionMessageIdsById: new Map(),
+    })
+    expect(clearSessionAutoAcceptCalls).toEqual([])
+
+    store.setState({ session: [deletedSession] })
+    applySyncEventForTest(DIRECTORY, {
+      type: "session.deleted",
+      properties: { sessionID: deletedSessionID, info: deletedSession },
+    } as Event, childStores, {
+      sessionDirectoryById: new Map([[deletedSessionID, DIRECTORY]]),
+      messageSessionById: new Map(),
+      sessionMessageIdsById: new Map(),
+    })
+
+    expect(clearSessionAutoAcceptCalls).toEqual([deletedSessionID])
+  })
+
+  test("clears only the deleted session's persisted queued prompts", () => {
+    const deletedSessionID = "ses_queue_delete"
+    const retainedSessionID = "ses_queue_keep"
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    const deletedSession = {
+      id: deletedSessionID,
+      title: "Delete queued prompt",
+      time: { created: 1, updated: 2 },
+    } as Session
+    store.setState({
+      ...INITIAL_STATE,
+      session: [deletedSession],
+    })
+
+    const queue = useMessageQueueStore.getState()
+    queue.addToQueue(deletedSessionID, {
+      directory: DIRECTORY,
+      content: "Unreachable prompt after deletion",
+      sendConfig: { providerID: "openai", modelID: "gpt-5.5", agent: "builder" },
+    })
+    queue.addToQueue(retainedSessionID, {
+      directory: "/other/repo",
+      content: "Keep this queued prompt",
+    })
+
+    applySyncEventForTest(DIRECTORY, {
+      type: "session.deleted",
+      properties: { sessionID: deletedSessionID, info: deletedSession },
+    } as Event, childStores, {
+      sessionDirectoryById: new Map([[deletedSessionID, DIRECTORY]]),
+      messageSessionById: new Map(),
+      sessionMessageIdsById: new Map(),
+    })
+
+    const nextQueue = useMessageQueueStore.getState()
+    expect(store.getState().session).toEqual([])
+    expect(nextQueue.getQueueForSession(deletedSessionID)).toEqual([])
+    expect(nextQueue.getQueueForSession(retainedSessionID).map((message) => message.content)).toEqual([
+      "Keep this queued prompt",
+    ])
+  })
+
+  test("removes only the deleted session's persisted composer text and mentions", () => {
+    const deletedSessionID = "ses_composer_delete"
+    const retainedSessionID = "ses_composer_keep"
+    const deletedDraftKey = `openchamber_chat_input_draft_${deletedSessionID}`
+    const deletedMentionsKey = `openchamber_chat_confirmed_mentions_${deletedSessionID}`
+    const retainedDraftKey = `openchamber_chat_input_draft_${retainedSessionID}`
+    const storage = getSafeStorage()
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    const deletedSession = {
+      id: deletedSessionID,
+      title: "Delete composer",
+      time: { created: 1, updated: 2 },
+    } as Session
+    store.setState({
+      ...INITIAL_STATE,
+      session: [deletedSession],
+    })
+    storage.setItem(deletedDraftKey, "Unsent private text")
+    storage.setItem(deletedMentionsKey, JSON.stringify(["README.md"]))
+    storage.setItem(retainedDraftKey, "Keep unrelated text")
+
+    try {
+      applySyncEventForTest(DIRECTORY, {
+        type: "session.deleted",
+        properties: { sessionID: deletedSessionID, info: deletedSession },
+      } as Event, childStores, {
+        sessionDirectoryById: new Map([[deletedSessionID, DIRECTORY]]),
+        messageSessionById: new Map(),
+        sessionMessageIdsById: new Map(),
+      })
+
+      expect(store.getState().session).toEqual([])
+      expect(storage.getItem(deletedDraftKey)).toBeNull()
+      expect(storage.getItem(deletedMentionsKey)).toBeNull()
+      expect(storage.getItem(retainedDraftKey)).toBe("Keep unrelated text")
+    } finally {
+      storage.removeItem(deletedDraftKey)
+      storage.removeItem(deletedMentionsKey)
+      storage.removeItem(retainedDraftKey)
+    }
+  })
+
+  test("clears only the currently selected session when authoritative deletion arrives", () => {
+    const deletedSessionID = "ses_current_delete"
+    const retainedSessionID = "ses_current_keep"
+    const deletedSession = {
+      id: deletedSessionID,
+      title: "Delete selected session",
+      time: { created: 1, updated: 2 },
+    } as Session
+    const retainedSession = {
+      id: retainedSessionID,
+      title: "Keep selected session",
+      time: { created: 1, updated: 2 },
+    } as Session
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    store.setState({
+      ...INITIAL_STATE,
+      session: [deletedSession, retainedSession],
+    })
+
+    useSessionUIStore.setState({ currentSessionId: deletedSessionID })
+    applySyncEventForTest(DIRECTORY, {
+      type: "session.deleted",
+      properties: { sessionID: deletedSessionID, info: deletedSession },
+    } as Event, childStores, {
+      sessionDirectoryById: new Map([
+        [deletedSessionID, DIRECTORY],
+        [retainedSessionID, DIRECTORY],
+      ]),
+      messageSessionById: new Map(),
+      sessionMessageIdsById: new Map(),
+    })
+
+    expect(useSessionUIStore.getState().currentSessionId).toBeNull()
+
+    useSessionUIStore.setState({ currentSessionId: retainedSessionID })
+    store.setState({ session: [deletedSession, retainedSession] })
+    applySyncEventForTest(DIRECTORY, {
+      type: "session.deleted",
+      properties: { sessionID: deletedSessionID, info: deletedSession },
+    } as Event, childStores, {
+      sessionDirectoryById: new Map([
+        [deletedSessionID, DIRECTORY],
+        [retainedSessionID, DIRECTORY],
+      ]),
+      messageSessionById: new Map(),
+      sessionMessageIdsById: new Map(),
+    })
+
+    expect(useSessionUIStore.getState().currentSessionId).toBe(retainedSessionID)
+  })
+
+  test("retires exact session UI ownership when authoritative deletion arrives", () => {
+    const deletedSessionID = "ses_ui_delete"
+    const retainedSessionID = "ses_ui_keep"
+    const deletedSession = {
+      id: deletedSessionID,
+      title: "Delete UI ownership",
+      time: { created: 1, updated: 2 },
+    } as Session
+    const retainedSession = {
+      id: retainedSessionID,
+      title: "Keep UI ownership",
+      time: { created: 1, updated: 2 },
+    } as Session
+    const deletedController = new AbortController()
+    const retainedController = new AbortController()
+    const childStores = new ChildStoreManager()
+    childStores.ensureChild(DIRECTORY).setState({
+      ...INITIAL_STATE,
+      session: [deletedSession, retainedSession],
+    })
+    useSessionUIStore.setState({
+      sessionDirectoryHints: new Map([
+        [deletedSessionID, "/repo/deleted"],
+        [retainedSessionID, "/repo/retained"],
+      ]),
+      webUICreatedSessions: new Set([deletedSessionID, retainedSessionID]),
+      abortControllers: new Map([
+        [deletedSessionID, deletedController],
+        [retainedSessionID, retainedController],
+      ]),
+      sessionPlanIndicator: new Map([
+        [deletedSessionID, { state: "proposed", sourceMessageId: "msg-delete-plan" }],
+        [retainedSessionID, { state: "proposed", sourceMessageId: "msg-keep-plan" }],
+      ]),
+      planModeUserMessages: new Set(["msg-delete-user", "msg-keep-user"]),
+      planModeUserMessagesBySession: new Map([
+        [deletedSessionID, "msg-delete-user"],
+        [retainedSessionID, "msg-keep-user"],
+      ]),
+    })
+
+    applySyncEventForTest(DIRECTORY, {
+      type: "session.deleted",
+      properties: { sessionID: deletedSessionID, info: deletedSession },
+    } as Event, childStores, {
+      sessionDirectoryById: new Map([
+        [deletedSessionID, DIRECTORY],
+        [retainedSessionID, DIRECTORY],
+      ]),
+      messageSessionById: new Map(),
+      sessionMessageIdsById: new Map(),
+    })
+
+    const state = useSessionUIStore.getState()
+    expect(deletedController.signal.aborted).toBe(true)
+    expect(retainedController.signal.aborted).toBe(false)
+    expect(state.sessionDirectoryHints).toEqual(new Map([[retainedSessionID, "/repo/retained"]]))
+    expect(state.webUICreatedSessions).toEqual(new Set([retainedSessionID]))
+    expect(state.abortControllers.has(deletedSessionID)).toBe(false)
+    expect(state.sessionPlanIndicator.has(deletedSessionID)).toBe(false)
+    expect(state.sessionPlanIndicator.get(retainedSessionID)).toEqual({
+      state: "proposed",
+      sourceMessageId: "msg-keep-plan",
+    })
+    expect(state.planModeUserMessages).toEqual(new Set(["msg-keep-user"]))
+    expect(state.planModeUserMessagesBySession).toEqual(new Map([[retainedSessionID, "msg-keep-user"]]))
+  })
+
+  test("preserves session UI ownership when a session is archived", () => {
+    const archivedSessionID = "ses_ui_archive"
+    const archivedSession = {
+      id: archivedSessionID,
+      title: "Archive UI ownership",
+      time: { created: 1, updated: 2, archived: 3 },
+    } as Session
+    const controller = new AbortController()
+    const childStores = new ChildStoreManager()
+    childStores.ensureChild(DIRECTORY).setState({
+      ...INITIAL_STATE,
+      session: [{ ...archivedSession, time: { created: 1, updated: 2 } } as Session],
+    })
+    useSessionUIStore.setState({
+      sessionDirectoryHints: new Map([[archivedSessionID, "/repo/archive"]]),
+      webUICreatedSessions: new Set([archivedSessionID]),
+      abortControllers: new Map([[archivedSessionID, controller]]),
+      planModeUserMessages: new Set(["msg-archive-user"]),
+      planModeUserMessagesBySession: new Map([[archivedSessionID, "msg-archive-user"]]),
+    })
+
+    applySyncEventForTest(DIRECTORY, {
+      type: "session.updated",
+      properties: { sessionID: archivedSessionID, info: archivedSession },
+    } as Event, childStores, {
+      sessionDirectoryById: new Map([[archivedSessionID, DIRECTORY]]),
+      messageSessionById: new Map(),
+      sessionMessageIdsById: new Map(),
+    })
+
+    const state = useSessionUIStore.getState()
+    expect(controller.signal.aborted).toBe(false)
+    expect(state.sessionDirectoryHints.get(archivedSessionID)).toBe("/repo/archive")
+    expect(state.webUICreatedSessions.has(archivedSessionID)).toBe(true)
+    expect(state.abortControllers.get(archivedSessionID)).toBe(controller)
+    expect(state.planModeUserMessages.has("msg-archive-user")).toBe(true)
+    expect(state.planModeUserMessagesBySession.get(archivedSessionID)).toBe("msg-archive-user")
   })
 
   test("marks sessionPlanIndicator proposed when structured plan text arrives via delta on an idle session", async () => {
@@ -248,6 +1094,62 @@ describe("sync plan lifecycle on message.part.delta", () => {
     })
   })
 
+  test("saves a completed background plan before its PlanCard mounts", async () => {
+    const originalFetch = globalThis.fetch
+    const originalProjects = useProjectsStore.getState().projects
+    let writes = 0
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/fs/home')) return Response.json({ home: '/Users/example' })
+      if (url.includes('/fs/stat')) return Response.json({ exists: false, isFile: false })
+      if (url.includes('/fs/write')) writes += 1
+      return Response.json({ success: true })
+    }) as typeof fetch
+    useProjectsStore.setState({
+      projects: [{ id: 'repo', path: DIRECTORY, label: 'Repo' }],
+    })
+
+    try {
+      const childStores = new ChildStoreManager()
+      const store = childStores.ensureChild(DIRECTORY)
+      store.setState({
+        ...INITIAL_STATE,
+        session: [{
+          id: SESSION_ID,
+          title: "Plan session",
+          slug: "plan-session",
+          directory: DIRECTORY,
+          time: { created: 1, updated: 2 },
+        } as Session],
+        message: {
+          [SESSION_ID]: [userMessage(), assistantMessage()],
+        },
+        part: {
+          [USER_MESSAGE_ID]: [planModePart()],
+          [ASSISTANT_MESSAGE_ID]: [textPart("")],
+        },
+        session_status: {
+          [SESSION_ID]: { type: "idle" } as SessionStatus,
+        },
+      })
+      useSessionUIStore.getState().recordUserMessagePlanMode(SESSION_ID, USER_MESSAGE_ID, true)
+
+      applySyncEventForTest(DIRECTORY, deltaEvent(structuredPlanBody), childStores, routingIndexFor())
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        if (useSessionPlanFileStore.getState().recordsBySession[SESSION_ID]?.status === 'saved') break
+        await new Promise((resolve) => setTimeout(resolve, 5))
+      }
+
+      const record = useSessionPlanFileStore.getState().recordsBySession[SESSION_ID]
+      expect(record?.sourceMessageId).toBe(ASSISTANT_MESSAGE_ID)
+      expect(record?.status).toBe('saved')
+      expect(writes).toBe(1)
+    } finally {
+      globalThis.fetch = originalFetch
+      useProjectsStore.setState({ projects: originalProjects })
+    }
+  })
+
   test("restores a persisted proposed plan indicator from authoritative materialized messages", async () => {
     const childStores = new ChildStoreManager()
     const store = childStores.ensureChild(DIRECTORY)
@@ -276,6 +1178,58 @@ describe("sync plan lifecycle on message.part.delta", () => {
       state: "proposed",
       sourceMessageId: ASSISTANT_MESSAGE_ID,
     })
+  })
+
+  test("restores the saved plan pointer without mounting the chat after a reload", async () => {
+    const originalFetch = globalThis.fetch
+    const originalProjects = useProjectsStore.getState().projects
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/fs/home')) return Response.json({ home: '/Users/example' })
+      if (url.includes('/fs/stat')) return Response.json({ exists: true, isFile: true })
+      return Response.json({ success: true })
+    }) as typeof fetch
+    useProjectsStore.setState({
+      projects: [{ id: 'repo', path: DIRECTORY, label: 'Repo' }],
+    })
+
+    try {
+      const childStores = new ChildStoreManager()
+      const store = childStores.ensureChild(DIRECTORY)
+      store.setState({
+        ...INITIAL_STATE,
+        session: [{
+          id: SESSION_ID,
+          title: "Plan session",
+          slug: "plan-session",
+          directory: DIRECTORY,
+          time: { created: 1, updated: 3 },
+        } as Session],
+        message: {
+          [SESSION_ID]: [userMessage(), assistantMessage()],
+        },
+        part: {
+          [USER_MESSAGE_ID]: [planModePart()],
+          [ASSISTANT_MESSAGE_ID]: [textPart(structuredPlanBody)],
+        },
+        session_status: {
+          [SESSION_ID]: { type: "idle" } as SessionStatus,
+        },
+      })
+      useSessionUIStore.setState({
+        planModeUserMessages: new Set([USER_MESSAGE_ID]),
+        planModeUserMessagesBySession: new Map([[SESSION_ID, USER_MESSAGE_ID]]),
+      })
+
+      await restorePersistedSessionIndicatorsForDirectory(DIRECTORY, store)
+
+      const record = useSessionPlanFileStore.getState().recordsBySession[SESSION_ID]
+      expect(record?.sourceMessageId).toBe(ASSISTANT_MESSAGE_ID)
+      expect(record?.status).toBe('saved')
+    } finally {
+      globalThis.fetch = originalFetch
+      useProjectsStore.setState({ projects: originalProjects })
+    }
   })
 
   test("restores unread background completion only after authoritative message materialization", async () => {
@@ -414,6 +1368,104 @@ describe("sync plan lifecycle on message.part.delta", () => {
     expect(notificationState.list[0]?.viewed).toBe(false)
     expect(notificationState.sessionHasCompletion(SESSION_ID)).toBe(true)
     expect(useSessionUIStore.getState().sessionCompletionIndicator.has(SESSION_ID)).toBe(false)
+
+    await waitForCompletionIndicatorSettlement()
+
+    expect(useSessionUIStore.getState().sessionCompletionIndicator.get(SESSION_ID)).toEqual({
+      messageId: ASSISTANT_MESSAGE_ID,
+      completedAt: 3,
+    })
+  })
+
+  test("retires notifications and pending completion settlement only after authoritative deletion", async () => {
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    const completedPart = textPart("Completed before deletion.")
+    const deletedSession = {
+      id: SESSION_ID,
+      title: "Delete completed session",
+      time: { created: 1, updated: 2 },
+    } as Session
+    const retainedNotification = {
+      type: "turn-complete" as const,
+      directory: DIRECTORY,
+      session: "ses_retained_completion",
+      messageId: "msg_retained_completion",
+      time: Date.now(),
+      viewed: false,
+    }
+
+    store.setState({
+      ...INITIAL_STATE,
+      session: [deletedSession],
+      message: {
+        [SESSION_ID]: [userMessage(), assistantMessage()],
+      },
+      part: {
+        [USER_MESSAGE_ID]: [],
+        [ASSISTANT_MESSAGE_ID]: [completedPart],
+      },
+      session_status: {
+        [SESSION_ID]: { type: "idle" } as SessionStatus,
+      },
+    })
+    useNotificationStore.getState().append(retainedNotification)
+
+    const routingIndex = routingIndexFor()
+    applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndex)
+    await flushAsync()
+    expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(true)
+
+    applySyncEventForTest(DIRECTORY, {
+      type: "session.deleted",
+      properties: { sessionID: SESSION_ID, info: deletedSession },
+    } as Event, childStores, routingIndex)
+
+    expect(useNotificationStore.getState().list).toEqual([retainedNotification])
+    expect(useNotificationStore.getState().list[0]).toBe(retainedNotification)
+    expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(false)
+
+    await waitForCompletionIndicatorSettlement()
+
+    expect(useSessionUIStore.getState().sessionCompletionIndicator.has(SESSION_ID)).toBe(false)
+  })
+
+  test("preserves completion notification and settlement when a session is archived", async () => {
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    const completedPart = textPart("Completed before archive.")
+    const session = {
+      id: SESSION_ID,
+      title: "Archive completed session",
+      time: { created: 1, updated: 2 },
+    } as Session
+
+    store.setState({
+      ...INITIAL_STATE,
+      session: [session],
+      message: {
+        [SESSION_ID]: [userMessage(), assistantMessage()],
+      },
+      part: {
+        [USER_MESSAGE_ID]: [],
+        [ASSISTANT_MESSAGE_ID]: [completedPart],
+      },
+      session_status: {
+        [SESSION_ID]: { type: "idle" } as SessionStatus,
+      },
+    })
+
+    const routingIndex = routingIndexFor()
+    applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndex)
+    await flushAsync()
+    applySyncEventForTest(DIRECTORY, {
+      type: "session.updated",
+      properties: {
+        info: { ...session, time: { ...session.time, archived: Date.now() } },
+      },
+    } as Event, childStores, routingIndex)
+
+    expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(true)
 
     await waitForCompletionIndicatorSettlement()
 

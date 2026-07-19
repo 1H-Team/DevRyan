@@ -4,6 +4,7 @@ import {
   addPendingPartDelta,
   applyPendingPartDeltasToParts,
   clearPendingPartDeltasForDirectory,
+  clearPendingPartDeltasForMessages,
   hasPendingPartDeltasForMessages,
   type PendingPartDeltaStore,
 } from "./pending-part-deltas"
@@ -54,6 +55,27 @@ describe("hasPendingPartDeltasForMessages", () => {
     expect(hasPendingPartDeltasForMessages(store, DIR, ["msgA"])).toBe(false)
     expect(hasPendingPartDeltasForMessages(store, "/repo/other", ["msgB"])).toBe(true)
     expect(store.size).toBe(1)
+  })
+
+  test("clears only exact owned messages in one directory", () => {
+    const store = seed()
+    addPendingPartDelta(store, DIR, {
+      messageID: "msgA-other",
+      partID: "partY",
+      field: "text",
+      delta: "retained",
+    }, 1_001)
+    addPendingPartDelta(store, "/repo/other", {
+      messageID: "msgA",
+      partID: "partZ",
+      field: "text",
+      delta: "other directory",
+    }, 1_002)
+
+    expect(clearPendingPartDeltasForMessages(store, DIR, ["msgA"])).toBe(1)
+    expect(hasPendingPartDeltasForMessages(store, DIR, ["msgA"])).toBe(false)
+    expect(hasPendingPartDeltasForMessages(store, DIR, ["msgA-other"])).toBe(true)
+    expect(hasPendingPartDeltasForMessages(store, "/repo/other", ["msgA"])).toBe(true)
   })
 })
 

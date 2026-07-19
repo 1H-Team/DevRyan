@@ -32,6 +32,7 @@ const tasks: ManagedTaskProjection[] = Array.from({ length: 12 }, (_, index) => 
     finishedAt: index < 3 ? null : 2_000,
     timeoutAt: null,
     failureReason: null,
+    failureKind: null,
     partial: false,
     recoverablePreview: '',
     canonicalRefs: [],
@@ -64,7 +65,7 @@ describe('AgentHandoffDialogView', () => {
 
     expect(html).toContain('3 active');
     expect(html).toContain('9 unreviewed');
-    expect(html).toContain('A very long task label');
+    expect(html).toContain('A Very Long Task Label');
     expect(html).toContain('Task 10');
     expect(html).not.toContain('Task 11');
     expect(html).toContain('2 more tasks');

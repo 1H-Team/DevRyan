@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { hasTreeExpansionStateChange } from './sessionNodeMemo';
+import { resolveSessionRowAuxAction } from './sessionRowAuxAction';
 import type { SessionNode } from './types';
 
 const session = (id: string): Session => ({
@@ -32,6 +33,37 @@ describe('hasTreeExpansionStateChange', () => {
       new Set(['parent']),
       new Set(['parent', 'child']),
     )).toBe(true);
+  });
+});
+
+describe('resolveSessionRowAuxAction', () => {
+  test('archives active sessions on middle click', () => {
+    expect(resolveSessionRowAuxAction(1, false, false)).toBe('archive');
+  });
+
+  test('permanently deletes genuine archived sessions on middle click', () => {
+    expect(resolveSessionRowAuxAction(1, true, false)).toBe('delete');
+  });
+
+  test('leaves archived structural ancestor rows inert', () => {
+    expect(resolveSessionRowAuxAction(1, true, true)).toBeNull();
+  });
+
+  test('ignores non-middle mouse buttons', () => {
+    expect(resolveSessionRowAuxAction(0, false, false)).toBeNull();
+    expect(resolveSessionRowAuxAction(2, true, false)).toBeNull();
+  });
+
+  test('wires the archived action to the existing hard-delete callback', () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'SessionNodeItem.tsx'), 'utf8');
+
+    const handlerStart = source.indexOf('const handleRowAuxClick');
+    const handlerEnd = source.indexOf('const handleRowPointerDown', handlerStart);
+    const handler = source.slice(handlerStart, handlerEnd);
+
+    expect(handler).toContain("if (auxAction === 'delete')");
+    expect(handler).toContain('handleDeleteSession(session, { archivedBucket: true })');
+    expect(handler).toContain('handleArchiveSession(session)');
   });
 });
 
@@ -141,21 +173,112 @@ describe('session sidebar archive reflow animation wiring', () => {
     expect(source).not.toContain('scale');
   });
 
-  test('animates the group empty state after row exit completes', () => {
+  test('reuses the row motion for project and Archived section bodies', () => {
+    const testDir = dirname(fileURLToPath(import.meta.url));
+    const motionSource = readFileSync(join(testDir, 'SessionSidebarMotionRow.tsx'), 'utf8');
+    const itemSource = readFileSync(join(testDir, 'SessionNodeItem.tsx'), 'utf8');
+    const projectSource = readFileSync(join(testDir, 'SidebarProjectsList.tsx'), 'utf8');
+    const groupSource = readFileSync(join(testDir, 'SessionGroupSection.tsx'), 'utf8');
+
+    expect(motionSource).toContain('withLeadingIndicatorGutter?: boolean;');
+    expect(motionSource).toContain('withLeadingIndicatorGutter = true');
+    expect(motionSource).toContain('...(withLeadingIndicatorGutter ? {');
+    expect(itemSource).toContain('<SessionSidebarMotionRow>');
+
+    expect(projectSource).toContain("import { AnimatePresence } from 'motion/react';");
+    expect(projectSource).toContain('key={`project-body:${projectKey}`}');
+    expect(projectSource).toContain('withLeadingIndicatorGutter={false}');
+
+    expect(groupSource).toContain('{group.isArchivedBucket ? (');
+    expect(groupSource).toContain('key={`archived-group-body:${groupKey}`}');
+    expect(groupSource).toContain('withLeadingIndicatorGutter={false}');
+    expect(groupSource).toContain(') : (!isCollapsed ? groupBody : null)}');
+  });
+
+  test('keeps section contents mounted inside their exit animation boundaries', () => {
+    const testDir = dirname(fileURLToPath(import.meta.url));
+    const projectSource = readFileSync(join(testDir, 'SidebarProjectsList.tsx'), 'utf8');
+    const groupSource = readFileSync(join(testDir, 'SessionGroupSection.tsx'), 'utf8');
+
+    const projectPresence = projectSource.indexOf('<AnimatePresence initial={false}>');
+    const projectMotionOpen = projectSource.indexOf('key={`project-body:${projectKey}`}', projectPresence);
+    const projectDndContext = projectSource.indexOf('<DndContext', projectMotionOpen);
+    const projectMotionClose = projectSource.indexOf('</SessionSidebarMotionRow>', projectDndContext);
+    const projectPresenceClose = projectSource.indexOf('</AnimatePresence>', projectMotionClose);
+
+    expect(projectPresence).toBeGreaterThan(-1);
+    expect(projectMotionOpen).toBeGreaterThan(projectPresence);
+    expect(projectDndContext).toBeGreaterThan(projectMotionOpen);
+    expect(projectMotionClose).toBeGreaterThan(projectDndContext);
+    expect(projectPresenceClose).toBeGreaterThan(projectMotionClose);
+
+    const archivedGuard = groupSource.indexOf('{group.isArchivedBucket ? (');
+    const archivedPresence = groupSource.indexOf('<AnimatePresence initial={false}>', archivedGuard);
+    const archivedMotionOpen = groupSource.indexOf('key={`archived-group-body:${groupKey}`}', archivedPresence);
+    const archivedBody = groupSource.indexOf('{groupBody}', archivedMotionOpen);
+    const archivedMotionClose = groupSource.indexOf('</SessionSidebarMotionRow>', archivedBody);
+
+    expect(archivedGuard).toBeGreaterThan(-1);
+    expect(archivedPresence).toBeGreaterThan(archivedGuard);
+    expect(archivedMotionOpen).toBeGreaterThan(archivedPresence);
+    expect(archivedBody).toBeGreaterThan(archivedMotionOpen);
+    expect(archivedMotionClose).toBeGreaterThan(archivedBody);
+  });
+
+  test('shows No chats instantly after row exit while preserving other empty-state motion', () => {
     const testDir = dirname(fileURLToPath(import.meta.url));
     const source = readFileSync(join(testDir, 'SessionGroupSection.tsx'), 'utf8');
-    const emptyStateGate = 'totalSessions === 0 && allFoldersForGroup.length === 0 && draftCount === 0 && !isExitAnimating';
+    const emptyStateGate = 'totalSessions === 0 && allFoldersForGroup.length === 0 && draftCount === 0 && !isExitAnimating && !shouldDeferNoChats';
     const emptyStateIndex = source.indexOf(emptyStateGate);
+    const emptyStateInitialIndex = source.indexOf('initial={group.isArchivedBucket ?');
 
     expect(source).toContain("import { AnimatePresence, motion, useReducedMotion } from 'motion/react';");
     expect(source).toContain('const shouldReduceMotion = useReducedMotion();');
+    expect(source).toContain('const isVisibleSessionCountDropping = visibleSessions.length < prevVisibleCountRef.current;');
+    expect(source).toContain('const shouldDeferNoChats = !group.isArchivedBucket && isVisibleSessionCountDropping;');
+    expect(source).toContain('<AnimatePresence initial={false} onExitComplete={() => setIsExitAnimating(false)}>');
     expect(source).toContain('const emptyStateContent = (');
     expect(source).toContain('const emptyState = shouldReduceMotion ? emptyStateContent : (');
     expect(source).toContain('<AnimatePresence initial={false}>');
     expect(emptyStateIndex).toBeGreaterThan(-1);
     expect(source.indexOf('{emptyState}', emptyStateIndex)).toBeGreaterThan(emptyStateIndex);
-    expect(source).toContain("initial={{ gridTemplateRows: '0fr', opacity: 0, y: -2 }}");
+    expect(emptyStateInitialIndex).toBeGreaterThan(-1);
+    expect(source.indexOf(': false}', emptyStateInitialIndex)).toBeGreaterThan(emptyStateInitialIndex);
+    expect(source).toContain("group.isArchivedBucket ? { gridTemplateRows: '0fr', opacity: 0, y: -2 } : false");
     expect(source).toContain("animate={{ gridTemplateRows: '1fr', opacity: 1, y: 0 }}");
     expect(source).toContain("exit={{ gridTemplateRows: '0fr', opacity: 0, y: -2 }}");
+  });
+});
+
+describe('session export outcome wiring', () => {
+  test('uses the typed save coordinator and suppresses duplicate export attempts', () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'SessionNodeItem.tsx'), 'utf8');
+
+    expect(source).toContain("import { saveSessionExportMarkdown } from '@/lib/sessionExportSave';");
+    expect(source).toContain('const exportInFlightRef = React.useRef(false);');
+    expect(source).toContain('if (exportInFlightRef.current) return;');
+    expect(source).toContain('exportInFlightRef.current = true;');
+    expect(source).toContain('exportInFlightRef.current = false;');
+    expect(source).not.toContain('saveAsMarkdownDesktop');
+  });
+
+  test('shows preparation feedback and handles saved, downloaded, canceled, and failed outcomes separately', () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'SessionNodeItem.tsx'), 'utf8');
+
+    expect(source).toContain("toast.loading(t('sessions.sidebar.session.export.preparing')");
+    expect(source).toContain("saveResult.status === 'canceled'");
+    expect(source).toContain("saveResult.status === 'downloaded'");
+    expect(source).toContain("t('sessions.sidebar.session.export.downloaded')");
+    expect(source).toContain("t('sessions.sidebar.session.export.failed')");
+    expect(source).toContain("saveResult.status === 'saved' && saveResult.path");
+  });
+
+  test('starts destination selection while asynchronous chat preparation is still in flight', () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'SessionNodeItem.tsx'), 'utf8');
+
+    expect(source).toContain('const preparedExportPromise = (async () => {');
+    expect(source).toContain('saveSessionExportMarkdown(\n        preparedExportPromise.then((prepared) => prepared.markdown),');
+    expect(source.indexOf('const saveResult = await saveSessionExportMarkdown('))
+      .toBeLessThan(source.indexOf('const preparedExport = await preparedExportPromise;'));
   });
 });

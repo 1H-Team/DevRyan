@@ -15,7 +15,8 @@ import type {
   GitDeleteBranchPayload,
   GitDeleteRemoteBranchPayload,
   GitRemoveRemotePayload,
-  GeneratedCommitWorkflowResult,
+  GenerateGitCommitMessageRequest,
+  GeneratedCommitMessage,
   GeneratedPullRequestDescription,
   GitWorktreeInfo,
   CreateGitWorktreePayload,
@@ -109,18 +110,12 @@ export const createVSCodeGitAPI = (): GitAPI => ({
 
   generateCommitMessage: async (
     directory: string,
-    files: string[],
-    options?: { zenModel?: string; providerId?: string; modelId?: string }
-  ): Promise<GeneratedCommitWorkflowResult> => {
-    // This requires AI integration - stubbed for now
-    void directory; // Unused for now
-    void files; // Unused for now
-    void options; // Unused for now
-    return {
-      status: 'blocked',
-      commits: [],
-      message: 'Commit generation workflow is not available in VS Code yet.',
-    };
+    request: GenerateGitCommitMessageRequest,
+  ): Promise<GeneratedCommitMessage> => {
+    return sendBridgeMessage<GeneratedCommitMessage>('api:git/commit-message', {
+      directory,
+      ...request,
+    });
   },
 
   generatePullRequestDescription: async (

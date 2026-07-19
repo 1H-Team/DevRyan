@@ -4,7 +4,11 @@ import {
   getGitLog,
   getGitStatus,
 } from '../gitApiHttp';
-import type { GitStatusFile } from '../api/types';
+import type {
+  GitCommitMessageContext,
+  GitCommitMessageFileContext,
+  GitStatusFile,
+} from '../api/types';
 
 export interface CommitContextLimits {
   recentCommitCount: number;
@@ -36,22 +40,8 @@ export const COMMIT_DRAFT_CONTEXT_LIMITS: CommitContextLimits = {
   largeFileLineThreshold: 200,
 };
 
-export type CommitPlanFileContext = {
-  path: string;
-  index: string;
-  workingDir: string;
-  diff?: string;
-  diffNote?: string;
-};
-
-export type CommitPlanContext = {
-  branch: string;
-  tracking: string | null;
-  scope: 'staged-only' | 'staged-and-unstaged';
-  stagedOnly: boolean;
-  selectedFiles: CommitPlanFileContext[];
-  recentCommitSubjects: string[];
-};
+export type CommitPlanFileContext = GitCommitMessageFileContext;
+export type CommitPlanContext = GitCommitMessageContext;
 
 export type BuildCommitPlanContextResult =
   | { status: 'ready'; context: CommitPlanContext }

@@ -1970,7 +1970,20 @@ export async function getGitDiff(
   args.push('--', filePath);
 
   const result = await execGit(args, directory);
-  return { diff: result.stdout };
+  if (result.stdout.trim() || staged) {
+    return { diff: result.stdout };
+  }
+
+  const tracked = await execGit(['ls-files', '--error-unmatch', '--', filePath], directory);
+  if (tracked.exitCode === 0) {
+    return { diff: result.stdout };
+  }
+
+  const noIndexArgs = ['diff', '--no-color'];
+  if (typeof contextLines === 'number') noIndexArgs.push(`-U${Math.max(0, contextLines)}`);
+  noIndexArgs.push('--no-index', '--', '/dev/null', filePath);
+  const untracked = await execGit(noIndexArgs, directory);
+  return { diff: untracked.stdout || untracked.stderr };
 }
 
 /**

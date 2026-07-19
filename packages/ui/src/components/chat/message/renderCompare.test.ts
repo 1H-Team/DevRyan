@@ -58,6 +58,13 @@ describe('areRelevantTurnGroupingContextsEqual', () => {
     expect(areRelevantTurnGroupingContextsEqual(normal, planMode, 'assistant-1', false)).toBe(false);
   });
 
+  test('treats the captured rationale level as render-relevant for assistant messages', () => {
+    const concise = createTurnContext({ responseStyleLevel: 'concise' });
+    const detailed = createTurnContext({ responseStyleLevel: 'detailed' });
+
+    expect(areRelevantTurnGroupingContextsEqual(concise, detailed, 'assistant-1', false)).toBe(false);
+  });
+
   test('treats active activity ownership changes as render-relevant', () => {
     const firstOwner = createTurnContext({ activityOwnerMessageId: 'assistant-1' });
     const nextOwner = createTurnContext({ activityOwnerMessageId: 'assistant-2' });

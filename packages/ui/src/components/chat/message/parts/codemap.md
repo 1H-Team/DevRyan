@@ -6,7 +6,7 @@ Contains renderers for individual chat message part types (text, tool, attachmen
 ## Design
 Part-dispatch pattern chooses a specialized renderer per part type.
 Tool diff parsing lives in `toolPartDiffEntries.ts` so `ToolPart.tsx` remains a React-only component module for fast refresh.
-Expandable fallback selection lives in `toolExpandedFallback.ts`; provider-native task result/failure projection lives in `taskToolUtils.ts` and is rendered by `TaskToolSummary.tsx`.
+Expandable fallback selection lives in `toolExpandedFallback.ts`; provider-native task result/failure projection lives in `taskToolUtils.ts` and is rendered by `TaskToolSummary.tsx`. `taskToolUtils.ts` also routes bounded linked-child message polls through the shared sync materializer so delayed HTTP snapshots cannot replace newer terminal SSE state or drop older cached child activity.
 
 ## Flow
 Message rows iterate parts and delegate rendering; part components format streaming updates safely.

@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/electron",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "private": true,
   "description": "Electron desktop runtime for DevRyan",
   "author": "DevRyan",
@@ -42,7 +42,10 @@
     "files": [
       "dist-bundle/main.mjs",
       "preload.mjs",
-      "origin-policy.mjs"
+      "origin-policy.mjs",
+      "!node_modules/@openchamber/web/server/default-config/plugins/*.test.*",
+      "!node_modules/@openchamber/web/server/default-config/plugins/*.spec.*",
+      "!node_modules/@openchamber/web/server/default-config/user-profile/**/test-*.md"
     ],
     "extraResources": [
       {

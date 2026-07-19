@@ -37,8 +37,8 @@ mock.module("@/lib/i18n", () => ({
 
 const {
   default: ReasoningPart,
-  formatReasoningText,
 } = await import("./ReasoningPart")
+const { formatReasoningText } = await import("./reasoningSummaryDisplay")
 
 const createReasoningPart = ({
   id,
@@ -60,8 +60,11 @@ const createReasoningPart = ({
   metadata,
 } as Part)
 
-const renderReasoning = (part: Part): string => renderToStaticMarkup(
-  <ReasoningPart part={part} messageId="message-1" />,
+const renderReasoning = (
+  part: Part,
+  options: { providerID?: string; responseStyleLevel?: "provider" | "actions" | "concise" | "detailed" } = {},
+): string => renderToStaticMarkup(
+  <ReasoningPart part={part} messageId="message-1" {...options} />,
 )
 
 const expectNoDisclosurePresentation = (html: string): void => {
@@ -104,9 +107,9 @@ describe("ReasoningPart", () => {
       id: "openai-reasoning",
       text: reasoning,
       metadata: { providerID: "openai" },
-    }))
+    }), { providerID: "openai", responseStyleLevel: "detailed" })
 
-    expect(html).toContain(reasoning)
+    expect(html).toContain("**Checking the constraints.**\n\nThe available evidence supports the answer.")
     expectNoDisclosurePresentation(html)
   })
 
@@ -194,5 +197,53 @@ describe("ReasoningPart", () => {
     const useful = "The final response should contain the concise plan only."
 
     expect(formatReasoningText(`${noisy}\n\n${useful}`)).toBe(`${noisy}\n\n${useful}`)
+  })
+
+  test("projects OpenAI summaries to visibly distinct rationale depths", () => {
+    const summary = "**Evaluating frontend design necessity**\n\nThe fixture contains no user interface, so frontend design expertise would not affect the finding\n\nThe test result supplies the remaining evidence"
+
+    expect(formatReasoningText(summary, "openai", "actions")).toBe("**Evaluating frontend design necessity.**")
+    expect(formatReasoningText(summary, "openai", "concise")).toBe(
+      "**Evaluating frontend design necessity.**\n\nThe fixture contains no user interface, so frontend design expertise would not affect the finding.",
+    )
+    expect(formatReasoningText(summary, "openai", "detailed")).toBe(
+      "**Evaluating frontend design necessity.**\n\nThe fixture contains no user interface, so frontend design expertise would not affect the finding.\n\nThe test result supplies the remaining evidence.",
+    )
+    expect(formatReasoningText(summary, "openai", "provider")).toBe(
+      "**Evaluating frontend design necessity.**\n\nThe fixture contains no user interface, so frontend design expertise would not affect the finding.\n\nThe test result supplies the remaining evidence.",
+    )
+  })
+
+  test("preserves OpenAI headings, lists, code, links, multiline blocks, and existing punctuation", () => {
+    const markdown = [
+      "# Evaluation heading",
+      "- Read README.md",
+      "`node --test src/math.test.ts`",
+      "[Open the report](https://example.com/report)",
+      "First line\nSecond line",
+      "Already complete!",
+    ].join("\n\n")
+
+    expect(formatReasoningText(markdown, "openai", "detailed")).toBe(markdown)
+  })
+
+  test("leaves non-OpenAI reasoning unchanged at every display depth", () => {
+    const summary = "**Unpunctuated title**\n\nUnpunctuated explanation"
+
+    expect(formatReasoningText(summary, "anthropic", "actions")).toBe(summary)
+    expect(formatReasoningText(summary, "cursor-acp", "detailed")).toBe(summary)
+  })
+
+  test("keeps the projected OpenAI headline stable as streaming adds rationale", () => {
+    const partial = formatReasoningText("**Evaluating frontend design necessity**", "openai", "concise")
+    const completed = formatReasoningText(
+      "**Evaluating frontend design necessity**\n\nThe repository contents determine whether design expertise is relevant",
+      "openai",
+      "concise",
+    )
+
+    expect(partial).toBe("**Evaluating frontend design necessity.**")
+    expect(completed.match(/Evaluating frontend design necessity/g)).toHaveLength(1)
+    expect(completed.startsWith(partial)).toBe(true)
   })
 })

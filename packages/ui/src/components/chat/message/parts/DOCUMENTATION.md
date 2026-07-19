@@ -49,7 +49,10 @@ Use this doc when you ask an agent to change tool/header/description behavior.
 - `ReasoningPart.tsx`
   - Renders reasoning Markdown directly in the message timeline while streaming and after completion.
   - Empty active reasoning retains the accessible, reduced-motion-aware `Thinking…` status until text arrives.
+  - At the OpenAI-only render boundary, projects the provider summary to the rationale level captured in the turn's first user message and adds terminal punctuation to standalone plain or fully bold summary sentences. Headings, lists, code, links, multiline blocks, persisted parts, and non-OpenAI reasoning remain untouched.
   - The global reasoning visibility setting remains the sole display gate.
+- `reasoningSummaryDisplay.ts`
+  - Owns the pure OpenAI summary projection and punctuation rules used by `ReasoningPart.tsx`.
 
 - `JustificationBlock.tsx`
   - Justification block wrapper over `ReasoningTimelineBlock`.
@@ -61,7 +64,7 @@ Use this doc when you ask an agent to change tool/header/description behavior.
 - Output-only `write/create/file_write` aliases remain expandable even when no structured diff is available.
 - Terminal tool failures remain visible alongside retained partial output. A genuinely empty terminal payload renders an explicit provider-no-details message instead of an empty expansion.
 - `perplexity` is currently treated as static and grouped into search/web-search style rows (through static grouping + short description extraction).
-- Reasoning remains inline across streaming/completion and respects the global reasoning visibility setting, which controls display only and does not change model reasoning effort or provider output.
+- Reasoning remains inline across streaming/completion and respects the global reasoning visibility setting. Rationale Display affects only the presentation depth of OpenAI's provider-generated summary; it never exposes hidden chain-of-thought or mutates persisted message data.
 
 ## "I want to change description for Perplexity" (example recipe)
 

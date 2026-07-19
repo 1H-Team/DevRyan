@@ -3,6 +3,7 @@ import type { PermissionRequest } from "@/types/permission"
 import type { Message, Part, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { applyDirectoryEvent } from "./event-reducer"
 import { useManagedOrchestrationStore } from "@/stores/useManagedOrchestrationStore"
+import { ABORT_GUARD_TTL_MS, isAbortGuardActive, resetAbortGuardState } from "./abort-retry-guard"
 
 const actualOpencodeClientModule = await import("@/lib/opencode/client")
 const actualSyncRefsModule = await import("./sync-refs")
@@ -22,6 +23,7 @@ const sessionMessageCalls: Array<Record<string, unknown>> = []
 const sessionUnrevertCalls: Array<Record<string, unknown>> = []
 const sessionForkCalls: Array<Record<string, unknown>> = []
 const scopedRevertCalls: Array<{ sessionId: string; messageId: string; directory?: string }> = []
+const registeredSessionDirectories: Array<{ sessionId: string; directory: string }> = []
 let sessionCreateHandler: (params: Record<string, unknown>) => Promise<unknown> = () => Promise.resolve({ data: makeSession("created-session") })
 let sessionUpdateHandler: (params: Record<string, unknown>) => Promise<unknown> = () => Promise.resolve({ data: true })
 let sessionDeleteHandler: (params: Record<string, unknown>) => Promise<unknown> = () => Promise.resolve({ data: true })
@@ -49,12 +51,14 @@ const sessionDirectories: Record<string, string | null> = {
   "session-b": "/other/project",
 }
 let inputStoreState: Record<string, unknown> = {}
+const mockComposerRevisions = new Map<string, number>()
 
 const globalArchiveCalls: Array<{ ids: string[]; archivedAt?: number }> = []
 const globalRemoveCalls: Array<{ ids: string[] }> = []
 const globalUnarchiveCalls: Array<{ ids: string[] }> = []
 const globalRestoreCalls: Array<{ ids: string[] }> = []
 const globalArchiveSnapshotCalls: Array<{ ids: string[]; archivedAt: number }> = []
+const globalUpsertCalls: Session[] = []
 const membershipBeginCalls: Array<Record<string, unknown>> = []
 const membershipSettleCalls: Array<{
   entries: Array<{ sessionID: string; version: number }>
@@ -262,6 +266,12 @@ bunTestHooks.afterAll(() => {
 
 // Mock useInputStore (imported but not used in permission functions)
 mock.module("./input-store", () => ({
+  getSessionComposerRevision: (sessionId: string) => mockComposerRevisions.get(sessionId) ?? 0,
+  markSessionComposerEdited: (sessionId: string) => {
+    const revision = (mockComposerRevisions.get(sessionId) ?? 0) + 1
+    mockComposerRevisions.set(sessionId, revision)
+    return revision
+  },
   useInputStore: {
     setState: (partial: Record<string, unknown>) => {
       inputStoreState = { ...inputStoreState, ...partial }
@@ -287,6 +297,33 @@ mock.module("./input-store", () => ({
             attachment,
           ],
         }
+      },
+      queueRestoredInput: (input: {
+        sessionId: string
+        text: string
+        attachments: Array<{ url: string; mimeType: string; filename: string }>
+        expectedComposerRevision: number
+      }) => {
+        const pendingRestoredInputs = new Map(
+          (inputStoreState.pendingRestoredInputs as ReadonlyMap<string, typeof input> | undefined) ?? [],
+        )
+        pendingRestoredInputs.set(input.sessionId, input)
+        inputStoreState = { ...inputStoreState, pendingRestoredInputs }
+      },
+      consumeRestoredInput: (sessionId: string, composerRevision: number) => {
+        const pendingRestoredInputs = new Map(
+          (inputStoreState.pendingRestoredInputs as ReadonlyMap<string, {
+            sessionId: string
+            text: string
+            attachments: Array<{ url: string; mimeType: string; filename: string }>
+            expectedComposerRevision: number
+          }> | undefined) ?? [],
+        )
+        const pending = pendingRestoredInputs.get(sessionId) ?? null
+        if (!pending) return null
+        pendingRestoredInputs.delete(sessionId)
+        inputStoreState = { ...inputStoreState, pendingRestoredInputs }
+        return pending.expectedComposerRevision === composerRevision ? pending : null
       },
     }),
   },
@@ -382,7 +419,9 @@ mock.module("@/stores/useGlobalSessionsStore", () => {
       archiveSessionSnapshots: (sessions: Session[], archivedAt: number) => {
         archiveGlobalSnapshots(sessions, archivedAt)
       },
-      upsertSession: () => {},
+      upsertSession: (session: Session) => {
+        globalUpsertCalls.push(session)
+      },
       activeSessions: mockGlobalActiveSessions,
       archivedSessions: mockGlobalArchivedSessions,
     }),
@@ -393,7 +432,9 @@ mock.module("@/stores/useGlobalSessionsStore", () => {
 // Mock sync-refs (imported but not used in permission functions)
 mock.module("./sync-refs", () => ({
   ...actualSyncRefsModule,
-  registerSessionDirectory: () => {},
+  registerSessionDirectory: (sessionId: string, directory: string) => {
+    registeredSessionDirectories.push({ sessionId, directory })
+  },
   setSyncRefs: () => {},
   getSyncChildStores: () => {
     throw new Error("not initialized")
@@ -520,11 +561,57 @@ describe("waitForConnectionOrThrow", () => {
 describe("createSessionRecord startup readiness", () => {
   beforeEach(() => {
     sessionCreateCalls.length = 0
+    registeredSessionDirectories.length = 0
+    setCurrentSessionCalls.length = 0
     mockConfigStoreState = {}
     for (const key of Object.keys(sessionDirectories)) {
       delete sessionDirectories[key]
     }
     sessionCreateHandler = () => Promise.resolve({ data: makeSession("created-session") })
+  })
+
+  test("keeps the requested directory authoritative for UI routing when OpenCode returns an alias", async () => {
+    const store = createStore({}, [])
+    const childStores = createChildStores([["/tmp/test-project", store]])
+    sessionCreateHandler = () => Promise.resolve({
+      data: {
+        ...makeSession("aliased-session"),
+        directory: "/private/tmp/test-project",
+      },
+    })
+
+    const { createSessionRecord, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/tmp/test-project")
+
+    const session = await createSessionRecord("Alias routing", "/tmp/test-project", null)
+
+    expect(session?.directory).toBe("/private/tmp/test-project")
+    expect(registeredSessionDirectories).toEqual([
+      { sessionId: "aliased-session", directory: "/tmp/test-project" },
+    ])
+    expect(sessionDirectories["aliased-session"]).toBe("/tmp/test-project")
+  })
+
+  test("selects a newly created session with its requested directory instead of a returned alias", async () => {
+    const store = createStore({}, [])
+    const childStores = createChildStores([["/tmp/test-project", store]])
+    sessionCreateHandler = () => Promise.resolve({
+      data: {
+        ...makeSession("selected-aliased-session"),
+        directory: "/private/tmp/test-project",
+      },
+    })
+
+    const { createSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/tmp/test-project")
+
+    const session = await createSession("Alias selection", "/tmp/test-project", null)
+
+    expect(session?.directory).toBe("/private/tmp/test-project")
+    expect(setCurrentSessionCalls.at(-1)).toEqual({
+      id: "selected-aliased-session",
+      directory: "/tmp/test-project",
+    })
   })
 
   test("retries a transient OpenCode restart response before failing chat creation", async () => {
@@ -1101,6 +1188,140 @@ describe("unarchiveSessions cascade behavior", () => {
     sessionUpdateHandler = () => Promise.resolve({ data: true })
   })
 
+  test("updates loaded directory membership before the SDK request resolves", async () => {
+    const archived = {
+      ...makeSession("session-a"),
+      time: { created: 1, updated: 1, archived: 10 },
+    } as Session
+    const unrelated = makeSession("session-b")
+    mockGlobalArchivedSessions = [archived]
+    const store = createStore({}, [archived, unrelated])
+    const before = store.getState()
+    const deferred = createDeferred<{ data: boolean }>()
+    sessionUpdateHandler = () => deferred.promise
+    const childStores = createChildStores([["/test/project", store]])
+
+    const { setActionRefs, unarchiveSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const resultPromise = unarchiveSessions([archived.id])
+    await Promise.resolve()
+
+    const during = store.getState()
+    expect(during.session).not.toBe(before.session)
+    expect(during.session[0]).not.toBe(archived)
+    expect(during.session[0].time?.archived).toBe(undefined)
+    expect(during.session[1]).toBe(unrelated)
+    expect(during.message).toBe(before.message)
+    expect(during.part).toBe(before.part)
+    expect(mockGlobalActiveSessions.map((session) => session.id)).toEqual([archived.id])
+    expect(mockGlobalArchivedSessions).toEqual([])
+
+    const optimistic = during.session[0]
+    deferred.resolve({ data: true })
+
+    expect(await resultPromise).toEqual({ unarchivedIds: [archived.id], failedIds: [] })
+    expect(store.getState().session[0]).toBe(optimistic)
+    expect(store.getState().session[1]).toBe(unrelated)
+  })
+
+  test("restores the exact archived record when unarchive fails", async () => {
+    const archived = {
+      ...makeSession("session-a"),
+      time: { created: 1, updated: 1, archived: 10 },
+    } as Session
+    const unrelated = makeSession("session-b")
+    mockGlobalArchivedSessions = [archived]
+    const store = createStore({}, [archived, unrelated])
+    const deferred = createDeferred<{ data: boolean }>()
+    sessionUpdateHandler = () => deferred.promise
+    const childStores = createChildStores([["/test/project", store]])
+
+    const { setActionRefs, unarchiveSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const resultPromise = withMutedConsoleError(() => unarchiveSessions([archived.id]))
+    await Promise.resolve()
+    expect(store.getState().session[0].time?.archived).toBe(undefined)
+
+    deferred.reject(new Error("unarchive failed"))
+
+    expect(await resultPromise).toEqual({ unarchivedIds: [], failedIds: [archived.id] })
+    expect(store.getState().session[0]).toBe(archived)
+    expect(store.getState().session[1]).toBe(unrelated)
+    expect(mockGlobalActiveSessions).toEqual([])
+    expect(mockGlobalArchivedSessions).toEqual([archived])
+  })
+
+  test("restores only failed descendants after optimistic unarchive", async () => {
+    const parent = {
+      ...makeSession("parent"),
+      time: { created: 1, updated: 1, archived: 10 },
+    } as Session
+    const child = {
+      ...makeSession("child", parent.id),
+      time: { created: 1, updated: 1, archived: 10 },
+    } as Session
+    const unrelated = makeSession("unrelated")
+    mockGlobalArchivedSessions = [parent, child]
+    const store = createStore({}, [parent, child, unrelated])
+    const deferredParent = createDeferred<{ data: boolean }>()
+    const deferredChild = createDeferred<{ data: boolean }>()
+    const deferredBySession = new Map([
+      [parent.id, deferredParent],
+      [child.id, deferredChild],
+    ])
+    sessionUpdateHandler = (params) => deferredBySession.get(String(params.sessionID))!.promise
+    const childStores = createChildStores([["/test/project", store]])
+
+    const { setActionRefs, unarchiveSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const resultPromise = withMutedConsoleError(() => unarchiveSessions([parent.id]))
+    await Promise.resolve()
+    const optimisticParent = store.getState().session[0]
+    expect(store.getState().session.map((session) => session.time?.archived)).toEqual([undefined, undefined, undefined])
+
+    deferredParent.resolve({ data: true })
+    deferredChild.reject(new Error("child unarchive failed"))
+
+    expect(await resultPromise).toEqual({ unarchivedIds: [parent.id], failedIds: [child.id] })
+    expect(store.getState().session[0]).toBe(optimisticParent)
+    expect(store.getState().session[1]).toBe(child)
+    expect(store.getState().session[2]).toBe(unrelated)
+  })
+
+  test("does not roll back over a newer live directory record", async () => {
+    const archived = {
+      ...makeSession("session-a"),
+      time: { created: 1, updated: 1, archived: 10 },
+    } as Session
+    const unrelated = makeSession("session-b")
+    mockGlobalArchivedSessions = [archived]
+    const store = createStore({}, [archived, unrelated])
+    const deferred = createDeferred<{ data: boolean }>()
+    sessionUpdateHandler = () => deferred.promise
+    const childStores = createChildStores([["/test/project", store]])
+
+    const { setActionRefs, unarchiveSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const resultPromise = withMutedConsoleError(() => unarchiveSessions([archived.id]))
+    await Promise.resolve()
+    const newer = {
+      ...store.getState().session[0],
+      title: "Updated in another renderer",
+      time: { created: 1, updated: 2 },
+    } as Session
+    store.setState({ session: [newer, unrelated] })
+
+    deferred.reject(new Error("stale unarchive failed"))
+
+    expect(await resultPromise).toEqual({ unarchivedIds: [], failedIds: [archived.id] })
+    expect(store.getState().session[0]).toBe(newer)
+    expect(store.getState().session[1]).toBe(unrelated)
+  })
+
   test("unarchives direct and nested child sessions with the parent", async () => {
     const parent = makeSession("parent")
     const child = makeSession("child", "parent")
@@ -1140,6 +1361,29 @@ describe("unarchiveSessions cascade behavior", () => {
     expect(sessionUpdateCalls.map((params) => params.sessionID)).toEqual(["child"])
     expect(globalRestoreCalls[0].ids).toEqual(["child"])
     expect(globalUnarchiveCalls).toEqual([])
+  })
+
+  test("deduplicates descendants during bulk unarchive", async () => {
+    const parent = {
+      ...makeSession("parent"),
+      time: { created: 1, updated: 1, archived: 10 },
+    } as Session
+    const child = {
+      ...makeSession("child", parent.id),
+      time: { created: 1, updated: 1, archived: 10 },
+    } as Session
+    mockGlobalArchivedSessions = [parent, child]
+    const store = createStore({}, [parent, child])
+    const childStores = createChildStores([["/test/project", store]])
+
+    const { setActionRefs, unarchiveSessions } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    expect(await unarchiveSessions([parent.id, child.id, parent.id])).toEqual({
+      unarchivedIds: [parent.id, child.id],
+      failedIds: [],
+    })
+    expect(sessionUpdateCalls.map((params) => params.sessionID)).toEqual([parent.id, child.id])
   })
 
   test("treats a resolved SDK unarchive error as a failed mutation", async () => {
@@ -1307,6 +1551,38 @@ describe("deleteSessions archived behavior", () => {
       failedIds: ["directory-session"],
     })
     expect(postMutationRefreshCalls).toBe(0)
+  })
+
+  test("preserves a newer live session record when a directory-specific delete rolls back", async () => {
+    const session = {
+      ...makeSession("directory-session"),
+      directory: "/other/project",
+    } as unknown as Session
+    const updatedSession = {
+      ...session,
+      title: "Updated while delete was pending",
+      time: { ...session.time, updated: 2 },
+    } as Session
+    mockGlobalActiveSessions = [session]
+    const store = createStore({}, [session])
+    const childStores = createChildStores([["/other/project", store]])
+    const deferredDelete = createDeferred<{ data: boolean }>()
+    sessionDeleteHandler = () => deferredDelete.promise
+
+    const { deleteSessionInDirectory, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
+
+    const deletePromise = withMutedConsoleError(
+      () => deleteSessionInDirectory("directory-session", "/other/project"),
+    )
+    await Promise.resolve()
+
+    expect(store.getState().session).toEqual([])
+    store.setState({ session: [updatedSession] })
+    deferredDelete.reject(new Error("delete failed"))
+
+    expect(await deletePromise).toBe(false)
+    expect(store.getState().session).toEqual([updatedSession])
   })
 
   test("deleting an archived parent cascades to archived descendants", async () => {
@@ -1629,8 +1905,11 @@ describe("deleteSessions archived behavior", () => {
 describe("revertToMessage scoped revert", () => {
   beforeEach(() => {
     scopedRevertCalls.length = 0
+    sessionMessageCalls.length = 0
     restoredAttachmentCalls.length = 0
     inputStoreState = {}
+    mockComposerRevisions.clear()
+    mockCurrentSessionId = null
     for (const key of Object.keys(sessionDirectories)) {
       delete sessionDirectories[key]
     }
@@ -1642,6 +1921,7 @@ describe("revertToMessage scoped revert", () => {
       time: { created: 1, updated: 2 },
       revert: { messageID: messageId },
     } as unknown as Session)
+    sessionMessagesHandler = () => Promise.resolve({ data: [] })
   })
 
   test("calls the OpenChamber scoped revert endpoint with session, message, and directory", async () => {
@@ -1693,12 +1973,11 @@ describe("revertToMessage scoped revert", () => {
     await revertToMessage("session-a", "msg_2")
 
     expect(store.getState().message["session-a"]).toEqual([before])
-    expect(inputStoreState.pendingInputText).toBe("restore this prompt")
-    expect(inputStoreState.pendingInputMode).toBe("replace")
-    expect(inputStoreState).toEqual({
-      pendingInputText: "restore this prompt",
-      pendingInputMode: "replace",
-      attachedFiles: [],
+    expect((inputStoreState.pendingRestoredInputs as Map<string, unknown>).get("session-a")).toEqual({
+      sessionId: "session-a",
+      text: "restore this prompt",
+      attachments: [],
+      expectedComposerRevision: 0,
     })
   })
 
@@ -1725,10 +2004,88 @@ describe("revertToMessage scoped revert", () => {
 
     await revertToMessage("session-a", "msg_2")
 
-    expect(restoredAttachmentCalls).toEqual([
+    expect((inputStoreState.pendingRestoredInputs as Map<string, {
+      attachments: unknown[]
+    }>).get("session-a")?.attachments).toEqual([
       { url: "data:image/png;base64,aGVsbG8=", mimeType: "image/png", filename: "image.png" },
     ])
-    expect(inputStoreState.attachedFiles).toEqual(restoredAttachmentCalls)
+    expect(restoredAttachmentCalls).toEqual([])
+  })
+
+  test("keeps an acknowledged revert restoration owned by its session across navigation", async () => {
+    const deferred = createDeferred<Session>()
+    scopedRevertHandler = () => deferred.promise
+    mockCurrentSessionId = "session-a"
+    const session = makeSession("session-a")
+    const target = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as unknown as Message
+    const store = createStore({}, [session])
+    store.setState({
+      message: { "session-a": [target] },
+      part: {
+        "msg_2": [
+          { type: "text", text: "restore session a" } as unknown as Part,
+          { type: "file", mime: "text/plain", url: "file:///a.txt", filename: "a.txt" } as unknown as Part,
+        ],
+      },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    const { useInputStore } = await import("./input-store")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const revert = revertToMessage("session-a", "msg_2")
+    await Promise.resolve()
+    mockCurrentSessionId = "session-b"
+    inputStoreState = {
+      pendingInputText: "session b draft",
+      attachedFiles: [{ filename: "b.txt" }],
+    }
+    deferred.resolve({
+      ...session,
+      revert: { messageID: "msg_2" },
+    } as unknown as Session)
+    await revert
+
+    expect(inputStoreState.pendingInputText).toBe("session b draft")
+    expect(inputStoreState.attachedFiles).toEqual([{ filename: "b.txt" }])
+    expect(useInputStore.getState().consumeRestoredInput("session-b", 0)).toBeNull()
+    expect(useInputStore.getState().consumeRestoredInput("session-a", 0)).toEqual({
+      sessionId: "session-a",
+      text: "restore session a",
+      attachments: [{ url: "file:///a.txt", mimeType: "text/plain", filename: "a.txt" }],
+      expectedComposerRevision: 0,
+    })
+  })
+
+  test("does not overwrite composer edits made while a revert is pending", async () => {
+    const deferred = createDeferred<Session>()
+    scopedRevertHandler = () => deferred.promise
+    mockCurrentSessionId = "session-a"
+    const session = makeSession("session-a")
+    const target = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as unknown as Message
+    const store = createStore({}, [session])
+    store.setState({
+      message: { "session-a": [target] },
+      part: { "msg_2": [{ type: "text", text: "old prompt" } as unknown as Part] },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    const { markSessionComposerEdited, useInputStore } = await import("./input-store")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const revert = revertToMessage("session-a", "msg_2")
+    await Promise.resolve()
+    markSessionComposerEdited("session-a")
+    inputStoreState = {
+      pendingInputText: "new draft typed during revert",
+      attachedFiles: [{ filename: "new.txt" }],
+    }
+    deferred.resolve({ ...session, revert: { messageID: "msg_2" } } as unknown as Session)
+    await revert
+
+    expect(useInputStore.getState().consumeRestoredInput("session-a", 1)).toBeNull()
+    expect(inputStoreState.pendingInputText).toBe("new draft typed during revert")
+    expect(inputStoreState.attachedFiles).toEqual([{ filename: "new.txt" }])
   })
 
   test("uses the clicked session directory instead of the current directory", async () => {
@@ -1852,6 +2209,85 @@ describe("revertToMessage scoped revert", () => {
     expect(store.getState().session[0]?.revert).toBe(undefined)
   })
 
+  test("recovers a concurrent new turn when an idle scoped revert fails", async () => {
+    const deferred = createDeferred<Session>()
+    scopedRevertHandler = () => deferred.promise
+    const session = makeSession("session-a")
+    const target = {
+      id: "msg_2",
+      sessionID: "session-a",
+      role: "user",
+      time: { created: 2 },
+    } as unknown as Message
+    const after = {
+      id: "msg_3",
+      sessionID: "session-a",
+      role: "assistant",
+      time: { created: 3, completed: 4 },
+      finish: "stop",
+    } as unknown as Message
+    const concurrent = {
+      id: "msg_4",
+      sessionID: "session-a",
+      role: "user",
+      time: { created: 5 },
+    } as unknown as Message
+    sessionMessagesHandler = () => Promise.resolve({
+      data: [target, after, concurrent].map((info) => ({ info, parts: [] })),
+    })
+    const store = createStore({}, [session])
+    store.setState({
+      session_status: { "session-a": { type: "idle" } as SessionStatus },
+      message: { "session-a": [target, after] },
+      part: { "msg_2": [], "msg_3": [] },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const revert = revertToMessage("session-a", "msg_2")
+    expect(store.getState().message["session-a"]).toEqual([])
+
+    let concurrentEventChanged = true
+    store.setState((state) => {
+      const draft = {
+        ...state,
+        session: [...state.session],
+        message: { ...state.message },
+        part: { ...state.part },
+        session_user_activity: { ...state.session_user_activity },
+      }
+      concurrentEventChanged = Boolean(applyDirectoryEvent(draft, {
+        type: "message.updated",
+        properties: { info: concurrent },
+      } as never))
+      return draft
+    })
+    expect(concurrentEventChanged).toBe(false)
+    expect(store.getState().message["session-a"]).toEqual([])
+
+    deferred.reject(new Error("safe revert conflict"))
+    let thrown: unknown = null
+    try {
+      await revert
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown instanceof Error ? thrown.message : "").toBe("safe revert conflict")
+    expect(sessionMessageCalls).toEqual([{
+      sessionID: "session-a",
+      directory: "/test/project",
+      limit: 200,
+    }])
+    expect(store.getState().message["session-a"]?.map((message) => message.id)).toEqual([
+      "msg_2",
+      "msg_3",
+      "msg_4",
+    ])
+  })
+
   test("does not restore reverted input when scoped revert fails", async () => {
     scopedRevertHandler = () => Promise.reject(new Error("safe revert conflict"))
     inputStoreState = {
@@ -1927,6 +2363,235 @@ describe("revertToMessage scoped revert", () => {
     await first
   })
 
+  test("restores history and rejects before bounded failure reconciliation settles", async () => {
+    const reconciliation = createDeferred<{ data: [] }>()
+    scopedRevertHandler = () => Promise.reject(new Error("scoped revert timed out"))
+    sessionMessagesHandler = () => reconciliation.promise
+    const session = makeSession("session-a")
+    const target = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as unknown as Message
+    const after = { id: "msg_3", sessionID: "session-a", role: "assistant", time: { created: 3 } } as unknown as Message
+    const store = createStore({}, [session])
+    store.setState({
+      message: { "session-a": [target, after] },
+      part: { "msg_2": [], "msg_3": [] },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const revert = revertToMessage("session-a", "msg_2")
+    try {
+      const outcome = await Promise.race([
+        revert.then(() => "resolved", () => "rejected"),
+        new Promise<string>((resolve) => setTimeout(() => resolve("still-pending"), 75)),
+      ])
+      expect(outcome).toBe("rejected")
+      expect(store.getState().message["session-a"]).toEqual([target, after])
+      expect(store.getState().part).toEqual({ "msg_2": [], "msg_3": [] })
+      expect(store.getState().revert_transaction["session-a"]).toBe(undefined)
+    } finally {
+      reconciliation.resolve({ data: [] })
+      await revert.catch(() => undefined)
+    }
+  })
+
+  test("ignores late failed-revert reconciliation after a newer transaction starts", async () => {
+    const reconciliation = createDeferred<{ data: Array<{ info: Message; parts: Part[] }> }>()
+    scopedRevertHandler = () => Promise.reject(new Error("scoped revert timed out"))
+    sessionMessagesHandler = () => reconciliation.promise
+    const session = makeSession("session-a")
+    const target = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as unknown as Message
+    const after = { id: "msg_3", sessionID: "session-a", role: "assistant", time: { created: 3 } } as unknown as Message
+    const newer = { id: "msg_newer", sessionID: "session-a", role: "user", time: { created: 4 } } as unknown as Message
+    const store = createStore({}, [session])
+    store.setState({
+      message: { "session-a": [target, after] },
+      part: { "msg_2": [], "msg_3": [] },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+
+    const { setActionRefs, revertToMessage } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const rejection = revertToMessage("session-a", "msg_2").catch((error) => error)
+    while (sessionMessageCalls.length === 0) {
+      await Promise.resolve()
+    }
+    store.setState((state) => ({
+      message: { ...state.message, "session-a": [newer] },
+      part: { "msg_newer": [] },
+      revert_transaction: {
+        ...state.revert_transaction,
+        "session-a": {
+          messageID: "msg_newer",
+          hiddenMessageIDs: new Set(["msg_newer"]),
+          version: 10_000,
+          status: "pending",
+          startedAt: 2,
+        },
+      },
+    }))
+    reconciliation.resolve({ data: [{ info: target, parts: [] }, { info: after, parts: [] }] })
+    await rejection
+    await Promise.resolve()
+
+    expect(store.getState().message["session-a"]).toEqual([newer])
+    expect(store.getState().revert_transaction["session-a"]?.version).toBe(10_000)
+  })
+
+  test("does not let a disposed directory's late failed-revert reconciliation restore history", async () => {
+    const reconciliation = createDeferred<{ data: Array<{ info: Message; parts: Part[] }> }>()
+    scopedRevertHandler = () => Promise.reject(new Error("scoped revert timed out"))
+    sessionMessagesHandler = () => reconciliation.promise
+    const session = makeSession("session-a")
+    const target = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as unknown as Message
+    const store = createStore({}, [session])
+    store.setState({ message: { "session-a": [target] }, part: { "msg_2": [] } })
+    const childStores = createChildStores([["/test/project", store]])
+
+    const {
+      releaseSessionActionDirectory,
+      setActionRefs,
+      revertToMessage,
+    } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const rejection = revertToMessage("session-a", "msg_2").catch((error) => error)
+    while (sessionMessageCalls.length === 0) {
+      await Promise.resolve()
+    }
+    releaseSessionActionDirectory("/test/project")
+    store.setState({ session: [], sessionTotal: 0, message: {}, part: {}, revert_transaction: {} })
+    reconciliation.resolve({ data: [{ info: target, parts: [] }] })
+    await rejection
+    await Promise.resolve()
+
+    expect(store.getState().message["session-a"]).toBe(undefined)
+  })
+
+  test("rejects same-session sends while revert is pending and allows them after confirmation", async () => {
+    const session = makeSession("session-a")
+    const before = { id: "msg_1", sessionID: "session-a", role: "user", time: { created: 1 } } as unknown as Message
+    const store = createStore({}, [session])
+    store.setState({
+      message: { "session-a": [before] },
+      part: { "msg_1": [] },
+      revert_transaction: {
+        "session-a": {
+          messageID: "msg_2",
+          hiddenMessageIDs: new Set(["msg_2"]),
+          version: 1,
+          status: "pending",
+          startedAt: 1,
+        },
+      },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    const { setActionRefs, setOptimisticRefs, optimisticSend } = await import("./session-actions")
+    const { applyOptimisticAdd, applyOptimisticRemove } = await import("./optimistic")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+    setOptimisticRefs(
+      (input) => store.setState((state) => {
+        const draft = { message: { ...state.message }, part: { ...state.part } }
+        applyOptimisticAdd(draft, input)
+        return draft
+      }),
+      (input) => store.setState((state) => {
+        const draft = { message: { ...state.message }, part: { ...state.part } }
+        applyOptimisticRemove(draft, input)
+        return draft
+      }),
+    )
+    let sendCalls = 0
+    const send = () => {
+      sendCalls += 1
+      return Promise.resolve()
+    }
+
+    let thrown: unknown = null
+    try {
+      await optimisticSend({
+        sessionId: "session-a",
+        content: "blocked prompt",
+        providerID: "provider",
+        modelID: "model",
+        directory: "/test/project",
+        send,
+      })
+    } catch (error) {
+      thrown = error
+    }
+    expect(thrown instanceof Error ? thrown.message : "").toBe("Cannot send while this chat is being reverted")
+    expect(sendCalls).toBe(0)
+    expect(store.getState().message["session-a"]).toEqual([before])
+
+    store.setState((state) => ({
+      revert_transaction: {
+        ...state.revert_transaction,
+        "session-a": {
+          ...state.revert_transaction["session-a"]!,
+          status: "confirmed",
+          serverAcknowledged: true,
+        },
+      },
+    }))
+    await optimisticSend({
+      sessionId: "session-a",
+      content: "allowed prompt",
+      providerID: "provider",
+      modelID: "model",
+      directory: "/test/project",
+      send,
+    })
+    expect(sendCalls).toBe(1)
+  })
+
+  test("guards every same-session mutation entrypoint while revert is pending", async () => {
+    const store = createStore({}, [makeSession("session-a")])
+    store.setState({
+      revert_transaction: {
+        "session-a": {
+          messageID: "msg_2",
+          hiddenMessageIDs: new Set(["msg_2"]),
+          version: 1,
+          status: "pending",
+          startedAt: 1,
+        },
+      },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    const {
+      assertSessionRevertMutationAllowed,
+      setActionRefs,
+    } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    expect(() => assertSessionRevertMutationAllowed("session-a", "/test/project", "send"))
+      .toThrow("Cannot send while this chat is being reverted")
+    expect(() => assertSessionRevertMutationAllowed("session-a", "/test/project", "undo"))
+      .toThrow("Cannot undo while this chat is being reverted")
+    expect(() => assertSessionRevertMutationAllowed("session-a", "/test/project", "redo"))
+      .toThrow("Cannot redo while this chat is being reverted")
+
+    store.setState((state) => ({
+      revert_transaction: {
+        ...state.revert_transaction,
+        "session-a": {
+          ...state.revert_transaction["session-a"]!,
+          status: "confirmed",
+        },
+      },
+    }))
+    let allowedError: unknown = null
+    try {
+      assertSessionRevertMutationAllowed("session-a", "/test/project", "send")
+    } catch (error) {
+      allowedError = error
+    }
+    expect(allowedError).toBeNull()
+  })
+
   test("clears confirmed revert state before optimistic resend so the new message is visible", async () => {
     const session = {
       ...makeSession("session-a"),
@@ -1940,7 +2605,7 @@ describe("revertToMessage scoped revert", () => {
       revert_transaction: {
         "session-a": {
           messageID: "msg_2",
-          hiddenMessageIDs: ["msg_2", "msg_3"],
+          hiddenMessageIDs: new Set(["msg_2", "msg_3"]),
           version: 1,
           status: "confirmed",
           startedAt: 1,
@@ -2050,7 +2715,7 @@ describe("revertToMessage scoped revert", () => {
     const before = { id: "msg_1", sessionID: "session-a", role: "user", time: { created: 1 } } as unknown as Message
     const previousTransaction = {
       messageID: "msg_2",
-      hiddenMessageIDs: ["msg_2", "msg_3"],
+      hiddenMessageIDs: new Set(["msg_2", "msg_3"]),
       version: 1,
       status: "confirmed" as const,
       startedAt: 1,
@@ -2131,7 +2796,7 @@ describe("revertToMessage scoped revert", () => {
     const before = { id: "msg_1", sessionID: "session-a", role: "user", time: { created: 1 } } as unknown as Message
     const previousTransaction = {
       messageID: "msg_2",
-      hiddenMessageIDs: ["msg_2", "msg_3"],
+      hiddenMessageIDs: new Set(["msg_2", "msg_3"]),
       version: 1,
       status: "confirmed" as const,
       startedAt: 1,
@@ -2206,6 +2871,99 @@ describe("session actions use target session directory", () => {
     sessionMessagesHandler = () => Promise.resolve({ data: [] })
     sessionUnrevertHandler = (params) => Promise.resolve({ data: makeSession(String(params.sessionID)) })
     sessionForkHandler = () => Promise.resolve({ data: makeSession("forked-session") })
+    globalUpsertCalls.length = 0
+  })
+
+  test("mirrors a successful title update into only the target directory store", async () => {
+    const original = {
+      ...makeSession("session-b"),
+      title: "Old title",
+      time: { created: 1, updated: 2 },
+    } as Session
+    const currentStore = createStore({}, [makeSession("session-a")])
+    const sessionStore = createStore({}, [original])
+    const childStores = createChildStores([
+      ["/test/project", currentStore],
+      ["/other/project", sessionStore],
+    ])
+    const updated = {
+      ...original,
+      title: "New title",
+      time: { created: 1, updated: 3 },
+    } as Session
+    sessionUpdateHandler = () => Promise.resolve({ data: updated })
+
+    const { setActionRefs, updateSessionTitle } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+    await updateSessionTitle("session-b", "New title")
+
+    expect(sessionStore.getState().session[0]).toEqual(updated)
+    expect(currentStore.getState().session.map((session) => session.id)).toEqual(["session-a"])
+    expect(globalUpsertCalls).toEqual([updated])
+  })
+
+  test("does not replace a newer directory record with an older title response", async () => {
+    const current = {
+      ...makeSession("session-b"),
+      title: "Newest title",
+      time: { created: 1, updated: 10 },
+    } as Session
+    const sessionStore = createStore({}, [current])
+    const childStores = createChildStores([["/other/project", sessionStore]])
+    sessionUpdateHandler = () => Promise.resolve({
+      data: {
+        ...current,
+        title: "Stale title",
+        time: { created: 1, updated: 9 },
+      } as Session,
+    })
+
+    const { setActionRefs, updateSessionTitle } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+    const before = sessionStore.getState().session
+    await updateSessionTitle("session-b", "Stale title")
+
+    expect(sessionStore.getState().session).toBe(before)
+    expect(sessionStore.getState().session[0]).toBe(current)
+  })
+
+  test("rejects unrevert while the same session has a pending revert and allows it after rollback", async () => {
+    const session = makeSession("session-b")
+    const currentStore = createStore({}, [])
+    const sessionStore = createStore({}, [session])
+    sessionStore.setState({
+      revert_transaction: {
+        "session-b": {
+          messageID: "msg_2",
+          hiddenMessageIDs: new Set(["msg_2"]),
+          version: 1,
+          status: "pending",
+          startedAt: 1,
+        },
+      },
+    })
+    const childStores = createChildStores([
+      ["/test/project", currentStore],
+      ["/other/project", sessionStore],
+    ])
+
+    const { setActionRefs, unrevertSession } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    let thrown: unknown = null
+    try {
+      await unrevertSession("session-b")
+    } catch (error) {
+      thrown = error
+    }
+    expect(thrown instanceof Error ? thrown.message : "").toBe("Cannot redo while this chat is being reverted")
+    expect(sessionUnrevertCalls).toEqual([])
+
+    sessionStore.setState({ revert_transaction: {} })
+    await unrevertSession("session-b")
+    expect(sessionUnrevertCalls).toEqual([
+      { sessionID: "session-b", directory: "/other/project" },
+    ])
   })
 
   test("unreverts using the target session directory instead of the current directory", async () => {
@@ -2428,6 +3186,7 @@ describe("rejectQuestion passes directory", () => {
 
 describe("revertToMessage recovery behavior", () => {
   beforeEach(() => {
+    resetAbortGuardState()
     sessionAbortCalls.length = 0
     sessionMessageCalls.length = 0
     scopedRevertCalls.length = 0
@@ -2471,6 +3230,29 @@ describe("revertToMessage recovery behavior", () => {
     expect(abortFlag?.reason).toBe("manual")
     expect(abortFlag?.acknowledged).toBe(false)
     expect(typeof abortFlag?.timestamp).toBe("number")
+  })
+
+  test("seeds a manual abort guard from the retry status being stopped", async () => {
+    const store = createStore({}, [makeSession("session-a")])
+    store.setState({
+      session_status: {
+        "session-a": {
+          type: "retry",
+          attempt: 2,
+          message: "rate limited",
+          next: ABORT_GUARD_TTL_MS * 2,
+        } as SessionStatus,
+      },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+
+    const { abortCurrentOperation, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await abortCurrentOperation("session-a")
+
+    expect(store.getState().session_status["session-a"]).toEqual({ type: "idle" })
+    expect(isAbortGuardActive("session-a", Date.now() + ABORT_GUARD_TTL_MS + 1)).toBe(true)
   })
 
   test("does not record a manual abort flag when sdk abort fails", async () => {
@@ -2752,6 +3534,77 @@ describe("revertToMessage recovery behavior", () => {
     firstRefetch.resolve({ data: [] })
     secondRefetch.resolve({ data: [] })
     await Promise.all([first, second])
+  })
+
+  test("does not let a disposed directory's late abort reconciliation restore messages", async () => {
+    const store = createStore({}, [makeSession("session-a")])
+    const childStores = createChildStores([["/test/project", store]])
+    const refetch = createDeferred<{ data: Array<{ info: Message; parts: Part[] }> }>()
+    sessionMessagesHandler = () => refetch.promise
+    const staleMessage = {
+      id: "message-after-directory-release",
+      sessionID: "session-a",
+      role: "assistant",
+      time: { created: 1, completed: 2 },
+    } as Message
+
+    const {
+      reconcileUnexpectedAbort,
+      releaseSessionActionDirectory,
+      setActionRefs,
+    } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const reconciliation = reconcileUnexpectedAbort("session-a")
+    releaseSessionActionDirectory("/test/project")
+    store.setState({ session: [], sessionTotal: 0, message: {}, part: {} })
+    refetch.resolve({ data: [{ info: staleMessage, parts: [] }] })
+    await reconciliation
+
+    expect(store.getState().message["session-a"]).toBe(undefined)
+  })
+
+  test("releases only one session's unexpected-abort reconciliation ownership", async () => {
+    const store = createStore({}, [makeSession("session-a"), makeSession("session-b")])
+    const childStores = createChildStores([["/test/project", store]])
+    const firstRefetch = createDeferred<{ data: Array<{ info: Message; parts: Part[] }> }>()
+    const secondRefetch = createDeferred<{ data: Array<{ info: Message; parts: Part[] }> }>()
+    sessionMessagesHandler = (params) => params.sessionID === "session-a"
+      ? firstRefetch.promise
+      : secondRefetch.promise
+    const firstMessage = {
+      id: "message-a-after-release",
+      sessionID: "session-a",
+      role: "assistant",
+      time: { created: 1, completed: 2 },
+    } as Message
+    const secondMessage = {
+      id: "message-b-after-release",
+      sessionID: "session-b",
+      role: "assistant",
+      time: { created: 1, completed: 2 },
+    } as Message
+
+    const {
+      reconcileUnexpectedAbort,
+      releaseSessionActionSession,
+      setActionRefs,
+    } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const first = reconcileUnexpectedAbort("session-a", "/test/project")
+    const second = reconcileUnexpectedAbort("session-b", "/test/project")
+    releaseSessionActionSession("/test/project", "session-a")
+    store.setState((state) => ({
+      session: state.session.filter((session) => session.id !== "session-a"),
+      sessionTotal: 1,
+    }))
+    firstRefetch.resolve({ data: [{ info: firstMessage, parts: [] }] })
+    secondRefetch.resolve({ data: [{ info: secondMessage, parts: [] }] })
+    await Promise.all([first, second])
+
+    expect(store.getState().message["session-a"]).toBe(undefined)
+    expect(store.getState().message["session-b"]).toEqual([secondMessage])
   })
 
   test("rejects missing message ids before calling scoped revert", async () => {

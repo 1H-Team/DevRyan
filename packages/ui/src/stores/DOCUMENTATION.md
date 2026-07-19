@@ -38,6 +38,13 @@ Examples:
 - `useFeatureFlagsStore.ts`
 - `useUpdateStore.ts`
 
+`useAgentRuntimeWarmupStore.ts` is a narrow, non-persisted status store for the
+single directory currently being warmed by the app startup effect. Assistant
+status consumers subscribe only to this string and replace a generic working
+phrase with `Preparing project…` when their active directory matches. The app
+clears the value on warmup settlement and effect cleanup only when it still owns
+the same directory value.
+
 These stores coordinate visible app state, navigation, selected tabs, dialogs, and lightweight feature flags.
 
 ### Session / project coordination stores
@@ -49,6 +56,63 @@ Examples:
 - `useSessionFoldersStore.ts`
 
 These stores coordinate persistent project/session metadata across multiple views.
+
+### Message queue store
+
+`messageQueueStore.ts` owns persisted queued prompt rows per session. Queue-time
+rows capture directory, attachments, and send configuration but intentionally do
+not receive a transport message ID until their first dispatch attempt.
+
+The store exposes two claim shapes:
+
+- `claimQueueForSession` atomically drains the FIFO queue for sequential idle or
+  send-now flushing; `restoreClaimedQueue` prepends the unprocessed tail.
+- `claimMessageForSession` atomically removes one selected chip and records its
+  original index; `restoreClaimedMessage` restores the same row at that position
+  after a failed manual dispatch.
+
+Exact-row claim/restore is the ownership boundary between a manual chip send and
+the idle auto-sender. Only the successful claimant may invoke the transport. The
+restored row retains its queue ID, creation time, captured payload/config, and
+dispatch-scoped message ID so an ambiguous retry cannot create a duplicate user
+turn.
+
+Queued rows survive reversible archive updates. An authoritative
+`session.deleted` event clears only the permanently deleted session's queue key,
+which removes its prompt and attachment data from persisted storage. Cleanup is
+not performed at optimistic delete initiation, so a failed delete cannot discard
+queued user work.
+
+### Persisted session context store
+
+`contextStore.ts` persists slow-changing session choices and derived context
+usage separately from the high-frequency sync stores. Its session-keyed state
+includes model, agent, per-agent model/variant, current-agent, context-usage,
+and edit-mode maps.
+
+An authoritative `session.deleted` event calls `clearSessionContext()` for the
+exact deleted ID. The action preserves unrelated session entries and the
+reserved `__global__` edit-mode fallback. It also cancels queued usage
+microtasks and owned token-poll timers before removing the maps, so deferred
+work cannot recreate a permanently deleted row. Deferred work records are
+released on completion or cancellation; the store does not retain deleted-ID
+tombstones. Archive and failed optimistic delete paths preserve this state.
+
+### Permission auto-accept store
+
+`permissionStore.ts` persists explicit per-session auto-accept overrides and
+mirrors enabled state to the host notification runtime. The host needs that
+mirror to suppress permission notifications before the renderer's automatic
+reply round-trip completes.
+
+Mirror requests are serialized independently per session. This keeps unrelated
+sessions concurrent while guaranteeing that a later state change for one
+session reaches the host after its older request settles. Authoritative
+`session.deleted` removes only that session's persisted override and queues a
+final `enabled: false`, preventing an older hydration/toggle request from
+re-enabling server suppression after deletion. Completed tails are released;
+there is no deleted-session tombstone. Archive and failed optimistic deletion
+preserve the explicit override.
 
 ### Managed orchestration projection store
 
@@ -90,10 +154,20 @@ Ownership and safety rules:
    so a stale response cannot resurrect an evicted projection.
 10. `manualRecoveryTaskIdByChildSessionId` contains only failed/interrupted,
     resumable, unacknowledged tasks whose `agentRetryAvailable` flag is false.
+    Definite usage/quota exhaustion, including exhausted provider session
+    allowances, is projected with `failureKind: provider_usage_limit` and keeps
+    the first grouped attempt available for the Orchestrator's same-child
+    automatic recovery. Manual recovery is indexed only if that second attempt
+    also fails. Transient failures retain the same single recovery ceiling.
     Events, snapshots, acknowledgement responses, and compaction recompute only
     affected child leaves; unrelated task, root, and index references remain
     stable. Sidebar rows must consume the one-child selector rather than task or
     envelope containers.
+
+The task ledger remains the durable result source, but a row whose terminal
+result is stale while its canonical child reports live `busy`/`retry` activity
+is presented as running. This is a display-only reconciliation and does not
+rewrite or discard the retained failure envelope.
 
 ### Provider recovery store
 
@@ -103,6 +177,17 @@ authoritative active-to-idle transition; live provider retry statuses do not.
 The record owns a local provider/model/variant selection plus pending/action
 error leaves. Normal user sends clear it, while a manual recovery send preserves
 it until the send succeeds so failed retries remain actionable.
+
+### MCP runtime store
+
+`useMcpStore.ts` keeps live MCP status and transient error details scoped by the
+normalized project directory. It separately persists only a sanitized last-issue
+kind (`failed`, `needs_auth`, or `needs_client_registration`) per directory and
+server so disabled MCP rows can distinguish a known connection problem from an
+ordinary disabled state after an app restart. Raw errors, authorization URLs,
+and credential-related content remain memory-only. A connected status or
+successful connection test clears the remembered issue; disabling preserves it,
+and successful server deletion removes only the deleted server's entry.
 
 ## Git / PR Stores
 

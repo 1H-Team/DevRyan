@@ -1,3 +1,5 @@
+import { classifyProviderRetryFailure } from './provider-retry-policy.js';
+
 export const MANAGED_TASK_OWNER = 'devryan';
 
 export const MANAGED_TASK_STATUSES = Object.freeze([
@@ -18,7 +20,26 @@ export const MAX_MANAGED_TASK_FAILURE_BYTES = 16 * 1024;
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'aborted', 'interrupted']);
 const STATUS_SET = new Set(MANAGED_TASK_STATUSES);
 const MODE_SET = new Set(['builder', 'orchestrator']);
-const EXECUTION_KIND_SET = new Set(['start', 'retry', 'resume', 'retry_in_place']);
+const EXECUTION_KIND_SET = new Set(['start', 'retry', 'resume', 'recover_in_place', 'retry_in_place']);
+const MANAGED_TASK_INITIALISMS = Object.freeze({
+  api: 'API',
+  cli: 'CLI',
+  css: 'CSS',
+  html: 'HTML',
+  http: 'HTTP',
+  json: 'JSON',
+  mcp: 'MCP',
+  pdf: 'PDF',
+  pr: 'PR',
+  sdk: 'SDK',
+  sse: 'SSE',
+  ui: 'UI',
+  url: 'URL',
+  ux: 'UX',
+});
+const MANAGED_TASK_LOWERCASE_INTERNAL_WORDS = Object.freeze([
+  'a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'in', 'nor', 'of', 'on', 'or', 'per', 'the', 'to', 'via', 'vs',
+]);
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
@@ -29,9 +50,29 @@ const utf8ByteLength = (value) => textEncoder.encode(value).byteLength;
 export const formatManagedTaskDisplayName = (label) => {
   if (typeof label !== 'string') return '';
   const normalized = label.trim().replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
-  return normalized
-    ? `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}`
-    : '';
+  if (!normalized) return '';
+
+  const words = normalized.split(' ').filter((word, index, allWords) => (
+    index === 0 || word.toLocaleLowerCase() !== allWords[index - 1]?.toLocaleLowerCase()
+  ));
+  return words.map((word, index) => {
+    const lowercase = word.toLowerCase();
+    const initialism = Object.hasOwn(MANAGED_TASK_INITIALISMS, lowercase)
+      ? MANAGED_TASK_INITIALISMS[lowercase]
+      : undefined;
+    if (initialism) return initialism;
+    if (
+      index > 0
+      && index < words.length - 1
+      && MANAGED_TASK_LOWERCASE_INTERNAL_WORDS.includes(lowercase)
+      && word === lowercase
+    ) {
+      return lowercase;
+    }
+    return word === lowercase
+      ? `${word.charAt(0).toUpperCase()}${word.slice(1)}`
+      : word;
+  }).join(' ');
 };
 
 export const truncateManagedText = (value, maxBytes) => {
@@ -124,7 +165,7 @@ export const validateManagedTaskRecord = (task) => {
   }
   assertNullableString(task.priorTaskId, 'priorTaskId', { prefix: 'dvr_task_' });
   if (!EXECUTION_KIND_SET.has(task.executionKind)) {
-    throw new TypeError('executionKind must be start, retry, resume, or retry_in_place');
+    throw new TypeError('executionKind must be start, retry, resume, recover_in_place, or retry_in_place');
   }
   if (!STATUS_SET.has(task.status)) {
     throw new TypeError(`status must be one of ${MANAGED_TASK_STATUSES.join(', ')}`);
@@ -197,6 +238,7 @@ const projectTaskForEvent = (task) => ({
   finishedAt: task.finishedAt,
   timeoutAt: task.timeoutAt,
   failureReason: task.failureReason,
+  failureKind: classifyProviderRetryFailure(task.failureReason),
   partial: task.partial,
   recoverablePreview: task.recoverablePreview,
   canonicalRefs: task.canonicalRefs,

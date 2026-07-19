@@ -84,6 +84,25 @@ describe('resolveToolExpandedDetails', () => {
         expect(details.showResult).toBe(false);
     });
 
+    test('coerces structured and circular runtime errors without returning object children', () => {
+        const structured = resolveToolExpandedDetails({
+            hasStructuredDetails: false,
+            error: { message: { code: 'E_PROVIDER' } },
+            status: 'failed',
+        });
+        expect(structured.failureReason).toBe('{"code":"E_PROVIDER"}');
+
+        const circular: Record<string, unknown> = {};
+        circular.self = circular;
+        const circularDetails = resolveToolExpandedDetails({
+            hasStructuredDetails: false,
+            error: circular,
+            status: 'failed',
+        });
+        expect(circularDetails.failureReason).toBe(undefined);
+        expect(circularDetails.isFailure).toBe(true);
+    });
+
     test('surfaces an interrupted status even when the provider supplied no reason', () => {
         const details = resolveToolExpandedDetails({
             hasStructuredDetails: false,

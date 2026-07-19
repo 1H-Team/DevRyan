@@ -28,7 +28,6 @@ import {
   updateSessionUserActivityFromMessages,
 } from "./session-user-activity"
 import {
-  hasActiveRevertTransactions,
   isCommittedRevertResendInFlight,
   isMessageHiddenByAnyActiveRevert,
   isMessageHiddenByRevert,
@@ -37,6 +36,7 @@ import {
 import { clearAbortGuard, filterSessionStatusThroughAbortGuard } from "./abort-retry-guard"
 import { isFinalToolStatus } from "../lib/toolStatus"
 import { hasSettledTerminalAssistantTurn } from "./plan-idle-settlement"
+import { areSessionRecordsEqual, isStrictlyOlderSession } from "./session-recency"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 const DELTA_OVERLAP_FIELDS = ["text", "output"] as const
@@ -44,6 +44,25 @@ const CURSOR_PROVIDER_ID = "cursor-acp"
 
 type DedupeMetadata = {
   __dedupeNextDeltaFields?: string[]
+}
+
+function advancesCachedUserTurn(messages: readonly Message[], candidate: Message): boolean {
+  if (candidate.role !== "user") return false
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const previous = messages[index]
+    if (previous.role !== "user") continue
+
+    const previousCreatedAt = previous.time?.created
+    const candidateCreatedAt = candidate.time?.created
+    if (typeof previousCreatedAt === "number" && typeof candidateCreatedAt === "number") {
+      return candidateCreatedAt > previousCreatedAt
+        || (candidateCreatedAt === previousCreatedAt && candidate.id > previous.id)
+    }
+    return candidate.id > previous.id
+  }
+
+  return false
 }
 
 function getUpdatedDeltaFields(previous: Part, next: Part) {
@@ -229,6 +248,11 @@ function areMessageDiffSummariesEquivalent(left: Message, right: Message): boole
   return !!leftSummary === !!rightSummary
     && leftStats.additions === rightStats.additions
     && leftStats.deletions === rightStats.deletions
+}
+
+function getMessageParentID(message: Message): string | undefined {
+  if (!("parentID" in message)) return undefined
+  return typeof message.parentID === "string" ? message.parentID : undefined
 }
 
 // Memoize normalizeChatOwnedDiffSummary by (messages, session) reference pair.
@@ -528,13 +552,18 @@ export function applyDirectoryEvent(
     }
 
     case "session.created": {
+      const incoming = stripSessionDiffSnapshots((event.properties as { info: Session }).info)
+      const sessions = draft.session
+      const result = Binary.search(sessions, incoming.id, (s) => s.id)
+      if (result.found && isStrictlyOlderSession(incoming, sessions[result.index])) {
+        return false
+      }
       const info = normalizeIncomingSessionSummary(
         draft,
-        stripSessionDiffSnapshots((event.properties as { info: Session }).info),
+        incoming,
       )
-      const sessions = draft.session
-      const result = Binary.search(sessions, info.id, (s) => s.id)
       if (result.found) {
+        if (areSessionRecordsEqual(sessions[result.index], info)) return false
         sessions[result.index] = info
       } else {
         sessions.splice(result.index, 0, info)
@@ -545,25 +574,34 @@ export function applyDirectoryEvent(
     }
 
     case "session.updated": {
+      const incoming = stripSessionDiffSnapshots((event.properties as { info: Session }).info)
+      const sessions = draft.session
+      const result = Binary.search(sessions, incoming.id, (s) => s.id)
+      if (result.found && isStrictlyOlderSession(incoming, sessions[result.index])) {
+        return false
+      }
       const info = normalizeIncomingSessionSummary(
         draft,
-        stripSessionDiffSnapshots((event.properties as { info: Session }).info),
+        incoming,
       )
-      const sessions = draft.session
-      const result = Binary.search(sessions, info.id, (s) => s.id)
 
       if (info.time.archived) {
+        const hadUserActivity = Object.hasOwn(draft.session_user_activity, info.id)
+        const hadRevertTransaction = Object.hasOwn(draft.revert_transaction, info.id)
         if (result.found) sessions.splice(result.index, 1)
         // Decision: archive removes the session from active lists immediately,
         // but heavy chat caches are offloaded by the materializer after the
         // configured TTL so quick archive/unarchive round-trips stay smooth.
         delete draft.session_user_activity[info.id]
         delete draft.revert_transaction[info.id]
-        if (!info.parentID) draft.sessionTotal = Math.max(0, draft.sessionTotal - 1)
-        return true
+        if (result.found && !info.parentID) draft.sessionTotal = Math.max(0, draft.sessionTotal - 1)
+        return result.found || hadUserActivity || hadRevertTransaction
       }
 
       if (result.found) {
+        if (areSessionRecordsEqual(sessions[result.index], info)) {
+          return updateSessionUserActivityFromMessages(draft, info.id)
+        }
         sessions[result.index] = info
       } else {
         sessions.splice(result.index, 0, info)
@@ -663,12 +701,19 @@ export function applyDirectoryEvent(
         return true
       }
       const result = Binary.search(messages, info.id, (m) => m.id)
+      if (!result.found && advancesCachedUserTurn(messages, info)) {
+        // A user message that advances the cached user-turn boundary is the
+        // authoritative cross-surface edge for new work. Replayed historical
+        // messages cannot clear a prior local Stop.
+        clearAbortGuard(info.sessionID)
+      }
       if (result.found) {
         // Skip message replacement if unchanged — preserves reference, avoids re-render
         const existing = messages[result.index]
         const unchanged = existing.role === info.role
           && (existing as { finish?: unknown }).finish === (info as { finish?: unknown }).finish
           && (existing.time as { completed?: number })?.completed === (info.time as { completed?: number })?.completed
+          && getMessageParentID(existing) === getMessageParentID(info)
           && areMessageDiffSummariesEquivalent(existing, info)
         if (unchanged) {
           syncDebug.reducer.messageUpdatedUnchanged(info.sessionID, info.id, info.role, (info as { finish?: unknown }).finish, (info.time as { completed?: number })?.completed)
@@ -723,7 +768,7 @@ export function applyDirectoryEvent(
       const sessionID = (part as { sessionID?: string }).sessionID
       if (
         isMessageHiddenByRevert(draft, sessionID, messageID)
-        || (!sessionID && hasActiveRevertTransactions(draft) && isMessageHiddenByAnyActiveRevert(draft, messageID))
+        || (!sessionID && isMessageHiddenByAnyActiveRevert(draft, messageID))
       ) {
         return false
       }
@@ -811,7 +856,7 @@ export function applyDirectoryEvent(
         ?? findSessionIdForMessage(draft, props.messageID)
       if (
         isMessageHiddenByRevert(draft, sessionID, props.messageID)
-        || (!sessionID && hasActiveRevertTransactions(draft) && isMessageHiddenByAnyActiveRevert(draft, props.messageID))
+        || (!sessionID && isMessageHiddenByAnyActiveRevert(draft, props.messageID))
       ) {
         return false
       }

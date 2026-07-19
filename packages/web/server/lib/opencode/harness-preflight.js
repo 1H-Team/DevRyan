@@ -8,6 +8,8 @@ import {
   isBlockedManagedRuntimeMcpName,
   isForbiddenManagedRuntimeToolId,
 } from './runtime-surface-policy.js';
+import { buildHarnessContextBudget } from './harness-context-budget.js';
+import { createHarnessToolManifestReader } from './harness-tool-manifest.js';
 
 const KNOWN_PERMISSION_KEYS = new Set([
   '*',
@@ -58,6 +60,13 @@ function normalizePath(value) {
 
 function formatErrorMessage(error, fallback) {
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function readRequestString(req, key) {
+  const value = typeof req.query?.[key] === 'string'
+    ? req.query[key]
+    : req.body?.[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 }
 
 function getAgentFrontmatter(agent) {
@@ -472,6 +481,29 @@ function lintForbiddenRuntimeSurface({ findings, toolManifest }) {
   }
 }
 
+function lintToolManifestAvailability({ findings, toolManifest }) {
+  if (toolManifest?.availability?.ids?.availability === 'unavailable') {
+    findings.push(createFinding({
+      ruleId: 'runtime-tool-ids-unavailable',
+      severity: 'warning',
+      summary: 'Live OpenCode tool IDs are unavailable',
+      artifact: { type: 'tool-manifest', name: 'runtime-tool-ids' },
+      suggestedNextAction: 'Retry preflight after OpenCode tool discovery is available',
+      stopCondition: 'Stop treating an unavailable tool ID measurement as an empty runtime catalog',
+    }));
+  }
+  if (toolManifest?.availability?.catalog?.availability === 'unavailable') {
+    findings.push(createFinding({
+      ruleId: 'runtime-tool-catalog-unavailable',
+      severity: 'warning',
+      summary: 'The selected OpenCode provider/model tool catalog is unavailable',
+      artifact: { type: 'tool-manifest', name: 'runtime-tool-catalog' },
+      suggestedNextAction: 'Retry preflight after the selected provider and model can resolve tools',
+      stopCondition: 'Stop treating an unavailable catalog measurement as a zero-byte catalog',
+    }));
+  }
+}
+
 function lintAgentHarness(options = {}) {
   const agents = asArray(options.agents);
   const skills = asArray(options.skills);
@@ -492,6 +524,7 @@ function lintAgentHarness(options = {}) {
   lintWarmup({ findings, latestWarmup: options.latestWarmup });
   lintSlimRuntime({ findings, slimRuntime: options.slimRuntime });
   lintForbiddenRuntimeSurface({ findings, toolManifest: options.toolManifest });
+  lintToolManifestAvailability({ findings, toolManifest: options.toolManifest });
 
   return findings;
 }
@@ -568,6 +601,7 @@ function auditPackagedPromptContext(options = {}) {
 }
 
 function buildPreflightResult({
+  context,
   directory,
   agents,
   skills,
@@ -577,6 +611,7 @@ function buildPreflightResult({
   toolManifest,
   packagedAgents,
   slimRuntime,
+  readSkillBody,
 }) {
   const findings = lintAgentHarness({
     agents,
@@ -588,6 +623,14 @@ function buildPreflightResult({
     slimRuntime,
   });
   const promptAudit = auditPackagedPromptContext({ agents: packagedAgents });
+  const contextBudget = buildHarnessContextBudget({
+    toolManifest,
+    packagedAgents,
+    skills,
+    hiddenSkills,
+    readSkillBody,
+    context,
+  });
   const harness = findings.length > 0
     ? createHarnessWarning({
       summary: `Harness preflight completed with ${findings.length} finding${findings.length === 1 ? '' : 's'}`,
@@ -609,7 +652,7 @@ function buildPreflightResult({
       artifacts: promptAudit.map((entry) => entry.path).filter(Boolean),
     });
 
-  return withHarnessResult({
+  const finish = (resolvedContextBudget) => withHarnessResult({
     ok: true,
     directory: directory || null,
     findings,
@@ -617,30 +660,71 @@ function buildPreflightResult({
     latestWarmup,
     slimRuntime,
     promptAudit,
+    contextBudget: resolvedContextBudget,
   }, harness);
+  return maybePromise(contextBudget) ? contextBudget.then(finish) : finish(contextBudget);
 }
 
 function createHarnessPreflight(dependencies = {}) {
   const read = (name, context) => (
     typeof dependencies[name] === 'function' ? dependencies[name](context) : []
   );
+  const runtimeToolManifestReader = (
+    typeof dependencies.fetchImpl === 'function'
+    && typeof dependencies.buildOpenCodeUrl === 'function'
+  )
+    ? createHarnessToolManifestReader(dependencies)
+    : null;
 
   return {
     run(context = {}) {
+      const hasModelSelector = Boolean(context.providerID && context.modelID);
       const values = {
         agents: read('getAgents', context),
         skills: read('getSkills', context),
         hiddenSkills: read('getHiddenSkills', context),
         staleOverrides: read('getStaleOverrides', context),
         latestWarmup: typeof dependencies.getLatestWarmup === 'function' ? dependencies.getLatestWarmup(context) : null,
-        toolManifest: typeof dependencies.getToolManifest === 'function' ? dependencies.getToolManifest(context) : { tools: [], aliases: {}, sourceRuntime: 'server', directory: context.directory || null },
+        toolManifest: typeof dependencies.getToolManifest === 'function'
+          ? dependencies.getToolManifest(context)
+          : runtimeToolManifestReader
+            ? runtimeToolManifestReader(context)
+            : {
+                tools: [],
+                toolIds: [],
+                aliases: {},
+                sourceRuntime: 'server',
+                directory: context.directory || null,
+                selector: {
+                  mode: hasModelSelector ? 'providerModel' : 'idsOnly',
+                  providerID: context.providerID || null,
+                  modelID: context.modelID || null,
+                },
+                availability: {
+                  ids: {
+                    availability: 'unavailable',
+                    error: { kind: 'sourceUnavailable' },
+                  },
+                  catalog: hasModelSelector
+                    ? {
+                        availability: 'unavailable',
+                        error: { kind: 'sourceUnavailable' },
+                      }
+                    : { availability: 'notRequested' },
+                },
+              },
         packagedAgents: read('getPackagedAgents', context),
         slimRuntime: typeof dependencies.getSlimRuntime === 'function' ? dependencies.getSlimRuntime(context) : null,
       };
 
       const pending = Object.entries(values).filter(([, value]) => maybePromise(value));
       if (pending.length === 0) {
-        return buildPreflightResult({ directory: context.directory, ...values });
+        return buildPreflightResult({
+          context,
+          directory: context.directory,
+          readSkillBody: dependencies.readSkillBody,
+          ...values,
+        });
       }
 
       return Promise.all(pending.map(([, value]) => value)).then((resolved) => {
@@ -648,7 +732,12 @@ function createHarnessPreflight(dependencies = {}) {
         pending.forEach(([key], index) => {
           nextValues[key] = resolved[index];
         });
-        return buildPreflightResult({ directory: context.directory, ...nextValues });
+        return buildPreflightResult({
+          context,
+          directory: context.directory,
+          readSkillBody: dependencies.readSkillBody,
+          ...nextValues,
+        });
       });
     },
   };
@@ -656,11 +745,32 @@ function createHarnessPreflight(dependencies = {}) {
 
 function registerHarnessPreflightRoute(app, preflight) {
   const handle = async (req, res) => {
-    const directory = typeof req.query?.directory === 'string'
-      ? req.query.directory
-      : (typeof req.body?.directory === 'string' ? req.body.directory : undefined);
+    const directory = readRequestString(req, 'directory');
+    const providerID = readRequestString(req, 'providerID');
+    const modelID = readRequestString(req, 'modelID');
+    if (Boolean(providerID) !== Boolean(modelID)) {
+      const message = 'providerID and modelID must be provided together';
+      res.status(400).json(withHarnessResult({
+        ok: false,
+        directory: directory || null,
+        error: {
+          kind: 'invalidModelSelector',
+          message,
+        },
+      }, createHarnessError({
+        summary: 'Harness preflight model selector is incomplete',
+        nextActions: ['Provide both providerID and modelID, or omit both'],
+        recovery: {
+          rootCauseHint: message,
+          safeRetry: 'Retry with a complete provider/model selector',
+          stopCondition: 'Stop retrying until both selector values are available',
+          retryable: true,
+        },
+      })));
+      return;
+    }
     try {
-      const result = await preflight.run({ directory });
+      const result = await preflight.run({ directory, providerID, modelID });
       res.json(result);
     } catch (error) {
       const message = formatErrorMessage(error, 'Harness preflight failed');

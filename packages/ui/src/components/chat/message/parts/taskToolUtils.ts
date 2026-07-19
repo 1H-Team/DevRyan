@@ -1,5 +1,9 @@
 import type { ToolPart as ToolPartType } from '@opencode-ai/sdk/v2';
-import type { MessageRecord } from '@/lib/messageCompletion';
+import {
+    materializeSessionSnapshots,
+    type MaterializedMessageRecord,
+    type MaterializedState,
+} from '@/sync/materialization';
 import { normalizeToolName } from './toolRenderUtils';
 
 export type TaskToolSummaryEntry = {
@@ -15,7 +19,24 @@ export type TaskToolSummaryEntry = {
     };
 };
 
-export type SessionMessageWithParts = MessageRecord;
+export type SessionMessageWithParts = MaterializedMessageRecord;
+
+export const materializeTaskSessionSnapshot = (
+    state: MaterializedState,
+    sessionID: string,
+    records: SessionMessageWithParts[],
+): Partial<MaterializedState> => {
+    const materialized = materializeSessionSnapshots(state, sessionID, records);
+    if (!materialized.sessionsChanged && !materialized.messagesChanged && !materialized.partsChanged) {
+        return state;
+    }
+
+    return {
+        ...(materialized.sessionsChanged && materialized.session ? { session: materialized.session } : {}),
+        message: materialized.message,
+        part: materialized.part,
+    };
+};
 
 const normalizeSessionIdCandidate = (value: unknown): string | undefined => {
     if (typeof value !== 'string') {
@@ -143,11 +164,15 @@ export const buildTaskSessionMessagesSignature = (messages: SessionMessageWithPa
 
     const lastMessage = messages[messages.length - 1];
     const lastMessageId = typeof lastMessage?.info?.id === 'string' ? lastMessage.info.id : '';
+    const lastMessageTime = lastMessage?.info?.time;
+    const completedAt = lastMessageTime && 'completed' in lastMessageTime
+        ? lastMessageTime.completed
+        : undefined;
     const lastMessageUpdated =
-        typeof lastMessage?.info?.time?.completed === 'number'
-            ? lastMessage.info.time.completed
-            : typeof lastMessage?.info?.time?.created === 'number'
-                ? lastMessage.info.time.created
+        typeof completedAt === 'number'
+            ? completedAt
+            : typeof lastMessageTime?.created === 'number'
+                ? lastMessageTime.created
                 : 0;
     const lastParts = Array.isArray(lastMessage?.parts) ? lastMessage.parts : [];
     const lastPart = lastParts[lastParts.length - 1] as Record<string, unknown> | undefined;

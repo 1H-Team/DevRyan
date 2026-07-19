@@ -2,6 +2,7 @@ import { readAuthFile } from '../../opencode/auth.js';
 import { isPlainObject, readConfigLayers } from '../../opencode/shared.js';
 import { readClaudeCodeStatusUsage } from './claude-code-status.js';
 import { refreshClaudeCodeStatusUsage } from './claude-code-status-refresh.js';
+import { isAnthropicOAuthPluginSpec } from '../../opencode/anthropic-oauth-plugin.js';
 import {
   CLAUDE_CODE_STATUS_LINE_CUSTOM_CODE,
   CLAUDE_CODE_USAGE_PENDING_MESSAGE,
@@ -18,9 +19,9 @@ import {
 
 export const providerId = 'claude';
 export const providerName = 'Anthropic';
+
 export const aliases = ['anthropic', 'claude', 'anthropic-oauth', 'opencode-with-claude'];
 
-const ANTHROPIC_OAUTH_PLUGIN_NAME = 'opencode-with-claude';
 const FIVE_HOUR_WINDOW_SECONDS = 5 * 60 * 60;
 const SEVEN_DAY_WINDOW_SECONDS = 7 * 24 * 60 * 60;
 
@@ -45,7 +46,7 @@ export const hasAnthropicOAuthProxyConfig = (workingDirectory = null) => {
     const anthropic = isPlainObject(providers.anthropic) ? providers.anthropic : null;
     const options = isPlainObject(anthropic?.options) ? anthropic.options : {};
 
-    return plugins.includes(ANTHROPIC_OAUTH_PLUGIN_NAME) && isAnthropicOAuthProxyOptions(options);
+    return plugins.some(isAnthropicOAuthPluginSpec) && isAnthropicOAuthProxyOptions(options);
   });
 };
 

@@ -65,6 +65,64 @@ Your response should be ready to speak immediately.`;
 
 const SUMMARIZE_TIMEOUT_MS = 30_000;
 
+export async function generateZenText({ prompt, zenModel, timeoutMs = SUMMARIZE_TIMEOUT_MS }) {
+  const normalizedPrompt = typeof prompt === 'string' ? prompt.trim() : '';
+  if (!normalizedPrompt) {
+    throw new Error('Generation prompt is required');
+  }
+
+  const model = typeof zenModel === 'string' && zenModel.trim() ? zenModel.trim() : 'gpt-5-nano';
+  const endpoint = getZenCompletionEndpoint(model);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`https://opencode.ai/zen/v1/${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(endpoint === 'responses'
+        ? {
+            model,
+            input: [{ role: 'user', content: normalizedPrompt }],
+            stream: false,
+            reasoning: { effort: 'low' },
+          }
+        : {
+            model,
+            messages: [{ role: 'user', content: normalizedPrompt }],
+            stream: false,
+          }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => ({}));
+      const detail = typeof errorBody?.error?.message === 'string'
+        ? errorBody.error.message
+        : typeof errorBody?.error === 'string'
+          ? errorBody.error
+          : response.statusText;
+      throw new Error(`Zen API returned ${response.status}${detail ? `: ${detail}` : ''}`);
+    }
+
+    const data = await response.json();
+    const output = endpoint === 'responses'
+      ? extractZenOutputText(data)
+      : extractZenChatCompletionText(data);
+    if (!output) {
+      throw new Error('Zen API returned no text');
+    }
+    return output;
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      throw new Error('Zen generation timed out');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function sanitizeForTTS(text) {
   if (!text || typeof text !== 'string') return '';
 

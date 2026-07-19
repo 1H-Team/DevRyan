@@ -8,6 +8,7 @@ import path from 'path';
 import { promisify } from 'node:util';
 
 import { createSseBoundaryTracker, registerOpenCodeProxy, writeSseChunkWithBackpressure } from './lib/opencode/proxy.js';
+import { bindScopedRevertRequestAbort, runScopedSessionRevert } from './lib/opencode/session-scoped-revert.js';
 import { createTurnTimingRuntime } from './lib/opencode/turn-timing.js';
 
 const execFileAsync = promisify(execFile);
@@ -62,6 +63,7 @@ const createProxyApp = (upstreamPort, options = {}) => {
     ensureOpenCodeApiPrefix: () => {},
     turnTimingRuntime: options.turnTimingRuntime,
     openCodeSnapshotRoot: options.openCodeSnapshotRoot,
+    scopedRevertTimeoutMs: options.scopedRevertTimeoutMs,
   });
   return app;
 };
@@ -444,6 +446,274 @@ describe('OpenCode scoped session revert', () => {
     repoDirectory = undefined;
     snapshotRoot = undefined;
     upstreamRevertCalls = 0;
+  });
+
+  it('returns a deterministic timeout when the upstream revert never settles', async () => {
+    repoDirectory = await createTestRepo();
+    await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\n');
+    await commitAll(repoDirectory);
+    await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\nsession-a\n');
+
+    const upstream = express();
+    upstream.use(express.json());
+    upstream.get('/session/:sessionID/message', (_req, res) => {
+      res.json([
+        userMessageWithDiff('msg-target', {
+          file: 'file-a.txt',
+          status: 'modified',
+          patch: addedLinePatch('file-a.txt', 'base', 'session-a'),
+          additions: 1,
+          deletions: 0,
+        }),
+      ]);
+    });
+    upstream.post('/session/:sessionID/revert', async () => {
+      upstreamRevertCalls += 1;
+      await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\n');
+    });
+    upstreamServer = await listen(upstream);
+
+    proxyServer = await listen(createProxyApp(upstreamServer.address().port, { scopedRevertTimeoutMs: 100 }));
+    const startedAt = Date.now();
+    const response = await fetch(`http://127.0.0.1:${proxyServer.address().port}/api/openchamber/session/session-a/scoped-revert?directory=${encodeURIComponent(repoDirectory)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messageID: 'msg-target' }),
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(504);
+    expect(payload).toEqual({
+      error: 'Scoped session revert timed out',
+      code: 'SCOPED_REVERT_TIMEOUT',
+    });
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+    expect(upstreamRevertCalls).toBe(1);
+    expect(await fs.readFile(path.join(repoDirectory, 'file-a.txt'), 'utf8')).toBe('base\nsession-a\n');
+  });
+
+  it('releases the directory lock after a timeout so the next revert can proceed', async () => {
+    repoDirectory = await createTestRepo();
+    await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\n');
+    await commitAll(repoDirectory);
+    await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\nsession-a\n');
+
+    const upstream = express();
+    upstream.use(express.json());
+    upstream.get('/session/:sessionID/message', (_req, res) => {
+      res.json([
+        userMessageWithDiff('msg-target', {
+          file: 'file-a.txt',
+          status: 'modified',
+          patch: addedLinePatch('file-a.txt', 'base', 'session-a'),
+          additions: 1,
+          deletions: 0,
+        }),
+      ]);
+    });
+    upstream.post('/session/:sessionID/revert', async (_req, res) => {
+      upstreamRevertCalls += 1;
+      if (upstreamRevertCalls === 1) return;
+      await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\n');
+      res.json({ id: 'session-a', title: 'session-a', revert: { messageID: 'msg-target' } });
+    });
+    upstreamServer = await listen(upstream);
+
+    proxyServer = await listen(createProxyApp(upstreamServer.address().port, { scopedRevertTimeoutMs: 100 }));
+    const url = `http://127.0.0.1:${proxyServer.address().port}/api/openchamber/session/session-a/scoped-revert?directory=${encodeURIComponent(repoDirectory)}`;
+    const firstResponse = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messageID: 'msg-target' }),
+    });
+    expect(firstResponse.status).toBe(504);
+
+    const secondResponse = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messageID: 'msg-target' }),
+    });
+
+    expect(secondResponse.status).toBe(200);
+    expect(upstreamRevertCalls).toBe(2);
+    expect(await fs.readFile(path.join(repoDirectory, 'file-a.txt'), 'utf8')).toBe('base\n');
+  });
+
+  it('aborts a scoped revert when the HTTP client socket disconnects', () => {
+    const req = new EventEmitter();
+    req.socket = new EventEmitter();
+    const res = new EventEmitter();
+    res.writableEnded = false;
+
+    const requestAbort = bindScopedRevertRequestAbort(req, res);
+    req.socket.emit('close');
+
+    expect(requestAbort.signal.aborted).toBe(true);
+    expect(requestAbort.signal.reason).toEqual(expect.objectContaining({
+      code: 'SCOPED_REVERT_CANCELLED',
+    }));
+    requestAbort.dispose();
+  });
+
+  it('restores a delayed upstream mutation after cancellation before releasing the lock', async () => {
+    repoDirectory = await createTestRepo();
+    await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\n');
+    await commitAll(repoDirectory);
+    await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\nsession-a\n');
+
+    let resolveFirstRevertStarted;
+    const firstRevertStarted = new Promise((resolve) => {
+      resolveFirstRevertStarted = resolve;
+    });
+    let resolveDelayedMutation;
+    const delayedMutation = new Promise((resolve) => {
+      resolveDelayedMutation = resolve;
+    });
+    const upstream = express();
+    upstream.use(express.json());
+    upstream.get('/session/:sessionID/message', (_req, res) => {
+      res.json([
+        userMessageWithDiff('msg-target', {
+          file: 'file-a.txt',
+          status: 'modified',
+          patch: addedLinePatch('file-a.txt', 'base', 'session-a'),
+          additions: 1,
+          deletions: 0,
+        }),
+      ]);
+    });
+    upstream.post('/session/:sessionID/revert', async (_req, res) => {
+      upstreamRevertCalls += 1;
+      if (upstreamRevertCalls === 1) {
+        resolveFirstRevertStarted();
+        await new Promise((resolve) => setTimeout(resolve, 75));
+        await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\n');
+        resolveDelayedMutation();
+        return res.json({ id: 'session-a', title: 'session-a', revert: { messageID: 'msg-target' } });
+      }
+      await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\n');
+      res.json({ id: 'session-a', title: 'session-a', revert: { messageID: 'msg-target' } });
+    });
+    upstreamServer = await listen(upstream);
+
+    const cancellation = new AbortController();
+    const cancelledRevert = runScopedSessionRevert({
+      buildOpenCodeUrl: (requestPath) => `http://127.0.0.1:${upstreamServer.address().port}${requestPath}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      directory: repoDirectory,
+      sessionID: 'session-a',
+      messageID: 'msg-target',
+      timeoutMs: 300,
+      signal: cancellation.signal,
+    });
+    await firstRevertStarted;
+    const cancellationError = new Error('test client disconnected');
+    cancellationError.code = 'SCOPED_REVERT_CANCELLED';
+    cancellation.abort(cancellationError);
+
+    await expect(cancelledRevert).rejects.toEqual(expect.objectContaining({
+      code: 'SCOPED_REVERT_CANCELLED',
+    }));
+    await delayedMutation;
+    expect(await fs.readFile(path.join(repoDirectory, 'file-a.txt'), 'utf8')).toBe('base\nsession-a\n');
+
+    const secondRevert = await runScopedSessionRevert({
+      buildOpenCodeUrl: (requestPath) => `http://127.0.0.1:${upstreamServer.address().port}${requestPath}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      directory: repoDirectory,
+      sessionID: 'session-a',
+      messageID: 'msg-target',
+      timeoutMs: 300,
+    });
+
+    expect(secondRevert).toEqual(expect.objectContaining({ id: 'session-a' }));
+    expect(upstreamRevertCalls).toBe(2);
+    expect(await fs.readFile(path.join(repoDirectory, 'file-a.txt'), 'utf8')).toBe('base\n');
+  });
+
+  it('reports an unconfirmed rollback when final interruption cleanup fails', async () => {
+    repoDirectory = await createTestRepo();
+    await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\n');
+    await commitAll(repoDirectory);
+    await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\nsession-a\n');
+
+    const upstream = express();
+    upstream.use(express.json());
+    upstream.get('/session/:sessionID/message', (_req, res) => {
+      res.json([
+        userMessageWithDiff('msg-target', {
+          file: 'file-a.txt',
+          status: 'modified',
+          patch: addedLinePatch('file-a.txt', 'base', 'session-a'),
+          additions: 1,
+          deletions: 0,
+        }),
+      ]);
+    });
+    upstream.post('/session/:sessionID/revert', async (_req, res) => {
+      await new Promise((resolve) => setTimeout(resolve, 125));
+      await fs.rm(path.join(repoDirectory, 'file-a.txt'), { force: true });
+      await fs.mkdir(path.join(repoDirectory, 'file-a.txt'));
+      res.json({ id: 'session-a' });
+    });
+    upstreamServer = await listen(upstream);
+
+    proxyServer = await listen(createProxyApp(upstreamServer.address().port, { scopedRevertTimeoutMs: 100 }));
+    const response = await fetch(`http://127.0.0.1:${proxyServer.address().port}/api/openchamber/session/session-a/scoped-revert?directory=${encodeURIComponent(repoDirectory)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messageID: 'msg-target' }),
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(payload).toEqual({
+      error: 'Scoped session revert rollback could not be confirmed',
+      code: 'SCOPED_REVERT_ROLLBACK_FAILED',
+    });
+    expect((await fs.stat(path.join(repoDirectory, 'file-a.txt'))).isDirectory()).toBe(true);
+  });
+
+  it('does not rewrite protected files that already match their desired snapshot', async () => {
+    repoDirectory = await createTestRepo();
+    await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\n');
+    await fs.writeFile(path.join(repoDirectory, 'file-b.txt'), 'base\n');
+    await commitAll(repoDirectory);
+    await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\nsession-a\n');
+    await fs.writeFile(path.join(repoDirectory, 'file-b.txt'), 'base\nsession-b\n');
+    await fs.utimes(path.join(repoDirectory, 'file-b.txt'), 1_000_000_000, 1_000_000_000);
+    const beforeMtime = (await fs.stat(path.join(repoDirectory, 'file-b.txt'))).mtimeMs;
+
+    const upstream = express();
+    upstream.use(express.json());
+    upstream.get('/session/:sessionID/message', (_req, res) => {
+      res.json([
+        userMessageWithDiff('msg-target', {
+          file: 'file-a.txt',
+          status: 'modified',
+          patch: addedLinePatch('file-a.txt', 'base', 'session-a'),
+          additions: 1,
+          deletions: 0,
+        }),
+      ]);
+    });
+    upstream.post('/session/:sessionID/revert', async (_req, res) => {
+      upstreamRevertCalls += 1;
+      await fs.writeFile(path.join(repoDirectory, 'file-a.txt'), 'base\n');
+      res.json({ id: 'session-a', title: 'session-a', revert: { messageID: 'msg-target' } });
+    });
+    upstreamServer = await listen(upstream);
+
+    proxyServer = await listen(createProxyApp(upstreamServer.address().port));
+    const response = await fetch(`http://127.0.0.1:${proxyServer.address().port}/api/openchamber/session/session-a/scoped-revert?directory=${encodeURIComponent(repoDirectory)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messageID: 'msg-target' }),
+    });
+
+    expect(response.status).toBe(200);
+    expect((await fs.stat(path.join(repoDirectory, 'file-b.txt'))).mtimeMs).toBe(beforeMtime);
+    expect(await fs.readFile(path.join(repoDirectory, 'file-b.txt'), 'utf8')).toBe('base\nsession-b\n');
   });
 
   it('reverts only files changed by the clicked session', async () => {

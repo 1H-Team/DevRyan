@@ -53,6 +53,19 @@ describe("agent selection policy", () => {
     expect(resolved.map((agent) => agent.name)).toEqual(["builder", "council", "orchestrator"])
   })
 
+  test("dedupes build and builder by preferring the canonical builder agent", () => {
+    const resolved = resolveSelectableAgentOptions(
+      [
+        { name: "build", mode: "primary" },
+        { name: "builder", mode: "primary" },
+        { name: "orchestrator", mode: "primary" },
+      ] as Agent[],
+      [],
+    )
+
+    expect(resolved.map((agent) => agent.name)).toEqual(["builder", "orchestrator"])
+  })
+
   test("keeps a saved fallback-source default selected", () => {
     const selectableAgents = resolveSelectableAgentOptions(
       [] as Agent[],
@@ -73,6 +86,33 @@ describe("agent selection policy", () => {
 
     expect(findSelectableAgentByName(selectableAgents, "Orchestrator")?.name).toBe("orchestrator")
     expect(resolveDefaultAgentName("Orchestrator", selectableAgents)).toBe("orchestrator")
+  })
+
+  test("resolves a legacy build default to the canonical builder agent", () => {
+    const selectableAgents = resolveSelectableAgentOptions(
+      [
+        { name: "build", mode: "primary" },
+        { name: "builder", mode: "primary" },
+        { name: "orchestrator", mode: "primary" },
+      ] as Agent[],
+      [],
+    )
+
+    expect(findSelectableAgentByName(selectableAgents, "build")?.name).toBe("builder")
+    expect(resolveDefaultAgentName("build", selectableAgents)).toBe("builder")
+  })
+
+  test("resolves builder to build when only the legacy agent is available", () => {
+    const selectableAgents = resolveSelectableAgentOptions(
+      [
+        { name: "build", mode: "primary" },
+        { name: "orchestrator", mode: "primary" },
+      ] as Agent[],
+      [],
+    )
+
+    expect(findSelectableAgentByName(selectableAgents, "Builder")?.name).toBe("build")
+    expect(resolveDefaultAgentName("Builder", selectableAgents)).toBe("build")
   })
 
   test("replaces an invalid plan default with a selectable fallback", () => {

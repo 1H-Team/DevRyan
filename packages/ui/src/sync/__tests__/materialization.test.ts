@@ -64,6 +64,89 @@ describe("materializeSessionSnapshots", () => {
     expect(result.messagesChanged).toBe(true)
   })
 
+  test("does not reopen terminal assistant and tool state from a stale snapshot", () => {
+    const completedMessage = {
+      ...message("msg_1"),
+      finish: "stop",
+      time: { created: 1, completed: 3 },
+    } as Message
+    const completedTool = {
+      id: "prt_tool",
+      messageID: "msg_1",
+      sessionID: "ses_1",
+      type: "tool",
+      tool: "read",
+      state: {
+        status: "completed",
+        time: { start: 1, end: 2 },
+        output: "fresh output",
+      },
+    } as unknown as Part
+    const staleMessage = message("msg_1")
+    const staleTool = {
+      id: "prt_tool",
+      messageID: "msg_1",
+      sessionID: "ses_1",
+      type: "tool",
+      tool: "read",
+      state: {
+        status: "running",
+        time: { start: 1 },
+      },
+    } as unknown as Part
+    const state = {
+      message: { ses_1: [completedMessage] },
+      part: { msg_1: [completedTool] },
+    }
+
+    const result = materializeSessionSnapshots(
+      state,
+      "ses_1",
+      [{ info: staleMessage, parts: [staleTool] }],
+    )
+
+    expect(result.message.ses_1[0]).toBe(completedMessage)
+    expect(result.part.msg_1[0]).toBe(completedTool)
+    expect(result.messagesChanged).toBe(false)
+    expect(result.partsChanged).toBe(false)
+  })
+
+  test("accepts forward progress from in-flight assistant and tool state", () => {
+    const liveMessage = message("msg_1")
+    const liveTool = {
+      id: "prt_tool",
+      messageID: "msg_1",
+      sessionID: "ses_1",
+      type: "tool",
+      tool: "read",
+      state: { status: "running", time: { start: 1 } },
+    } as unknown as Part
+    const completedMessage = {
+      ...liveMessage,
+      finish: "stop",
+      time: { created: 1, completed: 3 },
+    } as Message
+    const completedTool = {
+      ...liveTool,
+      state: {
+        status: "completed",
+        time: { start: 1, end: 2 },
+        output: "fresh output",
+      },
+    } as unknown as Part
+
+    const result = materializeSessionSnapshots(
+      { message: { ses_1: [liveMessage] }, part: { msg_1: [liveTool] } },
+      "ses_1",
+      [{ info: completedMessage, parts: [completedTool] }],
+    )
+
+    expect(result.message.ses_1[0]).toBe(completedMessage)
+    expect(result.part.msg_1[0]).toBe(completedTool)
+    expect(result.messagesChanged).toBe(true)
+    expect(result.partsChanged).toBe(true)
+  })
+
   test("derives session diff totals from materialized user message summaries", () => {
     const existingSession = {
       id: "ses_1",

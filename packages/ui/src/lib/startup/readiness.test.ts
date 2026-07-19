@@ -3,7 +3,9 @@ import { describe, expect, test } from "bun:test"
 import {
   STARTUP_READINESS_PHASES,
   createStartupReadinessSnapshot,
+  recoverStartupInitialization,
   shouldShowStartupReadinessScreen,
+  shouldRestartOpenCodeForStartupRecovery,
   summarizeStartupReadiness,
   withStartupReadinessPhase,
 } from "./readiness"
@@ -92,5 +94,48 @@ describe("startup readiness", () => {
     expect(shouldShowStartupReadinessScreen(loading, false)).toBe(true)
     expect(shouldShowStartupReadinessScreen(ready, false)).toBe(false)
     expect(shouldShowStartupReadinessScreen(loading, true)).toBe(false)
+  })
+
+  test("restarts a failed OpenCode runtime before retrying client initialization", async () => {
+    const calls: string[] = []
+
+    const result = await recoverStartupInitialization({
+      loadHealth: async () => ({ openCodeRunning: false, isOpenCodeReady: false }),
+      restartOpenCode: async () => { calls.push("restart") },
+      initializeApp: async () => { calls.push("initialize") },
+    })
+
+    expect(result).toEqual({ restartAttempted: true, restartError: null })
+    expect(calls).toEqual(["restart", "initialize"])
+  })
+
+  test("does not restart a healthy runtime during client-only recovery", async () => {
+    const calls: string[] = []
+
+    await recoverStartupInitialization({
+      loadHealth: async () => ({ openCodeRunning: true, isOpenCodeReady: true }),
+      restartOpenCode: async () => { calls.push("restart") },
+      initializeApp: async () => { calls.push("initialize") },
+    })
+
+    expect(calls).toEqual(["initialize"])
+    expect(shouldRestartOpenCodeForStartupRecovery(null)).toBe(false)
+  })
+
+  test("refreshes client state after a managed runtime restart failure", async () => {
+    const restartError = new Error("restart failed")
+    const calls: string[] = []
+
+    const result = await recoverStartupInitialization({
+      loadHealth: async () => ({ openCodeRunning: false }),
+      restartOpenCode: async () => {
+        calls.push("restart")
+        throw restartError
+      },
+      initializeApp: async () => { calls.push("initialize") },
+    })
+
+    expect(result).toEqual({ restartAttempted: true, restartError })
+    expect(calls).toEqual(["restart", "initialize"])
   })
 })

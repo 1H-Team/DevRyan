@@ -8,13 +8,15 @@ VS Code extension-host implementation: activation lifecycle, command surface, we
 - Provider classes (`ChatViewProvider`, `SessionEditorPanelProvider`, `AgentManagerPanelProvider`) encapsulate webview setup and host↔webview synchronization.
 - `bridge.ts` is a dispatcher that routes message types to focused runtime modules (`bridge-fs-runtime`, `bridge-git-runtime`, `bridge-system-runtime`, etc.).
 - `opencode.ts` provides a manager object with explicit connection status and restart/start/stop APIs.
-- `opencodeConfig.ts` owns VS Code-side config entity reads/writes, OpenCode Slim config/agent override parity, Slim-installed global agent prompt composition, and managed agent runtime overlays so saved user-side agent model defaults, plugin filtering, and blocked ambient MCP tombstones apply to the local OpenCode process.
+- `opencodeConfig.ts` owns VS Code-side config entity reads/writes, read-only singular/plural plugin-file discovery, OpenCode Slim config/agent override parity, Slim-installed global agent prompt composition, and managed agent runtime overlays so saved user-side agent model defaults, plugin filtering, and blocked ambient MCP tombstones apply to the local OpenCode process.
 - `globalAgentsMdRuntime.ts` owns user-global `~/.config/opencode/AGENTS.md` reads/writes, empty-file removal, UTF-8 limits, external-runtime read-only policy, and restart-warning results for the VS Code bridge.
-- `bridge-system-runtime.ts` owns VS Code Cursor SDK auth/status/configure bridge behavior via `@openchamber/cursor-sdk-runtime`; Cursor usage quota remains in `quotaProviders.ts`.
-- `managedOrchestrationRuntime.ts` composes the VS Code-owned scheduler and scoped RPC contract, including root barrier inspection and confirmed agent handoff.
+- `bridge-system-runtime.ts` owns VS Code provider auth/status/configure bridge behavior, including non-billable Claude Code status checks, Cursor SDK integration via `@openchamber/cursor-sdk-runtime`, and the HTTP-shaped managed quota credential bridge contract.
+- `claudeAuthStatus.ts` and `anthropicOAuthPlugin.ts` mirror the web/Electron safe auth-status contract and pinned Claude proxy migration policy.
+- `quotaCredentials.ts` owns allowlisted private managed quota files and explicit read-only Cursor import; `quotaProviders.ts` owns quota-source precedence and keeps those credentials separate from Cursor SDK execution auth.
+- `managedOrchestrationRuntime.ts` composes the VS Code-owned scheduler and scoped RPC contract, including validated 25-second maximum wait slices, unbounded root barrier inspection, and confirmed agent handoff.
 - `managedOrchestrationPersistence.ts` owns the private atomic extension-storage ledger, legacy dispatch-group hydration, and corrupt-ledger quarantine.
 - `managedOrchestrationHost.ts` owns the bearer-authenticated IPv4 loopback bridge used only by managed OpenCode plugins.
-- `managedOpenCodeExecutor.ts` owns canonical normal-provider and Cursor child-session execution.
+- `managedOpenCodeExecutor.ts` owns canonical normal-provider and Cursor child-session execution, including stale fresh-child cleanup through both OpenCode and the Cursor state owner.
 - `bridge-orchestration-runtime.ts` adapts scoped webview requests, including safe handoff projections, without exposing private task inputs or bridge credentials.
 
 ## Flow

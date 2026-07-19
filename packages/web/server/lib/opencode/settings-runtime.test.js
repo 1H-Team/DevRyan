@@ -76,6 +76,52 @@ const createRuntime = (initialSettings) => {
 };
 
 describe('settings runtime', () => {
+  it('migrates legacy Default IDs to dedicated DevRyan theme IDs once', async () => {
+    const { runtime } = createRuntime({
+      themeId: 'onedarkpro-light',
+      themeVariant: 'light',
+      lightThemeId: 'onedarkpro-light',
+      darkThemeId: 'carbonfox-dark',
+    });
+
+    const updated = await runtime.readSettingsFromDiskMigrated();
+
+    expect(updated).toMatchObject({
+      themeId: 'devryan-default-light',
+      lightThemeId: 'devryan-default-light',
+      darkThemeId: 'devryan-default-dark',
+      themeCatalogVersion: 2,
+    });
+  });
+
+  it('preserves intentional upstream IDs after the theme catalog migration', async () => {
+    const { runtime } = createRuntime({
+      themeId: 'onedarkpro-light',
+      themeVariant: 'light',
+      lightThemeId: 'onedarkpro-light',
+      darkThemeId: 'carbonfox-dark',
+      themeCatalogVersion: 2,
+    });
+
+    const updated = await runtime.readSettingsFromDiskMigrated();
+
+    expect(updated).toMatchObject({
+      themeId: 'onedarkpro-light',
+      lightThemeId: 'onedarkpro-light',
+      darkThemeId: 'carbonfox-dark',
+      themeCatalogVersion: 2,
+    });
+  });
+
+  it('uses the dedicated Default IDs when expanding legacy single-theme settings', async () => {
+    const { runtime } = createRuntime({ themeVariant: 'dark' });
+
+    const updated = await runtime.readSettingsFromDiskMigrated();
+
+    expect(updated.lightThemeId).toBe('devryan-default-light');
+    expect(updated.darkThemeId).toBe('devryan-default-dark');
+  });
+
   it('migrates legacy lastDirectory without statting the protected path', async () => {
     const projectPath = '/Users/test/Documents/LegacyProject';
     const projectId = createProjectIdFromPath(projectPath);

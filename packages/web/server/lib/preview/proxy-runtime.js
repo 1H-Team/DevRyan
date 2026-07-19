@@ -157,6 +157,9 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
   const VERSION = 1;
   const MAX_TEXT = 500;
   const MAX_ARG = 1000;
+  const previewConfig = window.__openchamberPreviewConfig || {};
+  const proxyBasePath = typeof previewConfig.proxyBasePath === 'string' ? previewConfig.proxyBasePath : '';
+  const targetOrigin = typeof previewConfig.targetOrigin === 'string' ? previewConfig.targetOrigin : '';
   let inspectMode = false;
   let lastHoverKey = '';
   let pendingHover = null;
@@ -172,6 +175,62 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
       }
     } catch {}
   };
+
+  const normalizedOrigin = (value) => {
+    try {
+      const parsed = new URL(value);
+      const host = parsed.hostname;
+      if (host === 'localhost' || host === '0.0.0.0' || host === '::1' || host === '[::1]') {
+        parsed.hostname = '127.0.0.1';
+      }
+      return parsed.origin;
+    } catch {
+      return '';
+    }
+  };
+
+  const toDisplayUrl = (value) => {
+    try {
+      const parsed = new URL(value || window.location.href, window.location.href);
+      if (!targetOrigin || parsed.origin !== window.location.origin) return parsed.toString();
+      const path = proxyBasePath && parsed.pathname.indexOf(proxyBasePath) === 0
+        ? parsed.pathname.slice(proxyBasePath.length) || '/'
+        : parsed.pathname || '/';
+      return new URL(path + parsed.search + parsed.hash, targetOrigin).toString();
+    } catch {
+      return String(value || '');
+    }
+  };
+
+  const toProxyUrl = (value) => {
+    try {
+      const parsed = new URL(value, window.location.href);
+      if (!proxyBasePath) return parsed.toString();
+      return proxyBasePath + (parsed.pathname || '/') + parsed.search + parsed.hash;
+    } catch {
+      return String(value || '');
+    }
+  };
+
+  const reportDisplayNavigation = () => {
+    const url = toDisplayUrl(window.location.href);
+    if (url) post({ type: 'navigate-preview', url, navigation: 'display', ts: Date.now() });
+  };
+
+  if (!window.__openchamberPreviewHistoryPatched) {
+    window.__openchamberPreviewHistoryPatched = true;
+    for (const method of ['pushState', 'replaceState']) {
+      const original = window.history && window.history[method];
+      if (typeof original !== 'function') continue;
+      window.history[method] = function() {
+        const result = original.apply(this, arguments);
+        reportDisplayNavigation();
+        return result;
+      };
+    }
+    window.addEventListener('popstate', reportDisplayNavigation);
+    window.addEventListener('hashchange', reportDisplayNavigation);
+  }
 
   const clip = (value, max = MAX_TEXT) => {
     const text = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
@@ -715,11 +774,27 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
     const anchor = event.target && typeof event.target.closest === 'function' ? event.target.closest('a[href]') : null;
     if (anchor && !inspectMode) {
       const navigation = classifyNavigation(anchor.href);
-      if (navigation.action === 'proxy' || navigation.action === 'external') {
+      if (navigation.action === 'external') {
         event.preventDefault();
         event.stopPropagation();
         post({ type: 'navigate-preview', url: navigation.url, navigation: navigation.action, ts: Date.now() });
         return;
+      }
+      if (navigation.action === 'proxy') {
+        const navigationOrigin = normalizedOrigin(navigation.url);
+        const staysOnRegisteredTarget = navigationOrigin === normalizedOrigin(targetOrigin)
+          || navigationOrigin === normalizedOrigin(window.location.origin);
+        if (!staysOnRegisteredTarget) {
+          event.preventDefault();
+          event.stopPropagation();
+          post({ type: 'navigate-preview', url: navigation.url, navigation: 'target', ts: Date.now() });
+          return;
+        }
+
+        const displayUrl = toDisplayUrl(navigation.url);
+        const proxyUrl = toProxyUrl(navigation.url);
+        if (proxyUrl) anchor.setAttribute('href', proxyUrl);
+        if (displayUrl) post({ type: 'navigate-preview', url: displayUrl, navigation: 'display', ts: Date.now() });
       }
     }
 
@@ -734,10 +809,15 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
   }, true);
 
   window.addEventListener('DOMContentLoaded', () => {
-    post({ type: 'ready', url: window.location.href, title: document.title || '' });
+    post({ type: 'ready', url: toDisplayUrl(window.location.href), title: document.title || '' });
   });
-  post({ type: 'ready', url: window.location.href, title: document.title || '' });
+  post({ type: 'ready', url: toDisplayUrl(window.location.href), title: document.title || '' });
 })();`;
+
+export const createPreviewBridgeScript = ({ proxyBasePath, targetOrigin }) => {
+  const config = JSON.stringify({ proxyBasePath, targetOrigin }).replace(/</g, '\\u003c');
+  return `window.__openchamberPreviewConfig=${config};${PREVIEW_BRIDGE_SCRIPT}`;
+};
 
 const parseCookieHeader = (cookieHeader) => {
   const result = new Map();
@@ -1034,12 +1114,12 @@ export const createPreviewProxyRuntime = ({
   }) => {
     ensureSweeper();
 
-    const injectPreviewBridge = (bodyText) => {
+    const injectPreviewBridge = (bodyText, { proxyBasePath, targetOrigin }) => {
       if (typeof bodyText !== 'string' || bodyText.includes(PREVIEW_BRIDGE_SCRIPT_ID)) {
         return bodyText;
       }
 
-      const script = `<script id="${PREVIEW_BRIDGE_SCRIPT_ID}">${PREVIEW_BRIDGE_SCRIPT}</script>`;
+      const script = `<script id="${PREVIEW_BRIDGE_SCRIPT_ID}">${createPreviewBridgeScript({ proxyBasePath, targetOrigin })}</script>`;
       if (/<head(?:\s[^>]*)?>/i.test(bodyText)) {
         return bodyText.replace(/<head(\s[^>]*)?>/i, (match) => `${match}${script}`);
       }
@@ -1204,7 +1284,9 @@ export const createPreviewProxyRuntime = ({
             targetOrigin: resolved.entry.origin,
             kind: isHtml ? 'html' : isCss ? 'css' : 'javascript',
           });
-          return isHtml ? injectPreviewBridge(rewrittenBody) : rewrittenBody;
+          return isHtml
+            ? injectPreviewBridge(rewrittenBody, { proxyBasePath, targetOrigin: resolved.entry.origin })
+            : rewrittenBody;
         }),
         error: (err, _req, res) => {
           const isDev = typeof process !== 'undefined'

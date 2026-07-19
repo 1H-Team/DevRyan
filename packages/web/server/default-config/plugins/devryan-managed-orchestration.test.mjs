@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('@opencode-ai/plugin', () => {
   const makeSchema = () => {
     const schema = {
-      describe: () => schema,
+      description: null,
+      describe: (description) => {
+        schema.description = description;
+        return schema;
+      },
       optional: () => schema,
       int: () => schema,
       min: () => schema,
@@ -87,6 +91,18 @@ describe('DevRyan managed orchestration plugin', () => {
     expect(plugin.tool.devryan_task.description).toContain(
       'start it before any standalone todo read/write whose only purpose is to restate that delegation',
     );
+    expect(plugin.tool.devryan_task.description).toContain(
+      'A queued, starting, or running wait result is a live polling snapshot',
+    );
+    expect(plugin.tool.devryan_task.description).toContain(
+      'does not impose a managed concurrency cap',
+    );
+    expect(plugin.tool.devryan_task.args.timeout_seconds.description).toContain(
+      'use at least 3600 for multi-file implementation plus tests',
+    );
+    expect(plugin.tool.devryan_task.args.timeout_seconds.description).toContain(
+      '7200 when the child also owns builds or browser verification',
+    );
     const args = {
       action: 'start',
       label: 'Inspect auth',
@@ -158,8 +174,12 @@ describe('DevRyan managed orchestration plugin', () => {
   it('requires wait before disposition and routes scoped control actions', async () => {
     const requests = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
-      requests.push(JSON.parse(init.body));
-      return new Response(JSON.stringify({ ok: true, result: { accepted: true } }), {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      const result = request.method === 'wait'
+        ? { task: { taskId: 'dvr_task_1', status: 'failed' } }
+        : { accepted: true };
+      return new Response(JSON.stringify({ ok: true, result }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });
@@ -185,7 +205,46 @@ describe('DevRyan managed orchestration plugin', () => {
     ]);
     expect(requests.every((request) => request.params.rootSessionId === 'ses_root')).toBe(true);
     expect(requests.every((request) => request.params.directory === '/workspace')).toBe(true);
+    expect(requests.find((request) => request.method === 'wait').params.waitTimeoutMs).toBe(25_000);
     expect(requests.at(-1).params.action).toBe('retry');
+  });
+
+  it('keeps live wait snapshots uncollected until a repeated wait returns terminal', async () => {
+    const requests = [];
+    const statuses = ['queued', 'starting', 'running', 'failed'];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      const status = request.method === 'wait' ? statuses.shift() : null;
+      const result = status
+        ? { task: { taskId: 'dvr_task_live', status } }
+        : { accepted: true };
+      return new Response(JSON.stringify({ ok: true, result }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+
+    for (const expectedStatus of ['queued', 'starting', 'running']) {
+      const output = await plugin.tool.devryan_task.execute({
+        action: 'wait',
+        task_id: 'dvr_task_live',
+      }, context());
+      expect(JSON.parse(output).task.status).toBe(expectedStatus);
+      await expect(plugin.tool.devryan_task.execute({
+        action: 'abandon',
+        task_id: 'dvr_task_live',
+      }, context())).rejects.toThrow('wait for dvr_task_live');
+    }
+
+    await plugin.tool.devryan_task.execute({ action: 'wait', task_id: 'dvr_task_live' }, context());
+    await plugin.tool.devryan_task.execute({ action: 'abandon', task_id: 'dvr_task_live' }, context());
+
+    expect(requests.map(({ method }) => method)).toEqual(['wait', 'wait', 'wait', 'wait', 'acknowledge']);
+    expect(requests.filter(({ method }) => method === 'wait').every(
+      ({ params }) => params.waitTimeoutMs === 25_000,
+    )).toBe(true);
   });
 
   it('requires continue after waiting for a successful result', async () => {
@@ -214,6 +273,115 @@ describe('DevRyan managed orchestration plugin', () => {
     }, context());
 
     expect(requests.map(({ method }) => method)).toEqual(['wait', 'acknowledge']);
+  });
+
+  it('serializes a terminal managed result payload only once for the parent model', async () => {
+    const recoverablePreview = `<results>${'x'.repeat(4_096)}</results>`;
+    const canonicalRefs = [{ type: 'message', id: 'msg_child' }];
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      ok: true,
+      result: {
+        task: {
+          taskId: 'dvr_task_1',
+          status: 'completed',
+          partial: false,
+          failureReason: null,
+          recoverablePreview,
+          canonicalRefs,
+        },
+        resultEnvelope: {
+          taskId: 'dvr_task_1',
+          status: 'completed',
+          partial: false,
+          failureReason: null,
+          recoverablePreview,
+          canonicalRefs,
+        },
+      },
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+
+    const output = await plugin.tool.devryan_task.execute({
+      action: 'wait',
+      task_id: 'dvr_task_1',
+    }, context());
+    const parsed = JSON.parse(output);
+
+    expect(output.split(recoverablePreview)).toHaveLength(2);
+    expect(parsed.task).not.toHaveProperty('recoverablePreview');
+    expect(parsed.task).not.toHaveProperty('failureReason');
+    expect(parsed.task).not.toHaveProperty('canonicalRefs');
+    expect(parsed.task).toMatchObject({ taskId: 'dvr_task_1', status: 'completed' });
+    expect(parsed.resultEnvelope).toMatchObject({
+      taskId: 'dvr_task_1',
+      recoverablePreview,
+      canonicalRefs,
+    });
+  });
+
+  it('compacts nested results without hiding divergent task payloads', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      ok: true,
+      result: {
+        tasks: [
+          {
+            task: {
+              taskId: 'dvr_task_matching',
+              status: 'failed',
+              failureReason: 'matching failure',
+              recoverablePreview: 'matching preview',
+              canonicalRefs: [],
+            },
+            resultEnvelope: {
+              taskId: 'dvr_task_matching',
+              status: 'failed',
+              failureReason: 'matching failure',
+              recoverablePreview: 'matching preview',
+              canonicalRefs: [],
+            },
+          },
+          {
+            task: {
+              taskId: 'dvr_task_divergent',
+              status: 'failed',
+              failureReason: 'task failure',
+              recoverablePreview: 'task preview',
+              canonicalRefs: [],
+            },
+            resultEnvelope: {
+              taskId: 'dvr_task_divergent',
+              status: 'failed',
+              failureReason: 'envelope failure',
+              recoverablePreview: 'envelope preview',
+              canonicalRefs: [],
+            },
+          },
+        ],
+      },
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+
+    const output = await plugin.tool.devryan_task.execute({
+      action: 'cancel',
+      task_id: 'dvr_task_matching',
+      cascade: true,
+    }, context());
+    const parsed = JSON.parse(output);
+
+    expect(parsed.tasks[0].task).not.toHaveProperty('failureReason');
+    expect(parsed.tasks[0].task).not.toHaveProperty('recoverablePreview');
+    expect(parsed.tasks[0].task).not.toHaveProperty('canonicalRefs');
+    expect(parsed.tasks[1].task).toMatchObject({
+      failureReason: 'task failure',
+      recoverablePreview: 'task preview',
+    });
+    expect(parsed.tasks[1].task).not.toHaveProperty('canonicalRefs');
   });
 
   it('blocks same-response work until start is submitted, then rejects it while acknowledgement is pending', async () => {
@@ -263,6 +431,51 @@ describe('DevRyan managed orchestration plugin', () => {
     await starting;
     await expect(guardedWork).rejects.toThrow('dvr_task_1');
     expect(requests.map(({ method }) => method)).toEqual(['submit', 'barrier_status']);
+  });
+
+  it('releases an abandoned pending start only when its session becomes idle', async () => {
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      expect(request.method).toBe('barrier_status');
+      return new Response(JSON.stringify({
+        ok: true,
+        result: { state: 'clear', taskIds: [] },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+    const startArgs = {
+      action: 'start',
+      agent: 'explorer',
+      prompt: 'This start is abandoned by a later pre-execution hook.',
+      provider_id: 'github-copilot',
+      model_id: 'gpt-4.1',
+    };
+
+    await plugin['tool.execute.before'](
+      { tool: 'devryan_task', sessionID: 'ses_root', callID: 'call_abandoned_start' },
+      { args: startArgs },
+    );
+    const guardedWork = plugin['tool.execute.before'](
+      { tool: 'read', sessionID: 'ses_root', callID: 'call_after_abandoned_start' },
+      { args: { filePath: '/workspace/src/math.ts' } },
+    );
+
+    await Promise.resolve();
+    expect(requests).toEqual([]);
+    plugin.event({
+      event: { type: 'session.idle', properties: { sessionID: 'ses_unrelated' } },
+    });
+    await Promise.resolve();
+    expect(requests).toEqual([]);
+
+    plugin.event({
+      event: { type: 'session.idle', properties: { sessionID: 'ses_root' } },
+    });
+
+    await expect(guardedWork).resolves.toBeUndefined();
+    expect(requests.map(({ method }) => method)).toEqual(['barrier_status']);
   });
 
   it('keeps skill, managed-task, and todo controls available while a barrier is locked', async () => {
@@ -448,8 +661,12 @@ describe('DevRyan managed orchestration plugin', () => {
   it('keeps the configured agent model authoritative over explicit start and retry overrides', async () => {
     const requests = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
-      requests.push(JSON.parse(init.body));
-      return new Response(JSON.stringify({ ok: true, result: { accepted: true } }), {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      const result = request.method === 'wait'
+        ? { task: { taskId: 'dvr_task_1', status: 'failed' } }
+        : { accepted: true };
+      return new Response(JSON.stringify({ ok: true, result }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });
@@ -497,6 +714,61 @@ describe('DevRyan managed orchestration plugin', () => {
       agent: 'fixer',
       variant: 'medium',
     });
+  });
+
+  it('translates legacy resume into same-child provider-limit recovery with the invoking Orchestrator model', async () => {
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      const result = request.method === 'wait'
+        ? {
+          task: {
+            taskId: 'dvr_task_limited',
+            status: 'failed',
+            childSessionId: 'ses_designer',
+            failureKind: 'provider_usage_limit',
+          },
+        }
+        : { accepted: true };
+      return new Response(JSON.stringify({ ok: true, result }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }));
+    const client = createToolOwnerClient([{
+      info: {
+        id: 'msg_parent',
+        role: 'assistant',
+        agent: 'orchestrator',
+        providerID: 'openai',
+        modelID: 'gpt-5.4',
+        variant: 'high',
+      },
+      parts: [],
+    }]);
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client });
+
+    await plugin.tool.devryan_task.execute({
+      action: 'wait',
+      task_id: 'dvr_task_limited',
+    }, context());
+    await plugin.tool.devryan_task.execute({
+      action: 'resume',
+      task_id: 'dvr_task_limited',
+      agent: 'designer',
+      provider_id: 'anthropic',
+      model_id: 'claude-sonnet-4-5',
+    }, context());
+
+    expect(requests.map(({ method }) => method)).toEqual(['wait', 'acknowledge']);
+    expect(requests[1].params).toMatchObject({
+      action: 'recover_in_place',
+      providerId: 'openai',
+      modelId: 'gpt-5.4',
+      variant: 'high',
+    });
+    expect(requests[1].params).not.toHaveProperty('agent');
   });
 
   it('fails visibly when the bridge is unavailable or rejects a request', async () => {

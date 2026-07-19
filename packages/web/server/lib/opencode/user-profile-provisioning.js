@@ -4,6 +4,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+import {
+  isAnthropicOAuthPluginSpec,
+  reconcileAnthropicOAuthPluginSpecs,
+} from './anthropic-oauth-plugin.js';
+import { listDefaultConfigAssets, listUserProfileAssets } from './default-config-assets.js';
+
 const DEFAULT_CONFIG_ROOT = path.resolve(process.cwd(), 'server', 'default-config');
 const DEFAULT_PROFILE_ROOT = path.join(DEFAULT_CONFIG_ROOT, 'user-profile');
 const MANIFEST_RELATIVE_PATH = path.join('.openchamber', 'user-profile-manifest.json');
@@ -29,11 +35,15 @@ const pluginSpec = (entry) => {
 const mergeUniquePlugins = (current, baseline) => {
   const result = Array.isArray(current) ? [...current] : [];
   const seen = new Set(result.map(pluginSpec).filter(Boolean));
+  let hasAnthropicOAuthPlugin = result.some((entry) => isAnthropicOAuthPluginSpec(pluginSpec(entry)));
   for (const entry of Array.isArray(baseline) ? baseline : []) {
     const spec = pluginSpec(entry);
-    if (!spec || seen.has(spec)) continue;
+    if (!spec || seen.has(spec) || (hasAnthropicOAuthPlugin && isAnthropicOAuthPluginSpec(spec))) {
+      continue;
+    }
     result.push(entry);
     seen.add(spec);
+    hasAnthropicOAuthPlugin ||= isAnthropicOAuthPluginSpec(spec);
   }
   return result;
 };
@@ -41,7 +51,15 @@ const mergeUniquePlugins = (current, baseline) => {
 const mergeOpenCodeConfig = (current, baseline) => ({
   ...current,
   ...baseline,
-  plugin: mergeUniquePlugins(current.plugin, baseline.plugin),
+  plugin: mergeUniquePlugins(
+    Array.isArray(baseline.plugin)
+      && baseline.plugin.some((entry) => isAnthropicOAuthPluginSpec(pluginSpec(entry)))
+      && Array.isArray(current.plugin)
+      && current.plugin.some((entry) => isAnthropicOAuthPluginSpec(pluginSpec(entry)))
+      ? reconcileAnthropicOAuthPluginSpecs(current.plugin)
+      : current.plugin,
+    baseline.plugin,
+  ),
   agent: {
     ...(isRecord(current.agent) ? current.agent : {}),
     ...(isRecord(baseline.agent) ? baseline.agent : {}),
@@ -66,18 +84,6 @@ const runCommandDefault = (command, args, options) => new Promise((resolve) => {
   child.on('error', (error) => resolve({ ok: false, exitCode: null, stdout, stderr: error.message }));
   child.on('close', (exitCode) => resolve({ ok: exitCode === 0, exitCode, stdout, stderr }));
 });
-
-const listFiles = (fsApi, pathApi, root, relative = '') => {
-  const directory = pathApi.join(root, relative);
-  if (!fsApi.existsSync(directory)) return [];
-  const files = [];
-  for (const entry of fsApi.readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-    const nextRelative = pathApi.join(relative, entry.name);
-    if (entry.isDirectory()) files.push(...listFiles(fsApi, pathApi, root, nextRelative));
-    if (entry.isFile() && entry.name !== '.DS_Store') files.push(nextRelative);
-  }
-  return files;
-};
 
 export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
   const fsApi = dependencies.fs || fs;
@@ -134,15 +140,28 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
 
     syncContent('oh-my-opencode-slim.json', fsApi.readFileSync(pathApi.join(profileRoot, 'oh-my-opencode-slim.json'), 'utf8'));
 
-    for (const source of [
-      { root: pathApi.join(configRoot, 'agents'), target: 'agents' },
-      { root: pathApi.join(configRoot, 'plugins'), target: 'plugins', filter: (name) => name === 'devryan-oh-my-opencode-slim.mjs' },
-      { root: pathApi.join(profileRoot, 'skills'), target: 'skills' },
-    ]) {
-      for (const relativePath of listFiles(fsApi, pathApi, source.root)) {
-        if (source.filter && !source.filter(pathApi.basename(relativePath))) continue;
-        syncContent(pathApi.join(source.target, relativePath), fsApi.readFileSync(pathApi.join(source.root, relativePath), 'utf8'));
+    const [canonicalAssets, profileAssets] = await Promise.all([
+      listDefaultConfigAssets(configRoot),
+      listUserProfileAssets(profileRoot),
+    ]);
+    for (const sourceRelativePath of canonicalAssets) {
+      let targetRelativePath = null;
+      if (sourceRelativePath.startsWith('agents/')) {
+        targetRelativePath = sourceRelativePath;
+      } else if (sourceRelativePath === 'plugins/devryan-oh-my-opencode-slim.mjs') {
+        targetRelativePath = sourceRelativePath;
       }
+      if (targetRelativePath) {
+        syncContent(targetRelativePath, fsApi.readFileSync(pathApi.join(configRoot, sourceRelativePath), 'utf8'));
+      }
+    }
+    for (const sourceRelativePath of profileAssets) {
+      if (!sourceRelativePath.startsWith('user-profile/skills/')) continue;
+      const targetRelativePath = sourceRelativePath.slice('user-profile/'.length);
+      syncContent(targetRelativePath, fsApi.readFileSync(
+        pathApi.join(profileRoot, sourceRelativePath.slice('user-profile/'.length)),
+        'utf8',
+      ));
     }
 
     for (const [relativePath, previousEntry] of Object.entries(previousFiles)) {

@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import type { ToolPart } from '@opencode-ai/sdk/v2';
+import { dict } from '@/lib/i18n/messages/en';
 
 import {
     collectConsecutiveToolActivityGroup,
+    collectCrossMessageFileActivityGroups,
     collectToolActivityBurst,
     collectToolActivityRowsFromToolParts,
     collectToolActivityRows,
@@ -14,6 +16,7 @@ import {
     getToolActivityGroupLabelKey,
     getToolActivityGroupInfo,
     getToolActivityGroupSummaryCount,
+    getToolFileMutationAction,
     getToolPartDiffStatsFromToolPart,
     mergePatchFileSummariesFromToolParts,
     normalizeToolName,
@@ -34,7 +37,7 @@ const toolPart = (tool: string, state: Record<string, unknown> = {}, id = tool):
 const collect = (items: readonly ToolItem[], startIndex = 0) => {
     return collectConsecutiveToolActivityGroup(items, startIndex, (item) => {
         return item.kind === 'tool' ? item.tool : null;
-    });
+    }, (item) => item.kind === 'tool' ? item.part : undefined);
 };
 
 const collectBurst = (items: readonly ToolItem[], startIndex = 0) => {
@@ -68,13 +71,14 @@ describe('tool activity grouping', () => {
         expect(grouped?.endIndex).toBe(3);
     });
 
-    test('groups consecutive edit and write tools under one edit group', () => {
+    test('groups explicit edits and writes to existing files under one edited group', () => {
         const grouped = collect([
-            { kind: 'tool', tool: 'edit' },
-            { kind: 'tool', tool: 'write' },
+            { kind: 'tool', tool: 'edit', part: toolPart('edit', { input: { path: 'a.sql' } }) },
+            { kind: 'tool', tool: 'write', part: toolPart('write', { input: { path: 'b.sql' }, metadata: { exists: true } }) },
         ]);
 
         expect(grouped?.groupInfo.kind).toBe('edit');
+        expect(grouped?.groupInfo.fileMutationAction).toBe('edited');
         expect(grouped?.items).toHaveLength(2);
     });
 
@@ -91,6 +95,11 @@ describe('tool activity grouping', () => {
         expect(normalizeToolName('applyDiffToolCall')).toBe('apply_patch');
         expect(normalizeToolName('cursor.shellToolCall:0')).toBe('bash');
         expect(normalizeToolName('readToolCall')).toBe('read');
+        expect(normalizeToolName('oc_write')).toBe('write');
+        expect(normalizeToolName('oc_edit')).toBe('edit');
+        expect(normalizeToolName('oc_read')).toBe('read');
+        expect(normalizeToolName('oc_bash')).toBe('bash');
+        expect(normalizeToolName('stat')).toBe('read');
     });
 
     test('classifies Cursor ToolCall names into activity groups', () => {
@@ -101,6 +110,41 @@ describe('tool activity grouping', () => {
         expect(getToolActivityGroupInfo('filePatchToolCall')?.kind).toBe('patch');
         expect(getToolActivityGroupInfo('applyDiffToolCall')?.kind).toBe('patch');
         expect(getToolActivityGroupInfo('readToolCall')?.kind).toBe('read');
+        expect(getToolActivityGroupInfo('oc_read')?.kind).toBe('read');
+        expect(getToolActivityGroupInfo('stat')?.kind).toBe('read');
+    });
+
+    test('classifies file mutations from authoritative pre-write existence metadata', () => {
+        const created = toolPart('oc_write', { metadata: { exists: false } }, 'create');
+        const edited = toolPart('oc_write', { metadata: { exists: true } }, 'edit');
+        const unknown = toolPart('oc_write', {}, 'unknown');
+
+        expect(getToolFileMutationAction('oc_write', created)).toBe('created');
+        expect(getToolFileMutationAction('oc_write', edited)).toBe('edited');
+        expect(getToolFileMutationAction('oc_write', unknown)).toBe('wrote');
+        expect(getToolFileMutationAction('oc_edit', unknown)).toBe('edited');
+        expect(getToolFileMutationAction('create', unknown)).toBe('created');
+        expect(getToolActivityGroupInfo('oc_write', created)?.key).toBe('edit:created');
+        expect(getToolActivityGroupInfo('oc_write', edited)?.key).toBe('edit:edited');
+        expect(getToolActivityGroupInfo('oc_write', unknown)?.key).toBe('edit:wrote');
+    });
+
+    test('uses count-based file action labels for singular and plural groups', () => {
+        const created = getToolActivityGroupInfo('create');
+        const wrote = getToolActivityGroupInfo('write');
+
+        expect(created && getToolActivityGroupLabelKey(created, 1)).toBe('chat.toolGroup.createdFileSingle');
+        expect(created && getToolActivityGroupLabelKey(created, 2)).toBe('chat.toolGroup.createdFilePlural');
+        expect(wrote && getToolActivityGroupLabelKey(wrote, 1)).toBe('chat.toolGroup.wroteFileSingle');
+        expect(getToolActivityGroupLabelKey('edit', 1)).toBe('chat.toolGroup.editedFileSingle');
+        expect(getToolActivityGroupLabelKey('read', 1)).toBe('chat.toolGroup.readFileSingle');
+        expect(dict['chat.toolGroup.searchedFilePlural']).toBe('Searched {count} files');
+        expect(dict['chat.toolGroup.createdFileSingle']).toBe('Created {count} file');
+        expect(dict['chat.toolGroup.createdFilePlural']).toBe('Created {count} files');
+        expect(dict['chat.toolGroup.editedFilePlural']).toBe('Edited {count} files');
+        expect(dict['chat.toolGroup.wroteFilePlural']).toBe('Wrote {count} files');
+        expect(dict['chat.toolGroup.readFileSingle']).toBe('Read {count} file');
+        expect(dict['chat.toolGroup.readFilePlural']).toBe('Read {count} files');
     });
 
     test('groups consecutive patch tools under one patch group', () => {
@@ -359,7 +403,7 @@ describe('tool activity grouping', () => {
         const rows = collectRows([
             { kind: 'tool', tool: 'edit', part: toolPart('edit', { input: { filePath: 'src/a.ts' } }, 'edit-1') },
             { kind: 'tool', tool: 'bash', part: toolPart('bash', { input: { command: 'pwd' } }, 'bash-1') },
-            { kind: 'tool', tool: 'write', part: toolPart('write', { input: { filePath: 'src/b.ts' } }, 'write-1') },
+            { kind: 'tool', tool: 'write', part: toolPart('write', { input: { filePath: 'src/b.ts' }, metadata: { exists: true } }, 'write-1') },
         ]);
 
         const editGroups = rows.filter((r) => r.type === 'group' && r.groupInfo.kind === 'edit');
@@ -423,10 +467,10 @@ describe('tool activity grouping', () => {
     test('rolls edit groups across reasoning while preserving reasoning rows', () => {
         const rows = collectRows([
             { kind: 'tool', tool: 'edit', part: toolPart('edit', { input: { filePath: 'src/a.ts' } }, 'edit-1') },
-            { kind: 'tool', tool: 'write', part: toolPart('write', { input: { filePath: 'src/b.ts' } }, 'write-1') },
+            { kind: 'tool', tool: 'write', part: toolPart('write', { input: { filePath: 'src/b.ts' }, metadata: { exists: true } }, 'write-1') },
             { kind: 'reasoning' },
             { kind: 'tool', tool: 'edit', part: toolPart('edit', { input: { filePath: 'src/c.ts' } }, 'edit-2') },
-            { kind: 'tool', tool: 'write', part: toolPart('write', { input: { filePath: 'src/d.ts' } }, 'write-2') },
+            { kind: 'tool', tool: 'write', part: toolPart('write', { input: { filePath: 'src/d.ts' }, metadata: { exists: true } }, 'write-2') },
         ]);
 
         expect(rows).toHaveLength(2);
@@ -574,9 +618,109 @@ describe('tool activity grouping', () => {
 
     test('labels shell rollups as command counts', () => {
         expect(getToolActivityGroupInfo('bash')?.kind).toBe('shell');
+        expect(getToolActivityGroupInfo('oc_bash')?.kind).toBe('shell');
         expect(getToolActivityGroupInfo('shellCommandToolCall')?.kind).toBe('shell');
         expect(getToolActivityGroupLabelKey('shell', 1)).toBe('chat.toolGroup.ranCommandSingle');
         expect(getToolActivityGroupLabelKey('shell', 2)).toBe('chat.toolGroup.ranCommandPlural');
+        expect(dict['chat.toolGroup.ranCommandSingle']).toBe('Ran {count} command');
+        expect(dict['chat.toolGroup.ranCommandPlural']).toBe('Ran {count} commands');
+
+        const rows = collectToolActivityRowsFromToolParts([
+            toolPart('oc_bash', { input: { command: 'pwd' } }, 'oc-bash-1'),
+        ]);
+        expect(rows).toHaveLength(1);
+        expect(rows[0]?.type).toBe('group');
+        if (rows[0]?.type === 'group') {
+            expect(rows[0].groupInfo.kind).toBe('shell');
+            expect(getToolActivityGroupSummaryCount('shell', rows[0].items, (part) => part)).toBe(1);
+        }
+    });
+
+    test('keeps created, edited, and unclassified writes in separate count-based groups', () => {
+        const rows = collectToolActivityRowsFromToolParts([
+            toolPart('oc_write', { input: { path: 'db/a.sql' }, metadata: { exists: false } }, 'create-1'),
+            toolPart('oc_write', { input: { path: 'db/a.sql' }, metadata: { exists: false } }, 'create-2'),
+            toolPart('oc_edit', { input: { path: 'db/b.sql' } }, 'edit-1'),
+            toolPart('oc_write', { input: { path: 'db/c.sql' } }, 'write-unknown'),
+        ]);
+
+        const groups = rows.filter((row) => row.type === 'group');
+        expect(groups).toHaveLength(3);
+        if (groups[0]?.type === 'group') {
+            expect(groups[0].groupInfo.fileMutationAction).toBe('created');
+            expect(getToolActivityGroupSummaryCount('edit', groups[0].items, (part) => part)).toBe(1);
+        }
+        if (groups[1]?.type === 'group') {
+            expect(groups[1].groupInfo.fileMutationAction).toBe('edited');
+            expect(getToolActivityGroupSummaryCount('edit', groups[1].items, (part) => part)).toBe(1);
+        }
+        if (groups[2]?.type === 'group') {
+            expect(groups[2].groupInfo.fileMutationAction).toBe('wrote');
+            expect(getToolActivityGroupSummaryCount('edit', groups[2].items, (part) => part)).toBe(1);
+        }
+    });
+
+    test('bridges file groups across assistant tool-call messages in live rendering', () => {
+        const items = [
+            { messageId: 'message-1', kind: 'tool' as const, tool: 'oc_write', part: toolPart('oc_write', { input: { path: 'db/a.sql' }, metadata: { exists: false } }, 'create-1') },
+            { messageId: 'message-2', kind: 'tool' as const, tool: 'oc_write', part: toolPart('oc_write', { input: { path: 'db/b.sql' }, metadata: { exists: false } }, 'create-2') },
+        ];
+
+        const groups = collectCrossMessageFileActivityGroups(items, {
+            getToolName: (item) => item.tool,
+            getToolPart: (item) => item.part,
+            getMessageId: (item) => item.messageId,
+        });
+
+        expect(groups).toHaveLength(1);
+        expect(groups[0]?.groupInfo.fileMutationAction).toBe('created');
+        expect(groups[0]?.items.map((item) => item.part.id)).toEqual(['create-1', 'create-2']);
+        expect(getToolActivityGroupSummaryCount('edit', groups[0]?.items ?? [], (item) => item.part)).toBe(2);
+    });
+
+    test('does not bridge a single-message file burst or unrelated tool groups', () => {
+        const sameMessageWrites = [
+            { messageId: 'message-1', tool: 'oc_write', part: toolPart('oc_write', { input: { path: 'db/a.sql' }, metadata: { exists: false } }, 'create-1') },
+            { messageId: 'message-1', tool: 'oc_write', part: toolPart('oc_write', { input: { path: 'db/b.sql' }, metadata: { exists: false } }, 'create-2') },
+        ];
+        const shellCalls = [
+            { messageId: 'message-1', tool: 'bash', part: toolPart('bash', { input: { command: 'pwd' } }, 'bash-1') },
+            { messageId: 'message-2', tool: 'bash', part: toolPart('bash', { input: { command: 'ls' } }, 'bash-2') },
+        ];
+        const options = {
+            getToolName: (item: (typeof sameMessageWrites)[number]) => item.tool,
+            getToolPart: (item: (typeof sameMessageWrites)[number]) => item.part,
+            getMessageId: (item: (typeof sameMessageWrites)[number]) => item.messageId,
+        };
+
+        expect(collectCrossMessageFileActivityGroups(sameMessageWrites, options)).toEqual([]);
+        expect(collectCrossMessageFileActivityGroups(shellCalls, options)).toEqual([]);
+    });
+
+    test('keeps failed file calls grouped with their attempted action and extracted path', () => {
+        const rows = collectToolActivityRowsFromToolParts([
+            toolPart('oc_write', {
+                status: 'error',
+                input: { path: 'db/failed.sql' },
+                metadata: { exists: false },
+                error: 'write failed',
+            }, 'failed-create'),
+            toolPart('stat', {
+                status: 'error',
+                input: { path: 'db/missing.sql' },
+                error: 'missing',
+            }, 'failed-stat'),
+        ]);
+
+        expect(rows).toHaveLength(2);
+        if (rows[0]?.type === 'group') {
+            expect(rows[0].groupInfo.fileMutationAction).toBe('created');
+            expect(extractEditedFilePathsFromToolPart(rows[0].items[0])).toEqual(['db/failed.sql']);
+        }
+        if (rows[1]?.type === 'group') {
+            expect(rows[1].groupInfo.kind).toBe('read');
+            expect(extractReadFilePathsFromToolPart(rows[1].items[0])).toEqual(['db/missing.sql']);
+        }
     });
 
     test('consolidates reads across standalone task tools', () => {

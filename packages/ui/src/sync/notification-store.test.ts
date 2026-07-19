@@ -181,4 +181,58 @@ describe("notification-store", () => {
     ) as Array<Record<string, unknown>>
     expect(persistedAfterRead[0]?.viewed).toBe(true)
   })
+
+  test("removes only a permanently deleted session from notification and persisted completion state", () => {
+    const targetCompletion = {
+      type: "turn-complete" as const,
+      directory: "/repo",
+      session: "deleted",
+      messageId: "msg_deleted",
+      time: Date.now(),
+      viewed: false,
+    }
+    const unrelatedCompletion = {
+      type: "turn-complete" as const,
+      directory: "/repo",
+      session: "retained",
+      messageId: "msg_retained",
+      time: Date.now() + 1,
+      viewed: false,
+    }
+    appendNotification(targetCompletion)
+    appendNotification({
+      type: "error",
+      directory: "/repo",
+      session: "deleted",
+      time: Date.now() + 2,
+      viewed: false,
+      error: { message: "do not retain deleted-session errors" },
+    })
+    appendNotification(unrelatedCompletion)
+
+    type NotificationStoreWithRemoval = ReturnType<typeof useNotificationStore.getState> & {
+      removeSession?: (sessionId: string) => void
+    }
+    const removeSession = (useNotificationStore.getState() as NotificationStoreWithRemoval).removeSession
+    expect(typeof removeSession).toBe("function")
+    removeSession?.("deleted")
+
+    const state = useNotificationStore.getState()
+    expect(state.list).toEqual([unrelatedCompletion])
+    expect(state.list[0]).toBe(unrelatedCompletion)
+    expect(state.sessionUnseenCount("deleted")).toBe(0)
+    expect(state.sessionHasCompletion("deleted")).toBe(false)
+    expect(state.projectUnseenCount("/repo")).toBe(1)
+
+    const persisted = JSON.parse(
+      getSafeStorage().getItem(COMPLETION_NOTIFICATION_STORAGE_KEY) ?? "[]",
+    ) as Array<Record<string, unknown>>
+    expect(persisted.map((notification) => notification.session)).toEqual(["retained"])
+
+    const beforeNoOp = useNotificationStore.getState()
+    removeSession?.("missing")
+    const afterNoOp = useNotificationStore.getState()
+    expect(afterNoOp.list).toBe(beforeNoOp.list)
+    expect(afterNoOp.index).toBe(beforeNoOp.index)
+  })
 })

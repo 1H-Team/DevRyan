@@ -33,6 +33,10 @@ export function getSessionUIStore(): StoreApi<SessionUIState> {
   return _sessionUIStore
 }
 
+export function getSessionUIStoreIfInitialized(): StoreApi<SessionUIState> | null {
+  return _sessionUIStore
+}
+
 export function setSyncRefs(
   sdk: OpencodeClient,
   childStores: ChildStoreManager,

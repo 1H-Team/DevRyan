@@ -1,4 +1,5 @@
 import React from 'react';
+import { AnimatePresence } from 'motion/react';
 import {
   DndContext,
   DragOverlay,
@@ -14,6 +15,7 @@ import { formatDirectoryName, formatPathForDisplay, cn } from '@/lib/utils';
 import type { SessionGroup } from './types';
 import type { SortableDragHandleProps } from './sortableItems';
 import { SortableGroupItem, SortableProjectItem } from './sortableItems';
+import { SessionSidebarMotionRow } from './SessionSidebarMotionRow';
 import { formatProjectLabel } from './utils';
 import { useI18n } from '@/lib/i18n';
 
@@ -192,59 +194,66 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
                     openSidebarMenuKey={props.openSidebarMenuKey}
                     setOpenSidebarMenuKey={props.setOpenSidebarMenuKey}
                   >
-                    {!isCollapsed ? (
-                      <div className="space-y-0 pt-0 pb-0.5 pl-3">
-                        {section.groups.length > 0 ? (
-                          <DndContext
-                            sensors={groupSensors}
-                            collisionDetection={closestCenter}
-                            onDragEnd={(event) => {
-                              if (props.isInlineEditing) return;
-                              const { active, over } = event;
-                              if (!over || active.id === over.id) return;
-                              const oldIndex = sortableNestedGroups.findIndex((item) => item.id === active.id);
-                              const newIndex = sortableNestedGroups.findIndex((item) => item.id === over.id);
-                              if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
-                              const nextSortable = arrayMove(sortableNestedGroups, oldIndex, newIndex).map((item) => item.id);
-                              // Keep non-sortable buckets (like Archived) outside the drag-reordered slice.
-                              const next = [
-                                ...(rootGroup ? [rootGroup.id] : []),
-                                ...nextSortable,
-                                ...staticNestedGroups.map((item) => item.id),
-                              ];
-                              props.setGroupOrderByProject((prev) => {
-                                const map = new Map(prev);
-                                map.set(projectKey, next);
-                                return map;
-                              });
-                            }}
-                          >
-                            {rootGroup ? props.renderGroupSessions(rootGroup, `${projectKey}:${rootGroup.id}`, projectKey, true) : null}
-                            <SortableContext items={sortableNestedGroups.map((group) => group.id)} strategy={verticalListSortingStrategy}>
-                              {sortableNestedGroups.map((group) => {
-                                const groupKey = `${projectKey}:${group.id}`;
-                                return (
-                                  <SortableGroupItem key={group.id} id={group.id} disabled={props.isInlineEditing}>
-                                    {(dragHandleProps) => props.renderGroupSessions(group, groupKey, projectKey, false, dragHandleProps)}
-                                  </SortableGroupItem>
-                                );
-                              })}
-                            </SortableContext>
-                            {staticNestedGroups.map((group) => {
-                              const groupKey = `${projectKey}:${group.id}`;
-                              return (
-                                <React.Fragment key={group.id}>
-                                  {props.renderGroupSessions(group, groupKey, projectKey, false, null)}
-                                </React.Fragment>
-                              );
-                            })}
-                            <DragOverlay dropAnimation={null} />
-                          </DndContext>
-                        ) : (
-                          <div className="py-1 text-left typography-micro text-muted-foreground">{t('sessions.sidebar.empty.noSessions.title')}</div>
-                        )}
-                      </div>
-                    ) : null}
+                    <AnimatePresence initial={false}>
+                      {!isCollapsed ? (
+                        <SessionSidebarMotionRow
+                          key={`project-body:${projectKey}`}
+                          withLeadingIndicatorGutter={false}
+                        >
+                          <div className="space-y-0 pt-0 pb-0.5 pl-3">
+                            {section.groups.length > 0 ? (
+                              <DndContext
+                                sensors={groupSensors}
+                                collisionDetection={closestCenter}
+                                onDragEnd={(event) => {
+                                  if (props.isInlineEditing) return;
+                                  const { active, over } = event;
+                                  if (!over || active.id === over.id) return;
+                                  const oldIndex = sortableNestedGroups.findIndex((item) => item.id === active.id);
+                                  const newIndex = sortableNestedGroups.findIndex((item) => item.id === over.id);
+                                  if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
+                                  const nextSortable = arrayMove(sortableNestedGroups, oldIndex, newIndex).map((item) => item.id);
+                                  // Keep non-sortable buckets (like Archived) outside the drag-reordered slice.
+                                  const next = [
+                                    ...(rootGroup ? [rootGroup.id] : []),
+                                    ...nextSortable,
+                                    ...staticNestedGroups.map((item) => item.id),
+                                  ];
+                                  props.setGroupOrderByProject((prev) => {
+                                    const map = new Map(prev);
+                                    map.set(projectKey, next);
+                                    return map;
+                                  });
+                                }}
+                              >
+                                {rootGroup ? props.renderGroupSessions(rootGroup, `${projectKey}:${rootGroup.id}`, projectKey, true) : null}
+                                <SortableContext items={sortableNestedGroups.map((group) => group.id)} strategy={verticalListSortingStrategy}>
+                                  {sortableNestedGroups.map((group) => {
+                                    const groupKey = `${projectKey}:${group.id}`;
+                                    return (
+                                      <SortableGroupItem key={group.id} id={group.id} disabled={props.isInlineEditing}>
+                                        {(dragHandleProps) => props.renderGroupSessions(group, groupKey, projectKey, false, dragHandleProps)}
+                                      </SortableGroupItem>
+                                    );
+                                  })}
+                                </SortableContext>
+                                {staticNestedGroups.map((group) => {
+                                  const groupKey = `${projectKey}:${group.id}`;
+                                  return (
+                                    <React.Fragment key={group.id}>
+                                      {props.renderGroupSessions(group, groupKey, projectKey, false, null)}
+                                    </React.Fragment>
+                                  );
+                                })}
+                                <DragOverlay dropAnimation={null} />
+                              </DndContext>
+                            ) : (
+                              <div className="py-1 text-left typography-micro text-muted-foreground">{t('sessions.sidebar.empty.noSessions.title')}</div>
+                            )}
+                          </div>
+                        </SessionSidebarMotionRow>
+                      ) : null}
+                    </AnimatePresence>
                   </SortableProjectItem>
                 );
               })}

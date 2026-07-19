@@ -5,6 +5,7 @@ import {
     formatSpecialistTaskOutputForMarkdown,
     formatTaskErrorText,
     formatTaskModelLabel,
+    materializeTaskSessionSnapshot,
     normalizeTaskSummaryEntries,
     parseTaskMetadataBlock,
     readTaskSessionIdFromOutput,
@@ -225,6 +226,50 @@ describe('task tool metadata helpers', () => {
         }] as unknown as SessionMessageWithParts[];
 
         expect(buildTaskSessionMessagesSignature(base)).not.toBe(buildTaskSessionMessagesSignature(changed));
+    });
+
+    test('merges a bounded child poll without dropping older cached messages', () => {
+        const cachedMessage = {
+            id: 'assistant-old',
+            sessionID: 'child-session',
+            role: 'assistant',
+            time: { created: 1, completed: 2 },
+            finish: 'stop',
+        };
+        const cachedPart = {
+            id: 'text-old',
+            messageID: 'assistant-old',
+            sessionID: 'child-session',
+            type: 'text',
+            text: 'older result',
+        };
+        const nextRecord = {
+            info: {
+                id: 'assistant-new',
+                sessionID: 'child-session',
+                role: 'assistant',
+                time: { created: 3 },
+            },
+            parts: [{
+                id: 'text-new',
+                messageID: 'assistant-new',
+                sessionID: 'child-session',
+                type: 'text',
+                text: 'new result',
+            }],
+        } as unknown as SessionMessageWithParts;
+
+        const patch = materializeTaskSessionSnapshot({
+            message: { 'child-session': [cachedMessage] },
+            part: { 'assistant-old': [cachedPart] },
+        } as never, 'child-session', [nextRecord]);
+
+        expect(patch.message?.['child-session']?.map((message) => message.id)).toEqual([
+            'assistant-new',
+            'assistant-old',
+        ]);
+        expect(patch.part?.['assistant-old']?.[0]).toBe(cachedPart);
+        expect(patch.part?.['assistant-new']?.[0]?.id).toBe('text-new');
     });
 
     test('formats denied task tool errors instead of treating them as unavailable activity', () => {

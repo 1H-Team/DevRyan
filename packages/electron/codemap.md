@@ -11,7 +11,7 @@ Primary desktop shell (Electron). Boots the DevRyan web server in-process, owns 
 - **Manager modules**: `ssh-manager.mjs` and `speech-manager.mjs` encapsulate long-running native integrations and emit structured status events.
 - **Native state controllers**: `keep-awake-controller.mjs` wraps `powerSaveBlocker` with idempotent apply/stop semantics for the desktop Keep Awake setting.
 - **Operational hardening**: single-instance lock, persistent logging via `electron-log`, stale log pruning, and unthrottled renderer paints for chat windows so packaged streaming/status updates stay responsive. `quit-cleanup.mjs` keeps the main process alive until owned web/OpenCode/SSH cleanup settles, with a bounded force-exit fallback.
-- **Cache maintenance**: `cache-maintenance.mjs` clears packaged Electron HTTP/code caches at startup without touching app storage such as localStorage, cookies, or IndexedDB.
+- **Cache maintenance**: `cache-maintenance.mjs` measures and clears Electron HTTP/code caches for startup maintenance and the Settings/Help cleanup actions without touching app storage such as localStorage, cookies, or IndexedDB.
 
 ## Flow
 1. Electron app starts (`main.mjs`) and establishes process-level guards (single instance, protocol registration, logging).

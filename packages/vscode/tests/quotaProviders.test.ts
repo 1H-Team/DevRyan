@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import { fetchQuotaForProvider } from '../src/quotaProviders';
+import {
+  fetchQuotaForProvider,
+  resolveCursorQuotaCredential,
+  resolveOllamaCloudCredential,
+  resolveOpenCodeGoCredentials,
+} from '../src/quotaProviders';
 
 describe('VS Code Cursor ACP quota provider', () => {
   test('maps Cursor dashboard usage summary buckets to quota windows', async () => {
@@ -56,6 +61,77 @@ describe('VS Code Cursor ACP quota provider', () => {
     expect(result.usage?.windows.total).toBeUndefined();
     expect(result.usage?.windows['auto-composer'].usedPercent).toBe(82);
     expect(result.usage?.windows.api.usedPercent).toBe(100);
+  });
+
+  test('uses the Cursor alias without creating a second provider identity', async () => {
+    const result = await fetchQuotaForProvider('cursor', {
+      env: {},
+      readAuth: () => ({}),
+      readManagedCredential: () => ({ sessionToken: 'managed-dashboard' }),
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ planUsage: { autoPercentUsed: 10, apiPercentUsed: 20 } }),
+      }),
+    });
+
+    expect(result.providerId).toBe('cursor-acp');
+    expect(result.ok).toBe(true);
+  });
+
+  test('persists refreshed OAuth tokens only for the managed source', async () => {
+    const expired = `header.${Buffer.from(JSON.stringify({ exp: 1 })).toString('base64url')}.signature`;
+    const writes: unknown[] = [];
+    const fetchImpl = async (url: string) => url.endsWith('/oauth/token')
+      ? { ok: true, status: 200, json: async () => ({ access_token: 'refreshed' }) }
+      : {
+          ok: true,
+          status: 200,
+          json: async () => ({ planUsage: { autoPercentUsed: 10, apiPercentUsed: 20 } }),
+        };
+
+    const managed = await fetchQuotaForProvider('cursor-acp', {
+      env: {},
+      readAuth: () => ({}),
+      readManagedCredential: () => ({ accessToken: expired, refreshToken: 'refresh' }),
+      writeManagedCredential: (_providerId, credential) => writes.push(credential),
+      fetchImpl,
+    });
+    expect(managed.ok).toBe(true);
+    expect(writes).toEqual([{ accessToken: 'refreshed', refreshToken: 'refresh' }]);
+
+    writes.length = 0;
+    const environment = await fetchQuotaForProvider('cursor-acp', {
+      env: { CURSOR_ACCESS_TOKEN: expired, CURSOR_REFRESH_TOKEN: 'refresh' },
+      readAuth: () => ({}),
+      readManagedCredential: () => null,
+      writeManagedCredential: (_providerId, credential) => writes.push(credential),
+      fetchImpl,
+    });
+    expect(environment.ok).toBe(true);
+    expect(writes).toEqual([]);
+  });
+
+  test('resolves environment, token-file, managed, then legacy sources', () => {
+    const common = {
+      readAuth: () => ({ 'cursor-acp': { usageSessionToken: 'legacy' } }),
+      readManagedCredential: () => ({ sessionToken: 'managed' } as const),
+    };
+    expect(resolveCursorQuotaCredential({
+      ...common,
+      env: { CURSOR_ACCESS_TOKEN: 'environment' },
+      readTokenFile: () => 'file',
+    }).source).toBe('environment');
+    expect(resolveCursorQuotaCredential({
+      ...common,
+      env: { CURSOR_TOKEN_FILE: '/token' },
+      readTokenFile: () => 'file',
+    }).source).toBe('token-file');
+    expect(resolveCursorQuotaCredential({
+      ...common,
+      env: {},
+      readTokenFile: () => '',
+    }).source).toBe('managed');
   });
 });
 
@@ -144,6 +220,33 @@ describe('VS Code OpenCode Go quota provider', () => {
     } finally {
       Date.now = originalDateNow;
     }
+  });
+
+  test('prefers managed OpenCode Go credentials over legacy auth fields', () => {
+    expect(resolveOpenCodeGoCredentials({
+      env: {},
+      readManagedCredential: () => ({ workspaceId: 'wrk_managed', authCookie: 'managed' }),
+      readAuth: () => ({
+        'opencode-go': { usageWorkspaceId: 'wrk_legacy', usageAuthCookie: 'legacy' },
+      }),
+    })).toMatchObject({
+      workspaceId: 'wrk_managed',
+      authCookie: 'managed',
+      source: 'managed',
+    });
+  });
+});
+
+describe('VS Code Ollama Cloud quota provider', () => {
+  test('uses the managed cookie before preserving the legacy fallback', () => {
+    expect(resolveOllamaCloudCredential({
+      readManagedCredential: () => ({ cookie: 'managed' }),
+      readLegacyOllamaCookie: () => 'legacy',
+    })).toEqual({ credential: { cookie: 'managed' }, source: 'managed' });
+    expect(resolveOllamaCloudCredential({
+      readManagedCredential: () => null,
+      readLegacyOllamaCookie: () => 'legacy',
+    })).toEqual({ credential: { cookie: 'legacy' }, source: 'legacy' });
   });
 });
 

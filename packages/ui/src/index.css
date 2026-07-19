@@ -40,6 +40,91 @@ button,
   animation: none !important;
 }
 
+@keyframes oc-context-plan-panel-enter {
+  from {
+    width: 0;
+    min-width: 0;
+    max-width: 0;
+  }
+  to {
+    width: var(--oc-context-panel-width);
+    min-width: var(--oc-context-panel-width);
+    max-width: var(--oc-context-panel-width);
+  }
+}
+
+@keyframes oc-context-plan-panel-exit {
+  from {
+    width: var(--oc-context-panel-width);
+    min-width: var(--oc-context-panel-width);
+    max-width: var(--oc-context-panel-width);
+  }
+  to {
+    width: 0;
+    min-width: 0;
+    max-width: 0;
+  }
+}
+
+@keyframes oc-context-plan-content-enter {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes oc-context-plan-content-exit {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+
+[data-context-panel="true"][data-plan-motion="enter"] {
+  animation: oc-context-plan-panel-enter 300ms ease-in-out both;
+  contain: layout paint style;
+  will-change: width;
+}
+
+[data-context-panel="true"][data-plan-motion="exit"] {
+  animation: oc-context-plan-panel-exit 300ms ease-in-out both;
+  contain: layout paint style;
+  will-change: width;
+}
+
+[data-context-panel="true"][data-plan-motion="enter"] > [data-context-panel-content="true"],
+[data-context-panel="true"][data-plan-motion="exit"] > [data-context-panel-content="true"] {
+  width: var(--oc-context-panel-width);
+  min-width: var(--oc-context-panel-width);
+}
+
+[data-context-panel="true"][data-plan-motion="enter"] > [data-context-panel-content="true"] {
+  animation: oc-context-plan-content-enter 200ms ease-out both;
+}
+
+[data-context-panel="true"][data-plan-motion="exit"] > [data-context-panel-content="true"] {
+  animation: oc-context-plan-content-exit 200ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-context-panel="true"][data-plan-motion] {
+    animation: none !important;
+    will-change: auto;
+  }
+
+  [data-context-panel="true"][data-plan-motion] > [data-context-panel-content="true"] {
+    animation: none !important;
+  }
+}
+
 /* Suppress WebKit-specific hover/focus adornments on the chat textarea */
 textarea[data-chat-input="true"] {
   -webkit-appearance: none;
@@ -1133,8 +1218,8 @@ html:not(.dark) .chat-scroll {
 .markdown-content code[data-markdown="inline-code"] {
   background-color: var(--markdown-inline-code-bg, var(--surface-muted)) !important;
   color: var(--markdown-inline-code, var(--foreground)) !important;
-  word-break: break-all;
-  overflow-wrap: break-word;
+  word-break: normal;
+  overflow-wrap: anywhere;
 }
 
 /* Markdown headings - use theme colors */

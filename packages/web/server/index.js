@@ -79,6 +79,7 @@ import { createSessionRuntime } from './lib/opencode/session-runtime.js';
 import { createOpenCodeWatcherRuntime } from './lib/opencode/watcher.js';
 import { createTurnTimingRuntime, registerTurnTimingRoutes } from './lib/opencode/turn-timing.js';
 import { createAgentRuntimeWarmup, registerAgentRuntimeWarmupRoute } from './lib/opencode/agent-runtime-warmup.js';
+import { createProjectPrewarmRuntime } from './lib/opencode/project-prewarm-runtime.js';
 import { createHarnessPreflight, registerHarnessPreflightRoute } from './lib/opencode/harness-preflight.js';
 import { filterVisibleSkills } from './lib/opencode/skill-policy.js';
 import { getAgentConfig, getAgentSources, listConfigAgents, listStaleAgentModelOverrides } from './lib/opencode/agents.js';
@@ -86,6 +87,7 @@ import { listPackagedAgents } from './lib/opencode/packaged-agents.js';
 import {
   findWorktreeRoot,
   getAncestors,
+  parseMdFile,
   resolveSkillSearchDirectories,
   walkSkillMdFiles,
 } from './lib/opencode/shared.js';
@@ -111,6 +113,24 @@ import webPush from 'web-push';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const configuredDefaultConfigRoot = typeof process.env.DEVRYAN_DEFAULT_CONFIG_ROOT === 'string'
+  ? process.env.DEVRYAN_DEFAULT_CONFIG_ROOT.trim()
+  : '';
+const defaultConfigRoot = configuredDefaultConfigRoot
+  ? path.resolve(configuredDefaultConfigRoot)
+  : path.join(__dirname, 'default-config');
+
+for (const requiredRelativePath of [
+  'opencode.json',
+  path.join('agents', 'orchestrator.md'),
+  path.join('plugins', 'openai-tool-schema-sanitizer.mjs'),
+  path.join('user-profile', 'package.json'),
+]) {
+  const requiredPath = path.join(defaultConfigRoot, requiredRelativePath);
+  if (!fs.existsSync(requiredPath)) {
+    throw new Error(`DevRyan default config is incomplete: ${requiredPath}`);
+  }
+}
 
 const DEFAULT_PORT = 3000;
 const DESKTOP_NOTIFY_PREFIX = '[OpenChamberDesktopNotify] ';
@@ -130,34 +150,6 @@ const TUNNEL_BOOTSTRAP_TTL_MAX_MS = 24 * 60 * 60 * 1000;
 const TUNNEL_SESSION_TTL_DEFAULT_MS = 8 * 60 * 60 * 1000;
 const TUNNEL_SESSION_TTL_MIN_MS = 5 * 60 * 1000;
 const TUNNEL_SESSION_TTL_MAX_MS = 30 * 24 * 60 * 60 * 1000;
-const SERVER_TOOL_ALIAS_GROUPS = [
-  ['edit', 'write', 'patch', 'apply_patch'],
-  ['read'],
-  ['bash'],
-  ['task'],
-  ['skill'],
-  ['question', 'ask', 'input', 'clarification'],
-  ['webfetch'],
-];
-
-function buildServerHarnessToolManifest(directory) {
-  const normalizedDirectory = typeof directory === 'string' && directory.trim().length > 0
-    ? directory.trim()
-    : null;
-  const aliases = {};
-  for (const group of SERVER_TOOL_ALIAS_GROUPS) {
-    for (const alias of group) {
-      aliases[alias] = [...group];
-    }
-  }
-  return {
-    tools: [],
-    aliases,
-    sourceRuntime: 'server',
-    directory: normalizedDirectory,
-  };
-}
-
 function parseSkillFrontmatterForHarness(skillMdPath) {
   try {
     const content = fs.readFileSync(skillMdPath, 'utf8');
@@ -596,7 +588,7 @@ const cursorSdkRuntime = createCursorSdkRuntime({
 
 const getActiveSessionCount = () => {
   const snapshot = sessionRuntime.getSessionActivitySnapshot();
-  return Object.values(snapshot).filter((entry) => entry.type === 'busy').length;
+  return Object.values(snapshot).filter((entry) => entry.type !== 'idle').length;
 };
 
 const getUpstreamStallTimeoutMs = () => (
@@ -650,6 +642,7 @@ let runtimeManagedRemoteTunnelHostname = '';
 let terminalRuntime = null;
 let messageStreamRuntime = null;
 let managedOrchestrationRuntime = null;
+let projectPrewarmRuntime = null;
 const userProvidedOpenCodePassword = hmrStateRuntime.getUserProvidedOpenCodePassword(hmrState);
 const initialOpenCodeAuthState = hmrStateRuntime.resolveOpenCodeAuthFromState({
   hmrState,
@@ -775,6 +768,54 @@ const setDetectedOpenCodeApiPrefix = (...args) => openCodeNetworkRuntime.setDete
 const buildOpenCodeUrl = (...args) => openCodeNetworkRuntime.buildOpenCodeUrl(...args);
 const ensureOpenCodeApiPrefix = (...args) => openCodeNetworkRuntime.ensureOpenCodeApiPrefix(...args);
 const scheduleOpenCodeApiDetection = (...args) => openCodeNetworkRuntime.scheduleOpenCodeApiDetection(...args);
+
+const getAuthoritativeActiveSessionCount = async () => {
+  if (!openCodePort) {
+    return getActiveSessionCount();
+  }
+
+  const settings = await readSettingsFromDiskMigrated();
+  const directories = new Set();
+  const addDirectory = (value) => {
+    if (typeof value !== 'string' || !value.trim()) return;
+    const normalized = normalizeDirectoryPath(value);
+    if (normalized) directories.add(normalized);
+  };
+
+  addDirectory(openCodeWorkingDirectory);
+  addDirectory(settings?.lastDirectory);
+  for (const project of sanitizeProjects(settings?.projects)) {
+    addDirectory(project?.path);
+  }
+
+  if (directories.size === 0) {
+    addDirectory(process.cwd());
+  }
+
+  const activeSessionIds = new Set();
+  await Promise.all([...directories].map(async (directory) => {
+    const statusUrl = new URL(buildOpenCodeUrl('/session/status'));
+    statusUrl.searchParams.set('directory', directory);
+    const response = await fetch(statusUrl, {
+      headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) {
+      throw new Error(`OpenCode session status responded with ${response.status}`);
+    }
+    const statuses = await response.json();
+    if (!statuses || typeof statuses !== 'object' || Array.isArray(statuses)) {
+      throw new Error('OpenCode session status returned an invalid payload');
+    }
+    for (const [sessionId, status] of Object.entries(statuses)) {
+      if (status && typeof status === 'object' && status.type && status.type !== 'idle') {
+        activeSessionIds.add(sessionId);
+      }
+    }
+  }));
+
+  return Math.max(getActiveSessionCount(), activeSessionIds.size);
+};
 
 const ENV_CONFIGURED_API_PREFIX = normalizeApiPrefix(
   process.env.OPENCODE_API_PREFIX || process.env.OPENCHAMBER_API_PREFIX || ''
@@ -902,6 +943,7 @@ const openCodeWatcherRuntime = createOpenCodeWatcherRuntime({
     if (payload?.type === 'session.deleted') {
       const deletedSessionId = payload?.properties?.info?.id;
       if (typeof deletedSessionId === 'string' && deletedSessionId) {
+        sessionRuntime.clearSessionActivity(deletedSessionId);
         cursorSdkRuntime.deleteSessionState(deletedSessionId).catch((error) => {
           console.warn('[CursorSDK] Failed to clean up deleted session state:', error);
         });
@@ -1136,12 +1178,20 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
   buildManagedOpenCodePath,
   getManagedOpenCodeShellEnvSnapshot: getLoginShellEnvSnapshot,
   getActiveSessionCount,
+  getAuthoritativeActiveSessionCount,
   provisionUserProfile: createUserProfileProvisioningRuntime({
-    configRoot: path.join(__dirname, 'default-config'),
-    profileRoot: path.join(__dirname, 'default-config', 'user-profile'),
+    configRoot: defaultConfigRoot,
+    profileRoot: path.join(defaultConfigRoot, 'user-profile'),
   }).provision,
-  syncPackagedAgents,
-  syncRuntimeAgentOverlays,
+  syncPackagedAgents: (options) => syncPackagedAgents({
+    ...options,
+    packagedAgentDirectory: path.join(defaultConfigRoot, 'agents'),
+  }),
+  syncRuntimeAgentOverlays: (options) => syncRuntimeAgentOverlays({
+    ...options,
+    packagedAgentDirectory: path.join(defaultConfigRoot, 'agents'),
+    packagedPluginDirectory: path.join(defaultConfigRoot, 'plugins'),
+  }),
   readSettingsFromDisk,
   sanitizeProjects,
   sanitizeHiddenSkills,
@@ -1151,6 +1201,10 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
       throw new Error('Managed orchestration runtime was not prepared before OpenCode startup');
     }
     return await managedOrchestrationRuntime.prepareBridge();
+  },
+  onOpenCodeRestarted: () => {
+    sessionRuntime.resetAllSessionActivityToIdle();
+    void projectPrewarmRuntime?.run('opencode-restart');
   },
 });
 
@@ -1220,11 +1274,10 @@ const bootstrapOpenCodeAtStartup = async (...args) => {
   if (openCodeLifecycleState.openCodeProcess && !openCodeLifecycleState.isExternalOpenCode) {
     startHealthMonitoring();
   }
-  if (ENV_DESKTOP_NOTIFY) {
-    void ensureGlobalWatcherStarted().catch((error) => {
-      console.warn(`Global event watcher startup failed: ${error?.message || error}`);
-    });
-  }
+  void ensureGlobalWatcherStarted().catch((error) => {
+    console.warn(`Global event watcher startup failed: ${error?.message || error}`);
+  });
+  void projectPrewarmRuntime?.run('startup');
 };
 const killProcessOnPort = (...args) => openCodeLifecycleRuntime.killProcessOnPort(...args);
 const waitForPortRelease = (...args) => openCodeLifecycleRuntime.waitForPortRelease(...args);
@@ -1459,6 +1512,44 @@ async function main(options = {}) {
     },
     filterVisibleSkills,
   });
+  projectPrewarmRuntime = createProjectPrewarmRuntime({
+    warm: (warmupOptions) => agentRuntimeWarmup.warm(warmupOptions),
+    listProjectDirectories: async () => {
+      const settings = await readSettingsFromDiskMigrated();
+      const projects = sanitizeProjects(settings?.projects || []) || [];
+      const activeProject = projects.find((project) => project.id === settings?.activeProjectId);
+      const candidates = [
+        settings?.lastDirectory,
+        activeProject?.path,
+        ...projects.map((project) => project.path),
+      ];
+      const directories = [];
+      const seen = new Set();
+
+      for (const candidate of candidates) {
+        const normalized = normalizeDirectoryPath(candidate);
+        if (typeof normalized !== 'string' || !normalized.trim()) continue;
+
+        const directory = path.resolve(normalized.trim());
+        if (seen.has(directory)) continue;
+
+        try {
+          const stats = await fsPromises.stat(directory);
+          if (!stats.isDirectory()) continue;
+        } catch {
+          continue;
+        }
+
+        seen.add(directory);
+        directories.push(directory);
+      }
+
+      return directories;
+    },
+    waitForOpenCodeReady,
+    shouldAbort: () => isShuttingDown,
+    logger: console,
+  });
   registerAgentRuntimeWarmupRoute(app, agentRuntimeWarmup);
   registerHarnessPreflightRoute(app, createHarnessPreflight({
     getAgents: ({ directory } = {}) => listConfigAgents(directory).map((agent) => ({
@@ -1473,8 +1564,11 @@ async function main(options = {}) {
     },
     getStaleOverrides: ({ directory } = {}) => (directory ? listStaleAgentModelOverrides(directory) : []),
     getLatestWarmup: () => agentRuntimeWarmup.getLatestResult(),
-    getToolManifest: ({ directory } = {}) => buildServerHarnessToolManifest(directory),
     getPackagedAgents: () => listPackagedAgents(),
+    readSkillBody: (skill) => parseMdFile(skill.path).body,
+    buildOpenCodeUrl,
+    getOpenCodeAuthHeaders,
+    fetchImpl: fetch,
   }));
 
   await featureRoutesRuntime.registerRoutes(app, {

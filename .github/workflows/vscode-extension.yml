@@ -46,6 +46,34 @@ jobs:
       - name: Package extension
         run: cd packages/vscode && bunx vsce package --no-dependencies
 
+      - name: Verify packaged VSIX orchestration config
+        run: |
+          set -euo pipefail
+          VSIX=$(find packages/vscode -maxdepth 1 -type f -name '*.vsix' -print -quit)
+          test -n "$VSIX"
+          EXTRACT_ROOT="$RUNNER_TEMP/devryan-vsix"
+          rm -rf "$EXTRACT_ROOT"
+          mkdir -p "$EXTRACT_ROOT"
+          unzip -q "$VSIX" -d "$EXTRACT_ROOT"
+          ARTIFACT_ROOT="$EXTRACT_ROOT/extension/dist/default-config"
+          node scripts/verify-default-config-artifact.mjs \
+            --source packages/web/server/default-config \
+            --artifact-root "$ARTIFACT_ROOT"
+          node scripts/smoke-packaged-orchestration-config.mjs --config-root "$ARTIFACT_ROOT"
+
+      - name: Stage branded VSIX for GitHub uploads
+        run: |
+          set -euo pipefail
+          mapfile -t VSIX_FILES < <(find packages/vscode -maxdepth 1 -type f -name '*.vsix' -print)
+          if [ "${#VSIX_FILES[@]}" -ne 1 ]; then
+            echo "Error: expected exactly one VSIX package, found ${#VSIX_FILES[@]}."
+            printf '%s\n' "${VSIX_FILES[@]}"
+            exit 1
+          fi
+          VERSION=$(node -p "require('./packages/vscode/package.json').version")
+          mkdir -p artifacts
+          cp "${VSIX_FILES[0]}" "artifacts/DevRyan-${VERSION}.vsix"
+
       - name: Publish to VS Code Marketplace
         if: ${{ env.VSCE_PAT != '' }}
         run: cd packages/vscode && bunx vsce publish -p "$VSCE_PAT" --no-dependencies
@@ -57,8 +85,8 @@ jobs:
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4
         with:
-          name: openchamber-vscode-vsix
-          path: packages/vscode/*.vsix
+          name: DevRyan-vscode-vsix
+          path: artifacts/*.vsix
 
       - name: Verify target release exists
         if: ${{ env.RELEASE_TAG != '' }}
@@ -71,7 +99,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
-          files: packages/vscode/*.vsix
+          files: artifacts/*.vsix
           generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

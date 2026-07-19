@@ -52,7 +52,7 @@ export type SetWorkingDirectoryResult =
 export interface OpenCodeManager {
   start(workdir?: string): Promise<void>;
   stop(): Promise<void>;
-  restart(): Promise<void>;
+  restart(options?: { force?: boolean }): Promise<void>;
   setWorkingDirectory(path: string): Promise<SetWorkingDirectoryResult>;
   getStatus(): ConnectionStatus;
   getApiUrl(): string | null;
@@ -65,6 +65,7 @@ export interface OpenCodeManager {
 
 type OpenCodeManagerOptions = {
   provisionUserProfile?: typeof provisionManagedUserProfile;
+  getActiveSessionCount?: () => number;
   getManagedOrchestrationEnvironment?: () => Promise<Partial<Record<
     'DEVRYAN_ORCHESTRATION_URL' | 'DEVRYAN_ORCHESTRATION_TOKEN',
     string
@@ -888,6 +889,25 @@ export function createOpenCodeManager(
   let cliPath: string | null = null;
 
   let pendingOperation: Promise<void> | null = null;
+  let deferredRestartPending = false;
+  let deferredRestartTimer: NodeJS.Timeout | null = null;
+
+  const scheduleDeferredRestartCheck = (): void => {
+    if (deferredRestartTimer || !deferredRestartPending) return;
+    deferredRestartTimer = setTimeout(() => {
+      deferredRestartTimer = null;
+      if (!deferredRestartPending) return;
+      if ((options.getActiveSessionCount?.() ?? 0) > 0 || pendingOperation) {
+        scheduleDeferredRestartCheck();
+        return;
+      }
+      deferredRestartPending = false;
+      void restart({ force: true }).catch((error) => {
+        console.error('[VSCode:OpenCode] Deferred configuration restart failed:', error);
+      });
+    }, 1000);
+    deferredRestartTimer.unref?.();
+  };
 
   const config = vscode.workspace.getConfiguration('openchamber');
   const configuredApiUrl = config.get<string>('apiUrl') || '';
@@ -1162,6 +1182,11 @@ export function createOpenCodeManager(
   }
 
   async function stop(): Promise<void> {
+    deferredRestartPending = false;
+    if (deferredRestartTimer) {
+      clearTimeout(deferredRestartTimer);
+      deferredRestartTimer = null;
+    }
     if (pendingOperation) {
       await pendingOperation;
     }
@@ -1177,7 +1202,18 @@ export function createOpenCodeManager(
     }
   }
 
-  async function restart(): Promise<void> {
+  async function restart(restartOptions: { force?: boolean } = {}): Promise<void> {
+    if (!restartOptions.force && (options.getActiveSessionCount?.() ?? 0) > 0) {
+      deferredRestartPending = true;
+      scheduleDeferredRestartCheck();
+      console.log('[VSCode:OpenCode] Configuration restart deferred until active agents finish');
+      return;
+    }
+    deferredRestartPending = false;
+    if (deferredRestartTimer) {
+      clearTimeout(deferredRestartTimer);
+      deferredRestartTimer = null;
+    }
     if (pendingOperation) {
       await pendingOperation;
     }

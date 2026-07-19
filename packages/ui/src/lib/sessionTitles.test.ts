@@ -75,4 +75,11 @@ describe("session title helpers", () => {
       fallback: "Untitled Session",
     })).toBe("Remove calendar export PDF button")
   })
+
+  test("collapses adjacent duplicate words in provider-created session titles", () => {
+    expect(resolveDisplaySessionTitle({
+      title: "Review Review Privacy",
+      fallback: "Untitled Session",
+    })).toBe("Review Privacy")
+  })
 })

@@ -179,6 +179,24 @@ export function clearPendingPartDeltasForDirectory(
   return cleared
 }
 
+export function clearPendingPartDeltasForMessages(
+  store: PendingPartDeltaStore,
+  directory: string,
+  messageIDs: Iterable<string>,
+): number {
+  if (!directory || directory === "global" || store.size === 0) return 0
+  const ids = messageIDs instanceof Set ? messageIDs : new Set(messageIDs)
+  if (ids.size === 0) return 0
+
+  let cleared = 0
+  for (const [key, pending] of store) {
+    if (!ids.has(pending.messageID) || !key.startsWith(`${directory}${KEY_SEPARATOR}`)) continue
+    store.delete(key)
+    cleared += 1
+  }
+  return cleared
+}
+
 export function applyPendingPartDeltasToParts(
   parts: Part[],
   partID: string,

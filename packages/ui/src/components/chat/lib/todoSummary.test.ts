@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import { buildTodoSummary, formatCompactTodoTotal } from './todoSummary';
+import {
+    buildTodoSummary,
+    formatCompactTodoTotal,
+    getCurrentTodoOrdinal,
+    parsePlanTodoContent,
+} from './todoSummary';
 
 const todo = (
     status: string,
@@ -14,6 +19,37 @@ const todo = (
 });
 
 describe('todo summary helpers', () => {
+    test('parses the saved-plan phase prefix used by Builder todos', () => {
+        expect(parsePlanTodoContent('Phase 2: Wire task progress to the plan')).toEqual({
+            phase: 2,
+            title: 'Wire task progress to the plan',
+        });
+        expect(parsePlanTodoContent('phase 12: Run verification')).toEqual({
+            phase: 12,
+            title: 'Run verification',
+        });
+    });
+
+    test('does not infer phases from ordinary non-plan task titles', () => {
+        expect(parsePlanTodoContent('Implement phase 2 behavior')).toBeNull();
+        expect(parsePlanTodoContent('Phase two: Implement behavior')).toBeNull();
+        expect(parsePlanTodoContent('Phase 0: Invalid phase')).toBeNull();
+        expect(parsePlanTodoContent('Phase 2:')).toBeNull();
+    });
+
+    test('reports the current one-based task ordinal for plan progress', () => {
+        const summary = buildTodoSummary([
+            todo('completed', 'task-1'),
+            todo('completed', 'task-2'),
+            todo('in_progress', 'task-3'),
+            todo('pending', 'task-4'),
+        ]);
+
+        expect(getCurrentTodoOrdinal(summary.visibleTodos, summary.visibleTodos[2])).toBe(3);
+        expect(getCurrentTodoOrdinal(summary.visibleTodos, null)).toBe(4);
+        expect(getCurrentTodoOrdinal([], null)).toBe(0);
+    });
+
     test('formats compact total from all visible tasks, including completed tasks', () => {
         const summary = buildTodoSummary([
             todo('completed', 'task-1'),

@@ -15,8 +15,6 @@ import type { VSCodeActiveEditorFile } from '@/sync/input-store';
 type ConnectionStatus = 'connecting' | 'connected' | 'error' | 'disconnected';
 type PanelType = 'chat' | 'agentManager';
 
-declare const __OPENCHAMBER_WEBVIEW_BUILD_TIME__: string;
-
 declare global {
   interface Window {
     __OPENCHAMBER_RUNTIME_APIS__?: RuntimeAPIs;
@@ -43,7 +41,6 @@ declare global {
 }
 
 console.log('[OpenChamber] VS Code webview starting...');
-console.log('[OpenChamber] VS Code webview build:', __OPENCHAMBER_WEBVIEW_BUILD_TIME__);
 console.log('[OpenChamber] Config:', window.__VSCODE_CONFIG__);
 try {
   if (window.localStorage.getItem('openchamber_stream_debug') === '1') {
@@ -929,6 +926,23 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init?: 
     }
   }
 
+  // Hide skill: /api/config/skills/:name/hide
+  if (pathname.startsWith('/api/config/skills/') && pathname.endsWith('/hide')) {
+    const encodedName = pathname.slice('/api/config/skills/'.length, -'/hide'.length);
+    const name = decodeURIComponent(encodedName);
+    const body = init?.body ? JSON.parse(init.body as string) : {};
+    try {
+      const scope = url.searchParams.get('scope') || undefined;
+      const skillPath = url.searchParams.get('path') || undefined;
+      const data = await sendBridgeMessage('api:config/skills:hidden:hide', { name, body, scope, path: skillPath });
+      const status = data && typeof data === 'object' && (data as { success?: boolean }).success === false ? 404 : 200;
+      return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return new Response(JSON.stringify({ error: message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
   // Skills CRUD: /api/config/skills/:name or /api/config/skills
   if (pathname === '/api/config/skills') {
     try {
@@ -951,7 +965,8 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init?: 
       const scope = url.searchParams.get('scope') || undefined;
       const skillPath = url.searchParams.get('path') || undefined;
       const data = await sendBridgeMessage('api:config/skills', { method: verb, name, body, scope, path: skillPath });
-      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      const status = data && typeof data === 'object' && (data as { success?: boolean }).success === false ? 404 : 200;
+      return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return new Response(JSON.stringify({ error: message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
@@ -1089,6 +1104,47 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init?: 
     }
   }
 
+  const quotaCredentialMatch = pathname.match(/^\/api\/quota\/credentials\/([^/]+)(?:\/(validate|import))?$/);
+  if (quotaCredentialMatch) {
+    const providerId = decodeURIComponent(quotaCredentialMatch[1]);
+    const action = quotaCredentialMatch[2] || '';
+    const verb = (init?.method || 'GET').toUpperCase();
+    const bodyText = typeof init?.body === 'string' ? init.body : '';
+    if (new TextEncoder().encode(bodyText).byteLength > 16 * 1024) {
+      return new Response(JSON.stringify({
+        code: 'PAYLOAD_TOO_LARGE',
+        error: 'Credential payload is too large',
+      }), { status: 413, headers: { 'Content-Type': 'application/json' } });
+    }
+    let body: unknown = undefined;
+    try {
+      body = bodyText ? JSON.parse(bodyText) : undefined;
+    } catch {
+      return new Response(JSON.stringify({
+        code: 'INVALID_CREDENTIAL',
+        error: 'Credential validation failed',
+      }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    try {
+      const result = await sendBridgeMessage<{ status: number; body: unknown }>('api:quota:credentials', {
+        providerId,
+        method: verb,
+        action,
+        body,
+      });
+      return new Response(JSON.stringify(result.body), {
+        status: result.status,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    } catch {
+      return new Response(JSON.stringify({
+        code: 'INVALID_CREDENTIAL',
+        error: 'Credential validation failed',
+      }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
   const quotaMatch = pathname.match(/^\/api\/quota\/([^/]+)$/);
   if (quotaMatch && (init?.method || 'GET').toUpperCase() === 'GET') {
     const providerId = decodeURIComponent(quotaMatch[1]);
@@ -1123,6 +1179,16 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init?: 
     const queryDirectory = url.searchParams.get('directory') || undefined;
     try {
       const data = await sendBridgeMessage('api:provider/source:get', { providerId, directory: queryDirectory });
+      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return new Response(JSON.stringify({ error: message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
+  if (pathname === '/api/provider/anthropic/claude-cli' && (init?.method || 'GET').toUpperCase() === 'GET') {
+    try {
+      const data = await sendBridgeMessage('api:provider/anthropic/claude-code-status');
       return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

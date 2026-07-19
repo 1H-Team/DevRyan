@@ -19,6 +19,7 @@ const input = (overrides = {}) => ({
 });
 
 const createTerminalHarness = async ({
+  failureReason = 'provider failed after useful work',
   resumable = true,
   resumeResult = { status: 'completed', recoverablePreview: 'resumed result' },
   submitOverrides = {},
@@ -36,7 +37,7 @@ const createTerminalHarness = async ({
         await control.markAccepted();
         return {
           status: 'failed',
-          failureReason: 'provider failed after useful work',
+          failureReason,
           partial: true,
           recoverablePreview: 'useful partial output',
           canonicalRefs: [{ type: 'message', id: `msg_${task.taskId}` }],
@@ -225,6 +226,54 @@ describe('managed scheduler parent actions', () => {
     expect(inPlaceRetries[0].childSessionId).toBe(original.childSessionId);
     expect(settled.status).toBe('completed');
     expect(action.envelope.action).toBe('retry_in_place');
+  });
+
+  test('automatically recovers a provider usage limit in the canonical child once', async () => {
+    const { inPlaceRetries, original, scheduler, starts } = await createTerminalHarness({
+      failureReason: "You've hit your session limit · resets 7:30pm",
+      submitOverrides: { dispatchGroupId: 'msg_parent' },
+    });
+    const originalStartCount = starts.length;
+
+    const action = await scheduler.acknowledgeResult(original.taskId, {
+      action: 'recover_in_place',
+      idempotencyKey: 'provider-limit-recovery-1',
+      providerId: 'openai',
+      modelId: 'gpt-5.4',
+      variant: 'high',
+    });
+    const settled = await scheduler.waitForTask(action.followUpTask.taskId);
+
+    expect(action.followUpTask).toMatchObject({
+      attempt: 2,
+      childSessionId: original.childSessionId,
+      executionKind: 'recover_in_place',
+      priorTaskId: original.taskId,
+      providerId: 'openai',
+      modelId: 'gpt-5.4',
+      variant: 'high',
+    });
+    expect(starts).toHaveLength(originalStartCount);
+    expect(inPlaceRetries).toHaveLength(1);
+    expect(settled.status).toBe('completed');
+
+    await expect(scheduler.acknowledgeResult(settled.taskId, {
+      action: 'recover_in_place',
+      idempotencyKey: 'provider-limit-recovery-2',
+      providerId: 'openai',
+      modelId: 'gpt-5.4',
+    })).rejects.toMatchObject({ code: 'managed_retry_limit_reached' });
+  });
+
+  test('rejects automatic in-place recovery for a non-usage failure', async () => {
+    const { original, scheduler } = await createTerminalHarness();
+
+    await expect(scheduler.acknowledgeResult(original.taskId, {
+      action: 'recover_in_place',
+      idempotencyKey: 'invalid-provider-limit-recovery',
+      providerId: 'openai',
+      modelId: 'gpt-5.4',
+    })).rejects.toMatchObject({ code: 'result_not_provider_usage_limited' });
   });
 
   test('rejects resume when the terminal result is not resumable', async () => {

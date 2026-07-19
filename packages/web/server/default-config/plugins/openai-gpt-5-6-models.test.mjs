@@ -22,8 +22,86 @@ const model = (id, variants = {
   variants,
 });
 
+const detailedReasoningVariant = (reasoningEffort) => ({
+  ...reasoningVariant(reasoningEffort),
+  reasoningSummary: "detailed",
+});
+
 describe("OpenAI GPT-5.6 provider model normalization", () => {
-  test("keeps only real OAuth rows and constrains Luna to its verified reasoning matrix", async () => {
+  test("uses detailed summaries for reasoning model options and variants", async () => {
+    const hooks = await OpenAIGpt56ModelsPlugin();
+    const models = await hooks.provider.models({
+      models: {
+        "gpt-5.5": {
+          ...model("gpt-5.5", {
+            low: reasoningVariant("low"),
+            concise: {
+              ...reasoningVariant("medium"),
+              reasoningSummary: "concise",
+            },
+            detailed: {
+              ...reasoningVariant("high"),
+              reasoningSummary: "detailed",
+            },
+            missing: {
+              reasoningEffort: "xhigh",
+              include: ["reasoning.encrypted_content"],
+              providerMetadata: "preserve-missing-summary",
+            },
+            none: reasoningVariant("none"),
+            nonreasoning: {
+              reasoningSummary: "auto",
+              providerMetadata: "leave-unchanged",
+            },
+          }),
+          options: {
+            reasoningEffort: "high",
+            reasoningSummary: "auto",
+            include: ["reasoning.encrypted_content"],
+            providerMetadata: "preserve-model-options",
+          },
+        },
+        "gpt-5.6-sol": {
+          ...model("gpt-5.6-sol"),
+          options: {
+            reasoningEffort: "medium",
+            include: ["reasoning.encrypted_content"],
+            providerMetadata: "preserve-sol-options",
+          },
+        },
+      },
+    }, { auth: { type: "oauth" } });
+
+    expect(models["gpt-5.5"].options).toEqual({
+      reasoningEffort: "high",
+      reasoningSummary: "detailed",
+      include: ["reasoning.encrypted_content"],
+      providerMetadata: "preserve-model-options",
+    });
+    expect(models["gpt-5.5"].variants.low).toEqual(detailedReasoningVariant("low"));
+    expect(models["gpt-5.5"].variants.concise.reasoningSummary).toBe("concise");
+    expect(models["gpt-5.5"].variants.detailed.reasoningSummary).toBe("detailed");
+    expect(models["gpt-5.5"].variants.missing).toEqual({
+      reasoningEffort: "xhigh",
+      reasoningSummary: "detailed",
+      include: ["reasoning.encrypted_content"],
+      providerMetadata: "preserve-missing-summary",
+    });
+    expect(models["gpt-5.5"].variants.nonreasoning).toEqual({
+      reasoningSummary: "auto",
+      providerMetadata: "leave-unchanged",
+    });
+    expect(models["gpt-5.6-sol"].options).toEqual({
+      reasoningEffort: "medium",
+      reasoningSummary: "detailed",
+      include: ["reasoning.encrypted_content"],
+      providerMetadata: "preserve-sol-options",
+    });
+    expect(models["gpt-5.6-sol"].variants.max).toEqual(detailedReasoningVariant("max"));
+    expect(models["gpt-5.6-sol"].variants.ultra).toEqual(detailedReasoningVariant("ultra"));
+  });
+
+  test("keeps only real OAuth rows and preserves upstream Luna Max without Ultra", async () => {
     const hooks = await OpenAIGpt56ModelsPlugin();
     const models = await hooks.provider.models({
       models: {
@@ -37,12 +115,18 @@ describe("OpenAI GPT-5.6 provider model normalization", () => {
         "gpt-5.6-terra-fast": model("gpt-5.6-terra-fast"),
         "gpt-5.6-luna": model("gpt-5.6-luna", {
           ...model("template").variants,
-          max: reasoningVariant("max"),
+          max: {
+            ...reasoningVariant("max"),
+            providerMetadata: "preserve-luna-max",
+          },
           ultra: reasoningVariant("ultra"),
         }),
         "gpt-5.6-luna-fast": model("gpt-5.6-luna-fast", {
           ...model("template").variants,
-          max: reasoningVariant("max"),
+          max: {
+            ...reasoningVariant("max"),
+            providerMetadata: "preserve-luna-fast-max",
+          },
           ultra: reasoningVariant("ultra"),
         }),
       },
@@ -59,8 +143,8 @@ describe("OpenAI GPT-5.6 provider model normalization", () => {
     ]);
     expect(models["gpt-5.6-sol"].variants.max.reasoningEffort).toBe("max");
     expect(models["gpt-5.6-sol"].variants.ultra.reasoningEffort).toBe("ultra");
-    expect(models["gpt-5.6-sol"].variants.max).toEqual(reasoningVariant("max"));
-    expect(models["gpt-5.6-sol"].variants.ultra).toEqual(reasoningVariant("ultra"));
+    expect(models["gpt-5.6-sol"].variants.max).toEqual(detailedReasoningVariant("max"));
+    expect(models["gpt-5.6-sol"].variants.ultra).toEqual(detailedReasoningVariant("ultra"));
     expect(models["gpt-5.6-sol-fast"].variants.max.reasoningEffort).toBe("max");
     expect(models["gpt-5.6-sol-fast"].variants.ultra.reasoningEffort).toBe("ultra");
     expect(models["gpt-5.6-terra"].variants.max.reasoningEffort).toBe("max");
@@ -70,13 +154,25 @@ describe("OpenAI GPT-5.6 provider model normalization", () => {
       "medium",
       "high",
       "xhigh",
+      "max",
     ]);
     expect(Object.keys(models["gpt-5.6-luna-fast"].variants)).toEqual([
       "low",
       "medium",
       "high",
       "xhigh",
+      "max",
     ]);
+    expect(models["gpt-5.6-luna"].variants.max).toEqual({
+      ...detailedReasoningVariant("max"),
+      providerMetadata: "preserve-luna-max",
+    });
+    expect(models["gpt-5.6-luna-fast"].variants.max).toEqual({
+      ...detailedReasoningVariant("max"),
+      providerMetadata: "preserve-luna-fast-max",
+    });
+    expect(models["gpt-5.6-luna"].variants.ultra).toBeUndefined();
+    expect(models["gpt-5.6-luna-fast"].variants.ultra).toBeUndefined();
     expect(Object.keys(models["gpt-5.6-sol"].variants)).toEqual([
       "low",
       "medium",
@@ -100,6 +196,19 @@ describe("OpenAI GPT-5.6 provider model normalization", () => {
     expect(models["gpt-5.6-luna"]).toBeUndefined();
   });
 
+  test("does not synthesize Max when the upstream Luna rows omit it", async () => {
+    const hooks = await OpenAIGpt56ModelsPlugin();
+    const models = await hooks.provider.models({
+      models: {
+        "gpt-5.6-luna": model("gpt-5.6-luna"),
+        "gpt-5.6-luna-fast": model("gpt-5.6-luna-fast"),
+      },
+    }, { auth: { type: "oauth" } });
+
+    expect(models["gpt-5.6-luna"].variants.max).toBeUndefined();
+    expect(models["gpt-5.6-luna-fast"].variants.max).toBeUndefined();
+  });
+
   test("removes none from API-key catalogs without changing other provider metadata", async () => {
     const hooks = await OpenAIGpt56ModelsPlugin();
     const input = {
@@ -111,19 +220,19 @@ describe("OpenAI GPT-5.6 provider model normalization", () => {
     expect(models["gpt-5.6"]).toEqual({
       ...input["gpt-5.6"],
       variants: {
-        low: reasoningVariant("low"),
-        medium: reasoningVariant("medium"),
-        high: reasoningVariant("high"),
-        xhigh: reasoningVariant("xhigh"),
+        low: detailedReasoningVariant("low"),
+        medium: detailedReasoningVariant("medium"),
+        high: detailedReasoningVariant("high"),
+        xhigh: detailedReasoningVariant("xhigh"),
       },
     });
     expect(models["gpt-5.6-sol"]).toEqual({
       ...input["gpt-5.6-sol"],
       variants: {
-        low: reasoningVariant("low"),
-        medium: reasoningVariant("medium"),
-        high: reasoningVariant("high"),
-        xhigh: reasoningVariant("xhigh"),
+        low: detailedReasoningVariant("low"),
+        medium: detailedReasoningVariant("medium"),
+        high: detailedReasoningVariant("high"),
+        xhigh: detailedReasoningVariant("xhigh"),
       },
     });
   });
@@ -183,5 +292,64 @@ describe("OpenAI GPT-5.6 provider model normalization", () => {
 
     expect(apiOutput.headers).toEqual({ existing: "value" });
     expect(solOutput.headers).toEqual({ existing: "value" });
+  });
+
+  test("enforces detailed summaries on every reasoning-capable OpenAI request", async () => {
+    const hooks = await OpenAIGpt56ModelsPlugin();
+    const output = {
+      options: {
+        reasoningEffort: "high",
+        reasoningSummary: "concise",
+        include: ["reasoning.encrypted_content"],
+        providerMetadata: "preserve-request-options",
+      },
+    };
+
+    await hooks["chat.params"]({
+      model: { providerID: "openai", capabilities: { reasoning: true } },
+      agent: "orchestrator",
+    }, output);
+
+    expect(output.options).toEqual({
+      reasoningEffort: "high",
+      reasoningSummary: "detailed",
+      include: ["reasoning.encrypted_content"],
+      providerMetadata: "preserve-request-options",
+    });
+  });
+
+  test("uses model capability when an OpenAI override omits reasoning effort", async () => {
+    const hooks = await OpenAIGpt56ModelsPlugin();
+    const output = { options: { providerMetadata: "preserve-override" } };
+
+    await hooks["chat.params"]({
+      model: { providerID: "openai", capabilities: { reasoning: true } },
+    }, output);
+
+    expect(output.options).toEqual({
+      providerMetadata: "preserve-override",
+      reasoningSummary: "detailed",
+    });
+  });
+
+  test("preserves none, non-reasoning models, and non-OpenAI requests", async () => {
+    const hooks = await OpenAIGpt56ModelsPlugin();
+    const noneOutput = { options: { reasoningEffort: "none", reasoningSummary: "auto", keep: true } };
+    const nonReasoningOutput = { options: { reasoningSummary: "auto", keep: true } };
+    const anthropicOutput = { options: { reasoningEffort: "high", reasoningSummary: "concise", keep: true } };
+
+    await hooks["chat.params"]({
+      model: { providerID: "openai", capabilities: { reasoning: true } },
+    }, noneOutput);
+    await hooks["chat.params"]({
+      model: { providerID: "openai", capabilities: { reasoning: false } },
+    }, nonReasoningOutput);
+    await hooks["chat.params"]({
+      model: { providerID: "anthropic", capabilities: { reasoning: true } },
+    }, anthropicOutput);
+
+    expect(noneOutput.options).toEqual({ reasoningEffort: "none", reasoningSummary: "auto", keep: true });
+    expect(nonReasoningOutput.options).toEqual({ reasoningSummary: "auto", keep: true });
+    expect(anthropicOutput.options).toEqual({ reasoningEffort: "high", reasoningSummary: "concise", keep: true });
   });
 });

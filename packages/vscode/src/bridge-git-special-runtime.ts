@@ -17,6 +17,25 @@ type SpecialGitDeps = {
 };
 
 const BRIDGE_ZEN_DEFAULT_MODEL = 'gpt-5-nano';
+const BRIDGE_COMMIT_DEFAULT_ZEN_MODEL = 'deepseek-v4-flash-free';
+const BRIDGE_COMMIT_ZEN_TIMEOUT_MS = 60_000;
+const BRIDGE_COMMIT_SUBJECT_MAX_LENGTH = 72;
+const BRIDGE_COMMIT_TYPES = [
+  'feat',
+  'fix',
+  'refactor',
+  'perf',
+  'docs',
+  'test',
+  'build',
+  'ci',
+  'chore',
+  'style',
+  'revert',
+] as const;
+const BRIDGE_COMMIT_SUBJECT_PATTERN = new RegExp(
+  `^(?:${BRIDGE_COMMIT_TYPES.join('|')})(?:\\([a-z0-9][a-z0-9_-]*\\))?(!)?:\\s+\\S.*$`,
+);
 const BRIDGE_GIT_GENERATION_TIMEOUT_MS = 2 * 60 * 1000;
 const BRIDGE_GIT_GENERATION_POLL_INTERVAL_MS = 500;
 const BRIDGE_GIT_MODEL_CATALOG_CACHE_TTL_MS = 30 * 1000;
@@ -136,6 +155,136 @@ const extractTextFromMessageParts = (parts: unknown): string => {
     .filter((text) => text.length > 0);
 
   return textParts.join('\n').trim();
+};
+
+const extractZenResponseText = (data: unknown): string => {
+  if (!data || typeof data !== 'object') return '';
+  const record = data as Record<string, unknown>;
+  const output = Array.isArray(record.output) ? record.output : [];
+  for (const item of output) {
+    if (!item || typeof item !== 'object') continue;
+    const content = Array.isArray((item as Record<string, unknown>).content)
+      ? (item as Record<string, unknown>).content as unknown[]
+      : [];
+    for (const part of content) {
+      if (!part || typeof part !== 'object') continue;
+      const text = (part as Record<string, unknown>).text;
+      if (typeof text === 'string' && text.trim()) return text.trim();
+    }
+  }
+
+  const choices = Array.isArray(record.choices) ? record.choices : [];
+  for (const choice of choices) {
+    if (!choice || typeof choice !== 'object') continue;
+    const message = (choice as Record<string, unknown>).message;
+    if (!message || typeof message !== 'object') continue;
+    const content = (message as Record<string, unknown>).content;
+    if (typeof content === 'string' && content.trim()) return content.trim();
+    if (Array.isArray(content)) {
+      const text = content
+        .map((part) => part && typeof part === 'object' && typeof (part as Record<string, unknown>).text === 'string'
+          ? (part as Record<string, unknown>).text as string
+          : '')
+        .join('')
+        .trim();
+      if (text) return text;
+    }
+  }
+  return '';
+};
+
+export const generateBridgeTextWithZen = async ({
+  prompt,
+  zenModel,
+}: {
+  prompt: string;
+  zenModel?: string;
+}): Promise<string> => {
+  const model = typeof zenModel === 'string' && zenModel.trim() ? zenModel.trim() : BRIDGE_COMMIT_DEFAULT_ZEN_MODEL;
+  const endpoint = /^(?:gpt-|claude-|gemini-)/.test(model) ? 'responses' : 'chat/completions';
+  const response = await fetch(`https://opencode.ai/zen/v1/${endpoint}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(endpoint === 'responses'
+      ? {
+          model,
+          input: [{ role: 'user', content: prompt }],
+          stream: false,
+          reasoning: { effort: 'low' },
+        }
+      : {
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          stream: false,
+        }),
+    signal: AbortSignal.timeout(BRIDGE_COMMIT_ZEN_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    const errorPayload = await response.json().catch(() => null) as Record<string, unknown> | null;
+    const error = errorPayload?.error;
+    const detail = typeof error === 'string'
+      ? error
+      : error && typeof error === 'object' && typeof (error as Record<string, unknown>).message === 'string'
+        ? (error as Record<string, unknown>).message as string
+        : response.statusText;
+    throw new Error(`Zen API returned ${response.status}${detail ? `: ${detail}` : ''}`);
+  }
+  const text = extractZenResponseText(await response.json().catch(() => null));
+  if (!text) throw new Error('Zen API returned no text');
+  return text;
+};
+
+const buildBridgeCommitMessagePrompt = (context: Record<string, unknown>, guidance?: string): string => {
+  const optionalGuidance = typeof guidance === 'string' && guidance.trim()
+    ? `\nOptional wording guidance:\n${guidance.trim()}\nThe Git context and output rules remain authoritative.`
+    : '';
+  return `Generate one Git commit subject for the supplied worktree changes.
+
+Rules:
+1. Output only the subject line, with no markdown, quotes, JSON, or explanation.
+2. Use Conventional Commits: type(scope): summary, or type: summary when no clear scope fits.
+3. Allowed types: ${BRIDGE_COMMIT_TYPES.join(', ')}.
+4. Keep the complete subject at or below ${BRIDGE_COMMIT_SUBJECT_MAX_LENGTH} characters.
+5. Use imperative mood and do not end with punctuation.
+6. Describe only the supplied changes. Respect the staged-only scope when present.
+${optionalGuidance}
+
+Git context:
+${JSON.stringify(context, null, 2)}`;
+};
+
+export const normalizeBridgeCommitSubject = (value: string): string => {
+  const withoutFence = String(value || '')
+    .trim()
+    .replace(/^```(?:json|text)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+  let jsonSubject = '';
+  try {
+    const parsed = JSON.parse(withoutFence) as unknown;
+    const candidate = Array.isArray(parsed) ? parsed[0] : parsed;
+    if (candidate && typeof candidate === 'object' && typeof (candidate as Record<string, unknown>).subject === 'string') {
+      jsonSubject = (candidate as Record<string, unknown>).subject as string;
+    }
+  } catch {
+    jsonSubject = '';
+  }
+  const subject = (jsonSubject || withoutFence)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean)
+    ?.replace(/^commit message\s*:\s*/i, '')
+    .replace(/^[`"'“”‘’]+|[`"'“”‘’]+$/g, '')
+    .trim() || '';
+  if (!subject) throw new Error('Commit generator returned an empty subject');
+  if (subject.length > BRIDGE_COMMIT_SUBJECT_MAX_LENGTH) {
+    throw new Error(`Generated commit subject exceeds ${BRIDGE_COMMIT_SUBJECT_MAX_LENGTH} characters`);
+  }
+  if (!BRIDGE_COMMIT_SUBJECT_PATTERN.test(subject)) {
+    throw new Error('Generated commit subject is not a valid conventional commit');
+  }
+  if (/\.$/.test(subject)) throw new Error('Generated commit subject must not end with a period');
+  return subject;
 };
 
 const generateBridgeTextWithSessionFlow = async ({
@@ -291,6 +440,43 @@ export async function handleSpecialGitBridgeMessage(
   const { id, type, payload } = message;
 
   switch (type) {
+    case 'api:git/commit-message': {
+      const { directory, context, guidance, zenModel: requestedZenModel } = (payload || {}) as {
+        directory?: string;
+        context?: Record<string, unknown>;
+        guidance?: string;
+        zenModel?: string;
+      };
+      const selectedFiles = context && Array.isArray(context.selectedFiles) ? context.selectedFiles : [];
+      if (!directory) {
+        return { id, type, success: false, error: 'Directory is required' };
+      }
+      if (!context || selectedFiles.length === 0) {
+        return { id, type, success: false, error: 'Worktree context is required' };
+      }
+
+      try {
+        const zenModel = typeof requestedZenModel === 'string' && requestedZenModel.trim()
+          ? requestedZenModel.trim()
+          : BRIDGE_COMMIT_DEFAULT_ZEN_MODEL;
+        const prompt = buildBridgeCommitMessagePrompt(context, guidance);
+        const raw = await generateBridgeTextWithZen({ prompt, zenModel });
+        return {
+          id,
+          type,
+          success: true,
+          data: { subject: normalizeBridgeCommitSubject(raw), highlights: [] },
+        };
+      } catch (error) {
+        return {
+          id,
+          type,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+
     case 'api:git/pr-description': {
       const { directory, base, head, context, providerId, modelId, zenModel: payloadZenModel } = (payload || {}) as {
         directory?: string;

@@ -9,29 +9,9 @@ import { useSkillsStore } from '@/stores/useSkillsStore';
 import { useSkillsCatalogStore } from '@/stores/useSkillsCatalogStore';
 import { usePluginsStore } from '@/stores/usePluginsStore';
 import {
-  RiAiAgentLine,
-  RiAiGenerate2,
   RiArrowLeftSLine,
-  RiBarChart2Line,
-  RiBookLine,
-  RiBookOpenLine,
-  RiChatAi3Line,
-  RiChatHistoryLine,
-  RiCommandLine,
-  RiCloudLine,
-  RiFoldersLine,
-  RiGithubLine,
-  RiGlobalLine,
-  RiMicLine,
   RiListUnordered,
-  RiNotification3Line,
-  RiPaletteLine,
-  RiPlugLine,
-  RiRobot2Line,
   RiRestartLine,
-  RiServerLine,
-  RiSlashCommands2,
-  RiBrainLine,
 } from '@remixicon/react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
@@ -59,7 +39,6 @@ import { MagicPromptsPage } from '@/components/sections/magic-prompts/MagicPromp
 import { GitPage } from '@/components/sections/git-identities/GitPage';
 import type { OpenChamberSection } from '@/components/sections/openchamber/types';
 import { OpenChamberPage } from '@/components/sections/openchamber/OpenChamberPage';
-import { McpIcon } from '@/components/icons/McpIcon';
 import { useDeviceInfo } from '@/lib/device';
 import { isDesktopShell, isVSCodeRuntime, isWebRuntime } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
@@ -74,6 +53,7 @@ import {
   type SettingsPageMeta,
 } from '@/lib/settings/metadata';
 import { SETTINGS_NAV_SECTIONS } from '@/lib/settings/navigation';
+import { getSettingsNavIcon } from '@/lib/settings/navigation-icons';
 import {
   getSettingsBackButtonHeaderClassName,
   getSettingsBackButtonHeaderContentClassName,
@@ -112,60 +92,6 @@ function isPageAvailable(page: SettingsPageMeta, ctx: SettingsRuntimeContext): b
     return true;
   }
   return page.isAvailable(ctx);
-}
-
-// eslint-disable-next-line react-refresh/only-export-components
-export function getSettingsNavIcon(slug: SettingsPageSlug): React.ComponentType<{ className?: string }> | null {
-  switch (slug) {
-    case 'projects':
-      return RiFoldersLine;
-    case 'remote-instances':
-      return RiServerLine;
-    case 'appearance':
-      return RiPaletteLine;
-    case 'chat':
-      return RiChatAi3Line;
-    case 'magic-prompts':
-      return RiAiGenerate2;
-    case 'notifications':
-      return RiNotification3Line;
-    case 'shortcuts':
-      return RiCommandLine;
-    case 'sessions':
-      return RiChatHistoryLine;
-
-    case 'providers':
-      return RiCloudLine;
-    case 'agents':
-      return RiAiAgentLine;
-    case 'behavior':
-      return RiBrainLine;
-    case 'commands':
-      return RiSlashCommands2;
-    case 'mcp':
-      return McpIcon;
-
-    case 'skills.installed':
-      return RiBookOpenLine;
-    case 'skills.catalog':
-      return RiBookLine;
-    case 'plugins':
-      return RiPlugLine;
-
-    case 'git':
-      return RiGithubLine;
-
-    case 'usage':
-      return RiBarChart2Line;
-    case 'voice':
-      return RiMicLine;
-    case 'tunnel':
-      return RiGlobalLine;
-    case 'home':
-      return null;
-    default:
-      return RiRobot2Line;
-  }
 }
 
 const SettingsHome: React.FC<{ onOpen: (slug: SettingsPageSlug) => void }> = ({ onOpen }) => {

@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { discoverSkills, getSkillSources } from './skills.js';
+import { deleteSkill, discoverSkills, getSkillSources } from './skills.js';
 
 describe('skill discovery', () => {
   it('does not treat non-file discovered skill paths as editable markdown sources', () => {
@@ -45,6 +45,32 @@ describe('skill discovery', () => {
       path.join(root, '.agents', 'skills', 'lint-helper', 'SKILL.md'),
       path.join(root, '.opencode', 'skills', 'lint-helper', 'SKILL.md'),
     ]);
+  });
+
+  it('permanently deletes only the supplied discovered skill directory', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skills-delete-'));
+    const userSkill = path.join(root, '.agents', 'skills', 'lint-helper');
+    const projectSkill = path.join(root, '.opencode', 'skills', 'lint-helper');
+    const userSkillPath = path.join(userSkill, 'SKILL.md');
+    const projectSkillPath = path.join(projectSkill, 'SKILL.md');
+    fs.mkdirSync(userSkill, { recursive: true });
+    fs.mkdirSync(projectSkill, { recursive: true });
+    fs.writeFileSync(userSkillPath, '---\nname: lint-helper\n---\n');
+    fs.writeFileSync(projectSkillPath, '---\nname: lint-helper\n---\n');
+
+    try {
+      deleteSkill('lint-helper', root, {
+        name: 'lint-helper',
+        path: projectSkillPath,
+        scope: 'project',
+        source: 'opencode',
+      });
+
+      expect(fs.existsSync(projectSkill)).toBe(false);
+      expect(fs.existsSync(userSkill)).toBe(true);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('discovers nested user skills from a config skills directory without an active project', () => {
