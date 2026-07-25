@@ -782,6 +782,7 @@ export type SessionUIState = {
   sessionPlanIndicator: Map<string, PlanIndicatorEntry>
   sessionCompletionIndicator: Map<string, SessionCompletionIndicatorEntry>
   implementedPlanRequests: Set<string>
+  externallyHandedOffPlanRequests: Set<string>
   planModeUserMessages: Set<string>
   planModeUserMessagesBySession: Map<string, string>
   starterAssistantMessages: Map<string, StarterAssistantMessage>
@@ -794,6 +795,8 @@ export type SessionUIState = {
   markPlanImplementing: (sessionId: string, sourceMessageId?: string, implementationMessageId?: string) => void
   markPlanCompleted: (sessionId: string, sourceMessageId?: string) => void
   markPlanImplementationRequested: (planKey: string) => void
+  markPlanImplementationHandedOff: (planKey: string) => void
+  clearHandedOffPlanIndicator: (sessionId: string, sourceMessageId: string) => void
   registerPendingSendAbort: (key: string, controller?: AbortController) => AbortController
   promotePendingSendAbort: (fromKey: string, toKey: string) => AbortController | null
   abortPendingSend: (key: string) => boolean
@@ -1244,6 +1247,7 @@ type PersistedPlanMessageState = {
   planModeUserMessages: Set<string>
   planModeUserMessagesBySession: Map<string, string>
   implementedPlanRequests: Set<string>
+  externallyHandedOffPlanRequests: Set<string>
 }
 
 const limitStringSet = (values: Set<string>, maxSize: number): Set<string> => {
@@ -1259,11 +1263,19 @@ const limitStringMap = (values: Map<string, string>, maxSize: number): Map<strin
 const readPersistedPlanMessageState = (): PersistedPlanMessageState => {
   try {
     const raw = safeStorage.getItem(PLAN_MESSAGE_STATE_STORAGE_KEY)
-    if (!raw) return { planModeUserMessages: new Set(), planModeUserMessagesBySession: new Map(), implementedPlanRequests: new Set() }
+    if (!raw) {
+      return {
+        planModeUserMessages: new Set(),
+        planModeUserMessagesBySession: new Map(),
+        implementedPlanRequests: new Set(),
+        externallyHandedOffPlanRequests: new Set(),
+      }
+    }
     const parsed = JSON.parse(raw) as {
       planModeUserMessages?: unknown
       planModeUserMessagesBySession?: unknown
       implementedPlanRequests?: unknown
+      externallyHandedOffPlanRequests?: unknown
     }
     const planModeUserMessages = new Set(
       (Array.isArray(parsed.planModeUserMessages) ? parsed.planModeUserMessages : [])
@@ -1281,31 +1293,58 @@ const readPersistedPlanMessageState = (): PersistedPlanMessageState => {
       (Array.isArray(parsed.implementedPlanRequests) ? parsed.implementedPlanRequests : [])
         .filter((value): value is string => typeof value === "string" && value.length > 0),
     )
+    const externallyHandedOffPlanRequests = new Set(
+      (Array.isArray(parsed.externallyHandedOffPlanRequests) ? parsed.externallyHandedOffPlanRequests : [])
+        .filter((value): value is string => typeof value === "string" && value.length > 0),
+    )
     return {
       planModeUserMessages: limitStringSet(planModeUserMessages, MAX_PERSISTED_PLAN_MESSAGE_IDS),
       planModeUserMessagesBySession: limitStringMap(planModeUserMessagesBySession, MAX_PERSISTED_PLAN_MESSAGE_IDS),
       implementedPlanRequests: limitStringSet(implementedPlanRequests, MAX_PERSISTED_PLAN_MESSAGE_IDS),
+      externallyHandedOffPlanRequests: limitStringSet(externallyHandedOffPlanRequests, MAX_PERSISTED_PLAN_MESSAGE_IDS),
     }
   } catch {
-    return { planModeUserMessages: new Set(), planModeUserMessagesBySession: new Map(), implementedPlanRequests: new Set() }
+    return {
+      planModeUserMessages: new Set(),
+      planModeUserMessagesBySession: new Map(),
+      implementedPlanRequests: new Set(),
+      externallyHandedOffPlanRequests: new Set(),
+    }
   }
 }
 
 const persistPlanMessageState = (
   planModeUserMessages: Set<string>,
   implementedPlanRequests: Set<string>,
+  externallyHandedOffPlanRequests: Set<string>,
   planModeUserMessagesBySession: Map<string, string>,
 ): void => {
   try {
-    if (planModeUserMessages.size === 0 && implementedPlanRequests.size === 0 && planModeUserMessagesBySession.size === 0) {
+    if (
+      planModeUserMessages.size === 0
+      && implementedPlanRequests.size === 0
+      && externallyHandedOffPlanRequests.size === 0
+      && planModeUserMessagesBySession.size === 0
+    ) {
       safeStorage.removeItem(PLAN_MESSAGE_STATE_STORAGE_KEY)
       return
     }
-    safeStorage.setItem(PLAN_MESSAGE_STATE_STORAGE_KEY, JSON.stringify({
+    const persisted: {
+      planModeUserMessages: string[]
+      planModeUserMessagesBySession: Array<[string, string]>
+      implementedPlanRequests: string[]
+      externallyHandedOffPlanRequests?: string[]
+    } = {
       planModeUserMessages: [...limitStringSet(planModeUserMessages, MAX_PERSISTED_PLAN_MESSAGE_IDS)],
       planModeUserMessagesBySession: [...limitStringMap(planModeUserMessagesBySession, MAX_PERSISTED_PLAN_MESSAGE_IDS)],
       implementedPlanRequests: [...limitStringSet(implementedPlanRequests, MAX_PERSISTED_PLAN_MESSAGE_IDS)],
-    }))
+    }
+    if (externallyHandedOffPlanRequests.size > 0) {
+      persisted.externallyHandedOffPlanRequests = [
+        ...limitStringSet(externallyHandedOffPlanRequests, MAX_PERSISTED_PLAN_MESSAGE_IDS),
+      ]
+    }
+    safeStorage.setItem(PLAN_MESSAGE_STATE_STORAGE_KEY, JSON.stringify(persisted))
   } catch { /* ignored */ }
 }
 
@@ -1800,10 +1839,13 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
     void activateConfigForDirectory(directory).then(() => {
       const state = get()
+      if (state.currentSessionId || state.currentDraftId !== draft.id) return
       const currentDraftSendConfig = state.draftsById[draft.id]?.sendConfig ?? (state.currentDraftId === draft.id ? state.newSessionDraft.sendConfig : undefined)
-      const hasExplicitDraftModel = state.currentDraftId === draft.id
-        && hasExplicitDraftModelIntent(currentDraftSendConfig)
-      useConfigStore.getState().applyDefaultsToCurrent({ preserveCurrentModel: hasExplicitDraftModel })
+      const hasExplicitDraftModel = hasExplicitDraftModelIntent(currentDraftSendConfig)
+      useConfigStore.getState().applyDefaultsToCurrent({
+        preserveCurrentModel: hasExplicitDraftModel,
+        preserveRehydratedDraftModel: false,
+      })
     })
   },
 
@@ -2958,7 +3000,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       } else if (currentSessionMessageId === messageId) {
         nextBySession.delete(sessionId)
       }
-      persistPlanMessageState(next, state.implementedPlanRequests, nextBySession)
+      persistPlanMessageState(next, state.implementedPlanRequests, state.externallyHandedOffPlanRequests, nextBySession)
       return { planModeUserMessages: next, planModeUserMessagesBySession: nextBySession }
     })
   },
@@ -2970,8 +3012,11 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   isPlanSourceImplemented: (sessionId, sourceMessageId) => {
     const prefix = `${sessionId}:${sourceMessageId}:plan:`
     const legacyPrefix = `${sessionId}:${sourceMessageId}-plan-`
-    for (const key of get().implementedPlanRequests) {
-      if (key.startsWith(prefix) || key.startsWith(legacyPrefix)) return true
+    const state = get()
+    for (const requests of [state.implementedPlanRequests, state.externallyHandedOffPlanRequests]) {
+      for (const key of requests) {
+        if (key.startsWith(prefix) || key.startsWith(legacyPrefix)) return true
+      }
     }
     return false
   },
@@ -3022,7 +3067,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       nextAvailable.set(sessionId, true)
       const nextCompletion = hasCompletion ? new Map(state.sessionCompletionIndicator) : state.sessionCompletionIndicator
       if (hasCompletion) nextCompletion.delete(sessionId)
-      if (removedPendingPlanMessage) persistPlanMessageState(state.planModeUserMessages, state.implementedPlanRequests, nextBySession)
+      if (removedPendingPlanMessage) {
+        persistPlanMessageState(state.planModeUserMessages, state.implementedPlanRequests, state.externallyHandedOffPlanRequests, nextBySession)
+      }
       return {
         sessionPlanIndicator: nextIndicator,
         sessionPlanAvailable: nextAvailable,
@@ -3046,7 +3093,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       }
       const nextAvailable = new Map(state.sessionPlanAvailable)
       nextAvailable.set(sessionId, true)
-      if (removedPendingPlanMessage) persistPlanMessageState(state.planModeUserMessages, state.implementedPlanRequests, nextBySession)
+      if (removedPendingPlanMessage) {
+        persistPlanMessageState(state.planModeUserMessages, state.implementedPlanRequests, state.externallyHandedOffPlanRequests, nextBySession)
+      }
       return { sessionPlanAvailable: nextAvailable, planModeUserMessagesBySession: nextBySession }
     })
   },
@@ -3056,8 +3105,50 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       if (state.implementedPlanRequests.has(planKey)) return state
       const next = new Set(state.implementedPlanRequests)
       next.add(planKey)
-      persistPlanMessageState(state.planModeUserMessages, next, state.planModeUserMessagesBySession)
+      persistPlanMessageState(state.planModeUserMessages, next, state.externallyHandedOffPlanRequests, state.planModeUserMessagesBySession)
       return { implementedPlanRequests: next }
+    })
+  },
+
+  markPlanImplementationHandedOff: (planKey) => {
+    set((state) => {
+      if (state.externallyHandedOffPlanRequests.has(planKey)) return state
+      const next = new Set(state.externallyHandedOffPlanRequests)
+      next.add(planKey)
+      persistPlanMessageState(state.planModeUserMessages, state.implementedPlanRequests, next, state.planModeUserMessagesBySession)
+      return { externallyHandedOffPlanRequests: next }
+    })
+  },
+
+  clearHandedOffPlanIndicator: (sessionId, sourceMessageId) => {
+    const id = sessionId.trim()
+    const sourceId = sourceMessageId.trim()
+    if (!id || !sourceId) return
+
+    set((state) => {
+      const current = state.sessionPlanIndicator.get(id)
+      const pendingPlanMessageId = state.planModeUserMessagesBySession.get(id)
+      const isMatchingHandoff = current
+        && (current.state === "proposed" || current.state === "implementing")
+        && current.sourceMessageId === sourceId
+      const hasNewerPendingPlan = pendingPlanMessageId !== undefined && pendingPlanMessageId > sourceId
+      if (!isMatchingHandoff || hasNewerPendingPlan) return state
+
+      const sessionPlanIndicator = new Map(state.sessionPlanIndicator)
+      sessionPlanIndicator.delete(id)
+      if (!pendingPlanMessageId) {
+        return { sessionPlanIndicator }
+      }
+
+      const planModeUserMessagesBySession = new Map(state.planModeUserMessagesBySession)
+      planModeUserMessagesBySession.delete(id)
+      persistPlanMessageState(
+        state.planModeUserMessages,
+        state.implementedPlanRequests,
+        state.externallyHandedOffPlanRequests,
+        planModeUserMessagesBySession,
+      )
+      return { sessionPlanIndicator, planModeUserMessagesBySession }
     })
   },
 
@@ -3125,6 +3216,10 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         state.implementedPlanRequests,
         (planKey) => planKey.startsWith(`${id}:`),
       )
+      const externallyHandedOffPlanRequests = deleteSetMatches(
+        state.externallyHandedOffPlanRequests,
+        (planKey) => planKey.startsWith(`${id}:`),
+      )
       const starterAssistantMessages = deleteMapKey(state.starterAssistantMessages, id)
       const pendingChangesBarDismissed = deleteMapKey(state.pendingChangesBarDismissed, id)
       const clearsAbortPrompt = state.abortPromptSessionId === id
@@ -3132,10 +3227,16 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         planModeUserMessages !== state.planModeUserMessages
         || planModeUserMessagesBySession !== state.planModeUserMessagesBySession
         || implementedPlanRequests !== state.implementedPlanRequests
+        || externallyHandedOffPlanRequests !== state.externallyHandedOffPlanRequests
       )
 
       if (planStateChanged) {
-        persistPlanMessageState(planModeUserMessages, implementedPlanRequests, planModeUserMessagesBySession)
+        persistPlanMessageState(
+          planModeUserMessages,
+          implementedPlanRequests,
+          externallyHandedOffPlanRequests,
+          planModeUserMessagesBySession,
+        )
       }
 
       const changed = (
@@ -3166,6 +3267,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         ...(planModeUserMessages !== state.planModeUserMessages ? { planModeUserMessages } : {}),
         ...(planModeUserMessagesBySession !== state.planModeUserMessagesBySession ? { planModeUserMessagesBySession } : {}),
         ...(implementedPlanRequests !== state.implementedPlanRequests ? { implementedPlanRequests } : {}),
+        ...(externallyHandedOffPlanRequests !== state.externallyHandedOffPlanRequests ? { externallyHandedOffPlanRequests } : {}),
         ...(starterAssistantMessages !== state.starterAssistantMessages ? { starterAssistantMessages } : {}),
         ...(pendingChangesBarDismissed !== state.pendingChangesBarDismissed ? { pendingChangesBarDismissed } : {}),
         ...(clearsAbortPrompt ? { abortPromptSessionId: null, abortPromptExpiresAt: null } : {}),
@@ -3241,7 +3343,12 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       }
       const nextAvailable = new Map(state.sessionPlanAvailable)
       nextAvailable.set(sessionId, true)
-      persistPlanMessageState(state.planModeUserMessages, nextRequests, state.planModeUserMessagesBySession)
+      persistPlanMessageState(
+        state.planModeUserMessages,
+        nextRequests,
+        state.externallyHandedOffPlanRequests,
+        state.planModeUserMessagesBySession,
+      )
       return {
         implementedPlanRequests: nextRequests,
         sessionPlanIndicator: nextIndicator,

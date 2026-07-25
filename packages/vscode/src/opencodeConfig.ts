@@ -27,6 +27,8 @@ const MCP_RECOVERY_MANIFEST_PATH = path.join(OPENCODE_CONFIG_DIR, '.openchamber'
 const RUNTIME_AGENT_OVERLAY_ROOT = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'runtime-agent-overlays');
 const RUNTIME_AGENT_OVERLAY_MANIFEST_PATH = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'runtime-agent-overlays-vscode.json');
 const DEFAULT_OPENAI_HEADER_TIMEOUT_MS = 60_000;
+const DEFAULT_OPENAI_CHUNK_TIMEOUT_MS = 120_000;
+const DEFAULT_OPENAI_REQUEST_TIMEOUT_MS = 600_000;
 const CUSTOM_CONFIG_FILE = process.env.OPENCODE_CONFIG
   ? path.resolve(process.env.OPENCODE_CONFIG)
   : null;
@@ -2224,7 +2226,7 @@ const buildBlockedManagedRuntimeMcpOverlay = (workingDirectory?: string): Record
   return Object.keys(mcp).length > 0 ? { mcp } : null;
 };
 
-const buildOpenAIHeaderTimeoutOverlay = (activeConfig: Record<string, unknown>): Record<string, unknown> | null => {
+const buildOpenAITimeoutOverlay = (activeConfig: Record<string, unknown>): Record<string, unknown> | null => {
   const providers = isPlainObject(activeConfig.provider)
     ? activeConfig.provider as Record<string, unknown>
     : {};
@@ -2252,11 +2254,17 @@ const buildOpenAIHeaderTimeoutOverlay = (activeConfig: Record<string, unknown>):
   const headerTimeout = Object.prototype.hasOwnProperty.call(providerOptions, 'headerTimeout')
     ? providerOptions.headerTimeout
     : DEFAULT_OPENAI_HEADER_TIMEOUT_MS;
+  const chunkTimeout = Object.prototype.hasOwnProperty.call(providerOptions, 'chunkTimeout')
+    ? providerOptions.chunkTimeout
+    : DEFAULT_OPENAI_CHUNK_TIMEOUT_MS;
+  const timeout = Object.prototype.hasOwnProperty.call(providerOptions, 'timeout')
+    ? providerOptions.timeout
+    : DEFAULT_OPENAI_REQUEST_TIMEOUT_MS;
 
   return {
     provider: {
       openai: {
-        options: { headerTimeout },
+        options: { headerTimeout, chunkTimeout, timeout },
       },
     },
   };
@@ -2287,9 +2295,9 @@ const buildRuntimeConfigOverlay = (workingDirectory?: string, packagedPluginSpec
   if (plugin.length > 0) {
     overlay.plugin = plugin;
   }
-  const openAIHeaderTimeoutOverlay = buildOpenAIHeaderTimeoutOverlay(activeConfig);
-  if (openAIHeaderTimeoutOverlay) {
-    Object.assign(overlay, openAIHeaderTimeoutOverlay);
+  const openAITimeoutOverlay = buildOpenAITimeoutOverlay(activeConfig);
+  if (openAITimeoutOverlay) {
+    Object.assign(overlay, openAITimeoutOverlay);
   }
   return Object.keys(overlay).length > 0 ? overlay : null;
 };

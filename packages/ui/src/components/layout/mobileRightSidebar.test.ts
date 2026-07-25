@@ -32,3 +32,19 @@ describe('mobile right sidebar layout', () => {
         expect(mobileRightDrawer).not.toContain('<GitView />');
     });
 });
+
+describe('mobile left sidebar gestures', () => {
+    test('starts drawer dragging manually outside locked session rows', () => {
+        const source = readSource('MainLayout.tsx');
+        const mobileLeftDrawer = source.slice(
+            source.indexOf('Left drawer (Session)'),
+            source.indexOf('Right drawer (Source / Files)'),
+        );
+
+        expect(source).toContain("target.closest('[data-mobile-drawer-drag-lock]')");
+        expect(source).toContain('leftDrawerDragControls.start(event)');
+        expect(mobileLeftDrawer).toContain('dragControls={leftDrawerDragControls}');
+        expect(mobileLeftDrawer).toContain('dragListener={false}');
+        expect(mobileLeftDrawer).toContain('onPointerDown={handleLeftDrawerPointerDown}');
+    });
+});

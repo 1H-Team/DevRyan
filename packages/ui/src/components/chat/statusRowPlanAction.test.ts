@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import { getStatusRowPlanActionState, hasPlanTaskTrackingContext } from './statusRowPlanAction';
+import {
+  getPlanAutoRevealTarget,
+  getStatusRowPlanActionState,
+  hasPlanTaskTrackingContext,
+  shouldAutoRevealPlanInMainTab,
+} from './statusRowPlanAction';
 
 describe('getStatusRowPlanActionState', () => {
   test('shows the composer action without tasks and enables it only after save', () => {
@@ -53,5 +58,77 @@ describe('getStatusRowPlanActionState', () => {
       isPlanAvailable: false,
       record: { sourceMessageId: 'msg-1', path: null, status: 'saving', error: null },
     })).toBe(false);
+  });
+
+  test('auto-reveals only the current saved actionable plan revision', () => {
+    const record = {
+      sourceMessageId: 'msg-plan-2',
+      path: '/plans/plan-2.md',
+      status: 'saved' as const,
+      error: null,
+    };
+
+    expect(getPlanAutoRevealTarget({
+      sessionId: 'session-a',
+      isPlanAvailable: true,
+      planIndicator: { state: 'proposed', sourceMessageId: 'msg-plan-2' },
+      isPlanSourceImplemented: false,
+      record,
+    })).toEqual({
+      sessionId: 'session-a',
+      sourceMessageId: 'msg-plan-2',
+      path: '/plans/plan-2.md',
+    });
+
+    expect(getPlanAutoRevealTarget({
+      sessionId: 'session-a',
+      isPlanAvailable: true,
+      planIndicator: { state: 'proposed', sourceMessageId: 'msg-plan-1' },
+      isPlanSourceImplemented: false,
+      record,
+    })).toBeNull();
+    expect(getPlanAutoRevealTarget({
+      sessionId: 'session-a',
+      isPlanAvailable: true,
+      planIndicator: { state: 'implementing', sourceMessageId: 'msg-plan-2' },
+      isPlanSourceImplemented: true,
+      record,
+    })).toBeNull();
+  });
+
+  test('does not reopen an auto-revealed revision or reveal an unsaved revision', () => {
+    expect(getPlanAutoRevealTarget({
+      sessionId: 'session-a',
+      isPlanAvailable: true,
+      planIndicator: { state: 'proposed', sourceMessageId: 'msg-plan-2' },
+      isPlanSourceImplemented: false,
+      record: {
+        sourceMessageId: 'msg-plan-2',
+        path: '/plans/plan-2.md',
+        status: 'saved',
+        error: null,
+        autoRevealed: true,
+      },
+    })).toBeNull();
+    expect(getPlanAutoRevealTarget({
+      sessionId: 'session-a',
+      isPlanAvailable: true,
+      planIndicator: { state: 'proposed', sourceMessageId: 'msg-plan-2' },
+      isPlanSourceImplemented: false,
+      record: {
+        sourceMessageId: 'msg-plan-2',
+        path: null,
+        status: 'saving',
+        error: null,
+      },
+    })).toBeNull();
+  });
+});
+
+describe('shouldAutoRevealPlanInMainTab', () => {
+  test('keeps desktop plan opening manual while preserving compact-runtime navigation', () => {
+    expect(shouldAutoRevealPlanInMainTab({ isMobile: false, isVSCode: false })).toBe(false);
+    expect(shouldAutoRevealPlanInMainTab({ isMobile: true, isVSCode: false })).toBe(true);
+    expect(shouldAutoRevealPlanInMainTab({ isMobile: false, isVSCode: true })).toBe(true);
   });
 });

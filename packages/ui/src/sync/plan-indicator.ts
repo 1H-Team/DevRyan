@@ -12,18 +12,34 @@ export const getPlanIndicatorTone = (state: PlanIndicatorState): PlanIndicatorTo
   return state === "completed" ? "success" : "warning"
 }
 
-const PLAN_INDICATOR_RANK: Record<PlanIndicatorState, number> = {
-  proposed: 0,
-  implementing: 1,
-  completed: 2,
-}
-
 const compareSourceMessageIds = (left?: string, right?: string): number => {
   if (!left || !right || left === right) return 0
   // Message ids are generated as sortable ids in the sync layer; use lexical
   // ordering only to prevent older rendered plan blocks from clobbering newer
   // plan lifecycle state.
   return left < right ? -1 : 1
+}
+
+export const resolveEffectivePlanIndicatorState = (
+  entry: PlanIndicatorEntry | undefined,
+  latestPlanModeUserMessageId?: string,
+): PlanIndicatorState | null => {
+  if (!entry) return null
+  if (entry.state !== "proposed") return entry.state
+  if (!entry.sourceMessageId || !latestPlanModeUserMessageId) return entry.state
+
+  // Plan-mode message ids and assistant source ids share the same sortable
+  // identity format. A later plan-mode turn makes the current proposal
+  // non-actionable immediately, before its replacement plan has completed.
+  return compareSourceMessageIds(latestPlanModeUserMessageId, entry.sourceMessageId) > 0
+    ? null
+    : entry.state
+}
+
+const PLAN_INDICATOR_RANK: Record<PlanIndicatorState, number> = {
+  proposed: 0,
+  implementing: 1,
+  completed: 2,
 }
 
 const createPlanIndicatorEntry = (

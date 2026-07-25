@@ -24,6 +24,18 @@ describe("resolveModelContextCapacity", () => {
     })
   })
 
+  test("uses context when an internal compaction input threshold exceeds it", () => {
+    expect(resolveModelContextCapacity({
+      limit: { input: 264_800, context: 258_400, output: 128_000 },
+    })).toEqual({
+      capacityLimit: 258_400,
+      capacityBasis: "context",
+      inputLimit: 264_800,
+      contextLimit: 258_400,
+      outputLimit: 128_000,
+    })
+  })
+
   test("keeps invalid and absent limits explicitly unavailable", () => {
     expect(resolveModelContextCapacity({
       limit: { input: Number.NaN, context: -1, output: Number.POSITIVE_INFINITY },

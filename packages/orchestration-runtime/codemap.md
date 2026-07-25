@@ -15,11 +15,11 @@ Transport-neutral DevRyan-managed task contracts and scheduler policy shared by 
 
 - `index.js` / `index.d.ts`: runtime exports and JSON-compatible TypeScript contract.
 - `contract.js`: task validation, bounds, status helpers, safe task projection, and identity-only compaction removal projection.
-- `open-code-executor.js`: injected canonical child create/prompt/observe/abort/delete/reconcile state machine, including lease-ownership checkpoints, stale fresh-child cleanup, live provider-retry observation, transient polling recovery, retained interruption output, and same-child manual model continuation.
+- `open-code-executor.js`: injected canonical child create/prompt/observe/abort/delete/reconcile state machine, including lease-ownership checkpoints, stale fresh-child cleanup, live provider-retry observation, transient polling and reconciliation recovery, retained interruption output, and same-child manual model continuation.
 - `provider-prompt-tools.js`: shared minimal provider-specific tool-surface overrides used by normal UI prompts and managed child prompts.
 - `provider-retry-policy.js`: narrow shared classifier that distinguishes definite usage/quota exhaustion from transient provider rate limits.
 - `transitions.js`: immutable terminal records and the explicit lifecycle graph.
-- `scheduler.js`: serialized immediate admission without an artificial concurrency cap, boolean child/acceptance lease checkpoints, mode ownership, terminal or bounded-slice task waits, dispatch-group barriers, explicit Orchestrator-to-Builder cleanup handoff, cancellation, execution timeouts, result actions, and restart reconciliation.
+- `scheduler.js`: serialized immediate admission without an artificial concurrency cap, boolean child/acceptance lease checkpoints, mode ownership, terminal or bounded-slice task waits, dispatch-group barriers, explicit Orchestrator-to-Builder cleanup handoff, cancellation, execution timeouts, result actions, and deadline-bounded same-child restart reconciliation retries.
 - `result-envelope.js`: idempotent terminal handoff records for the parent orchestrator.
 - `persistence.js`: count/age/UTF-8 byte compaction that protects live work, unacknowledged grouped results, and attempt lineage.
 - `*.test.js`: dependency-free Bun contract and scheduler conformance tests.

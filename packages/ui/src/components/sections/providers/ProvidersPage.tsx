@@ -15,7 +15,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { toast } from '@/components/ui';
-import { RiStackLine, RiToolsLine, RiBrainAi3Line, RiFileImageLine, RiArrowDownSLine, RiCheckLine, RiSearchLine, RiInformationLine, RiEyeLine, RiEyeOffLine } from '@remixicon/react';
+import { RiStackLine, RiToolsLine, RiBrainAi3Line, RiFileImageLine, RiArrowDownSLine, RiCheckLine, RiSearchLine, RiInformationLine, RiEyeLine, RiEyeOffLine, RiErrorWarningLine, RiLoader4Line } from '@remixicon/react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
 import { cn } from '@/lib/utils';
@@ -30,6 +30,14 @@ import {
 } from '@/lib/providers/modelVisibility';
 import { parseProvidersPayload, type ProviderOption } from './providerOptions';
 import { getProviderModelsForDisplay } from './providerSorting';
+import {
+  getProviderOAuthErrorMessage,
+  parseProviderOAuthAuthorization,
+  providerCatalogHasModels,
+  requestProviderOAuthCallback,
+  type ProviderOAuthAuthorization,
+  type ProviderOAuthMethod,
+} from './providerOAuth';
 import {
   ManagedQuotaCredentials,
   type ManagedQuotaProviderId,
@@ -90,6 +98,18 @@ interface CursorAcpRuntimeStatus {
     kind?: string;
   };
 }
+
+type ProviderOAuthPhase = 'waiting' | 'loading-models' | 'error';
+
+interface PendingProviderOAuth {
+  providerId: string;
+  methodIndex: number;
+  method: ProviderOAuthMethod;
+  phase: ProviderOAuthPhase;
+  error?: string;
+}
+
+const PROVIDER_CATALOG_RETRY_DELAYS_MS = [0, 250, 500, 750, 1000] as const;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -164,9 +184,9 @@ export const ProvidersPage: React.FC = () => {
   const [apiKeyInputs, setApiKeyInputs] = React.useState<Record<string, string>>({});
   const [authBusyKey, setAuthBusyKey] = React.useState<string | null>(null);
   const [modelQuery, setModelQuery] = React.useState('');
-  const [pendingOAuth, setPendingOAuth] = React.useState<{ providerId: string; methodIndex: number } | null>(null);
+  const [pendingOAuth, setPendingOAuth] = React.useState<PendingProviderOAuth | null>(null);
   const [oauthCodes, setOauthCodes] = React.useState<Record<string, string>>({});
-  const [oauthDetails, setOauthDetails] = React.useState<Record<string, { url?: string; instructions?: string; userCode?: string }>>({});
+  const [oauthDetails, setOauthDetails] = React.useState<Record<string, ProviderOAuthAuthorization>>({});
   const [availableProviders, setAvailableProviders] = React.useState<ProviderOption[]>([]);
   const [availableLoading, setAvailableLoading] = React.useState(false);
   const [availableError, setAvailableError] = React.useState<string | null>(null);
@@ -450,6 +470,38 @@ export const ProvidersPage: React.FC = () => {
     };
   }, [authMethodsByProvider]);
 
+  const waitForProviderCatalog = React.useCallback(async (providerId: string) => {
+    const activeDirectory = currentDirectory?.trim() || null;
+    const directories = activeDirectory ? [null, activeDirectory] : [null];
+
+    for (const delayMs of PROVIDER_CATALOG_RETRY_DELAYS_MS) {
+      if (delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+
+      await Promise.all(directories.map((directory) => loadProviders({ directory })));
+      const state = useConfigStore.getState();
+      const globalProviders = state.directoryScoped.__global__?.providers
+        ?? (activeDirectory ? [] : state.providers);
+      const globalReady = providerCatalogHasModels(globalProviders, providerId);
+      const activeReady = !activeDirectory || providerCatalogHasModels(state.providers, providerId);
+      if (globalReady && activeReady) return true;
+    }
+
+    return false;
+  }, [currentDirectory, loadProviders]);
+
+  const finalizeProviderConnection = React.useCallback(async (providerId: string) => {
+    await reloadOpenCodeConfiguration({ scopes: ['providers'], mode: 'active' });
+    const providerReady = await waitForProviderCatalog(providerId);
+    if (!providerReady) {
+      throw new Error(t('settings.providers.page.auth.modelsNotReady', { provider: providerId }));
+    }
+
+    setSelectedProvider(providerId);
+    quotaRefreshCoordinator.settingsChanged();
+  }, [setSelectedProvider, t, waitForProviderCatalog]);
+
   const handleSaveApiKey = async (providerId: string) => {
     const apiKey = apiKeyInputs[providerId]?.trim() ?? '';
     if (!apiKey) {
@@ -475,7 +527,7 @@ export const ProvidersPage: React.FC = () => {
 
       toast.success(t('settings.providers.page.toast.apiKeySaved'));
       setApiKeyInputs((prev) => ({ ...prev, [providerId]: '' }));
-      await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
+      await reloadOpenCodeConfiguration({ scopes: ['providers'], mode: 'active' });
       await loadProviders({ directory: null });
       setSelectedProvider(providerId);
       if (providerId === CURSOR_ACP_PROVIDER_ID) {
@@ -485,6 +537,51 @@ export const ProvidersPage: React.FC = () => {
     } catch (error) {
       console.error('Failed to save API key:', error);
       toast.error(t('settings.providers.page.toast.apiKeySaveFailed'));
+    } finally {
+      setAuthBusyKey(null);
+    }
+  };
+
+  const completeOAuthConnection = async (
+    providerId: string,
+    methodIndex: number,
+    code?: string,
+  ) => {
+    const codeKey = `${providerId}:${methodIndex}`;
+    const busyKey = `oauth-complete:${providerId}:${methodIndex}`;
+    setAuthBusyKey(busyKey);
+
+    try {
+      const target = resolveAuthMethodTarget(providerId, methodIndex);
+      await requestProviderOAuthCallback({
+        providerId: target.providerId,
+        methodIndex: target.methodIndex,
+        code,
+        fallbackError: t('settings.providers.page.toast.oauthCompleteFailed'),
+      });
+
+      setPendingOAuth((current) => current?.providerId === providerId && current.methodIndex === methodIndex
+        ? { ...current, phase: 'loading-models', error: undefined }
+        : current);
+      await finalizeProviderConnection(providerId);
+
+      setOauthCodes((prev) => ({ ...prev, [codeKey]: '' }));
+      setOauthDetails((prev) => {
+        const next = { ...prev };
+        delete next[codeKey];
+        return next;
+      });
+      setPendingOAuth(null);
+      toast.success(t('settings.providers.page.toast.oauthCompleted'));
+    } catch (error) {
+      const message = error instanceof Error
+        ? error.message
+        : t('settings.providers.page.toast.oauthCompleteFailed');
+      console.error('Failed to complete OAuth flow:', error);
+      setPendingOAuth((current) => current?.providerId === providerId && current.methodIndex === methodIndex
+        ? { ...current, phase: 'error', error: message }
+        : current);
+      toast.error(t('settings.providers.page.toast.oauthCompleteFailed'));
     } finally {
       setAuthBusyKey(null);
     }
@@ -504,46 +601,38 @@ export const ProvidersPage: React.FC = () => {
 
       const payload = await response.json().catch(() => null);
       if (!response.ok) {
-        const message = payload?.error || t('settings.providers.page.toast.oauthStartFailed');
+        const message = getProviderOAuthErrorMessage(
+          payload,
+          t('settings.providers.page.toast.oauthStartFailed'),
+        );
         throw new Error(message);
       }
 
-      const payloadRecord = isRecord(payload) ? payload : {};
-      const dataRecord = isRecord(payloadRecord.data) ? payloadRecord.data : payloadRecord;
-      const urlCandidate =
-        (typeof dataRecord.url === 'string' && dataRecord.url) ||
-        (typeof dataRecord.verification_uri_complete === 'string' && dataRecord.verification_uri_complete) ||
-        (typeof dataRecord.verification_uri === 'string' && dataRecord.verification_uri) ||
-        undefined;
-      const instructions =
-        (typeof dataRecord.instructions === 'string' && dataRecord.instructions) ||
-        (typeof dataRecord.message === 'string' && dataRecord.message) ||
-        undefined;
-      const userCode =
-        (typeof dataRecord.user_code === 'string' && dataRecord.user_code) ||
-        (typeof dataRecord.code === 'string' && dataRecord.code) ||
-        (typeof dataRecord.userCode === 'string' && dataRecord.userCode) ||
-        undefined;
-
-      if (!urlCandidate && !instructions && !userCode) {
+      const authorization = parseProviderOAuthAuthorization(payload);
+      if (!authorization) {
         throw new Error(t('settings.providers.page.toast.oauthDetailsMissing'));
       }
 
       const detailsKey = `${providerId}:${methodIndex}`;
       setOauthDetails((prev) => ({
         ...prev,
-        [detailsKey]: {
-          url: urlCandidate,
-          instructions,
-          userCode,
-        },
+        [detailsKey]: authorization,
       }));
 
-      if (urlCandidate) {
-        void openExternalUrl(urlCandidate);
+      setPendingOAuth({
+        providerId,
+        methodIndex,
+        method: authorization.method,
+        phase: 'waiting',
+      });
+      if (authorization.url) {
+        void openExternalUrl(authorization.url);
       }
-      setPendingOAuth({ providerId, methodIndex });
       toast.message(t('settings.providers.page.toast.completeOAuthInBrowser'));
+
+      if (authorization.method === 'auto') {
+        await completeOAuthConnection(providerId, methodIndex);
+      }
     } catch (error) {
       console.error('Failed to start OAuth flow:', error);
       toast.error(t('settings.providers.page.toast.oauthStartFailed'));
@@ -555,42 +644,12 @@ export const ProvidersPage: React.FC = () => {
   const handleOAuthComplete = async (providerId: string, methodIndex: number) => {
     const codeKey = `${providerId}:${methodIndex}`;
     const code = oauthCodes[codeKey]?.trim();
-
-    const busyKey = `oauth-complete:${providerId}:${methodIndex}`;
-    setAuthBusyKey(busyKey);
-
-    try {
-      const target = resolveAuthMethodTarget(providerId, methodIndex);
-      const requestBody: { method: number; code?: string } = { method: target.methodIndex };
-      if (code) {
-        requestBody.code = code;
-      }
-
-      const response = await fetch(`/api/provider/${encodeURIComponent(target.providerId)}/oauth/callback`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
-      });
-
-      const responsePayload = await response.json().catch(() => null);
-      if (!response.ok) {
-        const message = responsePayload?.error || t('settings.providers.page.toast.oauthCompleteFailed');
-        throw new Error(message);
-      }
-
-      toast.success(t('settings.providers.page.toast.oauthCompleted'));
-      setOauthCodes((prev) => ({ ...prev, [codeKey]: '' }));
-      setPendingOAuth(null);
-      await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
-      await loadProviders({ directory: null });
-      setSelectedProvider(providerId);
-      quotaRefreshCoordinator.settingsChanged();
-    } catch (error) {
-      console.error('Failed to complete OAuth flow:', error);
-      toast.error(t('settings.providers.page.toast.oauthCompleteFailed'));
-    } finally {
-      setAuthBusyKey(null);
+    if (!code) {
+      toast.error(t('settings.providers.page.toast.oauthCodeRequired'));
+      return;
     }
+
+    await completeOAuthConnection(providerId, methodIndex, code);
   };
 
   const handleCopyOAuthLink = async (url: string) => {
@@ -611,6 +670,52 @@ export const ProvidersPage: React.FC = () => {
     }
     console.error('Failed to copy device code:', result.error);
     toast.error(t('settings.providers.page.toast.deviceCodeCopyFailed'));
+  };
+
+  const renderOAuthAttemptStatus = (providerId: string, methodIndex: number) => {
+    if (
+      pendingOAuth?.providerId !== providerId
+      || pendingOAuth.methodIndex !== methodIndex
+      || (pendingOAuth.method === 'code' && pendingOAuth.phase === 'waiting')
+    ) {
+      return null;
+    }
+
+    const isError = pendingOAuth.phase === 'error';
+    const title = pendingOAuth.phase === 'waiting'
+      ? t('settings.providers.page.auth.oauthWaitingTitle')
+      : pendingOAuth.phase === 'loading-models'
+        ? t('settings.providers.page.auth.oauthLoadingModelsTitle')
+        : t('settings.providers.page.auth.oauthErrorTitle');
+    const description = pendingOAuth.phase === 'waiting'
+      ? t('settings.providers.page.auth.oauthWaitingDescription')
+      : pendingOAuth.phase === 'loading-models'
+        ? t('settings.providers.page.auth.oauthLoadingModelsDescription')
+        : pendingOAuth.error || t('settings.providers.page.toast.oauthCompleteFailed');
+
+    return (
+      <div
+        role={isError ? 'alert' : 'status'}
+        aria-live="polite"
+        className={cn(
+          'flex items-start gap-2.5 rounded-md border px-3 py-2',
+          isError
+            ? 'border-[var(--status-error-border)] bg-[var(--status-error-background)] text-[var(--status-error)]'
+            : 'border-[color-mix(in_srgb,var(--primary-base)_22%,transparent)] bg-[color-mix(in_srgb,var(--primary-base)_7%,transparent)] text-foreground',
+        )}
+      >
+        {isError
+          ? <RiErrorWarningLine className="mt-0.5 h-4 w-4 shrink-0" />
+          : <RiLoader4Line className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-[var(--primary-base)]" />}
+        <div className="min-w-0">
+          <p className="typography-ui-label font-medium">{title}</p>
+          <p className={cn('typography-meta break-words', isError ? 'text-inherit/80' : 'text-muted-foreground')}>
+            {description}
+            {isError ? ` ${t('settings.providers.page.auth.oauthRetryHint')}` : ''}
+          </p>
+        </div>
+      </div>
+    );
   };
 
   const runCommandInTerminal = async ({
@@ -1113,8 +1218,11 @@ export const ProvidersPage: React.FC = () => {
                         {candidateOAuthMethods.map((method, index) => {
                           const methodLabel = method.label || method.name || t('settings.providers.page.auth.oauthMethodFallback', { index: String(index + 1) });
                           const codeKey = `${candidateProviderId}:${index}`;
-                          const isPending =
-                            pendingOAuth?.providerId === candidateProviderId && pendingOAuth?.methodIndex === index;
+                          const activeAttempt = pendingOAuth?.providerId === candidateProviderId
+                            && pendingOAuth.methodIndex === index
+                            ? pendingOAuth
+                            : null;
+                          const isAttemptInProgress = activeAttempt && activeAttempt.phase !== 'error';
 
                           return (
                             <div key={`${candidateProviderId}-${methodLabel}`} className="space-y-3">
@@ -1132,9 +1240,11 @@ export const ProvidersPage: React.FC = () => {
                                   size="xs"
                                   className="!font-normal"
                                   onClick={() => handleOAuthStart(candidateProviderId, index)}
-                                  disabled={authBusyKey === `oauth:${candidateProviderId}:${index}`}
+                                  disabled={authBusyKey !== null || Boolean(isAttemptInProgress)}
                                 >
-                                  {t('settings.providers.page.actions.connect')}
+                                  {activeAttempt?.phase === 'error'
+                                    ? t('settings.providers.page.actions.retry')
+                                    : t('settings.providers.page.actions.connect')}
                                 </Button>
                               </div>
 
@@ -1161,7 +1271,9 @@ export const ProvidersPage: React.FC = () => {
                                 </div>
                               )}
 
-                              {isPending && (
+                              {renderOAuthAttemptStatus(candidateProviderId, index)}
+
+                              {activeAttempt?.method === 'code' && activeAttempt.phase === 'waiting' && (
                                 <div className="flex items-center gap-2 mt-2">
                                   <Input
                                     value={oauthCodes[codeKey] ?? ''}
@@ -1347,8 +1459,11 @@ export const ProvidersPage: React.FC = () => {
                     {visibleOAuthAuthMethods.map((method, index) => {
                       const methodLabel = method.label || method.name || t('settings.providers.page.auth.oauthMethodFallback', { index: String(index + 1) });
                       const codeKey = `${selectedProvider.id}:${index}`;
-                      const isPending =
-                        pendingOAuth?.providerId === selectedProvider.id && pendingOAuth?.methodIndex === index;
+                      const activeAttempt = pendingOAuth?.providerId === selectedProvider.id
+                        && pendingOAuth.methodIndex === index
+                        ? pendingOAuth
+                        : null;
+                      const isAttemptInProgress = activeAttempt && activeAttempt.phase !== 'error';
 
                       return (
                         <div key={`${selectedProvider.id}-${methodLabel}`} className="space-y-3">
@@ -1366,9 +1481,11 @@ export const ProvidersPage: React.FC = () => {
                               size="xs"
                               className="!font-normal"
                               onClick={() => handleOAuthStart(selectedProvider.id, index)}
-                              disabled={authBusyKey === `oauth:${selectedProvider.id}:${index}`}
+                              disabled={authBusyKey !== null || Boolean(isAttemptInProgress)}
                             >
-                              {t('settings.providers.page.actions.connect')}
+                              {activeAttempt?.phase === 'error'
+                                ? t('settings.providers.page.actions.retry')
+                                : t('settings.providers.page.actions.connect')}
                             </Button>
                           </div>
 
@@ -1395,7 +1512,9 @@ export const ProvidersPage: React.FC = () => {
                             </div>
                           )}
 
-                          {isPending && (
+                          {renderOAuthAttemptStatus(selectedProvider.id, index)}
+
+                          {activeAttempt?.method === 'code' && activeAttempt.phase === 'waiting' && (
                             <div className="flex items-center gap-2 mt-2">
                               <Input
                                 value={oauthCodes[codeKey] ?? ''}

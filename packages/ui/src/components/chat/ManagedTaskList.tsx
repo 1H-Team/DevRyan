@@ -1,16 +1,21 @@
 import React from 'react';
-import { RiAiAgentLine, RiGitBranchLine, RiRefreshLine } from '@remixicon/react';
+import { RiAiAgentLine, RiExternalLinkLine, RiGitBranchLine, RiRefreshLine } from '@remixicon/react';
 import { formatManagedTaskDisplayName } from '@openchamber/orchestration-runtime';
 
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/i18n';
 import { getAgentIconColor } from '@/lib/agentColors';
+import { cn } from '@/lib/utils';
 import {
   managedOrchestrationSelectors,
   useManagedOrchestrationStore,
 } from '@/stores/useManagedOrchestrationStore';
+import { useSessionUIStore } from '@/sync/session-ui-store';
 import { ManagedTaskRow } from './ManagedTaskRow';
-import type { PendingManagedTaskDispatch } from './managedTaskDispatch';
+import type {
+  ManagedTaskDispatchFallback,
+  PendingManagedTaskDispatch,
+} from './managedTaskDispatch';
 import { formatAgentLabel } from './mobileControlsUtils';
 import {
   collapseManagedTaskLineages,
@@ -20,6 +25,7 @@ import {
 } from './managedTaskListWindow';
 
 const EMPTY_PENDING_DISPATCHES: readonly PendingManagedTaskDispatch[] = [];
+const EMPTY_FALLBACK_TASKS: readonly ManagedTaskDispatchFallback[] = [];
 
 export const ManagedTaskPreparingRow = React.memo(({
   dispatch,
@@ -31,12 +37,27 @@ export const ManagedTaskPreparingRow = React.memo(({
     <article data-managed-task-pending-id={dispatch.partId}>
       <div className="flex min-w-0 items-center gap-3 px-3 py-2.5">
         <div className="min-w-0 flex-1">
-          <h4 className="truncate typography-ui-label font-medium text-foreground">
+          <h4 className="line-clamp-2 break-words typography-ui-label font-medium text-foreground sm:line-clamp-1">
             {formatManagedTaskDisplayName(dispatch.label)}
           </h4>
-          <p role="status" className="truncate typography-meta text-muted-foreground">
-            {t('chat.managedTasks.summary.preparing')}
+          <p
+            role={dispatch.status === 'error' ? 'alert' : 'status'}
+            className={cn(
+              'typography-meta',
+              dispatch.status === 'error'
+                ? 'text-[var(--status-error)]'
+                : 'truncate text-muted-foreground',
+            )}
+          >
+            {dispatch.status === 'error'
+              ? t('chat.managedTasks.summary.startError')
+              : t('chat.managedTasks.summary.preparing')}
           </p>
+          {dispatch.status === 'error' && dispatch.errorMessage ? (
+            <p className="mt-1 line-clamp-2 break-words typography-micro text-muted-foreground">
+              {dispatch.errorMessage}
+            </p>
+          ) : null}
         </div>
       </div>
     </article>
@@ -45,16 +66,66 @@ export const ManagedTaskPreparingRow = React.memo(({
 
 ManagedTaskPreparingRow.displayName = 'ManagedTaskPreparingRow';
 
+const ManagedTaskFallbackRow = React.memo(({
+  task,
+}: {
+  task: ManagedTaskDispatchFallback;
+}) => {
+  const { t } = useI18n();
+  const status = task.status === 'completed'
+    ? { label: t('chat.managedTasks.summary.complete'), className: 'text-[var(--status-success)]' }
+    : task.status === 'failed' || task.status === 'aborted' || task.status === 'interrupted'
+      ? { label: t('chat.managedTasks.summary.error'), className: 'text-[var(--status-error)]' }
+      : task.status === 'queued'
+        ? { label: t('chat.managedTasks.summary.queued'), className: 'text-muted-foreground' }
+        : task.status === 'starting'
+          ? { label: t('chat.managedTasks.summary.preparing'), className: 'text-muted-foreground' }
+          : { label: t('chat.managedTasks.summary.running'), className: 'text-muted-foreground' };
+  return (
+    <article data-managed-task-fallback-id={task.taskId}>
+      <div className="flex min-w-0 flex-col items-start gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3">
+        <div className="min-w-0 flex-1">
+          <h4 className="line-clamp-2 break-words typography-ui-label font-medium text-foreground sm:line-clamp-1">
+            {formatManagedTaskDisplayName(task.label)}
+          </h4>
+          <p className={`truncate typography-meta ${status.className}`}>{status.label}</p>
+        </div>
+        {task.childSessionId ? (
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            className="self-start w-auto min-h-[36px] min-w-[36px] gap-1 px-1 normal-case text-[var(--primary-base)] hover:text-[var(--primary-base)] sm:self-auto sm:w-auto sm:min-h-9 sm:min-w-9 sm:px-1.5"
+            onClick={() => useSessionUIStore.getState().setCurrentSession(
+              task.childSessionId,
+              task.directory,
+            )}
+          >
+            <RiExternalLinkLine className="hidden size-3 sm:block" />
+            {t('chat.managedTasks.child.open')}
+          </Button>
+        ) : null}
+      </div>
+    </article>
+  );
+});
+
+ManagedTaskFallbackRow.displayName = 'ManagedTaskFallbackRow';
+
 export const ManagedTaskList = React.memo(({
   rootSessionId,
   taskIds: explicitTaskIds,
   pendingDispatches = EMPTY_PENDING_DISPATCHES,
+  fallbackTasks = EMPTY_FALLBACK_TASKS,
   onContentChange,
+  isMobile = false,
 }: {
   rootSessionId?: string;
   taskIds?: readonly string[];
   pendingDispatches?: readonly PendingManagedTaskDispatch[];
+  fallbackTasks?: readonly ManagedTaskDispatchFallback[];
   onContentChange?: () => void;
+  isMobile?: boolean;
 }) => {
   const { t } = useI18n();
   const rootTaskIds = useManagedOrchestrationStore(React.useMemo(
@@ -68,6 +139,10 @@ export const ManagedTaskList = React.memo(({
       (taskId) => useManagedOrchestrationStore.getState().tasksById[taskId],
     ),
     [taskIds],
+  );
+  const fallbackTasksById = React.useMemo(
+    () => new Map(fallbackTasks.map((task) => [task.taskId, task])),
+    [fallbackTasks],
   );
   const available = useManagedOrchestrationStore((state) => state.available);
   const recoveryWarning = useManagedOrchestrationStore((state) => state.recoveryWarning);
@@ -89,6 +164,7 @@ export const ManagedTaskList = React.memo(({
     const groups = new Map<string, {
       agent: string;
       taskIds: string[];
+      fallbackTasks: ManagedTaskDispatchFallback[];
       pendingDispatches: PendingManagedTaskDispatch[];
     }>();
 
@@ -96,8 +172,27 @@ export const ManagedTaskList = React.memo(({
       groups.set(group.agent.toLocaleLowerCase(), {
         agent: group.agent,
         taskIds: group.taskIds,
+        fallbackTasks: [],
         pendingDispatches: [],
       });
+    }
+
+    for (const taskId of visibleTaskIds) {
+      if (useManagedOrchestrationStore.getState().tasksById[taskId]) continue;
+      const fallback = fallbackTasksById.get(taskId);
+      if (!fallback) continue;
+      const key = fallback.agent.toLocaleLowerCase();
+      const existing = groups.get(key);
+      if (existing) {
+        existing.fallbackTasks.push(fallback);
+      } else {
+        groups.set(key, {
+          agent: fallback.agent,
+          taskIds: [],
+          fallbackTasks: [fallback],
+          pendingDispatches: [],
+        });
+      }
     }
 
     for (const dispatch of pendingDispatches) {
@@ -109,13 +204,14 @@ export const ManagedTaskList = React.memo(({
         groups.set(key, {
           agent: dispatch.agent,
           taskIds: [],
+          fallbackTasks: [],
           pendingDispatches: [dispatch],
         });
       }
     }
 
     return Array.from(groups.values());
-  }, [agentGroups, pendingDispatches]);
+  }, [agentGroups, fallbackTasksById, pendingDispatches, visibleTaskIds]);
   const showRuntimeWarnings = rootSessionId !== undefined && explicitTaskIds === undefined;
 
   React.useLayoutEffect(() => {
@@ -133,9 +229,11 @@ export const ManagedTaskList = React.memo(({
   return (
     <section
       aria-label={t('chat.managedTasks.title')}
-      className="chat-message-column px-4 pb-2 pt-3"
+      className={cn(
+        isMobile ? 'w-full px-0 pb-1 pt-1' : 'chat-message-column px-4 pb-2 pt-3',
+      )}
     >
-      <div className="overflow-hidden rounded-xl border border-[color-mix(in_srgb,var(--primary-base)_16%,var(--border))] bg-[color-mix(in_srgb,var(--primary-base)_3%,var(--surface-background))]">
+      <div data-managed-task-card="true" className="overflow-hidden rounded-xl border border-[color-mix(in_srgb,var(--primary-base)_16%,var(--border))] bg-[color-mix(in_srgb,var(--primary-base)_3%,var(--surface-background))]">
         <header className="flex items-center gap-2 border-b border-border/70 px-3 py-2">
           <RiGitBranchLine className="size-3.5 text-[var(--primary-base)]" aria-hidden="true" />
           <h3 className="typography-ui-label font-semibold text-foreground">
@@ -196,6 +294,9 @@ export const ManagedTaskList = React.memo(({
                 <div className="divide-y divide-border/60">
                   {group.taskIds.map((taskId) => (
                     <ManagedTaskRow key={taskId} taskId={taskId} onContentChange={onContentChange} />
+                  ))}
+                  {group.fallbackTasks.map((task) => (
+                    <ManagedTaskFallbackRow key={task.taskId} task={task} />
                   ))}
                   {group.pendingDispatches.map((dispatch) => (
                     <ManagedTaskPreparingRow key={dispatch.partId} dispatch={dispatch} />

@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import {
+  PLAN_IMPLEMENTATION_REQUEST_PREFIX,
+  buildPlanImplementationRequestMarker,
   isPlanModeUserMessage,
+  parsePlanImplementationRequestPart,
   resolveMessagePlanCard,
   resolvePlanCardSplit,
   splitPlanCardSentinel,
@@ -29,6 +32,55 @@ const syntheticTextPart = (text: string): Part => ({
   text,
   synthetic: true,
 } as Part)
+
+describe("plan implementation request marker", () => {
+  const marker = buildPlanImplementationRequestMarker({
+    sourceSessionId: "session-1",
+    sourceMessageId: "assistant-1",
+    planIndex: 0,
+  })
+
+  test("round-trips an exact synthetic implementation marker", () => {
+    expect(parsePlanImplementationRequestPart(syntheticTextPart(marker))).toEqual({
+      action: "implement",
+      sourceSessionId: "session-1",
+      sourceMessageId: "assistant-1",
+      planIndex: 0,
+    })
+  })
+
+  test("rejects malformed marker JSON", () => {
+    expect(parsePlanImplementationRequestPart(
+      syntheticTextPart(`${PLAN_IMPLEMENTATION_REQUEST_PREFIX}{broken`),
+    )).toBeNull()
+  })
+
+  test("rejects visible marker text", () => {
+    expect(parsePlanImplementationRequestPart({
+      ...syntheticTextPart(marker),
+      synthetic: false,
+    } as Part)).toBeNull()
+  })
+
+  test("rejects unsupported actions and invalid plan identities", () => {
+    expect(parsePlanImplementationRequestPart(syntheticTextPart(
+      `${PLAN_IMPLEMENTATION_REQUEST_PREFIX}${JSON.stringify({
+        action: "improve",
+        sourceSessionId: "session-1",
+        sourceMessageId: "assistant-1",
+        planIndex: 0,
+      })}`,
+    ))).toBeNull()
+    expect(parsePlanImplementationRequestPart(syntheticTextPart(
+      `${PLAN_IMPLEMENTATION_REQUEST_PREFIX}${JSON.stringify({
+        action: "implement",
+        sourceSessionId: "session-1",
+        sourceMessageId: "",
+        planIndex: -1,
+      })}`,
+    ))).toBeNull()
+  })
+})
 
 describe("isPlanModeUserMessage", () => {
   test("treats a recorded plan-mode user turn as a plan source", () => {

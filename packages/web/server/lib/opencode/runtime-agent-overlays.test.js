@@ -1297,7 +1297,7 @@ describe('syncRuntimeAgentOverlays', () => {
     expect(runtimeConfig.provider?.anthropic).toBeUndefined();
   });
 
-  it('adds the bounded OpenAI header timeout for OAuth auth while preserving other runtime overlays', async () => {
+  it('adds bounded OpenAI request timeouts for OAuth auth while preserving other runtime overlays', async () => {
     const result = await syncRuntimeAgentOverlays({
       workingDirectory: projectDirectory,
       packagedAgentDirectory,
@@ -1331,7 +1331,11 @@ describe('syncRuntimeAgentOverlays', () => {
       'utf8',
     ));
     expect(runtimeConfig.provider?.openai).toEqual({
-      options: { headerTimeout: 60_000 },
+      options: {
+        headerTimeout: 60_000,
+        chunkTimeout: 120_000,
+        timeout: 600_000,
+      },
     });
     expect(runtimeConfig.provider.openai.models).toBeUndefined();
     expect(runtimeConfig.provider.anthropic.options.baseURL).toBe('http://127.0.0.1:3456');
@@ -1343,7 +1347,7 @@ describe('syncRuntimeAgentOverlays', () => {
     });
   });
 
-  it('adds the bounded OpenAI header timeout for an API-key environment', async () => {
+  it('adds bounded OpenAI request timeouts for an API-key environment', async () => {
     process.env.OPENAI_API_KEY = 'test-api-key';
 
     const result = await syncRuntimeAgentOverlays({
@@ -1362,10 +1366,14 @@ describe('syncRuntimeAgentOverlays', () => {
       path.join(result.targetConfigDirectory, 'opencode.json'),
       'utf8',
     ));
-    expect(runtimeConfig.provider?.openai?.options?.headerTimeout).toBe(60_000);
+    expect(runtimeConfig.provider?.openai?.options).toEqual({
+      headerTimeout: 60_000,
+      chunkTimeout: 120_000,
+      timeout: 600_000,
+    });
   });
 
-  it('adds the bounded OpenAI header timeout for an existing provider configuration', async () => {
+  it('adds bounded OpenAI request timeouts for an existing provider configuration', async () => {
     const result = await syncRuntimeAgentOverlays({
       workingDirectory: projectDirectory,
       packagedAgentDirectory,
@@ -1389,11 +1397,18 @@ describe('syncRuntimeAgentOverlays', () => {
       'utf8',
     ));
     expect(runtimeConfig.provider?.openai).toEqual({
-      options: { headerTimeout: 60_000 },
+      options: {
+        headerTimeout: 60_000,
+        chunkTimeout: 120_000,
+        timeout: 600_000,
+      },
     });
   });
 
-  it.each([30_000, false])('preserves an explicit OpenAI header timeout of %s', async (headerTimeout) => {
+  it.each([
+    { headerTimeout: 30_000, chunkTimeout: 45_000, timeout: 90_000 },
+    { headerTimeout: false, chunkTimeout: false, timeout: false },
+  ])('preserves explicit OpenAI timeout options: %j', async (providerOptions) => {
     const result = await syncRuntimeAgentOverlays({
       workingDirectory: projectDirectory,
       packagedAgentDirectory,
@@ -1405,7 +1420,7 @@ describe('syncRuntimeAgentOverlays', () => {
       readConfig: () => ({
         provider: {
           openai: {
-            options: { headerTimeout },
+            options: providerOptions,
           },
         },
       }),
@@ -1416,7 +1431,7 @@ describe('syncRuntimeAgentOverlays', () => {
       path.join(result.targetConfigDirectory, 'opencode.json'),
       'utf8',
     ));
-    expect(runtimeConfig.provider?.openai?.options?.headerTimeout).toBe(headerTimeout);
+    expect(runtimeConfig.provider?.openai?.options).toEqual(providerOptions);
   });
 
   it('removes a stale generated OpenAI timeout after auth is removed', async () => {

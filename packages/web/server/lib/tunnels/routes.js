@@ -29,7 +29,6 @@ export const createTunnelRoutesRuntime = (dependencies) => {
     getRuntimeManagedRemoteTunnelToken,
     setRuntimeManagedRemoteTunnelToken,
     getActiveTunnelController,
-    setActiveTunnelController,
   } = dependencies;
 
   const resolveActiveNormalizedTunnelMode = () => {
@@ -568,8 +567,9 @@ export const createTunnelRoutesRuntime = (dependencies) => {
         });
       } catch (error) {
         console.error('Failed to start tunnel:', error);
-        setActiveTunnelController(null);
-        tunnelAuthController.clearActiveTunnel();
+        if (!getActiveTunnelController()) {
+          tunnelAuthController.clearActiveTunnel();
+        }
         if (error instanceof TunnelServiceError) {
           const status = error.code === 'missing_dependency'
             ? 400
@@ -591,20 +591,29 @@ export const createTunnelRoutesRuntime = (dependencies) => {
       }
     });
 
-    app.post('/api/openchamber/tunnel/stop', (_req, res) => {
+    app.post('/api/openchamber/tunnel/stop', async (_req, res) => {
       let revokedBootstrapCount = 0;
       let invalidatedSessionCount = 0;
       const activeTunnelId = tunnelAuthController.getActiveTunnelId();
+
+      if (getActiveTunnelController()) {
+        console.log('Stopping active tunnel (user requested)...');
+        try {
+          await tunnelService.stop();
+        } catch (error) {
+          console.error('Failed to stop active tunnel:', error);
+          return res.status(500).json({
+            ok: false,
+            error: error instanceof Error ? error.message : 'Failed to stop active tunnel',
+            code: 'tunnel_stop_failed',
+          });
+        }
+      }
 
       if (activeTunnelId) {
         const revoked = tunnelAuthController.revokeTunnelArtifacts(activeTunnelId);
         revokedBootstrapCount = revoked.revokedBootstrapCount;
         invalidatedSessionCount = revoked.invalidatedSessionCount;
-      }
-
-      if (getActiveTunnelController()) {
-        console.log('Stopping active tunnel (user requested)...');
-        tunnelService.stop();
       }
 
       tunnelAuthController.clearActiveTunnel();

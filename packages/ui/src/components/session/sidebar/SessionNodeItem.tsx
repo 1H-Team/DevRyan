@@ -14,6 +14,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   RiAddLine,
+  RiAiAgentLine,
   RiArchiveLine,
   RiArrowDownSLine,
   RiArrowGoBackLine,
@@ -53,16 +54,20 @@ import {
   useManagedOrchestrationStore,
 } from '@/stores/useManagedOrchestrationStore';
 import { useI18n } from '@/lib/i18n';
-import type { PlanIndicatorState } from '@/sync/plan-indicator';
+import { resolveEffectivePlanIndicatorState, type PlanIndicatorState } from '@/sync/plan-indicator';
 import { useNotificationStore } from '@/sync/notification-store';
-import { resolveLeadingIndicatorPositionClasses, resolveSidebarIndicator, resolveSidebarWorkingStatus, resolveSubtaskSidebarIndicator } from './sessionIndicator';
+import { resolveLeadingRailLayout, resolveSidebarIndicator, resolveSidebarWorkingStatus, resolveSubtaskSidebarIndicator } from './sessionIndicator';
 import type { SessionIndicator } from './sessionIndicator';
 import { useSessionLifecycleStatus } from '@/hooks/useSessionLifecycleStatus';
 import { SidebarSpinner } from './SidebarSpinner';
-import { resolveSessionRowInteractionClasses } from './sessionRowInteractionClasses';
+import {
+  resolveMobileSessionSwipeAction,
+  resolveSessionRowInteractionClasses,
+} from './sessionRowInteractionClasses';
 import { resolveSessionRowAuxAction } from './sessionRowAuxAction';
 import { hasTreeExpansionStateChange } from './sessionNodeMemo';
 import { SessionSidebarMotionRow } from './SessionSidebarMotionRow';
+import { getAgentIconColor } from '@/lib/agentColors';
 
 type Folder = { id: string; name: string; sessionIds: string[] };
 
@@ -133,6 +138,7 @@ const getNodeChildSignature = (node: SessionNode): string => {
 
 const getSessionRenderSignature = (session: Session): string => {
   const record = session as Session & {
+    agent?: string | null;
     directory?: string | null;
     parentID?: string | null;
     project?: { worktree?: string | null } | null;
@@ -148,6 +154,7 @@ const getSessionRenderSignature = (session: Session): string => {
     record.directory ?? '',
     record.project?.worktree ?? '',
     record.parentID ?? '',
+    record.agent ?? '',
     session.share?.url ?? '',
     diffStats?.additions ?? 0,
     diffStats?.deletions ?? 0,
@@ -309,6 +316,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const isElectron = React.useMemo(() => canUseElectronDesktopIPC(), []);
   const session = node.session;
   const isArchiveAncestorOnly = archivedBucket && node.isArchiveAncestorOnly === true;
+  const canRevealMobileActions = mobileVariant && !archivedBucket && !isArchiveAncestorOnly;
   const showQuickPinAction = !archivedBucket && !mobileVariant;
   const showQuickArchiveAction = !archivedBucket && !mobileVariant;
   const showQuickUnarchiveAction = archivedBucket && !isArchiveAncestorOnly && !mobileVariant;
@@ -320,7 +328,14 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   } = resolveSessionRowInteractionClasses();
   const alwaysActionPaddingClass = 'pr-10';
   const suppressNextSelectRef = React.useRef(false);
+  const mobileSwipeRef = React.useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    didTrigger: boolean;
+  } | null>(null);
   const [isTouchPressed, setIsTouchPressed] = React.useState(false);
+  const [mobileActionsRevealed, setMobileActionsRevealed] = React.useState(false);
   const liveSession = useSession(session.id);
   const resolvedSession = liveSession ?? session;
   const sessionDirectoryHint = useSessionUIStore(
@@ -369,6 +384,10 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const isSessionWorking = useIsSessionWorking(session.id, sessionDirectory ?? undefined);
   const sessionParentId = (session as Session & { parentID?: string | null }).parentID ?? null;
   const isRootSession = !sessionParentId;
+  const subagentName = !isRootSession
+    && typeof (resolvedSession as Session & { agent?: unknown }).agent === 'string'
+    ? (resolvedSession as Session & { agent: string }).agent.trim() || undefined
+    : undefined;
   const questionScopeSessionIds = React.useMemo(() => {
     if (!isRootSession) return EMPTY_SESSION_IDS;
 
@@ -399,7 +418,10 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const planIndicatorState = useSessionUIStore(
     React.useCallback((state) => {
       if (!isRootSession) return null;
-      return state.sessionPlanIndicator.get(session.id)?.state ?? null;
+      return resolveEffectivePlanIndicatorState(
+        state.sessionPlanIndicator.get(session.id),
+        state.planModeUserMessagesBySession.get(session.id),
+      );
     }, [isRootSession, session.id]),
   );
   const sidebarIsWorking = resolveSidebarWorkingStatus({
@@ -441,6 +463,10 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   );
   const manualRecoveryTaskId = useManagedOrchestrationStore(React.useMemo(
     () => managedOrchestrationSelectors.manualRecoveryTaskIdForChildSession(session.id),
+    [session.id],
+  ));
+  const manualRecoveryFailureKind = useManagedOrchestrationStore(React.useMemo(
+    () => managedOrchestrationSelectors.manualRecoveryFailureKindForChildSession(session.id),
     [session.id],
   ));
   const sessionTimestamp = userActivityTimestamp ?? resolvedSession.time?.updated ?? resolvedSession.time?.created ?? Date.now();
@@ -645,9 +671,15 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     hasUnreadCompletion: sessionHasUnreadCompletion,
     hasUnreadError: sessionHasUnreadError,
     hasManualRecovery: Boolean(manualRecoveryTaskId),
+    manualRecoveryFailureKind,
   });
   const effectiveSidebarStatusIndicator = sidebarStatusIndicator ?? subtaskStatusIndicator;
   const showLeadingStatus = Boolean(effectiveSidebarStatusIndicator);
+  const leadingRailLayout = resolveLeadingRailLayout({
+    hasChildren,
+    showLeadingStatus,
+    isPinnedSession,
+  });
   const leadingStatusMarker = effectiveSidebarStatusIndicator ? (
     <span
       className={cn('h-1.5 w-1.5 rounded-full', effectiveSidebarStatusIndicator.className)}
@@ -668,21 +700,6 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
         ? 'sessions.sidebar.session.status.planExecuting'
         : 'sessions.sidebar.session.status.active')}
     />
-  ) : null;
-  const leadingIndicators = showLeadingStatus || isPinnedSession ? (
-    <span
-      className={cn(
-        'pointer-events-none absolute inline-flex h-3.5 items-center justify-center gap-0.5 transition-opacity top-1/2 -translate-y-1/2',
-        resolveLeadingIndicatorPositionClasses({
-          hasChildren,
-          showLeadingStatus,
-          isPinnedSession,
-        }),
-      )}
-    >
-      {leadingStatusMarker}
-      {isPinnedSession ? <RiPushpinLine className="h-3 w-3 flex-shrink-0 text-primary" aria-label={t('sessions.sidebar.session.status.pinned')} /> : null}
-    </span>
   ) : null;
   const handleSubsessionChevronPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -711,12 +728,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
           toggleParent(session.id);
         }
       }}
-      className={cn(
-        'absolute left-[-10px] inline-flex h-3.5 w-3.5 items-center justify-center rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 transition-opacity top-1/2 -translate-y-1/2',
-        showLeadingStatus && !alwaysShowActions
-          ? 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto'
-          : '',
-      )}
+      className="inline-flex h-3.5 w-full max-w-3.5 items-center justify-center rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
       aria-label={isExpanded
         ? t('sessions.sidebar.session.subsessions.collapse')
         : t('sessions.sidebar.session.subsessions.expand')}
@@ -724,6 +736,38 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
       <RiArrowDownSLine className={cn('h-3 w-3 transition-transform duration-150 ease-[cubic-bezier(0.33,1,0.68,1)]', isExpanded ? 'rotate-0' : '-rotate-90')} />
     </button>
   ) : null;
+  const leadingPinMarker = (
+    <RiPushpinLine
+      className="h-3 w-3 flex-shrink-0 text-primary"
+      aria-label={t('sessions.sidebar.session.status.pinned')}
+    />
+  );
+  const leadingRailSlotContent = {
+    status: leadingStatusMarker,
+    pin: leadingPinMarker,
+    chevron: subsessionChevron,
+  };
+  const leadingRail = (
+    <span
+      data-session-leading-rail
+      className="absolute right-full top-1/2 mr-0.5 grid h-4 w-9 flex-shrink-0 -translate-y-1/2 grid-cols-[minmax(0,4fr)_minmax(0,7fr)_2px_minmax(0,7fr)_1px] items-center justify-items-center"
+    >
+      {leadingRailLayout.slots.map((slot, index) => (
+        <span
+          key={index}
+          className={cn(
+            'inline-flex items-center justify-center',
+            index === 1 && 'justify-self-end',
+            index === 2 && 'col-start-4',
+            slot === 'status' ? 'h-2 w-2' : 'h-3.5 w-full max-w-3.5',
+            slot !== 'chevron' && 'pointer-events-none',
+          )}
+        >
+          {slot ? leadingRailSlotContent[slot] : null}
+        </span>
+      ))}
+    </span>
+  );
 
   const streamingIndicator = isZombie
     ? <RiErrorWarningLine className="h-4 w-4 text-status-warning" />
@@ -747,6 +791,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     event.preventDefault();
     event.stopPropagation();
     setOpenSidebarMenuKey(null);
+    setMobileActionsRevealed(false);
     handleArchiveSession(session);
   };
 
@@ -754,6 +799,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     event.preventDefault();
     event.stopPropagation();
     setOpenSidebarMenuKey(null);
+    setMobileActionsRevealed(false);
     togglePinnedSession(session.id);
   };
 
@@ -841,11 +887,52 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     if (mobileVariant && event.pointerType === 'touch') {
       setIsTouchPressed(true);
     }
+    if (!canRevealMobileActions || event.button !== 0) return;
+    event.stopPropagation();
+    mobileSwipeRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      didTrigger: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
   };
+
+  const handleRowPointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const gesture = mobileSwipeRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    const action = resolveMobileSessionSwipeAction(
+      event.clientX - gesture.startX,
+      event.clientY - gesture.startY,
+    );
+    if (!action) return;
+
+    gesture.didTrigger = true;
+    suppressNextSelectRef.current = true;
+    setIsTouchPressed(false);
+    setMobileActionsRevealed(action === 'reveal');
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
   const handleRowPointerEnd = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (mobileVariant && event.pointerType === 'touch') {
       setIsTouchPressed(false);
     }
+    const gesture = mobileSwipeRef.current;
+    if (!gesture || gesture.pointerId !== event.pointerId) return;
+    mobileSwipeRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (!gesture.didTrigger) return;
+
+    suppressNextSelectRef.current = true;
+    event.preventDefault();
+    event.stopPropagation();
+    window.setTimeout(() => {
+      suppressNextSelectRef.current = false;
+    }, 0);
   };
 
   const sessionMenuContent = (
@@ -966,6 +1053,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
             data-session-scope={sessionDirectory ?? ''}
             data-session-archived={archivedBucket ? '1' : '0'}
             data-session-archive-ancestor={isArchiveAncestorOnly ? '1' : '0'}
+            data-mobile-drawer-drag-lock={mobileVariant ? 'true' : undefined}
             onContextMenu={handleRowContextMenu}
             className={cn(
               'group @container/session-sidebar-row relative my-0.5 flex items-center rounded-sm px-1.5 py-1',
@@ -974,13 +1062,13 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
               isRowSelected && 'bg-primary/15',
             )}
           >
-            {leadingIndicators}
-            {subsessionChevron}
-            <div className="flex min-w-0 flex-1 items-center">
+            <div className="relative -ml-px flex min-w-0 flex-1 items-center">
+              {leadingRail}
               <button
                 type="button"
                 disabled={isMissingDirectory}
                 onPointerDown={handleRowPointerDown}
+                onPointerMove={handleRowPointerMove}
                 onPointerUp={handleRowPointerEnd}
                 onPointerCancel={handleRowPointerEnd}
                 onMouseDown={handleRowMouseDown}
@@ -992,6 +1080,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                 }}
                 className={cn(
                   'flex min-w-0 flex-1 cursor-pointer flex-col gap-0 overflow-hidden rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 text-foreground select-none disabled:cursor-not-allowed transition-[padding]',
+                  mobileVariant && 'touch-pan-y',
                   isTouchPressed && 'bg-interactive-hover/70',
                   alwaysShowActions
                     ? (isVSCode ? revealPaddingClass : alwaysActionPaddingClass)
@@ -1000,7 +1089,18 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                 )}
               >
                 <div className="flex w-full items-center min-w-0 flex-1 overflow-hidden gap-1">
-                  <div className={cn('block min-w-0 flex-1 truncate typography-ui-label font-normal', isActive ? 'text-primary' : 'text-foreground')}>{renderHighlightedText(sessionTitle, normalizedSessionSearchQuery)}</div>
+                  <div className={cn('flex min-w-0 flex-1 items-center gap-1.5 typography-ui-label font-normal', isActive ? 'text-primary' : 'text-foreground')}>
+                    {!isRootSession ? (
+                      <RiAiAgentLine
+                        className="h-3.5 w-3.5 flex-shrink-0"
+                        style={{ color: `var(${getAgentIconColor(subagentName).var})` }}
+                        aria-hidden="true"
+                      />
+                    ) : null}
+                    <span className="min-w-0 flex-1 truncate">
+                      {renderHighlightedText(sessionTitle, normalizedSessionSearchQuery)}
+                    </span>
+                  </div>
                   {alwaysShowActions ? <span className="session-sidebar-row__compact-time ml-2 flex-shrink-0 text-[0.72rem] text-muted-foreground/75">{sessionCompactUpdatedLabel}</span> : null}
                   {!alwaysShowActions ? (
                     <div className="relative ml-1 flex h-4 min-w-4 flex-shrink-0 items-center justify-end">
@@ -1023,6 +1123,48 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                 </div>
               </button>
             </div>
+
+            {canRevealMobileActions ? (
+              <div
+                data-mobile-session-actions
+                aria-hidden={!mobileActionsRevealed}
+                className={cn(
+                  'absolute right-0 top-1/2 z-30 flex -translate-y-1/2 items-center gap-1 rounded-md bg-sidebar p-0.5 shadow-sm ring-1 ring-border/50 transition-[opacity,transform] duration-150',
+                  mobileActionsRevealed
+                    ? 'translate-x-0 opacity-100'
+                    : 'pointer-events-none translate-x-2 opacity-0',
+                )}
+              >
+                <button
+                  type="button"
+                  disabled={!mobileActionsRevealed}
+                  className="inline-flex h-7 items-center gap-1 whitespace-nowrap rounded-md px-2 typography-micro font-medium text-primary hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                  aria-label={isPinnedSession
+                    ? t('sessions.sidebar.session.menu.unpin')
+                    : t('sessions.sidebar.session.menu.pin')}
+                  onClick={handleQuickPinClick}
+                >
+                  {isPinnedSession
+                    ? <RiUnpinLine className="h-3.5 w-3.5" />
+                    : <RiPushpinLine className="h-3.5 w-3.5" />}
+                  <span>
+                    {isPinnedSession
+                      ? t('sessions.sidebar.session.mobileAction.unpin')
+                      : t('sessions.sidebar.session.mobileAction.pin')}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!mobileActionsRevealed}
+                  className="inline-flex h-7 items-center gap-1 whitespace-nowrap rounded-md px-2 typography-micro font-medium text-muted-foreground hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                  aria-label={t('sessions.sidebar.bulkActions.archive')}
+                  onClick={handleQuickArchiveClick}
+                >
+                  <RiArchiveLine className="h-3.5 w-3.5" />
+                  <span>{t('sessions.sidebar.bulkActions.archive')}</span>
+                </button>
+              </div>
+            ) : null}
 
             {streamingIndicator && !mobileVariant ? (
               <div className="absolute top-1/2 -translate-y-1/2 z-10 right-0">

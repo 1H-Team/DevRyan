@@ -272,7 +272,7 @@ describe('VS Code Cursor SDK config handling', () => {
     }
   });
 
-  it('adds the bounded OpenAI header timeout for OAuth auth while preserving plugin and MCP overlays', async () => {
+  it('adds bounded OpenAI request timeouts for OAuth auth while preserving plugin and MCP overlays', async () => {
     const { syncRuntimeAgentOverlays } = await loadRuntime();
     const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-openai-oauth-'));
     writeJson(path.join(tempHome, '.local', 'share', 'opencode', 'auth.json'), {
@@ -286,7 +286,11 @@ describe('VS Code Cursor SDK config handling', () => {
       const result = syncRuntimeAgentOverlays(projectDir);
       const overlayConfig = readJson(path.join(result.targetConfigDirectory, 'opencode.json'));
       expect(overlayConfig.provider?.openai).toEqual({
-        options: { headerTimeout: 60_000 },
+        options: {
+          headerTimeout: 60_000,
+          chunkTimeout: 120_000,
+          timeout: 600_000,
+        },
       });
       expect(overlayConfig.provider.openai.models).toBeUndefined();
       expect(overlayConfig.plugin).toContain('opencode-antigravity-auth@latest');
@@ -296,7 +300,7 @@ describe('VS Code Cursor SDK config handling', () => {
     }
   });
 
-  it('adds the bounded OpenAI header timeout for an API-key environment', async () => {
+  it('adds bounded OpenAI request timeouts for an API-key environment', async () => {
     const { syncRuntimeAgentOverlays } = await loadRuntime();
     const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-openai-env-'));
     process.env.OPENAI_API_KEY = 'test-api-key';
@@ -304,13 +308,17 @@ describe('VS Code Cursor SDK config handling', () => {
     try {
       const result = syncRuntimeAgentOverlays(projectDir);
       const overlayConfig = readJson(path.join(result.targetConfigDirectory, 'opencode.json'));
-      expect(overlayConfig.provider?.openai?.options?.headerTimeout).toBe(60_000);
+      expect(overlayConfig.provider?.openai?.options).toEqual({
+        headerTimeout: 60_000,
+        chunkTimeout: 120_000,
+        timeout: 600_000,
+      });
     } finally {
       fs.rmSync(projectDir, { recursive: true, force: true });
     }
   });
 
-  it('adds the bounded OpenAI header timeout for an existing provider configuration', async () => {
+  it('adds bounded OpenAI request timeouts for an existing provider configuration', async () => {
     const { syncRuntimeAgentOverlays } = await loadRuntime();
     const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-openai-provider-'));
     writeJson(path.join(projectDir, 'opencode.json'), {
@@ -325,20 +333,27 @@ describe('VS Code Cursor SDK config handling', () => {
       const result = syncRuntimeAgentOverlays(projectDir);
       const overlayConfig = readJson(path.join(result.targetConfigDirectory, 'opencode.json'));
       expect(overlayConfig.provider?.openai).toEqual({
-        options: { headerTimeout: 60_000 },
+        options: {
+          headerTimeout: 60_000,
+          chunkTimeout: 120_000,
+          timeout: 600_000,
+        },
       });
     } finally {
       fs.rmSync(projectDir, { recursive: true, force: true });
     }
   });
 
-  it.each([30_000, false])('preserves an explicit OpenAI header timeout of %s', async (headerTimeout) => {
+  it.each([
+    { headerTimeout: 30_000, chunkTimeout: 45_000, timeout: 90_000 },
+    { headerTimeout: false, chunkTimeout: false, timeout: false },
+  ])('preserves explicit OpenAI timeout options: %j', async (providerOptions) => {
     const { syncRuntimeAgentOverlays } = await loadRuntime();
     const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-openai-explicit-'));
     writeJson(path.join(projectDir, 'opencode.json'), {
       provider: {
         openai: {
-          options: { headerTimeout },
+          options: providerOptions,
         },
       },
     });
@@ -346,7 +361,7 @@ describe('VS Code Cursor SDK config handling', () => {
     try {
       const result = syncRuntimeAgentOverlays(projectDir);
       const overlayConfig = readJson(path.join(result.targetConfigDirectory, 'opencode.json'));
-      expect(overlayConfig.provider?.openai?.options?.headerTimeout).toBe(headerTimeout);
+      expect(overlayConfig.provider?.openai?.options).toEqual(providerOptions);
     } finally {
       fs.rmSync(projectDir, { recursive: true, force: true });
     }
@@ -398,6 +413,29 @@ describe('VS Code Cursor SDK config handling', () => {
           .toBe(fs.readFileSync(path.join(defaultConfigRoot, relativePath), 'utf8'));
       }
       expect(pluginFiles.some((fileName) => fileName.includes('.test.') || fileName.includes('.spec.') || fileName.endsWith('.d.ts'))).toBe(false);
+    } finally {
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the packaged Orchestrator managed-only in VS Code runtime overlays', async () => {
+    const { listConfigAgents, syncRuntimeAgentOverlays } = await loadRuntime();
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-managed-orchestrator-'));
+
+    try {
+      const orchestrator = listConfigAgents(projectDir)
+        .find((agent) => agent.name === 'orchestrator');
+      expect(orchestrator?.permission).toMatchObject({
+        task: 'deny',
+        devryan_task: 'allow',
+      });
+
+      const result = syncRuntimeAgentOverlays(projectDir);
+      const frontmatter = readAgentFrontmatter(
+        path.join(result.targetConfigDirectory, 'agents', 'orchestrator.md'),
+      );
+      expect(frontmatter).toContain('  task: deny');
+      expect(frontmatter).toContain('  devryan_task: allow');
     } finally {
       fs.rmSync(projectDir, { recursive: true, force: true });
     }

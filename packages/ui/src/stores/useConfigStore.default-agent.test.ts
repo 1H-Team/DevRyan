@@ -192,6 +192,35 @@ describe("useConfigStore default agent selection", () => {
     expect(useConfigStore.getState().currentVariant).toBe("ultra")
   })
 
+  test("applies the default model and variant when a fresh draft disables rehydration preservation", () => {
+    useSessionUIStore.setState({ currentSessionId: null, currentDraftId: "draft-fresh" })
+    useConfigStore.setState({
+      providers: [
+        ...providers,
+        {
+          id: "openai",
+          name: "OpenAI",
+          source: "custom",
+          options: {},
+          env: [],
+          models: [createModel("openai", "gpt-5.6-sol", { max: {}, ultra: {} })],
+        },
+      ],
+      currentProviderId: "openai",
+      currentModelId: "gpt-5.6-sol",
+      currentVariant: "ultra",
+      currentAgentName: "Builder",
+      settingsDefaultAgent: "Builder",
+    })
+
+    useConfigStore.getState().applyDefaultsToCurrent({ preserveRehydratedDraftModel: false })
+
+    expect(useConfigStore.getState().currentAgentName).toBe("Builder")
+    expect(useConfigStore.getState().currentProviderId).toBe("opencode")
+    expect(useConfigStore.getState().currentModelId).toBe("builder-model")
+    expect(useConfigStore.getState().currentVariant).toBe("high")
+  })
+
   test("updates an empty draft immediately when the configured default agent changes", () => {
     useConfigStore.getState().setSettingsDefaultAgent("Builder")
 

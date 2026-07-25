@@ -5,6 +5,8 @@ Shared UI primitives and wrappers (buttons, dialogs, menus, toasts, etc.).
 
 ## Design
 Thin abstraction layer around Base UI/Radix/Hero patterns plus project styling defaults.
+`ScrollShadow` keeps its visibility attributes idempotent so its subtree
+`MutationObserver` cannot schedule itself indefinitely.
 
 ## Flow
 Feature components compose these primitives and pass business logic via props/callbacks.

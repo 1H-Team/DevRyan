@@ -13,7 +13,9 @@ Public tunnel management subsystem: provider registry, tunnel mode/intent typing
 1. API/CLI receives tunnel request (quick or managed modes).
 2. `normalizeTunnelStartRequest` + `validateTunnelStartRequest` sanitize and enforce constraints.
 3. Registry resolves concrete provider implementation (currently Cloudflare).
-4. Provider runtime starts/stops tunnel; managed config runtime updates persistent state.
+4. Provider runtime starts/stops tunnel; stop waits for confirmed connector exit with bounded signal
+   escalation before service/auth state is cleared.
+5. Managed config runtime updates persistent state.
 
 ## Integration
 - Used by `server/index.js` tunnel routes and CLI tunnel commands.

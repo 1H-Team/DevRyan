@@ -34,6 +34,8 @@ import {
     createScopedBlockingRequestsSelector,
 } from './lib/blockingRequests';
 import { useRetryVisibility } from './lib/turns/retryVisibility';
+import { ManagedTaskCompactionContinuity } from './ManagedTaskCompactionContinuity';
+import { getLatestCompactionBoundaryAt } from './managedTaskCompactionProjection';
 
 // New sync system imports
 import { useSessionUIStore } from '@/sync/session-ui-store';
@@ -44,8 +46,10 @@ import {
     useSessions,
     useDirectorySync,
     useSessionStatus,
+    useSyncDirectory,
 } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
+import { useSessionMessagePagination } from '@/sync/message-pagination-store';
 import { getSessionMaterializationStatus } from '@/sync/materialization';
 import { getAllSyncSessions } from '@/sync/sync-refs';
 import { isSessionWorkingFromState } from '@/sync/session-working';
@@ -146,6 +150,7 @@ type ChatViewportProps = {
     messageListRef: React.RefObject<MessageListHandle | null>;
     turnStart: number;
     renderedMessages: SessionMessageRecord[];
+    compactionBoundaryAt: number | null;
     hasMoreAboveTurns: boolean;
     isLoadingOlder: boolean;
     sessionIsWorking: boolean;
@@ -174,6 +179,7 @@ const ChatViewport = React.memo(({
     messageListRef,
     turnStart,
     renderedMessages,
+    compactionBoundaryAt,
     hasMoreAboveTurns,
     isLoadingOlder,
     sessionIsWorking,
@@ -257,6 +263,13 @@ const ChatViewport = React.memo(({
                             </div>
                         )}
 
+                        <ManagedTaskCompactionContinuity
+                            rootSessionId={currentSessionId}
+                            compactionBoundaryAt={compactionBoundaryAt}
+                            isMobile={isMobile}
+                            onContentChange={handleMessageContentChange}
+                        />
+
                         <div className="mb-3">
                             <StatusRowContainer />
                         </div>
@@ -280,6 +293,7 @@ const ChatViewport = React.memo(({
         && prev.messageListRef === next.messageListRef
         && prev.turnStart === next.turnStart
         && prev.renderedMessages === next.renderedMessages
+        && prev.compactionBoundaryAt === next.compactionBoundaryAt
         && prev.hasMoreAboveTurns === next.hasMoreAboveTurns
         && prev.isLoadingOlder === next.isLoadingOlder
         && prev.sessionIsWorking === next.sessionIsWorking
@@ -353,6 +367,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
 
     // Sync actions
     const sync = useSync();
+    const syncDirectory = useSyncDirectory();
     const ensureSessionRenderable = React.useCallback(
         (sessionId: string) => sync.ensureSessionRenderable(sessionId, { directory: currentSessionDirectory }),
         [sync, currentSessionDirectory],
@@ -395,6 +410,14 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
     // Messages from sync system
     const sessionMessageRecords = useSessionMessageRecords(currentSessionId ?? '', currentSessionDirectory ?? undefined);
     const sessionMessages = currentSessionId ? sessionMessageRecords : EMPTY_MESSAGES;
+    const compactionBoundaryAt = React.useMemo(
+        () => getLatestCompactionBoundaryAt(sessionMessages),
+        [sessionMessages],
+    );
+    const messagePagination = useSessionMessagePagination(
+        currentSessionDirectory ?? syncDirectory,
+        currentSessionId,
+    );
 
     // Sessions from sync system
     const sessions = useSessions(currentSessionDirectory ?? undefined);
@@ -479,17 +502,18 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
         };
     }, [visibleRetryStatus, retryFallbackTimestamp]);
 
-    // History metadata — use sync's hasMore/isLoading
+    // History metadata comes from the shared per-session pagination owner so a
+    // cache-only session open rerenders when its first-page metadata arrives.
     const historyMeta = React.useMemo(() => {
         if (!currentSessionId) return null;
-        const metaOptions = { directory: currentSessionDirectory };
-        const hasPaginationMetadata = sync.hasPaginationMetadata(currentSessionId, metaOptions);
         return {
             limit: sessionMessages.length,
-            complete: hasPaginationMetadata ? !sync.hasMore(currentSessionId, metaOptions) : true,
-            loading: sync.isLoading(currentSessionId, metaOptions),
+            complete: messagePagination.initialized
+                ? messagePagination.complete || !messagePagination.cursor
+                : true,
+            loading: messagePagination.loading,
         };
-    }, [currentSessionId, currentSessionDirectory, sessionMessages.length, sync]);
+    }, [currentSessionId, messagePagination, sessionMessages.length]);
 
     const { isMobile } = useDeviceInfo();
     const draftOpen = Boolean(currentDraftId && newSessionDraft?.open);
@@ -907,6 +931,7 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
                 messageListRef={messageListRef}
                 turnStart={timelineController.turnStart}
                 renderedMessages={timelineController.renderedMessages}
+                compactionBoundaryAt={compactionBoundaryAt}
                 hasMoreAboveTurns={timelineController.historySignals.hasMoreAboveTurns}
                 isLoadingOlder={timelineController.isLoadingOlder}
                 sessionIsWorking={sessionIsWorking}

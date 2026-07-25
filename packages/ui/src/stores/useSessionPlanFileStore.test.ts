@@ -18,6 +18,7 @@ describe('useSessionPlanFileStore', () => {
       path: null,
       status: 'saving',
       error: null,
+      autoRevealed: false,
     });
 
     store.markSaved('session-a', 'msg-2', '/plans/latest.md');
@@ -26,6 +27,7 @@ describe('useSessionPlanFileStore', () => {
       path: '/plans/latest.md',
       status: 'saved',
       error: null,
+      autoRevealed: false,
     });
   });
 
@@ -41,10 +43,26 @@ describe('useSessionPlanFileStore', () => {
       path: null,
       status: 'error',
       error: 'disk full',
+      autoRevealed: false,
     });
 
     store.clearSession('session-a');
     expect(useSessionPlanFileStore.getState().recordsBySession['session-a']).toBe(undefined);
     expect(useSessionPlanFileStore.getState().recordsBySession['session-b']?.path).toBe('/plans/b.md');
+  });
+
+  test('claims one auto-reveal per saved plan revision', () => {
+    const store = useSessionPlanFileStore.getState();
+    store.beginSaving('session-a', 'msg-1');
+    expect(store.claimAutoReveal('session-a', 'msg-1')).toBe(false);
+
+    store.markSaved('session-a', 'msg-1', '/plans/a.md');
+    expect(store.claimAutoReveal('session-a', 'msg-1')).toBe(true);
+    expect(store.claimAutoReveal('session-a', 'msg-1')).toBe(false);
+
+    store.beginSaving('session-a', 'msg-2');
+    store.markSaved('session-a', 'msg-2', '/plans/b.md');
+    expect(store.claimAutoReveal('session-a', 'msg-1')).toBe(false);
+    expect(store.claimAutoReveal('session-a', 'msg-2')).toBe(true);
   });
 });

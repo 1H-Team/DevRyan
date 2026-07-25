@@ -1991,7 +1991,7 @@ const ToolPart: React.FC<ToolPartProps> = ({
             {}
             <div
                 className={cn(
-                'group/tool flex gap-1.5 pr-2 pl-px py-2 rounded-xl',
+                'group/tool flex gap-1.5 pr-2 pl-px py-1.5 rounded-xl',
                 toolHeaderInteractive && 'cursor-pointer',
                 isMultiFileApplyPatch ? 'flex-wrap items-start' : 'items-center'
             )}

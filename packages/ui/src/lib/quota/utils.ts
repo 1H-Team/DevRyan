@@ -197,6 +197,14 @@ const appendTrendSnapshot = (
 ): UsageTrendHistory => {
   const previous = history[key] ?? [];
   const latest = previous.at(-1);
+  if (
+    latest
+    && latest.fetchedAt === snapshot.fetchedAt
+    && latest.usedPercent === snapshot.usedPercent
+    && latest.resetAt === snapshot.resetAt
+  ) {
+    return history;
+  }
   const isResetBoundary = latest
     ? latest.resetAt !== snapshot.resetAt || snapshot.usedPercent < latest.usedPercent - RESET_DROP_THRESHOLD_PERCENT
     : false;
@@ -214,7 +222,11 @@ export const recordProviderUsageTrends = (
   }
 
   let nextHistory = history;
-  const fetchedAt = Number.isFinite(result.fetchedAt) ? result.fetchedAt : Date.now();
+  const fetchedAt = typeof result.usageUpdatedAt === 'number' && Number.isFinite(result.usageUpdatedAt)
+    ? result.usageUpdatedAt
+    : Number.isFinite(result.fetchedAt)
+      ? result.fetchedAt
+      : Date.now();
   const addWindow = (key: string, window: UsageWindow) => {
     if (typeof window.usedPercent !== 'number' || !Number.isFinite(window.usedPercent)) {
       return;

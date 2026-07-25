@@ -49,7 +49,6 @@ const IMMUTABLE_PROJECTED_TASK_FIELDS = [
   'executionKind',
   'createdAt',
   'timeoutAt',
-  'agentRetryAvailable',
 ] as const satisfies readonly (keyof ManagedTaskEventRecord)[];
 const EMPTY_TASK_IDS: readonly string[] = Object.freeze([]);
 
@@ -83,7 +82,7 @@ export type ManagedOrchestrationStore = {
   acknowledgeTask(taskId: string, action: ManagedTaskResultAction, selection?: {
     providerId: string;
     modelId: string;
-    variant?: string | null;
+    variant: string | null;
   }): Promise<void>;
   reset(): void;
 };
@@ -998,6 +997,12 @@ export const managedOrchestrationSelectors = {
   manualRecoveryTaskIdForChildSession: (childSessionId: string) => (
     state: ManagedOrchestrationStore
   ) => state.manualRecoveryTaskIdByChildSessionId[childSessionId],
+  manualRecoveryFailureKindForChildSession: (childSessionId: string) => (
+    state: ManagedOrchestrationStore
+  ) => {
+    const taskId = state.manualRecoveryTaskIdByChildSessionId[childSessionId];
+    return taskId ? state.tasksById[taskId]?.failureKind ?? null : null;
+  },
   pendingAction: (taskId: string) => (state: ManagedOrchestrationStore) => (
     state.pendingActionByTaskId[taskId]
   ),

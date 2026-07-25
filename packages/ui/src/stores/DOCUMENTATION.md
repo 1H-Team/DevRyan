@@ -57,6 +57,14 @@ Examples:
 
 These stores coordinate persistent project/session metadata across multiple views.
 
+`useGlobalSessionsStore.ts` combines complete global HTTP listings with low-frequency
+`session.created`, `session.updated`, and `session.deleted` events from the sync pipeline. Lifecycle
+events from unopened directories update the sidebar cache without allocating a directory child store.
+A bounded module-level lifecycle overlay protects those events from stale in-flight HTTP snapshots:
+upserts remain until complete active+archived listings confirm equal-or-newer membership, and deletes
+remain tombstoned until both listings confirm absence. High-frequency message/part/status events stay
+out of this broad store.
+
 ### Message queue store
 
 `messageQueueStore.ts` owns persisted queued prompt rows per session. Queue-time
@@ -89,6 +97,12 @@ queued user work.
 usage separately from the high-frequency sync stores. Its session-keyed state
 includes model, agent, per-agent model/variant, current-agent, context-usage,
 and edit-mode maps.
+
+`utils/modelContextCapacity.ts` normally treats a positive provider input limit
+as the usable capacity. When an internal compaction input threshold exceeds the
+advertised context limit, the smaller context limit is authoritative for usage
+and display; this keeps OpenCode's Codex-reservation shim out of user-facing
+capacity calculations.
 
 An authoritative `session.deleted` event calls `clearSessionContext()` for the
 exact deleted ID. The action preserves unrelated session entries and the
@@ -155,14 +169,18 @@ Ownership and safety rules:
 10. `manualRecoveryTaskIdByChildSessionId` contains only failed/interrupted,
     resumable, unacknowledged tasks whose `agentRetryAvailable` flag is false.
     Definite usage/quota exhaustion, including exhausted provider session
-    allowances, is projected with `failureKind: provider_usage_limit` and keeps
-    the first grouped attempt available for the Orchestrator's same-child
-    automatic recovery. Manual recovery is indexed only if that second attempt
-    also fails. Transient failures retain the same single recovery ceiling.
+    and rate-limit allowances, is projected with
+    `failureKind: provider_usage_limit` and closes the flag on the first
+    terminal attempt. Manual recovery is therefore indexed immediately, even
+    while the child still reports provider `retry` during cleanup. Accepting a
+    user `retry_in_place` removes the index; another failed attempt restores it.
+    Transient non-provider-limit failures retain the single agent recovery.
     Events, snapshots, acknowledgement responses, and compaction recompute only
     affected child leaves; unrelated task, root, and index references remain
     stable. Sidebar rows must consume the one-child selector rather than task or
-    envelope containers.
+    envelope containers. The companion one-child failure-kind selector lets a
+    live child suppress stale transient recovery attention without hiding an
+    unresolved provider-usage-limit recovery.
 
 The task ledger remains the durable result source, but a row whose terminal
 result is stale while its canonical child reports live `busy`/`retry` activity

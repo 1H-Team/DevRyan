@@ -18,7 +18,6 @@ import type { UsageWindow } from '@/types';
 
 interface UsageProviderPanelProps {
   group: RateLimitGroup | null;
-  quotaLastUpdated: number | null;
   quotaTrendHistory: UsageTrendHistory;
   handleUsageRefresh: () => void;
   isQuotaLoading: boolean;
@@ -86,7 +85,6 @@ const UsageMetricRow = React.memo(function UsageMetricRow({
 
 export const UsageProviderPanel = React.memo(function UsageProviderPanel({
   group,
-  quotaLastUpdated,
   quotaTrendHistory,
   handleUsageRefresh,
   isQuotaLoading,
@@ -117,7 +115,7 @@ export const UsageProviderPanel = React.memo(function UsageProviderPanel({
               {group ? group.providerName : t('header.services.rateLimits')}
             </div>
             <div className="truncate typography-micro text-muted-foreground" aria-live="polite">
-              {t('header.services.updatedAt', { time: formatUpdatedTime(quotaLastUpdated) })}
+              {t('header.services.updatedAt', { time: formatUpdatedTime(group?.usageUpdatedAt ?? null) })}
             </div>
           </div>
         </div>

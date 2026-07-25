@@ -11,6 +11,16 @@ export type SessionIndicator = {
     | 'sessions.sidebar.session.status.error';
 };
 
+export type MobileSessionIndicatorPresentation =
+  | { kind: 'status'; indicator: SessionIndicator }
+  | {
+      kind: 'working';
+      labelKey:
+        | 'sessions.sidebar.session.status.active'
+        | 'sessions.sidebar.session.status.planExecuting';
+    }
+  | { kind: 'idle' };
+
 type ResolveSidebarIndicatorOptions = {
   isRootSession: boolean;
   isWorking: boolean;
@@ -36,17 +46,26 @@ type ResolveSubtaskSidebarIndicatorOptions = {
   hasUnreadCompletion: boolean;
   hasUnreadError: boolean;
   hasManualRecovery: boolean;
+  manualRecoveryFailureKind?: 'provider_usage_limit' | null;
 };
 
-type ResolveLeadingIndicatorPositionOptions = {
+type ResolveLeadingRailLayoutOptions = {
   hasChildren: boolean;
   showLeadingStatus: boolean;
   isPinnedSession: boolean;
 };
 
-// Must cover the largest absolute left offset used by leading status/pin
-// indicators so the animated row wrapper can clip vertically without hiding them.
-export const SESSION_LEADING_INDICATOR_CLIP_GUTTER_PX = 34;
+export type LeadingRailLayout = {
+  slots: [
+    'status' | null,
+    'status' | 'pin' | null,
+    'pin' | 'chevron' | null,
+  ];
+};
+
+type SessionChildIdentity = {
+  id: string;
+};
 
 const QUESTION_REQUIRED_INDICATOR: SessionIndicator = {
   className: 'bg-status-info',
@@ -81,6 +100,26 @@ export function resolveSidebarWorkingStatus({
   if (pendingQuestionCount > 0) return false;
   if (planState === 'proposed') return false;
   return isWorking;
+}
+
+export function collectSessionIndicatorScopeIds(
+  rootSessionId: string,
+  childrenByParent: ReadonlyMap<string, readonly SessionChildIdentity[]>,
+): string[] {
+  const scope = [rootSessionId];
+  const seen = new Set(scope);
+  const pending = [...(childrenByParent.get(rootSessionId) ?? [])];
+
+  while (pending.length > 0) {
+    const child = pending.shift();
+    if (!child || seen.has(child.id)) continue;
+
+    seen.add(child.id);
+    scope.push(child.id);
+    pending.push(...(childrenByParent.get(child.id) ?? []));
+  }
+
+  return scope;
 }
 
 export function resolveSidebarIndicator({
@@ -123,6 +162,31 @@ export function resolveSidebarIndicator({
   return null;
 }
 
+export function resolveMobileSessionIndicatorPresentation({
+  indicator,
+  isWorking,
+  planState,
+}: {
+  indicator: SessionIndicator | null;
+  isWorking: boolean;
+  planState: PlanIndicatorState | null;
+}): MobileSessionIndicatorPresentation {
+  if (indicator) {
+    return { kind: 'status', indicator };
+  }
+
+  if (isWorking) {
+    return {
+      kind: 'working',
+      labelKey: planState === 'implementing'
+        ? 'sessions.sidebar.session.status.planExecuting'
+        : 'sessions.sidebar.session.status.active',
+    };
+  }
+
+  return { kind: 'idle' };
+}
+
 export function resolveSubtaskSidebarIndicator({
   isRootSession,
   notifyOnSubtasks,
@@ -131,22 +195,45 @@ export function resolveSubtaskSidebarIndicator({
   hasUnreadCompletion,
   hasUnreadError,
   hasManualRecovery,
+  manualRecoveryFailureKind,
 }: ResolveSubtaskSidebarIndicatorOptions): SessionIndicator | null {
   if (isRootSession) return null;
-  if (hasManualRecovery) return ERROR_INDICATOR;
+  if (hasManualRecovery && (!isWorking || manualRecoveryFailureKind === 'provider_usage_limit')) {
+    return ERROR_INDICATOR;
+  }
   if (!notifyOnSubtasks || isWorking || isActive) return null;
   if (hasUnreadError) return ERROR_INDICATOR;
   if (hasUnreadCompletion) return SESSION_COMPLETED_INDICATOR;
   return null;
 }
 
-export function resolveLeadingIndicatorPositionClasses({
+export function resolveLeadingRailLayout({
   hasChildren,
   showLeadingStatus,
   isPinnedSession,
-}: ResolveLeadingIndicatorPositionOptions): string {
-  if (showLeadingStatus && isPinnedSession) return 'left-[-34px] w-6';
-  if (showLeadingStatus) return 'left-[-24px] w-3.5';
-  if (hasChildren && isPinnedSession) return 'left-[-18px] w-3.5';
-  return 'left-[-10px] w-3.5';
+}: ResolveLeadingRailLayoutOptions): LeadingRailLayout {
+  const slots: LeadingRailLayout['slots'] = [null, null, null];
+
+  if (hasChildren) {
+    slots[2] = 'chevron';
+  }
+
+  if (showLeadingStatus && isPinnedSession) {
+    slots[0] = 'status';
+    slots[1] = 'pin';
+    return { slots };
+  }
+
+  if (showLeadingStatus) {
+    slots[1] = 'status';
+    return { slots };
+  }
+
+  if (isPinnedSession) {
+    slots[hasChildren ? 1 : 2] = 'pin';
+  }
+
+  return {
+    slots,
+  };
 }

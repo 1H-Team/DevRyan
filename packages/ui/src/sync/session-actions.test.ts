@@ -3219,10 +3219,10 @@ describe("revertToMessage recovery behavior", () => {
     })
     const childStores = createChildStores([["/test/project", store]])
 
-    const { abortCurrentOperation, setActionRefs } = await import("./session-actions")
+    const { abortCurrentOperationConfirmed, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
 
-    await abortCurrentOperation("session-a")
+    expect(await abortCurrentOperationConfirmed("session-a")).toBe(true)
 
     expect(sessionAbortCalls).toEqual([{ sessionID: "session-a", directory: "/test/project" }])
     const abortFlag = mockSessionAbortFlags.get("session-a")
@@ -3260,13 +3260,26 @@ describe("revertToMessage recovery behavior", () => {
     const childStores = createChildStores([["/test/project", store]])
     sessionAbortHandler = () => Promise.reject(new Error("abort failed"))
 
-    const { abortCurrentOperation, setActionRefs } = await import("./session-actions")
+    const { abortCurrentOperationConfirmed, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
 
-    await withMutedConsoleError(() => abortCurrentOperation("session-a"))
+    expect(await withMutedConsoleError(() => abortCurrentOperationConfirmed("session-a"))).toBe(false)
 
     expect(sessionAbortCalls).toEqual([{ sessionID: "session-a", directory: "/test/project" }])
     expect(mockSessionAbortFlags.get("session-a")).toBe(undefined)
+  })
+
+  test("does not confirm an abort when the SDK resolves without acknowledgement", async () => {
+    const store = createStore({}, [makeSession("session-a")])
+    const childStores = createChildStores([["/test/project", store]])
+    sessionAbortHandler = () => Promise.resolve({ data: false })
+
+    const { abortCurrentOperationConfirmed, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    expect(await withMutedConsoleError(() => abortCurrentOperationConfirmed("session-a"))).toBe(false)
+    expect(mockSessionAbortFlags.get("session-a")).toBe(undefined)
+    expect(store.getState().session_status["session-a"]).toBe(undefined)
   })
 
   test("clears existing completion indicators after sdk abort succeeds", async () => {

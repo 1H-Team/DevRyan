@@ -6,6 +6,7 @@ import {
   createManagedTaskRecord,
   type ManagedOrchestrationState,
   type ManagedTaskExecutorResult,
+  type ManagedTaskResultEnvelope,
   type ManagedTaskScheduler,
 } from '@openchamber/orchestration-runtime';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -75,6 +76,13 @@ const getTask = (value: unknown) => {
   };
 };
 
+const getFollowUpTask = (value: unknown) => {
+  if (!value || typeof value !== 'object' || !('followUpTask' in value)) {
+    throw new TypeError('expected follow-up task result');
+  }
+  return getTask(value.followUpTask);
+};
+
 const createPersistence = () => {
   let state: ManagedOrchestrationState | null = null;
   return {
@@ -142,6 +150,84 @@ describe('VS Code managed orchestration owner', () => {
       })).rejects.toMatchObject({ code: 'invalid_request', statusCode: 400 });
     }
     expect(waitForTask).toHaveBeenCalledTimes(3);
+    await runtime.shutdown();
+  });
+
+  it('matches web result-action waiting and follow-up projection', async () => {
+    const original = queuedTask(1);
+    const followUp = queuedTask(2);
+    const resultEnvelope: ManagedTaskResultEnvelope = {
+      owner: 'devryan',
+      envelopeId: 'dvr_result_1_1',
+      taskId: original.taskId,
+      rootSessionId: 'ses_root',
+      parentTaskId: null,
+      childSessionId: 'ses_child',
+      directory: '/workspace',
+      sequence: 1,
+      status: 'failed',
+      partial: true,
+      failureReason: 'Monthly usage limit reached',
+      attempt: 1,
+      priorTaskId: null,
+      executionKind: 'start',
+      recoverablePreview: 'Partial child result',
+      canonicalRefs: [],
+      resumable: true,
+      createdAt: 2_000,
+      acknowledgedAt: 2_100,
+      action: 'retry_in_place',
+      followUpTaskId: followUp.taskId,
+    };
+    const waitForResultAction = vi.fn<ManagedTaskScheduler['waitForResultAction']>(
+      async () => resultEnvelope,
+    );
+    const scheduler = {
+      initialize: vi.fn(async () => undefined),
+      getTask: vi.fn((taskId: string) => (
+        taskId === original.taskId ? original : taskId === followUp.taskId ? followUp : null
+      )),
+      getResultEnvelope: vi.fn(() => null),
+      waitForResultAction,
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    } as unknown as ManagedTaskScheduler;
+    const runtime = createVsCodeManagedOrchestrationRuntime({
+      storageDirectory: '/unused',
+      scheduler,
+      persistence: createPersistence(),
+      executor: {
+        async start() { throw new Error('must not start'); },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' as const }; },
+        async readRecoverableResult() { return {}; },
+      },
+    });
+    const controller = new AbortController();
+
+    const result = await runtime.handleRpc({
+      method: 'wait_result_action',
+      params: {
+        taskId: original.taskId,
+        rootSessionId: 'ses_root',
+        directory: '/workspace',
+      },
+    }, { signal: controller.signal });
+
+    expect(waitForResultAction).toHaveBeenCalledWith(original.taskId, {
+      signal: controller.signal,
+    });
+    expect(result).toMatchObject({
+      resultEnvelope,
+      followUpTask: {
+        task: {
+          taskId: followUp.taskId,
+          rootSessionId: 'ses_root',
+          status: 'queued',
+        },
+      },
+    });
     await runtime.shutdown();
   });
 
@@ -424,9 +510,63 @@ describe('VS Code managed orchestration owner', () => {
       status: 'failed',
       failureReason: 'out of usage',
       failureKind: 'provider_usage_limit',
-      agentRetryAvailable: true,
+      agentRetryAvailable: false,
     });
     expect(status.resultEnvelope).toMatchObject({ resumable: true, action: null });
+    await expect(runtime.handleRpc({
+      method: 'acknowledge',
+      params: {
+        taskId: getTask(submitted).taskId,
+        rootSessionId: 'ses_root',
+        directory: '/workspace',
+        action: 'resume',
+        idempotencyKey: 'agent-rate-limit-resume',
+      },
+    })).rejects.toMatchObject({ code: 'manual_model_recovery_required', statusCode: 409 });
+    await runtime.shutdown();
+  });
+
+  it('enforces a 60-minute Oracle deadline for starts and follow-ups', async () => {
+    const runtime = createVsCodeManagedOrchestrationRuntime({
+      storageDirectory: '/unused',
+      persistence: createPersistence(),
+      executor: {
+        async start() {
+          return { status: 'failed' as const, failureReason: 'temporary failure', resumable: true };
+        },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' as const }; },
+        async readRecoverableResult() { return {}; },
+        async shutdown() {},
+      },
+      createTaskId: (() => {
+        let index = 0;
+        return () => `dvr_task_oracle_deadline_${++index}`;
+      })(),
+      createLeaseToken: (() => {
+        let index = 0;
+        return () => `dvr_lease_oracle_deadline_${++index}`;
+      })(),
+      now: () => 10_000,
+    });
+    const submitted = await runtime.handleRpc({
+      method: 'submit',
+      params: submitParams(1, { agent: 'oracle', timeoutAt: 1_810_000 }),
+    });
+    expect(getTask(submitted).timeoutAt).toBe(3_610_000);
+    await runtime.flush();
+
+    const retried = await runtime.handleRpc({
+      method: 'acknowledge',
+      params: {
+        taskId: getTask(submitted).taskId,
+        rootSessionId: 'ses_root',
+        directory: '/workspace',
+        action: 'retry',
+        idempotencyKey: 'retry-oracle-deadline',
+      },
+    });
+    expect(getFollowUpTask(retried).timeoutAt).toBe(3_610_000);
     await runtime.shutdown();
   });
 
@@ -533,6 +673,11 @@ describe('VS Code managed orchestration owner', () => {
           directory: '/workspace',
           action: actions[index],
           idempotencyKey: `ack-${actions[index]}`,
+          ...(actions[index] === 'retry_in_place' ? {
+            providerId: 'openai',
+            modelId: 'gpt-5.4',
+            variant: null,
+          } : {}),
         },
       }) as { followUpTask: unknown };
       expect(getTask(result.followUpTask).timeoutAt).toBe(1_810_000);
@@ -547,7 +692,11 @@ describe('VS Code managed orchestration owner', () => {
       persistence: createPersistence(),
       executor: {
         async start() {
-          return { status: 'failed' as const, failureReason: 'usage limit', resumable: true };
+          return {
+            status: 'failed' as const,
+            failureReason: 'provider connection ended',
+            resumable: true,
+          };
         },
         async abort() { return { aborted: true }; },
         async reconcile() { return { state: 'unavailable' as const }; },
@@ -741,6 +890,27 @@ describe('VS Code managed orchestration owner', () => {
 
     expect(requests).toHaveLength(1);
     expect(requests[0].init?.signal).toBe(controller.signal);
+  });
+
+  it('defers same-child reconciliation while the managed API URL is unavailable', async () => {
+    const executor = createVsCodeManagedOpenCodeExecutor({
+      manager: {
+        getApiUrl: () => null,
+        getOpenCodeAuthHeaders: () => ({ authorization: 'Basic opaque' }),
+      },
+      fetchImpl: vi.fn(),
+    });
+
+    await expect(executor.reconcile({
+      ...queuedTask(4),
+      childSessionId: 'ses_existing',
+      status: 'running',
+      leaseToken: 'dvr_lease_existing',
+      startedAt: 1_100,
+    })).resolves.toEqual({
+      state: 'transient',
+      failureReason: 'OpenCode API URL is unavailable',
+    });
   });
 
   it('discards a stale Cursor child through both authoritative owners before prompting', async () => {

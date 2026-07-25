@@ -2,13 +2,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createOpenCodeNetworkRuntime } from './network-runtime.js';
 
-const createRuntime = () => createOpenCodeNetworkRuntime({
+const createRuntime = (stateOverrides = {}) => createOpenCodeNetworkRuntime({
   state: {
     openCodePort: 4096,
     openCodeBaseUrl: null,
     openCodeApiPrefix: '',
     openCodeApiPrefixDetected: false,
     openCodeApiDetectionTimer: null,
+    ...stateOverrides,
   },
   getOpenCodeAuthHeaders: () => ({}),
 });
@@ -33,5 +34,15 @@ describe('OpenCode network runtime', () => {
     await expect(readyPromise).resolves.toBe(false);
 
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('types a missing managed runtime port as transient unavailability', () => {
+    const runtime = createRuntime({ openCodePort: null });
+
+    expect(() => runtime.buildOpenCodeUrl('/session')).toThrowError(expect.objectContaining({
+      message: 'OpenCode port is not available',
+      code: 'managed_runtime_unavailable',
+      statusCode: 503,
+    }));
   });
 });

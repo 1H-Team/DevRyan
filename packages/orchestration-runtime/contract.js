@@ -1,4 +1,7 @@
-import { classifyProviderRetryFailure } from './provider-retry-policy.js';
+import {
+  PROVIDER_USAGE_LIMIT_FAILURE_KIND,
+  classifyProviderRetryFailure,
+} from './provider-retry-policy.js';
 
 export const MANAGED_TASK_OWNER = 'devryan';
 
@@ -215,39 +218,43 @@ export const createManagedTaskRecord = (input) => {
   return validateManagedTaskRecord(task);
 };
 
-const projectTaskForEvent = (task) => ({
-  owner: task.owner,
-  taskId: task.taskId,
-  rootSessionId: task.rootSessionId,
-  parentTaskId: task.parentTaskId,
-  childSessionId: task.childSessionId,
-  directory: task.directory,
-  sequence: task.sequence,
-  mode: task.mode,
-  providerId: task.providerId,
-  modelId: task.modelId,
-  agent: task.agent,
-  variant: task.variant,
-  label: task.label,
-  status: task.status,
-  attempt: task.attempt,
-  priorTaskId: task.priorTaskId,
-  executionKind: task.executionKind,
-  createdAt: task.createdAt,
-  startedAt: task.startedAt,
-  finishedAt: task.finishedAt,
-  timeoutAt: task.timeoutAt,
-  failureReason: task.failureReason,
-  failureKind: classifyProviderRetryFailure(task.failureReason),
-  partial: task.partial,
-  recoverablePreview: task.recoverablePreview,
-  canonicalRefs: task.canonicalRefs,
-  agentRetryAvailable: (
-    task.mode === 'orchestrator'
-    && task.dispatchGroupId !== null
-    && task.attempt < 2
-  ),
-});
+const projectTaskForEvent = (task) => {
+  const failureKind = classifyProviderRetryFailure(task.failureReason);
+  return {
+    owner: task.owner,
+    taskId: task.taskId,
+    rootSessionId: task.rootSessionId,
+    parentTaskId: task.parentTaskId,
+    childSessionId: task.childSessionId,
+    directory: task.directory,
+    sequence: task.sequence,
+    mode: task.mode,
+    providerId: task.providerId,
+    modelId: task.modelId,
+    agent: task.agent,
+    variant: task.variant,
+    label: task.label,
+    status: task.status,
+    attempt: task.attempt,
+    priorTaskId: task.priorTaskId,
+    executionKind: task.executionKind,
+    createdAt: task.createdAt,
+    startedAt: task.startedAt,
+    finishedAt: task.finishedAt,
+    timeoutAt: task.timeoutAt,
+    failureReason: task.failureReason,
+    failureKind,
+    partial: task.partial,
+    recoverablePreview: task.recoverablePreview,
+    canonicalRefs: task.canonicalRefs,
+    agentRetryAvailable: (
+      task.mode === 'orchestrator'
+      && task.dispatchGroupId !== null
+      && task.attempt < 2
+      && failureKind !== PROVIDER_USAGE_LIMIT_FAILURE_KIND
+    ),
+  };
+};
 
 export const toManagedTaskEvent = (task, resultEnvelope = null) => {
   validateManagedTaskRecord(task);

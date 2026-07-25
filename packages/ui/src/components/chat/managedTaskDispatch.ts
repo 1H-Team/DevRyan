@@ -1,4 +1,5 @@
 import type { Part, ToolPart } from '@opencode-ai/sdk/v2';
+import type { ManagedTaskStatus } from '@openchamber/orchestration-runtime';
 
 import { isManagedTaskToolName } from './message/parts/toolRenderUtils';
 
@@ -21,6 +22,54 @@ export type PendingManagedTaskDispatch = {
   partId: string;
   agent: string;
   label: string;
+  status: 'preparing' | 'error';
+  errorMessage?: string;
+};
+
+export type ManagedTaskDispatchFallback = {
+  partId: string;
+  taskId: string;
+  agent: string;
+  label: string;
+  status: ManagedTaskStatus;
+  childSessionId: string | null;
+  directory: string;
+};
+
+const MANAGED_TASK_STATUSES = new Set<ManagedTaskStatus>([
+  'queued',
+  'starting',
+  'running',
+  'completed',
+  'failed',
+  'aborted',
+  'interrupted',
+]);
+
+const MANAGED_START_FAILURE_STATUSES = new Set([
+  'error',
+  'failed',
+  'aborted',
+  'cancelled',
+  'canceled',
+  'timeout',
+  'timedout',
+]);
+
+const readErrorMessage = (value: unknown): string => {
+  const raw = typeof value === 'string'
+    ? value
+    : value && typeof value === 'object' && !Array.isArray(value)
+      && typeof (value as { message?: unknown }).message === 'string'
+      ? (value as { message: string }).message
+      : '';
+  const normalized = raw.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  const permissionRulesIndex = normalized.search(/\s+Here are some of the relevant rules\b/i);
+  const withoutRules = permissionRulesIndex >= 0
+    ? normalized.slice(0, permissionRulesIndex)
+    : normalized;
+  return withoutRules.slice(0, 240);
 };
 
 const parsePayload = (output: unknown): ManagedTaskPayload | null => {
@@ -36,6 +85,62 @@ const parsePayload = (output: unknown): ManagedTaskPayload | null => {
   } catch {
     return null;
   }
+};
+
+const fallbackFromTask = (
+  partId: string,
+  value: unknown,
+): ManagedTaskDispatchFallback | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const task = value as Record<string, unknown>;
+  const taskId = typeof task.taskId === 'string' ? task.taskId.trim() : '';
+  const agent = typeof task.agent === 'string' ? task.agent.trim() : '';
+  const label = typeof task.label === 'string' ? task.label.trim() : '';
+  const status = typeof task.status === 'string' ? task.status.trim() : '';
+  const directory = typeof task.directory === 'string' ? task.directory.trim() : '';
+  const childSessionId = typeof task.childSessionId === 'string'
+    ? task.childSessionId.trim()
+    : task.childSessionId === null
+      ? null
+      : undefined;
+  if (
+    !taskId.startsWith('dvr_task_')
+    || !agent
+    || !label
+    || !MANAGED_TASK_STATUSES.has(status as ManagedTaskStatus)
+    || !directory
+    || childSessionId === undefined
+  ) return null;
+  return {
+    partId,
+    taskId,
+    agent,
+    label,
+    status: status as ManagedTaskStatus,
+    childSessionId: childSessionId || null,
+    directory,
+  };
+};
+
+export const resolveManagedTaskFallbacks = (
+  parts: readonly Part[],
+): ManagedTaskDispatchFallback[] => {
+  const latestByTaskId = new Map<string, ManagedTaskDispatchFallback>();
+  for (const part of parts) {
+    if (part.type !== 'tool' || !isManagedTaskToolName((part as ToolPart).tool)) continue;
+    const state = (part as ToolPart).state as Record<string, unknown> | undefined;
+    const payload = parsePayload(state?.output);
+    if (!payload) continue;
+    const candidates = [
+      payload.task,
+      payload.followUpTask?.task,
+    ];
+    for (const candidate of candidates) {
+      const fallback = fallbackFromTask(part.id, candidate);
+      if (fallback) latestByTaskId.set(fallback.taskId, fallback);
+    }
+  }
+  return Array.from(latestByTaskId.values());
 };
 
 const taskIdFromPart = (part: ToolPart): string | null => {
@@ -57,15 +162,28 @@ const pendingDispatchFromPart = (part: ToolPart): PendingManagedTaskDispatch | n
   const input = state?.input as Record<string, unknown> | undefined;
   const action = typeof input?.action === 'string' ? input.action.trim() : '';
   const status = typeof state?.status === 'string' ? state.status.trim() : '';
-  if (action !== 'start' || (status !== 'pending' && status !== 'running')) return null;
+  if (action !== 'start') return null;
 
   const agent = typeof input?.agent === 'string' ? input.agent.trim() : '';
   const label = typeof input?.label === 'string' ? input.label.trim() : '';
   const normalizedAgent = agent || 'agent';
+  if (status === 'pending' || status === 'running') {
+    return {
+      partId: part.id,
+      agent: normalizedAgent,
+      label: label || `Managed ${normalizedAgent} task`,
+      status: 'preparing',
+    };
+  }
+  if (!MANAGED_START_FAILURE_STATUSES.has(status.toLowerCase().replace(/[\s_-]+/g, ''))) {
+    return null;
+  }
   return {
     partId: part.id,
     agent: normalizedAgent,
     label: label || `Managed ${normalizedAgent} task`,
+    status: 'error',
+    errorMessage: readErrorMessage(state?.error),
   };
 };
 

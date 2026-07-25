@@ -7,6 +7,7 @@ export interface SessionPlanFileRecord {
   path: string | null;
   status: SessionPlanFileStatus;
   error: string | null;
+  autoRevealed?: boolean;
 }
 
 interface SessionPlanFileState {
@@ -14,6 +15,7 @@ interface SessionPlanFileState {
   beginSaving: (sessionId: string, sourceMessageId: string) => void;
   markSaved: (sessionId: string, sourceMessageId: string, path: string) => void;
   markError: (sessionId: string, sourceMessageId: string, error: string) => void;
+  claimAutoReveal: (sessionId: string, sourceMessageId: string) => boolean;
   clearSession: (sessionId: string) => void;
 }
 
@@ -33,7 +35,7 @@ export const useSessionPlanFileStore = create<SessionPlanFileState>((set) => ({
       return {
         recordsBySession: {
           ...state.recordsBySession,
-          [id]: { sourceMessageId: messageId, path: null, status: 'saving', error: null },
+          [id]: { sourceMessageId: messageId, path: null, status: 'saving', error: null, autoRevealed: false },
         },
       };
     });
@@ -52,7 +54,13 @@ export const useSessionPlanFileStore = create<SessionPlanFileState>((set) => ({
       return {
         recordsBySession: {
           ...state.recordsBySession,
-          [id]: { sourceMessageId: messageId, path: savedPath, status: 'saved', error: null },
+          [id]: {
+            sourceMessageId: messageId,
+            path: savedPath,
+            status: 'saved',
+            error: null,
+            autoRevealed: current.autoRevealed === true,
+          },
         },
       };
     });
@@ -71,10 +79,45 @@ export const useSessionPlanFileStore = create<SessionPlanFileState>((set) => ({
       return {
         recordsBySession: {
           ...state.recordsBySession,
-          [id]: { sourceMessageId: messageId, path: null, status: 'error', error: errorText },
+          [id]: {
+            sourceMessageId: messageId,
+            path: null,
+            status: 'error',
+            error: errorText,
+            autoRevealed: current.autoRevealed === true,
+          },
         },
       };
     });
+  },
+
+  claimAutoReveal: (sessionId, sourceMessageId) => {
+    const id = clean(sessionId);
+    const messageId = clean(sourceMessageId);
+    if (!id || !messageId) return false;
+
+    let claimed = false;
+    set((state) => {
+      const current = state.recordsBySession[id];
+      if (
+        !current
+        || current.sourceMessageId !== messageId
+        || current.status !== 'saved'
+        || !current.path
+        || current.autoRevealed === true
+      ) {
+        return state;
+      }
+
+      claimed = true;
+      return {
+        recordsBySession: {
+          ...state.recordsBySession,
+          [id]: { ...current, autoRevealed: true },
+        },
+      };
+    });
+    return claimed;
   },
 
   clearSession: (sessionId) => {

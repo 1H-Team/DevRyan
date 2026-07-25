@@ -14,6 +14,9 @@ const TRY_CF_URL_REGEX = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/i;
 const DEFAULT_STARTUP_TIMEOUT_MS = 30000;
 const MANAGED_TUNNEL_STARTUP_TIMEOUT_MS = 20000;
 const MANAGED_TUNNEL_LIVENESS_FALLBACK_MS = 6000;
+const CLOUDFLARED_INTERRUPT_GRACE_MS = 1000;
+const CLOUDFLARED_TERMINATE_GRACE_MS = 1500;
+const CLOUDFLARED_KILL_GRACE_MS = 1000;
 const CLOUDFLARED_LOG_MAX_LINES = 20;
 const TUNNEL_MODE_QUICK = 'quick';
 const TUNNEL_MODE_MANAGED_REMOTE = 'managed-remote';
@@ -26,6 +29,73 @@ export class CloudflareTunnelStartupError extends Error {
     this.code = code;
     this.details = details;
   }
+}
+
+const hasCloudflaredExited = (child) => {
+  return (
+    (child?.exitCode !== null && child?.exitCode !== undefined)
+    || (child?.signalCode !== null && child?.signalCode !== undefined)
+  );
+};
+
+const waitForCloudflaredExit = (child, timeoutMs) => {
+  if (hasCloudflaredExited(child)) {
+    return Promise.resolve(true);
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (exited) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      child.off?.('exit', onExit);
+      resolve(exited);
+    };
+    const onExit = () => settle(true);
+    const timeout = setTimeout(() => settle(hasCloudflaredExited(child)), timeoutMs);
+    child.once('exit', onExit);
+  });
+};
+
+export async function stopCloudflaredProcess(child, {
+  interruptGraceMs = CLOUDFLARED_INTERRUPT_GRACE_MS,
+  terminateGraceMs = CLOUDFLARED_TERMINATE_GRACE_MS,
+  killGraceMs = CLOUDFLARED_KILL_GRACE_MS,
+} = {}) {
+  if (!child || typeof child.kill !== 'function' || hasCloudflaredExited(child)) {
+    return { stopped: true, signal: null, escalated: false };
+  }
+
+  const attempts = [
+    { signal: 'SIGINT', graceMs: interruptGraceMs },
+    { signal: 'SIGTERM', graceMs: terminateGraceMs },
+    { signal: 'SIGKILL', graceMs: killGraceMs },
+  ];
+
+  for (const [index, attempt] of attempts.entries()) {
+    try {
+      child.kill(attempt.signal);
+    } catch (error) {
+      if (!hasCloudflaredExited(child)) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Failed to signal cloudflared with ${attempt.signal}: ${message}`);
+      }
+    }
+
+    if (await waitForCloudflaredExit(child, attempt.graceMs)) {
+      return {
+        stopped: true,
+        signal: attempt.signal,
+        escalated: index > 0,
+      };
+    }
+  }
+
+  const processLabel = Number.isFinite(child.pid) ? ` (pid ${child.pid})` : '';
+  throw new Error(`Cloudflared did not exit after SIGINT, SIGTERM, and SIGKILL${processLabel}`);
 }
 
 export function redactCloudflaredLogLine(line) {
@@ -534,13 +604,7 @@ export async function startCloudflareQuickTunnel({ originUrl }) {
 
   return {
     mode: TUNNEL_MODE_QUICK,
-    stop: () => {
-      try {
-        child.kill('SIGINT');
-      } catch {
-        // Ignore
-      }
-    },
+    stop: () => stopCloudflaredProcess(child),
     process: child,
     getPublicUrl: () => publicUrl,
     getDiagnostics: () => ({ startupLogExcerpt: outputBuffer.excerpt() }),
@@ -633,13 +697,10 @@ export async function startCloudflareManagedRemoteTunnel({ token, hostname, toke
 
   return {
     mode: TUNNEL_MODE_MANAGED_REMOTE,
-    stop: () => {
-      try {
-        child.kill('SIGINT');
-      } catch {
-        // Ignore
-      }
+    stop: async () => {
+      const result = await stopCloudflaredProcess(child);
       cleanupTempTokenFile();
+      return result;
     },
     process: child,
     getPublicUrl: () => publicUrl,
@@ -711,13 +772,7 @@ export async function startCloudflareManagedLocalTunnel({ configPath, hostname }
 
   return {
     mode: TUNNEL_MODE_MANAGED_LOCAL,
-    stop: () => {
-      try {
-        child.kill('SIGINT');
-      } catch {
-        // Ignore
-      }
-    },
+    stop: () => stopCloudflaredProcess(child),
     process: child,
     getPublicUrl: () => publicUrl,
     getResolvedHostname: () => resolvedHost,

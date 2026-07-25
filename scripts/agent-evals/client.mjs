@@ -192,7 +192,7 @@ export const createEvaluationClient = (options = {}) => {
       return session;
     },
     async promptSession(sessionId, directory, selection, prompt, signal) {
-      const tools = resolveProviderPromptTools(selection.providerId);
+      const tools = resolveProviderPromptTools(selection.providerId, selection.agent);
       return await request(appendQuery(`/session/${encodeURIComponent(sessionId)}/prompt_async`, { directory }), {
         method: 'POST',
         body: {

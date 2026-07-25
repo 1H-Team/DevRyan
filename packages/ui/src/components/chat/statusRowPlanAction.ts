@@ -1,4 +1,5 @@
 import type { SessionPlanFileRecord } from '@/stores/useSessionPlanFileStore';
+import type { PlanIndicatorEntry } from '@/sync/plan-indicator';
 
 interface StatusRowPlanActionOptions {
   showTodos: boolean;
@@ -12,6 +13,59 @@ export interface StatusRowPlanActionState {
   enabled: boolean;
   disabledReason: string | null;
 }
+
+export interface PlanAutoRevealTarget {
+  sessionId: string;
+  sourceMessageId: string;
+  path: string;
+}
+
+export const shouldAutoRevealPlanInMainTab = ({
+  isMobile,
+  isVSCode,
+}: {
+  isMobile: boolean;
+  isVSCode: boolean;
+}): boolean => isMobile || isVSCode;
+
+export const getPlanAutoRevealTarget = ({
+  sessionId,
+  isPlanAvailable,
+  planIndicator,
+  isPlanSourceImplemented,
+  record,
+}: {
+  sessionId: string | null;
+  isPlanAvailable: boolean;
+  planIndicator: PlanIndicatorEntry | undefined;
+  isPlanSourceImplemented: boolean;
+  record: SessionPlanFileRecord | undefined;
+}): PlanAutoRevealTarget | null => {
+  if (
+    !sessionId
+    || !isPlanAvailable
+    || isPlanSourceImplemented
+    || record?.status !== 'saved'
+    || !record.path
+    || record.autoRevealed === true
+  ) {
+    return null;
+  }
+
+  if (planIndicator && planIndicator.state !== 'proposed') {
+    return null;
+  }
+
+  if (planIndicator?.sourceMessageId && planIndicator.sourceMessageId !== record.sourceMessageId) {
+    return null;
+  }
+
+  return {
+    sessionId,
+    sourceMessageId: record.sourceMessageId,
+    path: record.path,
+  };
+};
 
 export const hasPlanTaskTrackingContext = ({
   isPlanAvailable,

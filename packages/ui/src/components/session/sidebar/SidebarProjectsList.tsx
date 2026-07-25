@@ -198,7 +198,6 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
                       {!isCollapsed ? (
                         <SessionSidebarMotionRow
                           key={`project-body:${projectKey}`}
-                          withLeadingIndicatorGutter={false}
                         >
                           <div className="space-y-0 pt-0 pb-0.5 pl-3">
                             {section.groups.length > 0 ? (

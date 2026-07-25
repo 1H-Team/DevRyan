@@ -38,4 +38,48 @@ describe("ContextUsageWindow", () => {
     expect(markup).toContain("width:100%")
     expect(markup).not.toContain("width:125%")
   })
+
+  test("renders every subagent session with title-cased section headings", () => {
+    const subagentSessions = [
+      { sessionId: "subagent-1", title: "Alpha Research", totalTokens: 1101 },
+      { sessionId: "subagent-2", title: "Bravo Review", totalTokens: 2202 },
+      { sessionId: "subagent-3", title: "Charlie Tests", totalTokens: 3303 },
+      { sessionId: "subagent-4", title: "Delta Docs", totalTokens: 4404 },
+      { sessionId: "subagent-5", title: "Echo Audit", totalTokens: 5505 },
+    ].map((session) => ({
+      ...session,
+      capacityLimit: 10_000,
+      capacityBasis: "input" as const,
+      inputLimit: 10_000,
+      contextLimit: 10_000,
+      outputLimit: null,
+      percentage: (session.totalTokens / 10_000) * 100,
+    }))
+
+    const markup = renderToStaticMarkup(
+      <I18nProvider>
+        <ContextUsageWindow
+          usage={{
+            ...usage,
+            sourceAccuracy: "unavailable",
+            sources: [],
+            relatedSubagentSessions: subagentSessions,
+            relatedSubagentTotalTokens: subagentSessions.reduce((sum, session) => sum + session.totalTokens, 0),
+          }}
+          onClose={() => {}}
+        />
+      </I18nProvider>,
+    )
+
+    expect(markup).toContain("Token Stats")
+    expect(markup).toContain("Subagent Sessions")
+    expect(markup).not.toContain("Token stats")
+    expect(markup).not.toContain("Subagent sessions")
+    expect(markup).not.toContain("more sessions")
+
+    for (const session of subagentSessions) {
+      expect(markup).toContain(session.title)
+      expect(markup).toContain(`${(session.totalTokens / 1000).toFixed(1)}K / 10.0K`)
+    }
+  })
 })

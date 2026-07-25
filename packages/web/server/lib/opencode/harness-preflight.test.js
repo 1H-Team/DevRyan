@@ -162,6 +162,32 @@ describe('harness preflight', () => {
     ]));
   });
 
+  it('does not report forbidden tools that the selected prompt policy disables', () => {
+    const findings = lintAgentHarness({
+      agents: [],
+      skills: [],
+      hiddenSkills: [],
+      staleOverrides: [],
+      promptTools: {
+        invalid: false,
+        'mcp__*': false,
+      },
+      toolManifest: {
+        tools: [
+          { id: 'invalid' },
+          { id: 'mcp__context7__query-docs' },
+          { id: 'grep_app_searchGitHub' },
+        ],
+      },
+    });
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toEqual(expect.objectContaining({
+      ruleId: 'forbidden-runtime-tool-surface',
+      summary: expect.stringContaining('grep_app_searchGitHub'),
+    }));
+  });
+
   it('reports hidden allowed skills, stale overrides, duplicate skill names, malformed skills, and warmup state', () => {
     const findings = lintAgentHarness({
       agents: [
@@ -415,7 +441,12 @@ describe('harness preflight', () => {
 
     await request(app)
       .get('/api/diagnostics/harness/preflight')
-      .query({ directory: '/get-repo', providerID: 'openai', modelID: 'gpt-5.6' })
+      .query({
+        directory: '/get-repo',
+        providerID: 'openai',
+        modelID: 'gpt-5.6',
+        agent: 'orchestrator',
+      })
       .expect(200);
     await request(app)
       .post('/api/diagnostics/harness/preflight')
@@ -423,8 +454,18 @@ describe('harness preflight', () => {
       .expect(200);
 
     expect(contexts).toEqual([
-      { directory: '/get-repo', providerID: 'openai', modelID: 'gpt-5.6' },
-      { directory: '/post-repo', providerID: 'anthropic', modelID: 'claude-opus-4-6' },
+      {
+        directory: '/get-repo',
+        providerID: 'openai',
+        modelID: 'gpt-5.6',
+        agent: 'orchestrator',
+      },
+      {
+        directory: '/post-repo',
+        providerID: 'anthropic',
+        modelID: 'claude-opus-4-6',
+        agent: undefined,
+      },
     ]);
   });
 

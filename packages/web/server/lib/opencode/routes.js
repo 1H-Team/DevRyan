@@ -6,6 +6,7 @@ import {
   clearCursorSdkAuth,
   saveCursorSdkAuth,
 } from '@openchamber/cursor-sdk-runtime';
+import { resolveProviderPromptTools } from '@openchamber/orchestration-runtime';
 import {
   GITHUB_COPILOT_PROVIDER_ID,
   getProviderIntegrationLookupIds,
@@ -792,6 +793,21 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       console.error('Failed to merge Cursor SDK session status:', error);
       return next(error);
     }
+  });
+
+  app.post('/api/session/:sessionID/prompt_async', (req, _res, next) => {
+    const providerID = typeof req.body?.model?.providerID === 'string'
+      ? req.body.model.providerID.trim()
+      : '';
+    const agent = typeof req.body?.agent === 'string' ? req.body.agent : '';
+    const toolOverrides = resolveProviderPromptTools(providerID, agent);
+    if (toolOverrides) {
+      const existingTools = req.body?.tools && typeof req.body.tools === 'object' && !Array.isArray(req.body.tools)
+        ? req.body.tools
+        : {};
+      req.body.tools = { ...existingTools, ...toolOverrides };
+    }
+    return next();
   });
 
   app.post('/api/session/:sessionID/prompt_async', async (req, res, next) => {

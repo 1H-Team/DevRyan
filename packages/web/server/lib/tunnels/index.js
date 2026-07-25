@@ -33,21 +33,35 @@ export function createTunnelService({
     return controller.provider;
   };
 
+  let stopPromise = null;
+
   const stop = () => {
-    const controller = getController();
-    if (!controller) {
-      return false;
+    if (stopPromise) {
+      return stopPromise;
     }
 
-    const providerId = typeof controller.provider === 'string' ? controller.provider : '';
-    const provider = providerId ? registry.get(providerId) : null;
-    if (provider?.stop) {
-      provider.stop(controller);
-    } else {
-      controller.stop?.();
+    const controller = getController();
+    if (!controller) {
+      return Promise.resolve(false);
     }
-    setController(null);
-    return true;
+
+    stopPromise = (async () => {
+      const providerId = typeof controller.provider === 'string' ? controller.provider : '';
+      const provider = providerId ? registry.get(providerId) : null;
+      if (provider?.stop) {
+        await provider.stop(controller);
+      } else {
+        await controller.stop?.();
+      }
+      if (getController() === controller) {
+        setController(null);
+      }
+      return true;
+    })().finally(() => {
+      stopPromise = null;
+    });
+
+    return stopPromise;
   };
 
   const checkAvailability = async (providerId) => {
@@ -71,6 +85,10 @@ export function createTunnelService({
     await previousLock;
 
     try {
+      if (stopPromise) {
+        await stopPromise;
+      }
+
       const request = normalizeTunnelStartRequest(rawRequest);
       const provider = registry.get(request.provider);
 
@@ -84,7 +102,7 @@ export function createTunnelService({
       const activeMode = resolveActiveMode();
 
       if (publicUrl && activeMode !== request.mode) {
-        stop();
+        await stop();
         publicUrl = null;
       }
 
@@ -112,7 +130,7 @@ export function createTunnelService({
 
         publicUrl = provider.resolvePublicUrl(controller);
         if (!publicUrl) {
-          stop();
+          await stop();
           throw new TunnelServiceError('startup_failed', 'Tunnel started but no public URL was assigned');
         }
 

@@ -1133,8 +1133,10 @@ describe('OpenCode provider routes', () => {
       .post('/api/session/ses_1/prompt_async')
       .send({
         model: { providerID: 'cursor-acp', modelID: 'auto' },
+        agent: 'orchestrator',
         messageID: 'msg_1',
         parts: [{ type: 'text', text: 'hello' }],
+        tools: { keep_enabled: true },
       })
       .expect(204);
 
@@ -1142,8 +1144,16 @@ describe('OpenCode provider routes', () => {
       sessionID: 'ses_1',
       body: {
         model: { providerID: 'cursor-acp', modelID: 'auto' },
+        agent: 'orchestrator',
         messageID: 'msg_1',
         parts: [{ type: 'text', text: 'hello' }],
+        tools: {
+          keep_enabled: true,
+          task: false,
+          invalid: false,
+          'mcp__*': false,
+          'resend_*': false,
+        },
       },
       directory: '/tmp/project',
     });
@@ -1309,20 +1319,34 @@ describe('OpenCode provider routes', () => {
         getSessionMessages: vi.fn(async () => []),
       },
     });
-    app.post('/api/session/:sessionID/prompt_async', (_req, res) => res.json({ proxied: true }));
+    app.post('/api/session/:sessionID/prompt_async', (req, res) => res.json({
+      proxied: true,
+      tools: req.body.tools,
+    }));
 
     const response = await request(app)
       .post('/api/session/ses_1/prompt_async')
       .send({
         model: { providerID: 'anthropic', modelID: 'claude-sonnet' },
+        agent: 'orchestrator',
         messageID: 'msg_1',
         parts: [{ type: 'text', text: 'hello' }],
+        tools: { keep_enabled: true },
       })
       .expect(200);
 
     expect(handlePromptAsync).toHaveBeenCalled();
     expect(schedule).not.toHaveBeenCalled();
-    expect(response.body).toEqual({ proxied: true });
+    expect(response.body).toEqual({
+      proxied: true,
+      tools: {
+        keep_enabled: true,
+        task: false,
+        invalid: false,
+        'mcp__*': false,
+        'resend_*': false,
+      },
+    });
   });
 
   it('schedules standard-provider title generation after the proxied prompt succeeds', async () => {

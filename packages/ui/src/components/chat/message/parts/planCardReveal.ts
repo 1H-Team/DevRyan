@@ -62,10 +62,31 @@ export const getPlanCardActionState = ({
     };
   }
 
+  if (isImplementationRequested) {
+    return {
+      canImplement: false,
+      disabledReason: 'Implementation already started.',
+    };
+  }
+
   return {
-    canImplement: streamPhase === 'completed' && hasPlanText && !isImplementationRequested,
+    canImplement: streamPhase === 'completed' && hasPlanText,
     disabledReason: null,
   };
+};
+
+export const getPlanCardDataState = ({
+  isSuperseded,
+  isImplementationRequested,
+  canImplement,
+}: {
+  isSuperseded: boolean;
+  isImplementationRequested: boolean;
+  canImplement: boolean;
+}): 'superseded' | 'implemented' | 'actionable' | 'pending' => {
+  if (isSuperseded) return 'superseded';
+  if (isImplementationRequested) return 'implemented';
+  return canImplement ? 'actionable' : 'pending';
 };
 
 export const resolvePlanCardDisplayText = ({

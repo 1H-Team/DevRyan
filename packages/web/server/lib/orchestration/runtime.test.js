@@ -102,6 +102,98 @@ describe('web managed orchestration runtime', () => {
     await runtime.shutdown();
   });
 
+  it('waits for a result action and projects its same-scope follow-up task', async () => {
+    const original = createManagedTaskRecord({
+      taskId: 'dvr_task_limited',
+      idempotencyKey: 'limited-task',
+      rootSessionId: 'ses_root',
+      parentTaskId: null,
+      directory: '/workspace',
+      sequence: 1,
+      mode: 'orchestrator',
+      providerId: 'opencode-go',
+      modelId: 'glm-5.2',
+      agent: 'explorer',
+      variant: 'high',
+      label: 'Limited task',
+      prompt: 'Inspect the project.',
+      attempt: 1,
+      priorTaskId: null,
+      executionKind: 'start',
+      createdAt: 1_000,
+      timeoutAt: null,
+    });
+    const followUp = createManagedTaskRecord({
+      taskId: 'dvr_task_recovered',
+      idempotencyKey: 'recovered-task',
+      rootSessionId: 'ses_root',
+      parentTaskId: null,
+      childSessionId: 'ses_child',
+      directory: '/workspace',
+      sequence: 2,
+      mode: 'orchestrator',
+      providerId: 'openai',
+      modelId: 'gpt-5.6-terra',
+      agent: 'explorer',
+      variant: 'high',
+      label: 'Recovered task',
+      prompt: 'Continue the inspection.',
+      attempt: 2,
+      priorTaskId: original.taskId,
+      executionKind: 'retry_in_place',
+      createdAt: 2_000,
+      timeoutAt: null,
+    });
+    const resultEnvelope = {
+      taskId: original.taskId,
+      action: 'retry_in_place',
+      followUpTaskId: followUp.taskId,
+    };
+    const waitForResultAction = vi.fn(async () => resultEnvelope);
+    const scheduler = {
+      initialize: vi.fn(async () => undefined),
+      getTask: vi.fn((taskId) => (
+        taskId === original.taskId ? original : taskId === followUp.taskId ? followUp : null
+      )),
+      getResultEnvelope: vi.fn(() => null),
+      waitForResultAction,
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    };
+    const runtime = createWebManagedOrchestrationRuntime({
+      scheduler,
+      persistence: createPersistence(),
+      executor: { async start() { throw new Error('must not start'); } },
+    });
+    const controller = new AbortController();
+
+    const result = await runtime.handleRpc({
+      method: 'wait_result_action',
+      params: {
+        taskId: original.taskId,
+        rootSessionId: 'ses_root',
+        directory: '/workspace',
+      },
+    }, { signal: controller.signal });
+
+    expect(waitForResultAction).toHaveBeenCalledWith(original.taskId, {
+      signal: controller.signal,
+    });
+    expect(result).toMatchObject({
+      resultEnvelope,
+      followUpTask: {
+        task: {
+          taskId: followUp.taskId,
+          rootSessionId: 'ses_root',
+          childSessionId: 'ses_child',
+          status: 'queued',
+        },
+      },
+    });
+    await runtime.shutdown();
+  });
+
   it('inspects and confirms a safe orchestrator-to-builder handoff', async () => {
     const runs = [];
     const runtime = createWebManagedOrchestrationRuntime({
@@ -383,9 +475,62 @@ describe('web managed orchestration runtime', () => {
       status: 'failed',
       failureReason: 'out of usage',
       failureKind: 'provider_usage_limit',
-      agentRetryAvailable: true,
+      agentRetryAvailable: false,
     });
     expect(status.resultEnvelope).toMatchObject({ resumable: true, action: null });
+    await expect(runtime.handleRpc({
+      method: 'acknowledge',
+      params: {
+        taskId: submitted.task.taskId,
+        rootSessionId: 'ses_root',
+        directory: '/workspace',
+        action: 'resume',
+        idempotencyKey: 'agent-rate-limit-resume',
+      },
+    })).rejects.toMatchObject({ code: 'manual_model_recovery_required', statusCode: 409 });
+    await runtime.shutdown();
+  });
+
+  it('enforces a 60-minute Oracle deadline for starts and follow-ups', async () => {
+    const runtime = createWebManagedOrchestrationRuntime({
+      persistence: createPersistence(),
+      executor: {
+        async start() {
+          return { status: 'failed', failureReason: 'temporary failure', resumable: true };
+        },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' }; },
+        async readRecoverableResult() { return {}; },
+        async shutdown() {},
+      },
+      createTaskId: (() => {
+        let index = 0;
+        return () => `dvr_task_oracle_deadline_${++index}`;
+      })(),
+      createLeaseToken: (() => {
+        let index = 0;
+        return () => `dvr_lease_oracle_deadline_${++index}`;
+      })(),
+      now: () => 10_000,
+    });
+    const submitted = await runtime.handleRpc({
+      method: 'submit',
+      params: submitParams(1, { agent: 'oracle', timeoutAt: 1_810_000 }),
+    });
+    expect(submitted.task.timeoutAt).toBe(3_610_000);
+    await runtime.flush();
+
+    const retried = await runtime.handleRpc({
+      method: 'acknowledge',
+      params: {
+        taskId: submitted.task.taskId,
+        rootSessionId: 'ses_root',
+        directory: '/workspace',
+        action: 'retry',
+        idempotencyKey: 'retry-oracle-deadline',
+      },
+    });
+    expect(retried.followUpTask.task.timeoutAt).toBe(3_610_000);
     await runtime.shutdown();
   });
 
@@ -436,6 +581,11 @@ describe('web managed orchestration runtime', () => {
           directory: '/workspace',
           action: actions[index],
           idempotencyKey: `ack-${actions[index]}`,
+          ...(actions[index] === 'retry_in_place' ? {
+            providerId: 'openai',
+            modelId: 'gpt-5.4',
+            variant: null,
+          } : {}),
         },
       });
       expect(result.followUpTask.task.timeoutAt).toBe(1_810_000);
@@ -449,7 +599,7 @@ describe('web managed orchestration runtime', () => {
       persistence: createPersistence(),
       executor: {
         async start() {
-          return { status: 'failed', failureReason: 'usage limit', resumable: true };
+          return { status: 'failed', failureReason: 'provider connection ended', resumable: true };
         },
         async abort() { return { aborted: true }; },
         async reconcile() { return { state: 'unavailable' }; },

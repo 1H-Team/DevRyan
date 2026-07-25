@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { buildPlanCardRenderSegments, shouldSuppressPostPlanText } from "./planCardRender"
+import {
+  buildPlanCardRenderSegments,
+  shouldStopAfterPlanCard,
+  shouldSuppressPostPlanText,
+} from "./planCardRender"
 
 const structuredPlanBody = [
   "# Cursor Plan Card Fix",
@@ -194,5 +198,22 @@ describe("buildPlanCardRenderSegments", () => {
 
     expect(shouldSuppressPostPlanText(messagePlan, false)).toBe(false)
     expect(shouldSuppressPostPlanText(messagePlan, true)).toBe(true)
+  })
+
+  test("makes a rendered plan card terminal for plan-mode and sentinel-backed responses", () => {
+    const structuredPlan = {
+      preambleText: "",
+      planText: structuredPlanBody,
+      source: "structured" as const,
+    }
+    const sentinelPlan = {
+      ...structuredPlan,
+      source: "sentinel" as const,
+    }
+
+    expect(shouldStopAfterPlanCard(structuredPlan, true, true)).toBe(true)
+    expect(shouldStopAfterPlanCard(sentinelPlan, false, true)).toBe(true)
+    expect(shouldStopAfterPlanCard(structuredPlan, true, false)).toBe(false)
+    expect(shouldStopAfterPlanCard(structuredPlan, false, true)).toBe(false)
   })
 })

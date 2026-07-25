@@ -5,6 +5,7 @@ import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
 import { useSyncSDK } from "./sync-context"
 import { useDirectoryStore } from "./sync-context"
 import { useSync } from "./use-sync"
+import { resolveProviderPromptTools } from "@/lib/opencode/provider-prompt-tools"
 
 // ---------------------------------------------------------------------------
 // Ascending ID generator — monotonic timestamp + sequence counter
@@ -122,6 +123,7 @@ export function usePromptSubmit() {
             messageID,
             parts: requestParts,
             variant: input.variant,
+            tools: resolveProviderPromptTools(input.model.providerID, input.agent),
           })
         }
         return true

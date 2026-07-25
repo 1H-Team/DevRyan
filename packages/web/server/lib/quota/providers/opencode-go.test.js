@@ -6,6 +6,9 @@ import { fetchQuota, isConfigured, resolveOpenCodeGoCredentials } from './openco
 vi.mock('../../opencode/auth.js', () => ({
   readAuthFile: vi.fn(() => ({})),
 }));
+vi.mock('../credentials/providers.js', () => ({
+  readManagedQuotaCredential: vi.fn(() => null),
+}));
 
 const ORIGINAL_ENV = { ...process.env };
 

@@ -153,6 +153,21 @@ describe('quota usage utils', () => {
     expect(history[key]).toBe(undefined);
   });
 
+  test('trend recording uses provider measurement time and skips identical cached measurements', () => {
+    const key = buildQuotaTrendKey('codex', 'window', null, 'weekly');
+    const result = {
+      ...makeProviderResult(makeWindow({ usedPercent: 12 }), 20_000),
+      usageUpdatedAt: 10_000,
+    };
+    const first = recordProviderUsageTrends({}, result);
+    const second = recordProviderUsageTrends(first, { ...result, fetchedAt: 30_000 });
+
+    expect(first[key]).toEqual([
+      { fetchedAt: 10_000, usedPercent: 12, resetAt: null },
+    ]);
+    expect(second).toBe(first);
+  });
+
   test('remaining display state mirrors predicted used quota', () => {
     const resetAt = Date.now() + 12 * 60 * 60 * 1000;
     const window = makeWindow({

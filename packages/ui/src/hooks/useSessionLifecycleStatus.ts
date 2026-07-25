@@ -3,6 +3,7 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
 import { useSessionQuestions } from '@/sync/sync-context';
 import { useAssistantStatus } from './useAssistantStatus';
+import { resolveEffectivePlanIndicatorState } from '@/sync/plan-indicator';
 import {
   deriveSessionLifecycleStatus,
   type AssistantActivity,
@@ -40,7 +41,10 @@ export function useSessionLifecycleStatus(
     React.useCallback(
       (state): PlanIndicatorPhase => {
         if (!sessionId) return null;
-        return state.sessionPlanIndicator.get(sessionId)?.state ?? null;
+        return resolveEffectivePlanIndicatorState(
+          state.sessionPlanIndicator.get(sessionId),
+          state.planModeUserMessagesBySession.get(sessionId),
+        );
       },
       [sessionId],
     ),

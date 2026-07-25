@@ -107,6 +107,10 @@ const isProviderResult = (payload: unknown, providerId: QuotaProviderId): payloa
     && typeof candidate.ok === 'boolean'
     && typeof candidate.configured === 'boolean'
     && typeof candidate.fetchedAt === 'number'
+    && (
+      candidate.usageUpdatedAt === undefined
+      || (typeof candidate.usageUpdatedAt === 'number' && Number.isFinite(candidate.usageUpdatedAt))
+    )
     && ('usage' in candidate);
 };
 

@@ -261,7 +261,13 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getProfile,
     });
 
-    registerQuotaRoutes(app, { getQuotaProviders, resolveProjectDirectory });
+    registerQuotaRoutes(app, {
+      getQuotaProviders,
+      resolveProjectDirectory,
+      buildOpenCodeUrl,
+      getOpenCodeAuthHeaders,
+      isExternalOpenCode,
+    });
     registerGitHubRoutes(app);
     registerGitRoutes(app, { resolveZenModel });
     registerMagicPromptRoutes(app, {

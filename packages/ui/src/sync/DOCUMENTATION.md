@@ -68,6 +68,21 @@ a child terminal event therefore cannot regress the newer SSE state or remove
 older cached child activity when the response's fetch limit is smaller than the
 loaded history.
 
+## Message pagination and first-page loading
+
+`message-pagination-store.ts` owns the shared pagination record for each exact
+`(directory, session)` pair: initialization, loading, retained limit, cursor,
+and completion. The selected chat subscribes only to its exact record, so
+metadata repair rerenders a cache-only session without exposing unrelated
+session loads to chat chrome.
+
+First-page requests from chat, sidebar prefetch, and model restoration are
+coalesced by the same exact key. A caller that arrives during an existing load
+awaits that request instead of treating `loading` as successful completion.
+Session eviction/deletion and directory disposal remove the matching record and
+invalidate its load token; late responses therefore cannot recreate retired
+pagination state.
+
 ## Ownership map
 
 | Layer / Store | Owns | Scope |
@@ -128,6 +143,17 @@ deduplicates same-revision work, protects the latest session pointer from stale
 completions, and leaves failures stable until the Plan Card requests an explicit
 retry. Persisted-indicator restoration awaits the same save after materializing
 messages, so a reload repopulates the in-memory saved path in the background.
+
+Plan implementation requests use the same authoritative-history rule. The
+Plan Card sends a versioned `synthetic: true` action marker containing the
+exact source session, assistant message, and plan index. Lifecycle detection
+reconciles that marker after live message/part events and after session
+materialization, projecting the matching implementation key and implementing
+indicator into `session-ui-store.ts`. The local persisted request sets provide
+an immediate same-client lock but are not the cross-client source of truth.
+Visible and configurable implementation prompt text is never parsed as
+lifecycle state, and legacy requests without the marker keep their existing
+client-local behavior.
 
 Before reducing an authoritative `session.deleted` event, `sync-context.tsx`
 also retires exact `(directory, session)` recovery ownership. It cancels a
@@ -239,10 +265,12 @@ Current consumers:
 
 ### Mutation responsibility
 
-`useGlobalSessionsStore` is not maintained by SSE directly. It is kept correct by:
+`useGlobalSessionsStore` combines:
 
 1. shared global fetch/reconciliation via `loadSessions()` / `refreshGlobalSessions()`
-2. optimistic mutation from session actions, followed by authoritative reconciliation:
+2. low-frequency `session.created`, `session.updated`, and `session.deleted` SSE lifecycle events
+   from every directory, including directories with no child sync store
+3. optimistic mutation from session actions, followed by authoritative reconciliation:
    - create
    - title update
    - share
@@ -252,6 +280,15 @@ Current consumers:
    - retention cleanup batch archive/delete
 
 This keeps cold/global lists responsive while preserving server authority.
+High-frequency background message, part, status, permission, and question events are not mirrored
+into this broad store and do not allocate inactive directory child stores.
+
+Remote lifecycle events use a bounded module-level overlay. Creates and updates remain visible until
+complete active+archived global snapshots confirm the same membership and equal-or-newer metadata;
+deletes remain tombstoned until both complete lists confirm absence. This prevents a global HTTP
+request that began before an SSE event from erasing a remote create/archive or resurrecting a remote
+delete. The overlay is deliberately outside Zustand state so lifecycle bookkeeping adds no render
+subscription boundary.
 
 Manual archive, delete, and unarchive actions use a module-level membership-mutation shadow in
 `useGlobalSessionsStore.ts`. `beginGlobalSessionMembershipMutation()` records a versioned intent
@@ -301,6 +338,14 @@ itself is absent from the fetched page; requiring server parts to echo those IDs
 would reintroduce duplicate optimistic content and retain the shadow forever.
 
 Live activity/status indicators must not depend on this cache. They must derive from aggregated child-store state.
+
+When an authoritative `session.status` event advances a loaded session to
+`busy` or `retry`, the sync boundary settles older terminal notification and
+completion attention for that session and its loaded descendants. This makes an
+in-place root resume equivalent to reopening the root for sidebar read state,
+while rejected/stale working events leave the prior error visible. Durable
+managed-task failure results remain unchanged; their cards continue to report
+the historical attempt accurately.
 
 After both the initial directory status snapshot and session list load successfully,
 bootstrap materializes an explicit `idle` status for every listed session absent
@@ -433,7 +478,7 @@ When OpenCode emits `message.part.updated` before the owning `message.updated`, 
 
 ## Active-session recovery watchdog
 
-`sync-context.tsx` tracks the last observed `session.status` and message/part output event per `directory + sessionID`. A 5-second watchdog checks only the active viewed session; when that session remains `busy` or `retry` without fresh status or output activity for 20 seconds, it runs a targeted reconnect resync for that session only. A 15-second per-session cooldown prevents repeated recovery calls.
+`sync-context.tsx` tracks the last observed `session.status` and message/part output event per `directory + sessionID`. A 5-second watchdog checks only the active viewed session; when that session remains `busy` or `retry` without fresh status or output activity for 20 seconds, it runs a targeted reconnect resync for that session only. A successful probe marks that exact activity epoch as recovered so unchanged server state cannot trigger repeated resyncs. Failed probes retry with a 15/30/60-second bounded backoff, and any new status or output event starts a fresh epoch.
 
 Reconnect recovery treats its status response as a snapshot, not a live event.
 For every candidate it captures the complete current status before requesting the
@@ -459,7 +504,7 @@ OpenCode ignores `session.abort` while a session sleeps between provider retry a
 - While active, `filterSessionStatusThroughAbortGuard` coerces incoming `retry` statuses to `idle` (live event reduction, reconnect status merge, and directory bootstrap snapshots all route through it) and schedules bounded, debounced re-aborts (max 3) so the server loop is cancelled when its next attempt creates an abortable in-flight request. Snapshot filtering preserves the original status-map reference when no guard changes a value.
 - Streaming derivation does not retain an incomplete assistant shell across that guarded `idle`; the manual-abort guard disables only the narrow premature-idle streaming exception for the stopped session, so the composer unlocks without changing ordinary out-of-order idle handling.
 - The guard clears on authoritative idle (`session.idle`, `session.error`, idle `session.status`), on any new local send (`optimisticSend`, `usePromptSubmit`), and when an authoritative user message advances the cached user-turn boundary and proves that another connected surface started new work. Historical replay into an empty or newer cache cannot clear it.
-- `useProviderErrorRecovery` creates recovery records only after an authoritative active-to-idle transition ends with a matching retryable terminal assistant error. Manual recovery waits for guard settlement before sending the selected model, preventing an explicitly stopped retry loop from overlapping the replacement turn.
+- `useProviderErrorRecovery` creates recovery records after an authoritative active-to-idle transition ends with a matching retryable terminal assistant error. A transient stream retry loop is capped after three attempts: DevRyan first receives a successful abort acknowledgement, then offers the same explicit recovery card. Manual recovery waits for guard settlement before sending the captured provider/model/agent/variant, preventing an explicitly stopped retry loop from overlapping the replacement turn; no recovery is resent automatically.
 - When the current retry deadline plus its settlement window expires without idle, live server state wins again — the guard never permanently masks real activity.
 
 `abortCurrentOperation` first cancels the active top-level DevRyan-managed tasks for the parent session with scheduler cascade enabled, then aborts the parent OpenCode session. This stops queued and running managed descendants without emitting cancellation tool calls into chat. It additionally settles a local `retry` status to `idle` right after the abort request (narrow optimistic transition mirroring `revertToMessage`); guarded streaming derivation completes the stopped assistant shell so the input and model picker unlock immediately.

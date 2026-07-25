@@ -1,10 +1,8 @@
 import React from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import { SESSION_LEADING_INDICATOR_CLIP_GUTTER_PX } from './sessionIndicator';
 
 type SessionSidebarMotionRowProps = {
   children: React.ReactNode;
-  withLeadingIndicatorGutter?: boolean;
 };
 
 const rowEase = [0.33, 1, 0.68, 1] as const;
@@ -32,10 +30,7 @@ const rowTransition = {
   },
 } as const;
 
-export function SessionSidebarMotionRow({
-  children,
-  withLeadingIndicatorGutter = true,
-}: SessionSidebarMotionRowProps): React.ReactElement {
+export function SessionSidebarMotionRow({ children }: SessionSidebarMotionRowProps): React.ReactElement {
   const shouldReduceMotion = useReducedMotion();
 
   if (shouldReduceMotion) {
@@ -50,19 +45,17 @@ export function SessionSidebarMotionRow({
       transition={rowTransition}
       style={{
         display: 'grid',
-        overflow: 'hidden',
-        ...(withLeadingIndicatorGutter ? {
-          // Keep leading session indicators inside this wrapper's clipping box
-          // while still clipping vertically during the grid-track-collapse
-          // animation. Section bodies disable this row-specific gutter.
-          marginLeft: -SESSION_LEADING_INDICATOR_CLIP_GUTTER_PX,
-          paddingLeft: SESSION_LEADING_INDICATOR_CLIP_GUTTER_PX,
-        } : {}),
+        minWidth: 0,
+        width: '100%',
+        // Session markers now live inside the row's fixed leading rail, so the
+        // animation boundary only needs to clip the collapsing grid track.
+        overflowX: 'visible',
+        overflowY: 'clip',
       }}
     >
       {/* minHeight: 0 allows the grid item to shrink below its content
           height in the 0fr track so the collapse actually hides content. */}
-      <div style={{ minHeight: 0 }}>{children}</div>
+      <div style={{ minHeight: 0, minWidth: 0, width: '100%' }}>{children}</div>
     </motion.div>
   );
 }

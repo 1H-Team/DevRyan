@@ -8,6 +8,8 @@ const STRONG_TRANSIENT_STREAM_PATTERNS = [
   "terminated",
   "econnreset",
   "socket hang up",
+  "stream idle timeout",
+  "sse read timed out",
 ] as const
 
 export function stripWrappedJsonQuotes(detail: string): string {
@@ -43,6 +45,10 @@ export function isLikelyTransientStreamFailure(name: unknown, detail: unknown): 
   const normalizedDetail = cleanDetail.toLowerCase()
   if (!normalizedDetail || normalizedDetail.includes("aborted") || isLikelyProviderAuthFailure(cleanDetail)) {
     return false
+  }
+
+  if (isLikelyCertificateVerificationFailure(cleanDetail)) {
+    return true
   }
 
   if (STRONG_TRANSIENT_STREAM_PATTERNS.some((pattern) => normalizedDetail.includes(pattern))) {

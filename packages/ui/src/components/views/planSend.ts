@@ -1,4 +1,11 @@
+import { buildPlanImplementationRequestMarker } from '@/lib/messages/actionablePlan';
+
 export type PlanSendAction = 'improve' | 'implement';
+
+export type PlanSendSyntheticPart = {
+  synthetic: true;
+  text: string;
+};
 
 export const getPlanSendVisiblePromptId = (action: PlanSendAction) =>
   action === 'improve' ? 'plan.improve.visible' : 'plan.implement.visible';
@@ -29,3 +36,23 @@ export const buildPlanSendPromptVariables = ({
 
 export const getPlanSendPlanMode = (action: PlanSendAction): boolean | undefined =>
   action === 'implement' ? false : undefined;
+
+export const buildPlanImplementationSyntheticParts = ({
+  sourceSessionId,
+  sourceMessageId,
+  instructions,
+}: {
+  sourceSessionId: string;
+  sourceMessageId: string;
+  instructions: string;
+}): PlanSendSyntheticPart[] => [
+  {
+    synthetic: true,
+    text: buildPlanImplementationRequestMarker({
+      sourceSessionId,
+      sourceMessageId,
+      planIndex: 0,
+    }),
+  },
+  { synthetic: true, text: instructions },
+];

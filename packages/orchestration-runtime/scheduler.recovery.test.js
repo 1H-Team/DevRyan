@@ -28,6 +28,29 @@ const record = (index, overrides = {}) => ({
   ...overrides,
 });
 
+const createManualTimers = () => {
+  const timers = new Map();
+  let nextId = 0;
+  return {
+    timers,
+    scheduleTimeout(callback, delay) {
+      const id = ++nextId;
+      timers.set(id, { callback, delay });
+      return id;
+    },
+    cancelTimeout(id) {
+      timers.delete(id);
+    },
+    runByDelay(delay) {
+      const entry = [...timers.entries()].find(([, timer]) => timer.delay === delay);
+      if (!entry) throw new Error(`No timer scheduled for ${delay}ms`);
+      const [id, timer] = entry;
+      timers.delete(id);
+      timer.callback();
+    },
+  };
+};
+
 describe('managed scheduler restart recovery', () => {
   test('rejects a result envelope that contradicts its terminal task', async () => {
     const failed = record(1, {
@@ -170,6 +193,121 @@ describe('managed scheduler restart recovery', () => {
     expect(task.partial).toBe(true);
     expect(task.failureReason).toBe('Child session ownership could not be recovered after restart');
     expect(task.recoverablePreview).toBe('work recovered before restart');
+  });
+
+  test('keeps a task active through transient reconciliation and observes the same child after recovery', async () => {
+    const timers = createManualTimers();
+    const starts = [];
+    const observed = [];
+    let reconciliationCount = 0;
+    const scheduler = createManagedTaskScheduler({
+      persistence: {
+        async load() {
+          return {
+            version: 1,
+            tasks: [record(1, {
+              status: 'running',
+              childSessionId: 'ses_existing',
+              leaseToken: 'dvr_lease_existing',
+              startedAt: 1_100,
+            })],
+            resultEnvelopes: [],
+          };
+        },
+        async save() {},
+      },
+      executor: {
+        async start(task) { starts.push(task.taskId); return { status: 'completed' }; },
+        async observe(task) {
+          observed.push(task.childSessionId);
+          return { status: 'completed', recoverablePreview: 'same child completed' };
+        },
+        async abort() { return { aborted: true }; },
+        async reconcile() {
+          reconciliationCount += 1;
+          return reconciliationCount === 1
+            ? { state: 'transient', failureReason: 'OpenCode port is not available' }
+            : { state: 'live' };
+        },
+        async readRecoverableResult() { return {}; },
+      },
+      reconciliationRetryMs: 25,
+      scheduleTimeout: timers.scheduleTimeout,
+      cancelTimeout: timers.cancelTimeout,
+      now: () => 2_000,
+    });
+
+    await scheduler.initialize();
+
+    expect(scheduler.getTask('dvr_task_1').status).toBe('running');
+    expect(scheduler.getResultEnvelope('dvr_task_1')).toBeNull();
+    expect(scheduler.getDiagnostics().pendingReconciliationRetryCount).toBe(1);
+    const settledPromise = scheduler.waitForTask('dvr_task_1');
+    timers.runByDelay(25);
+    const settled = await settledPromise;
+
+    expect(settled.status).toBe('completed');
+    expect(starts).toEqual([]);
+    expect(observed).toEqual(['ses_existing']);
+    expect(reconciliationCount).toBe(2);
+    expect(scheduler.getDiagnostics().pendingReconciliationRetryCount).toBe(0);
+    await scheduler.shutdown();
+  });
+
+  test('lets the task deadline settle a prolonged reconciliation outage and clears its retry', async () => {
+    const timers = createManualTimers();
+    let currentTime = 2_000;
+    const scheduler = createManagedTaskScheduler({
+      persistence: {
+        async load() {
+          return {
+            version: 1,
+            tasks: [record(1, {
+              status: 'running',
+              childSessionId: 'ses_existing',
+              leaseToken: 'dvr_lease_existing',
+              startedAt: 1_100,
+              timeoutAt: 2_100,
+            })],
+            resultEnvelopes: [],
+          };
+        },
+        async save() {},
+      },
+      executor: {
+        async start() { throw new Error('must not replay'); },
+        async abort() { return { aborted: true }; },
+        async reconcile() {
+          return { state: 'transient', failureReason: 'OpenCode port is not available' };
+        },
+        async readRecoverableResult() { return {}; },
+      },
+      reconciliationRetryMs: 1_000,
+      scheduleTimeout: timers.scheduleTimeout,
+      cancelTimeout: timers.cancelTimeout,
+      now: () => currentTime,
+    });
+
+    await scheduler.initialize();
+    expect(scheduler.getDiagnostics()).toMatchObject({
+      pendingTimeoutCount: 1,
+      pendingReconciliationRetryCount: 1,
+    });
+
+    const settledPromise = scheduler.waitForTask('dvr_task_1');
+    currentTime = 2_100;
+    timers.runByDelay(100);
+    const settled = await settledPromise;
+
+    expect(settled).toMatchObject({
+      status: 'failed',
+      failureReason: 'Managed task timed out at 2100',
+    });
+    expect(scheduler.getDiagnostics()).toMatchObject({
+      pendingTimeoutCount: 0,
+      pendingReconciliationRetryCount: 0,
+    });
+    await scheduler.shutdown();
   });
 
   test('keeps queued order and dispatches every recovered task after restart', async () => {

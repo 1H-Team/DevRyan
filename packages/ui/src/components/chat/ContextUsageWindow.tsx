@@ -60,8 +60,6 @@ const sourceOrder = (source: ContextUsageSource): number => {
     return index === -1 ? SOURCE_ORDER.length : index;
 };
 
-const MAX_VISIBLE_SUBAGENTS = 3;
-
 const getSourceLabel = (source: ContextUsageSource, t: ReturnType<typeof useI18n>['t']): string => {
     switch (source) {
         case 'system': return t('contextUsage.window.systemPrompt');
@@ -84,9 +82,7 @@ export const ContextUsageWindow: React.FC<ContextUsageWindowProps> = ({ usage, o
         totalLimitLabel,
         sourceBadgeLabel,
         tokenStats,
-        visibleSubagentRows,
-        hiddenSubagentCount,
-        hiddenSubagentTokens,
+        subagentRows,
         subagentTotalTokens,
     } = React.useMemo(() => {
         const nextSegments: ContextSegment[] = [...(usage.sources ?? [])]
@@ -113,8 +109,6 @@ export const ContextUsageWindow: React.FC<ContextUsageWindowProps> = ({ usage, o
 
         const subagentRows = [...(usage.relatedSubagentSessions ?? [])]
             .filter((session) => session.totalTokens > 0);
-        const visibleRows = subagentRows.slice(0, MAX_VISIBLE_SUBAGENTS);
-        const hiddenRows = subagentRows.slice(MAX_VISIBLE_SUBAGENTS);
 
         return {
             segments: nextSegments,
@@ -123,15 +117,13 @@ export const ContextUsageWindow: React.FC<ContextUsageWindowProps> = ({ usage, o
                 : `~${formatTokens(usage.totalTokens)} ${t('contextUsage.window.tokens')}`,
             sourceBadgeLabel: usage.sourceAccuracy === 'estimated' ? t('contextUsage.window.sourceEstimated') : null,
             tokenStats: nextTokenStats,
-            visibleSubagentRows: visibleRows,
-            hiddenSubagentCount: hiddenRows.length,
-            hiddenSubagentTokens: hiddenRows.reduce((sum, session) => sum + session.totalTokens, 0),
+            subagentRows,
             subagentTotalTokens: usage.relatedSubagentTotalTokens ?? subagentRows.reduce((sum, session) => sum + session.totalTokens, 0),
         };
     }, [t, usage.capacityLimit, usage.relatedSubagentSessions, usage.relatedSubagentTotalTokens, usage.sourceAccuracy, usage.sources, usage.tokenBreakdown, usage.totalTokens]);
 
     const hasSourceSegments = usage.sourceAccuracy !== 'unavailable' && segments.length > 0;
-    const hasSubagentRows = visibleSubagentRows.length > 0;
+    const hasSubagentRows = subagentRows.length > 0;
 
     return (
         <div
@@ -249,7 +241,7 @@ export const ContextUsageWindow: React.FC<ContextUsageWindowProps> = ({ usage, o
                         <span className="shrink-0 tabular-nums">~{formatTokens(subagentTotalTokens)}</span>
                     </div>
                     <div className="space-y-2">
-                        {visibleSubagentRows.map((session) => (
+                        {subagentRows.map((session) => (
                             <div key={session.sessionId} className="flex items-center justify-between gap-4 typography-ui-label text-foreground">
                                 <span className="truncate text-muted-foreground">{session.title ?? t('contextSidebar.session.untitled')}</span>
                                 <span className="shrink-0 tabular-nums text-muted-foreground">
@@ -259,12 +251,6 @@ export const ContextUsageWindow: React.FC<ContextUsageWindowProps> = ({ usage, o
                                 </span>
                             </div>
                         ))}
-                        {hiddenSubagentCount > 0 ? (
-                            <div className="flex items-center justify-between gap-4 typography-ui-label text-foreground">
-                                <span className="truncate text-muted-foreground">{t('contextUsage.window.moreSubagents', { count: hiddenSubagentCount.toString() })}</span>
-                                <span className="shrink-0 tabular-nums text-muted-foreground">{formatTokens(hiddenSubagentTokens)}</span>
-                            </div>
-                        ) : null}
                     </div>
                 </div>
             ) : null}

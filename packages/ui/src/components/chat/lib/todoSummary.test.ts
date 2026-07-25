@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+    buildPlanPhaseTodoProjection,
     buildTodoSummary,
     formatCompactTodoTotal,
-    getCurrentTodoOrdinal,
     parsePlanTodoContent,
 } from './todoSummary';
 
@@ -37,17 +37,82 @@ describe('todo summary helpers', () => {
         expect(parsePlanTodoContent('Phase 2:')).toBeNull();
     });
 
-    test('reports the current one-based task ordinal for plan progress', () => {
-        const summary = buildTodoSummary([
-            todo('completed', 'task-1'),
-            todo('completed', 'task-2'),
-            todo('in_progress', 'task-3'),
-            todo('pending', 'task-4'),
-        ]);
+    test('projects only the active phase with stripped titles and phase-local progress', () => {
+        const todos = [
+            todo('completed', 'phase-1-task-1', 'Phase 1: Inspect the public API'),
+            todo('in_progress', 'phase-1-task-2', 'Phase 1: Inspect error coverage'),
+            todo('pending', 'phase-2-task-1', 'Phase 2: Run the test suite'),
+            todo('pending', 'phase-2-task-2', 'Phase 2: Run the smoke check'),
+        ];
+        const snapshot = todos.map((item) => ({ ...item }));
 
-        expect(getCurrentTodoOrdinal(summary.visibleTodos, summary.visibleTodos[2])).toBe(3);
-        expect(getCurrentTodoOrdinal(summary.visibleTodos, null)).toBe(4);
-        expect(getCurrentTodoOrdinal([], null)).toBe(0);
+        const projection = buildPlanPhaseTodoProjection(todos);
+
+        expect(projection).toEqual({
+            phase: 1,
+            items: [
+                { todo: todos[0], title: 'Inspect the public API' },
+                { todo: todos[1], title: 'Inspect error coverage' },
+            ],
+            current: 2,
+            total: 2,
+            completed: 1,
+        });
+        expect(todos).toEqual(snapshot);
+        expect(projection?.items[0]?.todo).toBe(todos[0]);
+        expect(projection?.items[1]?.todo).toBe(todos[1]);
+    });
+
+    test('advances to the next phase when its first task becomes active', () => {
+        const todos = [
+            todo('completed', 'phase-1-task-1', 'Phase 1: Inspect the public API'),
+            todo('completed', 'phase-1-task-2', 'Phase 1: Inspect error coverage'),
+            todo('in_progress', 'phase-2-task-1', 'Phase 2: Run the test suite'),
+            todo('pending', 'phase-2-task-2', 'Phase 2: Run the smoke check'),
+        ];
+
+        expect(buildPlanPhaseTodoProjection(todos)).toEqual({
+            phase: 2,
+            items: [
+                { todo: todos[2], title: 'Run the test suite' },
+                { todo: todos[3], title: 'Run the smoke check' },
+            ],
+            current: 1,
+            total: 2,
+            completed: 0,
+        });
+    });
+
+    test('shows the final phase at N/N after every plan task completes', () => {
+        const todos = [
+            todo('completed', 'phase-1-task-1', 'Phase 1: Inspect the public API'),
+            todo('completed', 'phase-1-task-2', 'Phase 1: Inspect error coverage'),
+            todo('completed', 'phase-2-task-1', 'Phase 2: Run the test suite'),
+            todo('completed', 'phase-2-task-2', 'Phase 2: Run the smoke check'),
+        ];
+
+        expect(buildPlanPhaseTodoProjection(todos)).toEqual({
+            phase: 2,
+            items: [
+                { todo: todos[2], title: 'Run the test suite' },
+                { todo: todos[3], title: 'Run the smoke check' },
+            ],
+            current: 2,
+            total: 2,
+            completed: 2,
+        });
+    });
+
+    test('falls back when any visible task does not follow the plan prefix contract', () => {
+        const mixedTodos = [
+            todo('in_progress', 'phase-task', 'Phase 1: Inspect the public API'),
+            todo('pending', 'ordinary-task', 'Run the test suite'),
+        ];
+
+        expect(buildPlanPhaseTodoProjection(mixedTodos)).toBeNull();
+        expect(buildPlanPhaseTodoProjection([
+            todo('pending', 'ordinary-task', 'Run the test suite'),
+        ])).toBeNull();
     });
 
     test('formats compact total from all visible tasks, including completed tasks', () => {

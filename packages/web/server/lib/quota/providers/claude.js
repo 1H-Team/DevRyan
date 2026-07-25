@@ -1,13 +1,9 @@
 import { readAuthFile } from '../../opencode/auth.js';
 import { isPlainObject, readConfigLayers } from '../../opencode/shared.js';
 import { readClaudeCodeStatusUsage } from './claude-code-status.js';
-import { refreshClaudeCodeStatusUsage } from './claude-code-status-refresh.js';
+import { fetchClaudeCodeUsage } from './claude-code-usage.js';
+import { fetchMeridianClaudeQuota } from './claude-meridian.js';
 import { isAnthropicOAuthPluginSpec } from '../../opencode/anthropic-oauth-plugin.js';
-import {
-  CLAUDE_CODE_STATUS_LINE_CUSTOM_CODE,
-  CLAUDE_CODE_USAGE_PENDING_MESSAGE,
-  ensureClaudeCodeStatusLineBridge
-} from './claude-code-status-setup.js';
 import {
   getAuthEntry,
   normalizeAuthEntry,
@@ -32,7 +28,11 @@ export const isAnthropicOAuthProxyOptions = (options) => {
 
   try {
     const url = new URL(options.baseURL);
-    return url.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(url.hostname) && Boolean(url.port);
+    return url.protocol === 'http:'
+      && ['127.0.0.1', 'localhost'].includes(url.hostname)
+      && Boolean(url.port)
+      && !url.username
+      && !url.password;
   } catch {
     return false;
   }
@@ -50,132 +50,105 @@ export const hasAnthropicOAuthProxyConfig = (workingDirectory = null) => {
   });
 };
 
-export const isConfigured = ({ workingDirectory = null } = {}) => {
+export const isConfigured = ({
+  workingDirectory = null,
+  isExternalRuntime = false,
+} = {}) => {
   const auth = readAuthFile();
   const entry = normalizeAuthEntry(getAuthEntry(auth, aliases));
-  return Boolean(entry?.access || entry?.token || hasAnthropicOAuthProxyConfig(workingDirectory));
+  return Boolean(
+    entry?.access
+    || entry?.token
+    || (!isExternalRuntime && hasAnthropicOAuthProxyConfig(workingDirectory))
+  );
 };
+
+const buildOAuthUsage = (payload) => {
+  const windows = {};
+  for (const [key, value] of Object.entries(payload ?? {})) {
+    if (key !== 'five_hour' && key !== 'seven_day' && !key.startsWith('seven_day_')) continue;
+    if (!value || typeof value !== 'object') continue;
+    const label = key === 'five_hour'
+      ? '5h'
+      : key === 'seven_day'
+        ? '7d'
+        : `7d-${key.slice('seven_day_'.length).replace(/_/g, '-')}`;
+    windows[label] = toUsageWindow({
+      usedPercent: toNumber(value.utilization),
+      windowSeconds: key === 'five_hour' ? FIVE_HOUR_WINDOW_SECONDS : SEVEN_DAY_WINDOW_SECONDS,
+      resetAt: toTimestamp(value.resets_at),
+    });
+  }
+  return { windows };
+};
+
+const buildDegradedStatusResult = (statusUsage, primaryFailure) => buildResult({
+  providerId,
+  providerName,
+  ok: false,
+  configured: true,
+  usage: statusUsage.ok ? statusUsage.usage : null,
+  usageUpdatedAt: statusUsage.ok ? statusUsage.usageUpdatedAt : undefined,
+  error: primaryFailure.error || statusUsage.error || 'Claude usage is unavailable.',
+  errorCode: primaryFailure.code || statusUsage.code,
+});
 
 export const fetchClaudeQuota = async ({
   readAuth = readAuthFile,
   hasProxyConfig = hasAnthropicOAuthProxyConfig,
+  resolveProxyBaseUrl = async () => null,
   readStatusUsage = readClaudeCodeStatusUsage,
-  ensureStatusLineBridge = ensureClaudeCodeStatusLineBridge,
-  refreshStatusUsage = refreshClaudeCodeStatusUsage,
+  fetchCliUsage = fetchClaudeCodeUsage,
+  fetchMeridianUsage = fetchMeridianClaudeQuota,
   fetchImpl = globalThis.fetch,
-  forceRefresh = false,
   workingDirectory = null,
+  isExternalRuntime = false,
 } = {}) => {
   const auth = readAuth();
   const entry = normalizeAuthEntry(getAuthEntry(auth, aliases));
   const accessToken = entry?.access ?? entry?.token;
 
-  if (!accessToken) {
-    const proxyConfigured = hasProxyConfig(workingDirectory);
-    if (proxyConfigured) {
-      const setup = ensureStatusLineBridge();
-      if (!setup.ok) {
-        if (setup.code === CLAUDE_CODE_STATUS_LINE_CUSTOM_CODE) {
-          const statusUsage = readStatusUsage();
-          if (statusUsage.ok) {
-            return buildResult({
-              providerId,
-              providerName,
-              ok: true,
-              configured: true,
-              usage: statusUsage.usage
-            });
-          }
+  if (accessToken) {
+    try {
+      const response = await fetchImpl('https://api.anthropic.com/api/oauth/usage', {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'anthropic-beta': 'oauth-2025-04-20'
         }
+      });
 
+      if (!response.ok) {
         return buildResult({
           providerId,
           providerName,
           ok: false,
           configured: true,
-          error: setup.error || 'Claude Code usage bridge could not be configured.',
-          errorCode: setup.code
+          error: `API error: ${response.status}`
         });
       }
 
-      if (forceRefresh) {
-        const refreshResult = await refreshStatusUsage();
-        const refreshedStatusUsage = readStatusUsage();
-        if (refreshedStatusUsage.ok) {
-          return buildResult({
-            providerId,
-            providerName,
-            ok: true,
-            configured: true,
-            usage: refreshedStatusUsage.usage
-          });
-        }
-
-        if (!refreshResult.ok) {
-          return buildResult({
-            providerId,
-            providerName,
-            ok: false,
-            configured: true,
-            error: refreshResult.error || refreshedStatusUsage.error || CLAUDE_CODE_USAGE_PENDING_MESSAGE,
-            errorCode: refreshResult.code || refreshedStatusUsage.code
-          });
-        }
-
-        return buildResult({
-          providerId,
-          providerName,
-          ok: false,
-          configured: true,
-          error: refreshedStatusUsage.error || 'Claude CLI ran successfully, but Claude Code did not emit usage data for OpenChamber to read.',
-          errorCode: refreshedStatusUsage.code
-        });
-      }
-
-      const statusUsage = readStatusUsage();
-      if (statusUsage.ok) {
-        return buildResult({
-          providerId,
-          providerName,
-          ok: true,
-          configured: true,
-          usage: statusUsage.usage
-        });
-      }
-
-      const refreshResult = await refreshStatusUsage();
-      if (refreshResult.ok) {
-        const refreshedStatusUsage = readStatusUsage();
-        if (refreshedStatusUsage.ok) {
-          return buildResult({
-            providerId,
-            providerName,
-            ok: true,
-            configured: true,
-            usage: refreshedStatusUsage.usage
-          });
-        }
-
-        return buildResult({
-          providerId,
-          providerName,
-          ok: false,
-          configured: true,
-          error: refreshedStatusUsage.error || 'Claude CLI ran successfully, but Claude Code did not emit usage data for OpenChamber to read.',
-          errorCode: refreshedStatusUsage.code
-        });
-      }
-
+      const payload = await response.json();
+      return buildResult({
+        providerId,
+        providerName,
+        ok: true,
+        configured: true,
+        usage: buildOAuthUsage(payload),
+        usageUpdatedAt: Date.now(),
+      });
+    } catch (error) {
       return buildResult({
         providerId,
         providerName,
         ok: false,
         configured: true,
-        error: refreshResult.error || statusUsage.error || CLAUDE_CODE_USAGE_PENDING_MESSAGE,
-        errorCode: refreshResult.code || statusUsage.code
+        error: error instanceof Error ? error.message : 'Request failed'
       });
     }
+  }
 
+  if (isExternalRuntime || !hasProxyConfig(workingDirectory)) {
     return buildResult({
       providerId,
       providerName,
@@ -185,77 +158,59 @@ export const fetchClaudeQuota = async ({
     });
   }
 
+  let meridianResult = {
+    ok: false,
+    code: 'claude_meridian_unavailable',
+    error: 'The active Claude quota proxy could not be resolved.',
+  };
   try {
-    const response = await fetchImpl('https://api.anthropic.com/api/oauth/usage', {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'anthropic-beta': 'oauth-2025-04-20'
+    const baseUrl = await resolveProxyBaseUrl();
+    if (baseUrl) {
+      meridianResult = await fetchMeridianUsage({ baseUrl, fetchImpl });
+      if (meridianResult.ok) {
+        return buildResult({
+          providerId,
+          providerName,
+          ok: true,
+          configured: true,
+          usage: meridianResult.usage,
+          usageUpdatedAt: meridianResult.usageUpdatedAt,
+        });
       }
-    });
+    }
+  } catch (error) {
+    meridianResult = {
+      ok: false,
+      code: 'claude_meridian_unavailable',
+      error: error instanceof Error ? error.message : 'Failed to resolve the active Claude quota proxy.',
+    };
+  }
 
-    if (!response.ok) {
-      return buildResult({
-        providerId,
-        providerName,
-        ok: false,
-        configured: true,
-        error: `API error: ${response.status}`
-      });
-    }
-
-    const payload = await response.json();
-    const windows = {};
-    const fiveHour = payload?.five_hour ?? null;
-    const sevenDay = payload?.seven_day ?? null;
-    const sevenDaySonnet = payload?.seven_day_sonnet ?? null;
-    const sevenDayOpus = payload?.seven_day_opus ?? null;
-
-    if (fiveHour) {
-      windows['5h'] = toUsageWindow({
-        usedPercent: toNumber(fiveHour.utilization),
-        windowSeconds: FIVE_HOUR_WINDOW_SECONDS,
-        resetAt: toTimestamp(fiveHour.resets_at)
-      });
-    }
-    if (sevenDay) {
-      windows['7d'] = toUsageWindow({
-        usedPercent: toNumber(sevenDay.utilization),
-        windowSeconds: SEVEN_DAY_WINDOW_SECONDS,
-        resetAt: toTimestamp(sevenDay.resets_at)
-      });
-    }
-    if (sevenDaySonnet) {
-      windows['7d-sonnet'] = toUsageWindow({
-        usedPercent: toNumber(sevenDaySonnet.utilization),
-        windowSeconds: SEVEN_DAY_WINDOW_SECONDS,
-        resetAt: toTimestamp(sevenDaySonnet.resets_at)
-      });
-    }
-    if (sevenDayOpus) {
-      windows['7d-opus'] = toUsageWindow({
-        usedPercent: toNumber(sevenDayOpus.utilization),
-        windowSeconds: SEVEN_DAY_WINDOW_SECONDS,
-        resetAt: toTimestamp(sevenDayOpus.resets_at)
-      });
-    }
-
+  let cliResult;
+  try {
+    cliResult = await fetchCliUsage();
+  } catch (error) {
+    cliResult = {
+      ok: false,
+      code: 'claude_code_usage_failed',
+      error: error instanceof Error ? error.message : 'Failed to read Claude Code usage.',
+    };
+  }
+  if (cliResult.ok) {
     return buildResult({
       providerId,
       providerName,
       ok: true,
       configured: true,
-      usage: { windows }
-    });
-  } catch (error) {
-    return buildResult({
-      providerId,
-      providerName,
-      ok: false,
-      configured: true,
-      error: error instanceof Error ? error.message : 'Request failed'
+      usage: cliResult.usage,
+      usageUpdatedAt: cliResult.usageUpdatedAt,
     });
   }
+
+  return buildDegradedStatusResult(readStatusUsage(), {
+    code: cliResult.code || meridianResult.code,
+    error: cliResult.error || meridianResult.error,
+  });
 };
 
 export const fetchQuota = fetchClaudeQuota;

@@ -44,7 +44,7 @@ export const resolveModelContextCapacity = (
     const contextLimit = positiveLimit(variantLimit?.context) ?? positiveLimit(modelLimit?.context);
     const outputLimit = positiveLimit(variantLimit?.output) ?? positiveLimit(modelLimit?.output);
 
-    if (inputLimit !== null) {
+    if (inputLimit !== null && (contextLimit === null || inputLimit <= contextLimit)) {
         return {
             capacityLimit: inputLimit,
             capacityBasis: "input",

@@ -1287,7 +1287,7 @@ class OpencodeService {
 
     assertProviderCircuitClosed(params.providerID);
 
-    const tools = resolveProviderPromptTools(params.providerID);
+    const tools = resolveProviderPromptTools(params.providerID, params.agent);
     let response!: Response;
     postTurnTimingMark({
       sessionId: params.id,

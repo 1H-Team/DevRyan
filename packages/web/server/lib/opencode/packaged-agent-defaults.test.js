@@ -7,7 +7,7 @@ import yaml from 'yaml';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 16_432;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 16_379;
 
 const LOCAL_PATH_PATTERNS = [
   /(^|[\s"'`])\/Users\//,
@@ -182,15 +182,7 @@ describe('packaged agent defaults', () => {
           '*.env.*': 'ask',
           '*.env.example': 'allow',
         },
-        task: {
-          '*': 'deny',
-          explorer: 'allow',
-          librarian: 'allow',
-          oracle: 'allow',
-          designer: 'allow',
-          fixer: 'allow',
-          council: 'allow',
-        },
+        task: 'deny',
         council_session: 'deny',
         devryan_task: 'allow',
         skill: {
@@ -217,8 +209,10 @@ describe('packaged agent defaults', () => {
     for (const contract of [
       '**DevRyan-managed delegation.**',
       'at most one managed recovery',
+      'never change its model automatically',
+      'choose a model and thinking level in Model Recovery and click Try Again',
       '**Managed dispatch barrier.**',
-      'Only after every result is dispositioned may you resume local work.',
+      'Only after every result is dispositioned may you resume local work',
       'Allowed subagents: `explorer`, `librarian`, `oracle`, `designer`, `fixer`, `council`.',
       '<Git Command Boundary>',
       'Do not run git commands as a default finalization or safety routine.',
@@ -236,11 +230,12 @@ describe('packaged agent defaults', () => {
       'Once the plan is finished, stop after presenting it.',
       'Ask every delegated subagent to end with exactly one terminal status marker: `<status>complete</status>` or `<status>blocked</status>`.',
       'Use only real runtime tools.',
-      'A managed failure never authorizes `task`.',
+      'Provider-native `task` is unavailable to Orchestrator.',
       'Never use `general-purpose`.',
     ]) {
       expect(body, contract).toContain(contract);
     }
+    expect(body).not.toContain('use `recover_in_place`');
   });
 
   it('records exact pre-task and tightened Orchestrator UTF-8 byte counts', () => {
@@ -257,11 +252,12 @@ describe('packaged agent defaults', () => {
     expect(new TextEncoder().encode(content).byteLength).toBe(EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES);
   });
 
-  it('grants managed delegation only to orchestrator and keeps provider-native work distinct', () => {
+  it('grants managed delegation only to orchestrator and disables its provider-native task tool', () => {
     const orchestrator = readPackagedAgent('orchestrator');
     expect(orchestrator.frontmatter.permission.devryan_task).toBe('allow');
+    expect(orchestrator.frontmatter.permission.task).toBe('deny');
     expect(orchestrator.content).toContain('DevRyan-managed delegation');
-    expect(orchestrator.content).toContain('provider-native');
+    expect(orchestrator.content).toContain('Provider-native `task` is disabled for Orchestrator');
     expect(orchestrator.content).toContain('does not impose an artificial managed concurrency cap');
 
     for (const agentName of ['builder', 'council', 'designer', 'explorer', 'fixer', 'librarian', 'oracle', 'plan']) {
@@ -274,7 +270,7 @@ describe('packaged agent defaults', () => {
 
     expect(content).toContain('Start all independent managed tasks first');
     expect(content).toContain('wait for every dispatched task');
-    expect(content).toContain('Disposition every collected result');
+    expect(content).toContain('Disposition every collected non-provider-limit result');
     expect(content).toContain(
       'If `wait` returns `queued`, `starting`, or `running`, immediately call `wait` again',
     );
@@ -291,15 +287,15 @@ describe('packaged agent defaults', () => {
     expect(content).toContain('7,200 seconds when the same child also owns builds');
   });
 
-  it('never presents provider-native delegation as a managed-failure fallback', () => {
+  it('never presents provider-native delegation as an Orchestrator path', () => {
     const content = readPackagedAgent('orchestrator').content;
 
     expect(content).toContain('consume its partial output');
     expect(content).toContain('at most one managed recovery');
-    expect(content).toContain('Prefer `resume` only for a resumable timed-out or interrupted result');
-    expect(content).toContain('Never invoke provider-native `task` as an automatic fallback');
-    expect(content).toContain('explicit current-user request');
-    expect(content).not.toMatch(/managed (?:failure|timeout)[^\n]{0,120}(?:fall back|fallback) to (?:the )?`?task`?/i);
+    expect(content).toContain('prefer `resume` only for a resumable timed-out or interrupted result');
+    expect(content).toContain('Provider-native `task` is disabled for Orchestrator');
+    expect(content).toContain('Provider-native `task` is unavailable to Orchestrator');
+    expect(content).not.toContain('explicit current-user request');
   });
 
   it('keeps Builder ambiguity handling while scoping Orchestrator questions to material user-owned choices', () => {

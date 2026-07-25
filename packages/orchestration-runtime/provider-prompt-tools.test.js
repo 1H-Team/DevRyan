@@ -18,4 +18,29 @@ describe('provider prompt tool policy', () => {
     expect(resolveProviderPromptTools('openai')).toBeUndefined();
     expect(resolveProviderPromptTools('cursor-acp')).toBeUndefined();
   });
+
+  test('keeps Orchestrator root prompts on the managed harness surface', () => {
+    expect(resolveProviderPromptTools('openai', 'orchestrator')).toEqual({
+      task: false,
+      invalid: false,
+      'mcp__*': false,
+      'resend_*': false,
+    });
+    expect(resolveProviderPromptTools('cursor-acp', ' Orchestrator ')).toEqual({
+      task: false,
+      invalid: false,
+      'mcp__*': false,
+      'resend_*': false,
+    });
+  });
+
+  test('merges Orchestrator and Copilot tool restrictions', () => {
+    expect(resolveProviderPromptTools('github-copilot', 'orchestrator')).toEqual({
+      'resend_*': false,
+      'mcp__resend__*': false,
+      task: false,
+      invalid: false,
+      'mcp__*': false,
+    });
+  });
 });

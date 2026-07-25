@@ -49,6 +49,27 @@ type GlobalSessionMembershipMutationIntent = {
   desiredSession?: Session;
 };
 
+type GlobalSessionLifecycleIntent =
+  | {
+    kind: 'upsert';
+    version: number;
+    session: Session;
+  }
+  | {
+    kind: 'delete';
+    version: number;
+  };
+
+export type GlobalSessionLifecycleEvent =
+  | {
+    type: 'upsert';
+    session: Session;
+  }
+  | {
+    type: 'delete';
+    sessionID: string;
+  };
+
 type GlobalSessionsState = {
   activeSessions: Session[];
   archivedSessions: Session[];
@@ -77,11 +98,14 @@ let postMutationRefreshRequested = false;
 let postMutationRefreshPromise: Promise<void> | null = null;
 let nextMembershipMutationVersion = 0;
 const membershipMutationShadow = new Map<string, GlobalSessionMembershipMutationIntent>();
+let nextLifecycleVersion = 0;
+const lifecycleShadow = new Map<string, GlobalSessionLifecycleIntent>();
 
 const COMPLETE_GLOBAL_SNAPSHOT: GlobalSessionsSnapshotCompleteness = {
   activeComplete: true,
   archivedComplete: true,
 };
+const GLOBAL_SESSION_LIFECYCLE_SHADOW_LIMIT = 1_000;
 
 const normalizePath = (value?: string | null): string | null => {
   if (typeof value !== 'string') {
@@ -283,6 +307,126 @@ const reconcileMembershipMutationShadow = (
   };
 };
 
+const isLifecycleUpsertConfirmed = (
+  intent: Extract<GlobalSessionLifecycleIntent, { kind: 'upsert' }>,
+  activeById: Map<string, Session>,
+  archivedById: Map<string, Session>,
+  completeness: GlobalSessionsSnapshotCompleteness,
+): boolean => {
+  if (!completeness.activeComplete || !completeness.archivedComplete) {
+    return false;
+  }
+
+  const expectsArchived = Boolean(intent.session.time?.archived);
+  const snapshotSession = expectsArchived
+    ? archivedById.get(intent.session.id)
+    : activeById.get(intent.session.id);
+  if (!snapshotSession) {
+    return false;
+  }
+
+  return getSessionSignature(snapshotSession) === getSessionSignature(intent.session)
+    || isStrictlyOlderSession(intent.session, snapshotSession);
+};
+
+const reconcileLifecycleShadow = (
+  activeSessions: Session[],
+  archivedSessions: Session[],
+  completeness: GlobalSessionsSnapshotCompleteness,
+): LoadResult => {
+  if (lifecycleShadow.size === 0) {
+    return { activeSessions, archivedSessions };
+  }
+
+  const activeById = new Map(activeSessions.map((session) => [session.id, session]));
+  const archivedById = new Map(archivedSessions.map((session) => [session.id, session]));
+  const protectedIds = new Set<string>();
+  const desiredActiveSessions: Session[] = [];
+  const desiredArchivedSessions: Session[] = [];
+
+  for (const [sessionID, intent] of lifecycleShadow) {
+    const confirmed = intent.kind === 'delete'
+      ? completeness.activeComplete
+        && completeness.archivedComplete
+        && !activeById.has(sessionID)
+        && !archivedById.has(sessionID)
+      : isLifecycleUpsertConfirmed(intent, activeById, archivedById, completeness);
+
+    if (confirmed) {
+      lifecycleShadow.delete(sessionID);
+      continue;
+    }
+
+    protectedIds.add(sessionID);
+    if (intent.kind === 'upsert') {
+      if (intent.session.time?.archived) {
+        desiredArchivedSessions.push(intent.session);
+      } else {
+        desiredActiveSessions.push(intent.session);
+      }
+    }
+  }
+
+  if (protectedIds.size === 0) {
+    return { activeSessions, archivedSessions };
+  }
+
+  return {
+    activeSessions: prependDesiredSessions(
+      removeSessionsFromList(activeSessions, protectedIds),
+      desiredActiveSessions,
+    ),
+    archivedSessions: prependDesiredSessions(
+      removeSessionsFromList(archivedSessions, protectedIds),
+      desiredArchivedSessions,
+    ),
+  };
+};
+
+const reconcileSnapshotShadows = (
+  activeSessions: Session[],
+  archivedSessions: Session[],
+  completeness: GlobalSessionsSnapshotCompleteness,
+): LoadResult => {
+  const membershipReconciled = reconcileMembershipMutationShadow(
+    activeSessions,
+    archivedSessions,
+    completeness,
+  );
+  return reconcileLifecycleShadow(
+    membershipReconciled.activeSessions,
+    membershipReconciled.archivedSessions,
+    completeness,
+  );
+};
+
+const recordLifecycleIntent = (
+  sessionID: string,
+  intent:
+    | { kind: 'upsert'; session: Session }
+    | { kind: 'delete' },
+): void => {
+  lifecycleShadow.delete(sessionID);
+  const version = ++nextLifecycleVersion;
+  if (intent.kind === 'upsert') {
+    lifecycleShadow.set(sessionID, {
+      kind: 'upsert',
+      version,
+      session: intent.session,
+    });
+  } else {
+    lifecycleShadow.set(sessionID, { kind: 'delete', version });
+  }
+
+  while (lifecycleShadow.size > GLOBAL_SESSION_LIFECYCLE_SHADOW_LIMIT) {
+    const oldestSessionID = lifecycleShadow.keys().next().value;
+    if (typeof oldestSessionID !== 'string') {
+      break;
+    }
+    lifecycleShadow.delete(oldestSessionID);
+  }
+};
+
 const removeSessionsFromDirectoryMap = (
   directories: Map<string, Session[]>,
   removedSessions: Session[],
@@ -418,7 +562,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
     status = 'ready',
     completeness = COMPLETE_GLOBAL_SNAPSHOT,
   ) => {
-    const reconciled = reconcileMembershipMutationShadow(
+    const reconciled = reconcileSnapshotShadows(
       activeSessions,
       archivedSessions,
       completeness,
@@ -463,7 +607,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
           console.warn('[GlobalSessions] Failed to load archived sessions, preserving current snapshot:', archivedResult.reason);
         }
 
-        const reconciled = reconcileMembershipMutationShadow(
+        const reconciled = reconcileSnapshotShadows(
           nextActiveSessions,
           nextArchivedSessions,
           {
@@ -482,7 +626,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
         const nextActiveSessions = mergeSessionLists(current.activeSessions, fallbackActive);
         const nextArchivedSessions = current.archivedSessions;
         console.warn('[GlobalSessions] Failed to load sessions, using fallback snapshot:', error);
-        const reconciled = reconcileMembershipMutationShadow(
+        const reconciled = reconcileSnapshotShadows(
           nextActiveSessions,
           nextArchivedSessions,
           { activeComplete: false, archivedComplete: false },
@@ -503,6 +647,15 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
   },
 
   upsertSession: (session) => {
+    const lifecycleIntent = lifecycleShadow.get(session.id);
+    if (
+      lifecycleIntent?.kind === 'upsert'
+      && !isStrictlyOlderSession(session, lifecycleIntent.session)
+      && getSessionSignature(session) !== getSessionSignature(lifecycleIntent.session)
+    ) {
+      recordLifecycleIntent(session.id, { kind: 'upsert', session });
+    }
+
     set((state) => {
       const currentSession = state.activeSessions.find((candidate) => candidate.id === session.id)
         ?? state.archivedSessions.find((candidate) => candidate.id === session.id);
@@ -707,6 +860,45 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
   },
 }));
 
+export const applyGlobalSessionLifecycleEvent = (
+  event: GlobalSessionLifecycleEvent,
+): boolean => {
+  if (event.type === 'delete') {
+    const sessionID = event.sessionID.trim();
+    if (!sessionID) {
+      return false;
+    }
+    recordLifecycleIntent(sessionID, { kind: 'delete' });
+    useGlobalSessionsStore.getState().removeSessions([sessionID]);
+    return true;
+  }
+
+  const session = event.session;
+  if (!session?.id) {
+    return false;
+  }
+
+  const state = useGlobalSessionsStore.getState();
+  const currentSession = state.activeSessions.find((candidate) => candidate.id === session.id)
+    ?? state.archivedSessions.find((candidate) => candidate.id === session.id);
+  const currentIntent = lifecycleShadow.get(session.id);
+  const newestKnownSession = currentIntent?.kind === 'upsert'
+    ? currentIntent.session
+    : currentSession;
+  if (newestKnownSession && isStrictlyOlderSession(session, newestKnownSession)) {
+    return false;
+  }
+
+  recordLifecycleIntent(session.id, { kind: 'upsert', session });
+  state.upsertSession(session);
+  return true;
+};
+
+export const resetGlobalSessionLifecycleOverlayForTest = (): void => {
+  lifecycleShadow.clear();
+  nextLifecycleVersion = 0;
+};
+
 export const beginGlobalSessionMembershipMutation = (
   input: BeginGlobalSessionMembershipMutationInput,
 ): GlobalSessionMembershipMutationHandle => {
@@ -717,6 +909,7 @@ export const beginGlobalSessionMembershipMutation = (
   const entries: Array<{ sessionID: string; version: number }> = [];
 
   for (const sessionID of uniqueSessionIds) {
+    lifecycleShadow.delete(sessionID);
     const snapshot = snapshotsById.get(sessionID);
     const desiredSession = input.kind === 'archive'
       ? (snapshot ? markSessionArchived(snapshot, input.archivedAt) : undefined)

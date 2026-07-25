@@ -102,7 +102,7 @@ const fakeApi = (overrides: Partial<ManagedOrchestrationApi> = {}): ManagedOrche
 });
 
 describe('managed orchestration store', () => {
-  test('reserves an initial grouped usage-limit failure for automatic recovery, then indexes its failure', () => {
+  test('indexes the first grouped usage-limit failure for immediate manual recovery', () => {
     const store = createManagedOrchestrationStore({ api: fakeApi() });
     const failed = {
       ...taskRecord(1, 'failed', {
@@ -120,19 +120,25 @@ describe('managed orchestration store', () => {
 
     store.getState().ingestEvent(taskEvent(projected, envelope));
 
-    expect(projected.agentRetryAvailable).toBe(true);
+    expect(projected.agentRetryAvailable).toBe(false);
     expect(projected.failureKind).toBe('provider_usage_limit');
     expect(managedOrchestrationSelectors.manualRecoveryTaskIdForChildSession('ses_child_exhausted')(
       store.getState(),
-    )).toBe(undefined);
+    )).toBe(failed.taskId);
+    expect(managedOrchestrationSelectors.manualRecoveryFailureKindForChildSession('ses_child_exhausted')(
+      store.getState(),
+    )).toBe('provider_usage_limit');
 
     store.getState().ingestEvent(taskEvent(projected, {
       ...envelope,
       acknowledgedAt: 5_000,
-      action: 'recover_in_place',
+      action: 'retry_in_place',
       followUpTaskId: 'dvr_task_2',
     }));
     expect(store.getState().manualRecoveryTaskIdByChildSessionId.ses_child_exhausted).toBe(undefined);
+    expect(managedOrchestrationSelectors.manualRecoveryFailureKindForChildSession('ses_child_exhausted')(
+      store.getState(),
+    )).toBeNull();
 
     const replacementFailed = {
       ...taskRecord(2, 'failed', {
@@ -140,7 +146,7 @@ describe('managed orchestration store', () => {
         failureReason: 'Replacement model failed',
         attempt: 2,
         priorTaskId: failed.taskId,
-        executionKind: 'recover_in_place',
+        executionKind: 'retry_in_place',
         providerId: 'openai',
         modelId: 'gpt-5.4',
       }),
@@ -312,6 +318,29 @@ describe('managed orchestration store', () => {
     store.getState().ingestEvent(taskEvent(projectedTask(1, 'starting')));
 
     expect(store.getState().taskIdsByRootId.ses_root).toBe(rootIds);
+  });
+
+  test('accepts the live retry policy closing when a running task hits a provider limit', () => {
+    const store = createManagedOrchestrationStore({ api: fakeApi() });
+    const runningRecord = {
+      ...taskRecord(1, 'running'),
+      dispatchGroupId: 'msg_parent',
+    };
+    const running = toManagedTaskEvent(runningRecord).properties.task;
+    const failedRecord = {
+      ...runningRecord,
+      status: 'failed' as const,
+      finishedAt: 4_000,
+      failureReason: 'Usage limit reached',
+    };
+    const failed = toManagedTaskEvent(failedRecord).properties.task;
+
+    store.getState().ingestEvent(taskEvent(running));
+    store.getState().ingestEvent(taskEvent(failed));
+
+    expect(running.agentRetryAvailable).toBe(true);
+    expect(failed.agentRetryAvailable).toBe(false);
+    expect(store.getState().tasksById[failed.taskId]).toEqual(failed);
   });
 
   test('rejects event attempts to mutate the queue-time execution snapshot', () => {

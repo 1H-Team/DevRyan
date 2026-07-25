@@ -62,7 +62,7 @@ export const readClaudeCodeStatusUsage = ({ statusPath = CLAUDE_CODE_STATUS_PATH
     const payload = JSON.parse(content);
     const updatedAt = getStatusUpdatedAt(payload, stats);
     if (!updatedAt || now - updatedAt > STATUS_TTL_MS) {
-      return { ok: false, error: 'Claude Code usage data is stale. OpenChamber will refresh it with the Claude CLI before returning usage.' };
+      return { ok: false, error: 'Claude Code status-line usage data is stale and cannot be used as a fresh DevRyan result.' };
     }
 
     const rateLimits = payload?.rate_limits;
@@ -100,7 +100,7 @@ export const readClaudeCodeStatusUsage = ({ statusPath = CLAUDE_CODE_STATUS_PATH
     }
 
     // Visible review note: monthly naming is best-effort because Claude Code status JSON has changed shape across releases; only explicit percentages are mapped.
-    return { ok: true, usage: { windows } };
+    return { ok: true, usage: { windows }, usageUpdatedAt: updatedAt };
   } catch (error) {
     return {
       ok: false,

@@ -14,6 +14,7 @@ import { getProviderAuth, readAuthFile, removeProviderAuth, writeAuthFile } from
 import {
   fetchQuotaForProvider,
   listConfiguredQuotaProviders,
+  resolveClaudeProxyBaseUrlFromProviders,
   resolveCursorQuotaCredential,
   resolveOllamaCloudCredential,
   resolveOpenCodeGoCredentials,
@@ -80,6 +81,46 @@ const OPENCODE_GO_PROVIDER_ID = 'opencode-go';
 const OPENCODE_GO_WORKSPACE_ID_PATTERN = /^wrk_[a-zA-Z0-9]+$/;
 const OPENCODE_GO_USAGE_COOKIE_MAX_LENGTH = 16_384;
 let cachedZenModels: { models: Array<{ id: string; owned_by?: string }>; at: number } | null = null;
+
+const resolveClaudeQuotaRuntime = async (ctx?: BridgeContext) => {
+  const manager = ctx?.manager;
+  const isExternalRuntime = manager?.getDebugInfo?.().mode === 'external';
+  if (!manager || isExternalRuntime) {
+    return {
+      claudeProxyBaseUrl: null,
+      claudeProxyConfigured: false,
+      isExternalRuntime: Boolean(isExternalRuntime),
+    };
+  }
+  const apiUrl = manager.getApiUrl();
+  if (!apiUrl) {
+    return { claudeProxyBaseUrl: null, claudeProxyConfigured: false, isExternalRuntime: false };
+  }
+  try {
+    const base = `${apiUrl.replace(/\/+$/, '')}/`;
+    const directory = manager.getWorkingDirectory();
+    const target = new URL('config/providers', base);
+    if (directory) target.searchParams.set('directory', directory);
+    const response = await fetch(target, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        ...manager.getOpenCodeAuthHeaders(),
+      },
+    });
+    if (!response.ok) {
+      return { claudeProxyBaseUrl: null, claudeProxyConfigured: false, isExternalRuntime: false };
+    }
+    const claudeProxyBaseUrl = resolveClaudeProxyBaseUrlFromProviders(await response.json());
+    return {
+      claudeProxyBaseUrl,
+      claudeProxyConfigured: Boolean(claudeProxyBaseUrl),
+      isExternalRuntime: false,
+    };
+  } catch {
+    return { claudeProxyBaseUrl: null, claudeProxyConfigured: false, isExternalRuntime: false };
+  }
+};
 
 type CursorSdkModelSelection = { id: string; params?: Array<{ id: string; value: string }> };
 type CursorSdkAgentDefinition = { description: string; prompt: string; model: 'inherit' | CursorSdkModelSelection };
@@ -1102,7 +1143,8 @@ export async function handleSystemBridgeMessage(
 
     case 'api:quota:providers': {
       try {
-        const providers = listConfiguredQuotaProviders();
+        const claudeRuntime = await resolveClaudeQuotaRuntime(ctx);
+        const providers = listConfiguredQuotaProviders(claudeRuntime);
         return { id, type, success: true, data: { providers } };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -1129,12 +1171,18 @@ export async function handleSystemBridgeMessage(
     }
 
     case 'api:quota:get': {
-      const { providerId } = (payload || {}) as { providerId?: string };
+      const { providerId, forceRefresh } = (payload || {}) as { providerId?: string; forceRefresh?: boolean };
       if (!providerId) {
         return { id, type, success: false, error: 'Provider ID is required' };
       }
       try {
-        const result = await fetchQuotaForProvider(providerId);
+        const claudeRuntime = providerId === 'claude'
+          ? await resolveClaudeQuotaRuntime(ctx)
+          : {};
+        const result = await fetchQuotaForProvider(providerId, {
+          ...claudeRuntime,
+          forceRefresh: Boolean(forceRefresh),
+        });
         return { id, type, success: true, data: result };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);

@@ -1149,7 +1149,10 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init?: 
   if (quotaMatch && (init?.method || 'GET').toUpperCase() === 'GET') {
     const providerId = decodeURIComponent(quotaMatch[1]);
     try {
-      const data = await sendBridgeMessage('api:quota:get', { providerId });
+      const data = await sendBridgeMessage('api:quota:get', {
+        providerId,
+        forceRefresh: url.searchParams.get('refresh') === 'true',
+      });
       return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

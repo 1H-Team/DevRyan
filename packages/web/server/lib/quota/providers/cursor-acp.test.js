@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { readAuthFile } from '../../opencode/auth.js';
 import { fetchQuotaForProvider } from './index.js';
@@ -7,6 +7,19 @@ import { fetchCursorAcpQuota, resolveCursorQuotaCredential } from './cursor-acp.
 vi.mock('../../opencode/auth.js', () => ({
   readAuthFile: vi.fn(() => ({})),
 }));
+vi.mock('../credentials/providers.js', () => ({
+  readManagedQuotaCredential: vi.fn(() => null),
+  writeManagedQuotaCredential: vi.fn(),
+}));
+
+const ORIGINAL_ENV = { ...process.env };
+const CURSOR_CREDENTIAL_ENV_KEYS = [
+  'CURSOR_TOKEN',
+  'CURSOR_ACCESS_TOKEN',
+  'CURSOR_REFRESH_TOKEN',
+  'CURSOR_TOKEN_FILE',
+  'CURSOR_REFRESH_TOKEN_FILE',
+];
 
 const makeUsageSummary = () => ({
   billingCycleStart: '2026-04-02T14:11:55.000Z',
@@ -22,7 +35,13 @@ const makeUsageSummary = () => ({
 
 describe('Cursor ACP quota provider', () => {
   beforeEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+    for (const key of CURSOR_CREDENTIAL_ENV_KEYS) delete process.env[key];
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    process.env = { ...ORIGINAL_ENV };
   });
 
   it('returns not configured when the Cursor usage session token is missing', async () => {

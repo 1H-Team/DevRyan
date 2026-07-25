@@ -1737,8 +1737,8 @@ async function cancelActiveManagedSubtasks(rootSessionId: string): Promise<void>
   })
 }
 
-export async function abortCurrentOperation(sessionId: string): Promise<void> {
-  if (!sessionId) return
+export async function abortCurrentOperationConfirmed(sessionId: string): Promise<boolean> {
+  if (!sessionId) return false
   const sessionDirectory = getSessionDirectory(sessionId)
   const status = getSessionStatusForAction(sessionId, sessionDirectory)
   getSessionUIStore().getState().abortPendingSend?.(sessionId)
@@ -1746,15 +1746,27 @@ export async function abortCurrentOperation(sessionId: string): Promise<void> {
   try {
     postAbortRequestedMark(sessionId, sessionDirectory)
     registerManualAbortGuard(sessionId, sessionDirectory, status)
-    await sdk().session.abort({ sessionID: sessionId, directory: sessionDirectory })
+    const result = await sdk().session.abort(
+      { sessionID: sessionId, directory: sessionDirectory },
+      { throwOnError: true },
+    )
+    if (!result.data) {
+      throw new Error("OpenCode did not confirm the session abort")
+    }
     markManualAbort(sessionId, getLatestAssistantMessageId(sessionId, sessionDirectory))
     getSessionUIStore().getState().clearSessionTurnCompletion(sessionId)
     forceSessionIdleAfterManualAbort(sessionId, sessionDirectory)
+    return true
   } catch (error) {
     // The stop never reached the server — do not mask live retry/busy state.
     clearAbortGuard(sessionId)
     console.error("[session-actions] abort failed", error)
+    return false
   }
+}
+
+export async function abortCurrentOperation(sessionId: string): Promise<void> {
+  await abortCurrentOperationConfirmed(sessionId)
 }
 
 /**

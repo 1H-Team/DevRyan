@@ -24,7 +24,11 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
 import { flattenAssistantTextParts } from '@/lib/messages/messageText';
 import { resolveMessagePlanCard } from '@/lib/messages/actionablePlan';
-import { buildPlanCardRenderSegments, shouldSuppressPostPlanText } from '@/lib/messages/planCardRender';
+import {
+    buildPlanCardRenderSegments,
+    shouldStopAfterPlanCard,
+    shouldSuppressPostPlanText,
+} from '@/lib/messages/planCardRender';
 import { isOrphanNarrationFragment } from '@/lib/messages/orphanNarration';
 import { useMessageTTS } from '@/hooks/useMessageTTS';
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -48,7 +52,10 @@ import {
     type ToolActivityGroupInfo,
 } from './parts/toolRenderUtils';
 import { ManagedTaskList } from '../ManagedTaskList';
-import { resolveManagedTaskDispatch } from '../managedTaskDispatch';
+import {
+    resolveManagedTaskDispatch,
+    resolveManagedTaskFallbacks,
+} from '../managedTaskDispatch';
 import {
     managedOrchestrationSelectors,
     useManagedOrchestrationStore,
@@ -933,6 +940,12 @@ const AssistantMessageBody = React.memo(({
         () => resolveManagedTaskDispatch(visibleParts),
         [visibleParts],
     );
+    const managedTaskFallbacks = React.useMemo(
+        () => resolveManagedTaskFallbacks(
+            turnGroupingContext?.activityParts?.map((activity) => activity.part) ?? visibleParts,
+        ),
+        [turnGroupingContext?.activityParts, visibleParts],
+    );
     const managedBarrierLocked = useManagedOrchestrationStore(React.useMemo(
         () => managedOrchestrationSelectors.hasUndispositionedTasksForRoot(sessionId ?? ''),
         [sessionId],
@@ -1371,7 +1384,7 @@ const AssistantMessageBody = React.memo(({
                     return;
                 }
                 rendered.push(
-                    <div key={`progressive-group-${segment.id}`} className="mb-3">
+                    <div key={`progressive-group-${segment.id}`}>
                         <TurnActivity
                             parts={visibleSegmentParts}
                             isExpanded={turnGroupingContext.isGroupExpanded === true}
@@ -1406,6 +1419,14 @@ const AssistantMessageBody = React.memo(({
         let globalTextGroupOffset = 0;
         let hasSeenTextGroup = false;
         while (i < managedTaskDispatch.contentParts.length) {
+            // An actionable Plan-mode response ends at its Plan card. Providers
+            // may append late reasoning/tool parts after the final plan text;
+            // keep those authoritative parts in sync state, but do not let them
+            // visually displace the plan from the end of the response.
+            if (shouldStopAfterPlanCard(messagePlan, isPlanModeSource, hasRenderedPlanCard)) {
+                break;
+            }
+
             const part = managedTaskDispatch.contentParts[i];
 
             if (part.type === 'text') {
@@ -1557,6 +1578,7 @@ const AssistantMessageBody = React.memo(({
                             providerID={providerID}
                             responseStyleLevel={turnGroupingContext?.responseStyleLevel}
                             onContentChange={onContentChange}
+                            isMobile={isMobile}
                         />
                     );
                 }
@@ -1873,13 +1895,17 @@ const AssistantMessageBody = React.memo(({
               <TextSelectionMenu containerRef={messageContentRef} />
               <div>
                  <div
-                     className="message-content-text leading-relaxed overflow-hidden text-foreground/90 [&_p:last-child]:mb-0 [&_ul:last-child]:mb-0 [&_ol:last-child]:mb-0"
+                     className={cn(
+                         'message-content-text flex flex-col leading-relaxed overflow-hidden text-foreground/90 [&_p:last-child]:mb-0 [&_ul:last-child]:mb-0 [&_ol:last-child]:mb-0',
+                         isMobile ? 'gap-y-1' : 'gap-y-1.5',
+                     )}
+                     data-session-output-stack="true"
                  >
                     {renderedParts}
                      {showErrorMessage && (
                          <FadeInOnReveal key="assistant-error">
                              <div className={cn(
-                                 'group/assistant-text relative mt-3 break-words max-w-full',
+                                 'group/assistant-text relative break-words max-w-full',
                                  errorVariant === 'plain'
                                      ? 'text-muted-foreground'
                                      : cn(
@@ -1961,7 +1987,9 @@ const AssistantMessageBody = React.memo(({
                     <ManagedTaskList
                         taskIds={managedTaskDispatch.taskIds}
                         pendingDispatches={managedTaskDispatch.pendingDispatches}
+                        fallbackTasks={managedTaskFallbacks}
                         onContentChange={onContentChange}
+                        isMobile={isMobile}
                     />
                 ) : null}
 

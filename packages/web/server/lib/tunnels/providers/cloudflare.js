@@ -249,9 +249,7 @@ export function createCloudflareTunnelProvider() {
         port: context.activePort,
       });
     },
-    stop: (controller) => {
-      controller?.stop?.();
-    },
+    stop: (controller) => controller?.stop?.(),
     resolvePublicUrl: (controller) => controller?.getPublicUrl?.() ?? null,
     getMetadata: (controller) => ({
       configPath: controller?.getEffectiveConfigPath?.() ?? null,

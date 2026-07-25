@@ -32,6 +32,10 @@ import {
 } from './lib/taskSessionLinking';
 import { TaskSessionLinkProvider } from './lib/taskSessionLinkContext';
 import { PlanTurnTraceProvider } from './PlanTurnTraceProvider';
+import {
+    hasCompactionPart,
+    isCompactionBoundaryMessage,
+} from './managedTaskCompactionProjection';
 
 const MESSAGE_LIST_VIRTUALIZE_THRESHOLD = Number.POSITIVE_INFINITY;
 const MESSAGE_LIST_OVERSCAN = 6;
@@ -71,25 +75,6 @@ const resolveMessageRole = (message: ChatMessageEntry): string | null => {
     return (typeof info.clientRole === 'string' ? info.clientRole : null)
         ?? (typeof info.role === 'string' ? info.role : null)
         ?? null;
-};
-
-const hasCompactionPart = (message: ChatMessageEntry): boolean => {
-    return message.parts.some((part) => {
-        const type = (part as { type?: unknown } | null | undefined)?.type;
-        return type === 'compaction';
-    });
-};
-
-const getPartText = (part: Part): string => {
-    const text = (part as { text?: unknown }).text;
-    if (typeof text === 'string') {
-        return text;
-    }
-    const content = (part as { content?: unknown }).content;
-    if (typeof content === 'string') {
-        return content;
-    }
-    return '';
 };
 
 const normalizeCompactionCommandMessage = (message: ChatMessageEntry): ChatMessageEntry => {
@@ -1214,7 +1199,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         for (let index = 0; index < dedupedMessages.length; index += 1) {
             const current = dedupedMessages[index];
             const currentWithRole = normalizeCompactionSummaryMessage(current, compactionCommandIds);
-            if (hasCompactionPart(current) || current.parts.some((part) => part.type === 'text' && getPartText(part).trim() === '/compact')) {
+            if (isCompactionBoundaryMessage(current)) {
                 compactionCommandIds.add(current.info.id);
             }
             const previous = output.length > 0 ? output[output.length - 1] : undefined;

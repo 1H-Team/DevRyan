@@ -14,12 +14,13 @@ describe('useUIStore openContextPlan', () => {
   });
 
   test('opens the saved plan revision and requests an entrance from a closed panel', () => {
-    useUIStore.getState().openContextPlan('/repo/Test', '/plans/session-msg.md');
+    useUIStore.getState().openContextPlan('/repo/Test', '/plans/session-msg.md', 'session-parent');
 
     const state = useUIStore.getState();
     const panel = state.contextPanelByDirectory['/repo/Test'];
     expect(panel?.isOpen).toBe(true);
     expect(panel?.tabs.find((tab) => tab.mode === 'plan')?.targetPath).toBe('/plans/session-msg.md');
+    expect(panel?.tabs.find((tab) => tab.mode === 'plan')?.ownerSessionId).toBe('session-parent');
     expect(state.contextPlanMotionRequest).toEqual({
       id: 1,
       directory: '/repo/Test',
@@ -28,17 +29,34 @@ describe('useUIStore openContextPlan', () => {
   });
 
   test('toggles a closed panel open to the saved plan revision', () => {
-    useUIStore.getState().toggleContextPlan('/repo/Test/', '/plans/session-msg.md');
+    useUIStore.getState().toggleContextPlan('/repo/Test/', '/plans/session-msg.md', 'session-parent');
 
     const state = useUIStore.getState();
     const panel = state.contextPanelByDirectory['/repo/Test'];
     expect(panel?.isOpen).toBe(true);
     expect(panel?.tabs.find((tab) => tab.mode === 'plan')?.targetPath).toBe('/plans/session-msg.md');
+    expect(panel?.tabs.find((tab) => tab.mode === 'plan')?.ownerSessionId).toBe('session-parent');
     expect(state.contextPlanMotionRequest).toEqual({
       id: 1,
       directory: '/repo/Test',
       direction: 'enter',
     });
+  });
+
+  test('updates plan path and ownership without replaying panel motion', () => {
+    useUIStore.getState().openContextPlan('/repo/Test', '/plans/session-a.md', 'session-parent-a');
+    const entranceRequest = useUIStore.getState().contextPlanMotionRequest;
+    if (entranceRequest) {
+      useUIStore.getState().consumeContextPlanMotionRequest(entranceRequest.id);
+    }
+
+    useUIStore.getState().openContextPlan('/repo/Test', '/plans/session-b.md', 'session-parent-b');
+
+    const planTab = useUIStore.getState().contextPanelByDirectory['/repo/Test']?.tabs.find((tab) => tab.mode === 'plan');
+    expect(planTab?.targetPath).toBe('/plans/session-b.md');
+    expect(planTab?.ownerSessionId).toBe('session-parent-b');
+    expect(useUIStore.getState().contextPlanMotionRequest).toBeNull();
+    expect(useUIStore.getState().contextPlanMotionSequence).toBe(1);
   });
 
   test('toggles an active plan through the animated panel exit path', () => {

@@ -114,6 +114,9 @@ const credentialStatus = (providerId, runtime) => ({
 export function registerQuotaRoutes(app, {
   getQuotaProviders,
   resolveProjectDirectory,
+  buildOpenCodeUrl,
+  getOpenCodeAuthHeaders = () => ({}),
+  isExternalOpenCode = () => false,
   credentialRuntime: credentialRuntimeOverrides,
 }) {
   const credentialRuntime = {
@@ -140,11 +143,36 @@ export function registerQuotaRoutes(app, {
     return resolved.directory;
   };
 
+  const resolveClaudeProxyBaseUrl = async (workingDirectory) => {
+    if (isExternalOpenCode() || typeof buildOpenCodeUrl !== 'function') return null;
+    const query = workingDirectory
+      ? `?directory=${encodeURIComponent(workingDirectory)}`
+      : '';
+    const response = await fetch(buildOpenCodeUrl(`/config/providers${query}`, ''), {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        ...getOpenCodeAuthHeaders(),
+      },
+    });
+    if (!response.ok) return null;
+    const payload = await response.json().catch(() => null);
+    const providers = Array.isArray(payload?.providers) ? payload.providers : [];
+    const anthropic = providers.find((provider) => provider?.id === 'anthropic');
+    const baseUrl = anthropic?.options?.baseURL ?? anthropic?.baseURL;
+    return typeof baseUrl === 'string' ? baseUrl : null;
+  };
+
   app.get('/api/quota/providers', async (req, res) => {
     try {
       const { listConfiguredQuotaProviders } = await getQuotaProviders();
       const workingDirectory = await resolveQuotaDirectory(req);
-      res.json({ providers: listConfiguredQuotaProviders({ workingDirectory }) });
+      res.json({
+        providers: listConfiguredQuotaProviders({
+          workingDirectory,
+          isExternalRuntime: isExternalOpenCode(),
+        }),
+      });
     } catch (error) {
       console.error('Failed to list quota providers:', error);
       res.status(error.statusCode || 500).json({ error: error.message || 'Failed to list quota providers' });
@@ -223,7 +251,12 @@ export function registerQuotaRoutes(app, {
       const { fetchQuotaForProvider } = await getQuotaProviders();
       const forceRefresh = req.query.refresh === 'true';
       const workingDirectory = await resolveQuotaDirectory(req);
-      res.json(await fetchQuotaForProvider(providerId, { forceRefresh, workingDirectory }));
+      res.json(await fetchQuotaForProvider(providerId, {
+        forceRefresh,
+        workingDirectory,
+        isExternalRuntime: isExternalOpenCode(),
+        resolveProxyBaseUrl: () => resolveClaudeProxyBaseUrl(workingDirectory),
+      }));
     } catch (error) {
       console.error('Failed to fetch quota:', error);
       res.status(error.statusCode || 500).json({ error: error.message || 'Failed to fetch quota' });

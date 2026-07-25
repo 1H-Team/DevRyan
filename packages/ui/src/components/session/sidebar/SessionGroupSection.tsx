@@ -852,7 +852,6 @@ export function SessionGroupSection(props: Props): React.ReactNode {
           {!isCollapsed ? (
             <SessionSidebarMotionRow
               key={`archived-group-body:${groupKey}`}
-              withLeadingIndicatorGutter={false}
             >
               {groupBody}
             </SessionSidebarMotionRow>

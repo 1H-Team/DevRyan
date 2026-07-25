@@ -13,7 +13,10 @@ import {
 import { I18nProvider } from '@/lib/i18n';
 import { dict } from '@/lib/i18n/messages/en';
 import { formatAgentLabel } from './mobileControlsUtils';
-import { resolveManagedTaskDispatch } from './managedTaskDispatch';
+import {
+  resolveManagedTaskDispatch,
+  resolveManagedTaskFallbacks,
+} from './managedTaskDispatch';
 import {
   collapseManagedTaskLineages,
   getManagedTaskWindow,
@@ -27,7 +30,7 @@ mock.module('@/components/ui/ProviderLogo', () => ({
 }));
 
 const { ManagedTaskRowView } = await import('./ManagedTaskRow');
-const { ManagedTaskPreparingRow } = await import('./ManagedTaskList');
+const { ManagedTaskList, ManagedTaskPreparingRow } = await import('./ManagedTaskList');
 
 const terminalTask = (status: ManagedTaskStatus) => ({
   ...createManagedTaskRecord({
@@ -207,7 +210,7 @@ describe('managed task presentation', () => {
     expect(html).not.toContain('Try Again');
   });
 
-  test('shows a provider-limit explanation while automatic recovery remains available', () => {
+  test('shows immediate manual recovery for a first provider-limit failure', () => {
     const task = {
       ...terminalTask('failed'),
       dispatchGroupId: 'msg_parent',
@@ -225,6 +228,7 @@ describe('managed task presentation', () => {
         <ManagedTaskRowView
           task={projected}
           resultEnvelope={envelope}
+          childActive
           providers={[{
             id: 'github-copilot',
             name: 'GitHub Copilot',
@@ -240,14 +244,15 @@ describe('managed task presentation', () => {
       </I18nProvider>,
     );
 
-    expect(projected.agentRetryAvailable).toBe(true);
+    expect(projected.agentRetryAvailable).toBe(false);
     expect(projected.failureKind).toBe('provider_usage_limit');
     expect(html).toContain('GitHub Copilot rate limit reached for GPT 4.1.');
-    expect(html).not.toContain('Choose a model to continue this subtask');
-    expect(html).not.toContain('Try Again');
+    expect(html).toContain('Error');
+    expect(html).toContain('Choose a model to continue this subtask');
+    expect(html).toContain('Try Again');
   });
 
-  test('shows same-child recovery with the replacement model in one row', () => {
+  test('shows the selected model and thinking after same-child manual recovery', () => {
     const source = {
       ...toManagedTaskEvent({
         ...terminalTask('failed'),
@@ -256,13 +261,14 @@ describe('managed task presentation', () => {
       taskId: 'dvr_task_usage_limit',
     };
     const recovery = {
-      ...toManagedTaskEvent(terminalTask('running')).properties.task,
+      ...toManagedTaskEvent(terminalTask('completed')).properties.task,
       taskId: 'dvr_task_recovery',
       attempt: 2,
       priorTaskId: source.taskId,
-      executionKind: 'recover_in_place' as const,
+      executionKind: 'retry_in_place' as const,
       providerId: 'openai',
       modelId: 'gpt-5.4',
+      variant: 'medium',
     };
 
     const html = renderToStaticMarkup(
@@ -279,8 +285,11 @@ describe('managed task presentation', () => {
       </I18nProvider>,
     );
 
-    expect(html).toContain('Recovering...');
-    expect(html).toContain('GitHub Copilot rate limit reached for GPT 4.1. Recovering with OpenAI / GPT 5.4');
+    expect(html).toContain('Complete');
+    expect(html).toContain('Subagent Task Recovered with GPT 5.4 · Medium');
+    expect(html).toContain('text-[var(--status-success)]');
+    expect(html).not.toContain('Recovering...');
+    expect(html).not.toContain('rate limit reached for GPT 4.1. Recovering with');
   });
 
   test('expands a final grouped failure with enabled model and thinking controls', () => {
@@ -320,7 +329,7 @@ describe('managed task presentation', () => {
 
     expect(html).toContain('Choose a model to continue this subtask');
     expect(html).not.toContain('Provider connection ended');
-    expect(html).toContain('github-copilot / gpt-4.1');
+    expect(html).toContain('GitHub Copilot / GPT 4.1');
     expect(html).toContain('model-controls__model-trigger');
     expect(html).toContain('model-controls__variant-trigger');
     expect(html).not.toContain('disabled=""');
@@ -516,8 +525,8 @@ describe('managed task presentation', () => {
 
     expect(presentation.contentParts).toEqual([reasoningBefore, reasoningAfter]);
     expect(presentation.pendingDispatches).toEqual([
-      { partId: 'explorer-start', agent: 'explorer', label: 'inspect-runtime' },
-      { partId: 'designer-start', agent: 'designer', label: 'review-layout' },
+      { partId: 'explorer-start', agent: 'explorer', label: 'inspect-runtime', status: 'preparing' },
+      { partId: 'designer-start', agent: 'designer', label: 'review-layout', status: 'preparing' },
     ]);
   });
 
@@ -568,6 +577,7 @@ describe('managed task presentation', () => {
     expect(messageBodySource).not.toContain('managedTaskProjection');
     expect(messageBodySource).toContain('taskIds={managedTaskDispatch.taskIds}');
     expect(messageBodySource).toContain('pendingDispatches={managedTaskDispatch.pendingDispatches}');
+    expect(messageBodySource).toContain('fallbackTasks={managedTaskFallbacks}');
   });
 
   test('surfaces an active managed start before an authoritative task id exists', () => {
@@ -586,6 +596,7 @@ describe('managed task presentation', () => {
         partId: 'start-part',
         agent: 'explorer',
         label: 'workspace-surface_map',
+        status: 'preparing',
       }],
     });
   });
@@ -607,7 +618,60 @@ describe('managed task presentation', () => {
     });
   });
 
-  test('does not strand a provisional row after a terminal start failure', () => {
+  test('reconstructs the latest persisted task row from managed tool results after a runtime restart', () => {
+    const task = {
+      taskId: 'dvr_task_restart',
+      agent: 'oracle',
+      label: 'review-error-precedence-contract',
+      status: 'running',
+      childSessionId: 'ses_child',
+      directory: '/workspace',
+    };
+    const fallbacks = resolveManagedTaskFallbacks([
+      {
+        id: 'start-part',
+        type: 'tool',
+        tool: 'devryan_task',
+        state: {
+          status: 'completed',
+          input: { action: 'start' },
+          output: JSON.stringify({ task }),
+        },
+      },
+      {
+        id: 'wait-part',
+        type: 'tool',
+        tool: 'devryan_task',
+        state: {
+          status: 'completed',
+          input: { action: 'wait' },
+          output: JSON.stringify({ task: { ...task, status: 'completed' } }),
+        },
+      },
+    ] as never);
+
+    expect(fallbacks).toEqual([{
+      partId: 'wait-part',
+      taskId: 'dvr_task_restart',
+      agent: 'oracle',
+      label: 'review-error-precedence-contract',
+      status: 'completed',
+      childSessionId: 'ses_child',
+      directory: '/workspace',
+    }]);
+
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <ManagedTaskList taskIds={['dvr_task_restart']} fallbackTasks={fallbacks} />
+      </I18nProvider>,
+    );
+    expect(html).toContain('Oracle');
+    expect(html).toContain('Review Error Precedence Contract');
+    expect(html).toContain('Complete');
+    expect(html).toContain('Open Subtask');
+  });
+
+  test('keeps a terminal managed start failure visible in the dispatch card', () => {
     expect(resolveManagedTaskDispatch([{
       id: 'start-part',
       type: 'tool',
@@ -620,7 +684,13 @@ describe('managed task presentation', () => {
     }] as never)).toEqual({
       contentParts: [],
       taskIds: [],
-      pendingDispatches: [],
+      pendingDispatches: [{
+        partId: 'start-part',
+        agent: 'explorer',
+        label: 'workspace-surface_map',
+        status: 'error',
+        errorMessage: 'bridge offline',
+      }],
     });
   });
 
@@ -648,8 +718,8 @@ describe('managed task presentation', () => {
       contentParts: [],
       taskIds: [],
       pendingDispatches: [
-        { partId: 'explorer-start', agent: 'explorer', label: 'inspect-runtime' },
-        { partId: 'designer-start', agent: 'designer', label: 'review-layout' },
+        { partId: 'explorer-start', agent: 'explorer', label: 'inspect-runtime', status: 'preparing' },
+        { partId: 'designer-start', agent: 'designer', label: 'review-layout', status: 'preparing' },
       ],
     });
   });
@@ -661,12 +731,38 @@ describe('managed task presentation', () => {
           partId: 'start-part',
           agent: 'explorer',
           label: 'locate-chat_ui',
+          status: 'preparing',
         }} />
       </I18nProvider>,
     );
 
     expect(html).toContain('Locate Chat UI');
     expect(html).toContain('Preparing...');
+    expect(html).not.toContain('Open Subtask');
+  });
+
+  test('renders a failed managed start without exposing permission-rule JSON', () => {
+    const dispatch = resolveManagedTaskDispatch([{
+      id: 'start-part',
+      type: 'tool',
+      tool: 'devryan_task',
+      state: {
+        status: 'error',
+        input: { action: 'start', agent: 'explorer', label: 'inspect-runtime' },
+        error: 'Task could not start. Here are some of the relevant rules [{"permission":"task","action":"deny"}]',
+      },
+    }] as never).pendingDispatches[0];
+
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <ManagedTaskPreparingRow dispatch={dispatch} />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('Could not start this subtask');
+    expect(html).toContain('Task could not start.');
+    expect(html).not.toContain('relevant rules');
+    expect(html).not.toContain('&quot;permission&quot;');
     expect(html).not.toContain('Open Subtask');
   });
 
@@ -772,8 +868,23 @@ describe('managed task presentation', () => {
 
     expect(html).toContain('flex-col');
     expect(html).toContain('sm:flex-row');
-    expect(html).toContain('w-full');
+    expect(html).toContain('self-start');
+    expect(html).toContain('w-auto');
+    expect(html).toContain('min-h-[36px]');
+    expect(html).toContain('min-w-[36px]');
+    expect(html).not.toContain('w-full');
     expect(html).toContain('sm:w-auto');
+  });
+
+  test('keeps the mobile dispatch card aligned with the assistant output width and clips its rounded surface', () => {
+    const source = readFileSync(fileURLToPath(new URL('./ManagedTaskList.tsx', import.meta.url)), 'utf8');
+    const mobileStyles = readFileSync(fileURLToPath(new URL('../../styles/mobile.css', import.meta.url)), 'utf8');
+
+    expect(source).toContain('isMobile?: boolean');
+    expect(source).toContain("isMobile ? 'w-full px-0 pb-1 pt-1'");
+    expect(source).toContain('data-managed-task-card="true"');
+    expect(mobileStyles).toContain('[data-managed-task-card="true"]');
+    expect(mobileStyles).toContain('overflow: hidden !important;');
   });
 
   test('optically centers the agent icon and name within a fixed-height header', () => {

@@ -67,4 +67,5 @@ export interface ProviderResult {
   errorCode?: string;
   usage: ProviderUsage | null;
   fetchedAt: number;
+  usageUpdatedAt?: number;
 }

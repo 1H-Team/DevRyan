@@ -120,6 +120,11 @@ import type { SendConfigModelProvenance } from '@/sync/send-config';
 import { useI18n } from '@/lib/i18n';
 import { useOpenCodeReadiness } from '@/hooks/useOpenCodeReadiness';
 import { useAgentHandoffGuard } from './agentHandoffGuardContext';
+import {
+    captureModelPickerScroll,
+    restoreModelPickerScroll,
+    type ModelPickerScrollSnapshot,
+} from './lib/modelPickerScroll';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type IconComponent = ComponentType<any>;
@@ -532,6 +537,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const [desktopModelQuery, setDesktopModelQuery] = React.useState('');
     const [modelSelectedIndex, setModelSelectedIndex] = React.useState(0);
     const modelItemRefs = React.useRef<(HTMLDivElement | null)[]>([]);
+    const pendingModelPickerScrollRef = React.useRef<ModelPickerScrollSnapshot | null>(null);
     const keyboardOwnsModelSelectionRef = React.useRef(false);
     const lastModelPointerPositionRef = React.useRef<{ x: number; y: number } | null>(null);
     const [pendingThinkingVariants, setPendingThinkingVariants] = React.useState<Map<string, string | undefined>>(new Map());
@@ -539,6 +545,32 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const favoriteRowSensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     );
+
+    const handleFavoriteModelToggle = React.useCallback((
+        event: React.MouseEvent<HTMLButtonElement>,
+        providerId: string,
+        modelId: string,
+    ) => {
+        const scrollContainer = event.currentTarget.closest<HTMLElement>('.overlay-scrollbar-target');
+        pendingModelPickerScrollRef.current = captureModelPickerScroll(scrollContainer);
+        toggleFavoriteModel(providerId, modelId);
+    }, [toggleFavoriteModel]);
+
+    React.useLayoutEffect(() => {
+        const pendingScroll = pendingModelPickerScrollRef.current;
+        if (!pendingScroll) {
+            return;
+        }
+
+        restoreModelPickerScroll(pendingScroll);
+        pendingModelPickerScrollRef.current = null;
+    }, [favoriteModelsList]);
+
+    React.useEffect(() => {
+        if (!isModelSelectorOpen && activeMobilePanel !== 'model') {
+            pendingModelPickerScrollRef.current = null;
+        }
+    }, [activeMobilePanel, isModelSelectorOpen]);
 
     React.useEffect(() => {
         if (activeMobilePanel === 'model') {
@@ -2137,7 +2169,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                 onClick={(event) => {
                                     event.preventDefault();
                                     event.stopPropagation();
-                                    toggleFavoriteModel(providerId, modelId);
+                                    handleFavoriteModelToggle(event, providerId, modelId);
                                 }}
                                 className={cn(
                                     'model-favorite-button flex h-5 w-5 items-center justify-center hover:text-primary/80 flex-shrink-0',
@@ -2241,7 +2273,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 onClose={closeMobilePanel}
                 title={t('chat.modelControls.selectModel')}
             >
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-2 [overflow-anchor:none]">
                     <div>
                         <div className="relative">
                             <RiSearchLine className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -2544,6 +2576,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     {selectableAgentOptions.map((agent) => {
                         const isSelected = agent.name === uiAgentName;
                         const agentColor = getAgentColor(agent.name);
+                        const agentIconColor = getAgentIconColor(agent.name);
                         return (
                             <button
                                 key={agent.name}
@@ -2559,10 +2592,14 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                 )}
                                 onClick={() => handleAgentChange(agent.name)}
                             >
-                                <div className="flex items-center gap-2">
-                                    <div className={cn('h-3 w-3 rounded-full flex-shrink-0', agentColor.class)} />
+                                <div className="flex w-full min-w-0 items-center gap-2">
+                                    <RiAiAgentLine
+                                        className="h-4 w-4 flex-shrink-0"
+                                        style={{ color: `var(${agentIconColor.var})` }}
+                                        aria-hidden="true"
+                                    />
                                     <span
-                                        className="typography-ui-label font-semibold"
+                                        className="min-w-0 flex-1 truncate typography-ui-label font-semibold"
                                         style={isSelected ? { color: `var(${agentColor.var})` } : undefined}
                                     >
                                         {formatAgentLabel(agent.name)}
@@ -2817,7 +2854,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                         onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            toggleFavoriteModel(providerID, modelID);
+                            handleFavoriteModelToggle(e, providerID, modelID);
                         }}
                         className={cn(
                             "model-favorite-button flex h-4 w-4 items-center justify-center hover:text-primary/80",
@@ -3192,7 +3229,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                 outerClassName="max-h-[min(400px,calc(100dvh-12rem))] flex-1"
                                 className="overlay-scrollbar-target--no-gutter"
                             >
-                                <div className="p-1">
+                                <div className="p-1 [overflow-anchor:none]">
                                     <div className="grid grid-cols-2 gap-1">
                                         <button
                                             type="button"

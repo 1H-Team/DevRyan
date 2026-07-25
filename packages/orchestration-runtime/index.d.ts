@@ -143,6 +143,7 @@ export interface ManagedTaskControl {
 export type ManagedTaskReconciliation =
   | { state: 'live'; accepted?: boolean }
   | { state: 'terminal'; result: ManagedTaskExecutorResult }
+  | { state: 'transient'; failureReason?: string }
   | {
       state: 'unavailable';
       failureReason?: string;
@@ -229,6 +230,7 @@ export interface ManagedTaskSchedulerOptions {
   cancelTimeout?: (timer: unknown) => void;
   abortTimeoutMs?: number;
   startingLeaseTimeoutMs?: number;
+  reconciliationRetryMs?: number;
   maxTerminalRecords?: number;
   maxHistoryAgeMs?: number;
   maxPersistedBytes?: number;
@@ -243,6 +245,7 @@ export interface ManagedTaskSchedulerDiagnostics {
   pendingWaiterCount: number;
   pendingTimeoutCount: number;
   pendingLeaseCount: number;
+  pendingReconciliationRetryCount: number;
   compactedTaskCount: number;
   serializedBytes: number;
   shutDown: boolean;
@@ -273,6 +276,9 @@ export interface ManagedTaskScheduler {
     signal?: AbortSignal;
     timeoutMs?: number;
   }): Promise<ManagedTaskRecord>;
+  waitForResultAction(taskId: string, options?: {
+    signal?: AbortSignal;
+  }): Promise<ManagedTaskResultEnvelope>;
   waitForDispatchBarrier(rootSessionId: string, options?: { signal?: AbortSignal }): Promise<{
     state: 'clear' | 'awaiting_acknowledgement';
     taskIds: string[];
@@ -365,6 +371,6 @@ export function compactManagedOrchestrationState(state: ManagedOrchestrationStat
   serializedBytes: number;
   overLimit: boolean;
 };
-export function resolveProviderPromptTools(providerId: unknown): Readonly<Record<string, boolean>> | undefined;
+export function resolveProviderPromptTools(providerId: unknown, agent?: unknown): Readonly<Record<string, boolean>> | undefined;
 export function createManagedOpenCodeExecutor(options: ManagedOpenCodeExecutorOptions): ManagedTaskExecutor;
 export function createManagedTaskScheduler(options: ManagedTaskSchedulerOptions): ManagedTaskScheduler;

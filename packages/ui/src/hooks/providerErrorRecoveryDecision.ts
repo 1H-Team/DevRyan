@@ -1,4 +1,4 @@
-import type { Message } from '@opencode-ai/sdk/v2/client';
+import type { Message, SessionStatus } from '@opencode-ai/sdk/v2/client';
 
 import { isLikelyProviderAuthFailure } from '@/lib/messages/providerAuthError';
 import { isLikelyProviderModelNotFound } from '@/lib/messages/providerModelNotFound';
@@ -10,6 +10,21 @@ type Input = {
   queuedMessageCount: number;
   blockingRequestCount: number;
 };
+
+export const MAX_TRANSIENT_PROVIDER_RETRY_ATTEMPTS = 3;
+
+export function decideProviderRetryLoopRecovery(
+  status: SessionStatus | undefined,
+): { reason: string } | null {
+  if (status?.type !== 'retry' || status.attempt < MAX_TRANSIENT_PROVIDER_RETRY_ATTEMPTS) {
+    return null;
+  }
+  const reason = stripWrappedJsonQuotes(status.message).trim();
+  if (!reason || !isLikelyTransientStreamFailure(undefined, reason)) {
+    return null;
+  }
+  return { reason };
+}
 
 export function decideProviderErrorRecovery(input: Input): { reason: string } | null {
   if (input.queuedMessageCount > 0 || input.blockingRequestCount > 0) return null;

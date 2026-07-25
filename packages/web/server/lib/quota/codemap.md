@@ -6,6 +6,7 @@ Provider-agnostic quota reporting module for model/provider usage limits, exposi
 ## Design
 - **Provider registry pattern**: runtime resolves configured quota providers and dispatches by `providerId`.
 - **Directory-scoped resolution**: routes accept header/query project directory hints and normalize via shared resolver.
+- **Active-runtime proxy resolution**: managed Claude proxy quota uses the effective Anthropic `baseURL` from the active OpenCode provider catalog; external runtimes never fall back to the host's local Claude account.
 - **Error contract discipline**: route layer wraps provider exceptions into HTTP status/error payloads.
 - **Managed secrets**: `credentials/store.js` owns allowlisted private atomic files; `credentials/providers.js` owns exact shapes and safe status; `credentials/cursor-import.js` owns explicit read-only Cursor import.
 

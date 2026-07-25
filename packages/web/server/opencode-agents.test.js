@@ -451,14 +451,14 @@ describe('Packaged OpenChamber agents', () => {
     });
   });
 
-  it('instructs Orchestrator to keep managed recovery separate from explicit provider-native tasks', () => {
+  it('instructs Orchestrator to use managed delegation exclusively', () => {
     const orchestrator = listPackagedAgents().find((agent) => agent.name === 'orchestrator');
 
     expect(orchestrator?.prompt).toContain('calling `devryan_task`');
-    expect(orchestrator?.prompt).toContain('provider-native delegation means calling `task`');
+    expect(orchestrator?.frontmatter.permission.task).toBe('deny');
     expect(orchestrator?.prompt).toContain('at most one managed recovery');
-    expect(orchestrator?.prompt).toContain('Never invoke provider-native `task` as an automatic fallback');
-    expect(orchestrator?.prompt).toContain('explicit current-user request');
+    expect(orchestrator?.prompt).toContain('Provider-native `task` is unavailable to Orchestrator');
+    expect(orchestrator?.prompt).not.toContain('explicit current-user request');
     expect(orchestrator?.prompt).toContain('If Explorer remains unavailable after the one managed recovery');
   });
 
@@ -619,6 +619,8 @@ describe('Packaged OpenChamber agents', () => {
     expect(orchestrator?.frontmatter.permission).toMatchObject({
       question: 'allow',
       'question_*': 'allow',
+      task: 'deny',
+      devryan_task: 'allow',
     });
 
     for (const agent of [orchestrator, builder, fixer, designer, explorer, oracle, librarian, plan]) {

@@ -94,10 +94,10 @@ describe('managed OpenCode executor', () => {
     expect(calls.filter(([name]) => name === 'abort')).toHaveLength(1);
   });
 
-  test('keeps the same child live through a transient rate limit and busy before completing', async () => {
+  test('keeps the same child live through a transient provider retry and busy before completing', async () => {
     const calls = [];
     const statuses = [
-      { type: 'retry', message: 'rate limited', attempt: 1, next: 5_000 },
+      { type: 'retry', message: 'temporarily unavailable', attempt: 1, next: 5_000 },
       { type: 'busy' },
       { type: 'idle' },
     ];
@@ -179,7 +179,7 @@ describe('managed OpenCode executor', () => {
   test('keeps repeated identical provider retry snapshots live', async () => {
     let abortCount = 0;
     let reads = 0;
-    const retry = { type: 'retry', message: 'rate limited', attempt: 1, next: 5_000 };
+    const retry = { type: 'retry', message: 'temporarily unavailable', attempt: 1, next: 5_000 };
     const statuses = [retry, retry, retry, { type: 'idle' }];
     const transport = {
       async createSession() { throw new Error('must not create'); },
@@ -207,7 +207,7 @@ describe('managed OpenCode executor', () => {
 
   test('does not settle an assistant error while provider retry remains live', async () => {
     let reads = 0;
-    const statuses = [{ type: 'retry', message: 'rate limited' }, { type: 'idle' }];
+    const statuses = [{ type: 'retry', message: 'temporarily unavailable' }, { type: 'idle' }];
     const transport = {
       async createSession() { throw new Error('must not create'); },
       async promptSession() { throw new Error('must not prompt'); },
@@ -243,7 +243,7 @@ describe('managed OpenCode executor', () => {
   test('fails once and remains resumable when retry is followed by a terminal assistant error', async () => {
     let reads = 0;
     let abortCount = 0;
-    const statuses = [{ type: 'retry', message: 'rate limited' }, { type: 'idle' }];
+    const statuses = [{ type: 'retry', message: 'temporarily unavailable' }, { type: 'idle' }];
     const transport = {
       async createSession() { throw new Error('must not create'); },
       async promptSession() { throw new Error('must not prompt'); },
@@ -837,6 +837,32 @@ describe('managed OpenCode executor', () => {
     expect(await executor.reconcile(existing)).toMatchObject({
       state: 'unavailable',
       failureReason: 'Managed child session ses_child is unavailable',
+    });
+  });
+
+  test('defers reconciliation when the child runtime is temporarily unavailable', async () => {
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession() { throw new Error('must not prompt'); },
+      async readSession() {
+        const error = new Error('OpenCode port is not available');
+        error.code = 'managed_runtime_unavailable';
+        error.statusCode = 503;
+        throw error;
+      },
+      async readStatus() { throw new Error('must not read status'); },
+      async readMessages() { throw new Error('must not read messages'); },
+      async abortSession() { throw new Error('must not abort'); },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
+
+    await expect(executor.reconcile(task({
+      childSessionId: 'ses_child',
+      status: 'running',
+    }))).resolves.toEqual({
+      state: 'transient',
+      failureReason: 'OpenCode port is not available',
     });
   });
 

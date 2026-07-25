@@ -32,6 +32,8 @@ const DEFAULT_RUNTIME_AGENT_OVERLAY_ROOT = path.join(OPENCODE_CONFIG_DIR, '.open
 const DEFAULT_RUNTIME_AGENT_OVERLAY_MANIFEST_PATH = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'runtime-agent-overlays.json');
 const DEFAULT_REMOTE_MCP_TIMEOUT_MS = 5_000;
 const DEFAULT_OPENAI_HEADER_TIMEOUT_MS = 60_000;
+const DEFAULT_OPENAI_CHUNK_TIMEOUT_MS = 120_000;
+const DEFAULT_OPENAI_REQUEST_TIMEOUT_MS = 600_000;
 const ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID = 'anthropic';
 const SLIM_CONFIG_FILE_NAMES = ['oh-my-opencode-slim.jsonc', 'oh-my-opencode-slim.json'];
 
@@ -383,7 +385,7 @@ const buildGitHubCopilotProviderOverlay = async (options = {}) => {
   };
 };
 
-const buildOpenAIHeaderTimeoutOverlay = async (workingDirectory, options = {}) => {
+const buildOpenAITimeoutOverlay = async (workingDirectory, options = {}) => {
   const readActiveConfig = typeof options.readConfig === 'function' ? options.readConfig : readConfig;
   const config = readActiveConfig(workingDirectory);
   const providers = isPlainObject(config?.provider) ? config.provider : {};
@@ -420,11 +422,17 @@ const buildOpenAIHeaderTimeoutOverlay = async (workingDirectory, options = {}) =
   const headerTimeout = Object.prototype.hasOwnProperty.call(providerOptions, 'headerTimeout')
     ? providerOptions.headerTimeout
     : DEFAULT_OPENAI_HEADER_TIMEOUT_MS;
+  const chunkTimeout = Object.prototype.hasOwnProperty.call(providerOptions, 'chunkTimeout')
+    ? providerOptions.chunkTimeout
+    : DEFAULT_OPENAI_CHUNK_TIMEOUT_MS;
+  const timeout = Object.prototype.hasOwnProperty.call(providerOptions, 'timeout')
+    ? providerOptions.timeout
+    : DEFAULT_OPENAI_REQUEST_TIMEOUT_MS;
 
   return {
     provider: {
       openai: {
-        options: { headerTimeout },
+        options: { headerTimeout, chunkTimeout, timeout },
       },
     },
   };
@@ -481,7 +489,7 @@ const buildRuntimeConfigOverlay = (workingDirectory, options = {}) => {
     : [];
   const overlays = [
     options.githubCopilotProviderOverlay,
-    options.openAIHeaderTimeoutOverlay,
+    options.openAITimeoutOverlay,
     buildRemoteMcpTimeoutOverlay(workingDirectory, options),
     buildBlockedMcpOverlay(workingDirectory, options),
     activePluginPlan.overlay,
@@ -812,12 +820,12 @@ export const syncRuntimeAgentOverlays = async (options = {}) => {
   }
 
   const githubCopilotProviderOverlay = await buildGitHubCopilotProviderOverlay(runtimeOptions);
-  const openAIHeaderTimeoutOverlay = await buildOpenAIHeaderTimeoutOverlay(workingDirectory, runtimeOptions);
+  const openAITimeoutOverlay = await buildOpenAITimeoutOverlay(workingDirectory, runtimeOptions);
   const desiredRuntimeConfig = buildRuntimeConfigOverlay(workingDirectory, {
     ...options,
     packagedPluginSpecs: packagedPlugins.map((plugin) => plugin.spec),
     githubCopilotProviderOverlay,
-    openAIHeaderTimeoutOverlay,
+    openAITimeoutOverlay,
   });
 
   if (desiredRuntimeConfig) {

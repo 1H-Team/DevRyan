@@ -29,13 +29,20 @@ export { createVsCodeManagedOrchestrationHost } from './managedOrchestrationHost
 export { createVsCodeManagedOrchestrationLedger } from './managedOrchestrationPersistence';
 
 const DEFAULT_TASK_TIMEOUT_MS = 30 * 60 * 1_000;
+const ORACLE_TASK_TIMEOUT_MS = 60 * 60 * 1_000;
 const COUNCIL_TASK_TIMEOUT_MS = 3 * 60 * 1_000;
 const MAX_WAIT_TIMEOUT_MS = 25_000;
+
+const resolveMinimumTaskTimeoutMs = (agent: unknown) => (
+  typeof agent === 'string' && agent.trim().toLowerCase() === 'oracle'
+    ? ORACLE_TASK_TIMEOUT_MS
+    : DEFAULT_TASK_TIMEOUT_MS
+);
 
 const resolveSubmitTimeoutAt = (params: Record<string, unknown>, now: () => number) => {
   const submittedAt = now();
   if (params.deadlineClass === 'council') return submittedAt + COUNCIL_TASK_TIMEOUT_MS;
-  const minimumTimeoutAt = submittedAt + DEFAULT_TASK_TIMEOUT_MS;
+  const minimumTimeoutAt = submittedAt + resolveMinimumTaskTimeoutMs(params.agent);
   return typeof params.timeoutAt === 'number' && Number.isFinite(params.timeoutAt)
     ? Math.max(params.timeoutAt, minimumTimeoutAt)
     : minimumTimeoutAt;
@@ -67,6 +74,7 @@ const ERROR_STATUS_BY_CODE: Record<string, number> = {
   invalid_handoff_scope: 400,
   invalid_result_action: 400,
   ledger_capacity_exceeded: 507,
+  manual_model_recovery_required: 409,
   managed_retry_limit_reached: 409,
   managed_runtime_unavailable: 503,
   missing_recovery_model: 400,
@@ -372,6 +380,19 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
           ...(waitTimeoutMs === undefined ? {} : { timeoutMs: waitTimeoutMs }),
         }));
       }
+      case 'wait_result_action': {
+        const task = getScopedTask(params);
+        const resultEnvelope = await scheduler.waitForResultAction(task.taskId, {
+          signal: context.signal,
+        });
+        const followUpTask = resultEnvelope.followUpTaskId
+          ? scheduler.getTask(resultEnvelope.followUpTaskId)
+          : null;
+        return {
+          resultEnvelope,
+          followUpTask: followUpTask ? projectTaskResult(followUpTask) : null,
+        };
+      }
       case 'barrier':
         return await scheduler.waitForDispatchBarrier(
           requireString(params, 'rootSessionId'),
@@ -416,9 +437,10 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
         const agent = optionalString(params, 'agent');
         const label = optionalString(params, 'label');
         const prompt = optionalContentString(params, 'prompt');
-        const timeoutAt = typeof params.timeoutAt === 'number' && Number.isFinite(params.timeoutAt)
-          ? params.timeoutAt
-          : now() + DEFAULT_TASK_TIMEOUT_MS;
+        const timeoutAt = resolveSubmitTimeoutAt({
+          timeoutAt: params.timeoutAt,
+          agent: agent ?? task.agent,
+        }, now);
         const result = await scheduler.acknowledgeResult(task.taskId, {
           action: requireResultAction(params.action),
           idempotencyKey: requireString(params, 'idempotencyKey'),

@@ -50,7 +50,6 @@ export const UsagePage: React.FC = () => {
     selectedProviderId ? state.providerRefreshState[selectedProviderId] : undefined
   ));
   const isLoading = useQuotaStore((state) => state.isLoading);
-  const lastUpdated = useQuotaStore((state) => state.lastUpdated);
   const error = useQuotaStore((state) => state.error);
   const autoRefresh = useQuotaStore((state) => state.autoRefresh);
   const refreshIntervalMs = useQuotaStore((state) => state.refreshIntervalMs);
@@ -226,7 +225,10 @@ export const UsagePage: React.FC = () => {
                 <span className="animate-pulse">{t('settings.usage.page.header.refreshing')}</span>
               ) : (
                 t('settings.usage.page.header.lastUpdated', {
-                  time: formatTime(selectedRefreshStatus.lastSuccessAt ?? lastUpdated),
+                  time: formatTime(
+                    selectedResult?.usageUpdatedAt
+                    ?? selectedRefreshStatus.lastSuccessAt
+                  ),
                 })
               )}
             </p>

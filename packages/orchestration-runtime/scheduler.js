@@ -87,6 +87,10 @@ export const createManagedTaskScheduler = (options = {}) => {
   if (!Number.isFinite(startingLeaseTimeoutMs) || startingLeaseTimeoutMs < 1) {
     throw new RangeError('startingLeaseTimeoutMs must be a positive finite number');
   }
+  const reconciliationRetryMs = options.reconciliationRetryMs ?? 1_000;
+  if (!Number.isFinite(reconciliationRetryMs) || reconciliationRetryMs < 1) {
+    throw new RangeError('reconciliationRetryMs must be a positive finite number');
+  }
 
   const tasks = new Map();
   const resultEnvelopes = new Map();
@@ -96,8 +100,10 @@ export const createManagedTaskScheduler = (options = {}) => {
   const acknowledgementPromises = new Map();
   const handoffLocks = new Map();
   const taskWaiters = new Map();
+  const resultActionWaiters = new Map();
   const timeoutTimers = new Map();
   const startingLeaseTimers = new Map();
+  const reconciliationRetryTimers = new Map();
   let initialized = false;
   let initializePromise = null;
   let mutationTail = Promise.resolve();
@@ -180,6 +186,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       tasks.delete(taskId);
       resultEnvelopes.delete(taskId);
       clearTaskTimeout(taskId);
+      clearReconciliationRetry(taskId);
       compactedTaskCount += 1;
     }
   };
@@ -224,6 +231,14 @@ export const createManagedTaskScheduler = (options = {}) => {
     for (const waiter of waiters) waiter.resolve(cloneTask(task));
   };
 
+  const notifyResultActionWaiters = (envelope) => {
+    if (envelope.action === null) return;
+    const waiters = resultActionWaiters.get(envelope.taskId);
+    if (!waiters || waiters.size === 0) return;
+    resultActionWaiters.delete(envelope.taskId);
+    for (const waiter of waiters) waiter.resolve(structuredClone(envelope));
+  };
+
   const clearTaskTimeout = (taskId) => {
     const timer = timeoutTimers.get(taskId);
     if (timer === undefined) return;
@@ -235,6 +250,13 @@ export const createManagedTaskScheduler = (options = {}) => {
     const timer = startingLeaseTimers.get(taskId);
     if (timer === undefined) return;
     startingLeaseTimers.delete(taskId);
+    cancelTimeout(timer);
+  };
+
+  const clearReconciliationRetry = (taskId) => {
+    const timer = reconciliationRetryTimers.get(taskId);
+    if (timer === undefined) return;
+    reconciliationRetryTimers.delete(taskId);
     cancelTimeout(timer);
   };
 
@@ -257,6 +279,7 @@ export const createManagedTaskScheduler = (options = {}) => {
     }
     clearTaskTimeout(next.taskId);
     clearStartingLease(next.taskId);
+    clearReconciliationRetry(next.taskId);
     if (tasks.has(next.taskId)) queueTaskPublication(next);
     notifyTaskWaiters(next);
   };
@@ -275,6 +298,7 @@ export const createManagedTaskScheduler = (options = {}) => {
     }
     const task = tasks.get(next.taskId);
     if (task) queueTaskPublication(task);
+    notifyResultActionWaiters(next);
   };
 
   const getActiveModeForRootLocked = (rootSessionId) => {
@@ -558,6 +582,18 @@ export const createManagedTaskScheduler = (options = {}) => {
       return;
     }
 
+    if (reconciliation?.state === 'transient') {
+      const current = tasks.get(task.taskId);
+      if (
+        current
+        && !isTerminalManagedTaskStatus(current.status)
+        && current.leaseToken === task.leaseToken
+      ) {
+        scheduleReconciliationRetry(current);
+      }
+      return;
+    }
+
     const recovery = reconciliation?.recovery ?? await readRecovery(task);
     const recoverablePreview = typeof recovery?.recoverablePreview === 'string'
       ? recovery.recoverablePreview
@@ -576,6 +612,31 @@ export const createManagedTaskScheduler = (options = {}) => {
       canonicalRefs,
       resumable: Boolean(recovery?.resumable),
     }, 'interrupted');
+  };
+
+  const scheduleReconciliationRetry = (task) => {
+    if (shutDown || !ACTIVE_STATUSES.has(task.status)) return;
+    if (reconciliationRetryTimers.has(task.taskId)) return;
+    const leaseToken = task.leaseToken;
+    const timer = unrefTimer(scheduleTimeout(() => {
+      reconciliationRetryTimers.delete(task.taskId);
+      if (shutDown) return;
+      const current = tasks.get(task.taskId);
+      if (
+        !current
+        || !ACTIVE_STATUSES.has(current.status)
+        || current.leaseToken !== leaseToken
+      ) {
+        return;
+      }
+      void recoverTask(cloneTask(current)).catch((error) => {
+        logger.warn?.('[ManagedOrchestration] Failed to retry task reconciliation', {
+          taskId: task.taskId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }, reconciliationRetryMs));
+    reconciliationRetryTimers.set(task.taskId, timer);
   };
 
   async function pump() {
@@ -1164,6 +1225,61 @@ export const createManagedTaskScheduler = (options = {}) => {
     });
   };
 
+  const waitForResultAction = async (taskId, { signal } = {}) => {
+    await ensureInitialized();
+    if (shutDown) {
+      throw new ManagedOrchestrationError(
+        'scheduler_shut_down',
+        'managed orchestration scheduler is shut down',
+      );
+    }
+    if (!tasks.has(taskId)) {
+      throw new ManagedOrchestrationError('task_not_found', `managed task ${taskId} was not found`);
+    }
+    const envelope = resultEnvelopes.get(taskId);
+    if (!envelope) {
+      throw new ManagedOrchestrationError(
+        'result_not_found',
+        `managed task result ${taskId} was not found`,
+      );
+    }
+    if (envelope.action !== null) return structuredClone(envelope);
+    if (signal?.aborted) throw signal.reason ?? new Error('Result action wait aborted');
+    return await new Promise((resolve, reject) => {
+      const waiters = resultActionWaiters.get(taskId) ?? new Set();
+      let settled = false;
+      const settle = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        signal?.removeEventListener('abort', onAbort);
+        callback(value);
+      };
+      const removeWaiter = () => {
+        waiters.delete(waiter);
+        if (waiters.size === 0) resultActionWaiters.delete(taskId);
+      };
+      const waiter = {
+        resolve(value) {
+          settle(resolve, value);
+        },
+        reject(error) {
+          settle(reject, error);
+        },
+      };
+      const onAbort = () => {
+        removeWaiter();
+        waiter.reject(signal.reason ?? new Error('Result action wait aborted'));
+      };
+      /*
+       * Register synchronously after the action check. JavaScript cannot commit
+       * an acknowledgement between this check and Set insertion.
+       */
+      waiters.add(waiter);
+      resultActionWaiters.set(taskId, waiters);
+      signal?.addEventListener('abort', onAbort, { once: true });
+    });
+  };
+
   const waitForDispatchBarrier = async (rootSessionId, { signal } = {}) => {
     await ensureInitialized();
     if (typeof rootSessionId !== 'string' || !rootSessionId.trim()) {
@@ -1211,6 +1327,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       shutDown = true;
       for (const taskId of [...timeoutTimers.keys()]) clearTaskTimeout(taskId);
       for (const taskId of [...startingLeaseTimers.keys()]) clearStartingLease(taskId);
+      for (const taskId of [...reconciliationRetryTimers.keys()]) clearReconciliationRetry(taskId);
       const shutdownError = new ManagedOrchestrationError(
         'scheduler_shut_down',
         'managed orchestration scheduler is shut down',
@@ -1219,6 +1336,10 @@ export const createManagedTaskScheduler = (options = {}) => {
         for (const waiter of waiters) waiter.reject(shutdownError);
       }
       taskWaiters.clear();
+      for (const waiters of resultActionWaiters.values()) {
+        for (const waiter of waiters) waiter.reject(shutdownError);
+      }
+      resultActionWaiters.clear();
       activeLaunches.clear();
       cancellationPromises.clear();
       acknowledgementPromises.clear();
@@ -1296,8 +1417,28 @@ export const createManagedTaskScheduler = (options = {}) => {
         };
       }
 
+      const providerUsageLimited = isDefiniteProviderUsageLimit(sourceTask.failureReason);
+      if (providerUsageLimited && action !== 'retry_in_place') {
+        throw new ManagedOrchestrationError(
+          'manual_model_recovery_required',
+          'provider usage-limit recovery requires a user-selected model and thinking level',
+        );
+      }
+
+      if (action === 'retry_in_place' && (
+        !sourceTask.childSessionId
+        || !actionOptions.providerId?.trim()
+        || !actionOptions.modelId?.trim()
+        || !Object.prototype.hasOwnProperty.call(actionOptions, 'variant')
+      )) {
+        throw new ManagedOrchestrationError(
+          'missing_recovery_model',
+          'manual in-place recovery requires an explicit provider, model, and thinking selection',
+        );
+      }
+
       if (
-        (action === 'retry' || action === 'resume' || action === 'recover_in_place')
+        (action === 'retry' || action === 'resume')
         && sourceTask.mode === 'orchestrator'
         && sourceTask.dispatchGroupId !== null
         && sourceTask.attempt >= 2
@@ -1308,33 +1449,25 @@ export const createManagedTaskScheduler = (options = {}) => {
         );
       }
 
-      if ((action === 'resume' || action === 'recover_in_place' || action === 'retry_in_place') && !currentEnvelope.resumable) {
+      if ((action === 'resume' || action === 'retry_in_place') && !currentEnvelope.resumable) {
         throw new ManagedOrchestrationError('result_not_resumable', 'result cannot be resumed');
       }
 
       if (action === 'recover_in_place') {
-        if (!sourceTask.childSessionId || !isDefiniteProviderUsageLimit(sourceTask.failureReason)) {
-          throw new ManagedOrchestrationError(
-            'result_not_provider_usage_limited',
-            'automatic in-place recovery requires a provider usage-limit result with a canonical child session',
-          );
-        }
-        if (!actionOptions.providerId?.trim() || !actionOptions.modelId?.trim()) {
-          throw new ManagedOrchestrationError(
-            'missing_recovery_model',
-            'automatic in-place recovery requires an authoritative replacement provider and model',
-          );
-        }
+        throw new ManagedOrchestrationError(
+          'manual_model_recovery_required',
+          'automatic in-place recovery is disabled; choose a model and retry in place',
+        );
       }
 
       let followUpTask = null;
-      if (action === 'retry' || action === 'resume' || action === 'recover_in_place' || action === 'retry_in_place') {
+      if (action === 'retry' || action === 'resume' || action === 'retry_in_place') {
         followUpTask = await submit({
           idempotencyKey: actionOptions.idempotencyKey,
           rootSessionId: sourceTask.rootSessionId,
           dispatchGroupId: sourceTask.dispatchGroupId,
           parentTaskId: sourceTask.parentTaskId,
-          childSessionId: action === 'resume' || action === 'recover_in_place' || action === 'retry_in_place'
+          childSessionId: action === 'resume' || action === 'retry_in_place'
             ? sourceTask.childSessionId
             : null,
           directory: sourceTask.directory,
@@ -1480,6 +1613,7 @@ export const createManagedTaskScheduler = (options = {}) => {
     submit,
     cancelTask,
     waitForTask,
+    waitForResultAction,
     waitForDispatchBarrier,
     inspectDispatchBarrier,
     inspectAgentHandoff,
@@ -1507,9 +1641,11 @@ export const createManagedTaskScheduler = (options = {}) => {
         pendingCancellationCount: cancellationPromises.size,
         pendingAcknowledgementCount: acknowledgementPromises.size,
         activeHandoffCount: handoffLocks.size,
-        pendingWaiterCount: [...taskWaiters.values()].reduce((sum, waiters) => sum + waiters.size, 0),
+        pendingWaiterCount: [...taskWaiters.values(), ...resultActionWaiters.values()]
+          .reduce((sum, waiters) => sum + waiters.size, 0),
         pendingTimeoutCount: timeoutTimers.size,
         pendingLeaseCount: startingLeaseTimers.size,
+        pendingReconciliationRetryCount: reconciliationRetryTimers.size,
         compactedTaskCount,
         serializedBytes: lastSerializedBytes,
         shutDown,

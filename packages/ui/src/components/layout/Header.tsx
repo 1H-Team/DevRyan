@@ -135,7 +135,6 @@ export const Header: React.FC<HeaderProps> = ({
   const quotaProviderRefreshState = useQuotaStore((state) => state.providerRefreshState);
   const fetchAllQuotas = quotaRefreshCoordinator.refreshNow;
   const isQuotaLoading = useQuotaStore((state) => state.isLoading);
-  const quotaLastUpdated = useQuotaStore((state) => state.lastUpdated);
   const quotaTrendHistory = useQuotaStore((state) => state.trendHistory);
   const dropdownProviderIds = useQuotaStore((state) => state.dropdownProviderIds);
 
@@ -228,6 +227,9 @@ export const Header: React.FC<HeaderProps> = ({
         providerId: provider.id,
         providerName: provider.name,
         entries,
+        usageUpdatedAt: result?.usageUpdatedAt
+          ?? quotaProviderRefreshState[provider.id]?.lastSuccessAt
+          ?? null,
         resetCredits: result?.usage?.resetCredits,
         error: quotaProviderRefreshState[provider.id]?.refreshError
           ?? ((result && !result.ok && result.configured) ? result.error : undefined),
@@ -1073,7 +1075,6 @@ export const Header: React.FC<HeaderProps> = ({
                       ) : null}
                       <UsageProviderPanel
                         group={selectedGroup}
-                        quotaLastUpdated={quotaLastUpdated}
                         quotaTrendHistory={quotaTrendHistory}
                         handleUsageRefresh={handleUsageRefresh}
                         isQuotaLoading={isQuotaLoading}

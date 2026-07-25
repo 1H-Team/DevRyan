@@ -27,6 +27,7 @@ type ContextPanelTab = {
   id: string;
   mode: ContextPanelMode;
   targetPath: string | null;
+  ownerSessionId: string | null;
   displayUrl: string | null;
   dedupeKey: string;
   label: string | null;
@@ -36,6 +37,7 @@ type ContextPanelTab = {
 type ContextPanelTabDescriptor = {
   mode: ContextPanelMode;
   targetPath?: string | null;
+  ownerSessionId?: string | null;
   dedupeKey?: string | null;
   label?: string | null;
 };
@@ -252,6 +254,7 @@ const createContextPanelTab = (descriptor: ContextPanelTabDescriptor): ContextPa
     id: buildContextPanelTabID(descriptor.mode, dedupeKey),
     mode: descriptor.mode,
     targetPath: normalizedTargetPath,
+    ownerSessionId: descriptor.mode === 'plan' ? normalizeContextTargetPath(descriptor.ownerSessionId) : null,
     displayUrl: descriptor.mode === 'preview' ? normalizedTargetPath : null,
     dedupeKey,
     label: normalizeContextTabLabel(descriptor.label),
@@ -291,6 +294,7 @@ const sanitizeContextPanelTabs = (tabs: unknown): ContextPanelTab[] => {
     const candidate = entry as {
       mode?: unknown;
       targetPath?: unknown;
+      ownerSessionId?: unknown;
       displayUrl?: unknown;
       dedupeKey?: unknown;
       label?: unknown;
@@ -317,6 +321,9 @@ const sanitizeContextPanelTabs = (tabs: unknown): ContextPanelTab[] => {
       id,
       mode: candidate.mode,
       targetPath,
+      ownerSessionId: candidate.mode === 'plan'
+        ? normalizeContextTargetPath(typeof candidate.ownerSessionId === 'string' ? candidate.ownerSessionId : null)
+        : null,
       displayUrl: candidate.mode === 'preview'
         ? normalizeContextTargetPath(typeof candidate.displayUrl === 'string' ? candidate.displayUrl : targetPath)
         : null,
@@ -378,6 +385,7 @@ const upsertContextPanelTab = (
           ...tab,
           mode: nextTab.mode,
           targetPath: nextTab.targetPath,
+          ownerSessionId: nextTab.ownerSessionId,
           displayUrl: nextTab.displayUrl,
           dedupeKey: nextTab.dedupeKey,
           label: nextTab.label,
@@ -658,8 +666,8 @@ interface UIStore {
   openContextFile: (directory: string, filePath: string) => void;
   openContextFileAtLine: (directory: string, filePath: string, line: number, column?: number) => void;
   openContextOverview: (directory: string) => void;
-  openContextPlan: (directory: string, targetPath?: string | null) => void;
-  toggleContextPlan: (directory: string, targetPath?: string | null) => void;
+  openContextPlan: (directory: string, targetPath?: string | null, ownerSessionId?: string | null) => void;
+  toggleContextPlan: (directory: string, targetPath?: string | null, ownerSessionId?: string | null) => void;
   requestContextPanelClose: (directory: string) => void;
   requestContextPanelTabClose: (directory: string, tabID: string) => void;
   consumeContextPlanMotionRequest: (requestID: number) => void;
@@ -1070,7 +1078,7 @@ export const useUIStore = create<UIStore>()(
           get().openContextPanelTab(normalizedDirectory, { mode: 'context' });
         },
 
-        openContextPlan: (directory, targetPath) => {
+        openContextPlan: (directory, targetPath, ownerSessionId) => {
           const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
           if (!normalizedDirectory) {
             return;
@@ -1082,7 +1090,7 @@ export const useUIStore = create<UIStore>()(
             const wasVisible = current.isOpen && current.activeTabId !== null && current.tabs.length > 0;
             const byDirectory = {
               ...state.contextPanelByDirectory,
-              [normalizedDirectory]: upsertContextPanelTab(current, { mode: 'plan', targetPath }),
+              [normalizedDirectory]: upsertContextPanelTab(current, { mode: 'plan', targetPath, ownerSessionId }),
             };
 
             if (wasVisible) {
@@ -1102,7 +1110,7 @@ export const useUIStore = create<UIStore>()(
           });
         },
 
-        toggleContextPlan: (directory, targetPath) => {
+        toggleContextPlan: (directory, targetPath, ownerSessionId) => {
           const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
           if (!normalizedDirectory) {
             return;
@@ -1117,7 +1125,7 @@ export const useUIStore = create<UIStore>()(
             return;
           }
 
-          get().openContextPlan(normalizedDirectory, targetPath);
+          get().openContextPlan(normalizedDirectory, targetPath, ownerSessionId);
         },
 
         requestContextPanelClose: (directory) => {

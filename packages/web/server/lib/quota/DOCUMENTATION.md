@@ -45,15 +45,18 @@ The reset-credit endpoint is undocumented and can change independently of the st
 
 ## Internal-only provider module
 - `providers/openai.js` exists for logic parity/reuse but is intentionally not registered for dispatcher ID routing.
-- `providers/claude-code-status.js` is a fallback reader for Claude Code status-line JSON at `~/.cache/openchamber/claude-code-status.json`; it is used only by the Anthropic provider when OAuth tokens are unavailable but the local Claude proxy config exists.
-- `providers/claude-code-status-setup.js` installs and repairs OpenChamber's managed Claude Code status-line bridge at `~/.cache/openchamber/claude-code-status-line.sh`. The bridge reads Claude Code's official `statusLine` stdin JSON, atomically writes it to `~/.cache/openchamber/claude-code-status.json`, and lets OpenChamber display the `rate_limits.five_hour.used_percentage` and `rate_limits.seven_day.used_percentage` windows. If Claude Code already has a custom `statusLine`, OpenChamber does not overwrite it; the quota result reports manual setup guidance instead.
+- `providers/claude-meridian.js` validates and queries the active local `opencode-with-claude`/Meridian runtime through its bounded loopback-only `GET /v1/usage/quota` endpoint.
+- `providers/claude-code-usage.js` is the compatibility fallback for older Meridian releases. It runs the local, non-billable `/usage` command with JSON output and no session persistence.
+- `providers/claude-code-status.js` reads legacy status-line JSON only as degraded last-known data. A status-line result is never reported as a successful fresh quota read, and quota reads never install or modify Claude status-line settings.
 
 ## Anthropic usage sources
 
 The Claude provider has two usage data sources, in priority order:
 
-1. When OpenCode auth contains an Anthropic OAuth access token, `providers/claude.js` calls Anthropic's OAuth usage endpoint (`https://api.anthropic.com/api/oauth/usage`) and maps `five_hour`, `seven_day`, and model-specific seven-day windows into the shared quota response shape.
-2. When no token exists but a bare or versioned local `opencode-with-claude` proxy config is detected, `providers/claude.js` self-heals the Claude Code status-line bridge and reads Claude Code's status JSON. This path reports the overall 5-hour and 7-day windows from Claude Code `rate_limits` data. If Claude Code has not emitted a status-line payload yet, DevRyan runs `claude -p "Reply with exactly: OK" --output-format text` only to refresh usage, then reads the status JSON again. This usage refresh is separate from authentication, which uses the non-billable `claude auth status --json` path. Refresh output is captured from both stdout and stderr; a Claude session/usage-limit response is returned as `claude_code_session_limit` instead of being mislabeled as invalid authentication or a generic exit-code failure.
+1. When OpenCode auth contains an Anthropic OAuth access token, `providers/claude.js` calls Anthropic's OAuth usage endpoint (`https://api.anthropic.com/api/oauth/usage`) and maps `five_hour`, `seven_day`, and arbitrary model-specific seven-day windows into the shared quota response shape.
+2. For a locally managed `opencode-with-claude` runtime, the quota route resolves Anthropic's effective `baseURL` from the active OpenCode `/config/providers` response and calls Meridian's structured quota endpoint. Only explicit `http://127.0.0.1:<port>` and `http://localhost:<port>` origins are allowed; the request has a timeout and a 64 KB response limit.
+3. If the structured endpoint is unavailable (including older Meridian versions), DevRyan runs `claude -p /usage --output-format json --no-session-persistence --max-turns 1` and maps the returned subscription limits.
+4. Legacy status-line data may be returned only with `ok: false` and a visible warning after both live sources fail. DevRyan never substitutes the local Claude account for a configured external OpenCode runtime.
 
 ## OpenCode Go usage source
 
@@ -88,7 +91,7 @@ Credential precedence is intentional:
 ## Response contract
 All providers should return results via shared helpers to preserve API shape:
 - Required fields: `providerId`, `providerName`, `ok`, `configured`, `usage`, `fetchedAt`
-- Optional field: `error`
+- Optional fields: `error`, `errorCode`, and `usageUpdatedAt` (the provider measurement time for the displayed usage)
 - Usage windows may include optional `description` copy for provider-specific bucket explanations.
 - Unsupported provider requests should return `ok: false`, `configured: false`, `error: Unsupported provider`
 

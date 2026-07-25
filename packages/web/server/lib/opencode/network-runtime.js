@@ -75,7 +75,10 @@ export const createOpenCodeNetworkRuntime = (deps) => {
 
   const buildOpenCodeUrl = (path, prefixOverride) => {
     if (!state.openCodePort) {
-      throw new Error('OpenCode port is not available');
+      const error = new Error('OpenCode port is not available');
+      error.code = 'managed_runtime_unavailable';
+      error.statusCode = 503;
+      throw error;
     }
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     const prefix = normalizeApiPrefix(prefixOverride !== undefined ? prefixOverride : '');

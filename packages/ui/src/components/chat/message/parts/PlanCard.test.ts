@@ -9,6 +9,7 @@ import {
   getStableSkeletonLineCount,
   getPlanCardCollapsedMaxHeight,
   getPlanCardActionState,
+  getPlanCardDataState,
   shouldPersistPlanCard,
   resolvePlanCardDisplayText,
 } from './planCardReveal';
@@ -144,6 +145,33 @@ describe('getPlanCardActionState', () => {
       isImplementationRequested: false,
       isLatestPlan: true,
     }).canImplement).toBe(false);
+  });
+
+  test('disables an implemented plan with an accessible reason', () => {
+    expect(getPlanCardActionState({
+      streamPhase: 'completed',
+      hasPlanText: true,
+      isImplementationRequested: true,
+      isLatestPlan: true,
+    })).toEqual({
+      canImplement: false,
+      disabledReason: 'Implementation already started.',
+    });
+  });
+});
+
+describe('getPlanCardDataState', () => {
+  test('distinguishes implemented plans from pending and superseded plans', () => {
+    expect(getPlanCardDataState({
+      isSuperseded: false,
+      isImplementationRequested: true,
+      canImplement: false,
+    })).toBe('implemented');
+    expect(getPlanCardDataState({
+      isSuperseded: true,
+      isImplementationRequested: true,
+      canImplement: false,
+    })).toBe('superseded');
   });
 });
 

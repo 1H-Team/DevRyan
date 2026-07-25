@@ -83,7 +83,7 @@ const createCtx = (workingDirectory = '/tmp/project') => ({
     restart: vi.fn(async () => {}),
     getDebugInfo: vi.fn(() => ({
       cliPath: '/usr/local/bin/opencode',
-      version: '1.18.3',
+      version: '1.18.5',
     })),
   },
 });
@@ -98,9 +98,9 @@ describe('handleConfigBridgeMessage OpenCode resolution', () => {
 
     expect(response?.success).toBe(true);
     expect(response?.data).toMatchObject({
-      targetVersion: '1.18.3',
-      detectedVersion: '1.18.3',
-      installCommand: 'curl -fsSL https://opencode.ai/install | bash -s -- --version 1.18.3 --no-modify-path',
+      targetVersion: '1.18.5',
+      detectedVersion: '1.18.5',
+      installCommand: 'curl -fsSL https://opencode.ai/install | bash -s -- --version 1.18.5 --no-modify-path',
     });
   });
 });

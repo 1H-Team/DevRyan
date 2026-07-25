@@ -20,17 +20,12 @@ import { navigateToManagedTaskChild } from './managedTaskNavigation';
 import { getRetryInPlaceFollowUpTaskId } from './managedTaskRetryLineage';
 import { ModelRecoveryCard } from './ModelRecoveryCard';
 import type { ControlledModelPickerProvider } from './ControlledModelPicker';
+import { formatEffortLabel } from './mobileControlsUtils';
 
 const getStatusPresentation = (
   task: Pick<ManagedTaskEventRecord, 'executionKind' | 'status'>,
   t: ReturnType<typeof useI18n>['t'],
 ) => {
-  if (
-    task.executionKind === 'recover_in_place'
-    && (task.status === 'queued' || task.status === 'starting' || task.status === 'running')
-  ) {
-    return { label: t('chat.managedTasks.summary.recovering'), className: 'text-[var(--status-warning)]' };
-  }
   if (task.status === 'completed') {
     return { label: t('chat.managedTasks.summary.complete'), className: 'text-[var(--status-success)]' };
   }
@@ -56,6 +51,44 @@ const providerModelLabel = (
     provider: provider?.name ?? task.providerId,
     model: model?.name ?? task.modelId,
     combined: `${provider?.name ?? task.providerId} / ${model?.name ?? task.modelId}`,
+  };
+};
+
+const getProviderLimitPresentation = ({
+  task,
+  recoverySourceTask,
+  providers,
+  t,
+}: {
+  task: ManagedTaskEventRecord;
+  recoverySourceTask?: ManagedTaskEventRecord;
+  providers: ControlledModelPickerProvider[];
+  t: ReturnType<typeof useI18n>['t'];
+}) => {
+  if (task.failureKind === 'provider_usage_limit') {
+    const failedModel = providerModelLabel(task, providers);
+    return {
+      message: t('chat.managedTasks.providerLimit.reached', {
+        provider: failedModel.provider,
+        model: failedModel.model,
+      }),
+      className: 'text-[var(--status-warning)]',
+      role: 'alert' as const,
+    };
+  }
+
+  const recoveredSameChild = recoverySourceTask?.failureKind === 'provider_usage_limit'
+    && (task.executionKind === 'retry_in_place' || task.executionKind === 'recover_in_place')
+    && task.status === 'completed';
+  if (!recoveredSameChild) return null;
+
+  return {
+    message: t('chat.managedTasks.providerLimit.recovered', {
+      model: providerModelLabel(task, providers).model,
+      thinking: formatEffortLabel(task.variant ?? undefined, { providerId: task.providerId }),
+    }),
+    className: 'text-[var(--status-success)]',
+    role: 'status' as const,
   };
 };
 
@@ -85,41 +118,16 @@ export const ManagedTaskRowView = React.memo(({
   const { t } = useI18n();
   const presentedTask = childActive && (
     task.status === 'failed' || task.status === 'aborted' || task.status === 'interrupted'
-  )
+  ) && task.failureKind !== 'provider_usage_limit'
     ? { ...task, status: 'running' as const }
     : task;
   const status = getStatusPresentation(presentedTask, t);
-  const failedUsageTask = task.failureKind === 'provider_usage_limit'
-    ? task
-    : recoverySourceTask?.failureKind === 'provider_usage_limit'
-      ? recoverySourceTask
-      : null;
-  const failedModel = failedUsageTask
-    ? providerModelLabel(failedUsageTask, providers)
-    : null;
-  const recoveryModel = providerModelLabel(task, providers);
-  const providerLimitMessage = failedModel
-    ? task.executionKind === 'recover_in_place'
-      ? task.status === 'completed'
-        ? t('chat.managedTasks.providerLimit.recovered', {
-          provider: failedModel.provider,
-          recoveryModel: recoveryModel.combined,
-        })
-        : task.status === 'failed' || task.status === 'aborted' || task.status === 'interrupted'
-          ? t('chat.managedTasks.providerLimit.recoveryFailed', {
-            provider: failedModel.provider,
-            failedModel: failedModel.model,
-          })
-          : t('chat.managedTasks.providerLimit.recovering', {
-            provider: failedModel.provider,
-            failedModel: failedModel.model,
-            recoveryModel: recoveryModel.combined,
-          })
-      : t('chat.managedTasks.providerLimit.reached', {
-        provider: failedModel.provider,
-        model: failedModel.model,
-      })
-    : null;
+  const providerLimitPresentation = getProviderLimitPresentation({
+    task,
+    recoverySourceTask,
+    providers,
+    t,
+  });
   const [selection, setSelection] = React.useState<ProviderRecoverySelection>(() => ({
     providerId: task.providerId,
     modelId: task.modelId,
@@ -130,7 +138,7 @@ export const ManagedTaskRowView = React.memo(({
   }, [task.taskId, task.providerId, task.modelId, task.variant]);
   const showRecovery = Boolean(
     onRetryInPlace
-    && !childActive
+    && (!childActive || task.failureKind === 'provider_usage_limit')
     && resultEnvelope?.resumable
     && resultEnvelope.action === null
     && !task.agentRetryAvailable
@@ -139,15 +147,15 @@ export const ManagedTaskRowView = React.memo(({
 
   return (
     <article data-managed-task-id={task.taskId}>
-      <div className="flex min-w-0 flex-col items-stretch gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3">
+      <div className="flex min-w-0 flex-col items-start gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3">
         <div className="min-w-0 flex-1">
-          <h4 className="truncate typography-ui-label font-medium text-foreground">
+          <h4 className="line-clamp-2 break-words typography-ui-label font-medium text-foreground sm:line-clamp-1">
             {formatManagedTaskDisplayName(task.label)}
           </h4>
           <p className={`truncate typography-meta ${status.className}`}>{status.label}</p>
-          {providerLimitMessage ? (
-            <p role="alert" className="mt-1 typography-micro text-[var(--status-warning)]">
-              {providerLimitMessage}
+          {providerLimitPresentation ? (
+            <p role={providerLimitPresentation.role} className={`mt-1 typography-micro ${providerLimitPresentation.className}`}>
+              {providerLimitPresentation.message}
             </p>
           ) : null}
         </div>
@@ -156,7 +164,7 @@ export const ManagedTaskRowView = React.memo(({
             type="button"
             size="xs"
             variant="ghost"
-            className="w-full gap-1 px-1 normal-case text-[var(--primary-base)] hover:text-[var(--primary-base)] sm:w-auto sm:px-1.5"
+            className="self-start w-auto min-h-[36px] min-w-[36px] gap-1 px-1 normal-case text-[var(--primary-base)] hover:text-[var(--primary-base)] sm:self-auto sm:w-auto sm:min-h-9 sm:min-w-9 sm:px-1.5"
             onClick={onOpenChild}
           >
             <RiExternalLinkLine className="hidden size-3 sm:block" />
@@ -168,7 +176,7 @@ export const ManagedTaskRowView = React.memo(({
         <ModelRecoveryCard
           embedded
           title={t('chat.modelRecovery.subagentPrompt')}
-          originalModelLabel={`${task.providerId} / ${task.modelId}`}
+          originalModelLabel={providerModelLabel(task, providers).combined}
           providers={providers}
           selection={selection}
           pending={pending}

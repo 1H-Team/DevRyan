@@ -222,6 +222,32 @@ describe("detectPlanCompletedCandidate", () => {
     })
   })
 
+  test("does not recreate source-session completion after an external mobile handoff", () => {
+    const state = buildState({
+      message: {
+        [SESSION_ID]: [
+          userMessage("msg_plan_user", 1),
+          assistantMessage("msg_plan_assistant", 2, 3),
+          userMessage("msg_unrelated_user", 4),
+          assistantMessage("msg_unrelated_assistant", 5, 6),
+        ],
+      },
+      part: {
+        msg_plan_user: [textPart("msg_plan_user", "User has requested to enter plan mode.")],
+        msg_plan_assistant: [textPart("msg_plan_assistant", "<!--plan-->\n# Plan\n\nDo the work.")],
+        msg_unrelated_assistant: [textPart("msg_unrelated_assistant", "An unrelated follow-up completed.")],
+      },
+    })
+
+    expect(detectPlanCompletedCandidate({
+      sessionID: SESSION_ID,
+      state,
+      planEntry: null,
+      isRecordedPlanModeUserMessage: (messageId) => messageId === "msg_plan_user",
+      implementedPlanRequests: new Set(),
+    })).toBeNull()
+  })
+
   test("reconstructs completed plan state from structured plan cards without explicit sentinel", () => {
     const structuredPlanBody = [
       "# Cursor Plan Card Fix",

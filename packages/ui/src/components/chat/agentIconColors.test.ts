@@ -17,6 +17,8 @@ describe('agent glyph color wiring', () => {
     expect(messageHeader).toContain('getAgentColor(agentName).var');
     expect(managedTaskList).toContain('getAgentIconColor(group.agent).var');
     expect(modelControls.match(/getAgentIconColor\(uiAgentName\)\.var/g)).toHaveLength(2);
+    expect(modelControls).toContain('getAgentIconColor(agent.name)');
+    expect(modelControls).toContain('style={{ color: `var(${agentIconColor.var})` }}');
 
     expect(modelControls).toContain("getAgentColor(agent.name).class");
     expect(modelControls).toContain('const agentColor = getAgentColor(agent.name);');
@@ -33,6 +35,8 @@ describe('agent glyph color wiring', () => {
     expect(mobileAgentButton).toContain(
       "const PLAN_MODE_AGENT_STYLE: React.CSSProperties = { color: 'var(--status-warning)' };",
     );
-    expect(mobileAgentButton).not.toContain('getAgentIconColor');
+    expect(mobileAgentButton).toContain('getAgentIconColor');
+    expect(mobileAgentButton).toContain('style={isPlanModeSelected ? PLAN_MODE_AGENT_STYLE');
+    expect(mobileAgentButton).toContain('style={PLAN_MODE_AGENT_STYLE}');
   });
 });

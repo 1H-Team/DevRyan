@@ -263,6 +263,25 @@ describe("opencode client sends", () => {
     })
   })
 
+  test("keeps Orchestrator prompts on the managed harness surface and merges provider restrictions", async () => {
+    await opencodeClient.sendMessage({
+      id: "session-copilot-orchestrator",
+      providerID: "github-copilot",
+      modelID: "gpt-4.1",
+      agent: "orchestrator",
+      text: "delegate this",
+      directory: "/repo/copilot",
+    })
+
+    expect(getPromptBody().tools).toEqual({
+      "resend_*": false,
+      "mcp__resend__*": false,
+      task: false,
+      invalid: false,
+      "mcp__*": false,
+    })
+  })
+
   test("does not restrict prompt tools for providers without a tool limit", async () => {
     await opencodeClient.sendMessage({
       id: "session-openai",

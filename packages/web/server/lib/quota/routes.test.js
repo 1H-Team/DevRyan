@@ -118,3 +118,73 @@ describe('managed quota credential routes', () => {
     expect(runtime.writeCredential).toHaveBeenCalledWith('cursor-acp', { accessToken: 'imported' });
   });
 });
+
+describe('Claude quota runtime resolution', () => {
+  it('passes the active managed OpenCode Anthropic proxy URL to the provider', async () => {
+    const app = express();
+    const fetchQuotaForProvider = vi.fn(async (_providerId, options) => ({
+      providerId: 'claude',
+      proxyBaseUrl: await options.resolveProxyBaseUrl(),
+      forceRefresh: options.forceRefresh,
+      isExternalRuntime: options.isExternalRuntime,
+    }));
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: vi.fn(async () => ({
+        providers: [{
+          id: 'anthropic',
+          options: { baseURL: 'http://127.0.0.1:55201' },
+        }],
+      })),
+    });
+    registerQuotaRoutes(app, {
+      getQuotaProviders: async () => ({
+        listConfiguredQuotaProviders: () => ['claude'],
+        fetchQuotaForProvider,
+      }),
+      buildOpenCodeUrl: (requestPath) => `http://127.0.0.1:4096${requestPath}`,
+      getOpenCodeAuthHeaders: () => ({ Authorization: 'Basic redacted' }),
+      isExternalOpenCode: () => false,
+    });
+
+    const response = await request(app).get('/api/quota/claude?refresh=true').expect(200);
+    expect(response.body).toEqual({
+      providerId: 'claude',
+      proxyBaseUrl: 'http://127.0.0.1:55201',
+      forceRefresh: true,
+      isExternalRuntime: false,
+    });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'http://127.0.0.1:4096/config/providers',
+      expect.objectContaining({ headers: expect.objectContaining({ Authorization: 'Basic redacted' }) }),
+    );
+    fetchSpy.mockRestore();
+  });
+
+  it('does not query or resolve a local proxy for external OpenCode', async () => {
+    const app = express();
+    const fetchQuotaForProvider = vi.fn(async (_providerId, options) => ({
+      providerId: 'claude',
+      proxyBaseUrl: await options.resolveProxyBaseUrl(),
+      isExternalRuntime: options.isExternalRuntime,
+    }));
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    registerQuotaRoutes(app, {
+      getQuotaProviders: async () => ({
+        listConfiguredQuotaProviders: () => [],
+        fetchQuotaForProvider,
+      }),
+      buildOpenCodeUrl: () => 'http://remote.example/config/providers',
+      isExternalOpenCode: () => true,
+    });
+
+    const response = await request(app).get('/api/quota/claude').expect(200);
+    expect(response.body).toEqual({
+      providerId: 'claude',
+      proxyBaseUrl: null,
+      isExternalRuntime: true,
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+});

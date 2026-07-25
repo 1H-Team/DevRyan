@@ -50,6 +50,36 @@ describe("planTransientRecovery", () => {
     })
   })
 
+  test("continues an interrupted orchestrator turn after a managed dispatch without redelegating", () => {
+    const messages = [
+      makeMessage("user-1", "user", {
+        model: { providerID: "opencode-go", modelID: "deepseek-v4-flash" },
+        agent: "orchestrator",
+      }),
+      makeMessage("assistant-error", "assistant", {
+        error: {
+          name: "UnknownError",
+          data: { message: "unknown certificate verification error" },
+        },
+      }),
+    ]
+    const getParts = getPartsFrom({
+      "user-1": [makePart({ type: "text", text: "Implement the fix", messageID: "user-1" })],
+      "assistant-error": [makePart({
+        type: "tool",
+        tool: "devryan_task",
+        messageID: "assistant-error",
+        state: { status: "completed" },
+      })],
+    })
+
+    const plan = planManualRecovery({ messages, getParts, anchorUserMessageId: "user-1" })
+
+    expect(plan?.mode).toBe("continue")
+    expect(plan?.content).toBe(TRANSIENT_CONTINUATION_PROMPT)
+    expect(plan?.attachments).toEqual([])
+  })
+
   test("resends the original prompt when the first assistant stream produced no content", () => {
     const messages = [
       makeMessage("user-1", "user"),

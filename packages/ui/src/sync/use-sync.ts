@@ -30,6 +30,13 @@ import { hasMessageRecordInfo, normalizeMessageFetchLimit, unwrapMessageRecordsR
 import { unwrapSdkResult } from "./sdk-result"
 import { opencodeClient } from "@/lib/opencode/client"
 import {
+  clearSessionMessagePagination,
+  getSessionMessagePagination,
+  isSessionMessageLoadCurrent,
+  runSessionMessageLoad,
+  setSessionMessagePagination,
+} from "./message-pagination-store"
+import {
   normalizeChatOwnedDiffSummary,
   stripUntrustedSessionDiffSummary,
   type SessionSummaryDiffStats,
@@ -79,13 +86,6 @@ export function useSync() {
   const inflight = useRef(new Map<string, Promise<boolean>>())
   const optimistic = useRef(new Map<string, Map<string, OptimisticItem>>())
   const seen = useRef(new Map<string, Set<string>>())
-  const meta = useRef(new Map<string, {
-    limit: number
-    cursor: string | undefined
-    complete: boolean
-    loading: boolean
-    initialized: boolean
-  }>())
   const directoryDisposerUnregisters = useRef(new Map<string, () => void>())
 
   const clearDirectoryTracking = useCallback((targetDirectory: string) => {
@@ -95,9 +95,6 @@ export function useSync() {
     }
     for (const key of optimistic.current.keys()) {
       if (key.startsWith(prefix)) optimistic.current.delete(key)
-    }
-    for (const key of meta.current.keys()) {
-      if (key.startsWith(prefix)) meta.current.delete(key)
     }
     seen.current.delete(targetDirectory)
     directoryDisposerUnregisters.current.delete(targetDirectory)
@@ -126,20 +123,17 @@ export function useSync() {
   )
 
   const getMetaFor = useCallback(
-    (sessionID: string, directoryOverride?: string | null) => {
-      const key = keyFor(sessionID, directoryOverride)
-      return meta.current.get(key) ?? { limit: MESSAGE_PAGE_SIZE, cursor: undefined, complete: false, loading: false, initialized: false }
-    },
-    [keyFor],
+    (sessionID: string, directoryOverride?: string | null) => (
+      getSessionMessagePagination(resolveDirectory(directoryOverride), sessionID)
+    ),
+    [resolveDirectory],
   )
 
   const setMetaFor = useCallback(
     (sessionID: string, patch: Partial<{ limit: number; cursor: string | undefined; complete: boolean; loading: boolean; initialized: boolean }>, directoryOverride?: string | null) => {
-      const key = keyFor(sessionID, directoryOverride)
-      const current = meta.current.get(key) ?? { limit: MESSAGE_PAGE_SIZE, cursor: undefined, complete: false, loading: false, initialized: false }
-      meta.current.set(key, { ...current, ...patch })
+      setSessionMessagePagination(resolveDirectory(directoryOverride), sessionID, patch)
     },
-    [keyFor],
+    [resolveDirectory],
   )
 
   const reconcileSupersededLoad = useCallback((
@@ -150,7 +144,7 @@ export function useSync() {
     if (childStores.getChild(targetDirectory) !== targetStore) return false
     const latest = getSessionPrefetch(targetDirectory, sessionID)
     if (!latest) {
-      setMetaFor(sessionID, { loading: false }, targetDirectory)
+      clearSessionMessagePagination(targetDirectory, [sessionID])
       return false
     }
     setMetaFor(sessionID, {
@@ -193,8 +187,8 @@ export function useSync() {
       // Clear meta + optimistic + prefetch cache for evicted sessions
       for (const id of sessionIDs) {
         optimistic.current.delete(`${dir}\n${id}`)
-        meta.current.delete(`${dir}\n${id}`)
       }
+      clearSessionMessagePagination(dir, sessionIDs)
       clearSessionPrefetch(dir, sessionIDs)
     },
     [childStores],
@@ -317,79 +311,90 @@ export function useSync() {
       const targetDirectory = resolveDirectory(options?.directory)
       const targetStore = childStores.ensureChild(targetDirectory)
       registerDirectoryTracking(targetDirectory)
-      const m = getMetaFor(sessionID, targetDirectory)
-      if (m.loading) return true
-      setMetaFor(sessionID, { loading: true }, targetDirectory)
-      const prefetchRevision = captureSessionPrefetchRevision(targetDirectory, sessionID)
+      return runSessionMessageLoad({
+        directory: targetDirectory,
+        sessionID,
+        task: async (loadToken) => {
+          const m = getMetaFor(sessionID, targetDirectory)
+          setMetaFor(sessionID, { loading: true }, targetDirectory)
+          const prefetchRevision = captureSessionPrefetchRevision(targetDirectory, sessionID)
 
-      try {
-        const limit = normalizeMessageFetchLimit(m.limit, MESSAGE_PAGE_SIZE)
-        const page = await fetchMessages(sessionID, limit, options?.before, targetDirectory)
-        if (childStores.getChild(targetDirectory) !== targetStore) {
-          releaseSessionPrefetchRevision(targetDirectory, sessionID, prefetchRevision)
-          return false
-        }
-        if (!isSessionPrefetchCurrent(targetDirectory, sessionID, prefetchRevision)) {
-          releaseSessionPrefetchRevision(targetDirectory, sessionID, prefetchRevision)
-          return reconcileSupersededLoad(sessionID, targetDirectory, targetStore)
-        }
+          try {
+            const limit = normalizeMessageFetchLimit(m.limit, MESSAGE_PAGE_SIZE)
+            const page = await fetchMessages(sessionID, limit, options?.before, targetDirectory)
+            if (
+              childStores.getChild(targetDirectory) !== targetStore
+              || !isSessionMessageLoadCurrent(targetDirectory, sessionID, loadToken)
+            ) {
+              releaseSessionPrefetchRevision(targetDirectory, sessionID, prefetchRevision)
+              return false
+            }
+            if (!isSessionPrefetchCurrent(targetDirectory, sessionID, prefetchRevision)) {
+              releaseSessionPrefetchRevision(targetDirectory, sessionID, prefetchRevision)
+              return reconcileSupersededLoad(sessionID, targetDirectory, targetStore)
+            }
 
-        // Merge optimistic items
-        const items = getOptimistic(sessionID, targetDirectory)
-        const merged = mergeOptimisticPage(page, items)
-        for (const messageID of merged.confirmed) {
-          clearOptimistic(sessionID, messageID, targetDirectory)
-        }
+            // Merge optimistic items
+            const items = getOptimistic(sessionID, targetDirectory)
+            const merged = mergeOptimisticPage(page, items)
+            for (const messageID of merged.confirmed) {
+              clearOptimistic(sessionID, messageID, targetDirectory)
+            }
 
-        const current = targetStore.getState()
-        const materialized = materializeSessionSnapshots(
-          current,
-          sessionID,
-          merged.session.map((info) => ({
-            info,
-            parts: merged.part.find((item) => item.id === info.id)?.part ?? [],
-          })),
-          { skipPartTypes: SKIP_PARTS, mode: options?.mode === "prepend" ? "prepend" : "merge" },
-        )
+            const current = targetStore.getState()
+            const materialized = materializeSessionSnapshots(
+              current,
+              sessionID,
+              merged.session.map((info) => ({
+                info,
+                parts: merged.part.find((item) => item.id === info.id)?.part ?? [],
+              })),
+              { skipPartTypes: SKIP_PARTS, mode: options?.mode === "prepend" ? "prepend" : "merge" },
+            )
 
-        const draft = {
-          ...current,
-          message: materialized.message,
-          part: materialized.part,
-          session_user_activity: current.session_user_activity,
-        }
-        const activityChanged = updateSessionUserActivityFromMessages(draft, sessionID)
-        const normalizedSessions = normalizeSessionDiffSummaryFromMessages(current.session, sessionID, materialized.messages)
-        targetStore.setState({
-          message: materialized.message,
-          part: materialized.part,
-          ...(normalizedSessions !== current.session ? { session: normalizedSessions } : {}),
-          ...(activityChanged ? { session_user_activity: draft.session_user_activity } : {}),
-        })
-        setMetaFor(sessionID, {
-          limit: normalizeMessageFetchLimit(materialized.messages.length, limit),
-          cursor: merged.cursor,
-          complete: merged.complete,
-          loading: false,
-          initialized: true,
-        }, targetDirectory)
-        setSessionPrefetch({
-          directory: targetDirectory,
-          sessionID,
-          limit: normalizeMessageFetchLimit(materialized.messages.length, limit),
-          cursor: merged.cursor,
-          complete: merged.complete,
-          revision: prefetchRevision,
-        })
-        return true
-      } catch {
-        const current = isSessionPrefetchCurrent(targetDirectory, sessionID, prefetchRevision)
-        releaseSessionPrefetchRevision(targetDirectory, sessionID, prefetchRevision)
-        if (!current) return reconcileSupersededLoad(sessionID, targetDirectory, targetStore)
-        if (childStores.getChild(targetDirectory) !== targetStore) return false
-        setMetaFor(sessionID, { loading: false }, targetDirectory)
-        return false
-      }
+            const draft = {
+              ...current,
+              message: materialized.message,
+              part: materialized.part,
+              session_user_activity: current.session_user_activity,
+            }
+            const activityChanged = updateSessionUserActivityFromMessages(draft, sessionID)
+            const normalizedSessions = normalizeSessionDiffSummaryFromMessages(current.session, sessionID, materialized.messages)
+            targetStore.setState({
+              message: materialized.message,
+              part: materialized.part,
+              ...(normalizedSessions !== current.session ? { session: normalizedSessions } : {}),
+              ...(activityChanged ? { session_user_activity: draft.session_user_activity } : {}),
+            })
+            setMetaFor(sessionID, {
+              limit: normalizeMessageFetchLimit(materialized.messages.length, limit),
+              cursor: merged.cursor,
+              complete: merged.complete,
+              loading: false,
+              initialized: true,
+            }, targetDirectory)
+            setSessionPrefetch({
+              directory: targetDirectory,
+              sessionID,
+              limit: normalizeMessageFetchLimit(materialized.messages.length, limit),
+              cursor: merged.cursor,
+              complete: merged.complete,
+              revision: prefetchRevision,
+            })
+            return true
+          } catch {
+            const current = isSessionPrefetchCurrent(targetDirectory, sessionID, prefetchRevision)
+            releaseSessionPrefetchRevision(targetDirectory, sessionID, prefetchRevision)
+            if (!current) return reconcileSupersededLoad(sessionID, targetDirectory, targetStore)
+            if (
+              childStores.getChild(targetDirectory) !== targetStore
+              || !isSessionMessageLoadCurrent(targetDirectory, sessionID, loadToken)
+            ) return false
+            setMetaFor(sessionID, { loading: false }, targetDirectory)
+            return false
+          }
+        },
+      })
     },
     [childStores, fetchMessages, getMetaFor, setMetaFor, getOptimistic, clearOptimistic, resolveDirectory, registerDirectoryTracking, reconcileSupersededLoad],
   )

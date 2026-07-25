@@ -21,7 +21,10 @@ import { useFilesViewTabsStore } from '@/stores/useFilesViewTabsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useInlineCommentDraftStore } from '@/stores/useInlineCommentDraftStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { getAllSyncSessions } from '@/sync/sync-refs';
 import { useInputStore } from '@/sync/input-store';
+import { useManagedOrchestrationStore } from '@/stores/useManagedOrchestrationStore';
+import { useSessionPlanFileStore } from '@/stores/useSessionPlanFileStore';
 import { ContextPanelContent } from './ContextSidebarTab';
 import { toast } from '@/components/ui';
 import {
@@ -30,7 +33,7 @@ import {
   parsePreviewHttpUrl,
   resolvePreviewReloadUrl,
 } from './previewLifecycle';
-import { shouldCollapseContextPlanForSessionChange } from './contextPlanSessionLifecycle';
+import { resolveContextPlanSessionChange } from './contextPlanSessionLifecycle';
 
 const CONTEXT_PANEL_MIN_WIDTH = 360;
 const CONTEXT_PANEL_MAX_WIDTH = 1400;
@@ -1156,9 +1159,18 @@ export const ContextPanel: React.FC = () => {
   const effectiveDirectory = useEffectiveDirectory() ?? '';
   const directoryKey = React.useMemo(() => normalizeDirectoryKey(effectiveDirectory), [effectiveDirectory]);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
+  const currentSessionPlanPath = useSessionPlanFileStore((state) => {
+    if (!currentSessionId) {
+      return null;
+    }
+
+    const record = state.recordsBySession[currentSessionId];
+    return record?.status === 'saved' ? record.path : null;
+  });
 
   const panelState = useUIStore((state) => (directoryKey ? state.contextPanelByDirectory[directoryKey] : undefined));
   const contextPlanMotionRequest = useUIStore((state) => state.contextPlanMotionRequest);
+  const openContextPlan = useUIStore((state) => state.openContextPlan);
   const closeContextPanel = useUIStore((state) => state.closeContextPanel);
   const closeContextPanelTab = useUIStore((state) => state.closeContextPanelTab);
   const requestContextPanelClose = useUIStore((state) => state.requestContextPanelClose);
@@ -1271,17 +1283,43 @@ export const ContextPanel: React.FC = () => {
     const previousSessionId = previousSessionIdRef.current;
     previousSessionIdRef.current = currentSessionId;
 
-    if (!directoryKey || !shouldCollapseContextPlanForSessionChange({
+    if (!directoryKey) {
+      return;
+    }
+
+    const action = resolveContextPlanSessionChange({
       previousSessionId,
       currentSessionId,
       isPanelOpen: isOpen,
       activeMode: activeTab?.mode ?? null,
-    })) {
+      activeTargetPath: activeTab?.mode === 'plan' ? activeTab.targetPath : null,
+      ownerSessionId: activeTab?.mode === 'plan' ? activeTab.ownerSessionId : null,
+      currentSessionPlanPath,
+      sessions: getAllSyncSessions(),
+      managedTasks: Object.values(useManagedOrchestrationStore.getState().tasksById),
+    });
+
+    if (action === 'replace' && currentSessionId && currentSessionPlanPath) {
+      openContextPlan(directoryKey, currentSessionPlanPath, currentSessionId);
+      return;
+    }
+
+    if (action !== 'collapse') {
       return;
     }
 
     closeContextPanel(directoryKey);
-  }, [activeTab?.mode, closeContextPanel, currentSessionId, directoryKey, isOpen]);
+  }, [
+    activeTab?.mode,
+    activeTab?.ownerSessionId,
+    activeTab?.targetPath,
+    closeContextPanel,
+    currentSessionId,
+    currentSessionPlanPath,
+    directoryKey,
+    isOpen,
+    openContextPlan,
+  ]);
 
   React.useEffect(() => {
     if (!isOpen || wasOpenRef.current) {
@@ -1545,6 +1583,7 @@ export const ContextPanel: React.FC = () => {
             ? (
               <LazyViewBoundary>
                 <LazyPlanView
+                  key={`${activeTab.ownerSessionId ?? ''}:${activeTab.targetPath ?? ''}`}
                   targetPath={activeTab.targetPath}
                   presentation="context-panel"
                   headerActionsTarget={planHeaderActionsTarget}

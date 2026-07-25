@@ -101,7 +101,23 @@ describe('DevRyan managed orchestration plugin', () => {
       'use at least 3600 for multi-file implementation plus tests',
     );
     expect(plugin.tool.devryan_task.args.timeout_seconds.description).toContain(
+      'enforced 3600 minimum for Oracle',
+    );
+    expect(plugin.tool.devryan_task.args.timeout_seconds.description).toContain(
       '7200 when the child also owns builds or browser verification',
+    );
+    expect(plugin.tool.devryan_task.args.action.description).toContain(
+      'Provider usage-limit recovery is handled by the user-facing Model Recovery controls',
+    );
+    expect(plugin.tool.devryan_task.args.action.description).not.toContain('recover_in_place');
+    expect(plugin.tool.devryan_task.args.provider_id.description).toContain(
+      'when no runtime agent catalog is available',
+    );
+    expect(plugin.tool.devryan_task.args.provider_id.description).toContain(
+      'Supply together with model_id',
+    );
+    expect(plugin.tool.devryan_task.args.model_id.description).toContain(
+      'configured agent settings are authoritative',
     );
     const args = {
       action: 'start',
@@ -137,7 +153,7 @@ describe('DevRyan managed orchestration plugin', () => {
     expect(requests[1].body.params.idempotencyKey).toBe(requests[0].body.params.idempotencyKey);
   });
 
-  it('defaults omitted deadlines to 30 minutes and caps requested deadlines at 24 hours', async () => {
+  it('defaults omitted deadlines to 30 minutes, enforces 60 minutes for Oracle, and caps at 24 hours', async () => {
     const requests = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
       requests.push(JSON.parse(init.body));
@@ -164,11 +180,21 @@ describe('DevRyan managed orchestration plugin', () => {
       model_id: 'gpt-4.1',
       timeout_seconds: 90_000,
     }, context({ messageID: 'msg_second' }));
+    await plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'oracle',
+      prompt: 'Review within the Oracle deadline floor.',
+      provider_id: 'openai',
+      model_id: 'gpt-5.6-sol',
+      timeout_seconds: 1_800,
+    }, context({ messageID: 'msg_third' }));
 
     expect(requests[0].params.timeoutAt).toBeGreaterThanOrEqual(startedAt + 1_800_000);
     expect(requests[0].params.timeoutAt).toBeLessThanOrEqual(Date.now() + 1_800_000);
     expect(requests[1].params.timeoutAt).toBeGreaterThanOrEqual(startedAt + 86_400_000);
     expect(requests[1].params.timeoutAt).toBeLessThanOrEqual(Date.now() + 86_400_000);
+    expect(requests[2].params.timeoutAt).toBeGreaterThanOrEqual(startedAt + 3_600_000);
+    expect(requests[2].params.timeoutAt).toBeLessThanOrEqual(Date.now() + 3_600_000);
   });
 
   it('requires wait before disposition and routes scoped control actions', async () => {
@@ -498,6 +524,40 @@ describe('DevRyan managed orchestration plugin', () => {
     expect(requests).toEqual([]);
   });
 
+  it('blocks provider-native task for Orchestrator before child or scheduler work', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const client = createToolOwnerClient([
+      toolCallRecord('call_native_task', 'orchestrator'),
+    ]);
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client });
+
+    await expect(plugin['tool.execute.before'](
+      { tool: 'task', sessionID: 'ses_root', callID: 'call_native_task' },
+      { args: { subagent_type: 'explorer' } },
+    )).rejects.toThrow('must use devryan_task');
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(client.session.messages).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves provider-native task unchanged for non-Orchestrator agents', async () => {
+    const client = createToolOwnerClient([
+      toolCallRecord('call_builder_task', 'builder'),
+      toolCallRecord('call_custom_task', 'primary', { agent: 'project-agent' }),
+    ]);
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client });
+
+    await expect(plugin['tool.execute.before'](
+      { tool: 'task', sessionID: 'ses_root', callID: 'call_builder_task' },
+      { args: { subagent_type: 'explorer' } },
+    )).resolves.toBeUndefined();
+    await expect(plugin['tool.execute.before'](
+      { tool: 'task', sessionID: 'ses_root', callID: 'call_custom_task' },
+      { args: { subagent_type: 'project-child' } },
+    )).resolves.toBeUndefined();
+  });
+
   it('allows Builder direct tools through a stale Orchestrator barrier using the matching tool-call record', async () => {
     const requests = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
@@ -716,59 +776,205 @@ describe('DevRyan managed orchestration plugin', () => {
     });
   });
 
-  it('translates legacy resume into same-child provider-limit recovery with the invoking Orchestrator model', async () => {
+  it('ignores either partial start override when the configured agent model is available', async () => {
     const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      requests.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({ ok: true, result: { accepted: true } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }));
+    const client = {
+      app: {
+        agents: vi.fn(async () => ({ data: [{
+          name: 'designer',
+          model: { providerID: 'anthropic', modelID: 'claude-opus-5' },
+          variant: 'high',
+        }] })),
+      },
+    };
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client });
+
+    await plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'designer',
+      prompt: 'Review the first interface.',
+      model_id: 'gpt-5.4',
+    }, context());
+    await plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'designer',
+      prompt: 'Review the second interface.',
+      provider_id: 'openai',
+    }, context({ messageID: 'msg_second' }));
+
+    expect(requests).toHaveLength(2);
+    for (const request of requests) {
+      expect(request.params).toMatchObject({
+        providerId: 'anthropic',
+        modelId: 'claude-opus-5',
+        agent: 'designer',
+        variant: 'high',
+      });
+    }
+  });
+
+  it('requires paired compatibility fallback IDs only when the agent catalog is unavailable', async () => {
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      requests.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({ ok: true, result: { accepted: true } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'designer',
+      prompt: 'Review with a partial model fallback.',
+      model_id: 'claude-opus-5',
+    }, context())).rejects.toThrow('provider_id and model_id must be supplied together');
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'designer',
+      prompt: 'Review with a partial provider fallback.',
+      provider_id: 'anthropic',
+    }, context())).rejects.toThrow('provider_id and model_id must be supplied together');
+    await plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'designer',
+      prompt: 'Review with a complete compatibility fallback.',
+      provider_id: 'anthropic',
+      model_id: 'claude-opus-5',
+      variant: 'high',
+    }, context({ messageID: 'msg_complete' }));
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0].params).toMatchObject({
+      providerId: 'anthropic',
+      modelId: 'claude-opus-5',
+      variant: 'high',
+    });
+  });
+
+  it('does not bypass an available catalog when the configured agent model is incomplete', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const client = {
+      app: {
+        agents: vi.fn(async () => ({ data: [{
+          name: 'designer',
+          model: { providerID: 'anthropic' },
+        }] })),
+      },
+    };
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client });
+
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'designer',
+      prompt: 'Do not bypass the configured agent.',
+      provider_id: 'openai',
+      model_id: 'gpt-5.4',
+    }, context())).rejects.toThrow('Managed agent designer has no executable model');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('holds the parent wait through user-facing Model Recovery and returns the recovered result', async () => {
+    const requests = [];
+    let recoveredWaitCount = 0;
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
       const request = JSON.parse(init.body);
       requests.push(request);
-      const result = request.method === 'wait'
-        ? {
+      let result;
+      if (request.method === 'wait' && request.params.taskId === 'dvr_task_limited') {
+        result = {
           task: {
             taskId: 'dvr_task_limited',
             status: 'failed',
             childSessionId: 'ses_designer',
             failureKind: 'provider_usage_limit',
           },
-        }
-        : { accepted: true };
+        };
+      } else if (request.method === 'wait_result_action') {
+        result = {
+          resultEnvelope: {
+            taskId: 'dvr_task_limited',
+            action: 'retry_in_place',
+            followUpTaskId: 'dvr_task_recovered',
+          },
+          followUpTask: {
+            task: {
+              taskId: 'dvr_task_recovered',
+              status: 'running',
+              childSessionId: 'ses_designer',
+            },
+          },
+        };
+      } else if (request.method === 'wait' && request.params.taskId === 'dvr_task_recovered') {
+        recoveredWaitCount += 1;
+        result = {
+          task: {
+            taskId: 'dvr_task_recovered',
+            status: recoveredWaitCount === 1 ? 'running' : 'completed',
+            childSessionId: 'ses_designer',
+            recoverablePreview: recoveredWaitCount === 1 ? null : 'Recovered result',
+          },
+        };
+      } else {
+        result = { accepted: true };
+      }
       return new Response(JSON.stringify({ ok: true, result }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });
     }));
-    const client = createToolOwnerClient([{
-      info: {
-        id: 'msg_parent',
-        role: 'assistant',
-        agent: 'orchestrator',
-        providerID: 'openai',
-        modelID: 'gpt-5.4',
-        variant: 'high',
-      },
-      parts: [],
-    }]);
-    const plugin = await DevRyanManagedOrchestrationPlugin({ client });
+    const plugin = await DevRyanManagedOrchestrationPlugin();
 
-    await plugin.tool.devryan_task.execute({
+    const output = await plugin.tool.devryan_task.execute({
       action: 'wait',
       task_id: 'dvr_task_limited',
     }, context());
-    await plugin.tool.devryan_task.execute({
-      action: 'resume',
+    const parsed = JSON.parse(output);
+
+    expect(parsed.task).toMatchObject({
+      taskId: 'dvr_task_recovered',
+      status: 'completed',
+      childSessionId: 'ses_designer',
+      recoverablePreview: 'Recovered result',
+    });
+    expect(output).not.toContain('provider_usage_limit');
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'continue',
       task_id: 'dvr_task_limited',
-      agent: 'designer',
-      provider_id: 'anthropic',
-      model_id: 'claude-sonnet-4-5',
+    }, context())).rejects.toThrow('wait for dvr_task_limited');
+    await plugin.tool.devryan_task.execute({
+      action: 'continue',
+      task_id: 'dvr_task_recovered',
     }, context());
 
-    expect(requests.map(({ method }) => method)).toEqual(['wait', 'acknowledge']);
-    expect(requests[1].params).toMatchObject({
+    expect(requests.map(({ method }) => method)).toEqual([
+      'wait',
+      'wait_result_action',
+      'wait',
+      'wait',
+      'acknowledge',
+    ]);
+    expect(requests.slice(1, 4).map(({ params }) => params.taskId)).toEqual([
+      'dvr_task_limited',
+      'dvr_task_recovered',
+      'dvr_task_recovered',
+    ]);
+    expect(requests.slice(2, 4).every(
+      ({ params }) => params.waitTimeoutMs === 25_000,
+    )).toBe(true);
+    await expect(plugin.tool.devryan_task.execute({
       action: 'recover_in_place',
-      providerId: 'openai',
-      modelId: 'gpt-5.4',
-      variant: 'high',
-    });
-    expect(requests[1].params).not.toHaveProperty('agent');
+      task_id: 'dvr_task_limited',
+    }, context())).rejects.toThrow('Unsupported managed task action');
   });
 
   it('fails visibly when the bridge is unavailable or rejects a request', async () => {

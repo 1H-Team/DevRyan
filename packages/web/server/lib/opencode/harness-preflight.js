@@ -4,6 +4,7 @@ import {
   createHarnessWarning,
   withHarnessResult,
 } from './harness-result.js';
+import { resolveProviderPromptTools } from '@openchamber/orchestration-runtime';
 import {
   isBlockedManagedRuntimeMcpName,
   isForbiddenManagedRuntimeToolId,
@@ -451,9 +452,20 @@ function readToolManifestMcpNames(toolManifest) {
   return [...new Set(names)];
 }
 
-function lintForbiddenRuntimeSurface({ findings, toolManifest }) {
+function isToolDisabledForPrompt(toolId, promptTools) {
+  if (!isObject(promptTools)) return false;
+  return Object.entries(promptTools).some(([pattern, enabled]) => (
+    enabled === false
+    && (
+      pattern === toolId
+      || (pattern.endsWith('*') && toolId.startsWith(pattern.slice(0, -1)))
+    )
+  ));
+}
+
+function lintForbiddenRuntimeSurface({ findings, toolManifest, promptTools }) {
   for (const toolId of readToolManifestToolIds(toolManifest)) {
-    if (!isForbiddenManagedRuntimeToolId(toolId)) {
+    if (!isForbiddenManagedRuntimeToolId(toolId) || isToolDisabledForPrompt(toolId, promptTools)) {
       continue;
     }
     findings.push(createFinding({
@@ -523,7 +535,11 @@ function lintAgentHarness(options = {}) {
   lintStaleOverrides({ findings, staleOverrides });
   lintWarmup({ findings, latestWarmup: options.latestWarmup });
   lintSlimRuntime({ findings, slimRuntime: options.slimRuntime });
-  lintForbiddenRuntimeSurface({ findings, toolManifest: options.toolManifest });
+  lintForbiddenRuntimeSurface({
+    findings,
+    toolManifest: options.toolManifest,
+    promptTools: options.promptTools,
+  });
   lintToolManifestAvailability({ findings, toolManifest: options.toolManifest });
 
   return findings;
@@ -621,6 +637,7 @@ function buildPreflightResult({
     latestWarmup,
     toolManifest,
     slimRuntime,
+    promptTools: context.promptTools,
   });
   const promptAudit = auditPackagedPromptContext({ agents: packagedAgents });
   const contextBudget = buildHarnessContextBudget({
@@ -661,6 +678,7 @@ function buildPreflightResult({
     slimRuntime,
     promptAudit,
     contextBudget: resolvedContextBudget,
+    promptTools: context.promptTools || null,
   }, harness);
   return maybePromise(contextBudget) ? contextBudget.then(finish) : finish(contextBudget);
 }
@@ -679,16 +697,18 @@ function createHarnessPreflight(dependencies = {}) {
   return {
     run(context = {}) {
       const hasModelSelector = Boolean(context.providerID && context.modelID);
+      const promptTools = resolveProviderPromptTools(context.providerID, context.agent);
+      const resolvedContext = promptTools ? { ...context, promptTools } : context;
       const values = {
-        agents: read('getAgents', context),
-        skills: read('getSkills', context),
-        hiddenSkills: read('getHiddenSkills', context),
-        staleOverrides: read('getStaleOverrides', context),
-        latestWarmup: typeof dependencies.getLatestWarmup === 'function' ? dependencies.getLatestWarmup(context) : null,
+        agents: read('getAgents', resolvedContext),
+        skills: read('getSkills', resolvedContext),
+        hiddenSkills: read('getHiddenSkills', resolvedContext),
+        staleOverrides: read('getStaleOverrides', resolvedContext),
+        latestWarmup: typeof dependencies.getLatestWarmup === 'function' ? dependencies.getLatestWarmup(resolvedContext) : null,
         toolManifest: typeof dependencies.getToolManifest === 'function'
-          ? dependencies.getToolManifest(context)
+          ? dependencies.getToolManifest(resolvedContext)
           : runtimeToolManifestReader
-            ? runtimeToolManifestReader(context)
+            ? runtimeToolManifestReader(resolvedContext)
             : {
                 tools: [],
                 toolIds: [],
@@ -713,15 +733,15 @@ function createHarnessPreflight(dependencies = {}) {
                     : { availability: 'notRequested' },
                 },
               },
-        packagedAgents: read('getPackagedAgents', context),
-        slimRuntime: typeof dependencies.getSlimRuntime === 'function' ? dependencies.getSlimRuntime(context) : null,
+        packagedAgents: read('getPackagedAgents', resolvedContext),
+        slimRuntime: typeof dependencies.getSlimRuntime === 'function' ? dependencies.getSlimRuntime(resolvedContext) : null,
       };
 
       const pending = Object.entries(values).filter(([, value]) => maybePromise(value));
       if (pending.length === 0) {
         return buildPreflightResult({
-          context,
-          directory: context.directory,
+          context: resolvedContext,
+          directory: resolvedContext.directory,
           readSkillBody: dependencies.readSkillBody,
           ...values,
         });
@@ -733,8 +753,8 @@ function createHarnessPreflight(dependencies = {}) {
           nextValues[key] = resolved[index];
         });
         return buildPreflightResult({
-          context,
-          directory: context.directory,
+          context: resolvedContext,
+          directory: resolvedContext.directory,
           readSkillBody: dependencies.readSkillBody,
           ...nextValues,
         });
@@ -748,6 +768,7 @@ function registerHarnessPreflightRoute(app, preflight) {
     const directory = readRequestString(req, 'directory');
     const providerID = readRequestString(req, 'providerID');
     const modelID = readRequestString(req, 'modelID');
+    const agent = readRequestString(req, 'agent');
     if (Boolean(providerID) !== Boolean(modelID)) {
       const message = 'providerID and modelID must be provided together';
       res.status(400).json(withHarnessResult({
@@ -770,7 +791,7 @@ function registerHarnessPreflightRoute(app, preflight) {
       return;
     }
     try {
-      const result = await preflight.run({ directory, providerID, modelID });
+      const result = await preflight.run({ directory, providerID, modelID, agent });
       res.json(result);
     } catch (error) {
       const message = formatErrorMessage(error, 'Harness preflight failed');

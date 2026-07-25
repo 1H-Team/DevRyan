@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import type { Session } from '@opencode-ai/sdk/v2';
 import {
+  applyGlobalSessionLifecycleEvent,
   beginGlobalSessionMembershipMutation,
   queueGlobalSessionsRefreshAfterMutation,
+  resetGlobalSessionLifecycleOverlayForTest,
   settleGlobalSessionMembershipMutation,
   type GlobalSessionMembershipMutationHandle,
   useGlobalSessionsStore,
@@ -32,6 +34,7 @@ describe('useGlobalSessionsStore snapshot helpers', () => {
   const mutationHandles: GlobalSessionMembershipMutationHandle[] = [];
 
   beforeEach(() => {
+    resetGlobalSessionLifecycleOverlayForTest();
     for (const handle of mutationHandles.splice(0)) {
       settleGlobalSessionMembershipMutation(handle, {
         successfulIds: [],
@@ -125,6 +128,93 @@ describe('useGlobalSessionsStore snapshot helpers', () => {
 
     expect(useGlobalSessionsStore.getState().activeSessions).toEqual([]);
     expect(useGlobalSessionsStore.getState().archivedSessions.map((item) => item.id)).toEqual([current.id]);
+  });
+
+  test('keeps a remote create visible until a complete snapshot confirms it', () => {
+    const created = {
+      ...session('remote-create', '/remote'),
+      title: 'Created remotely',
+      time: { created: 10, updated: 10 },
+    } as Session;
+
+    expect(applyGlobalSessionLifecycleEvent({ type: 'upsert', session: created })).toBe(true);
+    expect(applyGlobalSessionLifecycleEvent({ type: 'upsert', session: created })).toBe(true);
+    useGlobalSessionsStore.getState().applySnapshot([], []);
+
+    expect(useGlobalSessionsStore.getState().activeSessions).toEqual([created]);
+    expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/remote')).toEqual([created]);
+
+    useGlobalSessionsStore.getState().applySnapshot([created], []);
+    useGlobalSessionsStore.getState().applySnapshot([], []);
+    expect(useGlobalSessionsStore.getState().activeSessions).toEqual([]);
+  });
+
+  test('keeps a remote archive update in the archived bucket across a stale active snapshot', () => {
+    const active = {
+      ...session('remote-archive', '/remote'),
+      time: { created: 10, updated: 20 },
+    } as Session;
+    const archived = {
+      ...active,
+      time: { created: 10, updated: 30, archived: 30 },
+    } as Session;
+    useGlobalSessionsStore.getState().applySnapshot([active], []);
+
+    applyGlobalSessionLifecycleEvent({ type: 'upsert', session: archived });
+    useGlobalSessionsStore.getState().applySnapshot([active], []);
+
+    expect(useGlobalSessionsStore.getState().activeSessions).toEqual([]);
+    expect(useGlobalSessionsStore.getState().archivedSessions).toEqual([archived]);
+    expect(useGlobalSessionsStore.getState().sessionsByDirectory.has('/remote')).toBe(false);
+  });
+
+  test('uses a remote delete tombstone until complete snapshots confirm absence', () => {
+    const deleted = session('remote-delete', '/remote');
+    useGlobalSessionsStore.getState().applySnapshot([deleted], []);
+
+    applyGlobalSessionLifecycleEvent({ type: 'delete', sessionID: deleted.id });
+    useGlobalSessionsStore.getState().applySnapshot([deleted], []);
+    expect(useGlobalSessionsStore.getState().activeSessions).toEqual([]);
+
+    useGlobalSessionsStore.getState().applySnapshot([], []);
+    useGlobalSessionsStore.getState().applySnapshot([deleted], []);
+    expect(useGlobalSessionsStore.getState().activeSessions).toEqual([deleted]);
+  });
+
+  test('ignores an older remote lifecycle echo without replacing the newer row', () => {
+    const newest = {
+      ...session('remote-recency', '/remote'),
+      title: 'Newest',
+      time: { created: 10, updated: 30 },
+    } as Session;
+    const older = {
+      ...newest,
+      title: 'Older',
+      time: { created: 10, updated: 20 },
+    } as Session;
+
+    applyGlobalSessionLifecycleEvent({ type: 'upsert', session: newest });
+    expect(applyGlobalSessionLifecycleEvent({ type: 'upsert', session: older })).toBe(false);
+    expect(useGlobalSessionsStore.getState().activeSessions).toEqual([newest]);
+  });
+
+  test('lets a newer direct mutation supersede a pending remote lifecycle overlay', () => {
+    const remote = {
+      ...session('remote-then-local', '/remote'),
+      title: 'Remote title',
+      time: { created: 10, updated: 20 },
+    } as Session;
+    const local = {
+      ...remote,
+      title: 'Local title',
+      time: { created: 10, updated: 30 },
+    } as Session;
+
+    applyGlobalSessionLifecycleEvent({ type: 'upsert', session: remote });
+    useGlobalSessionsStore.getState().upsertSession(local);
+    useGlobalSessionsStore.getState().applySnapshot([remote], []);
+
+    expect(useGlobalSessionsStore.getState().activeSessions).toEqual([local]);
   });
 
   test('keeps a successfully archived session archived when a stale snapshot resolves last', () => {

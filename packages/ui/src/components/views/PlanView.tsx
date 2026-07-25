@@ -21,7 +21,7 @@ import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { generateSyntaxTheme } from '@/lib/theme/syntaxThemeGenerator';
 import { createFlexokiCodeMirrorTheme } from '@/lib/codemirror/flexokiTheme';
 import { languageByExtension } from '@/lib/codemirror/languageByExtension';
-import { RiCheckLine, RiClipboardLine, RiCodeAiLine, RiLoopRightAiLine } from '@remixicon/react';
+import { RiCheckLine, RiClipboardLine, RiCloseLine, RiCodeAiLine, RiLoopRightAiLine } from '@remixicon/react';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessions } from '@/sync/sync-context';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
@@ -51,6 +51,7 @@ import {
   type PlanSendAction,
 } from './planSend';
 import { getPlanViewCandidatePaths } from './planViewPaths';
+import { getPlanBlockId, getPlanImplementationKey } from '@/lib/messages/actionablePlan';
 
 type PlanViewProps = {
   targetPath?: string | null;
@@ -161,15 +162,20 @@ export const PlanView: React.FC<PlanViewProps> = ({
 }) => {
   const { t } = useI18n();
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
-  const sessionPlanPath = useSessionPlanFileStore((state) => {
+  const sessionPlanFileRecord = useSessionPlanFileStore((state) => {
     if (!currentSessionId) return null;
     const record = state.recordsBySession[currentSessionId];
-    return record?.status === 'saved' ? record.path : null;
+    return record?.status === 'saved' ? record : null;
   });
+  const sessionPlanPath = sessionPlanFileRecord?.path ?? null;
+  const sourcePlanMessageId = sessionPlanFileRecord?.status === 'saved'
+    ? sessionPlanFileRecord.sourceMessageId
+    : null;
   const createSession = useSessionUIStore((state) => state.createSession);
   const initializeNewOpenChamberSession = useSessionUIStore((state) => state.initializeNewOpenChamberSession);
   const sendMessage = useSessionUIStore((state) => state.sendMessage);
   const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
+  const setPlanModeSelection = useSelectionStore((state) => state.setPlanModeSelection);
   const sessions = useSessions();
   const homeDirectory = useDirectoryStore((state) => state.homeDirectory);
   const planModeEnabled = useFeatureFlagsStore((state) => state.planModeEnabled);
@@ -584,12 +590,20 @@ export const PlanView: React.FC<PlanViewProps> = ({
           getPlanSendPlanMode(pendingPlanSend.action),
         );
 
+        if (pendingPlanSend.action === 'implement' && isMobile && currentSessionId && sourcePlanMessageId) {
+          useSessionUIStore.getState().markPlanImplementationHandedOff(
+            getPlanImplementationKey(currentSessionId, getPlanBlockId(sourcePlanMessageId, 0)),
+          );
+          setPlanModeSelection(currentSessionId, false);
+          useSessionUIStore.getState().clearHandedOffPlanIndicator(currentSessionId, sourcePlanMessageId);
+        }
+
         setPendingPlanSend(null);
       } finally {
         setIsPlanSendSubmitting(false);
       }
     },
-    [canCreateWorktree, createSession, currentProjectRef, initializeNewOpenChamberSession, pendingPlanSend, resolvedPath, routeToChat, savePlanContent, sendMessage, sendPromptTitle, setCurrentSession]
+    [canCreateWorktree, createSession, currentProjectRef, currentSessionId, initializeNewOpenChamberSession, isMobile, pendingPlanSend, resolvedPath, routeToChat, savePlanContent, sendMessage, sendPromptTitle, setCurrentSession, setPlanModeSelection, sourcePlanMessageId]
   );
 
   const blockWidgets = React.useMemo(() => {
@@ -716,13 +730,26 @@ export const PlanView: React.FC<PlanViewProps> = ({
       {presentation === 'standalone' ? (
         <div className="flex min-w-0 flex-shrink-0 items-center gap-2 border-b border-border/40 px-3 py-1.5">
           <div className="min-w-0 flex-1">
-            <div className="typography-ui-label truncate font-medium">{parsedTitle}</div>
+            <div className="typography-ui-label truncate font-medium">{isMobile ? t('layout.mainTab.plan') : parsedTitle}</div>
             {saveError ? (
               <div className="typography-micro truncate text-[color:var(--status-error)]" title={saveError}>
                 {t('planView.error.saveFailed')}
               </div>
             ) : null}
           </div>
+          {isMobile ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-5 w-5 p-0"
+              data-plan-view-close="true"
+              aria-label={t('planView.actions.closePlanAria')}
+              onClick={routeToChat}
+            >
+              <RiCloseLine className="size-4" />
+            </Button>
+          ) : null}
           {planActions}
         </div>
       ) : saveError ? (

@@ -1,5 +1,7 @@
 import React from "react";
 
+import { syncScrollShadowAttributes } from "./scrollShadowAttributes";
+
 export type ScrollShadowProps = React.HTMLAttributes<HTMLElement> & {
   as?: React.ElementType;
   orientation?: "vertical" | "horizontal";
@@ -29,6 +31,11 @@ function mergeRefs<T>(...refs: Array<React.Ref<T>>): React.RefCallback<T> {
     });
   };
 }
+
+const removeAttributeIfPresent = (element: HTMLElement, name: string) => {
+  if (!element.hasAttribute(name)) return;
+  element.removeAttribute(name);
+};
 
 export const ScrollShadow = React.forwardRef<HTMLElement, ScrollShadowProps>(
       (
@@ -63,26 +70,9 @@ export const ScrollShadow = React.forwardRef<HTMLElement, ScrollShadowProps>(
       return next;
     }, [size, style]);
 
-    const setAttributes = React.useCallback(
-      (el: HTMLElement, hasBefore: boolean, hasAfter: boolean, prefix: "top" | "left", suffix: "bottom" | "right") => {
-        const bothKey = `${prefix}${suffix.charAt(0).toUpperCase()}${suffix.slice(1)}Scroll` as const;
-
-        if (hasBefore && hasAfter) {
-          (el.dataset as Record<string, string>)[bothKey] = "true";
-          el.removeAttribute(`data-${prefix}-scroll`);
-          el.removeAttribute(`data-${suffix}-scroll`);
-        } else {
-          el.dataset[`${prefix}Scroll`] = String(hasBefore);
-          el.dataset[`${suffix}Scroll`] = String(hasAfter);
-          el.removeAttribute(`data-${prefix}-${suffix}-scroll`);
-        }
-      },
-      [],
-    );
-
     const clearAttributes = React.useCallback((el: HTMLElement) => {
       ["top", "bottom", "top-bottom", "left", "right", "left-right"].forEach((attr) => {
-        el.removeAttribute(`data-${attr}-scroll`);
+        removeAttributeIfPresent(el, `data-${attr}-scroll`);
       });
     }, []);
 
@@ -114,14 +104,20 @@ export const ScrollShadow = React.forwardRef<HTMLElement, ScrollShadowProps>(
         hasAfter = false;
       }
 
-      setAttributes(el, effectiveHasBefore, hasAfter, orientation === "vertical" ? "top" : "left", orientation === "vertical" ? "bottom" : "right");
+      syncScrollShadowAttributes(
+        el,
+        effectiveHasBefore,
+        hasAfter,
+        orientation === "vertical" ? "top" : "left",
+        orientation === "vertical" ? "bottom" : "right",
+      );
 
       const next = effectiveHasBefore && hasAfter ? "both" : effectiveHasBefore ? (orientation === "vertical" ? "top" : "left") : hasAfter ? (orientation === "vertical" ? "bottom" : "right") : "none";
       if (next !== visibleRef.current) {
         visibleRef.current = next;
         onVisibilityChange?.(next);
       }
-    }, [clearAttributes, hideTopShadow, hideBottomShadow, isEnabled, offset, onVisibilityChange, orientation, setAttributes]);
+    }, [clearAttributes, hideTopShadow, hideBottomShadow, isEnabled, offset, onVisibilityChange, orientation]);
 
     React.useEffect(() => {
       const el = internalRef.current;

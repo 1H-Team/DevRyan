@@ -45,7 +45,6 @@ export type DesktopServicesMenuProps = {
   quotaResultsLength: number;
   fetchAllQuotas: () => Promise<unknown>;
   servicesTabItems: SortableTabsStripItem[];
-  quotaLastUpdated: number | null;
   quotaTrendHistory: UsageTrendHistory;
   handleUsageRefresh: () => void;
   isQuotaLoading: boolean;
@@ -70,7 +69,6 @@ export const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
   quotaResultsLength,
   fetchAllQuotas,
   servicesTabItems,
-  quotaLastUpdated,
   quotaTrendHistory,
   handleUsageRefresh,
   isQuotaLoading,
@@ -182,7 +180,6 @@ export const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
             ) : null}
             <UsageProviderPanel
               group={selectedGroup}
-              quotaLastUpdated={quotaLastUpdated}
               quotaTrendHistory={quotaTrendHistory}
               handleUsageRefresh={handleUsageRefresh}
               isQuotaLoading={isQuotaLoading}

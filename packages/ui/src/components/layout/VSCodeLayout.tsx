@@ -569,7 +569,6 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
   const quotaProviderRefreshState = useQuotaStore((state) => state.providerRefreshState);
   const fetchAllQuotas = quotaRefreshCoordinator.refreshNow;
   const isQuotaLoading = useQuotaStore((state) => state.isLoading);
-  const quotaLastUpdated = useQuotaStore((state) => state.lastUpdated);
   const quotaTrendHistory = useQuotaStore((state) => state.trendHistory);
   const dropdownProviderIds = useQuotaStore((state) => state.dropdownProviderIds);
   const expandedFamilies = useQuotaStore((state) => state.expandedFamilies);
@@ -603,7 +602,16 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
         ?? ((result && !result.ok && result.configured) ? result.error : undefined);
       const resetCredits = result?.usage?.resetCredits;
       if (entries.length > 0 || resetCredits || error) {
-        groups.push({ providerId: provider.id, providerName: provider.name, entries, resetCredits, error });
+        groups.push({
+          providerId: provider.id,
+          providerName: provider.name,
+          entries,
+          resetCredits,
+          error,
+          usageUpdatedAt: result?.usageUpdatedAt
+            ?? quotaProviderRefreshState[provider.id]?.lastSuccessAt
+            ?? null,
+        });
       }
     }
 
@@ -690,7 +698,6 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
             ) : null}
             <UsageProviderPanel
               group={selectedGroup}
-              quotaLastUpdated={quotaLastUpdated}
               quotaTrendHistory={quotaTrendHistory}
               handleUsageRefresh={() => fetchAllQuotas({ forceRefresh: true })}
               isQuotaLoading={isQuotaLoading}

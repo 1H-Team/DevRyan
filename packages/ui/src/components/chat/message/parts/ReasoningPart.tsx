@@ -24,6 +24,7 @@ type ReasoningTimelineBlockProps = {
     time?: { start?: number; end?: number };
     showDuration?: boolean;
     isStreaming?: boolean;
+    isMobile?: boolean;
     actions?: React.ReactNode;
 };
 
@@ -35,6 +36,7 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
     time: _time,
     showDuration: _showDuration = true,
     isStreaming = false,
+    isMobile = false,
     actions,
 }) => {
     void _variant;
@@ -53,8 +55,8 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
     }
 
     return (
-        <div className="my-1" data-reasoning-block-id={blockId} data-message-text-export-root="true">
-            <div className="relative pr-2 pb-2 pt-1">
+        <div data-reasoning-block-id={blockId} data-message-text-export-root="true">
+            <div className={isMobile ? 'relative pr-2 py-1' : 'relative pr-2 py-1.5'}>
                 <div data-message-text-export-source="true">
                     <MarkdownRenderer
                         content={text}
@@ -82,6 +84,7 @@ type ReasoningPartProps = {
     messageId: string;
     providerID?: string | null;
     responseStyleLevel?: ResponseStyleLevel;
+    isMobile?: boolean;
 };
 
 const ReasoningPart = React.memo(({
@@ -90,6 +93,7 @@ const ReasoningPart = React.memo(({
     messageId,
     providerID,
     responseStyleLevel = 'provider',
+    isMobile = false,
 }: ReasoningPartProps) => {
     const { t } = useI18n();
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
@@ -114,12 +118,12 @@ const ReasoningPart = React.memo(({
         if (isActive) {
             return (
                 <div
-                    className="my-1 typography-meta text-muted-foreground"
+                    className="typography-meta text-muted-foreground"
                     data-reasoning-block-id={part.id || `${messageId}-reasoning`}
                     role="status"
                     aria-live="polite"
                 >
-                    <div className="relative pr-2 pb-2 pt-1">
+                    <div className={isMobile ? 'relative pr-2 py-1' : 'relative pr-2 py-1.5'}>
                         <span className="inline-flex animate-pulse motion-reduce:animate-none">
                             {t('chat.reasoning.thinking')}
                         </span>
@@ -139,6 +143,7 @@ const ReasoningPart = React.memo(({
             onContentChange={onContentChange}
             blockId={blockId}
             isStreaming={isStreaming}
+            isMobile={isMobile}
         />
     );
 });

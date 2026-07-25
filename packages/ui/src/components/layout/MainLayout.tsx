@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { motion, useMotionValue, animate } from 'motion/react';
+import { motion, useDragControls, useMotionValue, animate } from 'motion/react';
 import { Header } from './Header';
 import { BottomTerminalDock } from './BottomTerminalDock';
 import { Sidebar, SIDEBAR_CONTENT_WIDTH } from './Sidebar';
@@ -81,6 +81,7 @@ export const MainLayout: React.FC = () => {
 
     // Left drawer motion value
     const leftDrawerX = useMotionValue(0);
+    const leftDrawerDragControls = useDragControls();
     const leftDrawerWidth = useRef(0);
 
     // Right drawer motion value
@@ -346,6 +347,13 @@ export const MainLayout: React.FC = () => {
         const rawWidth = rightSidebarWidth || RIGHT_SIDEBAR_CONTENT_WIDTH;
         return Math.min(DESKTOP_RIGHT_SIDEBAR_MAX_WIDTH, Math.max(DESKTOP_RIGHT_SIDEBAR_MIN_WIDTH, rawWidth));
     }, [rightSidebarWidth]);
+    const handleLeftDrawerPointerDown = React.useCallback((event: React.PointerEvent<HTMLElement>) => {
+        const target = event.target;
+        if (target instanceof Element && target.closest('[data-mobile-drawer-drag-lock]')) {
+            return;
+        }
+        leftDrawerDragControls.start(event);
+    }, [leftDrawerDragControls]);
 
     // Memoize sidebar children by JSX identity so that toggling isSidebarOpen /
     // isRightSidebarOpen does NOT recurse React into these heavy trees. Without
@@ -429,9 +437,12 @@ export const MainLayout: React.FC = () => {
                     {/* Left drawer (Session) */}
                     <motion.aside
                         drag="x"
+                        dragControls={leftDrawerDragControls}
+                        dragListener={false}
                         dragElastic={0.08}
                         dragMomentum={false}
                         dragConstraints={{ left: -(leftDrawerWidth.current || window.innerWidth * 0.85), right: 0 }}
+                        onPointerDown={handleLeftDrawerPointerDown}
                         style={{
                             width: `${MOBILE_DRAWER_WIDTH_PERCENT}%`,
                             x: leftDrawerX,

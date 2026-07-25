@@ -88,7 +88,6 @@ export const DesktopRightChromeActions: React.FC = () => {
   const quotaProviderRefreshState = useQuotaStore((state) => state.providerRefreshState);
   const fetchAllQuotas = quotaRefreshCoordinator.refreshNow;
   const isQuotaLoading = useQuotaStore((state) => state.isLoading);
-  const quotaLastUpdated = useQuotaStore((state) => state.lastUpdated);
   const quotaTrendHistory = useQuotaStore((state) => state.trendHistory);
   const dropdownProviderIds = useQuotaStore((state) => state.dropdownProviderIds);
   const selectedModels = useQuotaStore((state) => state.selectedModels);
@@ -165,6 +164,9 @@ export const DesktopRightChromeActions: React.FC = () => {
         providerId: provider.id,
         providerName: provider.name,
         entries,
+        usageUpdatedAt: result?.usageUpdatedAt
+          ?? quotaProviderRefreshState[provider.id]?.lastSuccessAt
+          ?? null,
         resetCredits: result?.usage?.resetCredits,
         error: quotaProviderRefreshState[provider.id]?.refreshError
           ?? ((result && !result.ok && result.configured) ? result.error : undefined),
@@ -306,8 +308,8 @@ export const DesktopRightChromeActions: React.FC = () => {
       return;
     }
 
-    toggleContextPlan(directory, savedPlanPath);
-  }, [openDirectory, savedPlanPath, toggleContextPlan]);
+    toggleContextPlan(directory, savedPlanPath, currentSessionId);
+  }, [currentSessionId, openDirectory, savedPlanPath, toggleContextPlan]);
 
   const isContextPlanActive = React.useMemo(() => {
     const directory = normalize(openDirectory || '');
@@ -429,7 +431,6 @@ export const DesktopRightChromeActions: React.FC = () => {
         quotaResultsLength={quotaResults.length}
         fetchAllQuotas={fetchAllQuotas}
         servicesTabItems={servicesTabItems}
-        quotaLastUpdated={quotaLastUpdated}
         quotaTrendHistory={quotaTrendHistory}
         handleUsageRefresh={handleUsageRefresh}
         isQuotaLoading={isQuotaLoading}

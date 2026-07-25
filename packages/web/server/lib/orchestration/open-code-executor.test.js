@@ -77,6 +77,29 @@ describe('web managed OpenCode executor transport', () => {
     expect(requests.every((request) => request.init.headers.authorization === 'Basic opaque')).toBe(true);
   });
 
+  it('defers same-child reconciliation while the managed runtime port is unavailable', async () => {
+    const executor = createWebManagedOpenCodeExecutor({
+      buildOpenCodeUrl: () => {
+        const error = new Error('OpenCode port is not available');
+        error.code = 'managed_runtime_unavailable';
+        error.statusCode = 503;
+        throw error;
+      },
+      getOpenCodeAuthHeaders: () => ({ authorization: 'Basic opaque' }),
+      fetchImpl: vi.fn(),
+    });
+
+    await expect(executor.reconcile({
+      taskId: 'dvr_task_port_transition',
+      childSessionId: 'ses_existing',
+      directory: '/workspace',
+      providerId: 'openai',
+    })).resolves.toEqual({
+      state: 'transient',
+      failureReason: 'OpenCode port is not available',
+    });
+  });
+
   it('aborts and deletes a normal-provider child when the scheduler rejects its ownership checkpoint', async () => {
     const requests = [];
     const fetchImpl = vi.fn(async (url, init = {}) => {

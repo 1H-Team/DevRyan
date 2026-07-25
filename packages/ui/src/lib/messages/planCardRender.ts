@@ -13,6 +13,14 @@ export const shouldSuppressPostPlanText = (
   return isPlanModeSource === true || messagePlan.source === 'sentinel';
 };
 
+export const shouldStopAfterPlanCard = (
+  messagePlan: PlanCardSentinelSplit | null | undefined,
+  isPlanModeSource: boolean,
+  planCardRendered: boolean,
+): boolean => (
+  planCardRendered && shouldSuppressPostPlanText(messagePlan, isPlanModeSource)
+);
+
 export const buildPlanCardRenderSegments = ({
   groupText,
   groupStart,

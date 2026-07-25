@@ -5,6 +5,7 @@ Implements client-side sync primitives for session/event reconciliation and cach
 
 ## Design
 Event-reducer style updates with normalized entities and optimistic-safe merge utilities.
+`message-pagination-store.ts` is the shared, reactive owner for per-directory/session message pagination and load coordination. It coalesces sidebar/chat callers, exposes leaf-stable metadata to the active chat, and invalidates late loads on session eviction/deletion or directory disposal.
 `optimistic.ts` treats an echoed client-generated message ID in a REST page as authoritative confirmation: server-generated part IDs remain untouched, the shadow entry is cleared, and optimistic parts are retained only while the message is still absent.
 Draft persistence helpers (`session-draft-storage.ts`) own localStorage keys and migration for new-chat draft state. Authoritative permanent deletion removes both session composer keys and synchronously signals a mounted matching composer so its target-switch effect cannot recreate deleted text or confirmed mentions.
 Automatic title ownership is provider-specific and exclusive: the server-side standard title runtime owns accepted non-Cursor prompts, the separate server-side Cursor runtime owns Cursor ACP titles, and explicit custom draft titles remain authoritative. The sync layer never persists prompt-derived automatic titles and consumes authoritative `session.updated` events instead.

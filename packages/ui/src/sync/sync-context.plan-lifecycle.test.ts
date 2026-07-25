@@ -43,6 +43,11 @@ import { getSafeStorage } from "@/stores/utils/safeStorage"
 import { useSessionWorktreeStore } from "./session-worktree-store"
 import { useSessionPlanFileStore } from "@/stores/useSessionPlanFileStore"
 import { useProjectsStore } from "@/stores/useProjectsStore"
+import { buildPlanImplementationRequestMarker } from "@/lib/messages/actionablePlan"
+import {
+  resetGlobalSessionLifecycleOverlayForTest,
+  useGlobalSessionsStore,
+} from "@/stores/useGlobalSessionsStore"
 import * as sessionActions from "./session-actions"
 
 const DIRECTORY = "/repo"
@@ -162,6 +167,11 @@ const partUpdatedEvent = (part: Part): Event => ({
   properties: { part },
 } as Event)
 
+const messageUpdatedEvent = (info: Message): Event => ({
+  type: "message.updated",
+  properties: { info },
+} as Event)
+
 const sessionStatusEvent = (status: SessionStatus): Event => ({
   type: "session.status",
   properties: { sessionID: SESSION_ID, status },
@@ -205,6 +215,14 @@ const contextUsage = (totalTokens: number): SessionContextUsage => ({
 
 describe("sync plan lifecycle on message.part.delta", () => {
   beforeEach(() => {
+    resetGlobalSessionLifecycleOverlayForTest()
+    useGlobalSessionsStore.setState({
+      activeSessions: [],
+      archivedSessions: [],
+      sessionsByDirectory: new Map(),
+      hasLoaded: true,
+      status: "ready",
+    })
     clearSessionAutoAcceptCalls.length = 0
     resetAbortGuardState()
     useSessionUIStore.setState({
@@ -246,6 +264,108 @@ describe("sync plan lifecycle on message.part.delta", () => {
       sessionContextUsage: new Map(),
       sessionAgentEditModes: new Map(),
     })
+  })
+
+  test("projects a remote implementation marker into the exact plan card state", async () => {
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    const implementationMarker = {
+      id: "prt_implementation_marker",
+      sessionID: SESSION_ID,
+      messageID: IMPLEMENT_USER_MESSAGE_ID,
+      type: "text",
+      text: buildPlanImplementationRequestMarker({
+        sourceSessionId: SESSION_ID,
+        sourceMessageId: ASSISTANT_MESSAGE_ID,
+        planIndex: 0,
+      }),
+      synthetic: true,
+    } as Part
+    store.setState({
+      ...INITIAL_STATE,
+      session: [{ id: SESSION_ID, title: "Cross-client plan", time: { created: 1, updated: 4 } } as Session],
+      message: {
+        [SESSION_ID]: [userMessage(), assistantMessage(), implementingUserMessage()],
+      },
+      part: {
+        [USER_MESSAGE_ID]: [planModePart()],
+        [ASSISTANT_MESSAGE_ID]: [textPart(`<!--plan-->\n${structuredPlanBody}`)],
+      },
+    })
+
+    applySyncEventForTest(
+      DIRECTORY,
+      partUpdatedEvent(implementationMarker),
+      childStores,
+      routingIndexFor([USER_MESSAGE_ID, ASSISTANT_MESSAGE_ID, IMPLEMENT_USER_MESSAGE_ID]),
+    )
+    await flushAsync()
+
+    const implementationKey = `${SESSION_ID}:${ASSISTANT_MESSAGE_ID}:plan:0`
+    expect(useSessionUIStore.getState().implementedPlanRequests.has(implementationKey)).toBe(true)
+    expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toEqual({
+      state: "implementing",
+      sourceMessageId: ASSISTANT_MESSAGE_ID,
+      implementationMessageId: IMPLEMENT_USER_MESSAGE_ID,
+    })
+
+    applySyncEventForTest(
+      DIRECTORY,
+      partUpdatedEvent(implementationMarker),
+      childStores,
+      routingIndexFor([USER_MESSAGE_ID, ASSISTANT_MESSAGE_ID, IMPLEMENT_USER_MESSAGE_ID]),
+    )
+    await flushAsync()
+    expect(useSessionUIStore.getState().implementedPlanRequests.size).toBe(1)
+  })
+
+  test("reconciles the implementation when its marker part arrives before the user message", async () => {
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    const implementationMarker = {
+      id: "prt_implementation_marker_early",
+      sessionID: SESSION_ID,
+      messageID: IMPLEMENT_USER_MESSAGE_ID,
+      type: "text",
+      text: buildPlanImplementationRequestMarker({
+        sourceSessionId: SESSION_ID,
+        sourceMessageId: ASSISTANT_MESSAGE_ID,
+        planIndex: 0,
+      }),
+      synthetic: true,
+    } as Part
+    store.setState({
+      ...INITIAL_STATE,
+      session: [{ id: SESSION_ID, title: "Cross-client race", time: { created: 1, updated: 4 } } as Session],
+      message: {
+        [SESSION_ID]: [userMessage(), assistantMessage()],
+      },
+      part: {
+        [USER_MESSAGE_ID]: [planModePart()],
+        [ASSISTANT_MESSAGE_ID]: [textPart(`<!--plan-->\n${structuredPlanBody}`)],
+      },
+    })
+    const routingIndex = routingIndexFor([
+      USER_MESSAGE_ID,
+      ASSISTANT_MESSAGE_ID,
+      IMPLEMENT_USER_MESSAGE_ID,
+    ])
+
+    applySyncEventForTest(DIRECTORY, partUpdatedEvent(implementationMarker), childStores, routingIndex)
+    await flushAsync()
+    expect(useSessionUIStore.getState().implementedPlanRequests.size).toBe(0)
+
+    applySyncEventForTest(
+      DIRECTORY,
+      messageUpdatedEvent(implementingUserMessage()),
+      childStores,
+      routingIndex,
+    )
+    await flushAsync()
+
+    expect(useSessionUIStore.getState().implementedPlanRequests.has(
+      `${SESSION_ID}:${ASSISTANT_MESSAGE_ID}:plan:0`,
+    )).toBe(true)
   })
 
   test("drops a stale session update before allocating replacement store branches", () => {
@@ -297,6 +417,75 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     expect(isAbortGuardActive(SESSION_ID)).toBe(false)
     expect(store.getState().session_status[SESSION_ID]).toEqual(retryStatus)
+  })
+
+  test("settles stale terminal attention for a resumed root and its loaded descendants", async () => {
+    const childSessionID = "ses_child_failed"
+    const unrelatedSessionID = "ses_unrelated_failed"
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    store.setState({
+      ...INITIAL_STATE,
+      session: [
+        { id: SESSION_ID, title: "Root", time: { created: 1, updated: 2 } } as Session,
+        {
+          id: childSessionID,
+          parentID: SESSION_ID,
+          title: "Failed child",
+          time: { created: 1, updated: 2 },
+        } as Session,
+        { id: unrelatedSessionID, title: "Unrelated", time: { created: 1, updated: 2 } } as Session,
+      ],
+      session_status: {
+        [SESSION_ID]: { type: "idle" } as SessionStatus,
+        [childSessionID]: { type: "idle" } as SessionStatus,
+        [unrelatedSessionID]: { type: "idle" } as SessionStatus,
+      },
+    })
+    useNotificationStore.getState().append({
+      type: "error",
+      directory: DIRECTORY,
+      session: SESSION_ID,
+      time: Date.now(),
+      viewed: false,
+    })
+    useNotificationStore.getState().append({
+      type: "error",
+      directory: DIRECTORY,
+      session: childSessionID,
+      time: Date.now() + 1,
+      viewed: false,
+    })
+    useNotificationStore.getState().append({
+      type: "error",
+      directory: DIRECTORY,
+      session: unrelatedSessionID,
+      time: Date.now() + 2,
+      viewed: false,
+    })
+    useSessionUIStore.setState({
+      sessionCompletionIndicator: new Map([
+        [SESSION_ID, { messageId: "msg_root_complete", completedAt: 1 }],
+        [childSessionID, { messageId: "msg_child_complete", completedAt: 2 }],
+        [unrelatedSessionID, { messageId: "msg_unrelated_complete", completedAt: 3 }],
+      ]),
+    })
+
+    applySyncEventForTest(
+      DIRECTORY,
+      sessionStatusEvent({ type: "busy" } as SessionStatus),
+      childStores,
+      routingIndexFor([]),
+    )
+    await flushAsync()
+
+    const notifications = useNotificationStore.getState()
+    expect(notifications.sessionHasError(SESSION_ID)).toBe(false)
+    expect(notifications.sessionHasError(childSessionID)).toBe(false)
+    expect(notifications.sessionHasError(unrelatedSessionID)).toBe(true)
+    expect(useSessionUIStore.getState().sessionCompletionIndicator.has(SESSION_ID)).toBe(false)
+    expect(useSessionUIStore.getState().sessionCompletionIndicator.has(childSessionID)).toBe(false)
+    expect(useSessionUIStore.getState().sessionCompletionIndicator.has(unrelatedSessionID)).toBe(true)
   })
 
   test("does not resurrect a deleted session from late blocking-request materialization", async () => {
@@ -2294,6 +2483,13 @@ describe("sync plan lifecycle on message.part.delta", () => {
       time: Date.now(),
       viewed: false,
     })
+    useNotificationStore.getState().append({
+      type: "error",
+      directory: DIRECTORY,
+      session: SESSION_ID,
+      time: Date.now() + 1,
+      viewed: false,
+    })
 
     applySyncEventForTest(DIRECTORY, sessionStatusEvent({ type: "busy" } as SessionStatus), childStores, routingIndexFor())
     await flushAsync()
@@ -2305,6 +2501,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     })
     expect(useSessionUIStore.getState().sessionPlanAvailable.get(SESSION_ID)).toBe(true)
     expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(true)
+    expect(useNotificationStore.getState().sessionHasError(SESSION_ID)).toBe(true)
   })
 
   test("preserves proposed plan indicator when a stale busy status arrives", async () => {
@@ -2564,5 +2761,65 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     expect(useNotificationStore.getState().list).toHaveLength(1)
     expect(useNotificationStore.getState().sessionUnseenCount(SESSION_ID)).toBe(1)
+  })
+
+  test("mirrors inactive-directory session lifecycle without allocating a child store", () => {
+    const remoteDirectory = "/remote-repo"
+    const remoteSessionID = "ses_remote"
+    const childStores = new ChildStoreManager()
+    const routingIndex = {
+      sessionDirectoryById: new Map<string, string>(),
+      messageSessionById: new Map<string, string>(),
+      sessionMessageIdsById: new Map<string, Set<string>>(),
+    }
+    const created = {
+      id: remoteSessionID,
+      title: "Created through tunnel",
+      directory: remoteDirectory,
+      time: { created: 10, updated: 10 },
+    } as Session
+
+    applySyncEventForTest(remoteDirectory, {
+      type: "session.created",
+      properties: { info: created },
+    } as Event, childStores, routingIndex, DIRECTORY)
+
+    expect(childStores.getChild(remoteDirectory)).toBe(undefined)
+    expect(useGlobalSessionsStore.getState().activeSessions).toEqual([created])
+
+    applySyncEventForTest(remoteDirectory, {
+      type: "message.part.delta",
+      properties: {
+        sessionID: remoteSessionID,
+        messageID: "msg_remote",
+        partID: "prt_remote",
+        field: "text",
+        delta: "streaming",
+      },
+    } as Event, childStores, routingIndex, DIRECTORY)
+
+    expect(childStores.getChild(remoteDirectory)).toBe(undefined)
+    expect(useGlobalSessionsStore.getState().activeSessions).toEqual([created])
+
+    const archived = {
+      ...created,
+      time: { created: 10, updated: 20, archived: 20 },
+    } as Session
+    applySyncEventForTest(remoteDirectory, {
+      type: "session.updated",
+      properties: { info: archived },
+    } as Event, childStores, routingIndex, DIRECTORY)
+
+    expect(childStores.getChild(remoteDirectory)).toBe(undefined)
+    expect(useGlobalSessionsStore.getState().activeSessions).toEqual([])
+    expect(useGlobalSessionsStore.getState().archivedSessions).toEqual([archived])
+
+    applySyncEventForTest(remoteDirectory, {
+      type: "session.deleted",
+      properties: { sessionID: remoteSessionID, info: archived },
+    } as Event, childStores, routingIndex, DIRECTORY)
+
+    expect(childStores.getChild(remoteDirectory)).toBe(undefined)
+    expect(useGlobalSessionsStore.getState().archivedSessions).toEqual([])
   })
 })

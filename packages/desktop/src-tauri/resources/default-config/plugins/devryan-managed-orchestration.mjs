@@ -10,10 +10,9 @@ const ACTIONS = [
   'continue',
   'retry',
   'resume',
-  'recover_in_place',
   'abandon',
 ];
-const RESULT_ACTIONS = new Set(['continue', 'retry', 'resume', 'recover_in_place', 'abandon']);
+const RESULT_ACTIONS = new Set(['continue', 'retry', 'resume', 'abandon']);
 const BARRIER_CONTROL_TOOLS = new Set(['devryan_task', 'skill', 'todowrite', 'todoread']);
 const AGENT_OWNERSHIP_CACHE_MAX_ENTRIES = 128;
 const AGENT_OWNERSHIP_CACHE_TTL_MS = 30_000;
@@ -186,42 +185,7 @@ const resolveStartExecution = async (args, context, client) => {
   throw new Error(`Managed agent ${agentName} has no executable model`);
 };
 
-const resolveInvokingAssistantExecution = async (context, client) => {
-  if (!client?.session || typeof client.session.messages !== 'function') return null;
-  const messageID = requireText(context.messageID, 'context.messageID');
-  const response = await client.session.messages({
-    path: { id: requireText(context.sessionID, 'context.sessionID') },
-    query: { limit: AGENT_OWNERSHIP_MESSAGE_LIMIT },
-  });
-  if (response?.error) {
-    throw new Error('Failed to resolve the authoritative recovery model');
-  }
-  const records = Array.isArray(response?.data)
-    ? response.data
-    : Array.isArray(response)
-      ? response
-      : [];
-  const assistant = records.find((record) => (
-    record?.info?.role === 'assistant'
-    && record.info.id === messageID
-  ));
-  const providerId = typeof assistant?.info?.providerID === 'string'
-    ? assistant.info.providerID.trim()
-    : '';
-  const modelId = typeof assistant?.info?.modelID === 'string'
-    ? assistant.info.modelID.trim()
-    : '';
-  if (!providerId || !modelId) return null;
-  return {
-    providerId,
-    modelId,
-    variant: typeof assistant?.info?.variant === 'string' && assistant.info.variant.trim()
-      ? assistant.info.variant.trim()
-      : null,
-  };
-};
-
-const executeAction = async (args, context, client, options = {}) => {
+const executeAction = async (args, context, client) => {
   const action = requireText(args.action, 'action');
   if (!ACTIONS.includes(action)) throw new Error(`Unsupported managed task action: ${action}`);
 
@@ -280,28 +244,15 @@ const executeAction = async (args, context, client, options = {}) => {
     }, { signal: context.abort });
   }
   if (RESULT_ACTIONS.has(action)) {
-    const recoveryExecution = action === 'recover_in_place'
-      ? options.recoveryExecution
-      : null;
     const normalizedOverrides = {
-      providerId: recoveryExecution?.providerId
-        ?? (typeof args.provider_id === 'string' ? args.provider_id.trim() : ''),
-      modelId: recoveryExecution?.modelId
-        ?? (typeof args.model_id === 'string' ? args.model_id.trim() : ''),
-      agent: action === 'recover_in_place'
-        ? ''
-        : (typeof args.agent === 'string' ? args.agent.trim() : ''),
-      variant: recoveryExecution
-        ? recoveryExecution.variant
-        : (typeof args.variant === 'string' && args.variant.trim() ? args.variant.trim() : null),
-      label: action === 'recover_in_place'
-        ? ''
-        : (typeof args.label === 'string' ? args.label.trim() : ''),
-      prompt: action === 'recover_in_place'
-        ? ''
-        : (typeof args.prompt === 'string' ? args.prompt.trim() : ''),
+      providerId: typeof args.provider_id === 'string' ? args.provider_id.trim() : '',
+      modelId: typeof args.model_id === 'string' ? args.model_id.trim() : '',
+      agent: typeof args.agent === 'string' ? args.agent.trim() : '',
+      variant: typeof args.variant === 'string' && args.variant.trim() ? args.variant.trim() : null,
+      label: typeof args.label === 'string' ? args.label.trim() : '',
+      prompt: typeof args.prompt === 'string' ? args.prompt.trim() : '',
     };
-    const configured = action !== 'recover_in_place' && normalizedOverrides.agent
+    const configured = normalizedOverrides.agent
       ? await resolveConfiguredAgentExecution({ agent: normalizedOverrides.agent }, context, client)
       : null;
     if (configured) {
@@ -319,7 +270,7 @@ const executeAction = async (args, context, client, options = {}) => {
       ...(normalizedOverrides.providerId ? { providerId: normalizedOverrides.providerId } : {}),
       ...(normalizedOverrides.modelId ? { modelId: normalizedOverrides.modelId } : {}),
       ...(normalizedOverrides.agent ? { agent: normalizedOverrides.agent } : {}),
-      ...(recoveryExecution || configured || args.variant !== undefined ? { variant: normalizedOverrides.variant } : {}),
+      ...(configured || args.variant !== undefined ? { variant: normalizedOverrides.variant } : {}),
       ...(normalizedOverrides.label ? { label: normalizedOverrides.label } : {}),
       ...(normalizedOverrides.prompt ? { prompt: normalizedOverrides.prompt } : {}),
     }, { signal: context.abort });
@@ -508,7 +459,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({ client } = {}) => {
       }
       throw new Error(
         `Parent work is blocked by managed task results${taskIds ? `: ${taskIds}` : ''}. `
-        + 'Use devryan_task wait for each result, then continue, retry, resume, recover_in_place, or abandon it.',
+        + 'Use devryan_task wait for each result, then continue, retry, resume, or abandon it.',
       );
     }
     if (!state.knownBarrier) return;
@@ -522,7 +473,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({ client } = {}) => {
       devryan_task: tool({
       description: 'Start or control a DevRyan-managed sub-agent. When managed delegation is already the decided next action, start it before any standalone todo read/write whose only purpose is to restate that delegation. DevRyan enforces a global maximum of three concurrent managed children, queues excess work deterministically, and preserves partial results after failure or abort. A queued, starting, or running wait result is a live polling snapshot: immediately call wait again without narrating a timeout or failure and without resuming parent work. This is distinct from provider-native task orchestration.',
       args: {
-        action: tool.schema.enum(ACTIONS).describe('Action: start, status, wait, cancel, continue, retry, resume, recover_in_place, or abandon. Use recover_in_place only for a collected provider usage-limit result; it continues the same child with the authoritative current Orchestrator model. Wait uses bounded polling slices; queued, starting, or running means call wait again immediately.'),
+        action: tool.schema.enum(ACTIONS).describe('Action: start, status, wait, cancel, continue, retry, resume, or abandon. Provider usage-limit results require the user-facing Model Recovery controls and must remain unacknowledged. Wait uses bounded polling slices; queued, starting, or running means call wait again immediately.'),
         task_id: tool.schema.string().optional().describe('Managed dvr_task_ ID. Required for every action except start.'),
         label: tool.schema.string().optional().describe('Short task label for start or retry.'),
         prompt: tool.schema.string().optional().describe('Full delegated prompt for start, or an optional retry override.'),
@@ -535,7 +486,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({ client } = {}) => {
         reason: tool.schema.string().optional().describe('Optional cancellation reason.'),
       },
       async execute(args, context) {
-        let action = requireText(args.action, 'action');
+        const action = requireText(args.action, 'action');
         const state = getSessionState(context.sessionID);
         const pendingStart = action === 'start' ? claimPendingStart(context.sessionID) : null;
         try {
@@ -548,29 +499,11 @@ export const DevRyanManagedOrchestrationPlugin = async ({ client } = {}) => {
             if (collected.status === 'completed' && action !== 'continue') {
               throw new Error(`The successful result requires continue after wait: ${taskId}`);
             }
-            if (
-              action === 'resume'
-              && collected.task?.failureKind === 'provider_usage_limit'
-              && collected.task?.childSessionId
-            ) {
-              action = 'recover_in_place';
-            }
-            if (action === 'recover_in_place') {
-              if (
-                collected.task?.failureKind !== 'provider_usage_limit'
-                || !collected.task?.childSessionId
-              ) {
-                throw new Error('recover_in_place requires a collected provider usage-limit result with a canonical child session');
-              }
+            if (collected.task?.failureKind === 'provider_usage_limit') {
+              throw new Error('Provider usage-limit recovery requires the user-facing Model Recovery controls; leave this result unacknowledged');
             }
           }
-          const recoveryExecution = action === 'recover_in_place'
-            ? await resolveInvokingAssistantExecution(context, client)
-            : null;
-          if (action === 'recover_in_place' && !recoveryExecution) {
-            throw new Error('DevRyan could not resolve the authoritative current Orchestrator model for recovery');
-          }
-          const result = await executeAction({ ...args, action }, context, client, { recoveryExecution });
+          const result = await executeAction({ ...args, action }, context, client);
           if (action === 'start' && context.agent !== 'builder') state.knownBarrier = true;
           if (action === 'wait') {
             const taskId = requireText(args.task_id, 'task_id');

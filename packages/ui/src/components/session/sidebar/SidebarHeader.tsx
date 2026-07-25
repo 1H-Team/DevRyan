@@ -54,9 +54,9 @@ export function SidebarHeader(props: Props): React.ReactNode {
   const reserveExternalChromeOnly = reserveExternalDesktopChromeRow && !showTopRow;
   let rootSpacingClass = 'px-2.5 py-1';
   if (showSidebarToggle) {
-    rootSpacingClass = avoidWindowControlsOverlay ? 'pl-[5.5rem] pr-3 pb-2' : 'pl-3 pr-3 pb-2';
+    rootSpacingClass = avoidWindowControlsOverlay ? 'pl-[5.5rem] pr-3 pb-[11px]' : 'pl-3 pr-3 pb-[11px]';
   } else if (reserveExternalChromeOnly) {
-    rootSpacingClass = 'px-2.5 pb-1 pt-[var(--oc-header-height,56px)]';
+    rootSpacingClass = 'px-2.5 pb-[7px] pt-[var(--oc-header-height,56px)]';
   }
 
   const actionsRow = (

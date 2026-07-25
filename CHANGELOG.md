@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.11] - 2026-07-20
+
+- Sessions: add mobile swipe actions for pinning and archiving, and stabilize sidebar indicator and row layout.
+- Context usage: show every related subagent session and use title-cased section headings in the token details window.
+- Orchestration: require manual model recovery for provider usage, session, quota, and rate-limit failures, while preserving canonical child sessions and explicit retry-in-place selections across web and VS Code.
+- Reliability: keep managed tasks active through transient runtime port transitions and retry restart reconciliation under the original lease and deadline.
+- Sessions: align managed-task, plan, and sidebar lifecycle indicators so user-recoverable failures remain visible and settled plans clear consistently.
+- OpenCode: update the bundled SDK dependency and managed runtime target to 1.18.4 across web, UI, VS Code, and the workspace lockfile.
+
 ## [1.0.10] - 2026-07-15
 
 - Sessions: harden deletion cleanup, reconnect recovery, sidebar hydration, optimistic reconciliation, and queued-message delivery across web and VS Code runtimes.

@@ -7,6 +7,14 @@ type MessageWithPlanModeMetadata = Message & {
 };
 
 export const PLAN_MODE_INSTRUCTION_PREFIX = 'User has requested to enter plan mode';
+export const PLAN_IMPLEMENTATION_REQUEST_PREFIX = '[openchamber-plan-action:v1] ';
+
+export type PlanImplementationRequest = {
+  action: 'implement';
+  sourceSessionId: string;
+  sourceMessageId: string;
+  planIndex: number;
+};
 
 const PLAN_MODE_SECTION_HEADINGS = new Set([
   'context',
@@ -78,6 +86,56 @@ const getPartText = (part: Part): string => {
   return [rawText, contentText, valueText].reduce((best, candidate) => (
     candidate.length > best.length ? candidate : best
   ), '');
+};
+
+export const buildPlanImplementationRequestMarker = ({
+  sourceSessionId,
+  sourceMessageId,
+  planIndex,
+}: Omit<PlanImplementationRequest, 'action'>): string => {
+  return `${PLAN_IMPLEMENTATION_REQUEST_PREFIX}${JSON.stringify({
+    action: 'implement',
+    sourceSessionId,
+    sourceMessageId,
+    planIndex,
+  })}`;
+};
+
+export const parsePlanImplementationRequestPart = (
+  part: Part | undefined,
+): PlanImplementationRequest | null => {
+  if (!part || part.type !== 'text') return null;
+  const textPart = part as TextLikePart;
+  if (textPart.synthetic !== true) return null;
+
+  const text = getPartText(part).trim();
+  if (!text.startsWith(PLAN_IMPLEMENTATION_REQUEST_PREFIX)) return null;
+
+  try {
+    const parsed = JSON.parse(text.slice(PLAN_IMPLEMENTATION_REQUEST_PREFIX.length)) as {
+      action?: unknown;
+      sourceSessionId?: unknown;
+      sourceMessageId?: unknown;
+      planIndex?: unknown;
+    };
+    if (parsed.action !== 'implement') return null;
+    if (typeof parsed.sourceSessionId !== 'string' || parsed.sourceSessionId.trim().length === 0) {
+      return null;
+    }
+    if (typeof parsed.sourceMessageId !== 'string' || parsed.sourceMessageId.trim().length === 0) {
+      return null;
+    }
+    if (!Number.isSafeInteger(parsed.planIndex) || (parsed.planIndex as number) < 0) return null;
+
+    return {
+      action: 'implement',
+      sourceSessionId: parsed.sourceSessionId,
+      sourceMessageId: parsed.sourceMessageId,
+      planIndex: parsed.planIndex as number,
+    };
+  } catch {
+    return null;
+  }
 };
 
 export const getPlanBlockId = (assistantMessageId: string, planIndex: number): string => {

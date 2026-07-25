@@ -45,10 +45,10 @@ import { clearSyncRefs, getSessionUIStoreIfInitialized, setSyncRefs } from "./sy
 import { stripMessageDiffSnapshots, stripSessionDiffSnapshots } from "./sanitize"
 import { syncDebug } from "./debug"
 import {
-  ACTIVE_SESSION_RECOVERY_COOLDOWN_MS,
   ACTIVE_SESSION_STATUS_STALE_MS,
   captureSessionStatusBaseline,
   filterUnchangedSessionStatusCandidates,
+  getActiveSessionRecoveryCooldownMs,
   getReconnectCandidateSessionIds,
   mergeRecoveredSessionStatuses,
   shouldRecoverStaleActiveSession,
@@ -74,6 +74,7 @@ import { useManagedOrchestrationStore } from "@/stores/useManagedOrchestrationSt
 import { useMessageQueueStore } from "@/stores/messageQueueStore"
 import { useContextStore } from "@/stores/contextStore"
 import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
+import { applyGlobalSessionLifecycleEvent } from "@/stores/useGlobalSessionsStore"
 import {
   postRendererTurnTimingMark,
   responsivenessPerfCount,
@@ -104,6 +105,7 @@ import {
   setSessionMaterializerChildStores,
 } from "./session-materializer"
 import { detectPlanCompletedCandidate } from "./plan-completion-detection"
+import { detectPlanImplementationRequestCandidate } from "./plan-implementation-detection"
 import { detectPlanProposedCandidate } from "./plan-proposed-detection"
 import { persistSessionPlanRevision } from "@/lib/plans/sessionPlanPersistence"
 import { resolveProjectForSessionDirectory } from "@/lib/projectResolution"
@@ -128,6 +130,10 @@ import {
   type SessionChildrenHookStatus,
 } from "./session-children"
 import { clearSessionPrefetch, clearSessionPrefetchDirectory } from "./session-prefetch-cache"
+import {
+  clearSessionMessagePagination,
+  clearSessionMessagePaginationDirectory,
+} from "./message-pagination-store"
 import { removePersistedSessionInput } from "./session-draft-storage"
 import {
   clearDirectoryMaterializations,
@@ -985,6 +991,8 @@ const externallyViewedSessions = new Map<string, number>()
 const lastStatusEventAtBySessionKey = new Map<string, number>()
 const lastOutputEventAtBySessionKey = new Map<string, number>()
 const lastRecoveryAtBySessionKey = new Map<string, number>()
+const lastRecoveredActivityAtBySessionKey = new Map<string, number>()
+const recoveryFailureCountBySessionKey = new Map<string, number>()
 const EXTERNAL_VIEW_TTL_MS = 15_000
 
 const viewedSessionKey = (directory: string, sessionId: string) => `${directory}\n${sessionId}`
@@ -1005,6 +1013,8 @@ function markStatusEventObserved(directory: string, sessionId: string, timestamp
   const key = statusTrackingKey(directory, sessionId)
   rememberBoundedTimestamp(lastStatusEventAtBySessionKey, key, timestamp)
   lastRecoveryAtBySessionKey.delete(key)
+  lastRecoveredActivityAtBySessionKey.delete(key)
+  recoveryFailureCountBySessionKey.delete(key)
 }
 
 function markOutputEventObserved(directory: string, sessionId: string | null | undefined, timestamp = Date.now()) {
@@ -1012,6 +1022,8 @@ function markOutputEventObserved(directory: string, sessionId: string | null | u
   const key = statusTrackingKey(directory, sessionId)
   rememberBoundedTimestamp(lastOutputEventAtBySessionKey, key, timestamp)
   lastRecoveryAtBySessionKey.delete(key)
+  lastRecoveredActivityAtBySessionKey.delete(key)
+  recoveryFailureCountBySessionKey.delete(key)
 }
 
 function pruneExternallyViewedSessions(now = Date.now()) {
@@ -1077,6 +1089,7 @@ const retireDeletedSessionSyncOwnership = (
   releaseSessionActionSession(directory, sessionID)
   sessionChildrenFetches.delete(getSessionChildrenFetchKey(directory, sessionID))
   clearSessionPrefetch(directory, [sessionID])
+  clearSessionMessagePagination(directory, [sessionID])
 
   const messageIDs = new Set(routingIndex.sessionMessageIdsById.get(sessionID) ?? [])
   for (const message of state.message[sessionID] ?? EMPTY_MESSAGES) {
@@ -1092,6 +1105,8 @@ const retireDeletedSessionSyncOwnership = (
   lastStatusEventAtBySessionKey.delete(trackingKey)
   lastOutputEventAtBySessionKey.delete(trackingKey)
   lastRecoveryAtBySessionKey.delete(trackingKey)
+  lastRecoveredActivityAtBySessionKey.delete(trackingKey)
+  recoveryFailureCountBySessionKey.delete(trackingKey)
   clearAbortGuard(sessionID)
   clearCommittedRevertResendsForSessions([sessionID])
 
@@ -1108,6 +1123,7 @@ const releaseDirectoryOwnedSyncState = (
   releaseEventPipelineDirectory: (directory: string) => void,
 ) => {
   clearSessionPrefetchDirectory(directory)
+  clearSessionMessagePaginationDirectory(directory)
   releaseSessionMaterializerDirectory(directory)
   releaseSessionActionDirectory(directory)
   clearSessionChildrenForDirectory(sessionChildrenFetches, directory)
@@ -1125,6 +1141,8 @@ const releaseDirectoryOwnedSyncState = (
   clearDirectoryPrefixedEntries(lastStatusEventAtBySessionKey, directory)
   clearDirectoryPrefixedEntries(lastOutputEventAtBySessionKey, directory)
   clearDirectoryPrefixedEntries(lastRecoveryAtBySessionKey, directory)
+  clearDirectoryPrefixedEntries(lastRecoveredActivityAtBySessionKey, directory)
+  clearDirectoryPrefixedEntries(recoveryFailureCountBySessionKey, directory)
 
   const releasedSessionIDs = releaseDirectoryRoutingIndex(routingIndex, directory, snapshot)
   for (const sessionID of [
@@ -1195,7 +1213,7 @@ async function detectAndMarkPlanLifecycle(
 ): Promise<void> {
   const { useSessionUIStore } = await import("./session-ui-store")
   if (!isCurrent()) return
-  const sessionUI = useSessionUIStore.getState()
+  let sessionUI = useSessionUIStore.getState()
   let state = store.getState()
 
   if (shouldSettleTerminalSessionStatus({ sessionID, state })) {
@@ -1212,7 +1230,22 @@ async function detectAndMarkPlanLifecycle(
     state = store.getState()
   }
 
-  const planEntry = sessionUI.sessionPlanIndicator.get(sessionID)
+  let planEntry = sessionUI.sessionPlanIndicator.get(sessionID)
+
+  const implementationCandidate = detectPlanImplementationRequestCandidate({
+    sessionID,
+    state,
+  })
+  if (implementationCandidate) {
+    sessionUI.markPlanImplementationRequested(implementationCandidate.implementationKey)
+    sessionUI.markPlanImplementing(
+      implementationCandidate.sourceSessionId,
+      implementationCandidate.sourceMessageId,
+      implementationCandidate.implementationMessageId,
+    )
+    sessionUI = useSessionUIStore.getState()
+    planEntry = sessionUI.sessionPlanIndicator.get(sessionID)
+  }
 
   const completedCandidate = detectPlanCompletedCandidate({
     sessionID,
@@ -1305,6 +1338,7 @@ async function detectAndMarkPlanLifecycle(
     state,
     isRecordedPlanModeUserMessage: (messageId) => sessionUI.isUserMessagePlanMode(messageId),
     implementedPlanRequests: sessionUI.implementedPlanRequests,
+    externallyHandedOffPlanRequests: sessionUI.externallyHandedOffPlanRequests,
   })
   if (!candidate) return
 
@@ -1317,6 +1351,7 @@ async function detectAndMarkPlanLifecycle(
       sourceMessageId: candidate.sourceMessageId,
       planEntry: latestSessionUI.sessionPlanIndicator.get(sessionID),
       implementedPlanRequests: latestSessionUI.implementedPlanRequests,
+      externallyHandedOffPlanRequests: latestSessionUI.externallyHandedOffPlanRequests,
     })) {
       return current
     }
@@ -1367,6 +1402,8 @@ export function setActiveSession(directory: string, sessionId: string) {
     _activeSessionTrackingKey = nextKey
     rememberBoundedTimestamp(lastStatusEventAtBySessionKey, nextKey, Date.now())
     lastRecoveryAtBySessionKey.delete(nextKey)
+    lastRecoveredActivityAtBySessionKey.delete(nextKey)
+    recoveryFailureCountBySessionKey.delete(nextKey)
   } else if (!nextKey) {
     _activeSessionTrackingKey = ""
   }
@@ -1402,7 +1439,30 @@ function isWorkingSessionStatusEvent(payload: Event): boolean {
   return statusType === "busy" || statusType === "retry"
 }
 
-function clearCompletionForAcceptedWorkingStatus(
+function collectLoadedSessionScopeIds(state: State, rootSessionID: string): string[] {
+  const childrenByParentID = new Map<string, string[]>()
+  for (const session of state.session) {
+    const parentID = (session as Session & { parentID?: string | null }).parentID
+    if (!parentID) continue
+    const children = childrenByParentID.get(parentID) ?? []
+    children.push(session.id)
+    childrenByParentID.set(parentID, children)
+  }
+
+  const sessionIDs: string[] = []
+  const pending = [rootSessionID]
+  const seen = new Set<string>()
+  while (pending.length > 0) {
+    const sessionID = pending.pop()
+    if (!sessionID || seen.has(sessionID)) continue
+    seen.add(sessionID)
+    sessionIDs.push(sessionID)
+    pending.push(...(childrenByParentID.get(sessionID) ?? []))
+  }
+  return sessionIDs
+}
+
+function settleTerminalAttentionForAcceptedWorkingStatus(
   payload: Event,
   store: StoreApi<DirectoryStore>,
 ): void {
@@ -1414,9 +1474,12 @@ function clearCompletionForAcceptedWorkingStatus(
   const statusType = store.getState().session_status?.[sessionID]?.type
   if (statusType !== "busy" && statusType !== "retry") return
 
+  const sessionIDs = collectLoadedSessionScopeIds(store.getState(), sessionID)
+  useNotificationStore.getState().markSessionsViewed(sessionIDs)
+
   void import("./session-ui-store")
     .then(({ useSessionUIStore }) => {
-      useSessionUIStore.getState().clearSessionTurnCompletion(sessionID)
+      useSessionUIStore.getState().clearReadCompletionIndicators(sessionIDs)
     })
     .catch(() => undefined)
 }
@@ -2220,6 +2283,18 @@ function handleEvent(
 ) {
   const directory = resolveDirectoryFromRoutingIndex(routingIndex, rawDirectory, payload, childStores)
 
+  if (payload.type === "session.created" || payload.type === "session.updated") {
+    const session = (payload.properties as { info?: Session }).info
+    if (session) {
+      applyGlobalSessionLifecycleEvent({ type: "upsert", session })
+    }
+  } else if (payload.type === "session.deleted") {
+    const sessionID = getSessionIdFromPayload(payload)
+    if (sessionID) {
+      applyGlobalSessionLifecycleEvent({ type: "delete", sessionID })
+    }
+  }
+
   // Global events
   if (directory === "global" || !directory) {
     const recent = isRecentBoot()
@@ -2591,7 +2666,7 @@ function handleEvent(
     }
   }
 
-  clearCompletionForAcceptedWorkingStatus(payload, store)
+  settleTerminalAttentionForAcceptedWorkingStatus(payload, store)
 
   replayPendingPartDeltasForEvent(resolvedDirectory, payload, store)
 
@@ -2883,6 +2958,7 @@ export function SyncProvider(props: {
   // Abort controller owned by the pipeline closure. Cleanup aborts + flushes.
   useEffect(() => {
     const reconnectMaterializing = new Set<string>()
+    const activeSessionRecoveriesInFlight = new Set<string>()
     const triggerReconnectMaterialization = (directory: string) => {
       const store = childStores.children.get(directory)
       if (!store) return
@@ -2909,6 +2985,12 @@ export function SyncProvider(props: {
       const status = state.session_status?.[sessionID]
       const key = statusTrackingKey(directory, sessionID)
       const now = Date.now()
+      const observedEventTimes = [
+        lastStatusEventAtBySessionKey.get(key),
+        lastOutputEventAtBySessionKey.get(key),
+      ].filter((value): value is number => typeof value === "number")
+      const activityAt = observedEventTimes.length > 0 ? Math.max(...observedEventTimes) : now
+      const failureCount = recoveryFailureCountBySessionKey.get(key) ?? 0
 
       if (!shouldRecoverStaleActiveSession({
         status,
@@ -2916,17 +2998,35 @@ export function SyncProvider(props: {
         lastStatusEventAt: lastStatusEventAtBySessionKey.get(key),
         lastOutputEventAt: lastOutputEventAtBySessionKey.get(key),
         lastRecoveryAt: lastRecoveryAtBySessionKey.get(key),
+        lastRecoveredActivityAt: lastRecoveredActivityAtBySessionKey.get(key),
         staleMs: ACTIVE_SESSION_STATUS_STALE_MS,
-        cooldownMs: ACTIVE_SESSION_RECOVERY_COOLDOWN_MS,
+        cooldownMs: getActiveSessionRecoveryCooldownMs(failureCount),
       })) {
         return
       }
+      if (activeSessionRecoveriesInFlight.has(key)) return
 
+      activeSessionRecoveriesInFlight.add(key)
       rememberBoundedTimestamp(lastRecoveryAtBySessionKey, key, now)
       void resyncDirectoryAfterReconnect(directory, store, routingIndex, {
         candidateSessionIds: [sessionID],
+      }).then(() => {
+        const currentActivityAt = Math.max(
+          lastStatusEventAtBySessionKey.get(key) ?? Number.NEGATIVE_INFINITY,
+          lastOutputEventAtBySessionKey.get(key) ?? Number.NEGATIVE_INFINITY,
+        )
+        if (currentActivityAt !== activityAt) return
+        rememberBoundedTimestamp(lastRecoveredActivityAtBySessionKey, key, activityAt)
+        recoveryFailureCountBySessionKey.delete(key)
       }).catch(() => {
-        // Transient failure during targeted stale recovery; cooldown keeps retries bounded.
+        const currentActivityAt = Math.max(
+          lastStatusEventAtBySessionKey.get(key) ?? Number.NEGATIVE_INFINITY,
+          lastOutputEventAtBySessionKey.get(key) ?? Number.NEGATIVE_INFINITY,
+        )
+        if (currentActivityAt !== activityAt) return
+        rememberBoundedTimestamp(recoveryFailureCountBySessionKey, key, failureCount + 1)
+      }).finally(() => {
+        activeSessionRecoveriesInFlight.delete(key)
       })
     }
     const triggerActiveDirectoryRecovery = () => {

@@ -653,7 +653,10 @@ interface ConfigStore {
         agentName: string | undefined,
         options?: { agents?: Agent[]; preserveCurrentModel?: boolean; recordSessionSelection?: boolean },
     ) => void;
-    applyDefaultsToCurrent: (options?: { preserveCurrentModel?: boolean }) => void;
+    applyDefaultsToCurrent: (options?: {
+        preserveCurrentModel?: boolean;
+        preserveRehydratedDraftModel?: boolean;
+    }) => void;
     setSelectedProvider: (providerId: string) => void;
     setSettingsDefaultModel: (model: string | undefined) => void;
     setSettingsDefaultVariant: (variant: string | undefined) => void;
@@ -1365,6 +1368,7 @@ export const useConfigStore = create<ConfigStore>()(
                     const hasExplicitDraftModel = !!currentDraftId && hasExplicitDraftModelIntent(draftSendConfig);
                     const isReapplyingCurrentAgent = !state.currentAgentName || state.currentAgentName === target.name;
                     const hasRehydratedDraftVariant = !sessionState.currentSessionId
+                        && options?.preserveRehydratedDraftModel !== false
                         && isReapplyingCurrentAgent
                         && draftSendConfig?.modelProvenance !== 'agent-default'
                         && typeof state.currentVariant === 'string'

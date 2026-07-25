@@ -62,7 +62,11 @@ const createReasoningPart = ({
 
 const renderReasoning = (
   part: Part,
-  options: { providerID?: string; responseStyleLevel?: "provider" | "actions" | "concise" | "detailed" } = {},
+  options: {
+    providerID?: string;
+    responseStyleLevel?: "provider" | "actions" | "concise" | "detailed";
+    isMobile?: boolean;
+  } = {},
 ): string => renderToStaticMarkup(
   <ReasoningPart part={part} messageId="message-1" {...options} />,
 )
@@ -148,6 +152,40 @@ describe("ReasoningPart", () => {
     expect(completedHtml).toContain("First observation.\n\nSecond observation.")
     expectNoDisclosurePresentation(activeHtml)
     expectNoDisclosurePresentation(completedHtml)
+  })
+
+  test("keeps active and completed reasoning on the same outer spacing contract", () => {
+    const activeHtml = renderReasoning(createReasoningPart({
+      id: "reasoning-spacing-active",
+      text: "Checking the current output rhythm.",
+      active: true,
+    }))
+    const completedHtml = renderReasoning(createReasoningPart({
+      id: "reasoning-spacing-completed",
+      text: "Checking the current output rhythm.",
+    }))
+
+    expect(activeHtml).toContain('class="relative pr-2 py-1.5"')
+    expect(completedHtml).toContain('class="relative pr-2 py-1.5"')
+    expect(activeHtml).not.toContain('class="my-1')
+    expect(completedHtml).not.toContain('class="my-1')
+  })
+
+  test("uses compact spacing for both active and completed mobile reasoning", () => {
+    const activeHtml = renderReasoning(createReasoningPart({
+      id: "reasoning-mobile-active",
+      text: "Checking the current output rhythm.",
+      active: true,
+    }), { isMobile: true })
+    const completedHtml = renderReasoning(createReasoningPart({
+      id: "reasoning-mobile-completed",
+      text: "Checking the current output rhythm.",
+    }), { isMobile: true })
+
+    expect(activeHtml).toContain('class="relative pr-2 py-1"')
+    expect(completedHtml).toContain('class="relative pr-2 py-1"')
+    expect(activeHtml).not.toContain('py-1.5')
+    expect(completedHtml).not.toContain('py-1.5')
   })
 
   test("renders an accessible status while active reasoning is still empty", () => {

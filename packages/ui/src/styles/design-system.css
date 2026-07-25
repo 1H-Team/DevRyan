@@ -28,12 +28,14 @@
     /* Default Light Theme */
     /* Fixed to the Default Light theme primary color (devryan-default-light.json). */
     --subagent-icon-color: #0072C3;
-    /* Fixed built-in subagent glyph colors; intentionally independent of theme tokens. */
-    --agent-icon-designer-color: #DC2626;
-    --agent-icon-fixer-color: #92400E;
-    --agent-icon-explorer-color: #2563EB;
-    --agent-icon-librarian-color: #0EA5E9;
-    --agent-icon-oracle-color: #9CA3AF;
+    /* Fixed built-in agent glyph colors; intentionally independent of theme tokens. */
+    --agent-icon-builder-color: #9AA1AD;
+    --agent-icon-council-color: #92400E;
+    --agent-icon-designer-color: #9333EA;
+    --agent-icon-fixer-color: #DC2626;
+    --agent-icon-explorer-color: #16A34A;
+    --agent-icon-librarian-color: #2563EB;
+    --agent-icon-oracle-color: #0EA5E9;
     --background: oklch(0.97 0.02 85); /* Warm sand background */
     --foreground: oklch(0.25 0.02 40); /* Dark warm text */
     --card: oklch(0.99 0.01 90); /* Bright sand card */

@@ -21,11 +21,13 @@ export function detectPlanProposedCandidate({
   state,
   isRecordedPlanModeUserMessage,
   implementedPlanRequests,
+  externallyHandedOffPlanRequests,
 }: {
   sessionID: string
   state: PlanProposedDetectionState
   isRecordedPlanModeUserMessage: (messageId: string) => boolean
   implementedPlanRequests: ReadonlySet<string>
+  externallyHandedOffPlanRequests?: ReadonlySet<string>
 }): PlanProposedCandidate | null {
   const pendingQuestions = state.question[sessionID]
   if (pendingQuestions && pendingQuestions.length > 0) return null
@@ -58,7 +60,10 @@ export function detectPlanProposedCandidate({
     sessionID,
     getPlanBlockId(assistantMessage.id, 0),
   )
-  if (implementedPlanRequests.has(implementationKey)) return null
+  if (
+    implementedPlanRequests.has(implementationKey)
+    || externallyHandedOffPlanRequests?.has(implementationKey)
+  ) return null
 
   return {
     sessionID,

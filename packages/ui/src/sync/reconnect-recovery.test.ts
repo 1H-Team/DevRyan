@@ -4,6 +4,7 @@ import type { Session } from "@opencode-ai/sdk/v2"
 import {
   captureSessionStatusBaseline,
   filterUnchangedSessionStatusCandidates,
+  getActiveSessionRecoveryCooldownMs,
   getReconnectCandidateSessionIds,
   mergeAuthoritativeSessionStatuses,
   mergeRecoveredSessionStatuses,
@@ -245,5 +246,32 @@ describe("getReconnectCandidateSessionIds", () => {
       lastOutputEventAt: 10_000,
       lastRecoveryAt: undefined,
     })).toBe(true)
+  })
+
+  test("recovers each unchanged activity epoch only once after a successful probe", () => {
+    expect(shouldRecoverStaleActiveSession({
+      status: { type: "busy" } as SessionStatus,
+      now: 120_000,
+      lastStatusEventAt: 10_000,
+      lastOutputEventAt: 20_000,
+      lastRecoveryAt: 30_000,
+      lastRecoveredActivityAt: 20_000,
+    })).toBe(false)
+
+    expect(shouldRecoverStaleActiveSession({
+      status: { type: "busy" } as SessionStatus,
+      now: 120_000,
+      lastStatusEventAt: 10_000,
+      lastOutputEventAt: 40_000,
+      lastRecoveryAt: 30_000,
+      lastRecoveredActivityAt: 20_000,
+    })).toBe(true)
+  })
+
+  test("backs off failed recovery probes with a bounded cooldown", () => {
+    expect(getActiveSessionRecoveryCooldownMs(0)).toBe(15_000)
+    expect(getActiveSessionRecoveryCooldownMs(1)).toBe(30_000)
+    expect(getActiveSessionRecoveryCooldownMs(2)).toBe(60_000)
+    expect(getActiveSessionRecoveryCooldownMs(20)).toBe(60_000)
   })
 })

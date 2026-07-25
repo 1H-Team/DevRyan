@@ -9,6 +9,17 @@ export { unwrapSdkResult } from "./sdk-result"
 
 export const ACTIVE_SESSION_STATUS_STALE_MS = 20_000
 export const ACTIVE_SESSION_RECOVERY_COOLDOWN_MS = 15_000
+export const ACTIVE_SESSION_RECOVERY_MAX_COOLDOWN_MS = 60_000
+
+export function getActiveSessionRecoveryCooldownMs(failureCount = 0): number {
+  const normalizedFailureCount = Number.isFinite(failureCount)
+    ? Math.max(0, Math.floor(failureCount))
+    : 0
+  return Math.min(
+    ACTIVE_SESSION_RECOVERY_COOLDOWN_MS * (2 ** normalizedFailureCount),
+    ACTIVE_SESSION_RECOVERY_MAX_COOLDOWN_MS,
+  )
+}
 
 type ReconnectMaterializationState = {
   session: Session[]
@@ -208,6 +219,7 @@ export function shouldRecoverStaleActiveSession(input: {
   lastStatusEventAt?: number
   lastOutputEventAt?: number
   lastRecoveryAt?: number
+  lastRecoveredActivityAt?: number
   staleMs?: number
   cooldownMs?: number
 }): boolean {
@@ -228,6 +240,13 @@ export function shouldRecoverStaleActiveSession(input: {
     : now
 
   if (now - lastObservedEventAt < staleMs) {
+    return false
+  }
+
+  if (
+    typeof input.lastRecoveredActivityAt === "number"
+    && input.lastRecoveredActivityAt >= lastObservedEventAt
+  ) {
     return false
   }
 

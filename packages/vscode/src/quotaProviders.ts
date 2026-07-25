@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { spawn } from 'node:child_process';
 import {
   type CursorDashboardCredential,
   type CursorOAuthCredential,
@@ -57,6 +58,7 @@ type QuotaFetch = (
   status: number;
   json: () => Promise<unknown>;
   text?: () => Promise<string>;
+  headers?: { get: (name: string) => string | null };
 }>;
 
 type FetchQuotaOptions = {
@@ -67,6 +69,10 @@ type FetchQuotaOptions = {
   writeManagedCredential?: (providerId: string, credential: ManagedQuotaCredential) => unknown;
   readTokenFile?: (filePath: string) => string;
   readLegacyOllamaCookie?: () => string | null;
+  claudeProxyBaseUrl?: string | null;
+  claudeProxyConfigured?: boolean;
+  isExternalRuntime?: boolean;
+  forceRefresh?: boolean;
 };
 
 type OpenAiUsagePayload = {
@@ -164,7 +170,9 @@ export type ProviderResult = {
   configured: boolean;
   usage: ProviderUsage | null;
   fetchedAt: number;
+  usageUpdatedAt?: number;
   error?: string;
+  errorCode?: string;
 };
 
 const OPENCODE_CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode');
@@ -441,6 +449,8 @@ const buildResult = (data: {
   configured: boolean;
   usage?: ProviderUsage | null;
   error?: string;
+  errorCode?: string;
+  usageUpdatedAt?: number;
 }): ProviderResult => ({
   providerId: data.providerId,
   providerName: data.providerName,
@@ -448,6 +458,10 @@ const buildResult = (data: {
   configured: data.configured,
   usage: data.usage ?? null,
   ...(data.error ? { error: data.error } : {}),
+  ...(data.errorCode ? { errorCode: data.errorCode } : {}),
+  ...(typeof data.usageUpdatedAt === 'number' && Number.isFinite(data.usageUpdatedAt)
+    ? { usageUpdatedAt: data.usageUpdatedAt }
+    : {}),
   fetchedAt: Date.now(),
 });
 
@@ -472,12 +486,21 @@ const durationToSeconds = (duration?: number, unit?: string) => {
   return null;
 };
 
-export const listConfiguredQuotaProviders = () => {
+export const listConfiguredQuotaProviders = ({
+  claudeProxyConfigured = false,
+  isExternalRuntime = false,
+}: {
+  claudeProxyConfigured?: boolean;
+  isExternalRuntime?: boolean;
+} = {}) => {
   const auth = readAuthFile();
   const configured = new Set<string>();
 
   const anthropicAuth = normalizeAuthEntry(getAuthEntry(auth, ['anthropic', 'claude']));
-  if (anthropicAuth && ((anthropicAuth as Record<string, unknown>).access || (anthropicAuth as Record<string, unknown>).token)) {
+  if (
+    (anthropicAuth && ((anthropicAuth as Record<string, unknown>).access || (anthropicAuth as Record<string, unknown>).token))
+    || (claudeProxyConfigured && !isExternalRuntime)
+  ) {
     configured.add('claude');
   }
 
@@ -1579,92 +1602,386 @@ export const fetchAntigravityQuota = async (): Promise<ProviderResult> => fetchG
   'Antigravity',
 );
 
-export const fetchClaudeQuota = async (): Promise<ProviderResult> => {
-  const auth = readAuthFile();
+const CLAUDE_USAGE_TIMEOUT_MS = 15_000;
+const CLAUDE_PROXY_TIMEOUT_MS = 5_000;
+const CLAUDE_USAGE_OUTPUT_LIMIT = 64 * 1024;
+const CLAUDE_STATUS_PATH = path.join(os.homedir(), '.cache', 'openchamber', 'claude-code-status.json');
+const CLAUDE_FIVE_HOUR_SECONDS = 5 * 60 * 60;
+const CLAUDE_SEVEN_DAY_SECONDS = 7 * 24 * 60 * 60;
+
+export const resolveSafeClaudeQuotaUrl = (baseUrl: string | null | undefined): string | null => {
+  if (!baseUrl) return null;
+  try {
+    const parsed = new URL(baseUrl);
+    if (
+      parsed.protocol !== 'http:'
+      || !['127.0.0.1', 'localhost'].includes(parsed.hostname)
+      || !parsed.port
+      || parsed.username
+      || parsed.password
+    ) {
+      return null;
+    }
+    return new URL('/v1/usage/quota', parsed.origin).toString();
+  } catch {
+    return null;
+  }
+};
+
+export const resolveClaudeProxyBaseUrlFromProviders = (payload: unknown): string | null => {
+  const root = asObject(payload);
+  const providers = Array.isArray(root?.providers) ? root.providers : [];
+  const anthropic = providers.map(asObject).find((provider) => provider?.id === 'anthropic') ?? null;
+  if (!anthropic) return null;
+  const options = asObject(anthropic.options);
+  const baseUrl = options?.baseURL ?? anthropic.baseURL;
+  return typeof baseUrl === 'string' && resolveSafeClaudeQuotaUrl(baseUrl) ? baseUrl : null;
+};
+
+const mapClaudeBucketLabel = (type: string) => {
+  if (type === 'five_hour') return { label: '5h', windowSeconds: CLAUDE_FIVE_HOUR_SECONDS };
+  if (type === 'seven_day') return { label: '7d', windowSeconds: CLAUDE_SEVEN_DAY_SECONDS };
+  if (type.startsWith('seven_day_')) {
+    const model = type.slice('seven_day_'.length).replace(/_/g, '-');
+    return model ? { label: `7d-${model}`, windowSeconds: CLAUDE_SEVEN_DAY_SECONDS } : null;
+  }
+  return null;
+};
+
+const transformClaudeProxyPayload = (payload: unknown): {
+  ok: boolean;
+  usage?: ProviderUsage;
+  usageUpdatedAt?: number;
+  error?: string;
+} => {
+  const root = asObject(payload);
+  if (!root || !Array.isArray(root.buckets)) {
+    return { ok: false, error: 'Claude quota proxy returned a malformed response.' };
+  }
+  const windows: Record<string, UsageWindow> = {};
+  let usageUpdatedAt = toTimestamp(root.asOf);
+  for (const rawBucket of root.buckets) {
+    const bucket = asObject(rawBucket);
+    if (!bucket || typeof bucket.type !== 'string') continue;
+    const mapping = mapClaudeBucketLabel(bucket.type);
+    const utilization = toNumber(bucket.utilization);
+    if (!mapping || utilization === null || utilization < 0) continue;
+    const observedAt = toTimestamp(bucket.observedAt);
+    if (observedAt !== null) {
+      usageUpdatedAt = usageUpdatedAt === null ? observedAt : Math.max(usageUpdatedAt, observedAt);
+    }
+    windows[mapping.label] = toUsageWindow({
+      usedPercent: utilization * 100,
+      windowSeconds: mapping.windowSeconds,
+      resetAt: toTimestamp(bucket.resetsAt),
+    });
+  }
+  if (!windows['5h'] && !windows['7d']) {
+    return { ok: false, error: 'Claude quota proxy did not return subscription limits.' };
+  }
+  return { ok: true, usage: { windows }, usageUpdatedAt: usageUpdatedAt ?? Date.now() };
+};
+
+const parseClaudeResetAt = (value: string, now: number): number | null => {
+  const normalized = value.replace(/\s+\([^)]*\)\s*$/, '').replace(/\bat\b/i, '').trim();
+  const withYear = /\b\d{4}\b/.test(normalized)
+    ? normalized
+    : `${normalized} ${new Date(now).getFullYear()}`;
+  const timestamp = new Date(withYear).getTime();
+  if (!Number.isFinite(timestamp)) return null;
+  if (timestamp < now - 24 * 60 * 60 * 1000 && !/\b\d{4}\b/.test(normalized)) {
+    return new Date(`${normalized} ${new Date(now).getFullYear() + 1}`).getTime();
+  }
+  return timestamp;
+};
+
+export const parseClaudeCodeUsageOutput = (raw: string, now = Date.now()): {
+  ok: boolean;
+  usage?: ProviderUsage;
+  usageUpdatedAt?: number;
+  error?: string;
+} => {
+  try {
+    const payload = JSON.parse(raw) as Record<string, unknown>;
+    if (payload.is_error === true || typeof payload.result !== 'string') {
+      return { ok: false, error: 'Claude Code returned unexpected usage output.' };
+    }
+    const windows: Record<string, UsageWindow> = {};
+    const session = payload.result.match(/Current session:\s*([\d.]+)% used\s*·\s*resets\s+([^\r\n]+)/i);
+    const week = payload.result.match(/Current week \(all models\):\s*([\d.]+)% used\s*·\s*resets\s+([^\r\n]+)/i);
+    if (session) {
+      windows['5h'] = toUsageWindow({
+        usedPercent: Number(session[1]),
+        windowSeconds: CLAUDE_FIVE_HOUR_SECONDS,
+        resetAt: parseClaudeResetAt(session[2], now),
+      });
+    }
+    if (week) {
+      windows['7d'] = toUsageWindow({
+        usedPercent: Number(week[1]),
+        windowSeconds: CLAUDE_SEVEN_DAY_SECONDS,
+        resetAt: parseClaudeResetAt(week[2], now),
+      });
+    }
+    const modelPattern = /Current week \((?!all models\))([^):]+)\):\s*([\d.]+)% used\s*·\s*resets\s+([^\r\n]+)/gi;
+    for (const match of payload.result.matchAll(modelPattern)) {
+      const model = match[1].trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      if (!model) continue;
+      windows[`7d-${model}`] = toUsageWindow({
+        usedPercent: Number(match[2]),
+        windowSeconds: CLAUDE_SEVEN_DAY_SECONDS,
+        resetAt: parseClaudeResetAt(match[3], now),
+      });
+    }
+    if (!windows['5h'] && !windows['7d']) {
+      return { ok: false, error: 'Claude Code usage output did not contain subscription limits.' };
+    }
+    return { ok: true, usage: { windows }, usageUpdatedAt: now };
+  } catch {
+    return { ok: false, error: 'Claude Code returned malformed usage output.' };
+  }
+};
+
+const fetchClaudeCodeUsage = (): Promise<ReturnType<typeof parseClaudeCodeUsageOutput>> => new Promise((resolve) => {
+  let stdout = '';
+  let stderr = '';
+  let settled = false;
+  const child = spawn(process.env.CLAUDE_CODE_CLI || 'claude', [
+    '-p',
+    '/usage',
+    '--output-format',
+    'json',
+    '--no-session-persistence',
+    '--max-turns',
+    '1',
+  ], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: process.env,
+  });
+  const finish = (result: ReturnType<typeof parseClaudeCodeUsageOutput>) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    resolve(result);
+  };
+  const timer = setTimeout(() => {
+    child.kill('SIGTERM');
+    finish({ ok: false, error: 'Timed out while reading Claude Code usage.' });
+  }, CLAUDE_USAGE_TIMEOUT_MS);
+  const append = (current: string, chunk: Buffer): string | null => {
+    const next = `${current}${String(chunk)}`;
+    return Buffer.byteLength(next, 'utf8') <= CLAUDE_USAGE_OUTPUT_LIMIT ? next : null;
+  };
+  child.stdout.on('data', (chunk: Buffer) => {
+    const next = append(stdout, chunk);
+    if (next === null) {
+      child.kill('SIGTERM');
+      finish({ ok: false, error: 'Claude Code usage output exceeded the safe response limit.' });
+      return;
+    }
+    stdout = next;
+  });
+  child.stderr.on('data', (chunk: Buffer) => {
+    const next = append(stderr, chunk);
+    if (next === null) {
+      child.kill('SIGTERM');
+      finish({ ok: false, error: 'Claude Code usage error output exceeded the safe response limit.' });
+      return;
+    }
+    stderr = next;
+  });
+  child.on('error', (error: NodeJS.ErrnoException) => {
+    finish({ ok: false, error: error.code === 'ENOENT' ? 'Claude Code was not found on PATH.' : error.message });
+  });
+  child.on('close', (code) => {
+    finish(code === 0
+      ? parseClaudeCodeUsageOutput(stdout)
+      : { ok: false, error: stderr.trim() || stdout.trim() || `Claude Code exited with code ${code}.` });
+  });
+});
+
+const readDegradedClaudeStatus = (): {
+  usage: ProviderUsage | null;
+  usageUpdatedAt?: number;
+} => {
+  try {
+    const stats = fs.statSync(CLAUDE_STATUS_PATH);
+    if (!stats.isFile() || stats.size > CLAUDE_USAGE_OUTPUT_LIMIT) return { usage: null };
+    const payload = JSON.parse(fs.readFileSync(CLAUDE_STATUS_PATH, 'utf8')) as Record<string, unknown>;
+    const rateLimits = asObject(payload.rate_limits);
+    const fiveHour = asObject(rateLimits?.five_hour);
+    const sevenDay = asObject(rateLimits?.seven_day);
+    const windows: Record<string, UsageWindow> = {};
+    const fiveHourPercent = toNumber(fiveHour?.used_percentage);
+    const sevenDayPercent = toNumber(sevenDay?.used_percentage);
+    if (fiveHourPercent !== null) {
+      windows['5h'] = toUsageWindow({
+        usedPercent: fiveHourPercent,
+        windowSeconds: CLAUDE_FIVE_HOUR_SECONDS,
+        resetAt: toTimestamp(fiveHour?.resets_at),
+      });
+    }
+    if (sevenDayPercent !== null) {
+      windows['7d'] = toUsageWindow({
+        usedPercent: sevenDayPercent,
+        windowSeconds: CLAUDE_SEVEN_DAY_SECONDS,
+        resetAt: toTimestamp(sevenDay?.resets_at),
+      });
+    }
+    return Object.keys(windows).length
+      ? { usage: { windows }, usageUpdatedAt: stats.mtimeMs }
+      : { usage: null };
+  } catch {
+    return { usage: null };
+  }
+};
+
+export const fetchClaudeQuota = async (options: FetchQuotaOptions = {}): Promise<ProviderResult> => {
+  const auth = (options.readAuth ?? readAuthFile)();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['anthropic', 'claude'])) as Record<string, unknown> | null;
   const accessToken = (entry?.access as string | undefined) ?? (entry?.token as string | undefined);
+  const fetchImpl = options.fetchImpl ?? (fetch as QuotaFetch);
 
-  if (!accessToken) {
+  if (accessToken) {
+    try {
+      const response = await fetchImpl('https://api.anthropic.com/api/oauth/usage', {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'anthropic-beta': 'oauth-2025-04-20',
+        },
+      });
+      if (!response.ok) {
+        return buildResult({
+          providerId: 'claude',
+          providerName: 'Anthropic',
+          ok: false,
+          configured: true,
+          error: `API error: ${response.status}`,
+        });
+      }
+      const payload = await response.json() as Record<string, unknown>;
+      const windows: Record<string, UsageWindow> = {};
+      for (const [key, value] of Object.entries(payload)) {
+        if (key !== 'five_hour' && key !== 'seven_day' && !key.startsWith('seven_day_')) continue;
+        const usageWindow = asObject(value);
+        if (!usageWindow) continue;
+        const label = key === 'five_hour'
+          ? '5h'
+          : key === 'seven_day'
+            ? '7d'
+            : `7d-${key.slice('seven_day_'.length).replace(/_/g, '-')}`;
+        windows[label] = toUsageWindow({
+          usedPercent: toNumber(usageWindow.utilization),
+          windowSeconds: key === 'five_hour' ? CLAUDE_FIVE_HOUR_SECONDS : CLAUDE_SEVEN_DAY_SECONDS,
+          resetAt: toTimestamp(usageWindow.resets_at),
+        });
+      }
+      return buildResult({
+        providerId: 'claude',
+        providerName: 'Anthropic',
+        ok: true,
+        configured: true,
+        usage: { windows },
+        usageUpdatedAt: Date.now(),
+      });
+    } catch (error) {
+      return buildResult({
+        providerId: 'claude',
+        providerName: 'Anthropic',
+        ok: false,
+        configured: true,
+        error: error instanceof Error ? error.message : 'Request failed',
+      });
+    }
+  }
+
+  if (options.isExternalRuntime || !options.claudeProxyConfigured) {
     return buildResult({
       providerId: 'claude',
-      providerName: 'Claude',
+      providerName: 'Anthropic',
       ok: false,
       configured: false,
       error: 'Not configured',
     });
   }
 
+  let proxyError = 'The active Claude quota proxy could not be resolved.';
+  const quotaUrl = resolveSafeClaudeQuotaUrl(options.claudeProxyBaseUrl);
+  if (quotaUrl) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), CLAUDE_PROXY_TIMEOUT_MS);
+    try {
+      const response = await fetchImpl(quotaUrl, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        signal: controller.signal,
+      });
+      if (response.ok) {
+        const declaredLength = Number.parseInt(response.headers?.get('content-length') ?? '0', 10);
+        if (!Number.isFinite(declaredLength) || declaredLength <= CLAUDE_USAGE_OUTPUT_LIMIT) {
+          const raw = response.text ? await response.text() : JSON.stringify(await response.json());
+          if (Buffer.byteLength(raw, 'utf8') <= CLAUDE_USAGE_OUTPUT_LIMIT) {
+            const transformed = transformClaudeProxyPayload(JSON.parse(raw) as unknown);
+            if (transformed.ok) {
+              return buildResult({
+                providerId: 'claude',
+                providerName: 'Anthropic',
+                ok: true,
+                configured: true,
+                usage: transformed.usage,
+                usageUpdatedAt: transformed.usageUpdatedAt,
+              });
+            }
+            proxyError = transformed.error ?? proxyError;
+          } else {
+            proxyError = 'Claude quota proxy response exceeded the safe response limit.';
+          }
+        } else {
+          proxyError = 'Claude quota proxy response exceeded the safe response limit.';
+        }
+      } else {
+        proxyError = `Claude quota proxy returned HTTP ${response.status}.`;
+      }
+    } catch (error) {
+      proxyError = error instanceof Error ? error.message : 'Failed to read the Claude quota proxy.';
+    } finally {
+      clearTimeout(timer);
+    }
+  } else if (options.claudeProxyBaseUrl) {
+    proxyError = 'Claude quota proxy URL is not a safe loopback HTTP address.';
+  }
+
+  let cliResult: ReturnType<typeof parseClaudeCodeUsageOutput>;
   try {
-    const response = await fetch('https://api.anthropic.com/api/oauth/usage', {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'anthropic-beta': 'oauth-2025-04-20',
-      },
-    });
-
-    if (!response.ok) {
-      return buildResult({
-        providerId: 'claude',
-        providerName: 'Claude',
-        ok: false,
-        configured: true,
-        error: `API error: ${response.status}`,
-      });
-    }
-
-    const payload = await response.json() as Record<string, unknown>;
-    const windows: Record<string, UsageWindow> = {};
-    const fiveHour = (payload as Record<string, unknown>).five_hour as Record<string, unknown> | undefined;
-    const sevenDay = (payload as Record<string, unknown>).seven_day as Record<string, unknown> | undefined;
-    const sevenDaySonnet = (payload as Record<string, unknown>).seven_day_sonnet as Record<string, unknown> | undefined;
-    const sevenDayOpus = (payload as Record<string, unknown>).seven_day_opus as Record<string, unknown> | undefined;
-
-    if (fiveHour) {
-      windows['5h'] = toUsageWindow({
-        usedPercent: toNumber(fiveHour.utilization),
-        windowSeconds: null,
-        resetAt: toTimestamp(fiveHour.resets_at),
-      });
-    }
-    if (sevenDay) {
-      windows['7d'] = toUsageWindow({
-        usedPercent: toNumber(sevenDay.utilization),
-        windowSeconds: null,
-        resetAt: toTimestamp(sevenDay.resets_at),
-      });
-    }
-    if (sevenDaySonnet) {
-      windows['7d-sonnet'] = toUsageWindow({
-        usedPercent: toNumber(sevenDaySonnet.utilization),
-        windowSeconds: null,
-        resetAt: toTimestamp(sevenDaySonnet.resets_at),
-      });
-    }
-    if (sevenDayOpus) {
-      windows['7d-opus'] = toUsageWindow({
-        usedPercent: toNumber(sevenDayOpus.utilization),
-        windowSeconds: null,
-        resetAt: toTimestamp(sevenDayOpus.resets_at),
-      });
-    }
-
+    cliResult = await fetchClaudeCodeUsage();
+  } catch (error) {
+    cliResult = {
+      ok: false,
+      error: error instanceof Error ? error.message : 'Failed to read Claude Code usage.',
+    };
+  }
+  if (cliResult.ok) {
     return buildResult({
       providerId: 'claude',
-      providerName: 'Claude',
+      providerName: 'Anthropic',
       ok: true,
       configured: true,
-      usage: { windows },
-    });
-  } catch (error) {
-    return buildResult({
-      providerId: 'claude',
-      providerName: 'Claude',
-      ok: false,
-      configured: true,
-      error: error instanceof Error ? error.message : 'Request failed',
+      usage: cliResult.usage,
+      usageUpdatedAt: cliResult.usageUpdatedAt,
     });
   }
+  const degraded = readDegradedClaudeStatus();
+  return buildResult({
+    providerId: 'claude',
+    providerName: 'Anthropic',
+    ok: false,
+    configured: true,
+    usage: degraded.usage,
+    usageUpdatedAt: degraded.usageUpdatedAt,
+    error: cliResult.error ?? proxyError,
+    errorCode: 'claude_code_usage_failed',
+  });
 };
 
 const isCopilotTokenBasedBillingPayload = (payload: Record<string, unknown>) => (
@@ -2549,7 +2866,7 @@ export const fetchNanoGptQuota = async (): Promise<ProviderResult> => {
 export const fetchQuotaForProvider = async (providerId: string, options: FetchQuotaOptions = {}): Promise<ProviderResult> => {
   switch (providerId) {
     case 'claude':
-      return fetchClaudeQuota();
+      return fetchClaudeQuota(options);
     case 'codex':
       return fetchCodexQuota(options);
     case 'opencode-go':

@@ -52,6 +52,10 @@ const savedDraftAgentVariants: Array<{
 }> = []
 const configSetAgentCalls: Array<{ agentName: string; options?: Record<string, unknown> }> = []
 const configSetProviderModelCalls: Array<{ providerId: string; modelId: string; variant?: string }> = []
+const configApplyDefaultsCalls: Array<{
+  preserveCurrentModel?: boolean
+  preserveRehydratedDraftModel?: boolean
+}> = []
 const rejectQuestionCalls: Array<{ sessionId: string; requestId: string }> = []
 let sessionAgentSelections = new Map<string, string>()
 let draftAgentSelections = new Map<string, string>()
@@ -237,7 +241,12 @@ mock.module("@/stores/useConfigStore", () => ({
       agents: [],
       providers: [],
       activateDirectory: mock(() => Promise.resolve()),
-      applyDefaultsToCurrent: mock(() => {}),
+      applyDefaultsToCurrent: mock((options?: {
+        preserveCurrentModel?: boolean
+        preserveRehydratedDraftModel?: boolean
+      }) => {
+        configApplyDefaultsCalls.push(options ?? {})
+      }),
       setAgent: mock((agentName: string, options?: Record<string, unknown>) => {
         configSetAgentCalls.push({ agentName, options })
         mockConfigState = { ...mockConfigState, currentAgentName: agentName }
@@ -503,6 +512,7 @@ const {
   buildPlanModeSyntheticInstruction,
   useSessionUIStore,
 } = await import("./session-ui-store")
+const { resolveEffectivePlanIndicatorState } = await import("./plan-indicator")
 const {
   CHAT_DRAFTS_STORAGE_KEY,
   LEGACY_NEW_INPUT_DRAFT_KEY,
@@ -591,6 +601,7 @@ describe("session-ui-store send routing", () => {
     savedDraftAgentVariants.length = 0
     configSetAgentCalls.length = 0
     configSetProviderModelCalls.length = 0
+    configApplyDefaultsCalls.length = 0
     rejectQuestionCalls.length = 0
     sessionAgentSelections = new Map()
     draftAgentSelections = new Map()
@@ -647,6 +658,7 @@ describe("session-ui-store send routing", () => {
       sessionPlanIndicator: new Map(),
       sessionCompletionIndicator: new Map(),
       implementedPlanRequests: new Set(),
+      externallyHandedOffPlanRequests: new Set(),
       planModeUserMessages: new Set(),
       planModeUserMessagesBySession: new Map(),
       abortControllers: new Map(),
@@ -709,6 +721,87 @@ describe("session-ui-store send routing", () => {
     expect(useSessionUIStore.getState().sessionPlanIndicator.has("session-a")).toBe(false)
   })
 
+  test("hides an older proposal while a newer plan-mode turn is pending", () => {
+    useSessionUIStore.getState().recordUserMessagePlanMode("session-a", "msg_0001_user", true)
+    useSessionUIStore.getState().markPlanProposed("session-a", "msg_0002_assistant")
+    useSessionUIStore.getState().recordUserMessagePlanMode("session-a", "msg_0003_user", true)
+
+    const state = useSessionUIStore.getState()
+    expect(resolveEffectivePlanIndicatorState(
+      state.sessionPlanIndicator.get("session-a"),
+      state.planModeUserMessagesBySession.get("session-a"),
+    )).toBeNull()
+
+    useSessionUIStore.getState().markPlanProposed("session-a", "msg_0004_assistant")
+    const revisedState = useSessionUIStore.getState()
+    expect(resolveEffectivePlanIndicatorState(
+      revisedState.sessionPlanIndicator.get("session-a"),
+      revisedState.planModeUserMessagesBySession.get("session-a"),
+    )).toBe("proposed")
+  })
+
+  test("normal-mode follow-ups do not hide an actionable proposal", () => {
+    useSessionUIStore.getState().recordUserMessagePlanMode("session-a", "msg_0001_user", true)
+    useSessionUIStore.getState().markPlanProposed("session-a", "msg_0002_assistant")
+    useSessionUIStore.getState().recordUserMessagePlanMode("session-a", "msg_0003_user", false)
+
+    const state = useSessionUIStore.getState()
+    expect(resolveEffectivePlanIndicatorState(
+      state.sessionPlanIndicator.get("session-a"),
+      state.planModeUserMessagesBySession.get("session-a"),
+    )).toBe("proposed")
+  })
+
+  test("failed plan-mode sends restore the previous proposal indicator", async () => {
+    const sourceMessageId = "message-0"
+    useSessionUIStore.getState().markPlanProposed("session-a", sourceMessageId)
+    deferNextSendMessage = true
+
+    const sendPromise = useSessionUIStore.getState().sendMessageToSession(
+      "session-a",
+      "revise the plan",
+      "provider-a",
+      "model-a",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "normal",
+      true,
+    )
+    for (let attempt = 0; attempt < 10 && !deferredSendMessage; attempt += 1) {
+      await Promise.resolve()
+    }
+    expect(deferredSendMessage).not.toBeNull()
+
+    const pendingState = useSessionUIStore.getState()
+    const pendingPlanMessageId = pendingState.planModeUserMessagesBySession.get("session-a")
+    expect(pendingPlanMessageId).toBeTruthy()
+    if (!pendingPlanMessageId) throw new Error("expected pending plan-mode message ownership")
+    expect(pendingPlanMessageId > sourceMessageId).toBe(true)
+    expect(resolveEffectivePlanIndicatorState(
+      pendingState.sessionPlanIndicator.get("session-a"),
+      pendingState.planModeUserMessagesBySession.get("session-a"),
+    )).toBeNull()
+
+    deferredSendMessage?.reject(new Error("send failed"))
+    let sendError: unknown
+    try {
+      await sendPromise
+    } catch (error) {
+      sendError = error
+    }
+    expect(sendError).toBeInstanceOf(Error)
+    expect((sendError as Error).message).toBe("send failed")
+
+    const rolledBackState = useSessionUIStore.getState()
+    expect(resolveEffectivePlanIndicatorState(
+      rolledBackState.sessionPlanIndicator.get("session-a"),
+      rolledBackState.planModeUserMessagesBySession.get("session-a"),
+    )).toBe("proposed")
+  })
+
   test("opening a new draft clears the active session tracker", () => {
     useSessionUIStore.getState().setCurrentSession("session-a", "/repo/a")
     activeSessionCalls.length = 0
@@ -717,6 +810,54 @@ describe("session-ui-store send routing", () => {
 
     expect(useSessionUIStore.getState().currentSessionId).toBe(null)
     expect(activeSessionCalls).toEqual([{ directory: "", sessionId: "" }])
+  })
+
+  test("opening a fresh draft applies defaults without preserving the previous session model", async () => {
+    useSessionUIStore.getState().setCurrentSession("session-a", "/repo/a")
+
+    useSessionUIStore.getState().openNewSessionDraft({ directoryOverride: "/repo" })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(configApplyDefaultsCalls).toEqual([{
+      preserveCurrentModel: false,
+      preserveRehydratedDraftModel: false,
+    }])
+  })
+
+  test("opening an explicitly configured draft preserves its selected model", async () => {
+    useSessionUIStore.getState().openNewSessionDraft({
+      directoryOverride: "/repo",
+      sendConfig: {
+        providerID: "openai",
+        modelID: "gpt-5.6",
+        variant: "ultra",
+        modelProvenance: "explicit",
+      },
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(configApplyDefaultsCalls).toEqual([{
+      preserveCurrentModel: true,
+      preserveRehydratedDraftModel: false,
+    }])
+  })
+
+  test("late fresh-draft activation cannot overwrite a newer session", async () => {
+    const activation = createDeferredSend()
+    mockConfigState = {
+      activateDirectory: mock(() => activation.promise.then(() => undefined)),
+    }
+
+    useSessionUIStore.getState().openNewSessionDraft({ directoryOverride: "/repo" })
+    useSessionUIStore.getState().setCurrentSession("session-b", "/repo/b")
+    activation.resolve(undefined)
+    await activation.promise
+    await Promise.resolve()
+
+    expect(useSessionUIStore.getState().currentSessionId).toBe("session-b")
+    expect(configApplyDefaultsCalls).toEqual([])
   })
 
   test("opening a startup draft preserves reload-compatible config-only drafts", () => {
@@ -946,6 +1087,48 @@ describe("session-ui-store send routing", () => {
       state: "implementing",
       sourceMessageId: "msg_2_assistant",
     })
+  })
+
+  test("clears only the matching handed-off plan indicator and persists released ownership", () => {
+    const storage = getSafeStorage()
+    useSessionUIStore.setState({
+      sessionPlanAvailable: new Map([["session-a", true]]),
+      sessionPlanIndicator: new Map([["session-a", { state: "implementing", sourceMessageId: "msg_2_assistant" }]]),
+      planModeUserMessages: new Set(["msg_1_user"]),
+      planModeUserMessagesBySession: new Map([["session-a", "msg_1_user"]]),
+    })
+
+    useSessionUIStore.getState().clearHandedOffPlanIndicator("session-a", "msg_2_assistant")
+
+    const state = useSessionUIStore.getState()
+    expect(state.sessionPlanIndicator.has("session-a")).toBe(false)
+    expect(state.planModeUserMessagesBySession.has("session-a")).toBe(false)
+    expect(state.sessionPlanAvailable.get("session-a")).toBe(true)
+    expect(storage.getItem(PLAN_MESSAGE_STATE_STORAGE_KEY)).toContain('"planModeUserMessagesBySession":[]')
+  })
+
+  test("does not clear a newer plan revision during a stale mobile handoff", () => {
+    const planIndicator = new Map([["session-a", { state: "proposed" as const, sourceMessageId: "msg_4_assistant" }]])
+    const ownership = new Map([["session-a", "msg_3_user"]])
+    useSessionUIStore.setState({ sessionPlanIndicator: planIndicator, planModeUserMessagesBySession: ownership })
+
+    useSessionUIStore.getState().clearHandedOffPlanIndicator("session-a", "msg_2_assistant")
+
+    const state = useSessionUIStore.getState()
+    expect(state.sessionPlanIndicator).toBe(planIndicator)
+    expect(state.planModeUserMessagesBySession).toBe(ownership)
+  })
+
+  test("does not clear a completed plan indicator during a handoff", () => {
+    const planIndicator = new Map([["session-a", { state: "completed" as const, sourceMessageId: "msg_2_assistant" }]])
+    const ownership = new Map([["session-a", "msg_1_user"]])
+    useSessionUIStore.setState({ sessionPlanIndicator: planIndicator, planModeUserMessagesBySession: ownership })
+
+    useSessionUIStore.getState().clearHandedOffPlanIndicator("session-a", "msg_2_assistant")
+
+    const state = useSessionUIStore.getState()
+    expect(state.sessionPlanIndicator).toBe(planIndicator)
+    expect(state.planModeUserMessagesBySession).toBe(ownership)
   })
 
   test("clears normal completion indicators when a session is read", () => {
@@ -1964,6 +2147,17 @@ describe("session-ui-store send routing", () => {
       state: "proposed",
       sourceMessageId: "msg_2_assistant",
     })
+  })
+
+  test("tracks mobile handoffs separately from same-session implementations", () => {
+    const implementationKey = "session-a:msg_2_assistant:plan:0"
+
+    useSessionUIStore.getState().markPlanImplementationHandedOff(implementationKey)
+
+    const state = useSessionUIStore.getState()
+    expect(state.externallyHandedOffPlanRequests.has(implementationKey)).toBe(true)
+    expect(state.implementedPlanRequests.has(implementationKey)).toBe(false)
+    expect(state.isPlanSourceImplemented("session-a", "msg_2_assistant")).toBe(true)
   })
 
   test("starter assistant context is sent once with the first real user prompt", async () => {

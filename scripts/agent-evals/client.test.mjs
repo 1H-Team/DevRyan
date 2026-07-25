@@ -683,7 +683,7 @@ describe('DevRyan loopback evaluation client', () => {
     assert.equal(requests.every((item) => item.search.includes('directory=') || item.pathname.includes('/diagnostics/') || item.pathname.includes('/orchestration/')), true);
   });
 
-  test('applies the shared Copilot prompt-tool override only to Copilot requests', async () => {
+  test('applies shared provider and Orchestrator prompt-tool overrides', async () => {
     const bodies = [];
     const { baseUrl } = await startServer(async (request, response) => {
       bodies.push(await readJson(request));
@@ -704,12 +704,37 @@ describe('DevRyan loopback evaluation client', () => {
       agent: 'builder',
       variant: null,
     }, 'private prompt', undefined);
+    await client.promptSession('ses_orchestrator', '/tmp/fixture', {
+      providerId: 'openai',
+      modelId: 'gpt-5.4',
+      agent: 'orchestrator',
+      variant: null,
+    }, 'private prompt', undefined);
+    await client.promptSession('ses_copilot_orchestrator', '/tmp/fixture', {
+      providerId: 'github-copilot',
+      modelId: 'gpt-4.1',
+      agent: 'orchestrator',
+      variant: null,
+    }, 'private prompt', undefined);
 
     assert.deepEqual(bodies[0].tools, {
       'resend_*': false,
       'mcp__resend__*': false,
     });
     assert.equal(Object.hasOwn(bodies[1], 'tools'), false);
+    assert.deepEqual(bodies[2].tools, {
+      task: false,
+      invalid: false,
+      'mcp__*': false,
+      'resend_*': false,
+    });
+    assert.deepEqual(bodies[3].tools, {
+      'resend_*': false,
+      'mcp__resend__*': false,
+      task: false,
+      invalid: false,
+      'mcp__*': false,
+    });
   });
 
   test('fetches parent and recursive child messages once with cycle protection', async () => {

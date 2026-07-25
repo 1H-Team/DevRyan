@@ -23,10 +23,15 @@ import { WorkingPlaceholder } from "./message/parts/WorkingPlaceholder";
 import { isVSCodeRuntime } from "@/lib/desktop";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/lib/i18n";
-import { buildTodoSummary, getCurrentTodoOrdinal, parsePlanTodoContent } from "./lib/todoSummary";
+import { buildPlanPhaseTodoProjection, buildTodoSummary } from "./lib/todoSummary";
 import { useSessionPlanFileStore } from '@/stores/useSessionPlanFileStore';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
-import { getStatusRowPlanActionState, hasPlanTaskTrackingContext } from './statusRowPlanAction';
+import {
+  getPlanAutoRevealTarget,
+  getStatusRowPlanActionState,
+  hasPlanTaskTrackingContext,
+  shouldAutoRevealPlanInMainTab,
+} from './statusRowPlanAction';
 import { preloadPlanView } from '@/components/views/planViewLoader';
 
 const STATUS_ROW_CONTAINER_STYLE = { containerType: "inline-size" as const, containerName: "status-row" };
@@ -73,9 +78,10 @@ const priorityLabelKey: Record<TodoPriority, string> = {
 
 interface TodoItemRowProps {
   todo: TodoItem;
+  displayContent?: string;
 }
 
-const TodoItemRow: React.FC<TodoItemRowProps> = ({ todo }) => {
+const TodoItemRow: React.FC<TodoItemRowProps> = ({ todo, displayContent }) => {
   const { t } = useI18n();
   const config = statusConfig[todo.status] || statusConfig.pending;
   const statusKey = statusLabelKey[todo.status] ?? statusLabelKey.pending;
@@ -106,7 +112,7 @@ const TodoItemRow: React.FC<TodoItemRowProps> = ({ todo }) => {
           config.textClassName
         )}
       >
-        {todo.content}
+        {displayContent ?? todo.content}
       </span>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -171,9 +177,13 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   const isSessionPlanAvailable = useSessionUIStore((state) => (
     currentSessionId ? state.sessionPlanAvailable.get(currentSessionId) === true : false
   ));
+  const sessionPlanIndicator = useSessionUIStore((state) => (
+    currentSessionId ? state.sessionPlanIndicator.get(currentSessionId) : undefined
+  ));
   const sessionPlanRecord = useSessionPlanFileStore((state) => (
     currentSessionId ? state.recordsBySession[currentSessionId] : undefined
   ));
+  const claimPlanAutoReveal = useSessionPlanFileStore((state) => state.claimAutoReveal);
   const todosRecord = useDirectorySync((state) => state.todo);
   const persistedSessionTodos = useTodosPersistStore(
     React.useCallback(
@@ -193,6 +203,7 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   const effectiveDirectory = useEffectiveDirectory() ?? '';
   const isVSCode = isVSCodeRuntime();
   const isCompact = isMobile || isVSCode;
+  const shouldAutoRevealPlan = shouldAutoRevealPlanInMainTab({ isMobile, isVSCode });
   const planActionState = getStatusRowPlanActionState({
     showTodos,
     isPlanAvailable: isSessionPlanAvailable,
@@ -209,6 +220,37 @@ export const StatusRow: React.FC<StatusRowProps> = ({
     void preloadPlanView().catch(() => undefined);
   }, [planActionState.enabled]);
 
+  React.useEffect(() => {
+    if (!shouldAutoRevealPlan) return;
+
+    const isPlanSourceImplemented = currentSessionId && sessionPlanRecord
+      ? useSessionUIStore.getState().isPlanSourceImplemented(
+          currentSessionId,
+          sessionPlanRecord.sourceMessageId,
+        )
+      : false;
+    const target = getPlanAutoRevealTarget({
+      sessionId: currentSessionId,
+      isPlanAvailable: isSessionPlanAvailable,
+      planIndicator: sessionPlanIndicator,
+      isPlanSourceImplemented,
+      record: sessionPlanRecord,
+    });
+    if (!target) return;
+    if (!claimPlanAutoReveal(target.sessionId, target.sourceMessageId)) return;
+
+    void preloadPlanView().catch(() => undefined);
+    setActiveMainTab('plan');
+  }, [
+    claimPlanAutoReveal,
+    currentSessionId,
+    isSessionPlanAvailable,
+    sessionPlanIndicator,
+    sessionPlanRecord,
+    setActiveMainTab,
+    shouldAutoRevealPlan,
+  ]);
+
   const todoSummary = React.useMemo(() => buildTodoSummary(todos), [todos]);
   const visibleTodos = todoSummary.visibleTodos;
 
@@ -221,17 +263,16 @@ export const StatusRow: React.FC<StatusRowProps> = ({
     );
   }, [visibleTodos]);
 
-  // Calculate progress
-  const progress = React.useMemo(() => ({
-    completed: todoSummary.completed,
-    total: todoSummary.total,
-  }), [todoSummary.completed, todoSummary.total]);
+  const planPhaseProjection = React.useMemo(() => (
+    hasPlanTaskContext ? buildPlanPhaseTodoProjection(visibleTodos) : null
+  ), [hasPlanTaskContext, visibleTodos]);
 
-  const planTodo = React.useMemo(() => {
-    if (!hasPlanTaskContext) return null;
-    const progressTodo = activeTodo ?? visibleTodos[visibleTodos.length - 1];
-    return parsePlanTodoContent(progressTodo?.content);
-  }, [activeTodo, hasPlanTaskContext, visibleTodos]);
+  // Calculate progress. Saved-plan progress is scoped to the active phase;
+  // malformed or ordinary todo lists retain the existing whole-list summary.
+  const progress = React.useMemo(() => ({
+    completed: planPhaseProjection?.completed ?? todoSummary.completed,
+    total: planPhaseProjection?.total ?? todoSummary.total,
+  }), [planPhaseProjection, todoSummary.completed, todoSummary.total]);
 
   const hasTodoContent = showTodos && progress.total > 0;
   const hasAssistantContent = showAssistantStatus && (
@@ -246,11 +287,11 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   const hasContent = hasAssistantContent || hasTodoContent || hasLeftAccessory || planActionState.visible;
   // Compact surfaces still show the active task: the counter is short, and the
   // task text truncates before it can crowd out progress or the chevron.
-  const todoTitle = planTodo
-    ? t('chat.statusRow.planTaskTitle', { phase: planTodo.phase })
+  const todoTitle = planPhaseProjection
+    ? t('chat.statusRow.planTaskTitle', { phase: planPhaseProjection.phase })
     : activeTodo?.content ?? t('chat.statusRow.tasksTitle');
-  const displayedProgress = planTodo
-    ? getCurrentTodoOrdinal(visibleTodos, activeTodo)
+  const displayedProgress = planPhaseProjection
+    ? planPhaseProjection.current
     : progress.completed;
 
   // Close popover when clicking outside
@@ -318,8 +359,8 @@ export const StatusRow: React.FC<StatusRowProps> = ({
       return;
     }
     if (!effectiveDirectory) return;
-    toggleContextPlan(effectiveDirectory, sessionPlanRecord.path);
-  }, [effectiveDirectory, isMobile, planActionState.enabled, sessionPlanRecord?.path, setActiveMainTab, toggleContextPlan]);
+    toggleContextPlan(effectiveDirectory, sessionPlanRecord.path, currentSessionId);
+  }, [currentSessionId, effectiveDirectory, isMobile, planActionState.enabled, sessionPlanRecord?.path, setActiveMainTab, toggleContextPlan]);
 
   const viewPlanButton = planActionState.visible ? (
     <Tooltip>
@@ -399,17 +440,25 @@ export const StatusRow: React.FC<StatusRowProps> = ({
             >
               {/* Header */}
               <div className="flex items-center gap-1.5 px-2 py-1 typography-ui-label font-medium text-muted-foreground">
-                <span>{t('chat.statusRow.tasksTitle')}</span>
+                <span>{planPhaseProjection ? todoTitle : t('chat.statusRow.tasksTitle')}</span>
                 <span className="typography-meta tabular-nums">
-                  {progress.completed}/{progress.total}
+                  {displayedProgress}/{progress.total}
                 </span>
               </div>
 
               {/* Todo list */}
               <div className="px-1 max-h-[200px] overflow-y-auto">
-                {visibleTodos.map((todo, index) => (
-                  <TodoItemRow key={todo.id ?? `todo-${index}`} todo={todo} />
-                ))}
+                {planPhaseProjection
+                  ? planPhaseProjection.items.map(({ todo, title }, index) => (
+                    <TodoItemRow
+                      key={todo.id ?? `plan-todo-${index}`}
+                      todo={todo}
+                      displayContent={title}
+                    />
+                  ))
+                  : visibleTodos.map((todo, index) => (
+                    <TodoItemRow key={todo.id ?? `todo-${index}`} todo={todo} />
+                  ))}
               </div>
             </div>
           )}

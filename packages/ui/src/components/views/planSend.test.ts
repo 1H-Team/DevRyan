@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { buildPlanSendPromptVariables, getPlanSendPlanMode } from './planSend';
+import {
+  buildPlanImplementationSyntheticParts,
+  buildPlanSendPromptVariables,
+  getPlanSendPlanMode,
+} from './planSend';
+import { parsePlanImplementationRequestPart } from '@/lib/messages/actionablePlan';
+import type { Part } from '@opencode-ai/sdk/v2/client';
 
 describe('plan send helpers', () => {
   test('implement sends the authoritative plan path without requiring an inline body', () => {
@@ -47,5 +53,33 @@ describe('plan send helpers', () => {
     });
 
     expect(getPlanSendPlanMode('improve')).toBe(undefined);
+  });
+});
+
+describe('buildPlanImplementationSyntheticParts', () => {
+  test('keeps the authoritative marker separate from editable implementation instructions', () => {
+    const parts = buildPlanImplementationSyntheticParts({
+      sourceSessionId: 'session-a',
+      sourceMessageId: 'assistant-a',
+      instructions: 'Read the saved plan and implement it.',
+    });
+
+    expect(parts).toHaveLength(2);
+    expect(parsePlanImplementationRequestPart({
+      id: 'part-a',
+      sessionID: 'session-a',
+      messageID: 'implementation-a',
+      type: 'text',
+      ...parts[0],
+    } as Part)).toEqual({
+      action: 'implement',
+      sourceSessionId: 'session-a',
+      sourceMessageId: 'assistant-a',
+      planIndex: 0,
+    });
+    expect(parts[1]).toEqual({
+      synthetic: true,
+      text: 'Read the saved plan and implement it.',
+    });
   });
 });

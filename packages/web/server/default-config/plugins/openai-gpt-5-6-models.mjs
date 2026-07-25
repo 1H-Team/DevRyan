@@ -23,12 +23,58 @@ const LUNA_MODEL_IDS = new Set([
 const LUNA_API_MODEL_ID = "gpt-5.6-luna";
 const CODEX_ORIGINATOR = "codex_cli_rs";
 const CODEX_USER_AGENT = "codex_cli_rs/0.0.0 (OpenCode)";
+const OPENCODE_COMPACTION_BUFFER = 20_000;
+const OPENCODE_OUTPUT_TOKEN_MAX = 32_000;
+
+const CODEX_272K_LIMITS = Object.freeze({
+  context: 258_400,
+  autoCompact: 244_800,
+});
+const CODEX_128K_LIMITS = Object.freeze({
+  context: 121_600,
+  autoCompact: 115_200,
+});
+
+// Pinned from Codex's model catalog. Fast rows are separate OpenCode catalog
+// entries, but use the same Codex context policy as their base model.
+const CODEX_LIMITS_BY_MODEL_ID = new Map([
+  ["gpt-5.3-codex-spark", CODEX_128K_LIMITS],
+  ["gpt-5.3-codex-spark-fast", CODEX_128K_LIMITS],
+  ["gpt-5.4", CODEX_272K_LIMITS],
+  ["gpt-5.4-fast", CODEX_272K_LIMITS],
+  ["gpt-5.4-mini", CODEX_272K_LIMITS],
+  ["gpt-5.4-mini-fast", CODEX_272K_LIMITS],
+  ["gpt-5.5", CODEX_272K_LIMITS],
+  ["gpt-5.5-fast", CODEX_272K_LIMITS],
+  ["gpt-5.6-sol", CODEX_272K_LIMITS],
+  ["gpt-5.6-sol-fast", CODEX_272K_LIMITS],
+  ["gpt-5.6-terra", CODEX_272K_LIMITS],
+  ["gpt-5.6-terra-fast", CODEX_272K_LIMITS],
+  ["gpt-5.6-luna", CODEX_272K_LIMITS],
+  ["gpt-5.6-luna-fast", CODEX_272K_LIMITS],
+]);
 
 const isPlainObject = (value) => (
   value !== null
   && typeof value === "object"
   && !Array.isArray(value)
 );
+
+const isNonNegativeInteger = (value) => (
+  Number.isInteger(value) && value >= 0
+);
+
+const resolveOpenCodeCompactionReserved = (model, configuredReserved) => {
+  if (isNonNegativeInteger(configuredReserved)) return configuredReserved;
+
+  const output = isPlainObject(model?.limit)
+    && typeof model.limit.output === "number"
+    && Number.isFinite(model.limit.output)
+    && model.limit.output > 0
+    ? Math.min(model.limit.output, OPENCODE_OUTPUT_TOKEN_MAX)
+    : OPENCODE_OUTPUT_TOKEN_MAX;
+  return Math.min(OPENCODE_COMPACTION_BUFFER, output);
+};
 
 const isInvalidOAuthGpt56Model = (modelId) => (
   (modelId === "gpt-5.6" || modelId.startsWith("gpt-5.6-"))
@@ -104,6 +150,30 @@ const removeNoneReasoningVariants = (models) => {
   return normalized;
 };
 
+const normalizeCodexContextLimits = (models, configuredReserved) => {
+  if (!isPlainObject(models)) return {};
+
+  let normalized = models;
+  for (const [modelId, model] of Object.entries(models)) {
+    const codexLimits = CODEX_LIMITS_BY_MODEL_ID.get(modelId);
+    if (!codexLimits || !isPlainObject(model)) continue;
+
+    const reserved = resolveOpenCodeCompactionReserved(model, configuredReserved);
+    if (normalized === models) normalized = { ...models };
+    normalized[modelId] = {
+      ...model,
+      limit: {
+        ...(isPlainObject(model.limit) ? model.limit : {}),
+        context: codexLimits.context,
+        // OpenCode compacts at limit.input - compaction.reserved. This is an
+        // internal threshold shim; the public usable capacity is limit.context.
+        input: codexLimits.autoCompact + reserved,
+      },
+    };
+  }
+  return normalized;
+};
+
 const enforceDetailedOpenAIReasoningSummary = (input, output) => {
   const model = input?.model;
   if (model?.providerID !== PROVIDER_ID || !isPlainObject(output)) return;
@@ -150,16 +220,24 @@ export const normalizeOpenAIOAuthGpt56Models = (models) => {
 
 export const OpenAIGpt56ModelsPlugin = async () => {
   let openAIOAuthActive = false;
+  let configuredCompactionReserved;
 
   return {
+    async config(config) {
+      const reserved = config?.compaction?.reserved;
+      configuredCompactionReserved = isNonNegativeInteger(reserved) ? reserved : undefined;
+    },
     provider: {
       id: PROVIDER_ID,
       async models(provider, ctx) {
         const models = removeNoneReasoningVariants(provider?.models ?? {});
         openAIOAuthActive = ctx?.auth?.type === "oauth";
-        const normalizedModels = openAIOAuthActive
+        const oauthModels = openAIOAuthActive
           ? normalizeOpenAIOAuthGpt56Models(models)
           : models;
+        const normalizedModels = openAIOAuthActive
+          ? normalizeCodexContextLimits(oauthModels, configuredCompactionReserved)
+          : oauthModels;
         return normalizeReasoningSummaries(normalizedModels);
       },
     },

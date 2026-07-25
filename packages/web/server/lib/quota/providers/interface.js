@@ -32,6 +32,7 @@
  * @property {ProviderUsage|null} usage - Usage data if successful
  * @property {string|null} [error] - Error message if not successful
  * @property {number} fetchedAt - Unix timestamp when the result was fetched
+ * @property {number} [usageUpdatedAt] - Unix timestamp when the displayed usage was measured
  */
 
 /**

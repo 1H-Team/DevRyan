@@ -5,6 +5,7 @@ import {
     formatAgentLabel,
     formatEffortLabel,
     formatVisibleEffortLabel,
+    getModelThinkingLevelLabel,
     getCursorAcpVariantDisplayLabel,
     getCursorAcpVariantState,
     getCycledPrimaryAgentName,
@@ -90,6 +91,40 @@ describe('formatVisibleEffortLabel', () => {
         expect(formatEffortLabel('ultra')).toBe('Ultra');
         expect(formatEffortLabel('1.5', { providerId: 'openai' })).toBe('1.5');
         expect(formatEffortLabel(undefined, { providerId: 'openai' })).toBe('Default');
+    });
+});
+
+describe('getModelThinkingLevelLabel', () => {
+    test('uses the supported generic default and preserves the OpenAI Light label', () => {
+        const provider = {
+            id: 'openai',
+            models: [{
+                id: 'gpt-5',
+                name: 'GPT-5',
+                variants: { low: {}, medium: {}, high: {} },
+            }],
+        };
+
+        expect(getModelThinkingLevelLabel(provider, 'gpt-5', undefined)).toBe('Medium');
+        expect(getModelThinkingLevelLabel(provider, 'gpt-5', 'low')).toBe('Light');
+    });
+
+    test('normalizes Cursor thinking variants and returns no label for models without thinking levels', () => {
+        const cursorProvider = {
+            id: 'cursor-acp',
+            models: [{
+                id: 'opus',
+                name: 'Opus',
+                variants: { low: {}, medium: {}, 'thinking-low': {}, 'thinking-medium': {} },
+            }],
+        };
+        const plainProvider = {
+            id: 'anthropic',
+            models: [{ id: 'haiku', name: 'Haiku' }],
+        };
+
+        expect(getModelThinkingLevelLabel(cursorProvider, 'opus', 'medium-thinking')).toBe('Medium');
+        expect(getModelThinkingLevelLabel(plainProvider, 'haiku', undefined)).toBeNull();
     });
 });
 

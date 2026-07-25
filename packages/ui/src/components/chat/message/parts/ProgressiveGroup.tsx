@@ -567,11 +567,12 @@ const aggregateRows = (parts: TurnActivityPart[]): AggregatedRow[] => {
 /**
  * Inline reasoning text block — rendered as dimmed italic markdown.
  */
-const InlineReasoningBlock = React.memo(({ activity, onContentChange, providerID, responseStyleLevel }: {
+const InlineReasoningBlock = React.memo(({ activity, onContentChange, providerID, responseStyleLevel, isMobile }: {
     activity: TurnActivityPart;
     onContentChange?: (reason?: ContentChangeReason) => void;
     providerID?: string | null;
     responseStyleLevel?: ResponseStyleLevel;
+    isMobile: boolean;
 }) => {
     return (
         <ReasoningPart
@@ -580,6 +581,7 @@ const InlineReasoningBlock = React.memo(({ activity, onContentChange, providerID
             providerID={activity.providerID ?? providerID}
             responseStyleLevel={responseStyleLevel}
             onContentChange={onContentChange}
+            isMobile={isMobile}
         />
     );
 });
@@ -678,6 +680,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                             onContentChange={onContentChange}
                             providerID={providerID}
                             responseStyleLevel={responseStyleLevel}
+                            isMobile={isMobile}
                         />
                     </>
                 );
@@ -765,14 +768,14 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     if (!showHeader) {
         return (
             <FadeInOnReveal>
-                <div className="mt-1 mb-2 space-y-1.5">{renderedRows}</div>
+                <div className="space-y-1.5">{renderedRows}</div>
             </FadeInOnReveal>
         );
     }
 
     return (
         <FadeInOnReveal>
-            <div className="mt-1 mb-2">
+            <div>
                 <button
                     type="button"
                     className="group/tool flex w-full flex-wrap items-center gap-x-2 gap-y-0.5 pr-2 pl-px py-1.5 rounded-xl text-left"

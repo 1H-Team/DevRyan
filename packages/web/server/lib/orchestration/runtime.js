@@ -8,13 +8,20 @@ import { createWebManagedOpenCodeExecutor } from './open-code-executor.js';
 import { createManagedOrchestrationPrivateHost } from './private-host.js';
 
 const DEFAULT_TASK_TIMEOUT_MS = 30 * 60 * 1_000;
+const ORACLE_TASK_TIMEOUT_MS = 60 * 60 * 1_000;
 const COUNCIL_TASK_TIMEOUT_MS = 3 * 60 * 1_000;
 const MAX_WAIT_TIMEOUT_MS = 25_000;
+
+const resolveMinimumTaskTimeoutMs = (agent) => (
+  typeof agent === 'string' && agent.trim().toLowerCase() === 'oracle'
+    ? ORACLE_TASK_TIMEOUT_MS
+    : DEFAULT_TASK_TIMEOUT_MS
+);
 
 const resolveSubmitTimeoutAt = (params, now) => {
   const submittedAt = now();
   if (params.deadlineClass === 'council') return submittedAt + COUNCIL_TASK_TIMEOUT_MS;
-  const minimumTimeoutAt = submittedAt + DEFAULT_TASK_TIMEOUT_MS;
+  const minimumTimeoutAt = submittedAt + resolveMinimumTaskTimeoutMs(params.agent);
   return Number.isFinite(params.timeoutAt)
     ? Math.max(params.timeoutAt, minimumTimeoutAt)
     : minimumTimeoutAt;
@@ -36,6 +43,7 @@ const ERROR_STATUS_BY_CODE = Object.freeze({
   invalid_handoff_scope: 400,
   invalid_result_action: 400,
   ledger_capacity_exceeded: 507,
+  manual_model_recovery_required: 409,
   managed_retry_limit_reached: 409,
   managed_runtime_unavailable: 503,
   missing_recovery_model: 400,
@@ -276,6 +284,19 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         });
         return projectTaskResult(settled);
       }
+      case 'wait_result_action': {
+        const task = getScopedTask(params);
+        const resultEnvelope = await scheduler.waitForResultAction(task.taskId, {
+          signal: context.signal,
+        });
+        const followUpTask = resultEnvelope.followUpTaskId
+          ? scheduler.getTask(resultEnvelope.followUpTaskId)
+          : null;
+        return {
+          resultEnvelope,
+          followUpTask: followUpTask ? projectTaskResult(followUpTask) : null,
+        };
+      }
       case 'barrier': {
         const rootSessionId = typeof params.rootSessionId === 'string'
           ? params.rootSessionId.trim()
@@ -336,9 +357,10 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       }
       case 'acknowledge': {
         const task = getScopedTask(params);
-        const timeoutAt = Number.isFinite(params.timeoutAt)
-          ? params.timeoutAt
-          : now() + DEFAULT_TASK_TIMEOUT_MS;
+        const timeoutAt = resolveSubmitTimeoutAt({
+          timeoutAt: params.timeoutAt,
+          agent: params.agent || task.agent,
+        }, now);
         const result = await scheduler.acknowledgeResult(task.taskId, {
           action: params.action,
           idempotencyKey: params.idempotencyKey,

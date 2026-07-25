@@ -14,6 +14,19 @@ export interface PlanTodoMetadata {
     title: string;
 }
 
+export interface PlanPhaseTodoItem<T> {
+    todo: T;
+    title: string;
+}
+
+export interface PlanPhaseTodoProjection<T> {
+    phase: number;
+    items: PlanPhaseTodoItem<T>[];
+    current: number;
+    total: number;
+    completed: number;
+}
+
 const PLAN_TODO_PREFIX = /^\s*phase\s+(\d+)\s*:\s*(.+)$/i;
 
 export const parsePlanTodoContent = (value: unknown): PlanTodoMetadata | null => {
@@ -71,15 +84,46 @@ export const buildTodoSummary = <T>(todos: readonly T[] | undefined | null): Tod
     };
 };
 
-export const getCurrentTodoOrdinal = <T>(
+export const buildPlanPhaseTodoProjection = <T>(
     visibleTodos: readonly T[],
-    activeTodo: T | null | undefined,
-): number => {
-    if (visibleTodos.length === 0) return 0;
-    if (!activeTodo) return visibleTodos.length;
+): PlanPhaseTodoProjection<T> | null => {
+    if (visibleTodos.length === 0) return null;
 
-    const activeIndex = visibleTodos.indexOf(activeTodo);
-    return activeIndex >= 0 ? activeIndex + 1 : visibleTodos.length;
+    const parsedTodos = visibleTodos.map((todo): { todo: T; metadata: PlanTodoMetadata } | null => {
+        if (!todo || typeof todo !== 'object') return null;
+        const metadata = parsePlanTodoContent((todo as { content?: unknown }).content);
+        return metadata ? { todo, metadata } : null;
+    });
+
+    // A partial projection could silently hide malformed or legacy tasks. Only
+    // switch to phase-scoped rendering when the complete visible list follows
+    // the saved-plan todo contract.
+    if (!parsedTodos.every((item): item is { todo: T; metadata: PlanTodoMetadata } => item !== null)) {
+        return null;
+    }
+
+    const activeTodo = parsedTodos.find(({ todo }) => (
+        normalizeTodoStatus((todo as { status?: unknown }).status) === 'in_progress'
+    )) ?? parsedTodos.find(({ todo }) => (
+        normalizeTodoStatus((todo as { status?: unknown }).status) === 'pending'
+    )) ?? parsedTodos[parsedTodos.length - 1];
+    if (!activeTodo) return null;
+
+    const phase = activeTodo.metadata.phase;
+    const phaseTodos = parsedTodos.filter((item) => item.metadata.phase === phase);
+    const activeIndex = phaseTodos.indexOf(activeTodo);
+
+    return {
+        phase,
+        items: phaseTodos.map(({ todo, metadata }) => ({ todo, title: metadata.title })),
+        current: activeIndex >= 0 ? activeIndex + 1 : phaseTodos.length,
+        total: phaseTodos.length,
+        completed: phaseTodos.reduce((count, { todo }) => (
+            normalizeTodoStatus((todo as { status?: unknown }).status) === 'completed'
+                ? count + 1
+                : count
+        ), 0),
+    };
 };
 
 export const formatCompactTodoTotal = (total: number): string => {

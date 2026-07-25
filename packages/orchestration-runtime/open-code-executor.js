@@ -604,22 +604,35 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       directory: task.directory,
       providerId: task.providerId,
     };
-    const session = await transport.readSession(input);
-    if (!session) {
-      return {
-        state: 'unavailable',
-        failureReason: `Managed child session ${task.childSessionId} is unavailable`,
-        recovery: {
-          recoverablePreview: '',
-          canonicalRefs: [],
-          resumable: false,
-        },
-      };
+    try {
+      const session = await transport.readSession(input);
+      if (!session) {
+        return {
+          state: 'unavailable',
+          failureReason: `Managed child session ${task.childSessionId} is unavailable`,
+          recovery: {
+            recoverablePreview: '',
+            canonicalRefs: [],
+            resumable: false,
+          },
+        };
+      }
+      const observation = await readObservation(task);
+      const terminal = toTerminalResult(observation);
+      if (terminal) return { state: 'terminal', result: terminal };
+      return { state: 'live' };
+    } catch (error) {
+      if (shutdownController.signal.aborted) {
+        throw shutdownController.signal.reason ?? error;
+      }
+      if (isTransientObservationError(error)) {
+        return {
+          state: 'transient',
+          failureReason: extractFailureReason(error) || 'Managed child reconciliation is temporarily unavailable',
+        };
+      }
+      throw error;
     }
-    const observation = await readObservation(task);
-    const terminal = toTerminalResult(observation);
-    if (terminal) return { state: 'terminal', result: terminal };
-    return { state: 'live' };
   };
 
   return {

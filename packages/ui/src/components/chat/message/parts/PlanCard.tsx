@@ -7,6 +7,7 @@ import { extractPlanTitle } from '@/lib/messages/extractPlanTitle';
 import { renderMagicPrompt } from '@/lib/magicPrompts';
 import {
   type PlanSendAction,
+  buildPlanImplementationSyntheticParts,
   buildPlanSendPromptVariables,
   getPlanSendInstructionsPromptId,
   getPlanSendPlanMode,
@@ -28,6 +29,7 @@ import {
   PLAN_CARD_COLLAPSED_MAX_HEIGHT_PX,
   getPlanCardImplementationKey,
   getPlanCardActionState,
+  getPlanCardDataState,
   getPlanSkeletonRevealState,
   getStableSkeletonLineCount,
   resolvePlanCardDisplayText,
@@ -98,7 +100,10 @@ const PlanCard: React.FC<PlanCardProps> = ({
     [sessionId, sourceMessageId],
   );
   const isImplementationRequested = useSessionUIStore(
-    (state) => state.implementedPlanRequests.has(implementationKey),
+    (state) => (
+      state.implementedPlanRequests.has(implementationKey)
+      || state.externallyHandedOffPlanRequests.has(implementationKey)
+    ),
   );
   const traceEntry = usePlanTurnTraceEntry(sourceMessageId);
   const isLatestPlan = traceEntry?.isLatestPlan === true;
@@ -263,7 +268,11 @@ const PlanCard: React.FC<PlanCardProps> = ({
         getPlanSendInstructionsPromptId(action),
         buildPlanSendPromptVariables({ action, title, path: planPath }),
       );
-      const syntheticParts = [{ synthetic: true as const, text: instructions }];
+      const syntheticParts = buildPlanImplementationSyntheticParts({
+        sourceSessionId: sessionId,
+        sourceMessageId,
+        instructions,
+      });
 
       const selection = useSelectionStore.getState();
       const agent = selection.getSessionAgentSelection(sessionId) ?? undefined;
@@ -337,11 +346,15 @@ const PlanCard: React.FC<PlanCardProps> = ({
   return (
     <div
       ref={cardRef}
-      className="my-4 overflow-hidden rounded-xl border border-border bg-card"
+      className="overflow-hidden rounded-xl border border-border bg-card"
       data-plan-source-message-id={sourceMessageId}
       data-plan-turn-id={traceEntry?.turnId}
       data-plan-version={traceEntry?.planVersion}
-      data-plan-state={traceEntry?.isSuperseded ? 'superseded' : canImplement ? 'actionable' : 'pending'}
+      data-plan-state={getPlanCardDataState({
+        isSuperseded: traceEntry?.isSuperseded === true,
+        isImplementationRequested,
+        canImplement,
+      })}
     >
       <div className="flex items-center gap-2 border-b border-border/60 px-5 py-3">
         <RiDraftLine className="size-4 text-muted-foreground" />

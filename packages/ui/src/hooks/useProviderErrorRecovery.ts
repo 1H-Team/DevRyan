@@ -12,7 +12,11 @@ import {
   getSyncSessionDirectoryAnyDirectory,
 } from '@/sync/sync-refs';
 import { useSyncChildStores } from '@/sync/sync-context';
-import { decideProviderErrorRecovery } from './providerErrorRecoveryDecision';
+import { abortCurrentOperationConfirmed } from '@/sync/session-actions';
+import {
+  decideProviderErrorRecovery,
+  decideProviderRetryLoopRecovery,
+} from './providerErrorRecoveryDecision';
 
 const latestUserMessageId = (messages: ReturnType<typeof getSyncMessages>) => {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -25,13 +29,20 @@ export function useProviderErrorRecovery(enabled = true): void {
   const childStores = useSyncChildStores();
   const previousStatusesRef = React.useRef<Map<string, SessionStatus['type']>>(new Map());
   const activeUserMessageIdsRef = React.useRef<Map<string, string>>(new Map());
+  const cappedRetryUserMessageIdsRef = React.useRef<Map<string, string>>(new Map());
+  const cappedRetryAbortsInFlightRef = React.useRef<Set<string>>(new Set());
 
   React.useEffect(() => {
     const previousStatuses = previousStatusesRef.current;
     const activeUserMessageIds = activeUserMessageIdsRef.current;
+    const cappedRetryUserMessageIds = cappedRetryUserMessageIdsRef.current;
+    const cappedRetryAbortsInFlight = cappedRetryAbortsInFlightRef.current;
+    let active = true;
     if (!enabled) {
       previousStatuses.clear();
       activeUserMessageIds.clear();
+      cappedRetryUserMessageIds.clear();
+      cappedRetryAbortsInFlight.clear();
       return;
     }
 
@@ -45,8 +56,39 @@ export function useProviderErrorRecovery(enabled = true): void {
         const directory = getSyncSessionDirectoryAnyDirectory(sessionId);
         if (status.type === 'busy' || status.type === 'retry') {
           if (directory) {
-            const userMessageId = latestUserMessageId(getSyncMessages(sessionId, directory));
+            const messages = getSyncMessages(sessionId, directory);
+            const userMessageId = latestUserMessageId(messages);
             if (userMessageId) activeUserMessageIds.set(sessionId, userMessageId);
+            const retryDecision = decideProviderRetryLoopRecovery(status);
+            const hasPendingWork = useMessageQueueStore.getState().getQueueForSession(sessionId).length > 0
+              || isQueuedMessageFlushInFlight(sessionId)
+              || getSyncBlockingRequestCountAnyDirectory(sessionId) > 0;
+            if (
+              retryDecision
+              && userMessageId
+              && !hasPendingWork
+              && cappedRetryUserMessageIds.get(sessionId) !== userMessageId
+              && !cappedRetryAbortsInFlight.has(sessionId)
+            ) {
+              cappedRetryAbortsInFlight.add(sessionId);
+              void abortCurrentOperationConfirmed(sessionId).then((confirmed) => {
+                if (!active || !confirmed) return;
+                cappedRetryUserMessageIds.set(sessionId, userMessageId);
+                const currentDirectory = getSyncSessionDirectoryAnyDirectory(sessionId);
+                if (!currentDirectory) return;
+                const currentMessages = getSyncMessages(sessionId, currentDirectory);
+                if (latestUserMessageId(currentMessages) !== userMessageId) return;
+                const recovery = buildProviderRecoveryInput({
+                  sessionId,
+                  directory: currentDirectory,
+                  reason: retryDecision.reason,
+                  messages: currentMessages,
+                });
+                if (recovery) useProviderRecoveryStore.getState().offerRecovery(recovery);
+              }).finally(() => {
+                cappedRetryAbortsInFlight.delete(sessionId);
+              });
+            }
           }
           continue;
         }
@@ -77,9 +119,12 @@ export function useProviderErrorRecovery(enabled = true): void {
     processStatusSnapshot();
     const unsubscribe = childStores.subscribeSessionStatuses(processStatusSnapshot);
     return () => {
+      active = false;
       unsubscribe();
       previousStatuses.clear();
       activeUserMessageIds.clear();
+      cappedRetryUserMessageIds.clear();
+      cappedRetryAbortsInFlight.clear();
       useProviderRecoveryStore.getState().reset();
     };
   }, [childStores, enabled]);

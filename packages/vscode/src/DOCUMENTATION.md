@@ -1,6 +1,6 @@
 # VS Code Backend Modules
 
-Managed OpenCode startup provisions the same sanitized repository-owned user profile used by web/Electron before generating runtime overlays. It resolves `default-config/user-profile` from the extension bundle, preserves user-modified managed files, installs missing declared plugins into the user's OpenCode config directory, and fails visibly when required package installation cannot complete. When OpenAI is active through auth, `OPENAI_API_KEY`, or provider config, the managed overlay adds a 60-second response-header timeout while preserving explicit numeric values or `false`; it removes the generated row when OpenAI becomes inactive and never creates model availability. Configured external OpenCode URLs remain read-only.
+Managed OpenCode startup provisions the same sanitized repository-owned user profile used by web/Electron before generating runtime overlays. It resolves `default-config/user-profile` from the extension bundle, preserves user-modified managed files, installs missing declared plugins into the user's OpenCode config directory, and fails visibly when required package installation cannot complete. When OpenAI is active through auth, `OPENAI_API_KEY`, or provider config, the managed overlay adds liveness bounds of 60 seconds for response headers, 120 seconds between stream chunks, and 10 minutes for the total request while preserving explicit numeric values or `false`; it removes the generated row when OpenAI becomes inactive and never creates model availability. Configured external OpenCode URLs remain read-only.
 
 The extension copies root `opencode.json`, agents, runtime-safe plugins, and sanitized profile assets through the web-owned default-config asset policy. Its packaged VSIX gate SHA-verifies that inventory and smoke-tests provisioning/overlay behavior from the extracted artifact; configured external runtimes are never provisioned or rewritten.
 
@@ -57,7 +57,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Passes Slim's active preset into managed OpenCode with `OH_MY_OPENCODE_SLIM_PRESET`, copies the active Slim config into the runtime overlay `OPENCODE_CONFIG_DIR`, and keeps background subagents enabled for Slim orchestration.
 
 - `opencodeVersionPolicy.ts`
-  - Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.3 and exposes the upstream install command in diagnostics while still using the user/system `opencode` binary.
+  - Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.5 and exposes the upstream install command in diagnostics while still using the user/system `opencode` binary.
 
 - `bridge-settings-runtime.ts`
   - Settings read/write and OpenCode skills discovery via API for bridge consumers.
@@ -80,10 +80,11 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 - `quotaProviders.ts`
   - Resolves quota credentials with web parity: OpenCode Go environment → managed → legacy; Cursor environment/token-file OAuth → managed OAuth/dashboard → legacy dashboard token; Ollama managed → legacy cookie file.
   - Persists a refreshed Cursor OAuth access token only when its source is managed.
+  - Resolves managed Claude proxy quota from the active OpenCode provider catalog, uses the loopback-only Meridian structured endpoint, falls back to the non-billable Claude `/usage` command, and never substitutes local usage for external OpenCode runtimes.
 
 - `managedOrchestrationRuntime.ts`
   - Composes the one VS Code-owned `@openchamber/orchestration-runtime` scheduler.
-  - Immediately admits every eligible DevRyan-managed child without an artificial concurrency cap, enforces a minimum 30-minute ordinary start deadline, preserves the private Council three-minute deadline class, gives retry/resume/recovery-in-place/retry-in-place fresh default deadlines, preserves timeout causes with bounded abort-request cancellation and same-child resumability after failed immediate recovery, scopes task access, clamps optional positive-safe-integer wait slices to 25 seconds, exposes abortable unbounded root `barrier` plus non-blocking `barrier_status` RPCs, performs inspection-first confirmed agent handoff, preserves deterministic admission/cancellation, acknowledges recovery envelopes (including automatic same-child `recover_in_place` and user `retry_in_place` model overrides), and reports external-runtime unavailability.
+  - Immediately admits every eligible DevRyan-managed child without an artificial concurrency cap, enforces a minimum 30-minute ordinary deadline plus a 60-minute Oracle floor for starts and follow-ups, preserves the private Council three-minute deadline class, gives retry/resume/retry-in-place fresh agent-aware default deadlines, preserves timeout causes with bounded abort-request cancellation and same-child resumability after failed immediate recovery, scopes task access, clamps optional positive-safe-integer wait slices to 25 seconds, exposes abortable `wait_result_action` recovery synchronization, unbounded root `barrier`, and non-blocking `barrier_status` RPCs, performs inspection-first confirmed agent handoff, preserves deterministic admission/cancellation, requires explicit user-selected same-child `retry_in_place` for provider-limit recovery, returns the recovered lineage to the pending parent tool invocation, maps `manual_model_recovery_required` to HTTP 409, retains legacy `recover_in_place` ledger compatibility, and reports external-runtime unavailability.
   - Publishes safe task projections without private dispatch groups, identity-only compaction removals, and corrupt-ledger recovery warnings to open webviews.
 
 - `managedOrchestrationPersistence.ts`
@@ -97,7 +98,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Creates canonical OpenCode child sessions and routes normal providers through OpenCode HTTP.
   - Routes `cursor-acp` prompts, status, messages, aborts, and stale-child state cleanup through the shared Cursor SDK owner.
   - Enforces scheduler lease checkpoints before prompt and after provider acceptance; a stale fresh child is aborted and deleted from OpenCode instead of being prompted or left orphaned.
-  - Applies the shared Copilot prompt-tool policy through `@openchamber/orchestration-runtime`, whose observer keeps provider retries live, recovers transient polling failures against the same child, and retains partial output on non-retryable interruption.
+  - Applies the shared Copilot prompt-tool policy through `@openchamber/orchestration-runtime`, whose observer keeps provider retries live, recovers transient polling failures against the same child, and retains partial output on non-retryable interruption. Its typed 503 API-URL unavailability also feeds the shared deadline-bounded reconciliation retry, preserving the canonical child while the VS Code runtime reconnects.
 
 - `bridge-orchestration-runtime.ts`
   - Maps snapshot/status/cancel/acknowledge/handoff requests from the webview to the scoped runtime contract.

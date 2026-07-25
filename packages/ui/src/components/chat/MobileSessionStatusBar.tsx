@@ -1,7 +1,12 @@
 import React from 'react';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
-import { useSessions, useAllSessionStatuses } from '@/sync/sync-context';
+import {
+  useAllSessionStatuses,
+  useDirectorySync,
+  useIsSessionWorking,
+  useSessions,
+} from '@/sync/sync-context';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
@@ -17,6 +22,17 @@ import { useDrawerSwipe } from '@/hooks/useDrawerSwipe';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useNotificationStore } from '@/sync/notification-store';
 import { useI18n } from '@/lib/i18n';
+import { useShallow } from 'zustand/react/shallow';
+import {
+  collectSessionIndicatorScopeIds,
+  resolveMobileSessionIndicatorPresentation,
+  resolveSidebarIndicator,
+  resolveSidebarWorkingStatus,
+} from '@/components/session/sidebar/sessionIndicator';
+import {
+  resolveEffectivePlanIndicatorState,
+  type PlanIndicatorState,
+} from '@/sync/plan-indicator';
 
 interface MobileSessionStatusBarProps {
   onSessionSwitch?: (sessionId: string) => void;
@@ -27,6 +43,7 @@ interface SessionWithStatus extends Session {
   _hasRunningChildren?: boolean;
   _runningChildrenCount?: number;
   _childIndicators?: Array<{ session: Session; isRunning: boolean }>;
+  _indicatorScopeIds?: string[];
 }
 
 const normalize = (value: string): string => {
@@ -50,7 +67,15 @@ function useSessionGrouping(
   sessions: Session[],
   sessionStatus: Record<string, { type: string }> | undefined,
 ) {
-  const unseenCounts = useNotificationStore((s) => s.index.session.unseenCount);
+  const sessionIds = React.useMemo(() => sessions.map((session) => session.id), [sessions]);
+  const selectRelevantUnseenCounts = React.useCallback((state: ReturnType<typeof useNotificationStore.getState>) => {
+    const relevantCounts: Record<string, number> = {};
+    for (const sessionId of sessionIds) {
+      relevantCounts[sessionId] = state.index.session.unseenCount[sessionId] ?? 0;
+    }
+    return relevantCounts;
+  }, [sessionIds]);
+  const unseenCounts = useNotificationStore(useShallow(selectRelevantUnseenCounts));
 
   const parentChildMap = React.useMemo(() => {
     const map = new Map<string, Session[]>();
@@ -110,6 +135,7 @@ function useSessionGrouping(
         _hasRunningChildren: hasRunning,
         _runningChildrenCount: getRunningChildrenCount(session.id),
         _childIndicators: getChildIndicators(session.id),
+        _indicatorScopeIds: collectSessionIndicatorScopeIds(session.id, parentChildMap),
       };
 
       if (statusType !== 'idle' || hasRunning || attention) {
@@ -129,14 +155,13 @@ function useSessionGrouping(
     viewed.sort(sortByUpdated);
 
     return [...running, ...viewed];
-  }, [sessions, getStatusType, hasRunningChildren, getRunningChildrenCount, getChildIndicators, unseenCounts]);
+  }, [sessions, getStatusType, hasRunningChildren, getRunningChildrenCount, getChildIndicators, parentChildMap, unseenCounts]);
 
   return { sessions: processedSessions, totalCount: processedSessions.length };
 }
 
 function useSessionHelpers(
   agents: Array<{ name: string }>,
-  sessionStatus: Record<string, { type: string }> | undefined,
 ) {
   const getSessionAgentName = React.useCallback((session: Session): string => {
     const agent = (session as { agent?: string }).agent;
@@ -155,27 +180,112 @@ function useSessionHelpers(
     });
   }, []);
 
-  const unseenCounts = useNotificationStore((s) => s.index.session.unseenCount);
-  const needsAttention = React.useCallback((sessionId: string): boolean => {
-    return (unseenCounts[sessionId] ?? 0) > 0;
-  }, [unseenCounts]);
-
-  const isRunning = React.useCallback((sessionId: string): boolean => {
-    const status = sessionStatus?.[sessionId];
-    return status?.type === 'busy' || status?.type === 'retry';
-  }, [sessionStatus]);
-
-  return { getSessionAgentName, getSessionTitle, isRunning, needsAttention };
+  return { getSessionAgentName, getSessionTitle };
 }
 
-function StatusIndicator({ isRunning, needsAttention }: { isRunning: boolean; needsAttention: boolean }) {
-  if (isRunning) {
-    return <RiLoader4Line className="h-2.5 w-2.5 animate-spin text-[var(--status-info)]" />;
+function MobileSessionLifecycleIndicator({
+  session,
+  isCurrent,
+}: {
+  session: SessionWithStatus;
+  isCurrent: boolean;
+}) {
+  const { t } = useI18n();
+  const directory = (session as Session & { directory?: string | null }).directory ?? undefined;
+  const indicatorScopeIds = React.useMemo(
+    () => session._indicatorScopeIds ?? [session.id],
+    [session._indicatorScopeIds, session.id],
+  );
+  const isWorking = useIsSessionWorking(session.id, directory);
+  const pendingQuestionCount = useDirectorySync(
+    React.useCallback((state) => {
+      let count = 0;
+      for (const sessionId of indicatorScopeIds) {
+        count += state.question[sessionId]?.length ?? 0;
+      }
+      return count;
+    }, [indicatorScopeIds]),
+    directory,
+  );
+  const hasUnreadError = useNotificationStore(
+    React.useCallback((state) => indicatorScopeIds.some(
+      (sessionId) => state.index.session.unseenHasError[sessionId] ?? false,
+    ), [indicatorScopeIds]),
+  );
+  const hasUnreadCompletion = useNotificationStore(
+    React.useCallback(
+      (state) => state.index.session.unseenHasCompletion[session.id] ?? false,
+      [session.id],
+    ),
+  );
+  const planState = useSessionUIStore(
+    React.useCallback((state): PlanIndicatorState | null => (
+      resolveEffectivePlanIndicatorState(
+        state.sessionPlanIndicator.get(session.id),
+        state.planModeUserMessagesBySession.get(session.id),
+      )
+    ), [session.id]),
+  );
+  const hasCompletedStatus = useSessionUIStore(
+    React.useCallback(
+      (state) => state.sessionCompletionIndicator.has(session.id),
+      [session.id],
+    ),
+  );
+  const sidebarIsWorking = resolveSidebarWorkingStatus({
+    isWorking,
+    pendingQuestionCount,
+    planState,
+  });
+  const indicator = resolveSidebarIndicator({
+    isRootSession: true,
+    isWorking: sidebarIsWorking,
+    isActive: isCurrent,
+    hasUnreadCompletion,
+    hasCompletedStatus,
+    hasErrorStatus: hasUnreadError,
+    pendingQuestionCount,
+    planState,
+  });
+  const presentation = resolveMobileSessionIndicatorPresentation({
+    indicator,
+    isWorking: sidebarIsWorking,
+    planState,
+  });
+
+  if (presentation.kind === 'status') {
+    const label = t(presentation.indicator.labelKey);
+    return (
+      <span
+        className={cn('h-1.5 w-1.5 rounded-full', presentation.indicator.className)}
+        aria-label={label}
+        title={label}
+      />
+    );
   }
-  if (needsAttention) {
-    return <div className="h-1.5 w-1.5 rounded-full bg-[var(--status-error)]" />;
+
+  if (presentation.kind === 'working') {
+    const label = t(presentation.labelKey);
+    return (
+      <span
+        className="inline-flex h-2.5 w-2.5 items-center justify-center"
+        aria-label={label}
+        title={label}
+      >
+        <RiLoader4Line
+          className="h-2.5 w-2.5 animate-spin text-[var(--status-info)]"
+          aria-hidden="true"
+        />
+      </span>
+    );
   }
-  return <div className="h-1.5 w-1.5 rounded-full border border-[var(--surface-mutedForeground)]" />;
+
+  return (
+    <span
+      className="h-1.5 w-1.5 rounded-full border border-[var(--surface-mutedForeground)]"
+      aria-hidden="true"
+    />
+  );
 }
 
 function SessionItem({
@@ -185,7 +295,6 @@ function SessionItem({
   getSessionTitle,
   onClick,
   onDoubleClick,
-  needsAttention,
 }: {
   session: SessionWithStatus;
   isCurrent: boolean;
@@ -193,7 +302,6 @@ function SessionItem({
   getSessionTitle: (s: Session) => string;
   onClick: () => void;
   onDoubleClick?: () => void;
-  needsAttention: (sessionId: string) => boolean;
 }) {
   const agentName = getSessionAgentName(session);
   const agentColor = getAgentColor(agentName);
@@ -218,10 +326,7 @@ function SessionItem({
       )}
     >
       <div className="flex-shrink-0 w-3 flex items-center justify-center">
-        <StatusIndicator
-          isRunning={session._statusType !== 'idle'}
-          needsAttention={needsAttention(session.id)}
-        />
+        <MobileSessionLifecycleIndicator session={session} isCurrent={isCurrent} />
       </div>
 
       <div
@@ -462,7 +567,6 @@ function ExpandedView({
   onSessionDoubleClick,
   getSessionAgentName,
   getSessionTitle,
-  needsAttention,
 }: {
   sessions: SessionWithStatus[];
   currentSessionId: string;
@@ -479,7 +583,6 @@ function ExpandedView({
   onSessionDoubleClick?: () => void;
   getSessionAgentName: (s: Session) => string;
   getSessionTitle: (s: Session) => string;
-  needsAttention: (sessionId: string) => boolean;
 }) {
   const { t } = useI18n();
   const availableWorktreesByProject = useSessionUIStore((state) => state.availableWorktreesByProject);
@@ -538,7 +641,6 @@ function ExpandedView({
               getSessionTitle={getSessionTitle}
               onClick={() => onSessionClick(session.id)}
               onDoubleClick={onSessionDoubleClick}
-              needsAttention={needsAttention}
             />
           ))
         )}
@@ -571,7 +673,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
   const homeDirectory = useDirectoryStore((state) => state.homeDirectory);
 
   const { sessions: sortedSessions, totalCount } = useSessionGrouping(sessions, sessionStatus);
-  const { getSessionAgentName, getSessionTitle, needsAttention } = useSessionHelpers(agents, sessionStatus);
+  const { getSessionAgentName, getSessionTitle } = useSessionHelpers(agents);
   const currentSession = sessions.find((session) => session.id === currentSessionId);
   const currentSessionDirectory = (currentSession as { directory?: string | null } | undefined)?.directory ?? null;
   const currentSessionTitle = currentSession
@@ -650,7 +752,6 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
       onSessionDoubleClick={handleSessionDoubleClick}
       getSessionAgentName={getSessionAgentName}
       getSessionTitle={getSessionTitle}
-      needsAttention={needsAttention}
     />
   );
 };

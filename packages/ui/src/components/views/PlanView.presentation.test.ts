@@ -75,7 +75,7 @@ describe('plan presentation', () => {
     expect(contextPanelSource).toContain('headerActionsTarget={planHeaderActionsTarget}');
 
     expect(planViewSource).toContain("presentation === 'standalone'");
-    expect(planViewSource).toContain('{parsedTitle}');
+    expect(planViewSource).toContain(": parsedTitle}");
     expect(mainLayoutSource).toContain('<LazyPlanView />');
   });
 
@@ -83,5 +83,28 @@ describe('plan presentation', () => {
     expect(planViewSource).toContain("presentation === 'standalone' ? (");
     expect(planViewSource.match(/t\('planView\.error\.saveFailed'\)/g)?.length ?? 0).toBeGreaterThan(1);
     expect(planViewSource).toContain('flex-shrink-0 truncate border-b border-border/40 px-3 py-1');
+  });
+
+  test('uses the compact mobile Plan header with Close immediately before the action group', () => {
+    const standaloneHeader = planViewSource.slice(planViewSource.indexOf("presentation === 'standalone' ? ("));
+    const closeIndex = standaloneHeader.indexOf('data-plan-view-close="true"');
+    const actionIndex = standaloneHeader.indexOf('{planActions}');
+
+    expect(planViewSource).toContain('RiCloseLine');
+    expect(planViewSource).toContain("isMobile ? t('layout.mainTab.plan') : parsedTitle");
+    expect(planViewSource).toContain("t('planView.actions.closePlanAria')");
+    expect(planViewSource).toContain('onClick={routeToChat}');
+    expect(closeIndex).toBeGreaterThan(-1);
+    expect(actionIndex).toBeGreaterThan(closeIndex);
+  });
+
+  test('wires mobile implementation handoff to the exact saved source revision only after send succeeds', () => {
+    expect(planViewSource).toContain('const sessionPlanFileRecord = useSessionPlanFileStore');
+    expect(planViewSource).toContain('const sourcePlanMessageId = sessionPlanFileRecord?.status === \'saved\'');
+    expect(planViewSource).toContain("pendingPlanSend.action === 'implement' && isMobile && currentSessionId && sourcePlanMessageId");
+    expect(planViewSource).toContain('markPlanImplementationHandedOff(');
+    expect(planViewSource).not.toContain('markPlanImplementationRequested(');
+    expect(planViewSource).toContain('setPlanModeSelection(currentSessionId, false)');
+    expect(planViewSource).toContain('clearHandedOffPlanIndicator(currentSessionId, sourcePlanMessageId)');
   });
 });

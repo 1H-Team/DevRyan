@@ -1,11 +1,49 @@
 import { describe, expect, test } from "bun:test"
-import { getPlanIndicatorTone, nextPlanIndicatorEntry } from "./plan-indicator"
+import {
+  getPlanIndicatorTone,
+  nextPlanIndicatorEntry,
+  resolveEffectivePlanIndicatorState,
+} from "./plan-indicator"
 
 describe("getPlanIndicatorTone", () => {
   test("maps every plan lifecycle state to orange or green", () => {
     expect(getPlanIndicatorTone("proposed")).toBe("warning")
     expect(getPlanIndicatorTone("implementing")).toBe("warning")
     expect(getPlanIndicatorTone("completed")).toBe("success")
+  })
+})
+
+describe("resolveEffectivePlanIndicatorState", () => {
+  test("hides a proposal superseded by a newer plan-mode turn", () => {
+    expect(resolveEffectivePlanIndicatorState(
+      { state: "proposed", sourceMessageId: "msg_0002" },
+      "msg_0003",
+    )).toBeNull()
+  })
+
+  test("restores the proposal when the newer optimistic turn rolls back", () => {
+    const entry = { state: "proposed" as const, sourceMessageId: "msg_0002" }
+
+    expect(resolveEffectivePlanIndicatorState(entry, "msg_0003")).toBeNull()
+    expect(resolveEffectivePlanIndicatorState(entry)).toBe("proposed")
+  })
+
+  test("keeps the proposal visible for its originating plan-mode turn", () => {
+    expect(resolveEffectivePlanIndicatorState(
+      { state: "proposed", sourceMessageId: "msg_0002" },
+      "msg_0001",
+    )).toBe("proposed")
+  })
+
+  test("keeps implementing and completed lifecycle states unchanged", () => {
+    expect(resolveEffectivePlanIndicatorState(
+      { state: "implementing", sourceMessageId: "msg_0002" },
+      "msg_0003",
+    )).toBe("implementing")
+    expect(resolveEffectivePlanIndicatorState(
+      { state: "completed", sourceMessageId: "msg_0002" },
+      "msg_0003",
+    )).toBe("completed")
   })
 })
 

@@ -49,12 +49,14 @@ const detect = (
   options: {
     recorded?: Set<string>
     implemented?: Set<string>
+    handedOff?: Set<string>
   } = {},
 ) => detectPlanProposedCandidate({
   sessionID: SESSION_ID,
   state,
   isRecordedPlanModeUserMessage: (messageId) => options.recorded?.has(messageId) ?? false,
   implementedPlanRequests: options.implemented ?? new Set(),
+  externallyHandedOffPlanRequests: options.handedOff,
 })
 
 describe("detectPlanProposedCandidate", () => {
@@ -243,6 +245,25 @@ describe("detectPlanProposedCandidate", () => {
     expect(detect(state, {
       recorded: new Set(["msg_1_user"]),
       implemented: new Set([`${SESSION_ID}:msg_2_assistant:plan:0`]),
+    })).toBeNull()
+  })
+
+  test("keeps an externally handed-off plan from becoming actionable again", () => {
+    const state = buildState({
+      message: {
+        [SESSION_ID]: [
+          userMessage("msg_1_user"),
+          assistantMessage("msg_2_assistant"),
+        ],
+      },
+      part: {
+        msg_2_assistant: [textPart("msg_2_assistant", "<!--plan-->\n# Plan")],
+      },
+    })
+
+    expect(detect(state, {
+      recorded: new Set(["msg_1_user"]),
+      handedOff: new Set([`${SESSION_ID}:msg_2_assistant:plan:0`]),
     })).toBeNull()
   })
 

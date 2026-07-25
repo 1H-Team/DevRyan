@@ -190,7 +190,7 @@ describe('managed orchestration contract', () => {
     expect(toManagedTaskEvent(groupedRecovery).properties.task).not.toHaveProperty('dispatchGroupId');
   });
 
-  test('keeps the single grouped agent recovery available for exhausted usage', () => {
+  test('reserves provider usage limits for manual recovery on the first grouped attempt', () => {
     const initial = createManagedTaskRecord(validInput());
     const terminal = (failureReason) => ({
       ...initial,
@@ -202,13 +202,13 @@ describe('managed orchestration contract', () => {
     });
 
     expect(toManagedTaskEvent(terminal('Provider connection ended')).properties.task.agentRetryAvailable).toBe(true);
-    expect(toManagedTaskEvent(terminal('out of usage')).properties.task.agentRetryAvailable).toBe(true);
-    expect(toManagedTaskEvent(terminal('Usage limit reached')).properties.task.agentRetryAvailable).toBe(true);
-    expect(toManagedTaskEvent(terminal("You've hit your session limit · resets 7:30pm")).properties.task.agentRetryAvailable).toBe(true);
-    expect(toManagedTaskEvent(terminal('quota exceeded')).properties.task.agentRetryAvailable).toBe(true);
-    expect(toManagedTaskEvent(terminal('insufficient quota')).properties.task.agentRetryAvailable).toBe(true);
-    expect(toManagedTaskEvent(terminal('rate limited')).properties.task.agentRetryAvailable).toBe(true);
-    expect(toManagedTaskEvent(terminal('concurrent session limit temporarily reached')).properties.task.agentRetryAvailable).toBe(true);
+    expect(toManagedTaskEvent(terminal('out of usage')).properties.task.agentRetryAvailable).toBe(false);
+    expect(toManagedTaskEvent(terminal('Usage limit reached')).properties.task.agentRetryAvailable).toBe(false);
+    expect(toManagedTaskEvent(terminal("You've hit your session limit · resets 7:30pm")).properties.task.agentRetryAvailable).toBe(false);
+    expect(toManagedTaskEvent(terminal('quota exceeded')).properties.task.agentRetryAvailable).toBe(false);
+    expect(toManagedTaskEvent(terminal('insufficient quota')).properties.task.agentRetryAvailable).toBe(false);
+    expect(toManagedTaskEvent(terminal('rate limited')).properties.task.agentRetryAvailable).toBe(false);
+    expect(toManagedTaskEvent(terminal('concurrent session limit temporarily reached')).properties.task.agentRetryAvailable).toBe(false);
   });
 
   test('projects compaction as a safe identity-only removal event', () => {

@@ -7,7 +7,7 @@ import {
     getCursorAcpFastModelId,
     isCursorAcpProvider,
 } from '@/lib/providers/cursorAcp';
-import { resolveThinkingVariant } from '@/lib/providers/variantControls';
+import { getModelVariantDisplayState, resolveThinkingVariant } from '@/lib/providers/variantControls';
 
 export { shouldHideCursorAcpFastModel } from '@/lib/providers/cursorAcp';
 
@@ -354,6 +354,31 @@ export const formatVisibleEffortLabel = (
 ) => {
     const visibleVariant = resolveVisibleEffortVariant(variant, variants);
     return visibleVariant ? formatEffortLabel(visibleVariant, context) : null;
+};
+
+export const getModelThinkingLevelLabel = (
+    provider: { id?: string; models?: ProviderModel[] } | undefined,
+    modelId: string | undefined,
+    variant?: string,
+) => {
+    if (!provider || !modelId) {
+        return null;
+    }
+
+    const cursorState = getCursorAcpVariantState(provider, modelId, variant);
+    if (cursorState) {
+        if (cursorState.effortOptions.length === 0 && !cursorState.canToggleThinking) {
+            return null;
+        }
+        return getCursorAcpVariantDisplayLabel(cursorState, { providerId: provider.id });
+    }
+
+    const displayState = getModelVariantDisplayState(provider, modelId, variant);
+    return formatVisibleEffortLabel(
+        displayState?.selectedVariant ?? variant,
+        displayState?.visibleVariantOptions ?? [],
+        { providerId: provider.id },
+    );
 };
 
 export const DEFAULT_EFFORT_KEY = 'default';

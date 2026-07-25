@@ -11,7 +11,9 @@ export const classifyProviderRetryFailure = (value) => {
   if (!message) return null;
   return message.includes('out of usage')
     || message.includes('usage limit')
-    || message.includes('hit your session limit')
+    || message.includes('session limit')
+    || message.includes('rate limit')
+    || message.includes('rate limited')
     || message.includes('quota limit')
     || message.includes('quota exceeded')
     || message.includes('quota has been exceeded')

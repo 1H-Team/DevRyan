@@ -79,6 +79,44 @@ const createHarness = async () => {
   return { clock, execution, scheduler, task };
 };
 
+const createResultActionHarness = async () => {
+  const runs = [];
+  let taskIndex = 0;
+  const execute = async (task, control) => {
+    if (!task.childSessionId) await control.setChildSessionId('ses_result_action');
+    await control.markAccepted();
+    const run = deferred();
+    runs.push(run);
+    return await run.promise;
+  };
+  const scheduler = createManagedTaskScheduler({
+    executor: {
+      start: execute,
+      retryInPlace: execute,
+      async abort() { return { aborted: true }; },
+      async reconcile() { return { state: 'unavailable' }; },
+      async readRecoverableResult() { return {}; },
+    },
+    createTaskId: () => `dvr_task_result_action_${++taskIndex}`,
+    createLeaseToken: () => `dvr_lease_result_action_${taskIndex}`,
+  });
+  const task = await scheduler.submit({
+    ...input,
+    idempotencyKey: 'result-action-task',
+  });
+  await scheduler.flush();
+  runs[0].resolve({
+    status: 'failed',
+    failureKind: 'provider_usage_limit',
+    failureReason: 'Monthly usage limit reached',
+    recoverablePreview: 'Partial child result',
+    resumable: true,
+  });
+  await scheduler.waitForTask(task.taskId);
+  await scheduler.flush();
+  return { runs, scheduler, task };
+};
+
 describe('managed scheduler task waits', () => {
   test('returns a cloned live snapshot when a bounded wait slice expires without mutating the task', async () => {
     const { clock, scheduler, task } = await createHarness();
@@ -176,6 +214,69 @@ describe('managed scheduler task waits', () => {
 
     await expect(wait).rejects.toThrow('managed orchestration scheduler is shut down');
     expect(clock.count()).toBe(0);
+    expect(scheduler.getDiagnostics().pendingWaiterCount).toBe(0);
+  });
+
+  test('keeps a result-action wait pending until explicit recovery acknowledgement', async () => {
+    const { runs, scheduler, task } = await createResultActionHarness();
+    let resolved = false;
+    const wait = scheduler.waitForResultAction(task.taskId).then((result) => {
+      resolved = true;
+      return result;
+    });
+    await Promise.resolve();
+
+    expect(resolved).toBe(false);
+    expect(scheduler.getDiagnostics().pendingWaiterCount).toBe(1);
+
+    const acknowledgement = await scheduler.acknowledgeResult(task.taskId, {
+      action: 'retry_in_place',
+      idempotencyKey: 'recover-result-action-task',
+      providerId: 'openai',
+      modelId: 'gpt-5.6-terra',
+      variant: 'high',
+    });
+    const envelope = await wait;
+
+    expect(envelope).toMatchObject({
+      taskId: task.taskId,
+      action: 'retry_in_place',
+      followUpTaskId: acknowledgement.followUpTask.taskId,
+    });
+    expect(scheduler.getDiagnostics().pendingWaiterCount).toBe(0);
+    const immediate = await scheduler.waitForResultAction(task.taskId);
+    expect(immediate).toEqual(envelope);
+    expect(immediate).not.toBe(envelope);
+
+    await scheduler.flush();
+    runs[1].resolve({ status: 'completed', recoverablePreview: 'Recovered result' });
+    await scheduler.waitForTask(acknowledgement.followUpTask.taskId);
+    await scheduler.shutdown();
+  });
+
+  test('cleans up a result-action waiter on external abort', async () => {
+    const { scheduler, task } = await createResultActionHarness();
+    const controller = new AbortController();
+    const reason = new Error('caller stopped recovery');
+    const wait = scheduler.waitForResultAction(task.taskId, { signal: controller.signal });
+    await Promise.resolve();
+
+    controller.abort(reason);
+
+    await expect(wait).rejects.toBe(reason);
+    expect(scheduler.getDiagnostics().pendingWaiterCount).toBe(0);
+    await scheduler.shutdown();
+  });
+
+  test('rejects a pending result-action wait during shutdown', async () => {
+    const { scheduler, task } = await createResultActionHarness();
+    const wait = scheduler.waitForResultAction(task.taskId);
+    await Promise.resolve();
+
+    expect(scheduler.getDiagnostics().pendingWaiterCount).toBe(1);
+    await scheduler.shutdown();
+
+    await expect(wait).rejects.toThrow('managed orchestration scheduler is shut down');
     expect(scheduler.getDiagnostics().pendingWaiterCount).toBe(0);
   });
 });

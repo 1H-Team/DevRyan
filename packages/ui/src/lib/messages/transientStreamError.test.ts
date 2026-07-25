@@ -21,6 +21,8 @@ describe("isLikelyTransientStreamFailure", () => {
     expect(isLikelyTransientStreamFailure("APIError", "Error from provider (Console): Upstream request failed")).toBe(true)
     expect(isLikelyTransientStreamFailure("APIError", "premature close")).toBe(true)
     expect(isLikelyTransientStreamFailure("APIError", "ECONNRESET: socket hang up")).toBe(true)
+    expect(isLikelyTransientStreamFailure("APIError", "Stream idle timeout")).toBe(true)
+    expect(isLikelyTransientStreamFailure("APIError", "SSE read timed out after 120000ms")).toBe(true)
   })
 
   test("allows weaker stream and connection matches only for UnknownError", () => {

@@ -87,6 +87,32 @@ describe('SessionNodeItem row hover metadata', () => {
   });
 });
 
+describe('SessionNodeItem subagent icons', () => {
+  test('renders a colored, non-shrinking agent icon before child-session titles only', () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'SessionNodeItem.tsx'), 'utf8');
+
+    const titleRowStart = source.indexOf("className={cn('flex min-w-0 flex-1 items-center gap-1.5 typography-ui-label font-normal'");
+    const titleRowEnd = source.indexOf('</div>', titleRowStart);
+    const titleRow = source.slice(titleRowStart, titleRowEnd);
+    const iconIndex = titleRow.indexOf('<RiAiAgentLine');
+    const titleIndex = titleRow.indexOf('<span className="min-w-0 flex-1 truncate">');
+
+    expect(source).toContain('const isRootSession = !sessionParentId;');
+    expect(source).toContain('{!isRootSession ? (');
+    expect(iconIndex).toBeGreaterThan(-1);
+    expect(iconIndex).toBeLessThan(titleIndex);
+    expect(titleRow).toContain('className="h-3.5 w-3.5 flex-shrink-0"');
+    expect(titleRow).toContain('style={{ color: `var(${getAgentIconColor(subagentName).var})` }}');
+    expect(titleRow).toContain('aria-hidden="true"');
+  });
+
+  test('keeps agent metadata in the row memo signature', () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'SessionNodeItem.tsx'), 'utf8');
+
+    expect(source).toContain('record.agent ??');
+  });
+});
+
 describe('SessionNodeItem status selectors', () => {
   test('checks only the row scope instead of scanning every session notification', () => {
     const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'SessionNodeItem.tsx'), 'utf8');
@@ -99,6 +125,7 @@ describe('SessionNodeItem status selectors', () => {
     const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'SessionNodeItem.tsx'), 'utf8');
 
     expect(source).toContain('managedOrchestrationSelectors.manualRecoveryTaskIdForChildSession(session.id)');
+    expect(source).toContain('managedOrchestrationSelectors.manualRecoveryFailureKindForChildSession(session.id)');
     expect(source).not.toContain('state.tasksById');
   });
 });
@@ -128,6 +155,18 @@ describe('session sidebar quick hover actions', () => {
     expect(source.indexOf('handleQuickUnarchiveClick')).toBeLessThan(source.indexOf('handleQuickDeleteClick'));
     expect(source).toContain('handleDeleteSession(session, { archivedBucket: true })');
     expect(source).toContain('RiDeleteBinLine');
+  });
+
+  test('reveals mobile pin and archive actions after a horizontal row swipe', () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'SessionNodeItem.tsx'), 'utf8');
+
+    expect(source).toContain('resolveMobileSessionSwipeAction');
+    expect(source).toContain('onPointerMove={handleRowPointerMove}');
+    expect(source).toContain("data-mobile-drawer-drag-lock={mobileVariant ? 'true' : undefined}");
+    expect(source).toContain('data-mobile-session-actions');
+    expect(source).toContain("t('sessions.sidebar.session.menu.pin')");
+    expect(source).toContain("t('sessions.sidebar.session.mobileAction.pin')");
+    expect(source).toContain("t('sessions.sidebar.bulkActions.archive')");
   });
 });
 
@@ -163,14 +202,36 @@ describe('session sidebar archive reflow animation wiring', () => {
     expect(source).toContain("initial={{ gridTemplateRows: '0fr', opacity: 0 }}");
     expect(source).toContain("animate={{ gridTemplateRows: '1fr', opacity: 1 }}");
     expect(source).toContain("exit={{ gridTemplateRows: '0fr', opacity: 0 }}");
-    expect(source).toContain("overflow: 'hidden'");
+    expect(source).toContain("overflowX: 'visible'");
+    expect(source).toContain("overflowY: 'clip'");
     expect(source).toContain("display: 'grid'");
     expect(source).toContain('minHeight: 0');
-    expect(itemSource).toContain('left-[-10px]');
-    expect(source).toContain('SESSION_LEADING_INDICATOR_CLIP_GUTTER_PX');
-    expect(source).toContain('marginLeft: -SESSION_LEADING_INDICATOR_CLIP_GUTTER_PX');
-    expect(source).toContain('paddingLeft: SESSION_LEADING_INDICATOR_CLIP_GUTTER_PX');
+    expect(itemSource).toContain('data-session-leading-rail');
+    expect(itemSource).toContain('grid-cols-[minmax(0,4fr)_minmax(0,7fr)_2px_minmax(0,7fr)_1px]');
+    expect(itemSource).not.toContain('left-[-');
+    expect(source).not.toContain('SESSION_LEADING_INDICATOR_CLIP_GUTTER_PX');
+    expect(source).not.toContain('marginLeft');
+    expect(source).not.toContain('paddingLeft');
     expect(source).not.toContain('scale');
+  });
+
+  test('keeps the leading rail outside title flow and renders the resolved slots', () => {
+    const testDir = dirname(fileURLToPath(import.meta.url));
+    const itemSource = readFileSync(join(testDir, 'SessionNodeItem.tsx'), 'utf8');
+    const motionSource = readFileSync(join(testDir, 'SessionSidebarMotionRow.tsx'), 'utf8');
+    const leadingRailStart = itemSource.indexOf('const leadingRail = (');
+    const leadingRailEnd = itemSource.indexOf('const streamingIndicator', leadingRailStart);
+    const leadingRailSource = itemSource.slice(leadingRailStart, leadingRailEnd);
+
+    expect(leadingRailStart).toBeGreaterThan(-1);
+    expect(leadingRailEnd).toBeGreaterThan(leadingRailStart);
+    expect(leadingRailSource).toContain('absolute right-full');
+    expect(leadingRailSource).toContain('leadingRailLayout.slots.map');
+    expect(leadingRailSource).toContain("index === 2 && 'col-start-4'");
+    expect(leadingRailSource).not.toContain('justify-between');
+    expect(itemSource).not.toContain('<span className="h-4 w-9 flex-shrink-0" aria-hidden="true" />');
+    expect(motionSource).toContain('minWidth: 0');
+    expect(motionSource).toContain("width: '100%'");
   });
 
   test('reuses the row motion for project and Archived section bodies', () => {
@@ -180,18 +241,16 @@ describe('session sidebar archive reflow animation wiring', () => {
     const projectSource = readFileSync(join(testDir, 'SidebarProjectsList.tsx'), 'utf8');
     const groupSource = readFileSync(join(testDir, 'SessionGroupSection.tsx'), 'utf8');
 
-    expect(motionSource).toContain('withLeadingIndicatorGutter?: boolean;');
-    expect(motionSource).toContain('withLeadingIndicatorGutter = true');
-    expect(motionSource).toContain('...(withLeadingIndicatorGutter ? {');
+    expect(motionSource).not.toContain('withLeadingIndicatorGutter');
     expect(itemSource).toContain('<SessionSidebarMotionRow>');
 
     expect(projectSource).toContain("import { AnimatePresence } from 'motion/react';");
     expect(projectSource).toContain('key={`project-body:${projectKey}`}');
-    expect(projectSource).toContain('withLeadingIndicatorGutter={false}');
+    expect(projectSource).not.toContain('withLeadingIndicatorGutter');
 
     expect(groupSource).toContain('{group.isArchivedBucket ? (');
     expect(groupSource).toContain('key={`archived-group-body:${groupKey}`}');
-    expect(groupSource).toContain('withLeadingIndicatorGutter={false}');
+    expect(groupSource).not.toContain('withLeadingIndicatorGutter');
     expect(groupSource).toContain(') : (!isCollapsed ? groupBody : null)}');
   });
 

@@ -36,6 +36,7 @@ vi.mock('./opencodeAuth', () => ({
 vi.mock('./quotaProviders', () => ({
   fetchQuotaForProvider: vi.fn(),
   listConfiguredQuotaProviders: vi.fn(() => []),
+  resolveClaudeProxyBaseUrlFromProviders: vi.fn(() => null),
 }));
 
 vi.mock('./sessionActivityWatcher', () => ({

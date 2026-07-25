@@ -14,6 +14,18 @@ This module contains tunnel provider orchestration for OpenChamber, including pr
 
 Managed remote tunnel tokens are normalized by `managed-token.js` both before configuration persistence and immediately before cloudflared launch. Persisted configuration and generated token files therefore contain raw tokens only, while the launch boundary also recovers supported legacy command-form values.
 
+## Shutdown contract
+
+Tunnel shutdown is asynchronous and process-authoritative. Provider controllers first send
+`SIGINT`, wait for the connector to exit, then escalate to `SIGTERM` and `SIGKILL` with bounded
+grace periods. `createTunnelService().stop()` keeps the active controller registered until the
+provider confirms exit and coalesces concurrent stop requests onto the same promise.
+
+The `/api/openchamber/tunnel/stop` route waits for that promise before revoking bootstrap/session
+artifacts or clearing the active tunnel identity. If the connector cannot be stopped, the route
+returns `tunnel_stop_failed` and preserves both controller and authentication state; this prevents a
+still-public connector from being reclassified as a local unauthenticated request path.
+
 ## Public exports (routes.js)
 - `createTunnelRoutesRuntime(dependencies)`: creates tunnel routes runtime and helpers.
 - Returned API:

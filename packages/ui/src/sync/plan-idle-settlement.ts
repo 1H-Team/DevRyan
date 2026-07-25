@@ -20,6 +20,7 @@ type PlanIdleSettlementInput = {
   sourceMessageId: string
   planEntry?: PlanIndicatorEntry | null
   implementedPlanRequests: ReadonlySet<string>
+  externallyHandedOffPlanRequests?: ReadonlySet<string>
 }
 
 export function shouldSettlePlanProposalStatus({
@@ -28,12 +29,16 @@ export function shouldSettlePlanProposalStatus({
   sourceMessageId,
   planEntry,
   implementedPlanRequests,
+  externallyHandedOffPlanRequests,
 }: PlanIdleSettlementInput): boolean {
   if (state.session_status[sessionID]?.type !== "busy") return false
   if (planEntry?.state !== "proposed" || planEntry.sourceMessageId !== sourceMessageId) return false
 
   const implementationKey = getPlanImplementationKey(sessionID, getPlanBlockId(sourceMessageId, 0))
-  if (implementedPlanRequests.has(implementationKey)) return false
+  if (
+    implementedPlanRequests.has(implementationKey)
+    || externallyHandedOffPlanRequests?.has(implementationKey)
+  ) return false
 
   if ((state.permission[sessionID]?.length ?? 0) > 0) return false
   if ((state.question[sessionID]?.length ?? 0) > 0) return false
