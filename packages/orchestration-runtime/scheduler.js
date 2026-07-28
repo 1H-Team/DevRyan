@@ -1307,6 +1307,52 @@ export const createManagedTaskScheduler = (options = {}) => {
     return await runExclusive(async () => getDispatchBarrierStateLocked(rootSessionId));
   };
 
+  // Any terminal managed result whose parent never collected it leaves that
+  // parent wedged, not just the provider-recovery lineage this started as. A
+  // child that finished while the parent's tool wait was detached, and a child
+  // that hit its hard deadline, both end with an unacknowledged envelope and an
+  // idle root that will never move again on its own. Report all of them so the
+  // packaged plugin can wake the root once.
+  //
+  // Provider-limit results are deliberately excluded: those stay parked until
+  // the user picks a recovery model in the UI, and waking the parent would
+  // bypass that gate. Callers additionally require the root to be idle and
+  // marker-gate each wake, so an attached wait still wins and cannot double-fire.
+  const listReadyProviderRecoveryContinuations = ({ sessionId } = {}) => {
+    const normalizedSessionId = typeof sessionId === 'string' ? sessionId.trim() : '';
+    return [...tasks.values()]
+      .filter((task) => {
+        if (
+          task.mode !== 'orchestrator'
+          || task.dispatchGroupId === null
+          || !isTerminalManagedTaskStatus(task.status)
+          || isDefiniteProviderUsageLimit(task.failureReason)
+        ) {
+          return false;
+        }
+        if (
+          normalizedSessionId
+          && task.rootSessionId !== normalizedSessionId
+          && task.childSessionId !== normalizedSessionId
+        ) {
+          return false;
+        }
+
+        // An envelope that already carries an action was disposed of, or was
+        // superseded by a follow-up attempt that is tracked in its own right.
+        const resultEnvelope = resultEnvelopes.get(task.taskId);
+        return Boolean(resultEnvelope && resultEnvelope.action === null);
+      })
+      .sort(compareManagedTaskQueueOrder)
+      .map((task) => ({
+        sourceTaskId: task.priorTaskId,
+        taskId: task.taskId,
+        rootSessionId: task.rootSessionId,
+        childSessionId: task.childSessionId,
+        directory: task.directory,
+      }));
+  };
+
   const inspectAgentHandoff = async (input) => {
     await ensureInitialized();
     validateAgentHandoffScope(input);
@@ -1616,6 +1662,7 @@ export const createManagedTaskScheduler = (options = {}) => {
     waitForResultAction,
     waitForDispatchBarrier,
     inspectDispatchBarrier,
+    listReadyProviderRecoveryContinuations,
     inspectAgentHandoff,
     confirmAgentHandoff,
     acknowledgeResult,

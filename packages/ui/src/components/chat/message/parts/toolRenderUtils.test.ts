@@ -114,6 +114,25 @@ describe('tool activity grouping', () => {
         expect(getToolActivityGroupInfo('stat')?.kind).toBe('read');
     });
 
+    test('maps the observed OpenAI, OpenCodeGo, and Anthropic tools into the shared row groups', () => {
+        const providerTools = {
+            openai: ['grep', 'read', 'apply_patch', 'bash'],
+            opencodego: ['search', 'read', 'edit', 'bash'],
+            anthropic: ['grep', 'read', 'write', 'bash'],
+        } as const;
+
+        expect(Object.fromEntries(
+            Object.entries(providerTools).map(([provider, tools]) => [
+                provider,
+                tools.map((tool) => getToolActivityGroupInfo(tool)?.kind),
+            ]),
+        )).toEqual({
+            openai: ['search', 'read', 'patch', 'shell'],
+            opencodego: ['search', 'read', 'edit', 'shell'],
+            anthropic: ['search', 'read', 'edit', 'shell'],
+        });
+    });
+
     test('classifies file mutations from authoritative pre-write existence metadata', () => {
         const created = toolPart('oc_write', { metadata: { exists: false } }, 'create');
         const edited = toolPart('oc_write', { metadata: { exists: true } }, 'edit');

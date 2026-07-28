@@ -26,6 +26,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useDeviceInfo } from '@/lib/device';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { useI18n } from '@/lib/i18n';
+import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
 
 const renderToastDescription = (text?: string) =>
     text ? <span className="text-foreground/80 dark:text-foreground/70">{text}</span> : undefined;
@@ -591,7 +592,10 @@ export const SessionDialogs: React.FC = () => {
                                     •
                                 </span>
                                 <span className="truncate">
-                                    {session.title || t('sessions.sidebar.session.untitled')}
+                                    {resolveDisplaySessionTitle({
+                                        title: session.title,
+                                        fallback: t('sessions.sidebar.session.untitled'),
+                                    })}
                                 </span>
                             </li>
                         ))}

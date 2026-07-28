@@ -177,10 +177,10 @@ Ownership and safety rules:
     Transient non-provider-limit failures retain the single agent recovery.
     Events, snapshots, acknowledgement responses, and compaction recompute only
     affected child leaves; unrelated task, root, and index references remain
-    stable. Sidebar rows must consume the one-child selector rather than task or
-    envelope containers. The companion one-child failure-kind selector lets a
-    live child suppress stale transient recovery attention without hiding an
-    unresolved provider-usage-limit recovery.
+    stable. The sidebar consumes the narrow one-root recovery selector so
+    managed-child recovery attention appears on the parent row without
+    subscribing to task or envelope containers. Task-specific recovery
+    surfaces may consume the one-child selectors.
 
 The task ledger remains the durable result source, but a row whose terminal
 result is stale while its canonical child reports live `busy`/`retry` activity
@@ -190,11 +190,17 @@ rewrite or discard the retained failure envelope.
 ### Provider recovery store
 
 `useProviderRecoveryStore.ts` retains one low-frequency, non-persisted recovery
-record per session. Retryable terminal provider errors populate it after an
-authoritative active-to-idle transition; live provider retry statuses do not.
-The record owns a local provider/model/variant selection plus pending/action
-error leaves. Normal user sends clear it, while a manual recovery send preserves
-it until the send succeeds so failed retries remain actionable.
+record per root session. Retryable terminal provider errors populate it after
+an authoritative active-to-idle transition. A definite provider usage limit in
+a live root retry status first receives a confirmed abort, then populates the
+same record immediately; ordinary transient retry loops remain bounded at
+three attempts. Child sessions are excluded by authoritative `parentID` and
+continue through managed-task recovery. The record owns a local
+provider/model/variant selection plus pending/action error leaves. Normal user
+sends clear it, while a manual recovery send preserves it until the send
+succeeds so failed retries remain actionable. Successful recovery sends clear
+only the recovery record they started from; a newer limit failure cannot be
+erased by the older send resolving afterward.
 
 ### MCP runtime store
 

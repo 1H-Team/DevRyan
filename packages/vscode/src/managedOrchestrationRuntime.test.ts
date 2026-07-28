@@ -104,6 +104,45 @@ afterEach(async () => {
 });
 
 describe('VS Code managed orchestration owner', () => {
+  it('matches the web provider-recovery continuation bridge contract', async () => {
+    const continuations = [{
+      sourceTaskId: 'dvr_task_limited',
+      taskId: 'dvr_task_recovered',
+      rootSessionId: 'ses_root',
+      childSessionId: 'ses_child',
+      directory: '/workspace',
+    }];
+    const listReadyProviderRecoveryContinuations = vi.fn(() => continuations);
+    const scheduler = {
+      initialize: vi.fn(async () => undefined),
+      listReadyProviderRecoveryContinuations,
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    } as unknown as ManagedTaskScheduler;
+    const runtime = createVsCodeManagedOrchestrationRuntime({
+      storageDirectory: '/unused',
+      scheduler,
+      persistence: createPersistence(),
+      executor: {
+        async start() { throw new Error('must not start'); },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' as const }; },
+        async readRecoverableResult() { return {}; },
+      },
+    });
+
+    await expect(runtime.handleRpc({
+      method: 'list_provider_recovery_continuations',
+      params: { sessionId: 'ses_child' },
+    })).resolves.toEqual({ continuations });
+    expect(listReadyProviderRecoveryContinuations).toHaveBeenCalledWith({
+      sessionId: 'ses_child',
+    });
+
+    await runtime.shutdown();
+  });
+
   it('matches web validation and clamping for private wait slices', async () => {
     const task = queuedTask(1);
     const waitForTask = vi.fn<ManagedTaskScheduler['waitForTask']>(async () => task);

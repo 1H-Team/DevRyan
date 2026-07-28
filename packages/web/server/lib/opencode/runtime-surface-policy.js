@@ -1,9 +1,11 @@
 const ALLOWED_MANAGED_RUNTIME_PLUGIN_SPEC_PREFIXES = [
   '@rama_nigg/open-cursor',
+  'context-mode@',
   'opencode-antigravity-auth',
 ];
 
 const ALLOWED_MANAGED_RUNTIME_PLUGIN_SPECS = new Set([
+  'context-mode',
   'cursor-acp',
   'oh-my-opencode-slim',
   './plugins/devryan-oh-my-opencode-slim.mjs',
@@ -23,6 +25,8 @@ const FORBIDDEN_MANAGED_RUNTIME_TOOL_PREFIXES = [
   'ghgrep_',
   'grep_app_',
 ];
+
+const MANAGED_RUNTIME_TOOL_COUNT_WARNING_THRESHOLD = 200;
 
 const normalizeSpec = (value) => (
   typeof value === 'string' ? value.trim() : ''
@@ -94,6 +98,7 @@ const isForbiddenManagedRuntimeToolId = (toolId) => {
 
 export {
   BLOCKED_MANAGED_RUNTIME_MCP_NAMES,
+  MANAGED_RUNTIME_TOOL_COUNT_WARNING_THRESHOLD,
   buildBlockedManagedRuntimeMcpOverlay,
   filterManagedRuntimePluginEntries,
   isAllowedManagedRuntimePluginSpec,

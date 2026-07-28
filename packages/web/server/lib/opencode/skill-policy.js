@@ -172,6 +172,73 @@ const isSkillDirectoryPattern = (pattern) => {
 
 const toDirectoryAllowPattern = (dir) => `${dir.replace(/\/+$/, '')}/*`;
 
+const normalizeRuntimeExternalDirectories = (directories) => {
+  const normalizedDirectories = [];
+  const seenDirectories = new Set();
+  if (!Array.isArray(directories)) {
+    return normalizedDirectories;
+  }
+
+  for (const dir of directories) {
+    if (typeof dir !== 'string' || !dir.trim()) {
+      continue;
+    }
+    const resolved = path.resolve(dir.trim());
+    const candidates = [resolved];
+    try {
+      const real = fs.realpathSync(resolved);
+      if (real && real !== resolved) {
+        candidates.push(real);
+      }
+    } catch {
+      // Missing runtime directories still need a normalized allow pattern.
+    }
+
+    for (const candidate of candidates) {
+      if (!candidate || seenDirectories.has(candidate)) {
+        continue;
+      }
+      seenDirectories.add(candidate);
+      normalizedDirectories.push(candidate);
+    }
+  }
+
+  return normalizedDirectories.sort((a, b) => a.localeCompare(b));
+};
+
+const applyRuntimeExternalDirectoryPolicy = (frontmatter, runtimeExternalDirectories = []) => {
+  const permission = isPlainObject(frontmatter?.permission) ? frontmatter.permission : null;
+  const allowedDirectories = normalizeRuntimeExternalDirectories(runtimeExternalDirectories);
+  if (!permission || allowedDirectories.length === 0) {
+    return frontmatter;
+  }
+
+  const externalDirectory = isPlainObject(permission.external_directory)
+    ? { ...permission.external_directory }
+    : {};
+  let changed = !isPlainObject(permission.external_directory);
+  for (const dir of allowedDirectories) {
+    const pattern = toDirectoryAllowPattern(dir);
+    if (externalDirectory[pattern] === 'allow') {
+      continue;
+    }
+    externalDirectory[pattern] = 'allow';
+    changed = true;
+  }
+
+  if (!changed) {
+    return frontmatter;
+  }
+
+  return {
+    ...frontmatter,
+    permission: {
+      ...permission,
+      external_directory: externalDirectory,
+    },
+  };
+};
+
 const sanitizeExternalDirectory = (externalDirectory, allowedSkillDirectories) => {
   const allowedDirectories = Array.isArray(allowedSkillDirectories)
     ? allowedSkillDirectories
@@ -207,35 +274,20 @@ const sanitizeAgentSkillPolicy = (frontmatter, policy = null) => {
     return frontmatter;
   }
 
-  const permission = isPlainObject(frontmatter?.permission) ? frontmatter.permission : {};
+  const frontmatterWithRuntimeDirectories = applyRuntimeExternalDirectoryPolicy(
+    frontmatter,
+    policy.runtimeExternalDirectories,
+  );
+  const permission = isPlainObject(frontmatterWithRuntimeDirectories?.permission)
+    ? frontmatterWithRuntimeDirectories.permission
+    : {};
   const skillNames = Array.isArray(policy.skillNames) ? policy.skillNames : [];
   const skillDirectoriesByName = isPlainObject(policy.skillDirectoriesByName) ? policy.skillDirectoriesByName : {};
-  const runtimeExternalDirectories = Array.isArray(policy.runtimeExternalDirectories)
-    ? policy.runtimeExternalDirectories
-    : [];
   const allowedSkillNames = getAllowedSkillNames(permission.skill, skillNames);
-  const allowedDirectories = [];
+  const allowedDirectories = normalizeRuntimeExternalDirectories(policy.runtimeExternalDirectories);
   const seenAllowedDirectories = new Set();
-  for (const dir of runtimeExternalDirectories) {
-    if (typeof dir !== 'string' || !dir.trim()) {
-      continue;
-    }
-    const resolved = path.resolve(dir.trim());
-    const candidates = [resolved];
-    try {
-      const real = fs.realpathSync(resolved);
-      if (real && real !== resolved) {
-        candidates.push(real);
-      }
-    } catch {
-    }
-    for (const normalizedDir of candidates) {
-      if (!normalizedDir || seenAllowedDirectories.has(normalizedDir)) {
-        continue;
-      }
-      seenAllowedDirectories.add(normalizedDir);
-      allowedDirectories.push(normalizedDir);
-    }
+  for (const dir of allowedDirectories) {
+    seenAllowedDirectories.add(dir);
   }
   for (const name of allowedSkillNames) {
     const dirs = Array.isArray(skillDirectoriesByName[name]) ? skillDirectoriesByName[name] : [];
@@ -255,7 +307,7 @@ const sanitizeAgentSkillPolicy = (frontmatter, policy = null) => {
   }
 
   return {
-    ...frontmatter,
+    ...frontmatterWithRuntimeDirectories,
     permission: {
       ...permission,
       external_directory: sanitizeExternalDirectory(permission.external_directory, allowedDirectories),
@@ -265,6 +317,7 @@ const sanitizeAgentSkillPolicy = (frontmatter, policy = null) => {
 };
 
 export {
+  applyRuntimeExternalDirectoryPolicy,
   buildVisibleSkillPolicy,
   filterVisibleSkills,
   normalizeSkillPath,

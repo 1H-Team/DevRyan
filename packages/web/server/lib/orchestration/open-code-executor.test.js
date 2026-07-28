@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT } from '@openchamber/orchestration-runtime';
+
 import { createWebManagedOpenCodeExecutor } from './open-code-executor.js';
 
 const jsonResponse = (body, init = {}) => new Response(JSON.stringify(body), {
@@ -98,6 +100,81 @@ describe('web managed OpenCode executor transport', () => {
       state: 'transient',
       failureReason: 'OpenCode port is not available',
     });
+  });
+
+  it('sends an idempotent same-child continuation after a terminal operation timeout', async () => {
+    const requests = [];
+    let statusReads = 0;
+    const timeoutMessage = {
+      info: {
+        id: 'msg_timeout',
+        role: 'assistant',
+        finish: 'error',
+        error: { message: 'The operation timed out.' },
+      },
+      parts: [{ type: 'text', text: 'partial' }],
+    };
+    const fetchImpl = vi.fn(async (url, init = {}) => {
+      requests.push({ url: String(url), init });
+      const pathname = new URL(url).pathname;
+      if (pathname.endsWith('/prompt_async')) return new Response(null, { status: 204 });
+      if (pathname === '/session/status') {
+        statusReads += 1;
+        const type = statusReads === 2 ? 'busy' : 'idle';
+        return jsonResponse({ ses_child: { type } });
+      }
+      if (pathname.endsWith('/message')) {
+        // The recovery message appears once the continuation prompt was sent,
+        // rather than after a fixed number of transcript reads: a live child is
+        // no longer re-read on every poll.
+        const continued = requests.some(({ url: sent }) => (
+          new URL(sent).pathname.endsWith('/prompt_async')
+        ));
+        return jsonResponse(!continued
+          ? [timeoutMessage]
+          : [
+              timeoutMessage,
+              {
+                info: { id: 'msg_done', role: 'assistant', finish: 'stop' },
+                parts: [{ type: 'text', text: 'done' }],
+              },
+            ]);
+      }
+      throw new Error(`Unexpected request ${init.method} ${pathname}`);
+    });
+    const executor = createWebManagedOpenCodeExecutor({
+      buildOpenCodeUrl: (pathname) => `http://127.0.0.1:4096${pathname}`,
+      getOpenCodeAuthHeaders: () => ({ authorization: 'Basic opaque' }),
+      fetchImpl,
+      pollIntervalMs: 0,
+    });
+
+    const result = await executor.observe({
+      taskId: 'dvr_task_1',
+      childSessionId: 'ses_child',
+      directory: '/workspace',
+      providerId: 'github-copilot',
+      modelId: 'gpt-4.1',
+      agent: 'fixer',
+      variant: 'high',
+    });
+
+    expect(result.status).toBe('completed');
+    const promptRequests = requests.filter(({ url }) => (
+      new URL(url).pathname.endsWith('/prompt_async')
+    ));
+    expect(promptRequests).toHaveLength(1);
+    const continuationBody = JSON.parse(promptRequests[0].init.body);
+    expect(continuationBody).toMatchObject({
+      agent: 'fixer',
+      model: { providerID: 'github-copilot', modelID: 'gpt-4.1' },
+      variant: 'high',
+      parts: [{ type: 'text', text: MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT }],
+    });
+    // OpenCode must mint the id. A task-derived one is not ordered like an
+    // OpenCode id, and a continuation that sorts below the session's latest
+    // message is written into the past and silently never runs.
+    expect(continuationBody).not.toHaveProperty('messageID');
   });
 
   it('aborts and deletes a normal-provider child when the scheduler rejects its ownership checkpoint', async () => {

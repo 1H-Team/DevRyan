@@ -1,5 +1,5 @@
 ---
-name: Executing Plans
+name: executing-plans
 description: Use when you have a written implementation plan to execute in a separate session with review checkpoints
 ---
 
@@ -65,4 +65,3 @@ After all tasks complete and verified:
 
 **Required workflow skills:**
 - **superpowers:writing-plans** - Creates the plan this skill executes
-

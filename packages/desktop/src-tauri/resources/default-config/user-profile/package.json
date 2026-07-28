@@ -3,6 +3,7 @@
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.47",
     "@opencode-ai/plugin": "1.17.11",
+    "@rynfar/meridian": "1.57.0",
     "oh-my-opencode-slim": "2.0.5",
     "opencode-with-claude": "1.6.18"
   }

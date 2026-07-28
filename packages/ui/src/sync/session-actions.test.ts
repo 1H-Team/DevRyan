@@ -3255,6 +3255,28 @@ describe("revertToMessage recovery behavior", () => {
     expect(isAbortGuardActive("session-a", Date.now() + ABORT_GUARD_TTL_MS + 1)).toBe(true)
   })
 
+  test("settles a busy retry attempt raced in before abort acknowledgement", async () => {
+    const store = createStore({}, [makeSession("session-a")])
+    store.setState({
+      session_status: {
+        "session-a": { type: "busy" },
+      },
+    })
+    const childStores = createChildStores([["/test/project", store]])
+    const retryStatus = {
+      type: "retry",
+      attempt: 1,
+      message: "usage limit",
+      next: 10,
+    } as SessionStatus
+
+    const { abortCurrentOperationConfirmed, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    expect(await abortCurrentOperationConfirmed("session-a", retryStatus)).toBe(true)
+    expect(store.getState().session_status["session-a"]).toEqual({ type: "idle" })
+  })
+
   test("does not record a manual abort flag when sdk abort fails", async () => {
     const store = createStore({}, [makeSession("session-a")])
     const childStores = createChildStores([["/test/project", store]])

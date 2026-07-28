@@ -216,13 +216,11 @@ const canReusePreviousTurn = (previous: TurnRecord, next: TurnRecord): boolean =
 interface ProjectTurnRecordsOptions {
     previousProjection?: TurnProjectionResult | null;
     recordedPlanModeMessageIds?: ReadonlySet<string>;
-    showTextJustificationActivity: boolean;
 }
 
 const DEFAULT_OPTIONS: ProjectTurnRecordsOptions = {
     previousProjection: null,
     recordedPlanModeMessageIds: new Set<string>(),
-    showTextJustificationActivity: false,
 };
 
 export const projectTurnRecords = (
@@ -301,7 +299,6 @@ export const projectTurnRecords = (
             assistantMessages: turn.assistantMessages,
             summarySourceMessageId: turn.summary.sourceMessageId,
             summarySourcePartId: turn.summary.sourcePartId,
-            showTextJustificationActivity: effectiveOptions.showTextJustificationActivity,
         });
         turn.activityParts = activity.activityParts;
         turn.activitySegments = activity.activitySegments;

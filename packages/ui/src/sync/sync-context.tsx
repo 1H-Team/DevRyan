@@ -74,6 +74,11 @@ import { useManagedOrchestrationStore } from "@/stores/useManagedOrchestrationSt
 import { useMessageQueueStore } from "@/stores/messageQueueStore"
 import { useContextStore } from "@/stores/contextStore"
 import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
+import {
+  clearDirectorySessionChangeAttributions,
+  clearSessionChangeAttribution,
+  reconcileSessionChangeAttribution,
+} from "@/stores/useSessionChangeAttributionStore"
 import { applyGlobalSessionLifecycleEvent } from "@/stores/useGlobalSessionsStore"
 import {
   postRendererTurnTimingMark,
@@ -753,6 +758,7 @@ async function materializeSessionFromServer(
     }
   })
   replayPendingPartDeltasForSession(directory, sessionID, store)
+  reconcileSessionChangeAttribution(directory, sessionID, store.getState())
 
   // Report whether buffered deltas for this session are still orphaned after the
   // fetch+replay (the streamed part wasn't in the snapshot yet). The caller retries.
@@ -2247,6 +2253,7 @@ export async function resyncDirectoryAfterReconnect(
 
     setIndexedSessionDirectory(routingIndex, nextSession.id, directory)
     setIndexedSessionMessages(routingIndex, sessionId, directory, nextMessages)
+    reconcileSessionChangeAttribution(directory, sessionId, store.getState())
   }))
 
   await resyncBlockingRequestsForDirectory(directory, store, Array.from(candidateSessionIds))
@@ -2635,6 +2642,26 @@ function handleEvent(
     }
     const sessionID = getSessionIdFromPayload(payload) ?? undefined
     const messageID = getMessageIdFromPayload(payload) ?? undefined
+    const attributionSessionID = sessionID
+      ?? (messageID ? resolveSessionIdForMessage(store.getState(), routingIndex, messageID) ?? undefined : undefined)
+    if (payload.type === "session.deleted" && sessionID) {
+      clearSessionChangeAttribution(resolvedDirectory, sessionID)
+    } else if (
+      attributionSessionID
+      && (
+        payload.type === "message.part.updated"
+        || payload.type === "message.part.removed"
+        || payload.type === "message.removed"
+        || payload.type === "session.updated"
+      )
+    ) {
+      const part = payload.type === "message.part.updated"
+        ? (payload.properties as { part?: Part }).part
+        : undefined
+      if (payload.type !== "message.part.updated" || part?.type === "tool") {
+        reconcileSessionChangeAttribution(resolvedDirectory, attributionSessionID, store.getState())
+      }
+    }
     syncDebug.dispatch.eventApplied(payload.type, sessionID, messageID)
 
     // Snapshot materialization on message.updated: if the message was inserted or
@@ -2886,6 +2913,7 @@ export function SyncProvider(props: {
       },
       onDispose: (directory, snapshot) => {
         bootingDirs.delete(directory)
+        clearDirectorySessionChangeAttributions(directory)
         releaseDirectoryOwnedSyncState(
           directory,
           snapshot,

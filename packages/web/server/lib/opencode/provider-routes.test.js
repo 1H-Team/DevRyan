@@ -1372,6 +1372,53 @@ describe('OpenCode provider routes', () => {
     });
   });
 
+  it('schedules standard-provider title generation for Anthropic prompts', async () => {
+    const schedule = vi.fn();
+    const { app } = createApp({
+      standardSessionTitleRuntime: { schedule },
+    });
+    app.use('/api', (_req, res) => res.status(204).end());
+
+    await request(app)
+      .post('/api/session/ses_anthropic/prompt_async?directory=%2Ftmp%2Fproject')
+      .send({
+        model: { providerID: 'anthropic', modelID: 'claude-sonnet-4-5' },
+        messageID: 'msg_1',
+        parts: [
+          { type: 'text', text: 'User has requested to enter plan mode.', synthetic: true },
+          { type: 'text', text: 'repair Anthropic session titles' },
+        ],
+      })
+      .expect(204);
+
+    expect(schedule).toHaveBeenCalledWith({
+      sessionID: 'ses_anthropic',
+      directory: '/tmp/project',
+      text: 'repair Anthropic session titles',
+    });
+  });
+
+  it('schedules historical marker title backfill after a session list succeeds', async () => {
+    const scheduleMarkerBackfill = vi.fn();
+    const { app } = createApp({
+      standardSessionTitleRuntime: {
+        schedule: vi.fn(),
+        scheduleMarkerBackfill,
+      },
+    });
+    app.get('/api/session', (_req, res) => res.json([
+      { id: 'ses_anthropic', title: '<!--plan-->' },
+    ]));
+
+    await request(app)
+      .get('/api/session?directory=%2Ftmp%2Fproject')
+      .expect(200);
+
+    expect(scheduleMarkerBackfill).toHaveBeenCalledWith({
+      directory: '/tmp/project',
+    });
+  });
+
   it('does not schedule standard-provider title generation after a proxied prompt error', async () => {
     const schedule = vi.fn();
     const { app } = createApp({

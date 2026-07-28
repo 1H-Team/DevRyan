@@ -46,13 +46,14 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSync } from '@/sync/use-sync';
 import { useViewportStore } from '@/sync/viewport-store';
 import { DraggableSessionRow } from './sessionFolderDnd';
-import type { SessionNode, SessionSummaryMeta } from './types';
-import { formatSessionCompactDateLabel, normalizePath, renderHighlightedText, resolveSessionDiffStats, resolveSessionRoutingDirectory } from './utils';
+import type { SessionNode } from './types';
+import { formatSessionCompactDateLabel, normalizePath, renderHighlightedText, resolveSessionRoutingDirectory } from './utils';
 import { useSessionMultiSelectStore } from '@/stores/useSessionMultiSelectStore';
 import {
   managedOrchestrationSelectors,
   useManagedOrchestrationStore,
 } from '@/stores/useManagedOrchestrationStore';
+import { useProviderRecoveryStore } from '@/stores/useProviderRecoveryStore';
 import { useI18n } from '@/lib/i18n';
 import { resolveEffectivePlanIndicatorState, type PlanIndicatorState } from '@/sync/plan-indicator';
 import { useNotificationStore } from '@/sync/notification-store';
@@ -143,8 +144,6 @@ const getSessionRenderSignature = (session: Session): string => {
     parentID?: string | null;
     project?: { worktree?: string | null } | null;
   };
-  const diffStats = resolveSessionDiffStats(session.summary as SessionSummaryMeta | undefined);
-
   return [
     session.id,
     session.title ?? '',
@@ -156,8 +155,6 @@ const getSessionRenderSignature = (session: Session): string => {
     record.parentID ?? '',
     record.agent ?? '',
     session.share?.url ?? '',
-    diffStats?.additions ?? 0,
-    diffStats?.deletions ?? 0,
   ].join('|');
 };
 
@@ -424,8 +421,25 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
       );
     }, [isRootSession, session.id]),
   );
+  const hasPrimaryRecovery = useProviderRecoveryStore(
+    React.useCallback((state) => (
+      isRootSession && Boolean(state.recoveriesBySessionId[session.id])
+    ), [isRootSession, session.id]),
+  );
+  const hasManagedRecovery = useManagedOrchestrationStore(React.useMemo(
+    () => managedOrchestrationSelectors.hasManualRecoveryForRoot(
+      isRootSession ? session.id : '',
+    ),
+    [isRootSession, session.id],
+  ));
+  const parentOwnedRecoveryTaskId = useManagedOrchestrationStore(React.useMemo(
+    () => managedOrchestrationSelectors.manualRecoveryTaskIdForChildSession(
+      isRootSession ? '' : session.id,
+    ),
+    [isRootSession, session.id],
+  ));
   const sidebarIsWorking = resolveSidebarWorkingStatus({
-    isWorking: isSessionWorking,
+    isWorking: isSessionWorking && !hasPrimaryRecovery,
     pendingQuestionCount,
     planState: planIndicatorState,
   });
@@ -461,14 +475,6 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const sessionHasUnreadError = useNotificationStore(
     React.useCallback((state) => state.index.session.unseenHasError[session.id] ?? false, [session.id]),
   );
-  const manualRecoveryTaskId = useManagedOrchestrationStore(React.useMemo(
-    () => managedOrchestrationSelectors.manualRecoveryTaskIdForChildSession(session.id),
-    [session.id],
-  ));
-  const manualRecoveryFailureKind = useManagedOrchestrationStore(React.useMemo(
-    () => managedOrchestrationSelectors.manualRecoveryFailureKindForChildSession(session.id),
-    [session.id],
-  ));
   const sessionTimestamp = userActivityTimestamp ?? resolvedSession.time?.updated ?? resolvedSession.time?.created ?? Date.now();
   const sessionCompactUpdatedLabel = formatSessionCompactDateLabel(sessionTimestamp);
   const isMenuOpen = openSidebarMenuKey === menuInstanceKey;
@@ -483,7 +489,10 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
       try {
         await sync.ensureSessionRenderable(child.session.id);
         const childRecords = buildSessionMessageRecordsSnapshot(directoryStore.getState(), child.session.id).list;
-        const childTitle = child.session.title || t('sessions.sidebar.session.export.untitledSubagent');
+        const childTitle = resolveDisplaySessionTitle({
+          title: child.session.title,
+          fallback: t('sessions.sidebar.session.export.untitledSubagent'),
+        });
         const childAgent = (child.session as Session & { agent?: string }).agent;
         const grandChildren = await collectChildExports(child.children);
         skipped += grandChildren.skipped;
@@ -659,7 +668,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     isActive,
     hasUnreadCompletion: sessionHasUnreadCompletion,
     hasCompletedStatus,
-    hasErrorStatus: hasUnreadError,
+    hasErrorStatus: hasUnreadError || hasPrimaryRecovery || hasManagedRecovery,
     pendingQuestionCount,
     planState: effectivePlanIndicatorState,
   });
@@ -670,8 +679,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     isActive,
     hasUnreadCompletion: sessionHasUnreadCompletion,
     hasUnreadError: sessionHasUnreadError,
-    hasManualRecovery: Boolean(manualRecoveryTaskId),
-    manualRecoveryFailureKind,
+    hasParentOwnedRecovery: Boolean(parentOwnedRecoveryTaskId),
   });
   const effectiveSidebarStatusIndicator = sidebarStatusIndicator ?? subtaskStatusIndicator;
   const showLeadingStatus = Boolean(effectiveSidebarStatusIndicator);

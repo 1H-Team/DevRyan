@@ -1,5 +1,5 @@
 ---
-name: Linear
+name: linear
 description: Manage issues, projects & team workflows in Linear. Use when the user wants to read, create or updates tickets in Linear.
 metadata:
   short-description: Manage Linear issues in Codex
@@ -74,4 +74,3 @@ Explain why this change is being made — the problem or need it addresses, what
 - `path/to/existing/file.ext` — what changes and why.
 
 **Files read (no edit) for behavior reuse**
-

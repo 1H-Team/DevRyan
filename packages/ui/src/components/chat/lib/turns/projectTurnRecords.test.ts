@@ -10,6 +10,7 @@ function createMessageEntry({
     createdAt,
     completedAt,
     finish,
+    providerID,
     planMode = false,
     parts = [],
 }: {
@@ -19,6 +20,7 @@ function createMessageEntry({
     createdAt: number;
     completedAt?: number;
     finish?: string;
+    providerID?: string;
     planMode?: boolean;
     parts?: Part[];
 }): ChatMessageEntry {
@@ -28,6 +30,7 @@ function createMessageEntry({
             role,
             ...(parentID ? { parentID } : {}),
             ...(finish ? { finish } : {}),
+            ...(providerID ? { providerID } : {}),
             ...(planMode ? { mode: 'plan' } : {}),
             time: { created: createdAt, ...(completedAt ? { completed: completedAt } : {}) },
         } as Message,
@@ -41,6 +44,33 @@ const createPlanPart = (messageId: string, title: string): Part => ({
     sessionID: 'session-1',
     type: 'text',
     text: `<!--plan-->\n# ${title}\n\n## Context\n\nKeep context.\n\n## Implementation\n\n1. Do work.\n\n## Verification\n\n1. Run tests.`,
+} as Part);
+
+const createTextPart = (messageId: string, id: string, text: string): Part => ({
+    id,
+    messageID: messageId,
+    sessionID: 'session-1',
+    type: 'text',
+    text,
+} as Part);
+
+const createReasoningPart = (messageId: string, id: string, text: string): Part => ({
+    id,
+    messageID: messageId,
+    sessionID: 'session-1',
+    type: 'reasoning',
+    text,
+    time: { start: 1, end: 2 },
+} as Part);
+
+const createToolPart = (messageId: string, id: string, tool: string): Part => ({
+    id,
+    messageID: messageId,
+    sessionID: 'session-1',
+    type: 'tool',
+    tool,
+    callID: `${id}-call`,
+    state: { status: 'completed', input: {}, output: '' },
 } as Part);
 
 describe('projectTurnRecords', () => {
@@ -149,6 +179,123 @@ describe('projectTurnRecords', () => {
             sourceMessageId: 'a2',
             sourcePartId: 'final-text',
         });
+    });
+
+    test('keeps OpenAI reasoning and tools as activity while leaving the final text as the answer', () => {
+        const user = createMessageEntry({ id: 'u-openai', role: 'user', createdAt: 1 });
+        const progress = createMessageEntry({
+            id: 'a-openai-progress',
+            role: 'assistant',
+            parentID: 'u-openai',
+            createdAt: 2,
+            completedAt: 3,
+            finish: 'tool-calls',
+            providerID: 'openai',
+            parts: [
+                createReasoningPart('a-openai-progress', 'openai-reasoning', '**Reviewing the files**'),
+                createToolPart('a-openai-progress', 'openai-tool', 'apply_patch'),
+            ],
+        });
+        const final = createMessageEntry({
+            id: 'a-openai-final',
+            role: 'assistant',
+            parentID: 'u-openai',
+            createdAt: 4,
+            completedAt: 5,
+            finish: 'stop',
+            providerID: 'openai',
+            parts: [createTextPart('a-openai-final', 'openai-final-text', 'Implemented and tested.')],
+        });
+
+        const turn = projectTurnRecords([user, progress, final]).turns[0];
+
+        expect(turn?.activityParts.map(({ id, kind, providerID }) => ({ id, kind, providerID }))).toEqual([
+            { id: 'openai-reasoning', kind: 'reasoning', providerID: 'openai' },
+            { id: 'openai-tool', kind: 'tool', providerID: 'openai' },
+        ]);
+        expect(turn?.summary).toEqual({
+            text: 'Implemented and tested.',
+            sourceMessageId: 'a-openai-final',
+            sourcePartId: 'openai-final-text',
+        });
+    });
+
+    test('projects OpenCodeGo tool-step text as justification without consuming the final answer', () => {
+        const user = createMessageEntry({ id: 'u-kimi', role: 'user', createdAt: 1 });
+        const progress = createMessageEntry({
+            id: 'a-kimi-progress',
+            role: 'assistant',
+            parentID: 'u-kimi',
+            createdAt: 2,
+            completedAt: 3,
+            finish: 'tool-calls',
+            providerID: 'opencodego',
+            parts: [
+                createTextPart('a-kimi-progress', 'kimi-progress-text', '**Planning the change**The existing helper is nearby.'),
+                createToolPart('a-kimi-progress', 'kimi-tool', 'edit'),
+            ],
+        });
+        const final = createMessageEntry({
+            id: 'a-kimi-final',
+            role: 'assistant',
+            parentID: 'u-kimi',
+            createdAt: 4,
+            completedAt: 5,
+            finish: 'stop',
+            providerID: 'opencodego',
+            parts: [createTextPart('a-kimi-final', 'kimi-final-text', 'The helper and test are complete.')],
+        });
+
+        const turn = projectTurnRecords([user, progress, final]).turns[0];
+
+        expect(turn?.activityParts.map(({ id, kind }) => ({ id, kind }))).toEqual([
+            { id: 'kimi-progress-text', kind: 'justification' },
+            { id: 'kimi-tool', kind: 'tool' },
+        ]);
+        expect(turn?.summary.sourcePartId).toBe('kimi-final-text');
+        expect(turn?.activityParts.some(({ id }) => id === 'kimi-final-text')).toBe(false);
+    });
+
+    test('preserves Anthropic reasoning and narrated tool progress in source order', () => {
+        const user = createMessageEntry({ id: 'u-anthropic', role: 'user', createdAt: 1 });
+        const progress = createMessageEntry({
+            id: 'a-anthropic-progress',
+            role: 'assistant',
+            parentID: 'u-anthropic',
+            createdAt: 2,
+            completedAt: 3,
+            finish: 'tool-calls',
+            providerID: 'anthropic',
+            parts: [
+                createReasoningPart('a-anthropic-progress', 'anthropic-reasoning', 'I should inspect the implementation.'),
+                createTextPart('a-anthropic-progress', 'anthropic-progress-text', 'I’m checking the existing helper first.'),
+                createToolPart('a-anthropic-progress', 'anthropic-tool', 'read'),
+            ],
+        });
+        const final = createMessageEntry({
+            id: 'a-anthropic-final',
+            role: 'assistant',
+            parentID: 'u-anthropic',
+            createdAt: 4,
+            completedAt: 5,
+            finish: 'stop',
+            providerID: 'anthropic',
+            parts: [
+                createReasoningPart('a-anthropic-final', 'anthropic-final-reasoning', 'The focused test passed.'),
+                createTextPart('a-anthropic-final', 'anthropic-final-text', 'Implemented the helper and test.'),
+            ],
+        });
+
+        const turn = projectTurnRecords([user, progress, final]).turns[0];
+
+        expect(turn?.activityParts.map(({ id, kind }) => ({ id, kind }))).toEqual([
+            { id: 'anthropic-reasoning', kind: 'reasoning' },
+            { id: 'anthropic-progress-text', kind: 'justification' },
+            { id: 'anthropic-tool', kind: 'tool' },
+            { id: 'anthropic-final-reasoning', kind: 'reasoning' },
+        ]);
+        expect(turn?.summary.sourcePartId).toBe('anthropic-final-text');
+        expect(turn?.activityParts.some(({ id }) => id === 'anthropic-final-text')).toBe(false);
     });
 
     test('indexes completed plan revisions in canonical turn order', () => {

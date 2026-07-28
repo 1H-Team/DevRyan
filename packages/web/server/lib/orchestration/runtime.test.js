@@ -69,6 +69,38 @@ const createWaitScheduler = () => {
 };
 
 describe('web managed orchestration runtime', () => {
+  it('exposes durable provider-recovery continuations through the private bridge', async () => {
+    const continuations = [{
+      sourceTaskId: 'dvr_task_limited',
+      taskId: 'dvr_task_recovered',
+      rootSessionId: 'ses_root',
+      childSessionId: 'ses_child',
+      directory: '/workspace',
+    }];
+    const scheduler = {
+      initialize: vi.fn(async () => undefined),
+      listReadyProviderRecoveryContinuations: vi.fn(() => continuations),
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    };
+    const runtime = createWebManagedOrchestrationRuntime({
+      scheduler,
+      persistence: createPersistence(),
+      executor: { async start() { throw new Error('must not start'); } },
+    });
+
+    await expect(runtime.handleRpc({
+      method: 'list_provider_recovery_continuations',
+      params: { sessionId: 'ses_child' },
+    })).resolves.toEqual({ continuations });
+    expect(scheduler.listReadyProviderRecoveryContinuations).toHaveBeenCalledWith({
+      sessionId: 'ses_child',
+    });
+
+    await runtime.shutdown();
+  });
+
   it('validates and clamps private wait slices before forwarding them to the scheduler', async () => {
     const { scheduler } = createWaitScheduler();
     const runtime = createWebManagedOrchestrationRuntime({

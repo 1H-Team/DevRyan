@@ -68,6 +68,31 @@ a child terminal event therefore cannot regress the newer SSE state or remove
 older cached child activity when the response's fetch limit is smaller than the
 loaded history.
 
+## Authoritative session-change attribution
+
+Per-session change badges must not use user-message `summary.diffs`,
+session-level additions/deletions, `session.diff`, or patch snapshot parts.
+Those records can describe the shared working tree and can include changes made
+before or outside the current session.
+
+`sessionChangeAttribution.ts` projects ownership only from completed,
+successful, explicit file-tool parts. Paths are normalized relative to the
+session directory and outside-repository paths are rejected. Successful shell
+tools are represented as `hasUnattributedMutations` because their commands may
+change files without providing a trustworthy bounded path set.
+
+`sync-context.tsx` reconciles that projection after relevant live events and
+reconnect materialization; `use-sync.ts` does the same after message-page
+materialization. The dedicated `useSessionChangeAttributionStore.ts` stays
+outside high-frequency session/message state. The active badge intersects its
+attributed paths with current rich Git working-tree stats, so committed,
+reverted, or otherwise clean files disappear without transferring unrelated
+workspace changes into the session.
+
+Permanent session deletion clears the exact attribution entry. Directory
+disposal clears the directory's entries. Revert boundaries are respected during
+projection, so hidden tool parts cannot retain attribution.
+
 ## Message pagination and first-page loading
 
 `message-pagination-store.ts` owns the shared pagination record for each exact
@@ -494,20 +519,28 @@ scoped to the existing `directory + sessionID` candidates.
 Subtask composer sends preserve the agent assigned by the child's original user
 message. A later continuation cannot silently replace that child identity with
 the globally selected primary agent; root sessions continue restoring their
-latest user-selected agent and model.
+latest user-selected agent and model. When a same-child Model Recovery appends a
+new user record, the composer combines that stable specialist identity with the
+latest authoritative provider/model/variant, applies the four fields together,
+and scopes the child-session lookup by directory. This restoration waits for the
+message list itself, not full assistant-part materialization, because a failed
+provider turn can legitimately leave an empty assistant shell in history.
+Reopening the recovered child therefore shows Oracle (or the assigned
+specialist) beside the selected recovery model and thinking level instead of
+inheriting the previously viewed session's agent.
 
 OpenCode ignores `session.abort` while a session sleeps between provider retry attempts (out of usage / rate limit) and keeps emitting `session.status: retry` — it never emits `session.idle`/`session.error` from inside the loop. `abort-retry-guard.ts` makes a manual Stop stick:
 
 - Every user-initiated abort path (`abortCurrentOperation`, queued-send interrupt, archive/delete pre-abort, revert/unrevert) registers a per-session guard via `registerManualAbortGuard`.
-- An unguarded provider `retry` remains authoritative so OpenCode can apply its retry policy; observing a live retry does not create a recovery record or abort the active turn.
+- An unguarded provider `retry` remains authoritative so OpenCode can apply its retry policy, except when a root session reports a definite shared usage-limit classification. That case receives a confirmed abort immediately and creates the same explicit recovery record. Child sessions are excluded by authoritative `parentID` and continue through managed-task recovery.
 - The guard starts with a 60-second base window. When the stopped status is `retry`, it is seeded from the authoritative `attempt`/`next` identity and remains active through that normalized retry target plus the same settlement window. New retry identities can advance the deadline, while duplicate relative deadlines reuse their first normalized target instead of sliding forever.
 - While active, `filterSessionStatusThroughAbortGuard` coerces incoming `retry` statuses to `idle` (live event reduction, reconnect status merge, and directory bootstrap snapshots all route through it) and schedules bounded, debounced re-aborts (max 3) so the server loop is cancelled when its next attempt creates an abortable in-flight request. Snapshot filtering preserves the original status-map reference when no guard changes a value.
 - Streaming derivation does not retain an incomplete assistant shell across that guarded `idle`; the manual-abort guard disables only the narrow premature-idle streaming exception for the stopped session, so the composer unlocks without changing ordinary out-of-order idle handling.
 - The guard clears on authoritative idle (`session.idle`, `session.error`, idle `session.status`), on any new local send (`optimisticSend`, `usePromptSubmit`), and when an authoritative user message advances the cached user-turn boundary and proves that another connected surface started new work. Historical replay into an empty or newer cache cannot clear it.
-- `useProviderErrorRecovery` creates recovery records after an authoritative active-to-idle transition ends with a matching retryable terminal assistant error. A transient stream retry loop is capped after three attempts: DevRyan first receives a successful abort acknowledgement, then offers the same explicit recovery card. Manual recovery waits for guard settlement before sending the captured provider/model/agent/variant, preventing an explicitly stopped retry loop from overlapping the replacement turn; no recovery is resent automatically.
+- `useProviderErrorRecovery` creates root-session recovery records after an authoritative active-to-idle transition ends with a matching retryable terminal assistant error. A definite provider usage limit is stopped on its first live retry; other transient stream retry loops remain capped after three attempts. DevRyan first receives a successful abort acknowledgement, then offers the same explicit recovery card. Manual recovery waits for guard settlement before sending the captured provider/model/agent/variant, preventing an explicitly stopped retry loop from overlapping the replacement turn; no recovery is resent automatically.
 - When the current retry deadline plus its settlement window expires without idle, live server state wins again — the guard never permanently masks real activity.
 
-`abortCurrentOperation` first cancels the active top-level DevRyan-managed tasks for the parent session with scheduler cascade enabled, then aborts the parent OpenCode session. This stops queued and running managed descendants without emitting cancellation tool calls into chat. It additionally settles a local `retry` status to `idle` right after the abort request (narrow optimistic transition mirroring `revertToMessage`); guarded streaming derivation completes the stopped assistant shell so the input and model picker unlock immediately.
+`abortCurrentOperation` first cancels the active top-level DevRyan-managed tasks for the parent session with scheduler cascade enabled, then aborts the parent OpenCode session. This stops queued and running managed descendants without emitting cancellation tool calls into chat. It additionally settles a local `retry` status to `idle` right after the abort request (narrow optimistic transition mirroring `revertToMessage`); guarded streaming derivation completes the stopped assistant shell so the input and model picker unlock immediately. If the abort started from `retry` and the provider races the next attempt to `busy` before acknowledging it, the same narrow transition settles that raced state. An abort that started from ordinary `busy` still waits for the authoritative idle event.
 
 Direct steering and queued **send now** share the same successful-abort path and record abort display reason `steered`; the explicit Stop action remains `manual`. Send-now performs the steer before claiming the queue, then atomically flushes every claimed item FIFO. Natural idle auto-send never aborts and waits for the pre-existing user turn to have a terminal, parent-correlated assistant response before its first send. Before every later item, the flush likewise requires a terminal assistant message whose `parentID` matches the prior queued transport message ID while live status is idle; an early idle event cannot advance the queue. Queue rows capture a stable queue-item ID, session directory, provider/model/agent/variant/plan mode, and attachments at enqueue time. An OpenCode-compatible, time-sortable transport message ID is assigned immediately before each individual FIFO dispatch—after the preceding assistant turn—and is then preserved across rollback and ambiguous retries. Later, unattempted claimed rows remain without a transport ID until their turn; legacy queue-time IDs without dispatch scope are refreshed before dispatch. Missing directories use the authoritative session lookup.
 

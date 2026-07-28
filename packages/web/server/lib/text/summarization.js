@@ -64,6 +64,12 @@ Your response should be ready to speak immediately.`;
 }
 
 const SUMMARIZE_TIMEOUT_MS = 30_000;
+const PLAN_CONTROL_TITLE_PATTERN = /^<(?:!|--)[!-]*plan-+>$/i;
+
+export function isPlanControlTitle(text) {
+  if (!text || typeof text !== 'string') return false;
+  return PLAN_CONTROL_TITLE_PATTERN.test(text.replace(/\s+/g, ''));
+}
 
 export async function generateZenText({ prompt, zenModel, timeoutMs = SUMMARIZE_TIMEOUT_MS }) {
   const normalizedPrompt = typeof prompt === 'string' ? prompt.trim() : '';
@@ -184,16 +190,17 @@ export function sanitizeForTitle(text) {
   const line = text
     .split(/\r?\n/)
     .map((entry) => entry.trim())
-    .find((entry) => entry && !/^```/.test(entry));
+    .find((entry) => entry && !/^```/.test(entry) && !isPlanControlTitle(entry));
   if (!line) return '';
 
-  return line
+  const sanitized = line
     .replace(/^#{1,6}\s+/, '')
     .replace(/^[-*+]\s+/, '')
     .replace(/^[`*_~"'“”‘’]+|[`*_~"'“”‘’]+$/g, '')
     .replace(/[.!?;:]+$/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+  return isPlanControlTitle(sanitized) ? '' : sanitized;
 }
 
 function sanitizeByMode(text, mode) {

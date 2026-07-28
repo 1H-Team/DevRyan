@@ -90,6 +90,33 @@ describe('harness preflight', () => {
     expect(findings).toEqual([]);
   });
 
+  it('warns when the live runtime tool catalog crosses the context review threshold', () => {
+    const toolIds = Array.from({ length: 201 }, (_, index) => `tool_${index}`);
+    const findings = lintAgentHarness({
+      agents: [],
+      skills: [],
+      hiddenSkills: [],
+      staleOverrides: [],
+      toolManifest: {
+        toolIds,
+        tools: toolIds.map((id) => ({ id })),
+      },
+    });
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        ruleId: 'large-runtime-tool-surface',
+        severity: 'warning',
+        summary: expect.stringContaining('201 tools'),
+        artifact: expect.objectContaining({
+          toolCount: 201,
+          warningThreshold: 200,
+        }),
+        stopCondition: expect.stringContaining('Do not remove tools solely by count'),
+      }),
+    ]);
+  });
+
   it('accepts Explorer read and search permission keys', () => {
     const findings = lintAgentHarness({
       agents: [
@@ -227,6 +254,40 @@ describe('harness preflight', () => {
       'warmup-timeout',
       'slim-raw-mode-active',
     ]));
+  });
+
+  it('reports skill names that are invalid or do not match their directory', () => {
+    const findings = lintAgentHarness({
+      agents: [],
+      skills: [
+        {
+          name: 'Frontend Design',
+          path: '/skills/frontend-design/SKILL.md',
+          parseOk: true,
+        },
+        {
+          name: 'valid-name',
+          path: '/skills/valid-name/SKILL.md',
+          parseOk: true,
+        },
+      ],
+      hiddenSkills: [],
+      staleOverrides: [],
+      toolManifest: { aliases: { skill: ['skill'] } },
+    });
+
+    expect(findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        ruleId: 'skill-name-path-mismatch',
+        severity: 'error',
+        summary: expect.stringContaining('Frontend Design'),
+        artifact: expect.objectContaining({
+          path: '/skills/frontend-design/SKILL.md',
+          expectedName: 'frontend-design',
+        }),
+      }),
+    ]));
+    expect(findings.filter((finding) => finding.ruleId === 'skill-name-path-mismatch')).toHaveLength(1);
   });
 
   it('reports skill-capable agents without the platform skill-announcement policy', () => {

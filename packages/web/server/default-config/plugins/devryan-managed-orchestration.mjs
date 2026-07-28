@@ -23,6 +23,21 @@ const ORACLE_MIN_TIMEOUT_SECONDS = 60 * 60;
 const MAX_TIMEOUT_SECONDS = 24 * 60 * 60;
 const WAIT_TIMEOUT_MS = 25_000;
 const TERMINAL_TASK_STATUSES = new Set(['completed', 'failed', 'aborted', 'interrupted']);
+const PROVIDER_RECOVERY_SCAN_DELAY_MS = 500;
+const PROVIDER_RECOVERY_RETRY_DELAY_MS = 1_000;
+// Child idle can lead the 750ms managed observer and durable terminal commit.
+// Keep this window bounded so ordinary idle events never create a polling loop.
+const PROVIDER_RECOVERY_SETTLE_RETRY_COUNT = 2;
+const PROVIDER_RECOVERY_MESSAGE_LIMIT = 100;
+const PROVIDER_RECOVERY_MARKER_VERSION = 'v1';
+// A wake is only observable once its message is persisted and visible to
+// session.messages. Until then the marker check cannot see it, so the in-flight
+// guard alone let a settle-retry scan send the same wake a second time — which
+// appended a duplicate part to the same messageID and could leave the parent
+// with a user message it never answered. Track sent wakes for the process too.
+const PROVIDER_RECOVERY_SENT_MAX_ENTRIES = 512;
+// How long a trailing marker is treated as a wake that may still be starting.
+const RECOVERY_CONTINUATION_STALE_MS = 60_000;
 
 const resolveMinimumTimeoutSeconds = (agent) => (
   typeof agent === 'string' && agent.trim().toLowerCase() === 'oracle'
@@ -333,9 +348,287 @@ const executeAction = async (args, context, client) => {
   throw new Error(`Unsupported managed task action: ${action}`);
 };
 
-export const DevRyanManagedOrchestrationPlugin = async ({ client } = {}) => {
+export const DevRyanManagedOrchestrationPlugin = async ({
+  client,
+  scheduleTimeout = globalThis.setTimeout,
+} = {}) => {
   const sessionStates = new Map();
   const agentOwnershipCache = new Map();
+  const recoveryContinuationsInFlight = new Set();
+  const recoveryContinuationsSent = new Set();
+  let recoveryScanPromise = null;
+  let recoveryScanTimer = null;
+  let recoveryScanRequested = false;
+  let recoverySettleRetriesRemaining = 0;
+
+  const canResumeRecoveredParents = Boolean(
+    client?.session
+    && typeof client.session.messages === 'function'
+    && typeof client.session.promptAsync === 'function'
+    && typeof client.session.status === 'function',
+  );
+
+  const logRecovery = (event, details = {}) => {
+    console.error(JSON.stringify({
+      plugin: 'devryan-managed-orchestration',
+      event,
+      ...details,
+    }));
+  };
+
+  const unwrapResponseData = (response) => (
+    response && typeof response === 'object' && 'data' in response
+      ? response.data
+      : response
+  );
+
+  const readSessionMessages = async (sessionId, directory) => {
+    const response = await client.session.messages({
+      path: { id: sessionId },
+      query: {
+        directory,
+        limit: PROVIDER_RECOVERY_MESSAGE_LIMIT,
+      },
+    });
+    if (response?.error) {
+      throw new Error('Failed to read the parent session before provider-recovery continuation');
+    }
+    const records = unwrapResponseData(response);
+    return Array.isArray(records) ? records : [];
+  };
+
+  const isSessionIdle = async (sessionId, directory) => {
+    const response = await client.session.status({
+      query: { directory },
+    });
+    if (response?.error) {
+      throw new Error('Failed to read the parent session status before provider-recovery continuation');
+    }
+    const statuses = unwrapResponseData(response);
+    const status = isRecord(statuses) && isRecord(statuses[sessionId])
+      ? statuses[sessionId]
+      : null;
+    const type = typeof status?.type === 'string' ? status.type.trim().toLowerCase() : '';
+    return !type || type === 'idle';
+  };
+
+  const buildRecoveryContinuationMarker = (taskId) => (
+    `[devryan-provider-recovery:${PROVIDER_RECOVERY_MARKER_VERSION}:${taskId}]`
+  );
+
+  // The LAST occurrence is the one that matters. An earlier wake that was never
+  // answered is itself followed by its own retry, so searching forwards would
+  // see a later record and wrongly conclude the wake had been handled.
+  const findRecoveryContinuationMarkerIndex = (records, marker) => {
+    for (let index = records.length - 1; index >= 0; index -= 1) {
+      const record = records[index];
+      if (
+        Array.isArray(record?.parts)
+        && record.parts.some((part) => (
+          part?.type === 'text'
+          && typeof part.text === 'string'
+          && part.text.includes(marker)
+        ))
+      ) {
+        return index;
+      }
+    }
+    return -1;
+  };
+
+  /**
+   * Decide whether a marker already in the transcript means this wake is done.
+   *
+   * A marker with a later record is a wake the parent answered. A marker that is
+   * still the final record is a wake that never produced a turn, which leaves the
+   * parent idle forever; once it is old enough that no run is plausibly starting,
+   * it is re-sent. `recoveryContinuationsSent` bounds that to one retry per
+   * process, so a genuinely unanswerable wake cannot loop.
+   */
+  const isRecoveryContinuationSettled = (records, marker) => {
+    const index = findRecoveryContinuationMarkerIndex(records, marker);
+    if (index < 0) return false;
+    if (index < records.length - 1) return true;
+    const createdAt = records[index]?.info?.time?.created;
+    if (!Number.isFinite(createdAt)) return true;
+    return Date.now() - createdAt < RECOVERY_CONTINUATION_STALE_MS;
+  };
+
+  const rememberRecoveryContinuationSent = (taskId) => {
+    recoveryContinuationsSent.add(taskId);
+    while (recoveryContinuationsSent.size > PROVIDER_RECOVERY_SENT_MAX_ENTRIES) {
+      recoveryContinuationsSent.delete(recoveryContinuationsSent.values().next().value);
+    }
+  };
+
+  const resolveParentContinuationExecution = async (records, directory) => {
+    for (let index = records.length - 1; index >= 0; index -= 1) {
+      const info = records[index]?.info;
+      if (info?.role !== 'user') continue;
+      const providerId = typeof info.model?.providerID === 'string'
+        ? info.model.providerID.trim()
+        : '';
+      const modelId = typeof info.model?.modelID === 'string'
+        ? info.model.modelID.trim()
+        : '';
+      if (!providerId || !modelId) continue;
+      const agent = typeof info.agent === 'string' && info.agent.trim()
+        ? info.agent.trim()
+        : typeof info.mode === 'string' && info.mode.trim()
+          ? info.mode.trim()
+          : 'orchestrator';
+      const variantCandidate = info.model?.variant ?? info.variant;
+      return {
+        agent,
+        providerId,
+        modelId,
+        variant: typeof variantCandidate === 'string' && variantCandidate.trim()
+          ? variantCandidate.trim()
+          : null,
+      };
+    }
+
+    const configured = await resolveConfiguredAgentExecution(
+      { agent: 'orchestrator' },
+      { directory },
+      client,
+    );
+    return configured.execution
+      ? { agent: 'orchestrator', ...configured.execution }
+      : null;
+  };
+
+  const requestRecoveredParentContinuation = async (continuation) => {
+    if (!isRecord(continuation)) return false;
+    const taskId = typeof continuation.taskId === 'string' ? continuation.taskId.trim() : '';
+    const rootSessionId = typeof continuation.rootSessionId === 'string'
+      ? continuation.rootSessionId.trim()
+      : '';
+    const directory = typeof continuation.directory === 'string'
+      ? continuation.directory.trim()
+      : '';
+    if (
+      !taskId
+      || !rootSessionId
+      || !directory
+      || recoveryContinuationsInFlight.has(taskId)
+      || recoveryContinuationsSent.has(taskId)
+    ) {
+      return false;
+    }
+
+    recoveryContinuationsInFlight.add(taskId);
+    try {
+      if (!await isSessionIdle(rootSessionId, directory)) return false;
+
+      const records = await readSessionMessages(rootSessionId, directory);
+      const marker = buildRecoveryContinuationMarker(taskId);
+      if (isRecoveryContinuationSettled(records, marker)) {
+        rememberRecoveryContinuationSent(taskId);
+        return false;
+      }
+      const execution = await resolveParentContinuationExecution(records, directory);
+      if (!execution) {
+        throw new Error('Parent model selection is unavailable for provider-recovery continuation');
+      }
+      if (!await isSessionIdle(rootSessionId, directory)) return false;
+
+      // Deliberately no explicit messageID. OpenCode message IDs are ordered,
+      // and it processes the turn only when the incoming user message sorts
+      // after the session's latest message. A content-derived id (this used to
+      // be a sha256 slice) sorts arbitrarily, so roughly whenever it landed
+      // below the last assistant id the wake was written "into the past":
+      // OpenCode logged `loop step=0` then `exiting loop` without ever running,
+      // leaving the parent idle forever holding an unanswered message. Letting
+      // OpenCode mint the id keeps it ordered; the marker plus
+      // `recoveryContinuationsSent` already provide the de-duplication the
+      // fixed id was there for.
+      const prompt = [
+        marker,
+        `A DevRyan-managed sub-agent reached a terminal result that this turn never collected,`,
+        `because the parent wait detached, timed out, or the child settled after recovery.`,
+        `Call devryan_task with action "wait" and task_id "${taskId}" now.`,
+        'Disposition that terminal result according to the managed-task rules, then continue from the first incomplete todo.',
+        'Do not start a replacement delegation or repeat work already completed by the recovered child.',
+      ].join(' ');
+      const response = await client.session.promptAsync({
+        path: { id: rootSessionId },
+        query: { directory },
+        body: {
+          agent: execution.agent,
+          model: {
+            providerID: execution.providerId,
+            modelID: execution.modelId,
+          },
+          ...(execution.variant ? { variant: execution.variant } : {}),
+          parts: [{ type: 'text', text: prompt, synthetic: true }],
+        },
+      }, { throwOnError: false });
+      if (response?.error) {
+        const message = typeof response.error?.message === 'string' && response.error.message.trim()
+          ? response.error.message.trim()
+          : 'promptAsync returned an error';
+        throw new Error(message);
+      }
+      rememberRecoveryContinuationSent(taskId);
+      logRecovery('recovered-parent-continued', { rootSessionId, taskId });
+      return true;
+    } finally {
+      recoveryContinuationsInFlight.delete(taskId);
+    }
+  };
+
+  const scheduleRecoveryScan = ({
+    delayMs = PROVIDER_RECOVERY_SCAN_DELAY_MS,
+    settleRetries = 0,
+  } = {}) => {
+    if (!canResumeRecoveredParents) return;
+    recoverySettleRetriesRemaining = Math.max(
+      recoverySettleRetriesRemaining,
+      settleRetries,
+    );
+    if (recoveryScanTimer || recoveryScanPromise) {
+      recoveryScanRequested = true;
+      return;
+    }
+    recoveryScanTimer = scheduleTimeout(() => {
+      recoveryScanTimer = null;
+      recoveryScanRequested = false;
+      recoveryScanPromise = (async () => {
+        let retryNeeded = false;
+        try {
+          const result = await callRpc('list_provider_recovery_continuations', {});
+          const continuations = Array.isArray(result?.continuations) ? result.continuations : [];
+          for (const continuation of continuations) {
+            try {
+              await requestRecoveredParentContinuation(continuation);
+            } catch (error) {
+              retryNeeded = true;
+              logRecovery('recovered-parent-continuation-failed', {
+                taskId: typeof continuation?.taskId === 'string' ? continuation.taskId : null,
+                message: error instanceof Error ? error.message : String(error),
+              });
+            }
+          }
+        } catch (error) {
+          retryNeeded = true;
+          logRecovery('provider-recovery-scan-failed', {
+            message: error instanceof Error ? error.message : String(error),
+          });
+        } finally {
+          recoveryScanPromise = null;
+          const trailingScanRequested = recoveryScanRequested;
+          recoveryScanRequested = false;
+          const settleRetryNeeded = !retryNeeded && recoverySettleRetriesRemaining > 0;
+          if (settleRetryNeeded) recoverySettleRetriesRemaining -= 1;
+          if (retryNeeded || trailingScanRequested || settleRetryNeeded) {
+            scheduleRecoveryScan({ delayMs: PROVIDER_RECOVERY_RETRY_DELAY_MS });
+          }
+        }
+      })();
+    }, delayMs);
+    recoveryScanTimer?.unref?.();
+  };
 
   const readInvokingAgent = async (rootSessionId, callID) => {
     if (!client?.session || typeof client.session.messages !== 'function') return null;
@@ -461,14 +754,24 @@ export const DevRyanManagedOrchestrationPlugin = async ({ client } = {}) => {
   };
 
   const handleEvent = ({ event } = {}) => {
-    if (event?.type !== 'session.idle') return;
-    const rootSessionId = typeof event.properties?.sessionID === 'string'
-      ? event.properties.sessionID.trim()
-      : '';
-    if (!rootSessionId) return;
-    const state = sessionStates.get(rootSessionId);
-    if (!state) return;
-    for (const entry of [...state.pendingStarts]) entry.settle();
+    if (event?.type === 'session.idle') {
+      const rootSessionId = typeof event.properties?.sessionID === 'string'
+        ? event.properties.sessionID.trim()
+        : '';
+      const state = rootSessionId ? sessionStates.get(rootSessionId) : null;
+      if (state) {
+        for (const entry of [...state.pendingStarts]) entry.settle();
+      }
+      scheduleRecoveryScan({
+        settleRetries: PROVIDER_RECOVERY_SETTLE_RETRY_COUNT,
+      });
+      return;
+    }
+    if (event?.type === 'session.error') {
+      scheduleRecoveryScan({
+        settleRetries: PROVIDER_RECOVERY_SETTLE_RETRY_COUNT,
+      });
+    }
   };
 
   const beforeToolExecute = async (input, output) => {
@@ -527,14 +830,16 @@ export const DevRyanManagedOrchestrationPlugin = async ({ client } = {}) => {
     throw new Error('Parent work cannot verify the dispatch barrier and remains blocked');
   };
 
+  scheduleRecoveryScan();
+
   return {
     event: handleEvent,
     'tool.execute.before': beforeToolExecute,
     tool: {
       devryan_task: tool({
-      description: 'Start or control a DevRyan-managed sub-agent. When managed delegation is already the decided next action, start it before any standalone todo read/write whose only purpose is to restate that delegation. DevRyan does not impose a managed concurrency cap: start every independent sub-agent needed by the task without batching around an artificial slot limit. DevRyan preserves partial results after failure or abort. A queued, starting, or running wait result is a live polling snapshot: immediately call wait again without narrating a timeout or failure and without resuming parent work. A provider usage limit keeps the wait call pending while the user selects a recovery model, then returns the recovered same-child result. This is distinct from provider-native task orchestration.',
+      description: 'Start or control a DevRyan-managed sub-agent. When managed delegation is already the decided next action, start it before any standalone todo read/write whose only purpose is to restate that delegation. DevRyan does not impose a managed concurrency cap: start every independent sub-agent needed by the task without batching around an artificial slot limit. DevRyan preserves partial results after failure or abort. A queued, starting, or running wait result is a live polling snapshot: immediately call wait again without narrating a timeout or failure and without resuming parent work. A provider usage limit leaves a durable pending result while the user selects a recovery model; the attached wait returns the recovered same-child result, or DevRyan wakes the idle parent if an external timeout detached that wait. This is distinct from provider-native task orchestration.',
       args: {
-        action: tool.schema.enum(ACTIONS).describe('Action: start, status, wait, cancel, continue, retry, resume, or abandon. Provider usage-limit recovery is handled by the user-facing Model Recovery controls while wait remains pending. Wait otherwise uses bounded polling slices; queued, starting, or running means call wait again immediately.'),
+        action: tool.schema.enum(ACTIONS).describe('Action: start, status, wait, cancel, continue, retry, resume, or abandon. Provider usage-limit recovery is handled by the user-facing Model Recovery controls while the durable result remains pending; an attached wait resumes directly, while a detached wait is recovered by an idle-parent continuation. Wait otherwise uses bounded polling slices; queued, starting, or running means call wait again immediately.'),
         task_id: tool.schema.string().optional().describe('Managed dvr_task_ ID. Required for every action except start.'),
         label: tool.schema.string().optional().describe('Short task label for start or retry.'),
         prompt: tool.schema.string().optional().describe('Full delegated prompt for start, or an optional retry override.'),

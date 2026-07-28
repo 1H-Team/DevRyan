@@ -20,6 +20,7 @@ const input = (overrides = {}) => ({
 
 const createTerminalHarness = async ({
   failureReason = 'provider failed after useful work',
+  inPlaceRetryResult = { status: 'completed', recoverablePreview: 'continued with replacement model' },
   resumable = true,
   resumeResult = { status: 'completed', recoverablePreview: 'resumed result' },
   submitOverrides = {},
@@ -52,7 +53,7 @@ const createTerminalHarness = async ({
       async retryInPlace(task, control) {
         inPlaceRetries.push(task);
         await control.markAccepted();
-        return { status: 'completed', recoverablePreview: 'continued with replacement model' };
+        return inPlaceRetryResult;
       },
       async abort() { return { aborted: true }; },
       async reconcile() { return { state: 'unavailable' }; },
@@ -272,6 +273,76 @@ describe('managed scheduler parent actions', () => {
     expect(starts).toHaveLength(originalStartCount);
     expect(inPlaceRetries).toHaveLength(1);
     expect(settled.status).toBe('completed');
+  });
+
+  test('derives one durable parent continuation after delayed provider recovery', async () => {
+    const { original, scheduler } = await createTerminalHarness({
+      failureReason: 'Anthropic rate limit reached for Claude Opus',
+      submitOverrides: { dispatchGroupId: 'msg_parent' },
+    });
+    const action = await scheduler.acknowledgeResult(original.taskId, {
+      action: 'retry_in_place',
+      idempotencyKey: 'provider-limit-delayed-recovery',
+      providerId: 'openai',
+      modelId: 'gpt-5.6',
+      variant: 'xhigh',
+    });
+    const recovered = await scheduler.waitForTask(action.followUpTask.taskId);
+
+    expect(scheduler.listReadyProviderRecoveryContinuations()).toEqual([{
+      sourceTaskId: original.taskId,
+      taskId: recovered.taskId,
+      rootSessionId: 'ses_root',
+      childSessionId: original.childSessionId,
+      directory: '/workspace',
+    }]);
+    expect(scheduler.listReadyProviderRecoveryContinuations({
+      sessionId: original.childSessionId,
+    })).toHaveLength(1);
+    expect(scheduler.listReadyProviderRecoveryContinuations({
+      sessionId: 'ses_unrelated',
+    })).toEqual([]);
+
+    await scheduler.acknowledgeResult(recovered.taskId, {
+      action: 'continue',
+      idempotencyKey: 'collect-recovered-result',
+    });
+    expect(scheduler.listReadyProviderRecoveryContinuations()).toEqual([]);
+  });
+
+  test('does not wake a parent for ungrouped or repeatedly provider-limited recovery work', async () => {
+    const ungrouped = await createTerminalHarness({
+      failureReason: 'Monthly usage limit reached',
+    });
+    const ungroupedRecovery = await ungrouped.scheduler.acknowledgeResult(ungrouped.original.taskId, {
+      action: 'retry_in_place',
+      idempotencyKey: 'ungrouped-provider-recovery',
+      providerId: 'openai',
+      modelId: 'gpt-5.6',
+      variant: null,
+    });
+    await ungrouped.scheduler.waitForTask(ungroupedRecovery.followUpTask.taskId);
+    expect(ungrouped.scheduler.listReadyProviderRecoveryContinuations()).toEqual([]);
+
+    const limitedAgain = await createTerminalHarness({
+      failureReason: 'Monthly usage limit reached',
+      inPlaceRetryResult: {
+        status: 'failed',
+        failureReason: 'OpenAI rate limit reached',
+        partial: true,
+        resumable: true,
+      },
+      submitOverrides: { dispatchGroupId: 'msg_parent' },
+    });
+    const repeatedRecovery = await limitedAgain.scheduler.acknowledgeResult(limitedAgain.original.taskId, {
+      action: 'retry_in_place',
+      idempotencyKey: 'repeated-provider-recovery',
+      providerId: 'openai',
+      modelId: 'gpt-5.6',
+      variant: 'medium',
+    });
+    await limitedAgain.scheduler.waitForTask(repeatedRecovery.followUpTask.taskId);
+    expect(limitedAgain.scheduler.listReadyProviderRecoveryContinuations()).toEqual([]);
   });
 
   test('rejects new automatic in-place recovery while retaining its durable enum', async () => {

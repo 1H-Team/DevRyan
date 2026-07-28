@@ -11,6 +11,7 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessions, useSessionMessageRecords } from '@/sync/sync-context';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { useI18n } from '@/lib/i18n';
+import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
 import type { ContextUsageSource } from '@/stores/types/sessionTypes';
 import { getContextUsageFromMessages } from '@/stores/utils/contextUsageUtils';
 import { calculateContextUsage } from '@/stores/utils/contextUtils';
@@ -266,7 +267,10 @@ export const ContextPanelContent: React.FC = () => {
       : null;
 
     return {
-      sessionTitle: currentSession?.title || t('contextSidebar.session.untitled'),
+      sessionTitle: resolveDisplaySessionTitle({
+        title: currentSession?.title,
+        fallback: t('contextSidebar.session.untitled'),
+      }),
       messagesCount: sessionMessages.length,
       userMessagesCount: userMessages.length,
       assistantMessagesCount: assistantMessages.length,
@@ -470,7 +474,12 @@ export const ContextPanelContent: React.FC = () => {
               <div className="mt-2.5 space-y-2">
                 {viewModel.relatedSubagentSessions.map((session) => (
                   <div key={session.sessionId} className="flex items-center justify-between gap-4 typography-ui-label text-foreground">
-                    <span className="truncate text-muted-foreground">{session.title ?? t('contextSidebar.session.untitled')}</span>
+                    <span className="truncate text-muted-foreground">
+                      {resolveDisplaySessionTitle({
+                        title: session.title,
+                        fallback: t('contextSidebar.session.untitled'),
+                      })}
+                    </span>
                     <span className="shrink-0 tabular-nums text-muted-foreground">
                       {session.capacityLimit !== null
                         ? `${formatCompactTokens(session.totalTokens)} / ${formatCompactTokens(session.capacityLimit)}`

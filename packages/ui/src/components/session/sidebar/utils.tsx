@@ -424,6 +424,23 @@ export const discardPendingArchiveRevealSessionIds = (
   return next ?? pendingSessionIds;
 };
 
+export const removeExpandedSessionIds = (
+  expandedSessionIds: Set<string>,
+  sessionIds: Iterable<string>,
+): Set<string> => {
+  let next: Set<string> | null = null;
+  for (const sessionId of sessionIds) {
+    if (!expandedSessionIds.has(sessionId)) {
+      continue;
+    }
+    if (!next) {
+      next = new Set(expandedSessionIds);
+    }
+    next.delete(sessionId);
+  }
+  return next ?? expandedSessionIds;
+};
+
 export const resolveArchivedFolderName = (
   session: Session,
   projectRoot: string | null,

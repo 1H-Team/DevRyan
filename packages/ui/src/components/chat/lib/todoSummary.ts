@@ -84,6 +84,26 @@ export const buildTodoSummary = <T>(todos: readonly T[] | undefined | null): Tod
     };
 };
 
+export const getCurrentTodoPosition = <T>(visibleTodos: readonly T[]): number => {
+    if (visibleTodos.length === 0) return 0;
+
+    const inProgressIndex = visibleTodos.findIndex((todo) => (
+        todo !== null
+        && typeof todo === 'object'
+        && normalizeTodoStatus((todo as { status?: unknown }).status) === 'in_progress'
+    ));
+    if (inProgressIndex >= 0) return inProgressIndex + 1;
+
+    const pendingIndex = visibleTodos.findIndex((todo) => (
+        todo !== null
+        && typeof todo === 'object'
+        && normalizeTodoStatus((todo as { status?: unknown }).status) === 'pending'
+    ));
+    if (pendingIndex >= 0) return pendingIndex + 1;
+
+    return visibleTodos.length;
+};
+
 export const buildPlanPhaseTodoProjection = <T>(
     visibleTodos: readonly T[],
 ): PlanPhaseTodoProjection<T> | null => {

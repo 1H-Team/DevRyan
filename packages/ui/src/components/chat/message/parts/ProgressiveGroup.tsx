@@ -587,12 +587,13 @@ const InlineReasoningBlock = React.memo(({ activity, onContentChange, providerID
 });
 
 /**
- * Inline justification text block — rendered as normal assistant text between tools.
+ * Inline justification text block — rendered as compact assistant activity between tools.
  */
-const InlineJustificationBlock = React.memo(({ activity, onContentChange, actions }: {
+const InlineJustificationBlock = React.memo(({ activity, onContentChange, actions, isMobile }: {
     activity: TurnActivityPart;
     onContentChange?: (reason?: ContentChangeReason) => void;
     actions?: React.ReactNode;
+    isMobile: boolean;
 }) => {
     return (
         <JustificationBlock
@@ -600,6 +601,7 @@ const InlineJustificationBlock = React.memo(({ activity, onContentChange, action
             messageId={activity.messageId}
             onContentChange={onContentChange}
             actions={actions}
+            isMobile={isMobile}
         />
     );
 });
@@ -693,6 +695,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                             activity={row.activity}
                             onContentChange={onContentChange}
                             actions={renderJustificationActions?.(row.activity)}
+                            isMobile={isMobile}
                         />
                     </>
                 );

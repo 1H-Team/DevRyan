@@ -19,6 +19,8 @@ const originalOpenChamberDataDir = process.env.OPENCHAMBER_DATA_DIR;
 const originalOpencodeConfigDir = process.env.OPENCODE_CONFIG_DIR;
 const originalSlimPreset = process.env.OH_MY_OPENCODE_SLIM_PRESET;
 const originalDisableDefaultPlugins = process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS;
+const originalDisableExternalSkills = process.env.OPENCODE_DISABLE_EXTERNAL_SKILLS;
+const originalDisableClaudeCodeSkills = process.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS;
 const originalFetch = globalThis.fetch;
 const tempDirs = [];
 
@@ -61,6 +63,16 @@ afterEach(() => {
     process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS = originalDisableDefaultPlugins;
   } else {
     delete process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS;
+  }
+  if (typeof originalDisableExternalSkills === 'string') {
+    process.env.OPENCODE_DISABLE_EXTERNAL_SKILLS = originalDisableExternalSkills;
+  } else {
+    delete process.env.OPENCODE_DISABLE_EXTERNAL_SKILLS;
+  }
+  if (typeof originalDisableClaudeCodeSkills === 'string') {
+    process.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS = originalDisableClaudeCodeSkills;
+  } else {
+    delete process.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS;
   }
 });
 
@@ -213,6 +225,8 @@ describe('OpenCode lifecycle', () => {
     // v1.0.6 set this to 'true', which disabled the opencode default plugin that
     // surfaces the OpenAI (ChatGPT/Codex OAuth) provider. openchamber must NOT force it.
     expect(options.env.OPENCODE_DISABLE_DEFAULT_PLUGINS).toBeUndefined();
+    expect(options.env.OPENCODE_DISABLE_EXTERNAL_SKILLS).toBeUndefined();
+    expect(options.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS).toBe('1');
 
     await server.close();
   });
@@ -232,6 +246,26 @@ describe('OpenCode lifecycle', () => {
     const [, , options] = spawnMock.mock.calls[0];
 
     expect(options.env.OPENCODE_DISABLE_DEFAULT_PLUGINS).toBeUndefined();
+    await server.close();
+  });
+
+  it('keeps .agents skills enabled while disabling Claude skill discovery', async () => {
+    process.env.OPENCODE_DISABLE_EXTERNAL_SKILLS = 'true';
+    process.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS = 'false';
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+
+    const runtime = createRuntime();
+    const server = await runtime.startOpenCode();
+    const [, , options] = spawnMock.mock.calls[0];
+
+    expect(options.env.OPENCODE_DISABLE_EXTERNAL_SKILLS).toBeUndefined();
+    expect(options.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS).toBe('1');
     await server.close();
   });
 
@@ -542,11 +576,13 @@ describe('OpenCode lifecycle', () => {
       };
     });
 
-    const runtime = createRuntime({ env });
+    const provisionUserProfile = vi.fn(async () => ({ ok: true, changed: false, conflicts: [] }));
+    const runtime = createRuntime({ env, provisionUserProfile });
 
     await runtime.bootstrapOpenCodeAtStartup();
 
     expect(spawnMock).not.toHaveBeenCalled();
+    expect(provisionUserProfile).not.toHaveBeenCalled();
     expect(runtime.__testState.isExternalOpenCode).toBe(true);
     expect(runtime.__testState.openCodePort).toBe(4096);
   });

@@ -9,7 +9,7 @@ VS Code extension runtime: hosts DevRyan inside VS Code (sidebar + editor panels
   - `src/ChatViewProvider.ts`, `AgentManagerPanelProvider.ts`, `SessionEditorPanelProvider.ts`: UI container controllers.
 - **Bridge router pattern**: `src/bridge.ts` dispatches typed messages to focused runtime handlers (`bridge-*-runtime.ts`) for git/fs/config/system/proxy domains.
 - **Connection manager abstraction**: `src/opencode.ts` encapsulates managed/external OpenCode, status transitions, auth header generation, binary detection, and restarts.
-- **Managed-orchestration owner**: the extension host owns one persisted scheduler with unbounded immediate admission, a private loopback tool bridge, OpenCode/Cursor child executor, scoped bridge routes including confirmed primary-agent handoff, and shutdown ordering. External OpenCode connections do not receive this private runtime.
+- **Managed-orchestration owner**: the extension host owns one persisted scheduler with unbounded immediate admission, a private loopback tool bridge, OpenCode/Cursor child executor, scoped bridge routes including confirmed primary-agent handoff and durable provider-recovery parent continuation discovery, and shutdown ordering. External OpenCode connections do not receive this private runtime.
 - **SSE proxy layer**: extension host mediates streamed events to webview without exposing unrestricted local APIs.
 - **Theme/CSP-aware webview bootstrap**: `webviewHtml.ts` generates strict HTML shell with injected runtime config and initial loading state.
 - **Measured webview build graph**: `vite.config.ts` emits `dist/webview/.vite/manifest.json` so the shared root checker can enforce the normal chat startup graph without making tests depend on build output.

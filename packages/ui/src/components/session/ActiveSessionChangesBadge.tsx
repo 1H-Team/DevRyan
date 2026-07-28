@@ -3,12 +3,15 @@ import React from 'react'
 import { SessionChangesBadge } from '@/components/session/SessionChangesBadge'
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext'
 import {
-  getSessionTouchedFilePaths,
   resolveTouchedFileWorkingTreeDiffStats,
   type SessionDiffStats,
 } from '@/lib/sessionDiffStats'
+import { useI18n } from '@/lib/i18n'
 import { useGitStore } from '@/stores/useGitStore'
-import { useVisibleSessionMessages } from '@/sync/sync-context'
+import {
+  getSessionChangeAttributionKey,
+  useSessionChangeAttributionStore,
+} from '@/stores/useSessionChangeAttributionStore'
 
 type ActiveSessionChangesBadgeProps = {
   sessionId: string
@@ -29,19 +32,20 @@ export const ActiveSessionChangesBadge = React.memo(({
   sessionId,
   directory,
 }: ActiveSessionChangesBadgeProps) => {
+  const { t } = useI18n()
   const runtime = React.useContext(RuntimeAPIContext)
-  const messages = useVisibleSessionMessages(sessionId, directory)
+  const attributionKey = directory
+    ? getSessionChangeAttributionKey(directory, sessionId)
+    : ''
+  const attribution = useSessionChangeAttributionStore(React.useCallback(
+    (state) => attributionKey ? state.entries.get(attributionKey) : undefined,
+    [attributionKey],
+  ))
   const touchedFiles = React.useMemo(
-    () => getSessionTouchedFilePaths(messages),
-    [messages],
+    () => attribution?.paths ?? [],
+    [attribution?.paths],
   )
-  const refreshKey = React.useMemo(() => {
-    const filesKey = touchedFiles.join('\0')
-    const latestMessage = messages.at(-1)
-    if (!latestMessage) return filesKey
-    if (latestMessage.role !== 'assistant') return `${filesKey}|${latestMessage.id}`
-    return `${filesKey}|${latestMessage.id}|${latestMessage.finish ?? ''}|${latestMessage.time.completed ?? ''}`
-  }, [messages, touchedFiles])
+  const refreshKey = touchedFiles.join('\0')
   const statsKey = useGitStore(React.useCallback((state) => {
     if (!directory || touchedFiles.length === 0) return ''
     const diffStats = state.directories.get(directory)?.status?.diffStats
@@ -55,7 +59,11 @@ export const ActiveSessionChangesBadge = React.memo(({
     void fetchStatus(directory, runtime.git, { silent: true })
   }, [directory, fetchStatus, refreshKey, runtime?.git, touchedFiles.length])
 
-  return stats ? <SessionChangesBadge stats={stats} /> : null
+  if (!stats) return null
+  const label = attribution?.hasUnattributedMutations
+    ? t('sessions.changes.sessionTouchedWithUnattributed')
+    : t('sessions.changes.sessionTouched')
+  return <SessionChangesBadge stats={stats} title={label} ariaLabel={label} />
 })
 
 ActiveSessionChangesBadge.displayName = 'ActiveSessionChangesBadge'

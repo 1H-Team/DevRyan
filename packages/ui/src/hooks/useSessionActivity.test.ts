@@ -23,6 +23,22 @@ const toolCallsAssistant = {
 } as unknown as Message
 
 describe("resolveSessionActivityState", () => {
+  test("treats an actionable provider recovery as stopped despite stale live state", () => {
+    expect(resolveSessionActivityState({
+      sessionId: "session-1",
+      status: { type: "busy" },
+      messages: [incompleteAssistant],
+      permissions: [],
+      liveStreamingMessageId: "msg_assistant",
+      hasProviderRecovery: true,
+    })).toEqual({
+      phase: "idle",
+      isWorking: false,
+      isBusy: false,
+      isCooldown: false,
+    })
+  })
+
   test("returns busy for a directory-specific busy status", () => {
     const result = resolveSessionActivityState({
       sessionId: "session-child",

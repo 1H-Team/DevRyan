@@ -298,7 +298,7 @@ describe('resolveSubtaskSidebarIndicator', () => {
       isActive: false,
       hasUnreadCompletion: false,
       hasUnreadError: false,
-      hasManualRecovery: false,
+      hasParentOwnedRecovery: false,
     })).toBeNull();
   });
 
@@ -310,7 +310,7 @@ describe('resolveSubtaskSidebarIndicator', () => {
       isActive: false,
       hasUnreadCompletion: true,
       hasUnreadError: true,
-      hasManualRecovery: false,
+      hasParentOwnedRecovery: false,
     })).toEqual({
       className: 'bg-status-error',
       labelKey: 'sessions.sidebar.session.status.error',
@@ -323,39 +323,23 @@ describe('resolveSubtaskSidebarIndicator', () => {
       isActive: false,
       hasUnreadCompletion: true,
       hasUnreadError: false,
-      hasManualRecovery: false,
+      hasParentOwnedRecovery: false,
     })).toEqual({
       className: 'bg-status-success',
       labelKey: 'sessions.sidebar.session.status.completed',
     });
   });
 
-  test('suppresses a stale transient manual-recovery dot while the child is working', () => {
+  test('does not put parent-owned recovery attention or a duplicate unread error on a child row', () => {
     expect(resolveSubtaskSidebarIndicator({
       isRootSession: false,
-      notifyOnSubtasks: false,
-      isWorking: true,
-      isActive: true,
+      notifyOnSubtasks: true,
+      isWorking: false,
+      isActive: false,
       hasUnreadCompletion: false,
-      hasUnreadError: false,
-      hasManualRecovery: true,
+      hasUnreadError: true,
+      hasParentOwnedRecovery: true,
     })).toBeNull();
-  });
-
-  test('keeps unresolved provider-limit recovery red while the child reports working', () => {
-    expect(resolveSubtaskSidebarIndicator({
-      isRootSession: false,
-      notifyOnSubtasks: false,
-      isWorking: true,
-      isActive: true,
-      hasUnreadCompletion: false,
-      hasUnreadError: false,
-      hasManualRecovery: true,
-      manualRecoveryFailureKind: 'provider_usage_limit',
-    })).toEqual({
-      className: 'bg-status-error',
-      labelKey: 'sessions.sidebar.session.status.error',
-    });
   });
 });
 

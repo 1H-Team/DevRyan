@@ -1,3 +1,4 @@
+import path from 'node:path';
 import {
   createHarnessError,
   createHarnessSuccess,
@@ -6,6 +7,7 @@ import {
 } from './harness-result.js';
 import { resolveProviderPromptTools } from '@openchamber/orchestration-runtime';
 import {
+  MANAGED_RUNTIME_TOOL_COUNT_WARNING_THRESHOLD,
   isBlockedManagedRuntimeMcpName,
   isForbiddenManagedRuntimeToolId,
 } from './runtime-surface-policy.js';
@@ -42,6 +44,7 @@ const KNOWN_PERMISSION_KEYS = new Set([
   'websearch_*',
   'write',
 ]);
+const SKILL_NAME_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -333,6 +336,26 @@ function lintSkills({ findings, skills }) {
       }));
       continue;
     }
+
+    const expectedName = skillPath && path.basename(skillPath) === 'SKILL.md'
+      ? path.basename(path.dirname(skillPath))
+      : '';
+    if (!SKILL_NAME_PATTERN.test(name) || (expectedName && name !== expectedName)) {
+      const mismatchReason = expectedName && name !== expectedName
+        ? `does not match directory "${expectedName}"`
+        : 'must be lowercase kebab-case and 1-64 characters';
+      findings.push(createFinding({
+        ruleId: 'skill-name-path-mismatch',
+        severity: 'error',
+        summary: `Skill name "${name}" ${mismatchReason}`,
+        artifact: { type: 'skill', name, path: skillPath, expectedName: expectedName || undefined },
+        suggestedNextAction: expectedName
+          ? `Change the SKILL.md frontmatter name to "${expectedName}"`
+          : 'Change the SKILL.md frontmatter name to a lowercase kebab-case identifier',
+        stopCondition: `Stop exposing skill "${name}" until its registered name is canonical`,
+      }));
+    }
+
     if (!byName.has(name)) byName.set(name, []);
     byName.get(name).push(skillPath);
   }
@@ -516,6 +539,29 @@ function lintToolManifestAvailability({ findings, toolManifest }) {
   }
 }
 
+function lintRuntimeToolCount({ findings, toolManifest }) {
+  const toolCount = Math.max(
+    asArray(toolManifest?.toolIds).length,
+    asArray(toolManifest?.tools).length,
+  );
+  if (toolCount <= MANAGED_RUNTIME_TOOL_COUNT_WARNING_THRESHOLD) {
+    return;
+  }
+  findings.push(createFinding({
+    ruleId: 'large-runtime-tool-surface',
+    severity: 'warning',
+    summary: `Runtime exposes ${toolCount} tools, above the ${MANAGED_RUNTIME_TOOL_COUNT_WARNING_THRESHOLD}-tool context review threshold`,
+    artifact: {
+      type: 'tool-manifest',
+      name: 'runtime-tool-catalog',
+      toolCount,
+      warningThreshold: MANAGED_RUNTIME_TOOL_COUNT_WARNING_THRESHOLD,
+    },
+    suggestedNextAction: 'Review the tool manifest for redundant plugin or MCP registrations before sending Anthropic prompts',
+    stopCondition: 'Do not remove tools solely by count; preserve tools required by active agents and user-configured integrations',
+  }));
+}
+
 function lintAgentHarness(options = {}) {
   const agents = asArray(options.agents);
   const skills = asArray(options.skills);
@@ -541,6 +587,7 @@ function lintAgentHarness(options = {}) {
     promptTools: options.promptTools,
   });
   lintToolManifestAvailability({ findings, toolManifest: options.toolManifest });
+  lintRuntimeToolCount({ findings, toolManifest: options.toolManifest });
 
   return findings;
 }

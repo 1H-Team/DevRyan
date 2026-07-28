@@ -18,6 +18,7 @@ export function ModelRecoveryCard({
   selection,
   pending,
   actionError,
+  failureMessage,
   onSelectionChange,
   onRetry,
   embedded = false,
@@ -28,6 +29,7 @@ export function ModelRecoveryCard({
   selection: ProviderRecoverySelection;
   pending: boolean;
   actionError: string | null;
+  failureMessage?: string | null;
   onSelectionChange(selection: ProviderRecoverySelection): void;
   onRetry(): void | Promise<void>;
   embedded?: boolean;
@@ -45,12 +47,23 @@ export function ModelRecoveryCard({
           : 'rounded-xl border border-[color-mix(in_srgb,var(--primary-base)_16%,var(--border))]',
       )}>
         <header className="flex items-center gap-2 border-b border-border/70 px-3 py-2">
-          <RiErrorWarningLine className="size-3.5 text-[var(--status-warning)]" aria-hidden="true" />
+          <RiErrorWarningLine
+            className={cn(
+              'size-3.5',
+              failureMessage ? 'text-[var(--status-error)]' : 'text-[var(--status-warning)]',
+            )}
+            aria-hidden="true"
+          />
           <h3 className="typography-ui-label font-semibold text-foreground">
             {t('chat.modelRecovery.title')}
           </h3>
         </header>
         <div className="space-y-3 px-3 py-3">
+          {failureMessage ? (
+            <p role="alert" className="typography-micro text-[var(--status-error)]">
+              {failureMessage}
+            </p>
+          ) : null}
           <div className="space-y-2">
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-2">
               <h4 className="typography-ui-label font-medium text-foreground">{title}</h4>

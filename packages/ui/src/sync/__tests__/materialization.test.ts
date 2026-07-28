@@ -147,7 +147,7 @@ describe("materializeSessionSnapshots", () => {
     expect(result.partsChanged).toBe(true)
   })
 
-  test("derives session diff totals from materialized user message summaries", () => {
+  test("does not derive session diff totals from materialized user message summaries", () => {
     const existingSession = {
       id: "ses_1",
       title: "Fix services",
@@ -169,8 +169,8 @@ describe("materializeSessionSnapshots", () => {
       [{ info: summarizedUserMessage, parts: [part("prt_user", "msg_user")] }],
     )
 
-    expect(result.sessionsChanged).toBe(true)
-    expect(result.session?.[0]?.summary).toEqual({ diffs: [{ additions: 7, deletions: 4 }] })
+    expect(result.sessionsChanged).toBe(false)
+    expect(result.session?.[0]?.summary).toBe(undefined)
   })
 
   test("clears stale session diff totals when materialized messages have no scoped diffs", () => {

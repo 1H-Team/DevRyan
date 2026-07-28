@@ -3,7 +3,20 @@ import { formatManagedTaskDisplayName } from './contract.js';
 import { isDefiniteProviderUsageLimit } from './provider-retry-policy.js';
 
 const LIVE_STATUS_TYPES = new Set(['busy', 'retry']);
+// A child that is still demonstrably live tells us nothing new in its transcript,
+// and that transcript can be very large (OpenCode attaches a full git diff
+// snapshot to user messages). Gate the expensive read behind the cheap status
+// read so ordinary polling never pays for it.
+const DEFAULT_OBSERVATION_FAILURE_GRACE_MS = 5 * 60 * 1_000;
+// How often a still-live child's transcript is re-read, purely to keep a recent
+// partial-work snapshot for interruption reporting. Polling reads status at
+// `pollIntervalMs`; only this much rarer read touches the transcript.
+const DEFAULT_LIVE_TRANSCRIPT_REFRESH_MS = 30 * 1_000;
 export const MANAGED_RETRY_IN_PLACE_PROMPT = 'Continue the task from the existing progress. The previous provider could not continue. Do not repeat completed work.';
+export const MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT = 'Continue the task from the existing progress. The previous model request timed out. Do not repeat completed work.';
+export const MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT = 'Continue the task from the existing progress. The previous model ended before providing a final answer. Reuse completed work and tool results, retry only missing work, and return the requested final output.';
+const MAX_TRANSIENT_TIMEOUT_CONTINUATIONS = 1;
+const MAX_EMPTY_OUTPUT_CONTINUATIONS = 1;
 const ABORT_FINISH_REASONS = new Set(['abort', 'aborted', 'cancelled', 'canceled']);
 const TRANSIENT_HTTP_STATUSES = new Set([408, 425, 429]);
 const TRANSIENT_NETWORK_CODES = new Set([
@@ -88,6 +101,12 @@ const extractFailureReason = (error) => {
   }
 };
 
+const isTransientAssistantTimeout = (failureReason) => (
+  /^the operation timed out\.?$/i.test(trimString(failureReason))
+  || /^the request timed out\.?$/i.test(trimString(failureReason))
+  || /^request timeout(?:error)?\.?$/i.test(trimString(failureReason))
+);
+
 const isTransientObservationError = (error) => {
   if (!error || typeof error !== 'object') return false;
   if (error.name === 'TimeoutError' || error.name === 'AbortError') return true;
@@ -148,20 +167,44 @@ const extractAssistantWork = (record) => {
   };
 };
 
+const countExactUserPrompts = (records, prompt) => (
+  Array.isArray(records)
+    ? records.reduce((count, record) => {
+      if (record?.info?.role !== 'user') return count;
+      const matched = (Array.isArray(record.parts) ? record.parts : []).some((part) => (
+        part?.type === 'text'
+        && trimString(part.text) === prompt
+      ));
+      return count + (matched ? 1 : 0);
+    }, 0)
+    : 0
+);
+
 const analyzeMessages = (records, childSessionId) => {
   const assistants = Array.isArray(records)
     ? records.filter((record) => record?.info?.role === 'assistant')
     : [];
   const latest = assistants.at(-1) ?? null;
+  const transientTimeoutCount = assistants.reduce((count, record) => (
+    isTransientAssistantTimeout(extractFailureReason(record.info?.error))
+      ? count + 1
+      : count
+  ), 0);
+  const emptyOutputContinuationCount = countExactUserPrompts(
+    records,
+    MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT,
+  );
   if (!latest) {
     return {
       canonicalRefs: [],
       childSessionId,
+      emptyOutputContinuationCount,
       failureReason: null,
       finish: '',
       hasUsefulWork: false,
       recoverablePreview: '',
       terminal: false,
+      transientTimeoutCount,
     };
   }
 
@@ -189,6 +232,7 @@ const analyzeMessages = (records, childSessionId) => {
   return {
     canonicalRefs,
     childSessionId,
+    emptyOutputContinuationCount,
     failureReason,
     finish,
     hasFinalUsefulWork: latestWork.hasUsefulWork,
@@ -200,8 +244,18 @@ const analyzeMessages = (records, childSessionId) => {
       || finish
       || (typeof completedAt === 'number' && Number.isFinite(completedAt) && completedAt > 0)
     ),
+    transientTimeoutCount,
   };
 };
+
+const isEmptyTerminalObservation = (observation) => (
+  !LIVE_STATUS_TYPES.has(observation.statusType)
+  && observation.terminal
+  && !observation.failureReason
+  && !ABORT_FINISH_REASONS.has(observation.finish)
+  && !observation.hasFinalUsefulWork
+  && !observation.hasInFlightTool
+);
 
 const toTerminalResult = (observation) => {
   if (LIVE_STATUS_TYPES.has(observation.statusType)) return null;
@@ -275,6 +329,11 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
   }
   const pollIntervalMs = options.pollIntervalMs ?? 750;
   const idleStablePolls = options.idleStablePolls ?? 2;
+  const now = options.now ?? Date.now;
+  const observationFailureGraceMs = options.observationFailureGraceMs
+    ?? DEFAULT_OBSERVATION_FAILURE_GRACE_MS;
+  const liveTranscriptRefreshMs = options.liveTranscriptRefreshMs
+    ?? DEFAULT_LIVE_TRANSCRIPT_REFRESH_MS;
   const retryStopMaxAborts = options.retryStopMaxAborts ?? 3;
   const retryStopPollLimit = options.retryStopPollLimit ?? 80;
   if (!Number.isSafeInteger(pollIntervalMs) || pollIntervalMs < 0) {
@@ -299,22 +358,43 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     }
   };
 
-  const readObservation = async (task) => {
+  const normalizeStatusFields = (status) => ({
+    statusType: trimString(status?.type).toLowerCase(),
+    statusMessage: trimString(status?.message),
+    statusAttempt: Number.isFinite(status?.attempt) ? status.attempt : null,
+    statusNext: Number.isFinite(status?.next) ? status.next : null,
+  });
+
+  // Liveness only. Deliberately does NOT read messages: the transcript can run to
+  // tens of megabytes, and while the child is live it cannot be terminal anyway.
+  const readLiveStatus = async (task) => {
+    assertRunning();
+    const status = await transport.readStatus({
+      sessionId: task.childSessionId,
+      directory: task.directory,
+      providerId: task.providerId,
+    });
+    assertRunning();
+    return status;
+  };
+
+  // `knownStatus` lets a caller that already polled status reuse it, so one loop
+  // iteration still costs exactly one status read.
+  const readObservation = async (task, knownStatus) => {
     assertRunning();
     const input = {
       sessionId: task.childSessionId,
       directory: task.directory,
       providerId: task.providerId,
     };
-    const status = await transport.readStatus(input);
+    const status = knownStatus !== undefined
+      ? knownStatus
+      : await transport.readStatus(input);
     const messages = await transport.readMessages(input);
     assertRunning();
     return {
       ...analyzeMessages(messages, task.childSessionId),
-      statusType: trimString(status?.type).toLowerCase(),
-      statusMessage: trimString(status?.message),
-      statusAttempt: Number.isFinite(status?.attempt) ? status.attempt : null,
-      statusNext: Number.isFinite(status?.next) ? status.next : null,
+      ...normalizeStatusFields(status),
     };
   };
 
@@ -451,16 +531,67 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     }
     let emptyTerminalPolls = 0;
     let lastSuccessfulObservation = null;
+    let transientTimeoutContinuations = 0;
+    let emptyOutputContinuations = 0;
+    let firstTransientFailureAt = null;
+    let lastTranscriptReadAt = null;
     while (true) {
       let observation;
       try {
-        observation = await readObservation(task);
+        // Cheap gate first. A live child (busy, or retrying for a reason other
+        // than a definite usage limit) can never produce a terminal result, so
+        // it does not need a transcript read on every poll. The status itself is
+        // handed to readObservation so an iteration still costs one status read.
+        const status = await readLiveStatus(task);
+        const liveStatus = normalizeStatusFields(status);
+        if (
+          LIVE_STATUS_TYPES.has(liveStatus.statusType)
+          && !(liveStatus.statusType === 'retry' && isDefiniteProviderUsageLimit(liveStatus.statusMessage))
+        ) {
+          firstTransientFailureAt = null;
+          // A live child is not settled, so it clears any pending empty-terminal
+          // debounce exactly as a non-terminal observation used to.
+          emptyTerminalPolls = 0;
+          // Still refresh the partial-work snapshot on the first live poll and
+          // periodically after it, so an interruption can surface recoverable
+          // output — just not at the polling rate, which is what made a large
+          // transcript unaffordable.
+          if (
+            lastTranscriptReadAt === null
+            || now() - lastTranscriptReadAt >= liveTranscriptRefreshMs
+          ) {
+            lastSuccessfulObservation = await readObservation(task, status);
+            lastTranscriptReadAt = now();
+          }
+          await sleep(pollIntervalMs, { signal: shutdownController.signal });
+          assertRunning();
+          continue;
+        }
+        observation = await readObservation(task, status);
+        lastTranscriptReadAt = now();
         lastSuccessfulObservation = observation;
+        firstTransientFailureAt = null;
       } catch (error) {
         if (shutdownController.signal.aborted) {
           throw shutdownController.signal.reason ?? error;
         }
         if (isTransientObservationError(error)) {
+          // Transient reads must not stall the task forever. Before this bound
+          // existed, an unreadable child (e.g. a transcript too large to fetch
+          // inside the request budget) polled silently until the hard deadline
+          // and then reported a bare timeout, discarding finished work.
+          firstTransientFailureAt ??= now();
+          if (now() - firstTransientFailureAt >= observationFailureGraceMs) {
+            return {
+              status: 'interrupted',
+              failureReason: extractFailureReason(error)
+                || 'Managed child session could not be observed',
+              partial: lastSuccessfulObservation?.hasUsefulWork === true,
+              recoverablePreview: lastSuccessfulObservation?.recoverablePreview ?? '',
+              canonicalRefs: lastSuccessfulObservation?.canonicalRefs ?? [],
+              resumable: true,
+            };
+          }
           await sleep(pollIntervalMs, { signal: shutdownController.signal });
           assertRunning();
           continue;
@@ -492,6 +623,52 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
           canonicalRefs: observation.canonicalRefs,
           resumable: true,
         };
+      }
+      if (
+        !LIVE_STATUS_TYPES.has(observation.statusType)
+        && isTransientAssistantTimeout(observation.failureReason)
+        && observation.transientTimeoutCount <= MAX_TRANSIENT_TIMEOUT_CONTINUATIONS
+        && transientTimeoutContinuations < MAX_TRANSIENT_TIMEOUT_CONTINUATIONS
+      ) {
+        transientTimeoutContinuations += 1;
+        await transport.promptSession({
+          sessionId: task.childSessionId,
+          directory: task.directory,
+          providerId: task.providerId,
+          modelId: task.modelId,
+          agent: task.agent,
+          variant: task.variant,
+          // No explicit messageId: OpenCode only runs a turn when the incoming
+          // message sorts after the session's latest one, and a task-derived id
+          // sorts arbitrarily. When it landed low the continuation was written
+          // into the past and silently never ran. Repeat continuations are
+          // already bounded by transientTimeoutCount and the local counter.
+          prompt: MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT,
+          tools: resolveProviderPromptTools(task.providerId),
+        });
+        await sleep(pollIntervalMs, { signal: shutdownController.signal });
+        assertRunning();
+        continue;
+      }
+      if (
+        isEmptyTerminalObservation(observation)
+        && observation.emptyOutputContinuationCount < MAX_EMPTY_OUTPUT_CONTINUATIONS
+        && emptyOutputContinuations < MAX_EMPTY_OUTPUT_CONTINUATIONS
+      ) {
+        emptyOutputContinuations += 1;
+        await transport.promptSession({
+          sessionId: task.childSessionId,
+          directory: task.directory,
+          providerId: task.providerId,
+          modelId: task.modelId,
+          agent: task.agent,
+          variant: task.variant,
+          prompt: MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT,
+          tools: resolveProviderPromptTools(task.providerId),
+        });
+        await sleep(pollIntervalMs, { signal: shutdownController.signal });
+        assertRunning();
+        continue;
       }
       const terminal = toTerminalResult(observation);
       if (terminal) {
@@ -618,6 +795,19 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         };
       }
       const observation = await readObservation(task);
+      if (
+        !LIVE_STATUS_TYPES.has(observation.statusType)
+        && isTransientAssistantTimeout(observation.failureReason)
+        && observation.transientTimeoutCount <= MAX_TRANSIENT_TIMEOUT_CONTINUATIONS
+      ) {
+        return { state: 'live' };
+      }
+      if (
+        isEmptyTerminalObservation(observation)
+        && observation.emptyOutputContinuationCount < MAX_EMPTY_OUTPUT_CONTINUATIONS
+      ) {
+        return { state: 'live' };
+      }
       const terminal = toTerminalResult(observation);
       if (terminal) return { state: 'terminal', result: terminal };
       return { state: 'live' };

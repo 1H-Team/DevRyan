@@ -78,6 +78,7 @@ import {
   formatProjectLabel,
   normalizePath,
   reconcileArchivedGroupCollapse,
+  removeExpandedSessionIds,
   selectVisibleChatDrafts,
 } from './sidebar/utils';
 import { refreshGlobalSessions, resolveGlobalSessionDirectory, useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
@@ -685,6 +686,18 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       ids,
     );
   }, []);
+  const collapseArchivedSessionTrees = React.useCallback((ids: Iterable<string>) => {
+    setExpandedParents((prev) => {
+      const next = removeExpandedSessionIds(prev, ids);
+      if (next === prev) {
+        return prev;
+      }
+      try {
+        safeStorage.setItem(SESSION_EXPANDED_STORAGE_KEY, JSON.stringify(Array.from(next)));
+      } catch { /* ignored */ }
+      return next;
+    });
+  }, [safeStorage]);
 
   const {
     copiedSessionId,
@@ -724,6 +737,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     unarchiveSession,
     unarchiveSessions,
     onArchiveRequested: recordPendingArchiveRevealSessionIds,
+    onArchiveSucceeded: collapseArchivedSessionTrees,
     onArchiveFailed: discardPendingArchiveRevealSessionIdsFor,
     childrenMap,
     showDeletionDialog,
@@ -1648,6 +1662,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       } else {
         recordPendingArchiveRevealSessionIds(ids);
         const { archivedIds, failedIds } = await archiveSessions(ids);
+        collapseArchivedSessionTrees(archivedIds);
         successfulCount = archivedIds.length;
         failedCount = failedIds.length;
         if (failedIds.length > 0) {
@@ -1668,7 +1683,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       bulkDeletePendingRef.current = false;
       setBulkDeletePending(false);
     }
-  }, [archiveSessions, bulkScopeIsArchived, deleteSessions, discardPendingArchiveRevealSessionIdsFor, recordPendingArchiveRevealSessionIds, selectedIds, t]);
+  }, [archiveSessions, bulkScopeIsArchived, collapseArchivedSessionTrees, deleteSessions, discardPendingArchiveRevealSessionIdsFor, recordPendingArchiveRevealSessionIds, selectedIds, t]);
 
   const handleBulkDelete = React.useCallback(() => {
     const count = selectedIds.size;

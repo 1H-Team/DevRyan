@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { generateZenText, summarizeText } from './summarization.js';
+import { generateZenText, sanitizeForTitle, summarizeText } from './summarization.js';
 
 const originalFetch = globalThis.fetch;
 
@@ -65,6 +65,13 @@ describe('text summarization zen requests', () => {
     const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(requestBody.input[0].content).toContain('3 to 7 words');
     expect(result.summary).toBe('Fix OpenAI session titles');
+  });
+
+  it('drops standalone plan control markers and keeps the first valid title line', () => {
+    expect(sanitizeForTitle('<!--plan-->')).toBe('');
+    expect(sanitizeForTitle('<-----plan------>')).toBe('');
+    expect(sanitizeForTitle('<!-- plan -->\nFix Anthropic session titles.')).toBe('Fix Anthropic session titles');
+    expect(sanitizeForTitle('Review plan rendering')).toBe('Review plan rendering');
   });
 
   it('uses chat completions endpoint for openai-compatible zen models', async () => {

@@ -255,12 +255,10 @@ function getMessageParentID(message: Message): string | undefined {
   return typeof message.parentID === "string" ? message.parentID : undefined
 }
 
-// Memoize normalizeChatOwnedDiffSummary by (messages, session) reference pair.
-// The reducer replaces draft.message[sessionID] only on real changes and keeps
-// the same Session ref unless it mutates it, so unchanged-state events
-// (common during streaming message.updated) hit this cache and skip the O(n)
-// user-message scan. Identical inputs always yield the same output reference,
-// preserving the downstream areSummaryValuesEqual short-circuit.
+// Memoize normalization by (messages, session) reference pair. The reducer
+// keeps these references on no-op events, so hot-path message updates avoid
+// repeatedly cloning a session whose untrusted diff fields were already
+// removed.
 const sessionSummaryMemo: WeakMap<readonly Message[], WeakMap<Session, Session>> = new WeakMap()
 
 function memoizedNormalizeChatOwnedDiffSummary(session: Session, messages: readonly Message[]): Session {
@@ -292,9 +290,9 @@ function applyMessageSummaryToSession(draft: State, sessionID: string): boolean 
     return false
   }
 
-  // Message summaries are scoped to their owning session, unlike session.diff
-  // payloads which can reflect the shared working tree. Use them only on the
-  // non-hot message.updated path to refresh the current session's sidebar stats.
+  // Message summaries and session.diff can both reflect the shared working
+  // tree. This cold path strips those untrusted totals from session metadata;
+  // successful file tools feed the separate attribution store.
   draft.session = [...draft.session]
   draft.session[result.index] = nextSession
   return true

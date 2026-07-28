@@ -149,17 +149,16 @@ const isPackageCacheSkillPath = (skillPath: unknown): boolean => {
 
 const filterVisibleSkills = (skills: DiscoveredSkill[], hiddenSkills: HiddenSkillConfig[]): DiscoveredSkill[] => {
   const hiddenPaths = getHiddenSkillPathSet(hiddenSkills);
-  const nonCacheNames = new Set(
-    skills
-      .filter((skill) => skill.name && !isPackageCacheSkillPath(skill.path))
-      .map((skill) => skill.name)
-  );
   const seenPaths = new Set<string>();
   const visibleSkills: DiscoveredSkill[] = [];
   let changed = false;
 
   for (const skill of skills) {
-    if (skill.name && nonCacheNames.has(skill.name) && isPackageCacheSkillPath(skill.path)) {
+    if (skill.source === 'claude') {
+      changed = true;
+      continue;
+    }
+    if (isPackageCacheSkillPath(skill.path)) {
       changed = true;
       continue;
     }

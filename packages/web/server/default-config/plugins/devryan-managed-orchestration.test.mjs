@@ -977,6 +977,361 @@ describe('DevRyan managed orchestration plugin', () => {
     }, context())).rejects.toThrow('Unsupported managed task action');
   });
 
+  it('wakes an idle parent exactly once after a detached provider-recovery wait', async () => {
+    const scheduled = [];
+    const records = [{
+      info: {
+        id: 'msg_parent_user',
+        role: 'user',
+        agent: 'orchestrator',
+        model: {
+          providerID: 'openai',
+          modelID: 'gpt-5.6',
+          variant: 'xhigh',
+        },
+      },
+      parts: [{ type: 'text', text: 'Review the project.' }],
+    }];
+    const client = {
+      session: {
+        messages: vi.fn(async () => ({ data: records })),
+        status: vi.fn(async () => ({ data: {} })),
+        promptAsync: vi.fn(async (request) => {
+          records.push({
+            info: {
+              id: request.body.messageID,
+              role: 'user',
+              agent: request.body.agent,
+              model: {
+                ...request.body.model,
+                variant: request.body.variant,
+              },
+            },
+            parts: request.body.parts,
+          });
+          return { data: true };
+        }),
+      },
+    };
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      expect(request.method).toBe('list_provider_recovery_continuations');
+      return new Response(JSON.stringify({
+        ok: true,
+        result: {
+          continuations: [{
+            sourceTaskId: 'dvr_task_limited',
+            taskId: 'dvr_task_recovered',
+            rootSessionId: 'ses_root',
+            childSessionId: 'ses_oracle',
+            directory: '/workspace',
+          }],
+        },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin({
+      client,
+      scheduleTimeout(callback) {
+        scheduled.push(callback);
+        return { unref() {} };
+      },
+    });
+
+    expect(scheduled).toHaveLength(1);
+    scheduled.shift()();
+    await vi.waitFor(() => expect(client.session.promptAsync).toHaveBeenCalledTimes(1));
+
+    expect(client.session.promptAsync).toHaveBeenCalledWith({
+      path: { id: 'ses_root' },
+      query: { directory: '/workspace' },
+      body: {
+        // No explicit messageID: OpenCode must mint an ordered one, or the wake
+        // can sort below the session's latest message and never be processed.
+        agent: 'orchestrator',
+        model: {
+          providerID: 'openai',
+          modelID: 'gpt-5.6',
+        },
+        variant: 'xhigh',
+        parts: [{
+          type: 'text',
+          synthetic: true,
+          text: expect.stringContaining(
+            '[devryan-provider-recovery:v1:dvr_task_recovered]',
+          ),
+        }],
+      },
+    }, { throwOnError: false });
+
+    plugin.event({
+      event: {
+        type: 'session.idle',
+        properties: { sessionID: 'ses_root' },
+      },
+    });
+    expect(scheduled).toHaveLength(1);
+    scheduled.shift()();
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(client.session.promptAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not re-send a wake that is not yet visible in the parent transcript', async () => {
+    const scheduled = [];
+    const records = [{
+      info: {
+        id: 'msg_user',
+        role: 'user',
+        agent: 'orchestrator',
+        model: { providerID: 'openai', modelID: 'gpt-5.6', variant: 'xhigh' },
+      },
+      parts: [{ type: 'text', text: 'Review the project.' }],
+    }];
+    // A real wake is accepted well before session.messages can observe it. The
+    // marker check therefore cannot deduplicate the settle-retry scan, which is
+    // how the same wake was sent twice and left the parent with a message it
+    // never answered.
+    const client = {
+      session: {
+        messages: vi.fn(async () => ({ data: records })),
+        status: vi.fn(async () => ({ data: {} })),
+        promptAsync: vi.fn(async () => ({ data: true })),
+      },
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      ok: true,
+      result: {
+        continuations: [{
+          sourceTaskId: 'dvr_task_limited',
+          taskId: 'dvr_task_recovered',
+          rootSessionId: 'ses_root',
+          childSessionId: 'ses_oracle',
+          directory: '/workspace',
+        }],
+      },
+    }), { status: 200, headers: { 'content-type': 'application/json' } })));
+    const plugin = await DevRyanManagedOrchestrationPlugin({
+      client,
+      scheduleTimeout(callback) {
+        scheduled.push(callback);
+        return { unref() {} };
+      },
+    });
+
+    expect(scheduled).toHaveLength(1);
+    scheduled.shift()();
+    await vi.waitFor(() => expect(client.session.promptAsync).toHaveBeenCalledTimes(1));
+
+    plugin.event({
+      event: { type: 'session.idle', properties: { sessionID: 'ses_root' } },
+    });
+    expect(scheduled).toHaveLength(1);
+    scheduled.shift()();
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    // fetch resolves well before a wake would be sent, so let the second scan
+    // drain fully before asserting; otherwise a re-send is simply not observed
+    // yet and the assertion passes for the wrong reason.
+    await new Promise((resolve) => { setTimeout(resolve, 150); });
+    expect(client.session.promptAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps scanning briefly when an idle edge arrives before recovery is durably terminal', async () => {
+    const scheduled = [];
+    const records = [{
+      info: {
+        id: 'msg_parent_user',
+        role: 'user',
+        agent: 'orchestrator',
+        model: {
+          providerID: 'openai',
+          modelID: 'gpt-5.6',
+          variant: 'high',
+        },
+      },
+      parts: [{ type: 'text', text: 'Delegate a visual review.' }],
+    }];
+    const client = {
+      session: {
+        messages: vi.fn(async () => ({ data: records })),
+        status: vi.fn(async () => ({ data: {} })),
+        promptAsync: vi.fn(async (request) => {
+          records.push({
+            info: {
+              id: request.body.messageID,
+              role: 'user',
+              agent: request.body.agent,
+              model: request.body.model,
+            },
+            parts: request.body.parts,
+          });
+          return { data: true };
+        }),
+      },
+    };
+    let scanCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      scanCount += 1;
+      const continuations = scanCount < 3
+        ? []
+        : [{
+            sourceTaskId: 'dvr_task_limited',
+            taskId: 'dvr_task_recovered',
+            rootSessionId: 'ses_root',
+            childSessionId: 'ses_designer',
+            directory: '/workspace',
+          }];
+      return new Response(JSON.stringify({
+        ok: true,
+        result: { continuations },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin({
+      client,
+      scheduleTimeout(callback, delayMs) {
+        scheduled.push({ callback, delayMs });
+        return { unref() {} };
+      },
+    });
+
+    // The startup scan can happen arbitrarily long before the user chooses a
+    // recovery model, so it must not own the later settlement window.
+    scheduled.shift().callback();
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(scheduled).toEqual([]);
+
+    plugin.event({
+      event: {
+        type: 'session.idle',
+        properties: { sessionID: 'ses_designer' },
+      },
+    });
+    expect(scheduled[0].delayMs).toBe(500);
+    scheduled.shift().callback();
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(client.session.promptAsync).not.toHaveBeenCalled();
+
+    await vi.waitFor(() => expect(scheduled).toHaveLength(1));
+    expect(scheduled[0].delayMs).toBe(1_000);
+    scheduled.shift().callback();
+    await vi.waitFor(() => expect(client.session.promptAsync).toHaveBeenCalledTimes(1));
+    expect(fetch).toHaveBeenCalledTimes(3);
+
+    await vi.waitFor(() => expect(scheduled).toHaveLength(1));
+    scheduled.shift().callback();
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(scheduled).toEqual([]);
+    expect(client.session.promptAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not drop an idle recovery trigger while a scan is in flight', async () => {
+    const scheduled = [];
+    let resolveFirstScan;
+    const firstScan = new Promise((resolve) => {
+      resolveFirstScan = resolve;
+    });
+    const client = {
+      session: {
+        messages: vi.fn(async () => ({
+          data: [{
+            info: {
+              id: 'msg_parent_user',
+              role: 'user',
+              agent: 'orchestrator',
+              model: {
+                providerID: 'openai',
+                modelID: 'gpt-5.6',
+              },
+            },
+            parts: [{ type: 'text', text: 'Delegate a review.' }],
+          }],
+        })),
+        status: vi.fn(async () => ({ data: {} })),
+        promptAsync: vi.fn(async () => ({ data: true })),
+      },
+    };
+    let scanCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      scanCount += 1;
+      if (scanCount === 1) return await firstScan;
+      return new Response(JSON.stringify({
+        ok: true,
+        result: {
+          continuations: [{
+            sourceTaskId: 'dvr_task_limited',
+            taskId: 'dvr_task_recovered',
+            rootSessionId: 'ses_root',
+            childSessionId: 'ses_oracle',
+            directory: '/workspace',
+          }],
+        },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin({
+      client,
+      scheduleTimeout(callback, delayMs) {
+        scheduled.push({ callback, delayMs });
+        return { unref() {} };
+      },
+    });
+
+    scheduled.shift().callback();
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    plugin.event({
+      event: {
+        type: 'session.idle',
+        properties: { sessionID: 'ses_oracle' },
+      },
+    });
+
+    resolveFirstScan(new Response(JSON.stringify({
+      ok: true,
+      result: { continuations: [] },
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    await vi.waitFor(() => expect(scheduled).toHaveLength(1));
+
+    expect(scheduled[0].delayMs).toBe(1_000);
+    scheduled.shift().callback();
+    await vi.waitFor(() => expect(client.session.promptAsync).toHaveBeenCalledTimes(1));
+  });
+
+  it('leaves the live parent wait in control while the root session is busy', async () => {
+    const scheduled = [];
+    const client = {
+      session: {
+        messages: vi.fn(async () => ({ data: [] })),
+        status: vi.fn(async () => ({
+          data: { ses_root: { type: 'busy' } },
+        })),
+        promptAsync: vi.fn(async () => ({ data: true })),
+      },
+    };
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      ok: true,
+      result: {
+        continuations: [{
+          sourceTaskId: 'dvr_task_limited',
+          taskId: 'dvr_task_recovered',
+          rootSessionId: 'ses_root',
+          childSessionId: 'ses_oracle',
+          directory: '/workspace',
+        }],
+      },
+    }), { status: 200, headers: { 'content-type': 'application/json' } })));
+    await DevRyanManagedOrchestrationPlugin({
+      client,
+      scheduleTimeout(callback) {
+        scheduled.push(callback);
+        return { unref() {} };
+      },
+    });
+
+    scheduled.shift()();
+    await vi.waitFor(() => expect(client.session.status).toHaveBeenCalledTimes(1));
+    expect(client.session.messages).not.toHaveBeenCalled();
+    expect(client.session.promptAsync).not.toHaveBeenCalled();
+  });
+
   it('fails visibly when the bridge is unavailable or rejects a request', async () => {
     delete process.env.DEVRYAN_ORCHESTRATION_URL;
     const plugin = await DevRyanManagedOrchestrationPlugin();

@@ -83,7 +83,7 @@ const createCtx = (workingDirectory = '/tmp/project') => ({
     restart: vi.fn(async () => {}),
     getDebugInfo: vi.fn(() => ({
       cliPath: '/usr/local/bin/opencode',
-      version: '1.18.5',
+      version: '1.18.9',
     })),
   },
 });
@@ -98,9 +98,9 @@ describe('handleConfigBridgeMessage OpenCode resolution', () => {
 
     expect(response?.success).toBe(true);
     expect(response?.data).toMatchObject({
-      targetVersion: '1.18.5',
-      detectedVersion: '1.18.5',
-      installCommand: 'curl -fsSL https://opencode.ai/install | bash -s -- --version 1.18.5 --no-modify-path',
+      targetVersion: '1.18.9',
+      detectedVersion: '1.18.9',
+      installCommand: 'curl -fsSL https://opencode.ai/install | bash -s -- --version 1.18.9 --no-modify-path',
     });
   });
 });
@@ -256,7 +256,7 @@ describe('handleConfigBridgeMessage skills discovery', () => {
     expect(response?.data.skills).toEqual([localSkill, projectSkill]);
   });
 
-  it('hides package cache duplicates when a real skill has the same name', async () => {
+  it('hides every package-cache skill from the managed skill catalog', async () => {
     const localSkill = {
       name: 'dispatching-parallel-agents',
       path: '/Users/test/.config/opencode/skills/superpowers/dispatching-parallel-agents/SKILL.md',
@@ -287,7 +287,33 @@ describe('handleConfigBridgeMessage skills discovery', () => {
     );
 
     expect(response?.success).toBe(true);
-    expect(response?.data.skills).toEqual([localSkill, cacheOnlySkill]);
+    expect(response?.data.skills).toEqual([localSkill]);
+  });
+
+  it('excludes Claude skills returned by the managed OpenCode API', async () => {
+    const opencodeSkill = {
+      name: 'frontend-design',
+      path: '/Users/test/.config/opencode/skills/frontend-design/SKILL.md',
+      scope: 'user',
+      source: 'opencode',
+      description: 'Design skill',
+    };
+    const claudeSkill = {
+      name: 'claude-design',
+      path: '/Users/test/.claude/skills/claude-design/SKILL.md',
+      scope: 'user',
+      source: 'claude',
+      description: 'Disallowed Claude skill',
+    };
+
+    const response = await handleConfigBridgeMessage(
+      { id: '1', type: 'api:config/skills', payload: { method: 'GET' } },
+      createCtx(),
+      createDeps([opencodeSkill, claudeSkill]),
+    );
+
+    expect(response?.success).toBe(true);
+    expect(response?.data.skills).toEqual([opencodeSkill]);
   });
 
   it('uses local discovered skill paths for detail and supporting file lookups when OpenCode returns no skills', async () => {

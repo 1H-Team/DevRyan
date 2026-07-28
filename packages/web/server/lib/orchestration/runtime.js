@@ -315,6 +315,16 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         }
         return await scheduler.inspectDispatchBarrier(rootSessionId);
       }
+      case 'list_provider_recovery_continuations': {
+        const sessionId = typeof params.sessionId === 'string'
+          ? params.sessionId.trim()
+          : '';
+        return {
+          continuations: scheduler.listReadyProviderRecoveryContinuations({
+            ...(sessionId ? { sessionId } : {}),
+          }),
+        };
+      }
       case 'handoff': {
         const scope = normalizeHandoffParams(params);
         const result = scope.confirm

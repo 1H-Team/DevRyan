@@ -1,5 +1,5 @@
 ---
-name: Railway
+name: use-railway
 description: >
   Operate Railway infrastructure: create projects, provision services and
   databases, manage object storage buckets, deploy code, configure environments
@@ -183,4 +183,3 @@ For all operational responses, return:
 3. What to do next (or confirmation that the task is complete).
 
 Keep output concise. Include command evidence only when it helps the user understand what happened.
-

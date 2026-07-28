@@ -57,4 +57,25 @@ describe('provider recovery store', () => {
     store.clearRecovery('ses_1');
     expect(useProviderRecoveryStore.getState().recoveriesBySessionId.ses_1).toBe(undefined);
   });
+
+  test('does not clear a newer failed retry with an older successful send', () => {
+    const store = useProviderRecoveryStore.getState();
+    store.offerRecovery(recovery);
+    store.offerRecovery({
+      ...recovery,
+      anchorUserMessageId: 'msg_retry',
+      reason: "You've hit your limit",
+      createdAt: 2_000,
+    });
+
+    store.clearRecovery('ses_1', recovery);
+    expect(useProviderRecoveryStore.getState().recoveriesBySessionId.ses_1?.anchorUserMessageId)
+      .toBe('msg_retry');
+
+    store.clearRecovery('ses_1', {
+      anchorUserMessageId: 'msg_retry',
+      createdAt: 2_000,
+    });
+    expect(useProviderRecoveryStore.getState().recoveriesBySessionId.ses_1).toBe(undefined);
+  });
 });

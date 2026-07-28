@@ -1,10 +1,16 @@
 // ---------------------------------------------------------------------------
 // Payload sanitization — strip oversized diff snapshot fields client-side.
 //
-// OpenCode session/message snapshots may carry large full-content diff fields
-// (legacy before/after or from/to). The UI never uses these fields but they
-// waste browser memory and
-// can crash tabs for large sessions.
+// OpenCode attaches a git diff snapshot to session/message records. Every entry
+// carries its full patch text, so a workspace with a large untracked tree can
+// produce a snapshot far bigger than the conversation: one observed user message
+// held 10,345 entries totalling ~87MB, making a single session load ~92MB. The
+// UI only renders the per-entry counts, never the bodies, so the bodies are pure
+// browser memory cost and can wedge or crash the tab on large sessions.
+//
+// `patch` is the field current OpenCode populates. The legacy before/after and
+// from/to shapes are still stripped so mixed-version payloads stay covered —
+// stripping only those four silently did nothing on current payloads.
 //
 // Applied at two points:
 // 1. Event reducer — session.created/session.updated events
@@ -18,6 +24,7 @@ type DiffEntry = {
   status?: string
   additions?: number
   deletions?: number
+  patch?: string
   before?: string
   after?: string
   from?: string
@@ -29,58 +36,40 @@ type SessionSummary = {
   [key: string]: unknown
 }
 
-/** Strip oversized snapshot fields from summary.diffs on a session object */
-export function stripSessionDiffSnapshots(session: Session): Session {
-  const summary = (session as { summary?: SessionSummary }).summary
-  if (!summary?.diffs || !Array.isArray(summary.diffs)) return session
+const DIFF_CONTENT_FIELDS = ["patch", "before", "after", "from", "to"] as const
+
+/**
+ * Drop patch bodies from a summary while preserving entry metadata
+ * (file/status/additions/deletions), which the diff badges still read.
+ * Returns the original reference when nothing needed stripping.
+ */
+function stripDiffSummary<T extends { summary?: SessionSummary }>(target: T): T {
+  const summary = target.summary
+  if (!summary?.diffs || !Array.isArray(summary.diffs)) return target
 
   let changed = false
-  const stripped = summary.diffs.map((d) => {
-    if (d && (
-      typeof d.before === "string"
-      || typeof d.after === "string"
-      || typeof d.from === "string"
-      || typeof d.to === "string"
-    )) {
-      const rest = { ...d }
-      delete rest.before
-      delete rest.after
-      delete rest.from
-      delete rest.to
+  const stripped = summary.diffs.map((entry) => {
+    if (!entry) return entry
+    let next = entry
+    for (const field of DIFF_CONTENT_FIELDS) {
+      if (typeof entry[field] !== "string") continue
+      if (next === entry) next = { ...entry }
+      delete next[field]
       changed = true
-      return rest
     }
-    return d
+    return next
   })
 
-  if (!changed) return session
-  return { ...session, summary: { ...summary, diffs: stripped } } as Session
+  if (!changed) return target
+  return { ...target, summary: { ...summary, diffs: stripped } }
+}
+
+/** Strip oversized snapshot fields from summary.diffs on a session object */
+export function stripSessionDiffSnapshots(session: Session): Session {
+  return stripDiffSummary(session as Session & { summary?: SessionSummary }) as Session
 }
 
 /** Strip oversized snapshot fields from summary.diffs on a message object */
 export function stripMessageDiffSnapshots(message: Message): Message {
-  const summary = (message as { summary?: SessionSummary }).summary
-  if (!summary?.diffs || !Array.isArray(summary.diffs)) return message
-
-  let changed = false
-  const stripped = summary.diffs.map((d) => {
-    if (d && (
-      typeof d.before === "string"
-      || typeof d.after === "string"
-      || typeof d.from === "string"
-      || typeof d.to === "string"
-    )) {
-      const rest = { ...d }
-      delete rest.before
-      delete rest.after
-      delete rest.from
-      delete rest.to
-      changed = true
-      return rest
-    }
-    return d
-  })
-
-  if (!changed) return message
-  return { ...message, summary: { ...summary, diffs: stripped } } as Message
+  return stripDiffSummary(message as Message & { summary?: SessionSummary }) as Message
 }

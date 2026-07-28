@@ -4,6 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { listRuntimePluginAssets } from '../../web/server/lib/opencode/default-config-assets.js';
+import { resolveProjectPlansDirectory } from '../../web/server/lib/projects/project-id.js';
 import { deleteSkill, discoverSkills, getSkillSources } from './opencodeConfig';
 
 const writeJson = (filePath, data) => {
@@ -70,6 +71,26 @@ describe('VS Code skill discovery', () => {
         path.join(root, '.agents', 'skills', 'lint-helper', 'SKILL.md'),
         path.join(root, '.opencode', 'skills', 'lint-helper', 'SKILL.md'),
       ]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('discovers OpenCode and .agents skills while excluding .claude skills', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-skill-sources-'));
+    const opencodeSkill = path.join(root, '.opencode', 'skills', 'project-tool');
+    const agentsSkill = path.join(root, '.agents', 'skills', 'agent-tool');
+    const claudeSkill = path.join(root, '.claude', 'skills', 'claude-tool');
+    for (const skillDir of [opencodeSkill, agentsSkill, claudeSkill]) {
+      fs.mkdirSync(skillDir, { recursive: true });
+      const name = path.basename(skillDir);
+      fs.writeFileSync(path.join(skillDir, 'SKILL.md'), `---\nname: ${name}\ndescription: ${name}\n---\n`);
+    }
+
+    try {
+      const skills = discoverSkills(root).filter((skill) => skill.path.startsWith(root));
+      expect(skills.map((skill) => skill.name).sort()).toEqual(['agent-tool', 'project-tool']);
+      expect(skills.map((skill) => skill.source).sort()).toEqual(['agents', 'opencode']);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -149,6 +170,7 @@ describe('VS Code plugin discovery', () => {
       expect(result.defaults.map((plugin) => plugin.pluginId)).toEqual([
         'oh-my-opencode-slim',
         'opencode-with-claude',
+        'context-mode',
         'openai-tool-schema-sanitizer',
       ]);
       expect(result.entries.map((plugin) => `${plugin.scope}:${plugin.spec}:${plugin.parsedKind}`)).toEqual([
@@ -441,12 +463,74 @@ describe('VS Code Cursor SDK config handling', () => {
     }
   });
 
+  it('sanitizes Designer to its visible named skill subset and allowed source directories', async () => {
+    const { syncRuntimeAgentOverlays } = await loadRuntime();
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-designer-skills-'));
+    const frontendSkill = path.join(projectDir, '.opencode', 'skills', 'frontend-design');
+    const agentBrowserSkill = path.join(projectDir, '.agents', 'skills', 'agent-browser');
+    const claudeSkill = path.join(projectDir, '.claude', 'skills', 'accessibility');
+    for (const skillDir of [frontendSkill, agentBrowserSkill, claudeSkill]) {
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, 'SKILL.md'),
+        `---\nname: ${path.basename(skillDir)}\ndescription: test skill\n---\n`,
+      );
+    }
+    writeAgentMarkdown(path.join(projectDir, '.opencode', 'agents'), 'designer', [
+      'mode: subagent',
+      'permission:',
+      '  "*": allow',
+      '  external_directory:',
+      '    "*": ask',
+      '    /tmp/legacy/.cursor/skills/frontend-design/*: allow',
+      '  skill:',
+      '    "*": deny',
+      '    frontend-design: allow',
+      '    agent-browser: allow',
+      '    accessibility: allow',
+    ]);
+
+    try {
+      const result = syncRuntimeAgentOverlays(projectDir, {
+        hiddenSkills: [{
+          name: 'agent-browser',
+          path: path.join(agentBrowserSkill, 'SKILL.md'),
+          scope: 'project',
+          source: 'agents',
+        }],
+      });
+      const frontmatter = readAgentFrontmatter(
+        path.join(result.targetConfigDirectory, 'agents', 'designer.md'),
+      );
+
+      expect(frontmatter).toContain('skill:\n    "*": deny\n    frontend-design: allow');
+      expect(frontmatter).toContain(`${frontendSkill}/*: allow`);
+      expect(frontmatter).not.toContain(`${agentBrowserSkill}/*: allow`);
+      expect(frontmatter).not.toContain(`${claudeSkill}/*: allow`);
+      expect(frontmatter).not.toContain('.cursor/skills');
+      expect(frontmatter).not.toContain('agent-browser: allow');
+      expect(frontmatter).not.toContain('accessibility: allow');
+    } finally {
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
   it('adds active project external-directory allows to VS Code runtime agent overlays', async () => {
     const { syncRuntimeAgentOverlays } = await loadRuntime();
     const repoDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-overlay-repo-'));
     const projectDir = path.join(repoDir, 'packages', 'app');
     fs.mkdirSync(path.join(repoDir, '.git'), { recursive: true });
     fs.mkdirSync(projectDir, { recursive: true });
+    writeAgentMarkdown(path.join(projectDir, '.opencode', 'agents'), 'reviewer', [
+      'mode: subagent',
+      'permission:',
+      '  "*": deny',
+      '  external_directory:',
+      '    "*": ask',
+      '  read:',
+      '    "*": allow',
+      '    "*.env": ask',
+    ]);
     writeJson(path.join(tempHome, '.config', 'opencode', 'opencode.json'), {
       openchamber: {
         agentOverrides: {
@@ -459,11 +543,20 @@ describe('VS Code Cursor SDK config handling', () => {
 
     const result = syncRuntimeAgentOverlays(projectDir);
     const frontmatter = readAgentFrontmatter(path.join(result.targetConfigDirectory, 'agents', 'explorer.md'));
+    const reviewerFrontmatter = readAgentFrontmatter(
+      path.join(result.targetConfigDirectory, 'agents', 'reviewer.md'),
+    );
+    const plansDirectory = resolveProjectPlansDirectory(projectDir, tempHome);
 
     expect(frontmatter).toContain(`${repoDir}/*: allow`);
     expect(frontmatter).toContain(`${projectDir}/*: allow`);
+    expect(frontmatter).toContain(`${plansDirectory}/*: allow`);
     expect(frontmatter).toContain('"*": ask');
     expect(frontmatter).toContain('"*.env": ask');
+    expect(fs.existsSync(plansDirectory)).toBe(false);
+    expect(reviewerFrontmatter).toContain(`${plansDirectory}/*: allow`);
+    expect(reviewerFrontmatter).toContain('"*": deny');
+    expect(reviewerFrontmatter).toContain('"*.env": ask');
     fs.rmSync(repoDir, { recursive: true, force: true });
   });
 
@@ -675,6 +768,7 @@ describe('VS Code Cursor SDK config handling', () => {
         'opencode-antigravity-auth@latest',
         '@rama_nigg/open-cursor@latest',
         'cursor-acp',
+        'context-mode@1.0.169',
         'oh-my-opencode-slim',
         'superpowers@git+https://github.com/obra/superpowers.git',
         'context7@latest',
@@ -699,6 +793,7 @@ describe('VS Code Cursor SDK config handling', () => {
       expect(overlayConfig.plugin).toContain('opencode-antigravity-auth@latest');
       expect(overlayConfig.plugin).toContain('@rama_nigg/open-cursor@latest');
       expect(overlayConfig.plugin).toContain('cursor-acp');
+      expect(overlayConfig.plugin).toContain('context-mode@1.0.169');
       expect(overlayConfig.plugin).toContain('oh-my-opencode-slim');
       expect(overlayConfig.plugin).toContain('./plugins/council-session.js');
       expect(overlayConfig.plugin).toContain('./plugins/openai-tool-schema-sanitizer.mjs');

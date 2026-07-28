@@ -4,6 +4,7 @@ import { RiCloseLine, RiScissorsLine } from '@remixicon/react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
+import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
 import type { ContextUsageSource, SessionContextUsage } from '@/stores/types/sessionTypes';
 
 type ContextSegment = {
@@ -243,7 +244,12 @@ export const ContextUsageWindow: React.FC<ContextUsageWindowProps> = ({ usage, o
                     <div className="space-y-2">
                         {subagentRows.map((session) => (
                             <div key={session.sessionId} className="flex items-center justify-between gap-4 typography-ui-label text-foreground">
-                                <span className="truncate text-muted-foreground">{session.title ?? t('contextSidebar.session.untitled')}</span>
+                                <span className="truncate text-muted-foreground">
+                                    {resolveDisplaySessionTitle({
+                                        title: session.title,
+                                        fallback: t('contextSidebar.session.untitled'),
+                                    })}
+                                </span>
                                 <span className="shrink-0 tabular-nums text-muted-foreground">
                                     {session.capacityLimit !== null
                                         ? `${formatTokens(session.totalTokens)} / ${formatTokens(session.capacityLimit)}`

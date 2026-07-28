@@ -14,9 +14,12 @@ import {
 export const DEVRYAN_DEFAULT_PLUGIN_IDS = Object.freeze({
   SLIM: 'oh-my-opencode-slim',
   CLAUDE: 'opencode-with-claude',
+  CONTEXT_MODE: 'context-mode',
   OPENAI_TOOL_SCHEMA_SANITIZER: 'openai-tool-schema-sanitizer',
 });
 
+export const CONTEXT_MODE_PLUGIN_VERSION = '1.0.169';
+export const CONTEXT_MODE_PLUGIN_SPEC = `context-mode@${CONTEXT_MODE_PLUGIN_VERSION}`;
 export const OPENAI_TOOL_SCHEMA_SANITIZER_FILE = 'openai-tool-schema-sanitizer.mjs';
 export const OPENAI_TOOL_SCHEMA_SANITIZER_SPEC = `./plugins/${OPENAI_TOOL_SCHEMA_SANITIZER_FILE}`;
 
@@ -36,6 +39,15 @@ const catalog = Object.freeze([
     displayName: 'OpenCode with Claude',
     shippedSpec: ANTHROPIC_OAUTH_PLUGIN_SPEC,
     version: ANTHROPIC_OAUTH_PLUGIN_VERSION,
+    delivery: 'npm',
+    sourcePath: 'default-config/user-profile/package.json',
+  }),
+  Object.freeze({
+    id: `devryan-default:${DEVRYAN_DEFAULT_PLUGIN_IDS.CONTEXT_MODE}`,
+    pluginId: DEVRYAN_DEFAULT_PLUGIN_IDS.CONTEXT_MODE,
+    displayName: 'Context Mode',
+    shippedSpec: CONTEXT_MODE_PLUGIN_SPEC,
+    version: CONTEXT_MODE_PLUGIN_VERSION,
     delivery: 'npm',
     sourcePath: 'default-config/user-profile/package.json',
   }),
@@ -68,6 +80,9 @@ export const getDevRyanDefaultPluginIdForSpec = (spec) => {
   }
   if (isAnthropicOAuthPluginSpec(normalized)) {
     return DEVRYAN_DEFAULT_PLUGIN_IDS.CLAUDE;
+  }
+  if (normalized === DEVRYAN_DEFAULT_PLUGIN_IDS.CONTEXT_MODE || normalized.startsWith('context-mode@')) {
+    return DEVRYAN_DEFAULT_PLUGIN_IDS.CONTEXT_MODE;
   }
   if (isSanitizerValue(normalized)) {
     return DEVRYAN_DEFAULT_PLUGIN_IDS.OPENAI_TOOL_SCHEMA_SANITIZER;

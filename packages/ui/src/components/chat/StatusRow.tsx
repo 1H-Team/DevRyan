@@ -23,7 +23,11 @@ import { WorkingPlaceholder } from "./message/parts/WorkingPlaceholder";
 import { isVSCodeRuntime } from "@/lib/desktop";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/lib/i18n";
-import { buildPlanPhaseTodoProjection, buildTodoSummary } from "./lib/todoSummary";
+import {
+  buildPlanPhaseTodoProjection,
+  buildTodoSummary,
+  getCurrentTodoPosition,
+} from "./lib/todoSummary";
 import { useSessionPlanFileStore } from '@/stores/useSessionPlanFileStore';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import {
@@ -292,7 +296,7 @@ export const StatusRow: React.FC<StatusRowProps> = ({
     : activeTodo?.content ?? t('chat.statusRow.tasksTitle');
   const displayedProgress = planPhaseProjection
     ? planPhaseProjection.current
-    : progress.completed;
+    : getCurrentTodoPosition(visibleTodos);
 
   // Close popover when clicking outside
   const popoverRef = React.useRef<HTMLDivElement>(null);

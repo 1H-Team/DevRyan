@@ -1,5 +1,5 @@
 ---
-name: Dispatching Parallel Agents
+name: dispatching-parallel-agents
 description: Use when facing 2+ independent tasks that can be worked on without shared state or sequential dependencies
 ---
 
@@ -180,4 +180,3 @@ From debugging session (2025-10-03):
 - All investigations completed concurrently
 - All fixes integrated successfully
 - Zero conflicts between agent changes
-

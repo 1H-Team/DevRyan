@@ -52,6 +52,7 @@ import { useI18n } from '@/lib/i18n';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { filterUserVisibleSessions } from '@/lib/sessionVisibility';
+import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
 
 type CommandEntry = {
   id: string;
@@ -503,7 +504,10 @@ export const CommandPalette: React.FC = () => {
                 return (
                   <CommandGroup key="sessions">
                     {visibleSessions.map((session) => {
-                      const title = session.title || t('commandPalette.session.untitled');
+                      const title = resolveDisplaySessionTitle({
+                        title: session.title,
+                        fallback: t('commandPalette.session.untitled'),
+                      });
                       const dir = resolveGlobalSessionDirectory(session);
                       const branch = branchForSession(session.id, dir);
                       return (

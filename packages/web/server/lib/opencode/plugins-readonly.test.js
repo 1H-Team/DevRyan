@@ -51,6 +51,7 @@ describe('read-only plugin config model', () => {
       expect(result.defaults.map((plugin) => plugin.pluginId)).toEqual([
         'oh-my-opencode-slim',
         'opencode-with-claude',
+        'context-mode',
         'openai-tool-schema-sanitizer',
       ]);
       expect(result.entries.map((plugin) => `${plugin.scope}:${plugin.spec}:${plugin.parsedKind}`)).toEqual([

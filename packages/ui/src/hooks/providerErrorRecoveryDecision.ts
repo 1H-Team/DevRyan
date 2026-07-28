@@ -1,4 +1,5 @@
 import type { Message, SessionStatus } from '@opencode-ai/sdk/v2/client';
+import { isDefiniteProviderUsageLimit } from '@openchamber/orchestration-runtime';
 
 import { isLikelyProviderAuthFailure } from '@/lib/messages/providerAuthError';
 import { isLikelyProviderModelNotFound } from '@/lib/messages/providerModelNotFound';
@@ -13,16 +14,21 @@ type Input = {
 
 export const MAX_TRANSIENT_PROVIDER_RETRY_ATTEMPTS = 3;
 
+export function isPrimaryProviderRecoverySession(
+  session: { parentID?: string | null } | undefined,
+): boolean {
+  return Boolean(session && !session.parentID);
+}
+
 export function decideProviderRetryLoopRecovery(
   status: SessionStatus | undefined,
 ): { reason: string } | null {
-  if (status?.type !== 'retry' || status.attempt < MAX_TRANSIENT_PROVIDER_RETRY_ATTEMPTS) {
-    return null;
-  }
+  if (status?.type !== 'retry') return null;
   const reason = stripWrappedJsonQuotes(status.message).trim();
-  if (!reason || !isLikelyTransientStreamFailure(undefined, reason)) {
-    return null;
-  }
+  if (!reason) return null;
+  if (isDefiniteProviderUsageLimit(reason)) return { reason };
+  if (status.attempt < MAX_TRANSIENT_PROVIDER_RETRY_ATTEMPTS) return null;
+  if (!isLikelyTransientStreamFailure(undefined, reason)) return null;
   return { reason };
 }
 

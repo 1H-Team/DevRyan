@@ -3,6 +3,7 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessions } from '@/sync/sync-context';
 import { isWebRuntime } from '@/lib/desktop';
 import { PWA_RECENT_SESSIONS_STORAGE_KEY } from '@/lib/pwa';
+import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
 
 type RecentSessionShortcut = {
   sessionId: string;
@@ -16,13 +17,7 @@ type ManifestSyncWindow = Window & {
 const MAX_RECENT_SHORTCUTS = 3;
 
 const normalizeRecentTitle = (value: string | undefined, fallback: string): string => {
-  if (typeof value !== 'string') {
-    return fallback;
-  }
-  const normalized = value.trim().replace(/\s+/g, ' ');
-  if (!normalized) {
-    return fallback;
-  }
+  const normalized = resolveDisplaySessionTitle({ title: value, fallback });
   return normalized.slice(0, 48);
 };
 

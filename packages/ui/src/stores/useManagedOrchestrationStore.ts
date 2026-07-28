@@ -990,6 +990,34 @@ export const managedOrchestrationSelectors = {
       return !envelope || envelope.action === null;
     });
   },
+  /**
+   * True while a managed child for this root is still executing. Distinct from
+   * `hasUndispositionedTasksForRoot`, which also counts finished-but-uncollected
+   * results: this is only "a subagent is working right now". Used to keep the
+   * status row alive when the parent turn itself is idle, which is what happens
+   * after a recovered or detached child resumes.
+   */
+  hasActiveTasksForRoot: (rootSessionId: string) => (
+    state: ManagedOrchestrationStore
+  ) => {
+    const taskIds = state.taskIdsByRootId[rootSessionId] ?? EMPTY_TASK_IDS;
+    return taskIds.some((taskId) => {
+      const task = state.tasksById[taskId];
+      return Boolean(task && !isTerminalManagedTaskStatus(task.status));
+    });
+  },
+  hasManualRecoveryForRoot: (rootSessionId: string) => (
+    state: ManagedOrchestrationStore
+  ) => {
+    const taskIds = state.taskIdsByRootId[rootSessionId] ?? EMPTY_TASK_IDS;
+    return taskIds.some((taskId) => {
+      const task = state.tasksById[taskId];
+      return Boolean(
+        task
+        && isManualRecoveryTask(task, state.resultEnvelopesByTaskId[taskId]),
+      );
+    });
+  },
   task: (taskId: string) => (state: ManagedOrchestrationStore) => state.tasksById[taskId],
   resultEnvelope: (taskId: string) => (state: ManagedOrchestrationStore) => (
     state.resultEnvelopesByTaskId[taskId]

@@ -41,6 +41,7 @@ import {
   stripUntrustedSessionDiffSummary,
   type SessionSummaryDiffStats,
 } from "@/lib/sessionDiffStats"
+import { reconcileSessionChangeAttribution } from "@/stores/useSessionChangeAttributionStore"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 const MESSAGE_PAGE_SIZE = 200
@@ -366,6 +367,7 @@ export function useSync() {
               ...(normalizedSessions !== current.session ? { session: normalizedSessions } : {}),
               ...(activityChanged ? { session_user_activity: draft.session_user_activity } : {}),
             })
+            reconcileSessionChangeAttribution(targetDirectory, sessionID, targetStore.getState())
             setMetaFor(sessionID, {
               limit: normalizeMessageFetchLimit(materialized.messages.length, limit),
               cursor: merged.cursor,

@@ -14,6 +14,7 @@ import {
 } from '../utils';
 import { formatDirectoryName, formatPathForDisplay } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
+import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
 
 type Args = {
   homeDirectory: string | null;
@@ -101,7 +102,10 @@ export const useSessionGrouping = (args: Args) => {
 
   const buildSessionSearchText = React.useCallback((session: Session): string => {
     const sessionDirectory = normalizePath((session as Session & { directory?: string | null }).directory ?? null) ?? '';
-    const sessionTitle = (session.title || t('sessions.sidebar.session.untitled')).trim();
+    const sessionTitle = resolveDisplaySessionTitle({
+      title: session.title,
+      fallback: t('sessions.sidebar.session.untitled'),
+    });
     return `${sessionTitle} ${sessionDirectory}`.toLowerCase();
   }, [t]);
 

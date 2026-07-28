@@ -6,13 +6,6 @@ import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { Button } from '@/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { buildCodeMirrorCommentWidgets, normalizeLineRange, useInlineCommentController } from '@/components/comments';
 
 import { getLanguageFromExtension } from '@/lib/toolHelpers';
@@ -21,49 +14,25 @@ import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { generateSyntaxTheme } from '@/lib/theme/syntaxThemeGenerator';
 import { createFlexokiCodeMirrorTheme } from '@/lib/codemirror/flexokiTheme';
 import { languageByExtension } from '@/lib/codemirror/languageByExtension';
-import { RiCheckLine, RiClipboardLine, RiCloseLine, RiCodeAiLine, RiLoopRightAiLine } from '@remixicon/react';
+import { RiCheckLine, RiClipboardLine, RiCloseLine } from '@remixicon/react';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessions } from '@/sync/sync-context';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
-import { useProjectsStore } from '@/stores/useProjectsStore';
-import { useSelectionStore } from '@/sync/selection-store';
-import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useSessionPlanFileStore } from '@/stores/useSessionPlanFileStore';
-import { useGitStore } from '@/stores/useGitStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
-import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { EditorView } from '@codemirror/view';
 import { copyTextToClipboard } from '@/lib/clipboard';
-import { generateBranchName } from '@/lib/git/branchNameGenerator';
 import { parseProjectPlanMarkdown } from '@/lib/openchamberConfig';
-import { createWorktreeSessionForNewBranch } from '@/lib/worktreeSessionCreator';
-import { TodoSendDialog, type TodoSendExecution } from '@/components/session/TodoSendDialog';
-import { renderMagicPrompt } from '@/lib/magicPrompts';
 import { useI18n } from '@/lib/i18n';
-import {
-  buildPlanSendPromptVariables,
-  getPlanSendInstructionsPromptId,
-  getPlanSendPlanMode,
-  getPlanSendVisiblePromptId,
-  type PlanSendAction,
-} from './planSend';
 import { getPlanViewCandidatePaths } from './planViewPaths';
-import { getPlanBlockId, getPlanImplementationKey } from '@/lib/messages/actionablePlan';
 
 type PlanViewProps = {
   targetPath?: string | null;
   presentation?: 'standalone' | 'context-panel';
   headerActionsTarget?: HTMLElement | null;
-};
-
-type PlanSendTarget = 'session' | 'worktree';
-
-type PendingPlanSend = {
-  action: PlanSendAction;
-  target: PlanSendTarget;
 };
 
 const normalize = (value: string): string => {
@@ -119,37 +88,6 @@ const toDisplayPath = (resolvedPath: string, options: { currentDirectory: string
   return normalized;
 };
 
-const resolveProjectRefForDirectory = (
-  directory: string,
-  projects: Array<{ id: string; path: string }>,
-  activeProjectId: string | null,
-): { id: string; path: string } | null => {
-  const normalized = normalize(directory.trim());
-  if (!normalized) {
-    return null;
-  }
-
-  const activeProject = activeProjectId
-    ? projects.find((project) => project.id === activeProjectId) ?? null
-    : null;
-
-  if (activeProject?.path) {
-    const activePath = normalize(activeProject.path);
-    if (normalized === activePath || normalized.startsWith(`${activePath}/`)) {
-      return { id: activeProject.id, path: activeProject.path };
-    }
-  }
-
-  const match = projects
-    .filter((project) => {
-      const projectPath = normalize(project.path);
-      return normalized === projectPath || normalized.startsWith(`${projectPath}/`);
-    })
-    .sort((left, right) => normalize(right.path).length - normalize(left.path).length)[0];
-
-  return match ? { id: match.id, path: match.path } : null;
-};
-
 type SelectedLineRange = {
   start: number;
   end: number;
@@ -168,21 +106,9 @@ export const PlanView: React.FC<PlanViewProps> = ({
     return record?.status === 'saved' ? record : null;
   });
   const sessionPlanPath = sessionPlanFileRecord?.path ?? null;
-  const sourcePlanMessageId = sessionPlanFileRecord?.status === 'saved'
-    ? sessionPlanFileRecord.sourceMessageId
-    : null;
-  const createSession = useSessionUIStore((state) => state.createSession);
-  const initializeNewOpenChamberSession = useSessionUIStore((state) => state.initializeNewOpenChamberSession);
-  const sendMessage = useSessionUIStore((state) => state.sendMessage);
-  const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
-  const setPlanModeSelection = useSelectionStore((state) => state.setPlanModeSelection);
   const sessions = useSessions();
   const homeDirectory = useDirectoryStore((state) => state.homeDirectory);
   const planModeEnabled = useFeatureFlagsStore((state) => state.planModeEnabled);
-  const projects = useProjectsStore((state) => state.projects);
-  const activeProjectId = useProjectsStore((state) => state.activeProjectId);
-  const gitDirectories = useGitStore((state) => state.directories);
-  const effectiveDirectory = useEffectiveDirectory() ?? '';
   const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
   const setSessionSwitcherOpen = useUIStore((state) => state.setSessionSwitcherOpen);
   const runtimeApis = useRuntimeAPIs();
@@ -201,20 +127,6 @@ export const PlanView: React.FC<PlanViewProps> = ({
   }, [session?.directory]);
   const sessionSlug = session?.slug ?? null;
   const sessionCreated = session?.time?.created ?? null;
-  const projectDirectory = React.useMemo(
-    () => normalize(effectiveDirectory || sessionDirectory),
-    [effectiveDirectory, sessionDirectory],
-  );
-  const currentProjectRef = React.useMemo(
-    () => resolveProjectRefForDirectory(projectDirectory, projects, activeProjectId),
-    [activeProjectId, projectDirectory, projects],
-  );
-  const canCreateWorktree = React.useMemo(
-    () => (currentProjectRef ? gitDirectories.get(currentProjectRef.path)?.isGitRepo === true : false),
-    [currentProjectRef, gitDirectories],
-  );
-  const [pendingPlanSend, setPendingPlanSend] = React.useState<PendingPlanSend | null>(null);
-  const [isPlanSendSubmitting, setIsPlanSendSubmitting] = React.useState(false);
 
   const [resolvedPath, setResolvedPath] = React.useState<string | null>(null);
   const displayPath = React.useMemo(() => {
@@ -234,7 +146,6 @@ export const PlanView: React.FC<PlanViewProps> = ({
     }
     return parseProjectPlanMarkdown(content).title || t('planView.title.default');
   }, [content, t]);
-  const sendPromptTitle = React.useMemo(() => parsedTitle.trim() || t('planView.title.default'), [parsedTitle, t]);
   const [loading, setLoading] = React.useState(false);
   const [copiedContent, setCopiedContent] = React.useState(false);
   const [mdViewMode, setMdViewMode] = React.useState<'preview' | 'edit'>('preview');
@@ -506,106 +417,6 @@ export const PlanView: React.FC<PlanViewProps> = ({
     setSessionSwitcherOpen(false);
   }, [setActiveMainTab, setSessionSwitcherOpen]);
 
-  const handleConfirmPlanSend = React.useCallback(
-    async (execution: TodoSendExecution) => {
-      if (!currentProjectRef || !pendingPlanSend) {
-        return;
-      }
-      if (!resolvedPath || !(await savePlanContent())) {
-        return;
-      }
-
-      const visiblePrompt = await renderMagicPrompt(
-        getPlanSendVisiblePromptId(pendingPlanSend.action),
-        {
-          plan_title: sendPromptTitle,
-        },
-      );
-      const instructionsText = await renderMagicPrompt(
-        getPlanSendInstructionsPromptId(pendingPlanSend.action),
-        buildPlanSendPromptVariables({
-          action: pendingPlanSend.action,
-          title: sendPromptTitle,
-          path: resolvedPath,
-        }),
-      );
-      const syntheticParts = [{ synthetic: true as const, text: instructionsText }];
-      setIsPlanSendSubmitting(true);
-
-      try {
-        routeToChat();
-
-        let sessionId: string | null = null;
-        let directoryHint: string | null = currentProjectRef.path;
-
-        if (pendingPlanSend.target === 'worktree') {
-          if (!canCreateWorktree) {
-            return;
-          }
-          const created = await createWorktreeSessionForNewBranch(currentProjectRef.path, generateBranchName());
-          if (!created?.id) {
-            return;
-          }
-          sessionId = created.id;
-          directoryHint = null;
-        } else {
-          const sessionResult = await createSession(undefined, currentProjectRef.path, null);
-          if (!sessionResult?.id) {
-            return;
-          }
-          sessionId = sessionResult.id;
-          directoryHint = sessionResult.directory ?? currentProjectRef.path;
-          initializeNewOpenChamberSession(sessionResult.id, useConfigStore.getState().agents ?? []);
-        }
-
-        if (!sessionId) {
-          return;
-        }
-
-        const selectionState = useSelectionStore.getState();
-        selectionState.saveSessionModelSelection(sessionId, execution.providerID, execution.modelID);
-        if (execution.agent.trim()) {
-          selectionState.saveSessionAgentSelection(sessionId, execution.agent);
-          selectionState.saveAgentModelForSession(sessionId, execution.agent, execution.providerID, execution.modelID);
-          selectionState.saveAgentModelVariantForSession(
-            sessionId,
-            execution.agent,
-            execution.providerID,
-            execution.modelID,
-            execution.variant || undefined,
-          );
-        }
-
-        setCurrentSession(sessionId, directoryHint);
-        await sendMessage(
-          visiblePrompt,
-          execution.providerID,
-          execution.modelID,
-          execution.agent.trim() || undefined,
-          undefined,
-          undefined,
-          syntheticParts,
-          execution.variant || undefined,
-          undefined,
-          getPlanSendPlanMode(pendingPlanSend.action),
-        );
-
-        if (pendingPlanSend.action === 'implement' && isMobile && currentSessionId && sourcePlanMessageId) {
-          useSessionUIStore.getState().markPlanImplementationHandedOff(
-            getPlanImplementationKey(currentSessionId, getPlanBlockId(sourcePlanMessageId, 0)),
-          );
-          setPlanModeSelection(currentSessionId, false);
-          useSessionUIStore.getState().clearHandedOffPlanIndicator(currentSessionId, sourcePlanMessageId);
-        }
-
-        setPendingPlanSend(null);
-      } finally {
-        setIsPlanSendSubmitting(false);
-      }
-    },
-    [canCreateWorktree, createSession, currentProjectRef, currentSessionId, initializeNewOpenChamberSession, isMobile, pendingPlanSend, resolvedPath, routeToChat, savePlanContent, sendMessage, sendPromptTitle, setCurrentSession, setPlanModeSelection, sourcePlanMessageId]
-  );
-
   const blockWidgets = React.useMemo(() => {
     return buildCodeMirrorCommentWidgets({
       drafts: planFileDrafts,
@@ -628,64 +439,6 @@ export const PlanView: React.FC<PlanViewProps> = ({
 
   const planActions = resolvedPath ? (
     <div className="flex shrink-0 items-center gap-1" data-plan-view-actions="true">
-      <DropdownMenu>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-5 w-5 p-0"
-                aria-label={t('planView.actions.improvePlanAria')}
-                disabled={!content.trim()}
-              >
-                <RiLoopRightAiLine className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-          </TooltipTrigger>
-          <TooltipContent sideOffset={8}>{t('planView.actions.improve')}</TooltipContent>
-        </Tooltip>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => setPendingPlanSend({ action: 'improve', target: 'session' })}>
-            {t('planView.actions.sendToNewSession')}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={() => setPendingPlanSend({ action: 'improve', target: 'worktree' })}
-            disabled={!canCreateWorktree}
-          >
-            {t('planView.actions.sendToNewWorktreeSession')}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <DropdownMenu>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-5 w-5 p-0"
-                aria-label={t('planView.actions.implementPlanAria')}
-                disabled={!content.trim()}
-              >
-                <RiCodeAiLine className="size-4" />
-              </Button>
-            </DropdownMenuTrigger>
-          </TooltipTrigger>
-          <TooltipContent sideOffset={8}>{t('planView.actions.implement')}</TooltipContent>
-        </Tooltip>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => setPendingPlanSend({ action: 'implement', target: 'session' })}>
-            {t('planView.actions.sendToNewSession')}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={() => setPendingPlanSend({ action: 'implement', target: 'worktree' })}
-            disabled={!canCreateWorktree}
-          >
-            {t('planView.actions.sendToNewWorktreeSession')}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
       <PreviewToggleButton
         currentMode={mdViewMode}
         onToggle={() => setMdViewMode(mdViewMode === 'preview' ? 'edit' : 'preview')}
@@ -760,19 +513,6 @@ export const PlanView: React.FC<PlanViewProps> = ({
           {t('planView.error.saveFailed')}
         </div>
       ) : null}
-
-      <TodoSendDialog
-        open={pendingPlanSend !== null}
-        onOpenChange={(open) => {
-          if (!open && !isPlanSendSubmitting) {
-            setPendingPlanSend(null);
-          }
-        }}
-        target={pendingPlanSend?.target ?? 'session'}
-        projectDirectory={currentProjectRef?.path ?? null}
-        submitting={isPlanSendSubmitting}
-        onConfirm={handleConfirmPlanSend}
-      />
 
       <div className="flex-1 min-h-0 min-w-0 relative">
         <ScrollableOverlay outerClassName="h-full min-w-0" className="h-full min-w-0">

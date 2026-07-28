@@ -754,6 +754,9 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     if (Array.isArray(profileResult?.conflicts) && profileResult.conflicts.length > 0) {
       console.warn('[OpenCode] Preserved user-modified managed profile files', profileResult.conflicts);
     }
+    for (const warning of Array.isArray(profileResult?.warnings) ? profileResult.warnings : []) {
+      console.warn(`[OpenCode] ${warning}`);
+    }
     const skills = discoverSkills(state.openCodeWorkingDirectory);
     const skillPolicy = buildVisibleSkillPolicy({ skills, hiddenSkills });
     const slimConfig = resolveSlimConfig(state.openCodeWorkingDirectory);
@@ -854,6 +857,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       // launch with `--pure`. Both disable required provider/bundled plugin
       // surfaces. The generated runtime overlay is the plugin allowlist owner.
       OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: process.env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS || 'true',
+      OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: '1',
       ...(agentRuntimeConfig?.slimPreset
         ? { OH_MY_OPENCODE_SLIM_PRESET: agentRuntimeConfig.slimPreset }
         : {}),
@@ -865,6 +869,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         : {}),
     };
     delete processEnvironment.OPENCODE_DISABLE_DEFAULT_PLUGINS;
+    delete processEnvironment.OPENCODE_DISABLE_EXTERNAL_SKILLS;
     delete processEnvironment.DEVRYAN_ORCHESTRATION_URL;
     delete processEnvironment.DEVRYAN_ORCHESTRATION_TOKEN;
     if (orchestrationUrl) {

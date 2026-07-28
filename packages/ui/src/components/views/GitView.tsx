@@ -2462,7 +2462,7 @@ export const GitView: React.FC = () => {
   );
 
   return (
-    <div className={cn('flex h-full flex-col overflow-hidden', 'bg-sidebar')}>
+    <div className={cn('@container/git-view flex h-full flex-col overflow-hidden', 'bg-sidebar')}>
           <GitHeader
             status={status}
             localBranches={localBranches}

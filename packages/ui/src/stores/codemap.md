@@ -20,6 +20,7 @@ Zustand store layer for persisted and session-local client state: UI preferences
   with low-frequency cross-directory session lifecycle events and protects remote creates, updates,
   archive moves, and deletes from stale HTTP snapshots via a bounded non-Zustand overlay.
 - **Session plan-file pointer**: `useSessionPlanFileStore.ts` owns the narrow non-persisted `saving | saved | error` record for the latest plan revision in each session plus the atomic one-time auto-reveal claim for that revision. Permanent session deletion clears the pointer/claim but intentionally leaves the Markdown artifact intact; archive preserves both.
+- **Session-change attribution**: `useSessionChangeAttributionStore.ts` owns a non-persisted, low-frequency projection keyed by directory and session. Reconciliation preserves the map reference on no-op updates, while permanent session deletion and directory disposal clear only their exact ownership.
 
 ## Flow
 1. Components/hooks subscribe via narrow selectors.

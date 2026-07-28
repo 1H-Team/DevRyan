@@ -66,6 +66,7 @@ export interface OpenCodeManager {
 type OpenCodeManagerOptions = {
   provisionUserProfile?: typeof provisionManagedUserProfile;
   getActiveSessionCount?: () => number;
+  getHiddenSkills?: () => unknown[];
   getManagedOrchestrationEnvironment?: () => Promise<Partial<Record<
     'DEVRYAN_ORCHESTRATION_URL' | 'DEVRYAN_ORCHESTRATION_TOKEN',
     string
@@ -110,6 +111,7 @@ export function buildManagedOpenCodeEnvOverrides({
   }
   return {
     OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: process.env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS || 'true',
+    OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: '1',
     ...(slimPreset ? { OH_MY_OPENCODE_SLIM_PRESET: slimPreset } : {}),
     ...(slimConfigDirectory ? { DEVRYAN_OPENCODE_USER_CONFIG_DIR: slimConfigDirectory } : {}),
     ...(overlayConfigDirectory ? { OPENCODE_CONFIG_DIR: overlayConfigDirectory } : {}),
@@ -128,6 +130,7 @@ export function buildManagedOpenCodeProcessEnv(
   const orchestrationToken = overrides.DEVRYAN_ORCHESTRATION_TOKEN;
   const environment: NodeJS.ProcessEnv = { ...baseEnvironment, ...overrides };
   delete environment.OPENCODE_DISABLE_DEFAULT_PLUGINS;
+  delete environment.OPENCODE_DISABLE_EXTERNAL_SKILLS;
   delete environment.DEVRYAN_ORCHESTRATION_URL;
   delete environment.DEVRYAN_ORCHESTRATION_TOKEN;
   if (orchestrationUrl && orchestrationToken) {
@@ -1062,7 +1065,12 @@ export function createOpenCodeManager(
       if (!profileResult.ok) {
         throw new Error(profileResult.error || 'Failed to provision the OpenCode user profile');
       }
-      const overlayResult = syncRuntimeAgentOverlays(workingDirectory);
+      for (const warning of profileResult.warnings || []) {
+        console.warn(`[OpenCode] ${warning}`);
+      }
+      const overlayResult = syncRuntimeAgentOverlays(workingDirectory, {
+        hiddenSkills: options.getHiddenSkills?.() || [],
+      });
       const slimPreset = resolveSlimRuntimePreset(workingDirectory);
       const slimConfigDirectory = resolveSlimRuntimeConfigDirectory(workingDirectory);
       const orchestrationEnvironment = options.getManagedOrchestrationEnvironment

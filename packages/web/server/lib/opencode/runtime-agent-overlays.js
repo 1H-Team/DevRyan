@@ -1,13 +1,17 @@
 import crypto from 'node:crypto';
+import { existsSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'yaml';
 
+import { resolveProjectPlansDirectory } from '../projects/project-id.js';
 import {
   findWorktreeRoot,
+  getConfigPaths,
   OPENCODE_CONFIG_DIR,
   readConfig,
+  readConfigFile,
 } from './shared.js';
 import { listManagedRuntimeAgentModelOverrides } from './agents.js';
 import { listMcpConfigs } from './mcp.js';
@@ -15,7 +19,10 @@ import {
   buildBlockedManagedRuntimeMcpOverlay,
   filterManagedRuntimePluginEntries,
 } from './runtime-surface-policy.js';
-import { sanitizeAgentSkillPolicy } from './skill-policy.js';
+import {
+  applyRuntimeExternalDirectoryPolicy,
+  sanitizeAgentSkillPolicy,
+} from './skill-policy.js';
 import { resolveSlimConfig } from './slim-config.js';
 import {
   GITHUB_COPILOT_PROVIDER_ID,
@@ -313,6 +320,25 @@ const getLocalPluginFileName = (entry) => {
   return isRuntimePluginFileName(fileName) ? fileName : null;
 };
 
+const readSourcePluginConfigs = (workingDirectory) => {
+  const { userPaths, projectPath, customPath } = getConfigPaths(workingDirectory);
+  const userConfigPath = [
+    ...userPaths,
+  ].sort((left, right) => {
+    const priority = {
+      'opencode.jsonc': 0,
+      'opencode.json': 1,
+      'config.json': 2,
+    };
+    return (priority[path.basename(left)] ?? 3) - (priority[path.basename(right)] ?? 3);
+  }).find((candidate) => existsSync(candidate));
+  return [
+    readConfigFile(userConfigPath),
+    readConfigFile(projectPath),
+    readConfigFile(customPath),
+  ];
+};
+
 const buildActivePluginPlan = (workingDirectory, options = {}) => {
   const readActiveConfig = typeof options.readConfig === 'function' ? options.readConfig : readConfig;
   const config = readActiveConfig(workingDirectory);
@@ -324,6 +350,26 @@ const buildActivePluginPlan = (workingDirectory, options = {}) => {
     : [];
   const sourceOwnedPluginFileNames = new Set();
   const plugin = [];
+  let sourceConfigs;
+  if (typeof options.readSourcePluginConfigs === 'function') {
+    sourceConfigs = options.readSourcePluginConfigs(workingDirectory);
+  } else if (typeof options.readConfig === 'function') {
+    sourceConfigs = [config];
+  } else {
+    sourceConfigs = readSourcePluginConfigs(workingDirectory);
+  }
+
+  for (const sourceConfig of Array.isArray(sourceConfigs) ? sourceConfigs : []) {
+    if (!Array.isArray(sourceConfig?.plugin)) {
+      continue;
+    }
+    for (const entry of sourceConfig.plugin) {
+      const fileName = getLocalPluginFileName(entry);
+      if (fileName) {
+        sourceOwnedPluginFileNames.add(fileName);
+      }
+    }
+  }
 
   for (const entry of allowedPlugins) {
     // OpenCode also loads the source config and resolves relative plugin paths
@@ -689,9 +735,13 @@ const shouldApplySkillPolicy = (agent, options = {}) => (
 );
 
 const applyRuntimeOverrideFrontmatter = (agent, override, options = {}) => {
+  const frontmatterWithRuntimeDirectories = applyRuntimeExternalDirectoryPolicy(
+    agent.frontmatter,
+    options.runtimeExternalDirectories,
+  );
   const baseFrontmatter = shouldApplySkillPolicy(agent, options)
-    ? sanitizeAgentSkillPolicy(agent.frontmatter, options.skillPolicy)
-    : agent.frontmatter;
+    ? sanitizeAgentSkillPolicy(frontmatterWithRuntimeDirectories, options.skillPolicy)
+    : frontmatterWithRuntimeDirectories;
   const next = { ...baseFrontmatter };
 
   if (Object.prototype.hasOwnProperty.call(override, 'model')) {
@@ -715,6 +765,12 @@ const applyRuntimeOverrideFrontmatter = (agent, override, options = {}) => {
 
 const shouldWriteSkillPolicyOverlay = (agent, options = {}) => shouldApplySkillPolicy(agent, options);
 
+const shouldWriteRuntimePermissionOverlay = (agent, options = {}) => (
+  Array.isArray(options.runtimeExternalDirectories)
+  && options.runtimeExternalDirectories.length > 0
+  && isPlainObject(agent?.frontmatter?.permission)
+);
+
 const buildRuntimeExternalDirectories = (workingDirectory) => {
   if (!workingDirectory) {
     return [];
@@ -733,14 +789,14 @@ const buildRuntimeExternalDirectories = (workingDirectory) => {
 
   addDir(workingDirectory);
   addDir(findWorktreeRoot(workingDirectory));
+  addDir(resolveProjectPlansDirectory(workingDirectory));
   return dirs;
 };
 
-const buildRuntimeSkillPolicy = (skillPolicy, workingDirectory) => {
+const buildRuntimeSkillPolicy = (skillPolicy, runtimeExternalDirectories) => {
   if (!skillPolicy) {
     return null;
   }
-  const runtimeExternalDirectories = buildRuntimeExternalDirectories(workingDirectory);
   if (runtimeExternalDirectories.length === 0) {
     return skillPolicy;
   }
@@ -772,9 +828,11 @@ export const syncRuntimeAgentOverlays = async (options = {}) => {
   const targetAgentDirectory = path.join(targetConfigDirectory, 'agents');
   const targetPluginDirectory = path.join(targetConfigDirectory, 'plugins');
   const overrides = normalizeOverrides(options, workingDirectory);
-  const runtimeSkillPolicy = buildRuntimeSkillPolicy(options.skillPolicy, workingDirectory);
+  const runtimeExternalDirectories = buildRuntimeExternalDirectories(workingDirectory);
+  const runtimeSkillPolicy = buildRuntimeSkillPolicy(options.skillPolicy, runtimeExternalDirectories);
   const runtimeOptions = {
     ...options,
+    runtimeExternalDirectories,
     skillPolicy: runtimeSkillPolicy,
   };
 
@@ -886,7 +944,9 @@ export const syncRuntimeAgentOverlays = async (options = {}) => {
   }
 
   for (const [name, baseAgent] of baseAgentsByName.entries()) {
-    if (!shouldWriteSkillPolicyOverlay(baseAgent, runtimeOptions) || desiredAgentInputs.has(name)) {
+    const needsManagedOverlay = shouldWriteSkillPolicyOverlay(baseAgent, runtimeOptions)
+      || shouldWriteRuntimePermissionOverlay(baseAgent, runtimeOptions);
+    if (!needsManagedOverlay || desiredAgentInputs.has(name)) {
       continue;
     }
     desiredAgentInputs.set(name, { baseAgent, override: {} });

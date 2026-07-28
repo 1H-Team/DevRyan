@@ -1,5 +1,6 @@
 import React from 'react';
 import type { Message, SessionStatus } from '@opencode-ai/sdk/v2/client';
+import { useProviderRecoveryStore } from '@/stores/useProviderRecoveryStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { isSessionWorkingFromState } from '@/sync/session-working';
 import { useStreamingStore } from '@/sync/streaming';
@@ -28,14 +29,17 @@ export function resolveSessionActivityState({
   messages,
   permissions,
   liveStreamingMessageId,
+  hasProviderRecovery = false,
 }: {
   sessionId: string | null | undefined;
   status: SessionStatus | undefined;
   messages: readonly Message[];
   permissions: readonly unknown[];
   liveStreamingMessageId?: string | null;
+  hasProviderRecovery?: boolean;
 }): SessionActivityResult {
   if (!sessionId) return IDLE_RESULT;
+  if (hasProviderRecovery) return IDLE_RESULT;
 
   // Permissions pending → idle (permission indicator takes priority)
   if (permissions.length > 0) return IDLE_RESULT;
@@ -72,10 +76,30 @@ export function useSessionActivity(sessionId: string | null | undefined, directo
       [sessionId],
     ),
   );
+  const hasProviderRecovery = useProviderRecoveryStore(
+    React.useCallback(
+      (state) => Boolean(sessionId && state.recoveriesBySessionId[sessionId]),
+      [sessionId],
+    ),
+  );
 
   return React.useMemo<SessionActivityResult>(() => {
-    return resolveSessionActivityState({ sessionId, status, messages, permissions, liveStreamingMessageId });
-  }, [sessionId, status, messages, permissions, liveStreamingMessageId]);
+    return resolveSessionActivityState({
+      sessionId,
+      status,
+      messages,
+      permissions,
+      liveStreamingMessageId,
+      hasProviderRecovery,
+    });
+  }, [
+    sessionId,
+    status,
+    messages,
+    permissions,
+    liveStreamingMessageId,
+    hasProviderRecovery,
+  ]);
 }
 
 export function useCurrentSessionActivity(): SessionActivityResult {

@@ -63,10 +63,18 @@ import { useContextStore } from '@/stores/contextStore';
 import { useConfigStore, useVisibleConfigAgents } from '@/stores/useConfigStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
-import { useDirectorySync, useSession, useSessionMessages } from '@/sync/sync-context';
+import {
+    useDirectorySync,
+    useSession,
+    useSessionMessages,
+    useSessionMessagesResolved,
+} from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
 import { getSessionMaterializationStatus } from '@/sync/materialization';
-import { resolveSubtaskAgentFromMessages } from '@/sync/subtask-agent';
+import {
+    resolveLatestUserChoiceFromMessages,
+    resolveSubtaskAgentFromMessages,
+} from '@/sync/subtask-agent';
 import { useUIStore } from '@/stores/useUIStore';
 import { useModelLists } from '@/hooks/useModelLists';
 import {
@@ -874,7 +882,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
     const latestLoadedUserChoiceRestoreRef = React.useRef<string | null>(null);
 
     const currentSessionDirectory = currentSessionId ? getDirectoryForSession(currentSessionId) : undefined;
-    const currentSession = useSession(currentSessionId);
+    const currentSession = useSession(currentSessionId, currentSessionDirectory ?? undefined);
     const currentSessionIsSubtask = Boolean((currentSession as { parentID?: string | null } | undefined)?.parentID);
     const hasRenderableCurrentSessionSnapshot = useDirectorySync(
         React.useCallback(
@@ -884,37 +892,14 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         currentSessionDirectory ?? undefined,
     );
     const currentSessionMessagesFromSync = useSessionMessages(currentSessionId ?? '', currentSessionDirectory ?? undefined);
-    const latestLoadedUserChoice = React.useMemo(() => {
-        for (let i = currentSessionMessagesFromSync.length - 1; i >= 0; i -= 1) {
-            const message = currentSessionMessagesFromSync[i] as typeof currentSessionMessagesFromSync[number] & {
-                model?: { providerID?: string; modelID?: string; variant?: string };
-                variant?: string;
-                mode?: string;
-            };
-            if (message.role !== 'user') {
-                continue;
-            }
-
-            const providerID = typeof message.model?.providerID === 'string' && message.model.providerID.trim().length > 0
-                ? message.model.providerID
-                : undefined;
-            const modelID = typeof message.model?.modelID === 'string' && message.model.modelID.trim().length > 0
-                ? message.model.modelID
-                : undefined;
-            const agent = typeof message.agent === 'string' && message.agent.trim().length > 0
-                ? message.agent
-                : (typeof message.mode === 'string' && message.mode.trim().length > 0 ? message.mode : undefined);
-            // OpenCode 1.4.0 moved variant from top-level to model.variant.
-            // Prefer the new location, fall back to the legacy one for older servers.
-            const variantCandidate = message.model?.variant ?? message.variant;
-            const variant = typeof variantCandidate === 'string' && variantCandidate.trim().length > 0
-                ? variantCandidate
-                : undefined;
-
-            return { id: message.id, agent, providerID, modelID, variant };
-        }
-        return null;
-    }, [currentSessionMessagesFromSync]);
+    const currentSessionMessagesResolved = useSessionMessagesResolved(
+        currentSessionId ?? '',
+        currentSessionDirectory ?? undefined,
+    );
+    const latestLoadedUserChoice = React.useMemo(
+        () => resolveLatestUserChoiceFromMessages(currentSessionMessagesFromSync),
+        [currentSessionMessagesFromSync],
+    );
     const assignedSubtaskAgent = React.useMemo(
         () => currentSessionIsSubtask
             ? resolveSubtaskAgentFromMessages(currentSessionMessagesFromSync)
@@ -1210,7 +1195,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             return;
         }
 
-        if (!contextHydrated || providers.length === 0 || !hasRenderableCurrentSessionSnapshot || !latestLoadedUserChoice?.providerID || !latestLoadedUserChoice.modelID) {
+        if (!contextHydrated || providers.length === 0 || !currentSessionMessagesResolved || !latestLoadedUserChoice?.providerID || !latestLoadedUserChoice.modelID) {
             return;
         }
 
@@ -1229,13 +1214,10 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         }
 
         const restoredAgent = assignedSubtaskAgent ?? latestLoadedUserChoice.agent;
-        if (restoredAgent && currentAgentName !== restoredAgent) {
-            setAgent(restoredAgent);
-        }
-
-        const applyResult = tryApplyModelSelection(
+        const applyResult = applyModelSelectionWithVariant(
             latestLoadedUserChoice.providerID,
             latestLoadedUserChoice.modelID,
+            latestLoadedUserChoice.variant,
             restoredAgent || currentAgentName || undefined,
         );
         if (applyResult !== 'applied') {
@@ -1244,6 +1226,12 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
         if (restoredAgent) {
             saveSessionAgentSelection(currentSessionId, restoredAgent);
+            saveAgentModelForSession(
+                currentSessionId,
+                restoredAgent,
+                latestLoadedUserChoice.providerID,
+                latestLoadedUserChoice.modelID,
+            );
             saveAgentModelVariantForSession(
                 currentSessionId,
                 restoredAgent,
@@ -1251,6 +1239,12 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 latestLoadedUserChoice.modelID,
                 latestLoadedUserChoice.variant,
             );
+            if (currentAgentName !== restoredAgent) {
+                setAgent(restoredAgent, {
+                    preserveCurrentModel: true,
+                    recordSessionSelection: false,
+                });
+            }
         }
         saveSessionModelSelection(currentSessionId, latestLoadedUserChoice.providerID, latestLoadedUserChoice.modelID);
         latestLoadedUserChoiceRestoreRef.current = restoreKey;
@@ -1260,12 +1254,13 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         currentAgentName,
         contextHydrated,
         providers,
-        hasRenderableCurrentSessionSnapshot,
+        currentSessionMessagesResolved,
         latestLoadedUserChoice,
         assignedSubtaskAgent,
         setAgent,
-        tryApplyModelSelection,
+        applyModelSelectionWithVariant,
         saveSessionAgentSelection,
+        saveAgentModelForSession,
         saveAgentModelVariantForSession,
         saveSessionModelSelection,
     ]);

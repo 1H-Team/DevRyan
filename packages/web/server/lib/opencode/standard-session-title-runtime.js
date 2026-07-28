@@ -1,4 +1,4 @@
-import { summarizeText } from '../text/summarization.js';
+import { isPlanControlTitle, summarizeText } from '../text/summarization.js';
 
 const GENERATED_NEW_SESSION_TITLE_PATTERN = /^new session\s*-\s*\d{4}-\d{2}-\d{2}t\d{2}:\d{2}:\d{2}(?:\.\d+)?z$/i;
 const DEFAULT_SESSION_TITLE = 'Untitled Session';
@@ -25,7 +25,8 @@ const isEligibleStandardTitle = (title) => {
   const normalized = normalizeWhitespace(title);
   return !normalized
     || normalized === DEFAULT_SESSION_TITLE
-    || GENERATED_NEW_SESSION_TITLE_PATTERN.test(normalized);
+    || GENERATED_NEW_SESSION_TITLE_PATTERN.test(normalized)
+    || isPlanControlTitle(normalized);
 };
 
 const generateDefaultTitle = async ({ text, zenModel }) => {
@@ -36,7 +37,7 @@ const generateDefaultTitle = async ({ text, zenModel }) => {
     zenModel,
     mode: 'title',
   });
-  return result.summarized ? trimString(result.summary) || null : null;
+  return trimString(result.summary) || null;
 };
 
 export const createStandardSessionTitleRuntime = ({
@@ -48,6 +49,7 @@ export const createStandardSessionTitleRuntime = ({
   logger = console,
 } = {}) => {
   const pendingBySession = new Map();
+  const pendingBackfillByDirectory = new Map();
   const titleGenerator = typeof generateTitle === 'function'
     ? generateTitle
     : async ({ text, directory }) => generateDefaultTitle({
@@ -60,6 +62,12 @@ export const createStandardSessionTitleRuntime = ({
     if (typeof buildOpenCodeUrl !== 'function') return null;
     const query = trimString(directory) ? `?directory=${encodeURIComponent(trimString(directory))}` : '';
     return buildOpenCodeUrl(`/session/${encodeURIComponent(sessionID)}${suffix}${query}`, '');
+  };
+
+  const buildSessionListUrl = (directory) => {
+    if (typeof buildOpenCodeUrl !== 'function') return null;
+    const query = trimString(directory) ? `?directory=${encodeURIComponent(trimString(directory))}` : '';
+    return buildOpenCodeUrl(`/session${query}`, '');
   };
 
   const readJson = async (url) => {
@@ -105,10 +113,11 @@ export const createStandardSessionTitleRuntime = ({
       text: firstUserText,
       directory: trimString(directory) || undefined,
     }));
-    if (!generatedTitle || generatedTitle === observedTitle) return false;
+    if (!generatedTitle || isPlanControlTitle(generatedTitle) || generatedTitle === observedTitle) return false;
 
     const current = await readJson(buildSessionUrl(sessionID, directory));
-    if (!current || trimString(current.title) !== observedTitle) return false;
+    const currentTitle = trimString(current?.title);
+    if (!current || (currentTitle !== observedTitle && !isEligibleStandardTitle(currentTitle))) return false;
     return updateSessionTitle(sessionID, directory, generatedTitle);
   };
 
@@ -132,5 +141,38 @@ export const createStandardSessionTitleRuntime = ({
     return job;
   };
 
-  return { schedule };
+  const scheduleMarkerBackfill = (input = {}) => {
+    const directory = trimString(input.directory);
+    const key = directory || '__global__';
+    const existing = pendingBackfillByDirectory.get(key);
+    if (existing) return existing;
+
+    const job = readJson(buildSessionListUrl(directory))
+      .then(async (sessions) => {
+        if (!Array.isArray(sessions)) return false;
+        const markerSessions = sessions.filter((session) => (
+          trimString(session?.id) && isPlanControlTitle(session?.title)
+        ));
+        if (markerSessions.length === 0) return false;
+
+        const results = await Promise.allSettled(markerSessions.map((session) => schedule({
+          sessionID: session.id,
+          directory,
+        })));
+        return results.some((result) => result.status === 'fulfilled' && result.value === true);
+      })
+      .catch((error) => {
+        logger.warn?.('[SessionTitle] Failed to scan for historical plan-control titles:', error instanceof Error ? error.message : error);
+        return false;
+      })
+      .finally(() => {
+        if (pendingBackfillByDirectory.get(key) === job) {
+          pendingBackfillByDirectory.delete(key);
+        }
+      });
+    pendingBackfillByDirectory.set(key, job);
+    return job;
+  };
+
+  return { schedule, scheduleMarkerBackfill };
 };

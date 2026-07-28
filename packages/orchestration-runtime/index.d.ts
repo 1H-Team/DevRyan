@@ -180,6 +180,7 @@ export interface ManagedOpenCodeTransport {
     modelId: string;
     agent: string;
     variant: string | null;
+    messageId?: string;
     prompt: string;
     tools?: Readonly<Record<string, boolean>>;
   }): Promise<void>;
@@ -204,6 +205,13 @@ export interface ManagedOpenCodeExecutorOptions {
   idleStablePolls?: number;
   retryStopMaxAborts?: number;
   retryStopPollLimit?: number;
+  /** How long an unreadable child may keep failing transiently before the wait
+   * gives up with a resumable interruption instead of polling to the deadline. */
+  observationFailureGraceMs?: number;
+  /** How often a still-live child's transcript is re-read to refresh the
+   * partial-work snapshot. Status is still polled at `pollIntervalMs`. */
+  liveTranscriptRefreshMs?: number;
+  now?: () => number;
   sleep?: (delayMs: number, options: { signal: AbortSignal }) => Promise<void>;
 }
 
@@ -267,6 +275,14 @@ export interface ManagedAgentHandoffResult {
   }>;
 }
 
+export interface ManagedProviderRecoveryContinuation {
+  sourceTaskId: string;
+  taskId: string;
+  rootSessionId: string;
+  childSessionId: string | null;
+  directory: string;
+}
+
 export interface ManagedTaskScheduler {
   initialize(): Promise<void>;
   submit(input: ManagedTaskSubmitInput): Promise<ManagedTaskRecord>;
@@ -287,6 +303,9 @@ export interface ManagedTaskScheduler {
     state: 'clear' | 'active' | 'awaiting_acknowledgement';
     taskIds: string[];
   }>;
+  listReadyProviderRecoveryContinuations(options?: {
+    sessionId?: string;
+  }): ManagedProviderRecoveryContinuation[];
   inspectAgentHandoff(input: ManagedAgentHandoffScope): Promise<ManagedAgentHandoffResult>;
   confirmAgentHandoff(input: ManagedAgentHandoffScope & {
     idempotencyKey: string;
@@ -325,6 +344,9 @@ export const MAX_MANAGED_TASK_PROMPT_BYTES: number;
 export const MAX_MANAGED_TASK_PREVIEW_BYTES: number;
 export const MAX_MANAGED_TASK_FAILURE_BYTES: number;
 export const PROVIDER_USAGE_LIMIT_FAILURE_KIND: 'provider_usage_limit';
+export const MANAGED_RETRY_IN_PLACE_PROMPT: string;
+export const MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT: string;
+export const MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT: string;
 export const DEFAULT_MANAGED_TERMINAL_MAX_RECORDS: number;
 export const DEFAULT_MANAGED_TERMINAL_MAX_AGE_MS: number;
 export const DEFAULT_MANAGED_LEDGER_MAX_BYTES: number;

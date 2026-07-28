@@ -1,5 +1,5 @@
 ---
-name: Writing Plans
+name: writing-plans
 description: Use when you have a spec or requirements for a multi-step task, before touching code
 ---
 
@@ -150,4 +150,3 @@ After saving the plan, offer execution choice:
 **If Inline Execution chosen:**
 - **REQUIRED SUB-SKILL:** Use superpowers:executing-plans
 - Batch execution with checkpoints for review
-

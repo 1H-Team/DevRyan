@@ -7,8 +7,11 @@ import {
 } from '../../proxy-headers.js';
 import { registerScopedSessionRevertRoute } from './session-scoped-revert.js';
 import { createHarnessError, withHarnessResult } from './harness-result.js';
+import { stripMessageDiffContent } from './diff-summary.js';
 
 const PROMPT_ASYNC_MESSAGE_ID_HEADER = 'x-openchamber-message-id';
+// Transcripts carry diff snapshots and are not a fast control-plane read.
+const SESSION_MESSAGE_FETCH_TIMEOUT_MS = 120_000;
 
 export const waitForSseDrain = (res, signal) => new Promise((resolve) => {
   if (signal?.aborted || res.writableEnded || res.destroyed) {
@@ -562,6 +565,57 @@ export const registerOpenCodeProxy = (app, deps) => {
 
   app.post('/api/mcp/:name/:action', forwardMcpActionRequest);
   app.use('/api/session/:sessionID/prompt_async', recordPromptAsyncTiming);
+
+  // Trim diff-snapshot patch bodies before a transcript reaches the renderer.
+  // OpenCode attaches a full git diff snapshot to user messages; on a workspace
+  // with a large untracked tree this dwarfs the conversation (~92MB observed for
+  // a 21-message session) and the renderer has to receive, parse and retain all
+  // of it. The UI only reads the per-entry counts, so the bodies are dropped
+  // here and never cross the wire. Registered ahead of the generic /api proxy;
+  // any failure falls through to that proxy so behaviour is unchanged on error.
+  app.get('/api/session/:sessionID/message', async (req, res, next) => {
+    let upstream;
+    try {
+      const query = new URLSearchParams();
+      for (const [key, value] of Object.entries(req.query ?? {})) {
+        if (typeof value === 'string') query.set(key, value);
+      }
+      const serialized = query.toString();
+      upstream = await fetch(
+        buildOpenCodeUrl(
+          `/session/${encodeURIComponent(req.params.sessionID)}/message${serialized ? `?${serialized}` : ''}`,
+          '',
+        ),
+        {
+          headers: {
+            accept: 'application/json',
+            'accept-encoding': 'identity',
+            ...getOpenCodeAuthHeaders(),
+          },
+          signal: AbortSignal.timeout(SESSION_MESSAGE_FETCH_TIMEOUT_MS),
+        },
+      );
+    } catch {
+      next();
+      return;
+    }
+
+    if (!upstream.ok) {
+      next();
+      return;
+    }
+
+    try {
+      const records = await upstream.json();
+      if (!Array.isArray(records)) {
+        next();
+        return;
+      }
+      res.json(records.map(stripMessageDiffContent));
+    } catch {
+      if (!res.headersSent) next();
+    }
+  });
 
   // Generic proxy for non-SSE OpenCode API routes.
   const apiProxy = createProxyMiddleware({

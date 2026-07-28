@@ -76,7 +76,43 @@ describe("plan task tracking prompts", () => {
 
     expect(def.template).toContain("exactly one todo per plan task")
     expect(def.template).toContain("Prefix every todo with `Phase <number>: `")
-    expect(def.template).toContain("Do not remove, merge, reorder, cancel, or replace plan todos")
+    expect(def.template).toContain("do not remove, merge, reorder, cancel, add, or replace plan todos")
     expect(def.template).toContain("counter reaches N/N")
+    expect(def.template).toContain("revised counter reaches N/N")
+  })
+
+  test("saved-plan implementation classifies gaps before changing scope", () => {
+    const def = MAGIC_PROMPT_DEFINITIONS.find((entry) => entry.id === "plan.implement.instructions")
+    if (!def) throw new Error("plan.implement.instructions definition missing")
+
+    expect(def.template).toContain("a low-risk related adjustment, a material related adjustment, or an unrelated finding")
+    expect(def.template).toContain("public contract")
+    expect(def.template).toContain("persisted data or schema")
+    expect(def.template).toContain("production deployment")
+    expect(def.template).toContain("If any of these boundaries are involved or the classification is uncertain, treat the adjustment as material")
+  })
+
+  test("material saved-plan gaps route through a resumable structured question", () => {
+    const def = MAGIC_PROMPT_DEFINITIONS.find((entry) => entry.id === "plan.implement.instructions")
+    if (!def) throw new Error("plan.implement.instructions definition missing")
+
+    expect(def.template).toContain("Ask exactly one question through the structured question tool")
+    expect(def.template).toContain("Use the header `Plan gap`")
+    expect(def.template).toContain("`Apply adjustment and continue (Recommended)`")
+    expect(def.template).toContain("`Pause for plan revision`")
+    expect(def.template).toContain("While the question is pending, do not emit a completion or blocked response")
+    expect(def.template).toContain("skip the question, or give an ambiguous answer")
+    expect(def.template).not.toContain("stop, state exactly what is broken and why")
+  })
+
+  test("approved and automatic plan revisions reconcile todos before resuming", () => {
+    const def = MAGIC_PROMPT_DEFINITIONS.find((entry) => entry.id === "plan.implement.instructions")
+    if (!def) throw new Error("plan.implement.instructions definition missing")
+
+    expect(def.template).toContain("For a low-risk related adjustment, update this same plan file")
+    expect(def.template).toContain("update this same plan file first, reconcile the todos, and resume in the same session")
+    expect(def.template).toContain("Preserve the wording, identity, and status of unchanged tasks")
+    expect(def.template).toContain("add newly approved tasks in plan order")
+    expect(def.template).toContain("reopen any completed task whose work or verification is affected")
   })
 })

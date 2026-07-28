@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
-import { createManagedOpenCodeExecutor } from './open-code-executor.js';
+import {
+  createManagedOpenCodeExecutor,
+  MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT,
+  MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT,
+} from './open-code-executor.js';
 
 const task = (overrides = {}) => ({
   owner: 'devryan',
@@ -279,6 +283,203 @@ describe('managed OpenCode executor', () => {
     });
     expect(reads).toBe(2);
     expect(abortCount).toBe(0);
+  });
+
+  test('continues once in the same child after a terminal assistant operation timeout', async () => {
+    const prompts = [];
+    const statuses = [{ type: 'idle' }, { type: 'busy' }, { type: 'idle' }];
+    let reads = 0;
+    const timeoutMessage = assistant({
+      info: {
+        id: 'msg_timeout',
+        finish: 'error',
+        error: { message: 'The operation timed out.' },
+      },
+      parts: [{ type: 'text', text: 'Partial work before timeout' }],
+    });
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession(input) { prompts.push(input); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return statuses.shift() ?? { type: 'idle' }; },
+      // The recovery message appears because the continuation prompt was sent,
+      // not because the transcript happened to be read a certain number of
+      // times — a live child is no longer re-read on every poll.
+      async readMessages() {
+        reads += 1;
+        if (prompts.length === 0) return [timeoutMessage];
+        return [
+          timeoutMessage,
+          assistant({
+            info: { id: 'msg_completed' },
+            parts: [{ type: 'text', text: 'Completed after timeout recovery' }],
+          }),
+        ];
+      },
+      async abortSession() { throw new Error('must not abort'); },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({
+      transport,
+      sleep: async () => undefined,
+    });
+    const original = task({ childSessionId: 'ses_child', status: 'running' });
+
+    const result = await executor.observe(original, {});
+
+    expect(result).toMatchObject({
+      status: 'completed',
+      recoverablePreview: 'Completed after timeout recovery',
+    });
+    expect(prompts).toEqual([{
+      sessionId: 'ses_child',
+      directory: '/workspace',
+      providerId: 'github-copilot',
+      modelId: 'gpt-4.1',
+      agent: 'explorer',
+      variant: 'fast',
+      // No explicit messageId: a task-derived id is not ordered like an OpenCode
+      // id, and a continuation that sorts below the session's latest message is
+      // written into the past and never runs.
+      messageId: undefined,
+      prompt: MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT,
+      tools: {
+        'resend_*': false,
+        'mcp__resend__*': false,
+      },
+    }]);
+  });
+
+  test('fails honestly when the same child times out again after automatic continuation', async () => {
+    const prompts = [];
+    const statuses = [{ type: 'idle' }, { type: 'busy' }, { type: 'idle' }];
+    let reads = 0;
+    const firstTimeout = assistant({
+      info: {
+        id: 'msg_timeout_1',
+        finish: 'error',
+        error: { message: 'The operation timed out.' },
+      },
+      parts: [{ type: 'text', text: 'Partial work before timeout' }],
+    });
+    const secondTimeout = assistant({
+      info: {
+        id: 'msg_timeout_2',
+        finish: 'error',
+        error: { message: 'The operation timed out.' },
+      },
+      parts: [],
+    });
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession(input) { prompts.push(input); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return statuses.shift() ?? { type: 'idle' }; },
+      async readMessages() {
+        reads += 1;
+        return reads < 3 ? [firstTimeout] : [firstTimeout, secondTimeout];
+      },
+      async abortSession() { throw new Error('must not abort'); },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({
+      transport,
+      sleep: async () => undefined,
+    });
+
+    const result = await executor.observe(
+      task({ childSessionId: 'ses_child', status: 'running' }),
+      {},
+    );
+
+    expect(result).toMatchObject({
+      status: 'failed',
+      failureReason: 'The operation timed out.',
+      partial: true,
+      recoverablePreview: 'Partial work before timeout',
+      resumable: true,
+    });
+    expect(prompts).toHaveLength(1);
+  });
+
+  test('continues once in the same child when a provider stops after tools without a final answer', async () => {
+    const prompts = [];
+    const statuses = [{ type: 'idle' }, { type: 'busy' }, { type: 'idle' }];
+    const incomplete = assistant({
+      info: {
+        id: 'msg_incomplete',
+        finish: 'unknown',
+      },
+      parts: [{ type: 'reasoning', text: 'Now I have all' }],
+    });
+    const toolWork = assistant({
+      info: {
+        id: 'msg_tools',
+        finish: 'unknown',
+      },
+      parts: [
+        {
+          type: 'tool',
+          callID: 'call_completed',
+          state: { status: 'completed', output: 'Official documentation' },
+        },
+        {
+          type: 'tool',
+          callID: 'call_invalid',
+          state: { status: 'error', error: '"undefined" cannot be parsed as a URL.' },
+        },
+      ],
+    });
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession(input) { prompts.push(input); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return statuses.shift() ?? { type: 'idle' }; },
+      async readMessages() {
+        if (prompts.length === 0) return [toolWork, incomplete];
+        return [
+          toolWork,
+          incomplete,
+          {
+            info: { id: 'msg_recovery_prompt', role: 'user' },
+            parts: [{ type: 'text', text: MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT }],
+          },
+          assistant({
+            info: { id: 'msg_completed' },
+            parts: [{ type: 'text', text: 'Completed after empty-output recovery' }],
+          }),
+        ];
+      },
+      async abortSession() { throw new Error('must not abort'); },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({
+      transport,
+      sleep: async () => undefined,
+    });
+
+    const result = await executor.observe(
+      task({ childSessionId: 'ses_child', status: 'running' }),
+      {},
+    );
+
+    expect(result).toMatchObject({
+      status: 'completed',
+      recoverablePreview: 'Completed after empty-output recovery',
+    });
+    expect(prompts).toEqual([{
+      sessionId: 'ses_child',
+      directory: '/workspace',
+      providerId: 'github-copilot',
+      modelId: 'gpt-4.1',
+      agent: 'explorer',
+      variant: 'fast',
+      prompt: MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT,
+      tools: {
+        'resend_*': false,
+        'mcp__resend__*': false,
+      },
+    }]);
   });
 
   test('recovers from repeated observation timeouts without recreating or reprompting the child', async () => {
@@ -781,17 +982,30 @@ describe('managed OpenCode executor', () => {
     });
   });
 
-  test('does not report an empty completed assistant shell as successful work', async () => {
+  test('fails honestly when the same child ends empty again after automatic continuation', async () => {
+    const prompts = [];
     const transport = {
       async createSession() { return { id: 'ses_empty' }; },
-      async promptSession() {},
+      async promptSession(input) { prompts.push(input); },
       async readSession() { return { id: 'ses_empty' }; },
       async readStatus() { return { type: 'idle' }; },
       async readMessages() {
-        return [assistant({
-          info: { finish: undefined, time: { completed: 2_000 } },
+        const records = [assistant({
+          info: { id: 'msg_empty_1', finish: undefined, time: { completed: 2_000 } },
           parts: [],
         })];
+        if (prompts.length === 0) return records;
+        return [
+          ...records,
+          {
+            info: { id: 'msg_recovery_prompt', role: 'user' },
+            parts: [{ type: 'text', text: MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT }],
+          },
+          assistant({
+            info: { id: 'msg_empty_2', finish: 'unknown', time: { completed: 3_000 } },
+            parts: [{ type: 'reasoning', text: 'Still no final answer' }],
+          }),
+        ];
       },
       async abortSession() { return true; },
       deleteSession,
@@ -805,9 +1019,10 @@ describe('managed OpenCode executor', () => {
       failureReason: 'Managed child session completed without useful assistant output',
       partial: false,
       recoverablePreview: '',
-      canonicalRefs: [{ type: 'message', id: 'msg_assistant' }],
+      canonicalRefs: [{ type: 'message', id: 'msg_empty_2' }],
       resumable: true,
     });
+    expect(prompts).toHaveLength(1);
   });
 
   test('reconciles live, terminal, and missing children without replaying prompts', async () => {
@@ -863,6 +1078,98 @@ describe('managed OpenCode executor', () => {
     }))).resolves.toEqual({
       state: 'transient',
       failureReason: 'OpenCode port is not available',
+    });
+  });
+
+  test('keeps a first terminal assistant timeout live for restart-safe same-child recovery', async () => {
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession() { throw new Error('must not prompt during reconciliation'); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return { type: 'idle' }; },
+      async readMessages() {
+        return [assistant({
+          info: {
+            id: 'msg_timeout',
+            finish: 'error',
+            error: { message: 'The operation timed out.' },
+          },
+          parts: [],
+        })];
+      },
+      async abortSession() { throw new Error('must not abort'); },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
+
+    await expect(executor.reconcile(task({
+      childSessionId: 'ses_child',
+      status: 'running',
+    }))).resolves.toEqual({ state: 'live' });
+  });
+
+  test('keeps a first empty terminal assistant live for restart-safe same-child recovery', async () => {
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession() { throw new Error('must not prompt during reconciliation'); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return { type: 'idle' }; },
+      async readMessages() {
+        return [assistant({
+          info: {
+            id: 'msg_empty',
+            finish: 'unknown',
+          },
+          parts: [{ type: 'reasoning', text: 'Now I have all' }],
+        })];
+      },
+      async abortSession() { throw new Error('must not abort'); },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
+
+    await expect(executor.reconcile(task({
+      childSessionId: 'ses_child',
+      status: 'running',
+    }))).resolves.toEqual({ state: 'live' });
+  });
+
+  test('does not duplicate an empty-output continuation already recorded before restart', async () => {
+    const transport = {
+      async createSession() { throw new Error('must not create'); },
+      async promptSession() { throw new Error('must not prompt again'); },
+      async readSession() { return { id: 'ses_child' }; },
+      async readStatus() { return { type: 'idle' }; },
+      async readMessages() {
+        return [
+          assistant({
+            info: {
+              id: 'msg_empty',
+              finish: 'unknown',
+            },
+            parts: [{ type: 'reasoning', text: 'Now I have all' }],
+          }),
+          {
+            info: { id: 'msg_recovery_prompt', role: 'user' },
+            parts: [{ type: 'text', text: MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT }],
+          },
+        ];
+      },
+      async abortSession() { throw new Error('must not abort'); },
+      deleteSession,
+    };
+    const executor = createManagedOpenCodeExecutor({ transport, sleep: async () => undefined });
+
+    await expect(executor.reconcile(task({
+      childSessionId: 'ses_child',
+      status: 'running',
+    }))).resolves.toMatchObject({
+      state: 'terminal',
+      result: {
+        status: 'failed',
+        failureReason: 'Managed child session completed without useful assistant output',
+        resumable: true,
+      },
     });
   });
 

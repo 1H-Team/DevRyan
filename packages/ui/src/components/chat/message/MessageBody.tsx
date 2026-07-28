@@ -6,6 +6,7 @@ import ToolPart from './parts/ToolPart';
 import AssistantTextPart from './parts/AssistantTextPart';
 import PlanCard from './parts/PlanCard';
 import ReasoningPart from './parts/ReasoningPart';
+import JustificationBlock from './parts/JustificationBlock';
 import { MessageFilesDisplay } from '../FileAttachment';
 import { TurnChangedFilesDropdown } from '../TurnChangedFilesDropdown';
 import type { ToolPart as ToolPartType } from '@opencode-ai/sdk/v2';
@@ -1230,11 +1231,11 @@ const AssistantMessageBody = React.memo(({
 
     const activityPartsForTurn = React.useMemo(() => {
         const all = turnGroupingContext?.activityParts;
-        if (!isSortedRenderMode || !all) {
+        if (!all) {
             return [];
         }
         return all;
-    }, [isSortedRenderMode, turnGroupingContext?.activityParts]);
+    }, [turnGroupingContext?.activityParts]);
 
     const activityGroupSegmentsForMessage = React.useMemo(() => {
         const all = turnGroupingContext?.activityGroupSegments;
@@ -1436,6 +1437,18 @@ const AssistantMessageBody = React.memo(({
                     continue;
                 }
                 if (activity?.kind === 'justification') {
+                    if (!isSortedRenderMode) {
+                        rendered.push(
+                            <JustificationBlock
+                                key={`assistant-justification-${messageId}-${part.id ?? i}`}
+                                part={part}
+                                messageId={messageId}
+                                isMessageCompleted={isMessageCompleted}
+                                isMobile={isMobile}
+                                onContentChange={onContentChange}
+                            />
+                        );
+                    }
                     i += 1;
                     continue;
                 }
@@ -1596,7 +1609,11 @@ const AssistantMessageBody = React.memo(({
                 }
 
                 const activity = activityByPart.get(part);
-                if (activity?.kind === 'tool' && (shouldRenderActivityGroup || !isStandaloneTool(toolName))) {
+                if (
+                    isSortedRenderMode
+                    && activity?.kind === 'tool'
+                    && (shouldRenderActivityGroup || !isStandaloneTool(toolName))
+                ) {
                     i += 1;
                     continue;
                 }
@@ -1685,7 +1702,11 @@ const AssistantMessageBody = React.memo(({
                     }
 
                     const candidateActivity = activityByPart.get(candidate);
-                    if (candidateActivity?.kind === 'tool' && (shouldRenderActivityGroup || !isStandaloneTool(candidateToolName))) {
+                    if (
+                        isSortedRenderMode
+                        && candidateActivity?.kind === 'tool'
+                        && (shouldRenderActivityGroup || !isStandaloneTool(candidateToolName))
+                    ) {
                         return null;
                     }
 

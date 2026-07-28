@@ -3,7 +3,7 @@
  * Replaces the action methods from the old useSessionStore.
  */
 
-import type { OpencodeClient, Session, Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { OpencodeClient, Session, Message, Part, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import type { StoreApi } from "zustand"
 import { Binary } from "./binary"
 import {
@@ -1737,10 +1737,13 @@ async function cancelActiveManagedSubtasks(rootSessionId: string): Promise<void>
   })
 }
 
-export async function abortCurrentOperationConfirmed(sessionId: string): Promise<boolean> {
+export async function abortCurrentOperationConfirmed(
+  sessionId: string,
+  statusHint?: SessionStatus,
+): Promise<boolean> {
   if (!sessionId) return false
   const sessionDirectory = getSessionDirectory(sessionId)
-  const status = getSessionStatusForAction(sessionId, sessionDirectory)
+  const status = statusHint ?? getSessionStatusForAction(sessionId, sessionDirectory)
   getSessionUIStore().getState().abortPendingSend?.(sessionId)
   await cancelActiveManagedSubtasks(sessionId)
   try {
@@ -1755,7 +1758,11 @@ export async function abortCurrentOperationConfirmed(sessionId: string): Promise
     }
     markManualAbort(sessionId, getLatestAssistantMessageId(sessionId, sessionDirectory))
     getSessionUIStore().getState().clearSessionTurnCompletion(sessionId)
-    forceSessionIdleAfterManualAbort(sessionId, sessionDirectory)
+    forceSessionIdleAfterManualAbort(
+      sessionId,
+      sessionDirectory,
+      status?.type === "retry",
+    )
     return true
   } catch (error) {
     // The stop never reached the server — do not mask live retry/busy state.
@@ -1775,10 +1782,16 @@ export async function abortCurrentOperation(sessionId: string): Promise<void> {
  * backoff sleep is ignored upstream. Optimistically settle a `retry` status to
  * idle so the UI unlocks; the abort-retry guard keeps stale `retry` statuses
  * from resurrecting it and cancels the loop server-side when the next attempt
- * fires. Plain `busy` aborts are left alone: the server confirms those with an
+ * fires. If the abort began during `retry`, also settle a `busy` state raced in
+ * by the next attempt before the abort acknowledgement. Plain aborts that
+ * began while `busy` are left alone: the server confirms those with an
  * authoritative idle event.
  */
-function forceSessionIdleAfterManualAbort(sessionId: string, directoryOverride?: string): void {
+function forceSessionIdleAfterManualAbort(
+  sessionId: string,
+  directoryOverride?: string,
+  startedFromRetry = false,
+): void {
   let store: StoreApi<DirectoryStore>
   try {
     store = directoryStore(directoryOverride)
@@ -1788,7 +1801,10 @@ function forceSessionIdleAfterManualAbort(sessionId: string, directoryOverride?:
 
   store.setState((current) => {
     const status = current.session_status[sessionId]
-    if (status?.type !== "retry") {
+    if (
+      status?.type !== "retry"
+      && !(startedFromRetry && status?.type === "busy")
+    ) {
       return current
     }
     return {

@@ -2,26 +2,26 @@ import React from 'react';
 import type { Part } from '@opencode-ai/sdk/v2';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import { useUIStore } from '@/stores/useUIStore';
+import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
 import { ReasoningTimelineBlock } from './ReasoningPart';
 
 type PartWithText = Part & { text?: string; content?: string; time?: { start?: number; end?: number } };
 
-const cleanJustificationText = (text: string): string => {
+const formatJustificationText = (text: string): string => {
     if (typeof text !== 'string' || text.trim().length === 0) {
         return '';
     }
 
     return text
-        .split('\n')
-        .map((line: string) => line.replace(/^>\s?/, '').trimEnd())
-        .filter((line: string) => line.trim().length > 0)
-        .join('\n')
-        .trim();
+        .trim()
+        .replace(/^(\*\*[^\n]+?\*\*)(?=[\p{L}\p{N}])/u, '$1\n\n');
 };
 
 interface JustificationBlockProps {
     part: Part;
     messageId: string;
+    isMessageCompleted?: boolean;
+    isMobile?: boolean;
     onContentChange?: (reason?: ContentChangeReason) => void;
     actions?: React.ReactNode;
 }
@@ -29,28 +29,38 @@ interface JustificationBlockProps {
 const JustificationBlock: React.FC<JustificationBlockProps> = ({
     part,
     messageId,
+    isMessageCompleted = true,
+    isMobile = false,
     onContentChange,
     actions,
 }) => {
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
     const partWithText = part as PartWithText;
     const rawText = partWithText.text || partWithText.content || '';
-    const textContent = React.useMemo(() => cleanJustificationText(rawText), [rawText]);
+    const textContent = React.useMemo(() => formatJustificationText(rawText), [rawText]);
     const time = partWithText.time;
+    const isStreaming = chatRenderMode === 'live' && !isMessageCompleted;
+    const throttledText = useStreamingTextThrottle({
+        text: textContent,
+        isStreaming,
+        identityKey: `${messageId}:${part.id ?? 'justification'}`,
+    });
 
     // Don't render if there's no text content
-    if (!textContent || textContent.trim().length === 0) {
+    if (!throttledText || throttledText.trim().length === 0) {
         return null;
     }
 
     return (
         <ReasoningTimelineBlock
-            text={textContent}
+            text={throttledText}
             variant="justification"
             onContentChange={onContentChange}
             blockId={part.id || `${messageId}-justification`}
             time={time}
             showDuration={chatRenderMode !== 'sorted'}
+            isStreaming={isStreaming}
+            isMobile={isMobile}
             actions={actions}
         />
     );

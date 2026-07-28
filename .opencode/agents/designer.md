@@ -11,18 +11,6 @@ permission:
   external_directory:
     "*": ask
     /Users/zoubair/.local/share/opencode/tool-output/*: allow
-    /Users/zoubair/.agents/skills/agent-browser/*: allow
-    /Users/zoubair/Documents/onehealth-connector/.agents/skills/frontend-design/*: allow
-    /Users/zoubair/Documents/onehealth-connector/.cursor/skills/frontend-design/*: allow
-    /Users/zoubair/Documents/onehealth-connector/.cursor/skills/dashboard-design/*: allow
-    /Users/zoubair/Documents/onehealth-connector/.cursor/skills/component-patterns/*: allow
-    /Users/zoubair/Documents/onehealth-connector/.cursor/skills/accessibility/*: allow
-    /Users/zoubair/.config/opencode/skills/browser-testing-with-devtools/*: allow
-    /Users/zoubair/.config/opencode/skills/frontend-ui-engineering/*: allow
-    /Users/zoubair/.config/opencode/skills/web-artifacts-builder/*: allow
-    /Users/zoubair/.config/opencode/skills/code-simplification/*: allow
-    /Users/zoubair/.config/opencode/skills/deprecation-and-migration/*: allow
-    /Users/zoubair/.config/opencode/skills/codemap/*: allow
   plan_enter: deny
   plan_exit: deny
   read:

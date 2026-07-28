@@ -4,6 +4,7 @@ import os from 'node:os';
 import { describe, expect, it } from 'vitest';
 
 import {
+  applyRuntimeExternalDirectoryPolicy,
   buildVisibleSkillPolicy,
   filterVisibleSkills,
   sanitizeAgentSkillPolicy,
@@ -23,6 +24,37 @@ const runtimeDirectoryAllows = (...directories) => Object.fromEntries(
 );
 
 describe('skill policy', () => {
+  it('adds runtime directories without changing role-level tool permissions', () => {
+    const frontmatter = applyRuntimeExternalDirectoryPolicy({
+      permission: {
+        '*': 'deny',
+        external_directory: {
+          '*': 'ask',
+          '/tmp/scratch/*': 'deny',
+        },
+        read: {
+          '*': 'allow',
+          '*.env': 'ask',
+        },
+        edit: 'deny',
+      },
+    }, ['/tmp/project/plans']);
+
+    expect(frontmatter.permission).toEqual({
+      '*': 'deny',
+      external_directory: {
+        '*': 'ask',
+        '/tmp/scratch/*': 'deny',
+        '/tmp/project/plans/*': 'allow',
+      },
+      read: {
+        '*': 'allow',
+        '*.env': 'ask',
+      },
+      edit: 'deny',
+    });
+  });
+
   it('filters hidden skills by normalized SKILL.md path', () => {
     const visiblePath = path.join('/tmp', 'skills', 'frontend-design', 'SKILL.md');
     const hiddenPath = path.join('/tmp', 'skills', 'debugging', 'SKILL.md');

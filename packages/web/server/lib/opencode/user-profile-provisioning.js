@@ -9,10 +9,16 @@ import {
   reconcileAnthropicOAuthPluginSpecs,
 } from './anthropic-oauth-plugin.js';
 import { listDefaultConfigAssets, listUserProfileAssets } from './default-config-assets.js';
+import { applyManagedMeridianSdkFeaturePolicy } from './meridian-sdk-features.js';
 
 const DEFAULT_CONFIG_ROOT = path.resolve(process.cwd(), 'server', 'default-config');
 const DEFAULT_PROFILE_ROOT = path.join(DEFAULT_CONFIG_ROOT, 'user-profile');
 const MANIFEST_RELATIVE_PATH = path.join('.openchamber', 'user-profile-manifest.json');
+const MERIDIAN_POLICY_MARKER_RELATIVE_PATH = path.join(
+  '.openchamber',
+  'meridian-sdk-features-policy.json',
+);
+const MERIDIAN_PACKAGE = '@rynfar/meridian';
 
 const isRecord = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const hashContent = (content) => crypto.createHash('sha256').update(content).digest('hex');
@@ -66,14 +72,22 @@ const mergeOpenCodeConfig = (current, baseline) => ({
   },
 });
 
-const mergePackageJson = (current, baseline) => ({
-  ...current,
-  ...baseline,
-  dependencies: {
-    ...(isRecord(current.dependencies) ? current.dependencies : {}),
+const mergePackageJson = (current, baseline) => {
+  const currentDependencies = isRecord(current.dependencies) ? current.dependencies : {};
+  const dependencies = {
+    ...currentDependencies,
     ...(isRecord(baseline.dependencies) ? baseline.dependencies : {}),
-  },
-});
+  };
+  const explicitMeridianPin = currentDependencies[MERIDIAN_PACKAGE];
+  if (typeof explicitMeridianPin === 'string' && explicitMeridianPin.trim()) {
+    dependencies[MERIDIAN_PACKAGE] = explicitMeridianPin;
+  }
+  return {
+    ...baseline,
+    ...current,
+    dependencies,
+  };
+};
 
 const runCommandDefault = (command, args, options) => new Promise((resolve) => {
   const child = spawnChild(command, args, { cwd: options.cwd, env: options.env || process.env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -93,17 +107,50 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
   const profileRoot = dependencies.profileRoot || DEFAULT_PROFILE_ROOT;
   const configRoot = dependencies.configRoot || DEFAULT_CONFIG_ROOT;
   const configDirectory = dependencies.configDirectory || pathApi.join(homedir(), '.config', 'opencode');
+  const meridianConfigDirectory = dependencies.meridianConfigDirectory
+    || pathApi.join(homedir(), '.config', 'meridian');
+  const meridianSettingsPath = dependencies.meridianSettingsPath
+    || pathApi.join(meridianConfigDirectory, 'sdk-features.json');
+  const meridianPolicyMarkerPath = dependencies.meridianPolicyMarkerPath
+    || pathApi.join(configDirectory, MERIDIAN_POLICY_MARKER_RELATIVE_PATH);
 
   const provision = async () => {
     const manifestPath = pathApi.join(configDirectory, MANIFEST_RELATIVE_PATH);
     const previousManifest = readJson(fsApi, manifestPath, { version: 1, files: {} });
     const previousFiles = isRecord(previousManifest.files) ? previousManifest.files : {};
     const nextFiles = {};
-    const result = { ok: true, changed: false, conflicts: [], written: [], updated: [], removed: [], install: null };
+    const result = {
+      ok: true,
+      changed: false,
+      conflicts: [],
+      written: [],
+      updated: [],
+      removed: [],
+      install: null,
+      warnings: [],
+      meridianPolicy: null,
+    };
+
+    const meridianPolicy = applyManagedMeridianSdkFeaturePolicy({
+      fs: fsApi,
+      path: pathApi,
+      settingsPath: meridianSettingsPath,
+      markerPath: meridianPolicyMarkerPath,
+    });
+    result.meridianPolicy = meridianPolicy;
+    if (!meridianPolicy.ok) {
+      result.ok = false;
+      result.error = meridianPolicy.error;
+      return result;
+    }
+    result.changed = meridianPolicy.changed;
+    if (meridianPolicy.warning) {
+      result.warnings.push(meridianPolicy.warning);
+    }
 
     fsApi.mkdirSync(configDirectory, { recursive: true });
 
-    const syncContent = (relativePath, desiredContent) => {
+    const syncContent = (relativePath, desiredContent, { mergeSafe = false } = {}) => {
       const targetPath = pathApi.join(configDirectory, relativePath);
       const desiredHash = hashContent(desiredContent);
       let currentContent = null;
@@ -114,7 +161,7 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
         nextFiles[relativePath] = { hash: desiredHash };
         return;
       }
-      if (currentContent !== null && previousHash && currentHash !== previousHash) {
+      if (currentContent !== null && previousHash && currentHash !== previousHash && !mergeSafe) {
         result.conflicts.push(targetPath);
         nextFiles[relativePath] = previousFiles[relativePath];
         return;
@@ -136,7 +183,11 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
     const currentPackage = readJson(fsApi, packagePath);
     const desiredPackage = mergePackageJson(currentPackage, baselinePackage);
     const dependenciesChanged = JSON.stringify(currentPackage.dependencies || {}) !== JSON.stringify(desiredPackage.dependencies || {});
-    syncContent('package.json', `${JSON.stringify(desiredPackage, null, 2)}\n`);
+    // package.json is assembled from the current user file plus managed defaults,
+    // so writing that merged result cannot discard unrelated user fields. Allow
+    // newly managed dependencies to land even when another package field changed
+    // since the last provisioning manifest.
+    syncContent('package.json', `${JSON.stringify(desiredPackage, null, 2)}\n`, { mergeSafe: true });
 
     syncContent('oh-my-opencode-slim.json', fsApi.readFileSync(pathApi.join(profileRoot, 'oh-my-opencode-slim.json'), 'utf8'));
 
@@ -201,7 +252,7 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
     return result;
   };
 
-  return { provision, configDirectory };
+  return { provision, configDirectory, meridianConfigDirectory };
 };
 
 export { DEFAULT_PROFILE_ROOT };

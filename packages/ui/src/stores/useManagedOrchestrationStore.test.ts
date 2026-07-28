@@ -128,6 +128,12 @@ describe('managed orchestration store', () => {
     expect(managedOrchestrationSelectors.manualRecoveryFailureKindForChildSession('ses_child_exhausted')(
       store.getState(),
     )).toBe('provider_usage_limit');
+    expect(managedOrchestrationSelectors.hasManualRecoveryForRoot('ses_root')(
+      store.getState(),
+    )).toBe(true);
+    expect(managedOrchestrationSelectors.hasManualRecoveryForRoot('ses_other')(
+      store.getState(),
+    )).toBe(false);
 
     store.getState().ingestEvent(taskEvent(projected, {
       ...envelope,
@@ -139,6 +145,9 @@ describe('managed orchestration store', () => {
     expect(managedOrchestrationSelectors.manualRecoveryFailureKindForChildSession('ses_child_exhausted')(
       store.getState(),
     )).toBeNull();
+    expect(managedOrchestrationSelectors.hasManualRecoveryForRoot('ses_root')(
+      store.getState(),
+    )).toBe(false);
 
     const replacementFailed = {
       ...taskRecord(2, 'failed', {
@@ -166,6 +175,9 @@ describe('managed orchestration store', () => {
     expect(store.getState().manualRecoveryTaskIdByChildSessionId.ses_child_exhausted).toBe(
       replacementFailed.taskId,
     );
+    expect(managedOrchestrationSelectors.hasManualRecoveryForRoot('ses_root')(
+      store.getState(),
+    )).toBe(true);
   });
 
   test('indexes only final manual recovery and clears or restores it with the envelope lifecycle', () => {

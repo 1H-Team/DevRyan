@@ -45,8 +45,7 @@ type ResolveSubtaskSidebarIndicatorOptions = {
   isActive: boolean;
   hasUnreadCompletion: boolean;
   hasUnreadError: boolean;
-  hasManualRecovery: boolean;
-  manualRecoveryFailureKind?: 'provider_usage_limit' | null;
+  hasParentOwnedRecovery: boolean;
 };
 
 type ResolveLeadingRailLayoutOptions = {
@@ -194,13 +193,9 @@ export function resolveSubtaskSidebarIndicator({
   isActive,
   hasUnreadCompletion,
   hasUnreadError,
-  hasManualRecovery,
-  manualRecoveryFailureKind,
+  hasParentOwnedRecovery,
 }: ResolveSubtaskSidebarIndicatorOptions): SessionIndicator | null {
-  if (isRootSession) return null;
-  if (hasManualRecovery && (!isWorking || manualRecoveryFailureKind === 'provider_usage_limit')) {
-    return ERROR_INDICATOR;
-  }
+  if (isRootSession || hasParentOwnedRecovery) return null;
   if (!notifyOnSubtasks || isWorking || isActive) return null;
   if (hasUnreadError) return ERROR_INDICATOR;
   if (hasUnreadCompletion) return SESSION_COMPLETED_INDICATOR;

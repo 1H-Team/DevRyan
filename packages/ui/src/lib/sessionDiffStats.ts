@@ -15,16 +15,6 @@ export type SessionSummaryDiffStats = SessionSummaryDiffEntry & {
   diffs?: SessionSummaryDiffEntry[] | null
 }
 
-export type SessionDiffSummaryMessage = {
-  role?: string
-  summary?: SessionSummaryDiffStats | null
-}
-
-export type SessionTouchedFileMessage = {
-  role?: string
-  summary?: SessionSummaryDiffStats | boolean | null
-}
-
 export type SessionDiffSummaryTarget = {
   summary?: SessionSummaryDiffStats | null
 }
@@ -75,25 +65,6 @@ const normalizeSessionDiffPath = (value: string): string => {
   return value.replace(/\\/g, '/').replace(/^\.\//, '')
 }
 
-export const getSessionTouchedFilePaths = (
-  messages: readonly SessionTouchedFileMessage[] | undefined,
-): string[] => {
-  const paths = new Set<string>()
-
-  for (const message of messages ?? []) {
-    if (message?.role !== 'user') continue
-    const summary = message.summary
-    if (!summary || typeof summary !== 'object') continue
-    for (const diff of summary.diffs ?? []) {
-      if (typeof diff.file !== 'string') continue
-      const path = normalizeSessionDiffPath(diff.file.trim())
-      if (path) paths.add(path)
-    }
-  }
-
-  return [...paths].sort()
-}
-
 export const resolveTouchedFileWorkingTreeDiffStats = (
   touchedFiles: readonly string[],
   diffStats: WorkingTreeDiffStats | undefined,
@@ -110,13 +81,6 @@ export const resolveTouchedFileWorkingTreeDiffStats = (
   return additions === 0 && deletions === 0 ? null : { additions, deletions }
 }
 
-export const resolveSessionWorkingTreeDiffStats = (
-  messages: readonly SessionTouchedFileMessage[] | undefined,
-  diffStats: WorkingTreeDiffStats | undefined,
-): SessionDiffStats | null => {
-  return resolveTouchedFileWorkingTreeDiffStats(getSessionTouchedFilePaths(messages), diffStats)
-}
-
 export const getScopedMessageDiffTotals = (summary?: SessionSummaryDiffStats | null): SessionDiffStats => {
   let additions = 0
   let deletions = 0
@@ -130,43 +94,6 @@ export const getScopedMessageDiffTotals = (summary?: SessionSummaryDiffStats | n
   }
 
   return { additions, deletions }
-}
-
-export const getChatOwnedDiffTotalsFromMessages = (messages: readonly SessionDiffSummaryMessage[] | undefined): SessionDiffStats => {
-  let additions = 0
-  let deletions = 0
-
-  for (const message of messages ?? []) {
-    if (message?.role !== 'user') continue
-    const stats = getScopedMessageDiffTotals(message.summary)
-    additions += stats.additions
-    deletions += stats.deletions
-  }
-
-  return { additions, deletions }
-}
-
-export const applyChatOwnedDiffTotalsToSummary = (
-  summary: SessionSummaryDiffStats | null | undefined,
-  totals: SessionDiffStats,
-): SessionSummaryDiffStats | undefined => {
-  const nextSummary: SessionSummaryDiffStats = { ...(summary ?? {}) }
-
-  delete nextSummary.diffs
-  delete nextSummary.files
-  delete nextSummary.additions
-  delete nextSummary.deletions
-
-  if (totals.additions === 0 && totals.deletions === 0) {
-    // No trusted scoped edits for this chat.
-  } else {
-    nextSummary.diffs = [{
-      additions: totals.additions,
-      deletions: totals.deletions,
-    }]
-  }
-
-  return Object.keys(nextSummary).length > 0 ? nextSummary : undefined
 }
 
 export const stripUntrustedSessionDiffSummary = <T extends SessionDiffSummaryTarget>(target: T): T => {
@@ -195,58 +122,14 @@ export const stripUntrustedSessionDiffSummary = <T extends SessionDiffSummaryTar
   return withoutSummary as T
 }
 
-const areDiffEntriesEqual = (
-  left: SessionSummaryDiffEntry[] | null | undefined,
-  right: SessionSummaryDiffEntry[] | null | undefined,
-): boolean => {
-  if (left === right) return true
-  const leftEntries = left ?? []
-  const rightEntries = right ?? []
-  if (leftEntries.length !== rightEntries.length) return false
-
-  for (let index = 0; index < leftEntries.length; index += 1) {
-    const leftEntry = leftEntries[index]
-    const rightEntry = rightEntries[index]
-    if (!leftEntry || !rightEntry) return leftEntry === rightEntry
-    if (parseSessionDiffCount(leftEntry.additions) !== parseSessionDiffCount(rightEntry.additions)) return false
-    if (parseSessionDiffCount(leftEntry.deletions) !== parseSessionDiffCount(rightEntry.deletions)) return false
-  }
-
-  return true
-}
-
-const areSummaryValuesEqual = (
-  left: SessionSummaryDiffStats | null | undefined,
-  right: SessionSummaryDiffStats | null | undefined,
-): boolean => {
-  if (left === right) return true
-  if (!left || !right) return !left && !right
-
-  const leftKeys = Object.keys(left)
-  const rightKeys = Object.keys(right)
-  if (leftKeys.length !== rightKeys.length) return false
-
-  for (const key of leftKeys) {
-    if (!Object.prototype.hasOwnProperty.call(right, key)) return false
-    if (key === 'diffs') {
-      if (!areDiffEntriesEqual(left.diffs, right.diffs)) return false
-      continue
-    }
-    if (left[key] !== right[key]) return false
-  }
-
-  return true
-}
-
 export const normalizeChatOwnedDiffSummary = <T extends SessionDiffSummaryTarget>(
   target: T,
-  messages: readonly SessionDiffSummaryMessage[] | undefined,
+  messages: readonly unknown[] | undefined,
 ): T => {
-  const totals = getChatOwnedDiffTotalsFromMessages(messages)
-  const nextSummary = applyChatOwnedDiffTotalsToSummary(target.summary, totals)
-  if (areSummaryValuesEqual(target.summary, nextSummary)) {
-    return target
-  }
-
-  return { ...target, summary: nextSummary } as T
+  // OpenCode message summaries and patch snapshots describe shared working-tree
+  // state, not authoritative per-session ownership. Keep them out of session
+  // metadata entirely; the dedicated attribution store derives touched paths
+  // from successful file tools instead.
+  void messages
+  return stripUntrustedSessionDiffSummary(target)
 }

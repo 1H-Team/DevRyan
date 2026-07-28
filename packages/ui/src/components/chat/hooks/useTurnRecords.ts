@@ -6,7 +6,6 @@ import { streamPerfMeasure } from '@/stores/utils/streamDebug';
 interface UseTurnRecordsOptions {
     recordedPlanModeMessageIds?: ReadonlySet<string>;
     sessionKey?: string;
-    showTextJustificationActivity: boolean;
 }
 
 export interface TurnRecordsResult {
@@ -35,19 +34,18 @@ export const useTurnRecords = (
         previousProjectionRef.current = null;
         staticTurnsRef.current = [];
         streamingTurnRef.current = undefined;
-    }, [options.recordedPlanModeMessageIds, options.sessionKey, options.showTextJustificationActivity]);
+    }, [options.recordedPlanModeMessageIds, options.sessionKey]);
 
     const projection = React.useMemo(() => {
         return streamPerfMeasure('ui.turns.projection_ms', () => {
             const nextProjection = projectTurnRecords(messages, {
                 previousProjection: previousProjectionRef.current,
                 recordedPlanModeMessageIds: options.recordedPlanModeMessageIds,
-                showTextJustificationActivity: options.showTextJustificationActivity,
             });
             previousProjectionRef.current = nextProjection;
             return nextProjection;
         });
-    }, [messages, options.recordedPlanModeMessageIds, options.showTextJustificationActivity]);
+    }, [messages, options.recordedPlanModeMessageIds]);
 
     const staticTurns = React.useMemo(() => {
         const nextStatic = projection.turns.length <= 1

@@ -57,13 +57,13 @@ describe('plan presentation', () => {
     expect(planCardSource).toContain('isPlanFileReady');
   });
 
-  test('moves context-panel plan actions ahead of the panel controls without changing the standalone view', () => {
+  test('keeps the remaining context-panel plan actions ahead of the panel controls without changing the standalone view', () => {
     expect(planViewSource).toContain("presentation?: 'standalone' | 'context-panel'");
     expect(planViewSource).toContain("presentation === 'context-panel'");
     expect(planViewSource).toContain('createPortal(planActions, headerActionsTarget)');
     expect(planViewSource).toContain('data-plan-view-actions="true"');
-    expect(planViewSource).toContain("t('planView.actions.improvePlanAria')");
-    expect(planViewSource).toContain("t('planView.actions.implementPlanAria')");
+    expect(planViewSource).not.toContain("t('planView.actions.improvePlanAria')");
+    expect(planViewSource).not.toContain("t('planView.actions.implementPlanAria')");
     expect(planViewSource).toContain('<PreviewToggleButton');
     expect(planViewSource).toContain("t('planView.actions.copyPlanContents')");
 
@@ -98,13 +98,10 @@ describe('plan presentation', () => {
     expect(actionIndex).toBeGreaterThan(closeIndex);
   });
 
-  test('wires mobile implementation handoff to the exact saved source revision only after send succeeds', () => {
-    expect(planViewSource).toContain('const sessionPlanFileRecord = useSessionPlanFileStore');
-    expect(planViewSource).toContain('const sourcePlanMessageId = sessionPlanFileRecord?.status === \'saved\'');
-    expect(planViewSource).toContain("pendingPlanSend.action === 'implement' && isMobile && currentSessionId && sourcePlanMessageId");
-    expect(planViewSource).toContain('markPlanImplementationHandedOff(');
-    expect(planViewSource).not.toContain('markPlanImplementationRequested(');
-    expect(planViewSource).toContain('setPlanModeSelection(currentSessionId, false)');
-    expect(planViewSource).toContain('clearHandedOffPlanIndicator(currentSessionId, sourcePlanMessageId)');
+  test('removes improve and implement actions from the plan viewer', () => {
+    expect(planViewSource).not.toContain('RiLoopRightAiLine');
+    expect(planViewSource).not.toContain('RiCodeAiLine');
+    expect(planViewSource).not.toContain('TodoSendDialog');
+    expect(planViewSource).not.toContain('setPendingPlanSend');
   });
 });

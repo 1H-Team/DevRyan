@@ -510,14 +510,28 @@ Before and during implementation, build a deep understanding of the project — 
 Task tracking is part of the implementation contract:
 1. Read the complete \`## Implementation\` section and identify every numbered actionable task under its sequential phase headings.
 2. Before editing any file, create the complete todo list with exactly one todo per plan task. Preserve the plan's phase order and task wording. Prefix every todo with \`Phase <number>: \` so the UI can show which saved-plan phase is active.
-3. Do not add todos for Context, Critical files, Visual details, acceptance criteria, risks, or the separate Verification checklist. Do not remove, merge, reorder, cancel, or replace plan todos while implementing them.
+3. Do not add todos for Context, Critical files, Visual details, acceptance criteria, risks, or the separate Verification checklist. Unless the saved plan is legitimately revised under the plan-gap rules below, do not remove, merge, reorder, cancel, add, or replace plan todos while implementing them.
 4. Keep exactly one todo \`in_progress\`. Mark a task \`completed\` only after its implementation and focused checks are complete. If later verification finds a regression, reopen the relevant task.
 5. Keep the final plan task \`in_progress\` while running every applicable item in the plan's \`## Verification\` section. Mark it complete only after those checks pass or an unavailable check is explicitly justified.
 6. Do not emit a completion response while any todo is \`pending\` or \`in_progress\`. A successful implementation finishes only when the counter reaches N/N. If genuinely blocked, explain the blocker and leave the affected todo incomplete instead of claiming completion.
 
 Do the implementation work continuously. When a plan step is ambiguous, do not stop to ask — make the best judgment call consistent with the plan's intent and the repo's conventions, and briefly note the decision inline so it is visible on review. Prefer forward progress over interrupting me.
 
-Do not expand scope beyond the plan. If during implementation you find the plan itself is wrong or genuinely blocks completion (not merely ambiguous), stop, state exactly what is broken and why, and propose a plan adjustment to save back into this same file ({{plan_path}}) before continuing.`,
+Plan gaps and related findings:
+1. When implementation or verification reveals work missing from the saved plan, first classify it as a low-risk related adjustment, a material related adjustment, or an unrelated finding. Do not treat ordinary ambiguity as a plan gap.
+2. A low-risk related adjustment must be strictly necessary for the agreed outcome, local, reversible, and mechanically implied by the plan. It must not change a public contract, persisted data or schema, a migration, production deployment, security or privacy behavior, dependencies, external systems, user-visible product behavior, or meaningful scope or risk. If any of these boundaries are involved or the classification is uncertain, treat the adjustment as material.
+3. For a low-risk related adjustment, update this same plan file ({{plan_path}}) with the missing work, reconcile the todos under the rules below, and continue automatically. Briefly note the incorporated adjustment in normal progress reporting; do not interrupt me for approval.
+4. For a material related adjustment, do not implement it yet. Ask exactly one question through the structured question tool so the existing question-card UI can keep the session resumable. Use the header \`Plan gap\`. Concisely state what is already complete, what was discovered, why it is required for the agreed outcome, and the exact plan adjustment proposed. Offer exactly these two choices:
+   - \`Apply adjustment and continue (Recommended)\` — revise this same plan file, reconcile todos, implement the adjustment, and finish verification.
+   - \`Pause for plan revision\` — leave the affected todo incomplete and stop safely without implementing the adjustment.
+   Never ask this as free-form assistant text. While the question is pending, do not emit a completion or blocked response and do not continue implementing the material adjustment.
+5. If I choose \`Apply adjustment and continue\`, update this same plan file first, reconcile the todos, and resume in the same session without asking me to send another prompt. If I choose \`Pause for plan revision\`, skip the question, or give an ambiguous answer, do not implement the material adjustment; leave the affected todo incomplete and report that the implementation is paused for plan revision.
+6. For an unrelated finding, do not expand the plan to fix it. Record it concisely and continue when the agreed outcome can still be completed. If it genuinely prevents the agreed outcome or its verification, treat the required response as a material adjustment and use the question-card flow.
+
+Todo reconciliation after an automatic low-risk or approved material plan revision:
+1. Re-read the revised \`## Implementation\` section and restore exactly one todo per numbered plan task in the revised phase order.
+2. Preserve the wording, identity, and status of unchanged tasks; add newly approved tasks in plan order; and reopen any completed task whose work or verification is affected by the revision.
+3. This reconciliation is the only exception to the rule against adding or replacing plan todos. After reconciliation, continue with exactly one todo \`in_progress\` and do not finish until the revised counter reaches N/N.`,
   },
   {
     id: 'session.summary.visible',

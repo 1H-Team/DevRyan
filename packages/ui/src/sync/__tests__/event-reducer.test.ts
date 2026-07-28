@@ -650,7 +650,7 @@ describe("applyDirectoryEvent", () => {
     expect((draft.session[0] as Session & { summary?: { additions?: number; deletions?: number; files?: number } }).summary).toBe(undefined)
   })
 
-  test("normalizes raw session updated snapshots from cached scoped user message diffs", () => {
+  test("strips raw session diff snapshots even when cached user messages contain diffs", () => {
     const draft = state({
       session: [testSession("ses_1")],
       message: {
@@ -678,12 +678,10 @@ describe("applyDirectoryEvent", () => {
     } as unknown as Event)
 
     expect(result).toBe(true)
-    expect((draft.session[0] as Session & { summary?: { diffs?: Array<{ additions?: number; deletions?: number }> } }).summary).toEqual({
-      diffs: [{ additions: 3, deletions: 1 }],
-    })
+    expect((draft.session[0] as Session & { summary?: unknown }).summary).toBe(undefined)
   })
 
-  test("updates only the owning session summary from scoped user message summaries", () => {
+  test("does not project scoped user message summaries into the owning session", () => {
     const firstSummary = { diffs: [{ additions: 1, deletions: 2 }] }
     const secondSummary = { diffs: [{ additions: 10, deletions: 20 }] }
     const draft = state({
@@ -707,9 +705,7 @@ describe("applyDirectoryEvent", () => {
     } as unknown as Message))
 
     expect(result).toBe(true)
-    expect((draft.session[0] as Session & { summary?: { diffs?: Array<{ additions?: number; deletions?: number }> } }).summary).toEqual({
-      diffs: [{ additions: 12, deletions: 13 }],
-    })
+    expect((draft.session[0] as Session & { summary?: unknown }).summary).toBe(undefined)
     expect((draft.session[1] as Session & { summary?: typeof secondSummary }).summary).toBe(secondSummary)
   })
 
@@ -750,7 +746,7 @@ describe("applyDirectoryEvent", () => {
     })
   })
 
-  test("recomputes session summary diff totals when a user message is removed", () => {
+  test("keeps session summaries clear when a user message is removed", () => {
     const draft = state({
       session: [
         {
@@ -778,9 +774,7 @@ describe("applyDirectoryEvent", () => {
     } as Event)
 
     expect(result).toBe(true)
-    expect((draft.session[0] as Session & { summary?: { diffs?: Array<{ additions?: number; deletions?: number }> } }).summary).toEqual({
-      diffs: [{ additions: 5, deletions: 5 }],
-    })
+    expect((draft.session[0] as Session & { summary?: unknown }).summary).toBe(undefined)
   })
 
   test("detects retry status metadata changes", () => {

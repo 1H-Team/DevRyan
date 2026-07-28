@@ -19,7 +19,15 @@ export const shouldRenderStatusRowAssistantStatus = (
     activePartType: AssistantActivePartType,
     isWorking: boolean,
     managedBarrierOwnsStatus = false,
-): boolean => isWorking && (activePartType !== 'reasoning' || managedBarrierOwnsStatus);
+    managedChildOwnsIdleStatus = false,
+): boolean => (
+    // A managed child keeps running after its parent turn ends — that is the
+    // normal shape of a recovered subtask, and of one whose parent tool wait
+    // detached. Without this the row went blank while a subagent was actively
+    // working, so the session looked finished or dead.
+    managedChildOwnsIdleStatus
+    || (isWorking && (activePartType !== 'reasoning' || managedBarrierOwnsStatus))
+);
 
 // Exported for focused regression tests; keep component exports unchanged otherwise.
 // eslint-disable-next-line react-refresh/only-export-components
@@ -70,19 +78,29 @@ export const StatusRowContainer: React.FC = React.memo(() => {
         [currentSessionId],
     ));
 
+    const managedChildActive = useManagedOrchestrationStore(React.useMemo(
+        () => managedOrchestrationSelectors.hasActiveTasksForRoot(currentSessionId ?? ''),
+        [currentSessionId],
+    ));
+
     const wasAborted = Boolean(abortRecord && !abortRecord.acknowledged);
-    const managedBarrierOwnsStatus = managedBarrierLocked && (
+    // Only speak for the row once the parent turn has nothing of its own to say,
+    // so a builder that legitimately keeps working alongside a managed child
+    // still reports its own activity.
+    const managedChildOwnsIdleStatus = !working.isWorking && managedChildActive;
+    const managedBarrierOwnsStatus = managedChildOwnsIdleStatus || (managedBarrierLocked && (
         working.activePartType === 'reasoning'
         || working.activePartType === undefined
         || (
             working.activePartType === 'tool'
             && isManagedTaskToolName(working.activeToolName ?? '')
         )
-    );
+    ));
     const showWorkingPlaceholder = shouldRenderStatusRowAssistantStatus(
         working.activePartType,
         working.isWorking,
         managedBarrierOwnsStatus,
+        managedChildOwnsIdleStatus,
     );
     const display = resolveStatusRowAssistantDisplay({
         isRevertPending,

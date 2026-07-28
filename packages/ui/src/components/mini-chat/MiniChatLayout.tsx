@@ -3,7 +3,7 @@ import { RiExternalLinkLine, RiPushpin2Fill, RiPushpin2Line } from '@remixicon/r
 import { Button } from '@/components/ui/button';
 import { ChatContainer } from '@/components/chat/ChatContainer';
 import { ChatSurfaceProvider } from '@/components/chat/ChatSurfaceContext';
-import { SessionChangesBadge } from '@/components/session/SessionChangesBadge';
+import { ActiveSessionChangesBadge } from '@/components/session/ActiveSessionChangesBadge';
 import { ContextUsageDisplay } from '@/components/ui/ContextUsageDisplay';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
@@ -12,7 +12,6 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessionWorktreeStore } from '@/sync/session-worktree-store';
 import { useSessionMessages, useSessionMessagesResolved, useSessions } from '@/sync/sync-context';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
-import { resolveSessionDiffStats } from '@/components/session/sidebar/utils';
 import { getContextUsageFromMessages } from '@/stores/utils/contextUsageUtils';
 import { useStableSessionContextUsage } from '@/hooks/useStableSessionContextUsage';
 import { useSelectedModelContextCapacity } from '@/hooks/useSelectedModelContextCapacity';
@@ -77,11 +76,6 @@ const MiniChatHeader: React.FC<{ mode: MiniChatMode }> = ({ mode }) => {
   const worktreeDirectory = normalizePath(worktreePath || sessionWorktreeMetadata?.path || worktreeAttachment?.cwd || worktreeAttachment?.worktreeRoot || '');
   const currentDirectoryNormalized = normalizePath(currentDirectory);
   const openDirectory = worktreeDirectory || sessionDirectory || draftDirectory || currentDirectoryNormalized;
-  const diffStats = React.useMemo(() => {
-    return resolveSessionDiffStats(session?.summary as Parameters<typeof resolveSessionDiffStats>[0]);
-  }, [session?.summary]);
-  const changes = diffStats ?? { additions: 0, deletions: 0 };
-  const hasChanges = changes.additions > 0 || changes.deletions > 0;
   const selectedCapacity = useSelectedModelContextCapacity();
   const contextUsage = React.useMemo(() => {
     if (!currentSessionId || currentSessionMessages.length === 0) return null;
@@ -128,7 +122,12 @@ const MiniChatHeader: React.FC<{ mode: MiniChatMode }> = ({ mode }) => {
     >
       <div className="flex min-w-0 flex-1 items-center gap-2 pl-1">
         <div className="min-w-0 truncate typography-ui-label text-[14px] font-normal leading-tight text-foreground">{title}</div>
-        {hasChanges ? <SessionChangesBadge stats={changes} /> : null}
+        {currentSessionId ? (
+          <ActiveSessionChangesBadge
+            sessionId={currentSessionId}
+            directory={openDirectory || undefined}
+          />
+        ) : null}
       </div>
       {stableContextUsage && stableContextUsage.totalTokens > 0 ? (
         <ContextUsageDisplay

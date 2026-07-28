@@ -29,7 +29,10 @@ type ProviderRecoveryStore = {
   offerRecovery(recovery: ProviderRecoveryInput): void;
   setSelection(sessionId: string, selection: ProviderRecoverySelection): void;
   setActionState(sessionId: string, pending: boolean, actionError: string | null): void;
-  clearRecovery(sessionId: string): void;
+  clearRecovery(
+    sessionId: string,
+    expected?: Pick<ProviderRecoveryInput, 'anchorUserMessageId' | 'createdAt'>,
+  ): void;
   reset(): void;
 };
 
@@ -88,9 +91,17 @@ export const useProviderRecoveryStore = create<ProviderRecoveryStore>()((set) =>
       };
     });
   },
-  clearRecovery(sessionId) {
+  clearRecovery(sessionId, expected) {
     set((state) => {
-      if (!state.recoveriesBySessionId[sessionId]) return state;
+      const previous = state.recoveriesBySessionId[sessionId];
+      if (!previous) return state;
+      if (
+        expected
+        && (
+          previous.anchorUserMessageId !== expected.anchorUserMessageId
+          || previous.createdAt !== expected.createdAt
+        )
+      ) return state;
       const recoveriesBySessionId = { ...state.recoveriesBySessionId };
       delete recoveriesBySessionId[sessionId];
       return { recoveriesBySessionId };

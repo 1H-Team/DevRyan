@@ -16,6 +16,12 @@ describe('GitView revert actions', () => {
 });
 
 describe('GitView staged changes workflow', () => {
+  test('does not render the repository state summary', () => {
+    const code = source();
+
+    expect(code).not.toContain('RepositoryStateSummary');
+  });
+
   test('does not reference chat-based commit generation', () => {
     const code = source();
 

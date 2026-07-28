@@ -15,6 +15,7 @@ import {
   createVsCodeManagedOrchestrationRuntime,
   type VsCodeManagedOrchestrationRuntime,
 } from './managedOrchestrationRuntime';
+import { readSettings } from './bridge-settings-runtime';
 
 let chatViewProvider: ChatViewProvider | undefined;
 let agentManagerProvider: AgentManagerPanelProvider | undefined;
@@ -132,6 +133,10 @@ export async function activate(context: vscode.ExtensionContext) {
   openCodeManager = createOpenCodeManager(context, {
     getActiveSessionCount: () => Object.values(getSessionActivitySnapshot())
       .filter((entry) => entry.type !== 'idle').length,
+    getHiddenSkills: () => {
+      const settings = readSettings({ context });
+      return Array.isArray(settings.hiddenSkills) ? settings.hiddenSkills : [];
+    },
     getManagedOrchestrationEnvironment: async () => {
       if (!managedOrchestrationRuntime) {
         throw new Error('Managed orchestration runtime is unavailable during OpenCode startup');

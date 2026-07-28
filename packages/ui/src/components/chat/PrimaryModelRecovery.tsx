@@ -1,6 +1,7 @@
 import React from 'react';
 
 import { useI18n } from '@/lib/i18n';
+import { getProviderUsageLimitDisplayReason } from '@/lib/messages/providerRecovery';
 import { useConfigStore } from '@/stores/useConfigStore';
 import {
   providerRecoverySelector,
@@ -30,6 +31,7 @@ export const PrimaryModelRecovery = React.memo(({
 
   if (!recovery) return null;
 
+  const usageLimitReason = getProviderUsageLimitDisplayReason(recovery.reason);
   const setSelection = (selection: ProviderRecoverySelection) => {
     useProviderRecoveryStore.getState().setSelection(sessionId, selection);
   };
@@ -40,7 +42,7 @@ export const PrimaryModelRecovery = React.memo(({
     try {
       const sent = await executeProviderRecovery(current);
       if (!sent) throw new Error('The failed turn could not be retried.');
-      useProviderRecoveryStore.getState().clearRecovery(sessionId);
+      useProviderRecoveryStore.getState().clearRecovery(sessionId, current);
     } catch (error) {
       useProviderRecoveryStore.getState().setActionState(
         sessionId,
@@ -58,6 +60,9 @@ export const PrimaryModelRecovery = React.memo(({
       selection={recovery.selection}
       pending={recovery.pending}
       actionError={recovery.actionError}
+      failureMessage={usageLimitReason
+        ? t('chat.modelRecovery.usageLimitStopped', { detail: usageLimitReason })
+        : null}
       onSelectionChange={setSelection}
       onRetry={retry}
     />

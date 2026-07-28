@@ -7,7 +7,7 @@ import yaml from 'yaml';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 16_379;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 16_625;
 
 const LOCAL_PATH_PATTERNS = [
   /(^|[\s"'`])\/Users\//,
@@ -211,6 +211,7 @@ describe('packaged agent defaults', () => {
       'at most one managed recovery',
       'never change its model automatically',
       'choose a model and thinking level in Model Recovery and click Try Again',
+      'DevRyan will send one synthetic continuation after the recovered child settles',
       '**Managed dispatch barrier.**',
       'Only after every result is dispositioned may you resume local work',
       'Allowed subagents: `explorer`, `librarian`, `oracle`, `designer`, `fixer`, `council`.',

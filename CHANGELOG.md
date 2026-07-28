@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.0.12] - 2026-07-26
+
+- Orchestration: recover provider-limited managed subtasks even when the original parent tool wait detaches, using durable retry lineage and a restart-safe one-shot parent continuation.
+- Orchestration: continue a managed subtask once in the same child after a terminal model timeout, with idempotent cross-runtime delivery and restart-safe bounded recovery.
+- Chat: keep recovered child activity, model recovery controls, and primary-session state synchronized through retry-in-place completion without duplicate wakes or stale working indicators.
+- Runtime parity: expose provider-recovery continuations across web/Electron and VS Code bridges, with packaged-agent guidance and focused scheduler, plugin, store, sync, and sidebar regression coverage.
+
 ## [1.0.11] - 2026-07-20
 
 - Sessions: add mobile swipe actions for pinning and archiving, and stabilize sidebar indicator and row layout.

@@ -4,6 +4,7 @@ import {
     buildPlanPhaseTodoProjection,
     buildTodoSummary,
     formatCompactTodoTotal,
+    getCurrentTodoPosition,
     parsePlanTodoContent,
 } from './todoSummary';
 
@@ -113,6 +114,51 @@ describe('todo summary helpers', () => {
         expect(buildPlanPhaseTodoProjection([
             todo('pending', 'ordinary-task', 'Run the test suite'),
         ])).toBeNull();
+    });
+
+    test('uses a one-based position for the first pending or in-progress task', () => {
+        const pendingSummary = buildTodoSummary([
+            todo('pending', 'task-1'),
+            todo('pending', 'task-2'),
+        ]);
+        const inProgressSummary = buildTodoSummary([
+            todo('in_progress', 'task-1'),
+            todo('pending', 'task-2'),
+        ]);
+
+        expect(getCurrentTodoPosition(pendingSummary.visibleTodos)).toBe(1);
+        expect(getCurrentTodoPosition(inProgressSummary.visibleTodos)).toBe(1);
+    });
+
+    test('uses the active task ordinal after completed predecessors', () => {
+        const summary = buildTodoSummary([
+            todo('completed', 'task-1'),
+            todo('completed', 'task-2'),
+            todo('in_progress', 'task-3'),
+            todo('pending', 'task-4'),
+        ]);
+
+        expect(getCurrentTodoPosition(summary.visibleTodos)).toBe(3);
+    });
+
+    test('uses the final position when every visible task is completed', () => {
+        const summary = buildTodoSummary([
+            todo('completed', 'task-1'),
+            todo('completed', 'task-2'),
+        ]);
+
+        expect(getCurrentTodoPosition(summary.visibleTodos)).toBe(2);
+    });
+
+    test('excludes cancelled tasks from the current position and total', () => {
+        const summary = buildTodoSummary([
+            todo('completed', 'task-1'),
+            todo('cancelled', 'task-2'),
+            todo('pending', 'task-3'),
+        ]);
+
+        expect(summary.total).toBe(2);
+        expect(getCurrentTodoPosition(summary.visibleTodos)).toBe(2);
     });
 
     test('formats compact total from all visible tasks, including completed tasks', () => {

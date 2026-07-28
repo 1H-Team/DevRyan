@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import type { Message } from '@opencode-ai/sdk/v2/client';
 
-import { buildProviderRecoveryInput } from './providerRecovery';
+import {
+  buildProviderRecoveryInput,
+  getProviderUsageLimitDisplayReason,
+} from './providerRecovery';
 
 describe('buildProviderRecoveryInput', () => {
   test('captures the authoritative latest user send snapshot', () => {
@@ -51,5 +54,18 @@ describe('buildProviderRecoveryInput', () => {
       messages: [],
       now: 20,
     })).toBeNull();
+  });
+});
+
+describe('getProviderUsageLimitDisplayReason', () => {
+  test('keeps the reset detail and removes runtime noise from an Anthropic limit', () => {
+    expect(getProviderUsageLimitDisplayReason(
+      "Claude Code returned an error result: You've hit your limit · resets 1:30am (Africa/Casablanca) "
+      + 'Subprocess stderr: Permission deny rule "MultiEdit" matches no known tool. Warning: ignored',
+    )).toBe("You've hit your limit · resets 1:30am (Africa/Casablanca)");
+  });
+
+  test('returns null for unrelated provider failures', () => {
+    expect(getProviderUsageLimitDisplayReason('Streaming response failed')).toBeNull();
   });
 });

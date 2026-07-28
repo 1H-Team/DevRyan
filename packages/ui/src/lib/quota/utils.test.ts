@@ -64,6 +64,10 @@ describe('quota usage utils', () => {
     expect(formatWindowLabel('auto-composer')).toBe('First-party models');
   });
 
+  test('formats Anthropic Fable quota label', () => {
+    expect(formatWindowLabel('7d-fable')).toBe('7-Day Fable');
+  });
+
   test('prediction falls back to full-window pace without enough trend samples', () => {
     const prediction = calculateUsagePrediction(20, 0.5, 3600, [
       { fetchedAt: 1_000, usedPercent: 20, resetAt: 10_000 },

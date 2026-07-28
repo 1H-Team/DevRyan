@@ -10,12 +10,14 @@ import {
   getSyncBlockingRequestCountAnyDirectory,
   getSyncMessages,
   getSyncSessionDirectoryAnyDirectory,
+  getSyncSessions,
 } from '@/sync/sync-refs';
 import { useSyncChildStores } from '@/sync/sync-context';
 import { abortCurrentOperationConfirmed } from '@/sync/session-actions';
 import {
   decideProviderErrorRecovery,
   decideProviderRetryLoopRecovery,
+  isPrimaryProviderRecoverySession,
 } from './providerErrorRecoveryDecision';
 
 const latestUserMessageId = (messages: ReturnType<typeof getSyncMessages>) => {
@@ -52,8 +54,13 @@ export function useProviderErrorRecovery(enabled = true): void {
       );
       const nextStatuses = new Map<string, SessionStatus['type']>();
       for (const [sessionId, status] of Object.entries(statuses)) {
-        nextStatuses.set(sessionId, status.type);
         const directory = getSyncSessionDirectoryAnyDirectory(sessionId);
+        const session = directory
+          ? getSyncSessions(directory).find((candidate) => candidate.id === sessionId)
+          : undefined;
+        if (!isPrimaryProviderRecoverySession(session)) continue;
+
+        nextStatuses.set(sessionId, status.type);
         if (status.type === 'busy' || status.type === 'retry') {
           if (directory) {
             const messages = getSyncMessages(sessionId, directory);
@@ -71,7 +78,7 @@ export function useProviderErrorRecovery(enabled = true): void {
               && !cappedRetryAbortsInFlight.has(sessionId)
             ) {
               cappedRetryAbortsInFlight.add(sessionId);
-              void abortCurrentOperationConfirmed(sessionId).then((confirmed) => {
+              void abortCurrentOperationConfirmed(sessionId, status).then((confirmed) => {
                 if (!active || !confirmed) return;
                 cappedRetryUserMessageIds.set(sessionId, userMessageId);
                 const currentDirectory = getSyncSessionDirectoryAnyDirectory(sessionId);

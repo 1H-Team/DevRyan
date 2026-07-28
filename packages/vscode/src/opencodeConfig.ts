@@ -9,11 +9,17 @@ import {
   isAnthropicOAuthPluginSpec,
   reconcileAnthropicOAuthPluginSpecs,
 } from './anthropicOAuthPlugin';
+import { resolveProjectPlansDirectory } from '../../web/server/lib/projects/project-id.js';
 import {
   buildDevRyanDefaultPluginInventory,
   type DevRyanDefaultPlugin,
   type DevRyanDefaultPluginId,
 } from '../../web/server/lib/opencode/default-plugins.js';
+import {
+  buildVisibleSkillPolicy,
+  sanitizeAgentSkillPolicy,
+  type VisibleSkillPolicy,
+} from '../../web/server/lib/opencode/skill-policy.js';
 
 const OPENCODE_CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode');
 const AGENT_DIR = path.join(OPENCODE_CONFIG_DIR, 'agents');
@@ -96,9 +102,11 @@ const SLIM_DEEP_MERGE_KEYS = [
 ];
 const ALLOWED_MANAGED_RUNTIME_PLUGIN_SPEC_PREFIXES = [
   '@rama_nigg/open-cursor',
+  'context-mode@',
   'opencode-antigravity-auth',
 ];
 const ALLOWED_MANAGED_RUNTIME_PLUGIN_SPECS = new Set([
+  'context-mode',
   'cursor-acp',
   'oh-my-opencode-slim',
   DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC,
@@ -2065,6 +2073,7 @@ const buildRuntimeExternalDirectories = (workingDirectory?: string): string[] =>
 
   addDirectory(workingDirectory);
   addDirectory(findWorktreeRoot(workingDirectory));
+  addDirectory(resolveProjectPlansDirectory(workingDirectory));
   return result.sort((a, b) => a.localeCompare(b));
 };
 
@@ -2136,6 +2145,7 @@ const applyRuntimeAgentOverride = (
   agent: ConfigAgent,
   override: AgentModelOverride | undefined,
   runtimeExternalDirectories: string[] = [],
+  skillPolicy: VisibleSkillPolicy | null = null,
 ): string | null => {
   const sourcePath = typeof agent.__path === 'string' ? agent.__path : null;
   if (!sourcePath || !fs.existsSync(sourcePath)) {
@@ -2143,7 +2153,24 @@ const applyRuntimeAgentOverride = (
   }
 
   const { frontmatter, body } = parseMdFile(sourcePath);
-  const next = applyRuntimeExternalDirectoryPolicy({ ...frontmatter }, runtimeExternalDirectories);
+  const frontmatterWithRuntimeDirectories = applyRuntimeExternalDirectoryPolicy(
+    { ...frontmatter },
+    runtimeExternalDirectories,
+  );
+  const shouldApplySkillPolicy = Boolean(skillPolicy) && (
+    agent.scope === AGENT_SCOPE.PACKAGED
+    || (
+      agent.scope === AGENT_SCOPE.PROJECT
+      && isPlainObject(frontmatterWithRuntimeDirectories.permission)
+      && (
+        frontmatterWithRuntimeDirectories.permission.skill === 'allow'
+        || isPlainObject(frontmatterWithRuntimeDirectories.permission.skill)
+      )
+    )
+  );
+  const next = shouldApplySkillPolicy
+    ? sanitizeAgentSkillPolicy(frontmatterWithRuntimeDirectories, skillPolicy)
+    : frontmatterWithRuntimeDirectories;
 
   if (override && Object.prototype.hasOwnProperty.call(override, 'model')) {
     next.model = override.model;
@@ -2344,7 +2371,10 @@ const syncSlimConfigOverlay = (targetConfigDirectory: string, workingDirectory?:
   return changed;
 };
 
-export const syncRuntimeAgentOverlays = (workingDirectory?: string): {
+export const syncRuntimeAgentOverlays = (
+  workingDirectory?: string,
+  options: { hiddenSkills?: unknown[] } = {},
+): {
   changed: boolean;
   targetConfigDirectory: string | null;
   written: string[];
@@ -2368,6 +2398,15 @@ export const syncRuntimeAgentOverlays = (workingDirectory?: string): {
   const baseAgents = new Map(baseAgentList.map((agent) => [agent.name, agent]));
   const overrides = listManagedRuntimeAgentModelOverrides(workingDirectory);
   const runtimeExternalDirectories = buildRuntimeExternalDirectories(workingDirectory);
+  const hiddenSkills = Array.isArray(options.hiddenSkills)
+    ? options.hiddenSkills.filter((skill): skill is { name?: unknown; path?: unknown } => (
+      Boolean(skill) && typeof skill === 'object' && !Array.isArray(skill)
+    ))
+    : [];
+  const skillPolicy = buildVisibleSkillPolicy({
+    skills: discoverSkills(workingDirectory),
+    hiddenSkills,
+  });
   const packagedPlugins = listPackagedRuntimePlugins();
   const manifest = readRuntimeOverlayManifest();
   const projects = isPlainObject(manifest.projects) ? manifest.projects : {};
@@ -2406,7 +2445,18 @@ export const syncRuntimeAgentOverlays = (workingDirectory?: string): {
   const desiredAgentNames = new Set([
     ...Object.keys(overrides),
     ...Array.from(baseAgents.values())
-      .filter((agent) => isPlainObject(agent.permission) && runtimeExternalDirectories.length > 0)
+      .filter((agent) => (
+        agent.scope === AGENT_SCOPE.PACKAGED
+        || (
+          agent.scope === AGENT_SCOPE.PROJECT
+          && isPlainObject(agent.permission)
+          && (
+            agent.permission.skill === 'allow'
+            || isPlainObject(agent.permission.skill)
+          )
+        )
+        || (isPlainObject(agent.permission) && runtimeExternalDirectories.length > 0)
+      ))
       .map((agent) => agent.name),
   ]);
 
@@ -2414,7 +2464,12 @@ export const syncRuntimeAgentOverlays = (workingDirectory?: string): {
     const override = overrides[agentName];
     const baseAgent = baseAgents.get(agentName);
     if (!baseAgent) continue;
-    const content = applyRuntimeAgentOverride(baseAgent, override, runtimeExternalDirectories);
+    const content = applyRuntimeAgentOverride(
+      baseAgent,
+      override,
+      runtimeExternalDirectories,
+      skillPolicy,
+    );
     if (!content) continue;
     desired.set(agentName, {
       content,
@@ -3223,14 +3278,6 @@ const getProjectSkillPath = (workingDirectory: string, skillName: string): strin
   return pluralPath;
 };
 
-const getClaudeSkillDir = (workingDirectory: string, skillName: string): string => {
-  return path.join(workingDirectory, '.claude', 'skills', skillName);
-};
-
-const getClaudeSkillPath = (workingDirectory: string, skillName: string): string => {
-  return path.join(getClaudeSkillDir(workingDirectory, skillName), 'SKILL.md');
-};
-
 const getUserAgentsSkillDir = (skillName: string): string => {
   return path.join(os.homedir(), '.agents', 'skills', skillName);
 };
@@ -3256,11 +3303,6 @@ export const getSkillScope = (skillName: string, workingDirectory?: string): {
       return { scope: SKILL_SCOPE.PROJECT, path: projectPath, source: 'opencode' };
     }
     
-    // Check .claude/skills (claude-compat)
-    const claudePath = getClaudeSkillPath(workingDirectory, skillName);
-    if (fs.existsSync(claudePath)) {
-      return { scope: SKILL_SCOPE.PROJECT, path: claudePath, source: 'claude' };
-    }
   }
   
   const userPath = getUserSkillPath(skillName);
@@ -3301,26 +3343,20 @@ const listSupportingFiles = (skillDir: string): SupportingFile[] => {
 export const discoverSkills = (workingDirectory?: string): DiscoveredSkill[] => {
   const skills = new Map<string, DiscoveredSkill>();
 
-  // 1) External global (.claude, .agents)
-  for (const externalRootName of ['.claude', '.agents']) {
-    const source: SkillSource = externalRootName === '.agents' ? 'agents' : 'claude';
-    const homeRoot = path.join(os.homedir(), externalRootName, 'skills');
-    for (const skillMdPath of walkSkillMdFiles(homeRoot)) {
-      addSkillFromMdFile(skills, skillMdPath, SKILL_SCOPE.USER, source);
-    }
+  // 1) External global (.agents only; .claude is intentionally excluded)
+  const userAgentsRoot = path.join(os.homedir(), '.agents', 'skills');
+  for (const skillMdPath of walkSkillMdFiles(userAgentsRoot)) {
+    addSkillFromMdFile(skills, skillMdPath, SKILL_SCOPE.USER, 'agents');
   }
 
-  // 2) External project ancestors (.claude, .agents)
+  // 2) External project ancestors (.agents only)
   if (workingDirectory) {
     const worktreeRoot = findWorktreeRoot(workingDirectory) || path.resolve(workingDirectory);
     const ancestors = getAncestors(workingDirectory, worktreeRoot);
     for (const ancestor of ancestors) {
-      for (const externalRootName of ['.claude', '.agents']) {
-        const source: SkillSource = externalRootName === '.agents' ? 'agents' : 'claude';
-        const externalSkillsRoot = path.join(ancestor, externalRootName, 'skills');
-        for (const skillMdPath of walkSkillMdFiles(externalSkillsRoot)) {
-          addSkillFromMdFile(skills, skillMdPath, SKILL_SCOPE.PROJECT, source);
-        }
+      const externalSkillsRoot = path.join(ancestor, '.agents', 'skills');
+      for (const skillMdPath of walkSkillMdFiles(externalSkillsRoot)) {
+        addSkillFromMdFile(skills, skillMdPath, SKILL_SCOPE.PROJECT, 'agents');
       }
     }
   }
@@ -3401,10 +3437,6 @@ export const getSkillSources = (
   const projectExists = projectPath ? fs.existsSync(projectPath) : false;
   const projectDir = projectExists && workingDirectory ? getProjectSkillDir(workingDirectory, skillName) : null;
   
-  const claudePath = workingDirectory ? getClaudeSkillPath(workingDirectory, skillName) : null;
-  const claudeExists = claudePath ? fs.existsSync(claudePath) : false;
-  const claudeDir = claudeExists && workingDirectory ? getClaudeSkillDir(workingDirectory, skillName) : null;
-  
   const userPath = getUserSkillPath(skillName);
   const userExists = fs.existsSync(userPath);
   const userDir = userExists ? getUserSkillDir(skillName) : null;
@@ -3435,11 +3467,6 @@ export const getSkillSources = (
     mdScope = SKILL_SCOPE.PROJECT;
     mdSource = 'opencode';
     mdDir = projectDir;
-  } else if (claudeExists) {
-    mdPath = claudePath;
-    mdScope = SKILL_SCOPE.PROJECT;
-    mdSource = 'claude';
-    mdDir = claudeDir;
   } else if (userExists) {
     mdPath = userPath;
     mdScope = SKILL_SCOPE.USER;
@@ -3471,7 +3498,7 @@ export const getSkillSources = (
       supportingFiles
     },
     projectMd: { exists: projectExists, path: projectPath },
-    claudeMd: { exists: claudeExists, path: claudePath },
+    claudeMd: { exists: false, path: null },
     userMd: { exists: userExists, path: userPath }
   };
 };

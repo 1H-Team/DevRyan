@@ -1,5 +1,6 @@
 const CURSOR_ACP_ERROR_TITLE_PATTERN = /^cursor-acp\s+error\s*:/i
 const GENERATED_NEW_SESSION_TITLE_PATTERN = /^new session\s*-\s*\d{4}-\d{2}-\d{2}t\d{2}:\d{2}:\d{2}(?:\.\d+)?z$/i
+const PLAN_CONTROL_TITLE_PATTERN = /^<(?:!|--)[!-]*plan-+>$/i
 const DEFAULT_SESSION_TITLE = "Untitled Session"
 const MAX_DERIVED_TITLE_LENGTH = 80
 const ROUTE_CONTEXT_PATTERN = /^(?:in|on|for)\s+((?:\/|\.{1,2}\/)[^,\s]+)\s*,?\s*(.+)$/i
@@ -113,6 +114,13 @@ export const isGeneratedNewSessionTitle = (title?: string | null): boolean => {
   return GENERATED_NEW_SESSION_TITLE_PATTERN.test(title.trim())
 }
 
+export const isPlanControlSessionTitle = (title?: string | null): boolean => {
+  if (typeof title !== "string") {
+    return false
+  }
+  return PLAN_CONTROL_TITLE_PATTERN.test(title.replace(/\s+/g, ""))
+}
+
 export const deriveSessionTitleFromUserText = (
   text?: string | null,
   fallback = DEFAULT_SESSION_TITLE,
@@ -156,7 +164,12 @@ export const resolveDisplaySessionTitle = ({
   const normalizedTitle = typeof title === "string"
     ? collapseAdjacentDuplicateTitleWords(normalizeTitleWhitespace(title))
     : ""
-  if (!normalizedTitle || isCursorAcpErrorTitle(normalizedTitle) || isGeneratedNewSessionTitle(normalizedTitle)) {
+  if (
+    !normalizedTitle
+    || isCursorAcpErrorTitle(normalizedTitle)
+    || isGeneratedNewSessionTitle(normalizedTitle)
+    || isPlanControlSessionTitle(normalizedTitle)
+  ) {
     return deriveSessionTitleFromUserText(latestUserText, fallback)
   }
   const smartTitle = deriveSmartTitleFromUserText(normalizedTitle)

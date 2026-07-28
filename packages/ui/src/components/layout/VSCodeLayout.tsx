@@ -10,6 +10,7 @@ import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { ContextUsageDisplay } from '@/components/ui/ContextUsageDisplay';
 import { McpDropdown } from '@/components/mcp/McpDropdown';
 import { cn } from '@/lib/utils';
+import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -148,7 +149,10 @@ export const VSCodeLayout: React.FC = () => {
     if (!currentSessionId) {
       return null;
     }
-    return sessions.find((session) => session.id === currentSessionId)?.title || t('vscodeLayout.title.sessionFallback');
+    return resolveDisplaySessionTitle({
+      title: sessions.find((session) => session.id === currentSessionId)?.title,
+      fallback: t('vscodeLayout.title.sessionFallback'),
+    });
   }, [currentSessionId, sessions, t]);
   const newSessionDraftOpen = useSessionUIStore((state) => Boolean(state.currentDraftId && state.newSessionDraft?.open));
   const isSyncingMessages = useViewportStore((state) => state.isSyncing);

@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { useI18n } from '@/lib/i18n';
+import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
 
 interface DebugPanelProps {
   onClose?: () => void;
@@ -198,7 +199,10 @@ export const DebugPanel: React.FC<DebugPanelProps> = ({ onClose }) => {
       const memoryState = sessionMemoryState.get(session.id);
       return {
         id: session.id,
-        title: session.title || t('memoryDebugPanel.common.untitled'),
+        title: resolveDisplaySessionTitle({
+          title: session.title,
+          fallback: t('memoryDebugPanel.common.untitled'),
+        }),
         messageCount,
         isStreaming: memoryState?.isStreaming || false,
         isZombie: memoryState?.isZombie || false,

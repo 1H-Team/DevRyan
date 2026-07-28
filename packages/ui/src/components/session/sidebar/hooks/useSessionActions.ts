@@ -36,6 +36,7 @@ type Args = {
   unarchiveSession: (id: string) => Promise<boolean>;
   unarchiveSessions: (ids: string[]) => Promise<{ unarchivedIds: string[]; failedIds: string[] }>;
   onArchiveRequested?: (ids: string[]) => void;
+  onArchiveSucceeded?: (ids: string[]) => void;
   onArchiveFailed?: (ids: string[]) => void;
   childrenMap: Map<string, Session[]>;
   showDeletionDialog: boolean;
@@ -184,6 +185,9 @@ export const useSessionActions = (args: Args) => {
           ? await args.deleteSession(session.id)
           : await args.archiveSession(session.id);
         if (success) {
+          if (!shouldHardDelete) {
+            args.onArchiveSucceeded?.([session.id]);
+          }
           return;
         } else {
           if (!shouldHardDelete) {
@@ -208,7 +212,10 @@ export const useSessionActions = (args: Args) => {
       }
 
       args.onArchiveRequested?.(ids);
-      const { failedIds } = await args.archiveSessions(ids);
+      const { archivedIds, failedIds } = await args.archiveSessions(ids);
+      if (archivedIds.length > 0) {
+        args.onArchiveSucceeded?.(archivedIds);
+      }
       if (failedIds.length > 0) {
         args.onArchiveFailed?.(failedIds);
         toast.error(failedIds.length === 1

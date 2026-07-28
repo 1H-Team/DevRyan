@@ -121,11 +121,13 @@ describe('SessionNodeItem status selectors', () => {
     expect(source).not.toContain('Object.entries(state.index.session.unseenHasError)');
   });
 
-  test('subscribes to one child-session manual recovery leaf', () => {
+  test('subscribes to parent-owned primary and managed recovery leaves', () => {
     const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'SessionNodeItem.tsx'), 'utf8');
 
-    expect(source).toContain('managedOrchestrationSelectors.manualRecoveryTaskIdForChildSession(session.id)');
-    expect(source).toContain('managedOrchestrationSelectors.manualRecoveryFailureKindForChildSession(session.id)');
+    expect(source).toContain('state.recoveriesBySessionId[session.id]');
+    expect(source).toContain('managedOrchestrationSelectors.hasManualRecoveryForRoot(');
+    expect(source).toContain('managedOrchestrationSelectors.manualRecoveryTaskIdForChildSession(');
+    expect(source).not.toContain('managedOrchestrationSelectors.manualRecoveryFailureKindForChildSession(session.id)');
     expect(source).not.toContain('state.tasksById');
   });
 });

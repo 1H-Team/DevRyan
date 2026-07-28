@@ -15,7 +15,7 @@ Transport-neutral DevRyan-managed task contracts and scheduler policy shared by 
 
 - `index.js` / `index.d.ts`: runtime exports and JSON-compatible TypeScript contract.
 - `contract.js`: task validation, bounds, status helpers, safe task projection, and identity-only compaction removal projection.
-- `open-code-executor.js`: injected canonical child create/prompt/observe/abort/delete/reconcile state machine, including lease-ownership checkpoints, stale fresh-child cleanup, live provider-retry observation, transient polling and reconciliation recovery, retained interruption output, and same-child manual model continuation.
+- `open-code-executor.js`: injected canonical child create/prompt/observe/abort/delete/reconcile state machine, including lease-ownership checkpoints, stale fresh-child cleanup, live provider-retry observation, transient polling and reconciliation recovery, retained interruption output, bounded same-child recovery when a provider ends without a final answer, and same-child manual model continuation.
 - `provider-prompt-tools.js`: shared minimal provider-specific tool-surface overrides used by normal UI prompts and managed child prompts.
 - `provider-retry-policy.js`: narrow shared classifier that distinguishes definite usage/quota exhaustion from transient provider rate limits.
 - `transitions.js`: immutable terminal records and the explicit lifecycle graph.

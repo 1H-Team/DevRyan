@@ -400,6 +400,14 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
         );
       case 'barrier_status':
         return await scheduler.inspectDispatchBarrier(requireString(params, 'rootSessionId'));
+      case 'list_provider_recovery_continuations': {
+        const sessionId = optionalString(params, 'sessionId');
+        return {
+          continuations: scheduler.listReadyProviderRecoveryContinuations({
+            ...(sessionId ? { sessionId } : {}),
+          }),
+        };
+      }
       case 'handoff': {
         const scope = normalizeHandoffParams(params);
         const result = scope.confirm

@@ -34,6 +34,7 @@ describe('VS Code managed OpenCode launch', () => {
       slimPreset: null,
     })).toEqual({
       OPENCODE_CONFIG_DIR: '/tmp/runtime-overlay',
+      OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: '1',
       OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: 'true',
     });
   });
@@ -49,16 +50,27 @@ describe('VS Code managed OpenCode launch', () => {
     expect(buildManagedOpenCodeProcessEnv({
       PATH: '/bin',
       OPENCODE_DISABLE_DEFAULT_PLUGINS: 'true',
+      OPENCODE_DISABLE_EXTERNAL_SKILLS: 'true',
+      OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: 'false',
       DEVRYAN_ORCHESTRATION_URL: 'http://127.0.0.1:9999/rpc',
       DEVRYAN_ORCHESTRATION_TOKEN: 'untrusted-token',
     }, overrides)).toMatchObject({
       PATH: '/bin',
+      OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: '1',
       DEVRYAN_ORCHESTRATION_URL: 'http://127.0.0.1:43210/rpc',
       DEVRYAN_ORCHESTRATION_TOKEN: 'private-token',
     });
     expect(buildManagedOpenCodeProcessEnv({
       OPENCODE_DISABLE_DEFAULT_PLUGINS: 'true',
     }, {}).OPENCODE_DISABLE_DEFAULT_PLUGINS).toBeUndefined();
+    const skillEnvironment = buildManagedOpenCodeProcessEnv({
+      OPENCODE_DISABLE_EXTERNAL_SKILLS: 'true',
+      OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: 'false',
+    }, {
+      OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: '1',
+    });
+    expect(skillEnvironment.OPENCODE_DISABLE_EXTERNAL_SKILLS).toBeUndefined();
+    expect(skillEnvironment.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS).toBe('1');
 
     const withoutBridge = buildManagedOpenCodeProcessEnv({
       DEVRYAN_ORCHESTRATION_URL: 'http://127.0.0.1:9999/rpc',

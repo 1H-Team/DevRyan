@@ -21,6 +21,7 @@ describe('ModelRecoveryCard', () => {
           selection={{ providerId: 'opencode-go', modelId: 'deepseek-v4-flash', variant: null }}
           pending={false}
           actionError={null}
+          failureMessage="You've hit your limit · resets 1:30am (Africa/Casablanca). This session was stopped."
           onSelectionChange={() => undefined}
           onRetry={() => undefined}
         />
@@ -29,7 +30,8 @@ describe('ModelRecoveryCard', () => {
 
     expect(html).toContain('Choose a model to continue:');
     expect(html).toContain('Model Recovery');
-    expect(html).not.toContain('OpenCode Go usage limit reached');
+    expect(html).toContain('You&#x27;ve hit your limit · resets 1:30am (Africa/Casablanca). This session was stopped.');
+    expect(html).toContain('role="alert"');
     expect(html).toContain('OpenCode Go / DeepSeek V4 Flash');
     expect(html).toContain('Try Again');
     expect(html).toContain('normal-case');

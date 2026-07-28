@@ -43,6 +43,10 @@ import { getSafeStorage } from "@/stores/utils/safeStorage"
 import { useSessionWorktreeStore } from "./session-worktree-store"
 import { useSessionPlanFileStore } from "@/stores/useSessionPlanFileStore"
 import { useProjectsStore } from "@/stores/useProjectsStore"
+import {
+  getSessionChangeAttributionKey,
+  useSessionChangeAttributionStore,
+} from "@/stores/useSessionChangeAttributionStore"
 import { buildPlanImplementationRequestMarker } from "@/lib/messages/actionablePlan"
 import {
   resetGlobalSessionLifecycleOverlayForTest,
@@ -245,6 +249,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     })
     useSessionWorktreeStore.setState({ attachments: new Map() })
     useSessionPlanFileStore.setState({ recordsBySession: {} })
+    useSessionChangeAttributionStore.setState({ entries: new Map() })
     setActiveSession("", "")
     setExternallyViewedSession(DIRECTORY, SESSION_ID, false)
     useNotificationStore.setState({
@@ -263,6 +268,44 @@ describe("sync plan lifecycle on message.part.delta", () => {
       currentAgentContext: new Map(),
       sessionContextUsage: new Map(),
       sessionAgentEditModes: new Map(),
+    })
+  })
+
+  test("projects completed file tools into the session attribution store", () => {
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    store.setState({
+      ...INITIAL_STATE,
+      session: [{ id: SESSION_ID, title: "Edits", time: { created: 1, updated: 2 } } as Session],
+      message: {
+        [SESSION_ID]: [assistantMessage()],
+      },
+    })
+    const completedEdit = {
+      id: "prt_edit",
+      sessionID: SESSION_ID,
+      messageID: ASSISTANT_MESSAGE_ID,
+      callID: "call_edit",
+      type: "tool",
+      tool: "edit",
+      state: {
+        status: "completed",
+        input: { path: `${DIRECTORY}/src/app.ts` },
+      },
+    } as unknown as Part
+
+    applySyncEventForTest(
+      DIRECTORY,
+      partUpdatedEvent(completedEdit),
+      childStores,
+      routingIndexFor(),
+    )
+
+    expect(useSessionChangeAttributionStore.getState().entries.get(
+      getSessionChangeAttributionKey(DIRECTORY, SESSION_ID),
+    )).toEqual({
+      paths: ["src/app.ts"],
+      hasUnattributedMutations: false,
     })
   })
 

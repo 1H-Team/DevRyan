@@ -57,7 +57,6 @@ interface ProjectActivityInput {
     assistantMessages: ChatMessageEntry[];
     summarySourceMessageId?: string;
     summarySourcePartId?: string;
-    showTextJustificationActivity: boolean;
 }
 
 interface ProjectActivityResult {
@@ -129,8 +128,7 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
                     kind = 'reasoning';
                 }
             } else if (
-                input.showTextJustificationActivity
-                && part.type === 'text'
+                part.type === 'text'
                 && text
                 && !isConfirmedSummaryText
                 && (messageHasTool || (typeof finish === 'string' && finish !== 'stop'))

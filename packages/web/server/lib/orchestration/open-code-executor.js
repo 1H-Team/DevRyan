@@ -3,7 +3,15 @@ import {
 } from '@openchamber/orchestration-runtime';
 import { CURSOR_PROVIDER_ID } from '@openchamber/cursor-sdk-runtime';
 
+import { stripMessageDiffSummary } from '../opencode/diff-summary.js';
+
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+// Session transcripts are unbounded: OpenCode attaches a full git diff snapshot
+// to user messages, which for a repo with a large untracked tree can reach tens
+// of megabytes. Reading one is not a fast control-plane call and must not share
+// the 10s budget used by status/prompt/abort — a transcript that cannot be read
+// inside the budget used to stall the managed task until its hard deadline.
+const DEFAULT_MESSAGES_REQUEST_TIMEOUT_MS = 120_000;
 const MAX_ERROR_BODY_LENGTH = 2_000;
 
 const appendDirectory = (pathname, directory, extra = {}) => {
@@ -40,6 +48,8 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
   }
   const fetchImpl = options.fetchImpl ?? fetch;
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+  const messagesRequestTimeoutMs = options.messagesRequestTimeoutMs
+    ?? DEFAULT_MESSAGES_REQUEST_TIMEOUT_MS;
   const cursorSdkRuntime = options.cursorSdkRuntime ?? null;
 
   const requestJson = async (pathname, requestOptions = {}) => {
@@ -53,7 +63,8 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
       ...(requestOptions.body === undefined
         ? {}
         : { body: JSON.stringify(requestOptions.body) }),
-      signal: requestOptions.signal ?? AbortSignal.timeout(requestTimeoutMs),
+      signal: requestOptions.signal
+        ?? AbortSignal.timeout(requestOptions.timeoutMs ?? requestTimeoutMs),
     });
     if (requestOptions.allowNotFound && response.status === 404) return null;
     if (!response.ok) throw await createHttpError(response, requestOptions.label ?? 'OpenCode request');
@@ -71,6 +82,7 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
   };
 
   const buildPromptBody = (input) => ({
+    ...(input.messageId ? { messageID: input.messageId } : {}),
     agent: input.agent,
     model: {
       providerID: input.providerId,
@@ -158,9 +170,12 @@ export const createWebManagedOpenCodeExecutor = (options = {}) => {
         appendDirectory(`/session/${encodeURIComponent(input.sessionId)}/message`, input.directory, {
           limit: '100',
         }),
-        { label: 'session.messages' },
+        { label: 'session.messages', timeoutMs: messagesRequestTimeoutMs },
       );
-      return Array.isArray(messages) ? messages : [];
+      // Drop the diff snapshot immediately. Managed observation only reads
+      // role/id/error/finish/time and parts, while `summary.diffs` carries the
+      // bulk of the payload and would otherwise be retained for the whole poll.
+      return Array.isArray(messages) ? messages.map(stripMessageDiffSummary) : [];
     },
     async abortSession(input) {
       if (input.providerId === CURSOR_PROVIDER_ID) {

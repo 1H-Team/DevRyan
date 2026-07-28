@@ -38,6 +38,9 @@ mock.module("@/lib/i18n", () => ({
 const {
   default: ReasoningPart,
 } = await import("./ReasoningPart")
+const {
+  default: JustificationBlock,
+} = await import("./JustificationBlock")
 const { formatReasoningText } = await import("./reasoningSummaryDisplay")
 
 const createReasoningPart = ({
@@ -69,6 +72,28 @@ const renderReasoning = (
   } = {},
 ): string => renderToStaticMarkup(
   <ReasoningPart part={part} messageId="message-1" {...options} />,
+)
+
+const createJustificationPart = (text: string): Part => ({
+  id: "justification-1",
+  messageID: "message-1",
+  sessionID: "session-1",
+  type: "text",
+  text,
+} as Part)
+
+const renderJustification = (
+  text: string,
+  options: {
+    isMessageCompleted?: boolean;
+    isMobile?: boolean;
+  } = {},
+): string => renderToStaticMarkup(
+  <JustificationBlock
+    part={createJustificationPart(text)}
+    messageId="message-1"
+    {...options}
+  />,
 )
 
 const expectNoDisclosurePresentation = (html: string): void => {
@@ -283,5 +308,56 @@ describe("ReasoningPart", () => {
     expect(partial).toBe("**Evaluating frontend design necessity.**")
     expect(completed.match(/Evaluating frontend design necessity/g)).toHaveLength(1)
     expect(completed.startsWith(partial)).toBe(true)
+  })
+})
+
+describe("JustificationBlock", () => {
+  test("separates an attached leading bold title from its body at render time", () => {
+    const html = renderJustification("**Planning the focused change**The helper already has nearby tests.")
+
+    expect(html).toContain("**Planning the focused change**\n\nThe helper already has nearby tests.")
+  })
+
+  test("preserves ordinary provider-authored Markdown and block spacing", () => {
+    const markdown = [
+      "First paragraph.",
+      "> Provider-authored quote.\n> Second quoted line.",
+      "- Read `src/math.ts`",
+      "[Open the test](https://example.com/test)",
+      "```ts\nmultiply(2, 3)\n```",
+    ].join("\n\n")
+
+    const html = renderJustification(markdown)
+
+    expect(html.replaceAll("&gt;", ">")).toContain(
+      `<div data-testid="markdown-renderer" data-streaming="false" data-variant="reasoning">${markdown}</div>`,
+    )
+  })
+
+  test("does not split ordinary leading bold prose that already has whitespace", () => {
+    const markdown = "**Important** context remains on the same line."
+
+    expect(renderJustification(markdown)).toContain(markdown)
+  })
+
+  test("does not split ordinary leading bold labels followed by punctuation", () => {
+    const markdown = "**Important**: context remains on the same line."
+
+    expect(renderJustification(markdown)).toContain(markdown)
+  })
+
+  test("marks live incomplete narration as streaming and completed narration as static", () => {
+    expect(renderJustification("Inspecting the current implementation.", {
+      isMessageCompleted: false,
+    })).toContain('data-streaming="true"')
+    expect(renderJustification("Inspecting the current implementation.", {
+      isMessageCompleted: true,
+    })).toContain('data-streaming="false"')
+  })
+
+  test("uses compact mobile spacing", () => {
+    expect(renderJustification("Inspecting the current implementation.", {
+      isMobile: true,
+    })).toContain('class="relative pr-2 py-1"')
   })
 })

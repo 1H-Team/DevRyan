@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { buildArchivedSessionTree } from './hooks/useSessionGrouping';
-import { addMissingCollapsedGroupKeys, collectArchivedActionSessions, compareArchivedSessionsByParentAssistantActivity, compareSessionsByPinnedAndTime, discardPendingArchiveRevealSessionIds, getArchivedGroupKeys, reconcileArchivedGroupCollapse, resolveArchivedFolderName, resolveSessionDiffStats, resolveSessionRoutingDirectory, selectVisibleChatDrafts } from './utils';
+import { addMissingCollapsedGroupKeys, collectArchivedActionSessions, compareArchivedSessionsByParentAssistantActivity, compareSessionsByPinnedAndTime, discardPendingArchiveRevealSessionIds, getArchivedGroupKeys, reconcileArchivedGroupCollapse, removeExpandedSessionIds, resolveArchivedFolderName, resolveSessionDiffStats, resolveSessionRoutingDirectory, selectVisibleChatDrafts } from './utils';
 import type { SessionNode } from './types';
 
 const session = (id: string, created: number, updated = created, parentID?: string): Session => ({
@@ -47,6 +47,23 @@ describe('resolveSessionRoutingDirectory', () => {
     expect(resolveSessionRoutingDirectory(null, '/private/tmp/test-project/', '/group')).toBe('/private/tmp/test-project');
     expect(resolveSessionRoutingDirectory(null, null, '/group/')).toBe('/group');
     expect(resolveSessionRoutingDirectory(null, null, null)).toBeNull();
+  });
+});
+
+describe('removeExpandedSessionIds', () => {
+  test('removes only successfully archived session trees', () => {
+    const expanded = new Set(['parent', 'failed-parent', 'unrelated']);
+
+    expect(Array.from(removeExpandedSessionIds(expanded, ['parent', 'child']))).toEqual([
+      'failed-parent',
+      'unrelated',
+    ]);
+  });
+
+  test('preserves the original set when no expanded session was archived', () => {
+    const expanded = new Set(['failed-parent']);
+
+    expect(removeExpandedSessionIds(expanded, ['other'])).toBe(expanded);
   });
 });
 

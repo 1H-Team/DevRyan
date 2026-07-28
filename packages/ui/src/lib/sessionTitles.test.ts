@@ -4,6 +4,7 @@ import {
   deriveSessionTitleFromUserText,
   isCursorAcpErrorTitle,
   isGeneratedNewSessionTitle,
+  isPlanControlSessionTitle,
   resolveDisplaySessionTitle,
 } from "./sessionTitles"
 
@@ -48,6 +49,14 @@ describe("session title helpers", () => {
     expect(isGeneratedNewSessionTitle("regular title")).toBe(false)
   })
 
+  test("detects standalone plan control titles without matching ordinary plan titles", () => {
+    expect(isPlanControlSessionTitle("<!--plan-->")).toBe(true)
+    expect(isPlanControlSessionTitle("<-----plan------>")).toBe(true)
+    expect(isPlanControlSessionTitle("<!-- plan -->")).toBe(true)
+    expect(isPlanControlSessionTitle("Review plan rendering")).toBe(false)
+    expect(isPlanControlSessionTitle("<plan>")).toBe(false)
+  })
+
   test("hides raw Cursor error titles behind a user-prompt fallback", () => {
     expect(resolveDisplaySessionTitle({
       title: "cursor-acp error: b: Provider Error",
@@ -67,6 +76,17 @@ describe("session title helpers", () => {
       latestUserText: "remove the export pdf button",
       fallback: "Untitled Session",
     })).toBe("Remove export PDF button")
+  })
+
+  test("hides plan control titles behind the requested fallback", () => {
+    expect(resolveDisplaySessionTitle({
+      title: "<!--plan-->",
+      fallback: "Untitled Session",
+    })).toBe("Untitled Session")
+    expect(resolveDisplaySessionTitle({
+      title: "<-----plan------>",
+      fallback: "New session",
+    })).toBe("New session")
   })
 
   test("renders old raw prompt titles using the smarter title form", () => {

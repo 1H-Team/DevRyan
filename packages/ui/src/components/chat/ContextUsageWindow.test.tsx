@@ -82,4 +82,32 @@ describe("ContextUsageWindow", () => {
       expect(markup).toContain(`${(session.totalTokens / 1000).toFixed(1)}K / 10.0K`)
     }
   })
+
+  test("labels provider token categories without implying cached input is free context", () => {
+    const markup = renderToStaticMarkup(
+      <I18nProvider>
+        <ContextUsageWindow
+          usage={{
+            ...usage,
+            sourceAccuracy: "unavailable",
+            sources: [],
+            tokenBreakdown: {
+              input: 100,
+              output: 20,
+              reasoning: 10,
+              cacheRead: 900,
+              cacheWrite: 220,
+              total: 1250,
+            },
+          }}
+          onClose={() => {}}
+        />
+      </I18nProvider>,
+    )
+
+    expect(markup).toContain("Uncached input")
+    expect(markup).toContain("Cached input read")
+    expect(markup).toContain("Cached input created")
+    expect(markup).toContain("cached tokens still occupy the model context window")
+  })
 })

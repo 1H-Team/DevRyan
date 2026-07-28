@@ -604,6 +604,19 @@ const TurnBlock = React.memo(({
             .filter((segment): segment is NonNullable<typeof segment> => segment !== null);
     }, [chatRenderMode, visibleActivityMessageIdSet, turn.activitySegments, turn.assistantMessages.length]);
 
+    const activityPartsByMessageId = React.useMemo(() => {
+        const byMessageId = new Map<string, typeof visibleActivityParts>();
+        visibleActivityParts.forEach((activity) => {
+            const existing = byMessageId.get(activity.messageId);
+            if (existing) {
+                existing.push(activity);
+                return;
+            }
+            byMessageId.set(activity.messageId, [activity]);
+        });
+        return byMessageId;
+    }, [visibleActivityParts]);
+
     const recordedTurnPlanMode = useSessionUIStore(
         React.useCallback((state) => (
             state.isUserMessagePlanMode(turn.userMessageId)
@@ -712,11 +725,11 @@ const TurnBlock = React.memo(({
                     hasReasoning: turn.hasReasoning,
                     isPlanModeSource: turnGroupingContextBase.isPlanModeSource,
                     lastTodoToolPartId: turnGroupingContextBase.lastTodoToolPartId,
+                    activityParts: activityPartsByMessageId.get(message.info.id),
                     ...(shouldAttachFullTurnContext ? {
                         summaryBody: turnGroupingContextBase.summaryBody,
                         summarySourceMessageId: turnGroupingContextBase.summarySourceMessageId,
                         summarySourcePartId: turnGroupingContextBase.summarySourcePartId,
-                        activityParts: turnGroupingContextBase.activityParts,
                         activityGroupSegments: turnGroupingContextBase.activityGroupSegments,
                         headerMessageId: turnGroupingContextBase.headerMessageId,
                         diffStats: turnGroupingContextBase.diffStats,
@@ -767,6 +780,7 @@ const TurnBlock = React.memo(({
             turnIsInActiveStream,
             streamingAssistantMessageId,
             activeStreamingPhase,
+            activityPartsByMessageId,
             visibleAssistantMessages,
             visibleAssistantIds,
             activityOwnerMessageId,
@@ -1250,7 +1264,6 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     const { projection, staticTurns, streamingTurn } = useTurnRecords(displayMessages, {
         recordedPlanModeMessageIds,
         sessionKey,
-        showTextJustificationActivity: chatRenderMode === 'sorted',
     });
     const staticRenderEntries = React.useMemo<RenderEntry[]>(() => streamPerfMeasure('ui.message_list.render_entries_ms', () => {
         const turnEntries = staticTurns.map((turn) => ({

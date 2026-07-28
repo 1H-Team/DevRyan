@@ -126,6 +126,7 @@ export const createVsCodeManagedOpenCodeExecutor = (options: {
     },
     async promptSession(input) {
       const body = {
+        ...(input.messageId ? { messageID: input.messageId } : {}),
         agent: input.agent,
         model: { providerID: input.providerId, modelID: input.modelId },
         ...(input.variant ? { variant: input.variant } : {}),

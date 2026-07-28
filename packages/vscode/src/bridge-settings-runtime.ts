@@ -56,15 +56,12 @@ const inferSkillScopeAndSourceFromLocation = (location: string, workingDirectory
   const resolvedPath = path.resolve(location);
   const source: SkillSource = resolvedPath.includes(`${path.sep}.agents${path.sep}skills${path.sep}`)
     ? 'agents'
-    : resolvedPath.includes(`${path.sep}.claude${path.sep}skills${path.sep}`)
-      ? 'claude'
-      : 'opencode';
+    : 'opencode';
 
   const projectAncestors = getProjectAncestors(workingDirectory);
   const isProjectScoped = projectAncestors.some((ancestor) => {
     const candidates = [
       path.join(ancestor, '.opencode'),
-      path.join(ancestor, '.claude', 'skills'),
       path.join(ancestor, '.agents', 'skills'),
     ];
     return candidates.some((candidate) => isPathInside(resolvedPath, candidate));
@@ -78,7 +75,6 @@ const inferSkillScopeAndSourceFromLocation = (location: string, workingDirectory
   const userRoots = [
     path.join(home, '.config', 'opencode'),
     path.join(home, '.opencode'),
-    path.join(home, '.claude', 'skills'),
     path.join(home, '.agents', 'skills'),
     process.env.OPENCODE_CONFIG_DIR ? path.resolve(process.env.OPENCODE_CONFIG_DIR) : null,
   ].filter((value): value is string => Boolean(value));
@@ -133,6 +129,9 @@ export const fetchOpenCodeSkillsFromApi = async (
           return null;
         }
         const inferred = inferSkillScopeAndSourceFromLocation(location, workingDirectory);
+        if (location.includes(`${path.sep}.claude${path.sep}skills${path.sep}`)) {
+          return null;
+        }
         return {
           name,
           path: location,

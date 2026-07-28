@@ -6,6 +6,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import yaml from 'yaml';
 
+import { resolveProjectPlansDirectory } from '../projects/project-id.js';
 import { deleteAgentModelOverride, writeAgentModelOverride } from './agents.js';
 import * as authModule from './auth.js';
 import { GITHUB_COPILOT_AUTO_MODEL } from './github-copilot-models.js';
@@ -318,7 +319,10 @@ describe('syncRuntimeAgentOverlays', () => {
     });
     expect(overlay.frontmatter.permission.external_directory).toEqual({
       '*': 'ask',
-      ...runtimeDirectoryAllows(projectDirectory),
+      ...runtimeDirectoryAllows(
+        projectDirectory,
+        resolveProjectPlansDirectory(projectDirectory),
+      ),
       '/tmp/skills/frontend-design/*': 'allow',
       '/tmp/project/.opencode/skills/project-audit/*': 'allow',
     });
@@ -362,7 +366,11 @@ describe('syncRuntimeAgentOverlays', () => {
     expect(overlay.frontmatter.permission.read).toEqual({ '*.env': 'ask' });
     expect(overlay.frontmatter.permission.external_directory).toEqual({
       '*': 'ask',
-      ...runtimeDirectoryAllows(worktreeRoot, appDirectory),
+      ...runtimeDirectoryAllows(
+        worktreeRoot,
+        appDirectory,
+        resolveProjectPlansDirectory(appDirectory),
+      ),
       '/tmp/skills/codemap/*': 'allow',
     });
   });
@@ -610,7 +618,10 @@ describe('syncRuntimeAgentOverlays', () => {
     expect(sourceContent).not.toContain(`${projectDirectory}/*`);
     expect(overlay.frontmatter.permission.external_directory).toMatchObject({
       '*': 'ask',
-      ...runtimeDirectoryAllows(projectDirectory),
+      ...runtimeDirectoryAllows(
+        projectDirectory,
+        resolveProjectPlansDirectory(projectDirectory),
+      ),
     });
   });
 
@@ -656,7 +667,10 @@ describe('syncRuntimeAgentOverlays', () => {
     expect(result.updated).toEqual(['explorer']);
     expect(overlay.frontmatter.permission.external_directory).toEqual({
       '*': 'ask',
-      ...runtimeDirectoryAllows(secondDirectory),
+      ...runtimeDirectoryAllows(
+        secondDirectory,
+        resolveProjectPlansDirectory(secondDirectory),
+      ),
     });
   });
 
@@ -705,7 +719,10 @@ describe('syncRuntimeAgentOverlays', () => {
     });
     expect(overlay.frontmatter.permission.external_directory).toEqual({
       '*': 'ask',
-      ...runtimeDirectoryAllows(projectDirectory),
+      ...runtimeDirectoryAllows(
+        projectDirectory,
+        resolveProjectPlansDirectory(projectDirectory),
+      ),
       '/tmp/skills/frontend-design/*': 'allow',
     });
     expect(overlay.prompt).toBe('Project prompt');
@@ -741,6 +758,47 @@ describe('syncRuntimeAgentOverlays', () => {
 
     await expect(fs.stat(path.join(result.targetConfigDirectory, 'agents', 'builder.md'))).rejects.toMatchObject({ code: 'ENOENT' });
     expect(result.written).toEqual([]);
+  });
+
+  it('writes runtime directory permissions for project agents without skill or model overrides', async () => {
+    await writeAgent(path.join(projectDirectory, '.opencode', 'agents'), 'reviewer', [
+      'mode: subagent',
+      'permission:',
+      '  "*": deny',
+      '  external_directory:',
+      '    "*": ask',
+      '  read:',
+      '    "*": allow',
+      '    "*.env": ask',
+    ], 'Project reviewer prompt');
+
+    const plansDirectory = resolveProjectPlansDirectory(projectDirectory);
+    expect(fsSync.existsSync(plansDirectory)).toBe(false);
+
+    const result = await syncRuntimeAgentOverlays({
+      workingDirectory: projectDirectory,
+      packagedAgentDirectory,
+      overlayRoot,
+      manifestPath,
+      agentOverrides: {},
+      skillPolicy: {
+        skillNames: [],
+        skillDirectories: [],
+        skillDirectoriesByName: {},
+      },
+    });
+
+    const overlay = await readOverlayAgent(result.targetConfigDirectory, 'reviewer');
+    expect(result.written).toEqual(['reviewer']);
+    expect(overlay.frontmatter.permission.external_directory).toEqual({
+      '*': 'ask',
+      ...runtimeDirectoryAllows(projectDirectory, plansDirectory),
+    });
+    expect(overlay.frontmatter.permission.read).toEqual({
+      '*': 'allow',
+      '*.env': 'ask',
+    });
+    expect(overlay.frontmatter.permission['*']).toBe('deny');
   });
 
   it('removes stale overlay files after an override reset', async () => {
@@ -1156,6 +1214,7 @@ describe('syncRuntimeAgentOverlays', () => {
           '@rama_nigg/open-cursor@latest',
           'cursor-acp',
           'opencode-with-claude',
+          'context-mode@1.0.169',
           'oh-my-opencode-slim',
           'superpowers@git+https://github.com/obra/superpowers.git',
           'context7@latest',
@@ -1174,6 +1233,7 @@ describe('syncRuntimeAgentOverlays', () => {
           '@rama_nigg/open-cursor@latest',
           'cursor-acp',
           'opencode-with-claude',
+          'context-mode@1.0.169',
           'oh-my-opencode-slim',
           './plugins/council-session.js',
         ],
@@ -1222,6 +1282,39 @@ describe('syncRuntimeAgentOverlays', () => {
       'cursor-acp',
       DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC,
     ]);
+  });
+
+  it('does not re-register a local plugin declared outside the merged config snapshot', async () => {
+    const wrapperSource = 'export default async function wrapper() { return {}; }\n';
+    await fs.mkdir(packagedPluginDirectory, { recursive: true });
+    await fs.writeFile(
+      path.join(packagedPluginDirectory, DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE),
+      wrapperSource,
+      'utf8',
+    );
+
+    const result = await syncRuntimeAgentOverlays({
+      workingDirectory: projectDirectory,
+      packagedAgentDirectory,
+      packagedPluginDirectory,
+      overlayRoot,
+      manifestPath,
+      readConfig: () => ({ plugin: ['context-mode@1.0.169'] }),
+      readSourcePluginConfigs: () => [{
+        plugin: [DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC],
+      }],
+      readOpenCodeConfig: () => ({}),
+      listMcpConfigs: () => [],
+    });
+    const runtimeConfig = JSON.parse(
+      await fs.readFile(path.join(result.targetConfigDirectory, 'opencode.json'), 'utf8'),
+    );
+
+    expect(runtimeConfig.plugin).toEqual(['context-mode@1.0.169']);
+    await expect(fs.readFile(
+      path.join(result.targetPluginDirectory, DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE),
+      'utf8',
+    )).resolves.toBe(wrapperSource);
   });
 
   it('writes GitHub Copilot provider models into the runtime overlay when auth exists', async () => {

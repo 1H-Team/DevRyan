@@ -5,6 +5,7 @@
     "@rama_nigg/open-cursor@latest",
     "cursor-acp",
     "opencode-with-claude@1.6.18",
+    "context-mode@1.0.169",
     "superpowers@git+https://github.com/obra/superpowers.git",
     "./plugins/devryan-oh-my-opencode-slim.mjs"
   ],

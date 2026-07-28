@@ -24,3 +24,14 @@ describe('session archive toast behavior', () => {
     expect(source).not.toContain('sessions.sidebar.bulkActions.archivedPlural');
   });
 });
+
+describe('session archive expansion lifecycle', () => {
+  test('collapses only confirmed archive successes', () => {
+    const source = readFileSync(join(testDir, 'useSessionActions.ts'), 'utf8');
+
+    expect(source).toContain('onArchiveSucceeded?: (ids: string[]) => void;');
+    expect(source).toContain('args.onArchiveSucceeded?.([session.id]);');
+    expect(source).toContain('const { archivedIds, failedIds } = await args.archiveSessions(ids);');
+    expect(source).toContain('args.onArchiveSucceeded?.(archivedIds);');
+  });
+});

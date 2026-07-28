@@ -4,6 +4,7 @@ import { RuntimeAPIProvider } from '@/contexts/RuntimeAPIProvider';
 import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from '@/components/ui/sonner';
+import { AgentHandoffGuardProvider } from '@/components/chat/AgentHandoffGuard';
 import { MiniChatLayout } from '@/components/mini-chat/MiniChatLayout';
 import { usePushVisibilityBeacon } from '@/hooks/usePushVisibilityBeacon';
 import { useWindowTitle } from '@/hooks/useWindowTitle';
@@ -264,7 +265,9 @@ const ElectronMiniChatContent: React.FC<{ config: MiniChatConfig }> = ({ config 
       <MiniChatBootstrap config={config} />
       <MiniChatPresencePublisher />
       <SyncRuntimeEffects embeddedBackgroundWorkEnabled={true} />
-      <MiniChatLayout mode={config.mode} autoOpenDraft={config.mode === 'draft'} unavailable={sessionUnavailable} />
+      <AgentHandoffGuardProvider>
+        <MiniChatLayout mode={config.mode} autoOpenDraft={config.mode === 'draft'} unavailable={sessionUnavailable} />
+      </AgentHandoffGuardProvider>
     </>
   );
 };

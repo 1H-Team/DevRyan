@@ -205,6 +205,10 @@ describe('managed orchestration contract', () => {
     expect(toManagedTaskEvent(terminal('out of usage')).properties.task.agentRetryAvailable).toBe(false);
     expect(toManagedTaskEvent(terminal('Usage limit reached')).properties.task.agentRetryAvailable).toBe(false);
     expect(toManagedTaskEvent(terminal("You've hit your session limit · resets 7:30pm")).properties.task.agentRetryAvailable).toBe(false);
+    expect(toManagedTaskEvent(terminal(
+      "Claude Code returned an error result: You've hit your limit · resets 1:30am (Africa/Casablanca) "
+      + 'Subprocess stderr: Permission deny rule "MultiEdit" matches no known tool',
+    )).properties.task.agentRetryAvailable).toBe(false);
     expect(toManagedTaskEvent(terminal('quota exceeded')).properties.task.agentRetryAvailable).toBe(false);
     expect(toManagedTaskEvent(terminal('insufficient quota')).properties.task.agentRetryAvailable).toBe(false);
     expect(toManagedTaskEvent(terminal('rate limited')).properties.task.agentRetryAvailable).toBe(false);

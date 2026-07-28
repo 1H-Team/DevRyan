@@ -615,6 +615,20 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     return resolved.directory || null;
   };
 
+  app.get('/api/session', async (req, res, next) => {
+    try {
+      const directory = await resolveRequestDirectory(req);
+      res.once('finish', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          void standardSessionTitleRuntime.scheduleMarkerBackfill?.({ directory });
+        }
+      });
+      return next();
+    } catch (error) {
+      return next(error);
+    }
+  });
+
   const mergeCursorProvider = async (payload) => {
     if (
       !cursorSdkRuntime

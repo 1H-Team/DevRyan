@@ -4,6 +4,7 @@ import type { Message } from '@opencode-ai/sdk/v2/client';
 import {
   decideProviderErrorRecovery,
   decideProviderRetryLoopRecovery,
+  isPrimaryProviderRecoverySession,
 } from './providerErrorRecoveryDecision';
 
 const user = { id: 'user-1', sessionID: 'ses_1', role: 'user', time: { created: 1 } } as Message;
@@ -55,6 +56,23 @@ describe('decideProviderErrorRecovery', () => {
 });
 
 describe('decideProviderRetryLoopRecovery', () => {
+  test('stops a definite provider usage limit on the first retry', () => {
+    expect(decideProviderRetryLoopRecovery({
+      type: 'retry',
+      attempt: 1,
+      message: "Claude Code returned an error result: You've hit your limit · resets 1:30am (Africa/Casablanca) Subprocess stderr: ignored",
+      next: 10,
+    })).toEqual({
+      reason: "Claude Code returned an error result: You've hit your limit · resets 1:30am (Africa/Casablanca) Subprocess stderr: ignored",
+    });
+    expect(decideProviderRetryLoopRecovery({
+      type: 'retry',
+      attempt: 1,
+      message: 'Rate limited',
+      next: 10,
+    })).toEqual({ reason: 'Rate limited' });
+  });
+
   test('stops a transient provider retry loop at the bounded attempt limit', () => {
     expect(decideProviderRetryLoopRecovery({
       type: 'retry',
@@ -70,7 +88,7 @@ describe('decideProviderRetryLoopRecovery', () => {
     })).toEqual({ reason: 'Stream idle timeout' });
   });
 
-  test('does not stop authentication or ordinary rate-limit retries', () => {
+  test('does not stop authentication or unrelated retries', () => {
     expect(decideProviderRetryLoopRecovery({
       type: 'retry',
       attempt: 3,
@@ -80,8 +98,17 @@ describe('decideProviderRetryLoopRecovery', () => {
     expect(decideProviderRetryLoopRecovery({
       type: 'retry',
       attempt: 3,
-      message: 'Rate limited',
+      message: 'Provider warming up',
       next: 10,
     })).toBeNull();
+  });
+});
+
+describe('isPrimaryProviderRecoverySession', () => {
+  test('accepts only an authoritative root session', () => {
+    expect(isPrimaryProviderRecoverySession({ parentID: null })).toBe(true);
+    expect(isPrimaryProviderRecoverySession({})).toBe(true);
+    expect(isPrimaryProviderRecoverySession({ parentID: 'ses_parent' })).toBe(false);
+    expect(isPrimaryProviderRecoverySession(undefined)).toBe(false);
   });
 });
