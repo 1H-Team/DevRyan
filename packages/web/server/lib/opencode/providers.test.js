@@ -4,7 +4,6 @@ import { join } from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
-  ANTHROPIC_OAUTH_PLUGIN_SPEC,
   ensureAnthropicOAuthProviderConfig,
   getProviderSources,
 } from './providers.js';
@@ -33,7 +32,8 @@ describe('provider config helpers', () => {
     expect(result.path).toBe(join(projectDir, '.opencode', 'opencode.json'));
 
     const config = JSON.parse(readFileSync(result.path, 'utf8'));
-    expect(config.plugin).toContain(ANTHROPIC_OAUTH_PLUGIN_SPEC);
+    expect(config.plugin).toHaveLength(1);
+    expect(config.plugin[0]).toMatch(/^file:.*\/node_modules\/opencode-with-claude\/dist\/index\.js$/);
     expect(config.provider.anthropic.options).toEqual({
       baseURL: 'http://127.0.0.1:3456',
       apiKey: 'dummy',
@@ -99,7 +99,9 @@ describe('provider config helpers', () => {
 
     const migrated = ensureAnthropicOAuthProviderConfig({ workingDirectory: projectDir });
     expect(migrated.changed).toBe(true);
-    expect(JSON.parse(readFileSync(configPath, 'utf8')).plugin).toEqual([ANTHROPIC_OAUTH_PLUGIN_SPEC]);
+    expect(JSON.parse(readFileSync(configPath, 'utf8')).plugin).toEqual([
+      expect.stringMatching(/^file:.*\/node_modules\/opencode-with-claude\/dist\/index\.js$/),
+    ]);
 
     const explicitlyPinned = JSON.parse(readFileSync(configPath, 'utf8'));
     explicitlyPinned.plugin = ['opencode-with-claude@1.6.17'];

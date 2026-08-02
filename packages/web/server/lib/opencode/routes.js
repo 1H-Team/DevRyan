@@ -15,6 +15,7 @@ import {
   mergeGitHubCopilotProvider,
 } from './provider-integrations.js';
 import { annotateOpenAIModelAvailability } from './openai-model-availability.js';
+import { stripMessageDiffContent } from './diff-summary.js';
 import { discoverGitHubCopilotModels } from './github-copilot-models.js';
 import { createCursorSessionTitleRuntime } from './cursor-session-title-runtime.js';
 import { createStandardSessionTitleRuntime } from './standard-session-title-runtime.js';
@@ -103,11 +104,33 @@ const searchPathForExecutable = (binaryName, pathValue) => {
   return null;
 };
 
+export const createOpenCodeUpdateCheckHandler = ({
+  readSettingsFromDiskMigrated,
+  getOpenCodeResolutionSnapshot,
+  checkForOpenCodeUpdates,
+}) => async (_req, res) => {
+  try {
+    const settings = await readSettingsFromDiskMigrated();
+    const resolution = await getOpenCodeResolutionSnapshot(settings);
+    const updateInfo = await checkForOpenCodeUpdates({
+      currentVersion: resolution.detectedVersion,
+      supportedVersion: resolution.targetVersion,
+    });
+    res.json(updateInfo);
+  } catch (error) {
+    console.error('Failed to check for OpenCode updates:', error);
+    res.status(502).json({
+      error: error instanceof Error ? error.message : 'Unable to check the latest OpenCode version',
+    });
+  }
+};
+
 export const registerOpenCodeRoutes = (app, dependencies) => {
   const {
     crypto,
     clientReloadDelayMs,
     getOpenCodeResolutionSnapshot,
+    checkForOpenCodeUpdates,
     formatSettingsResponse,
     readSettingsFromDisk,
     readSettingsFromDiskMigrated,
@@ -327,6 +350,12 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       res.status(500).json({ error: 'Failed to resolve OpenCode binary' });
     }
   });
+
+  app.get('/api/opencode/update-check', createOpenCodeUpdateCheckHandler({
+    readSettingsFromDiskMigrated,
+    getOpenCodeResolutionSnapshot,
+    checkForOpenCodeUpdates,
+  }));
 
   app.put('/api/config/settings', async (req, res) => {
     console.log('[API:PUT /api/config/settings] Received request');
@@ -958,12 +987,18 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         }
       }
 
+      // This route shadows the proxy's stripping route for Cursor-backed
+      // sessions, so it must apply the same diff-body strip: a workspace diff
+      // snapshot can make an unstripped transcript ~92MB (see diff-summary.js).
+      // Strip per-record as entries land so the unstripped payload is released
+      // as early as possible.
       const byId = new Map();
       for (const record of upstreamRecords) {
-        if (record?.info?.id) byId.set(record.info.id, record);
+        if (record?.info?.id) byId.set(record.info.id, stripMessageDiffContent(record));
       }
+      upstreamRecords = [];
       for (const record of cursorRecords) {
-        if (record?.info?.id) byId.set(record.info.id, record);
+        if (record?.info?.id) byId.set(record.info.id, stripMessageDiffContent(record));
       }
       return res.json(Array.from(byId.values()).sort((left, right) => (
         String(left?.info?.id || '').localeCompare(String(right?.info?.id || ''))

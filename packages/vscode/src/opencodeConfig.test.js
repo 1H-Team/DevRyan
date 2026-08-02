@@ -168,9 +168,12 @@ describe('VS Code plugin discovery', () => {
       const result = listReadonlyPlugins(projectDir);
 
       expect(result.defaults.map((plugin) => plugin.pluginId)).toEqual([
-        'oh-my-opencode-slim',
+        'opencode-antigravity-auth',
+        '@rama_nigg/open-cursor',
         'opencode-with-claude',
         'context-mode',
+        'oh-my-opencode-slim',
+        'superpowers',
         'openai-tool-schema-sanitizer',
       ]);
       expect(result.entries.map((plugin) => `${plugin.scope}:${plugin.spec}:${plugin.parsedKind}`)).toEqual([
@@ -272,7 +275,7 @@ describe('VS Code Cursor SDK config handling', () => {
     const overlayConfigPath = path.join(result.targetConfigDirectory, 'opencode.json');
     const overlayConfig = readJson(overlayConfigPath);
 
-    expect(overlayConfig.plugin).toContain('@rama_nigg/open-cursor@latest');
+    expect(overlayConfig.plugin).not.toContain('@rama_nigg/open-cursor@latest');
     expect(overlayConfig.plugin).toContain('./plugins/openai-tool-schema-sanitizer.mjs');
     expect(overlayConfig.provider?.['cursor-acp']).toBeUndefined();
     expect(overlayConfig.provider?.openai).toBeUndefined();
@@ -294,7 +297,7 @@ describe('VS Code Cursor SDK config handling', () => {
     }
   });
 
-  it('adds bounded OpenAI request timeouts for OAuth auth while preserving plugin and MCP overlays', async () => {
+  it('adds bounded OpenAI connection and total-request liveness timeouts for OAuth auth', async () => {
     const { syncRuntimeAgentOverlays } = await loadRuntime();
     const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-openai-oauth-'));
     writeJson(path.join(tempHome, '.local', 'share', 'opencode', 'auth.json'), {
@@ -309,20 +312,20 @@ describe('VS Code Cursor SDK config handling', () => {
       const overlayConfig = readJson(path.join(result.targetConfigDirectory, 'opencode.json'));
       expect(overlayConfig.provider?.openai).toEqual({
         options: {
-          headerTimeout: 60_000,
-          chunkTimeout: 120_000,
-          timeout: 600_000,
+          headerTimeout: 120_000,
+          chunkTimeout: 300_000,
+          timeout: 900_000,
         },
       });
       expect(overlayConfig.provider.openai.models).toBeUndefined();
-      expect(overlayConfig.plugin).toContain('opencode-antigravity-auth@latest');
+      expect(overlayConfig.plugin).not.toContain('opencode-antigravity-auth@latest');
       expect(overlayConfig.mcp.ghgrep).toEqual({ enabled: false });
     } finally {
       fs.rmSync(projectDir, { recursive: true, force: true });
     }
   });
 
-  it('adds bounded OpenAI request timeouts for an API-key environment', async () => {
+  it('adds OpenAI connection-liveness timeouts for an API-key environment', async () => {
     const { syncRuntimeAgentOverlays } = await loadRuntime();
     const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-openai-env-'));
     process.env.OPENAI_API_KEY = 'test-api-key';
@@ -331,16 +334,16 @@ describe('VS Code Cursor SDK config handling', () => {
       const result = syncRuntimeAgentOverlays(projectDir);
       const overlayConfig = readJson(path.join(result.targetConfigDirectory, 'opencode.json'));
       expect(overlayConfig.provider?.openai?.options).toEqual({
-        headerTimeout: 60_000,
-        chunkTimeout: 120_000,
-        timeout: 600_000,
+        headerTimeout: 120_000,
+        chunkTimeout: 300_000,
+        timeout: 900_000,
       });
     } finally {
       fs.rmSync(projectDir, { recursive: true, force: true });
     }
   });
 
-  it('adds bounded OpenAI request timeouts for an existing provider configuration', async () => {
+  it('adds OpenAI connection-liveness timeouts for an existing provider configuration', async () => {
     const { syncRuntimeAgentOverlays } = await loadRuntime();
     const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-openai-provider-'));
     writeJson(path.join(projectDir, 'opencode.json'), {
@@ -356,9 +359,9 @@ describe('VS Code Cursor SDK config handling', () => {
       const overlayConfig = readJson(path.join(result.targetConfigDirectory, 'opencode.json'));
       expect(overlayConfig.provider?.openai).toEqual({
         options: {
-          headerTimeout: 60_000,
-          chunkTimeout: 120_000,
-          timeout: 600_000,
+          headerTimeout: 120_000,
+          chunkTimeout: 300_000,
+          timeout: 900_000,
         },
       });
     } finally {
@@ -400,13 +403,43 @@ describe('VS Code Cursor SDK config handling', () => {
     try {
       const initial = syncRuntimeAgentOverlays(projectDir);
       expect(readJson(path.join(initial.targetConfigDirectory, 'opencode.json'))
-        .provider?.openai?.options?.headerTimeout).toBe(60_000);
+        .provider?.openai?.options?.headerTimeout).toBe(120_000);
 
       fs.unlinkSync(authPath);
       const updated = syncRuntimeAgentOverlays(projectDir);
       const overlayConfig = readJson(path.join(updated.targetConfigDirectory, 'opencode.json'));
       expect(updated.changed).toBe(true);
       expect(overlayConfig.provider?.openai).toBeUndefined();
+    } finally {
+      fs.rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it('replaces a stale generated OpenAI total deadline on the next startup sync', async () => {
+    const { syncRuntimeAgentOverlays } = await loadRuntime();
+    const projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-vscode-openai-refresh-'));
+    writeJson(path.join(tempHome, '.local', 'share', 'opencode', 'auth.json'), {
+      openai: { type: 'oauth', access: 'oauth-token' },
+    });
+
+    try {
+      const initial = syncRuntimeAgentOverlays(projectDir);
+      const generatedConfigPath = path.join(initial.targetConfigDirectory, 'opencode.json');
+      const staleConfig = readJson(generatedConfigPath);
+      staleConfig.provider.openai.options = {
+        headerTimeout: 60_000,
+        chunkTimeout: 120_000,
+        timeout: 600_000,
+      };
+      writeJson(generatedConfigPath, staleConfig);
+
+      const refreshed = syncRuntimeAgentOverlays(projectDir);
+      expect(refreshed.changed).toBe(true);
+      expect(readJson(generatedConfigPath).provider.openai.options).toEqual({
+        headerTimeout: 120_000,
+        chunkTimeout: 300_000,
+        timeout: 900_000,
+      });
     } finally {
       fs.rmSync(projectDir, { recursive: true, force: true });
     }
@@ -577,13 +610,13 @@ describe('VS Code Cursor SDK config handling', () => {
       preset: 'openai',
       presets: {
         openai: {
-          orchestrator: { model: 'openai/gpt-5.5', variant: 'medium', skills: ['*'], mcps: ['*', '!context7'] },
+          orchestrator: { model: 'openai/gpt-5.5', variant: 'medium', skills: ['*'], mcps: ['*'] },
           designer: { model: 'openai/gpt-5.4-mini', variant: 'medium', skills: [], mcps: [] },
           fixer: { model: 'openai/gpt-5.5', variant: 'low', skills: [], mcps: [] },
         },
       },
       agents: {
-        orchestrator: { skills: ['*'], mcps: ['*', '!context7'] },
+        orchestrator: { skills: ['*'], mcps: ['*'] },
       },
     });
     writeAgentMarkdown(path.join(opencodeConfigDir, 'agents'), 'builder', [
@@ -643,7 +676,7 @@ describe('VS Code Cursor SDK config handling', () => {
       expect(slimConfig.agents.orchestrator).toEqual({
         model: 'openai/gpt-5.4-mini',
         skills: ['*'],
-        mcps: ['*', '!context7'],
+        mcps: ['*'],
       });
       expect(fs.existsSync(path.join(opencodeConfigDir, '.openchamber', 'config.json'))).toBe(false);
       expect(getAgentConfig('orchestrator', projectDir).config).toMatchObject({
@@ -771,7 +804,7 @@ describe('VS Code Cursor SDK config handling', () => {
         'context-mode@1.0.169',
         'oh-my-opencode-slim',
         'superpowers@git+https://github.com/obra/superpowers.git',
-        'context7@latest',
+        'unapproved-docs@latest',
         'grep-app@latest',
       ],
     });
@@ -790,15 +823,15 @@ describe('VS Code Cursor SDK config handling', () => {
       const overlayConfig = readJson(path.join(result.targetConfigDirectory, 'opencode.json'));
       const overlaySlimConfig = readJson(path.join(result.targetConfigDirectory, 'oh-my-opencode-slim.json'));
 
-      expect(overlayConfig.plugin).toContain('opencode-antigravity-auth@latest');
-      expect(overlayConfig.plugin).toContain('@rama_nigg/open-cursor@latest');
-      expect(overlayConfig.plugin).toContain('cursor-acp');
-      expect(overlayConfig.plugin).toContain('context-mode@1.0.169');
-      expect(overlayConfig.plugin).toContain('oh-my-opencode-slim');
+      expect(overlayConfig.plugin).not.toContain('opencode-antigravity-auth@latest');
+      expect(overlayConfig.plugin).not.toContain('@rama_nigg/open-cursor@latest');
+      expect(overlayConfig.plugin).not.toContain('cursor-acp');
+      expect(overlayConfig.plugin).not.toContain('context-mode@1.0.169');
+      expect(overlayConfig.plugin).not.toContain('oh-my-opencode-slim');
       expect(overlayConfig.plugin).toContain('./plugins/council-session.js');
       expect(overlayConfig.plugin).toContain('./plugins/openai-tool-schema-sanitizer.mjs');
       expect(overlayConfig.plugin).not.toContain('superpowers@git+https://github.com/obra/superpowers.git');
-      expect(overlayConfig.plugin).not.toContain('context7@latest');
+      expect(overlayConfig.plugin).not.toContain('unapproved-docs@latest');
       expect(overlayConfig.plugin).not.toContain('grep-app@latest');
       expect(overlayConfig.mcp.ghgrep).toEqual({ enabled: false });
       expect(overlaySlimConfig.preset).toBe('openai');
@@ -916,7 +949,7 @@ describe('VS Code MCP OAuth stale-state handling', () => {
     });
     writeJson(path.join(tempHome, '.opencode', 'opencode.json'), {
       mcp: {
-        context7: { type: 'remote', url: 'https://ambient.example.test/mcp' },
+        ambientDocs: { type: 'remote', url: 'https://ambient.example.test/mcp' },
       },
     });
     writeJson(path.join(projectDir, '.opencode', 'opencode.json'), {

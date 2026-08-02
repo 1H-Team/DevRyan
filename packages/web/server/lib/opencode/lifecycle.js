@@ -156,6 +156,9 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     buildManagedOpenCodePath,
     getManagedOpenCodeShellEnvSnapshot,
     getManagedOrchestrationEnvironment = async () => ({}),
+    getManagedBrowserEnvironment = async () => ({}),
+    pauseManagedBrowserLeases = async () => null,
+    resumeManagedBrowserLeases = async () => false,
     getActiveSessionCount = () => 0,
     getAuthoritativeActiveSessionCount = async () => getActiveSessionCount(),
     provisionUserProfile = async () => ({ ok: true, changed: false, conflicts: [] }),
@@ -530,8 +533,20 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     let url;
     try {
       url = await new Promise((resolve, reject) => {
+      // Diagnostics capture keeps a bounded tail, and the listening-line scan
+      // only walks the unscanned remainder — the previous whole-accumulator
+      // re-split was O(n²) and uncapped until the marker line appeared.
+      const OUTPUT_CAPTURE_MAX_CHARS = 256 * 1024;
+      const SCAN_REMAINDER_MAX_CHARS = 8 * 1024;
+      const appendBoundedTail = (current, chunkText) => {
+        const next = current + chunkText;
+        return next.length > OUTPUT_CAPTURE_MAX_CHARS
+          ? next.slice(next.length - OUTPUT_CAPTURE_MAX_CHARS)
+          : next;
+      };
       let stdout = '';
       let stderr = '';
+      let scanRemainder = '';
       let done = false;
       const finish = (handler, value) => {
         if (done) return;
@@ -545,8 +560,10 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       };
 
       const onStdout = (chunk) => {
-        stdout += chunk.toString();
-        const lines = stdout.split('\n');
+        const text = chunk.toString();
+        stdout = appendBoundedTail(stdout, text);
+        scanRemainder += text;
+        const lines = scanRemainder.split('\n');
         for (const line of lines) {
           if (!line.startsWith('opencode server listening')) continue;
           const match = line.match(/on\s+(https?:\/\/[^\s]+)/);
@@ -557,10 +574,15 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
           finish(resolve, match[1]);
           return;
         }
+        // Keep only the trailing partial line for the next scan.
+        scanRemainder = lines[lines.length - 1] ?? '';
+        if (scanRemainder.length > SCAN_REMAINDER_MAX_CHARS) {
+          scanRemainder = scanRemainder.slice(-SCAN_REMAINDER_MAX_CHARS);
+        }
       };
 
       const onStderr = (chunk) => {
-        stderr += chunk.toString();
+        stderr = appendBoundedTail(stderr, chunk.toString());
       };
 
       const onExit = (code, signal) => {
@@ -807,6 +829,10 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   };
 
   const startOpenCodeOnce = async () => {
+    // Electron provisions the managed browser skill here so the immediately
+    // following skill discovery/overlay sync sees it on this same launch.
+    // External and non-Electron runtimes return an empty object without IO.
+    const browserEnvironmentInput = await getManagedBrowserEnvironment();
     const agentRuntimeConfig = await syncManagedAgentRuntimeConfig();
 
     const desiredPort = env.ENV_CONFIGURED_OPENCODE_PORT ?? 0;
@@ -848,6 +874,36 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         throw new Error('Managed orchestration bridge must use the private IPv4 loopback RPC endpoint');
       }
     }
+    const browserDiscoveryUrl = typeof browserEnvironmentInput?.DEVRYAN_BROWSER_CDP_DISCOVERY_URL === 'string'
+      ? browserEnvironmentInput.DEVRYAN_BROWSER_CDP_DISCOVERY_URL.trim()
+      : '';
+    const browserToken = typeof browserEnvironmentInput?.DEVRYAN_BROWSER_CDP_TOKEN === 'string'
+      ? browserEnvironmentInput.DEVRYAN_BROWSER_CDP_TOKEN.trim()
+      : '';
+    const agentBrowserBinary = typeof browserEnvironmentInput?.DEVRYAN_AGENT_BROWSER_BIN === 'string'
+      ? browserEnvironmentInput.DEVRYAN_AGENT_BROWSER_BIN.trim()
+      : '';
+    const browserEnvironmentValueCount = [browserDiscoveryUrl, browserToken, agentBrowserBinary]
+      .filter(Boolean).length;
+    if (browserEnvironmentValueCount !== 0 && browserEnvironmentValueCount !== 3) {
+      throw new Error('Managed agent browser discovery URL, token, and binary must be provided together');
+    }
+    if (browserDiscoveryUrl) {
+      const parsedDiscoveryUrl = new URL(browserDiscoveryUrl);
+      if (
+        parsedDiscoveryUrl.protocol !== 'http:'
+        || parsedDiscoveryUrl.hostname !== '127.0.0.1'
+        || !parsedDiscoveryUrl.port
+        || parsedDiscoveryUrl.pathname !== '/api/desktop/browser-cdp'
+        || parsedDiscoveryUrl.search
+        || parsedDiscoveryUrl.hash
+      ) {
+        throw new Error('Managed agent browser discovery must use the private IPv4 loopback endpoint');
+      }
+      if (!path.isAbsolute(agentBrowserBinary)) {
+        throw new Error('Managed agent browser binary path must be absolute');
+      }
+    }
     const processEnvironment = {
       ...shellEnv,
       ...process.env,
@@ -872,9 +928,20 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     delete processEnvironment.OPENCODE_DISABLE_EXTERNAL_SKILLS;
     delete processEnvironment.DEVRYAN_ORCHESTRATION_URL;
     delete processEnvironment.DEVRYAN_ORCHESTRATION_TOKEN;
+    delete processEnvironment.DEVRYAN_BROWSER_CDP_DISCOVERY_URL;
+    delete processEnvironment.DEVRYAN_BROWSER_CDP_TOKEN;
+    delete processEnvironment.DEVRYAN_AGENT_BROWSER_BIN;
+    for (const key of Object.keys(processEnvironment)) {
+      if (key.startsWith('AGENT_BROWSER_')) delete processEnvironment[key];
+    }
     if (orchestrationUrl) {
       processEnvironment.DEVRYAN_ORCHESTRATION_URL = orchestrationUrl;
       processEnvironment.DEVRYAN_ORCHESTRATION_TOKEN = orchestrationToken;
+    }
+    if (browserDiscoveryUrl) {
+      processEnvironment.DEVRYAN_BROWSER_CDP_DISCOVERY_URL = browserDiscoveryUrl;
+      processEnvironment.DEVRYAN_BROWSER_CDP_TOKEN = browserToken;
+      processEnvironment.DEVRYAN_AGENT_BROWSER_BIN = agentBrowserBinary;
     }
 
     try {
@@ -986,45 +1053,53 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         return;
       }
 
-      const portToRelease = state.openCodePort;
+      // Hold admission closed across the full managed-child replacement. The
+      // lease runtime invalidates and drains old-epoch acquisition before this
+      // returns, then remains paused until the new child is installed.
+      const browserLeaseResetHandle = await pauseManagedBrowserLeases('opencode_restart');
+      try {
+        const portToRelease = state.openCodePort;
 
-      if (state.openCodeProcess) {
-        console.log('Stopping existing OpenCode process...');
-        try {
-          await state.openCodeProcess.close();
-        } catch (error) {
-          console.warn('Error closing OpenCode process:', error);
+        if (state.openCodeProcess) {
+          console.log('Stopping existing OpenCode process...');
+          try {
+            await state.openCodeProcess.close();
+          } catch (error) {
+            console.warn('Error closing OpenCode process:', error);
+          }
+          state.openCodeProcess = null;
+          syncToHmrState();
         }
-        state.openCodeProcess = null;
+
+        if (!(await waitForPortRelease(portToRelease, 5000))) {
+          console.warn(`Timed out waiting for OpenCode port ${portToRelease} to be released`);
+        }
+
+        if (env.ENV_CONFIGURED_OPENCODE_PORT) {
+          console.log(`Using OpenCode port from environment: ${env.ENV_CONFIGURED_OPENCODE_PORT}`);
+          setOpenCodePort(env.ENV_CONFIGURED_OPENCODE_PORT);
+        } else {
+          state.openCodePort = null;
+          syncToHmrState();
+        }
+
+        state.openCodeApiPrefixDetected = true;
+        state.openCodeApiPrefix = '';
+        if (state.openCodeApiDetectionTimer) {
+          clearTimeout(state.openCodeApiDetectionTimer);
+          state.openCodeApiDetectionTimer = null;
+        }
+
+        state.lastOpenCodeError = null;
+        state.openCodeProcess = await startOpenCode();
         syncToHmrState();
-      }
 
-      if (!(await waitForPortRelease(portToRelease, 5000))) {
-        console.warn(`Timed out waiting for OpenCode port ${portToRelease} to be released`);
-      }
-
-      if (env.ENV_CONFIGURED_OPENCODE_PORT) {
-        console.log(`Using OpenCode port from environment: ${env.ENV_CONFIGURED_OPENCODE_PORT}`);
-        setOpenCodePort(env.ENV_CONFIGURED_OPENCODE_PORT);
-      } else {
-        state.openCodePort = null;
-        syncToHmrState();
-      }
-
-      state.openCodeApiPrefixDetected = true;
-      state.openCodeApiPrefix = '';
-      if (state.openCodeApiDetectionTimer) {
-        clearTimeout(state.openCodeApiDetectionTimer);
-        state.openCodeApiDetectionTimer = null;
-      }
-
-      state.lastOpenCodeError = null;
-      state.openCodeProcess = await startOpenCode();
-      syncToHmrState();
-
-      if (state.expressApp) {
-        setupProxy(state.expressApp);
-        ensureOpenCodeApiPrefix();
+        if (state.expressApp) {
+          setupProxy(state.expressApp);
+          ensureOpenCodeApiPrefix();
+        }
+      } finally {
+        await resumeManagedBrowserLeases(browserLeaseResetHandle);
       }
     })();
 

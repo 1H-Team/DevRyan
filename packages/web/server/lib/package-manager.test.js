@@ -1,27 +1,25 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mock child_process to prevent real spawnSync calls that would hang in tests
 vi.mock('node:child_process', () => ({
   spawn: vi.fn(),
   spawnSync: vi.fn(() => ({ status: 0, stdout: '/usr/local/bin', stderr: '' })),
 }));
 
+const previousUpdateApiUrl = process.env.OPENCHAMBER_UPDATE_API_URL;
+delete process.env.OPENCHAMBER_UPDATE_API_URL;
 const { checkForUpdates } = await import('./package-manager.js');
 
-/** Helper: create a fetch mock that routes by URL pattern */
 function createFetchMock() {
   const handlers = new Map();
 
-  const mock = vi.fn((url, options) => {
-    const urlStr = typeof url === 'string' ? url : url.toString();
-
+  const mock = vi.fn((url) => {
+    const urlString = typeof url === 'string' ? url : url.toString();
     for (const [pattern, response] of handlers) {
-      if (urlStr.includes(pattern)) {
+      if (urlString.includes(pattern)) {
         return Promise.resolve(response);
       }
     }
-
-    return Promise.reject(new Error(`Unexpected fetch call: ${urlStr}`));
+    return Promise.reject(new Error(`Unexpected fetch call: ${urlString}`));
   });
 
   mock.when = (pattern, response) => {
@@ -31,6 +29,13 @@ function createFetchMock() {
 
   return mock;
 }
+
+const githubRelease = (overrides = {}) => ({
+  tag_name: 'v1.10.0',
+  body: '## DevRyan 1.10.0\n\n- Great new feature',
+  published_at: '2026-05-01T12:00:00Z',
+  ...overrides,
+});
 
 describe('checkForUpdates', () => {
   let fetchMock;
@@ -44,207 +49,132 @@ describe('checkForUpdates', () => {
     vi.unstubAllGlobals();
   });
 
-  // --- Scenario: API says update available, npm confirms ---
+  afterAll(() => {
+    if (previousUpdateApiUrl === undefined) {
+      delete process.env.OPENCHAMBER_UPDATE_API_URL;
+    } else {
+      process.env.OPENCHAMBER_UPDATE_API_URL = previousUpdateApiUrl;
+    }
+  });
 
-  it('returns available=true when both API and npm confirm a newer version', async () => {
+  it('uses the DevRyan GitHub release as the latest-version authority', async () => {
     fetchMock
-      .when('api.openchamber.dev', {
+      .when('api.github.com/repos/zoubenr/DevRyan/releases/latest', {
         ok: true,
-        json: async () => ({
-          latestVersion: '1.10.0',
-          updateAvailable: true,
-          releaseNotes: '## [1.10.0] - 2026-05-01\n\n- Great new feature',
-        }),
+        json: async () => githubRelease(),
       })
       .when('registry.npmjs.org', {
         ok: true,
-        json: async () => ({
-          'dist-tags': { latest: '1.10.0' },
-        }),
-      })
-      .when('raw.githubusercontent.com', {
-        ok: true,
-        text: async () => '## [1.10.0] - 2026-05-01\n\n- Great new feature',
+        json: async () => ({ 'dist-tags': { latest: '1.10.0' } }),
       });
 
     const result = await checkForUpdates({ currentVersion: '1.9.10' });
 
-    expect(result.available).toBe(true);
-    expect(result.version).toBe('1.10.0');
-    expect(result.currentVersion).toBe('1.9.10');
+    expect(result).toMatchObject({
+      available: true,
+      version: '1.10.0',
+      currentVersion: '1.9.10',
+      body: '## DevRyan 1.10.0\n\n- Great new feature',
+      date: '2026-05-01T12:00:00Z',
+      nextSuggestedCheckInSec: 21_600,
+    });
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      method: 'GET',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
   });
 
-  // --- Scenario (THE FIX): API says update available, npm does NOT have it ---
-
-  it('returns available=false when API claims update but npm has same version', async () => {
+  it('keeps web updates unavailable until the matching compatibility package is published', async () => {
     fetchMock
-      .when('api.openchamber.dev', {
+      .when('api.github.com/repos/zoubenr/DevRyan/releases/latest', {
         ok: true,
-        json: async () => ({
-          latestVersion: '1.10.0',
-          updateAvailable: true,
-          releaseNotes: '## [1.10.0] - 2026-05-01\n\n- Great new feature',
-        }),
+        json: async () => githubRelease(),
       })
       .when('registry.npmjs.org', {
         ok: true,
-        json: async () => ({
-          'dist-tags': { latest: '1.9.10' },
-        }),
+        json: async () => ({ 'dist-tags': { latest: '1.9.10' } }),
       });
 
     const result = await checkForUpdates({ currentVersion: '1.9.10' });
 
     expect(result.available).toBe(false);
-  });
-
-  it('does not cross-check desktop update claims against npm', async () => {
-    fetchMock
-      .when('api.openchamber.dev', {
-        ok: true,
-        json: async () => ({
-          latestVersion: '1.10.0',
-          updateAvailable: true,
-          releaseNotes: '## [1.10.0] - 2026-05-01\n\n- Great new feature',
-        }),
-      });
-
-    const result = await checkForUpdates({
-      appType: 'desktop-tauri',
-      currentVersion: '1.9.10',
-    });
-
-    expect(result.available).toBe(true);
     expect(result.version).toBe('1.10.0');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('accepts electron desktop update claims without npm cross-checking', async () => {
-    fetchMock
-      .when('api.openchamber.dev', {
+  it.each(['desktop-tauri', 'desktop-electron'])(
+    'does not cross-check %s release availability against npm',
+    async (appType) => {
+      fetchMock.when('api.github.com/repos/zoubenr/DevRyan/releases/latest', {
         ok: true,
-        json: async () => ({
-          latestVersion: '1.10.0',
-          updateAvailable: true,
-          releaseNotes: '## [1.10.0] - 2026-05-01\n\n- Great new feature',
-        }),
+        json: async () => githubRelease(),
       });
 
-    const result = await checkForUpdates({
-      appType: 'desktop-electron',
-      currentVersion: '1.9.10',
-    });
-
-    expect(result.available).toBe(true);
-    expect(result.version).toBe('1.10.0');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('returns available=false when API claims update but npm is behind', async () => {
-    fetchMock
-      .when('api.openchamber.dev', {
-        ok: true,
-        json: async () => ({
-          latestVersion: '1.10.0',
-          updateAvailable: true,
-          releaseNotes: '## [1.10.0] - 2026-05-01\n\n- Great new feature',
-        }),
-      })
-      .when('registry.npmjs.org', {
-        ok: true,
-        json: async () => ({
-          'dist-tags': { latest: '1.9.9' },
-        }),
+      const result = await checkForUpdates({
+        appType,
+        currentVersion: '1.9.10',
       });
 
-    const result = await checkForUpdates({ currentVersion: '1.9.10' });
+      expect(result.available).toBe(true);
+      expect(result.version).toBe('1.10.0');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    },
+  );
 
-    expect(result.available).toBe(false);
-  });
-
-  // --- Scenario: API says no update, npm agrees ---
-
-  it('returns available=false when API says no update and versions match', async () => {
-    fetchMock.when('api.openchamber.dev', {
+  it('reports the current DevRyan release without consulting npm', async () => {
+    fetchMock.when('api.github.com/repos/zoubenr/DevRyan/releases/latest', {
       ok: true,
-      json: async () => ({
-        latestVersion: '1.9.10',
-        updateAvailable: false,
-      }),
+      json: async () => githubRelease({ tag_name: 'v1.9.10' }),
     });
 
     const result = await checkForUpdates({ currentVersion: '1.9.10' });
 
     expect(result.available).toBe(false);
+    expect(result.version).toBe('1.9.10');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  // --- Scenario: API unreachable, npm fallback ---
-
-  it('returns available=true from npm fallback when API is unreachable and npm has newer version', async () => {
-    fetchMock
-      .when('api.openchamber.dev', Promise.reject(new Error('Network error')))
-      .when('registry.npmjs.org', {
-        ok: true,
-        json: async () => ({
-          'dist-tags': { latest: '1.10.0' },
-        }),
-      })
-      .when('raw.githubusercontent.com', {
-        ok: true,
-        text: async () => '## [1.10.0] - 2026-05-01\n\n- Great new feature',
-      });
-
-    const result = await checkForUpdates({ currentVersion: '1.9.10' });
-
-    expect(result.available).toBe(true);
-    expect(result.version).toBe('1.10.0');
-  });
-
-  it('returns available=false from npm fallback when API is unreachable and versions match', async () => {
-    fetchMock
-      .when('api.openchamber.dev', Promise.reject(new Error('Network error')))
-      .when('registry.npmjs.org', {
-        ok: true,
-        json: async () => ({
-          'dist-tags': { latest: '1.9.10' },
-        }),
-      });
+  it('does not fall back to a newer OpenChamber npm version when GitHub is older', async () => {
+    fetchMock.when('api.github.com/repos/zoubenr/DevRyan/releases/latest', {
+      ok: true,
+      json: async () => githubRelease({ tag_name: 'v1.9.9' }),
+    });
 
     const result = await checkForUpdates({ currentVersion: '1.9.10' });
 
     expect(result.available).toBe(false);
+    expect(result.version).toBe('1.9.9');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  // --- Scenario: API returns null (bad response), npm fallback ---
+  it('fails closed when the DevRyan GitHub release cannot be read', async () => {
+    fetchMock.when(
+      'api.github.com/repos/zoubenr/DevRyan/releases/latest',
+      Promise.reject(new Error('Network error')),
+    );
 
-  it('returns available=false when API returns non-ok status and versions match on npm', async () => {
-    fetchMock
-      .when('api.openchamber.dev', {
-        ok: false,
-        status: 500,
-        json: async () => ({}),
-      })
-      .when('registry.npmjs.org', {
-        ok: true,
-        json: async () => ({
-          'dist-tags': { latest: '1.9.10' },
-        }),
-      });
+    const result = await checkForUpdates({ currentVersion: '1.9.10' });
+
+    expect(result).toMatchObject({
+      available: false,
+      currentVersion: '1.9.10',
+      error: 'Unable to check DevRyan releases',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed for invalid GitHub release metadata', async () => {
+    fetchMock.when('api.github.com/repos/zoubenr/DevRyan/releases/latest', {
+      ok: true,
+      json: async () => ({ tag_name: null }),
+    });
 
     const result = await checkForUpdates({ currentVersion: '1.9.10' });
 
     expect(result.available).toBe(false);
-  });
-
-  // --- Scenario: Both API and npm are unreachable ---
-
-  it('returns available=false when both sources are unreachable', async () => {
-    fetchMock
-      .when('api.openchamber.dev', Promise.reject(new Error('Network error')))
-      .when('registry.npmjs.org', Promise.reject(new Error('Registry unreachable')));
-
-    const result = await checkForUpdates({ currentVersion: '1.9.10' });
-
-    expect(result.available).toBe(false);
+    expect(result.error).toBe('Unable to check DevRyan releases');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

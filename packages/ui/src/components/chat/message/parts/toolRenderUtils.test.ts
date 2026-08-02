@@ -15,9 +15,16 @@ import {
     extractSearchedFilePathsFromToolPart,
     getToolActivityGroupLabelKey,
     getToolActivityGroupInfo,
+    getToolActivityGroupDescription,
     getToolActivityGroupSummaryCount,
     getToolFileMutationAction,
+    getToolDescriptionFallback,
     getToolPartDiffStatsFromToolPart,
+    isExpandableTool,
+    isHiddenTool,
+    isManagedTaskToolName,
+    isStandaloneTool,
+    isStaticTool,
     mergePatchFileSummariesFromToolParts,
     normalizeToolName,
 } from './toolRenderUtils';
@@ -59,6 +66,36 @@ const collectRows = (items: readonly ToolItem[]) => {
 };
 
 describe('tool activity grouping', () => {
+    test('uses glob patterns as the tool-description fallback', () => {
+        expect(getToolDescriptionFallback('glob', {
+            input: { pattern: 'packages/ui/src/**/*.tsx' },
+        })).toBe('packages/ui/src/**/*.tsx');
+    });
+
+    test('preserves the generic tool-description fallback', () => {
+        expect(getToolDescriptionFallback('custom_tool', {
+            input: { description: 'Inspect the generated report' },
+        })).toBe('Inspect the generated report');
+    });
+
+    test('keeps path-specific tool descriptions authoritative', () => {
+        expect(getToolDescriptionFallback('read', {
+            pathDescription: 'src/config.ts',
+            input: { description: 'Read the config' },
+        })).toBe('src/config.ts');
+    });
+
+    test('shows deduplicated glob patterns on grouped search rows', () => {
+        expect(getToolActivityGroupDescription('search', [
+            toolPart('glob', { input: { pattern: '**/*.md' } }, 'glob-1'),
+            toolPart('glob', { input: { pattern: '**/*.md' } }, 'glob-2'),
+            toolPart('grep', { input: { pattern: 'TODO' } }, 'grep-1'),
+        ])).toBe('**/*.md');
+        expect(getToolActivityGroupDescription('read', [
+            toolPart('glob', { input: { pattern: '**/*.md' } }, 'glob-3'),
+        ])).toBe('');
+    });
+
     test('groups consecutive search tools under one search group', () => {
         const grouped = collect([
             { kind: 'tool', tool: 'grep' },
@@ -100,6 +137,39 @@ describe('tool activity grouping', () => {
         expect(normalizeToolName('oc_read')).toBe('read');
         expect(normalizeToolName('oc_bash')).toBe('bash');
         expect(normalizeToolName('stat')).toBe('read');
+    });
+
+    test('defines presentation families while leaving new plugin tools on the safe fallback', () => {
+        const families = [
+            { tool: 'bash', expandable: true, standalone: false, hidden: false, static: false },
+            { tool: 'cursor.shellToolCall:0', expandable: true, standalone: false, hidden: false, static: false },
+            { tool: 'oc_write', expandable: true, standalone: false, hidden: false, static: false },
+            { tool: 'task', expandable: true, standalone: true, hidden: false, static: false },
+            { tool: 'question', expandable: true, standalone: false, hidden: false, static: false },
+            { tool: 'devryan_task', expandable: false, standalone: false, hidden: true, static: false },
+            { tool: 'create_plan', expandable: false, standalone: false, hidden: true, static: false },
+            { tool: 'todowrite', expandable: false, standalone: false, hidden: false, static: true },
+            { tool: 'structuredoutput', expandable: false, standalone: false, hidden: false, static: true },
+            { tool: 'council', expandable: false, standalone: false, hidden: false, static: true },
+            { tool: 'ctx_execute', expandable: false, standalone: false, hidden: false, static: true },
+            { tool: 'mcp__future_plugin__inspect', expandable: false, standalone: false, hidden: false, static: true },
+        ];
+
+        for (const family of families) {
+            expect({
+                expandable: isExpandableTool(family.tool),
+                standalone: isStandaloneTool(family.tool),
+                hidden: isHiddenTool(family.tool),
+                static: isStaticTool(family.tool),
+            }).toEqual({
+                expandable: family.expandable,
+                standalone: family.standalone,
+                hidden: family.hidden,
+                static: family.static,
+            });
+        }
+        expect(isManagedTaskToolName('devryan_task')).toBe(true);
+        expect(isManagedTaskToolName('task')).toBe(false);
     });
 
     test('classifies Cursor ToolCall names into activity groups', () => {

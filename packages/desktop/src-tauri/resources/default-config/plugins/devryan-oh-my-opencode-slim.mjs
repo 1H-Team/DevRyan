@@ -12,32 +12,32 @@ const cloneValue = (value) => {
 };
 
 const loadSlimPlugin = async () => {
-  const roots = [
-    process.env.DEVRYAN_OPENCODE_USER_CONFIG_DIR,
-    process.env.OPENCODE_CONFIG_DIR,
-    process.cwd(),
-  ].filter(Boolean);
-
-  let lastError = null;
-  for (const root of roots) {
-    try {
-      const pluginEntrypoint = path.join(root, 'node_modules', 'oh-my-opencode-slim', 'dist', 'index.js');
-      if (!fs.existsSync(pluginEntrypoint)) {
-        continue;
-      }
-      const module = await import(pathToFileURL(pluginEntrypoint).href);
-      return module.default || module;
-    } catch (error) {
-      lastError = error;
-    }
+  const configuredRoot = typeof process.env.DEVRYAN_OPENCODE_USER_CONFIG_DIR === 'string'
+    && process.env.DEVRYAN_OPENCODE_USER_CONFIG_DIR.trim()
+    ? path.resolve(process.env.DEVRYAN_OPENCODE_USER_CONFIG_DIR.trim())
+    : path.resolve(import.meta.dirname, '..');
+  const pluginEntrypoint = path.join(
+    configuredRoot,
+    'node_modules',
+    'oh-my-opencode-slim',
+    'dist',
+    'index.js',
+  );
+  if (!fs.existsSync(pluginEntrypoint)) {
+    throw new Error(
+      `[DevRyan] Installed Oh My OpenCode Slim entrypoint is missing: ${pluginEntrypoint}. `
+      + 'Repair the managed OpenCode profile before starting OpenCode.',
+    );
   }
 
-  try {
-    const module = await import('oh-my-opencode-slim');
-    return module.default || module;
-  } catch (error) {
-    throw lastError || error;
+  const module = await import(pathToFileURL(pluginEntrypoint).href);
+  const plugin = module.default || module;
+  if (typeof plugin !== 'function') {
+    throw new Error(
+      `[DevRyan] Installed Oh My OpenCode Slim entrypoint does not export a plugin: ${pluginEntrypoint}`,
+    );
   }
+  return plugin;
 };
 
 export const DevRyanOhMyOpenCodeSlimPlugin = async (context) => {

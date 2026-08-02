@@ -5,12 +5,13 @@ import type { PermissionRequest, PermissionResponse } from '@/types/permission';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessions } from '@/sync/sync-context';
 import * as sessionActions from '@/sync/session-actions';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { LazySyntaxHighlighter as SyntaxHighlighter } from '@/components/chat/LazySyntaxHighlighter';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { generateSyntaxTheme } from '@/lib/theme/syntaxThemeGenerator';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { DiffPreview, WritePreview } from './DiffPreview';
 import { useI18n } from '@/lib/i18n';
+import { filterPermissionCardPatterns, isShellPermissionTool } from './permissionCardPatterns';
 
 const PERMISSION_BASH_CUSTOM_STYLE: React.CSSProperties = {
   margin: 0,
@@ -59,7 +60,7 @@ const getToolIcon = (toolName: string) => {
     return <RiFileEditLine className={iconClass} />;
   }
 
-  if (tool === 'bash' || tool === 'shell' || tool === 'cmd' || tool === 'terminal' || tool === 'shell_command') {
+  if (isShellPermissionTool(toolName)) {
     return <RiTerminalBoxLine className={iconClass} />;
   }
 
@@ -79,7 +80,7 @@ const getToolDisplayName = (toolName: string): string => {
   if (tool === 'write' || tool === 'create' || tool === 'file_write') {
     return 'write';
   }
-  if (tool === 'bash' || tool === 'shell' || tool === 'cmd' || tool === 'terminal' || tool === 'shell_command') {
+  if (isShellPermissionTool(toolName)) {
     return 'bash';
   }
   if (tool === 'webfetch' || tool === 'fetch' || tool === 'curl' || tool === 'wget') {
@@ -141,11 +142,18 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
     return Boolean(val);
   };
   const displayToolName = getToolDisplayName(toolName);
+  const shellCommand = isShellPermissionTool(toolName)
+    ? getMeta('command') || getMeta('cmd') || getMeta('script')
+    : '';
+  const visiblePermissionPatterns = filterPermissionCardPatterns({
+    toolName,
+    patterns: permission.patterns,
+    command: shellCommand,
+  });
 
   const renderToolContent = () => {
 
-    if (tool === 'bash' || tool === 'shell' || tool === 'shell_command') {
-      const command = getMeta('command') || getMeta('cmd') || getMeta('script');
+    if (isShellPermissionTool(toolName)) {
       const description = getMeta('description');
       const workingDir = getMeta('cwd') || getMeta('working_directory') || getMeta('directory') || getMeta('path');
       const timeout = getMetaNum('timeout');
@@ -166,7 +174,7 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
             </div>
           )}
           {}
-          {command && (
+          {shellCommand && (
             <div>
               <SyntaxHighlighter
                 language="bash"
@@ -176,7 +184,7 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
                 codeTagProps={PERMISSION_BASH_CODE_TAG_PROPS}
                 wrapLongLines={true}
               >
-                {command}
+                {shellCommand}
               </SyntaxHighlighter>
             </div>
           )}
@@ -344,11 +352,11 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
 
           {}
           <div className="px-2 py-2">
-            {permission.patterns.length > 0 && (
+            {visiblePermissionPatterns.length > 0 && (
               <div className="mb-2">
                 <div className="typography-meta text-muted-foreground mb-1">{t('chat.permissionCard.patterns')}</div>
                 <code className="typography-meta px-2 py-1 bg-muted/30 rounded block break-all">
-                  {permission.patterns.join(", ")}
+                  {visiblePermissionPatterns.join(", ")}
                 </code>
               </div>
             )}

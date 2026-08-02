@@ -304,7 +304,7 @@ export class ChildStoreManager {
     }
   }
 
-  subscribeSessionStatuses(listener: () => void): () => void {
+  subscribeSessionLists(listener: () => void): () => void {
     const storeUnsubscribers = new Map<string, () => void>()
 
     const syncStoreSubscriptions = () => {
@@ -319,7 +319,45 @@ export class ChildStoreManager {
       for (const [directory, store] of this.children.entries()) {
         if (storeUnsubscribers.has(directory)) continue
         storeUnsubscribers.set(directory, store.subscribe((state, previous) => {
-          if (state.session_status !== previous.session_status) {
+          if (state.session !== previous.session) listener()
+        }))
+      }
+    }
+
+    syncStoreSubscriptions()
+    const unsubscribeRegistry = this.subscribeRegistry(() => {
+      syncStoreSubscriptions()
+      listener()
+    })
+
+    return () => {
+      unsubscribeRegistry()
+      for (const unsubscribe of storeUnsubscribers.values()) {
+        unsubscribe()
+      }
+      storeUnsubscribers.clear()
+    }
+  }
+
+  subscribeProviderRecoveryInputs(listener: () => void): () => void {
+    const storeUnsubscribers = new Map<string, () => void>()
+
+    const syncStoreSubscriptions = () => {
+      const activeDirectories = new Set(this.children.keys())
+
+      for (const [directory, unsubscribe] of storeUnsubscribers.entries()) {
+        if (activeDirectories.has(directory)) continue
+        unsubscribe()
+        storeUnsubscribers.delete(directory)
+      }
+
+      for (const [directory, store] of this.children.entries()) {
+        if (storeUnsubscribers.has(directory)) continue
+        storeUnsubscribers.set(directory, store.subscribe((state, previous) => {
+          if (
+            state.session_status !== previous.session_status
+            || state.message !== previous.message
+          ) {
             listener()
           }
         }))

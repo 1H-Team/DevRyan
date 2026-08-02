@@ -80,6 +80,22 @@ describe('resolveSidebarIndicator', () => {
     });
   });
 
+  test('keeps pending questions higher priority than a proposed plan, errors, and completion', () => {
+    expect(resolveSidebarIndicator({
+      isRootSession: true,
+      isWorking: true,
+      isActive: true,
+      hasUnreadCompletion: true,
+      hasCompletedStatus: true,
+      hasErrorStatus: true,
+      pendingQuestionCount: 1,
+      planState: 'proposed',
+    })).toEqual({
+      className: 'bg-status-info',
+      labelKey: 'sessions.sidebar.session.status.questionRequired',
+    });
+  });
+
   test('hides completion while the session is working', () => {
     expect(resolveSidebarIndicator({
       isRootSession: true,
@@ -188,6 +204,14 @@ describe('resolveSidebarIndicator', () => {
 });
 
 describe('resolveSidebarWorkingStatus', () => {
+  test('does not show a stale active spinner while a question requires an answer', () => {
+    expect(resolveSidebarWorkingStatus({
+      isWorking: true,
+      pendingQuestionCount: 1,
+      planState: null,
+    })).toBe(false);
+  });
+
   test('does not show a stale active spinner once a plan is ready', () => {
     expect(resolveSidebarWorkingStatus({
       isWorking: true,
@@ -344,27 +368,7 @@ describe('resolveSubtaskSidebarIndicator', () => {
 });
 
 describe('resolveLeadingRailLayout', () => {
-  test('reserves only the status slot for a completed root session without children', () => {
-    expect(resolveLeadingRailLayout({
-      hasChildren: false,
-      showLeadingStatus: true,
-      isPinnedSession: false,
-    })).toEqual({
-      slots: [null, 'status', null],
-    });
-  });
-
-  test('keeps status and pin in independent slots', () => {
-    expect(resolveLeadingRailLayout({
-      hasChildren: false,
-      showLeadingStatus: true,
-      isPinnedSession: true,
-    })).toEqual({
-      slots: ['status', 'pin', null],
-    });
-  });
-
-  test('keeps parent chevron, status, and pin in three independent slots', () => {
+  test('keeps status, pin, and parent chevron in left-to-right order', () => {
     expect(resolveLeadingRailLayout({
       hasChildren: true,
       showLeadingStatus: true,
@@ -374,13 +378,33 @@ describe('resolveLeadingRailLayout', () => {
     });
   });
 
-  test('reserves the chevron slot without manufacturing a status or pin', () => {
+  test('keeps status immediately left of the parent chevron without a pin', () => {
     expect(resolveLeadingRailLayout({
       hasChildren: true,
-      showLeadingStatus: false,
+      showLeadingStatus: true,
       isPinnedSession: false,
     })).toEqual({
-      slots: [null, null, 'chevron'],
+      slots: [null, 'status', 'chevron'],
+    });
+  });
+
+  test('uses the middle status slot for an unpinned leaf session', () => {
+    expect(resolveLeadingRailLayout({
+      hasChildren: false,
+      showLeadingStatus: true,
+      isPinnedSession: false,
+    })).toEqual({
+      slots: [null, 'status', null],
+    });
+  });
+
+  test('keeps status and pin in independent slots for a pinned leaf session', () => {
+    expect(resolveLeadingRailLayout({
+      hasChildren: false,
+      showLeadingStatus: true,
+      isPinnedSession: true,
+    })).toEqual({
+      slots: ['status', 'pin', null],
     });
   });
 

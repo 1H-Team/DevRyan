@@ -42,9 +42,13 @@ import {
   type SessionSummaryDiffStats,
 } from "@/lib/sessionDiffStats"
 import { reconcileSessionChangeAttribution } from "@/stores/useSessionChangeAttributionStore"
+import { getBackgroundTrimLimit } from "@/stores/types/sessionTypes"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 const MESSAGE_PAGE_SIZE = 200
+// Debounce for the background-session message trim so rapid session flips
+// don't thrash trim/reload cycles.
+const BACKGROUND_TRIM_DEBOUNCE_MS = 5_000
 const MAX_SEEN_DIRS = 30
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
@@ -279,6 +283,74 @@ export function useSync() {
     [resolveDirectory],
   )
 
+  // Background-session message trim — the limit MemoryDebugPanel advertises.
+  // Debounced after every touch(): sessions other than the current one keep at
+  // most getBackgroundTrimLimit() newest messages in memory. Trimmed sessions
+  // reset pagination (complete: false, no cursor) so the existing Load More →
+  // force-reload path rehydrates older history on demand. Never trims the
+  // current session, protected sessions (streaming / pending permissions or
+  // questions / incomplete assistant turn), sessions with optimistic entries,
+  // or sessions with a load in flight.
+  const trimTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>())
+  const runBackgroundTrim = useCallback(async (targetDirectory: string) => {
+    const targetStore = childStores.getChild(targetDirectory)
+    if (!targetStore) return
+    const { useSessionUIStore } = await import("./session-ui-store")
+    if (childStores.getChild(targetDirectory) !== targetStore) return
+    const currentSessionId = useSessionUIStore.getState().currentSessionId
+    const state = targetStore.getState()
+    const protectedIds = getProtectedSessionCacheIds(state)
+    const trimLimit = getBackgroundTrimLimit()
+    let message = state.message
+    let part = state.part
+    let changed = false
+    for (const sessionID of Object.keys(state.message)) {
+      if (sessionID === currentSessionId) continue
+      if (protectedIds.has(sessionID)) continue
+      if (getOptimistic(sessionID, targetDirectory).length > 0) continue
+      const meta = getMetaFor(sessionID, targetDirectory)
+      if (meta.loading) continue
+      const messages = message[sessionID]
+      if (!messages || messages.length <= trimLimit) continue
+      const removed = messages.slice(0, messages.length - trimLimit)
+      const kept = messages.slice(messages.length - trimLimit)
+      if (!changed) {
+        message = { ...message }
+        part = { ...part }
+        changed = true
+      }
+      message[sessionID] = kept
+      for (const msg of removed) {
+        if (msg?.id) delete part[msg.id]
+      }
+      setMetaFor(sessionID, {
+        limit: normalizeMessageFetchLimit(kept.length, MESSAGE_PAGE_SIZE),
+        cursor: undefined,
+        complete: false,
+        initialized: true,
+      }, targetDirectory)
+      clearSessionPrefetch(targetDirectory, sessionID)
+    }
+    if (changed) targetStore.setState({ message, part })
+  }, [childStores, getOptimistic, getMetaFor, setMetaFor])
+
+  const scheduleBackgroundTrim = useCallback((targetDirectory: string) => {
+    const existing = trimTimers.current.get(targetDirectory)
+    if (existing) clearTimeout(existing)
+    trimTimers.current.set(targetDirectory, setTimeout(() => {
+      trimTimers.current.delete(targetDirectory)
+      void runBackgroundTrim(targetDirectory).catch(() => {})
+    }, BACKGROUND_TRIM_DEBOUNCE_MS))
+  }, [runBackgroundTrim])
+
+  useEffect(() => {
+    const timers = trimTimers.current
+    return () => {
+      for (const timer of timers.values()) clearTimeout(timer)
+      timers.clear()
+    }
+  }, [])
+
   // Fetch messages from API
   const fetchMessages = useCallback(
     async (sessionID: string, limit: number, before?: string, directoryOverride?: string | null) => {
@@ -409,6 +481,7 @@ export function useSync() {
       const targetStore = childStores.ensureChild(targetDirectory)
       const targetSdk = targetDirectory === directory ? sdk : opencodeClient.getScopedSdkClient(targetDirectory)
       touch(sessionID, targetDirectory)
+      scheduleBackgroundTrim(targetDirectory)
       const key = keyFor(sessionID, targetDirectory)
 
       // Dedup inflight requests
@@ -491,7 +564,7 @@ export function useSync() {
       })
       return promise
     },
-    [childStores, directory, sdk, resolveDirectory, keyFor, touch, getMetaFor, setMetaFor, loadMessages],
+    [childStores, directory, sdk, resolveDirectory, keyFor, touch, scheduleBackgroundTrim, getMetaFor, setMetaFor, loadMessages],
   )
 
   // Load more (pagination)
@@ -499,6 +572,7 @@ export function useSync() {
     async (sessionID: string, options?: { directory?: string | null }) => {
       const targetDirectory = resolveDirectory(options?.directory)
       touch(sessionID, targetDirectory)
+      scheduleBackgroundTrim(targetDirectory)
       const m = getMetaFor(sessionID, targetDirectory)
       if (m.loading || m.complete) return
       if (!m.cursor) {
@@ -507,7 +581,7 @@ export function useSync() {
       }
       await loadMessages(sessionID, { before: m.cursor, mode: "prepend", directory: targetDirectory })
     },
-    [resolveDirectory, touch, getMetaFor, loadMessages, syncSession],
+    [resolveDirectory, touch, scheduleBackgroundTrim, getMetaFor, loadMessages, syncSession],
   )
 
   const hasMore = useCallback(

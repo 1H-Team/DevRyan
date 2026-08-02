@@ -7,7 +7,7 @@ DevRyan provides UI runtimes (web/desktop/VS Code) for interacting with an OpenC
 ## Repository authority
 
 - Canonical repository: `zoubenr/DevRyan`.
-- Local workspace root: `/Users/zoubair/Documents/Repositories/DevRyan`.
+- Local workspace root: `/Users/zoubair/Repositories/DevRyan`.
 - DevRyan is a separate repository for agent work, not a fork. Treat this repository and its local files as the only source of truth unless the user explicitly says otherwise in the current task.
 - Do not read, browse, clone, diff, compare against, patch, or edit `openchamber/openchamber`, `btriapitsyn/openchamber`, `../openchamber`, or any other upstream OpenChamber checkout without explicit user permission in the current task.
 - Existing local names such as `@openchamber/web`, `openchamber`, `OPENCHAMBER_*`, and config paths are implementation compatibility names. They are not permission to consult upstream OpenChamber.
@@ -59,9 +59,9 @@ Workspaces are `packages/*` (see `package.json`).
 
 ## Repository Map
 
-A full codemap is available at `codemap.md` in the project root.
+A full codemap is available at `CODEMAP.md` in the project root.
 
-Before working on any task, read `codemap.md` to understand:
+Before working on any task, read `CODEMAP.md` to understand:
 - Project architecture and entry points
 - Directory responsibilities and design patterns
 - Data flow and integration points between modules
@@ -134,6 +134,18 @@ Server-side text-to-speech services and summarization helpers for `/api/tts/*` e
 Skills catalog management including discovery, installation, and configuration of agent skill packages.
 
 - Module docs: `packages/web/server/lib/skills-catalog/DOCUMENTATION.md`
+
+##### diagnostics
+
+Diagnostics HTTP contract for the journal: status, clear, export ZIP, and support-text sanitization endpoints.
+
+- Module docs: `packages/web/server/lib/diagnostics/DOCUMENTATION.md`
+
+### harness-runtime
+
+Shared diagnostic journal runtime: NDJSON journal writer, mandatory sanitizer, export pipeline, storage layout and retention limits.
+
+- Module docs: `packages/harness-runtime/DOCUMENTATION.md`
 
 ## Build / dev commands (verified)
 
@@ -385,6 +397,25 @@ A single store with N properties means every subscriber re-evaluates on every st
 
 - **Never cache directory strings in closures.** Directory can change at any time (worktree switch). Read it dynamically from `opencodeClient.getDirectory()` at call time.
 - **Pass directory hints when the source of truth isn't available yet.** Newly created sessions aren't in the sync store until SSE delivers them. Pass the known directory as a parameter instead of relying on lookup.
+
+## Diagnostic journal (check it before theorizing)
+
+Whenever the user reports a DevRyan runtime issue — stuck or hung sessions, missing or duplicated events, failed/rejected prompts, aborts that did not take effect, streaming or sync anomalies, worktree or evidence lifecycle issues — inspect the journal before forming a code-only theory. Start from the repository root:
+
+```bash
+bun scripts/journal.mjs list
+bun scripts/journal.mjs show <sessionID> --tail 200
+bun scripts/journal.mjs gaps
+```
+
+- Location (web/Electron): `~/.config/openchamber/harness/journal/` (data-root override: `$OPENCHAMBER_DATA_DIR`). VS Code uses `<globalStorage>/harness/journal/`. Pass `--dir <journal-dir>` to the CLI for either host.
+- Layout: `index.json` summarizes `sessions/<sessionID>/manifest.json`; closed chunks are `*.ndjson.gz`, the active crash-safe chunk is plain `*.ndjson.open`, large strings are `blobs/<sha256>.txt.gz`, and records without a resolvable session are under `runtime/`. The directory's generated `README.md` is the self-describing format guide.
+- Legacy root `*.ndjson` segments coexist during the transition. They remain readable, are listed as `legacy`, are pruned before session buckets, and are removed by Clear All Data; they are never regrouped.
+- `message.part.delta` is intentionally absent. Repeated `message.part.updated` and `session.updated` records are last-write-wins; `coalesced` reports how many source events a stored record represents. These trims are not data-loss gaps. `gap` still means queue overflow, sanitization failure, or parse failure and must qualify conclusions.
+- Record types remain `open_code_event`, `prompt`, `control`, `lifecycle`, `worktree_transition`, `evidence_transition`, `connection`, `timing`, `log`, and `gap`. Resolved session IDs are stamped at the top level before storage.
+- Runtime health: `GET /api/diagnostics/status` (default port 3000; `dev:server` uses `${OPENCHAMBER_PORT:-3001}`) reports `sessionCount`, bytes, queue/write/gap counts, segment count, and the last error.
+- Caveats: records and manifests are sanitized before disk (secrets redacted, home/worktree paths rewritten to `<WORKTREE_…>` placeholders); retention is 7 days / 1 GiB total (256 MiB in VS Code). Absence of an expected non-delta record is itself evidence — the runtime never saw it.
+- Deep contracts: `packages/harness-runtime/DOCUMENTATION.md` (journal, sanitizer, export, storage limits) and `packages/web/server/lib/diagnostics/DOCUMENTATION.md` (HTTP status/clear/export/sanitize).
 
 ## Regression-prevention checklist
 

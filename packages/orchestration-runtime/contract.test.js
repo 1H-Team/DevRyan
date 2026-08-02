@@ -82,6 +82,7 @@ describe('managed orchestration contract', () => {
       ...validInput(),
       owner: 'devryan',
       status: 'queued',
+      readOnly: false,
       childSessionId: null,
       leaseToken: null,
       startedAt: null,
@@ -104,6 +105,16 @@ describe('managed orchestration contract', () => {
     expect(task.dispatchGroupId).toBeNull();
     expect(() => validateManagedTaskRecord({ ...task, dispatchGroupId: '' }))
       .toThrow('dispatchGroupId is required');
+  });
+
+  test('defaults legacy work to writable and validates an explicit read-only policy', () => {
+    const writable = createManagedTaskRecord(validInput());
+    const readOnly = createManagedTaskRecord(validInput({ readOnly: true }));
+
+    expect(writable.readOnly).toBe(false);
+    expect(readOnly.readOnly).toBe(true);
+    expect(() => validateManagedTaskRecord({ ...writable, readOnly: 'yes' }))
+      .toThrow('readOnly must be a boolean');
   });
 
   test('rejects provider-native ownership and colliding task identifiers', () => {
@@ -158,6 +169,7 @@ describe('managed orchestration contract', () => {
     expect(event.properties.task).not.toHaveProperty('prompt');
     expect(event.properties.task).not.toHaveProperty('idempotencyKey');
     expect(event.properties.task).not.toHaveProperty('dispatchGroupId');
+    expect(event.properties.task).not.toHaveProperty('readOnly');
     expect(event.properties.task.agentRetryAvailable).toBe(true);
     expect(event.properties.directory).toBe('/workspace');
     expect(JSON.parse(JSON.stringify(event))).toEqual(event);

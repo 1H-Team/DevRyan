@@ -19,6 +19,7 @@ const TOOL_STATUS_PHRASES: Record<string, string> = {
     todoread: "reading todos",
     skill: "learning skill",
     question: "asking question",
+    devryan_browser: "using DevRyan Browser",
     devryan_task: "waiting for subagent output",
     plan_enter: "switching to planning",
     plan_exit: "switching to building",

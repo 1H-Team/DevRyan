@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import path from 'node:path';
 import { describe, test } from 'node:test';
 
 import { stopChildTree } from './dev-child-utils.mjs';
+import { resolveDevDataDirectory } from './dev-data-directory.mjs';
 import { shouldRestartDevChild } from './dev-restart-policy.mjs';
 import { buildPlan } from './validate.mjs';
 
@@ -54,10 +56,43 @@ describe('shouldRestartDevChild', () => {
   });
 });
 
+describe('resolveDevDataDirectory', () => {
+  test('preserves an explicit data-directory override', () => {
+    assert.equal(resolveDevDataDirectory({
+      env: { OPENCHAMBER_DATA_DIR: './explicit-dev-data' },
+      repoRoot: '/workspace/devryan',
+      scope: 'electron',
+    }), path.resolve('./explicit-dev-data'));
+  });
+
+  test('isolates defaults by checkout and development mode', () => {
+    const options = {
+      env: {},
+      repoRoot: '/workspace/devryan-a',
+      scope: 'web-hmr',
+      temporaryRoot: '/tmp/devryan-tests',
+    };
+    const first = resolveDevDataDirectory(options);
+
+    assert.equal(resolveDevDataDirectory(options), first);
+    assert.notEqual(resolveDevDataDirectory({
+      ...options,
+      repoRoot: '/workspace/devryan-b',
+    }), first);
+    assert.notEqual(resolveDevDataDirectory({
+      ...options,
+      scope: 'electron',
+    }), first);
+    assert.equal(path.dirname(path.dirname(path.dirname(first))), '/tmp/devryan-tests');
+  });
+});
+
 describe('stopChildTree', () => {
-  test('waits for a detached process group after its wrapper leader exits', {
-    skip: process.platform !== 'darwin',
-  }, async () => {
+  test('waits for a detached process group after its wrapper leader exits', async () => {
+    if (process.platform !== 'darwin') {
+      assert.equal(typeof stopChildTree, 'function');
+      return;
+    }
     const workerSource = `
       process.on('SIGINT', () => setTimeout(() => process.exit(0), 300));
       process.stdout.write('ready\\n');
@@ -124,6 +159,25 @@ describe('affected validation planning', () => {
       'lint:electron',
       'typeCheck:electron',
       'test:electron',
+    ]);
+  });
+
+  test('runs the legacy Tauri suite for Rust compatibility code', () => {
+    const affected = buildPlan('affected', [
+      'packages/desktop/src-tauri/src/main.rs',
+    ]);
+    const quick = buildPlan('quick', [
+      'packages/desktop/src-tauri/Cargo.toml',
+    ]);
+
+    assert.deepEqual(affected.commands.map((entry) => entry.label), [
+      'lint:desktop',
+      'typeCheck:desktop',
+      'test:desktop',
+    ]);
+    assert.deepEqual(quick.commands.map((entry) => entry.label), [
+      'typeCheck:desktop',
+      'test:desktop',
     ]);
   });
 

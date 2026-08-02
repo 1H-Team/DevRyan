@@ -15,6 +15,7 @@ import type {
   GitWorktreeInfo,
   CreateGitWorktreePayload,
   GitWorktreeCreateResult,
+  GitWorktreePreviewResult,
   RemoveGitWorktreePayload,
   GitWorktreeValidationResult,
   CreateGitCommitOptions,
@@ -525,7 +526,7 @@ export async function getGitWorktreeBootstrapStatus(directory: string): Promise<
   return response.json();
 }
 
-export async function previewGitWorktree(directory: string, payload: CreateGitWorktreePayload): Promise<GitWorktreeCreateResult> {
+export async function previewGitWorktree(directory: string, payload: CreateGitWorktreePayload): Promise<GitWorktreePreviewResult> {
   const response = await fetch(buildUrl(`${API_BASE}/worktrees/preview`, directory), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -540,6 +541,43 @@ export async function previewGitWorktree(directory: string, payload: CreateGitWo
   return response.json();
 }
 
+export async function getGitWorktreeBootstrapOperation(
+  operationId: string,
+): Promise<import('./api/types').GitWorktreeBootstrapStatus> {
+  const response = await fetch(`${API_BASE}/worktrees/operations/${encodeURIComponent(operationId)}`, {
+    cache: 'no-store',
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error || 'Failed to get worktree operation');
+  }
+  return response.json();
+}
+
+export async function listActiveGitWorktreeBootstrapOperations(): Promise<import('./api/types').GitWorktreeBootstrapStatus[]> {
+  const response = await fetch(`${API_BASE}/worktrees/operations?active=1`, { cache: 'no-store' });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error || 'Failed to list worktree operations');
+  }
+  const data = await response.json() as { operations?: import('./api/types').GitWorktreeBootstrapStatus[] };
+  return Array.isArray(data.operations) ? data.operations : [];
+}
+
+export async function retryGitWorktreeBootstrapOperation(
+  operationId: string,
+): Promise<import('./api/types').GitWorktreeBootstrapStatus> {
+  const response = await fetch(
+    `${API_BASE}/worktrees/operations/${encodeURIComponent(operationId)}/retry`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+  );
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error || 'Failed to retry worktree operation');
+  }
+  return response.json();
+}
+
 export async function createGitWorktree(directory: string, payload: CreateGitWorktreePayload): Promise<GitWorktreeCreateResult> {
   const response = await fetch(buildUrl(`${API_BASE}/worktrees`, directory), {
     method: 'POST',
@@ -548,8 +586,16 @@ export async function createGitWorktree(directory: string, payload: CreateGitWor
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(error.error || 'Failed to create worktree');
+    const payload = await response.json().catch(() => ({ error: response.statusText }));
+    const error = new Error(payload.error || 'Failed to create worktree') as Error & {
+      operationId?: string;
+      bootstrap?: import('./api/types').GitWorktreeBootstrapStatus;
+    };
+    if (typeof payload.operationId === 'string') error.operationId = payload.operationId;
+    if (payload.bootstrap && typeof payload.bootstrap === 'object') {
+      error.bootstrap = payload.bootstrap;
+    }
+    throw error;
   }
 
   return response.json();
@@ -754,7 +800,8 @@ export async function getGitLog(
       from: options.from,
       to: options.to,
       file: options.file,
-    })
+    }),
+    { cache: 'no-store' }
   );
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));

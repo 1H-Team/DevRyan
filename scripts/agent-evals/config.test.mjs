@@ -9,6 +9,7 @@ import {
   parseEvaluationArgs,
   validateEvaluationConfig,
 } from './config.mjs';
+import { discoverScriptTestFiles } from '../test-scripts.mjs';
 
 const repoRoot = path.resolve(new URL('../..', import.meta.url).pathname);
 
@@ -238,7 +239,8 @@ describe('agent evaluation CLI configuration', () => {
 
     const packageJson = JSON.parse(readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
     assert.equal(packageJson.scripts['agent:eval'], 'node ./scripts/agent-evals/main.mjs');
-    assert.match(packageJson.scripts['test:scripts'], /scripts\/agent-evals\/\*\.test\.mjs/);
+    assert.equal(packageJson.scripts['test:scripts'], 'node scripts/test-scripts.mjs');
+    assert.ok(discoverScriptTestFiles(repoRoot).includes('scripts/agent-evals/config.test.mjs'));
   });
 
   test('rejects a report directory that enters the fixture through a symlink', () => {

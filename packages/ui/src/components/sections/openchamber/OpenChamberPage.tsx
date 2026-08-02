@@ -1,7 +1,6 @@
 import React from 'react';
 import { OpenChamberVisualSettings } from './OpenChamberVisualSettings';
 import { AboutSettings } from './AboutSettings';
-import { SessionRetentionSettings } from './SessionRetentionSettings';
 import { PasskeySettings } from './PasskeySettings';
 import { DefaultsSettings } from './DefaultsSettings';
 import { GitSettings } from './GitSettings';
@@ -10,6 +9,7 @@ import { GitHubSettings } from './GitHubSettings';
 import { VoiceSettings } from './VoiceSettings';
 import { TunnelSettings } from './TunnelSettings';
 import { OpenCodeCliSettings } from './OpenCodeCliSettings';
+import { AgentBrowserControlSettings } from './AgentBrowserControlSettings';
 import { DesktopKeepAwakeSettings } from './DesktopKeepAwakeSettings';
 import { DesktopNetworkSettings } from './DesktopNetworkSettings';
 import { KeyboardShortcutsSettings } from './KeyboardShortcutsSettings';
@@ -49,12 +49,10 @@ export const OpenChamberPage: React.FC<OpenChamberPageProps> = ({ section }) => 
                     {showDesktopNetworkSettings && (
                         <div className="border-t border-border/40 pt-6">
                             <DesktopKeepAwakeSettings />
+                            <AgentBrowserControlSettings />
                             <DesktopNetworkSettings />
                         </div>
                     )}
-                    <div className="border-t border-border/40 pt-6">
-                        <SessionRetentionSettings />
-                    </div>
                     <div className="border-t border-border/40 pt-6">
                         <PasskeySettings />
                     </div>
@@ -133,7 +131,7 @@ const ChatSectionContent: React.FC = () => {
     return <OpenChamberVisualSettings visibleSettings={['chatRenderMode', 'messageTransport', 'activityRenderMode', 'userMessageRendering', 'mermaidRendering', 'reasoning', 'showToolFileIcons', 'expandedTools', 'collapsibleUserMessages', 'stickyUserHeader', 'wideChatLayout', 'splitAssistantMessageActions', 'diffLayout', 'mobileStatusBar', 'dotfiles', 'queueMode', 'persistDraft', 'inputSpellcheck']} />;
 };
 
-// Sessions section: Default model & agent, Session retention
+// Sessions section: Default model & agent
 const SessionsSectionContent: React.FC = () => {
     const isVSCode = isVSCodeRuntime();
     const showDesktopNetworkSettings = isDesktopShell() && isDesktopLocalOriginActive();
@@ -148,12 +146,10 @@ const SessionsSectionContent: React.FC = () => {
             {showDesktopNetworkSettings && (
                 <div className="border-t border-border/40 pt-6">
                     <DesktopKeepAwakeSettings />
+                    <AgentBrowserControlSettings />
                     <DesktopNetworkSettings />
                 </div>
             )}
-            <div className="border-t border-border/40 pt-6">
-                <SessionRetentionSettings />
-            </div>
         </div>
     );
 };

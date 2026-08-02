@@ -158,6 +158,19 @@ describe('getPlanCardActionState', () => {
       disabledReason: 'Implementation already started.',
     });
   });
+
+  test('keeps the card disabled while a sibling assistant in the revision is still running', () => {
+    expect(getPlanCardActionState({
+      streamPhase: 'completed',
+      hasPlanText: true,
+      isImplementationRequested: false,
+      isLatestPlan: true,
+      isRevisionSettled: false,
+    })).toEqual({
+      canImplement: false,
+      disabledReason: 'The response is still finishing.',
+    });
+  });
 });
 
 describe('getPlanCardDataState', () => {
@@ -193,6 +206,15 @@ describe('shouldPersistPlanCard', () => {
       streamPhase: 'completed',
       hasPlanText: true,
       isLatestPlan: false,
+    })).toBe(false);
+  });
+
+  test('does not persist while the revision has an unsettled sibling assistant', () => {
+    expect(shouldPersistPlanCard({
+      streamPhase: 'completed',
+      hasPlanText: true,
+      isLatestPlan: true,
+      isRevisionSettled: false,
     })).toBe(false);
   });
 });

@@ -3,6 +3,7 @@ import type { OpencodeClient, SessionStatus } from "@opencode-ai/sdk/v2/client"
 
 import { registerManualAbortGuard, resetAbortGuardState, setAbortGuardExecutor } from "./abort-retry-guard"
 import { bootstrapDirectory } from "./bootstrap"
+import { updateStreamingState, useStreamingStore } from "./streaming"
 import { INITIAL_STATE, type State } from "./types"
 
 const createSdk = (sessionStatus: Record<string, SessionStatus> = {}): OpencodeClient => ({
@@ -40,6 +41,10 @@ describe("bootstrapDirectory session list readiness", () => {
     console.error = mock(() => {}) as unknown as typeof console.error
     resetAbortGuardState()
     setAbortGuardExecutor(null)
+    useStreamingStore.setState({
+      streamingMessageIds: new Map(),
+      messageStreamStates: new Map(),
+    })
   })
 
   test("marks an empty session list ready after a successful first request", async () => {
@@ -118,6 +123,56 @@ describe("bootstrapDirectory session list readiness", () => {
     })
 
     expect(state.session_status["session-a"]).toEqual({ type: "idle" })
+  })
+
+  test("settles a stale incomplete stream when the successful status snapshot omits its session", async () => {
+    let state: State = {
+      ...createState(),
+      message: {
+        "session-a": [
+          {
+            id: "user-a",
+            sessionID: "session-a",
+            role: "user",
+            time: { created: 1 },
+          },
+          {
+            id: "assistant-a",
+            sessionID: "session-a",
+            role: "assistant",
+            time: { created: 2 },
+          },
+        ] as State["message"][string],
+      },
+    }
+    updateStreamingState(state)
+    expect(useStreamingStore.getState().streamingMessageIds.get("session-a")).toBe("assistant-a")
+
+    await bootstrapDirectory({
+      directory: "/repo",
+      sdk: createSdk(),
+      getState: () => state,
+      set: (patch) => {
+        state = { ...state, ...patch }
+      },
+      global: {
+        config: {},
+        projects: [],
+        providers: { all: [], connected: [], default: {} },
+      },
+      loadSessions: () => {
+        state = {
+          ...state,
+          session: [{ id: "session-a", directory: "/repo" } as State["session"][number]],
+          sessionTotal: 1,
+          sessionListStatus: "ready",
+        }
+      },
+    })
+
+    expect(state.session_status["session-a"]).toEqual({ type: "idle" })
+    expect(useStreamingStore.getState().streamingMessageIds.get("session-a")).toBeNull()
+    expect(useStreamingStore.getState().messageStreamStates.get("assistant-a")?.phase).toBe("completed")
   })
 
   test("preserves a newer live status received while the session list loads", async () => {

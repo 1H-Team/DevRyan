@@ -1,17 +1,21 @@
 import express from 'express';
 import request from 'supertest';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { COMMIT_GENERATION_DEFAULT_ZEN_MODEL } from './commit-message.js';
 import { registerGitRoutes } from './routes.js';
 
-const originalFetch = globalThis.fetch;
-
-const makeApp = (resolveZenModel = vi.fn(async (override) => override || 'gpt-5-nano')) => {
+const makeApp = ({
+  resolveZenModel = vi.fn(async (override) => override || 'gpt-5-nano'),
+  generateCommitMessage = vi.fn(async () => ({
+    subject: 'feat: add generated source file',
+    highlights: [],
+  })),
+} = {}) => {
   const app = express();
   app.use(express.json());
-  registerGitRoutes(app, { resolveZenModel });
-  return { app, resolveZenModel };
+  registerGitRoutes(app, { resolveZenModel, generateCommitMessage });
+  return { app, generateCommitMessage, resolveZenModel };
 };
 
 const requestBody = {
@@ -31,20 +35,8 @@ const requestBody = {
 };
 
 describe('POST /api/git/commit-message', () => {
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
-    vi.restoreAllMocks();
-  });
-
   it('uses the commit-specific free Zen model without calling OpenCode session endpoints', async () => {
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({
-        choices: [{ message: { content: 'feat: add generated source file' } }],
-      }),
-    }));
-    globalThis.fetch = fetchMock;
-    const { app, resolveZenModel } = makeApp();
+    const { app, generateCommitMessage, resolveZenModel } = makeApp();
 
     const response = await request(app)
       .post('/api/git/commit-message?directory=/repo')
@@ -55,23 +47,19 @@ describe('POST /api/git/commit-message', () => {
       message: { subject: 'feat: add generated source file', highlights: [] },
     });
     expect(resolveZenModel).toHaveBeenCalledWith(COMMIT_GENERATION_DEFAULT_ZEN_MODEL);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const requestedUrl = String(fetchMock.mock.calls[0][0]);
-    const requestPayload = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(requestedUrl).toBe('https://opencode.ai/zen/v1/chat/completions');
-    expect(requestPayload.model).toBe(COMMIT_GENERATION_DEFAULT_ZEN_MODEL);
-    expect(requestedUrl).not.toMatch(/session|prompt_async/);
+    expect(generateCommitMessage).toHaveBeenCalledWith({
+      context: requestBody.context,
+      guidance: undefined,
+      zenModel: COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
+    });
   });
 
   it('preserves an explicit Zen model override', async () => {
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({
-        choices: [{ message: { content: 'chore: update generated fixture' } }],
-      }),
+    const generateCommitMessage = vi.fn(async () => ({
+      subject: 'chore: update generated fixture',
+      highlights: [],
     }));
-    globalThis.fetch = fetchMock;
-    const { app, resolveZenModel } = makeApp();
+    const { app, resolveZenModel } = makeApp({ generateCommitMessage });
 
     await request(app)
       .post('/api/git/commit-message?directory=/repo')
@@ -79,8 +67,9 @@ describe('POST /api/git/commit-message', () => {
       .expect(200);
 
     expect(resolveZenModel).toHaveBeenCalledWith('big-pickle');
-    const requestPayload = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(requestPayload.model).toBe('big-pickle');
+    expect(generateCommitMessage).toHaveBeenCalledWith(expect.objectContaining({
+      zenModel: 'big-pickle',
+    }));
   });
 
   it('rejects missing directory and worktree context', async () => {
@@ -94,13 +83,13 @@ describe('POST /api/git/commit-message', () => {
   });
 
   it('returns a deterministic error for malformed model output', async () => {
-    globalThis.fetch = vi.fn(async () => ({
-      ok: true,
-      json: async () => ({
-        choices: [{ message: { content: 'this is not a conventional commit' } }],
-      }),
-    }));
-    const { app } = makeApp(vi.fn(async () => 'big-pickle'));
+    const generateCommitMessage = vi.fn(async () => {
+      throw new Error('Generated commit subject is not a valid conventional commit');
+    });
+    const { app } = makeApp({
+      resolveZenModel: vi.fn(async () => 'big-pickle'),
+      generateCommitMessage,
+    });
 
     const response = await request(app)
       .post('/api/git/commit-message?directory=/repo')

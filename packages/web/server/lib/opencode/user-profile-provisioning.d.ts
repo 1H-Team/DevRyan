@@ -6,6 +6,13 @@ export type UserProfileProvisionResult = {
   updated: string[];
   removed: string[];
   install: { ok: boolean; exitCode: number | null; stdout: string; stderr: string } | null;
+  managedPluginIssues?: Array<{
+    pluginId: string;
+    kind: 'missing-package' | 'version-mismatch' | 'missing-entrypoint';
+    path: string;
+    expectedVersion: string;
+    installedVersion: string | null;
+  }>;
   warnings?: string[];
   meridianPolicy?: {
     ok: boolean;

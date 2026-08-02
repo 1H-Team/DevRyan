@@ -78,4 +78,23 @@ describe('provider recovery store', () => {
     });
     expect(useProviderRecoveryStore.getState().recoveriesBySessionId.ses_1).toBe(undefined);
   });
+
+  test('clears a stale recovery when a newer authoritative user turn appears', () => {
+    const store = useProviderRecoveryStore.getState();
+    store.offerRecovery(recovery);
+
+    store.reconcileLatestUserMessage('ses_1', 'msg_user_new');
+
+    expect(useProviderRecoveryStore.getState().recoveriesBySessionId.ses_1).toBe(undefined);
+  });
+
+  test('preserves recovery reconciliation during its own pending replacement send', () => {
+    const store = useProviderRecoveryStore.getState();
+    store.offerRecovery(recovery);
+    store.setActionState('ses_1', true, null);
+
+    store.reconcileLatestUserMessage('ses_1', 'msg_user_recovery');
+
+    expect(useProviderRecoveryStore.getState().recoveriesBySessionId.ses_1?.pending).toBe(true);
+  });
 });

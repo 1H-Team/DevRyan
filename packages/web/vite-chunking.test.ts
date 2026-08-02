@@ -56,6 +56,13 @@ describe('resolveVendorChunkName', () => {
   });
 
   it.each([
+    '\0vite/preload-helper.js',
+    'vite/preload-helper.js',
+  ])('pins the Vite preload helper %s to its own chunk', (id) => {
+    expect(resolveVendorChunkName(id)).toBe('vendor-vite-preload');
+  });
+
+  it.each([
     '/repo/node_modules/lodash/index.js',
     '/repo/node_modules/@remixicon/react/index.js',
     '/repo/node_modules/.bun/lodash@4.17.21/index.js',

@@ -3,6 +3,9 @@ import { parseSseEventEnvelope } from './protocol.js';
 export const DEFAULT_UPSTREAM_STALL_TIMEOUT_MS = 20_000;
 export const UPSTREAM_STALL_TIMEOUT_CONCURRENT_MS = DEFAULT_UPSTREAM_STALL_TIMEOUT_MS * 3;
 export const DEFAULT_UPSTREAM_RECONNECT_DELAY_MS = 250;
+// Hard cap for the partial-frame accumulator (a legitimate SSE frame stays far
+// below this; see the drop logic in the read loop).
+export const MAX_UPSTREAM_FRAME_BYTES = 32 * 1024 * 1024;
 
 function resolveTimeoutMs(value, fallback) {
   const resolved = typeof value === 'function' ? value() : value;
@@ -151,6 +154,16 @@ export function createUpstreamSseReader({
 
             resetStallTimer();
             buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+
+            // A single frame should never approach this; a runaway upstream
+            // (or a missing separator) must not grow the accumulator without
+            // bound. Drop the partial frame and keep reading — the client-side
+            // gap handling recovers the stream.
+            if (buffer.length > MAX_UPSTREAM_FRAME_BYTES && buffer.indexOf('\n\n') === -1) {
+              onError?.({ type: 'frame_too_large', bytes: buffer.length });
+              buffer = '';
+              continue;
+            }
 
             let separatorIndex = buffer.indexOf('\n\n');
             while (separatorIndex !== -1 && !stopped && !signal?.aborted) {

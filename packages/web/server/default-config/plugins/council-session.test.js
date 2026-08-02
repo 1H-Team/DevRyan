@@ -20,7 +20,7 @@ const { CouncilSessionPlugin } = await import('./council-session.js');
 
 const PROJECT_DIR = '/project';
 const PARENT_SESSION_ID = 'parent-session';
-const realSetImmediate = globalThis.setImmediate;
+const realSetTimeout = globalThis.setTimeout;
 
 const assistantMessage = (sessionID, text, options = {}) => ({
   info: {
@@ -94,11 +94,11 @@ const flushMicrotasks = async () => {
 };
 
 const waitForMockCalls = async (mockFn, count = 1) => {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
     if (mockFn.mock.calls.length >= count) {
       return;
     }
-    await new Promise((resolve) => realSetImmediate(resolve));
+    await new Promise((resolve) => realSetTimeout(resolve, 5));
     await flushMicrotasks();
   }
   throw new Error(`Expected mock to be called ${count} time(s), received ${mockFn.mock.calls.length}`);

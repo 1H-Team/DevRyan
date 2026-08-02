@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { devtools, persist, createJSONStorage } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import { devtools } from './utils/devtoolsGate';
 import type { SidebarSection } from '@/constants/sidebar';
 import { getSafeStorage } from './utils/safeStorage';
 import { SEMANTIC_TYPOGRAPHY, getTypographyVariable, type SemanticTypographyKey } from '@/lib/typography';
@@ -7,9 +8,9 @@ import type { ShortcutCombo } from '@/lib/shortcuts';
 import { DEFAULT_MONO_FONT, DEFAULT_UI_FONT, type MonoFontOption, type UiFontOption } from '@/lib/fontOptions';
 import { getStoredMobileKeyboardMode, type MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 
-export type MainTab = 'chat' | 'plan' | 'git' | 'diff' | 'terminal' | 'files';
+export type MainTab = 'chat' | 'plan' | 'git' | 'diff' | 'terminal';
 export type RightSidebarTab = 'git' | 'files';
-export type ContextPanelMode = 'diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview';
+export type ContextPanelMode = 'diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview' | 'browser';
 export type MermaidRenderingMode = 'svg' | 'ascii';
 export type UserMessageRenderingMode = 'markdown' | 'plain';
 export type ChatRenderMode = 'sorted' | 'live';
@@ -28,6 +29,7 @@ type ContextPanelTab = {
   mode: ContextPanelMode;
   targetPath: string | null;
   ownerSessionId: string | null;
+  leaseId: string | null;
   displayUrl: string | null;
   dedupeKey: string;
   label: string | null;
@@ -38,6 +40,7 @@ type ContextPanelTabDescriptor = {
   mode: ContextPanelMode;
   targetPath?: string | null;
   ownerSessionId?: string | null;
+  leaseId?: string | null;
   dedupeKey?: string | null;
   label?: string | null;
 };
@@ -83,6 +86,7 @@ const LEGACY_DEFAULT_NOTIFICATION_TEMPLATES = {
 
 const EMPTY_NOTIFICATION_TEMPLATES = {
   completion: { title: '', message: '' },
+  planReady: { title: '', message: '' },
   error: { title: '', message: '' },
   question: { title: '', message: '' },
   subtask: { title: '', message: '' },
@@ -245,6 +249,9 @@ const modelRefsEqual = (a: readonly ModelRef[], b: readonly ModelRef[]): boolean
 
 const createContextPanelTab = (descriptor: ContextPanelTabDescriptor): ContextPanelTab => {
   const normalizedTargetPath = normalizeContextTargetPath(descriptor.targetPath);
+  const leaseId = descriptor.mode === 'browser'
+    ? normalizeContextTargetPath(descriptor.leaseId)
+    : null;
   const dedupeKey = normalizeContextPanelTabDedupeKey(
     descriptor.mode,
     normalizedTargetPath,
@@ -254,7 +261,10 @@ const createContextPanelTab = (descriptor: ContextPanelTabDescriptor): ContextPa
     id: buildContextPanelTabID(descriptor.mode, dedupeKey),
     mode: descriptor.mode,
     targetPath: normalizedTargetPath,
-    ownerSessionId: descriptor.mode === 'plan' ? normalizeContextTargetPath(descriptor.ownerSessionId) : null,
+    ownerSessionId: descriptor.mode === 'plan' || leaseId
+      ? normalizeContextTargetPath(descriptor.ownerSessionId)
+      : null,
+    leaseId,
     displayUrl: descriptor.mode === 'preview' ? normalizedTargetPath : null,
     dedupeKey,
     label: normalizeContextTabLabel(descriptor.label),
@@ -295,13 +305,14 @@ const sanitizeContextPanelTabs = (tabs: unknown): ContextPanelTab[] => {
       mode?: unknown;
       targetPath?: unknown;
       ownerSessionId?: unknown;
+      leaseId?: unknown;
       displayUrl?: unknown;
       dedupeKey?: unknown;
       label?: unknown;
       touchedAt?: unknown;
     };
 
-    if (candidate.mode !== 'diff' && candidate.mode !== 'file' && candidate.mode !== 'context' && candidate.mode !== 'plan' && candidate.mode !== 'chat' && candidate.mode !== 'preview') {
+    if (candidate.mode !== 'diff' && candidate.mode !== 'file' && candidate.mode !== 'context' && candidate.mode !== 'plan' && candidate.mode !== 'chat' && candidate.mode !== 'preview' && candidate.mode !== 'browser') {
       continue;
     }
 
@@ -321,8 +332,11 @@ const sanitizeContextPanelTabs = (tabs: unknown): ContextPanelTab[] => {
       id,
       mode: candidate.mode,
       targetPath,
-      ownerSessionId: candidate.mode === 'plan'
+      ownerSessionId: candidate.mode === 'plan' || candidate.mode === 'browser'
         ? normalizeContextTargetPath(typeof candidate.ownerSessionId === 'string' ? candidate.ownerSessionId : null)
+        : null,
+      leaseId: candidate.mode === 'browser'
+        ? normalizeContextTargetPath(typeof candidate.leaseId === 'string' ? candidate.leaseId : null)
         : null,
       displayUrl: candidate.mode === 'preview'
         ? normalizeContextTargetPath(typeof candidate.displayUrl === 'string' ? candidate.displayUrl : targetPath)
@@ -386,6 +400,7 @@ const upsertContextPanelTab = (
           mode: nextTab.mode,
           targetPath: nextTab.targetPath,
           ownerSessionId: nextTab.ownerSessionId,
+          leaseId: nextTab.leaseId,
           displayUrl: nextTab.displayUrl,
           dedupeKey: nextTab.dedupeKey,
           label: nextTab.label,
@@ -530,6 +545,33 @@ const clampContextPanelRoots = (
   return next;
 };
 
+const stripEphemeralBrowserLeaseTabs = (
+  byDirectory: Record<string, ContextPanelDirectoryState>,
+): Record<string, ContextPanelDirectoryState> => {
+  let next: Record<string, ContextPanelDirectoryState> | null = null;
+
+  for (const [directory, panel] of Object.entries(byDirectory)) {
+    const tabs = panel.tabs.filter((tab) => !tab.leaseId);
+    if (tabs.length === panel.tabs.length) continue;
+
+    next ??= { ...byDirectory };
+    const activeTabId = resolveActiveContextPanelTabID(
+      tabs,
+      panel.activeTabId && tabs.some((tab) => tab.id === panel.activeTabId)
+        ? panel.activeTabId
+        : null,
+    );
+    next[directory] = {
+      ...panel,
+      tabs,
+      activeTabId,
+      isOpen: tabs.length > 0 ? panel.isOpen : false,
+    };
+  }
+
+  return next ?? byDirectory;
+};
+
 interface UIStore {
 
   theme: 'light' | 'dark' | 'system';
@@ -616,12 +658,14 @@ interface UIStore {
 
   // Event toggles (which events trigger notifications)
   notifyOnCompletion: boolean;
+  notifyOnPlanReady: boolean;
   notifyOnError: boolean;
   notifyOnQuestion: boolean;
 
   // Per-event notification templates
   notificationTemplates: {
     completion: { title: string; message: string };
+    planReady: { title: string; message: string };
     error: { title: string; message: string };
     question: { title: string; message: string };
     subtask: { title: string; message: string };
@@ -672,7 +716,18 @@ interface UIStore {
   requestContextPanelTabClose: (directory: string, tabID: string) => void;
   consumeContextPlanMotionRequest: (requestID: number) => void;
   openContextPreview: (directory: string, url: string) => void;
+  openContextBrowser: (directory: string, url?: string | null) => void;
+  openContextBrowserLease: (directory: string, lease: {
+    leaseId: string;
+    rootSessionId: string;
+    url?: string | null;
+    title?: string | null;
+    hostname?: string | null;
+  }) => void;
+  toggleContextBrowser: (directory: string) => void;
+  pruneBrowserLeaseTabs: (activeLeaseIds: readonly string[]) => void;
   setContextPreviewDisplayUrl: (directory: string, tabID: string, url: string) => void;
+  setContextPanelTabTargetPath: (directory: string, tabID: string, targetPath: string) => void;
   setActiveContextPanelTab: (directory: string, tabID: string) => void;
   reorderContextPanelTabs: (directory: string, activeTabID: string, overTabID: string) => void;
   closeContextPanelTab: (directory: string, tabID: string) => void;
@@ -762,9 +817,15 @@ interface UIStore {
   setShowTerminalQuickKeysOnDesktop: (value: boolean) => void;
   setNotifyOnSubtasks: (value: boolean) => void;
   setNotifyOnCompletion: (value: boolean) => void;
+  setNotifyOnPlanReady: (value: boolean) => void;
   setNotifyOnError: (value: boolean) => void;
   setNotifyOnQuestion: (value: boolean) => void;
   setNotificationTemplates: (templates: UIStore['notificationTemplates']) => void;
+  updateNotificationTemplate: (
+    event: keyof UIStore['notificationTemplates'],
+    field: 'title' | 'message',
+    value: string,
+  ) => void;
   setSummarizeLastMessage: (value: boolean) => void;
   setSummaryThreshold: (value: number) => void;
   setSummaryLength: (value: number) => void;
@@ -878,14 +939,16 @@ export const useUIStore = create<UIStore>()(
         isImagePreviewOpen: false,
         nativeNotificationsEnabled: false,
         notificationMode: 'hidden-only',
-        notifyOnSubtasks: true,
+        notifyOnSubtasks: false,
 
         // Event toggles (which events trigger notifications)
         notifyOnCompletion: true,
+        notifyOnPlanReady: true,
         notifyOnError: true,
         notifyOnQuestion: true,
         notificationTemplates: {
           completion: { ...EMPTY_NOTIFICATION_TEMPLATES.completion },
+          planReady: { ...EMPTY_NOTIFICATION_TEMPLATES.planReady },
           error: { ...EMPTY_NOTIFICATION_TEMPLATES.error },
           question: { ...EMPTY_NOTIFICATION_TEMPLATES.question },
           subtask: { ...EMPTY_NOTIFICATION_TEMPLATES.subtask },
@@ -1239,6 +1302,155 @@ export const useUIStore = create<UIStore>()(
             targetPath: normalizedUrl,
             dedupeKey: normalizedUrl,
             label,
+          });
+        },
+
+        openContextBrowser: (directory, url) => {
+          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          if (!normalizedDirectory) {
+            return;
+          }
+
+          const normalizedUrl = (url || '').trim();
+          let label: string | null = null;
+          let targetPath: string | null = null;
+          if (normalizedUrl && normalizedUrl !== 'about:blank') {
+            try {
+              const parsed = new URL(normalizedUrl);
+              if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+                targetPath = parsed.toString();
+                label = parsed.host || parsed.hostname || null;
+              }
+            } catch {
+              // ignore invalid URL; open an empty browser tab instead
+            }
+          }
+
+          get().openContextPanelTab(normalizedDirectory, {
+            mode: 'browser',
+            targetPath,
+            label,
+            leaseId: null,
+            ownerSessionId: null,
+          });
+        },
+
+        openContextBrowserLease: (directory, lease) => {
+          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const leaseId = normalizeContextTargetPath(lease?.leaseId);
+          const rootSessionId = normalizeContextTargetPath(lease?.rootSessionId);
+          if (!normalizedDirectory || !leaseId || !rootSessionId) {
+            return;
+          }
+
+          let targetPath: string | null = null;
+          const rawUrl = (lease.url || '').trim();
+          if (rawUrl && rawUrl !== 'about:blank') {
+            try {
+              const parsed = new URL(rawUrl);
+              if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+                targetPath = parsed.toString();
+              }
+            } catch {
+              // The live webview still starts safely at about:blank.
+            }
+          }
+
+          get().openContextPanelTab(normalizedDirectory, {
+            mode: 'browser',
+            targetPath,
+            ownerSessionId: rootSessionId,
+            leaseId,
+            dedupeKey: `lease:${leaseId}`,
+            label: lease.title || lease.hostname || null,
+          });
+        },
+
+        toggleContextBrowser: (directory) => {
+          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          if (!normalizedDirectory) {
+            return;
+          }
+
+          const panelState = get().contextPanelByDirectory[normalizedDirectory];
+          const browserTab = panelState?.tabs.find((tab) => tab.mode === 'browser' && !tab.leaseId);
+          if (panelState?.isOpen && browserTab && panelState.activeTabId === browserTab.id) {
+            get().closeContextPanelTab(normalizedDirectory, browserTab.id);
+            return;
+          }
+
+          if (browserTab) {
+            get().setActiveContextPanelTab(normalizedDirectory, browserTab.id);
+            return;
+          }
+
+          get().openContextBrowser(normalizedDirectory);
+        },
+
+        pruneBrowserLeaseTabs: (activeLeaseIds) => {
+          const active = new Set(
+            activeLeaseIds
+              .map((leaseId) => normalizeContextTargetPath(leaseId))
+              .filter((leaseId): leaseId is string => Boolean(leaseId)),
+          );
+
+          set((state) => {
+            let nextByDirectory: Record<string, ContextPanelDirectoryState> | null = null;
+            for (const [directory, panel] of Object.entries(state.contextPanelByDirectory)) {
+              const removedTabs = panel.tabs.filter((tab) => tab.leaseId && !active.has(tab.leaseId));
+              if (removedTabs.length === 0) continue;
+
+              let nextPanel = panel;
+              for (const tab of removedTabs) {
+                nextPanel = closeContextPanelTab(nextPanel, tab.id);
+              }
+              nextByDirectory ??= { ...state.contextPanelByDirectory };
+              nextByDirectory[directory] = nextPanel;
+            }
+
+            return nextByDirectory ? { contextPanelByDirectory: nextByDirectory } : state;
+          });
+        },
+
+        setContextPanelTabTargetPath: (directory, tabID, targetPath) => {
+          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedTabID = (tabID || '').trim();
+          const normalizedTargetPath = normalizeContextTargetPath(targetPath);
+          if (!normalizedDirectory || !normalizedTabID || !normalizedTargetPath) {
+            return;
+          }
+
+          set((state) => {
+            const current = state.contextPanelByDirectory[normalizedDirectory];
+            if (!current) {
+              return state;
+            }
+
+            const tabIndex = current.tabs.findIndex((tab) => tab.id === normalizedTabID);
+            const currentTab = current.tabs[tabIndex];
+            if (tabIndex === -1 || !currentTab || currentTab.targetPath === normalizedTargetPath) {
+              return state;
+            }
+
+            let label = currentTab.label;
+            if (currentTab.mode === 'browser') {
+              try {
+                const parsed = new URL(normalizedTargetPath);
+                label = parsed.host || parsed.hostname || label;
+              } catch {
+                // keep the existing label for non-URL target paths
+              }
+            }
+
+            const tabs = current.tabs.map((tab, index) => (
+              index === tabIndex ? { ...tab, targetPath: normalizedTargetPath, label } : tab
+            ));
+            return {
+              contextPanelByDirectory: {
+                ...state.contextPanelByDirectory,
+                [normalizedDirectory]: { ...current, tabs },
+              },
+            };
           });
         },
 
@@ -2098,9 +2310,27 @@ export const useUIStore = create<UIStore>()(
         },
 
         setNotifyOnCompletion: (value) => { set({ notifyOnCompletion: value }); },
+        setNotifyOnPlanReady: (value) => { set({ notifyOnPlanReady: value }); },
         setNotifyOnError: (value) => { set({ notifyOnError: value }); },
         setNotifyOnQuestion: (value) => { set({ notifyOnQuestion: value }); },
         setNotificationTemplates: (templates) => { set({ notificationTemplates: templates }); },
+        updateNotificationTemplate: (event, field, value) => {
+          set((state) => {
+            const template = state.notificationTemplates[event];
+            if (template[field] === value) {
+              return state;
+            }
+            return {
+              notificationTemplates: {
+                ...state.notificationTemplates,
+                [event]: {
+                  ...template,
+                  [field]: value,
+                },
+              },
+            };
+          });
+        },
         setSummarizeLastMessage: (value) => { set({ summarizeLastMessage: value }); },
         setSummaryThreshold: (value) => { set({ summaryThreshold: value }); },
         setSummaryLength: (value) => { set({ summaryLength: value }); },
@@ -2199,7 +2429,7 @@ export const useUIStore = create<UIStore>()(
       {
         name: 'ui-store',
         storage: createJSONStorage(() => getSafeStorage()),
-        version: 9,
+        version: 12,
         migrate: (persistedState, version) => {
           if (!persistedState || typeof persistedState !== 'object') {
             return persistedState;
@@ -2211,9 +2441,32 @@ export const useUIStore = create<UIStore>()(
             if (isLegacyDefaultTemplates(state.notificationTemplates)) {
               state.notificationTemplates = {
                 completion: { ...EMPTY_NOTIFICATION_TEMPLATES.completion },
+                planReady: { ...EMPTY_NOTIFICATION_TEMPLATES.planReady },
                 error: { ...EMPTY_NOTIFICATION_TEMPLATES.error },
                 question: { ...EMPTY_NOTIFICATION_TEMPLATES.question },
                 subtask: { ...EMPTY_NOTIFICATION_TEMPLATES.subtask },
+              };
+            }
+          }
+
+          // v11 -> v12: add the independently configurable Plan Ready event
+          // without replacing any existing notification template customizations.
+          if (version < 12) {
+            if (typeof state.notifyOnPlanReady !== 'boolean') {
+              state.notifyOnPlanReady = true;
+            }
+            const templates = state.notificationTemplates;
+            const templateRecord = templates && typeof templates === 'object'
+              ? templates as Record<string, unknown>
+              : {};
+            const planReady = templateRecord.planReady;
+            const validPlanReady = planReady && typeof planReady === 'object'
+              && typeof (planReady as Record<string, unknown>).title === 'string'
+              && typeof (planReady as Record<string, unknown>).message === 'string';
+            if (!validPlanReady) {
+              state.notificationTemplates = {
+                ...templateRecord,
+                planReady: { ...EMPTY_NOTIFICATION_TEMPLATES.planReady },
               };
             }
           }
@@ -2246,7 +2499,9 @@ export const useUIStore = create<UIStore>()(
             state.rightSidebarTab = 'git';
           }
 
-          state.contextPanelByDirectory = sanitizeContextPanelByDirectory(state.contextPanelByDirectory);
+          state.contextPanelByDirectory = stripEphemeralBrowserLeaseTabs(
+            sanitizeContextPanelByDirectory(state.contextPanelByDirectory),
+          );
 
           if (version < 5) {
             if (!state.shortcutOverrides || typeof state.shortcutOverrides !== 'object') {
@@ -2287,6 +2542,22 @@ export const useUIStore = create<UIStore>()(
               : 0;
           }
 
+          // v9 -> v10: the 'files' main tab was removed; files now open as context
+          // panel tabs. A stale persisted value would render a blank view.
+          if (version < 10) {
+            if (state.activeMainTab === 'files') {
+              state.activeMainTab = 'chat';
+            }
+          }
+
+          // v10 -> v11: 'browser' context-panel tab mode added (Electron webview
+          // pane). No data reshape needed — the unconditional context-panel tab
+          // sanitizer accepts the new mode; the bump marks the schema change so
+          // older clients drop unknown browser tabs instead of misrendering them.
+          if (version < 11) {
+            // intentionally no-op
+          }
+
           return state;
         },
         partialize: (state) => ({
@@ -2296,7 +2567,7 @@ export const useUIStore = create<UIStore>()(
           isRightSidebarOpen: state.isRightSidebarOpen,
           rightSidebarWidth: state.rightSidebarWidth,
           rightSidebarTab: state.rightSidebarTab,
-          contextPanelByDirectory: state.contextPanelByDirectory,
+          contextPanelByDirectory: stripEphemeralBrowserLeaseTabs(state.contextPanelByDirectory),
           isBottomTerminalOpen: state.isBottomTerminalOpen,
           isBottomTerminalExpanded: state.isBottomTerminalExpanded,
           bottomTerminalHeight: state.bottomTerminalHeight,
@@ -2340,6 +2611,7 @@ export const useUIStore = create<UIStore>()(
           showTerminalQuickKeysOnDesktop: state.showTerminalQuickKeysOnDesktop,
           notifyOnSubtasks: state.notifyOnSubtasks,
           notifyOnCompletion: state.notifyOnCompletion,
+          notifyOnPlanReady: state.notifyOnPlanReady,
           notifyOnError: state.notifyOnError,
           notifyOnQuestion: state.notifyOnQuestion,
           notificationTemplates: state.notificationTemplates,

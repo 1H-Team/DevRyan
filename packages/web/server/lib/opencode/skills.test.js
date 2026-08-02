@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import { deleteSkill, discoverSkills, getSkillSources } from './skills.js';
+import { createSkill, deleteSkill, discoverSkills, getSkillSources } from './skills.js';
 
 describe('skill discovery', () => {
   it('does not treat non-file discovered skill paths as editable markdown sources', () => {
@@ -125,6 +125,39 @@ describe('skill discovery', () => {
       ]);
       expect(skills.some((skill) => skill.source === 'claude')).toBe(false);
       expect(skills.some((skill) => skill.path.includes(`${path.sep}.claude${path.sep}`))).toBe(false);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('does not discover or create retired Superpowers skills from project harness directories', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-retired-skills-'));
+    const controlSkill = path.join(root, '.agents', 'skills', 'control-skill');
+    const retiredNames = ['test-driven-development', 'subagent-driven-development'];
+    fs.mkdirSync(controlSkill, { recursive: true });
+    fs.writeFileSync(
+      path.join(controlSkill, 'SKILL.md'),
+      '---\nname: control-skill\ndescription: Visible control\n---\n',
+      'utf8',
+    );
+    for (const name of retiredNames) {
+      const skillDirectory = path.join(root, '.agents', 'skills', name);
+      fs.mkdirSync(skillDirectory, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDirectory, 'SKILL.md'),
+        `---\nname: ${name}\ndescription: Must remain unavailable\n---\n`,
+        'utf8',
+      );
+    }
+
+    try {
+      const skills = discoverSkills(root).filter((skill) => skill.path.startsWith(root));
+      expect(skills.map((skill) => skill.name)).toEqual(['control-skill']);
+      for (const name of retiredNames) {
+        expect(() => createSkill(name, {}, root, 'project')).toThrow(
+          `Skill "${name}" is retired`,
+        );
+      }
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }

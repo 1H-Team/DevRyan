@@ -11,7 +11,7 @@ export type SettingsNavSection = {
 export const SETTINGS_NAV_SECTIONS = [
   {
     labelKey: 'settings.view.nav.group.general',
-    pages: ['appearance', 'notifications', 'shortcuts', 'voice'],
+    pages: ['appearance', 'notifications', 'shortcuts', 'voice', 'about'],
   },
   {
     labelKey: 'settings.view.nav.group.workflow',

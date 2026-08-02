@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import { create } from "zustand";
 import type { StoreApi, UseBoundStore } from "zustand";
-import { devtools, persist, createJSONStorage } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
+import { devtools } from './utils/devtoolsGate';
 import type { Provider, Agent } from "@opencode-ai/sdk/v2";
 import { opencodeClient } from "@/lib/opencode/client";
 import { scopeMatches, subscribeToConfigChanges } from "@/lib/configSync";

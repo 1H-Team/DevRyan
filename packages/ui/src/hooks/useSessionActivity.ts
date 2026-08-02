@@ -4,7 +4,7 @@ import { useProviderRecoveryStore } from '@/stores/useProviderRecoveryStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { isSessionWorkingFromState } from '@/sync/session-working';
 import { useStreamingStore } from '@/sync/streaming';
-import { useSessionStatus, useSessionMessages, useSessionPermissions } from '@/sync/sync-context';
+import { useSessionStatus, useSessionMessages, useSessionPermissions, useSessionQuestions } from '@/sync/sync-context';
 
 // Mirrors OpenCode SessionStatus: busy|retry|idle.
 export type SessionActivityPhase = 'idle' | 'busy' | 'retry';
@@ -28,6 +28,7 @@ export function resolveSessionActivityState({
   status,
   messages,
   permissions,
+  questions,
   liveStreamingMessageId,
   hasProviderRecovery = false,
 }: {
@@ -35,14 +36,16 @@ export function resolveSessionActivityState({
   status: SessionStatus | undefined;
   messages: readonly Message[];
   permissions: readonly unknown[];
+  questions: readonly unknown[];
   liveStreamingMessageId?: string | null;
   hasProviderRecovery?: boolean;
 }): SessionActivityResult {
   if (!sessionId) return IDLE_RESULT;
   if (hasProviderRecovery) return IDLE_RESULT;
 
-  // Permissions pending → idle (permission indicator takes priority)
+  // Pending permissions or questions take priority over working state.
   if (permissions.length > 0) return IDLE_RESULT;
+  if (questions.length > 0) return IDLE_RESULT;
 
   const phase: SessionActivityPhase = (status?.type ?? 'idle') as SessionActivityPhase;
   const isWorking = isSessionWorkingFromState({ status, permissions, messages, liveStreamingMessageId });
@@ -64,12 +67,14 @@ export function resolveSessionActivityState({
  * Determines if a session is actively working.
  * Checks session_status and, only when status is missing, falls back to the
  * trailing assistant message when its completion update has not landed yet.
- * Returns idle when permissions are pending (permission indicator takes priority).
+ * Returns idle when permissions or questions are pending because their blocking
+ * indicators take priority over working state.
  */
 export function useSessionActivity(sessionId: string | null | undefined, directory?: string): SessionActivityResult {
   const status = useSessionStatus(sessionId ?? '', directory);
   const messages = useSessionMessages(sessionId ?? '', directory);
   const permissions = useSessionPermissions(sessionId ?? '', directory);
+  const questions = useSessionQuestions(sessionId ?? '', directory);
   const liveStreamingMessageId = useStreamingStore(
     React.useCallback(
       (state) => (sessionId ? state.streamingMessageIds.get(sessionId) ?? null : null),
@@ -89,6 +94,7 @@ export function useSessionActivity(sessionId: string | null | undefined, directo
       status,
       messages,
       permissions,
+      questions,
       liveStreamingMessageId,
       hasProviderRecovery,
     });
@@ -97,6 +103,7 @@ export function useSessionActivity(sessionId: string | null | undefined, directo
     status,
     messages,
     permissions,
+    questions,
     liveStreamingMessageId,
     hasProviderRecovery,
   ]);

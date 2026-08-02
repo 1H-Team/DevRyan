@@ -18,6 +18,7 @@ import {
   migrateThemeCatalogSettings,
   THEME_CATALOG_VERSION,
 } from '@/lib/theme/catalogMigration';
+import { resolveNotificationTemplatesFromSettingsSnapshot } from '@/lib/notificationTemplateSync';
 
 const persistToLocalStorage = (settings: DesktopSettings) => {
   if (typeof window === 'undefined') {
@@ -358,6 +359,12 @@ const readCurrentModelPrefs = (): ModelPrefsSnapshot => {
   };
 };
 
+type NotificationTemplatesSnapshot = ReturnType<typeof useUIStore.getState>['notificationTemplates'];
+
+const readCurrentNotificationTemplates = (): NotificationTemplatesSnapshot => {
+  return useUIStore.getState().notificationTemplates;
+};
+
 const getPersistApi = (): PersistApi | undefined => {
   const candidate = (useUIStore as unknown as { persist?: PersistApi }).persist;
   if (candidate && typeof candidate === 'object') {
@@ -370,7 +377,10 @@ const getRuntimeSettingsAPI = () => getRegisteredRuntimeAPIs()?.settings ?? null
 
 const applyDesktopUiPreferences = (
   settings: DesktopSettings,
-  options?: { modelPrefsBaseline?: ModelPrefsSnapshot },
+  options?: {
+    modelPrefsBaseline?: ModelPrefsSnapshot;
+    notificationTemplatesBaseline?: NotificationTemplatesSnapshot;
+  },
 ) => {
   const store = useUIStore.getState();
   const configStore = typeof window !== 'undefined'
@@ -417,6 +427,9 @@ const applyDesktopUiPreferences = (
   if (typeof settings.notifyOnCompletion === 'boolean' && settings.notifyOnCompletion !== store.notifyOnCompletion) {
     store.setNotifyOnCompletion(settings.notifyOnCompletion);
   }
+  if (typeof settings.notifyOnPlanReady === 'boolean' && settings.notifyOnPlanReady !== store.notifyOnPlanReady) {
+    store.setNotifyOnPlanReady(settings.notifyOnPlanReady);
+  }
   if (typeof settings.notifyOnError === 'boolean' && settings.notifyOnError !== store.notifyOnError) {
     store.setNotifyOnError(settings.notifyOnError);
   }
@@ -424,7 +437,14 @@ const applyDesktopUiPreferences = (
     store.setNotifyOnQuestion(settings.notifyOnQuestion);
   }
   if (settings.notificationTemplates && typeof settings.notificationTemplates === 'object') {
-    store.setNotificationTemplates(settings.notificationTemplates);
+    const templates = resolveNotificationTemplatesFromSettingsSnapshot({
+      baseline: options?.notificationTemplatesBaseline,
+      current: store.notificationTemplates,
+      incoming: settings.notificationTemplates,
+    });
+    if (templates !== store.notificationTemplates) {
+      store.setNotificationTemplates(templates);
+    }
   }
   if (typeof settings.summarizeLastMessage === 'boolean' && settings.summarizeLastMessage !== store.summarizeLastMessage) {
     store.setSummarizeLastMessage(settings.summarizeLastMessage);
@@ -673,6 +693,9 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   if (typeof candidate.desktopKeepAwakeEnabled === 'boolean') {
     result.desktopKeepAwakeEnabled = candidate.desktopKeepAwakeEnabled;
   }
+  if (typeof candidate.agentBrowserControlEnabled === 'boolean') {
+    result.agentBrowserControlEnabled = candidate.agentBrowserControlEnabled;
+  }
 
   const projects = sanitizeProjects(candidate.projects);
   if (projects) {
@@ -793,6 +816,9 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   if (typeof candidate.notifyOnCompletion === 'boolean') {
     result.notifyOnCompletion = candidate.notifyOnCompletion;
   }
+  if (typeof candidate.notifyOnPlanReady === 'boolean') {
+    result.notifyOnPlanReady = candidate.notifyOnPlanReady;
+  }
   if (typeof candidate.notifyOnError === 'boolean') {
     result.notifyOnError = candidate.notifyOnError;
   }
@@ -810,12 +836,14 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
       return { title, message };
     };
     const completion = validateTemplate('completion');
+    const planReady = validateTemplate('planReady');
     const error = validateTemplate('error');
     const question = validateTemplate('question');
     const subtask = validateTemplate('subtask');
-    if (completion || error || question || subtask) {
+    if (completion || planReady || error || question || subtask) {
       result.notificationTemplates = {
         completion: completion ?? { title: 'Task Complete', message: 'Your task has finished.' },
+        planReady: planReady ?? { title: 'Plan ready', message: 'A plan is ready for review' },
         error: error ?? { title: 'Error Occurred', message: 'An error occurred while processing your task.' },
         question: question ?? { title: 'Input Needed', message: 'Please provide input to continue.' },
         subtask: subtask ?? { title: 'Subtask Complete', message: 'A subtask has finished.' },
@@ -1208,6 +1236,7 @@ export const syncDesktopSettings = async (): Promise<void> => {
 
   await waitForHydration();
   const modelPrefsBaseline = createModelPrefsBaseline(readCurrentModelPrefs());
+  const notificationTemplatesBaseline = readCurrentNotificationTemplates();
 
   // Each step is wrapped in try/catch so a failure in one side-effect (e.g.
   // a TypeError from writing to a contextBridge-protected global) doesn't
@@ -1222,7 +1251,7 @@ export const syncDesktopSettings = async (): Promise<void> => {
     }
     await waitForHydration();
     try {
-      applyDesktopUiPreferences(settings, { modelPrefsBaseline });
+      applyDesktopUiPreferences(settings, { modelPrefsBaseline, notificationTemplatesBaseline });
     } catch (error) {
       console.warn('applyDesktopUiPreferences failed:', error);
     }
@@ -1261,13 +1290,14 @@ const persistSettingsChanges = async (changes: Partial<DesktopSettings>): Promis
 
   const runtimeSettings = getRuntimeSettingsAPI();
   const modelPrefsBaseline = createModelPrefsBaseline(readCurrentModelPrefs());
+  const notificationTemplatesBaseline = readCurrentNotificationTemplates();
   if (runtimeSettings) {
     try {
       const updated = await runtimeSettings.save(changes);
       if (updated) {
         const migrated = migrateThemeCatalogSettings(updated).settings;
         persistToLocalStorage(migrated);
-        applyDesktopUiPreferences(migrated, { modelPrefsBaseline });
+        applyDesktopUiPreferences(migrated, { modelPrefsBaseline, notificationTemplatesBaseline });
         return migrated;
       }
       return null;
@@ -1295,7 +1325,7 @@ const persistSettingsChanges = async (changes: Partial<DesktopSettings>): Promis
     if (updated) {
       const migrated = migrateThemeCatalogSettings(updated).settings;
       persistToLocalStorage(migrated);
-      applyDesktopUiPreferences(migrated, { modelPrefsBaseline });
+      applyDesktopUiPreferences(migrated, { modelPrefsBaseline, notificationTemplatesBaseline });
       // Invalidate GET cache so next read sees the fresh data
       _settingsCache = null;
       return migrated;

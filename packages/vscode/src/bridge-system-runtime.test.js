@@ -43,7 +43,35 @@ vi.mock('./sessionActivityWatcher', () => ({
   getSessionActivitySnapshot: vi.fn(() => ({})),
 }));
 
-const { resolveCursorSdkAgentDefinitions } = await import('./bridge-system-runtime');
+const {
+  normalizeGithubReleaseUpdate,
+  resolveCursorSdkAgentDefinitions,
+} = await import('./bridge-system-runtime');
+
+describe('VS Code update source of truth', () => {
+  it('normalizes the canonical DevRyan GitHub release contract', () => {
+    expect(normalizeGithubReleaseUpdate({
+      tag_name: 'v1.2.3',
+      body: 'DevRyan release notes',
+      published_at: '2026-07-29T12:00:00Z',
+    }, '1.2.2')).toEqual({
+      available: true,
+      version: '1.2.3',
+      currentVersion: '1.2.2',
+      body: 'DevRyan release notes',
+      date: '2026-07-29T12:00:00Z',
+      nextSuggestedCheckInSec: 21_600,
+    });
+  });
+
+  it('does not report a newer release when DevRyan is current', () => {
+    expect(normalizeGithubReleaseUpdate({ tag_name: 'v1.2.3' }, '1.2.3')).toMatchObject({
+      available: false,
+      version: '1.2.3',
+      currentVersion: '1.2.3',
+    });
+  });
+});
 
 describe('VS Code Cursor SDK agent definitions', () => {
   beforeEach(() => {

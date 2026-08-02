@@ -8,6 +8,8 @@ import { createWebNotificationsAPI } from './notifications';
 import { createWebToolsAPI } from './tools';
 import { createWebPushAPI } from './push';
 import { createWebGitHubAPI } from './github';
+import { createWebDiagnosticsAPI } from './diagnostics';
+import { createWebEvidenceAPI } from './evidence';
 
 export const createWebAPIs = (): RuntimeAPIs => ({
   runtime: { platform: 'web', isDesktop: false, isVSCode: false, label: 'web' },
@@ -19,5 +21,7 @@ export const createWebAPIs = (): RuntimeAPIs => ({
   notifications: createWebNotificationsAPI(),
   github: createWebGitHubAPI(),
   push: createWebPushAPI(),
+  diagnostics: createWebDiagnosticsAPI(),
+  evidence: createWebEvidenceAPI(),
   tools: createWebToolsAPI(),
 });

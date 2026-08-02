@@ -5,6 +5,8 @@ import path from 'node:path';
 import { describe, test } from 'node:test';
 
 import { discoverTestFiles, isIsolatedUiTestSource } from './test-runner-utils.mjs';
+import { discoverElectronTestFiles } from './test-electron.mjs';
+import { discoverScriptTestFiles } from './test-scripts.mjs';
 import { discoverVscodeBunTestFiles } from './test-vscode.mjs';
 
 const repoRoot = new URL('..', import.meta.url);
@@ -61,6 +63,44 @@ describe('test file discovery', () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  test('discovers repository script tests recursively', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'devryan-script-tests-'));
+    try {
+      mkdirSync(path.join(root, 'scripts/nested'), { recursive: true });
+      mkdirSync(path.join(root, '.opencode/plugins/nested'), { recursive: true });
+      writeFileSync(path.join(root, 'scripts/top.test.mjs'), '');
+      writeFileSync(path.join(root, 'scripts/nested/release.test.mjs'), '');
+      writeFileSync(path.join(root, 'scripts/nested/helper.mjs'), '');
+      writeFileSync(path.join(root, '.opencode/plugins/nested/project.test.mjs'), '');
+
+      assert.deepEqual(discoverScriptTestFiles(root), [
+        '.opencode/plugins/nested/project.test.mjs',
+        'scripts/nested/release.test.mjs',
+        'scripts/top.test.mjs',
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('discovers Electron tests recursively while excluding packaged output', () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), 'devryan-electron-tests-'));
+    try {
+      mkdirSync(path.join(root, 'tests/nested'), { recursive: true });
+      mkdirSync(path.join(root, 'dist'), { recursive: true });
+      writeFileSync(path.join(root, 'startup.test.mjs'), '');
+      writeFileSync(path.join(root, 'tests/nested/browser.test.mjs'), '');
+      writeFileSync(path.join(root, 'dist/packaged.test.mjs'), '');
+
+      assert.deepEqual(discoverElectronTestFiles(root), [
+        'startup.test.mjs',
+        'tests/nested/browser.test.mjs',
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('release workflow', () => {
@@ -69,7 +109,7 @@ describe('release workflow', () => {
 
     assert.match(
       packageJson.scripts['test:full'],
-      /bun test packages\/cursor-sdk-runtime/,
+      /bun run --cwd packages\/cursor-sdk-runtime test/,
     );
   });
 
@@ -78,7 +118,7 @@ describe('release workflow', () => {
 
     assert.match(
       packageJson.scripts['test:full'],
-      /bun test packages\/orchestration-runtime/,
+      /bun run --cwd packages\/orchestration-runtime test/,
     );
   });
 
@@ -88,6 +128,15 @@ describe('release workflow', () => {
     assert.match(
       packageJson.scripts['test:full'],
       /bun run --cwd packages\/electron test/,
+    );
+  });
+
+  test('includes the legacy Tauri package suite in the full test gate', () => {
+    const packageJson = JSON.parse(readFileSync(new URL('package.json', repoRoot), 'utf8'));
+
+    assert.match(
+      packageJson.scripts['test:full'],
+      /bun run --cwd packages\/desktop test/,
     );
   });
 

@@ -20,6 +20,10 @@ export interface WorktreeSectionContentProps {
   projectRef?: { id: string; path: string } | null;
 }
 
+const normalizeWorktreePath = (value: string): string => (
+  value.replace(/\\/g, '/').replace(/\/+$/, '')
+);
+
 export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ projectRef: projectRefProp = null }) => {
   const { t } = useI18n();
   const { isMobile, isTablet } = useDeviceInfo();
@@ -27,9 +31,18 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
   const activeProject = useProjectsStore((state) => state.getActiveProject());
 
   const projectPath = projectRefProp?.path ?? activeProject?.path ?? null;
+  const normalizedProjectPath = React.useMemo(
+    () => projectPath ? normalizeWorktreePath(projectPath) : null,
+    [projectPath],
+  );
 
   const getWorktreeMetadata = useSessionUIStore((s) => s.getWorktreeMetadata);
-    const sessions = useSessions();
+  const storedAvailableWorktrees = useSessionUIStore((state) => (
+    normalizedProjectPath
+      ? state.availableWorktreesByProject.get(normalizedProjectPath)
+      : undefined
+  ));
+  const sessions = useSessions();
   const homeDirectory = useDirectoryStore((state) => state.homeDirectory);
 
   const [setupCommands, setSetupCommands] = React.useState<string[]>([]);
@@ -37,6 +50,12 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
   const [isGitRepoLocal, setIsGitRepoLocal] = React.useState<boolean | null>(null);
   const [availableWorktrees, setAvailableWorktrees] = React.useState<WorktreeMetadata[]>([]);
   const [isLoadingWorktrees, setIsLoadingWorktrees] = React.useState(false);
+
+  React.useEffect(() => {
+    if (storedAvailableWorktrees) {
+      setAvailableWorktrees(storedAvailableWorktrees);
+    }
+  }, [storedAvailableWorktrees]);
 
   const projectRef = React.useMemo(() => {
     if (projectRefProp?.id && projectRefProp?.path) {
@@ -181,8 +200,7 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
 
   // Delete worktree handler
   const handleDeleteWorktree = React.useCallback((worktree: WorktreeMetadata) => {
-    const normalize = (value: string): string => value.replace(/\\/g, '/').replace(/\/+$/, '');
-    const normalizedWorktreePath = normalize(worktree.path);
+    const normalizedWorktreePath = normalizeWorktreePath(worktree.path);
 
     // Find sessions linked to this worktree by:
     // 1. Worktree metadata path match
@@ -190,14 +208,14 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
     const directSessions = sessions.filter((session) => {
       // Check worktree metadata
       const metadata = getWorktreeMetadata(session.id);
-      if (metadata?.path && normalize(metadata.path) === normalizedWorktreePath) {
+      if (metadata?.path && normalizeWorktreePath(metadata.path) === normalizedWorktreePath) {
         return true;
       }
 
       // Check session directory
       const sessionDir = (session as { directory?: string }).directory;
       if (sessionDir) {
-        const normalizedSessionDir = normalize(sessionDir);
+        const normalizedSessionDir = normalizeWorktreePath(sessionDir);
         if (normalizedSessionDir === normalizedWorktreePath) {
           return true;
         }

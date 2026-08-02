@@ -35,6 +35,7 @@ const packages = {
     prefix: 'packages/desktop/',
     lint: ['bun', ['run', 'lint:desktop']],
     typeCheck: ['bun', ['run', 'type-check:desktop']],
+    test: ['bun', ['run', '--cwd', 'packages/desktop', 'test']],
   },
   vscode: {
     prefix: 'packages/vscode/',
@@ -49,6 +50,10 @@ const packages = {
   orchestration: {
     prefix: 'packages/orchestration-runtime/',
     test: ['bun', ['test', 'packages/orchestration-runtime']],
+  },
+  harness: {
+    prefix: 'packages/harness-runtime/',
+    test: ['bun', ['test', 'packages/harness-runtime']],
   },
 };
 
@@ -160,6 +165,15 @@ function isElectronTestRelevant(file, quick) {
   return ['.js', '.mjs'].includes(path.extname(file)) || file === 'packages/electron/package.json';
 }
 
+function isDesktopTestRelevant(file) {
+  if (!file.startsWith('packages/desktop/')) return false;
+  return file.startsWith('packages/desktop/src-tauri/src/')
+    || file === 'packages/desktop/src-tauri/Cargo.toml'
+    || file === 'packages/desktop/src-tauri/Cargo.lock'
+    || file === 'packages/desktop/src-tauri/tauri.conf.json'
+    || file === 'packages/desktop/package.json';
+}
+
 function isCursorTestRelevant(file) {
   if (!file.startsWith('packages/cursor-sdk-runtime/')) return false;
   if (testFilePattern.test(file)) return true;
@@ -168,6 +182,12 @@ function isCursorTestRelevant(file) {
 
 function isOrchestrationTestRelevant(file) {
   if (!file.startsWith('packages/orchestration-runtime/')) return false;
+  if (testFilePattern.test(file)) return true;
+  return ['.js', '.mjs'].includes(path.extname(file));
+}
+
+function isHarnessTestRelevant(file) {
+  if (!file.startsWith('packages/harness-runtime/')) return false;
   if (testFilePattern.test(file)) return true;
   return ['.js', '.mjs'].includes(path.extname(file));
 }
@@ -200,6 +220,10 @@ function affectedTypeCheckPackages(changedPackages, includeDependents) {
   }
   if (includeDependents && changedPackages.has('orchestration')) {
     result.add('ui');
+    result.add('web');
+    result.add('vscode');
+  }
+  if (includeDependents && changedPackages.has('harness')) {
     result.add('web');
     result.add('vscode');
   }
@@ -252,13 +276,19 @@ export function buildPlan(requestedMode, providedFiles) {
       if (isUiTestRelevant(file, false)) tests.add('ui');
       if (isWebTestRelevant(file, false)) tests.add('web');
       if (isElectronTestRelevant(file, false)) tests.add('electron');
+      if (isDesktopTestRelevant(file)) tests.add('desktop');
       if (isVscodeTestRelevant(file, false)) tests.add('vscode');
       if (isCursorTestRelevant(file)) tests.add('cursor');
       if (isOrchestrationTestRelevant(file)) tests.add('orchestration');
+      if (isHarnessTestRelevant(file)) tests.add('harness');
     }
     if (tests.has('cursor')) tests.add('web');
     if (tests.has('orchestration')) {
       tests.add('ui');
+      tests.add('web');
+      tests.add('vscode');
+    }
+    if (tests.has('harness')) {
       tests.add('web');
       tests.add('vscode');
     }
@@ -294,13 +324,19 @@ export function buildPlan(requestedMode, providedFiles) {
     if (isUiTestRelevant(file, quick)) tests.add('ui');
     if (isWebTestRelevant(file, quick)) tests.add('web');
     if (isElectronTestRelevant(file, quick)) tests.add('electron');
+    if (isDesktopTestRelevant(file)) tests.add('desktop');
     if (isVscodeTestRelevant(file, quick)) tests.add('vscode');
     if (isCursorTestRelevant(file)) tests.add('cursor');
     if (isOrchestrationTestRelevant(file)) tests.add('orchestration');
+    if (isHarnessTestRelevant(file)) tests.add('harness');
   }
   if (!quick && tests.has('cursor')) tests.add('web');
   if (!quick && tests.has('orchestration')) {
     tests.add('ui');
+    tests.add('web');
+    tests.add('vscode');
+  }
+  if (!quick && tests.has('harness')) {
     tests.add('web');
     tests.add('vscode');
   }

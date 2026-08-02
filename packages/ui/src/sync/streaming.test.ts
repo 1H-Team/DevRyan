@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from "bun:test"
 import type { Message, Part, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { registerManualAbortGuard, resetAbortGuardState } from "./abort-retry-guard"
 import { INITIAL_STATE, type State } from "./types"
-import { updateStreamingState, useStreamingStore } from "./streaming"
+import { settleStreamingSessions, updateStreamingState, useStreamingStore } from "./streaming"
 
 const message = (id: string, role: "user" | "assistant", completed?: number): Message => ({
   id,
@@ -324,5 +324,25 @@ describe("updateStreamingState", () => {
     ], { type: "idle" } as SessionStatus))
 
     expect(useStreamingStore.getState().streamingMessageIds.get("ses_1")).toBe(undefined)
+  })
+
+  test("settles a tracked stream when bootstrap authoritatively materializes idle", () => {
+    updateStreamingState({
+      ...INITIAL_STATE,
+      session_status: {},
+      message: {
+        ses_1: [
+          message("msg_user_1", "user"),
+          message("msg_assistant_1", "assistant"),
+        ],
+      },
+    })
+    expect(useStreamingStore.getState().streamingMessageIds.get("ses_1")).toBe("msg_assistant_1")
+
+    settleStreamingSessions(["ses_1"], 123)
+
+    expect(useStreamingStore.getState().streamingMessageIds.get("ses_1")).toBeNull()
+    expect(useStreamingStore.getState().messageStreamStates.get("msg_assistant_1")?.phase).toBe("completed")
+    expect(useStreamingStore.getState().messageStreamStates.get("msg_assistant_1")?.completedAt).toBe(123)
   })
 })

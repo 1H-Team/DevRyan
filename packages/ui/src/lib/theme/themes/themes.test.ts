@@ -10,15 +10,10 @@ import {
 import { CSSVariableGenerator } from '../cssGenerator';
 
 const UPSTREAM_THEME_IDS = [
-  'flexoki',
   'carbonfox',
-  'gruvbox',
   'jetbrains',
-  'nightowl',
   'nord',
   'onedarkpro',
-  'solarized',
-  'vesper',
   'mono-plus',
 ] as const;
 
@@ -30,9 +25,9 @@ const expectedIds = [
 
 describe('built-in theme catalog', () => {
   test('contains Default plus the exact active upstream catalog', () => {
-    expect(themes).toHaveLength(22);
-    expect(themes.filter((theme) => theme.metadata.variant === 'light')).toHaveLength(11);
-    expect(themes.filter((theme) => theme.metadata.variant === 'dark')).toHaveLength(11);
+    expect(themes).toHaveLength(12);
+    expect(themes.filter((theme) => theme.metadata.variant === 'light')).toHaveLength(6);
+    expect(themes.filter((theme) => theme.metadata.variant === 'dark')).toHaveLength(6);
     expect(new Set(themes.map((theme) => theme.metadata.id)).size).toBe(themes.length);
     expect(themes.map((theme) => theme.metadata.id).sort()).toEqual([...expectedIds].sort());
   });

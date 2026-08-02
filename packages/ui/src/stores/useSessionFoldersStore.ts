@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { devtools } from 'zustand/middleware';
+import { devtools } from './utils/devtoolsGate';
 import { getSafeStorage } from './utils/safeStorage';
 import { isVSCodeRuntime } from '@/lib/desktop';
 

@@ -11,13 +11,18 @@ const __dirname = path.dirname(__filename);
 const PACKAGE_NAME = '@openchamber/web';
 const PACKAGE_PATH_SEGMENTS = PACKAGE_NAME.split('/');
 const NPM_REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}`;
+const GITHUB_REPOSITORY_OWNER = 'zoubenr';
+const GITHUB_REPOSITORY_NAME = 'DevRyan';
+const GITHUB_LATEST_RELEASE_API_URL =
+  `https://api.github.com/repos/${GITHUB_REPOSITORY_OWNER}/${GITHUB_REPOSITORY_NAME}/releases/latest`;
+const COMPATIBILITY_UPDATE_CHECK_URL = process.env.OPENCHAMBER_UPDATE_API_URL;
+const UPDATE_CHECK_URL = COMPATIBILITY_UPDATE_CHECK_URL || GITHUB_LATEST_RELEASE_API_URL;
+const DEFAULT_UPDATE_CHECK_INTERVAL_SEC = 6 * 60 * 60;
 let cachedDetectedPm = null;
 
 function getSpawnSyncBaseOptions() {
   return process.platform === 'win32' ? { windowsHide: true } : {};
 }
-const UPDATE_CHECK_URL = process.env.OPENCHAMBER_UPDATE_API_URL || 'https://api.openchamber.dev/v1/update/check';
-
 function getOpenChamberConfigDir() {
   if (process.platform === 'win32') {
     const appData = process.env.APPDATA;
@@ -83,7 +88,39 @@ function normalizeArch(value) {
   return mapArch(process.arch);
 }
 
-async function checkForUpdatesFromApi(currentVersion, options = {}) {
+async function checkForUpdatesFromGithub(currentVersion) {
+  try {
+    const response = await fetch(UPDATE_CHECK_URL, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/vnd.github+json',
+        'User-Agent': `DevRyan/${currentVersion}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!response.ok) return null;
+    const data = await response.json();
+    const latestVersion = typeof data?.tag_name === 'string'
+      ? data.tag_name.trim().replace(/^v/, '')
+      : '';
+    if (!latestVersion) return null;
+
+    return {
+      available: compareVersions(latestVersion, currentVersion) > 0,
+      version: latestVersion,
+      currentVersion,
+      body: typeof data.body === 'string' ? data.body : undefined,
+      date: typeof data.published_at === 'string' ? data.published_at : undefined,
+      nextSuggestedCheckInSec: DEFAULT_UPDATE_CHECK_INTERVAL_SEC,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function checkForUpdatesFromCompatibilityApi(currentVersion, options = {}) {
   try {
     const appType = normalizeAppType(options.appType);
     const hostPlatform = mapPlatform(process.platform);
@@ -132,6 +169,13 @@ async function checkForUpdatesFromApi(currentVersion, options = {}) {
   } catch {
     return null;
   }
+}
+
+async function checkForUpdatesFromApi(currentVersion, options = {}) {
+  if (!COMPATIBILITY_UPDATE_CHECK_URL) {
+    return checkForUpdatesFromGithub(currentVersion);
+  }
+  return checkForUpdatesFromCompatibilityApi(currentVersion, options);
 }
 
 function normalizePathForComparison(filePath) {
@@ -687,6 +731,14 @@ export async function checkForUpdates(options = {}) {
         updateCommand: 'openchamber update',
       };
     }
+  }
+
+  if (!COMPATIBILITY_UPDATE_CHECK_URL) {
+    return {
+      available: false,
+      currentVersion,
+      error: 'Unable to check DevRyan releases',
+    };
   }
 
   const latestVersion = await getLatestVersion();

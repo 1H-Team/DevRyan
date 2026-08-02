@@ -29,6 +29,7 @@ type ProviderRecoveryStore = {
   offerRecovery(recovery: ProviderRecoveryInput): void;
   setSelection(sessionId: string, selection: ProviderRecoverySelection): void;
   setActionState(sessionId: string, pending: boolean, actionError: string | null): void;
+  reconcileLatestUserMessage(sessionId: string, latestUserMessageId: string | undefined): void;
   clearRecovery(
     sessionId: string,
     expected?: Pick<ProviderRecoveryInput, 'anchorUserMessageId' | 'createdAt'>,
@@ -89,6 +90,20 @@ export const useProviderRecoveryStore = create<ProviderRecoveryStore>()((set) =>
           [sessionId]: { ...previous, pending, actionError },
         },
       };
+    });
+  },
+  reconcileLatestUserMessage(sessionId, latestUserMessageId) {
+    if (!latestUserMessageId) return;
+    set((state) => {
+      const previous = state.recoveriesBySessionId[sessionId];
+      if (
+        !previous
+        || previous.pending
+        || previous.anchorUserMessageId === latestUserMessageId
+      ) return state;
+      const recoveriesBySessionId = { ...state.recoveriesBySessionId };
+      delete recoveriesBySessionId[sessionId];
+      return { recoveriesBySessionId };
     });
   },
   clearRecovery(sessionId, expected) {

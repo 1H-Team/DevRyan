@@ -12,6 +12,28 @@ const COPILOT_ORCHESTRATOR_PROMPT_TOOL_OVERRIDES = Object.freeze({
   ...COPILOT_PROMPT_TOOL_OVERRIDES,
   ...ORCHESTRATOR_PROMPT_TOOL_OVERRIDES,
 });
+const READ_ONLY_PROMPT_TOOL_OVERRIDES = Object.freeze({
+  // Managed plan-mode work must fail closed. OpenCode can discover custom
+  // tools after this runtime ships, so enumerating today's mutation aliases
+  // (write, oc_write, shell, rm, ast_grep_replace, and so on) is not a durable
+  // boundary. Disable every tool first, then reopen only inspection surfaces.
+  '*': false,
+  read: true,
+  oc_read: true,
+  glob: true,
+  oc_glob: true,
+  grep: true,
+  ls: true,
+  oc_ls: true,
+  stat: true,
+  oc_stat: true,
+  ast_grep_search: true,
+  ctx_search: true,
+  ctx_stats: true,
+  webfetch: true,
+  websearch: true,
+  google_search: true,
+});
 
 const normalize = (value) => (
   typeof value === 'string' ? value.trim().toLowerCase() : ''
@@ -25,13 +47,19 @@ const normalize = (value) => (
  * integrations to managed subtasks, so its root prompt retains only the core
  * harness tools and omits invalid/provider-native task/MCP surfaces.
  */
-export const resolveProviderPromptTools = (providerId, agent) => {
+export const resolveProviderPromptTools = (providerId, agent, options = {}) => {
   const normalizedProviderId = normalize(providerId);
   const isCopilot = normalizedProviderId === 'github-copilot' || normalizedProviderId === 'copilot';
   const isOrchestrator = normalize(agent) === 'orchestrator';
 
-  if (isCopilot && isOrchestrator) return COPILOT_ORCHESTRATOR_PROMPT_TOOL_OVERRIDES;
-  if (isCopilot) return COPILOT_PROMPT_TOOL_OVERRIDES;
-  if (isOrchestrator) return ORCHESTRATOR_PROMPT_TOOL_OVERRIDES;
-  return undefined;
+  let providerOverrides;
+  if (isCopilot && isOrchestrator) providerOverrides = COPILOT_ORCHESTRATOR_PROMPT_TOOL_OVERRIDES;
+  else if (isCopilot) providerOverrides = COPILOT_PROMPT_TOOL_OVERRIDES;
+  else if (isOrchestrator) providerOverrides = ORCHESTRATOR_PROMPT_TOOL_OVERRIDES;
+
+  if (options.readOnly !== true) return providerOverrides;
+  return {
+    ...providerOverrides,
+    ...READ_ONLY_PROMPT_TOOL_OVERRIDES,
+  };
 };

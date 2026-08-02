@@ -45,6 +45,43 @@ export const useStreamingStore = create<StreamingStore>()(() => ({
 /** Only update lastUpdateAt every this many ms to avoid 60Hz store churn */
 const STREAMING_HEARTBEAT_MS = 1000
 
+export function settleStreamingSessions(sessionIDs: Iterable<string>, completedAt = Date.now()): void {
+  const current = useStreamingStore.getState()
+  let nextStreamingIds = current.streamingMessageIds
+  let nextStreamStates = current.messageStreamStates
+
+  for (const sessionID of sessionIDs) {
+    const messageID = current.streamingMessageIds.get(sessionID)
+    if (!messageID) continue
+
+    if (nextStreamingIds === current.streamingMessageIds) {
+      nextStreamingIds = new Map(current.streamingMessageIds)
+    }
+    nextStreamingIds.set(sessionID, null)
+
+    const existing = current.messageStreamStates.get(messageID)
+    if (!existing || existing.phase === "completed") continue
+    if (nextStreamStates === current.messageStreamStates) {
+      nextStreamStates = new Map(current.messageStreamStates)
+    }
+    nextStreamStates.set(messageID, {
+      ...existing,
+      phase: "completed",
+      completedAt,
+    })
+  }
+
+  if (
+    nextStreamingIds === current.streamingMessageIds
+    && nextStreamStates === current.messageStreamStates
+  ) return
+
+  useStreamingStore.setState({
+    streamingMessageIds: nextStreamingIds,
+    messageStreamStates: nextStreamStates,
+  })
+}
+
 const selectStreamingAssistantMessage = (messages: Message[], state: State): Message | null => {
   let emptyAssistantFallback: Message | null = null
 

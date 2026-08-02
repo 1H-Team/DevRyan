@@ -1,12 +1,16 @@
 # packages/web/server/lib/projects/
 
 ## Responsibility
-Project-level configuration domain, including scheduled task definitions, task execution metadata, and stable project ID derivation.
+Project-level configuration domain, including scheduled task definitions, task
+execution metadata, default-off evidence checkpoint settings, and stable project
+ID derivation.
 
 ## Design
 - **Schema-normalization approach** (`project-config.js`) validates and canonicalizes nested schedule/execution objects.
 - **Defensive constraints**: max lengths, timezone validation (IANA), cron parsing, schedule kind guards.
 - **Versioned config model** (`PROJECT_CONFIG_VERSION`) for forward-compatible persistence.
+- **Lossless atomic writes** preserve unrelated/future keys while using the
+  harness fsync/rename primitive.
 - **Shared path identity** (`project-id.js`) derives both stable project IDs and the matching active-project plan directory under `~/.config/openchamber/projects`.
 
 ## Flow

@@ -155,4 +155,53 @@ describe('settings runtime', () => {
     expect(updated.themeId).toBe('dark-default');
     expect(fsPromises.stat).not.toHaveBeenCalled();
   });
+
+  it('adds Plan Ready notification defaults without replacing customized templates', async () => {
+    const completion = { title: 'Custom completion', message: 'Finished {session_name}' };
+    const question = { title: 'Custom question', message: '{last_message}' };
+    const { runtime } = createRuntime({
+      notifyOnCompletion: false,
+      notificationTemplates: { completion, question },
+    });
+
+    const updated = await runtime.readSettingsFromDiskMigrated();
+
+    expect(updated.notifyOnPlanReady).toBe(true);
+    expect(updated.notifyOnCompletion).toBe(false);
+    expect(updated.notifyOnSubtasks).toBe(false);
+    expect(updated.notificationTemplates).toMatchObject({
+      completion,
+      question,
+      planReady: { title: 'Plan ready', message: 'A plan is ready for review' },
+    });
+  });
+
+  it.each([
+    { title: '{agent_name} is ready', message: '{model_name} completed the task' },
+    { title: '{agent_name} is ready', message: '{last_message}' },
+  ])('migrates the exact legacy completion template $title / $message', async (completion) => {
+    const { runtime } = createRuntime({
+      notificationTemplates: { completion },
+    });
+
+    const updated = await runtime.readSettingsFromDiskMigrated();
+
+    expect(updated.notificationTemplates.completion).toEqual({
+      title: 'Session complete',
+      message: '{session_name} is ready to review',
+    });
+  });
+
+  it('preserves an existing subagent preference and customized completion template', async () => {
+    const completion = { title: 'Build is done.', message: '{session_name} has completed' };
+    const { runtime } = createRuntime({
+      notifyOnSubtasks: true,
+      notificationTemplates: { completion },
+    });
+
+    const updated = await runtime.readSettingsFromDiskMigrated();
+
+    expect(updated.notifyOnSubtasks).toBe(true);
+    expect(updated.notificationTemplates.completion).toEqual(completion);
+  });
 });

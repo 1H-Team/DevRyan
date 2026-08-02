@@ -8,15 +8,55 @@ import {
 } from './default-plugins.js';
 
 describe('DevRyan default plugin catalog', () => {
-  it('exposes exactly the four public defaults in deterministic order', () => {
+  it('exposes every public managed plugin with local-only registrations', () => {
     expect(DEVRYAN_DEFAULT_PLUGINS.map((plugin) => ({
       pluginId: plugin.pluginId,
       shippedSpec: plugin.shippedSpec,
+      version: plugin.version,
+      delivery: plugin.delivery,
     }))).toEqual([
-      { pluginId: 'oh-my-opencode-slim', shippedSpec: 'oh-my-opencode-slim@2.0.5' },
-      { pluginId: 'opencode-with-claude', shippedSpec: 'opencode-with-claude@1.6.18' },
-      { pluginId: 'context-mode', shippedSpec: 'context-mode@1.0.169' },
-      { pluginId: 'openai-tool-schema-sanitizer', shippedSpec: './plugins/openai-tool-schema-sanitizer.mjs' },
+      {
+        pluginId: 'opencode-antigravity-auth',
+        shippedSpec: './node_modules/opencode-antigravity-auth/dist/index.js',
+        version: '1.6.0',
+        delivery: 'installed-local',
+      },
+      {
+        pluginId: '@rama_nigg/open-cursor',
+        shippedSpec: './node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js',
+        version: '2.5.4',
+        delivery: 'installed-local',
+      },
+      {
+        pluginId: 'opencode-with-claude',
+        shippedSpec: './node_modules/opencode-with-claude/dist/index.js',
+        version: '1.6.18',
+        delivery: 'installed-local',
+      },
+      {
+        pluginId: 'context-mode',
+        shippedSpec: './node_modules/context-mode/build/adapters/opencode/plugin.js',
+        version: '1.0.169',
+        delivery: 'installed-local',
+      },
+      {
+        pluginId: 'oh-my-opencode-slim',
+        shippedSpec: './plugins/devryan-oh-my-opencode-slim.mjs',
+        version: '2.0.5',
+        delivery: 'installed-local',
+      },
+      {
+        pluginId: 'superpowers',
+        shippedSpec: './plugins/devryan-superpowers.mjs',
+        version: null,
+        delivery: 'bundled-file',
+      },
+      {
+        pluginId: 'openai-tool-schema-sanitizer',
+        shippedSpec: './plugins/openai-tool-schema-sanitizer.mjs',
+        version: null,
+        delivery: 'bundled-file',
+      },
     ]);
   });
 
@@ -24,6 +64,9 @@ describe('DevRyan default plugin catalog', () => {
     expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-oh-my-opencode-slim.mjs')).toBe('oh-my-opencode-slim');
     expect(getDevRyanDefaultPluginIdForSpec('opencode-with-claude@1.6.17')).toBe('opencode-with-claude');
     expect(getDevRyanDefaultPluginIdForSpec('context-mode@1.0.168')).toBe('context-mode');
+    expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-superpowers.mjs')).toBe('superpowers');
+    expect(getDevRyanDefaultPluginIdForSpec('./node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js'))
+      .toBe('@rama_nigg/open-cursor');
     expect(getDevRyanDefaultPluginIdForFile('openai-tool-schema-sanitizer.mjs')).toBe('openai-tool-schema-sanitizer');
     expect(getDevRyanDefaultPluginIdForFile('devryan-managed-orchestration.mjs')).toBeNull();
   });
@@ -40,19 +83,19 @@ describe('DevRyan default plugin catalog', () => {
       ],
     });
 
-    expect(inventory.defaults[0]).toMatchObject({
+    expect(inventory.defaults.find((plugin) => plugin.pluginId === 'oh-my-opencode-slim')).toMatchObject({
       effectiveSpec: './plugins/devryan-oh-my-opencode-slim.mjs',
       configuredSourcePath: '/tmp/project/opencode.json',
     });
-    expect(inventory.defaults[1]).toMatchObject({
+    expect(inventory.defaults.find((plugin) => plugin.pluginId === 'opencode-with-claude')).toMatchObject({
       effectiveSpec: 'opencode-with-claude@1.6.17',
       configuredSourcePath: '/tmp/opencode.json',
     });
-    expect(inventory.defaults[2]).toMatchObject({
+    expect(inventory.defaults.find((plugin) => plugin.pluginId === 'context-mode')).toMatchObject({
       effectiveSpec: 'context-mode@1.0.168',
       configuredSourcePath: '/tmp/context-mode.json',
     });
-    expect(inventory.defaults[3]).toMatchObject({
+    expect(inventory.defaults.find((plugin) => plugin.pluginId === 'openai-tool-schema-sanitizer')).toMatchObject({
       configuredSourcePath: '/tmp/plugins/openai-tool-schema-sanitizer.mjs',
     });
   });

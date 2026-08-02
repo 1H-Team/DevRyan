@@ -17,11 +17,12 @@ Core OpenCode integration layer: config entities (agents/commands/skills/provide
 - **Plugin read model** (`plugins-readonly.js`) exposes configured entries and both singular `plugin/` and plural `plugins/` user/project files to Settings without mutating runtime configuration.
 - **Harness diagnostics and proactive warmup** (`harness-result.js`, `harness-preflight.js`, `harness-tool-manifest.js`, `harness-context-budget.js`, `turn-timing.js`, `agent-runtime-warmup.js`, `project-prewarm-runtime.js`) expose additive response envelopes, lazy live tool-catalog measurements, UTF-8 context budgets, capped/redacted tool-call timelines, latest read-only runtime warmup state, forbidden runtime surface findings, oversized-catalog review warnings, and read-only preflight audits without creating hidden sessions or prompts. Startup and successful restart paths proactively warm known projects sequentially, while directory-keyed single-flight deduplicates overlapping UI warmups.
 - **Global behavior ownership** (`global-agents-md-runtime.js`, `global-agents-md-routes.js`) treats `~/.config/opencode/AGENTS.md` as the sole prompt source, keeps external runtimes read-only, and reports refresh failures without hiding successful persistence.
+- **Read-only version checks** (`opencode-update-runtime.js`) compare the active health-reported runtime version with the canonical latest stable release and DevRyan's supported target. Successful upstream results are cached for five minutes; the flow never installs or restarts OpenCode.
 
 ## Flow
 1. Server bootstrap resolves env/config (`env-config`, `settings-normalization-runtime`).
 2. Startup pipeline creates OpenCode process/network/session runtimes.
-3. Route registrars expose config/auth/control APIs to UI and CLI.
+3. Route registrars expose config/auth/control APIs to UI and CLI, including `GET /api/opencode/update-check`.
 4. Watchers + event handlers update session/auth/theme state and drive downstream SSE/WS notifications.
 
 ## Integration

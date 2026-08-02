@@ -1,3 +1,4 @@
+import express from 'express';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 
 import {
@@ -318,7 +319,29 @@ export const registerOpenCodeProxy = (app, deps) => {
 
     const messageId = getSingleHeader(req.headers?.[PROMPT_ASYNC_MESSAGE_ID_HEADER]);
     const directory = typeof req.query?.directory === 'string' ? req.query.directory : undefined;
-    const metadata = { source: 'proxy' };
+    let body = req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)
+      ? req.body
+      : {};
+    if (Buffer.isBuffer(req.body) || typeof req.body === 'string') {
+      try {
+        const parsed = JSON.parse(Buffer.isBuffer(req.body) ? req.body.toString('utf8') : req.body);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          body = parsed;
+        }
+      } catch {
+        // Timing metadata is optional; leave an unparseable proxied body untouched.
+      }
+    }
+    const model = body.model && typeof body.model === 'object' && !Array.isArray(body.model)
+      ? body.model
+      : {};
+    const metadata = {
+      source: 'proxy',
+      providerID: normalizeString(model.providerID) || null,
+      modelID: normalizeString(model.modelID) || null,
+      agent: normalizeString(body.agent) || null,
+      variant: normalizeString(body.variant) || null,
+    };
 
     turnTimingRuntime.recordClientMark({
       sessionId,
@@ -564,7 +587,11 @@ export const registerOpenCodeProxy = (app, deps) => {
   });
 
   app.post('/api/mcp/:name/:action', forwardMcpActionRequest);
-  app.use('/api/session/:sessionID/prompt_async', recordPromptAsyncTiming);
+  app.use(
+    '/api/session/:sessionID/prompt_async',
+    express.json({ limit: '50mb' }),
+    recordPromptAsyncTiming,
+  );
 
   // Trim diff-snapshot patch bodies before a transcript reaches the renderer.
   // OpenCode attaches a full git diff snapshot to user messages; on a workspace
@@ -611,6 +638,10 @@ export const registerOpenCodeProxy = (app, deps) => {
         next();
         return;
       }
+      // Forward the pagination cursor — clients page older history with it,
+      // and res.json alone would silently drop it.
+      const nextCursor = upstream.headers?.get?.('x-next-cursor');
+      if (nextCursor) res.setHeader('x-next-cursor', nextCursor);
       res.json(records.map(stripMessageDiffContent));
     } catch {
       if (!res.headersSent) next();

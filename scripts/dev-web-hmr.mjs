@@ -4,11 +4,17 @@ import { existsSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stopChildTree, useDetachedChildren } from './dev-child-utils.mjs';
+import { resolveDevDataDirectory } from './dev-data-directory.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 const webRoot = path.join(repoRoot, 'packages/web');
+const devDataDirectory = resolveDevDataDirectory({
+  env: process.env,
+  repoRoot,
+  scope: 'web-hmr',
+});
 
 function run(label, command, args, env = {}, options = {}) {
   return spawn(command, args, {
@@ -39,6 +45,7 @@ function clearViteCache() {
 clearViteCache();
 
 const api = run('api', 'bun', ['run', '--cwd', 'packages/web', 'dev:server:watch'], {
+  OPENCHAMBER_DATA_DIR: devDataDirectory,
   OPENCHAMBER_PORT: backendPort,
 });
 const vite = run(
@@ -46,6 +53,7 @@ const vite = run(
   'bun',
   ['x', 'vite', '--force', '--host', '127.0.0.1', '--port', uiPort, '--strictPort'],
   {
+    OPENCHAMBER_DATA_DIR: devDataDirectory,
     OPENCHAMBER_PORT: backendPort,
     OPENCHAMBER_DISABLE_PWA_DEV: '1',
   },

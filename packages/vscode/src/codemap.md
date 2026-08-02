@@ -7,10 +7,17 @@ VS Code extension-host implementation: activation lifecycle, command surface, we
 - `extension.ts` is the orchestrator entrypoint.
 - Provider classes (`ChatViewProvider`, `SessionEditorPanelProvider`, `AgentManagerPanelProvider`) encapsulate webview setup and host↔webview synchronization.
 - `bridge.ts` is a dispatcher that routes message types to focused runtime modules (`bridge-fs-runtime`, `bridge-git-runtime`, `bridge-system-runtime`, etc.).
+- `harnessRuntime.ts` owns the extension-host lifecycle tracker, sanitized
+  journal, durable worktree receipts, and optional evidence. The lightweight
+  `harness-runtime-access.ts` registry lets bridge/SSE paths reach the active
+  runtime without importing VS Code-only Git host dependencies.
+- `worktreeLockRecovery.ts` owns bounded, identity-safe recovery for worktree
+  population collisions on `index.lock`.
 - `opencode.ts` provides a manager object with explicit connection status and restart/start/stop APIs.
 - `opencodeConfig.ts` owns VS Code-side config entity reads/writes, read-only singular/plural plugin-file discovery, OpenCode Slim config/agent override parity, Slim-installed global agent prompt composition, and managed agent runtime overlays so saved user-side agent model defaults, plugin filtering, and blocked ambient MCP tombstones apply to the local OpenCode process.
 - `globalAgentsMdRuntime.ts` owns user-global `~/.config/opencode/AGENTS.md` reads/writes, empty-file removal, UTF-8 limits, external-runtime read-only policy, and restart-warning results for the VS Code bridge.
 - `bridge-system-runtime.ts` owns VS Code provider auth/status/configure bridge behavior, including non-billable Claude Code status checks, Cursor SDK integration via `@openchamber/cursor-sdk-runtime`, and the HTTP-shaped managed quota credential bridge contract.
+- `bridge-config-runtime.ts` owns config/skills requests plus OpenCode resolution and read-only update-check parity for the shared Settings UI; the update check uses the manager's active managed or external runtime version.
 - `claudeAuthStatus.ts` and `anthropicOAuthPlugin.ts` mirror the web/Electron safe auth-status contract and pinned Claude proxy migration policy.
 - `quotaCredentials.ts` owns allowlisted private managed quota files and explicit read-only Cursor import; `quotaProviders.ts` owns quota-source precedence and keeps those credentials separate from Cursor SDK execution auth.
 - `managedOrchestrationRuntime.ts` composes the VS Code-owned scheduler and scoped RPC contract, including validated 25-second maximum wait slices, unbounded root barrier inspection, and confirmed agent handoff.

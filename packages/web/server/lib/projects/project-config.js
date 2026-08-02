@@ -1,5 +1,6 @@
 import { DateTime, IANAZone } from 'luxon';
 import parser from 'cron-parser';
+import { writeFileAtomic } from '@openchamber/harness-runtime';
 
 const PROJECT_CONFIG_VERSION = 1;
 const MAX_TASK_NAME_LENGTH = 80;
@@ -323,6 +324,11 @@ const normalizeTaskForStorage = (value, options) => {
 const createEmptyProjectConfig = () => ({
   version: PROJECT_CONFIG_VERSION,
   scheduledTasks: [],
+  evidenceCheckpoints: { enabled: false },
+});
+
+const normalizeEvidenceCheckpoints = (value) => ({
+  enabled: value?.enabled === true,
 });
 
 export const createProjectConfigRuntime = (deps) => {
@@ -394,24 +400,25 @@ export const createProjectConfigRuntime = (deps) => {
     return {
       version: PROJECT_CONFIG_VERSION,
       scheduledTasks,
+      evidenceCheckpoints: normalizeEvidenceCheckpoints(parsed.evidenceCheckpoints),
     };
   };
 
   const writeProjectConfigToDisk = async (projectID, config) => {
     const filePath = resolveProjectConfigPath(projectID);
     const parentDirectory = path.dirname(filePath);
-    const temporaryPath = `${filePath}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
     const existing = await readRawProjectConfigFromDisk(projectID);
     const merged = {
       ...existing,
       version: PROJECT_CONFIG_VERSION,
       scheduledTasks: Array.isArray(config?.scheduledTasks) ? config.scheduledTasks : [],
+      evidenceCheckpoints: config?.evidenceCheckpoints
+        ? normalizeEvidenceCheckpoints(config.evidenceCheckpoints)
+        : normalizeEvidenceCheckpoints(existing.evidenceCheckpoints),
     };
 
     await fsPromises.mkdir(parentDirectory, { recursive: true });
-    await fsPromises.writeFile(temporaryPath, JSON.stringify(merged, null, 2), 'utf8');
-    await fsPromises.rename(temporaryPath, filePath);
+    await writeFileAtomic(filePath, `${JSON.stringify(merged, null, 2)}\n`, { mode: 0o600 });
   };
 
   const withProjectWriteLock = async (projectID, mutate) => {
@@ -440,6 +447,24 @@ export const createProjectConfigRuntime = (deps) => {
     const config = await readProjectConfigFromDisk(projectID);
     return config.scheduledTasks;
   };
+
+  const getEvidenceCheckpoints = async (projectID) => {
+    const config = await readProjectConfigFromDisk(projectID);
+    return config.evidenceCheckpoints;
+  };
+
+  const setEvidenceCheckpoints = async (projectID, value) => withProjectWriteLock(
+    projectID,
+    async () => {
+      const current = await readProjectConfigFromDisk(projectID);
+      const evidenceCheckpoints = normalizeEvidenceCheckpoints(value);
+      await writeProjectConfigToDisk(projectID, {
+        ...current,
+        evidenceCheckpoints,
+      });
+      return evidenceCheckpoints;
+    },
+  );
 
   const upsertScheduledTask = async (projectID, taskInput) => {
     return withProjectWriteLock(projectID, async () => {
@@ -552,6 +577,8 @@ export const createProjectConfigRuntime = (deps) => {
     upsertScheduledTask,
     deleteScheduledTask,
     updateScheduledTaskState,
+    getEvidenceCheckpoints,
+    setEvidenceCheckpoints,
     resolveProjectConfigPath,
   };
 };
@@ -562,4 +589,5 @@ export {
   MAX_CRON_LENGTH,
   MAX_LAST_ERROR_LENGTH,
   normalizeTaskForStorage,
+  normalizeEvidenceCheckpoints,
 };

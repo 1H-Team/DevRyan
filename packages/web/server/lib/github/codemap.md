@@ -8,6 +8,8 @@ GitHub integration boundary: account auth storage/activation, OAuth device flow,
 - **Auth split**:
   - `auth.js`: persisted auth accounts/tokens + active account switching
   - `device-flow.js`: OAuth device-code start/exchange
+- `api-client.js` creates every authenticated Octokit client and supplies the shared per-request timeout fetch wrapper.
+- `rate-limit.js` classifies GitHub failures and owns the shared PR-status cooldown without conflating rate limits with invalid authentication.
 - **Repository parsing module** under `repo/` decouples remote URL normalization from auth logic.
 
 ## Flow

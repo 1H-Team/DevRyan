@@ -9,6 +9,6 @@
     }
   },
   "plugin": [
-    "opencode-with-claude@1.6.18"
+    "./node_modules/opencode-with-claude/dist/index.js"
   ]
 }

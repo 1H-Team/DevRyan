@@ -22,6 +22,7 @@ const MIN_TIMEOUT_SECONDS = DEFAULT_TIMEOUT_SECONDS;
 const ORACLE_MIN_TIMEOUT_SECONDS = 60 * 60;
 const MAX_TIMEOUT_SECONDS = 24 * 60 * 60;
 const WAIT_TIMEOUT_MS = 25_000;
+const LIVE_TASK_STATUSES = new Set(['queued', 'starting', 'running']);
 const TERMINAL_TASK_STATUSES = new Set(['completed', 'failed', 'aborted', 'interrupted']);
 const PROVIDER_RECOVERY_SCAN_DELAY_MS = 500;
 const PROVIDER_RECOVERY_RETRY_DELAY_MS = 1_000;
@@ -29,6 +30,8 @@ const PROVIDER_RECOVERY_RETRY_DELAY_MS = 1_000;
 // Keep this window bounded so ordinary idle events never create a polling loop.
 const PROVIDER_RECOVERY_SETTLE_RETRY_COUNT = 2;
 const PROVIDER_RECOVERY_MESSAGE_LIMIT = 100;
+const INVOCATION_POLICY_MESSAGE_LIMIT = 100;
+const PLAN_MODE_INSTRUCTION_PREFIX = 'User has requested to enter plan mode';
 const PROVIDER_RECOVERY_MARKER_VERSION = 'v1';
 // A wake is only observable once its message is persisted and visible to
 // session.messages. Until then the marker check cannot see it, so the in-flight
@@ -102,6 +105,66 @@ const isRecord = (value) => (
   && typeof value === 'object'
   && !Array.isArray(value)
 );
+
+const unwrapResponseData = (response) => (
+  response && typeof response === 'object' && 'data' in response
+    ? response.data
+    : response
+);
+
+const isPlanModeUserRecord = (record) => {
+  if (record?.info?.role !== 'user') return false;
+  const mode = typeof record.info.mode === 'string'
+    ? record.info.mode.trim().toLowerCase()
+    : '';
+  if (mode === 'plan' || record.info.metadata?.openchamberPlanMode === true) return true;
+  return Array.isArray(record.parts) && record.parts.some((part) => (
+    part?.type === 'text'
+    && part.synthetic === true
+    && typeof part.text === 'string'
+    && part.text.trim().startsWith(PLAN_MODE_INSTRUCTION_PREFIX)
+  ));
+};
+
+const resolveInvocationReadOnly = async (context, client) => {
+  if (!client?.session || typeof client.session.messages !== 'function') return false;
+  const rootSessionId = requireText(context.sessionID, 'context.sessionID');
+  const messageId = requireText(context.messageID, 'context.messageID');
+  const directory = requireText(context.directory, 'context.directory');
+  let response;
+  try {
+    response = await client.session.messages({
+      path: { id: rootSessionId },
+      query: { directory, limit: INVOCATION_POLICY_MESSAGE_LIMIT },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Cannot verify parent plan-mode policy before managed dispatch: ${message}`);
+  }
+  if (response?.error) {
+    throw new Error('Cannot verify parent plan-mode policy before managed dispatch');
+  }
+  const records = unwrapResponseData(response);
+  if (!Array.isArray(records)) {
+    throw new Error('Cannot verify parent plan-mode policy before managed dispatch');
+  }
+  const assistant = records.find((record) => (
+    record?.info?.role === 'assistant' && record.info.id === messageId
+  ));
+  const parentId = typeof assistant?.info?.parentID === 'string'
+    ? assistant.info.parentID.trim()
+    : '';
+  if (!parentId) {
+    throw new Error('Cannot verify the parent turn for managed dispatch');
+  }
+  const parent = records.find((record) => (
+    record?.info?.role === 'user' && record.info.id === parentId
+  ));
+  if (!parent) {
+    throw new Error('Cannot verify the parent turn for managed dispatch');
+  }
+  return isPlanModeUserRecord(parent);
+};
 
 const DUPLICATE_RESULT_PAYLOAD_FIELDS = [
   'failureReason',
@@ -218,9 +281,59 @@ const resolveStartExecution = async (args, context, client) => {
   throw new Error(`Managed agent ${agentName} has no executable model`);
 };
 
-const waitThroughProviderRecovery = async (initialResult, scoped, signal) => {
+const requiresManualModelRecovery = (result) => {
+  const task = result?.task;
+  const resultEnvelope = result?.resultEnvelope;
+  return Boolean(
+    isRecord(task)
+    && isRecord(resultEnvelope)
+    && task.childSessionId
+    && task.agentRetryAvailable === false
+    && (task.status === 'failed' || task.status === 'interrupted')
+    && (
+      task.failureKind === 'provider_usage_limit'
+      || (task.mode === 'orchestrator' && Number(task.attempt) >= 2)
+    )
+    && resultEnvelope.resumable === true
+    && resultEnvelope.action === null
+  );
+};
+
+const waitForTerminalTask = async (taskId, scoped, signal, initialResult) => {
+  const expectedTaskId = requireText(taskId, 'wait task_id');
   let result = initialResult;
-  while (result?.task?.failureKind === 'provider_usage_limit') {
+  while (true) {
+    if (result !== undefined) {
+      if (!isRecord(result?.task)) {
+        throw new Error('Managed task wait returned a malformed task');
+      }
+      const resultTaskId = requireText(result.task.taskId, 'wait result task_id');
+      if (resultTaskId !== expectedTaskId) {
+        throw new Error(
+          `Managed task wait returned task ${resultTaskId} while waiting for ${expectedTaskId}`,
+        );
+      }
+      const status = typeof result.task.status === 'string' ? result.task.status : '';
+      if (TERMINAL_TASK_STATUSES.has(status)) return result;
+      if (!LIVE_TASK_STATUSES.has(status)) {
+        throw new Error(
+          `Managed task wait returned an invalid task status${status ? `: ${status}` : ''}`,
+        );
+      }
+    }
+
+    if (signal?.aborted) throw signal.reason ?? new Error('Managed task wait aborted');
+    result = await callRpc('wait', {
+      ...scoped,
+      taskId: expectedTaskId,
+      waitTimeoutMs: WAIT_TIMEOUT_MS,
+    }, { signal });
+  }
+};
+
+const waitThroughManualModelRecovery = async (initialResult, scoped, signal) => {
+  let result = initialResult;
+  while (requiresManualModelRecovery(result)) {
     const recovery = await callRpc('wait_result_action', {
       ...scoped,
       taskId: requireText(result.task.taskId, 'recovery task_id'),
@@ -229,17 +342,16 @@ const waitThroughProviderRecovery = async (initialResult, scoped, signal) => {
       recovery?.resultEnvelope?.action !== 'retry_in_place'
       || !isRecord(recovery.followUpTask?.task)
     ) {
-      throw new Error('Provider usage-limit recovery ended without a retry-in-place follow-up');
+      throw new Error('Manual model recovery ended without a retry-in-place follow-up');
     }
 
-    result = recovery.followUpTask;
-    while (!TERMINAL_TASK_STATUSES.has(result.task.status)) {
-      result = await callRpc('wait', {
-        ...scoped,
-        taskId: requireText(result.task.taskId, 'recovery task_id'),
-        waitTimeoutMs: WAIT_TIMEOUT_MS,
-      }, { signal });
-    }
+    const followUpTaskId = requireText(recovery.followUpTask.task.taskId, 'recovery task_id');
+    result = await waitForTerminalTask(
+      followUpTaskId,
+      scoped,
+      signal,
+      recovery.followUpTask,
+    );
   }
   return result;
 };
@@ -255,6 +367,7 @@ const executeAction = async (args, context, client) => {
       ? Math.min(MAX_TIMEOUT_SECONDS, Math.max(minimumTimeoutSeconds, Math.trunc(args.timeout_seconds)))
       : minimumTimeoutSeconds;
     const execution = await resolveStartExecution(args, context, client);
+    const readOnly = await resolveInvocationReadOnly(context, client);
     const normalizedArgs = {
       action,
       label: typeof args.label === 'string' ? args.label.trim() : '',
@@ -274,6 +387,7 @@ const executeAction = async (args, context, client) => {
       parentTaskId: null,
       directory: requireText(context.directory, 'context.directory'),
       mode: context.agent === 'builder' ? 'builder' : 'orchestrator',
+      readOnly,
       providerId: normalizedArgs.providerId,
       modelId: normalizedArgs.modelId,
       agent,
@@ -289,11 +403,8 @@ const executeAction = async (args, context, client) => {
     return await callRpc(action, scoped, { signal: context.abort });
   }
   if (action === 'wait') {
-    const result = await callRpc(action, {
-      ...scoped,
-      waitTimeoutMs: WAIT_TIMEOUT_MS,
-    }, { signal: context.abort });
-    return await waitThroughProviderRecovery(result, scoped, context.abort);
+    const result = await waitForTerminalTask(scoped.taskId, scoped, context.abort);
+    return await waitThroughManualModelRecovery(result, scoped, context.abort);
   }
   if (action === 'cancel') {
     return await callRpc('cancel', {
@@ -375,12 +486,6 @@ export const DevRyanManagedOrchestrationPlugin = async ({
       ...details,
     }));
   };
-
-  const unwrapResponseData = (response) => (
-    response && typeof response === 'object' && 'data' in response
-      ? response.data
-      : response
-  );
 
   const readSessionMessages = async (sessionId, directory) => {
     const response = await client.session.messages({
@@ -837,9 +942,9 @@ export const DevRyanManagedOrchestrationPlugin = async ({
     'tool.execute.before': beforeToolExecute,
     tool: {
       devryan_task: tool({
-      description: 'Start or control a DevRyan-managed sub-agent. When managed delegation is already the decided next action, start it before any standalone todo read/write whose only purpose is to restate that delegation. DevRyan does not impose a managed concurrency cap: start every independent sub-agent needed by the task without batching around an artificial slot limit. DevRyan preserves partial results after failure or abort. A queued, starting, or running wait result is a live polling snapshot: immediately call wait again without narrating a timeout or failure and without resuming parent work. A provider usage limit leaves a durable pending result while the user selects a recovery model; the attached wait returns the recovered same-child result, or DevRyan wakes the idle parent if an external timeout detached that wait. This is distinct from provider-native task orchestration.',
+      description: 'Start or control a DevRyan-managed sub-agent. When managed delegation is already the decided next action, start it before any standalone todo read/write whose only purpose is to restate that delegation. DevRyan does not impose a managed concurrency cap: start every independent sub-agent needed by the task without batching around an artificial slot limit. DevRyan preserves partial results after failure or abort. DevRyan keeps each wait call attached while repeating bounded polling slices internally; wait returns only a terminal result, and status is the non-blocking way to inspect queued, starting, or running state. A resumable failure with no agent retry remaining leaves a durable pending result while the user selects a recovery model; the attached wait returns the recovered same-child result, or DevRyan wakes the idle parent if an external timeout detached that wait. This is distinct from provider-native task orchestration.',
       args: {
-        action: tool.schema.enum(ACTIONS).describe('Action: start, status, wait, cancel, continue, retry, resume, or abandon. Provider usage-limit recovery is handled by the user-facing Model Recovery controls while the durable result remains pending; an attached wait resumes directly, while a detached wait is recovered by an idle-parent continuation. Wait otherwise uses bounded polling slices; queued, starting, or running means call wait again immediately.'),
+        action: tool.schema.enum(ACTIONS).describe('Action: start, status, wait, cancel, continue, retry, resume, or abandon. A resumable failure with no agent retry remaining is handled by the user-facing Model Recovery controls while the durable result remains pending; an attached wait resumes directly, while a detached wait is recovered by an idle-parent continuation. Wait stays attached until terminal while DevRyan polls internally; use status for a non-blocking live snapshot.'),
         task_id: tool.schema.string().optional().describe('Managed dvr_task_ ID. Required for every action except start.'),
         label: tool.schema.string().optional().describe('Short task label for start or retry.'),
         prompt: tool.schema.string().optional().describe('Full delegated prompt for start, or an optional retry override.'),
@@ -865,8 +970,8 @@ export const DevRyanManagedOrchestrationPlugin = async ({
             if (collected.status === 'completed' && action !== 'continue') {
               throw new Error(`The successful result requires continue after wait: ${taskId}`);
             }
-            if (collected.task?.failureKind === 'provider_usage_limit') {
-              throw new Error('Provider usage-limit recovery requires the user-facing Model Recovery controls; leave this result unacknowledged');
+            if (requiresManualModelRecovery(collected)) {
+              throw new Error('Manual model recovery requires the user-facing Model Recovery controls; leave this result unacknowledged');
             }
           }
           const result = await executeAction({ ...args, action }, context, client);
@@ -880,7 +985,11 @@ export const DevRyanManagedOrchestrationPlugin = async ({
             state.collectedResults.delete(requestedTaskId);
             if (TERMINAL_TASK_STATUSES.has(status)) {
               if (!resultTaskId) throw new Error('Managed task wait returned a terminal result without a task ID');
-              state.collectedResults.set(resultTaskId, { status, task: result.task });
+              state.collectedResults.set(resultTaskId, {
+                status,
+                task: result.task,
+                resultEnvelope: result.resultEnvelope,
+              });
             }
           }
           return JSON.stringify(compactManagedTaskToolResult(result), null, 2);

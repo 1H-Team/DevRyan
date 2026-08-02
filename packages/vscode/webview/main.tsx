@@ -1029,6 +1029,16 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init?: 
     }
   }
 
+  if (pathname === '/api/opencode/update-check' && method === 'GET') {
+    try {
+      const data = await sendBridgeMessage('api:opencode:update-check');
+      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return new Response(JSON.stringify({ error: message }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
   if (pathname.startsWith('/api/config/reload')) {
     await sendBridgeMessage('api:config/reload');
     return new Response(JSON.stringify({ restarted: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });

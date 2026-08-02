@@ -39,6 +39,10 @@ const SidebarRightExpandIcon = (props: React.ComponentProps<typeof SidebarRightI
   <SidebarRightIcon {...props} chevronDirection="left" />
 );
 
+interface DesktopRightChromeActionsProps {
+  browserActionPortalRef?: React.Ref<HTMLSpanElement>;
+}
+
 const normalize = (value: string): string => {
   if (!value) return '';
   const replaced = value.replace(/\\/g, '/');
@@ -48,8 +52,8 @@ const normalize = (value: string): string => {
 const getActiveContextMode = (panelState: {
   isOpen: boolean;
   activeTabId: string | null;
-  tabs: Array<{ id: string; mode: 'diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview' }>;
-} | undefined): 'diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview' | null => {
+  tabs: Array<{ id: string; mode: 'diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview' | 'browser' }>;
+} | undefined): 'diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview' | 'browser' | null => {
   if (!panelState?.isOpen || !Array.isArray(panelState.tabs) || panelState.tabs.length === 0) {
     return null;
   }
@@ -58,7 +62,9 @@ const getActiveContextMode = (panelState: {
   return activeTab?.mode ?? null;
 };
 
-export const DesktopRightChromeActions: React.FC = () => {
+export const DesktopRightChromeActions: React.FC<DesktopRightChromeActionsProps> = ({
+  browserActionPortalRef,
+}) => {
   const { t } = useI18n();
   const toggleBottomTerminal = useUIStore((state) => state.toggleBottomTerminal);
   const toggleRightSidebar = useUIStore((state) => state.toggleRightSidebar);
@@ -450,6 +456,11 @@ export const DesktopRightChromeActions: React.FC = () => {
         className={cn(DESKTOP_HEADER_ICON_BUTTON_CLASS, 'h-[37.5px] w-[37.5px]')}
         iconClassName="h-[18px] w-[18px]"
         Icon={TerminalPanelIcon}
+      />
+      <span
+        ref={browserActionPortalRef}
+        className="contents"
+        data-desktop-browser-action-slot="true"
       />
       <HeaderIconActionButton
         title={t('header.actions.rightSidebarWithShortcut', { shortcut: shortcutLabel('toggle_right_sidebar') })}

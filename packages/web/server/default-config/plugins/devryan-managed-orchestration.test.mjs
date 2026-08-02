@@ -54,7 +54,17 @@ const context = (overrides = {}) => ({
 
 const createToolOwnerClient = (records) => ({
   session: {
-    messages: vi.fn(async () => ({ data: records })),
+    messages: vi.fn(async () => ({ data: [
+      ...records,
+      {
+        info: { id: 'msg_user_parent', role: 'user' },
+        parts: [{ type: 'text', text: 'Proceed normally.' }],
+      },
+      {
+        info: { id: 'msg_parent', role: 'assistant', parentID: 'msg_user_parent' },
+        parts: [],
+      },
+    ] })),
   },
 });
 
@@ -75,6 +85,72 @@ const toolCallRecord = (callID, mode, overrides = {}) => ({
 });
 
 describe('DevRyan managed orchestration plugin', () => {
+  it('derives a private read-only policy from the exact parent plan turn', async () => {
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      requests.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({ ok: true, result: { task: { taskId: 'dvr_task_plan' } } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }));
+    const client = {
+      session: {
+        messages: vi.fn(async () => ({ data: [
+          {
+            info: {
+              id: 'msg_user_plan',
+              role: 'user',
+            },
+            parts: [{
+              type: 'text',
+              text: 'User has requested to enter plan mode.\nProduce an implementation plan only.',
+              synthetic: true,
+            }],
+          },
+          {
+            info: { id: 'msg_parent', role: 'assistant', parentID: 'msg_user_plan' },
+            parts: [],
+          },
+        ] })),
+      },
+    };
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client });
+
+    await plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'designer',
+      prompt: 'Inspect the interface without changing it.',
+      provider_id: 'anthropic',
+      model_id: 'claude-opus-4-5',
+    }, context());
+
+    expect(client.session.messages).toHaveBeenCalledWith({
+      path: { id: 'ses_root' },
+      query: { directory: '/workspace', limit: 100 },
+    });
+    expect(requests[0].params.readOnly).toBe(true);
+  });
+
+  it('fails closed when the parent turn policy cannot be resolved', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const plugin = await DevRyanManagedOrchestrationPlugin({
+      client: {
+        session: { messages: vi.fn(async () => ({ data: [] })) },
+      },
+    });
+
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'designer',
+      prompt: 'Inspect the interface.',
+      provider_id: 'anthropic',
+      model_id: 'claude-opus-4-5',
+    }, context())).rejects.toThrow('Cannot verify the parent turn');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it('exposes one tool and derives root scope plus stable idempotency from context', async () => {
     const requests = [];
     vi.stubGlobal('fetch', vi.fn(async (url, init) => {
@@ -92,7 +168,7 @@ describe('DevRyan managed orchestration plugin', () => {
       'start it before any standalone todo read/write whose only purpose is to restate that delegation',
     );
     expect(plugin.tool.devryan_task.description).toContain(
-      'A queued, starting, or running wait result is a live polling snapshot',
+      'keeps each wait call attached while repeating bounded polling slices internally',
     );
     expect(plugin.tool.devryan_task.description).toContain(
       'does not impose a managed concurrency cap',
@@ -107,7 +183,13 @@ describe('DevRyan managed orchestration plugin', () => {
       '7200 when the child also owns builds or browser verification',
     );
     expect(plugin.tool.devryan_task.args.action.description).toContain(
-      'Provider usage-limit recovery is handled by the user-facing Model Recovery controls',
+      'A resumable failure with no agent retry remaining is handled by the user-facing Model Recovery controls',
+    );
+    expect(plugin.tool.devryan_task.args.action.description).toContain(
+      'Wait stays attached until terminal while DevRyan polls internally',
+    );
+    expect(plugin.tool.devryan_task.args.action.description).toContain(
+      'use status for a non-blocking live snapshot',
     );
     expect(plugin.tool.devryan_task.args.action.description).not.toContain('recover_in_place');
     expect(plugin.tool.devryan_task.args.provider_id.description).toContain(
@@ -143,6 +225,7 @@ describe('DevRyan managed orchestration plugin', () => {
       dispatchGroupId: 'msg_parent',
       directory: '/workspace',
       mode: 'orchestrator',
+      readOnly: false,
       providerId: 'github-copilot',
       modelId: 'gpt-4.1',
       agent: 'explorer',
@@ -235,13 +318,18 @@ describe('DevRyan managed orchestration plugin', () => {
     expect(requests.at(-1).params.action).toBe('retry');
   });
 
-  it('keeps live wait snapshots uncollected until a repeated wait returns terminal', async () => {
+  it('keeps one wait attached across live polling slices until terminal', async () => {
     const requests = [];
-    const statuses = ['queued', 'starting', 'running', 'failed'];
+    const statuses = ['queued', 'starting', 'running', 'completed'];
+    let releaseTerminal;
+    const terminalGate = new Promise((resolve) => {
+      releaseTerminal = resolve;
+    });
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
       const request = JSON.parse(init.body);
       requests.push(request);
       const status = request.method === 'wait' ? statuses.shift() : null;
+      if (status === 'completed') await terminalGate;
       const result = status
         ? { task: { taskId: 'dvr_task_live', status } }
         : { accepted: true };
@@ -252,25 +340,118 @@ describe('DevRyan managed orchestration plugin', () => {
     }));
     const plugin = await DevRyanManagedOrchestrationPlugin();
 
-    for (const expectedStatus of ['queued', 'starting', 'running']) {
-      const output = await plugin.tool.devryan_task.execute({
-        action: 'wait',
-        task_id: 'dvr_task_live',
-      }, context());
-      expect(JSON.parse(output).task.status).toBe(expectedStatus);
-      await expect(plugin.tool.devryan_task.execute({
-        action: 'abandon',
-        task_id: 'dvr_task_live',
-      }, context())).rejects.toThrow('wait for dvr_task_live');
-    }
+    let settled = false;
+    const wait = plugin.tool.devryan_task.execute({
+      action: 'wait',
+      task_id: 'dvr_task_live',
+    }, context()).finally(() => {
+      settled = true;
+    });
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+    expect(settled).toBe(false);
 
-    await plugin.tool.devryan_task.execute({ action: 'wait', task_id: 'dvr_task_live' }, context());
-    await plugin.tool.devryan_task.execute({ action: 'abandon', task_id: 'dvr_task_live' }, context());
+    releaseTerminal();
+    expect(JSON.parse(await wait).task.status).toBe('completed');
+    await plugin.tool.devryan_task.execute({ action: 'continue', task_id: 'dvr_task_live' }, context());
 
     expect(requests.map(({ method }) => method)).toEqual(['wait', 'wait', 'wait', 'wait', 'acknowledge']);
     expect(requests.filter(({ method }) => method === 'wait').every(
       ({ params }) => params.waitTimeoutMs === 25_000,
     )).toBe(true);
+  });
+
+  it('rejects an unrecognized live wait status instead of polling forever', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      ok: true,
+      result: { task: { taskId: 'dvr_task_invalid', status: 'paused' } },
+    }), { status: 200, headers: { 'content-type': 'application/json' } })));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'wait',
+      task_id: 'dvr_task_invalid',
+    }, context())).rejects.toThrow('invalid task status: paused');
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts an attached wait without collecting a live snapshot', async () => {
+    const controller = new AbortController();
+    let markSecondWaitStarted;
+    const secondWaitStarted = new Promise((resolve) => {
+      markSecondWaitStarted = resolve;
+    });
+    let waitCallCount = 0;
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      waitCallCount += 1;
+      if (waitCallCount === 1) {
+        return new Response(JSON.stringify({
+          ok: true,
+          result: { task: { taskId: 'dvr_task_abort', status: 'running' } },
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+
+      markSecondWaitStarted();
+      return await new Promise((_resolve, reject) => {
+        const rejectAbort = () => reject(init.signal.reason ?? new Error('aborted'));
+        if (init.signal.aborted) rejectAbort();
+        else init.signal.addEventListener('abort', rejectAbort, { once: true });
+      });
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+    const wait = plugin.tool.devryan_task.execute({
+      action: 'wait',
+      task_id: 'dvr_task_abort',
+    }, context({ abort: controller.signal }));
+    const rejection = expect(wait).rejects.toThrow('stop requested');
+
+    await secondWaitStarted;
+    controller.abort(new Error('stop requested'));
+    await rejection;
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'abandon',
+      task_id: 'dvr_task_abort',
+    }, context())).rejects.toThrow('wait for dvr_task_abort');
+    expect(waitCallCount).toBe(2);
+  });
+
+  it('waits for concurrent children independently until both are terminal', async () => {
+    const requests = [];
+    const statusesByTask = new Map([
+      ['dvr_task_alpha', ['running', 'completed']],
+      ['dvr_task_beta', ['queued', 'running', 'completed']],
+    ]);
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      if (request.method !== 'wait') {
+        return new Response(JSON.stringify({ ok: true, result: { accepted: true } }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      const status = statusesByTask.get(request.params.taskId)?.shift();
+      return new Response(JSON.stringify({
+        ok: true,
+        result: { task: { taskId: request.params.taskId, status } },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+
+    const [alpha, beta] = await Promise.all([
+      plugin.tool.devryan_task.execute({ action: 'wait', task_id: 'dvr_task_alpha' }, context()),
+      plugin.tool.devryan_task.execute({ action: 'wait', task_id: 'dvr_task_beta' }, context()),
+    ]);
+    expect(JSON.parse(alpha).task.status).toBe('completed');
+    expect(JSON.parse(beta).task.status).toBe('completed');
+    await Promise.all([
+      plugin.tool.devryan_task.execute({ action: 'continue', task_id: 'dvr_task_alpha' }, context()),
+      plugin.tool.devryan_task.execute({ action: 'continue', task_id: 'dvr_task_beta' }, context()),
+    ]);
+
+    const waitRequests = requests.filter(({ method }) => method === 'wait');
+    expect(waitRequests).toHaveLength(5);
+    expect(waitRequests.every(({ params }) => params.waitTimeoutMs === 25_000)).toBe(true);
+    expect(requests.filter(({ method }) => method === 'acknowledge')).toHaveLength(2);
   });
 
   it('requires continue after waiting for a successful result', async () => {
@@ -896,7 +1077,15 @@ describe('DevRyan managed orchestration plugin', () => {
             taskId: 'dvr_task_limited',
             status: 'failed',
             childSessionId: 'ses_designer',
+            mode: 'orchestrator',
+            attempt: 1,
+            agentRetryAvailable: false,
             failureKind: 'provider_usage_limit',
+          },
+          resultEnvelope: {
+            taskId: 'dvr_task_limited',
+            action: null,
+            resumable: true,
           },
         };
       } else if (request.method === 'wait_result_action') {
@@ -977,7 +1166,64 @@ describe('DevRyan managed orchestration plugin', () => {
     }, context())).rejects.toThrow('Unsupported managed task action');
   });
 
-  it('wakes an idle parent exactly once after a detached provider-recovery wait', async () => {
+  it('holds the parent wait after a grouped agent retry is exhausted', async () => {
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      const result = request.method === 'wait'
+        ? {
+            task: {
+              taskId: 'dvr_task_fixer_attempt_2',
+              status: 'failed',
+              childSessionId: 'ses_fixer',
+              mode: 'orchestrator',
+              attempt: 2,
+              agentRetryAvailable: false,
+              failureKind: null,
+            },
+            resultEnvelope: {
+              taskId: 'dvr_task_fixer_attempt_2',
+              action: null,
+              resumable: true,
+            },
+          }
+        : {
+            resultEnvelope: {
+              taskId: 'dvr_task_fixer_attempt_2',
+              action: 'retry_in_place',
+              followUpTaskId: 'dvr_task_fixer_manual',
+            },
+            followUpTask: {
+              task: {
+                taskId: 'dvr_task_fixer_manual',
+                status: 'completed',
+                childSessionId: 'ses_fixer',
+                recoverablePreview: 'Recovered fixer result',
+              },
+            },
+          };
+      return new Response(JSON.stringify({ ok: true, result }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+
+    const output = await plugin.tool.devryan_task.execute({
+      action: 'wait',
+      task_id: 'dvr_task_fixer_attempt_2',
+    }, context());
+
+    expect(JSON.parse(output).task).toMatchObject({
+      taskId: 'dvr_task_fixer_manual',
+      status: 'completed',
+      recoverablePreview: 'Recovered fixer result',
+    });
+    expect(requests.map(({ method }) => method)).toEqual(['wait', 'wait_result_action']);
+  });
+
+  it('wakes an idle parent exactly once after any detached terminal wait', async () => {
     const scheduled = [];
     const records = [{
       info: {
@@ -1020,10 +1266,10 @@ describe('DevRyan managed orchestration plugin', () => {
         ok: true,
         result: {
           continuations: [{
-            sourceTaskId: 'dvr_task_limited',
-            taskId: 'dvr_task_recovered',
+            sourceTaskId: null,
+            taskId: 'dvr_task_completed',
             rootSessionId: 'ses_root',
-            childSessionId: 'ses_oracle',
+            childSessionId: 'ses_explorer',
             directory: '/workspace',
           }],
         },
@@ -1057,7 +1303,7 @@ describe('DevRyan managed orchestration plugin', () => {
           type: 'text',
           synthetic: true,
           text: expect.stringContaining(
-            '[devryan-provider-recovery:v1:dvr_task_recovered]',
+            '[devryan-provider-recovery:v1:dvr_task_completed]',
           ),
         }],
       },

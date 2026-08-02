@@ -120,11 +120,42 @@ describe('managed quota credential routes', () => {
 });
 
 describe('Claude quota runtime resolution', () => {
+  it('uses the safe live Anthropic proxy for configured-provider discovery', async () => {
+    const app = express();
+    const listConfiguredQuotaProviders = vi.fn(() => ['claude']);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: vi.fn(async () => ({
+        providers: [{
+          id: 'anthropic',
+          options: { baseURL: 'http://127.0.0.1:55201/v1' },
+        }],
+      })),
+    });
+    registerQuotaRoutes(app, {
+      getQuotaProviders: async () => ({
+        listConfiguredQuotaProviders,
+        fetchQuotaForProvider: async () => ({}),
+      }),
+      buildOpenCodeUrl: (requestPath) => `http://127.0.0.1:4096${requestPath}`,
+      isExternalOpenCode: () => false,
+    });
+
+    const response = await request(app).get('/api/quota/providers').expect(200);
+    expect(response.body).toEqual({ providers: ['claude'] });
+    expect(listConfiguredQuotaProviders).toHaveBeenCalledWith({
+      workingDirectory: null,
+      isExternalRuntime: false,
+      claudeProxyBaseUrl: 'http://127.0.0.1:55201/v1',
+    });
+    fetchSpy.mockRestore();
+  });
+
   it('passes the active managed OpenCode Anthropic proxy URL to the provider', async () => {
     const app = express();
     const fetchQuotaForProvider = vi.fn(async (_providerId, options) => ({
       providerId: 'claude',
-      proxyBaseUrl: await options.resolveProxyBaseUrl(),
+      proxyBaseUrl: options.claudeProxyBaseUrl,
       forceRefresh: options.forceRefresh,
       isExternalRuntime: options.isExternalRuntime,
     }));
@@ -165,7 +196,7 @@ describe('Claude quota runtime resolution', () => {
     const app = express();
     const fetchQuotaForProvider = vi.fn(async (_providerId, options) => ({
       providerId: 'claude',
-      proxyBaseUrl: await options.resolveProxyBaseUrl(),
+      proxyBaseUrl: options.claudeProxyBaseUrl,
       isExternalRuntime: options.isExternalRuntime,
     }));
     const fetchSpy = vi.spyOn(globalThis, 'fetch');

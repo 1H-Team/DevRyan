@@ -28,6 +28,7 @@ export const buildPlanCardRenderSegments = ({
   messagePlan,
   planCardRendered,
   suppressPostPlanText = false,
+  mountPlanCard = true,
 }: {
   groupText: string;
   groupStart: number;
@@ -35,6 +36,12 @@ export const buildPlanCardRenderSegments = ({
   messagePlan: PlanCardSentinelSplit;
   planCardRendered: boolean;
   suppressPostPlanText?: boolean;
+  /**
+   * When false the plan body is consumed without emitting a plan-card
+   * segment — used for earlier siblings of a plan revision whose plan text
+   * was superseded by the revision's selected source message.
+   */
+  mountPlanCard?: boolean;
 }): { segments: PlanCardRenderSegment[]; planCardRendered: boolean } => {
   const planStart = messagePlan.preambleText.length;
   const planEnd = planStart + messagePlan.planText.length;
@@ -62,7 +69,9 @@ export const buildPlanCardRenderSegments = ({
   }
 
   if (!rendered && groupEnd > planStart && messagePlan.planText.trim().length > 0) {
-    segments.push({ kind: 'plan-card' });
+    if (mountPlanCard) {
+      segments.push({ kind: 'plan-card' });
+    }
     rendered = true;
   }
 

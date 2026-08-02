@@ -27,6 +27,22 @@ interface DebugPanelProps {
 
 type DebugTab = 'memory' | 'streaming';
 
+interface ProcessMemorySnapshot {
+  process?: {
+    rss?: number;
+    heapUsed?: number;
+  } | null;
+  appMetrics?: Array<{
+    type?: string;
+    memory?: { workingSetSize?: number };
+  }> | null;
+}
+
+const formatBytes = (bytes: number): string => {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 MB';
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
 const formatDuration = (durationMs: number): string => {
   if (durationMs < 1000) {
     return `${Math.round(durationMs)}ms`;
@@ -173,6 +189,42 @@ export const DebugPanel: React.FC<DebugPanelProps> = ({ onClose }) => {
     return () => window.clearInterval(intervalId);
   }, []);
 
+  const [processMemory, setProcessMemory] = React.useState<ProcessMemorySnapshot | null>(null);
+  const [mountedMessageNodes, setMountedMessageNodes] = React.useState(0);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      setMountedMessageNodes(document.querySelectorAll('[data-message-id]').length);
+      try {
+        const response = await fetch('/api/debug/memory', { cache: 'no-store' });
+        if (!response.ok) return;
+        const payload = (await response.json()) as ProcessMemorySnapshot;
+        if (!cancelled) setProcessMemory(payload);
+      } catch {
+        // Endpoint unavailable (e.g. older server) — leave the section empty.
+      }
+    };
+    void refresh();
+    const intervalId = window.setInterval(() => void refresh(), 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  const appMetricsSummary = React.useMemo(() => {
+    const metrics = Array.isArray(processMemory?.appMetrics) ? processMemory.appMetrics : [];
+    let totalBytes = 0;
+    let guestCount = 0;
+    for (const metric of metrics) {
+      // workingSetSize is reported in kilobytes.
+      totalBytes += (metric.memory?.workingSetSize ?? 0) * 1024;
+      if (metric.type === 'Tab') guestCount += 1;
+    }
+    return { processCount: metrics.length, totalBytes, guestCount };
+  }, [processMemory]);
+
   React.useEffect(() => {
     if (copyState === 'idle') {
       return;
@@ -313,6 +365,18 @@ export const DebugPanel: React.FC<DebugPanelProps> = ({ onClose }) => {
             <div className="flex justify-between gap-2">
               <span className="text-[var(--surface-muted-foreground)]">{t('memoryDebugPanel.metric.githubTotalRequests')}</span>
               <span className="text-[var(--surface-foreground)]">{totalGitHubRequests}</span>
+            </div>
+          </div>
+
+          <div className="border-t border-[var(--interactive-border)] pt-2">
+            <div className="mb-1 typography-meta font-semibold text-[var(--surface-foreground)]">{t('memoryDebugPanel.section.processMemory')}</div>
+            <div className="grid grid-cols-2 gap-2 typography-meta">
+              <MetricCard label={t('memoryDebugPanel.metric.serverRss')} value={formatBytes(processMemory?.process?.rss ?? 0)} />
+              <MetricCard label={t('memoryDebugPanel.metric.serverHeapUsed')} value={formatBytes(processMemory?.process?.heapUsed ?? 0)} />
+              <MetricCard label={t('memoryDebugPanel.metric.appMemoryTotal')} value={formatBytes(appMetricsSummary.totalBytes)} />
+              <MetricCard label={t('memoryDebugPanel.metric.appProcesses')} value={appMetricsSummary.processCount} />
+              <MetricCard label={t('memoryDebugPanel.metric.guestProcesses')} value={appMetricsSummary.guestCount} />
+              <MetricCard label={t('memoryDebugPanel.metric.mountedMessageNodes')} value={mountedMessageNodes} />
             </div>
           </div>
 

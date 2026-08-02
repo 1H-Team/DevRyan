@@ -82,6 +82,28 @@ describe("detectPlanProposedCandidate", () => {
     })
   })
 
+  test("treats an explicit sentinel-backed Plan card as proposed without local plan-mode ownership", () => {
+    const state = buildState({
+      message: {
+        [SESSION_ID]: [
+          userMessage("msg_1_user"),
+          assistantMessage("msg_2_assistant"),
+        ],
+      },
+      part: {
+        msg_2_assistant: [textPart("msg_2_assistant", "intro\n<!--plan-->\n# Plan\n\nDo the work.")],
+      },
+    })
+
+    expect(detect(state)).toEqual({
+      sessionID: SESSION_ID,
+      sourceMessageId: "msg_2_assistant",
+      originatingUserMessageId: "msg_1_user",
+      implementationKey: `${SESSION_ID}:msg_2_assistant:plan:0`,
+      markdown: "# Plan\n\nDo the work.",
+    })
+  })
+
   test("uses persisted message metadata as a fallback when the local recorded flag is missing", () => {
     const state = buildState({
       message: {
@@ -370,6 +392,97 @@ describe("detectPlanProposedCandidate", () => {
       },
       part: {
         msg_2_assistant: [textPart("msg_2_assistant", "<!--plan-->\n# Plan")],
+      },
+    })
+
+    expect(detect(state, { recorded: new Set(["msg_1_user"]) })).toBeNull()
+  })
+
+  test("selects the canonical plan when the latest assistant sibling is plain epilogue text", () => {
+    const state = buildState({
+      message: {
+        [SESSION_ID]: [
+          userMessage("msg_1_user"),
+          assistantMessage("msg_2_assistant"),
+          assistantMessage("msg_3_assistant"),
+        ],
+      },
+      part: {
+        msg_2_assistant: [textPart("msg_2_assistant", "<!--plan-->\n# Plan\n\nDo the work.")],
+        msg_3_assistant: [textPart("msg_3_assistant", "The plan is ready — let me know how to proceed.")],
+      },
+    })
+
+    expect(detect(state, { recorded: new Set(["msg_1_user"]) })).toEqual({
+      sessionID: SESSION_ID,
+      sourceMessageId: "msg_2_assistant",
+      originatingUserMessageId: "msg_1_user",
+      implementationKey: `${SESSION_ID}:msg_2_assistant:plan:0`,
+      markdown: "# Plan\n\nDo the work.",
+    })
+  })
+
+  test("selects the last plan across synthetic continuation turns and keeps the user-authored origin", () => {
+    const state = buildState({
+      message: {
+        [SESSION_ID]: [
+          userMessage("msg_1_user"),
+          assistantMessage("msg_2_assistant"),
+          userMessage("msg_3_continuation"),
+          assistantMessage("msg_4_assistant"),
+          assistantMessage("msg_5_assistant"),
+        ],
+      },
+      part: {
+        msg_2_assistant: [textPart("msg_2_assistant", "<!--plan-->\n# Plan v1")],
+        msg_3_continuation: [textPart("msg_3_continuation", "Continue where you left off.", true)],
+        msg_4_assistant: [textPart("msg_4_assistant", "<!--plan-->\n# Plan v2")],
+        msg_5_assistant: [textPart("msg_5_assistant", "Epilogue.")],
+      },
+    })
+
+    expect(detect(state, { recorded: new Set(["msg_1_user"]) })).toEqual({
+      sessionID: SESSION_ID,
+      sourceMessageId: "msg_4_assistant",
+      originatingUserMessageId: "msg_1_user",
+      implementationKey: `${SESSION_ID}:msg_4_assistant:plan:0`,
+      markdown: "# Plan v2",
+    })
+  })
+
+  test("does not propose while a sibling assistant in the revision is still incomplete", () => {
+    const state = buildState({
+      message: {
+        [SESSION_ID]: [
+          userMessage("msg_1_user"),
+          assistantMessage("msg_2_assistant", { time: { created: 2 } } as Partial<Message>),
+          assistantMessage("msg_3_assistant"),
+        ],
+      },
+      part: {
+        msg_2_assistant: [textPart("msg_2_assistant", "<!--plan-->\n# Plan")],
+        msg_3_assistant: [textPart("msg_3_assistant", "Epilogue.")],
+      },
+    })
+
+    expect(detect(state, { recorded: new Set(["msg_1_user"]) })).toBeNull()
+  })
+
+  test("does not propose while a sibling assistant still has a running tool", () => {
+    const state = buildState({
+      message: {
+        [SESSION_ID]: [
+          userMessage("msg_1_user"),
+          assistantMessage("msg_2_assistant"),
+          assistantMessage("msg_3_assistant"),
+        ],
+      },
+      part: {
+        msg_2_assistant: [
+          textPart("msg_2_assistant", "<!--plan-->\n# Plan"),
+          toolPart("msg_2_assistant", "running"),
+        ],
+        msg_3_assistant: [textPart("msg_3_assistant", "Epilogue.")],
       },
     })
 

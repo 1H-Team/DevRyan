@@ -33,11 +33,11 @@ describe('UsagePage model rows', () => {
 
   test('keeps Cursor selectable in Usage while its usage token is missing', () => {
     const pageSource = source('UsagePage.tsx');
-    const sidebarSource = source('UsageSidebar.tsx');
+    const visibilitySource = source('usage-provider-visibility.ts');
 
     expect(pageSource).toContain("selectedProviderId === 'cursor-acp'");
-    expect(sidebarSource).toContain("provider.id === 'cursor-acp'");
-    expect(sidebarSource).toContain('configuredByProviderId.has(provider.id)');
+    expect(visibilitySource).toContain("provider.id === 'cursor-acp'");
+    expect(visibilitySource).toContain('configuredByProviderId.has(provider.id)');
   });
 
   test('renders Antigravity model rows as a flat selected model list', () => {

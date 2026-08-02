@@ -165,6 +165,12 @@ export const TOOL_METADATA: Record<string, ToolMetadata> = {
        { key: 'name', label: 'Skill Name', type: 'text' }
      ]
    },
+   devryan_browser: {
+     displayName: 'Using DevRyan Browser',
+     category: 'web',
+     outputLanguage: 'text',
+     inputFields: []
+   },
    question: {
       displayName: 'Question',
       category: 'ai',
@@ -215,9 +221,30 @@ function formatFallbackToolDisplayName(toolName: string): string {
     .join(' ');
 }
 
+function formatContextModeToolDisplayName(toolName: string): string | null {
+  const trimmedToolName = toolName.trim();
+  const contextModeMcpMatch = /^mcp__context[-_]mode__(.+)$/i.exec(trimmedToolName);
+  const contextModeToolName = contextModeMcpMatch?.[1] ?? trimmedToolName;
+  const actionName = contextModeMcpMatch
+    ? contextModeToolName.replace(/^ctx_/, '')
+    : /^ctx_(.+)$/i.exec(contextModeToolName)?.[1];
+
+  if (!actionName) {
+    return null;
+  }
+
+  const displayAction = formatFallbackToolDisplayName(actionName);
+  return displayAction ? `C-Mode: ${displayAction}` : null;
+}
+
 export function getToolMetadata(toolName: string): ToolMetadata {
-  return TOOL_METADATA[toolName] || {
-    displayName: formatFallbackToolDisplayName(toolName),
+  const explicitMetadata = TOOL_METADATA[toolName];
+  if (explicitMetadata) {
+    return explicitMetadata;
+  }
+
+  return {
+    displayName: formatContextModeToolDisplayName(toolName) ?? formatFallbackToolDisplayName(toolName),
     category: 'system',
     outputLanguage: 'text',
     inputFields: []

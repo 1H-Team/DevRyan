@@ -145,6 +145,17 @@ function detectRuntimeType(): 'desktop' | 'web' | 'vscode' | null {
   return null;
 }
 
+export function resolveDesktopUpdateState(
+  desktopInfo: UpdateInfo | null,
+  sidecarInfo: UpdateInfo | null,
+): Pick<UpdateState, 'available' | 'info' | 'nextCheckInSec'> {
+  return {
+    available: desktopInfo?.available ?? false,
+    info: desktopInfo,
+    nextCheckInSec: sidecarInfo?.nextSuggestedCheckInSec ?? null,
+  };
+}
+
 const initialState: UpdateState = {
   checking: false,
   available: false,
@@ -191,22 +202,7 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
           }
         }
 
-        if (sidecarInfo) {
-          const mergedInfo: UpdateInfo = {
-            ...(desktopInfo ?? { available: false, currentVersion: sidecarInfo.currentVersion ?? 'unknown' }),
-            ...sidecarInfo,
-            currentVersion: desktopInfo?.currentVersion ?? sidecarInfo.currentVersion ?? 'unknown',
-            available: sidecarInfo.available,
-          };
-
-          set({
-            available: mergedInfo.available,
-            info: mergedInfo,
-            nextCheckInSec: suggestedSec,
-          });
-        } else {
-          set({ nextCheckInSec: suggestedSec });
-        }
+        set(resolveDesktopUpdateState(desktopInfo, sidecarInfo));
 
         return suggestedSec;
       } else if (runtime === 'web') {

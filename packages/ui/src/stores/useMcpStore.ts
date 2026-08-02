@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { createJSONStorage, devtools, persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
+import { devtools } from './utils/devtoolsGate';
 import type { McpStatus } from '@opencode-ai/sdk/v2';
 import { opencodeClient } from '@/lib/opencode/client';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';

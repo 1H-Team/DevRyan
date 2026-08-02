@@ -1,5 +1,6 @@
 import React from 'react';
 
+import { INTERRUPTED_PROVIDER_RESPONSE_REASON } from '@/hooks/providerErrorRecoveryDecision';
 import { useI18n } from '@/lib/i18n';
 import { getProviderUsageLimitDisplayReason } from '@/lib/messages/providerRecovery';
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -9,6 +10,10 @@ import {
   type ProviderRecoverySelection,
 } from '@/stores/useProviderRecoveryStore';
 import { executeProviderRecovery } from '@/sync/transient-retry';
+import {
+  PROVIDER_INFERENCE_STALL_REASON,
+  PROVIDER_TOOL_INPUT_STALL_REASON,
+} from '@/sync/provider-stall-recovery';
 import { ModelRecoveryCard } from './ModelRecoveryCard';
 
 export const PrimaryModelRecovery = React.memo(({
@@ -62,6 +67,12 @@ export const PrimaryModelRecovery = React.memo(({
       actionError={recovery.actionError}
       failureMessage={usageLimitReason
         ? t('chat.modelRecovery.usageLimitStopped', { detail: usageLimitReason })
+        : recovery.reason === INTERRUPTED_PROVIDER_RESPONSE_REASON
+          ? t('chat.modelRecovery.interrupted')
+          : recovery.reason === PROVIDER_TOOL_INPUT_STALL_REASON
+            ? t('chat.modelRecovery.toolInputStall')
+          : recovery.reason === PROVIDER_INFERENCE_STALL_REASON
+            ? t('chat.modelRecovery.inferenceStall')
         : null}
       onSelectionChange={setSelection}
       onRetry={retry}

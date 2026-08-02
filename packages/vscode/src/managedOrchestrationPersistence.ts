@@ -46,6 +46,9 @@ const validateSnapshot = (value: unknown): ManagedOrchestrationState => {
       dispatchGroupId: isRecord(candidate) && candidate.dispatchGroupId !== undefined
         ? candidate.dispatchGroupId
         : null,
+      readOnly: isRecord(candidate) && candidate.readOnly !== undefined
+        ? candidate.readOnly
+        : false,
     });
     if (tasks.has(task.taskId)) throw new TypeError(`duplicate managed task ${task.taskId}`);
     const idempotencyKey = `${task.rootSessionId}\u0000${task.idempotencyKey}`;

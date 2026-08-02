@@ -107,6 +107,9 @@ const PlanCard: React.FC<PlanCardProps> = ({
   );
   const traceEntry = usePlanTurnTraceEntry(sourceMessageId);
   const isLatestPlan = traceEntry?.isLatestPlan === true;
+  // Unsettled revision = another assistant sibling is still running; the card
+  // stays visible but disabled until the whole revision settles.
+  const isRevisionSettled = traceEntry?.isSettled ?? true;
   const planFileRecord = useSessionPlanFileStore((state) => state.recordsBySession[sessionId]);
   const currentPlanFileRecord = planFileRecord?.sourceMessageId === sourceMessageId
     ? planFileRecord
@@ -116,11 +119,13 @@ const PlanCard: React.FC<PlanCardProps> = ({
     hasPlanText: planText.trim().length > 0,
     isImplementationRequested,
     isLatestPlan: traceEntry?.isLatestPlan ?? true,
+    isRevisionSettled,
   });
   const shouldPersist = shouldPersistPlanCard({
     streamPhase,
     hasPlanText: planText.trim().length > 0,
     isLatestPlan,
+    isRevisionSettled,
   });
   const isPlanFileReady = currentPlanFileRecord?.status === 'saved' && Boolean(currentPlanFileRecord.path);
   const canImplement = actionState.canImplement && isPlanFileReady;

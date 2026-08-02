@@ -1,6 +1,8 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import {
   RiAddLine,
+  RiArrowLeftLine,
   RiArrowDownSLine,
   RiGlobalLine,
   RiLoader4Line,
@@ -20,8 +22,14 @@ import { toast } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useDeviceInfo } from '@/lib/device';
-import { isDesktopShell } from '@/lib/desktop';
+import { isDesktopLocalOriginActive, isDesktopShell, isElectronShell } from '@/lib/desktop';
 import { useUIStore } from '@/stores/useUIStore';
+import {
+  browserAgentLeaseSelectors,
+  claimBrowserAgentWindowContext,
+  ensureBrowserAgentListeners,
+  useBrowserAgentStore,
+} from '@/stores/useBrowserAgentStore';
 import { useTerminalStore } from '@/stores/useTerminalStore';
 import { useDesktopSshStore } from '@/stores/useDesktopSshStore';
 import { openExternalUrl } from '@/lib/url';
@@ -43,6 +51,47 @@ import {
 } from '@/lib/projectActions';
 import { detectDevServerCommand, readPackageJsonScripts } from '@/lib/detectDevServer';
 import { connectTerminalStream } from '@/lib/terminalApi';
+import { DESKTOP_HEADER_ICON_BUTTON_CLASS } from '@/components/layout/headerIconButton';
+import { useSessionUIStore } from '@/sync/session-ui-store';
+import { getAllSyncSessions } from '@/sync/sync-refs';
+import { useSession } from '@/sync/sync-context';
+import { resolveRootSessionID } from '@/lib/sessionLineage';
+
+const BrowserLeaseMenuRow: React.FC<{
+  leaseId: string;
+  onSelect: (leaseId: string) => void;
+}> = React.memo(({ leaseId, onSelect }) => {
+  const leaseSelector = React.useMemo(
+    () => browserAgentLeaseSelectors.lease(leaseId),
+    [leaseId],
+  );
+  const lease = useBrowserAgentStore(leaseSelector);
+  if (!lease) return null;
+
+  const pageLabel = lease.title || lease.hostname || lease.url || 'Browser';
+  const primary = lease.agent ? `${lease.agent} · ${pageLabel}` : pageLabel;
+
+  return (
+    <DropdownMenuItem
+      className="flex min-w-0 items-start gap-2.5 py-2"
+      onClick={() => onSelect(leaseId)}
+      data-browser-lease-menu-item={leaseId}
+    >
+      <span className="relative mt-0.5 inline-flex shrink-0">
+        <RiGlobalLine className="h-4 w-4" />
+        <span
+          className="absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-[var(--status-info)]"
+          aria-hidden="true"
+        />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate typography-ui-label text-foreground">{primary}</span>
+        <span className="block truncate typography-micro text-muted-foreground">{lease.url || lease.hostname}</span>
+      </span>
+    </DropdownMenuItem>
+  );
+});
+BrowserLeaseMenuRow.displayName = 'BrowserLeaseMenuRow';
 
 type UrlWatchEntry = {
   lastSeenChunkId: number | null;
@@ -63,6 +112,7 @@ interface ProjectActionsButtonProps {
   className?: string;
   compact?: boolean;
   allowMobile?: boolean;
+  browserActionPortalTarget?: HTMLElement | null;
 }
 
 const ANSI_ESCAPE_PREFIX = String.fromCharCode(27);
@@ -183,6 +233,7 @@ export const ProjectActionsButton = ({
   className,
   compact = false,
   allowMobile = false,
+  browserActionPortalTarget,
 }: ProjectActionsButtonProps) => {
   const { t } = useI18n();
   const { terminal, runtime } = useRuntimeAPIs();
@@ -191,12 +242,46 @@ export const ProjectActionsButton = ({
   const desktopSshInstances = useDesktopSshStore((state) => state.instances);
   const loadDesktopSsh = useDesktopSshStore((state) => state.load);
 
+  const projectId = projectRef?.id ?? null;
+  const projectPath = projectRef?.path ?? '';
+  const stableProjectRef = React.useMemo(() => {
+    if (!projectId) {
+      return null;
+    }
+    return { id: projectId, path: projectPath };
+  }, [projectId, projectPath]);
+  const normalizedDirectory = React.useMemo(() => {
+    return normalizeProjectActionDirectory(directory || stableProjectRef?.path || '');
+  }, [directory, stableProjectRef?.path]);
+
   const setBottomTerminalOpen = useUIStore((state) => state.setBottomTerminalOpen);
   const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
   const setSettingsPage = useUIStore((state) => state.setSettingsPage);
   const setSettingsDialogOpen = useUIStore((state) => state.setSettingsDialogOpen);
   const setSettingsProjectsSelectedId = useUIStore((state) => state.setSettingsProjectsSelectedId);
   const openContextPreview = useUIStore((state) => state.openContextPreview);
+  const toggleContextBrowser = useUIStore((state) => state.toggleContextBrowser);
+  const openContextBrowserLease = useUIStore((state) => state.openContextBrowserLease);
+  const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
+  const currentSession = useSession(currentSessionId);
+  const selectedRootSessionId = React.useMemo(() => {
+    if (!currentSessionId) return null;
+    const sessions = getAllSyncSessions();
+    if (currentSession && !sessions.some((session) => session.id === currentSession.id)) {
+      sessions.push(currentSession);
+    }
+    return resolveRootSessionID(currentSessionId, sessions);
+  }, [currentSession, currentSessionId]);
+  const rootLeaseIdsSelector = React.useMemo(
+    () => browserAgentLeaseSelectors.leaseIdsForRoot(selectedRootSessionId),
+    [selectedRootSessionId],
+  );
+  const rootLeaseCountSelector = React.useMemo(
+    () => browserAgentLeaseSelectors.activeCountForRoot(selectedRootSessionId),
+    [selectedRootSessionId],
+  );
+  const rootLeaseIds = useBrowserAgentStore(rootLeaseIdsSelector);
+  const rootLeaseCount = useBrowserAgentStore(rootLeaseCountSelector);
 
   const terminalSessions = useTerminalStore((state) => state.sessions);
   const ensureDirectory = useTerminalStore((state) => state.ensureDirectory);
@@ -214,21 +299,35 @@ export const ProjectActionsButton = ({
   const [actions, setActions] = React.useState<OpenChamberProjectAction[]>([]);
   const [selectedActionId, setSelectedActionId] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
+  const [browserPresentationLeaseId, setBrowserPresentationLeaseId] = React.useState<string | null>(null);
   const tabByKeyRef = React.useRef<Record<string, string>>({});
   const urlWatchByRunKeyRef = React.useRef<Record<string, UrlWatchEntry>>({});
   const streamCleanupByRunKeyRef = React.useRef<Record<string, () => void>>({});
   const previewWaitTimeoutByRunKeyRef = React.useRef<Record<string, number>>({});
   const loadRequestIdRef = React.useRef(0);
 
-  const projectId = projectRef?.id ?? null;
-  const projectPath = projectRef?.path ?? '';
+  React.useEffect(() => {
+    ensureBrowserAgentListeners();
+  }, []);
 
-  const stableProjectRef = React.useMemo(() => {
-    if (!projectId) {
-      return null;
+  React.useEffect(() => {
+    const claimContext = () => {
+      void claimBrowserAgentWindowContext(selectedRootSessionId, normalizedDirectory);
+    };
+    claimContext();
+    window.addEventListener('focus', claimContext);
+    return () => window.removeEventListener('focus', claimContext);
+  }, [normalizedDirectory, selectedRootSessionId]);
+
+  React.useEffect(() => {
+    setBrowserPresentationLeaseId(null);
+  }, [selectedRootSessionId]);
+
+  React.useEffect(() => {
+    if (browserPresentationLeaseId && !rootLeaseIds.includes(browserPresentationLeaseId)) {
+      setBrowserPresentationLeaseId(null);
     }
-    return { id: projectId, path: projectPath };
-  }, [projectId, projectPath]);
+  }, [browserPresentationLeaseId, rootLeaseIds]);
 
   React.useEffect(() => {
     if (!isDesktopShellApp) {
@@ -269,10 +368,6 @@ export const ProjectActionsButton = ({
       }
     }
   }, [stableProjectRef]);
-
-  const normalizedDirectory = React.useMemo(() => {
-    return normalizeProjectActionDirectory(directory || stableProjectRef?.path || '');
-  }, [directory, stableProjectRef?.path]);
 
   const autoDiscoverAction = React.useMemo<OpenChamberProjectAction>(() => ({
     id: OPENCHAMBER_AUTO_DISCOVER_ACTION_ID,
@@ -511,7 +606,7 @@ export const ProjectActionsButton = ({
 
     const runKey = toProjectActionRunKey(normalizedDirectory, action.id);
     const existingRun = projectActionRuns[runKey];
-    if (existingRun && existingRun.status === 'running') {
+    if (existingRun) {
       return;
     }
 
@@ -771,13 +866,131 @@ export const ProjectActionsButton = ({
     setSettingsDialogOpen(true);
   }, [setSettingsDialogOpen, setSettingsPage, setSettingsProjectsSelectedId, stableProjectRef?.id]);
 
+  const canOpenBlankBrowser = Boolean(stableProjectRef && normalizedDirectory);
+  const isLocalElectronBrowser = isElectronShell() && isDesktopLocalOriginActive();
+  const browserActionLabel = !canOpenBlankBrowser
+    ? t('header.actions.browserNoProject')
+    : rootLeaseCount > 0
+      ? t('header.actions.browserLeaseActiveTooltip')
+      : t('header.actions.browser');
+
+  const handleManualBrowserAction = React.useCallback(() => {
+    if (!canOpenBlankBrowser) {
+      return;
+    }
+    if (isLocalElectronBrowser) {
+      toggleContextBrowser(normalizedDirectory);
+      return;
+    }
+    openContextPreview(normalizedDirectory, 'about:blank');
+  }, [canOpenBlankBrowser, isLocalElectronBrowser, normalizedDirectory, openContextPreview, toggleContextBrowser]);
+
+  const handleObserveBrowserLease = React.useCallback((leaseId: string) => {
+    const lease = useBrowserAgentStore.getState().leasesById.get(leaseId);
+    if (!lease || lease.rootSessionId !== selectedRootSessionId || !normalizedDirectory) return;
+
+    openContextBrowserLease(normalizedDirectory, {
+      leaseId: lease.leaseId,
+      rootSessionId: lease.rootSessionId,
+      url: lease.url,
+      title: lease.title,
+      hostname: lease.hostname,
+    });
+    setBrowserPresentationLeaseId(leaseId);
+  }, [normalizedDirectory, openContextBrowserLease, selectedRootSessionId]);
+
+  const browserTrigger = (
+    <button
+      type="button"
+      onClick={isLocalElectronBrowser ? undefined : handleManualBrowserAction}
+      aria-label={browserActionLabel}
+      title={browserActionLabel}
+      disabled={!canOpenBlankBrowser}
+      className={cn(
+        DESKTOP_HEADER_ICON_BUTTON_CLASS,
+        'h-[37.5px] w-[37.5px]',
+        !canOpenBlankBrowser && 'cursor-not-allowed opacity-50',
+      )}
+    >
+      <span className="relative inline-flex">
+        <RiGlobalLine className="h-[18px] w-[18px]" />
+        {rootLeaseCount > 0 ? (
+          <span
+            className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-[var(--status-info)] animate-pulse"
+            aria-hidden="true"
+            data-browser-lease-active="true"
+          />
+        ) : null}
+      </span>
+    </button>
+  );
+
+  const browserActionPortal = browserActionPortalTarget
+    ? createPortal(
+      isLocalElectronBrowser ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>{browserTrigger}</DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-80 max-h-[70vh] overflow-y-auto">
+            {browserPresentationLeaseId ? (
+              <>
+                <DropdownMenuItem
+                  className="flex items-center gap-2"
+                  onClick={() => setBrowserPresentationLeaseId(null)}
+                  data-browser-lease-back="true"
+                >
+                  <RiArrowLeftLine className="h-4 w-4" />
+                  <span className="typography-ui-label text-foreground">{t('header.actions.browserLeases.back')}</span>
+                </DropdownMenuItem>
+                <div className="px-2 pb-1 pt-2 typography-micro font-medium uppercase tracking-wide text-muted-foreground">
+                  {t('header.actions.browserLeases.observing')}
+                </div>
+                <BrowserLeaseMenuRow
+                  leaseId={browserPresentationLeaseId}
+                  onSelect={handleObserveBrowserLease}
+                />
+              </>
+            ) : (
+              <>
+                <div className="px-2 pb-1 pt-2 typography-micro font-medium uppercase tracking-wide text-muted-foreground">
+                  {t('header.actions.browserLeases.title')}
+                </div>
+                {rootLeaseIds.length > 0 ? rootLeaseIds.map((leaseId) => (
+                  <BrowserLeaseMenuRow
+                    key={leaseId}
+                    leaseId={leaseId}
+                    onSelect={handleObserveBrowserLease}
+                  />
+                )) : (
+                  <div className="px-2 py-3 typography-micro text-muted-foreground">
+                    {t('header.actions.browserLeases.empty')}
+                  </div>
+                )}
+              </>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="flex items-center gap-2" onClick={handleManualBrowserAction}>
+              <RiGlobalLine className="h-4 w-4" />
+              <span className="typography-ui-label text-foreground">{t('header.actions.browserLeases.manual')}</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
+        <Tooltip>
+          <TooltipTrigger asChild>{browserTrigger}</TooltipTrigger>
+          <TooltipContent><p>{browserActionLabel}</p></TooltipContent>
+        </Tooltip>
+      ),
+      browserActionPortalTarget,
+    )
+    : null;
+
   if (runtime.isVSCode || (!allowMobile && isMobile) || !stableProjectRef || !normalizedDirectory) {
-    return null;
+    return browserActionPortal;
   }
 
   const resolvedSelected = resolvedSelectedAction;
   if (!resolvedSelected) {
-    return null;
+    return browserActionPortal;
   }
 
   const selectedIconKey = (resolvedSelected.icon || 'play') as keyof typeof PROJECT_ACTION_ICON_MAP;
@@ -807,6 +1020,7 @@ export const ProjectActionsButton = ({
   if (compact) {
     return (
       <div className="inline-flex items-center">
+        {browserActionPortal}
         <button
           type="button"
           disabled={isLoading || isStoppingSelected}
@@ -903,6 +1117,7 @@ export const ProjectActionsButton = ({
         className
       )}
     >
+      {browserActionPortal}
       <button
         type="button"
         onClick={handlePrimaryClick}

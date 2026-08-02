@@ -3,8 +3,11 @@
   "dependencies": {
     "@ai-sdk/openai-compatible": "^2.0.47",
     "@opencode-ai/plugin": "1.17.11",
+    "@rama_nigg/open-cursor": "2.5.4",
     "@rynfar/meridian": "1.57.0",
+    "context-mode": "1.0.169",
     "oh-my-opencode-slim": "2.0.5",
+    "opencode-antigravity-auth": "1.6.0",
     "opencode-with-claude": "1.6.18"
   }
 }

@@ -16,6 +16,7 @@ import {
     extractFetchedUrlsFromToolPart,
     extractReadFilePathsFromToolPart,
     extractSearchedFilePathsFromToolPart,
+    getToolActivityGroupDescription,
     getToolActivityGroupLabelKey,
     getToolActivityGroupSummaryCount,
     isExpandableTool,
@@ -297,6 +298,9 @@ const GroupedToolActivityRowInner: React.FC<GroupedToolActivityRowProps> = ({
         return getToolActivityGroupSummaryCount(groupInfo.kind, activities, getActivityToolPart);
     }, [activities, groupInfo.kind]);
     const label = t(getToolActivityGroupLabelKey(groupInfo, summaryCount), { count: summaryCount });
+    const description = React.useMemo(() => {
+        return getToolActivityGroupDescription(groupInfo.kind, activities.map(getActivityToolPart));
+    }, [activities, groupInfo.kind]);
     const icon = getToolIcon(groupInfo.representativeToolName);
 
     const patchFiles = React.useMemo(() => {
@@ -475,6 +479,15 @@ const GroupedToolActivityRowInner: React.FC<GroupedToolActivityRowProps> = ({
                 >
                     <AnimatedCounter label={label} animate={hasRunningActivity} />
                 </MinDurationShineText>
+                {description ? (
+                    <span
+                        className="typography-meta leading-5 min-w-0 truncate"
+                        style={{ color: 'var(--tools-description)' }}
+                        title={description}
+                    >
+                        {description}
+                    </span>
+                ) : null}
             </button>
             {isExpanded ? (
                 <div className="relative ml-2 pl-3 space-y-1.5">
@@ -788,10 +801,9 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         <RiStackLine className="h-3.5 w-3.5" />
                     </span>
                     <span
-                        className="leading-5 font-semibold inline-flex h-5 items-center flex-shrink-0"
+                        className="typography-meta leading-5 font-semibold inline-flex h-5 items-center flex-shrink-0"
                         style={{
                             color: 'var(--tools-title)',
-                            fontSize: '0.9rem',
                             letterSpacing: '0.005em',
                         }}
                     >

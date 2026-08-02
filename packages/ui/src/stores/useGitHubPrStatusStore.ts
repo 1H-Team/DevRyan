@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
-import type { GitHubPullRequestStatus, RuntimeAPIs } from '@/lib/api/types';
+import type { GitHubAPI, GitHubPullRequestStatus } from '@/lib/api/types';
 import { getSafeStorage } from './utils/safeStorage';
 
 const PR_REVALIDATE_TTL_MS = 90_000;
@@ -12,6 +12,34 @@ const PR_OPEN_DEFAULT_INTERVAL_MS = 2 * 60_000;
 const PR_OPEN_STABLE_INTERVAL_MS = 5 * 60_000;
 const PR_PERSIST_TTL_MS = 12 * 60 * 60_000;
 const PR_STATUS_STORAGE_KEY = 'openchamber.github-pr-status';
+export const PR_STATUS_REFRESH_CONCURRENCY = 4;
+
+export const mapWithConcurrency = async <Input, Output>(
+  items: readonly Input[],
+  concurrency: number,
+  mapper: (item: Input, index: number) => Promise<Output>,
+): Promise<Output[]> => {
+  if (!Number.isInteger(concurrency) || concurrency < 1) {
+    throw new Error('concurrency must be a positive integer');
+  }
+  if (items.length === 0) {
+    return [];
+  }
+
+  const results = new Array<Output>(items.length);
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  };
+
+  const workerCount = Math.min(concurrency, items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+};
 
 const isTerminalPrState = (state: string | null | undefined): boolean => state === 'closed' || state === 'merged';
 const isPendingChecks = (status: GitHubPullRequestStatus | null): boolean => {
@@ -45,7 +73,7 @@ type PrRuntimeParams = {
   branch: string;
   remoteName: string | null;
   canShow: boolean;
-  github?: RuntimeAPIs['github'];
+  github?: Pick<GitHubAPI, 'prStatus'>;
   githubAuthChecked: boolean;
   githubConnected: boolean | null;
 };
@@ -482,7 +510,6 @@ export const useGitHubPrStatusStore = create<GitHubPrStatusStore>()(
 
         try {
           set((prev) => ({
-            ...prev,
             activeRequestCount: prev.activeRequestCount + 1,
             totalRequestCount: prev.totalRequestCount + 1,
           }));
@@ -563,7 +590,7 @@ export const useGitHubPrStatusStore = create<GitHubPrStatusStore>()(
           });
         } finally {
           inFlightBySignature.delete(signature);
-          set((prev) => ({ ...prev, activeRequestCount: Math.max(0, prev.activeRequestCount - 1) }));
+          set((prev) => ({ activeRequestCount: Math.max(0, prev.activeRequestCount - 1) }));
         }
       },
 
@@ -581,7 +608,11 @@ export const useGitHubPrStatusStore = create<GitHubPrStatusStore>()(
             .filter((key): key is string => Boolean(key)),
         ));
 
-        await Promise.all(keys.map((key) => get().refresh(key, options)));
+        await mapWithConcurrency(
+          keys,
+          PR_STATUS_REFRESH_CONCURRENCY,
+          async (key) => get().refresh(key, options),
+        );
       },
 
       updateStatus: (key, updater) => {

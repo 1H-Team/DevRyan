@@ -16,6 +16,11 @@ import {
   type VsCodeManagedOrchestrationRuntime,
 } from './managedOrchestrationRuntime';
 import { readSettings } from './bridge-settings-runtime';
+import {
+  drainVsCodeHarnessRuntime,
+  initializeVsCodeHarnessRuntime,
+} from './harnessRuntime';
+import { getVsCodeHarnessRuntime } from './harness-runtime-access';
 
 let chatViewProvider: ChatViewProvider | undefined;
 let agentManagerProvider: AgentManagerPanelProvider | undefined;
@@ -46,6 +51,7 @@ const formatDurationMs = (value: number | null | undefined) => {
 
 export async function activate(context: vscode.ExtensionContext) {
   outputChannel = vscode.window.createOutputChannel('DevRyan');
+  await initializeVsCodeHarnessRuntime(context);
 
   let moveToRightSidebarScheduled = false;
 
@@ -738,6 +744,7 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 export async function deactivate() {
+  getVsCodeHarnessRuntime()?.beginDrain();
   stopGlobalEventWatcher();
   try {
     await managedOrchestrationRuntime?.shutdown();
@@ -748,6 +755,10 @@ export async function deactivate() {
   }
   managedOrchestrationRuntime = undefined;
   await openCodeManager?.stop();
+  await Promise.race([
+    drainVsCodeHarnessRuntime(),
+    new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
+  ]);
   openCodeManager = undefined;
   chatViewProvider = undefined;
   agentManagerProvider = undefined;

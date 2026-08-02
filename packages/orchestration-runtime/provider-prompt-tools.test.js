@@ -43,4 +43,32 @@ describe('provider prompt tool policy', () => {
       'mcp__*': false,
     });
   });
+
+  test('fails closed to an inspection-only allowlist for read-only tasks', () => {
+    expect(resolveProviderPromptTools('openai', 'designer', { readOnly: true })).toEqual({
+      '*': false,
+      read: true,
+      oc_read: true,
+      glob: true,
+      oc_glob: true,
+      grep: true,
+      ls: true,
+      oc_ls: true,
+      stat: true,
+      oc_stat: true,
+      ast_grep_search: true,
+      ctx_search: true,
+      ctx_stats: true,
+      webfetch: true,
+      websearch: true,
+      google_search: true,
+    });
+    expect(resolveProviderPromptTools('github-copilot', 'designer', { readOnly: true })).toMatchObject({
+      'resend_*': false,
+      'mcp__resend__*': false,
+      '*': false,
+      read: true,
+      webfetch: true,
+    });
+  });
 });

@@ -468,6 +468,98 @@ describe('turn timing runtime', () => {
     expect(JSON.stringify(record)).not.toContain('old_string');
   });
 
+  it('records transport failure timing and contextual concurrency without retaining idle sessions', () => {
+    let now = 100;
+    const runtime = createTurnTimingRuntime({ now: () => now });
+    const accept = (sessionId, messageId, providerID, modelID) => {
+      runtime.recordClientMark({
+        sessionId,
+        messageId,
+        mark: 'prompt_accepted',
+        metadata: { providerID, modelID, agent: 'builder', variant: 'high' },
+      });
+    };
+
+    accept('ses_openai_1', 'msg_openai_1', 'openai', 'gpt-5.6');
+    now = 110;
+    accept('ses_anthropic', 'msg_anthropic', 'anthropic', 'claude-opus');
+    now = 120;
+    accept('ses_openai_2', 'msg_openai_2', 'openai', 'gpt-5.6');
+
+    runtime.processOpenCodeEvent({
+      type: 'session.status',
+      properties: { sessionID: 'ses_openai_1', status: { type: 'busy' } },
+    });
+    runtime.processOpenCodeEvent({
+      type: 'session.status',
+      properties: { sessionID: 'ses_openai_1', status: { type: 'busy' } },
+    });
+
+    now = 601_368;
+    runtime.processOpenCodeEvent({
+      type: 'message.updated',
+      properties: {
+        info: {
+          id: 'msg_assistant_timeout',
+          sessionID: 'ses_openai_1',
+          role: 'assistant',
+          parentID: 'msg_openai_1',
+          time: { created: 1_000, completed: 601_368 },
+          error: {
+            name: 'UnknownError',
+            data: { message: 'The operation timed out.' },
+          },
+        },
+      },
+    });
+    expect(runtime.getRecentTimings({ sessionId: 'ses_openai_1' }).records[0]
+      .diagnostics.terminalFailure).toBeNull();
+    runtime.processOpenCodeEvent({
+      type: 'session.status',
+      properties: { sessionID: 'ses_openai_1', status: { type: 'idle' } },
+    });
+
+    const failedRecord = runtime.getRecentTimings({ sessionId: 'ses_openai_1' }).records[0];
+    expect(failedRecord.model).toEqual({
+      providerID: 'openai',
+      modelID: 'gpt-5.6',
+      agent: 'builder',
+      variant: 'high',
+    });
+    expect(failedRecord.diagnostics.terminalFailure).toEqual({
+      kind: 'request_timeout',
+      elapsedMs: 600_368,
+    });
+    expect(failedRecord.diagnostics.concurrency).toEqual({
+      evidenceOnly: true,
+      atAcceptance: {
+        activeTotal: 1,
+        activeSameProvider: 1,
+      },
+      atTerminalFailure: {
+        activeTotal: 3,
+        activeSameProvider: 2,
+      },
+    });
+
+    runtime.processOpenCodeEvent({
+      type: 'session.deleted',
+      properties: { info: { id: 'ses_anthropic' } },
+    });
+    runtime.processOpenCodeEvent({
+      type: 'session.status',
+      properties: { sessionID: 'ses_openai_2', status: { type: 'idle' } },
+    });
+
+    now = 601_500;
+    accept('ses_openai_3', 'msg_openai_3', 'openai', 'gpt-5.6');
+    expect(runtime.getRecentTimings({ sessionId: 'ses_openai_3' }).records[0]
+      .diagnostics.concurrency.atAcceptance).toEqual({
+      activeTotal: 1,
+      activeSameProvider: 1,
+    });
+  });
+
   it('records Cursor workspace and mutating tool diagnostics without raw payloads', () => {
     let now = 10;
     const runtime = createTurnTimingRuntime({ now: () => now });
@@ -667,7 +759,10 @@ describe('turn timing runtime', () => {
     const app = express();
     app.use(express.json());
     const runtime = createTurnTimingRuntime();
-    registerTurnTimingRoutes(app, runtime);
+    const acceptedMarks = [];
+    registerTurnTimingRoutes(app, runtime, {
+      onAcceptedMark: (input) => acceptedMarks.push(input),
+    });
 
     await request(app)
       .post('/api/diagnostics/turn-timing/mark')
@@ -680,6 +775,30 @@ describe('turn timing runtime', () => {
           summary: 'Turn timing mark recorded',
         }));
       });
+
+    await request(app)
+      .post('/api/diagnostics/turn-timing/mark')
+      .send({
+        sessionId: 'ses_1',
+        assistantMessageId: 'msg_assistant',
+        mark: 'renderer_tool_input_stall_confirmed',
+      })
+      .expect(200);
+    expect(acceptedMarks.at(-1)).toEqual(expect.objectContaining({
+      mark: 'renderer_tool_input_stall_confirmed',
+    }));
+
+    await request(app)
+      .post('/api/diagnostics/turn-timing/mark')
+      .send({
+        sessionId: 'ses_1',
+        assistantMessageId: 'msg_assistant',
+        mark: 'renderer_provider_inference_stall_confirmed',
+      })
+      .expect(200);
+    expect(acceptedMarks.at(-1)).toEqual(expect.objectContaining({
+      mark: 'renderer_provider_inference_stall_confirmed',
+    }));
 
     await request(app)
       .post('/api/diagnostics/turn-timing/mark')
@@ -753,6 +872,46 @@ describe('turn timing runtime', () => {
       runtime: 'desktop',
       transport: 'ws',
       visibilityState: 'visible',
+    });
+    expect(JSON.stringify(record)).not.toContain('secret');
+  });
+
+  it('accepts the operational renderer tool-input stall mark', () => {
+    const runtime = createTurnTimingRuntime();
+
+    expect(runtime.recordClientMark({
+      sessionId: 'ses_stall',
+      assistantMessageId: 'msg_assistant',
+      mark: 'renderer_tool_input_stall_confirmed',
+      directory: '/project',
+      metadata: { source: 'active-session-watchdog' },
+    })).toBe(true);
+
+    expect(runtime.getRecentTimings({ sessionId: 'ses_stall' }).records[0]
+      .marks.renderer_tool_input_stall_confirmed.metadata).toEqual({
+      source: 'active-session-watchdog',
+    });
+  });
+
+  it('accepts the operational renderer inference stall mark with sanitized duration', () => {
+    const runtime = createTurnTimingRuntime();
+
+    expect(runtime.recordClientMark({
+      sessionId: 'ses_stall',
+      assistantMessageId: 'msg_assistant',
+      mark: 'renderer_provider_inference_stall_confirmed',
+      directory: '/project',
+      metadata: {
+        source: 'active-session-watchdog',
+        stalledForMs: 300_123.9,
+        text: 'secret response',
+      },
+    })).toBe(true);
+
+    const record = runtime.getRecentTimings({ sessionId: 'ses_stall' }).records[0];
+    expect(record.marks.renderer_provider_inference_stall_confirmed.metadata).toEqual({
+      source: 'active-session-watchdog',
+      stalledForMs: 300_123,
     });
     expect(JSON.stringify(record)).not.toContain('secret');
   });
@@ -859,6 +1018,17 @@ describe('turn timing runtime', () => {
     updateTool('one', 'read', 'running');
     updateTool('two', 'write', 'completed');
     updateTool('three', 'bash', 'completed');
+
+    expect(runtime.getRecentTimings({ sessionId: 'ses_cap' })
+      .records[0]
+      .diagnostics
+      .latestToolCall).toEqual({
+      ordinal: 3,
+      tool: 'bash',
+      status: 'completed',
+      final: true,
+    });
+
     updateTool('one', 'read', 'completed');
 
     const toolCalls = runtime.getRecentTimings({ sessionId: 'ses_cap' })
@@ -870,6 +1040,15 @@ describe('turn timing runtime', () => {
       { ordinal: 1, tool: 'read', status: 'completed', final: true },
       { ordinal: 2, tool: 'write', status: 'completed', final: true },
     ]);
+    expect(runtime.getRecentTimings({ sessionId: 'ses_cap' })
+      .records[0]
+      .diagnostics
+      .latestToolCall).toEqual({
+      ordinal: 1,
+      tool: 'read',
+      status: 'completed',
+      final: true,
+    });
   });
 
   it('keeps terminal tool-call finality when a stale active state arrives later', () => {

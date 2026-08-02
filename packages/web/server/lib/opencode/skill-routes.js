@@ -1,4 +1,8 @@
-import { filterVisibleSkills, normalizeSkillPath } from './skill-policy.js';
+import {
+  filterVisibleSkills,
+  isRetiredDevRyanSkillName,
+  normalizeSkillPath,
+} from './skill-policy.js';
 import { isAllowedSkillSource } from './shared.js';
 import {
   createHarnessError,
@@ -145,6 +149,9 @@ export const registerSkillRoutes = (app, dependencies) => {
   };
 
   const findSkillByIdentity = (skills, skillName, requestedPath, scope = 'all', strictPath = false) => {
+    if (isRetiredDevRyanSkillName(skillName)) {
+      return null;
+    }
     const normalizedRequestedPath = normalizeSkillPath(requestedPath);
     if (normalizedRequestedPath) {
       const byPath = skills.find((skill) => (

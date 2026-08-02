@@ -520,6 +520,8 @@ const {
   getDraftInputStorageKey,
 } = await import("./session-draft-storage")
 const { useMessageQueueStore } = await import("@/stores/messageQueueStore")
+const { useCommandsStore } = await import("@/stores/useCommandsStore")
+const { useSkillsStore } = await import("@/stores/useSkillsStore")
 const { useInputStore } = await import("./input-store")
 const { useNotificationStore } = await import("./notification-store")
 const { useProjectsStore } = await import("@/stores/useProjectsStore")
@@ -669,6 +671,8 @@ describe("session-ui-store send routing", () => {
     useSessionPlanFileStore.setState({ recordsBySession: {} })
     useInputStore.setState({ pendingInputText: null, pendingInputMode: "replace" })
     useMessageQueueStore.setState({ queuedMessages: {}, queueModeEnabled: true })
+    useCommandsStore.setState({ commands: [] })
+    useSkillsStore.setState({ skills: [] })
     useProjectsStore.setState({ projects: [], activeProjectId: null })
     useNotificationStore.setState({
       list: [],
@@ -3048,6 +3052,38 @@ describe("session-ui-store send routing", () => {
 
     expect(sendCommandCalls[0]?.id).toBe("session-b")
     expect(unarchiveCalls).toEqual(["session-b"])
+  })
+
+  test("routes a known skill through command transport when command snapshots are empty", async () => {
+    mockDirectoryState = { command: [] }
+    useCommandsStore.setState({ commands: [] })
+    useSkillsStore.setState({
+      skills: [{
+        name: "review-code",
+        path: "/repo/.opencode/skills/review-code/SKILL.md",
+        scope: "project",
+        source: "opencode",
+      }],
+    })
+    useSessionUIStore.setState({ currentSessionId: "session-b" })
+
+    await useSessionUIStore.getState().sendMessage(
+      "/review-code packages/ui/src",
+      "provider-b",
+      "model-b",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      "normal",
+    )
+
+    expect(sendCommandCalls).toHaveLength(1)
+    expect(sendCommandCalls[0]?.id).toBe("session-b")
+    expect(sendCommandCalls[0]?.command).toBe("review-code")
+    expect(sendCommandCalls[0]?.arguments).toBe("packages/ui/src")
+    expect(sendMessageCalls).toHaveLength(0)
   })
 
   test("plan mode synthetic instruction follows the plan.md layout contract", () => {

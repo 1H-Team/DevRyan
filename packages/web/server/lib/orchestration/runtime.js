@@ -35,6 +35,14 @@ const resolveWaitTimeoutMs = (params) => {
   return Math.min(params.waitTimeoutMs, MAX_WAIT_TIMEOUT_MS);
 };
 
+const resolveReadOnly = (params) => {
+  if (params.readOnly === undefined) return false;
+  if (typeof params.readOnly !== 'boolean') {
+    throw new TypeError('readOnly must be a boolean');
+  }
+  return params.readOnly;
+};
+
 const ERROR_STATUS_BY_CODE = Object.freeze({
   child_session_conflict: 409,
   duplicate_idempotency_key: 409,
@@ -45,6 +53,8 @@ const ERROR_STATUS_BY_CODE = Object.freeze({
   ledger_capacity_exceeded: 507,
   manual_model_recovery_required: 409,
   managed_retry_limit_reached: 409,
+  managed_orchestration_owner_conflict: 409,
+  managed_orchestration_ownership_lost: 409,
   managed_runtime_unavailable: 503,
   missing_recovery_model: 400,
   missing_idempotency_key: 400,
@@ -86,6 +96,13 @@ const normalizeRuntimeError = (error) => {
 
 const projectTask = (task, envelope = null) => (
   toManagedTaskEvent(task, envelope).properties.task
+);
+
+const OWNERSHIP_WARNING = 'Managed orchestration is unavailable because another DevRyan runtime owns this data directory. Close the other runtime or configure a separate OPENCHAMBER_DATA_DIR.';
+
+const isOwnershipError = (error) => (
+  error?.code === 'managed_orchestration_owner_conflict'
+  || error?.code === 'managed_orchestration_ownership_lost'
 );
 
 const normalizeHandoffParams = (params) => {
@@ -151,8 +168,11 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
 
   let privateHost;
   let bridgeEnvironment = null;
+  let bridgePromise = null;
   let initializePromise = null;
   let initialized = false;
+  let ownershipPromise = null;
+  let ownershipAcquired = false;
   let recoveryWarningPublished = false;
   let shutdownPromise = null;
 
@@ -166,11 +186,25 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     }
   };
 
+  const ensureOwnership = () => {
+    if (ownershipAcquired) {
+      return Promise.resolve().then(() => persistence.verifyOwnership?.());
+    }
+    if (ownershipPromise) return ownershipPromise;
+    ownershipPromise = (async () => {
+      await persistence.acquireOwnership?.();
+      ownershipAcquired = true;
+    })().finally(() => {
+      ownershipPromise = null;
+    });
+    return ownershipPromise;
+  };
+
   const initialize = () => {
     assertAvailable();
-    if (initialized) return Promise.resolve();
+    if (initialized) return ensureOwnership();
     if (initializePromise) return initializePromise;
-    initializePromise = scheduler.initialize().then(async () => {
+    initializePromise = ensureOwnership().then(() => scheduler.initialize()).then(async () => {
       initialized = true;
       const recoveryWarning = persistence.getDiagnostics?.().recoveryWarning ?? null;
       if (recoveryWarning && !recoveryWarningPublished) {
@@ -195,6 +229,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
 
   const ensureInitialized = async () => {
     assertAvailable();
+    await ensureOwnership();
     if (!initialized) await initialize();
   };
 
@@ -265,6 +300,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           childSessionId: params.childSessionId ?? null,
           directory: params.directory,
           mode: params.mode,
+          readOnly: resolveReadOnly(params),
           providerId: params.providerId,
           modelId: params.modelId,
           agent: params.agent,
@@ -406,9 +442,16 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
 
   const prepareBridge = async () => {
     assertAvailable();
+    await ensureOwnership();
     if (bridgeEnvironment) return bridgeEnvironment;
-    bridgeEnvironment = await privateHost.start();
-    return bridgeEnvironment;
+    if (bridgePromise) return await bridgePromise;
+    bridgePromise = (async () => {
+      bridgeEnvironment = await privateHost.start();
+      return bridgeEnvironment;
+    })().finally(() => {
+      bridgePromise = null;
+    });
+    return await bridgePromise;
   };
 
   async function getSnapshot({ rootSessionId } = {}) {
@@ -421,7 +464,18 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         resultEnvelopes: [],
       };
     }
-    await ensureInitialized();
+    try {
+      await ensureInitialized();
+    } catch (error) {
+      if (!isOwnershipError(error)) throw error;
+      return {
+        available: false,
+        bridgeReady: false,
+        recoveryWarning: OWNERSHIP_WARNING,
+        tasks: [],
+        resultEnvelopes: [],
+      };
+    }
     const tasks = scheduler.listTasks({ rootSessionId });
     return {
       available: true,
@@ -440,7 +494,14 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
         scheduler.shutdown(),
       ]);
       bridgeEnvironment = null;
-      const errors = [hostResult, schedulerResult]
+      const ownershipResult = ownershipAcquired
+        ? await Promise.resolve().then(() => persistence.releaseOwnership?.()).then(
+          () => ({ status: 'fulfilled' }),
+          (reason) => ({ status: 'rejected', reason }),
+        )
+        : { status: 'fulfilled' };
+      ownershipAcquired = false;
+      const errors = [hostResult, schedulerResult, ownershipResult]
         .filter((result) => result.status === 'rejected')
         .map((result) => result.reason);
       if (errors.length === 1) throw errors[0];
@@ -459,11 +520,15 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     shutdown,
     flush: () => scheduler.flush(),
     getDiagnostics() {
+      const persistenceDiagnostics = persistence.getDiagnostics?.() ?? {};
       return {
         available: isManagedOpenCode(),
         bridge: privateHost.getDiagnostics?.() ?? null,
         ledger: {
-          recoveryWarning: persistence.getDiagnostics?.().recoveryWarning ?? null,
+          recoveryWarning: persistenceDiagnostics.recoveryWarning ?? null,
+          ownership: persistenceDiagnostics.ownership ?? {
+            state: ownershipAcquired ? 'owned' : 'unavailable',
+          },
         },
         scheduler: scheduler.getDiagnostics(),
       };

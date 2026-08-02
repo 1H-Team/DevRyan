@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
+  classifyTransientProviderFailure,
+  isLikelyTransientProviderAvailabilityFailure,
   isLikelyTransientStreamFailure,
   stripWrappedJsonQuotes,
 } from "./transientStreamError"
@@ -23,16 +25,59 @@ describe("isLikelyTransientStreamFailure", () => {
     expect(isLikelyTransientStreamFailure("APIError", "ECONNRESET: socket hang up")).toBe(true)
     expect(isLikelyTransientStreamFailure("APIError", "Stream idle timeout")).toBe(true)
     expect(isLikelyTransientStreamFailure("APIError", "SSE read timed out after 120000ms")).toBe(true)
+    expect(isLikelyTransientStreamFailure("UnknownError", "The operation timed out.")).toBe(true)
+    expect(isLikelyTransientStreamFailure("HeadersTimeoutError", "UND_ERR_HEADERS_TIMEOUT")).toBe(true)
   })
 
-  test("allows weaker stream and connection matches only for UnknownError", () => {
+  test("recognizes transient provider overload responses", () => {
+    const reason = "Our servers are currently overloaded. Please try again later."
+
+    expect(isLikelyTransientProviderAvailabilityFailure(reason)).toBe(true)
+    expect(isLikelyTransientProviderAvailabilityFailure(JSON.stringify(reason))).toBe(true)
+    expect(isLikelyTransientStreamFailure("APIError", reason)).toBe(true)
+  })
+
+  test("recognizes explicit connection-loss wording regardless of wrapper error name", () => {
     expect(isLikelyTransientStreamFailure("UnknownError", "Stream connection lost")).toBe(true)
-    expect(isLikelyTransientStreamFailure("APIError", "Stream connection lost")).toBe(false)
+    expect(isLikelyTransientStreamFailure("APIError", "Stream connection lost")).toBe(true)
   })
 
   test("rejects auth failures, aborts, and non-transient model errors", () => {
     expect(isLikelyTransientStreamFailure("UnknownError", "OAuth token refresh failed during stream")).toBe(false)
     expect(isLikelyTransientStreamFailure("UnknownError", "aborted")).toBe(false)
     expect(isLikelyTransientStreamFailure("ContentFilterError", "The model refused this request")).toBe(false)
+    expect(isLikelyTransientProviderAvailabilityFailure("Rate limit exceeded")).toBe(false)
+    expect(isLikelyTransientProviderAvailabilityFailure("Provider warming up")).toBe(false)
+  })
+})
+
+describe("classifyTransientProviderFailure", () => {
+  test("normalizes transport variants to stable failure kinds", () => {
+    const cases = [
+      ["UnknownError", "The operation timed out.", "request_timeout"],
+      ["UnknownError", '"The request timed out"', "request_timeout"],
+      ["HeadersTimeoutError", "Response headers timed out", "response_header_timeout"],
+      ["BodyTimeoutError", "Chunk timeout error", "stream_idle_timeout"],
+      ["UnknownError", "Upstream request failed: ECONNRESET", "connection_failure"],
+    ] as const
+    for (const [name, detail, expected] of cases) {
+      expect(classifyTransientProviderFailure(name, detail)).toBe(expected)
+    }
+  })
+
+  test("does not override auth, model, certificate, or abort classifications", () => {
+    expect(classifyTransientProviderFailure(
+      "AuthenticationError",
+      "The operation timed out while refreshing an access token",
+    )).toBeNull()
+    expect(classifyTransientProviderFailure(
+      "ProviderModelNotFoundError",
+      "Model not found after an upstream request failed",
+    )).toBeNull()
+    expect(classifyTransientProviderFailure(
+      "UnknownError",
+      "Unable to verify the first certificate",
+    )).toBeNull()
+    expect(classifyTransientProviderFailure("AbortError", "The operation timed out while cancelling")).toBeNull()
   })
 })

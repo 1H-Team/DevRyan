@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { devtools } from "zustand/middleware";
+import { devtools } from './utils/devtoolsGate';
 import { opencodeClient } from "@/lib/opencode/client";
 import { useProjectsStore } from "@/stores/useProjectsStore";
 import type { DevRyanDefaultPlugin, DevRyanDefaultPluginId, PluginConfigError, PluginEntry, PluginFile, PluginsListResponse, SlimSetupIssue, SlimSetupStatus } from "@/lib/api/types";
@@ -90,8 +90,12 @@ const normalizePluginEntry = (value: unknown): PluginEntry | null => {
 };
 
 const normalizeDefaultPluginId = (value: unknown): DevRyanDefaultPluginId | null => (
-  value === "oh-my-opencode-slim"
+  value === "opencode-antigravity-auth"
+    || value === "@rama_nigg/open-cursor"
+    || value === "oh-my-opencode-slim"
     || value === "opencode-with-claude"
+    || value === "context-mode"
+    || value === "superpowers"
     || value === "openai-tool-schema-sanitizer"
     ? value
     : null
@@ -106,7 +110,13 @@ const normalizeDefaultPlugin = (value: unknown): DevRyanDefaultPlugin | null => 
   const shippedSpec = typeof candidate.shippedSpec === "string" ? candidate.shippedSpec : "";
   const effectiveSpec = typeof candidate.effectiveSpec === "string" ? candidate.effectiveSpec : "";
   const version = typeof candidate.version === "string" ? candidate.version : candidate.version === null ? null : undefined;
-  const delivery = candidate.delivery === "npm" ? "npm" : candidate.delivery === "bundled-file" ? "bundled-file" : null;
+  const delivery = candidate.delivery === "installed-local"
+    ? "installed-local"
+    : candidate.delivery === "bundled-file"
+      ? "bundled-file"
+      : candidate.delivery === "curated-skills"
+        ? "curated-skills"
+        : null;
   const sourcePath = typeof candidate.sourcePath === "string" ? candidate.sourcePath : "";
   const configuredSourcePath = typeof candidate.configuredSourcePath === "string" ? candidate.configuredSourcePath : undefined;
 

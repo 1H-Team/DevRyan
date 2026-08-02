@@ -97,10 +97,6 @@ export const listDefaultConfigAssets = async (defaultConfigRoot) => (
   (await listFiles(defaultConfigRoot)).sort((left, right) => left.localeCompare(right))
 );
 
-export const listUserProfileAssets = async (profileRoot) => (
-  (await listFiles(profileRoot, '', 'user-profile')).sort((left, right) => left.localeCompare(right))
-);
-
 export const listRuntimePluginAssets = async (defaultConfigRoot) => (
   (await listDefaultConfigAssets(defaultConfigRoot))
     .filter((relativePath) => relativePath.startsWith('plugins/'))

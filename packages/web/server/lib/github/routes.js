@@ -1,3 +1,8 @@
+import {
+  classifyGitHubApiError,
+  githubRateLimitTracker,
+} from './rate-limit.js';
+
 const PR_STATUS_CACHE_TTL_MS = 90_000;
 const PR_STATUS_CACHE_MAX_ENTRIES = 200;
 const prStatusCache = new Map();
@@ -37,11 +42,13 @@ function setPrStatusCache(key, data, fetchedAt) {
   prStatusCache.set(key, { data, fetchedAt });
 }
 
-export function registerGitHubRoutes(app) {
+export function registerGitHubRoutes(app, dependencies = {}) {
+  const loadGitHubLibraries = dependencies.loadGitHubLibraries ?? (() => import('./index.js'));
+  const rateLimitTracker = dependencies.rateLimitTracker ?? githubRateLimitTracker;
   let githubLibraries = null;
   const getGitHubLibraries = async () => {
     if (!githubLibraries) {
-      githubLibraries = await import('./index.js');
+      githubLibraries = await loadGitHubLibraries();
     }
     return githubLibraries;
   };
@@ -71,8 +78,13 @@ export function registerGitHubRoutes(app) {
     };
   };
 
-  const isGitHubAuthInvalid = (error) => error?.status === 401 || error?.status === 403;
-  const isGitHubResourceUnavailable = (error) => error?.status === 403 || error?.status === 404;
+  const isGitHubAuthInvalid = (error) => classifyGitHubApiError(error) === 'authentication';
+  const isGitHubResourceUnavailable = (error) => classifyGitHubApiError(error) === 'forbidden' || error?.status === 404;
+  const sendRateLimitResponse = (res, cooldown) => res.status(429).json({
+    code: 'GITHUB_RATE_LIMITED',
+    error: 'GitHub API rate limit cooldown active',
+    retryAt: cooldown?.retryAt ?? null,
+  });
 
   app.get('/api/github/auth/status', async (_req, res) => {
     try {
@@ -101,6 +113,9 @@ export function registerGitHubRoutes(app) {
       try {
         user = await getGitHubUserSummary(octokit);
       } catch (error) {
+        if (classifyGitHubApiError(error) === 'rate_limit') {
+          rateLimitTracker.recordFailure(error);
+        }
         if (isGitHubAuthInvalid(error)) {
           if (usingOwnToken) clearGitHubAuth();
           return res.json({ connected: false, accounts: getGitHubAuthAccounts(), ghCli: buildGhCli() });
@@ -172,7 +187,13 @@ export function registerGitHubRoutes(app) {
 
   app.post('/api/github/auth/complete', async (req, res) => {
     try {
-      const { getGitHubClientId, exchangeDeviceCode, setGitHubAuth, getGitHubAuthAccounts } = await getGitHubLibraries();
+      const {
+        createGitHubApiClient,
+        exchangeDeviceCode,
+        getGitHubAuthAccounts,
+        getGitHubClientId,
+        setGitHubAuth,
+      } = await getGitHubLibraries();
       const clientId = getGitHubClientId();
       if (!clientId) {
         return res.status(400).json({
@@ -203,8 +224,7 @@ export function registerGitHubRoutes(app) {
         return res.status(500).json({ error: 'Missing access_token from GitHub' });
       }
 
-      const { Octokit } = await import('@octokit/rest');
-      const octokit = new Octokit({ auth: accessToken });
+      const octokit = createGitHubApiClient({ auth: accessToken });
       const user = await getGitHubUserSummary(octokit);
 
       setGitHubAuth({
@@ -253,6 +273,9 @@ export function registerGitHubRoutes(app) {
       try {
         user = await getGitHubUserSummary(octokit);
       } catch (error) {
+        if (classifyGitHubApiError(error) === 'rate_limit') {
+          rateLimitTracker.recordFailure(error);
+        }
         if (isGitHubAuthInvalid(error)) {
           clearGitHubAuth();
           return res.json({ connected: false, accounts: getGitHubAuthAccounts() });
@@ -325,6 +348,11 @@ export function registerGitHubRoutes(app) {
         return res.json(cached.data);
       }
 
+      const activeCooldown = rateLimitTracker.getCooldown();
+      if (activeCooldown) {
+        return sendRateLimitResponse(res, activeCooldown);
+      }
+
       // Intercept res.json to cache successful responses before sending
       // Only caches responses with connected:true — error/edge-case responses are not cached
       const originalJson = res.json.bind(res);
@@ -341,7 +369,8 @@ export function registerGitHubRoutes(app) {
         return res.json({ connected: false });
       }
 
-      const { resolveGitHubPrStatus } = await import('./pr-status.js');
+      const resolveGitHubPrStatus = dependencies.resolveGitHubPrStatus
+        ?? (await import('./pr-status.js')).resolveGitHubPrStatus;
       const resolvedStatus = await resolveGitHubPrStatus({
         octokit,
         directory,
@@ -401,7 +430,10 @@ export function registerGitHubRoutes(app) {
               : (counts.pending > 0 ? 'pending' : (total > 0 ? 'success' : 'unknown'));
             checks = { state, total, ...counts };
           }
-        } catch {
+        } catch (error) {
+          if (classifyGitHubApiError(error) === 'rate_limit') {
+            throw error;
+          }
           // ignore and fall back
         }
 
@@ -424,7 +456,10 @@ export function registerGitHubRoutes(app) {
               ? 'failure'
               : (counts.pending > 0 ? 'pending' : (total > 0 ? 'success' : 'unknown'));
             checks = { state, total, ...counts };
-          } catch {
+          } catch (error) {
+            if (classifyGitHubApiError(error) === 'rate_limit') {
+              throw error;
+            }
             checks = null;
           }
         }
@@ -444,7 +479,10 @@ export function registerGitHubRoutes(app) {
           const level = perm?.data?.permission;
           canMerge = level === 'admin' || level === 'maintain' || level === 'write';
         }
-      } catch {
+      } catch (error) {
+        if (classifyGitHubApiError(error) === 'rate_limit') {
+          throw error;
+        }
         canMerge = false;
       }
 
@@ -474,6 +512,9 @@ export function registerGitHubRoutes(app) {
         resolvedRemoteName: resolvedStatus.resolvedRemoteName ?? null,
       });
     } catch (error) {
+      if (classifyGitHubApiError(error) === 'rate_limit') {
+        return sendRateLimitResponse(res, rateLimitTracker.recordFailure(error));
+      }
       if (error?.status === 401) {
         const { clearGitHubAuth } = await getGitHubLibraries();
         clearGitHubAuth();
@@ -881,7 +922,7 @@ export function registerGitHubRoutes(app) {
         return res.json({ connected: false, isFork: false, upstream: null });
       }
 
-      const { resolveRepoNetwork } = await import('./repo/fork-detection.js');
+      const { getRepoDefaultBranch, resolveRepoNetwork } = await import('./repo/fork-detection.js');
       const network = await resolveRepoNetwork(octokit, directory);
 
       if (!network || network.length <= 1) {
@@ -893,8 +934,7 @@ export function registerGitHubRoutes(app) {
       let defaultBranchSha = null;
       if (upstream) {
         try {
-          const metadata = await octokit.rest.repos.get({ owner: upstream.owner, repo: upstream.repo });
-          defaultBranch = metadata?.data?.default_branch || 'main';
+          defaultBranch = await getRepoDefaultBranch(octokit, upstream) || 'main';
           const ref = await octokit.rest.git.getRef({ owner: upstream.owner, repo: upstream.repo, ref: `heads/${defaultBranch}` });
           defaultBranchSha = ref?.data?.object?.sha || null;
         } catch {

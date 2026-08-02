@@ -23,6 +23,7 @@ const createTerminalHarness = async ({
   inPlaceRetryResult = { status: 'completed', recoverablePreview: 'continued with replacement model' },
   resumable = true,
   resumeResult = { status: 'completed', recoverablePreview: 'resumed result' },
+  startResult = null,
   submitOverrides = {},
 } = {}) => {
   let taskCounter = 0;
@@ -36,7 +37,7 @@ const createTerminalHarness = async ({
         starts.push(task);
         await control.setChildSessionId(`ses_child_${task.taskId}`);
         await control.markAccepted();
-        return {
+        return startResult ?? {
           status: 'failed',
           failureReason,
           partial: true,
@@ -70,7 +71,9 @@ const createTerminalHarness = async ({
 
 describe('managed scheduler parent actions', () => {
   test('retries as one linked attempt and deduplicates repeated action requests', async () => {
-    const { original, scheduler, starts } = await createTerminalHarness();
+    const { original, scheduler, starts } = await createTerminalHarness({
+      submitOverrides: { readOnly: true },
+    });
 
     const first = await scheduler.acknowledgeResult(original.taskId, {
       action: 'retry',
@@ -84,6 +87,7 @@ describe('managed scheduler parent actions', () => {
     expect(first.followUpTask.taskId).toBe(second.followUpTask.taskId);
     expect(first.followUpTask.executionKind).toBe('retry');
     expect(first.followUpTask.priorTaskId).toBe(original.taskId);
+    expect(first.followUpTask.readOnly).toBe(true);
     expect(first.followUpTask.attempt).toBe(2);
     const retryStarts = starts.filter((task) => task.executionKind === 'retry');
     expect(retryStarts).toHaveLength(1);
@@ -98,7 +102,7 @@ describe('managed scheduler parent actions', () => {
     })).rejects.toThrow('result is already acknowledged with retry');
   });
 
-  test('allows one grouped agent retry, rejects another, and leaves manual retry in place available', async () => {
+  test('parks a second grouped failure for user-selected manual recovery', async () => {
     const { inPlaceRetries, original, scheduler, starts } = await createTerminalHarness({
       submitOverrides: { dispatchGroupId: 'msg_parent' },
     });
@@ -110,14 +114,12 @@ describe('managed scheduler parent actions', () => {
     const failedRecovery = await scheduler.waitForTask(firstRecovery.followUpTask.taskId);
 
     expect(failedRecovery).toMatchObject({ attempt: 2, executionKind: 'retry', status: 'failed' });
-    await expect(scheduler.acknowledgeResult(failedRecovery.taskId, {
-      action: 'retry',
-      idempotencyKey: 'grouped-retry-2',
-    })).rejects.toMatchObject({ code: 'managed_retry_limit_reached' });
-    await expect(scheduler.acknowledgeResult(failedRecovery.taskId, {
-      action: 'resume',
-      idempotencyKey: 'grouped-resume-2',
-    })).rejects.toMatchObject({ code: 'managed_retry_limit_reached' });
+    for (const action of ['continue', 'retry', 'resume', 'recover_in_place', 'abandon']) {
+      await expect(scheduler.acknowledgeResult(failedRecovery.taskId, {
+        action,
+        idempotencyKey: `grouped-final-${action}`,
+      })).rejects.toMatchObject({ code: 'manual_model_recovery_required' });
+    }
     expect(scheduler.getResultEnvelope(failedRecovery.taskId).action).toBeNull();
     expect(starts).toHaveLength(2);
 
@@ -142,7 +144,7 @@ describe('managed scheduler parent actions', () => {
     expect(settled.status).toBe('completed');
   });
 
-  test('allows one grouped agent resume and rejects a second resume', async () => {
+  test('allows one grouped agent resume and parks a second failure for manual recovery', async () => {
     const { original, scheduler } = await createTerminalHarness({
       resumeResult: {
         status: 'failed',
@@ -162,7 +164,7 @@ describe('managed scheduler parent actions', () => {
     await expect(scheduler.acknowledgeResult(failedRecovery.taskId, {
       action: 'resume',
       idempotencyKey: 'grouped-resume-2',
-    })).rejects.toMatchObject({ code: 'managed_retry_limit_reached' });
+    })).rejects.toMatchObject({ code: 'manual_model_recovery_required' });
     expect(scheduler.getResultEnvelope(failedRecovery.taskId).action).toBeNull();
   });
 
@@ -232,7 +234,7 @@ describe('managed scheduler parent actions', () => {
   test('leaves provider usage limits unacknowledged until a selected manual retry', async () => {
     const { inPlaceRetries, original, scheduler, starts } = await createTerminalHarness({
       failureReason: "You've hit your session limit · resets 7:30pm",
-      submitOverrides: { dispatchGroupId: 'msg_parent' },
+      submitOverrides: { dispatchGroupId: 'msg_parent', readOnly: true },
     });
     const originalStartCount = starts.length;
 
@@ -269,6 +271,7 @@ describe('managed scheduler parent actions', () => {
       providerId: 'openai',
       modelId: 'gpt-5.4',
       variant: 'high',
+      readOnly: true,
     });
     expect(starts).toHaveLength(originalStartCount);
     expect(inPlaceRetries).toHaveLength(1);
@@ -306,6 +309,30 @@ describe('managed scheduler parent actions', () => {
     await scheduler.acknowledgeResult(recovered.taskId, {
       action: 'continue',
       idempotencyKey: 'collect-recovered-result',
+    });
+    expect(scheduler.listReadyProviderRecoveryContinuations()).toEqual([]);
+  });
+
+  test('derives a durable parent continuation for an uncollected ordinary completion', async () => {
+    const { original, scheduler } = await createTerminalHarness({
+      startResult: {
+        status: 'completed',
+        recoverablePreview: 'ordinary completed result',
+      },
+      submitOverrides: { dispatchGroupId: 'msg_parent' },
+    });
+
+    expect(scheduler.listReadyProviderRecoveryContinuations()).toEqual([{
+      sourceTaskId: null,
+      taskId: original.taskId,
+      rootSessionId: 'ses_root',
+      childSessionId: original.childSessionId,
+      directory: '/workspace',
+    }]);
+
+    await scheduler.acknowledgeResult(original.taskId, {
+      action: 'continue',
+      idempotencyKey: 'collect-ordinary-result',
     });
     expect(scheduler.listReadyProviderRecoveryContinuations()).toEqual([]);
   });

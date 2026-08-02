@@ -6,6 +6,8 @@ import { handleStandardGitBridgeMessage } from './bridge-git-runtime';
 import { handleSpecialGitBridgeMessage } from './bridge-git-special-runtime';
 import { handleFsBridgeMessage } from './bridge-fs-runtime';
 import { handleConfigBridgeMessage } from './bridge-config-runtime';
+import { handleDiagnosticsBridgeMessage } from './bridge-diagnostics-runtime';
+import { handleEvidenceBridgeMessage } from './bridge-evidence-runtime';
 import { getVsCodeCursorSdkRuntime, handleSystemBridgeMessage } from './bridge-system-runtime';
 import { handleProxyBridgeMessage } from './bridge-proxy-runtime';
 import { handleManagedOrchestrationBridgeMessage } from './bridge-orchestration-runtime';
@@ -40,6 +42,7 @@ import {
   collectHeaders,
   base64EncodeUtf8,
 } from './bridge-localfs-proxy-runtime';
+import { createOpenCodeUpdateRuntime } from '../../web/server/lib/opencode/opencode-update-runtime.js';
 
 export interface BridgeRequest {
   id: string;
@@ -53,6 +56,7 @@ export interface BridgeResponse {
   success: boolean;
   data?: unknown;
   error?: string;
+  errorData?: unknown;
 }
 
 export interface BridgeContext {
@@ -64,8 +68,11 @@ export interface BridgeContext {
 
 const CLIENT_RELOAD_DELAY_MS = 800;
 
-const UPDATE_CHECK_URL = process.env.OPENCHAMBER_UPDATE_API_URL || 'https://api.openchamber.dev/v1/update/check';
+const GITHUB_LATEST_RELEASE_API_URL = 'https://api.github.com/repos/zoubenr/DevRyan/releases/latest';
+const COMPATIBILITY_UPDATE_CHECK_URL = process.env.OPENCHAMBER_UPDATE_API_URL;
+const UPDATE_CHECK_URL = COMPATIBILITY_UPDATE_CHECK_URL || GITHUB_LATEST_RELEASE_API_URL;
 const GITHUB_BACKEND_DISABLED_ERROR = 'DevRyan VS Code backend GitHub integration is disabled. Use native VS Code GitHub integrations.';
+const openCodeUpdateRuntime = createOpenCodeUpdateRuntime();
 
 
 export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeContext): Promise<BridgeResponse> {
@@ -109,6 +116,14 @@ export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeCo
     if (fsResponse) {
       return fsResponse;
     }
+    const diagnosticsResponse = await handleDiagnosticsBridgeMessage({ id, type, payload });
+    if (diagnosticsResponse) {
+      return diagnosticsResponse;
+    }
+    const evidenceResponse = await handleEvidenceBridgeMessage({ id, type, payload });
+    if (evidenceResponse) {
+      return evidenceResponse;
+    }
     const configResponse = await handleConfigBridgeMessage(
       { id, type, payload },
       ctx,
@@ -128,6 +143,7 @@ export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeCo
           },
           isEditable: () => context?.manager?.getDebugInfo()?.mode !== 'external',
         }),
+        checkForOpenCodeUpdates: (input) => openCodeUpdateRuntime.checkForUpdates(input),
       },
     );
     if (configResponse) {
@@ -140,6 +156,7 @@ export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeCo
         resolveUserPath,
         fetchModelsMetadata,
         updateCheckUrl: UPDATE_CHECK_URL,
+        updateCheckUsesCompatibilityContract: Boolean(COMPATIBILITY_UPDATE_CHECK_URL),
         clientReloadDelayMs: CLIENT_RELOAD_DELAY_MS,
       },
     );
@@ -192,6 +209,21 @@ export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeCo
     }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    return { id, type, success: false, error: errorMessage };
+    const operationError = err as {
+      operationId?: unknown;
+      bootstrap?: unknown;
+    };
+    const errorData = (
+      typeof operationError?.operationId === 'string'
+      || (operationError?.bootstrap !== null && typeof operationError?.bootstrap === 'object')
+    ) ? {
+        ...(typeof operationError.operationId === 'string'
+          ? { operationId: operationError.operationId }
+          : {}),
+        ...(operationError.bootstrap !== null && typeof operationError.bootstrap === 'object'
+          ? { bootstrap: operationError.bootstrap }
+          : {}),
+      } : undefined;
+    return { id, type, success: false, error: errorMessage, ...(errorData ? { errorData } : {}) };
   }
 }

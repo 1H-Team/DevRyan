@@ -114,4 +114,22 @@ describe('notification template runtime session variables', () => {
       headers: expect.objectContaining({ Authorization: 'Bearer token' }),
     }));
   });
+
+  it('caches authoritative session metadata from lifecycle events for notification eligibility', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+    const runtime = createRuntime();
+    const sessionInfo = {
+      id: 'ses_helper',
+      title: 'smartfetch-secondary',
+      parentID: null,
+    };
+
+    runtime.maybeCacheSessionInfoFromEvent({
+      type: 'session.created',
+      properties: { info: sessionInfo },
+    });
+
+    await expect(runtime.fetchSessionInfo('ses_helper')).resolves.toEqual(sessionInfo);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

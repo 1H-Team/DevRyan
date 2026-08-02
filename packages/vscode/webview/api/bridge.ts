@@ -34,6 +34,7 @@ interface BridgeResponse {
   success: boolean;
   data?: unknown;
   error?: string;
+  errorData?: unknown;
 }
 
 const pendingRequests = new Map<string, {
@@ -58,7 +59,11 @@ window.addEventListener('message', (event: MessageEvent<BridgeResponse>) => {
     if (response.success) {
       pending.resolve(response.data);
     } else {
-      pending.reject(new Error(response.error || 'Unknown error'));
+      const error = new Error(response.error || 'Unknown error') as Error & Record<string, unknown>;
+      if (response.errorData && typeof response.errorData === 'object') {
+        Object.assign(error, response.errorData);
+      }
+      pending.reject(error);
     }
   }
 });

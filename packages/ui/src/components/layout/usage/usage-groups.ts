@@ -30,10 +30,24 @@ export const buildUsageProviderTabs = (groups: RateLimitGroup[]) => (
 );
 
 export const getVisibleUsageEntries = (group: RateLimitGroup) => {
-  if (group.providerId !== 'codex' || !group.resetCredits) {
-    return group.entries;
+  const entries = group.providerId === 'codex' && group.resetCredits
+    ? group.entries.filter(([label]) => label !== 'credits')
+    : group.entries;
+
+  if (group.providerId !== 'claude') {
+    return entries;
   }
-  return group.entries.filter(([label]) => label !== 'credits');
+
+  const anthropicWindowRank = (label: string): number => {
+    if (label === '5h') return 0;
+    if (label === '7d') return 1;
+    if (label.startsWith('7d-')) return 2;
+    return 3;
+  };
+
+  return [...entries].sort(
+    ([leftLabel], [rightLabel]) => anthropicWindowRank(leftLabel) - anthropicWindowRank(rightLabel),
+  );
 };
 
 const creditStatusRank = (status: string): number => {

@@ -12,6 +12,7 @@ const encodePluginId = (prefix, value) => Buffer.from(`${prefix}:${value}`).toSt
 
 const isPathSpec = (spec) => (
   spec.startsWith('/')
+  || spec.startsWith('file:')
   || spec.startsWith('./')
   || spec.startsWith('../')
   || spec.startsWith('~')

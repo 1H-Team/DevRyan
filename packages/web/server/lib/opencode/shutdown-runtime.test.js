@@ -88,6 +88,25 @@ describe('graceful shutdown runtime', () => {
     expect(order).toEqual(['managed', 'cursor']);
   });
 
+  it('closes browser leases before managed runtime teardown', async () => {
+    const order = [];
+    const browserLeaseRuntime = {
+      closeAll: vi.fn(async () => { order.push('browser'); }),
+    };
+    const managedOrchestrationRuntime = {
+      shutdown: vi.fn(async () => { order.push('managed'); }),
+    };
+    const runtime = createRuntime(null, {
+      getBrowserLeaseRuntime: () => browserLeaseRuntime,
+      getManagedOrchestrationRuntime: () => managedOrchestrationRuntime,
+    });
+
+    await runtime.gracefulShutdown({ exitProcess: false });
+
+    expect(browserLeaseRuntime.closeAll).toHaveBeenCalledWith('shutdown');
+    expect(order).toEqual(['browser', 'managed']);
+  });
+
   it('does not let a hung OpenCode close block server cleanup or process exit', async () => {
     vi.useFakeTimers();
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});

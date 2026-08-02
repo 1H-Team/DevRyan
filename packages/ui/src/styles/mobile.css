@@ -54,33 +54,6 @@
     --text-micro: 0.75rem;
   }
 
-  /* Force override with higher specificity */
-  :root.mobile-pointer:not(.desktop-runtime) * {
-    --text-markdown: 0.9375rem !important;
-    --text-code: 0.8125rem !important;
-    --text-ui-header: 0.875rem !important;
-    --text-ui-label: 0.8125rem !important;
-    --text-meta: 0.8125rem !important;
-    --text-micro: 0.75rem !important;
-  }
-
-  /* Additional override for elements using typography classes */
-  :root.mobile-pointer:not(.desktop-runtime) .typography-markdown,
-  :root.mobile-pointer:not(.desktop-runtime) .typography-code,
-  :root.mobile-pointer:not(.desktop-runtime) .typography-ui-header,
-  :root.mobile-pointer:not(.desktop-runtime) .typography-ui-label,
-  :root.mobile-pointer:not(.desktop-runtime) .typography-meta,
-  :root.mobile-pointer:not(.desktop-runtime) .typography-micro {
-    font-size: unset !important;
-  }
-
-  /* Fix font size for tool displays */
-  :root.mobile-pointer:not(.desktop-runtime) [class*="tool"],
-  :root.mobile-pointer:not(.desktop-runtime) [class*="code"] {
-    --text-code: 0.8125rem !important;
-    font-size: var(--text-code) !important;
-  }
-
   /* Improve touch targets for mobile */
   :root.mobile-pointer:not(.desktop-runtime) button:not([role="radio"]):not([role="checkbox"]):not([role="switch"]),
   :root.mobile-pointer:not(.desktop-runtime) .btn,
@@ -324,35 +297,6 @@
       --header-height: 4.5rem;
     }
 
-    /* Mobile typography improvements */
-    .typography-markdown {
-      font-size: 0.9375rem !important;
-    }
-
-    .typography-code {
-      font-size: 0.8125rem !important;
-    }
-
-    .typography-ui-header {
-      font-size: 0.875rem !important;
-    }
-
-    .typography-ui-label {
-      font-size: 0.8125rem !important;
-    }
-
-    .typography-meta {
-      font-size: 0.8125rem !important;
-    }
-
-    .typography-micro {
-      font-size: 0.75rem !important;
-    }
-
-    /* Fix font size for tool displays */
-    [class*="tool"], [class*="code"] {
-      font-size: 0.8125rem !important;
-    }
   }
 
   /* Fallback for non-iOS standalone mode */

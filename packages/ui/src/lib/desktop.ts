@@ -61,6 +61,8 @@ export type DesktopSettings = {
   opencodeBinary?: string;
   desktopLanAccessEnabled?: boolean;
   desktopKeepAwakeEnabled?: boolean;
+  // Whether agents may drive the in-app browser pane over CDP (default on).
+  agentBrowserControlEnabled?: boolean;
   projects?: ProjectEntry[];
   activeProjectId?: string;
   approvedDirectories?: string[];
@@ -74,12 +76,14 @@ export type DesktopSettings = {
 
   // Event toggles (which events trigger notifications)
   notifyOnCompletion?: boolean;
+  notifyOnPlanReady?: boolean;
   notifyOnError?: boolean;
   notifyOnQuestion?: boolean;
 
   // Per-event notification templates
   notificationTemplates?: {
     completion: { title: string; message: string };
+    planReady: { title: string; message: string };
     error: { title: string; message: string };
     question: { title: string; message: string };
     subtask: { title: string; message: string };
@@ -249,6 +253,72 @@ export const setDesktopKeepAwake = async (enabled: boolean): Promise<DesktopKeep
     return null;
   }
   return invokeDesktop<DesktopKeepAwakeResult>('desktop_set_keep_awake', { enabled });
+};
+
+// Whether agents may drive the in-app browser pane over CDP. The main process
+// is the enforcement point (disabling drops any live session immediately);
+// this is only the renderer-side control surface.
+export const setAgentBrowserControlEnabled = async (enabled: boolean): Promise<{ enabled: boolean } | null> => {
+  if (!canUseElectronDesktopIPC() || !isDesktopLocalOriginActive()) {
+    return null;
+  }
+  return invokeDesktop<{ enabled: boolean }>('desktop_set_agent_browser_control', { enabled });
+};
+
+export type BrowserCdpBridgeStatus = {
+  state: 'ready' | 'stopped' | 'disabled' | 'no_target' | 'debugger_conflict';
+  running?: boolean;
+  clients?: number;
+  port?: number;
+};
+
+export const getBrowserCdpBridgeStatus = async (): Promise<BrowserCdpBridgeStatus | null> => {
+  if (!canUseElectronDesktopIPC() || !isDesktopLocalOriginActive()) {
+    return null;
+  }
+  return invokeDesktop<BrowserCdpBridgeStatus>('desktop_browser_cdp_status');
+};
+
+export type AgentBrowserInstallerStatus = {
+  ok: boolean;
+  state?: string;
+  applied?: boolean;
+  restartSucceeded?: boolean;
+  expectedVersion: string;
+  installedVersion: string | null;
+  binaryPath: string;
+  activeLeaseCount?: number;
+  issues?: Array<{
+    code: string;
+    message: string;
+  }>;
+  skill?: {
+    state: string;
+    conflicts?: Array<{
+      code: string;
+      message: string;
+      path?: string;
+    }>;
+    issues?: Array<{
+      code: string;
+      message: string;
+      path?: string;
+    }>;
+  };
+};
+
+export const getAgentBrowserInstallerStatus = async (): Promise<AgentBrowserInstallerStatus | null> => {
+  if (!canUseElectronDesktopIPC() || !isDesktopLocalOriginActive()) {
+    return null;
+  }
+  return invokeDesktop<AgentBrowserInstallerStatus>('desktop_agent_browser_status');
+};
+
+export const repairAgentBrowserInstaller = async (): Promise<AgentBrowserInstallerStatus | null> => {
+  if (!canUseElectronDesktopIPC() || !isDesktopLocalOriginActive()) {
+    return null;
+  }
+  return invokeDesktop<AgentBrowserInstallerStatus>('desktop_agent_browser_repair');
 };
 
 const normalizeOrigin = (raw: string): string | null => {

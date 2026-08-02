@@ -9,7 +9,7 @@ import { SidebarLeftIcon } from '@/components/icons/ToolbarIcons';
 import { useUIStore } from '@/stores/useUIStore';
 import { useTabletStandalonePwaRuntime } from '@/lib/device';
 import { cn } from '@/lib/utils';
-import { isDesktopShell } from '@/lib/desktop';
+import { isDesktopShell, isVSCodeRuntime } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
 import { formatShortcutForDisplay, getEffectiveShortcutCombo } from '@/lib/shortcuts';
 import {
@@ -25,9 +25,15 @@ const SidebarLeftExpandIcon = (props: React.ComponentProps<typeof SidebarLeftIco
 
 interface DesktopEdgeChromeProps {
   hideActions: boolean;
+  isMobile: boolean;
+  browserActionPortalRef?: React.Ref<HTMLSpanElement>;
 }
 
-export const DesktopEdgeChrome: React.FC<DesktopEdgeChromeProps> = ({ hideActions }) => {
+export const DesktopEdgeChrome: React.FC<DesktopEdgeChromeProps> = ({
+  hideActions,
+  isMobile,
+  browserActionPortalRef,
+}) => {
   const { t } = useI18n();
   const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
   const toggleSidebar = useUIStore((state) => state.toggleSidebar);
@@ -44,6 +50,7 @@ export const DesktopEdgeChrome: React.FC<DesktopEdgeChromeProps> = ({ hideAction
     return /Macintosh|Mac OS X/.test(navigator.userAgent || '');
   }, []);
   const [isDesktopWindowFullscreen, setIsDesktopWindowFullscreen] = React.useState(false);
+  const isVSCode = isVSCodeRuntime();
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -149,7 +156,7 @@ export const DesktopEdgeChrome: React.FC<DesktopEdgeChromeProps> = ({ hideAction
     right: 'calc(0.75rem + var(--oc-wco-right-inset, 0px))',
   }), []);
 
-  if (!isDesktopApp) {
+  if (isMobile || isVSCode) {
     return null;
   }
 
@@ -167,7 +174,7 @@ export const DesktopEdgeChrome: React.FC<DesktopEdgeChromeProps> = ({ hideAction
         className="app-region-drag pointer-events-auto absolute top-0 left-0 h-full"
         style={{ width: 'var(--oc-desktop-chrome-left, 0.75rem)' }}
       />
-      {!hideActions && (
+      {isDesktopApp && !hideActions && (
         <div
           className={cn(
             'app-region-no-drag pointer-events-auto absolute top-0 flex h-full items-center gap-1.5',
@@ -223,7 +230,7 @@ export const DesktopEdgeChrome: React.FC<DesktopEdgeChromeProps> = ({ hideAction
           className="app-region-no-drag pointer-events-auto absolute top-0 flex h-full items-center"
           style={rightClusterStyle}
         >
-          <DesktopRightChromeActions />
+          <DesktopRightChromeActions browserActionPortalRef={browserActionPortalRef} />
         </div>
       )}
     </div>

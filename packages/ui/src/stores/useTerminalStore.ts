@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { devtools, persist, createJSONStorage } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import { devtools } from './utils/devtoolsGate';
 
 import { closeTerminal } from '@/lib/terminalApi';
 import { getSafeSessionStorage } from '@/stores/utils/safeStorage';
@@ -73,8 +74,56 @@ interface TerminalStore {
 }
 
 const TERMINAL_BUFFER_LIMIT = 1_000_000;
+// At most this many directories keep live scrollback. Older directories'
+// buffers are dropped (tab metadata survives), matching what a relaunch does —
+// otherwise every visited directory retains up to 1MB × tabs indefinitely.
+const MAX_DIRECTORIES_WITH_SCROLLBACK = 4;
 const TERMINAL_STORE_NAME = 'terminal-store';
 let hydrationListenerAttached = false;
+
+// Module-scoped recency for scrollback eviction (not part of reactive state).
+const scrollbackActivityAt = new Map<string, number>();
+
+const touchScrollbackActivity = (key: string) => {
+  scrollbackActivityAt.delete(key);
+  scrollbackActivityAt.set(key, Date.now());
+};
+
+/**
+ * Returns a sessions map with scrollback cleared for the least-recently-active
+ * directories beyond the cap, or the input map when nothing changes.
+ */
+const evictStaleScrollback = (
+  sessions: Map<string, DirectoryTerminalState>,
+  protectedKey: string,
+): Map<string, DirectoryTerminalState> => {
+  const withScrollback: string[] = [];
+  for (const [key, state] of sessions) {
+    if (state.tabs.some((tab) => tab.bufferLength > 0)) withScrollback.push(key);
+  }
+  if (withScrollback.length <= MAX_DIRECTORIES_WITH_SCROLLBACK) return sessions;
+
+  withScrollback.sort((a, b) => (scrollbackActivityAt.get(a) ?? 0) - (scrollbackActivityAt.get(b) ?? 0));
+  const excess = withScrollback.length - MAX_DIRECTORIES_WITH_SCROLLBACK;
+  let next: Map<string, DirectoryTerminalState> | null = null;
+  let evicted = 0;
+  for (const key of withScrollback) {
+    if (evicted >= excess) break;
+    if (key === protectedKey) continue;
+    const state = sessions.get(key);
+    if (!state) continue;
+    if (!next) next = new Map(sessions);
+    next.set(key, {
+      ...state,
+      tabs: state.tabs.map((tab) => (
+        tab.bufferLength > 0 ? { ...tab, bufferChunks: [], bufferLength: 0 } : tab
+      )),
+    });
+    scrollbackActivityAt.delete(key);
+    evicted += 1;
+  }
+  return next ?? sessions;
+};
 
 type PersistedTerminalTab = Pick<TerminalTab, 'id' | 'label' | 'iconKey' | 'terminalSessionId' | 'lifecycle' | 'createdAt'>;
 
@@ -266,6 +315,7 @@ export const useTerminalStore = create<TerminalStore>()(
 
         setActiveTab: (directory: string, tabId: string) => {
           const key = normalizeDirectory(directory);
+          touchScrollbackActivity(key);
           set((state) => {
             const newSessions = new Map(state.sessions);
             const existing = newSessions.get(key);
@@ -541,7 +591,8 @@ export const useTerminalStore = create<TerminalStore>()(
             };
             newSessions.set(key, { ...existing, tabs: nextTabs });
 
-            return { sessions: newSessions, nextChunkId: chunkId + 1 };
+            touchScrollbackActivity(key);
+            return { sessions: evictStaleScrollback(newSessions, key), nextChunkId: chunkId + 1 };
           });
         },
 

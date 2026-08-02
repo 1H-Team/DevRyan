@@ -25,7 +25,20 @@ export const resolveDependencyPackageName = (id: string): string | undefined => 
   return `${firstSegment}/${secondSegment}`;
 };
 
+// Vite's `__vitePreload` runtime helper is a virtual module every chunk that
+// dynamic-imports depends on. Left unassigned, Rollup folds it into whichever
+// vendor chunk it prefers — it picked `vendor-syntax`, which made the entry
+// chunk a static importer of react-syntax-highlighter's ~590KB refractor
+// payload. Pinning it to its own chunk keeps that merge target from moving.
+const VITE_PRELOAD_HELPER_ID = 'vite/preload-helper';
+
+export const isVitePreloadHelperId = (id: string): boolean => (
+  id.replace(/^\0/, '').startsWith(VITE_PRELOAD_HELPER_ID)
+);
+
 export const resolveVendorChunkName = (id: string): string | undefined => {
+  if (isVitePreloadHelperId(id)) return 'vendor-vite-preload';
+
   const packageName = resolveDependencyPackageName(id);
   if (!packageName) return undefined;
 

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { devtools } from 'zustand/middleware';
+import { devtools } from './utils/devtoolsGate';
 import { opencodeClient, type ProjectFileSearchHit } from '@/lib/opencode/client';
 
 const CACHE_TTL_MS = 30_000;

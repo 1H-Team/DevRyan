@@ -4,6 +4,18 @@ import { createUpstreamSseReader } from './upstream-reader.js';
 // long-running agent sessions where many events accumulate quickly.
 export const MESSAGE_STREAM_GLOBAL_REPLAY_LIMIT = 2048;
 
+// Count alone is not a memory bound: message.part.updated events can carry
+// entire tool outputs and patch text, so 2048 retained payloads can reach
+// hundreds of MB. Evict oldest entries once the approximate serialized size of
+// the buffer exceeds this budget. Clients that reconnect past the window get a
+// `gap` response and resync, which the protocol already handles.
+const parseByteBudget = (raw) => {
+  const value = Number.parseInt(String(raw ?? ''), 10);
+  return Number.isFinite(value) && value > 0 ? value : null;
+};
+export const MESSAGE_STREAM_GLOBAL_REPLAY_BYTE_BUDGET =
+  parseByteBudget(process.env.OPENCHAMBER_MESSAGE_STREAM_REPLAY_BYTE_BUDGET) ?? 16 * 1024 * 1024;
+
 export function createGlobalMessageStreamHub({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
@@ -11,10 +23,13 @@ export function createGlobalMessageStreamHub({
   upstreamStallTimeoutMs,
   upstreamReconnectDelayMs,
   replayLimit = MESSAGE_STREAM_GLOBAL_REPLAY_LIMIT,
+  replayByteBudget = MESSAGE_STREAM_GLOBAL_REPLAY_BYTE_BUDGET,
 }) {
   const eventSubscribers = new Set();
   const statusSubscribers = new Set();
   const replay = [];
+  const replaySizes = [];
+  let replayTotalBytes = 0;
   let syntheticEventSequence = 0;
 
   let controller = null;
@@ -42,13 +57,29 @@ export function createGlobalMessageStreamHub({
     }
   };
 
+  const approxEventSizeBytes = (normalized) => {
+    try {
+      return JSON.stringify(normalized).length;
+    } catch {
+      return 1024;
+    }
+  };
+
   const rememberReplayEvent = (normalized) => {
     if (!normalized?.eventId) {
       return;
     }
+    const size = approxEventSizeBytes(normalized);
     replay.push(normalized);
-    if (replay.length > replayLimit) {
-      replay.splice(0, replay.length - replayLimit);
+    replaySizes.push(size);
+    replayTotalBytes += size;
+    // Always keep at least the newest event, even if it alone busts the budget.
+    while (
+      replay.length > 1 &&
+      (replay.length > replayLimit || replayTotalBytes > replayByteBudget)
+    ) {
+      replay.shift();
+      replayTotalBytes -= replaySizes.shift() ?? 0;
     }
   };
 
@@ -132,6 +163,9 @@ export function createGlobalMessageStreamHub({
     controller = null;
     everConnected = false;
     buildUrlFailed = false;
+    // The replay buffer intentionally survives stop(): the hub stops whenever
+    // the last client disconnects, and a reconnecting client relies on replay
+    // to bridge exactly that window. The byte budget above is the memory bound.
   };
 
   return {

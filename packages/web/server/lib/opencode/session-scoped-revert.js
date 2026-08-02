@@ -755,7 +755,8 @@ const listSnapshotTreeFiles = async ({ snapshotRoot, projectID, snapshotHash, si
       execFileAsync(
         'git',
         ['--git-dir', gitDir, 'ls-tree', '-r', '-z', '--name-only', snapshotHash],
-        { maxBuffer: 100 * 1024 * 1024, signal },
+        // Names only — even huge snapshots stay far below this.
+        { maxBuffer: 20 * 1024 * 1024, signal },
       ),
       signal,
     );

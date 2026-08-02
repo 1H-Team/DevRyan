@@ -451,7 +451,8 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
                 disabled={isResponding}
                 rows={2}
                 onKeyDown={handleKeyDown}
-                className="w-full bg-transparent border border-border/30 focus:border-primary rounded px-2 py-1 outline-none typography-meta text-foreground placeholder:text-muted-foreground/50 transition-colors resize-none overflow-hidden"
+                data-scrollable
+                className="w-full bg-transparent border border-border/30 focus:border-primary rounded px-2 py-1 outline-none typography-meta text-foreground placeholder:text-muted-foreground/50 transition-colors resize-none overflow-y-auto overflow-x-hidden"
                 autoFocus
               />
             </div>

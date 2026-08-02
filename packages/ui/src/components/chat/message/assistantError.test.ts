@@ -7,10 +7,40 @@ describe("classifyAssistantError", () => {
       name: "UnknownError",
       data: { message: '"Streaming response failed"' },
     })).toEqual({
-      text: "The model provider dropped the connection mid-response. This is a temporary provider-side issue — retry, or switch models if it keeps happening.\n`Streaming response failed`",
+      text: "Your prompt was accepted, but the model provider connection failed before the turn finished. Any completed work was preserved in this session.\n`Streaming response failed`",
       variant: "error",
       retryable: true,
     })
+  })
+
+  test("renders cause-specific timeout recovery copy", () => {
+    const cases = [
+      [
+        "UnknownError",
+        "The operation timed out.",
+        "Your prompt was accepted, but the model provider request timed out before the turn finished.",
+      ],
+      [
+        "HeadersTimeoutError",
+        "UND_ERR_HEADERS_TIMEOUT",
+        "Your prompt was accepted, but the model provider did not begin its response before the response-header liveness timeout.",
+      ],
+      [
+        "BodyTimeoutError",
+        "Chunk timeout error",
+        "Your prompt was accepted, but the model provider stopped sending response data before the stream liveness timeout.",
+      ],
+    ] as const
+    for (const [name, detail, expectedLead] of cases) {
+      expect(classifyAssistantError({
+        name,
+        data: { message: detail },
+      })).toEqual({
+        text: `${expectedLead} Any completed work was preserved in this session.\n\`${detail}\``,
+        variant: "error",
+        retryable: true,
+      })
+    }
   })
 
   test("keeps OpenCode retry and provider auth classifications ahead of transient matching", () => {
@@ -58,7 +88,7 @@ describe("classifyAssistantError", () => {
       name: "UnknownError",
       data: { message: '"A permanent model refusal"' },
     })).toEqual({
-      text: "Opencode failed to send message with error:\n`A permanent model refusal`",
+      text: "The model provider could not complete this turn:\n`A permanent model refusal`",
       variant: "error",
     })
   })

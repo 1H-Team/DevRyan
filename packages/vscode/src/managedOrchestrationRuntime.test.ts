@@ -6,6 +6,7 @@ import {
   createManagedTaskRecord,
   type ManagedOrchestrationState,
   type ManagedTaskExecutorResult,
+  type ManagedTaskRecord,
   type ManagedTaskResultEnvelope,
   type ManagedTaskScheduler,
 } from '@openchamber/orchestration-runtime';
@@ -365,7 +366,11 @@ describe('VS Code managed orchestration owner', () => {
   it('persists a private atomic ledger under extension storage', async () => {
     const storageDirectory = await createTemporaryDirectory();
     const ledger = createVsCodeManagedOrchestrationLedger({ storageDirectory });
-    const expected = { version: 1 as const, tasks: [queuedTask(1)], resultEnvelopes: [] };
+    const expected = {
+      version: 1 as const,
+      tasks: [{ ...queuedTask(1), readOnly: true }],
+      resultEnvelopes: [],
+    };
 
     await ledger.save(expected);
 
@@ -375,11 +380,12 @@ describe('VS Code managed orchestration owner', () => {
     expect((await fs.readdir(path.dirname(ledger.filePath))).filter((name) => name.includes('.tmp'))).toEqual([]);
   });
 
-  it('hydrates legacy tasks without dispatch groups instead of quarantining them', async () => {
+  it('hydrates legacy tasks without dispatch groups or read-only policy instead of quarantining them', async () => {
     const storageDirectory = await createTemporaryDirectory();
     const ledger = createVsCodeManagedOrchestrationLedger({ storageDirectory });
     const legacyTask = { ...queuedTask(1) } as Record<string, unknown>;
     delete legacyTask.dispatchGroupId;
+    delete legacyTask.readOnly;
     await fs.mkdir(path.dirname(ledger.filePath), { recursive: true });
     await fs.writeFile(ledger.filePath, JSON.stringify({
       version: 1,
@@ -390,6 +396,7 @@ describe('VS Code managed orchestration owner', () => {
     const loaded = await ledger.load();
 
     expect(loaded?.tasks[0].dispatchGroupId).toBeNull();
+    expect(loaded?.tasks[0].readOnly).toBe(false);
     expect(ledger.getDiagnostics?.().quarantinedPath).toBeNull();
   });
 
@@ -610,14 +617,14 @@ describe('VS Code managed orchestration owner', () => {
   });
 
   it('waits on a root-scoped private dispatch barrier with web-runtime parity', async () => {
-    const runs: Array<{ result: ReturnType<typeof deferred> }> = [];
+    const runs: Array<{ result: ReturnType<typeof deferred>; task: ManagedTaskRecord }> = [];
     const runtime = createVsCodeManagedOrchestrationRuntime({
       storageDirectory: '/unused',
       persistence: createPersistence(),
       executor: {
-        start() {
+        start(task) {
           const result = deferred();
-          runs.push({ result });
+          runs.push({ result, task });
           return result.promise;
         },
         async abort() { return { aborted: true }; },
@@ -630,9 +637,11 @@ describe('VS Code managed orchestration owner', () => {
     });
     const submitted = await runtime.handleRpc({
       method: 'submit',
-      params: submitParams(1, { dispatchGroupId: 'msg_parent' }),
+      params: submitParams(1, { dispatchGroupId: 'msg_parent', readOnly: true }),
     });
     expect(getTask(submitted)).not.toHaveProperty('dispatchGroupId');
+    expect(getTask(submitted)).not.toHaveProperty('readOnly');
+    expect(runs[0].task.readOnly).toBe(true);
     expect(await runtime.handleRpc({
       method: 'barrier',
       params: { rootSessionId: 'ses_other' },

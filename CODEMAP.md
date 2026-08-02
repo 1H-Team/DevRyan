@@ -2,7 +2,7 @@
 
 ## Project Responsibility
 
-DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtimes for interacting with an OpenCode server. The shared React UI lives in `packages/ui`; `packages/web` owns the Express server, browser bootstrap, and CLI; `packages/cursor-sdk-runtime` owns shared Cursor SDK execution/auth helpers for web and VS Code; `packages/electron` is the primary desktop shell; `packages/desktop` is the legacy Tauri shell; `packages/vscode` hosts the same experience inside VS Code.
+DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtimes for interacting with an OpenCode server. The shared React UI lives in `packages/ui`; `packages/web` owns the Express server, browser bootstrap, and CLI; `packages/cursor-sdk-runtime` owns shared Cursor SDK execution/auth helpers; `packages/harness-runtime` owns durable harness operations, diagnostics, lifecycle, and evidence primitives; `packages/electron` is the primary desktop shell; `packages/desktop` is the legacy Tauri shell; `packages/vscode` hosts the same experience inside VS Code.
 
 ## System Entry Points
 
@@ -19,6 +19,8 @@ DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtim
 - `packages/vscode/src/extension.ts`: VS Code extension activation and provider registration.
 - `packages/vscode/webview/main.tsx`: VS Code webview bootstrap for shared UI.
 - `scripts/validate.mjs`: changed-file-aware validation planner used by quick/affected/full checks.
+- `scripts/test-scripts.mjs` and `scripts/test-suite-contract.test.mjs`: recursive repository-test runner and full-gate completeness contract.
+- `scripts/feature-test-matrix.mjs`: checked source-to-test anchors for the supported feature and tool families.
 - `scripts/check-bundle-budgets.mjs`: deterministic Vite-manifest startup graph and bundle-budget verifier for web and VS Code builds.
 
 ## Repository Directory Map
@@ -30,6 +32,7 @@ DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtim
 | `packages/web/` | Browser app, Express/OpenCode server runtime, and `openchamber` CLI. | [packages/web/codemap.md](packages/web/codemap.md) |
 | `packages/cursor-sdk-runtime/` | Shared Cursor SDK execution runtime used by web/Electron and VS Code; quota credentials remain deliberately separate in each surface's quota module. | [packages/cursor-sdk-runtime/codemap.md](packages/cursor-sdk-runtime/codemap.md) |
 | `packages/orchestration-runtime/` | Dependency-free DevRyan-managed task contract, dispatch-barrier, and scheduler policy shared by web/Electron and VS Code owners. | [packages/orchestration-runtime/codemap.md](packages/orchestration-runtime/codemap.md) |
+| `packages/harness-runtime/` | Durable harness operations, diagnostic journal, lifecycle correlation, and optional turn evidence shared by host runtimes. | [packages/harness-runtime/codemap.md](packages/harness-runtime/codemap.md) |
 | `packages/electron/` | Primary desktop shell with in-process web server, native OS integrations, and IPC bridge. | [packages/electron/codemap.md](packages/electron/codemap.md) |
 | `packages/desktop/` | Legacy Tauri desktop shell retained for existing-install migration compatibility. | [packages/desktop/codemap.md](packages/desktop/codemap.md) |
 | `packages/vscode/` | VS Code extension host, bridge router, OpenCode manager, and webview runtime. | [packages/vscode/codemap.md](packages/vscode/codemap.md) |
@@ -43,13 +46,16 @@ DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtim
 - **Web browser bootstrap or web runtime API adapters** → `packages/web/src/codemap.md` and `packages/web/src/api/codemap.md`.
 - **CLI commands, prompts, output modes, tunnel/auth operator flows** → `packages/web/bin/codemap.md`.
 - **Electron desktop behavior, IPC, menus, dialogs, notifications, updater, deep links** → `packages/electron/codemap.md`.
+- **Session-scoped agent browser leases, managed browser CLI/skill, or private browser tool** → `packages/electron/codemap.md`, `packages/web/server/lib/browser-cdp/codemap.md`, `packages/web/server/lib/agent-browser/codemap.md`, and `packages/web/server/default-config/codemap.md`; renderer badge/fleet ownership starts in the nearest UI layout/store codemaps.
 - **Legacy Tauri compatibility only** → `packages/desktop/codemap.md`; do not add new desktop features there unless explicitly required for released Tauri users.
 - **VS Code extension host or webview bridge behavior** → `packages/vscode/codemap.md`, `packages/vscode/src/codemap.md`, and `packages/vscode/webview/codemap.md`.
 - **DevRyan-managed task identity, admission, dispatch barriers, cancellation, recovery, or persistence policy** → `packages/orchestration-runtime/codemap.md` and `packages/orchestration-runtime/DOCUMENTATION.md`.
+- **Durable worktree receipts, diagnostics, lifecycle correlation, or turn evidence primitives** → `packages/harness-runtime/codemap.md` and `packages/harness-runtime/DOCUMENTATION.md`.
 - **Web/Electron managed scheduler ownership, private tool/barrier bridge, ledger, OpenCode transport, or UI routes** → `packages/web/server/lib/orchestration/codemap.md` and `packages/web/server/lib/orchestration/DOCUMENTATION.md`.
 - **VS Code managed scheduler ownership, private tool bridge, ledger, OpenCode/Cursor transport, or webview routes** → `packages/vscode/src/codemap.md`, `packages/vscode/src/DOCUMENTATION.md`, and `packages/vscode/webview/api/codemap.md`.
 - **Shared managed-task cards, snapshot/event projection, recovery controls, or primary-agent handoff UI** → `packages/ui/src/stores/codemap.md`, `packages/ui/src/stores/DOCUMENTATION.md`, `packages/ui/src/sync/DOCUMENTATION.md`, and `packages/ui/src/components/chat/codemap.md`.
 - **Validation/build/dev scripts** → `scripts/codemap.md` and the specific script file.
+- **Test ownership, discovery, and feature coverage** → `docs/TESTING.md`, `scripts/feature-test-matrix.mjs`, and `scripts/test-suite-contract.test.mjs`.
 - **Generated/bundled asset folders** → treat their codemaps as ownership pointers; change source packages instead of editing generated output.
 
 ## Cross-Runtime Flow
@@ -58,7 +64,8 @@ DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtim
 2. The host exposes runtime APIs over HTTP, WebSocket/SSE, IPC, or VS Code webview messaging.
 3. Shared UI initializes providers and stores, consumes runtime APIs, and renders session/chat/settings/tooling surfaces.
 4. Live OpenCode events flow through server/extension bridges into UI sync stores; user actions flow back through runtime adapters into host-owned capabilities.
-5. Packaging scripts build the shared UI/server outputs into Electron, legacy Tauri, VS Code, or standalone web deployments.
+5. On managed Electron only, browser-using tool turns acquire a fenced server lease, bind an invisible renderer webview to a per-lease Electron CDP capability, and release it on explicit close or authoritative lifecycle cleanup.
+6. Packaging scripts build the shared UI/server outputs into Electron, legacy Tauri, VS Code, or standalone web deployments.
 
 ## Integration Notes
 

@@ -1,5 +1,5 @@
 import type { ToolsAPI } from '@openchamber/ui/lib/api/types';
-import { buildToolManifest } from '../../../ui/src/lib/tools/manifest';
+import { buildToolManifest, normalizeToolIds } from '../../../ui/src/lib/tools/manifest';
 
 type ToolsAPIOptions = {
   getDirectory?: () => string | null | undefined;
@@ -18,9 +18,7 @@ const fetchAvailableTools = async (): Promise<string[]> => {
     throw new Error('Tools API returned invalid data format');
   }
 
-  return data
-    .filter((tool: unknown): tool is string => typeof tool === 'string' && tool !== 'invalid')
-    .sort();
+  return normalizeToolIds(data);
 };
 
 export const createWebToolsAPI = (options: ToolsAPIOptions = {}): ToolsAPI => ({

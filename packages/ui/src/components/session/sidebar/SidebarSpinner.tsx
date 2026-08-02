@@ -1,10 +1,10 @@
+import React from 'react';
+
 const SPIN_DURATION_MS = 4000;
-const INITIAL_PHASE_MS = Date.now() % SPIN_DURATION_MS;
 
 const SYNCED_STYLE: React.CSSProperties = {
   animationName: 'webkit-spin',
   animationDuration: `${SPIN_DURATION_MS}ms`,
-  animationDelay: `-${INITIAL_PHASE_MS}ms`,
   animationTimingFunction: 'linear',
   animationIterationCount: 'infinite',
   willChange: 'transform',
@@ -21,12 +21,16 @@ type SidebarSpinnerProps = {
 };
 
 export function SidebarSpinner({ 'aria-label': ariaLabel, title }: SidebarSpinnerProps) {
+  const [animationDelay] = React.useState(
+    () => `-${Date.now() % SPIN_DURATION_MS}ms`,
+  );
+
   return (
     <svg
       viewBox="0 0 24 24"
       fill="none"
       className="h-[0.7rem] w-[0.7rem]"
-      style={SYNCED_STYLE}
+      style={{ ...SYNCED_STYLE, animationDelay }}
       aria-label={ariaLabel}
       role="img"
     >

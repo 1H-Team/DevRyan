@@ -226,6 +226,7 @@ const createInstantWorktreeDraft = async (options?: {
       branchName: preferredName,
       worktreeName: preferredName,
       setupCommands,
+      idempotencyKey: pendingRequestId,
     });
 
     resolvePendingDraftWorktreeRequest(pendingRequestId, metadata.path);
@@ -243,6 +244,17 @@ const createInstantWorktreeDraft = async (options?: {
     return metadata.path;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to create worktree';
+    const failedMetadata = (
+      error
+      && typeof error === 'object'
+      && 'worktreeMetadata' in error
+    ) ? (error as { worktreeMetadata?: Parameters<typeof removeProjectWorktree>[1] }).worktreeMetadata : null;
+    if (failedMetadata) {
+      const projectRef: ProjectRef = { id: activeProject.id, path: projectDirectory };
+      await removeProjectWorktree(projectRef, failedMetadata, {
+        deleteLocalBranch: true,
+      }).catch(() => undefined);
+    }
     const requestId = useSessionUIStore.getState().newSessionDraft.pendingWorktreeRequestId;
     if (requestId) {
       rejectPendingDraftWorktreeRequest(requestId, error instanceof Error ? error : new Error(message));

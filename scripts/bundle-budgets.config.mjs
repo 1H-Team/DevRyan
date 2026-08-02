@@ -9,6 +9,10 @@ export default {
       entry: 'index.html',
       immediateDynamicRoots: [{ name: 'main' }],
       prohibitedStartupChunks: [
+        { id: 'file-type-sprite-chunk', identities: ['sprite'] },
+        // refractor + every Prism grammar; web pins react-syntax-highlighter to
+        // the vendor-syntax manual chunk (see packages/web/vite-chunking.ts).
+        { id: 'syntax-highlighter-chunk', identities: ['vendor-syntax'] },
         { id: 'markdown-renderer-chunk', identities: ['MarkdownRendererImpl'] },
         { id: 'mini-chat-app-chunk', identities: ['renderElectronMiniChatApp'] },
         { id: 'terminal-view-chunk', identities: ['TerminalView'] },
@@ -29,10 +33,10 @@ export default {
         rawBytes: 17_286_557,
         gzipBytes: 4_006_124,
       },
-      // Measured 5,926,683 raw / 1,746,824 gzip; budgets add 5% headroom.
+      // Measured 4,493,412 raw / 1,309,883 gzip; budgets add 5% headroom.
       budgets: {
-        rawBytes: 6_223_018,
-        gzipBytes: 1_834_166,
+        rawBytes: 4_718_082,
+        gzipBytes: 1_375_377,
       },
       minimumGzipReductionPercent: 30,
     },
@@ -43,6 +47,10 @@ export default {
       entry: 'index.html',
       immediateDynamicRoots: [{ name: 'renderVSCodeApp' }],
       prohibitedStartupChunks: [
+        { id: 'file-type-sprite-chunk', identities: ['sprite'] },
+        // refractor + every Prism grammar, split out by LazySyntaxHighlighter;
+        // this build has no manual chunks, so it keeps the module's own name.
+        { id: 'syntax-highlighter-chunk', identities: ['prism'] },
         { id: 'markdown-renderer-chunk', identities: ['MarkdownRendererImpl'] },
         { id: 'tool-output-dialog-chunk', identities: ['ToolOutputDialog'] },
         { id: 'lazy-vscode-view-chunks', identities: ['AgentManagerView', 'SettingsView'] },
@@ -59,10 +67,10 @@ export default {
         rawBytes: 5_424_732,
         gzipBytes: 1_575_500,
       },
-      // Measured 5,128,339 raw / 1,496,378 gzip; budgets add 5% headroom.
+      // Measured 3,664,849 raw / 1,051,760 gzip; budgets add 5% headroom.
       budgets: {
-        rawBytes: 5_384_756,
-        gzipBytes: 1_571_197,
+        rawBytes: 3_848_091,
+        gzipBytes: 1_104_348,
       },
       minimumGzipReductionPercent: 5,
     },

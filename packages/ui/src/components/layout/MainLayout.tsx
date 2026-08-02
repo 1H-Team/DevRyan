@@ -27,7 +27,6 @@ import { getSettingsFullPageOverlayClassName } from '@/components/views/Settings
 import {
     DeferredLazyView,
     LazyDiffView,
-    LazyFilesView,
     LazyGitView,
     LazyMultiRunWindow,
     LazyPlanView,
@@ -70,6 +69,7 @@ export const MainLayout: React.FC = () => {
     const isDesktopShellRuntime = React.useMemo(() => isDesktopShell(), []);
     const sidebarWidth = useUIStore((state) => state.sidebarWidth);
     const rightSidebarWidth = useUIStore((state) => state.rightSidebarWidth);
+    const [browserActionPortalTarget, setBrowserActionPortalTarget] = React.useState<HTMLSpanElement | null>(null);
     const rightSidebarAutoClosedRef = React.useRef(false);
     const bottomTerminalAutoClosedRef = React.useRef(false);
     const responsiveRightSidebarChangeRef = React.useRef<ResponsivePanelAction | null>(null);
@@ -331,8 +331,6 @@ export const MainLayout: React.FC = () => {
                 return <LazyViewBoundary><LazyDiffView /></LazyViewBoundary>;
             case 'terminal':
                 return <LazyViewBoundary><LazyTerminalView /></LazyViewBoundary>;
-            case 'files':
-                return <LazyViewBoundary><LazyFilesView /></LazyViewBoundary>;
             default:
                 return null;
         }
@@ -649,7 +647,7 @@ export const MainLayout: React.FC = () => {
                                 isSidebarOpen && 'border-l border-border/50 rounded-tl-[10px] rounded-bl-[10px]',
                                 isRightSidebarOpen && 'border-r border-border/50 rounded-tr-[10px] rounded-br-[10px]'
                             )} data-page-scroll-lock="true">
-                                <Header />
+                                <Header browserActionPortalTarget={browserActionPortalTarget} />
                                 <div className={cn(
                                     'flex flex-1 min-h-0 overflow-hidden',
                                     isSidebarOpen || isChatActive ? '' : 'border-l border-border/50',
@@ -683,7 +681,11 @@ export const MainLayout: React.FC = () => {
                             >
                                 {rightSidebarTabsElement}
                             </RightSidebar>
-                            <DesktopEdgeChrome hideActions={isSettingsDialogOpen} />
+                            <DesktopEdgeChrome
+                                hideActions={isSettingsDialogOpen}
+                                isMobile={isMobile}
+                                browserActionPortalRef={setBrowserActionPortalTarget}
+                            />
                         </div>
 
                     </div>

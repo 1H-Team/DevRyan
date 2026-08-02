@@ -1,16 +1,11 @@
+import {
+  classifyProviderTransportFailure,
+  type ProviderTransportFailureKind,
+} from "@openchamber/orchestration-runtime"
+
 import { isLikelyProviderAuthFailure } from "./providerAuthError"
 
-const STRONG_TRANSIENT_STREAM_PATTERNS = [
-  "streaming response failed",
-  "upstream request failed",
-  "error from provider",
-  "premature close",
-  "terminated",
-  "econnreset",
-  "socket hang up",
-  "stream idle timeout",
-  "sse read timed out",
-] as const
+const TRANSIENT_PROVIDER_AVAILABILITY_PATTERN = /\b(?:our\s+)?servers?\s+(?:are\s+)?(?:currently\s+)?overloaded\b/i
 
 export function stripWrappedJsonQuotes(detail: string): string {
   const trimmed = detail.trim()
@@ -36,25 +31,26 @@ export function isLikelyCertificateVerificationFailure(detail: unknown): boolean
     || normalizedDetail.includes("unable to get local issuer certificate")
 }
 
-export function isLikelyTransientStreamFailure(name: unknown, detail: unknown): boolean {
-  if (typeof detail !== "string") {
-    return false
-  }
+export function isLikelyTransientProviderAvailabilityFailure(detail: unknown): boolean {
+  if (typeof detail !== "string") return false
 
   const cleanDetail = stripWrappedJsonQuotes(detail)
-  const normalizedDetail = cleanDetail.toLowerCase()
-  if (!normalizedDetail || normalizedDetail.includes("aborted") || isLikelyProviderAuthFailure(cleanDetail)) {
-    return false
-  }
+  return TRANSIENT_PROVIDER_AVAILABILITY_PATTERN.test(cleanDetail)
+}
 
-  if (isLikelyCertificateVerificationFailure(cleanDetail)) {
-    return true
-  }
+export function classifyTransientProviderFailure(
+  name: unknown,
+  detail: unknown,
+): ProviderTransportFailureKind | null {
+  if (typeof detail !== "string") return null
 
-  if (STRONG_TRANSIENT_STREAM_PATTERNS.some((pattern) => normalizedDetail.includes(pattern))) {
-    return true
-  }
+  const cleanDetail = stripWrappedJsonQuotes(detail)
+  if (!cleanDetail || isLikelyProviderAuthFailure(cleanDetail)) return null
+  return classifyProviderTransportFailure(name, cleanDetail)
+}
 
-  return name === "UnknownError"
-    && (normalizedDetail.includes("stream") || normalizedDetail.includes("connection"))
+export function isLikelyTransientStreamFailure(name: unknown, detail: unknown): boolean {
+  return isLikelyCertificateVerificationFailure(detail)
+    || isLikelyTransientProviderAvailabilityFailure(detail)
+    || classifyTransientProviderFailure(name, detail) !== null
 }

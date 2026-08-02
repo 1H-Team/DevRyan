@@ -1,4 +1,5 @@
 import { summarizeText as summarizeSharedText } from '../text/summarization.js';
+import { stripMessageDiffContent, stripSessionDiffContent } from '../opencode/diff-summary.js';
 
 export const createNotificationTemplateRuntime = (deps) => {
   const {
@@ -18,8 +19,27 @@ export const createNotificationTemplateRuntime = (deps) => {
   let cachedZenModels = null;
   let cachedZenModelsTimestamp = 0;
 
+  // Both caches are bounded LRUs (Map insertion order): sessions accumulate for
+  // the whole server lifetime otherwise. forgetSessionCaches drops a session's
+  // entries when the notifications runtime forgets the session.
+  const SESSION_CACHE_MAX_ENTRIES = 200;
   const sessionTitleCache = new Map();
   const sessionInfoCache = new Map();
+
+  const setBoundedCacheEntry = (cache, key, value) => {
+    if (cache.has(key)) cache.delete(key);
+    cache.set(key, value);
+    while (cache.size > SESSION_CACHE_MAX_ENTRIES) {
+      const oldestKey = cache.keys().next().value;
+      cache.delete(oldestKey);
+    }
+  };
+
+  const forgetSessionCaches = (sessionId) => {
+    if (typeof sessionId !== 'string' || sessionId.length === 0) return;
+    sessionTitleCache.delete(sessionId);
+    sessionInfoCache.delete(sessionId);
+  };
 
   const createTimeoutSignal = (timeoutMs) => {
     const controller = new AbortController();
@@ -230,12 +250,12 @@ export const createNotificationTemplateRuntime = (deps) => {
     return '';
   };
 
-  const fetchLastAssistantMessageText = async (sessionId, messageId, maxLength = NOTIFICATION_BODY_MAX_CHARS) => {
-    if (!sessionId) return '';
+  const fetchSessionMessages = async (sessionId, limit = 200) => {
+    if (!sessionId) return [];
 
     try {
       const url = buildOpenCodeUrl(`/session/${encodeURIComponent(sessionId)}/message`, '');
-      const response = await fetch(`${url}?limit=5`, {
+      const response = await fetch(`${url}?limit=${encodeURIComponent(limit)}`, {
         method: 'GET',
         headers: {
           Accept: 'application/json',
@@ -244,10 +264,22 @@ export const createNotificationTemplateRuntime = (deps) => {
         signal: AbortSignal.timeout(3000),
       });
 
-      if (!response.ok) return '';
-
+      if (!response.ok) return [];
       const messages = await response.json().catch(() => null);
-      if (!Array.isArray(messages)) return '';
+      // Diff snapshots can dominate the payload (~92MB observed); notification
+      // templates only read message text/metadata, never patch bodies.
+      return Array.isArray(messages) ? messages.map(stripMessageDiffContent) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const fetchLastAssistantMessageText = async (sessionId, messageId, maxLength = NOTIFICATION_BODY_MAX_CHARS) => {
+    if (!sessionId) return '';
+
+    try {
+      const messages = await fetchSessionMessages(sessionId, 5);
+      if (messages.length === 0) return '';
 
       let target = null;
       if (messageId) {
@@ -273,12 +305,18 @@ export const createNotificationTemplateRuntime = (deps) => {
 
   const cacheSessionTitle = (sessionId, title) => {
     if (typeof sessionId === 'string' && sessionId.length > 0 && typeof title === 'string' && title.length > 0) {
-      sessionTitleCache.set(sessionId, title);
+      setBoundedCacheEntry(sessionTitleCache, sessionId, title);
     }
   };
 
   const getCachedSessionTitle = (sessionId) => {
     return sessionTitleCache.get(sessionId) ?? null;
+  };
+
+  const cacheSessionInfo = (sessionId, rawInfo) => {
+    if (!sessionId || !rawInfo || typeof rawInfo !== 'object') return;
+    const data = stripSessionDiffContent(rawInfo);
+    setBoundedCacheEntry(sessionInfoCache, sessionId, { data, at: Date.now() });
   };
 
   const maybeCacheSessionInfoFromEvent = (payload) => {
@@ -288,6 +326,7 @@ export const createNotificationTemplateRuntime = (deps) => {
     const info = payload.properties?.info;
     if (!info || typeof info !== 'object') return;
     cacheSessionTitle(info.id, info.title);
+    cacheSessionInfo(info.id, info);
   };
 
   const fetchSessionInfo = async (sessionId) => {
@@ -312,9 +351,12 @@ export const createNotificationTemplateRuntime = (deps) => {
         console.warn(`[Notification] fetchSessionInfo: ${response.status} for session ${sessionId}`);
         return null;
       }
-      const data = await response.json().catch(() => null);
-      if (data && typeof data === 'object') {
-        sessionInfoCache.set(sessionId, { data, at: Date.now() });
+      const rawData = await response.json().catch(() => null);
+      if (rawData && typeof rawData === 'object') {
+        // Session objects can carry a top-level diff summary; drop patch bodies
+        // before caching so the cache holds metadata, not workspace diffs.
+        const data = stripSessionDiffContent(rawData);
+        cacheSessionInfo(sessionId, data);
         return data;
       }
       return null;
@@ -456,9 +498,12 @@ export const createNotificationTemplateRuntime = (deps) => {
     summarizeText,
     extractTextFromParts,
     extractLastMessageText,
+    fetchSessionMessages,
+    fetchSessionInfo,
     fetchLastAssistantMessageText,
     maybeCacheSessionInfoFromEvent,
     buildTemplateVariables,
     getCachedZenModels,
+    forgetSessionCaches,
   };
 };

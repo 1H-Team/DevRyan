@@ -95,4 +95,12 @@ describe('lazy session sidebar dialogs', () => {
       expect(source).toContain(activeCondition);
     }
   });
+
+  test('pins a completed worktree draft to its authoritative project and directory', () => {
+    const source = readSource('../SessionSidebar.tsx');
+
+    expect(source).toContain('selectedProjectId: options?.projectId');
+    expect(source).toContain('directoryOverride: worktreePath');
+    expect(source).toContain('preserveDirectoryOverride: true');
+  });
 });

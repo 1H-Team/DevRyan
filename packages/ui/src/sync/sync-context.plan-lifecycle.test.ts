@@ -52,6 +52,7 @@ import {
   resetGlobalSessionLifecycleOverlayForTest,
   useGlobalSessionsStore,
 } from "@/stores/useGlobalSessionsStore"
+import { resolveSidebarIndicator } from "@/components/session/sidebar/sessionIndicator"
 import * as sessionActions from "./session-actions"
 
 const DIRECTORY = "/repo"
@@ -1530,6 +1531,70 @@ describe("sync plan lifecycle on message.part.delta", () => {
       sourceMessageId: ASSISTANT_MESSAGE_ID,
     })
     expect(store.getState().session_status[SESSION_ID]).toEqual({ type: "idle" })
+  })
+
+  test("renders plan-ready yellow after part and message updates complete the plan card lifecycle", async () => {
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    const incompleteAssistantMessage = {
+      ...assistantMessage(),
+      time: { created: 2 },
+    } as Message
+    const completedPlanPart = textPart(structuredPlanBody)
+
+    store.setState({
+      ...INITIAL_STATE,
+      session: [{ id: SESSION_ID, title: "Plan session", time: { created: 1, updated: 2 } } as Session],
+      message: {
+        [SESSION_ID]: [userMessage(), incompleteAssistantMessage],
+      },
+      part: {
+        [USER_MESSAGE_ID]: [planModePart()],
+        [ASSISTANT_MESSAGE_ID]: [textPart("")],
+      },
+      session_status: {
+        [SESSION_ID]: { type: "busy" } as SessionStatus,
+      },
+    })
+
+    useSessionUIStore.getState().recordUserMessagePlanMode(SESSION_ID, USER_MESSAGE_ID, true)
+    const routingIndex = routingIndexFor()
+
+    applySyncEventForTest(
+      DIRECTORY,
+      partUpdatedEvent(completedPlanPart),
+      childStores,
+      routingIndex,
+    )
+    await flushAsync()
+    expect(useSessionUIStore.getState().sessionPlanIndicator.has(SESSION_ID)).toBe(false)
+
+    applySyncEventForTest(
+      DIRECTORY,
+      messageUpdatedEvent(assistantMessage()),
+      childStores,
+      routingIndex,
+    )
+    await flushAsync()
+
+    const planEntry = useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)
+    expect(planEntry).toEqual({
+      state: "proposed",
+      sourceMessageId: ASSISTANT_MESSAGE_ID,
+    })
+    expect(resolveSidebarIndicator({
+      isRootSession: true,
+      isWorking: true,
+      isActive: true,
+      hasUnreadCompletion: false,
+      hasCompletedStatus: false,
+      hasErrorStatus: false,
+      pendingQuestionCount: 0,
+      planState: planEntry?.state ?? null,
+    })).toEqual({
+      className: "bg-status-warning",
+      labelKey: "sessions.sidebar.session.status.planReady",
+    })
   })
 
   test("does not mark proposed when the busy Cursor plan turn is not complete", async () => {

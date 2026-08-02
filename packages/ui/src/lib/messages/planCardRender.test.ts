@@ -200,6 +200,32 @@ describe("buildPlanCardRenderSegments", () => {
     expect(shouldSuppressPostPlanText(messagePlan, true)).toBe(true)
   })
 
+  test("consumes the plan body without emitting a card when mounting is disabled", () => {
+    const messagePlan = {
+      preambleText: "intro\n",
+      planText: structuredPlanBody,
+      source: "sentinel" as const,
+    }
+    const groupText = `intro\n${structuredPlanBody}\nepilogue`
+
+    expect(buildPlanCardRenderSegments({
+      groupText,
+      groupStart: 0,
+      groupEnd: groupText.length,
+      messagePlan,
+      planCardRendered: false,
+      suppressPostPlanText: true,
+      mountPlanCard: false,
+    })).toEqual({
+      segments: [
+        { kind: "preserved-text", text: "intro\n" },
+        { kind: "consumed-plan-text", text: structuredPlanBody },
+        { kind: "consumed-plan-text", text: "\nepilogue" },
+      ],
+      planCardRendered: true,
+    })
+  })
+
   test("makes a rendered plan card terminal for plan-mode and sentinel-backed responses", () => {
     const structuredPlan = {
       preambleText: "",

@@ -68,6 +68,8 @@ export type EventPipelineInput = {
   onReplayGap?: () => void
   /** Routes low-frequency DevRyan-managed task state outside directory sync stores. */
   onManagedOrchestrationEvent?: (payload: unknown) => void
+  /** Routes server-owned native notification events outside directory sync stores. */
+  onUserNotificationEvent?: (payload: unknown) => void
   transport?: "auto" | "ws" | "sse"
   heartbeatTimeoutMs?: number
   reconnectDelayMs?: number
@@ -395,6 +397,7 @@ export function createEventPipeline(input: EventPipelineInput) {
     onTransportSwitch,
     onReplayGap,
     onManagedOrchestrationEvent,
+    onUserNotificationEvent,
     routeDirectory,
     transport = "auto",
     heartbeatTimeoutMs = DEFAULT_HEARTBEAT_TIMEOUT_MS,
@@ -635,6 +638,10 @@ export function createEventPipeline(input: EventPipelineInput) {
       || normalizedType === "openchamber:managed-orchestration-warning"
     ) {
       onManagedOrchestrationEvent?.(normalizedPayload)
+      return
+    }
+    if (normalizedType === "openchamber:notification") {
+      onUserNotificationEvent?.(normalizedPayload)
       return
     }
     const routedDirectory = routeDirectory?.(directory, normalizedPayload) || directory

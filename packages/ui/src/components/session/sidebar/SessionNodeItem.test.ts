@@ -217,21 +217,47 @@ describe('session sidebar archive reflow animation wiring', () => {
     expect(source).not.toContain('scale');
   });
 
-  test('keeps the leading rail outside title flow and renders the resolved slots', () => {
+  test('keeps status left of chevron and chevron left of the session title without shifting titles', () => {
     const testDir = dirname(fileURLToPath(import.meta.url));
     const itemSource = readFileSync(join(testDir, 'SessionNodeItem.tsx'), 'utf8');
     const motionSource = readFileSync(join(testDir, 'SessionSidebarMotionRow.tsx'), 'utf8');
     const leadingRailStart = itemSource.indexOf('const leadingRail = (');
     const leadingRailEnd = itemSource.indexOf('const streamingIndicator', leadingRailStart);
     const leadingRailSource = itemSource.slice(leadingRailStart, leadingRailEnd);
+    const rowButtonStart = itemSource.indexOf('<button', itemSource.indexOf('{leadingRail}'));
+    const rowButtonEnd = itemSource.indexOf('</button>', rowButtonStart);
+    const rowButtonSource = itemSource.slice(rowButtonStart, rowButtonEnd);
+    const leadingRailRenderIndex = itemSource.indexOf('{leadingRail}', leadingRailEnd);
+    const titleRowStart = rowButtonSource.indexOf("className={cn('flex min-w-0 flex-1 items-center gap-1.5 typography-ui-label font-normal'");
+    const titleRowEnd = rowButtonSource.indexOf('</div>', titleRowStart);
+    const titleRowSource = rowButtonSource.slice(titleRowStart, titleRowEnd);
+    const agentIconIndex = titleRowSource.indexOf('<RiAiAgentLine');
+    const titleIndex = titleRowSource.indexOf('<span className="min-w-0 flex-1 truncate">');
 
     expect(leadingRailStart).toBeGreaterThan(-1);
     expect(leadingRailEnd).toBeGreaterThan(leadingRailStart);
     expect(leadingRailSource).toContain('absolute right-full');
     expect(leadingRailSource).toContain('leadingRailLayout.slots.map');
     expect(leadingRailSource).toContain("index === 2 && 'col-start-4'");
+    expect(leadingRailSource).toContain("slot === 'status'");
     expect(leadingRailSource).not.toContain('justify-between');
     expect(itemSource).not.toContain('<span className="h-4 w-9 flex-shrink-0" aria-hidden="true" />');
+    expect(itemSource).toContain('status: leadingStatusMarker');
+    expect(itemSource.indexOf('status: leadingStatusMarker')).toBeLessThan(
+      itemSource.indexOf('chevron: subsessionChevron'),
+    );
+    expect(leadingRailRenderIndex).toBeGreaterThan(leadingRailEnd);
+    expect(rowButtonStart).toBeGreaterThan(-1);
+    expect(leadingRailRenderIndex).toBeLessThan(rowButtonStart);
+    expect(rowButtonEnd).toBeGreaterThan(rowButtonStart);
+    expect(rowButtonSource).toContain('overflow-hidden rounded-sm text-left');
+    expect(rowButtonSource).not.toContain('pl-9');
+    expect(rowButtonSource).not.toContain('{leadingStatusSlot}');
+    expect(rowButtonSource).not.toContain('{subsessionChevron}');
+    expect(titleRowStart).toBeGreaterThan(-1);
+    expect(agentIconIndex).toBeGreaterThan(-1);
+    expect(agentIconIndex).toBeLessThan(titleIndex);
+    expect(titleRowSource).toContain('{!isRootSession ? (');
     expect(motionSource).toContain('minWidth: 0');
     expect(motionSource).toContain("width: '100%'");
   });

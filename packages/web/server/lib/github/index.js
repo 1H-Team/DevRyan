@@ -21,6 +21,13 @@ export {
 } from './octokit.js';
 
 export {
+  createGitHubApiClient,
+  createTimeoutFetch,
+  fetchGitHubApi,
+  DEFAULT_GITHUB_API_TIMEOUT_MS,
+} from './api-client.js';
+
+export {
   parseGitHubRemoteUrl,
   resolveGitHubRepoFromDirectory,
 } from './repo/index.js';

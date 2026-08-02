@@ -1,6 +1,7 @@
 import React from 'react';
 import type { Part } from '@opencode-ai/sdk/v2';
 import { measureElement as measureVirtualElement, type VirtualItem, useVirtualizer } from '@tanstack/react-virtual';
+import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 
 import ChatMessage from './ChatMessage';
 import { PrimaryModelRecovery } from './PrimaryModelRecovery';
@@ -32,12 +33,19 @@ import {
 } from './lib/taskSessionLinking';
 import { TaskSessionLinkProvider } from './lib/taskSessionLinkContext';
 import { PlanTurnTraceProvider } from './PlanTurnTraceProvider';
+import { useIsPlanRevisionSuppressedTurn } from './usePlanTurnTraceEntry';
 import {
     hasCompactionPart,
     isCompactionBoundaryMessage,
 } from './managedTaskCompactionProjection';
 
-const MESSAGE_LIST_VIRTUALIZE_THRESHOLD = Number.POSITIVE_INFINITY;
+// Sessions below the threshold render fully (zero behavior change for the
+// common case); above it, history virtualizes so DOM + observers + highlighted
+// markdown stay O(viewport) instead of O(transcript). The streaming tail is
+// rendered outside the virtualized history either way. Escape hatch:
+// useFeatureFlagsStore.messageListVirtualizationEnabled = false restores the
+// fully-mounted path.
+const MESSAGE_LIST_VIRTUALIZE_THRESHOLD = 80;
 const MESSAGE_LIST_OVERSCAN = 6;
 
 const nowMs = (): number => {
@@ -475,6 +483,7 @@ const TurnBlock = React.memo(({
     activeStreamingPhase,
 }: TurnBlockProps) => {
     const turnUiState = turnUiStates.get(turn.turnId) ?? { isExpanded: defaultActivityExpanded };
+    const isSuppressedPlanContinuationTurn = useIsPlanRevisionSuppressedTurn(turn.turnId);
     const handleToggleTurnGroup = React.useCallback(() => {
         onToggleTurnGroup(turn.turnId);
     }, [onToggleTurnGroup, turn.turnId]);
@@ -799,6 +808,13 @@ const TurnBlock = React.memo(({
             assistantMessages: visibleAssistantMessages,
         };
     }, [turn, visibleAssistantMessages]);
+
+    // Synthetic continuation turns that follow their plan revision's source
+    // turn render no output — the revision ends at its plan card. Canonical
+    // messages remain untouched in sync state.
+    if (isSuppressedPlanContinuationTurn) {
+        return null;
+    }
 
     return (
         <TurnItem turn={renderableTurn} stickyUserHeader={stickyUserHeader} renderMessage={renderMessage} />
@@ -1339,7 +1355,11 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     }
 
     const historyEntries = staticRenderEntries;
-    const shouldVirtualizeHistory = historyEntries.length >= MESSAGE_LIST_VIRTUALIZE_THRESHOLD;
+    const messageListVirtualizationEnabled = useFeatureFlagsStore(
+        (state) => state.messageListVirtualizationEnabled,
+    );
+    const shouldVirtualizeHistory =
+        messageListVirtualizationEnabled && historyEntries.length >= MESSAGE_LIST_VIRTUALIZE_THRESHOLD;
     const [historyWidthPx, setHistoryWidthPx] = React.useState<number | null>(null);
     const historyMeasurementScopeKey = historyWidthPx === null ? 'width:unknown' : `width:${Math.round(historyWidthPx)}`;
 

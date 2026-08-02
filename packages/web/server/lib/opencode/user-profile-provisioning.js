@@ -3,12 +3,16 @@ import { spawn as spawnChild } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { applyEdits, modify, parse as parseJsonc } from 'jsonc-parser';
 
+import { listDefaultConfigAssets } from './default-config-assets.js';
 import {
-  isAnthropicOAuthPluginSpec,
-  reconcileAnthropicOAuthPluginSpecs,
-} from './anthropic-oauth-plugin.js';
-import { listDefaultConfigAssets, listUserProfileAssets } from './default-config-assets.js';
+  DEVRYAN_MANAGED_PROFILE_DEPENDENCIES,
+  DEVRYAN_MANAGED_PROFILE_PLUGIN_FILES,
+  inspectDevRyanManagedPluginInstallation,
+  reconcileDevRyanManagedPluginSpecs,
+  removeDevRyanManagedLegacyPluginSpecs,
+} from './managed-plugins.js';
 import { applyManagedMeridianSdkFeaturePolicy } from './meridian-sdk-features.js';
 
 const DEFAULT_CONFIG_ROOT = path.resolve(process.cwd(), 'server', 'default-config');
@@ -32,40 +36,10 @@ const readJson = (fsApi, filePath, fallback = {}) => {
   }
 };
 
-const pluginSpec = (entry) => {
-  if (typeof entry === 'string') return entry.trim();
-  if (Array.isArray(entry) && typeof entry[0] === 'string') return entry[0].trim();
-  return '';
-};
-
-const mergeUniquePlugins = (current, baseline) => {
-  const result = Array.isArray(current) ? [...current] : [];
-  const seen = new Set(result.map(pluginSpec).filter(Boolean));
-  let hasAnthropicOAuthPlugin = result.some((entry) => isAnthropicOAuthPluginSpec(pluginSpec(entry)));
-  for (const entry of Array.isArray(baseline) ? baseline : []) {
-    const spec = pluginSpec(entry);
-    if (!spec || seen.has(spec) || (hasAnthropicOAuthPlugin && isAnthropicOAuthPluginSpec(spec))) {
-      continue;
-    }
-    result.push(entry);
-    seen.add(spec);
-    hasAnthropicOAuthPlugin ||= isAnthropicOAuthPluginSpec(spec);
-  }
-  return result;
-};
-
 const mergeOpenCodeConfig = (current, baseline) => ({
   ...current,
   ...baseline,
-  plugin: mergeUniquePlugins(
-    Array.isArray(baseline.plugin)
-      && baseline.plugin.some((entry) => isAnthropicOAuthPluginSpec(pluginSpec(entry)))
-      && Array.isArray(current.plugin)
-      && current.plugin.some((entry) => isAnthropicOAuthPluginSpec(pluginSpec(entry)))
-      ? reconcileAnthropicOAuthPluginSpecs(current.plugin)
-      : current.plugin,
-    baseline.plugin,
-  ),
+  plugin: reconcileDevRyanManagedPluginSpecs(current.plugin, baseline.plugin),
   agent: {
     ...(isRecord(current.agent) ? current.agent : {}),
     ...(isRecord(baseline.agent) ? baseline.agent : {}),
@@ -77,6 +51,7 @@ const mergePackageJson = (current, baseline) => {
   const dependencies = {
     ...currentDependencies,
     ...(isRecord(baseline.dependencies) ? baseline.dependencies : {}),
+    ...DEVRYAN_MANAGED_PROFILE_DEPENDENCIES,
   };
   const explicitMeridianPin = currentDependencies[MERIDIAN_PACKAGE];
   if (typeof explicitMeridianPin === 'string' && explicitMeridianPin.trim()) {
@@ -104,6 +79,8 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
   const pathApi = dependencies.path || path;
   const homedir = dependencies.homedir || (() => os.homedir());
   const runCommand = dependencies.runCommand || runCommandDefault;
+  const inspectManagedPluginInstallation = dependencies.inspectManagedPluginInstallation
+    || inspectDevRyanManagedPluginInstallation;
   const profileRoot = dependencies.profileRoot || DEFAULT_PROFILE_ROOT;
   const configRoot = dependencies.configRoot || DEFAULT_CONFIG_ROOT;
   const configDirectory = dependencies.configDirectory || pathApi.join(homedir(), '.config', 'opencode');
@@ -129,6 +106,7 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
       install: null,
       warnings: [],
       meridianPolicy: null,
+      managedPluginIssues: [],
     };
 
     const meridianPolicy = applyManagedMeridianSdkFeaturePolicy({
@@ -161,9 +139,17 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
         nextFiles[relativePath] = { hash: desiredHash };
         return;
       }
-      if (currentContent !== null && previousHash && currentHash !== previousHash && !mergeSafe) {
+      if (
+        currentContent !== null
+        && !mergeSafe
+        && (
+          previousHash && currentHash !== previousHash
+        )
+      ) {
         result.conflicts.push(targetPath);
-        nextFiles[relativePath] = previousFiles[relativePath];
+        if (previousHash) {
+          nextFiles[relativePath] = previousFiles[relativePath];
+        }
         return;
       }
       fsApi.mkdirSync(pathApi.dirname(targetPath), { recursive: true });
@@ -176,7 +162,43 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
     const configPath = pathApi.join(configDirectory, 'opencode.json');
     const baselineConfig = readJson(fsApi, pathApi.join(profileRoot, 'opencode.json'));
     const currentConfig = readJson(fsApi, configPath);
-    syncContent('opencode.json', `${JSON.stringify(mergeOpenCodeConfig(currentConfig, baselineConfig), null, 2)}\n`);
+    // The desired config is assembled from the current user file plus the
+    // narrowly reconciled DevRyan defaults. Treat it as merge-safe so legacy
+    // managed specs cannot survive merely because the old managed file also
+    // contains unrelated user edits.
+    syncContent(
+      'opencode.json',
+      `${JSON.stringify(mergeOpenCodeConfig(currentConfig, baselineConfig), null, 2)}\n`,
+      { mergeSafe: true },
+    );
+
+    for (const legacyConfigName of ['config.json', 'opencode.jsonc']) {
+      const legacyConfigPath = pathApi.join(configDirectory, legacyConfigName);
+      if (!fsApi.existsSync(legacyConfigPath)) continue;
+      const source = fsApi.readFileSync(legacyConfigPath, 'utf8');
+      const parseErrors = [];
+      const parsed = parseJsonc(source, parseErrors, { allowTrailingComma: true });
+      if (parseErrors.length > 0 || !isRecord(parsed) || !Array.isArray(parsed.plugin)) {
+        if (parseErrors.length > 0) {
+          result.warnings.push(
+            `Skipped legacy managed plugin reconciliation for ${legacyConfigPath}: invalid JSON/JSONC`,
+          );
+        }
+        continue;
+      }
+      const reconciledPlugins = removeDevRyanManagedLegacyPluginSpecs(parsed.plugin);
+      if (JSON.stringify(reconciledPlugins) === JSON.stringify(parsed.plugin)) continue;
+      const edits = modify(source, ['plugin'], reconciledPlugins, {
+        formattingOptions: {
+          insertSpaces: true,
+          tabSize: 2,
+          eol: source.includes('\r\n') ? '\r\n' : '\n',
+        },
+      });
+      fsApi.writeFileSync(legacyConfigPath, applyEdits(source, edits), 'utf8');
+      result.changed = true;
+      result.updated.push(legacyConfigPath);
+    }
 
     const packagePath = pathApi.join(configDirectory, 'package.json');
     const baselinePackage = readJson(fsApi, pathApi.join(profileRoot, 'package.json'));
@@ -191,31 +213,71 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
 
     syncContent('oh-my-opencode-slim.json', fsApi.readFileSync(pathApi.join(profileRoot, 'oh-my-opencode-slim.json'), 'utf8'));
 
-    const [canonicalAssets, profileAssets] = await Promise.all([
-      listDefaultConfigAssets(configRoot),
-      listUserProfileAssets(profileRoot),
-    ]);
+    const canonicalAssets = await listDefaultConfigAssets(configRoot);
     for (const sourceRelativePath of canonicalAssets) {
       let targetRelativePath = null;
       if (sourceRelativePath.startsWith('agents/')) {
         targetRelativePath = sourceRelativePath;
-      } else if (sourceRelativePath === 'plugins/devryan-oh-my-opencode-slim.mjs') {
+      } else if (
+        sourceRelativePath.startsWith('plugins/')
+        && DEVRYAN_MANAGED_PROFILE_PLUGIN_FILES.includes(sourceRelativePath.slice('plugins/'.length))
+      ) {
         targetRelativePath = sourceRelativePath;
       }
       if (targetRelativePath) {
         syncContent(targetRelativePath, fsApi.readFileSync(pathApi.join(configRoot, sourceRelativePath), 'utf8'));
       }
     }
-    for (const sourceRelativePath of profileAssets) {
-      if (!sourceRelativePath.startsWith('user-profile/skills/')) continue;
-      const targetRelativePath = sourceRelativePath.slice('user-profile/'.length);
-      syncContent(targetRelativePath, fsApi.readFileSync(
-        pathApi.join(profileRoot, sourceRelativePath.slice('user-profile/'.length)),
-        'utf8',
-      ));
+    const retiredSkillPaths = Object.keys(previousFiles)
+      .filter((relativePath) => relativePath.startsWith('skills/'));
+    const skillsDirectory = pathApi.join(configDirectory, 'skills');
+    const retiredSkillDirectories = new Set(
+      retiredSkillPaths.length > 0 ? [skillsDirectory] : [],
+    );
+    for (const relativePath of retiredSkillPaths) {
+      const targetPath = pathApi.join(configDirectory, relativePath);
+      let currentContent = null;
+      try { currentContent = fsApi.readFileSync(targetPath, 'utf8'); } catch { currentContent = null; }
+      const previousEntry = previousFiles[relativePath];
+      if (
+        currentContent !== null
+        && isRecord(previousEntry)
+        && hashContent(currentContent) === previousEntry.hash
+      ) {
+        fsApi.unlinkSync(targetPath);
+        result.changed = true;
+        result.removed.push(targetPath);
+      }
+
+      let candidateDirectory = pathApi.dirname(targetPath);
+      while (
+        candidateDirectory === skillsDirectory
+        || candidateDirectory.startsWith(`${skillsDirectory}${pathApi.sep}`)
+      ) {
+        retiredSkillDirectories.add(candidateDirectory);
+        if (candidateDirectory === skillsDirectory) break;
+        candidateDirectory = pathApi.dirname(candidateDirectory);
+      }
+    }
+
+    const retirementDirectories = [...retiredSkillDirectories]
+      .sort((left, right) => right.split(pathApi.sep).length - left.split(pathApi.sep).length);
+    for (const directoryPath of retirementDirectories) {
+      try {
+        const entries = fsApi.readdirSync(directoryPath);
+        if (entries.length === 1 && entries[0] === '.DS_Store') {
+          fsApi.unlinkSync(pathApi.join(directoryPath, '.DS_Store'));
+        } else if (entries.length > 0) {
+          continue;
+        }
+        fsApi.rmdirSync(directoryPath);
+      } catch {
+        // Retirement cleanup is best-effort. Non-empty and user-owned directories stay intact.
+      }
     }
 
     for (const [relativePath, previousEntry] of Object.entries(previousFiles)) {
+      if (relativePath.startsWith('skills/')) continue;
       if (Object.prototype.hasOwnProperty.call(nextFiles, relativePath) || !isRecord(previousEntry)) continue;
       const targetPath = pathApi.join(configDirectory, relativePath);
       let currentContent = null;
@@ -239,13 +301,34 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
       result.changed = true;
     }
 
-    const dependencies = Object.keys(desiredPackage.dependencies || {});
-    const missingDependency = dependencies.some((name) => !fsApi.existsSync(pathApi.join(configDirectory, 'node_modules', ...name.split('/'))));
-    if (dependenciesChanged || missingDependency) {
+    const dependencyNames = Object.keys(desiredPackage.dependencies || {});
+    const missingDependency = dependencyNames.some((name) => (
+      !fsApi.existsSync(pathApi.join(configDirectory, 'node_modules', ...name.split('/')))
+    ));
+    const managedPluginIssuesBeforeInstall = inspectManagedPluginInstallation({
+      configDirectory,
+      fs: fsApi,
+      path: pathApi,
+    });
+    if (dependenciesChanged || missingDependency || managedPluginIssuesBeforeInstall.length > 0) {
       result.install = await runCommand('bun', ['install', '--ignore-scripts'], { cwd: configDirectory, env: process.env });
       if (!result.install.ok) {
         result.ok = false;
         result.error = `Failed to install OpenCode user plugins: ${result.install.stderr || `exit ${result.install.exitCode}`}`;
+      }
+    }
+    if (result.ok) {
+      result.managedPluginIssues = inspectManagedPluginInstallation({
+        configDirectory,
+        fs: fsApi,
+        path: pathApi,
+      });
+      if (result.managedPluginIssues.length > 0) {
+        const issueSummary = result.managedPluginIssues
+          .map((issue) => `${issue.pluginId}:${issue.kind}`)
+          .join(', ');
+        result.ok = false;
+        result.error = `Managed OpenCode plugin validation failed after provisioning: ${issueSummary}`;
       }
     }
 

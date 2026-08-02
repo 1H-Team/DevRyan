@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { devtools } from 'zustand/middleware';
+import { devtools } from './utils/devtoolsGate';
 import { opencodeClient } from '@/lib/opencode/client';
 import { getDesktopHomeDirectory, isVSCodeRuntime } from '@/lib/desktop';
 import { updateDesktopSettings } from '@/lib/persistence';

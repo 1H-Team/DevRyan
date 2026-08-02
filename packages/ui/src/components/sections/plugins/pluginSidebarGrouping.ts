@@ -8,7 +8,7 @@ export type PluginSidebarItem = {
   kind: "default" | "config" | "file";
   parsedKind?: "npm" | "path";
   version?: string | null;
-  delivery?: "npm" | "bundled-file";
+  delivery?: "installed-local" | "bundled-file" | "curated-skills";
 };
 
 export type PluginSidebarGroup = {

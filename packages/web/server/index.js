@@ -74,6 +74,7 @@ import { createServerUtilsRuntime } from './lib/opencode/server-utils-runtime.js
 import { createStaticRoutesRuntime } from './lib/opencode/static-routes-runtime.js';
 import { createSettingsRuntime } from './lib/opencode/settings-runtime.js';
 import { createOpenCodeResolutionRuntime } from './lib/opencode/opencode-resolution-runtime.js';
+import { createOpenCodeUpdateRuntime } from './lib/opencode/opencode-update-runtime.js';
 import { createBootstrapRuntime } from './lib/opencode/bootstrap-runtime.js';
 import { createSessionRuntime } from './lib/opencode/session-runtime.js';
 import { createOpenCodeWatcherRuntime } from './lib/opencode/watcher.js';
@@ -105,9 +106,20 @@ import { createNotificationTemplateRuntime } from './lib/notifications/template-
 import { createGracefulShutdownRuntime } from './lib/opencode/shutdown-runtime.js';
 import { createProjectConfigRuntime } from './lib/projects/project-config.js';
 import { createPreviewProxyRuntime } from './lib/preview/proxy-runtime.js';
+import { createLocalInstanceStatusRuntime } from './lib/preview/local-instances-runtime.js';
+import { createBrowserCdpDiscoveryRuntime } from './lib/browser-cdp/discovery-runtime.js';
+import { createBrowserLeaseRuntime } from './lib/browser-cdp/lease-runtime.js';
 import { dynamicNoStoreMiddleware } from './lib/http-cache-policy.js';
 import { createWebManagedOrchestrationRuntime } from './lib/orchestration/runtime.js';
 import { registerManagedOrchestrationRoutes } from './lib/orchestration/routes.js';
+import { createWebHarnessRuntime } from './lib/harness/runtime.js';
+import { registerDiagnosticsRoutes } from './lib/diagnostics/routes.js';
+import { registerMemoryDebugRoutes } from './lib/debug/memory-routes.js';
+import { createWebEvidenceRuntime } from './lib/evidence/runtime.js';
+import { registerEvidenceRoutes } from './lib/evidence/routes.js';
+import { registerIndexingPolicy } from './lib/indexing-policy.js';
+import { getPublicRuntimePort } from './lib/runtime-port-visibility.js';
+import { configureWorktreeBootstrapRuntime } from './lib/git/service.js';
 import { createProxyMiddleware, responseInterceptor } from 'http-proxy-middleware';
 import webPush from 'web-push';
 
@@ -370,6 +382,7 @@ const validateZenModelAtStartup = (...args) => notificationTemplateRuntime.valid
 const summarizeText = (...args) => notificationTemplateRuntime.summarizeText(...args);
 const extractTextFromParts = (...args) => notificationTemplateRuntime.extractTextFromParts(...args);
 const extractLastMessageText = (...args) => notificationTemplateRuntime.extractLastMessageText(...args);
+const fetchSessionMessages = (...args) => notificationTemplateRuntime.fetchSessionMessages(...args);
 const fetchLastAssistantMessageText = (...args) => notificationTemplateRuntime.fetchLastAssistantMessageText(...args);
 const maybeCacheSessionInfoFromEvent = (...args) => notificationTemplateRuntime.maybeCacheSessionInfoFromEvent(...args);
 const buildTemplateVariables = (...args) => notificationTemplateRuntime.buildTemplateVariables(...args);
@@ -383,6 +396,32 @@ const PUSH_SUBSCRIPTIONS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'push-subsc
 const CLOUDFLARE_MANAGED_REMOTE_TUNNELS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'cloudflare-managed-remote-tunnels.json');
 const CLOUDFLARE_LEGACY_NAMED_TUNNELS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'cloudflare-named-tunnels.json');
 const CLOUDFLARE_MANAGED_REMOTE_TUNNELS_VERSION = 1;
+const harnessRuntime = createWebHarnessRuntime({
+  dataDirectory: OPENCHAMBER_DATA_DIR,
+  runtime: process.env.OPENCHAMBER_RUNTIME || 'web',
+  logger: console,
+  knownSecrets: Object.entries(process.env)
+    .filter(([key, value]) => (
+      /(?:secret|token|password|api[_-]?key|authorization)/i.test(key)
+      && typeof value === 'string'
+      && value.length >= 6
+    ))
+    .map(([, value]) => value),
+});
+const configuredWorktreeBootstrapRuntime = configureWorktreeBootstrapRuntime({
+  store: harnessRuntime.worktreeStore,
+  onTransition: (receipt) => {
+    harnessRuntime.record({
+      type: 'worktree_transition',
+      directory: receipt.directory,
+      operationID: receipt.operationId,
+      stage: receipt.stage,
+      status: receipt.status,
+      payload: receipt,
+    });
+  },
+});
+harnessRuntime.setWorktreeRuntime(configuredWorktreeBootstrapRuntime);
 
 const managedTunnelConfigRuntime = createManagedTunnelConfigRuntime({
   fsPromises,
@@ -525,12 +564,20 @@ const sessionRuntime = createSessionRuntime({
   broadcastEvent: broadcastGlobalUiEvent,
 });
 
-const turnTimingRuntime = createTurnTimingRuntime();
+let evidenceRuntime = null;
+const turnTimingRuntime = createTurnTimingRuntime({
+  onTurnEvent: (event) => {
+    harnessRuntime.recordLifecycleEvent(event);
+    evidenceRuntime?.processLifecycleEvent(event);
+  },
+});
 
 const emitSyntheticOpenCodeEvent = (payload, options = {}) => {
   maybeCacheSessionInfoFromEvent(payload);
   sessionRuntime.processOpenCodeSsePayload(payload);
   turnTimingRuntime.processOpenCodeEvent(payload);
+  harnessRuntime.recordOpenCodeEvent(payload, options.directory ?? null);
+  void evidenceRuntime?.processOpenCodeEvent(payload);
   broadcastGlobalUiEvent(payload, options);
 };
 
@@ -602,6 +649,15 @@ const projectConfigRuntime = createProjectConfigRuntime({
   path,
   projectsDirPath: OPENCHAMBER_PROJECTS_CONFIG_DIR,
 });
+evidenceRuntime = createWebEvidenceRuntime({
+  evidenceDirectory: harnessRuntime.paths.evidenceDir,
+  projectConfigRuntime,
+  getSessionActivity: (sessionID) => sessionRuntime.getSessionActivitySnapshot()[sessionID] ?? null,
+  journal: harnessRuntime.journal,
+  runtime: process.env.OPENCHAMBER_RUNTIME || 'web',
+  logger: console,
+});
+harnessRuntime.setEvidenceRuntime(evidenceRuntime);
 
 // HMR-persistent state via globalThis
 // These values survive Vite HMR reloads to prevent zombie OpenCode processes
@@ -642,6 +698,8 @@ let runtimeManagedRemoteTunnelHostname = '';
 let terminalRuntime = null;
 let messageStreamRuntime = null;
 let managedOrchestrationRuntime = null;
+let browserLeaseRuntime = null;
+let managedBrowserEnvironmentProvider = null;
 let projectPrewarmRuntime = null;
 const userProvidedOpenCodePassword = hmrStateRuntime.getUserProvidedOpenCodePassword(hmrState);
 const initialOpenCodeAuthState = hmrStateRuntime.resolveOpenCodeAuthFromState({
@@ -892,6 +950,9 @@ const openCodeResolutionRuntime = createOpenCodeResolutionRuntime({
 });
 const getOpenCodeResolutionSnapshot = (...args) =>
   openCodeResolutionRuntime.getOpenCodeResolutionSnapshot(...args);
+const openCodeUpdateRuntime = createOpenCodeUpdateRuntime();
+const checkForOpenCodeUpdates = (...args) =>
+  openCodeUpdateRuntime.checkForUpdates(...args);
 
 applyLoginShellEnvSnapshot();
 
@@ -910,6 +971,7 @@ const notificationTriggerRuntime = createNotificationTriggerRuntime({
   resolveZenModel,
   buildTemplateVariables,
   extractLastMessageText,
+  fetchSessionMessages,
   fetchLastAssistantMessageText,
   resolveNotificationTemplate,
   shouldApplyResolvedTemplateMessage,
@@ -918,6 +980,8 @@ const notificationTriggerRuntime = createNotificationTriggerRuntime({
   sendPushToAllUiSessions,
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
+  fetchSessionInfo: (...args) => notificationTemplateRuntime.fetchSessionInfo(...args),
+  forgetSessionCaches: (sessionId) => notificationTemplateRuntime?.forgetSessionCaches?.(sessionId),
 });
 
 const maybeSendPushForTrigger = (...args) => notificationTriggerRuntime.maybeSendPushForTrigger(...args);
@@ -940,6 +1004,11 @@ const openCodeWatcherRuntime = createOpenCodeWatcherRuntime({
     void maybeSendPushForTrigger(payload);
     sessionRuntime.processOpenCodeSsePayload(payload);
     turnTimingRuntime.processOpenCodeEvent(payload);
+    harnessRuntime.recordOpenCodeEvent(payload);
+    void evidenceRuntime?.processOpenCodeEvent(payload);
+    void browserLeaseRuntime?.processOpenCodeEvent(payload).catch((error) => {
+      console.warn('[AgentBrowser] Failed to process session cleanup event:', error?.message ?? error);
+    });
     if (payload?.type === 'session.deleted') {
       const deletedSessionId = payload?.properties?.info?.id;
       if (typeof deletedSessionId === 'string' && deletedSessionId) {
@@ -959,6 +1028,8 @@ const processForwardedEventPayload = (payload, emitSyntheticEvent) => {
 
   maybeCacheSessionInfoFromEvent(payload);
   turnTimingRuntime.processOpenCodeEvent(payload);
+  harnessRuntime.recordOpenCodeEvent(payload);
+  void evidenceRuntime?.processOpenCodeEvent(payload);
 
   if (payload.type !== 'session.status') {
     return;
@@ -1202,6 +1273,21 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
     }
     return await managedOrchestrationRuntime.prepareBridge();
   },
+  getManagedBrowserEnvironment: async () => (
+    typeof managedBrowserEnvironmentProvider === 'function'
+      ? await managedBrowserEnvironmentProvider()
+      : {}
+  ),
+  pauseManagedBrowserLeases: async (reason) => (
+    browserLeaseRuntime && typeof browserLeaseRuntime.pauseForReset === 'function'
+      ? await browserLeaseRuntime.pauseForReset(reason)
+      : null
+  ),
+  resumeManagedBrowserLeases: async (handle) => (
+    browserLeaseRuntime && typeof browserLeaseRuntime.resumeAfterReset === 'function'
+      ? await browserLeaseRuntime.resumeAfterReset(handle)
+      : false
+  ),
   onOpenCodeRestarted: () => {
     sessionRuntime.resetAllSessionActivityToIdle();
     void projectPrewarmRuntime?.run('opencode-restart');
@@ -1308,6 +1394,7 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
     messageStreamRuntime = value;
   },
   getManagedOrchestrationRuntime: () => managedOrchestrationRuntime,
+  getBrowserLeaseRuntime: () => browserLeaseRuntime,
   getCursorSdkRuntime: () => cursorSdkRuntime,
   shouldSkipOpenCodeStop: () => ENV_SKIP_OPENCODE_START || isExternalOpenCode,
   getOpenCodePort: () => openCodePort,
@@ -1328,11 +1415,16 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   },
   tunnelAuthController,
   scheduledTasksRuntime,
+  getHarnessRuntime: () => harnessRuntime,
 });
 
 const gracefulShutdown = (...args) => gracefulShutdownRuntime.gracefulShutdown(...args);
 
 async function main(options = {}) {
+  managedBrowserEnvironmentProvider = typeof options.getManagedBrowserEnvironment === 'function'
+    ? options.getManagedBrowserEnvironment
+    : null;
+  const harnessInitialization = harnessRuntime.initialize();
   const port = Number.isFinite(options.port) && options.port >= 0 ? Math.trunc(options.port) : DEFAULT_PORT;
   const host = typeof options.host === 'string' && options.host.length > 0 ? options.host : undefined;
   const effectiveBindHost = host
@@ -1395,6 +1487,7 @@ async function main(options = {}) {
   const app = express();
   const serverStartedAt = new Date().toISOString();
   app.set('trust proxy', true);
+  registerIndexingPolicy(app);
   app.use(dynamicNoStoreMiddleware);
   app.use(compression({
     filter: (req, res) => {
@@ -1476,6 +1569,21 @@ async function main(options = {}) {
     setAutoAcceptSession,
   });
   uiAuthController = bootstrapResult.uiAuthController;
+  app.use(
+    '/api/session/:sessionID/prompt_async',
+    express.json({ limit: '50mb' }),
+    harnessRuntime.promptAdmissionMiddleware(turnTimingRuntime),
+  );
+  app.use('/api/session/:sessionID', harnessRuntime.controlJournalMiddleware);
+  registerDiagnosticsRoutes(app, {
+    runtime: harnessRuntime,
+    getEvidenceRecords: (scope) => evidenceRuntime.getRecords(scope),
+  });
+  registerMemoryDebugRoutes(app, {
+    getAppMetrics: typeof options.getAppMetrics === 'function' ? options.getAppMetrics : null,
+  });
+  registerEvidenceRoutes(app, { runtime: evidenceRuntime });
+  await harnessInitialization;
 
   managedOrchestrationRuntime = createWebManagedOrchestrationRuntime({
     dataDirectory: OPENCHAMBER_DATA_DIR,
@@ -1495,10 +1603,58 @@ async function main(options = {}) {
     express,
   });
 
+  browserLeaseRuntime = createBrowserLeaseRuntime({
+    getDiscoveryToken: typeof options.getBrowserCdpDiscoveryToken === 'function'
+      ? options.getBrowserCdpDiscoveryToken
+      : null,
+    createBrowserLease: typeof options.createBrowserLease === 'function'
+      ? options.createBrowserLease
+      : null,
+    touchBrowserLease: typeof options.touchBrowserLease === 'function'
+      ? options.touchBrowserLease
+      : null,
+    releaseBrowserLease: typeof options.releaseBrowserLease === 'function'
+      ? options.releaseBrowserLease
+      : null,
+    getBrowserLeaseAvailability: [
+      options.getBrowserLeaseAvailability,
+      options.getBrowserCdpBridgeStatus,
+    ].find((candidate) => typeof candidate === 'function') ?? null,
+    buildOpenCodeUrl,
+    getOpenCodeAuthHeaders,
+  });
+
   const tunnelRuntimeContext = tunnelWiringRuntime.initialize(app, port);
   const { tunnelService, startTunnelWithNormalizedRequest } = tunnelRuntimeContext;
 
-  registerTurnTimingRoutes(app, turnTimingRuntime);
+  registerTurnTimingRoutes(app, turnTimingRuntime, {
+    onAcceptedMark: (input) => {
+      const isToolInputStall = input?.mark === 'renderer_tool_input_stall_confirmed';
+      const isInferenceStall = input?.mark === 'renderer_provider_inference_stall_confirmed';
+      if (!isToolInputStall && !isInferenceStall) return;
+      const rawStalledForMs = input?.metadata?.stalledForMs;
+      const stalledForMs = typeof rawStalledForMs === 'number'
+        && Number.isFinite(rawStalledForMs)
+        && rawStalledForMs >= 0
+        ? Math.trunc(rawStalledForMs)
+        : null;
+      harnessRuntime.record({
+        type: 'lifecycle',
+        event: isInferenceStall
+          ? 'provider_inference_stall_confirmed'
+          : 'provider_tool_input_stall_confirmed',
+        sessionID: typeof input.sessionId === 'string' ? input.sessionId : null,
+        directory: typeof input.directory === 'string' ? input.directory : null,
+        assistantMessageID: typeof input.assistantMessageId === 'string'
+          ? input.assistantMessageId
+          : null,
+        payload: {
+          source: 'renderer_active_session_watchdog',
+          ...(stalledForMs === null ? {} : { stalledForMs }),
+        },
+      });
+    },
+  });
   const agentRuntimeWarmup = createAgentRuntimeWarmup({
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
@@ -1589,6 +1745,7 @@ async function main(options = {}) {
     readCustomThemesFromDisk,
     refreshOpenCodeAfterConfigChange,
     getOpenCodeResolutionSnapshot,
+    checkForOpenCodeUpdates,
     formatSettingsResponse,
     readSettingsFromDisk,
     readSettingsFromDiskMigrated,
@@ -1631,6 +1788,25 @@ async function main(options = {}) {
     isRequestOriginAllowed,
     rejectWebSocketUpgrade,
   });
+
+  createLocalInstanceStatusRuntime({ net, URL }).attach(app, {
+    express,
+    uiAuthController,
+    isRequestOriginAllowed,
+  });
+
+  // Desktop-only lookup for the in-app browser CDP bridge. Both callbacks are
+  // supplied by the Electron host; in web/remote runtimes they are absent and
+  // the route 404s.
+  createBrowserCdpDiscoveryRuntime({
+    getBridgeStatus: typeof options.getBrowserCdpBridgeStatus === 'function'
+      ? options.getBrowserCdpBridgeStatus
+      : null,
+    getDiscoveryToken: typeof options.getBrowserCdpDiscoveryToken === 'function'
+      ? options.getBrowserCdpDiscoveryToken
+      : null,
+  }).attach(app);
+  browserLeaseRuntime.attach(app);
 
   const startupPipelineResult = await startupPipelineRuntime.run({
     app,
@@ -1693,8 +1869,14 @@ async function main(options = {}) {
     expressApp: app,
     httpServer: server,
     getPort: () => tunnelRuntimeContext.getActivePort(),
-    getOpenCodePort: () => openCodePort,
+    getOpenCodePort: () => getPublicRuntimePort(openCodePort, {
+      startupSkipped: ENV_SKIP_OPENCODE_START,
+      externallyManaged: isExternalOpenCode,
+    }),
     getManagedOrchestrationDiagnostics: () => managedOrchestrationRuntime?.getDiagnostics() ?? null,
+    getBrowserLeaseDiagnostics: () => ({
+      activeLeases: browserLeaseRuntime?.getSnapshot().length ?? 0,
+    }),
     getTunnelUrl: () => tunnelService.getPublicUrl(),
     getQuitRiskStatus: () => ({
       tunnel: {

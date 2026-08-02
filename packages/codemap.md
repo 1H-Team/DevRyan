@@ -10,6 +10,7 @@ Monorepo package boundary for DevRyan runtimes. It organizes shared UI/runtime i
   - `vscode/`: extension-host + webview runtime.
   - `cursor-sdk-runtime/`: shared Cursor SDK execution/auth helper package used by web/Electron and VS Code.
   - `orchestration-runtime/`: dependency-free DevRyan-managed task contracts and scheduler policy shared by web/Electron and VS Code.
+  - `harness-runtime/`: dependency-free durable operation, diagnostic, lifecycle, and turn-evidence primitives shared by web/Electron and VS Code.
   - `ui/` and `web/` (outside this task scope) provide shared renderer/server layers consumed by runtimes.
 - **Compatibility-first API contracts**: runtime shells expose equivalent command/event semantics so shared UI remains mostly shell-agnostic.
 

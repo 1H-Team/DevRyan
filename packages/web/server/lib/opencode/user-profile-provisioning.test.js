@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -5,9 +6,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { DEFAULT_PROFILE_ROOT, createUserProfileProvisioningRuntime } from './user-profile-provisioning.js';
 import { listDefaultConfigAssets } from './default-config-assets.js';
-import { parseMdFile } from './shared.js';
+import {
+  DEVRYAN_MANAGED_PLUGINS,
+  DEVRYAN_MANAGED_PROFILE_PLUGIN_FILES,
+} from './managed-plugins.js';
 
 const readJson = (filePath) => JSON.parse(fs.readFileSync(filePath, 'utf8'));
+const hashContent = (content) => crypto.createHash('sha256').update(content).digest('hex');
 const writeJson = (filePath, value) => {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
@@ -27,6 +32,17 @@ describe('user profile provisioning', () => {
       const packageJson = readJson(path.join(options.cwd, 'package.json'));
       for (const name of Object.keys(packageJson.dependencies || {})) {
         fs.mkdirSync(path.join(options.cwd, 'node_modules', ...name.split('/')), { recursive: true });
+      }
+      for (const plugin of DEVRYAN_MANAGED_PLUGINS) {
+        if (!plugin.packageName || !plugin.version || !plugin.entrypoint) continue;
+        const packageRoot = path.join(options.cwd, 'node_modules', ...plugin.packageName.split('/'));
+        writeJson(path.join(packageRoot, 'package.json'), {
+          name: plugin.packageName,
+          version: plugin.version,
+        });
+        const entrypointPath = path.join(packageRoot, ...plugin.entrypoint.split('/'));
+        fs.mkdirSync(path.dirname(entrypointPath), { recursive: true });
+        fs.writeFileSync(entrypointPath, 'export default async () => ({});\n', 'utf8');
       }
       return { ok: true, exitCode: 0, stdout: '', stderr: '' };
     },
@@ -53,32 +69,33 @@ describe('user profile provisioning', () => {
 
     expect(result.ok).toBe(true);
     expect(config.plugin).toEqual([
-      'opencode-antigravity-auth@latest',
-      '@rama_nigg/open-cursor@latest',
-      'cursor-acp',
-      'opencode-with-claude@1.6.18',
-      'context-mode@1.0.169',
-      'superpowers@git+https://github.com/obra/superpowers.git',
+      './node_modules/opencode-antigravity-auth/dist/index.js',
+      './node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js',
+      './node_modules/opencode-with-claude/dist/index.js',
+      './node_modules/context-mode/build/adapters/opencode/plugin.js',
       './plugins/devryan-oh-my-opencode-slim.mjs',
+      './plugins/devryan-superpowers.mjs',
     ]);
     expect(config).not.toHaveProperty('mcp');
     expect(packageJson.dependencies).toMatchObject({
       '@ai-sdk/openai-compatible': '^2.0.47',
       '@opencode-ai/plugin': '1.17.11',
+      '@rama_nigg/open-cursor': '2.5.4',
       '@rynfar/meridian': '1.57.0',
       'context-mode': '1.0.169',
       'oh-my-opencode-slim': '2.0.5',
+      'opencode-antigravity-auth': '1.6.0',
       'opencode-with-claude': '1.6.18',
     });
     expect(JSON.stringify(slim)).not.toContain('"mcps"');
     expect(fs.existsSync(path.join(configDir, 'agents', 'orchestrator.md'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-oh-my-opencode-slim.mjs'))).toBe(true);
+    expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-superpowers.mjs'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'node_modules', 'oh-my-opencode-slim'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'node_modules', 'opencode-with-claude'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'node_modules', 'context-mode'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'node_modules', '@rynfar', 'meridian'))).toBe(true);
-    expect(fs.existsSync(path.join(configDir, 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
-    expect(fs.existsSync(path.join(configDir, 'skills', 'superpowers', 'README.md'))).toBe(true);
+    expect(fs.existsSync(path.join(configDir, 'skills'))).toBe(false);
     expect(fs.existsSync(path.join(configDir, '.openchamber', 'user-profile-manifest.json'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, '.openchamber', 'meridian-sdk-features-policy.json'))).toBe(true);
     expect(meridianFeatures.opencode).toEqual({
@@ -109,7 +126,10 @@ describe('user profile provisioning', () => {
     const expectedManagedFiles = (await listDefaultConfigAssets(defaultConfigRoot))
       .flatMap((relativePath) => {
         if (relativePath.startsWith('agents/')) return [relativePath];
-        if (relativePath === 'plugins/devryan-oh-my-opencode-slim.mjs') return [relativePath];
+        if (
+          relativePath.startsWith('plugins/')
+          && DEVRYAN_MANAGED_PROFILE_PLUGIN_FILES.includes(relativePath.slice('plugins/'.length))
+        ) return [relativePath];
         if (relativePath.startsWith('user-profile/')) return [relativePath];
         return [];
       })
@@ -120,25 +140,13 @@ describe('user profile provisioning', () => {
     const manifest = readJson(path.join(configDir, '.openchamber', 'user-profile-manifest.json'));
 
     expect(Object.keys(manifest.files).sort()).toEqual(expectedManagedFiles);
+    expect(Object.keys(manifest.files).some((relativePath) => relativePath.startsWith('skills/')))
+      .toBe(false);
+    expect(result.written.some((filePath) => (
+      path.relative(configDir, filePath).startsWith(`skills${path.sep}`)
+    ))).toBe(false);
     for (const relativePath of expectedManagedFiles) {
       expect(fs.existsSync(path.join(configDir, relativePath))).toBe(true);
-    }
-  });
-
-  it('ships canonical lowercase skill names that match their directories', async () => {
-    const defaultConfigRoot = path.dirname(DEFAULT_PROFILE_ROOT);
-    const skillAssets = (await listDefaultConfigAssets(defaultConfigRoot))
-      .filter((relativePath) => (
-        relativePath.startsWith('user-profile/skills/')
-        && relativePath.endsWith('/SKILL.md')
-      ));
-
-    expect(skillAssets.length).toBeGreaterThan(0);
-    for (const relativePath of skillAssets) {
-      const skillPath = path.join(defaultConfigRoot, relativePath);
-      const name = parseMdFile(skillPath).frontmatter.name;
-      expect(name).toBe(path.basename(path.dirname(skillPath)));
-      expect(name).toMatch(/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/);
     }
   });
 
@@ -161,6 +169,74 @@ describe('user profile provisioning', () => {
     expect(config.agent.custom).toEqual({ description: 'keep' });
     expect(config.plugin).toContain('custom-plugin');
     expect(commands).toHaveLength(1);
+  });
+
+  it('reconciles legacy managed specs in a previously managed config without discarding later user edits', async () => {
+    const runtime = createRuntime();
+    await runtime.provision();
+    const configPath = path.join(home, '.config', 'opencode', 'opencode.json');
+    const staleConfig = readJson(configPath);
+    staleConfig.theme = 'user-theme';
+    staleConfig.plugin = [
+      'user-plugin@4.2.0',
+      'opencode-antigravity-auth@latest',
+      '@rama_nigg/open-cursor@latest',
+      'cursor-acp',
+      'opencode-with-claude@1.6.18',
+      'context-mode@1.0.169',
+      'superpowers@git+https://github.com/obra/superpowers.git',
+      './plugins/devryan-oh-my-opencode-slim.mjs',
+    ];
+    writeJson(configPath, staleConfig);
+
+    const result = await runtime.provision();
+    const reconciled = readJson(configPath);
+
+    expect(result.ok).toBe(true);
+    expect(result.conflicts).not.toContain(configPath);
+    expect(reconciled.theme).toBe('user-theme');
+    expect(reconciled.plugin).toEqual([
+      'user-plugin@4.2.0',
+      './node_modules/opencode-antigravity-auth/dist/index.js',
+      './node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js',
+      './node_modules/opencode-with-claude/dist/index.js',
+      './node_modules/context-mode/build/adapters/opencode/plugin.js',
+      './plugins/devryan-superpowers.mjs',
+      './plugins/devryan-oh-my-opencode-slim.mjs',
+    ]);
+    expect(commands).toHaveLength(1);
+  });
+
+  it('removes legacy managed registrations from older user config layers while preserving their other content', async () => {
+    const configDirectory = path.join(home, '.config', 'opencode');
+    const legacyConfigPath = path.join(configDirectory, 'config.json');
+    const jsoncConfigPath = path.join(configDirectory, 'opencode.jsonc');
+    writeJson(legacyConfigPath, {
+      provider: { custom: { name: 'keep' } },
+      plugin: [
+        'user-plugin@4.2.0',
+        'context-mode@1.0.169',
+        'superpowers@git+https://github.com/obra/superpowers.git',
+      ],
+    });
+    fs.writeFileSync(
+      jsoncConfigPath,
+      '{\n  // keep this comment\n  "plugin": ["cursor-acp", "opencode-with-claude@1.6.17"],\n}\n',
+      'utf8',
+    );
+
+    const result = await createRuntime().provision();
+
+    expect(result.ok).toBe(true);
+    expect(readJson(legacyConfigPath)).toEqual({
+      provider: { custom: { name: 'keep' } },
+      plugin: ['user-plugin@4.2.0'],
+    });
+    const reconciledJsonc = fs.readFileSync(jsoncConfigPath, 'utf8');
+    expect(reconciledJsonc).toContain('// keep this comment');
+    expect(reconciledJsonc).toContain('opencode-with-claude@1.6.17');
+    expect(reconciledJsonc).not.toContain('cursor-acp');
+    expect(result.updated).toEqual(expect.arrayContaining([legacyConfigPath, jsoncConfigPath]));
   });
 
   it('migrates only the exact legacy Meridian prompt defaults and preserves explicit choices', async () => {
@@ -239,7 +315,7 @@ describe('user profile provisioning', () => {
     writeJson(configPath, { plugin: ['opencode-with-claude'] });
 
     await createRuntime().provision();
-    expect(readJson(configPath).plugin).toContain('opencode-with-claude@1.6.18');
+    expect(readJson(configPath).plugin).toContain('./node_modules/opencode-with-claude/dist/index.js');
     expect(readJson(configPath).plugin).not.toContain('opencode-with-claude');
 
     const pinnedHome = path.join(root, 'pinned-home');
@@ -311,59 +387,43 @@ describe('user profile provisioning', () => {
     expect(result.conflicts).toContain(agentPath);
   });
 
-  it('updates untouched baseline files and removes untouched stale managed files', async () => {
-    const profileRoot = path.join(root, 'profile');
-    fs.cpSync(DEFAULT_PROFILE_ROOT, profileRoot, { recursive: true });
-    const staleSource = path.join(profileRoot, 'skills', 'stale', 'SKILL.md');
-    fs.mkdirSync(path.dirname(staleSource), { recursive: true });
-    fs.writeFileSync(staleSource, 'managed stale skill\n', 'utf8');
-    const runtime = createRuntime({ profileRoot });
-    await runtime.provision();
+  it('retires previously managed skills without claiming user-modified files', async () => {
     const configDir = path.join(home, '.config', 'opencode');
-    const staleTarget = path.join(configDir, 'skills', 'stale', 'SKILL.md');
-    const slimSource = path.join(profileRoot, 'oh-my-opencode-slim.json');
-    const slim = readJson(slimSource);
-    slim.preset = 'opencode-go';
-    writeJson(slimSource, slim);
-    fs.rmSync(path.join(profileRoot, 'skills', 'stale'), { recursive: true });
+    const legacySkillPath = path.join(configDir, 'skills', 'legacy', 'SKILL.md');
+    const legacyReferencePath = path.join(configDir, 'skills', 'legacy', 'references', 'x.md');
+    const adoptedSkillPath = path.join(configDir, 'skills', 'adopted', 'SKILL.md');
+    const legacySkillContent = 'managed legacy skill\n';
+    const legacyReferenceContent = 'managed legacy reference\n';
+    fs.mkdirSync(path.dirname(legacyReferencePath), { recursive: true });
+    fs.mkdirSync(path.dirname(adoptedSkillPath), { recursive: true });
+    fs.writeFileSync(legacySkillPath, legacySkillContent, 'utf8');
+    fs.writeFileSync(legacyReferencePath, legacyReferenceContent, 'utf8');
+    fs.writeFileSync(path.join(configDir, 'skills', 'legacy', '.DS_Store'), '', 'utf8');
+    fs.writeFileSync(adoptedSkillPath, 'user-adopted skill\n', 'utf8');
+    writeJson(path.join(configDir, '.openchamber', 'user-profile-manifest.json'), {
+      version: 1,
+      files: {
+        'skills/legacy/SKILL.md': { hash: hashContent(legacySkillContent) },
+        'skills/legacy/references/x.md': { hash: hashContent(legacyReferenceContent) },
+        'skills/adopted/SKILL.md': { hash: hashContent('former managed content\n') },
+      },
+    });
 
+    const runtime = createRuntime();
     const result = await runtime.provision();
+    const repeated = await runtime.provision();
+    const manifest = readJson(path.join(configDir, '.openchamber', 'user-profile-manifest.json'));
 
-    expect(readJson(path.join(configDir, 'oh-my-opencode-slim.json')).preset).toBe('opencode-go');
-    expect(result.updated).toContain(path.join(configDir, 'oh-my-opencode-slim.json'));
-    expect(result.removed).toContain(staleTarget);
-    expect(fs.existsSync(staleTarget)).toBe(false);
-  });
-
-  it('upgrades an untouched managed skill name and preserves a user-modified conflict', async () => {
-    const profileRoot = path.join(root, 'profile');
-    fs.cpSync(DEFAULT_PROFILE_ROOT, profileRoot, { recursive: true });
-    const sourceSkillPath = path.join(profileRoot, 'skills', 'frontend-design', 'SKILL.md');
-    const titleCasedSource = fs.readFileSync(sourceSkillPath, 'utf8')
-      .replace('name: frontend-design', 'name: Frontend Design');
-    fs.writeFileSync(sourceSkillPath, titleCasedSource, 'utf8');
-    const runtime = createRuntime({ profileRoot });
-    await runtime.provision();
-
-    const targetSkillPath = path.join(home, '.config', 'opencode', 'skills', 'frontend-design', 'SKILL.md');
-    fs.writeFileSync(
-      sourceSkillPath,
-      titleCasedSource.replace('name: Frontend Design', 'name: frontend-design'),
-      'utf8',
-    );
-    const upgraded = await runtime.provision();
-    expect(parseMdFile(targetSkillPath).frontmatter.name).toBe('frontend-design');
-    expect(upgraded.updated).toContain(targetSkillPath);
-
-    fs.writeFileSync(targetSkillPath, 'user-owned skill change\n', 'utf8');
-    fs.writeFileSync(
-      sourceSkillPath,
-      fs.readFileSync(sourceSkillPath, 'utf8').replace('description:', 'license: test\ndescription:'),
-      'utf8',
-    );
-    const conflicted = await runtime.provision();
-    expect(fs.readFileSync(targetSkillPath, 'utf8')).toBe('user-owned skill change\n');
-    expect(conflicted.conflicts).toContain(targetSkillPath);
+    expect(result.removed).toEqual(expect.arrayContaining([
+      legacySkillPath,
+      legacyReferencePath,
+    ]));
+    expect(fs.existsSync(path.join(configDir, 'skills', 'legacy'))).toBe(false);
+    expect(fs.readFileSync(adoptedSkillPath, 'utf8')).toBe('user-adopted skill\n');
+    expect(result.conflicts).not.toContain(adoptedSkillPath);
+    expect(Object.keys(manifest.files).some((relativePath) => relativePath.startsWith('skills/')))
+      .toBe(false);
+    expect(repeated).toMatchObject({ ok: true, changed: false, conflicts: [] });
   });
 
   it('reports package installation failure without claiming readiness', async () => {
@@ -376,5 +436,27 @@ describe('user profile provisioning', () => {
     expect(result.ok).toBe(false);
     expect(result.install).toMatchObject({ ok: false, exitCode: 1 });
     expect(result.error).toContain('network unavailable');
+  });
+
+  it('fails explicit validation when installation succeeds without materializing managed entrypoints', async () => {
+    const runtime = createRuntime({
+      runCommand: async () => ({ ok: true, exitCode: 0, stdout: '', stderr: '' }),
+    });
+
+    const result = await runtime.provision();
+
+    expect(result.ok).toBe(false);
+    expect(result.install).toMatchObject({ ok: true, exitCode: 0 });
+    expect(result.managedPluginIssues).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        pluginId: 'opencode-antigravity-auth',
+        kind: 'missing-package',
+      }),
+      expect.objectContaining({
+        pluginId: '@rama_nigg/open-cursor',
+        kind: 'missing-package',
+      }),
+    ]));
+    expect(result.error).toContain('Managed OpenCode plugin validation failed after provisioning');
   });
 });

@@ -165,4 +165,13 @@ describe('SettingsView navigation', () => {
     expect(workflowPages.indexOf('plugins')).toBe(workflowPages.indexOf('skills.installed') + 1);
     expect(workflowPages.indexOf('magic-prompts')).toBe(workflowPages.indexOf('plugins') + 1);
   });
+
+  test('exposes the About page so diagnostics are reachable in desktop settings', () => {
+    const generalPages = SETTINGS_NAV_SECTIONS
+      .find((section) => section.labelKey === 'settings.view.nav.group.general')
+      ?.pages ?? [];
+
+    expect(resolveSettingsSlug('about')).toBe('about');
+    expect(generalPages).toContain('about');
+  });
 });

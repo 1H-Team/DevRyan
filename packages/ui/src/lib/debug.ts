@@ -375,7 +375,20 @@ export const debugUtils = {
 
   async buildDiagnosticsReport() {
     const report = await this.getAppStatus();
-    return JSON.stringify(report, null, 2);
+    const serialized = JSON.stringify(report, null, 2);
+    const runtimeApis = typeof window !== 'undefined'
+      ? (window as typeof window & {
+          __OPENCHAMBER_RUNTIME_APIS__?: {
+            diagnostics?: { sanitizeText?: (text: string) => Promise<string> };
+          };
+        }).__OPENCHAMBER_RUNTIME_APIS__
+      : null;
+    if (runtimeApis?.diagnostics?.sanitizeText) {
+      return runtimeApis.diagnostics.sanitizeText(serialized);
+    }
+    return serialized
+      .replace(/(?:Bearer\s+|sk-|ghp_|xox[baprs]-)[A-Za-z0-9._~+/=-]{8,}/gi, '[REDACTED]')
+      .replace(/-----BEGIN[\s\S]*?-----END[^-]*-----/g, '[REDACTED_PEM]');
   },
 
   async copyTextToClipboard(text: string) {

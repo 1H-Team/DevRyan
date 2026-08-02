@@ -8,12 +8,13 @@ type ManagedTaskPayload = {
   followUpTask?: { task?: { taskId?: unknown } };
 };
 
-const MANAGED_DISPATCH_ACTIONS = new Set(['start', 'retry', 'resume']);
+const MANAGED_DISPATCH_ACTIONS = new Set(['start', 'retry']);
 const MANAGED_CONTROL_ACTIONS = new Set([
   'status',
   'wait',
   'cancel',
   'continue',
+  'resume',
   'recover_in_place',
   'abandon',
 ]);
@@ -148,7 +149,7 @@ const taskIdFromPart = (part: ToolPart): string | null => {
   const state = part.state as Record<string, unknown> | undefined;
   const input = state?.input as Record<string, unknown> | undefined;
   const action = typeof input?.action === 'string' ? input.action.trim() : '';
-  if (action !== 'start' && action !== 'retry' && action !== 'resume') return null;
+  if (action !== 'start' && action !== 'retry') return null;
   const payload = parsePayload(state?.output);
   const candidate = action === 'start'
     ? payload?.task?.taskId

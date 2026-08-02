@@ -49,9 +49,12 @@ describe('read-only plugin config model', () => {
       const result = model.listPlugins(project);
 
       expect(result.defaults.map((plugin) => plugin.pluginId)).toEqual([
-        'oh-my-opencode-slim',
+        'opencode-antigravity-auth',
+        '@rama_nigg/open-cursor',
         'opencode-with-claude',
         'context-mode',
+        'oh-my-opencode-slim',
+        'superpowers',
         'openai-tool-schema-sanitizer',
       ]);
       expect(result.entries.map((plugin) => `${plugin.scope}:${plugin.spec}:${plugin.parsedKind}`)).toEqual([

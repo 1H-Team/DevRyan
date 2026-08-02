@@ -10,6 +10,7 @@ export { unwrapSdkResult } from "./sdk-result"
 export const ACTIVE_SESSION_STATUS_STALE_MS = 20_000
 export const ACTIVE_SESSION_RECOVERY_COOLDOWN_MS = 15_000
 export const ACTIVE_SESSION_RECOVERY_MAX_COOLDOWN_MS = 60_000
+export const PROVIDER_STALL_SEMANTIC_SILENCE_MS = 5 * 60_000
 
 export function getActiveSessionRecoveryCooldownMs(failureCount = 0): number {
   const normalizedFailureCount = Number.isFinite(failureCount)
@@ -19,6 +20,20 @@ export function getActiveSessionRecoveryCooldownMs(failureCount = 0): number {
     ACTIVE_SESSION_RECOVERY_COOLDOWN_MS * (2 ** normalizedFailureCount),
     ACTIVE_SESSION_RECOVERY_MAX_COOLDOWN_MS,
   )
+}
+
+export function getActiveSessionRecoveryActivityAt(input: {
+  status: SessionStatus | undefined
+  now: number
+  lastStatusEventAt?: number
+  lastOutputEventAt?: number
+}): number {
+  if (input.status?.type === "retry") {
+    const retryActivity = [input.lastStatusEventAt, input.lastOutputEventAt]
+      .filter((value): value is number => typeof value === "number")
+    return retryActivity.length > 0 ? Math.max(...retryActivity) : input.now
+  }
+  return input.lastOutputEventAt ?? input.lastStatusEventAt ?? input.now
 }
 
 type ReconnectMaterializationState = {
@@ -32,6 +47,183 @@ type RecoveredSessionStatusState = Pick<
   State,
   "message" | "part" | "permission" | "question" | "session" | "session_status" | "revert_transaction"
 >
+
+type PendingToolInputState = Pick<
+  State,
+  "message" | "part" | "permission" | "question" | "session" | "session_status"
+>
+
+export type PendingToolInputStallFingerprint = {
+  kind: "tool-input"
+  sessionID: string
+  assistantMessageID: string
+  anchorUserMessageID: string
+  partID: string
+  callID: string
+  tool: string
+}
+
+export type ProviderInferenceStallFingerprint = {
+  kind: "inference"
+  sessionID: string
+  assistantMessageID: string
+  anchorUserMessageID: string
+  stepStartPartID: string
+  partID: string
+  partType: "reasoning" | "text"
+}
+
+export type ProviderStallFingerprint = (
+  PendingToolInputStallFingerprint | ProviderInferenceStallFingerprint
+)
+
+const nonEmptyString = (value: unknown): string | null => (
+  typeof value === "string" && value.trim().length > 0 ? value.trim() : null
+)
+
+const isEmptyPlainObject = (value: unknown): boolean => (
+  typeof value === "object"
+  && value !== null
+  && !Array.isArray(value)
+  && Object.keys(value).length === 0
+)
+
+type IncompleteRootAssistantSnapshot = {
+  assistant: Message
+  anchorUserMessageID: string
+  parts: Part[]
+}
+
+const getIncompleteRootAssistantSnapshot = (input: {
+  state: PendingToolInputState
+  sessionID: string
+}): IncompleteRootAssistantSnapshot | null => {
+  if (input.state.session_status[input.sessionID]?.type !== "busy") return null
+  const session = input.state.session.find((candidate) => candidate.id === input.sessionID) as (
+    Session & { parentID?: string | null }
+  ) | undefined
+  if (!session || session.parentID) return null
+  if ((input.state.permission[input.sessionID]?.length ?? 0) > 0) return null
+  if ((input.state.question[input.sessionID]?.length ?? 0) > 0) return null
+
+  const messages = input.state.message[input.sessionID] ?? []
+  const assistant = messages.at(-1) as (Message & {
+    parentID?: unknown
+    error?: unknown
+    finish?: unknown
+  }) | undefined
+  if (!assistant || assistant.role !== "assistant" || assistant.error) return null
+  if (typeof assistant.time?.completed === "number") return null
+  if (typeof assistant.finish === "string" && assistant.finish.length > 0) return null
+
+  const anchorUserMessageID = nonEmptyString(assistant.parentID)
+  if (!anchorUserMessageID) return null
+
+  return {
+    assistant,
+    anchorUserMessageID,
+    parts: input.state.part[assistant.id] ?? [],
+  }
+}
+
+export function getPendingToolInputStallFingerprint(input: {
+  state: PendingToolInputState
+  sessionID: string
+}): PendingToolInputStallFingerprint | null {
+  const snapshot = getIncompleteRootAssistantSnapshot(input)
+  if (!snapshot) return null
+
+  const trailingPart = snapshot.parts.at(-1) as (Part & {
+    callID?: unknown
+    tool?: unknown
+    state?: { status?: unknown; input?: unknown; raw?: unknown }
+  }) | undefined
+  if (!trailingPart || trailingPart.type !== "tool") return null
+  if (trailingPart.state?.status !== "pending") return null
+  if (!isEmptyPlainObject(trailingPart.state.input)) return null
+  if (trailingPart.state.raw !== "") return null
+
+  const partID = nonEmptyString(trailingPart.id)
+  const callID = nonEmptyString(trailingPart.callID)
+  const tool = nonEmptyString(trailingPart.tool)
+  if (!partID || !callID || !tool || tool.toLowerCase() === "devryan_task") return null
+
+  return {
+    kind: "tool-input",
+    sessionID: input.sessionID,
+    assistantMessageID: snapshot.assistant.id,
+    anchorUserMessageID: snapshot.anchorUserMessageID,
+    partID,
+    callID,
+    tool,
+  }
+}
+
+export function getProviderInferenceStallFingerprint(input: {
+  state: PendingToolInputState
+  sessionID: string
+}): ProviderInferenceStallFingerprint | null {
+  const snapshot = getIncompleteRootAssistantSnapshot(input)
+  if (!snapshot || snapshot.parts.length !== 2) return null
+
+  const [stepStartPart, trailingPart] = snapshot.parts as [Part, Part]
+  if (stepStartPart.type !== "step-start") return null
+  if (trailingPart.type !== "reasoning" && trailingPart.type !== "text") return null
+  const text = (trailingPart as Part & { text?: unknown }).text
+  if (typeof text !== "string" || text.trim().length > 0) return null
+
+  const stepStartPartID = nonEmptyString(stepStartPart.id)
+  const partID = nonEmptyString(trailingPart.id)
+  if (!stepStartPartID || !partID) return null
+
+  return {
+    kind: "inference",
+    sessionID: input.sessionID,
+    assistantMessageID: snapshot.assistant.id,
+    anchorUserMessageID: snapshot.anchorUserMessageID,
+    stepStartPartID,
+    partID,
+    partType: trailingPart.type,
+  }
+}
+
+export function getProviderStallFingerprint(input: {
+  state: PendingToolInputState
+  sessionID: string
+}): ProviderStallFingerprint | null {
+  return getPendingToolInputStallFingerprint(input)
+    ?? getProviderInferenceStallFingerprint(input)
+}
+
+export function haveSameProviderStallFingerprint(
+  left: ProviderStallFingerprint | null | undefined,
+  right: ProviderStallFingerprint | null | undefined,
+): boolean {
+  if (left === right) return true
+  if (!left || !right || left.kind !== right.kind) return false
+  if (
+    left.sessionID !== right.sessionID
+    || left.assistantMessageID !== right.assistantMessageID
+    || left.anchorUserMessageID !== right.anchorUserMessageID
+    || left.partID !== right.partID
+  ) {
+    return false
+  }
+  if (left.kind === "tool-input" && right.kind === "tool-input") {
+    return left.callID === right.callID && left.tool === right.tool
+  }
+  if (left.kind === "inference" && right.kind === "inference") {
+    return left.stepStartPartID === right.stepStartPartID && left.partType === right.partType
+  }
+  return false
+}
+
+export function haveSamePendingToolInputStallFingerprint(
+  left: PendingToolInputStallFingerprint | null | undefined,
+  right: PendingToolInputStallFingerprint | null | undefined,
+): boolean {
+  return haveSameProviderStallFingerprint(left, right)
+}
 
 export type ViewedSessionMaterializationTarget = {
   directory: string
@@ -219,7 +411,6 @@ export function shouldRecoverStaleActiveSession(input: {
   lastStatusEventAt?: number
   lastOutputEventAt?: number
   lastRecoveryAt?: number
-  lastRecoveredActivityAt?: number
   staleMs?: number
   cooldownMs?: number
 }): boolean {
@@ -231,22 +422,14 @@ export function shouldRecoverStaleActiveSession(input: {
   const now = input.now ?? Date.now()
   const staleMs = input.staleMs ?? ACTIVE_SESSION_STATUS_STALE_MS
   const cooldownMs = input.cooldownMs ?? ACTIVE_SESSION_RECOVERY_COOLDOWN_MS
-  const observedEventTimes = [
-    input.lastStatusEventAt,
-    input.lastOutputEventAt,
-  ].filter((value): value is number => typeof value === "number")
-  const lastObservedEventAt = observedEventTimes.length > 0
-    ? Math.max(...observedEventTimes)
-    : now
+  const lastObservedEventAt = getActiveSessionRecoveryActivityAt({
+    status: input.status,
+    now,
+    lastStatusEventAt: input.lastStatusEventAt,
+    lastOutputEventAt: input.lastOutputEventAt,
+  })
 
   if (now - lastObservedEventAt < staleMs) {
-    return false
-  }
-
-  if (
-    typeof input.lastRecoveredActivityAt === "number"
-    && input.lastRecoveredActivityAt >= lastObservedEventAt
-  ) {
     return false
   }
 

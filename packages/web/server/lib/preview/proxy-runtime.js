@@ -1,5 +1,7 @@
 const DEFAULT_TARGET_TTL_MS = 30 * 60 * 1000;
 const TOKEN_COOKIE_NAME = 'oc_preview_token';
+const PREVIEW_PASSTHROUGH_REQUEST_HEADERS = ['x-inertia', 'x-inertia-version'];
+const PREVIEW_PASSTHROUGH_RESPONSE_HEADERS = ['x-inertia', 'x-inertia-location'];
 
 const LOOPBACK_HOSTS = new Set([
   'localhost',
@@ -19,6 +21,34 @@ const parsePreviewResourcePath = (url) => {
     return path + parsed.search;
   } catch {
     return String(url || '');
+  }
+};
+
+const readHeader = (headers, name) => {
+  if (!headers || typeof headers !== 'object') return undefined;
+  const direct = headers[name];
+  if (direct !== undefined) return direct;
+  const lowerName = name.toLowerCase();
+  const key = Object.keys(headers).find((entry) => entry.toLowerCase() === lowerName);
+  return key ? headers[key] : undefined;
+};
+
+export const applyPreviewPassthroughRequestHeaders = (req, proxyReq) => {
+  for (const headerName of PREVIEW_PASSTHROUGH_REQUEST_HEADERS) {
+    const value = readHeader(req?.headers, headerName);
+    if (value !== undefined) {
+      proxyReq.setHeader(headerName, value);
+    }
+  }
+};
+
+export const applyPreviewPassthroughResponseHeaders = (proxyRes, res) => {
+  if (!res || res.headersSent || typeof res.setHeader !== 'function') return;
+  for (const headerName of PREVIEW_PASSTHROUGH_RESPONSE_HEADERS) {
+    const value = readHeader(proxyRes?.headers, headerName);
+    if (value !== undefined) {
+      res.setHeader(headerName, value);
+    }
   }
 };
 
@@ -859,7 +889,46 @@ const buildCookie = ({
   return chunks.join('; ');
 };
 
-const normalizeLoopbackUrl = (rawUrl) => {
+// Guard for a potential future `allowExternal` path: refuse to proxy private,
+// loopback and reserved addresses (incl. cloud-metadata 169.254.169.254).
+// Operates on the WHATWG-normalized hostname, so decimal/hex/octal IPv4 forms
+// are already canonical dotted-decimal here. NOTE: this blocks IP *literals*
+// only — a hostname that resolves to a private IP (DNS rebinding) is not
+// caught and would need resolve-time IP pinning. Loopback for local preview
+// goes through the non-external path (allowExternal=false), which is
+// unaffected. Nothing in this runtime passes allowExternal=true today, and the
+// flag must never be exposed through request payloads.
+const isBlockedExternalHost = (hostname) => {
+  if (!hostname) return true;
+  let host = hostname.toLowerCase();
+  if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1);
+
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true;
+
+  const v4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4) {
+    const a = Number(v4[1]);
+    const b = Number(v4[2]);
+    if (a === 0 || a === 127 || a === 10) return true;          // this-host / loopback / private
+    if (a === 169 && b === 254) return true;                    // link-local incl. cloud metadata
+    if (a === 172 && b >= 16 && b <= 31) return true;           // private
+    if (a === 192 && b === 168) return true;                    // private
+    if (a === 100 && b >= 64 && b <= 127) return true;          // carrier-grade NAT
+    return false;
+  }
+
+  if (host.includes(':')) {
+    if (host === '::1' || host === '::') return true;           // loopback / unspecified
+    if (host.startsWith('fe80')) return true;                   // link-local
+    if (host.startsWith('fc') || host.startsWith('fd')) return true; // unique local fc00::/7
+    if (host.includes('::ffff:')) return true;                       // IPv4-mapped (dotted or hex form)
+    return false;
+  }
+
+  return false;
+};
+
+export const normalizeProxyTargetUrl = (rawUrl, { allowExternal = false } = {}) => {
   let url;
   try {
     url = new URL(rawUrl);
@@ -872,8 +941,12 @@ const normalizeLoopbackUrl = (rawUrl) => {
   }
 
   const hostname = url.hostname;
-  if (!LOOPBACK_HOSTS.has(hostname)) {
-    return { ok: false, error: 'Only loopback hosts are supported' };
+  if (!allowExternal) {
+    if (!LOOPBACK_HOSTS.has(hostname)) {
+      return { ok: false, error: 'Only loopback hosts are supported' };
+    }
+  } else if (isBlockedExternalHost(hostname)) {
+    return { ok: false, error: 'Refusing to proxy private or reserved addresses' };
   }
 
   const port = url.port ? Number.parseInt(url.port, 10) : (url.protocol === 'https:' ? 443 : 80);
@@ -883,13 +956,15 @@ const normalizeLoopbackUrl = (rawUrl) => {
 
   // Normalize common loopback hostnames to IPv4 to avoid environments where
   // `localhost` resolves to ::1 but the dev server only binds IPv4.
-  if (hostname === '0.0.0.0' || hostname === 'localhost' || hostname === '::1' || hostname === '[::1]') {
+  if (LOOPBACK_HOSTS.has(hostname) && (hostname === '0.0.0.0' || hostname === 'localhost' || hostname === '::1' || hostname === '[::1]')) {
     url.hostname = '127.0.0.1';
   }
 
   // Only keep origin here; the proxy path is preserved on the OpenChamber side.
   return { ok: true, origin: url.origin };
 };
+
+const normalizeLoopbackUrl = (rawUrl) => normalizeProxyTargetUrl(rawUrl, { allowExternal: false });
 
 export const rewritePreviewBody = ({ bodyText, proxyBasePath, targetOrigin, kind }) => {
   if (typeof bodyText !== 'string' || bodyText.length === 0) {
@@ -956,11 +1031,71 @@ export const rewritePreviewBody = ({ bodyText, proxyBasePath, targetOrigin, kind
     .replace(/\bimport\(\s*(['"])\/(?!\/)([^'"]*)\1\s*\)/gi, (_match, quote, path) => {
       return `import(${quote}${rewriteResourceUrl(`/${path}`)}${quote})`;
     });
+  // Inline <script type="module"> blocks (e.g. Vite's React-refresh preamble)
+  // import root-relative specifiers that must be routed through the proxy too.
+  const rewriteInlineModuleScripts = (text) => text.replace(
+    /<script\b([^>]*)>([\s\S]*?)<\/script>/gi,
+    (match, attrs, scriptBody) => {
+      if (/\bsrc\s*=/i.test(attrs)) return match;
 
-  if (kind === 'html') return rewriteHtml(bodyText);
+      const typeMatch = String(attrs || '').match(/\btype\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i);
+      const type = String(typeMatch?.[1] ?? typeMatch?.[2] ?? typeMatch?.[3] ?? '').trim().toLowerCase();
+      if (type !== 'module') return match;
+
+      const rewrittenScriptBody = rewriteJavaScript(scriptBody);
+      if (rewrittenScriptBody === scriptBody) return match;
+      return `<script${attrs}>${rewrittenScriptBody}</script>`;
+    },
+  );
+  // A meta-delivered CSP cannot be relaxed per-response the way the header can
+  // (the bridge nonce is only added to headers), so drop it entirely.
+  const stripPreviewCspMeta = (text) => text
+    .replace(/<meta\b(?=[^>]*\bhttp-equiv\s*=\s*(['"])content-security-policy\1)[^>]*>/gi, '')
+    .replace(/<meta\b(?=[^>]*\bhttp-equiv\s*=\s*content-security-policy\b)[^>]*>/gi, '');
+
+  if (kind === 'html') return stripPreviewCspMeta(rewriteInlineModuleScripts(rewriteHtml(bodyText)));
   if (kind === 'css') return rewriteCss(bodyText);
   if (kind === 'javascript') return rewriteJavaScript(bodyText);
   return bodyText;
+};
+
+// Rewrite a dev server's CSP so the injected preview bridge can run via a
+// per-response nonce, while keeping the dev server's own script restrictions.
+// frame-ancestors is dropped (it blocks embedding) and require-trusted-types-for
+// is dropped (it can block the bridge's DOM use); everything else is preserved.
+// Returns null if no directives remain.
+export const rewritePreviewCspHeader = (cspValue, nonce) => {
+  if (typeof cspValue !== 'string' || cspValue.length === 0) return cspValue;
+  const nonceSource = nonce ? `'nonce-${nonce}'` : '';
+  const directives = cspValue
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const tokens = part.split(/\s+/);
+      return { name: (tokens[0] || '').toLowerCase(), tokens };
+    })
+    .filter((directive) => directive.name !== 'frame-ancestors' && directive.name !== 'require-trusted-types-for');
+
+  if (nonceSource) {
+    const byName = new Map(directives.map((directive) => [directive.name, directive]));
+    const allowNonce = (directive) => {
+      // Drop a lone 'none' so the nonce takes effect, then add our nonce.
+      directive.tokens = directive.tokens.filter((token) => token.toLowerCase() !== "'none'");
+      if (!directive.tokens.includes(nonceSource)) directive.tokens.push(nonceSource);
+    };
+    const scriptElem = byName.get('script-src-elem');
+    const scriptSrc = byName.get('script-src');
+    if (scriptElem) allowNonce(scriptElem);
+    if (scriptSrc) allowNonce(scriptSrc);
+    if (!scriptElem && !scriptSrc && byName.has('default-src')) {
+      const base = byName.get('default-src').tokens.slice(1).filter((token) => token.toLowerCase() !== "'none'");
+      directives.push({ name: 'script-src', tokens: ['script-src', ...base, nonceSource] });
+    }
+  }
+
+  const rebuilt = directives.map((directive) => directive.tokens.join(' '));
+  return rebuilt.length > 0 ? rebuilt.join('; ') : null;
 };
 
 export const createPreviewProxyRuntime = ({
@@ -1054,31 +1189,12 @@ export const createPreviewProxyRuntime = ({
     return parts.length > 0 ? `?${parts.join('&')}` : '';
   };
 
-  // Strip the `frame-ancestors` directive from a CSP header value while
-  // preserving every other directive. Returns null if no directives remain.
-  const removeFrameAncestorsDirective = (cspValue) => {
-    if (typeof cspValue !== 'string' || cspValue.length === 0) {
-      return cspValue;
-    }
-    const directives = cspValue
-      .split(';')
-      .map((part) => part.trim())
-      .filter((part) => part.length > 0);
-
-    const filtered = directives.filter((directive) => {
-      const name = directive.split(/\s+/, 1)[0]?.toLowerCase() ?? '';
-      return name !== 'frame-ancestors';
-    });
-
-    if (filtered.length === 0) {
-      return null;
-    }
-    return filtered.join('; ');
-  };
-
   // Drop response headers that prevent the dev server from being framed.
-  // The proxy itself is same-origin, so embedding is otherwise safe.
-  const stripFrameBustingHeaders = (headers) => {
+  // The proxy itself is same-origin, so embedding is otherwise safe. CSP
+  // headers are rewritten (not dropped): frame-ancestors is removed and the
+  // per-response bridge nonce is allowed, keeping the dev server's own script
+  // restrictions intact.
+  const stripFrameBustingHeaders = (headers, bridgeNonce) => {
     if (!headers || typeof headers !== 'object') {
       return;
     }
@@ -1094,7 +1210,7 @@ export const createPreviewProxyRuntime = ({
         const original = headers[key];
         const values = Array.isArray(original) ? original : [original];
         const rewritten = values
-          .map((value) => removeFrameAncestorsDirective(value))
+          .map((value) => rewritePreviewCspHeader(value, bridgeNonce))
           .filter((value) => typeof value === 'string' && value.length > 0);
         if (rewritten.length === 0) {
           delete headers[key];
@@ -1114,12 +1230,13 @@ export const createPreviewProxyRuntime = ({
   }) => {
     ensureSweeper();
 
-    const injectPreviewBridge = (bodyText, { proxyBasePath, targetOrigin }) => {
+    const injectPreviewBridge = (bodyText, { proxyBasePath, targetOrigin, bridgeNonce }) => {
       if (typeof bodyText !== 'string' || bodyText.includes(PREVIEW_BRIDGE_SCRIPT_ID)) {
         return bodyText;
       }
 
-      const script = `<script id="${PREVIEW_BRIDGE_SCRIPT_ID}">${createPreviewBridgeScript({ proxyBasePath, targetOrigin })}</script>`;
+      const nonceAttr = bridgeNonce ? ` nonce="${bridgeNonce}"` : '';
+      const script = `<script id="${PREVIEW_BRIDGE_SCRIPT_ID}"${nonceAttr}>${createPreviewBridgeScript({ proxyBasePath, targetOrigin })}</script>`;
       if (/<head(?:\s[^>]*)?>/i.test(bodyText)) {
         return bodyText.replace(/<head(\s[^>]*)?>/i, (match) => `${match}${script}`);
       }
@@ -1234,18 +1351,23 @@ export const createPreviewProxyRuntime = ({
         return `${strippedPath}${removeRawQueryParam(parsed.search, 'ocPreview')}`;
       },
       on: {
-        proxyReq: (proxyReq) => {
+        proxyReq: (proxyReq, req) => {
+          applyPreviewPassthroughRequestHeaders(req, proxyReq);
           // Keep local dev servers from receiving OpenChamber credentials.
           proxyReq.removeHeader('cookie');
           proxyReq.removeHeader('authorization');
           proxyReq.removeHeader('x-openchamber-ui-session');
           proxyReq.setHeader('accept-encoding', 'identity');
         },
-        proxyRes: responseInterceptor(async (responseBuffer, proxyRes, req) => {
+        proxyRes: responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
+          applyPreviewPassthroughResponseHeaders(proxyRes, res);
+          // Per-response nonce lets the injected bridge run under the dev
+          // server's CSP without dropping its script restrictions wholesale.
+          const bridgeNonce = crypto.randomBytes(16).toString('base64');
           // Allow the dev server response to be framed inside OpenChamber even
           // if it normally sets X-Frame-Options or a CSP frame-ancestors rule.
           // The proxy is same-origin so embedding is otherwise safe.
-          stripFrameBustingHeaders(proxyRes.headers);
+          stripFrameBustingHeaders(proxyRes.headers, bridgeNonce);
 
           const contentType = String(proxyRes.headers?.['content-type'] || '').toLowerCase();
           const isHtml = contentType.includes('text/html');
@@ -1285,7 +1407,7 @@ export const createPreviewProxyRuntime = ({
             kind: isHtml ? 'html' : isCss ? 'css' : 'javascript',
           });
           return isHtml
-            ? injectPreviewBridge(rewrittenBody, { proxyBasePath, targetOrigin: resolved.entry.origin })
+            ? injectPreviewBridge(rewrittenBody, { proxyBasePath, targetOrigin: resolved.entry.origin, bridgeNonce })
             : rewrittenBody;
         }),
         error: (err, _req, res) => {

@@ -4,8 +4,8 @@ import {
   PROVIDER_MODEL_NOT_FOUND_MESSAGE,
 } from "@/lib/messages/providerModelNotFound"
 import {
+  classifyTransientProviderFailure,
   isLikelyCertificateVerificationFailure,
-  isLikelyTransientStreamFailure,
   stripWrappedJsonQuotes,
 } from "@/lib/messages/transientStreamError"
 
@@ -20,6 +20,21 @@ export type AssistantErrorClassification = {
   variant: "plain" | "info" | "error"
   abortKind?: "manual" | "steered" | "unexpected"
   retryable?: boolean
+}
+
+const getTransportFailureCopy = (
+  kind: NonNullable<ReturnType<typeof classifyTransientProviderFailure>>,
+): string => {
+  switch (kind) {
+    case "request_timeout":
+      return "Your prompt was accepted, but the model provider request timed out before the turn finished."
+    case "response_header_timeout":
+      return "Your prompt was accepted, but the model provider did not begin its response before the response-header liveness timeout."
+    case "stream_idle_timeout":
+      return "Your prompt was accepted, but the model provider stopped sending response data before the stream liveness timeout."
+    case "connection_failure":
+      return "Your prompt was accepted, but the model provider connection failed before the turn finished."
+  }
 }
 
 type SteeredAbortOptions = {
@@ -118,16 +133,17 @@ export function classifyAssistantError(
     }
   }
 
-  if (isLikelyTransientStreamFailure(errorName, detail)) {
+  const transportFailureKind = classifyTransientProviderFailure(errorName, detail)
+  if (transportFailureKind) {
     return {
-      text: `The model provider dropped the connection mid-response. This is a temporary provider-side issue — retry, or switch models if it keeps happening.\n\`${detail}\``,
+      text: `${getTransportFailureCopy(transportFailureKind)} Any completed work was preserved in this session.\n\`${detail}\``,
       variant: "error",
       retryable: true,
     }
   }
 
   return {
-    text: `Opencode failed to send message with error:\n\`${detail}\``,
+    text: `The model provider could not complete this turn:\n\`${detail}\``,
     variant: "error",
   }
 }

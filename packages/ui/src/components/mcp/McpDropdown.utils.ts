@@ -12,7 +12,6 @@ export type McpIndicatorState = {
 };
 
 const AMBIENT_MCP_NAMES = new Set([
-  'context7',
   'ghgrep',
   'gh-grep',
   'gh_grep',

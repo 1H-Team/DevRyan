@@ -16,6 +16,11 @@ import {
   SLIM_MANAGED_VERSION,
   SLIM_PLUGIN_PACKAGE_NAME,
 } from '../packages/web/server/lib/opencode/slim-config.js';
+import {
+  DEVRYAN_MANAGED_PLUGINS,
+  DEVRYAN_MANAGED_PROFILE_PLUGIN_FILES,
+  DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS,
+} from '../packages/web/server/lib/opencode/managed-plugins.js';
 import { createUserProfileProvisioningRuntime } from '../packages/web/server/lib/opencode/user-profile-provisioning.js';
 import { syncRuntimeAgentOverlays } from '../packages/web/server/lib/opencode/runtime-agent-overlays.js';
 
@@ -27,7 +32,10 @@ const hashFile = (filePath) => crypto.createHash('sha256').update(fs.readFileSyn
 
 const managedProfileFiles = (assets) => assets.flatMap((relativePath) => {
   if (relativePath.startsWith('agents/')) return [relativePath];
-  if (relativePath === 'plugins/devryan-oh-my-opencode-slim.mjs') return [relativePath];
+  if (
+    relativePath.startsWith('plugins/')
+    && DEVRYAN_MANAGED_PROFILE_PLUGIN_FILES.includes(relativePath.slice('plugins/'.length))
+  ) return [relativePath];
   if (relativePath.startsWith('user-profile/')) return [relativePath.slice('user-profile/'.length)];
   return [];
 }).sort();
@@ -58,6 +66,9 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
   if (!profileConfig.plugin.includes(ANTHROPIC_OAUTH_PLUGIN_SPEC)) {
     throw new Error(`Missing default Claude registration: ${ANTHROPIC_OAUTH_PLUGIN_SPEC}`);
   }
+  if (JSON.stringify(profileConfig.plugin) !== JSON.stringify(DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS)) {
+    throw new Error('User profile plugin declarations do not match the managed local registrations');
+  }
   if (profilePackage.dependencies[SLIM_PLUGIN_PACKAGE_NAME] !== SLIM_MANAGED_VERSION) {
     throw new Error(`Missing default Slim dependency: ${SLIM_PLUGIN_PACKAGE_NAME}@${SLIM_MANAGED_VERSION}`);
   }
@@ -70,8 +81,8 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
     listRuntimePluginAssets(resolvedConfigRoot),
   ]);
   if (runtimePlugins.length === 0) throw new Error('Missing canonical runtime plugin assets');
-  if (!assets.some((relativePath) => relativePath.startsWith('user-profile/skills/'))) {
-    throw new Error('Missing user profile skills');
+  if (assets.some((relativePath) => relativePath.startsWith('user-profile/skills/'))) {
+    throw new Error('Packaged config must not include user profile skills');
   }
 
   const tempRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'devryan-packaged-config-smoke-'));
@@ -83,8 +94,22 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
       profileRoot,
       configDirectory,
       runCommand: async (_command, _args, { cwd }) => {
-        for (const dependency of Object.keys(readJson(path.join(cwd, 'package.json')).dependencies || {})) {
+        const dependencies = readJson(path.join(cwd, 'package.json')).dependencies || {};
+        for (const dependency of Object.keys(dependencies)) {
           fs.mkdirSync(path.join(cwd, 'node_modules', ...dependency.split('/')), { recursive: true });
+        }
+        for (const plugin of DEVRYAN_MANAGED_PLUGINS) {
+          if (!plugin.packageName || !plugin.version || !plugin.entrypoint || !dependencies[plugin.packageName]) {
+            continue;
+          }
+          const packageRoot = path.join(cwd, 'node_modules', ...plugin.packageName.split('/'));
+          const entrypointPath = path.join(packageRoot, ...plugin.entrypoint.split('/'));
+          fs.mkdirSync(path.dirname(entrypointPath), { recursive: true });
+          fs.writeFileSync(path.join(packageRoot, 'package.json'), `${JSON.stringify({
+            name: plugin.packageName,
+            version: plugin.version,
+          })}\n`);
+          fs.writeFileSync(entrypointPath, '');
         }
         return { ok: true, exitCode: 0, stdout: '', stderr: '' };
       },
@@ -124,16 +149,18 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
       const targetPath = path.join(overlay.targetPluginDirectory, pluginFileName);
       requireFile(targetPath, `runtime overlay plugin ${pluginFileName}`);
       if (hashFile(sourcePath) !== hashFile(targetPath)) throw new Error(`Runtime plugin bytes differ: ${pluginFileName}`);
-      if (pluginFileName === DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE) {
-        if (overlayConfig.plugin?.includes(DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC)) {
-          throw new Error(`Source-owned Slim wrapper is registered twice: ${pluginFileName}`);
+      if (DEVRYAN_MANAGED_PROFILE_PLUGIN_FILES.includes(pluginFileName)) {
+        if (overlayConfig.plugin?.includes(`./plugins/${pluginFileName}`)) {
+          throw new Error(`Source-owned profile plugin is registered twice: ${pluginFileName}`);
         }
       } else if (!overlayConfig.plugin?.includes(`./plugins/${pluginFileName}`)) {
         throw new Error(`Runtime plugin is not registered: ${pluginFileName}`);
       }
     }
-    if (!overlayConfig.plugin?.includes(ANTHROPIC_OAUTH_PLUGIN_SPEC)) {
-      throw new Error(`Default Claude plugin is not registered: ${ANTHROPIC_OAUTH_PLUGIN_SPEC}`);
+    for (const profileSpec of DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS) {
+      if (overlayConfig.plugin?.includes(profileSpec)) {
+        throw new Error(`Profile-owned plugin is registered twice in the runtime overlay: ${profileSpec}`);
+      }
     }
     if (!overlayConfig.plugin?.includes(OPENAI_TOOL_SCHEMA_SANITIZER_SPEC)) {
       throw new Error(`Default OpenAI tool schema sanitizer is not registered: ${OPENAI_TOOL_SCHEMA_SANITIZER_SPEC}`);

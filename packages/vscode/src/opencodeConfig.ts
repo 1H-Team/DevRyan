@@ -17,9 +17,15 @@ import {
 } from '../../web/server/lib/opencode/default-plugins.js';
 import {
   buildVisibleSkillPolicy,
+  isRetiredDevRyanSkillName,
   sanitizeAgentSkillPolicy,
   type VisibleSkillPolicy,
 } from '../../web/server/lib/opencode/skill-policy.js';
+import {
+  DEVRYAN_MANAGED_PLUGIN_IDS,
+  getDevRyanManagedPluginForSpec,
+  getDevRyanManagedPluginRegistrationForConfigPath,
+} from '../../web/server/lib/opencode/managed-plugins.js';
 
 const OPENCODE_CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode');
 const AGENT_DIR = path.join(OPENCODE_CONFIG_DIR, 'agents');
@@ -32,9 +38,9 @@ const OPENCHAMBER_SIDECAR_PATH = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 
 const MCP_RECOVERY_MANIFEST_PATH = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'mcp-recovery-vscode.json');
 const RUNTIME_AGENT_OVERLAY_ROOT = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'runtime-agent-overlays');
 const RUNTIME_AGENT_OVERLAY_MANIFEST_PATH = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'runtime-agent-overlays-vscode.json');
-const DEFAULT_OPENAI_HEADER_TIMEOUT_MS = 60_000;
-const DEFAULT_OPENAI_CHUNK_TIMEOUT_MS = 120_000;
-const DEFAULT_OPENAI_REQUEST_TIMEOUT_MS = 600_000;
+const DEFAULT_OPENAI_HEADER_TIMEOUT_MS = 120_000;
+const DEFAULT_OPENAI_CHUNK_TIMEOUT_MS = 300_000;
+const DEFAULT_OPENAI_REQUEST_TIMEOUT_MS = 15 * 60_000;
 const CUSTOM_CONFIG_FILE = process.env.OPENCODE_CONFIG
   ? path.resolve(process.env.OPENCODE_CONFIG)
   : null;
@@ -100,19 +106,7 @@ const SLIM_DEEP_MERGE_KEYS = [
   'acpAgents',
   'companion',
 ];
-const ALLOWED_MANAGED_RUNTIME_PLUGIN_SPEC_PREFIXES = [
-  '@rama_nigg/open-cursor',
-  'context-mode@',
-  'opencode-antigravity-auth',
-];
-const ALLOWED_MANAGED_RUNTIME_PLUGIN_SPECS = new Set([
-  'context-mode',
-  'cursor-acp',
-  'oh-my-opencode-slim',
-  DEVRYAN_SLIM_WRAPPER_PLUGIN_SPEC,
-]);
 const BLOCKED_MANAGED_RUNTIME_MCP_NAMES = [
-  'context7',
   'ghgrep',
   'gh-grep',
   'gh_grep',
@@ -766,6 +760,7 @@ const encodePluginId = (prefix: string, value: string): string => Buffer.from(`$
 
 const isPluginPathSpec = (spec: string): boolean => (
   spec.startsWith('/')
+  || spec.startsWith('file:')
   || spec.startsWith('./')
   || spec.startsWith('../')
   || spec.startsWith('~')
@@ -2215,13 +2210,11 @@ const isAllowedManagedRuntimePluginSpec = (spec: string): boolean => {
   if (!normalized) {
     return false;
   }
-  if (ALLOWED_MANAGED_RUNTIME_PLUGIN_SPECS.has(normalized)) {
-    return true;
-  }
-  if (isAnthropicOAuthPluginSpec(normalized)) {
-    return true;
-  }
-  return ALLOWED_MANAGED_RUNTIME_PLUGIN_SPEC_PREFIXES.some((prefix) => normalized.startsWith(prefix));
+  const plugin = getDevRyanManagedPluginForSpec(normalized);
+  return Boolean(
+    plugin?.profileRegistration
+    && !plugin.legacySpecs.includes(normalized),
+  );
 };
 
 const filterManagedRuntimePluginEntries = (entries: unknown[]): unknown[] => (
@@ -3004,7 +2997,16 @@ export const ensureAnthropicOAuthProviderConfig = ({
     ? [...(targetConfig as Record<string, unknown>).plugin as unknown[]]
     : [];
   const hadPlugin = plugin.some(isAnthropicOAuthPluginSpec);
-  const nextPlugin = reconcileAnthropicOAuthPluginSpecs(plugin);
+  const nextPlugin = reconcileAnthropicOAuthPluginSpecs(
+    plugin,
+    getDevRyanManagedPluginRegistrationForConfigPath(
+      DEVRYAN_MANAGED_PLUGIN_IDS.CLAUDE,
+      {
+        configDirectory: OPENCODE_CONFIG_DIR,
+        configPath: targetPath ?? undefined,
+      },
+    ) || undefined,
+  );
   const provider = isPlainObject((targetConfig as Record<string, unknown>).provider)
     ? (targetConfig as Record<string, unknown>).provider as Record<string, unknown>
     : {};
@@ -3422,7 +3424,7 @@ export const discoverSkills = (workingDirectory?: string): DiscoveredSkill[] => 
     }
   }
 
-  return Array.from(skills.values());
+  return Array.from(skills.values()).filter((skill) => !isRetiredDevRyanSkillName(skill?.name));
 };
 
 export const getSkillSources = (
@@ -3545,6 +3547,9 @@ const validateSkillName = (skillName: string): void => {
 
 export const createSkill = (skillName: string, config: Record<string, unknown>, workingDirectory?: string, scope?: SkillScope): void => {
   ensureSkillDirs();
+  if (isRetiredDevRyanSkillName(skillName)) {
+    throw new Error(`Skill "${skillName}" is retired from DevRyan's managed skill runtime`);
+  }
   validateSkillName(skillName);
   
   // Check if skill already exists

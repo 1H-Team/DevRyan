@@ -16,10 +16,14 @@ const normalizeDirectory = (directory: string | null | undefined): string | null
   return trimmed.length > 0 ? trimmed : null;
 };
 
-export const normalizeToolIds = (toolIds: unknown[]): string[] => (
-  [...new Set(toolIds.filter((tool): tool is string => typeof tool === 'string' && tool !== 'invalid'))]
-    .sort((a, b) => a.localeCompare(b))
-);
+export const normalizeToolIds = (toolIds: unknown[]): string[] => {
+  const normalized = toolIds.flatMap((tool) => {
+    if (typeof tool !== 'string') return [];
+    const trimmed = tool.trim();
+    return trimmed && trimmed !== 'invalid' ? [trimmed] : [];
+  });
+  return [...new Set(normalized)].sort((a, b) => a.localeCompare(b));
+};
 
 export const getToolPermissionAliases = (toolId: string): string[] => {
   const group = TOOL_PERMISSION_ALIAS_GROUPS.find((aliases) => aliases.includes(toolId));

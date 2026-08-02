@@ -356,7 +356,13 @@ describe('OpenCode proxy SSE forwarding', () => {
           'content-type': 'application/json',
           'x-openchamber-message-id': 'msg-user',
         },
-        body: JSON.stringify({ messageID: 'msg-user', parts: [{ type: 'text', text: 'Test prompt' }] }),
+        body: JSON.stringify({
+          messageID: 'msg-user',
+          model: { providerID: 'openai', modelID: 'gpt-5.6' },
+          agent: 'builder',
+          variant: 'high',
+          parts: [{ type: 'text', text: 'Test prompt' }],
+        }),
       }
     );
 
@@ -366,6 +372,12 @@ describe('OpenCode proxy SSE forwarding', () => {
       sessionId: 'ses-1',
       userMessageId: 'msg-user',
       directory: '/project',
+      model: {
+        providerID: 'openai',
+        modelID: 'gpt-5.6',
+        agent: 'builder',
+        variant: 'high',
+      },
       durationsMs: {
         send_started_to_prompt_accepted: 250,
       },

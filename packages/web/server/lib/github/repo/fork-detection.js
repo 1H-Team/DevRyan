@@ -1,4 +1,5 @@
 import { resolveGitHubRepoFromDirectory } from './index.js';
+import { classifyGitHubApiError } from '../rate-limit.js';
 
 const REPO_METADATA_TTL_MS = 5 * 60_000;
 const REPO_METADATA_CACHE_MAX_ENTRIES = 200;
@@ -21,7 +22,7 @@ const normalizeRepoKey = (owner, repo) => {
   return `${o}/${r}`;
 };
 
-const getRepoMetadata = async (octokit, repo) => {
+export const getRepoMetadata = async (octokit, repo) => {
   const repoKey = normalizeRepoKey(repo?.owner, repo?.repo);
   if (!repoKey) return null;
 
@@ -39,12 +40,23 @@ const getRepoMetadata = async (octokit, repo) => {
     setRepoMetadataCache(repoKey, data);
     return data;
   } catch (error) {
+    if (classifyGitHubApiError(error) === 'rate_limit') {
+      throw error;
+    }
     if (error?.status === 403 || error?.status === 404) {
       setRepoMetadataCache(repoKey, null);
       return null;
     }
     throw error;
   }
+};
+
+export const getRepoDefaultBranch = async (octokit, repo) => {
+  const metadata = await getRepoMetadata(octokit, repo);
+  const defaultBranch = typeof metadata?.default_branch === 'string'
+    ? metadata.default_branch.trim()
+    : '';
+  return defaultBranch || null;
 };
 
 /**

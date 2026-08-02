@@ -338,12 +338,43 @@ export interface GitWorktreeValidationResult {
 }
 
 export interface GitWorktreeBootstrapStatus {
-  status: 'pending' | 'ready' | 'failed';
+  operationId: string | null;
+  idempotencyKey: string | null;
+  directory: string;
+  metadata?: Record<string, unknown>;
+  stage:
+    | 'prepare_remote'
+    | 'create_worktree'
+    | 'sync_project_metadata'
+    | 'populate_worktree'
+    | 'configure_upstream'
+    | 'run_project_setup'
+    | 'run_requested_setup'
+    | 'complete';
+  status:
+    | 'queued'
+    | 'running'
+    | 'ready'
+    | 'ready_with_warnings'
+    | 'failed'
+    | 'needs_attention'
+    | 'removed'
+    | 'not_applicable';
   error: string | null;
   updatedAt: number;
+  attempt: number;
+  warnings: Array<{ stage: string; message: string; at: number }>;
+  stages: Record<string, {
+    status: 'queued' | 'running' | 'completed' | 'warning' | 'failed' | 'needs_attention' | 'skipped';
+    startedAt: number | null;
+    finishedAt: number | null;
+    error: string | null;
+  }>;
 }
 
 export interface CreateGitWorktreePayload {
+  /** Stable caller-generated key used to join/replay worktree creation safely. */
+  idempotencyKey?: string;
   mode?: 'new' | 'existing';
   /** Worktree folder name (falls back to OpenCode name generation when omitted). */
   worktreeName?: string;
@@ -368,6 +399,14 @@ export interface CreateGitWorktreePayload {
 
 export interface GitWorktreeCreateResult {
   head: string;
+  name: string;
+  branch: string;
+  path: string;
+  operationId: string;
+  bootstrap: GitWorktreeBootstrapStatus;
+}
+
+export interface GitWorktreePreviewResult {
   name: string;
   branch: string;
   path: string;
@@ -452,8 +491,11 @@ export interface GitWorktreeAPI {
   primaryRoot?(directory: string): Promise<string>;
   validate?(directory: string, payload: CreateGitWorktreePayload): Promise<GitWorktreeValidationResult>;
   bootstrapStatus?(directory: string): Promise<GitWorktreeBootstrapStatus>;
-  preview?(directory: string, payload: CreateGitWorktreePayload): Promise<GitWorktreeCreateResult>;
+  preview?(directory: string, payload: CreateGitWorktreePayload): Promise<GitWorktreePreviewResult>;
   create?(directory: string, payload: CreateGitWorktreePayload): Promise<GitWorktreeCreateResult>;
+  operation?(operationId: string): Promise<GitWorktreeBootstrapStatus>;
+  activeOperations?(): Promise<GitWorktreeBootstrapStatus[]>;
+  retry?(operationId: string): Promise<GitWorktreeBootstrapStatus>;
   remove?(directory: string, payload: RemoveGitWorktreePayload): Promise<{ success: boolean }>;
 }
 
@@ -482,8 +524,11 @@ export interface GitAPI {
   getPrimaryWorktreeRoot?(directory: string): Promise<string>;
   validateGitWorktree?(directory: string, payload: CreateGitWorktreePayload): Promise<GitWorktreeValidationResult>;
   getGitWorktreeBootstrapStatus?(directory: string): Promise<GitWorktreeBootstrapStatus>;
-  previewGitWorktree?(directory: string, payload: CreateGitWorktreePayload): Promise<GitWorktreeCreateResult>;
+  previewGitWorktree?(directory: string, payload: CreateGitWorktreePayload): Promise<GitWorktreePreviewResult>;
   createGitWorktree?(directory: string, payload: CreateGitWorktreePayload): Promise<GitWorktreeCreateResult>;
+  getGitWorktreeBootstrapOperation?(operationId: string): Promise<GitWorktreeBootstrapStatus>;
+  listActiveGitWorktreeBootstrapOperations?(): Promise<GitWorktreeBootstrapStatus[]>;
+  retryGitWorktreeBootstrapOperation?(operationId: string): Promise<GitWorktreeBootstrapStatus>;
   deleteGitWorktree?(directory: string, payload: RemoveGitWorktreePayload): Promise<{ success: boolean }>;
   createGitCommit(directory: string, message: string, options?: CreateGitCommitOptions): Promise<GitCommitResult>;
   gitPush(directory: string, options?: { remote?: string; branch?: string; options?: string[] | Record<string, unknown> }): Promise<GitPushResult>;
@@ -637,6 +682,7 @@ export interface SettingsPayload {
   homeDirectory?: string;
   opencodeBinary?: string;
   desktopKeepAwakeEnabled?: boolean;
+  agentBrowserControlEnabled?: boolean;
   projects?: ProjectEntry[];
   activeProjectId?: string;
   approvedDirectories?: string[];
@@ -726,8 +772,86 @@ export interface NotificationsAPI {
   canNotify?: () => boolean | Promise<boolean>;
 }
 
+export interface DiagnosticsStatus {
+  enabled: true;
+  directory: string;
+  diskBytes: number;
+  maxBytes: number;
+  segmentCount: number;
+  sessionCount: number;
+  queuedRecords: number;
+  writtenRecords: number;
+  gapRecords: number;
+  lastError: string | null;
+}
+
+export type DiagnosticsExportScope =
+  | { scope: 'runtime' }
+  | { scope: 'task'; sessionID: string; directory?: string };
+
+export interface DiagnosticsExportResult {
+  cancelled: boolean;
+  fileName: string;
+}
+
 export interface DiagnosticsAPI {
-  downloadLogs(): Promise<{ fileName: string; content: string }>;
+  getStatus(): Promise<DiagnosticsStatus>;
+  export(scope: DiagnosticsExportScope): Promise<DiagnosticsExportResult>;
+  sanitizeText(text: string): Promise<string>;
+  clear(): Promise<DiagnosticsStatus>;
+}
+
+export interface EvidenceProjectSetting {
+  enabled: boolean;
+  projectID: string;
+  directory: string;
+}
+
+export interface TurnEvidenceCheckpoint {
+  checkpointID: string;
+  directory: string;
+  sessionID: string;
+  turnID: string;
+  userMessageID: string | null;
+  status: 'capturing_before' | 'capturing_after' | 'complete' | 'gap';
+  contended: boolean;
+  gapReason: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface TurnEvidenceFileSummary {
+  path: string;
+  oldPath?: string;
+  changeType?: 'renamed';
+  additions: number | null;
+  deletions: number | null;
+  binary: boolean;
+}
+
+export interface TurnEvidenceDiffSummary {
+  checkpointID: string;
+  contended: boolean;
+  files: TurnEvidenceFileSummary[];
+}
+
+export interface TurnEvidenceFileDiff {
+  checkpointID: string;
+  contended: boolean;
+  file: TurnEvidenceFileSummary & {
+    kind: 'patch' | 'metadata';
+    patch?: string;
+    size?: number;
+    sha256?: string;
+  };
+}
+
+export interface EvidenceAPI {
+  getProjectSetting(directory: string): Promise<EvidenceProjectSetting>;
+  setProjectSetting(directory: string, enabled: boolean): Promise<EvidenceProjectSetting>;
+  clearProject(directory: string): Promise<{ removed: number }>;
+  listTurns(sessionID: string, directory?: string): Promise<TurnEvidenceCheckpoint[]>;
+  getDiff(checkpointID: string, file?: string): Promise<TurnEvidenceDiffSummary | TurnEvidenceFileDiff>;
 }
 
 export interface ToolManifestEntry {
@@ -1111,6 +1235,7 @@ export interface RuntimeAPIs {
   github?: GitHubAPI;
   push?: PushAPI;
   diagnostics?: DiagnosticsAPI;
+  evidence?: EvidenceAPI;
   tools: ToolsAPI;
   editor?: EditorAPI;
   vscode?: VSCodeAPI;
@@ -1123,7 +1248,14 @@ export type RuntimeAPISelector<TValue> = (apis: RuntimeAPIs) => TValue;
 
 export type PluginScope = 'user' | 'project';
 export type PluginParsedKind = 'npm' | 'path';
-export type DevRyanDefaultPluginId = 'oh-my-opencode-slim' | 'opencode-with-claude' | 'openai-tool-schema-sanitizer';
+export type DevRyanDefaultPluginId =
+  | 'opencode-antigravity-auth'
+  | '@rama_nigg/open-cursor'
+  | 'oh-my-opencode-slim'
+  | 'opencode-with-claude'
+  | 'context-mode'
+  | 'superpowers'
+  | 'openai-tool-schema-sanitizer';
 
 export interface DevRyanDefaultPlugin {
   id: string;
@@ -1132,7 +1264,7 @@ export interface DevRyanDefaultPlugin {
   shippedSpec: string;
   effectiveSpec: string;
   version: string | null;
-  delivery: 'npm' | 'bundled-file';
+  delivery: 'installed-local' | 'bundled-file' | 'curated-skills';
   sourcePath: string;
   configuredSourcePath?: string;
   kind: 'default';

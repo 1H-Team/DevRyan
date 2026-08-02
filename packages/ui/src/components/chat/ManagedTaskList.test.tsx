@@ -7,6 +7,7 @@ import {
   createManagedTaskRecord,
   createManagedTaskResultEnvelope,
   toManagedTaskEvent,
+  type ManagedTaskRecord,
   type ManagedTaskStatus,
 } from '@openchamber/orchestration-runtime';
 
@@ -23,7 +24,7 @@ import {
   shouldRenderManagedTaskList,
 } from './managedTaskListWindow';
 import { navigateToManagedTaskChild } from './managedTaskNavigation';
-import { getRetryInPlaceFollowUpTaskId } from './managedTaskRetryLineage';
+import { getSameChildFollowUpTaskId } from './managedTaskRetryLineage';
 
 mock.module('@/components/ui/ProviderLogo', () => ({
   ProviderLogo: ({ providerId }: { providerId: string }) => React.createElement('img', { src: `/logos/${providerId}.svg` }),
@@ -91,12 +92,16 @@ describe('managed task presentation', () => {
     expect(dict['chat.managedTasks.summary.running']).toBe('Running...');
   });
 
-  test('keeps an in-place retry in the original Agent Dispatch row', () => {
-    expect(getRetryInPlaceFollowUpTaskId({
+  test('keeps same-child recovery in the original Agent Dispatch row', () => {
+    expect(getSameChildFollowUpTaskId({
+      action: 'resume',
+      followUpTaskId: 'dvr_task_attempt_2',
+    })).toBe('dvr_task_attempt_2');
+    expect(getSameChildFollowUpTaskId({
       action: 'retry_in_place',
       followUpTaskId: 'dvr_task_attempt_2',
     })).toBe('dvr_task_attempt_2');
-    expect(getRetryInPlaceFollowUpTaskId({
+    expect(getSameChildFollowUpTaskId({
       action: 'retry',
       followUpTaskId: 'dvr_task_fresh_child',
     })).toBeNull();
@@ -252,6 +257,77 @@ describe('managed task presentation', () => {
     expect(html).toContain('Try Again');
   });
 
+  test('renders independent recovery cards for designer and fixer siblings', () => {
+    const tasks = [
+      {
+        ...terminalTask('failed'),
+        taskId: 'dvr_task_designer',
+        idempotencyKey: 'designer',
+        childSessionId: 'ses_child_designer',
+        dispatchGroupId: 'msg_parent',
+        agent: 'designer',
+        label: 'Implement booking table',
+        failureReason: 'Usage limit reached',
+      },
+      {
+        ...terminalTask('failed'),
+        taskId: 'dvr_task_fixer_a',
+        idempotencyKey: 'fixer-a',
+        childSessionId: 'ses_child_fixer_a',
+        dispatchGroupId: 'msg_parent',
+        sequence: 2,
+        agent: 'fixer',
+        label: 'Implement query gates',
+        attempt: 2,
+        priorTaskId: 'dvr_task_fixer_a_initial',
+        executionKind: 'resume',
+      },
+      {
+        ...terminalTask('failed'),
+        taskId: 'dvr_task_fixer_b',
+        idempotencyKey: 'fixer-b',
+        childSessionId: 'ses_child_fixer_b',
+        dispatchGroupId: 'msg_parent',
+        sequence: 3,
+        agent: 'fixer',
+        label: 'Implement editor RPC',
+        attempt: 2,
+        priorTaskId: 'dvr_task_fixer_b_initial',
+        executionKind: 'resume',
+      },
+    ] satisfies ManagedTaskRecord[];
+    const rows = tasks.map((task, index) => {
+      const envelope = createManagedTaskResultEnvelope(task, {
+        sequence: index + 1,
+        createdAt: 3_000 + index,
+        resumable: true,
+      });
+      return {
+        envelope,
+        task: toManagedTaskEvent(task, envelope).properties.task,
+      };
+    });
+
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        {rows.map(({ envelope, task }) => (
+          <ManagedTaskRowView
+            key={task.taskId}
+            task={task}
+            resultEnvelope={envelope}
+            providers={[]}
+            onOpenChild={() => undefined}
+            onRetryInPlace={() => undefined}
+          />
+        ))}
+      </I18nProvider>,
+    );
+
+    expect(rows.every(({ task }) => task.agentRetryAvailable === false)).toBe(true);
+    expect(html.match(/Choose a model to continue this subtask/g)).toHaveLength(3);
+    expect(html.match(/Try Again/g)).toHaveLength(3);
+  });
+
   test('shows the selected model and thinking after same-child manual recovery', () => {
     const source = {
       ...toManagedTaskEvent({
@@ -384,7 +460,7 @@ describe('managed task presentation', () => {
     expect(source).toContain('<ManagedTaskRow key={taskId} taskId={taskId}');
   });
 
-  test('collects start and retry tasks while omitting wait-only tool calls', () => {
+  test('collects fresh-child dispatches while omitting same-child resume and wait controls', () => {
     const parts = [
       {
         id: 'start-part',
@@ -411,6 +487,15 @@ describe('managed task presentation', () => {
         state: {
           input: { action: 'retry' },
           output: JSON.stringify({ followUpTask: { task: { taskId: 'dvr_task_retry' } } }),
+        },
+      },
+      {
+        id: 'resume-part',
+        type: 'tool',
+        tool: 'devryan_task',
+        state: {
+          input: { action: 'resume' },
+          output: JSON.stringify({ followUpTask: { task: { taskId: 'dvr_task_resume' } } }),
         },
       },
     ];

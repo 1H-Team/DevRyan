@@ -21,7 +21,9 @@ import type {
   GitWorktreeInfo,
   CreateGitWorktreePayload,
   GitWorktreeValidationResult,
+  GitWorktreeBootstrapStatus,
   GitWorktreeCreateResult,
+  GitWorktreePreviewResult,
   RemoveGitWorktreePayload,
   GitCommitResult,
   CreateGitCommitOptions,
@@ -144,14 +146,14 @@ export const createVSCodeGitAPI = (): GitAPI => ({
     });
   },
 
-  getGitWorktreeBootstrapStatus: async (directory: string): Promise<{ status: 'pending' | 'ready' | 'failed'; error: string | null; updatedAt: number }> => {
-    return sendBridgeMessage<{ status: 'pending' | 'ready' | 'failed'; error: string | null; updatedAt: number }>('api:git/worktrees/bootstrap-status', {
+  getGitWorktreeBootstrapStatus: async (directory: string): Promise<GitWorktreeBootstrapStatus> => {
+    return sendBridgeMessage<GitWorktreeBootstrapStatus>('api:git/worktrees/bootstrap-status', {
       directory,
     });
   },
 
-  previewGitWorktree: async (directory: string, payload: CreateGitWorktreePayload): Promise<GitWorktreeCreateResult> => {
-    return sendBridgeMessage<GitWorktreeCreateResult>('api:git/worktrees/preview', {
+  previewGitWorktree: async (directory: string, payload: CreateGitWorktreePayload): Promise<GitWorktreePreviewResult> => {
+    return sendBridgeMessage<GitWorktreePreviewResult>('api:git/worktrees/preview', {
       directory,
       method: 'POST',
       ...(payload || {}),
@@ -164,6 +166,18 @@ export const createVSCodeGitAPI = (): GitAPI => ({
       method: 'POST',
       ...(payload || {}),
     });
+  },
+
+  getGitWorktreeBootstrapOperation: async (operationId: string): Promise<GitWorktreeBootstrapStatus> => {
+    return sendBridgeMessage<GitWorktreeBootstrapStatus>('api:git/worktrees/operation', { operationId });
+  },
+
+  listActiveGitWorktreeBootstrapOperations: async (): Promise<GitWorktreeBootstrapStatus[]> => {
+    return sendBridgeMessage<GitWorktreeBootstrapStatus[]>('api:git/worktrees/operations');
+  },
+
+  retryGitWorktreeBootstrapOperation: async (operationId: string): Promise<GitWorktreeBootstrapStatus> => {
+    return sendBridgeMessage<GitWorktreeBootstrapStatus>('api:git/worktrees/retry', { operationId });
   },
 
   deleteGitWorktree: async (directory: string, payload: RemoveGitWorktreePayload): Promise<{ success: boolean }> => {
@@ -403,6 +417,16 @@ export const createVSCodeGitAPI = (): GitAPI => ({
         ...(payload || {}),
       });
     },
+    bootstrapStatus: async (directory: string): Promise<GitWorktreeBootstrapStatus> => {
+      return sendBridgeMessage<GitWorktreeBootstrapStatus>('api:git/worktrees/bootstrap-status', { directory });
+    },
+    preview: async (directory: string, payload: CreateGitWorktreePayload): Promise<GitWorktreePreviewResult> => {
+      return sendBridgeMessage<GitWorktreePreviewResult>('api:git/worktrees/preview', {
+        directory,
+        method: 'POST',
+        ...(payload || {}),
+      });
+    },
     create: async (directory: string, payload: CreateGitWorktreePayload): Promise<GitWorktreeCreateResult> => {
       return sendBridgeMessage<GitWorktreeCreateResult>('api:git/worktrees', {
         directory,
@@ -419,6 +443,15 @@ export const createVSCodeGitAPI = (): GitAPI => ({
           deleteLocalBranch: payload.deleteLocalBranch === true,
         },
       });
+    },
+    operation: async (operationId: string): Promise<GitWorktreeBootstrapStatus> => {
+      return sendBridgeMessage<GitWorktreeBootstrapStatus>('api:git/worktrees/operation', { operationId });
+    },
+    activeOperations: async (): Promise<GitWorktreeBootstrapStatus[]> => {
+      return sendBridgeMessage<GitWorktreeBootstrapStatus[]>('api:git/worktrees/operations');
+    },
+    retry: async (operationId: string): Promise<GitWorktreeBootstrapStatus> => {
+      return sendBridgeMessage<GitWorktreeBootstrapStatus>('api:git/worktrees/retry', { operationId });
     },
   },
 });

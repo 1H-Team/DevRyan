@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT } from '@openchamber/orchestration-runtime';
+import { MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT } from '@openchamber/orchestration-runtime';
 
 import { createWebManagedOpenCodeExecutor } from './open-code-executor.js';
 
@@ -169,7 +169,7 @@ describe('web managed OpenCode executor transport', () => {
       agent: 'fixer',
       model: { providerID: 'github-copilot', modelID: 'gpt-4.1' },
       variant: 'high',
-      parts: [{ type: 'text', text: MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT }],
+      parts: [{ type: 'text', text: MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT }],
     });
     // OpenCode must mint the id. A task-derived one is not ordered like an
     // OpenCode id, and a continuation that sorts below the session's latest

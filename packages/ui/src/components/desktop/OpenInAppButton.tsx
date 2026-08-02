@@ -51,7 +51,7 @@ const AppIcon = ({
       <img
         src={src}
         alt=""
-        className="h-4 w-4 rounded-sm"
+        className="h-[17px] w-[17px] rounded-sm"
         onError={() => setFailed(true)}
       />
     );
@@ -60,7 +60,7 @@ const AppIcon = ({
   return (
     <span
       className={cn(
-        'h-4 w-4 rounded-sm flex items-center justify-center',
+        'h-[17px] w-[17px] rounded-sm flex items-center justify-center',
         'bg-[var(--surface-muted)] text-[9px] font-medium text-muted-foreground'
       )}
     >

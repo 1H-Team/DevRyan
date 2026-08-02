@@ -17,7 +17,7 @@ import {
   useManagedOrchestrationStore,
 } from '@/stores/useManagedOrchestrationStore';
 import { navigateToManagedTaskChild } from './managedTaskNavigation';
-import { getRetryInPlaceFollowUpTaskId } from './managedTaskRetryLineage';
+import { getSameChildFollowUpTaskId } from './managedTaskRetryLineage';
 import { ModelRecoveryCard } from './ModelRecoveryCard';
 import type { ControlledModelPickerProvider } from './ControlledModelPicker';
 import { formatEffortLabel } from './mobileControlsUtils';
@@ -220,7 +220,7 @@ export const ManagedTaskRow = React.memo(({
     () => managedOrchestrationSelectors.task(task?.priorTaskId ?? ''),
     [task?.priorTaskId],
   ));
-  const retryFollowUpTaskId = getRetryInPlaceFollowUpTaskId(resultEnvelope);
+  const sameChildFollowUpTaskId = getSameChildFollowUpTaskId(resultEnvelope);
   const childStatus = useSessionStatus(task?.childSessionId ?? '', task?.directory ?? undefined);
   const childActive = childStatus?.type === 'busy' || childStatus?.type === 'retry';
 
@@ -232,8 +232,8 @@ export const ManagedTaskRow = React.memo(({
     if (task) onContentChange?.();
   }, [onContentChange, task]);
 
-  if (retryFollowUpTaskId) {
-    return <ManagedTaskRow taskId={retryFollowUpTaskId} onContentChange={onContentChange} />;
+  if (sameChildFollowUpTaskId) {
+    return <ManagedTaskRow taskId={sameChildFollowUpTaskId} onContentChange={onContentChange} />;
   }
   if (!task) return null;
   return (

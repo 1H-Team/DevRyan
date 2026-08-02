@@ -69,6 +69,7 @@ import { resolveSessionRowAuxAction } from './sessionRowAuxAction';
 import { hasTreeExpansionStateChange } from './sessionNodeMemo';
 import { SessionSidebarMotionRow } from './SessionSidebarMotionRow';
 import { getAgentIconColor } from '@/lib/agentColors';
+import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 
 type Folder = { id: string; name: string; sessionIds: string[] };
 
@@ -349,6 +350,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   );
   const directoryStore = useDirectoryStore(sessionDirectory ?? undefined);
   const sync = useSync();
+  const { diagnostics } = useRuntimeAPIs();
 
   const selectionModeEnabled = useSessionMultiSelectStore((state) => state.enabled);
   const isRowSelected = useSessionMultiSelectStore(
@@ -610,6 +612,26 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     }
     await doExportSession(false);
   }, [doExportSession, node.children.length]);
+  const handleExportDiagnostics = React.useCallback(async () => {
+    if (!diagnostics) {
+      toast.error(t('sessions.sidebar.session.exportDiagnostics.unavailable'));
+      return;
+    }
+    try {
+      const result = await diagnostics.export({
+        scope: 'task',
+        sessionID: session.id,
+        directory: sessionDirectory || undefined,
+      });
+      if (!result.cancelled) {
+        toast.success(t('sessions.sidebar.session.exportDiagnostics.success', { fileName: result.fileName }));
+      }
+    } catch (error) {
+      toast.error(t('sessions.sidebar.session.exportDiagnostics.failed'), {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    }
+  }, [diagnostics, session.id, sessionDirectory, t]);
 
   const handleOpenMiniChatWindow = React.useCallback(() => {
     if (!sessionDirectory) return;
@@ -984,6 +1006,10 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
       <DropdownMenuItem onClick={() => { void handleExportSession(); }} className="[&>svg]:mr-1">
         <RiDownloadLine className="mr-1 h-4 w-4" />
         {t('sessions.sidebar.session.menu.exportMarkdown')}
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => { void handleExportDiagnostics(); }} className="[&>svg]:mr-1">
+        <RiShieldLine className="mr-1 h-4 w-4" />
+        {t('sessions.sidebar.session.menu.exportDiagnostics')}
       </DropdownMenuItem>
 
       {sessionDirectory && !archivedBucket ? (() => {

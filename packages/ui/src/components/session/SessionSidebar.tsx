@@ -86,6 +86,7 @@ import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
 import type { GitHubAuthStatus } from '@/lib/api/types';
+import { markWorktreeBootstrapPending } from '@/lib/worktrees/worktreeBootstrap';
 
 const PROJECT_COLLAPSE_STORAGE_KEY = 'oc.sessions.projectCollapse';
 const GROUP_ORDER_STORAGE_KEY = 'oc.sessions.groupOrder';
@@ -867,7 +868,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     [normalizedProjects],
   );
 
-  const { github } = useRuntimeAPIs();
+  const { github, git } = useRuntimeAPIs();
   const githubAuthStatus = useGitHubAuthStore((state) => state.status);
   const setGitHubAuthStatus = useGitHubAuthStore((state) => state.setStatus);
   const githubAuthChecked = useGitHubAuthStore((state) => state.hasChecked);
@@ -876,6 +877,31 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const ensurePrStatusEntry = useGitHubPrStatusStore((state) => state.ensureEntry);
   const setPrStatusParams = useGitHubPrStatusStore((state) => state.setParams);
   const refreshPrStatusTargets = useGitHubPrStatusStore((state) => state.refreshTargets);
+
+  React.useEffect(() => {
+    const listActive = git.worktree?.activeOperations
+      ?? git.listActiveGitWorktreeBootstrapOperations;
+    if (!listActive) return;
+    let cancelled = false;
+    void listActive()
+      .then((operations) => {
+        if (cancelled || operations.length === 0) return;
+        const projectPaths = new Set(normalizedProjectPaths);
+        const matching = operations.find((operation) => {
+          const primary = typeof operation.metadata?.primaryWorktree === 'string'
+            ? normalizePath(operation.metadata.primaryWorktree)
+            : '';
+          return !primary || projectPaths.has(primary);
+        });
+        if (!matching) return;
+        markWorktreeBootstrapPending(matching.directory, matching);
+        setNewWorktreeDialogOpen(true);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [git.listActiveGitWorktreeBootstrapOperations, git.worktree, normalizedProjectPaths]);
 
   useProjectRepoStatus({
     normalizedProjects,
@@ -1892,7 +1918,11 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
                 setCurrentSession(options.sessionId);
                 return;
               }
-              openNewSessionDraft({ directoryOverride: worktreePath });
+              openNewSessionDraft({
+                selectedProjectId: options?.projectId,
+                directoryOverride: worktreePath,
+                preserveDirectoryOverride: true,
+              });
             }}
           />
         </LazyViewBoundary>

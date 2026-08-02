@@ -387,7 +387,7 @@ describe('control copy', () => {
   });
 
   test('authors notification template labels instead of relying on CSS capitalization', () => {
-    expect(dict['settings.notifications.page.template.event.completion']).toBe('Completion');
+    expect(dict['settings.notifications.page.template.event.completion']).toBe('Session Completion');
     expect(dict['settings.notifications.page.template.event.error']).toBe('Error');
     expect(dict['settings.notifications.page.template.event.question']).toBe('Question');
   });

@@ -357,11 +357,18 @@ const sanitizeRendererTimingMetadata = (metadata: Record<string, unknown> | unde
         }
     }
 
+    const stalledForMs = metadata.stalledForMs;
+    if (typeof stalledForMs === 'number' && Number.isFinite(stalledForMs) && stalledForMs >= 0) {
+        sanitized.stalledForMs = Math.trunc(stalledForMs);
+    }
+
     return Object.keys(sanitized).length > 0 ? sanitized : undefined;
 };
 
 export const postTurnTimingMark = (input: TurnTimingMarkInput): void => {
-    if (!streamDebugEnabled() || typeof fetch !== 'function') {
+    const recordsOperationalIncident = input.mark === 'renderer_tool_input_stall_confirmed'
+        || input.mark === 'renderer_provider_inference_stall_confirmed';
+    if ((!recordsOperationalIncident && !streamDebugEnabled()) || typeof fetch !== 'function') {
         return;
     }
 

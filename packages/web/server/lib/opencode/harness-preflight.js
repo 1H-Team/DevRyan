@@ -20,7 +20,6 @@ const KNOWN_PERMISSION_KEYS = new Set([
   'bash',
   'clarification',
   'clarification_*',
-  'context7_*',
   'council_session',
   'doom_loop',
   'edit',

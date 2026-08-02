@@ -21,6 +21,7 @@ import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { useUIStore } from '@/stores/useUIStore';
 import { useDeviceInfo } from '@/lib/device';
+import { handleClosableTabAuxClick } from './sortableTabsStripAuxClick';
 
 export type SortableTabsStripItem = {
   id: string;
@@ -38,7 +39,7 @@ type SortableTabsStripProps = {
   onClose?: (id: string) => void;
   onReorder?: (activeId: string, overId: string) => void;
   layoutMode?: 'scrollable' | 'fit';
-  variant?: 'default' | 'active-pill' | 'animated';
+  variant?: 'default' | 'active-pill' | 'animated' | 'soft-pill';
   activePillInsetClassName?: string;
   activePillButtonClassName?: string;
   inactiveTabsIconOnly?: boolean;
@@ -113,12 +114,15 @@ export const SortableTabsStrip: React.FC<SortableTabsStripProps> = ({
   const isDefaultVariant = variant === 'default';
   const isActivePillVariant = variant === 'active-pill';
   const isAnimatedVariant = variant === 'animated';
-  const usesActivePillIndicator = isActivePillVariant || isAnimatedVariant;
+  const isSoftPillVariant = variant === 'soft-pill';
+  const usesActivePillIndicator = isActivePillVariant || isAnimatedVariant || isSoftPillVariant;
   const useUnderlineIndicator = isDefaultVariant;
   const usesIndicator = usesActivePillIndicator || useUnderlineIndicator;
-  const useIntrinsicPillSizing = isActivePillVariant && isScrollable;
-  const showPillTrackBackground = usesActivePillIndicator;
-  const shouldAnimateActivePill = animateActivePill ?? isAnimatedVariant;
+  const useIntrinsicPillSizing = (isActivePillVariant || isSoftPillVariant) && isScrollable;
+  // Soft-pill deliberately has no recessed track — the active pill floats on the
+  // surface background. That is the key visual difference from `active-pill`.
+  const showPillTrackBackground = usesActivePillIndicator && !isSoftPillVariant;
+  const shouldAnimateActivePill = animateActivePill ?? (isAnimatedVariant || isSoftPillVariant);
   const reorderEnabled = typeof onReorder === 'function';
   const Wrapper = reorderEnabled ? SortableTabWrapper : StaticTabWrapper;
   const tabRefs = React.useRef<Map<string, HTMLElement>>(new Map());
@@ -328,9 +332,9 @@ export const SortableTabsStrip: React.FC<SortableTabsStripProps> = ({
         className={cn(
           'relative flex h-full min-w-0 flex-1',
           usesActivePillIndicator ? 'items-center overflow-x-hidden overflow-y-hidden' : 'items-stretch',
-          usesActivePillIndicator && '@container/pill-tabs',
-          usesActivePillIndicator && 'pill-tabs__track',
-          usesActivePillIndicator && (activePillInsetClassName ?? 'gap-0.5 py-0.5'),
+          usesActivePillIndicator && (isSoftPillVariant ? '@container/soft-tabs' : '@container/pill-tabs'),
+          usesActivePillIndicator && (isSoftPillVariant ? 'soft-tabs__track' : 'pill-tabs__track'),
+          usesActivePillIndicator && (activePillInsetClassName ?? (isSoftPillVariant ? 'gap-1 py-0.5' : 'gap-0.5 py-0.5')),
           useUnderlineIndicator && 'items-center overflow-y-hidden',
           showPillTrackBackground && 'rounded-[10px] [corner-shape:squircle] supports-[corner-shape:squircle]:rounded-[50px] bg-[color-mix(in_srgb,var(--foreground)_2%,transparent)] p-0.5 gap-0.5',
           isScrollable
@@ -344,8 +348,10 @@ export const SortableTabsStrip: React.FC<SortableTabsStripProps> = ({
         {usesActivePillIndicator && pillRect ? (
           <div
             className={cn(
-              'pointer-events-none absolute left-0 top-0 z-0 rounded-[9px] [corner-shape:squircle] supports-[corner-shape:squircle]:rounded-[50px] bg-[var(--surface-elevated)]',
-              'border border-border/60'
+              'pointer-events-none absolute left-0 top-0 z-0 [corner-shape:squircle] supports-[corner-shape:squircle]:rounded-[50px]',
+              isSoftPillVariant
+                ? 'rounded-[10px] bg-[color-mix(in_srgb,var(--foreground)_6%,transparent)]'
+                : 'rounded-[9px] bg-[var(--surface-elevated)] border border-border/60'
             )}
             style={{
               transform: `translate3d(${pillRect.left}px, ${pillRect.top}px, 0)`,
@@ -374,7 +380,14 @@ export const SortableTabsStrip: React.FC<SortableTabsStripProps> = ({
           const shouldShowIcon = Boolean(item.icon) && (!iconOnlyActiveTab || isActive);
           const useIntrinsicActiveTab = inactiveTabsIconOnly && usesActivePillIndicator && isActive && !isScrollable && !useIntrinsicPillSizing;
           const closable = item.closable !== false && Boolean(onClose);
-          const closeReplacesIcon = closable && Boolean(item.icon);
+          // Soft-pill keeps the icon and the close control side by side instead of
+          // swapping the icon out for an X on hover.
+          const closeReplacesIcon = closable && Boolean(item.icon) && !isSoftPillVariant;
+          // The close control is hover-revealed on pointer devices — including on the
+          // active tab. Touch devices have no hover, so it stays visible there.
+          const closeControlVisibilityClass = alwaysShowCloseControls
+            ? 'opacity-100'
+            : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100';
           const wrapperClassName = (isScrollable || useIntrinsicPillSizing)
             ? undefined
             : usesActivePillIndicator
@@ -386,6 +399,13 @@ export const SortableTabsStrip: React.FC<SortableTabsStripProps> = ({
             <Wrapper key={item.id} id={item.id} className={wrapperClassName}>
               <div
                 ref={(element) => setTabRef(item.id, element)}
+                onAuxClick={(event) => {
+                  handleClosableTabAuxClick(
+                    event,
+                    item.id,
+                    closable ? onClose : undefined,
+                  );
+                }}
                 className={cn(
                   'group flex h-full min-w-0 flex-nowrap items-center',
                   (isScrollable || useIntrinsicPillSizing)
@@ -397,7 +417,12 @@ export const SortableTabsStrip: React.FC<SortableTabsStripProps> = ({
                     ? 'relative z-10 bg-transparent'
                     : isActive
                       ? 'relative z-10 bg-transparent text-foreground'
-                      : 'relative z-10 bg-transparent text-muted-foreground hover:text-foreground'
+                      : 'relative z-10 bg-transparent text-muted-foreground hover:text-foreground',
+                  // The hover fill lives on the row, not the tab button, so it covers
+                  // the trailing close control too — matching the active pill, which is
+                  // sized to the whole row.
+                  isSoftPillVariant && 'rounded-[10px] [corner-shape:squircle] supports-[corner-shape:squircle]:rounded-[50px] transition-colors duration-150',
+                  isSoftPillVariant && !isActive && 'hover:bg-[color-mix(in_srgb,var(--foreground)_3.5%,transparent)]'
                 )}
               >
                 <button
@@ -407,31 +432,41 @@ export const SortableTabsStrip: React.FC<SortableTabsStripProps> = ({
                   aria-label={showInactiveIconOnly ? (item.title ?? item.label) : undefined}
                   onClick={() => onSelect(item.id)}
                   className={cn(
-                    usesActivePillIndicator
-                      ? 'animated-tabs__button pill-tabs__button relative z-10 flex flex-1 min-w-0 flex-nowrap items-center justify-center rounded-[9px] [corner-shape:squircle] supports-[corner-shape:squircle]:rounded-[50px] text-sm font-medium transition-colors duration-150 !min-h-0'
-                      : 'flex h-full min-w-0 flex-nowrap items-center typography-micro',
+                    isSoftPillVariant
+                      ? 'soft-tabs__button relative z-10 flex min-w-0 shrink-0 flex-nowrap items-center rounded-[10px] [corner-shape:squircle] supports-[corner-shape:squircle]:rounded-[50px] typography-ui-label font-medium transition-colors duration-150 !min-h-0'
+                      : usesActivePillIndicator
+                        ? 'animated-tabs__button pill-tabs__button relative z-10 flex flex-1 min-w-0 flex-nowrap items-center justify-center rounded-[9px] [corner-shape:squircle] supports-[corner-shape:squircle]:rounded-[50px] text-sm font-medium transition-colors duration-150 !min-h-0'
+                        : 'flex h-full min-w-0 flex-nowrap items-center typography-micro',
                     usesActivePillIndicator && activePillLowercase ? 'lowercase' : null,
                     usesActivePillIndicator && (showInactiveIconOnly ? 'gap-0' : 'gap-1.5'),
-                    usesActivePillIndicator
-                      ? useIntrinsicPillSizing
-                        ? 'shrink-0 whitespace-nowrap px-3 text-center'
+                    isSoftPillVariant
+                      ? 'max-w-56 px-2.5 text-left'
+                      : usesActivePillIndicator
+                        ? useIntrinsicPillSizing
+                          ? 'shrink-0 whitespace-nowrap px-3 text-center'
+                          : isScrollable
+                            ? 'max-w-56 shrink-0 px-3 text-center'
+                            : (showInactiveIconOnly
+                              ? 'px-2 !min-w-0 text-center'
+                              : useIntrinsicActiveTab
+                                ? 'shrink-0 whitespace-nowrap px-3 text-center'
+                                : 'px-3 text-center')
                         : isScrollable
-                          ? 'max-w-56 shrink-0 px-3 text-center'
-                          : (showInactiveIconOnly
-                            ? 'px-2 !min-w-0 text-center'
-                            : useIntrinsicActiveTab
-                              ? 'shrink-0 whitespace-nowrap px-3 text-center'
-                              : 'px-3 text-center')
-                      : isScrollable
-                        ? 'max-w-56 justify-start truncate px-3 text-left'
-                        : 'w-full justify-center truncate px-3 text-center',
+                          ? 'max-w-56 justify-start truncate px-3 text-left'
+                          : 'w-full justify-center truncate px-3 text-center',
                     usesActivePillIndicator
-                      ? (activePillButtonClassName ?? (isActivePillVariant ? (isMobile ? 'h-[38px]' : 'h-[31px]') : 'h-7'))
+                      ? (activePillButtonClassName ?? (isSoftPillVariant
+                        ? (isMobile ? 'h-8' : 'h-7')
+                        : isActivePillVariant ? (isMobile ? 'h-[38px]' : 'h-[31px]') : 'h-7'))
                       : null,
                     usesActivePillIndicator
                       ? isActive
                         ? 'text-foreground'
-                        : 'text-muted-foreground hover:text-foreground'
+                        // Soft-pill keys off the row so the label brightens even when the
+                        // pointer is on the close control.
+                        : isSoftPillVariant
+                          ? 'text-muted-foreground group-hover:text-foreground'
+                          : 'text-muted-foreground hover:text-foreground'
                       : null,
                     usesActivePillIndicator
                       ? 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)] focus-visible:ring-offset-1 focus-visible:ring-offset-background'
@@ -448,7 +483,7 @@ export const SortableTabsStrip: React.FC<SortableTabsStripProps> = ({
                             <span
                               role="button"
                               tabIndex={-1}
-                              className={cn('absolute inset-0 z-20 flex !min-h-0 !min-w-0 items-center justify-center rounded-sm text-muted-foreground transition-opacity hover:text-foreground', alwaysShowCloseControls ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}
+                              className={cn('absolute inset-0 z-20 flex !min-h-0 !min-w-0 items-center justify-center rounded-sm text-muted-foreground transition-opacity hover:text-foreground', closeControlVisibilityClass)}
                               onPointerDown={(event) => {
                                 event.stopPropagation();
                               }}
@@ -464,7 +499,11 @@ export const SortableTabsStrip: React.FC<SortableTabsStripProps> = ({
                           ) : null}
                         </span>
                       ) : null}
-                      {shouldShowLabel ? <span className="animated-tabs__label truncate">{item.label}</span> : null}
+                      {shouldShowLabel ? (
+                        <span className={cn('truncate', isSoftPillVariant ? 'soft-tabs__label' : 'animated-tabs__label')}>
+                          {item.label}
+                        </span>
+                      ) : null}
                     </>
                   ) : (
                     <span className={cn('flex min-w-0 flex-nowrap items-center gap-1.5', !isScrollable && 'justify-center')}>
@@ -480,7 +519,7 @@ export const SortableTabsStrip: React.FC<SortableTabsStripProps> = ({
                             <span
                               role="button"
                               tabIndex={-1}
-                              className={cn('absolute inset-0 z-20 flex !min-h-0 !min-w-0 items-center justify-center rounded-sm text-muted-foreground transition-opacity hover:text-foreground', alwaysShowCloseControls ? 'opacity-100' : 'opacity-0 group-hover:opacity-100')}
+                              className={cn('absolute inset-0 z-20 flex !min-h-0 !min-w-0 items-center justify-center rounded-sm text-muted-foreground transition-opacity hover:text-foreground', closeControlVisibilityClass)}
                               onPointerDown={(event) => {
                                 event.stopPropagation();
                               }}
@@ -512,16 +551,17 @@ export const SortableTabsStrip: React.FC<SortableTabsStripProps> = ({
                     }}
                     className={cn(
                       'relative z-20 inline-flex !min-h-0 !min-w-0 items-center justify-center transition-opacity',
-                      usesActivePillIndicator
-                        ? '-ml-2.5 mr-1 h-[88%] w-5 self-center !aspect-auto rounded-md'
-                        : 'aspect-square h-[65%] min-h-4 max-h-5 rounded-sm mr-1',
-                      usesActivePillIndicator
-                        ? (isActive
+                      isSoftPillVariant
+                        ? '-ml-1 mr-1.5 h-4 w-4 shrink-0 self-center !aspect-auto rounded-full'
+                        : usesActivePillIndicator
+                          ? '-ml-2.5 mr-1 h-[88%] w-5 self-center !aspect-auto rounded-md'
+                          : 'aspect-square h-[65%] min-h-4 max-h-5 rounded-sm mr-1',
+                      isSoftPillVariant
+                        ? 'text-muted-foreground hover:bg-[color-mix(in_srgb,var(--foreground)_10%,transparent)] hover:text-foreground'
+                        : usesActivePillIndicator
                           ? 'text-muted-foreground hover:bg-transparent hover:text-foreground'
-                          : 'text-muted-foreground opacity-0 hover:bg-transparent hover:text-foreground group-hover:opacity-100')
-                        : (isActive
-                          ? 'text-muted-foreground hover:bg-interactive-hover/60 hover:text-foreground'
-                          : 'text-muted-foreground opacity-0 hover:bg-interactive-hover/80 hover:text-foreground group-hover:opacity-100')
+                          : 'text-muted-foreground hover:bg-interactive-hover/80 hover:text-foreground',
+                      closeControlVisibilityClass
                     )}
                     aria-label={item.closeLabel ?? `Close ${item.label} tab`}
                     title={item.closeLabel ?? `Close ${item.label} tab`}

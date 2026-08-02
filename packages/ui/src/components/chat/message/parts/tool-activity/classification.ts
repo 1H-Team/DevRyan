@@ -165,6 +165,59 @@ export const normalizeToolName = (toolName: unknown): string => {
     return TOOL_NAME_ALIASES.get(normalized) ?? normalized;
 };
 
+export const getToolDescriptionFallback = (
+    toolName: unknown,
+    {
+        pathDescription,
+        input,
+        metadata,
+        title,
+    }: {
+        pathDescription?: string | null;
+        input?: Record<string, unknown>;
+        metadata?: Record<string, unknown>;
+        title?: unknown;
+    },
+): string => {
+    if (pathDescription) return pathDescription;
+
+    if (normalizeToolName(toolName) === 'glob') {
+        const pattern = input?.pattern ?? input?.glob;
+        if (typeof pattern === 'string' && pattern.trim()) return pattern;
+    }
+
+    const description = input?.description || metadata?.description || title || '';
+    return typeof description === 'string' ? description : '';
+};
+
+const getToolDescriptionFallbackForPart = (part: ToolPart): string => {
+    const stateValue: unknown = part.state;
+    const state = isRecord(stateValue) ? stateValue : undefined;
+    return getToolDescriptionFallback(part.tool, {
+        input: isRecord(state?.input) ? state.input : undefined,
+        metadata: isRecord(state?.metadata) ? state.metadata : undefined,
+        title: state?.title,
+    });
+};
+
+export const getToolActivityGroupDescription = (
+    kind: ToolActivityGroupKind,
+    parts: readonly ToolPart[],
+): string => {
+    if (kind !== 'search') return '';
+
+    const descriptions: string[] = [];
+    const seen = new Set<string>();
+    for (const part of parts) {
+        if (normalizeToolName(part.tool) !== 'glob') continue;
+        const description = getToolDescriptionFallbackForPart(part);
+        if (!description || seen.has(description)) continue;
+        seen.add(description);
+        descriptions.push(description);
+    }
+    return descriptions.join(', ');
+};
+
 export const isShellToolName = (toolName: unknown): boolean => {
     return SHELL_TOOL_NAMES.has(normalizeToolName(toolName));
 };

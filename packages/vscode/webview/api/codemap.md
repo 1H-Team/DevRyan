@@ -8,6 +8,8 @@ Thin transport wrappers around message passing: typed request/response helpers a
 
 `orchestration.ts` is the API-shaped adapter for managed task snapshot, status, cancellation, result acknowledgement, and Orchestrator-to-Builder handoff. It validates JSON/body size locally and preserves extension-host HTTP status semantics.
 
+Dynamic tool discovery uses the same validation, deduplication, sorting, permission-alias, and directory-attribution contract as web. `index.test.ts` asserts the required shared `RuntimeAPIs` capabilities and the intentional VS Code editor/host-action and terminal-stub differences.
+
 ## Flow
 1. Webview component invokes an API helper from this folder.
 2. Helper sends a structured message to extension host.

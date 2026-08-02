@@ -8,10 +8,15 @@ import { useWindowControlsOverlayLayout } from '@/hooks/useWindowControlsOverlay
 import { setOptimisticRefs } from '@/sync/session-actions';
 import { markSessionViewed } from '@/sync/notification-store';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { setExternallyViewedSession } from '@/sync/sync-context';
+import { setExternallyViewedSession, useSyncChildStores } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
 import { quotaRefreshCoordinator } from '@/stores/useQuotaStore';
 import { useManagedOrchestrationStore } from '@/stores/useManagedOrchestrationStore';
+import {
+  canClaimBrowserAgentWindowContexts,
+  claimBrowserAgentWindowContexts,
+  collectBrowserAgentWindowContexts,
+} from '@/stores/useBrowserAgentStore';
 
 const MINI_CHAT_PRESENCE_CHANNEL = 'openchamber:mini-chat-presence';
 const MANAGED_TASK_EVENT = 'openchamber:managed-task';
@@ -121,6 +126,48 @@ const ManagedOrchestrationOwner: React.FC = () => {
   return null;
 };
 
+const BrowserLeaseClaimOwner: React.FC = () => {
+  const childStores = useSyncChildStores();
+
+  React.useEffect(() => {
+    if (!canClaimBrowserAgentWindowContexts()) return;
+
+    let lastClaimSignature = '';
+    const claimKnownContexts = (force = false) => {
+      const sessions = Array.from(childStores.children.values()).flatMap(
+        (store) => store.getState().session,
+      );
+      const contexts = collectBrowserAgentWindowContexts({
+        sessions,
+        managedTasks: Object.values(useManagedOrchestrationStore.getState().tasksById),
+      });
+      const signature = contexts
+        .map((context) => `${context.directory}\u0000${context.rootSessionId}`)
+        .sort()
+        .join('\u0001');
+      if (!force && signature === lastClaimSignature) return;
+      lastClaimSignature = signature;
+      if (contexts.length > 0) void claimBrowserAgentWindowContexts(contexts);
+    };
+
+    claimKnownContexts(true);
+    const unsubscribeSessions = childStores.subscribeSessionLists(() => claimKnownContexts());
+    const unsubscribeManagedTasks = useManagedOrchestrationStore.subscribe((state, previous) => {
+      if (state.tasksById !== previous.tasksById) claimKnownContexts();
+    });
+    const handleFocus = () => claimKnownContexts(true);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      unsubscribeSessions();
+      unsubscribeManagedTasks();
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [childStores]);
+
+  return null;
+};
+
 export function SyncRuntimeEffects({ embeddedBackgroundWorkEnabled }: {
   embeddedBackgroundWorkEnabled: boolean;
 }) {
@@ -144,6 +191,7 @@ export function SyncAppEffects({ embeddedBackgroundWorkEnabled }: {
       <MiniChatPresenceBridge />
       <QuotaRefreshOwner enabled={embeddedBackgroundWorkEnabled} />
       <ManagedOrchestrationOwner />
+      <BrowserLeaseClaimOwner />
     </>
   );
 }

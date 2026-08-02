@@ -18,10 +18,11 @@ import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import { useFilesViewTabsStore } from '@/stores/useFilesViewTabsStore';
-import { useUIStore } from '@/stores/useUIStore';
+import { useUIStore, type ContextPanelMode } from '@/stores/useUIStore';
 import { useInlineCommentDraftStore } from '@/stores/useInlineCommentDraftStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { getAllSyncSessions } from '@/sync/sync-refs';
+import { useSession } from '@/sync/sync-context';
 import { useInputStore } from '@/sync/input-store';
 import { useManagedOrchestrationStore } from '@/stores/useManagedOrchestrationStore';
 import { useSessionPlanFileStore } from '@/stores/useSessionPlanFileStore';
@@ -33,7 +34,23 @@ import {
   parsePreviewHttpUrl,
   resolvePreviewReloadUrl,
 } from './previewLifecycle';
+import {
+  formatPreviewAnnotationMarkdown,
+  isPreviewElementMetadata,
+  renderPreviewScreenshot,
+  type PreviewElementMetadata,
+} from '@/lib/preview/screenshot-capture';
 import { resolveContextPlanSessionChange } from './contextPlanSessionLifecycle';
+import { DesktopBrowserPane } from './DesktopBrowserPane';
+import { useGuestRetention } from './useGuestRetention';
+import {
+  browserAgentLeaseSelectors,
+  ensureBrowserAgentListeners,
+  setObservedBrowserAgentLease,
+  useBrowserAgentStore,
+} from '@/stores/useBrowserAgentStore';
+import { isElectronShell } from '@/lib/desktop';
+import { resolveRootSessionID } from '@/lib/sessionLineage';
 
 const CONTEXT_PANEL_MIN_WIDTH = 360;
 const CONTEXT_PANEL_MAX_WIDTH = 1400;
@@ -79,19 +96,6 @@ type PreviewBridgeMessage = {
   navigation?: unknown;
 };
 
-type PreviewElementMetadata = {
-  frame: 'top';
-  tag: string;
-  text: string;
-  selector: string;
-  path: string;
-  bounds: { x: number; y: number; width: number; height: number };
-  center: { x: number; y: number };
-  attributes: Record<string, string>;
-  computedStyle: Record<string, string>;
-  ancestry: Array<{ tag: string; id?: string; className?: string; selectorPart: string }>;
-};
-
 const PREVIEW_CONSOLE_EVENT_LIMIT = 200;
 
 const getPreviewConsoleFilterMatch = (event: PreviewConsoleEvent, filter: PreviewConsoleFilter): boolean => {
@@ -99,118 +103,6 @@ const getPreviewConsoleFilterMatch = (event: PreviewConsoleEvent, filter: Previe
   if (filter === 'errors') return event.level === 'error' || event.level === 'runtime' || event.level === 'resource';
   if (filter === 'warnings') return event.level === 'warn';
   return event.level === 'log' || event.level === 'info' || event.level === 'debug';
-};
-
-const isPreviewElementMetadata = (value: unknown): value is PreviewElementMetadata => {
-  if (!value || typeof value !== 'object') return false;
-  const record = value as Partial<PreviewElementMetadata>;
-  const bounds = record.bounds;
-  return typeof record.tag === 'string'
-    && typeof record.selector === 'string'
-    && typeof record.path === 'string'
-    && Boolean(bounds)
-    && typeof bounds?.x === 'number'
-    && typeof bounds?.y === 'number'
-    && typeof bounds?.width === 'number'
-    && typeof bounds?.height === 'number';
-};
-
-const formatPreviewAnnotationMarkdown = ({
-  pageUrl,
-  viewport,
-  devicePixelRatio,
-  target,
-  screenshotAttached,
-  intro,
-}: {
-  pageUrl: string;
-  viewport: { width: number; height: number };
-  devicePixelRatio: number;
-  target: PreviewElementMetadata;
-  screenshotAttached: boolean;
-  intro: string;
-}): string => {
-  const text = target.text.trim();
-  const attributes = Object.entries(target.attributes)
-    .map(([key, value]) => `${key}="${value}"`)
-    .join(' ');
-  const styles = target.computedStyle;
-  const bounds = target.bounds;
-  const center = target.center;
-  const introLabel = intro.replace(/[.:]+$/g, '');
-  const ancestry = target.ancestry
-    .map((entry) => entry.selectorPart)
-    .join(' > ');
-
-  return [
-    `${introLabel}:`,
-    `Page: ${pageUrl || 'preview'}`,
-    `Viewport: ${viewport.width}x${viewport.height}, DPR ${devicePixelRatio}`,
-    `Screenshot: ${screenshotAttached ? 'attached' : 'not attached'}`,
-    `Element: ${target.tag}`,
-    text ? `Text: ${text}` : null,
-    `- Selector: ${target.selector}`,
-    `- Path: ${target.path}`,
-    ancestry ? `- Ancestry: ${ancestry}` : null,
-    attributes ? `- Attributes: ${attributes}` : null,
-    `- Bounds: x=${Math.round(bounds.x)}, y=${Math.round(bounds.y)}, width=${Math.round(bounds.width)}, height=${Math.round(bounds.height)}`,
-    `- Center: x=${Math.round(center.x)}, y=${Math.round(center.y)}`,
-    `Styles: display=${styles.display}; position=${styles.position}; font=${styles.fontWeight} ${styles.fontSize} / ${styles.lineHeight} ${styles.fontFamily}; color=${styles.color}; background=${styles.backgroundColor}; z-index=${styles.zIndex}`,
-  ].filter((line): line is string => typeof line === 'string').join('\n');
-};
-
-const renderPreviewScreenshot = async (
-  iframe: HTMLIFrameElement,
-  target: PreviewElementMetadata,
-): Promise<File | null> => {
-  const tauri = typeof window !== 'undefined'
-    ? (window as unknown as { __TAURI__?: { core?: { invoke?: <T>(cmd: string, args?: Record<string, unknown>) => Promise<T> } } }).__TAURI__
-    : undefined;
-  if (typeof tauri?.core?.invoke === 'function') {
-    try {
-      const rect = iframe.getBoundingClientRect();
-      const capture = await tauri.core.invoke<{ mime: string; base64: string; width: number; height: number }>('desktop_capture_page_rect', {
-        x: rect.left,
-        y: rect.top,
-        width: rect.width,
-        height: rect.height,
-      });
-      const image = new Image();
-      await new Promise<void>((resolve, reject) => {
-        image.onload = () => resolve();
-        image.onerror = () => reject(new Error('Failed to load desktop preview screenshot'));
-        image.src = `data:${capture.mime};base64,${capture.base64}`;
-      });
-
-      const width = Math.max(1, image.naturalWidth || capture.width || Math.floor(rect.width));
-      const height = Math.max(1, image.naturalHeight || capture.height || Math.floor(rect.height));
-      const maxOutputWidth = 1200;
-      const outputScale = Math.min(1, maxOutputWidth / width);
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.floor(width * outputScale);
-      canvas.height = Math.floor(height * outputScale);
-      const context = canvas.getContext('2d');
-      if (!context) return null;
-
-      context.scale(outputScale, outputScale);
-      context.drawImage(image, 0, 0, width, height);
-      const xScale = width / Math.max(1, rect.width);
-      const yScale = height / Math.max(1, rect.height);
-      context.fillStyle = 'rgba(37, 99, 235, 0.28)';
-      context.strokeStyle = 'rgb(37, 99, 235)';
-      context.lineWidth = Math.max(2, 2 * xScale);
-      context.fillRect(target.bounds.x * xScale, target.bounds.y * yScale, target.bounds.width * xScale, target.bounds.height * yScale);
-      context.strokeRect(target.bounds.x * xScale, target.bounds.y * yScale, target.bounds.width * xScale, target.bounds.height * yScale);
-
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.82));
-      if (!blob) return null;
-      return new File([blob], `preview-annotation-${Date.now()}.jpg`, { type: 'image/jpeg' });
-    } catch (error) {
-      console.warn('[preview] failed to capture annotation screenshot:', error);
-      return null;
-    }
-  }
-  return null;
 };
 
 const normalizeDirectoryKey = (value: string): string => {
@@ -253,7 +145,7 @@ const getRelativePathLabel = (filePath: string | null, directory: string): strin
 };
 
 const getModeLabel = (
-  mode: 'diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview',
+  mode: 'diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview' | 'browser',
   t: TranslateFn
 ): string => {
   if (mode === 'chat') return t('contextPanel.mode.chat');
@@ -261,6 +153,7 @@ const getModeLabel = (
   if (mode === 'diff') return t('contextPanel.mode.diff');
   if (mode === 'plan') return t('contextPanel.mode.plan');
   if (mode === 'preview') return t('contextPanel.mode.preview');
+  if (mode === 'browser') return t('contextPanel.mode.browser');
   return t('contextPanel.mode.context');
 };
 
@@ -283,7 +176,7 @@ const getFileNameFromPath = (path: string | null): string | null => {
 };
 
 const getTabLabel = (
-  tab: { mode: 'diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview'; label: string | null; targetPath: string | null },
+  tab: { mode: 'diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview' | 'browser'; label: string | null; targetPath: string | null },
   t: TranslateFn
 ): string => {
   if (tab.label) {
@@ -294,23 +187,24 @@ const getTabLabel = (
     return getFileNameFromPath(tab.targetPath) || t('contextPanel.mode.files');
   }
 
-  if (tab.mode === 'preview') {
+  if (tab.mode === 'preview' || tab.mode === 'browser') {
     const url = tab.targetPath;
+    const fallback = tab.mode === 'browser' ? t('contextPanel.mode.browser') : t('contextPanel.mode.preview');
     if (url) {
       try {
         const parsed = new URL(url);
-        return parsed.host || parsed.hostname || t('contextPanel.mode.preview');
+        return parsed.host || parsed.hostname || fallback;
       } catch {
         // ignore invalid URL
       }
     }
-    return t('contextPanel.mode.preview');
+    return fallback;
   }
 
   return getModeLabel(tab.mode, t);
 };
 
-const getTabIcon = (tab: { mode: 'diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview'; targetPath: string | null }): React.ReactNode | undefined => {
+const getTabIcon = (tab: { mode: 'diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview' | 'browser'; targetPath: string | null; leaseId?: string | null }): React.ReactNode | undefined => {
   if (tab.mode === 'file') {
     return tab.targetPath
       ? <FileTypeIcon filePath={tab.targetPath} className="h-3.5 w-3.5" />
@@ -337,8 +231,89 @@ const getTabIcon = (tab: { mode: 'diff' | 'file' | 'context' | 'plan' | 'chat' |
     return <RiGlobalLine className="h-3.5 w-3.5 text-[var(--status-info)]" />;
   }
 
+  if (tab.mode === 'browser') {
+    return <BrowserTabIcon leaseId={tab.leaseId} />;
+  }
+
   return undefined;
 };
+
+// Manual browser guests sleep 60s after their tab deactivates (quick flips do
+// not reload). Lease guests have an independent invariant fleet below and stay
+// mounted until their authoritative lease disappears. Chat iframes are
+// same-process but each hosts a full app instance; the long grace mirrors
+// relaunch behavior for long-idle tabs without losing recently-typed drafts.
+const BROWSER_GUEST_SLEEP_DELAY_MS = 60_000;
+const CHAT_GUEST_SLEEP_DELAY_MS = 30 * 60_000;
+
+const BrowserTabIcon: React.FC<{ leaseId?: string | null }> = ({ leaseId }) => {
+  const leaseSelector = React.useMemo(
+    () => browserAgentLeaseSelectors.lease(leaseId ?? ''),
+    [leaseId],
+  );
+  const lease = useBrowserAgentStore(leaseSelector);
+  return (
+    <span className="relative inline-flex">
+      <RiGlobalLine className="h-3.5 w-3.5" />
+      {lease ? (
+        <span
+          className="absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-[var(--status-info)]"
+          aria-hidden="true"
+        />
+      ) : null}
+    </span>
+  );
+};
+
+const BrowserLeasePane: React.FC<{ leaseId: string; active: boolean }> = React.memo(({
+  leaseId,
+  active,
+}) => {
+  const leaseSelector = React.useMemo(
+    () => browserAgentLeaseSelectors.lease(leaseId),
+    [leaseId],
+  );
+  const lease = useBrowserAgentStore(leaseSelector);
+  if (!lease) return null;
+
+  return (
+    <div
+      className={cn(
+        'absolute inset-0',
+        active ? 'z-10 opacity-100' : 'z-0 pointer-events-none opacity-0',
+      )}
+      aria-hidden={!active}
+      data-browser-lease-pane={leaseId}
+    >
+      <DesktopBrowserPane
+        initialUrl={lease.url}
+        directory={lease.directory}
+        tabID={`browser:lease:${leaseId}`}
+        active={active}
+        leaseId={leaseId}
+      />
+    </div>
+  );
+});
+BrowserLeasePane.displayName = 'BrowserLeasePane';
+
+type BrowserLeasePresentationTab = {
+  id: string;
+  mode: ContextPanelMode;
+  leaseId?: string | null;
+  ownerSessionId?: string | null;
+};
+
+const getStaleBrowserLeaseTabIDs = (
+  tabs: readonly BrowserLeasePresentationTab[],
+  currentRootSessionId: string | null,
+): string[] => tabs
+  .filter((tab) => (
+    tab.mode === 'browser'
+    && Boolean(tab.leaseId)
+    && tab.ownerSessionId !== currentRootSessionId
+  ))
+  .map((tab) => tab.id);
 
 const getSessionIDFromDedupeKey = (dedupeKey: string | undefined): string | null => {
   if (!dedupeKey || !dedupeKey.startsWith('session:')) {
@@ -443,6 +418,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
   const addAttachedFile = useInputStore((state) => state.addAttachedFile);
 
   const normalizedUrl = parsePreviewHttpUrl(targetUrl);
+  const isBlankPreview = targetUrl === 'about:blank';
   const frameUrl = frameRequest.ownerTargetUrl === targetUrl
     ? resolvePreviewReloadUrl(targetUrl, frameRequest.url)
     : normalizedUrl;
@@ -518,7 +494,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
     };
   }, [isLoopback, proxyRegistrationNonce, t, targetKey]);
 
-  const directSrc = frameUrl?.toString() ?? '';
+  const directSrc = isBlankPreview ? 'about:blank' : (frameUrl?.toString() ?? '');
 
   const proxySrc = isLoopback && proxyState.status === 'ready' && frameUrl
     ? (() => {
@@ -580,7 +556,9 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
           devicePixelRatio,
           target,
           screenshotAttached: attachedScreenshot,
-          intro: t('contextPanel.preview.inspect.attachAnnotation'),
+          intro: attachedScreenshot
+            ? t('contextPanel.preview.inspect.attachAnnotationWithScreenshot')
+            : t('contextPanel.preview.inspect.attachAnnotation'),
         }),
         language: 'markdown',
         text: '',
@@ -1159,6 +1137,15 @@ export const ContextPanel: React.FC = () => {
   const effectiveDirectory = useEffectiveDirectory() ?? '';
   const directoryKey = React.useMemo(() => normalizeDirectoryKey(effectiveDirectory), [effectiveDirectory]);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
+  const currentSession = useSession(currentSessionId);
+  const currentRootSessionId = React.useMemo(() => {
+    if (!currentSessionId) return null;
+    const sessions = getAllSyncSessions();
+    if (currentSession && !sessions.some((session) => session.id === currentSession.id)) {
+      sessions.push(currentSession);
+    }
+    return resolveRootSessionID(currentSessionId, sessions);
+  }, [currentSession, currentSessionId]);
   const currentSessionPlanPath = useSessionPlanFileStore((state) => {
     if (!currentSessionId) {
       return null;
@@ -1184,6 +1171,8 @@ export const ContextPanel: React.FC = () => {
   const setSelectedFilePath = useFilesViewTabsStore((state) => state.setSelectedPath);
   const openContextPreview = useUIStore((state) => state.openContextPreview);
   const setContextPreviewDisplayUrl = useUIStore((state) => state.setContextPreviewDisplayUrl);
+  const leaseIds = useBrowserAgentStore((state) => state.leaseIds);
+  const observedLeaseId = useBrowserAgentStore((state) => state.observedLeaseId);
   const { themeMode, lightThemeId, darkThemeId, currentTheme } = useThemeSystem();
 
   const tabs = React.useMemo(() => panelState?.tabs ?? [], [panelState?.tabs]);
@@ -1191,6 +1180,12 @@ export const ContextPanel: React.FC = () => {
   const activePreviewTabID = activeTab?.mode === 'preview' ? activeTab.id : null;
   const isOpen = Boolean(panelState?.isOpen && activeTab);
   const isExpanded = Boolean(isOpen && panelState?.expanded);
+  const activeLeaseId = isOpen
+    && activeTab?.mode === 'browser'
+    && activeTab.leaseId
+    && leaseIds.includes(activeTab.leaseId)
+    ? activeTab.leaseId
+    : null;
   const width = clampWidth(panelState?.width ?? CONTEXT_PANEL_DEFAULT_WIDTH);
   const shouldReduceMotion = useReducedMotion() === true
     || (typeof window !== 'undefined'
@@ -1208,6 +1203,29 @@ export const ContextPanel: React.FC = () => {
   const chatFrameRefs = React.useRef<Map<string, HTMLIFrameElement>>(new Map());
   const wasOpenRef = React.useRef(false);
   const previousSessionIdRef = React.useRef<string | null | undefined>(undefined);
+
+  React.useEffect(() => {
+    ensureBrowserAgentListeners();
+  }, []);
+
+  React.useEffect(() => {
+    void setObservedBrowserAgentLease(activeLeaseId);
+  }, [activeLeaseId]);
+
+  React.useEffect(() => () => {
+    void setObservedBrowserAgentLease(null);
+  }, []);
+
+  React.useLayoutEffect(() => {
+    if (!directoryKey) {
+      return;
+    }
+
+    const staleLeaseTabIDs = getStaleBrowserLeaseTabIDs(tabs, currentRootSessionId);
+    for (const staleTabID of staleLeaseTabIDs) {
+      closeContextPanelTab(directoryKey, staleTabID);
+    }
+  }, [closeContextPanelTab, currentRootSessionId, directoryKey, tabs]);
 
   const finalizePlanExit = React.useCallback((motion: ActiveContextPlanMotion) => {
     if (!directoryKey) {
@@ -1612,15 +1630,41 @@ export const ContextPanel: React.FC = () => {
     () => tabs.filter((tab) => tab.mode === 'chat'),
     [tabs],
   );
+  const manualBrowserTabs = React.useMemo(
+    () => tabs.filter((tab) => tab.mode === 'browser' && !tab.leaseId),
+    [tabs],
+  );
+
+  // Manual browser guests retain the existing sleep policy. Lease guests are
+  // not part of this set: the invariant lease fleet mounts directly from the
+  // authoritative snapshot and unmounts only when a lease disappears.
+  const manualBrowserKeepIDs = React.useMemo(
+    () => (isOpen && activeTab?.mode === 'browser' && !activeTab.leaseId ? [activeTab.id] : []),
+    [activeTab, isOpen],
+  );
+  const retainedBrowserTabIDs = useGuestRetention({
+    keepIDs: manualBrowserKeepIDs,
+    sleepDelayMs: BROWSER_GUEST_SLEEP_DELAY_MS,
+  });
+
+  const chatKeepIDs = React.useMemo(
+    () => (activeChatTabID ? [activeChatTabID] : []),
+    [activeChatTabID],
+  );
+  const retainedChatTabIDs = useGuestRetention({
+    keepIDs: chatKeepIDs,
+    sleepDelayMs: CHAT_GUEST_SLEEP_DELAY_MS,
+  });
   const hasFileTabs = React.useMemo(
     () => tabs.some((tab) => tab.mode === 'file'),
     [tabs],
   );
 
   const isFileTabActive = activeTab?.mode === 'file';
+  const isBrowserTabActive = activeTab?.mode === 'browser';
 
   const header = (
-    <header className="flex h-8 items-stretch border-b border-transparent">
+    <header className="flex h-8 items-stretch pl-1.5">
       <SortableTabsStrip
         items={tabItems}
         activeId={activeTab?.id ?? null}
@@ -1643,7 +1687,7 @@ export const ContextPanel: React.FC = () => {
           reorderContextPanelTabs(directoryKey, activeTabID, overTabID);
         }}
         layoutMode="scrollable"
-        variant="default"
+        variant="soft-pill"
       />
       <div className="flex items-center gap-1 px-1.5">
         {activeTab?.mode === 'plan' ? (
@@ -1679,11 +1723,13 @@ export const ContextPanel: React.FC = () => {
     </header>
   );
 
-  if (!isOpen) {
-    return null;
-  }
-
-  const panelStyle: React.CSSProperties = isExpanded
+  const panelStyle: React.CSSProperties = !isOpen
+    ? {
+        width: '100%',
+        minWidth: '100%',
+        maxWidth: '100%',
+      }
+    : isExpanded
     ? {
         ['--oc-context-panel-width' as string]: '100%',
         width: '100%',
@@ -1702,20 +1748,22 @@ export const ContextPanel: React.FC = () => {
       ref={panelRef}
       data-context-panel="true"
       data-plan-motion={activePlanMotion?.direction}
+      aria-hidden={!isOpen}
       tabIndex={-1}
       className={cn(
         'flex min-h-0 flex-col overflow-hidden bg-background',
-        !isExpanded && 'border-l border-border/40',
-        isExpanded
-          ? 'absolute inset-0 z-20 min-w-0'
-          : 'relative h-full flex-shrink-0',
+        !isOpen
+          ? 'pointer-events-none fixed inset-0 -z-10 opacity-0'
+          : isExpanded
+            ? 'absolute inset-0 z-20 min-w-0'
+            : 'relative h-full flex-shrink-0 border-l border-border/40',
         isResizing ? 'transition-none' : 'transition-[width] duration-200 ease-in-out'
       )}
       onKeyDownCapture={handlePanelKeyDownCapture}
       onAnimationEnd={handlePlanMotionEnd}
       style={panelStyle}
     >
-      {!isExpanded && (
+      {isOpen && !isExpanded && (
         <div
           className={cn(
             'absolute left-0 top-0 z-20 h-full w-[3px] cursor-col-resize transition-colors hover:bg-[var(--interactive-border)]/80',
@@ -1737,18 +1785,65 @@ export const ContextPanel: React.FC = () => {
           activePlanMotion?.direction === 'exit' && 'pointer-events-none'
         )}
       >
-        {header}
+        {isOpen ? header : null}
         <div className={cn('relative min-h-0 flex-1 overflow-hidden', isResizing && 'pointer-events-none')}>
-          {hasFileTabs ? (
+          {isOpen && hasFileTabs ? (
             <div className={cn('absolute inset-0', isFileTabActive ? 'block' : 'hidden')}>
               <LazyViewBoundary>
-                <LazyFilesView mode="editor-only" />
+                <LazyFilesView />
               </LazyViewBoundary>
             </div>
           ) : null}
-          {chatTabs.map((tab) => {
+          {leaseIds.map((leaseId) => (
+            <BrowserLeasePane
+              key={leaseId}
+              leaseId={leaseId}
+              active={activeLeaseId === leaseId && observedLeaseId === leaseId}
+            />
+          ))}
+          {manualBrowserTabs.map((tab) => {
+            // Manual tabs remain ordinary user browser panes: only the active
+            // tab and its short grace-period guest stay mounted.
+            const isActive = isOpen && activeTab?.id === tab.id;
+            const isMounted = isActive || retainedBrowserTabIDs.has(tab.id);
+            if (!isMounted) {
+              return null;
+            }
+            return (
+              <div
+                key={tab.id}
+                className={cn(
+                  'absolute inset-0',
+                  !isActive && 'invisible pointer-events-none'
+                )}
+                aria-hidden={!isActive}
+              >
+                {isElectronShell() ? (
+                  <DesktopBrowserPane
+                    initialUrl={tab.targetPath ?? ''}
+                    directory={directoryKey ?? ''}
+                    tabID={tab.id}
+                    active={isActive}
+                  />
+                ) : (
+                  <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+                    <RiGlobalLine className="h-12 w-12 text-muted-foreground/50" />
+                    <div className="max-w-sm typography-micro text-muted-foreground">{t('contextPanel.browser.desktopOnly')}</div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {isOpen ? chatTabs.map((tab) => {
             const sessionID = getSessionIDFromDedupeKey(tab.dedupeKey);
             if (!sessionID) {
+              return null;
+            }
+
+            // Each chat iframe hosts a full app instance. Keep the active tab
+            // plus recently-used ones mounted; long-idle tabs unmount (their
+            // chat state is store/server-backed and rebuilds on remount).
+            if (activeChatTabID !== tab.id && !retainedChatTabIDs.has(tab.id)) {
               return null;
             }
 
@@ -1779,8 +1874,8 @@ export const ContextPanel: React.FC = () => {
                 }}
               />
             );
-          })}
-          {activeTab?.mode !== 'chat' && !isFileTabActive
+          }) : null}
+          {isOpen && activeTab?.mode !== 'chat' && !isFileTabActive && !isBrowserTabActive
             ? activeNonChatContent
             : null}
         </div>

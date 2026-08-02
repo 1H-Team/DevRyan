@@ -154,23 +154,16 @@ describe('harness preflight', () => {
       toolManifest: {
         tools: [
           { id: 'read' },
-          { id: 'context7_query_docs' },
           { id: 'grep_app_searchGitHub' },
           { id: 'invalid' },
         ],
         mcp: {
-          context7: {},
           'gh-grep': {},
         },
       },
     });
 
     expect(findings).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        ruleId: 'forbidden-runtime-tool-surface',
-        severity: 'error',
-        summary: expect.stringContaining('context7_query_docs'),
-      }),
       expect.objectContaining({
         ruleId: 'forbidden-runtime-tool-surface',
         severity: 'error',
@@ -184,7 +177,7 @@ describe('harness preflight', () => {
       expect.objectContaining({
         ruleId: 'forbidden-runtime-mcp-surface',
         severity: 'error',
-        summary: expect.stringContaining('context7'),
+        summary: expect.stringContaining('gh-grep'),
       }),
     ]));
   });
@@ -202,7 +195,7 @@ describe('harness preflight', () => {
       toolManifest: {
         tools: [
           { id: 'invalid' },
-          { id: 'mcp__context7__query-docs' },
+          { id: 'mcp__docs__query-docs' },
           { id: 'grep_app_searchGitHub' },
         ],
       },

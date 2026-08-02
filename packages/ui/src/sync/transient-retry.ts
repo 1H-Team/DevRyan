@@ -9,7 +9,17 @@ import {
 } from "./sync-refs"
 import { useSessionUIStore } from "./session-ui-store"
 import { waitForAbortGuardSettlement } from "./abort-retry-guard"
-import type { ProviderRecoveryRecord } from "@/stores/useProviderRecoveryStore"
+import {
+  useProviderRecoveryStore,
+  type ProviderRecoveryRecord,
+} from "@/stores/useProviderRecoveryStore"
+
+const latestUserMessageId = (messages: ReturnType<typeof getSyncMessages>): string | undefined => {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.role === "user") return messages[index].id
+  }
+  return undefined
+}
 
 async function sendRecovery(
   sessionId: string,
@@ -58,6 +68,11 @@ async function sendRecovery(
 export async function executeProviderRecovery(record: ProviderRecoveryRecord): Promise<boolean> {
   await waitForAbortGuardSettlement(record.sessionId)
   const messages = getSyncMessages(record.sessionId, record.directory)
+  const currentUserMessageId = latestUserMessageId(messages)
+  if (currentUserMessageId && currentUserMessageId !== record.anchorUserMessageId) {
+    useProviderRecoveryStore.getState().clearRecovery(record.sessionId, record)
+    return false
+  }
   const recovery = planManualRecovery({
     messages,
     getParts: (messageId) => getSyncParts(messageId, record.directory),

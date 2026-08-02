@@ -23,6 +23,7 @@ const IMMUTABLE_FIELDS = Object.freeze([
   'directory',
   'sequence',
   'mode',
+  'readOnly',
   'providerId',
   'modelId',
   'agent',

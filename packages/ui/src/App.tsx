@@ -936,7 +936,7 @@ function App({ apis }: AppProps) {
     setShowMemoryDebug(prev => !prev);
   }, []);
 
-  useMenuActions(handleToggleMemoryDebug);
+  useMenuActions(handleToggleMemoryDebug, apis.diagnostics);
 
   React.useEffect(() => {
     if (embeddedSessionChat) {

@@ -65,15 +65,27 @@ export function createGlobalMessageStreamSseHandler({
       res.socket.setNoDelay(true);
     }
 
+    // Dedupe is only needed while the one-shot replay overlaps the live
+    // subscription; afterwards the set would grow one id per event for the
+    // connection's lifetime, so tracking stops once replay completes.
+    let replayPhase = true;
     const deliveredEventIds = new Set();
+    // A slow or suspended client otherwise makes Node buffer events without
+    // bound in the socket write queue. Past this ceiling, drop the connection —
+    // the client reconnects with Last-Event-ID and replays the gap.
+    const SSE_MAX_BUFFERED_BYTES = 16 * 1024 * 1024;
     const writeEntry = (entry) => {
       if (res.writableEnded || res.destroyed) {
         return false;
       }
-      if (typeof entry?.eventId === 'string' && entry.eventId.length > 0) {
+      if (replayPhase && typeof entry?.eventId === 'string' && entry.eventId.length > 0) {
         deliveredEventIds.add(entry.eventId);
       }
       res.write(serializeMessageStreamSseEvent(entry));
+      if ((res.socket?.writableLength ?? 0) > SSE_MAX_BUFFERED_BYTES) {
+        res.destroy?.();
+        return false;
+      }
       return true;
     };
 
@@ -88,6 +100,8 @@ export function createGlobalMessageStreamSseHandler({
       }
       writeEntry(entry);
     }
+    replayPhase = false;
+    deliveredEventIds.clear();
 
     globalHub.start?.();
 

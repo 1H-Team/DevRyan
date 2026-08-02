@@ -4,7 +4,7 @@
 Hosts app-shell entry compositions for different runtime surfaces.
 
 ## Design
-Thin composition roots that wire providers, routes, top-level views, and gated runtime effects such as queued sends, transient stream recovery, and the single quota-refresh lifecycle owner. The VS Code composition keeps normal chat synchronous while resolving the Agent Manager view through the shared recovery-aware lazy registry only for `agentManager` panels.
+Thin composition roots that wire providers, routes, top-level views, and gated runtime effects such as queued sends, transient stream recovery, and the single quota-refresh lifecycle owner. The main local Electron composition also owns exact agent-browser window claims: it reacts only to session-list membership and low-frequency managed-task changes, deduplicates known `(directory, rootSessionId)` pairs, and refreshes them on focus. The VS Code composition keeps normal chat synchronous while resolving the Agent Manager view through the shared recovery-aware lazy registry only for `agentManager` panels.
 The Electron Mini Chat composition supplies the same `AgentHandoffGuardProvider`
 as the main chat before rendering shared composer/model controls.
 

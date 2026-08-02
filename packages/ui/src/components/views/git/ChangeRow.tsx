@@ -77,10 +77,6 @@ export const ChangeRow = React.memo<ChangeRowProps>(function ChangeRow({
     const lastSlash = file.path.lastIndexOf('/');
     return lastSlash === -1 ? file.path : file.path.slice(lastSlash + 1);
   }, [file.path]);
-  const directoryName = useMemo(() => {
-    const lastSlash = file.path.lastIndexOf('/');
-    return lastSlash === -1 ? '' : file.path.slice(0, lastSlash);
-  }, [file.path]);
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
@@ -142,15 +138,8 @@ export const ChangeRow = React.memo<ChangeRowProps>(function ChangeRow({
       style={indentPx > 0 ? { paddingLeft: `${indentPx}px` } : undefined}
     >
         <FileTypeIcon filePath={file.path} className="h-3.5 w-3.5 shrink-0" />
-        <span className="flex min-w-0 flex-1 flex-row-reverse items-baseline justify-end gap-1.5 overflow-hidden" title={file.path}>
-          <span className="shrink-0 typography-ui-label text-foreground">
-            {fileName}
-          </span>
-          {directoryName ? (
-            <span className="min-w-0 truncate typography-micro text-muted-foreground" dir="rtl">
-              {directoryName}
-            </span>
-          ) : null}
+        <span className="min-w-0 flex-1 truncate typography-ui-label text-foreground" title={file.path}>
+          {fileName}
         </span>
         <span
           className={cn(

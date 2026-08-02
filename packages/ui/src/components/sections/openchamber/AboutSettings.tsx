@@ -1,5 +1,5 @@
 import React from 'react';
-import { RiDiscordFill, RiDownloadLine, RiGithubFill, RiLoaderLine, RiTwitterXFill } from '@remixicon/react';
+import { RiDiscordFill, RiDownloadLine, RiGithubFill, RiLoaderLine } from '@remixicon/react';
 import { useUpdateStore } from '@/stores/useUpdateStore';
 import { useShallow } from 'zustand/react/shallow';
 import { UpdateDialog } from '@/components/ui/UpdateDialog';
@@ -8,6 +8,8 @@ import { toast } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/i18n';
+import { SessionRetentionSettings } from './SessionRetentionSettings';
+import { OpenCodeVersionSection } from './OpenCodeVersionSection';
 
 const GITHUB_URL = 'https://github.com/zoubenr/DevRyan';
 
@@ -64,7 +66,7 @@ export const AboutSettings: React.FC = () => {
         {/* Version row with update status */}
         <div className="flex items-center justify-between">
           <span className="typography-meta text-muted-foreground">
-            v{currentVersion}
+            {t('settings.openchamber.about.field.currentVersion', { version: currentVersion })}
           </span>
 
           {!updateStore.available && !updateStore.error && (
@@ -117,16 +119,9 @@ export const AboutSettings: React.FC = () => {
             <span>Discord</span>
           </a>
 
-          <a
-            href="https://x.com/btriapitsyn"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 typography-meta text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <RiTwitterXFill className="h-3.5 w-3.5" />
-            <span>@btriapitsyn</span>
-          </a>
         </div>
+
+        <OpenCodeVersionSection compact />
 
         <UpdateDialog
           open={updateDialogOpen}
@@ -140,6 +135,9 @@ export const AboutSettings: React.FC = () => {
           onRestart={updateStore.restartToUpdate}
           runtimeType={updateStore.runtimeType}
         />
+        <div className="border-t border-border/40 pt-6">
+          <SessionRetentionSettings />
+        </div>
       </div>
     );
   }
@@ -158,7 +156,9 @@ export const AboutSettings: React.FC = () => {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-4 py-3 border-b border-[var(--surface-subtle)]">
           <div className="flex min-w-0 flex-col">
             <span className="typography-ui-label text-foreground">{t('settings.openchamber.about.field.version')}</span>
-            <span className="typography-meta text-muted-foreground font-mono">{currentVersion}</span>
+            <span className="typography-meta text-muted-foreground font-mono">
+              {t('settings.openchamber.about.field.currentVersion', { version: currentVersion })}
+            </span>
           </div>
           
           <div className="flex items-center gap-3">
@@ -210,16 +210,8 @@ export const AboutSettings: React.FC = () => {
             <span>GitHub</span>
           </a>
 
-          <a
-            href="https://x.com/btriapitsyn"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground typography-meta transition-colors"
-          >
-            <RiTwitterXFill className="h-4 w-4" />
-            <span>@btriapitsyn</span>
-          </a>
         </div>
+        <OpenCodeVersionSection />
       </div>
 
       <UpdateDialog
@@ -234,6 +226,9 @@ export const AboutSettings: React.FC = () => {
         onRestart={updateStore.restartToUpdate}
         runtimeType={updateStore.runtimeType}
       />
+      <div className="border-t border-border/40 pt-6">
+        <SessionRetentionSettings />
+      </div>
     </div>
   );
 };

@@ -21,10 +21,10 @@ const defaultPlugin = {
   id: 'devryan-default:oh-my-opencode-slim',
   pluginId: 'oh-my-opencode-slim' as const,
   displayName: 'Oh My OpenCode Slim',
-  shippedSpec: 'oh-my-opencode-slim@2.0.5',
+  shippedSpec: './plugins/devryan-oh-my-opencode-slim.mjs',
   effectiveSpec: './plugins/devryan-oh-my-opencode-slim.mjs',
   version: '2.0.5',
-  delivery: 'npm' as const,
+  delivery: 'installed-local' as const,
   sourcePath: 'default-config/user-profile/package.json',
   kind: 'default' as const,
 };

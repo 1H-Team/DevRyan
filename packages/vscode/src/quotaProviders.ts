@@ -73,7 +73,15 @@ type FetchQuotaOptions = {
   claudeProxyConfigured?: boolean;
   isExternalRuntime?: boolean;
   forceRefresh?: boolean;
+  fetchClaudeCodeUsage?: () => Promise<ReturnType<typeof parseClaudeCodeUsageOutput>>;
 };
+
+const ANTHROPIC_AUTH_ALIASES = [
+  'anthropic',
+  'claude',
+  'anthropic-oauth',
+  'opencode-with-claude',
+];
 
 type OpenAiUsagePayload = {
   rate_limit?: {
@@ -489,17 +497,22 @@ const durationToSeconds = (duration?: number, unit?: string) => {
 export const listConfiguredQuotaProviders = ({
   claudeProxyConfigured = false,
   isExternalRuntime = false,
+  readAuth = readAuthFile,
 }: {
   claudeProxyConfigured?: boolean;
   isExternalRuntime?: boolean;
+  readAuth?: () => AuthFile;
 } = {}) => {
-  const auth = readAuthFile();
+  const auth = readAuth();
   const configured = new Set<string>();
 
-  const anthropicAuth = normalizeAuthEntry(getAuthEntry(auth, ['anthropic', 'claude']));
+  const anthropicAuth = normalizeAuthEntry(getAuthEntry(auth, ANTHROPIC_AUTH_ALIASES));
   if (
-    (anthropicAuth && ((anthropicAuth as Record<string, unknown>).access || (anthropicAuth as Record<string, unknown>).token))
-    || (claudeProxyConfigured && !isExternalRuntime)
+    !isExternalRuntime
+    && (
+      (anthropicAuth && ((anthropicAuth as Record<string, unknown>).access || (anthropicAuth as Record<string, unknown>).token))
+      || claudeProxyConfigured
+    )
   ) {
     configured.add('claude');
   }
@@ -1837,10 +1850,21 @@ const readDegradedClaudeStatus = (): {
 };
 
 export const fetchClaudeQuota = async (options: FetchQuotaOptions = {}): Promise<ProviderResult> => {
+  if (options.isExternalRuntime) {
+    return buildResult({
+      providerId: 'claude',
+      providerName: 'Anthropic',
+      ok: false,
+      configured: false,
+      error: 'Not configured',
+    });
+  }
+
   const auth = (options.readAuth ?? readAuthFile)();
-  const entry = normalizeAuthEntry(getAuthEntry(auth, ['anthropic', 'claude'])) as Record<string, unknown> | null;
+  const entry = normalizeAuthEntry(getAuthEntry(auth, ANTHROPIC_AUTH_ALIASES)) as Record<string, unknown> | null;
   const accessToken = (entry?.access as string | undefined) ?? (entry?.token as string | undefined);
   const fetchImpl = options.fetchImpl ?? (fetch as QuotaFetch);
+  let oauthError: string | null = null;
 
   if (accessToken) {
     try {
@@ -1852,57 +1876,52 @@ export const fetchClaudeQuota = async (options: FetchQuotaOptions = {}): Promise
         },
       });
       if (!response.ok) {
-        return buildResult({
-          providerId: 'claude',
-          providerName: 'Anthropic',
-          ok: false,
-          configured: true,
-          error: `API error: ${response.status}`,
-        });
+        oauthError = `Anthropic OAuth usage returned HTTP ${response.status}.`;
+      } else {
+        const payload = await response.json() as Record<string, unknown>;
+        const windows: Record<string, UsageWindow> = {};
+        for (const [key, value] of Object.entries(payload)) {
+          if (key !== 'five_hour' && key !== 'seven_day' && !key.startsWith('seven_day_')) continue;
+          const usageWindow = asObject(value);
+          if (!usageWindow) continue;
+          const usedPercent = toNumber(usageWindow.utilization);
+          if (usedPercent === null || usedPercent < 0) continue;
+          const label = key === 'five_hour'
+            ? '5h'
+            : key === 'seven_day'
+              ? '7d'
+              : `7d-${key.slice('seven_day_'.length).replace(/_/g, '-')}`;
+          windows[label] = toUsageWindow({
+            usedPercent,
+            windowSeconds: key === 'five_hour' ? CLAUDE_FIVE_HOUR_SECONDS : CLAUDE_SEVEN_DAY_SECONDS,
+            resetAt: toTimestamp(usageWindow.resets_at),
+          });
+        }
+        if (windows['5h'] || windows['7d']) {
+          return buildResult({
+            providerId: 'claude',
+            providerName: 'Anthropic',
+            ok: true,
+            configured: true,
+            usage: { windows },
+            usageUpdatedAt: Date.now(),
+          });
+        }
+        oauthError = 'Anthropic OAuth usage did not return subscription limits.';
       }
-      const payload = await response.json() as Record<string, unknown>;
-      const windows: Record<string, UsageWindow> = {};
-      for (const [key, value] of Object.entries(payload)) {
-        if (key !== 'five_hour' && key !== 'seven_day' && !key.startsWith('seven_day_')) continue;
-        const usageWindow = asObject(value);
-        if (!usageWindow) continue;
-        const label = key === 'five_hour'
-          ? '5h'
-          : key === 'seven_day'
-            ? '7d'
-            : `7d-${key.slice('seven_day_'.length).replace(/_/g, '-')}`;
-        windows[label] = toUsageWindow({
-          usedPercent: toNumber(usageWindow.utilization),
-          windowSeconds: key === 'five_hour' ? CLAUDE_FIVE_HOUR_SECONDS : CLAUDE_SEVEN_DAY_SECONDS,
-          resetAt: toTimestamp(usageWindow.resets_at),
-        });
-      }
-      return buildResult({
-        providerId: 'claude',
-        providerName: 'Anthropic',
-        ok: true,
-        configured: true,
-        usage: { windows },
-        usageUpdatedAt: Date.now(),
-      });
     } catch (error) {
-      return buildResult({
-        providerId: 'claude',
-        providerName: 'Anthropic',
-        ok: false,
-        configured: true,
-        error: error instanceof Error ? error.message : 'Request failed',
-      });
+      oauthError = error instanceof Error ? error.message : 'Anthropic OAuth usage request failed.';
     }
   }
 
-  if (options.isExternalRuntime || !options.claudeProxyConfigured) {
+  if (!options.claudeProxyConfigured) {
     return buildResult({
       providerId: 'claude',
       providerName: 'Anthropic',
       ok: false,
-      configured: false,
-      error: 'Not configured',
+      configured: Boolean(accessToken),
+      error: oauthError ?? 'Not configured',
+      ...(oauthError ? { errorCode: 'claude_oauth_usage_unavailable' } : {}),
     });
   }
 
@@ -1954,7 +1973,7 @@ export const fetchClaudeQuota = async (options: FetchQuotaOptions = {}): Promise
 
   let cliResult: ReturnType<typeof parseClaudeCodeUsageOutput>;
   try {
-    cliResult = await fetchClaudeCodeUsage();
+    cliResult = await (options.fetchClaudeCodeUsage ?? fetchClaudeCodeUsage)();
   } catch (error) {
     cliResult = {
       ok: false,
@@ -1979,7 +1998,7 @@ export const fetchClaudeQuota = async (options: FetchQuotaOptions = {}): Promise
     configured: true,
     usage: degraded.usage,
     usageUpdatedAt: degraded.usageUpdatedAt,
-    error: cliResult.error ?? proxyError,
+    error: cliResult.error ?? proxyError ?? oauthError ?? 'Claude usage is unavailable.',
     errorCode: 'claude_code_usage_failed',
   });
 };

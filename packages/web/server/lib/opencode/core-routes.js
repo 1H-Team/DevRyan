@@ -484,6 +484,8 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
         return res.status(413).json({ error: 'Content exceeds maximum size of 1048576 bytes' });
       }
       express.json({ limit: '1mb' })(req, res, next);
+    } else if (req.path.startsWith('/api/desktop/browser-leases')) {
+      express.json({ limit: '16kb' })(req, res, next);
     } else if (
       req.path.startsWith('/api/config/agents') ||
       req.path.startsWith('/api/config/commands') ||
@@ -492,6 +494,8 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
       req.path.startsWith('/api/config/skills') ||
       req.path.startsWith('/api/config/plugins') ||
       req.path.startsWith('/api/auth') ||
+      req.path.startsWith('/api/diagnostics') ||
+      req.path.startsWith('/api/evidence') ||
       req.path.startsWith('/api/projects') ||
       req.path.startsWith('/api/fs') ||
       req.path.startsWith('/api/git') ||

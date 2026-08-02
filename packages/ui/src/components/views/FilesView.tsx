@@ -12,8 +12,6 @@ import {
   RiFolderReceivedLine,
   RiFileCheckFill,
   RiFileCheckLine,
-  RiFullscreenExitLine,
-  RiFullscreenLine,
   RiLoader4Line,
   RiRefreshLine,
   RiSearchLine,
@@ -507,23 +505,21 @@ const FileRow: React.FC<FileRowProps> = ({
   );
 };
 
-interface FilesViewProps {
-  mode?: 'full' | 'editor-only';
-}
-
-export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
+export const FilesView: React.FC = () => {
   const { t } = useI18n();
   const { files, runtime } = useRuntimeAPIs();
   const { currentTheme, availableThemes, lightThemeId, darkThemeId } = useThemeSystem();
-  const { isMobile, isTablet, screenWidth } = useDeviceInfo();
+  const { isMobile, isTablet } = useDeviceInfo();
   const alwaysShowActions = isMobile || isTablet;
   const showHidden = useDirectoryShowHidden();
   const showGitignored = useFilesViewShowGitignored();
 
   const currentDirectory = useEffectiveDirectory() ?? '';
   const root = normalizePath(currentDirectory.trim());
-  const showEditorTabsRow = isMobile || mode !== 'editor-only';
-  const suppressFileLoadingIndicator = mode === 'editor-only' && !isMobile;
+  // The mobile layout keeps a filename dropdown in this row; desktop shows the file
+  // name only, since the context panel already owns the tab strip.
+  const showEditorTabsRow = isMobile;
+  const suppressFileLoadingIndicator = !isMobile;
   const searchFiles = useFileSearchStore((state) => state.searchFiles);
   const gitStatus = useGitStatus(currentDirectory);
 
@@ -533,7 +529,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
 
   const [showMobilePageContent, setShowMobilePageContent] = React.useState(false);
   const [wrapLines, setWrapLines] = React.useState(true);
-  const [isFullscreen, setIsFullscreen] = React.useState(false);
   const [isSearchOpen, setIsSearchOpen] = React.useState(false);
   const [isFloatingToolbarOpen, setIsFloatingToolbarOpen] = React.useState(false);
   const floatingToolbarRef = React.useRef<HTMLDivElement | null>(null);
@@ -619,35 +614,11 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
   const selectedFileIsOutsideWorkspace = Boolean(root && selectedFilePath && !isPathWithinRoot(selectedFilePath, root));
   const selectedFileReadOptions = React.useMemo<FileReadOptions>(
     () => ({
-      allowOutsideWorkspace: mode === 'editor-only' && selectedFileIsOutsideWorkspace,
+      allowOutsideWorkspace: selectedFileIsOutsideWorkspace,
       directory: root || undefined,
     }),
-    [mode, root, selectedFileIsOutsideWorkspace],
+    [root, selectedFileIsOutsideWorkspace],
   );
-
-  // Editor tabs horizontal scroll fades
-  const editorTabsScrollRef = React.useRef<HTMLDivElement>(null);
-  const [editorTabsOverflow, setEditorTabsOverflow] = React.useState<{ left: boolean; right: boolean }>({ left: false, right: false });
-  const updateEditorTabsOverflow = React.useCallback(() => {
-    const el = editorTabsScrollRef.current;
-    if (!el) return;
-    setEditorTabsOverflow({
-      left: el.scrollLeft > 2,
-      right: el.scrollLeft + el.clientWidth < el.scrollWidth - 2,
-    });
-  }, []);
-  React.useEffect(() => {
-    const el = editorTabsScrollRef.current;
-    if (!el) return;
-    updateEditorTabsOverflow();
-    el.addEventListener('scroll', updateEditorTabsOverflow, { passive: true });
-    const ro = new ResizeObserver(updateEditorTabsOverflow);
-    ro.observe(el);
-    return () => {
-      el.removeEventListener('scroll', updateEditorTabsOverflow);
-      ro.disconnect();
-    };
-  }, [updateEditorTabsOverflow, openFiles.length]);
 
   const [childrenByDir, setChildrenByDir] = React.useState<Record<string, FileNode[]>>({});
   const loadedDirsRef = React.useRef<Set<string>>(new Set());
@@ -1500,7 +1471,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
     setFileLoading(true);
 
     const readOptions: FileReadOptions = {
-      allowOutsideWorkspace: mode === 'editor-only' && Boolean(root) && !isPathWithinRoot(node.path, root),
+      allowOutsideWorkspace: Boolean(root) && !isPathWithinRoot(node.path, root),
       directory: root || undefined,
     };
 
@@ -1566,7 +1537,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
           setFileLoading(false);
         }
       });
-  }, [expandPaths, isMobile, loadDirectory, mode, readFile, readFileStat, root, runtime.isDesktop, searchQuery, setSelectedPath, t]);
+  }, [expandPaths, isMobile, loadDirectory, readFile, readFileStat, root, runtime.isDesktop, searchQuery, setSelectedPath, t]);
 
   const ensurePathVisible = React.useCallback(async (targetPath: string, includeTarget: boolean) => {
     if (!root) {
@@ -2572,7 +2543,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
     );
   }, [currentTheme.metadata.variant, pierreTheme, wrapLines]);
 
-  const renderFloatingFileControls = ({ exitFullscreenOnly = false }: { exitFullscreenOnly?: boolean } = {}) => {
+  const renderFloatingFileControls = () => {
     if (!selectedFile) {
       return null;
     }
@@ -2819,33 +2790,6 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
           </Button>
         )}
 
-        {exitFullscreenOnly ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsFullscreen(false)}
-            className="h-6 w-6 p-0 hover:bg-transparent focus-visible:bg-transparent active:bg-transparent"
-            title={t('filesView.editor.exitFullscreen')}
-            aria-label={t('filesView.editor.exitFullscreen')}
-          >
-            <RiFullscreenExitLine className="h-4 w-4" />
-          </Button>
-        ) : (!isMobile && mode === 'full' && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsFullscreen(!isFullscreen)}
-            className="h-6 w-6 p-0 hover:bg-transparent focus-visible:bg-transparent active:bg-transparent"
-            title={isFullscreen ? t('filesView.editor.exitFullscreen') : t('filesView.editor.fullscreen')}
-            aria-label={isFullscreen ? t('filesView.editor.exitFullscreen') : t('filesView.editor.fullscreen')}
-          >
-            {isFullscreen ? (
-              <RiFullscreenExitLine className="h-4 w-4" />
-            ) : (
-              <RiFullscreenLine className="h-4 w-4" />
-            )}
-          </Button>
-        ))}
       </div>
     );
   };
@@ -2881,10 +2825,10 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
         </DialogContent>
       </Dialog>
       <div className={cn('flex flex-col flex-shrink-0', showEditorTabsRow && 'border-b border-border/40')}>
-        {/* Row 1: Tabs */}
+        {/* Row 1: mobile-only open-file switcher */}
         {showEditorTabsRow ? (
         <div className="flex min-w-0 items-center px-3 py-1.5">
-          {isMobile && showMobilePageContent && (
+          {showMobilePageContent && (
             <button
               type="button"
               onClick={() => setShowMobilePageContent(false)}
@@ -2895,8 +2839,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
             </button>
           )}
 
-          {isMobile ? (
-            selectedFile ? (
+          {selectedFile ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
@@ -2958,69 +2901,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
               </DropdownMenu>
             ) : (
               <div className="typography-ui-label font-medium truncate">{t('filesView.editor.selectFile')}</div>
-            )
-          ) : (
-            openFiles.length > 0 ? (
-              <div className="relative min-w-0 flex-1">
-                {editorTabsOverflow.left && (
-                  <div className="pointer-events-none absolute left-0 top-0 bottom-0 w-6 z-10 bg-gradient-to-r from-background to-transparent" />
-                )}
-                {editorTabsOverflow.right && (
-                  <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-6 z-10 bg-gradient-to-l from-background to-transparent" />
-                )}
-                <div
-                  ref={editorTabsScrollRef}
-                  className="flex min-w-0 items-center gap-1 overflow-x-auto scrollbar-none"
-                  style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-                >
-                  {openFiles.map((file) => {
-                    const isActive = selectedFile?.path === file.path;
-                    return (
-                      <div
-                        key={file.path}
-                        title={getDisplayPath(root, file.path)}
-                        className={cn(
-                          'group inline-flex items-center gap-1 rounded-md border px-2 py-1 typography-ui-label transition-colors whitespace-nowrap',
-                          isActive
-                            ? 'bg-[var(--interactive-selection)] border-[var(--primary-muted)] text-[var(--interactive-selection-foreground)]'
-                            : 'bg-transparent border-[var(--interactive-border)] text-[var(--surface-muted-foreground)] hover:bg-[var(--interactive-hover)] hover:text-[var(--surface-foreground)]'
-                        )}
-                      >
-                        <FileTypeIcon filePath={file.path} extension={file.extension} className="h-3.5 w-3.5 flex-shrink-0" />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!isActive) {
-                              void handleSelectFile(file);
-                            }
-                          }}
-                          className="max-w-[12rem] truncate text-left"
-                        >
-                          {file.name}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            handleCloseFile(file.path);
-                          }}
-                          className={cn(
-                            'rounded-sm p-0.5 text-[var(--surface-muted-foreground)] hover:text-[var(--surface-foreground)]',
-                            !isActive && !alwaysShowActions && 'opacity-0 group-hover:opacity-100'
-                          )}
-                          aria-label={t('filesView.editor.closeFileAria', { name: file.name })}
-                        >
-                          <RiCloseLine size={14} />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
-              <div className="typography-ui-label font-medium truncate">{t('filesView.editor.selectFile')}</div>
-            )
-          )}
+            )}
         </div>
         ) : null}
 
@@ -3349,125 +3230,22 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full' }) => {
     </section>
   );
 
-  // Fullscreen file viewer overlay
-  const fullscreenViewer = mode === 'full' && isFullscreen && selectedFile && (
-    <div className="absolute inset-0 z-50 flex flex-col bg-background">
-      {/* Fullscreen content */}
-      <div className="flex-1 min-h-0 min-w-0 relative">
-        <div className="absolute right-4 top-4 z-30">
-          {renderFloatingFileControls({ exitFullscreenOnly: true })}
-        </div>
-        <ScrollableOverlay outerClassName="h-full min-w-0" className="h-full min-w-0">
-          {fileLoading ? (
-            suppressFileLoadingIndicator
-              ? <div className="p-4" />
-              : (
-                <div className="p-4 flex items-center gap-2 typography-ui text-muted-foreground">
-                  <RiLoader4Line className="h-4 w-4 animate-spin" />
-                  Loading…
-                </div>
-              )
-          ) : fileError ? (
-            <div className="p-4 typography-ui text-[color:var(--status-error)]">{fileError}</div>
-          ) : isSelectedImage ? (
-            <div className="flex h-full items-center justify-center p-4">
-              <img
-                src={imageSrc}
-                alt={selectedFile.name}
-                className="max-w-full max-h-full object-contain rounded-md border border-border/30 bg-primary/10"
-              />
-            </div>
-          ) : isMarkdown && getMdViewMode() === 'preview' ? (
-            <div className="h-full overflow-auto p-4">
-              {fileContent.length > 500 * 1024 && (
-                  <div className="mb-3 rounded-md border border-status-warning/20 bg-status-warning/10 px-3 py-2 text-sm text-status-warning">
-                    {t('filesView.warning.largeFilePreviewLimited', { sizeKb: Math.round(fileContent.length / 1024) })}
-                  </div>
-                )}
-              <ErrorBoundary
-                fallback={
-                  <div className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2">
-                    <div className="mb-1 font-medium text-destructive">{t('filesView.error.previewUnavailable')}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {t('filesView.error.switchToEditMode')}
-                    </div>
-                  </div>
-                }
-              >
-                <SimpleMarkdownRenderer
-                  content={fileContent}
-                  className="typography-markdown-body"
-                  stripFrontmatter
-                />
-              </ErrorBoundary>
-            </div>
-          ) : canUseShikiFileView && textViewMode === 'view' ? (
-            renderShikiFileView(selectedFile, draftContent)
-          ) : (
-            <div className={cn('relative h-full', shouldMaskEditorForPendingNavigation && 'overflow-hidden')}>
-              <div className={cn('h-full', shouldMaskEditorForPendingNavigation && 'invisible')}>
-              <CodeMirrorEditor
-                value={draftContent}
-                onChange={setDraftContent}
-                readOnly={!canEdit}
-                extensions={editorExtensions}
-                className="h-full"
-                onViewReady={(view) => {
-                  editorViewRef.current = view;
-                  window.requestAnimationFrame(() => {
-                    nudgeEditorSelectionAboveKeyboard(view);
-                  });
-                }}
-                onViewDestroy={() => {
-                  if (editorViewRef.current) {
-                    editorViewRef.current = null;
-                  }
-                }}
-              />
-              </div>
-              {shouldMaskEditorForPendingNavigation && (
-                <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background">
-                  <div className="flex items-center gap-2 typography-ui text-muted-foreground">
-                    <RiLoader4Line className="h-4 w-4 animate-spin" />
-                    {t('filesView.state.openingFileAtChange')}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </ScrollableOverlay>
-      </div>
-    </div>
-  );
-
   return (
     <div className="flex h-full min-h-0 overflow-hidden bg-background relative">
       {renderDialogs()}
-      {fullscreenViewer}
       {isMobile ? (
         showMobilePageContent ? (
           fileViewer
         ) : (
           treePanel
         )
-       ) : mode === 'editor-only' ? (
-         <div className="flex flex-1 min-h-0 min-w-0 overflow-hidden">
-            <div className="flex-1 min-h-0 min-w-0 overflow-hidden bg-background">
-             {fileViewer}
-            </div>
+      ) : (
+        <div className="flex flex-1 min-h-0 min-w-0 overflow-hidden">
+          <div className="flex-1 min-h-0 min-w-0 overflow-hidden bg-background">
+            {fileViewer}
           </div>
-       ) : (
-         <div className="flex flex-1 min-h-0 min-w-0 gap-3 px-3 pb-3 pt-2">
-            {screenWidth >= 700 && (
-              <div className="w-72 flex-shrink-0 min-h-0 overflow-hidden">
-               {treePanel}
-             </div>
-           )}
-           <div className="flex-1 min-h-0 min-w-0 overflow-hidden rounded-xl border border-border/60 bg-background">
-             {fileViewer}
-           </div>
-         </div>
-       )}
+        </div>
+      )}
     </div>
   );
 };

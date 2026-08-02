@@ -12,8 +12,10 @@
 - `packages/web/server/lib/github/auth.js`: auth storage, multi-account support, client id, scope config.
 - `packages/web/server/lib/github/device-flow.js`: OAuth device flow.
 - `packages/web/server/lib/github/octokit.js`: Octokit factory for the current auth.
+- `packages/web/server/lib/github/api-client.js`: shared Octokit construction and timeout-aware GitHub fetch wrapper.
 - `packages/web/server/lib/github/repo/index.js`: remote URL parsing and directory-to-repo resolution.
 - `packages/web/server/lib/github/pr-status.js`: PR lookup across remotes, forks, and upstreams.
+- `packages/web/server/lib/github/rate-limit.js`: API failure classification and shared PR-status cooldown state.
 - `packages/web/server/index.js`: API route layer that calls this module.
 - `packages/web/src/api/github.ts`: web client wrapper for GitHub endpoints.
 
@@ -38,6 +40,8 @@
 ### Octokit
 
 - `getOctokitOrNull()`: current Octokit or `null`.
+- `createGitHubApiClient({ auth })`: construct a timeout-protected client for a selected token.
+- Every GitHub HTTP request has a 15-second deadline. Device-flow requests use the same timeout wrapper.
 
 ### Repo
 
@@ -51,6 +55,7 @@
 - Client ID resolution order: `OPENCHAMBER_GITHUB_CLIENT_ID` -> `settings.json` -> default.
 - Scope resolution order: `OPENCHAMBER_GITHUB_SCOPES` -> `settings.json` -> default.
 - Account id resolution order: explicit `accountId` -> user login -> user id -> token prefix.
+- Client credential selection remains stored account first, then optional `gh` CLI token when CLI credentials are enabled. OAuth completion creates its verification client through the same shared factory.
 
 ## PR integration overview
 
@@ -74,6 +79,8 @@
 - It ranks remotes in this order: explicit remote, tracking remote, `origin`, `upstream`, then the rest.
 - It resolves those remotes into GitHub repos.
 - It expands each repo through `parent` and `source` so PRs in upstream repos can still be found.
+- Independent remote and repository-metadata reads run concurrently, while candidate ranking and repository deduplication remain deterministic.
+- Repository metadata and default branches share one bounded five-minute cache, including the upstream route.
 - It skips PR lookup when the current branch matches that repo's default branch.
 - It first searches for PRs by likely source owner plus exact head branch.
 - If that fails, it falls back to broader GitHub search for the branch name.
@@ -111,6 +118,7 @@
 - Closed or merged PR -> stop regular polling.
 - Hidden tab -> skip polling.
 - Non-forced refreshes use a `90s` TTL.
+- A GitHub rate-limit response starts a server-side cooldown. Cached status can still be served, while uncached or forced PR-status work returns a stable `429` without making another GitHub request until the cooldown expires.
 
 ## Background tracking rules
 
@@ -157,7 +165,9 @@
 ## Failure handling
 
 - If GitHub is disconnected, API returns `connected: false`.
+- Authentication failures and rate limits are classified separately; a rate limit never removes the active stored account.
 - If a repo is private or inaccessible, resolver calls may quietly return no PR.
+- If a watched directory disappears, PR resolution stops before local remote or GitHub work begins.
 - Sidebar stays quiet on missing or inaccessible PR state.
 - Git view is where explicit PR-level problems should be shown.
 

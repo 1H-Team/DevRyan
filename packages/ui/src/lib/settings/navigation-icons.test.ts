@@ -15,6 +15,7 @@ import {
   RiFoldersLine,
   RiGithubLine,
   RiGlobalLine,
+  RiInformationLine,
   RiMicLine,
   RiNotification3Line,
   RiPaletteLine,
@@ -69,6 +70,7 @@ describe('settings navigation icons', () => {
       usage: RiBarChart2Line,
       voice: RiMicLine,
       tunnel: RiGlobalLine,
+      about: RiInformationLine,
     } as const;
 
     expect(Object.keys(settingsNavIcons).sort()).toEqual(

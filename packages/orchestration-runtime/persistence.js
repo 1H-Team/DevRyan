@@ -4,9 +4,11 @@ export const DEFAULT_MANAGED_TERMINAL_MAX_RECORDS = 2_000;
 export const DEFAULT_MANAGED_TERMINAL_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1_000;
 export const DEFAULT_MANAGED_LEDGER_MAX_BYTES = 20 * 1024 * 1024;
 
-const textEncoder = new TextEncoder();
-
-const serializedByteLength = (value) => textEncoder.encode(JSON.stringify(value)).byteLength;
+// Byte length without materializing an intermediate Uint8Array — this runs on
+// every task transition against a ledger that can approach the 20MB budget.
+const serializedByteLength = typeof Buffer !== 'undefined' && typeof Buffer.byteLength === 'function'
+  ? (value) => Buffer.byteLength(JSON.stringify(value), 'utf8')
+  : (value) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
 
 const taskAgeTimestamp = (task) => task.finishedAt ?? task.createdAt;
 
@@ -42,9 +44,14 @@ export const compactManagedOrchestrationState = (input, options = {}) => {
   const maxTerminalRecords = options.maxTerminalRecords ?? DEFAULT_MANAGED_TERMINAL_MAX_RECORDS;
   const maxAgeMs = options.maxAgeMs ?? DEFAULT_MANAGED_TERMINAL_MAX_AGE_MS;
   const maxBytes = options.maxBytes ?? DEFAULT_MANAGED_LEDGER_MAX_BYTES;
-  const tasks = Array.isArray(input?.tasks) ? input.tasks.map((task) => structuredClone(task)) : [];
+  // `assumeOwnedInput` skips the defensive deep copy. Compaction never mutates
+  // task/envelope objects (it only filters arrays), so a caller that passes an
+  // already-owned snapshot — the scheduler's persist path, which deep-copies in
+  // snapshotLocked() — avoids a second full-ledger clone on every transition.
+  const cloneRecord = options.assumeOwnedInput === true ? (record) => record : structuredClone;
+  const tasks = Array.isArray(input?.tasks) ? input.tasks.map(cloneRecord) : [];
   const envelopes = Array.isArray(input?.resultEnvelopes)
-    ? input.resultEnvelopes.map((envelope) => structuredClone(envelope))
+    ? input.resultEnvelopes.map(cloneRecord)
     : [];
   const protectedIds = collectProtectedTaskIds(tasks, envelopes);
   const removable = tasks

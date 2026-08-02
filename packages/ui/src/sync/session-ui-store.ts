@@ -23,6 +23,7 @@ import { useProjectsStore } from "@/stores/useProjectsStore"
 import { useDirectoryStore } from "@/stores/useDirectoryStore"
 import { useSessionFoldersStore } from "@/stores/useSessionFoldersStore"
 import { useCommandsStore } from "@/stores/useCommandsStore"
+import { useSkillsStore } from "@/stores/useSkillsStore"
 import { useMessageQueueStore } from "@/stores/messageQueueStore"
 import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
 import { useSessionPlanFileStore } from "@/stores/useSessionPlanFileStore"
@@ -424,9 +425,11 @@ async function routeMessage(params: {
     const dirState = getDirectoryState(messageDirectory ?? undefined)
     const syncCommands = dirState?.command ?? []
     const storeCommands = useCommandsStore.getState().commands
+    const skills = useSkillsStore.getState().skills
 
     const isCommand = syncCommands.find((c) => c.name === cmdName)
       || storeCommands.find((c) => c.name === cmdName)
+      || skills.find((skill) => skill.name === cmdName)
 
     if (isCommand) {
       await optimisticSend({

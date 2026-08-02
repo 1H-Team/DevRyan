@@ -1,6 +1,6 @@
-import { Octokit } from '@octokit/rest';
 import { getGitHubAuth, isGhCliDisabled } from './auth.js';
 import { getGhCliToken } from './gh-cli-credential.js';
+import { createGitHubApiClient } from './api-client.js';
 
 export function getOctokitOrNull() {
   const auth = getGitHubAuth();
@@ -8,5 +8,5 @@ export function getOctokitOrNull() {
   if (!token) {
     return null;
   }
-  return new Octokit({ auth: token });
+  return createGitHubApiClient({ auth: token });
 }

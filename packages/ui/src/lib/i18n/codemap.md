@@ -11,3 +11,6 @@ Components request translated strings via helpers/hooks using active locale cont
 
 ## Integration
 Integrated with settings, message catalogs, and text-heavy views.
+The Settings catalog owns the unified diagnostic journal/cache status and
+clear-confirmation copy; the desktop variant explicitly names both stores and
+both variants state that chat history is unaffected.

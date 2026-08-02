@@ -1,0 +1,141 @@
+export const FEATURE_TEST_MATRIX = Object.freeze([
+  {
+    id: 'ui-session-chat-sync',
+    sourcePaths: ['packages/ui/src/sync/sync-context.tsx', 'packages/ui/src/sync/session-ui-store.ts'],
+    testPaths: ['packages/ui/src/sync/sync-context.plan-lifecycle.test.ts', 'packages/ui/src/sync/session-ui-store.send.test.ts'],
+  },
+  {
+    id: 'web-server-and-runtime-apis',
+    sourcePaths: ['packages/web/server/index.js', 'packages/web/src/api/index.ts'],
+    testPaths: ['packages/web/server/opencode-proxy.test.js', 'packages/web/src/api/index.test.ts'],
+  },
+  {
+    id: 'electron-native-shell',
+    sourcePaths: ['packages/electron/main.mjs', 'packages/electron/preload.mjs'],
+    testPaths: ['packages/electron/tests/origin-policy.test.mjs', 'packages/electron/tests/quit-cleanup.test.mjs'],
+  },
+  {
+    id: 'vscode-extension-and-bridge',
+    sourcePaths: ['packages/vscode/src/bridge.ts', 'packages/vscode/webview/api/index.ts'],
+    testPaths: ['packages/vscode/src/bridge-system-runtime.test.js', 'packages/vscode/webview/api/index.test.ts'],
+  },
+  {
+    id: 'legacy-tauri-compatibility',
+    sourcePaths: ['packages/desktop/src-tauri/src/main.rs', 'packages/desktop/src-tauri/src/remote_ssh.rs'],
+    testPaths: ['packages/desktop/src-tauri/src/main.rs', 'packages/desktop/src-tauri/src/remote_ssh.rs'],
+  },
+  {
+    id: 'cursor-sdk-runtime',
+    sourcePaths: ['packages/cursor-sdk-runtime/index.js', 'packages/cursor-sdk-runtime/cursor-question-runtime.js'],
+    testPaths: ['packages/cursor-sdk-runtime/tool-call-normalize.test.js', 'packages/cursor-sdk-runtime/cursor-question-runtime.test.js'],
+  },
+  {
+    id: 'managed-orchestration',
+    sourcePaths: ['packages/orchestration-runtime/scheduler.js', 'packages/web/server/lib/orchestration/runtime.js'],
+    testPaths: ['packages/orchestration-runtime/scheduler.lifecycle.test.js', 'packages/web/server/lib/orchestration/runtime.test.js', '.opencode/plugins/orchestrator-autoresume.test.mjs'],
+  },
+  {
+    id: 'diagnostics-evidence-worktrees',
+    sourcePaths: ['packages/harness-runtime/lib/journal.js', 'packages/harness-runtime/lib/evidence-runtime.js', 'packages/harness-runtime/lib/worktree-bootstrap.js'],
+    testPaths: ['packages/harness-runtime/lib/journal.test.js', 'packages/harness-runtime/lib/evidence-runtime.test.js', 'packages/harness-runtime/lib/worktree-bootstrap.test.js'],
+  },
+  {
+    id: 'providers-and-quota',
+    sourcePaths: ['packages/web/server/lib/quota/providers/index.js', 'packages/ui/src/stores/useQuotaStore.ts'],
+    testPaths: ['packages/web/server/lib/quota/providers/index.test.js', 'packages/ui/src/stores/useQuotaStore.test.ts'],
+  },
+  {
+    id: 'git-and-github',
+    sourcePaths: ['packages/web/server/lib/git/service.js', 'packages/web/server/lib/git/commit-message.js', 'packages/web/server/lib/github/routes.js'],
+    testPaths: [
+      'packages/web/server/lib/git/service.test.js',
+      'packages/web/server/lib/git/commit-message.test.js',
+      'packages/web/server/lib/git/routes.commit-message.test.js',
+      'packages/ui/src/lib/gitApi.generation.test.ts',
+      'packages/ui/src/lib/github/sourceRepo.test.ts',
+    ],
+  },
+  {
+    id: 'terminal-runtime',
+    sourcePaths: ['packages/web/server/lib/terminal/runtime.js', 'packages/ui/src/lib/terminalApi.ts'],
+    testPaths: ['packages/web/server/lib/terminal/runtime.test.js', 'packages/ui/src/lib/terminalApi.test.ts'],
+  },
+  {
+    id: 'skills-plugins-and-mcp',
+    sourcePaths: ['packages/web/server/lib/opencode/skills.js', 'packages/web/server/lib/opencode/mcp.js', 'packages/ui/src/stores/usePluginsStore.ts'],
+    testPaths: ['packages/web/server/lib/opencode/skills.test.js', 'packages/web/server/lib/opencode/mcp.test.js', 'packages/ui/src/stores/usePluginsStore.test.ts'],
+  },
+  {
+    id: 'notifications-and-tts',
+    sourcePaths: ['packages/web/server/lib/notifications/runtime.js', 'packages/web/server/lib/tts/routes.js'],
+    testPaths: ['packages/web/server/lib/notifications/runtime.test.js', 'packages/web/server/lib/tts/routes.test.js'],
+  },
+  {
+    id: 'browser-preview-and-session-scoped-agent-leases',
+    sourcePaths: [
+      'packages/web/server/lib/browser-cdp/discovery-runtime.js',
+      'packages/web/server/lib/browser-cdp/lease-runtime.js',
+      'packages/web/server/lib/agent-browser/install.js',
+      'packages/web/server/default-config/plugins/devryan-browser.mjs',
+      'packages/electron/browser-cdp-bridge.mjs',
+      'packages/electron/main.mjs',
+      'packages/ui/src/stores/useBrowserAgentStore.ts',
+    ],
+    testPaths: [
+      'packages/web/server/lib/browser-cdp/discovery-runtime.test.js',
+      'packages/web/server/lib/browser-cdp/lease-runtime.test.js',
+      'packages/web/server/lib/agent-browser/install.test.js',
+      'packages/web/server/default-config/plugins/devryan-browser.test.mjs',
+      'packages/electron/tests/browser-cdp-bridge.test.mjs',
+      'packages/electron/tests/browser-lease-main-contract.test.mjs',
+      'packages/ui/src/stores/useBrowserAgentStore.test.ts',
+      'packages/ui/src/components/layout/browserGuestLifecycle.test.ts',
+    ],
+  },
+  {
+    id: 'product-tool-contracts',
+    sourcePaths: [
+      'packages/ui/src/lib/tools/manifest.ts',
+      'packages/ui/src/lib/toolHelpers.ts',
+      'packages/ui/src/components/chat/message/parts/tool-activity/classification.ts',
+      'packages/ui/src/components/chat/ManagedTaskList.tsx',
+    ],
+    testPaths: [
+      'packages/ui/src/lib/tools/manifest.test.ts',
+      'packages/ui/src/lib/toolHelpers.test.ts',
+      'packages/ui/src/components/chat/message/parts/toolRenderUtils.test.ts',
+      'packages/ui/src/components/chat/message/parts/toolDisplayState.test.ts',
+      'packages/ui/src/components/chat/message/parts/toolExpandedFallback.test.ts',
+      'packages/ui/src/components/chat/message/parts/ToolPart.diff.test.ts',
+      'packages/ui/src/components/chat/message/parts/taskToolUtils.test.ts',
+      'packages/ui/src/components/chat/ManagedTaskList.test.tsx',
+      'packages/web/src/api/tools.test.ts',
+      'packages/vscode/webview/api/tools.test.ts',
+    ],
+  },
+  {
+    id: 'provider-prompt-tool-policy',
+    sourcePaths: ['packages/ui/src/lib/opencode/provider-prompt-tools.ts'],
+    testPaths: ['packages/ui/src/lib/opencode/provider-prompt-tools.test.ts', 'packages/ui/src/lib/opencode/client.send.test.ts'],
+  },
+  {
+    id: 'cli-tunnels-and-auth',
+    sourcePaths: ['packages/web/bin/cli.js', 'packages/web/server/lib/tunnels/index.js'],
+    testPaths: ['packages/web/bin/cli.test.js', 'packages/web/server/lib/tunnels/index.test.js'],
+  },
+  {
+    id: 'packaging-and-release-branding',
+    sourcePaths: ['.github/workflows/release.yml', 'scripts/verify-release-assets.mjs'],
+    testPaths: ['scripts/verify-release-assets.test.mjs', 'scripts/verify-default-config-artifact.test.mjs'],
+  },
+  {
+    id: 'validation-and-bundle-budgets',
+    sourcePaths: ['scripts/validate.mjs', 'scripts/check-bundle-budgets.mjs'],
+    testPaths: ['scripts/test-runner-utils.test.mjs', 'scripts/check-bundle-budgets.test.mjs'],
+  },
+  {
+    id: 'agent-evaluation-tools',
+    sourcePaths: ['scripts/agent-evals/main.mjs', 'scripts/agent-evals/runner.mjs'],
+    testPaths: ['scripts/agent-evals/main.test.mjs', 'scripts/agent-evals/runner.test.mjs'],
+  },
+]);

@@ -94,7 +94,12 @@ mock.module("@/components/ui", () => ({
 
 import { INITIAL_STATE, type State } from "../types"
 import type { DirectoryStore } from "../child-store"
-import { resyncBlockingRequestsForDirectory } from "../sync-context"
+import {
+  createForegroundRecoveryHandlers,
+  resyncBlockingRequestsForDirectory,
+  setActiveSession,
+} from "../sync-context"
+import { useSessionUIStore } from "../session-ui-store"
 
 function buildQuestion(overrides: Partial<QuestionRequest> = {}): QuestionRequest {
   return {
@@ -126,6 +131,29 @@ function createDirectoryStore(initial: Partial<State>): StoreApi<DirectoryStore>
     replace: (next) => set(next),
   }))
 }
+
+describe("foreground recovery", () => {
+  test("recovers on window focus even when visibility did not transition", () => {
+    let visibilityState: DocumentVisibilityState = "hidden"
+    let recoveryCount = 0
+    const handlers = createForegroundRecoveryHandlers(
+      () => {
+        recoveryCount += 1
+      },
+      () => visibilityState,
+    )
+
+    handlers.onVisibilityChange()
+    expect(recoveryCount).toBe(0)
+
+    handlers.onWindowFocus()
+    expect(recoveryCount).toBe(1)
+
+    visibilityState = "visible"
+    handlers.onVisibilityChange()
+    expect(recoveryCount).toBe(2)
+  })
+})
 
 describe("resyncBlockingRequestsForDirectory", () => {
   beforeEach(() => {
@@ -320,6 +348,125 @@ describe("resyncDirectoryAfterReconnect", () => {
     expect(store.getState().message.ses_a).toEqual([completedAssistant])
     expect(routingIndex.sessionDirectoryById.get("ses_a")).toBe("/repo")
     expect(routingIndex.messageSessionById.get("msg_assistant")).toBe("ses_a")
+  })
+
+  test("foreground recovery replaces a stale completed snapshot and restores the proposed plan lifecycle", async () => {
+    const sessionID = "ses_plan"
+    const userMessageID = "msg_1_user"
+    const assistantMessageID = "msg_2_assistant"
+    const planText = [
+      "<!--plan-->",
+      "# Background Plan",
+      "",
+      "## Implementation",
+      "",
+      "1. Inspect the package metadata.",
+      "",
+      "## Verification",
+      "",
+      "1. Confirm no files changed.",
+    ].join("\n")
+    const userMessage = {
+      id: userMessageID,
+      sessionID,
+      role: "user",
+      time: { created: 1 },
+    } as State["message"][string][number]
+    const completedAssistant = {
+      id: assistantMessageID,
+      sessionID,
+      role: "assistant",
+      providerID: "cursor-acp",
+      time: { created: 2, completed: 3 },
+    } as State["message"][string][number]
+    const planModePart = {
+      id: "prt_plan_mode",
+      sessionID,
+      messageID: userMessageID,
+      type: "text",
+      text: "User has requested to enter plan mode.",
+      synthetic: true,
+    } as State["part"][string][number]
+    const staleAssistantPart = {
+      id: "prt_assistant",
+      sessionID,
+      messageID: assistantMessageID,
+      type: "text",
+      text: "Preparing the plan...",
+    } as State["part"][string][number]
+    const completedPlanPart = {
+      ...staleAssistantPart,
+      text: planText,
+    } as State["part"][string][number]
+    const session = {
+      id: sessionID,
+      title: "Background plan",
+      time: { created: 1, updated: 3 },
+      version: "1",
+    } as State["session"][number]
+    const store = createDirectoryStore({
+      session: [session],
+      session_status: { [sessionID]: { type: "idle" } },
+      message: { [sessionID]: [userMessage, completedAssistant] },
+      part: {
+        [userMessageID]: [planModePart],
+        [assistantMessageID]: [staleAssistantPart],
+      },
+    })
+    sessionStatusResponse = { [sessionID]: { type: "idle" } }
+    sessionGetResponse = { [sessionID]: session }
+    sessionMessagesResponse = {
+      [sessionID]: [
+        { info: userMessage, parts: [planModePart] },
+        { info: completedAssistant, parts: [completedPlanPart] },
+      ],
+    }
+    const routingIndex = {
+      sessionDirectoryById: new Map([[sessionID, "/repo"]]),
+      messageSessionById: new Map([
+        [userMessageID, sessionID],
+        [assistantMessageID, sessionID],
+      ]),
+      sessionMessageIdsById: new Map([[sessionID, new Set([userMessageID, assistantMessageID])]]),
+    }
+    const previousParts = store.getState().part[assistantMessageID]
+
+    useSessionUIStore.getState().recordUserMessagePlanMode(sessionID, userMessageID, true)
+    setActiveSession("/repo", sessionID)
+
+    try {
+      const { resyncDirectoryAfterReconnect } = await import("../sync-context")
+      await resyncDirectoryAfterReconnect("/repo", store, routingIndex as never, {
+        candidateSessionIds: [sessionID],
+        restoreSessionLifecycleFor: sessionID,
+      })
+
+      const nextParts = store.getState().part[assistantMessageID]
+      expect(nextParts).not.toBe(previousParts)
+      expect(nextParts?.[0]).toEqual(completedPlanPart)
+      expect(useSessionUIStore.getState().sessionPlanIndicator.get(sessionID)).toEqual({
+        state: "proposed",
+        sourceMessageId: assistantMessageID,
+      })
+    } finally {
+      setActiveSession("", "")
+      useSessionUIStore.setState((state) => {
+        const planModeUserMessages = new Set(state.planModeUserMessages)
+        planModeUserMessages.delete(userMessageID)
+        const planModeUserMessagesBySession = new Map(state.planModeUserMessagesBySession)
+        planModeUserMessagesBySession.delete(sessionID)
+        const sessionPlanIndicator = new Map(state.sessionPlanIndicator)
+        sessionPlanIndicator.delete(sessionID)
+        const sessionPlanAvailable = new Map(state.sessionPlanAvailable)
+        sessionPlanAvailable.delete(sessionID)
+        return {
+          planModeUserMessages,
+          planModeUserMessagesBySession,
+          sessionPlanIndicator,
+          sessionPlanAvailable,
+        }
+      })
+    }
   })
 
   test("preserves existing status and pending blockers when reconnect fetches fail", async () => {

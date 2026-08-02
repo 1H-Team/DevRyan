@@ -1097,6 +1097,23 @@ html:not(.dark) .chat-scroll {
   }
 }
 
+/* Soft-pill tabs: tighten padding, then drop labels, as the strip narrows. */
+.soft-tabs__track {
+  padding-inline: 0.125rem;
+}
+
+@container soft-tabs (max-width: 20rem) {
+  .soft-tabs__button {
+    padding-inline: 0.5rem;
+  }
+}
+
+@container soft-tabs (max-width: 12rem) {
+  .soft-tabs__label {
+    display: none;
+  }
+}
+
 /* Text font: IBM Plex Sans */
 .markdown-content {
   font-family: var(--font-sans);

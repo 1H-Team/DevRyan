@@ -12,7 +12,6 @@ const disabled = { status: 'disabled' as const };
 describe('MCP dropdown visibility', () => {
   test('hides known ambient MCP aliases that only exist in runtime status', () => {
     const status = {
-      context7: disabled,
       ghgrep: disabled,
       'gh-grep': disabled,
       linear: connected,
@@ -23,10 +22,10 @@ describe('MCP dropdown visibility', () => {
   });
 
   test('keeps explicitly configured blocked aliases visible', () => {
-    const status = { context7: connected, ghgrep: connected };
-    const configs = [{ name: 'context7' }, { name: 'ghgrep' }];
+    const status = { 'gh-grep': connected, ghgrep: connected };
+    const configs = [{ name: 'gh-grep' }, { name: 'ghgrep' }];
 
-    expect(getVisibleMcpServerNames(status, configs)).toEqual(['context7', 'ghgrep']);
+    expect(getVisibleMcpServerNames(status, configs)).toEqual(['gh-grep', 'ghgrep']);
     expect(getVisibleMcpStatus(status, configs)).toEqual(status);
   });
 

@@ -1,6 +1,17 @@
 import path from 'node:path';
 import fs from 'node:fs';
 
+const RETIRED_DEVRYAN_SKILL_NAMES = Object.freeze([
+  'test-driven-development',
+  'subagent-driven-development',
+]);
+const RETIRED_DEVRYAN_SKILL_NAME_SET = new Set(RETIRED_DEVRYAN_SKILL_NAMES);
+
+const isRetiredDevRyanSkillName = (value) => (
+  typeof value === 'string'
+  && RETIRED_DEVRYAN_SKILL_NAME_SET.has(value.trim().toLowerCase())
+);
+
 const isPlainObject = (value) => (
   value
   && typeof value === 'object'
@@ -37,6 +48,10 @@ const filterVisibleSkills = (skills = [], hiddenSkills = []) => {
   let changed = false;
 
   for (const skill of skills) {
+    if (isRetiredDevRyanSkillName(skill?.name)) {
+      changed = true;
+      continue;
+    }
     if (isPackageCacheSkillPath(skill?.path)) {
       changed = true;
       continue;
@@ -317,9 +332,11 @@ const sanitizeAgentSkillPolicy = (frontmatter, policy = null) => {
 };
 
 export {
+  RETIRED_DEVRYAN_SKILL_NAMES,
   applyRuntimeExternalDirectoryPolicy,
   buildVisibleSkillPolicy,
   filterVisibleSkills,
+  isRetiredDevRyanSkillName,
   normalizeSkillPath,
   sanitizeAgentSkillPolicy,
 };

@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { create } from "zustand";
-import { devtools, persist, createJSONStorage } from "zustand/middleware";
+import { persist, createJSONStorage } from "zustand/middleware";
+import { devtools } from './utils/devtoolsGate';
 import type { EditPermissionMode, SessionContextUsage } from "./types/sessionTypes";
 import { getAgentDefaultEditPermission } from "./utils/permissionUtils";
 import { getContextUsageFromMessages, isSameSessionContextUsage } from "./utils/contextUsageUtils";

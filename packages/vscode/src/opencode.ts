@@ -1065,6 +1065,9 @@ export function createOpenCodeManager(
       if (!profileResult.ok) {
         throw new Error(profileResult.error || 'Failed to provision the OpenCode user profile');
       }
+      if (profileResult.conflicts.length > 0) {
+        console.warn('[OpenCode] Preserved user-modified managed profile files', profileResult.conflicts);
+      }
       for (const warning of profileResult.warnings || []) {
         console.warn(`[OpenCode] ${warning}`);
       }

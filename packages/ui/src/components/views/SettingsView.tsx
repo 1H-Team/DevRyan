@@ -39,6 +39,7 @@ import { MagicPromptsPage } from '@/components/sections/magic-prompts/MagicPromp
 import { GitPage } from '@/components/sections/git-identities/GitPage';
 import type { OpenChamberSection } from '@/components/sections/openchamber/types';
 import { OpenChamberPage } from '@/components/sections/openchamber/OpenChamberPage';
+import { AboutSettings } from '@/components/sections/openchamber/AboutSettings';
 import { useDeviceInfo } from '@/lib/device';
 import { isDesktopShell, isVSCodeRuntime, isWebRuntime } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
@@ -395,6 +396,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return t('settings.page.voice.title');
       case 'tunnel':
         return t('settings.page.tunnel.title');
+      case 'about':
+        return t('settings.openchamber.about.title');
       case 'home':
       default:
         return t('settings.view.home.title');
@@ -474,6 +477,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return <MagicPromptsPage />;
       case 'git':
         return <GitPage />;
+      case 'about':
+        return (
+          <div className="h-full overflow-auto">
+            <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
+              <AboutSettings />
+            </div>
+          </div>
+        );
       case 'appearance':
       case 'chat':
       case 'shortcuts':

@@ -2,6 +2,7 @@ import {
   MAX_MANAGED_TASK_FAILURE_BYTES,
   MAX_MANAGED_TASK_PREVIEW_BYTES,
   createManagedTaskRecord,
+  isManagedTaskAgentRetryAvailable,
   isTerminalManagedTaskStatus,
   toManagedTaskEvent,
   toManagedTaskRemovalEvent,
@@ -24,6 +25,17 @@ import { isDefiniteProviderUsageLimit } from './provider-retry-policy.js';
 
 const ACTIVE_STATUSES = new Set(['starting', 'running']);
 const TERMINAL_RESULT_STATUSES = new Set(['completed', 'failed', 'aborted', 'interrupted']);
+
+const requiresManualModelRecovery = (task, resultEnvelope) => Boolean(
+  task.childSessionId
+  && !isManagedTaskAgentRetryAvailable(task)
+  && (task.status === 'failed' || task.status === 'interrupted')
+  && resultEnvelope?.resumable
+  && (
+    isDefiniteProviderUsageLimit(task.failureReason)
+    || (task.mode === 'orchestrator' && task.dispatchGroupId !== null && task.attempt >= 2)
+  )
+);
 
 const cloneTask = (task) => task ? {
   ...task,
@@ -168,6 +180,8 @@ export const createManagedTaskScheduler = (options = {}) => {
       maxTerminalRecords,
       maxAgeMs: maxHistoryAgeMs,
       maxBytes: maxPersistedBytes,
+      // snapshotLocked() already deep-copies; skip the compactor's own clone.
+      assumeOwnedInput: true,
     });
     if (compaction.overLimit) {
       throw new ManagedOrchestrationError(
@@ -741,6 +755,7 @@ export const createManagedTaskScheduler = (options = {}) => {
           const task = validateManagedTaskRecord({
             ...rawTask,
             dispatchGroupId: rawTask?.dispatchGroupId ?? null,
+            readOnly: rawTask?.readOnly ?? false,
           });
           if (tasks.has(task.taskId)) {
             throw new ManagedOrchestrationError('duplicate_task', `duplicate task ${task.taskId} in ledger`);
@@ -881,6 +896,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         directory: input.directory,
         sequence: nextSequenceLocked(),
         mode: input.mode,
+        readOnly: input.readOnly ?? false,
         providerId: input.providerId,
         modelId: input.modelId,
         agent: input.agent,
@@ -1314,9 +1330,9 @@ export const createManagedTaskScheduler = (options = {}) => {
   // idle root that will never move again on its own. Report all of them so the
   // packaged plugin can wake the root once.
   //
-  // Provider-limit results are deliberately excluded: those stay parked until
-  // the user picks a recovery model in the UI, and waking the parent would
-  // bypass that gate. Callers additionally require the root to be idle and
+  // Results requiring user-selected recovery are deliberately excluded: those
+  // stay parked until the user picks a model in the UI, and waking the parent
+  // would bypass that gate. Callers additionally require the root to be idle and
   // marker-gate each wake, so an attached wait still wins and cannot double-fire.
   const listReadyProviderRecoveryContinuations = ({ sessionId } = {}) => {
     const normalizedSessionId = typeof sessionId === 'string' ? sessionId.trim() : '';
@@ -1326,7 +1342,6 @@ export const createManagedTaskScheduler = (options = {}) => {
           task.mode !== 'orchestrator'
           || task.dispatchGroupId === null
           || !isTerminalManagedTaskStatus(task.status)
-          || isDefiniteProviderUsageLimit(task.failureReason)
         ) {
           return false;
         }
@@ -1338,10 +1353,16 @@ export const createManagedTaskScheduler = (options = {}) => {
           return false;
         }
 
+        const resultEnvelope = resultEnvelopes.get(task.taskId);
         // An envelope that already carries an action was disposed of, or was
         // superseded by a follow-up attempt that is tracked in its own right.
-        const resultEnvelope = resultEnvelopes.get(task.taskId);
-        return Boolean(resultEnvelope && resultEnvelope.action === null);
+        // A final resumable failure stays parked for the user's Model Recovery
+        // choice instead of waking the parent agent to abandon it.
+        return Boolean(
+          resultEnvelope
+          && resultEnvelope.action === null
+          && !requiresManualModelRecovery(task, resultEnvelope)
+        );
       })
       .sort(compareManagedTaskQueueOrder)
       .map((task) => ({
@@ -1463,11 +1484,13 @@ export const createManagedTaskScheduler = (options = {}) => {
         };
       }
 
-      const providerUsageLimited = isDefiniteProviderUsageLimit(sourceTask.failureReason);
-      if (providerUsageLimited && action !== 'retry_in_place') {
+      if (
+        requiresManualModelRecovery(sourceTask, currentEnvelope)
+        && action !== 'retry_in_place'
+      ) {
         throw new ManagedOrchestrationError(
           'manual_model_recovery_required',
-          'provider usage-limit recovery requires a user-selected model and thinking level',
+          'managed task recovery requires a user-selected model and thinking level',
         );
       }
 
@@ -1518,6 +1541,7 @@ export const createManagedTaskScheduler = (options = {}) => {
             : null,
           directory: sourceTask.directory,
           mode: sourceTask.mode,
+          readOnly: sourceTask.readOnly,
           providerId: actionOptions.providerId ?? sourceTask.providerId,
           modelId: actionOptions.modelId ?? sourceTask.modelId,
           agent: actionOptions.agent ?? sourceTask.agent,

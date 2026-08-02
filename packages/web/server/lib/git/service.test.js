@@ -3,15 +3,21 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import simpleGit from 'simple-git';
+import { createRecordStore } from '@openchamber/harness-runtime';
 
 import {
+  applyHunk,
   canonicalizeWorktreeState,
   commit,
+  configureWorktreeBootstrapRuntime,
   getBranches,
   getLog,
   getRemotes,
+  getRemoteUrl,
   getStatus,
+  getWorktreeBootstrapStatus,
   isInsideOrSameDirectory,
+  isGitRepository,
   resolveBaseRefForLog,
   stageFile,
   unstageFile,
@@ -50,6 +56,28 @@ describe('getRemotes', () => {
   });
 });
 
+describe('worktree bootstrap compatibility status', () => {
+  it('treats an existing non-Git workspace as not applicable and a missing directory as absent', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'openchamber-bootstrap-workspace-'));
+    tempDirs.push(directory);
+    const runtime = configureWorktreeBootstrapRuntime({
+      store: createRecordStore({
+        directory: join(directory, 'operations'),
+      }),
+    });
+
+    await expect(getWorktreeBootstrapStatus(directory)).resolves.toMatchObject({
+      directory,
+      status: 'not_applicable',
+    });
+    await expect(getWorktreeBootstrapStatus(join(directory, 'missing'))).rejects.toMatchObject({
+      code: 'WORKTREE_NOT_FOUND',
+      statusCode: 404,
+    });
+    await runtime.drain();
+  });
+});
+
 describe('file staging', () => {
   const createRepo = async () => {
     const directory = await mkdtemp(join(tmpdir(), 'openchamber-git-service-'));
@@ -77,6 +105,21 @@ describe('file staging', () => {
     expect(status.files).toContainEqual({ path: 'tracked.txt', index: ' ', working_dir: 'M' });
   });
 
+  it('applies a valid hunk with the stricter repository client contract', async () => {
+    const { directory, git } = await createRepo();
+    await writeFile(join(directory, 'tracked.txt'), 'changed\n');
+    const patch = await git.diff(['--', 'tracked.txt']);
+
+    await applyHunk(directory, 'tracked.txt', { patch, action: 'stage' });
+
+    const status = await git.status();
+    expect(status.files).toContainEqual(expect.objectContaining({
+      path: 'tracked.txt',
+      index: 'M',
+      working_dir: ' ',
+    }));
+  });
+
   it('commits only staged files when stagedOnly is requested', async () => {
     const { directory, git } = await createRepo();
     await writeFile(join(directory, 'tracked.txt'), 'staged\n');
@@ -94,6 +137,36 @@ describe('file staging', () => {
     const status = await getStatus(directory);
     expect(status.files).toContainEqual({ path: 'unstaged.txt', index: '?', working_dir: '?' });
     expect(status.files.some((file) => file.path === 'tracked.txt')).toBe(false);
+  });
+});
+
+describe('project directory isolation', () => {
+  it('rejects an empty directory before constructing a repository client', async () => {
+    await expect(getRemoteUrl('')).rejects.toThrow('Git directory is required');
+  });
+
+  it('does not inherit repository context from an ancestor directory', async () => {
+    const repository = await mkdtemp(join(tmpdir(), 'devryan-git-parent-'));
+    tempDirs.push(repository);
+    await simpleGit(repository).init();
+    const nestedProject = join(repository, 'nested-project');
+    await mkdir(nestedProject);
+
+    await expect(isGitRepository(nestedProject)).resolves.toBe(false);
+    await expect(getStatus(nestedProject)).rejects.toMatchObject({
+      code: 'GIT_REPOSITORY_CONTEXT_MISMATCH',
+    });
+  });
+
+  it('reports missing project directories as non-repositories and rejects status collection', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'devryan-git-missing-'));
+    tempDirs.push(parent);
+    const missing = join(parent, 'deleted-project');
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(isGitRepository(missing)).resolves.toBe(false);
+    await expect(getStatus(missing)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(consoleError).not.toHaveBeenCalled();
   });
 });
 

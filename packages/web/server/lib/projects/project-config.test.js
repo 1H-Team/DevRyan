@@ -141,4 +141,27 @@ describe('project-config runtime', () => {
       await cleanup();
     }
   });
+
+  it('keeps evidence checkpoints default-off and preserves unrelated project config', async () => {
+    const { runtime, cleanup } = await createRuntime();
+    try {
+      const projectID = 'project-evidence';
+      const filePath = runtime.resolveProjectConfigPath(projectID);
+      await writeFile(filePath, JSON.stringify({
+        projectNotes: 'keep me',
+        customFutureField: { enabled: true },
+      }), 'utf8');
+
+      expect(await runtime.getEvidenceCheckpoints(projectID)).toEqual({ enabled: false });
+      expect(await runtime.setEvidenceCheckpoints(projectID, { enabled: true })).toEqual({ enabled: true });
+      expect(await runtime.getEvidenceCheckpoints(projectID)).toEqual({ enabled: true });
+
+      const saved = JSON.parse(await readFile(filePath, 'utf8'));
+      expect(saved.evidenceCheckpoints).toEqual({ enabled: true });
+      expect(saved.projectNotes).toBe('keep me');
+      expect(saved.customFutureField).toEqual({ enabled: true });
+    } finally {
+      await cleanup();
+    }
+  });
 });

@@ -46,14 +46,19 @@ import { stripMessageDiffSnapshots, stripSessionDiffSnapshots } from "./sanitize
 import { syncDebug } from "./debug"
 import {
   ACTIVE_SESSION_STATUS_STALE_MS,
+  PROVIDER_STALL_SEMANTIC_SILENCE_MS,
   captureSessionStatusBaseline,
   filterUnchangedSessionStatusCandidates,
+  getActiveSessionRecoveryActivityAt,
   getActiveSessionRecoveryCooldownMs,
+  getProviderStallFingerprint,
   getReconnectCandidateSessionIds,
+  haveSameProviderStallFingerprint,
   mergeRecoveredSessionStatuses,
   shouldRecoverStaleActiveSession,
   unwrapSdkResult,
 } from "./reconnect-recovery"
+import { stopStalledProviderAndOfferRecovery } from "./provider-stall-recovery"
 import { hasMessageRecordInfo, unwrapMessageRecordsResult } from "./message-fetch"
 import {
   addPendingPartDelta,
@@ -70,10 +75,14 @@ import { usePermissionStore } from "@/stores/permissionStore"
 import { useConfigStore } from "@/stores/useConfigStore"
 import { useTodosPersistStore } from "@/stores/useTodosPersistStore"
 import { useUIStore } from "@/stores/useUIStore"
-import { useManagedOrchestrationStore } from "@/stores/useManagedOrchestrationStore"
+import {
+  managedOrchestrationSelectors,
+  useManagedOrchestrationStore,
+} from "@/stores/useManagedOrchestrationStore"
 import { useMessageQueueStore } from "@/stores/messageQueueStore"
 import { useContextStore } from "@/stores/contextStore"
 import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
+import { useProviderStallStore } from "@/stores/useProviderStallStore"
 import {
   clearDirectorySessionChangeAttributions,
   clearSessionChangeAttribution,
@@ -153,6 +162,7 @@ import {
   type SessionSummaryDiffStats,
 } from "@/lib/sessionDiffStats"
 import { requestSignature } from "./request-signature"
+import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry"
 
 const EMPTY_SESSION_STATUS_MAP: Record<string, SessionStatus> = {}
 const EMPTY_MESSAGES: Message[] = []
@@ -997,7 +1007,6 @@ const externallyViewedSessions = new Map<string, number>()
 const lastStatusEventAtBySessionKey = new Map<string, number>()
 const lastOutputEventAtBySessionKey = new Map<string, number>()
 const lastRecoveryAtBySessionKey = new Map<string, number>()
-const lastRecoveredActivityAtBySessionKey = new Map<string, number>()
 const recoveryFailureCountBySessionKey = new Map<string, number>()
 const EXTERNAL_VIEW_TTL_MS = 15_000
 
@@ -1014,12 +1023,17 @@ function rememberBoundedTimestamp(map: Map<string, number>, key: string, timesta
   }
 }
 
-function markStatusEventObserved(directory: string, sessionId: string, timestamp = Date.now()) {
+function markStatusEventObserved(
+  directory: string,
+  sessionId: string,
+  resetRecovery: boolean,
+  timestamp = Date.now(),
+) {
   if (!directory || !sessionId || directory === "global") return
   const key = statusTrackingKey(directory, sessionId)
   rememberBoundedTimestamp(lastStatusEventAtBySessionKey, key, timestamp)
+  if (!resetRecovery) return
   lastRecoveryAtBySessionKey.delete(key)
-  lastRecoveredActivityAtBySessionKey.delete(key)
   recoveryFailureCountBySessionKey.delete(key)
 }
 
@@ -1028,8 +1042,8 @@ function markOutputEventObserved(directory: string, sessionId: string | null | u
   const key = statusTrackingKey(directory, sessionId)
   rememberBoundedTimestamp(lastOutputEventAtBySessionKey, key, timestamp)
   lastRecoveryAtBySessionKey.delete(key)
-  lastRecoveredActivityAtBySessionKey.delete(key)
   recoveryFailureCountBySessionKey.delete(key)
+  useProviderStallStore.getState().clearStall(sessionId)
 }
 
 function pruneExternallyViewedSessions(now = Date.now()) {
@@ -1111,8 +1125,8 @@ const retireDeletedSessionSyncOwnership = (
   lastStatusEventAtBySessionKey.delete(trackingKey)
   lastOutputEventAtBySessionKey.delete(trackingKey)
   lastRecoveryAtBySessionKey.delete(trackingKey)
-  lastRecoveredActivityAtBySessionKey.delete(trackingKey)
   recoveryFailureCountBySessionKey.delete(trackingKey)
+  useProviderStallStore.getState().clearStall(sessionID)
   clearAbortGuard(sessionID)
   clearCommittedRevertResendsForSessions([sessionID])
 
@@ -1147,8 +1161,8 @@ const releaseDirectoryOwnedSyncState = (
   clearDirectoryPrefixedEntries(lastStatusEventAtBySessionKey, directory)
   clearDirectoryPrefixedEntries(lastOutputEventAtBySessionKey, directory)
   clearDirectoryPrefixedEntries(lastRecoveryAtBySessionKey, directory)
-  clearDirectoryPrefixedEntries(lastRecoveredActivityAtBySessionKey, directory)
   clearDirectoryPrefixedEntries(recoveryFailureCountBySessionKey, directory)
+  useProviderStallStore.getState().clearDirectory(directory)
 
   const releasedSessionIDs = releaseDirectoryRoutingIndex(routingIndex, directory, snapshot)
   for (const sessionID of [
@@ -1401,14 +1415,18 @@ async function detectAndMarkPlanLifecycle(
 }
 
 export function setActiveSession(directory: string, sessionId: string) {
+  const previousDirectory = _activeDirectory
+  const previousSession = _activeSession
   _activeDirectory = directory
   _activeSession = sessionId
+  if (previousSession && (previousSession !== sessionId || previousDirectory !== directory)) {
+    useProviderStallStore.getState().clearStall(previousSession)
+  }
   const nextKey = directory && sessionId ? statusTrackingKey(directory, sessionId) : ""
   if (nextKey && nextKey !== _activeSessionTrackingKey) {
     _activeSessionTrackingKey = nextKey
     rememberBoundedTimestamp(lastStatusEventAtBySessionKey, nextKey, Date.now())
     lastRecoveryAtBySessionKey.delete(nextKey)
-    lastRecoveredActivityAtBySessionKey.delete(nextKey)
     recoveryFailureCountBySessionKey.delete(nextKey)
   } else if (!nextKey) {
     _activeSessionTrackingKey = ""
@@ -2120,13 +2138,17 @@ export async function resyncDirectoryAfterReconnect(
   directory: string,
   store: StoreApi<DirectoryStore>,
   routingIndex: EventRoutingIndex,
-  options?: { candidateSessionIds?: Iterable<string> },
+  options?: {
+    candidateSessionIds?: Iterable<string>
+    restoreSessionLifecycleFor?: string
+  },
 ) {
   const current = store.getState()
   const candidateSessionIds = new Set(getReconnectCandidateSessionIds(current, {
     directory,
     viewedSession: getViewedSessionMaterializationTarget(directory),
   }))
+  const materializedSessionIds = new Set<string>()
   for (const sessionId of options?.candidateSessionIds ?? []) {
     if (sessionId) candidateSessionIds.add(sessionId)
   }
@@ -2254,6 +2276,7 @@ export async function resyncDirectoryAfterReconnect(
     setIndexedSessionDirectory(routingIndex, nextSession.id, directory)
     setIndexedSessionMessages(routingIndex, sessionId, directory, nextMessages)
     reconcileSessionChangeAttribution(directory, sessionId, store.getState())
+    materializedSessionIds.add(sessionId)
   }))
 
   await resyncBlockingRequestsForDirectory(directory, store, Array.from(candidateSessionIds))
@@ -2279,6 +2302,18 @@ export async function resyncDirectoryAfterReconnect(
   }
 
   ingestDirectoryStateIntoRoutingIndex(routingIndex, directory, store.getState())
+
+  if (
+    options?.restoreSessionLifecycleFor
+    && materializedSessionIds.has(options.restoreSessionLifecycleFor)
+  ) {
+    await materializeAndRestoreSessionLifecycle(
+      directory,
+      options.restoreSessionLifecycleFor,
+      store,
+      true,
+    )
+  }
 }
 
 function handleEvent(
@@ -2384,8 +2419,30 @@ function handleEvent(
   if (payload.type === "session.status") {
     const sessionID = getSessionIdFromPayload(payload)
     if (sessionID) {
-      markStatusEventObserved(resolvedDirectory, sessionID)
+      const nextStatus = (payload.properties as {
+        status?: { type?: unknown; attempt?: unknown; message?: unknown; next?: unknown }
+      }).status
+      const currentStatus = store.getState().session_status?.[sessionID] as {
+        type?: unknown
+        attempt?: unknown
+        message?: unknown
+        next?: unknown
+      } | undefined
+      const statusChanged = nextStatus?.type !== currentStatus?.type
+        || nextStatus?.attempt !== currentStatus?.attempt
+        || nextStatus?.message !== currentStatus?.message
+        || nextStatus?.next !== currentStatus?.next
+      markStatusEventObserved(resolvedDirectory, sessionID, statusChanged)
+      const statusType = nextStatus?.type
+      if (statusType !== "busy") {
+        useProviderStallStore.getState().clearStall(sessionID)
+      }
     }
+  }
+
+  if (payload.type === "session.idle" || payload.type === "session.error") {
+    const sessionID = getSessionIdFromPayload(payload)
+    if (sessionID) useProviderStallStore.getState().clearStall(sessionID)
   }
 
   if (payload.type === "permission.asked") {
@@ -2480,6 +2537,7 @@ function handleEvent(
       }
       sessionUI?.retireDeletedSession(sessionID)
       useProviderRecoveryStore.getState().clearRecovery(sessionID)
+      useProviderStallStore.getState().clearStall(sessionID)
       useMessageQueueStore.getState().clearQueue(sessionID)
       useSelectionStore.getState().clearSessionSelection(sessionID)
     }
@@ -2756,6 +2814,23 @@ export function applySyncEventForTest(
   handleEvent(rawDirectory, payload, childStores, routingIndex, activeDirectory)
 }
 
+export function createForegroundRecoveryHandlers(
+  triggerRecovery: () => void,
+  getVisibilityState: () => DocumentVisibilityState | undefined = () => (
+    typeof document === "undefined" ? undefined : document.visibilityState
+  ),
+) {
+  return {
+    onVisibilityChange: () => {
+      if (getVisibilityState() !== "visible") return
+      triggerRecovery()
+    },
+    onWindowFocus: () => {
+      triggerRecovery()
+    },
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
@@ -2794,6 +2869,7 @@ export function SyncProvider(props: {
       const store = childStores.ensureChild(directory)
       await resyncDirectoryAfterReconnect(directory, store, routingIndex, {
         candidateSessionIds: [sessionID],
+        restoreSessionLifecycleFor: sessionID,
       })
     },
     [childStores, props.directory, routingIndex],
@@ -2992,11 +3068,15 @@ export function SyncProvider(props: {
       if (!store) return
       if (reconnectMaterializing.has(directory)) return
 
+      const activeSessionID = directory === _activeDirectory ? _activeSession : ""
       reconnectMaterializing.add(directory)
-      void resyncDirectoryAfterReconnect(directory, store, routingIndex)
+      void resyncDirectoryAfterReconnect(directory, store, routingIndex, {
+        candidateSessionIds: activeSessionID ? [activeSessionID] : undefined,
+        restoreSessionLifecycleFor: activeSessionID || undefined,
+      })
         .catch(() => {
           // Transient failure during materialization — next SSE event, transport switch,
-          // or reconnect will catch up.
+          // reconnect, or foreground focus will catch up.
         })
         .finally(() => {
           reconnectMaterializing.delete(directory)
@@ -3013,12 +3093,14 @@ export function SyncProvider(props: {
       const status = state.session_status?.[sessionID]
       const key = statusTrackingKey(directory, sessionID)
       const now = Date.now()
-      const observedEventTimes = [
-        lastStatusEventAtBySessionKey.get(key),
-        lastOutputEventAtBySessionKey.get(key),
-      ].filter((value): value is number => typeof value === "number")
-      const activityAt = observedEventTimes.length > 0 ? Math.max(...observedEventTimes) : now
+      const activityAt = getActiveSessionRecoveryActivityAt({
+        status,
+        now,
+        lastStatusEventAt: lastStatusEventAtBySessionKey.get(key),
+        lastOutputEventAt: lastOutputEventAtBySessionKey.get(key),
+      })
       const failureCount = recoveryFailureCountBySessionKey.get(key) ?? 0
+      const fingerprintBeforeResync = getProviderStallFingerprint({ state, sessionID })
 
       if (!shouldRecoverStaleActiveSession({
         status,
@@ -3026,7 +3108,6 @@ export function SyncProvider(props: {
         lastStatusEventAt: lastStatusEventAtBySessionKey.get(key),
         lastOutputEventAt: lastOutputEventAtBySessionKey.get(key),
         lastRecoveryAt: lastRecoveryAtBySessionKey.get(key),
-        lastRecoveredActivityAt: lastRecoveredActivityAtBySessionKey.get(key),
         staleMs: ACTIVE_SESSION_STATUS_STALE_MS,
         cooldownMs: getActiveSessionRecoveryCooldownMs(failureCount),
       })) {
@@ -3039,18 +3120,94 @@ export function SyncProvider(props: {
       void resyncDirectoryAfterReconnect(directory, store, routingIndex, {
         candidateSessionIds: [sessionID],
       }).then(() => {
-        const currentActivityAt = Math.max(
-          lastStatusEventAtBySessionKey.get(key) ?? Number.NEGATIVE_INFINITY,
-          lastOutputEventAtBySessionKey.get(key) ?? Number.NEGATIVE_INFINITY,
-        )
+        const currentState = store.getState()
+        const currentActivityAt = getActiveSessionRecoveryActivityAt({
+          status: currentState.session_status?.[sessionID],
+          now: Date.now(),
+          lastStatusEventAt: lastStatusEventAtBySessionKey.get(key),
+          lastOutputEventAt: lastOutputEventAtBySessionKey.get(key),
+        })
         if (currentActivityAt !== activityAt) return
-        rememberBoundedTimestamp(lastRecoveredActivityAtBySessionKey, key, activityAt)
         recoveryFailureCountBySessionKey.delete(key)
-      }).catch(() => {
-        const currentActivityAt = Math.max(
-          lastStatusEventAtBySessionKey.get(key) ?? Number.NEGATIVE_INFINITY,
-          lastOutputEventAtBySessionKey.get(key) ?? Number.NEGATIVE_INFINITY,
+
+        const fingerprintAfterResync = getProviderStallFingerprint({
+          state: currentState,
+          sessionID,
+        })
+        const managedChildActive = managedOrchestrationSelectors.hasActiveTasksForRoot(sessionID)(
+          useManagedOrchestrationStore.getState(),
         )
+        const stalledForMs = Date.now() - activityAt
+        if (
+          !managedChildActive
+          && stalledForMs >= PROVIDER_STALL_SEMANTIC_SILENCE_MS
+          && haveSameProviderStallFingerprint(fingerprintBeforeResync, fingerprintAfterResync)
+          && fingerprintAfterResync
+        ) {
+          const stallStore = useProviderStallStore.getState()
+          const previousStall = stallStore.stallsBySessionId[sessionID]
+          stallStore.offerStall({
+            ...fingerprintAfterResync,
+            directory,
+            confirmedAt: Date.now(),
+          })
+          if (haveSameProviderStallFingerprint(previousStall, fingerprintAfterResync)) {
+            return
+          }
+          const mark = fingerprintAfterResync.kind === "inference"
+            ? "renderer_provider_inference_stall_confirmed"
+            : "renderer_tool_input_stall_confirmed"
+          postRendererTurnTimingMark({
+            sessionId: sessionID,
+            assistantMessageId: fingerprintAfterResync.assistantMessageID,
+            mark,
+            directory,
+            metadata: {
+              source: "active-session-watchdog",
+              stalledForMs,
+            },
+          })
+          if (fingerprintAfterResync.kind !== "inference") return
+
+          const record = useProviderStallStore.getState().stallsBySessionId[sessionID]
+          if (!record || record.kind !== "inference") return
+          useProviderStallStore.getState().setActionState(sessionID, true, null)
+          return stopStalledProviderAndOfferRecovery(record, {
+            resyncSession,
+            getState: () => (
+              childStores.getChild(directory) === store ? store.getState() : undefined
+            ),
+            isCurrent: () => {
+              const latest = useProviderStallStore.getState().stallsBySessionId[sessionID]
+              return haveSameProviderStallFingerprint(record, latest)
+            },
+            abort: async (stalledSessionID, stalledStatus) => {
+              const latest = useProviderStallStore.getState().stallsBySessionId[stalledSessionID]
+              if (!haveSameProviderStallFingerprint(record, latest)) return false
+              return sessionActions.abortCurrentOperationConfirmed(stalledSessionID, stalledStatus)
+            },
+            offerRecovery: (recovery) => useProviderRecoveryStore.getState().offerRecovery(recovery),
+          }).then(() => {
+            useProviderStallStore.getState().clearStall(sessionID, record)
+          }).catch((error) => {
+            useProviderStallStore.getState().setActionState(
+              sessionID,
+              false,
+              error instanceof Error ? error.message : String(error),
+            )
+          })
+        }
+        if (!fingerprintAfterResync) {
+          useProviderStallStore.getState().clearStall(sessionID)
+        }
+      }).catch(() => {
+        const currentState = store.getState()
+        const currentActivityAt = getActiveSessionRecoveryActivityAt({
+          status: currentState.session_status?.[sessionID],
+          now: Date.now(),
+          lastStatusEventAt: lastStatusEventAtBySessionKey.get(key),
+          lastOutputEventAt: lastOutputEventAtBySessionKey.get(key),
+        })
         if (currentActivityAt !== activityAt) return
         rememberBoundedTimestamp(recoveryFailureCountBySessionKey, key, failureCount + 1)
       }).finally(() => {
@@ -3062,15 +3219,17 @@ export function SyncProvider(props: {
         triggerReconnectMaterialization(dir)
       }
     }
-    const onVisible = () => {
-      if (typeof document === "undefined") return
-      if (document.visibilityState !== "visible") return
-      triggerActiveDirectoryRecovery()
-    }
+    const {
+      onVisibilityChange,
+      onWindowFocus,
+    } = createForegroundRecoveryHandlers(triggerActiveDirectoryRecovery)
     const activeRecoveryWatchdog = setInterval(triggerActiveSessionRecovery, ACTIVE_SESSION_RECOVERY_CHECK_MS)
     ;(activeRecoveryWatchdog as { unref?: () => void }).unref?.()
     if (typeof document !== "undefined") {
-      document.addEventListener("visibilitychange", onVisible)
+      document.addEventListener("visibilitychange", onVisibilityChange)
+    }
+    if (typeof window !== "undefined") {
+      window.addEventListener("focus", onWindowFocus)
     }
 
     const { cleanup, releaseDirectory } = createEventPipeline({
@@ -3084,6 +3243,26 @@ export function SyncProvider(props: {
       },
       onManagedOrchestrationEvent: (payload) => {
         useManagedOrchestrationStore.getState().ingestEvent(payload)
+      },
+      onUserNotificationEvent: (payload) => {
+        const properties = payload && typeof payload === "object"
+          && (payload as { properties?: unknown }).properties
+          && typeof (payload as { properties: unknown }).properties === "object"
+          ? (payload as { properties: Record<string, unknown> }).properties
+          : null
+        if (!properties || properties.desktopStdoutActive === true) return
+
+        const requireHidden = properties.requireHidden === true
+        const isFocused = typeof document !== "undefined"
+          && document.visibilityState === "visible"
+          && document.hasFocus()
+        if (requireHidden && isFocused) return
+
+        const title = typeof properties.title === "string" ? properties.title : undefined
+        const body = typeof properties.body === "string" ? properties.body : undefined
+        const tag = typeof properties.tag === "string" ? properties.tag : undefined
+        if (!title && !body) return
+        void getRegisteredRuntimeAPIs()?.notifications.notifyAgentCompletion({ title, body, tag })
       },
       onReconnect: () => {
         applyEventPipelineConnectionEvent({ type: "reconnected" })
@@ -3114,14 +3293,17 @@ export function SyncProvider(props: {
     return () => {
       clearInterval(activeRecoveryWatchdog)
       if (typeof document !== "undefined") {
-        document.removeEventListener("visibilitychange", onVisible)
+        document.removeEventListener("visibilitychange", onVisibilityChange)
+      }
+      if (typeof window !== "undefined") {
+        window.removeEventListener("focus", onWindowFocus)
       }
       if (releaseEventPipelineDirectoryRef.current === releaseDirectory) {
         releaseEventPipelineDirectoryRef.current = () => undefined
       }
       cleanup()
     }
-  }, [props.sdk, childStores, routingIndex, messageStreamTransport])
+  }, [props.sdk, childStores, routingIndex, messageStreamTransport, resyncSession])
 
   // Ensure current directory's child store exists
   useEffect(() => {

@@ -22,3 +22,4 @@ Legacy Tauri desktop shell retained for update continuity/migration support. It 
 - **Shared UI contract**: same `openchamber:*` event semantics expected by renderer compatibility layer.
 - **Build pipeline**: `packages/desktop/scripts/*` handles sidecar build/dev orchestration and Tauri dev/build wrappers. The legacy bundle carries the canonical filtered web `default-config` as a resource and passes its validated location to the compiled sidecar; it does not maintain a second defaults tree.
 - **Release role**: exists to preserve upgrade path until Tauri→Electron cutover is complete.
+- **Compatibility regression suite**: `bun run test` runs `cargo test --locked`; health probes use loopback fixtures and accept only a valid DevRyan payload with `openCodeRunning: true` as ready. Rust/Cargo/Tauri changes select this suite in quick and affected validation.

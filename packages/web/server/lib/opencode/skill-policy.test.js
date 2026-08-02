@@ -109,6 +109,25 @@ describe('skill policy', () => {
     ]);
   });
 
+  it('denies retired Superpowers skill names regardless of their directory', () => {
+    const result = filterVisibleSkills([
+      {
+        name: 'test-driven-development',
+        path: '/tmp/project/.agents/skills/test-driven-development/SKILL.md',
+      },
+      {
+        name: 'subagent-driven-development',
+        path: '/Users/test/.agents/skills/subagent-driven-development/SKILL.md',
+      },
+      {
+        name: 'systematic-debugging',
+        path: '/Users/test/.config/opencode/skills/superpowers/systematic-debugging/SKILL.md',
+      },
+    ], []);
+
+    expect(result.map((skill) => skill.name)).toEqual(['systematic-debugging']);
+  });
+
   it('normalizes existing symlinked skill paths to their real SKILL.md target', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-policy-realpath-'));
     const realDir = path.join(root, 'real', 'frontend-design');

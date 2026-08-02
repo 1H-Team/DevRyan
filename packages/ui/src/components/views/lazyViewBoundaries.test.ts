@@ -105,7 +105,8 @@ describe('shared lazy view boundaries', () => {
     expect(mainLayout).toContain('<LazyGitView />');
     expect(mainLayout).toContain('<LazyDiffView />');
     expect(mainLayout).toContain('<LazyTerminalView />');
-    expect(mainLayout).toContain('<LazyFilesView />');
+    // FilesView is no longer a main tab; it is mounted by ContextPanel (asserted below).
+    expect(mainLayout).not.toContain('LazyFilesView');
     expect(mainLayout).toContain('<LazySettingsView onClose=');
     expect(mainLayout).toContain('<LazyMultiRunWindow');
     expect(mainLayout).toContain('<DeferredLazyView active={isMultiRunLauncherOpen}>');

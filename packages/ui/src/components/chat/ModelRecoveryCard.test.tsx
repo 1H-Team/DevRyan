@@ -38,4 +38,24 @@ describe('ModelRecoveryCard', () => {
     expect(html).toContain('rounded-xl');
     expect(html).toContain('border-[color-mix');
   });
+
+  test('keeps Try Again visible and disables it while one retry is in flight', () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <ModelRecoveryCard
+          title="Choose a model to continue:"
+          originalModelLabel="openai / gpt-5.6"
+          providers={[]}
+          selection={{ providerId: 'openai', modelId: 'gpt-5.6', variant: 'high' }}
+          pending
+          actionError={null}
+          onSelectionChange={() => undefined}
+          onRetry={() => undefined}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('Trying Again…');
+    expect(html).toContain('disabled=""');
+  });
 });

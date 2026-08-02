@@ -2,17 +2,23 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveDevDataDirectory } from './dev-data-directory.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 const useDetachedChildren = process.platform === 'darwin';
+const devDataDirectory = resolveDevDataDirectory({
+  env: process.env,
+  repoRoot,
+  scope: 'web-full',
+});
 
 function run(label, command, args, options = {}) {
   const child = spawn(command, args, {
     cwd: repoRoot,
     stdio: ['inherit', 'pipe', 'pipe'],
-    env: { ...process.env },
+    env: { ...process.env, OPENCHAMBER_DATA_DIR: devDataDirectory },
     detached: useDetachedChildren,
     ...options,
   });

@@ -10,7 +10,7 @@ import { getToolLifecycleState } from '@/lib/toolStatus';
 import type { ToolPart as ToolPartType, ToolState as ToolStateUnion } from '@opencode-ai/sdk/v2';
 import type { Session } from '@opencode-ai/sdk/v2/client';
 import { toolDisplayStyles } from '@/lib/typography';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { LazySyntaxHighlighter as SyntaxHighlighter } from '@/components/chat/LazySyntaxHighlighter';
 import { useOptionalThemeSystem } from '@/contexts/useThemeSystem';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useDirectorySync, useSessionMessageRecords, useEnsureSessionMessages } from '@/sync/sync-context';
@@ -40,7 +40,7 @@ import { TaskToolSummary } from './TaskToolSummary';
 import { ToolScrollableSection } from './ToolScrollableSection';
 import { getToolIcon } from './toolPresentation';
 import { isToolHeaderInteractive } from './toolHeaderInteractions';
-import { normalizeToolName } from './toolRenderUtils';
+import { getToolDescriptionFallback, normalizeToolName } from './toolRenderUtils';
 import { useDurationTickerNow } from './useDurationTicker';
 import { buildTaskInvocationKey } from '../../lib/taskSessionLinking';
 import { useTaskSessionAssignment, useTaskSessionLinkContext } from '../../lib/taskSessionLinkContext';
@@ -142,7 +142,7 @@ const getMultiFileDescription = (
                             {entry.name}
                         </Text>
                         {hasPerFileDiff ? (
-                            <span className="flex-shrink-0 inline-flex items-center gap-0 typography-meta" style={{ fontSize: '0.8rem', lineHeight: '1' }}>
+                            <span className="flex-shrink-0 inline-flex items-center gap-0 typography-meta" style={{ lineHeight: '1' }}>
                                 <span style={{ color: 'var(--status-success)' }}>+{entry.added ?? 0}</span>
                                 <span style={{ color: 'var(--tools-description)' }}>/</span>
                                 <span style={{ color: 'var(--status-error)' }}>-{entry.removed ?? 0}</span>
@@ -619,7 +619,12 @@ const getToolDescription = (part: ToolPartType, state: ToolStateUnion, currentDi
 
     const filePathLabel = getToolDescriptionPath(part, state, currentDirectory);
     if (filePathLabel) {
-        return filePathLabel;
+        return getToolDescriptionFallback(part.tool, {
+            pathDescription: filePathLabel,
+            input,
+            metadata,
+            title: 'title' in state ? state.title : undefined,
+        });
     }
 
     if (part.tool === 'apply_patch') {
@@ -645,8 +650,11 @@ const getToolDescription = (part: ToolPartType, state: ToolStateUnion, currentDi
         return input.description.substring(0, 80);
     }
 
-    const desc = input?.description || metadata?.description || ('title' in state && state.title) || '';
-    return typeof desc === 'string' ? desc : '';
+    return getToolDescriptionFallback(part.tool, {
+        input,
+        metadata,
+        title: 'title' in state ? state.title : undefined,
+    });
 };
 
 const getToolOutputLanguage = (
@@ -2095,14 +2103,14 @@ const ToolPart: React.FC<ToolPartProps> = ({
                                 )
                             )}
                             {diffStats && (
-                                <span className="flex-shrink-0 inline-flex items-center gap-0 typography-meta" style={{ fontSize: '0.8rem', lineHeight: '1' }}>
+                                <span className="flex-shrink-0 inline-flex items-center gap-0 typography-meta" style={{ lineHeight: '1' }}>
                                     <span style={{ color: 'var(--status-success)' }}>+{diffStats.additions}</span>
                                     <span style={{ color: 'var(--tools-description)' }}>/</span>
                                     <span style={{ color: 'var(--status-error)' }}>-{diffStats.deletions}</span>
                                 </span>
                             )}
                             {writeLineCount && (
-                                <span className="flex-shrink-0 inline-flex items-center gap-0 typography-meta" style={{ fontSize: '0.8rem', lineHeight: '1' }}>
+                                <span className="flex-shrink-0 inline-flex items-center gap-0 typography-meta" style={{ lineHeight: '1' }}>
                                     <span style={{ color: 'var(--status-success)' }}>+{writeLineCount}</span>
                                 </span>
                             )}

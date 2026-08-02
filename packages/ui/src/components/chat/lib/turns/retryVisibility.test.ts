@@ -80,4 +80,22 @@ describe('retry visibility', () => {
 
         expect(shouldShowRetryVisibility(status, state, 1000 + TRANSIENT_PROVIDER_RETRY_VISIBILITY_GRACE_MS)).toBe(true);
     });
+
+    test('hides transient provider overload responses during the longer grace window', () => {
+        const status = retry({
+            message: 'Our servers are currently overloaded. Please try again later.',
+        });
+        const state = { identity: getRetryVisibilityIdentity(status), firstSeenAt: 1000 };
+
+        expect(shouldShowRetryVisibility(
+            status,
+            state,
+            1000 + RETRY_VISIBILITY_GRACE_MS,
+        )).toBe(false);
+        expect(shouldShowRetryVisibility(
+            status,
+            state,
+            1000 + TRANSIENT_PROVIDER_RETRY_VISIBILITY_GRACE_MS,
+        )).toBe(true);
+    });
 });

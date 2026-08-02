@@ -165,6 +165,29 @@ export async function handleStandardGitBridgeMessage(message: BridgeMessageInput
       return { id, type, success: true, data: result };
     }
 
+    case 'api:git/worktrees/operation': {
+      const { operationId } = (payload || {}) as { operationId?: string };
+      if (!operationId) {
+        return { id, type, success: false, error: 'Operation ID is required' };
+      }
+      const result = await gitService.getWorktreeBootstrapOperation(operationId);
+      return { id, type, success: true, data: result };
+    }
+
+    case 'api:git/worktrees/operations': {
+      const result = await gitService.listActiveWorktreeBootstrapOperations();
+      return { id, type, success: true, data: result };
+    }
+
+    case 'api:git/worktrees/retry': {
+      const { operationId } = (payload || {}) as { operationId?: string };
+      if (!operationId) {
+        return { id, type, success: false, error: 'Operation ID is required' };
+      }
+      const result = await gitService.retryWorktreeBootstrapOperation(operationId);
+      return { id, type, success: true, data: result };
+    }
+
     case 'api:git/worktrees/preview': {
       const { directory } = (payload || {}) as { directory?: string };
       const dirError = requireDirectory(id, type, directory);

@@ -22,6 +22,34 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            packages/desktop/src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('packages/desktop/src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install Tauri v2 prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 

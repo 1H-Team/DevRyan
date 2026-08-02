@@ -21,7 +21,7 @@ describe('default config asset policy', () => {
   it('allows only the canonical runtime roots and runtime plugin extensions', () => {
     expect(isAllowedDefaultConfigRelativePath('opencode.json')).toBe(true);
     expect(isAllowedDefaultConfigRelativePath('agents/orchestrator.md')).toBe(true);
-    expect(isAllowedDefaultConfigRelativePath('user-profile/skills/example/SKILL.md')).toBe(true);
+    expect(isAllowedDefaultConfigRelativePath('user-profile/preferences.json')).toBe(true);
     expect(isAllowedDefaultConfigRelativePath('plugins/runtime.mjs')).toBe(true);
     expect(isAllowedDefaultConfigRelativePath('plugins/runtime.test.mjs')).toBe(false);
     expect(isAllowedDefaultConfigRelativePath('README.md')).toBe(false);
@@ -46,19 +46,19 @@ describe('default config asset policy', () => {
     roots.push(root);
     await fs.mkdir(path.join(root, 'agents'), { recursive: true });
     await fs.mkdir(path.join(root, 'plugins'), { recursive: true });
-    await fs.mkdir(path.join(root, 'user-profile', 'skills', 'example'), { recursive: true });
+    await fs.mkdir(path.join(root, 'user-profile'), { recursive: true });
     await fs.mkdir(path.join(root, 'user-profile', 'secrets'), { recursive: true });
     await Promise.all([
       fs.writeFile(path.join(root, 'opencode.json'), '{}\n'),
       fs.writeFile(path.join(root, 'agents', 'builder.md'), 'builder\n'),
       fs.writeFile(path.join(root, 'plugins', 'runtime.mjs'), 'export {};\n'),
       fs.writeFile(path.join(root, 'plugins', 'runtime.test.mjs'), 'export {};\n'),
-      fs.writeFile(path.join(root, 'user-profile', 'skills', 'example', 'SKILL.md'), 'skill\n'),
+      fs.writeFile(path.join(root, 'user-profile', 'preferences.json'), '{}\n'),
       fs.writeFile(path.join(root, 'user-profile', 'secrets', 'token'), 'nope\n'),
     ]);
 
     await expect(listDefaultConfigAssets(root)).resolves.toEqual([
-      'agents/builder.md', 'opencode.json', 'plugins/runtime.mjs', 'user-profile/skills/example/SKILL.md',
+      'agents/builder.md', 'opencode.json', 'plugins/runtime.mjs', 'user-profile/preferences.json',
     ]);
     await expect(listRuntimePluginAssets(root)).resolves.toEqual(['plugins/runtime.mjs']);
   });

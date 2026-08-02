@@ -119,6 +119,9 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.desktopKeepAwakeEnabled === 'boolean') {
       result.desktopKeepAwakeEnabled = candidate.desktopKeepAwakeEnabled;
     }
+    if (typeof candidate.agentBrowserControlEnabled === 'boolean') {
+      result.agentBrowserControlEnabled = candidate.agentBrowserControlEnabled;
+    }
     if (Array.isArray(candidate.projects)) {
       const projects = sanitizeProjects(candidate.projects);
       if (projects) {
@@ -193,6 +196,9 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.notifyOnCompletion === 'boolean') {
       result.notifyOnCompletion = candidate.notifyOnCompletion;
     }
+    if (typeof candidate.notifyOnPlanReady === 'boolean') {
+      result.notifyOnPlanReady = candidate.notifyOnPlanReady;
+    }
     if (typeof candidate.notifyOnError === 'boolean') {
       result.notifyOnError = candidate.notifyOnError;
     }
@@ -200,7 +206,16 @@ export const createSettingsHelpers = (dependencies) => {
       result.notifyOnQuestion = candidate.notifyOnQuestion;
     }
     if (candidate.notificationTemplates && typeof candidate.notificationTemplates === 'object') {
-      result.notificationTemplates = candidate.notificationTemplates;
+      const templates = {};
+      for (const event of ['completion', 'planReady', 'error', 'question', 'subtask']) {
+        const entry = candidate.notificationTemplates[event];
+        if (!entry || typeof entry !== 'object') continue;
+        if (typeof entry.title !== 'string' || typeof entry.message !== 'string') continue;
+        templates[event] = { title: entry.title, message: entry.message };
+      }
+      if (Object.keys(templates).length > 0) {
+        result.notificationTemplates = templates;
+      }
     }
     if (typeof candidate.summarizeLastMessage === 'boolean') {
       result.summarizeLastMessage = candidate.summarizeLastMessage;
@@ -697,6 +712,12 @@ export const createSettingsHelpers = (dependencies) => {
           ...changes.typographySizes
         }
       : current.typographySizes;
+    const nextNotificationTemplates = changes.notificationTemplates
+      ? {
+          ...(current.notificationTemplates || {}),
+          ...changes.notificationTemplates,
+        }
+      : current.notificationTemplates;
 
     const next = {
       ...current,
@@ -711,7 +732,8 @@ export const createSettingsHelpers = (dependencies) => {
           baseBookmarks.filter((entry) => typeof entry === 'string' && entry.length > 0)
         )
       ),
-      typographySizes: nextTypographySizes
+      typographySizes: nextTypographySizes,
+      notificationTemplates: nextNotificationTemplates,
     };
 
     return next;

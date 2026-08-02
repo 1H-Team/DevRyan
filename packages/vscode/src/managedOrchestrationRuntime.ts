@@ -57,6 +57,13 @@ const resolveWaitTimeoutMs = (params: Record<string, unknown>) => {
   return Math.min(value, MAX_WAIT_TIMEOUT_MS);
 };
 
+const resolveReadOnly = (params: Record<string, unknown>) => {
+  const value = params.readOnly;
+  if (value === undefined) return false;
+  if (typeof value !== 'boolean') throw new TypeError('readOnly must be a boolean');
+  return value;
+};
+
 type Logger = Pick<Console, 'warn'>;
 type RuntimeError = Error & { code?: string; statusCode?: number };
 
@@ -362,6 +369,7 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
           childSessionId: optionalString(params, 'childSessionId'),
           directory: requireString(params, 'directory'),
           mode: requireMode(params.mode),
+          readOnly: resolveReadOnly(params),
           providerId: requireString(params, 'providerId'),
           modelId: requireString(params, 'modelId'),
           agent: requireString(params, 'agent'),

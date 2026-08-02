@@ -1,5 +1,6 @@
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
-import { getPlanBlockId, getPlanImplementationKey, isPlanModeUserMessage, resolveMessagePlanCard } from "@/lib/messages/actionablePlan"
+import { getPlanBlockId, getPlanImplementationKey } from "@/lib/messages/actionablePlan"
+import { projectPlanRevisions, type PlanRevisionTurnInput } from "@/lib/messages/planRevisions"
 import { filterMessagesForRevert, getEffectiveSessionRevertMessageID } from "./revert-transactions"
 import type { State } from "./types"
 
@@ -40,25 +41,43 @@ export function detectPlanProposedCandidate({
   const revertMessageID = getEffectiveSessionRevertMessageID(state, sessionID)
   const messages = filterMessagesForRevert(rawMessages, revertMessageID)
 
-  const assistantIndex = messages.length - 1
-  const assistantMessage = messages[assistantIndex]
-  if (!assistantMessage || assistantMessage.role !== "assistant") return null
-  if (!isAssistantTurnComplete(assistantMessage)) return null
+  // The proposal moment is when the session's tail settles on a completed
+  // assistant message. The tail assistant itself may be plain epilogue text —
+  // the canonical plan is selected from the whole revision below.
+  const lastMessage = messages[messages.length - 1]
+  if (!lastMessage || lastMessage.role !== "assistant") return null
+  if (!isAssistantTurnComplete(lastMessage)) return null
 
-  const userMessage = findOriginatingUserMessage(messages, assistantIndex)
-  if (!userMessage) return null
+  const turnInputs = buildRevisionTurnInputs(messages, state, isRecordedPlanModeUserMessage)
+  if (turnInputs.length === 0) return null
 
-  const userParts = state.part[userMessage.id] ?? []
-  const recordedPlanMode = isRecordedPlanModeUserMessage(userMessage.id)
-  if (!isPlanModeUserMessage(userMessage, userParts, recordedPlanMode)) return null
-  const assistantParts = state.part[assistantMessage.id] ?? []
-  if (hasRunningToolPart(assistantParts)) return null
-  const markdown = getPresentedPlanMarkdown(assistantParts)
-  if (!markdown) return null
+  const revisions = projectPlanRevisions(turnInputs)
+  const revision = revisions[revisions.length - 1]
+  // A sentinel-backed Plan card is explicit even when local plan-mode
+  // ownership was unavailable (for example after reload or from a remote
+  // session). Structured markdown still requires plan-mode evidence because
+  // resolveMessagePlanCard only recognizes it for plan-mode revisions.
+  if (!revision) return null
+  if (!revision.sourceMessageId || !revision.planText || revision.planText.trim().length === 0) return null
+
+  // Only propose while the revision is still the live tail of the session.
+  const lastTurnId = turnInputs[turnInputs.length - 1]?.turnId
+  if (!lastTurnId || !revision.memberTurnIds.includes(lastTurnId)) return null
+
+  // Never save or enable implementation while any sibling assistant in the
+  // revision is still generating or running tools.
+  if (!revision.isSettled) return null
+  for (const memberTurnId of revision.memberTurnIds) {
+    const memberTurn = turnInputs.find((turn) => turn.turnId === memberTurnId)
+    if (!memberTurn) continue
+    for (const assistant of memberTurn.assistants) {
+      if (hasRunningToolPart(assistant.parts)) return null
+    }
+  }
 
   const implementationKey = getPlanImplementationKey(
     sessionID,
-    getPlanBlockId(assistantMessage.id, 0),
+    getPlanBlockId(revision.sourceMessageId, 0),
   )
   if (
     implementedPlanRequests.has(implementationKey)
@@ -67,17 +86,58 @@ export function detectPlanProposedCandidate({
 
   return {
     sessionID,
-    sourceMessageId: assistantMessage.id,
-    originatingUserMessageId: userMessage.id,
+    sourceMessageId: revision.sourceMessageId,
+    originatingUserMessageId: revision.rootUserMessageId,
     implementationKey,
-    markdown,
+    markdown: revision.planText,
   }
 }
 
-function getPresentedPlanMarkdown(parts: readonly Part[]): string | null {
-  const split = resolveMessagePlanCard(parts, { isPlanModeSource: true })
-  const markdown = split?.planText ?? ""
-  return markdown.trim().length > 0 ? markdown : null
+function buildRevisionTurnInputs(
+  messages: readonly Message[],
+  state: PlanProposedDetectionState,
+  isRecordedPlanModeUserMessage: (messageId: string) => boolean,
+): PlanRevisionTurnInput[] {
+  const inputs: PlanRevisionTurnInput[] = []
+  const inputByUserMessageId = new Map<string, PlanRevisionTurnInput>()
+
+  for (const message of messages) {
+    if (message.role === "user") {
+      const input: PlanRevisionTurnInput = {
+        turnId: message.id,
+        userMessageId: message.id,
+        userInfo: message,
+        userParts: state.part[message.id] ?? [],
+        isRecordedPlanMode: isRecordedPlanModeUserMessage(message.id),
+        assistants: [],
+      }
+      inputs.push(input)
+      inputByUserMessageId.set(message.id, input)
+      continue
+    }
+
+    if (message.role !== "assistant") continue
+
+    const parentID = (message as { parentID?: unknown }).parentID
+    const targetTurn = (typeof parentID === "string" ? inputByUserMessageId.get(parentID) : undefined)
+      ?? inputs[inputs.length - 1]
+    if (!targetTurn) continue
+
+    targetTurn.assistants.push({
+      id: message.id,
+      parentMessageId: typeof parentID === "string" && parentID.trim().length > 0 ? parentID : null,
+      completedAt: getAssistantCompletedAt(message),
+      parts: state.part[message.id] ?? [],
+    })
+  }
+
+  return inputs
+}
+
+function getAssistantCompletedAt(message: Message): number | null {
+  if (!isAssistantTurnComplete(message)) return null
+  const completedAt = (message.time as { completed?: unknown } | undefined)?.completed
+  return typeof completedAt === "number" && completedAt > 0 ? completedAt : 1
 }
 
 function hasRunningToolPart(parts: readonly Part[]): boolean {
@@ -88,14 +148,6 @@ function hasRunningToolPart(parts: readonly Part[]): boolean {
   }
 
   return false
-}
-
-function findOriginatingUserMessage(messages: readonly Message[], assistantIndex: number): Message | null {
-  for (let index = assistantIndex - 1; index >= 0; index -= 1) {
-    const message = messages[index]
-    if (message.role === "user") return message
-  }
-  return null
 }
 
 function isAssistantTurnComplete(message: Message): boolean {

@@ -28,6 +28,14 @@ test('smokes clean-user provisioning and runtime overlays from an artifact confi
   assert.ok(result.runtimePlugins.includes('plugins/openai-tool-schema-sanitizer.mjs'));
 });
 
+test('rejects packaged user profile skills', async () => {
+  await assert.rejects(() => withConfig(async (root) => {
+    const skillPath = path.join(root, 'user-profile', 'skills', 'unexpected', 'SKILL.md');
+    await fs.mkdir(path.dirname(skillPath), { recursive: true });
+    await fs.writeFile(skillPath, '---\nname: unexpected\n---\nUnexpected skill.\n');
+  }), /Packaged config must not include user profile skills/);
+});
+
 for (const [name, mutate, message] of [
   ['agent', (root) => fs.rm(path.join(root, 'agents', 'orchestrator.md')), /Missing required orchestration agent/],
   ['plugin', (root) => fs.rm(path.join(root, 'plugins', 'devryan-managed-orchestration.mjs')), /Missing required orchestration runtime plugin/],

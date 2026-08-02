@@ -2,7 +2,7 @@ import { readAuthFile } from '../../opencode/auth.js';
 import { isPlainObject, readConfigLayers } from '../../opencode/shared.js';
 import { readClaudeCodeStatusUsage } from './claude-code-status.js';
 import { fetchClaudeCodeUsage } from './claude-code-usage.js';
-import { fetchMeridianClaudeQuota } from './claude-meridian.js';
+import { fetchMeridianClaudeQuota, resolveSafeClaudeQuotaUrl } from './claude-meridian.js';
 import { isAnthropicOAuthPluginSpec } from '../../opencode/anthropic-oauth-plugin.js';
 import {
   getAuthEntry,
@@ -53,13 +53,19 @@ export const hasAnthropicOAuthProxyConfig = (workingDirectory = null) => {
 export const isConfigured = ({
   workingDirectory = null,
   isExternalRuntime = false,
+  claudeProxyBaseUrl = null,
+  readAuth = readAuthFile,
+  hasProxyConfig = hasAnthropicOAuthProxyConfig,
 } = {}) => {
-  const auth = readAuthFile();
+  if (isExternalRuntime) return false;
+
+  const auth = readAuth();
   const entry = normalizeAuthEntry(getAuthEntry(auth, aliases));
   return Boolean(
     entry?.access
     || entry?.token
-    || (!isExternalRuntime && hasAnthropicOAuthProxyConfig(workingDirectory))
+    || resolveSafeClaudeQuotaUrl(claudeProxyBaseUrl)
+    || hasProxyConfig(workingDirectory)
   );
 };
 
@@ -73,14 +79,20 @@ const buildOAuthUsage = (payload) => {
       : key === 'seven_day'
         ? '7d'
         : `7d-${key.slice('seven_day_'.length).replace(/_/g, '-')}`;
+    const usedPercent = toNumber(value.utilization);
+    if (usedPercent === null || usedPercent < 0) continue;
     windows[label] = toUsageWindow({
-      usedPercent: toNumber(value.utilization),
+      usedPercent,
       windowSeconds: key === 'five_hour' ? FIVE_HOUR_WINDOW_SECONDS : SEVEN_DAY_WINDOW_SECONDS,
       resetAt: toTimestamp(value.resets_at),
     });
   }
   return { windows };
 };
+
+const hasPrimaryUsageWindow = (usage) => Boolean(
+  usage?.windows?.['5h'] || usage?.windows?.['7d']
+);
 
 const buildDegradedStatusResult = (statusUsage, primaryFailure) => buildResult({
   providerId,
@@ -103,10 +115,22 @@ export const fetchClaudeQuota = async ({
   fetchImpl = globalThis.fetch,
   workingDirectory = null,
   isExternalRuntime = false,
+  claudeProxyBaseUrl = null,
 } = {}) => {
+  if (isExternalRuntime) {
+    return buildResult({
+      providerId,
+      providerName,
+      ok: false,
+      configured: false,
+      error: 'Not configured'
+    });
+  }
+
   const auth = readAuth();
   const entry = normalizeAuthEntry(getAuthEntry(auth, aliases));
   const accessToken = entry?.access ?? entry?.token;
+  let oauthFailure = null;
 
   if (accessToken) {
     try {
@@ -119,42 +143,63 @@ export const fetchClaudeQuota = async ({
       });
 
       if (!response.ok) {
-        return buildResult({
-          providerId,
-          providerName,
-          ok: false,
-          configured: true,
-          error: `API error: ${response.status}`
-        });
+        oauthFailure = {
+          code: 'claude_oauth_usage_unavailable',
+          error: `Anthropic OAuth usage returned HTTP ${response.status}.`,
+        };
+      } else {
+        const payload = await response.json();
+        const usage = buildOAuthUsage(payload);
+        if (hasPrimaryUsageWindow(usage)) {
+          return buildResult({
+            providerId,
+            providerName,
+            ok: true,
+            configured: true,
+            usage,
+            usageUpdatedAt: Date.now(),
+          });
+        }
+        oauthFailure = {
+          code: 'claude_oauth_usage_unavailable',
+          error: 'Anthropic OAuth usage did not return subscription limits.',
+        };
       }
-
-      const payload = await response.json();
-      return buildResult({
-        providerId,
-        providerName,
-        ok: true,
-        configured: true,
-        usage: buildOAuthUsage(payload),
-        usageUpdatedAt: Date.now(),
-      });
     } catch (error) {
-      return buildResult({
-        providerId,
-        providerName,
-        ok: false,
-        configured: true,
-        error: error instanceof Error ? error.message : 'Request failed'
-      });
+      oauthFailure = {
+        code: 'claude_oauth_usage_unavailable',
+        error: error instanceof Error ? error.message : 'Anthropic OAuth usage request failed.',
+      };
     }
   }
 
-  if (isExternalRuntime || !hasProxyConfig(workingDirectory)) {
+  let resolvedProxyBaseUrl = claudeProxyBaseUrl;
+  if (!resolveSafeClaudeQuotaUrl(resolvedProxyBaseUrl)) {
+    try {
+      resolvedProxyBaseUrl = await resolveProxyBaseUrl();
+    } catch (error) {
+      resolvedProxyBaseUrl = null;
+      if (!oauthFailure) {
+        oauthFailure = {
+          code: 'claude_meridian_unavailable',
+          error: error instanceof Error ? error.message : 'Failed to resolve the active Claude quota proxy.',
+        };
+      }
+    }
+  }
+
+  const proxyConfigured = Boolean(
+    resolveSafeClaudeQuotaUrl(resolvedProxyBaseUrl)
+    || hasProxyConfig(workingDirectory)
+  );
+  if (!proxyConfigured) {
     return buildResult({
       providerId,
       providerName,
       ok: false,
-      configured: false,
-      error: 'Not configured'
+      configured: Boolean(accessToken),
+      error: oauthFailure?.error ?? 'Not configured',
+      errorCode: oauthFailure?.code,
     });
   }
 
@@ -164,9 +209,8 @@ export const fetchClaudeQuota = async ({
     error: 'The active Claude quota proxy could not be resolved.',
   };
   try {
-    const baseUrl = await resolveProxyBaseUrl();
-    if (baseUrl) {
-      meridianResult = await fetchMeridianUsage({ baseUrl, fetchImpl });
+    if (resolvedProxyBaseUrl) {
+      meridianResult = await fetchMeridianUsage({ baseUrl: resolvedProxyBaseUrl, fetchImpl });
       if (meridianResult.ok) {
         return buildResult({
           providerId,
@@ -208,8 +252,8 @@ export const fetchClaudeQuota = async ({
   }
 
   return buildDegradedStatusResult(readStatusUsage(), {
-    code: cliResult.code || meridianResult.code,
-    error: cliResult.error || meridianResult.error,
+    code: cliResult.code || meridianResult.code || oauthFailure?.code,
+    error: cliResult.error || meridianResult.error || oauthFailure?.error,
   });
 };
 

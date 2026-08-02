@@ -28,7 +28,6 @@ permission:
     council: allow
   council_session: deny
   skill: allow
-  context7_*: deny
 modelRefs:
   - openai/gpt-5.5
 ---

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { devtools, persist, createJSONStorage } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import { devtools } from './utils/devtoolsGate';
 import { getSafeStorage } from './utils/safeStorage';
 import {
   startConfigUpdate,

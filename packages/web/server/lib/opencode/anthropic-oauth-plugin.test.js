@@ -7,14 +7,15 @@ import {
 } from './anthropic-oauth-plugin.js';
 
 describe('Anthropic OAuth plugin spec', () => {
-  it('recognizes both legacy bare and versioned package specs', () => {
+  it('recognizes legacy package specs and installed local registrations', () => {
     expect(isAnthropicOAuthPluginSpec('opencode-with-claude')).toBe(true);
     expect(isAnthropicOAuthPluginSpec('opencode-with-claude@1.6.18')).toBe(true);
+    expect(isAnthropicOAuthPluginSpec('./node_modules/opencode-with-claude/dist/index.js')).toBe(true);
     expect(isAnthropicOAuthPluginSpec('opencode-with-claude@')).toBe(false);
     expect(isAnthropicOAuthPluginSpec('opencode-with-claude-copy')).toBe(false);
   });
 
-  it('migrates a legacy bare entry to the reviewed version', () => {
+  it('migrates a legacy bare entry to the installed local entrypoint', () => {
     expect(reconcileAnthropicOAuthPluginSpecs(['custom', 'opencode-with-claude'])).toEqual([
       'custom',
       ANTHROPIC_OAUTH_PLUGIN_SPEC,
@@ -34,5 +35,10 @@ describe('Anthropic OAuth plugin spec', () => {
     ])).toEqual([
       [ANTHROPIC_OAUTH_PLUGIN_SPEC, { enabled: true }],
     ]);
+  });
+
+  it('uses an absolute installed entrypoint when the target config is outside the profile', () => {
+    const absoluteSpec = 'file:///Users/test/.config/opencode/node_modules/opencode-with-claude/dist/index.js';
+    expect(reconcileAnthropicOAuthPluginSpecs([], absoluteSpec)).toEqual([absoluteSpec]);
   });
 });

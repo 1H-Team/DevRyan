@@ -1,5 +1,8 @@
 import crypto from 'node:crypto';
 
+import { createLifecycleTracker } from '@openchamber/harness-runtime';
+import { classifyProviderTransportFailure } from '@openchamber/orchestration-runtime';
+
 import {
   createHarnessError,
   createHarnessSuccess,
@@ -49,6 +52,8 @@ const KNOWN_TURN_MARKS = new Set([
   'renderer_first_visible_text_committed',
   'renderer_assistant_completion_observed',
   'renderer_status_idle_visible',
+  'renderer_tool_input_stall_confirmed',
+  'renderer_provider_inference_stall_confirmed',
   'cursor_abort_requested',
 ]);
 
@@ -248,6 +253,10 @@ function sanitizeClientMarkMetadata(mark, metadata) {
         sanitized[key] = metadata[key].trim();
       }
     }
+    const stalledForMs = metadata.stalledForMs;
+    if (typeof stalledForMs === 'number' && Number.isFinite(stalledForMs) && stalledForMs >= 0) {
+      sanitized.stalledForMs = Math.trunc(stalledForMs);
+    }
   }
 
   if (mark === 'cursor_abort_requested') {
@@ -351,10 +360,15 @@ function createTurnTimingRuntime(options = {}) {
   const maxToolCalls = Number.isFinite(options.maxToolCalls) && options.maxToolCalls > 0
     ? Math.trunc(options.maxToolCalls)
     : DEFAULT_MAX_TOOL_CALLS;
+  const lifecycleTracker = options.lifecycleTracker ?? createLifecycleTracker({
+    clock: now,
+    onTurnEvent: options.onTurnEvent,
+  });
 
   const records = [];
   const recordsByUserMessage = new Map();
   const recordsByAssistantMessage = new Map();
+  const activeTurnsBySession = new Map();
 
   const userKey = (sessionId, messageId) => `${sessionId}\n${messageId}`;
 
@@ -366,6 +380,9 @@ function createTurnTimingRuntime(options = {}) {
     }
     if (record.assistantMessageId) {
       recordsByAssistantMessage.delete(record.assistantMessageId);
+    }
+    if (activeTurnsBySession.get(record.sessionId)?.record === record) {
+      activeTurnsBySession.delete(record.sessionId);
     }
   };
 
@@ -438,9 +455,18 @@ function createTurnTimingRuntime(options = {}) {
         mutationEvidence: false,
         cursorWorkspaceRepair: null,
         mutatingToolCalls: [],
+        terminalFailure: null,
+        concurrency: {
+          evidenceOnly: true,
+          atAcceptance: null,
+          atTerminalFailure: null,
+        },
       },
       toolCalls: [],
+      latestToolCall: null,
+      toolCallOrdinal: 0,
       lastTextDeltaSignaturesByPart: {},
+      pendingTerminalFailure: null,
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -507,7 +533,7 @@ function createTurnTimingRuntime(options = {}) {
   };
 
   const setMark = (record, mark, metadata, sanitizeMetadata = false) => {
-    if (!record || !mark || record.marks[mark]) return;
+    if (!record || !mark || record.marks[mark]) return false;
     const timestamp = now();
     const entry = { at: timestamp };
     const clonedMetadata = sanitizeMetadata
@@ -520,6 +546,73 @@ function createTurnTimingRuntime(options = {}) {
     }
     record.updatedAt = timestamp;
     pruneRecords();
+    return true;
+  };
+
+  const captureConcurrency = (providerID) => {
+    const normalizedProviderID = normalizeString(providerID);
+    let activeSameProvider = null;
+    if (normalizedProviderID) {
+      activeSameProvider = 0;
+      for (const active of activeTurnsBySession.values()) {
+        if (active.providerID === normalizedProviderID) {
+          activeSameProvider += 1;
+        }
+      }
+    }
+    return {
+      activeTotal: activeTurnsBySession.size,
+      activeSameProvider,
+    };
+  };
+
+  const activateAcceptedTurn = (record) => {
+    const model = getPromptAcceptedMetadata(record);
+    const providerID = normalizeString(model?.providerID);
+    activeTurnsBySession.set(record.sessionId, {
+      record,
+      providerID,
+    });
+    record.diagnostics.concurrency.atAcceptance = captureConcurrency(providerID);
+  };
+
+  const buildTerminalFailure = (record, info) => {
+    if (!record || !isObject(info.error)) return null;
+    const error = info.error;
+    const errorData = isObject(error.data) ? error.data : {};
+    const errorName = normalizeString(error.name);
+    const errorDetail = normalizeString(errorData.message)
+      || normalizeString(error.message)
+      || errorName;
+    if (!errorName && !errorDetail) return null;
+
+    const time = isObject(info.time) ? info.time : {};
+    const createdAt = typeof time.created === 'number' && Number.isFinite(time.created)
+      ? time.created
+      : null;
+    const completedAt = typeof time.completed === 'number' && Number.isFinite(time.completed)
+      ? time.completed
+      : null;
+    const acceptedAt = record.marks.prompt_accepted?.at;
+    const fallbackCompletedAt = completedAt ?? now();
+    const elapsedMs = createdAt !== null && fallbackCompletedAt >= createdAt
+      ? fallbackCompletedAt - createdAt
+      : typeof acceptedAt === 'number' && fallbackCompletedAt >= acceptedAt
+        ? fallbackCompletedAt - acceptedAt
+        : null;
+    return {
+      kind: classifyProviderTransportFailure(errorName, errorDetail),
+      elapsedMs,
+    };
+  };
+
+  const captureTerminalFailure = (record, terminalFailure) => {
+    if (!record || record.diagnostics.terminalFailure || !terminalFailure) return;
+    const providerID = getPromptAcceptedMetadata(record)?.providerID;
+
+    record.diagnostics.terminalFailure = terminalFailure;
+    record.diagnostics.concurrency.atTerminalFailure = captureConcurrency(providerID);
+    record.updatedAt = now();
   };
 
   const recordMutatingToolCall = (record, toolName, status) => {
@@ -550,16 +643,25 @@ function createTurnTimingRuntime(options = {}) {
     let entry = record.toolCalls.find((toolCall) => (
       identities.some((identity) => toolCall.identities.has(identity))
     ));
+    if (
+      !entry
+      && record.latestToolCall
+      && identities.some((identity) => record.latestToolCall.identities.has(identity))
+    ) {
+      entry = record.latestToolCall;
+    }
     if (!entry) {
-      if (record.toolCalls.length >= maxToolCalls) return;
+      record.toolCallOrdinal += 1;
       entry = {
         identities: new Set(),
-        ordinal: record.toolCalls.length + 1,
+        ordinal: record.toolCallOrdinal,
         tool: '',
         status: null,
         final: false,
       };
-      record.toolCalls.push(entry);
+      if (record.toolCalls.length < maxToolCalls) {
+        record.toolCalls.push(entry);
+      }
     }
     for (const identity of identities) entry.identities.add(identity);
 
@@ -570,6 +672,7 @@ function createTurnTimingRuntime(options = {}) {
       entry.status = normalizedStatus;
       entry.final = isFinalToolStatus(normalizedStatus);
     }
+    record.latestToolCall = entry;
     record.updatedAt = now();
     pruneRecords();
   };
@@ -587,7 +690,12 @@ function createTurnTimingRuntime(options = {}) {
 
     if (statusType === 'idle') {
       const record = findLatestRecordForSession(sessionId, (item) => !item.marks.session_status_idle);
+      if (record?.pendingTerminalFailure) {
+        captureTerminalFailure(record, record.pendingTerminalFailure);
+        record.pendingTerminalFailure = null;
+      }
       setMark(record, 'session_status_idle', { status: statusType });
+      activeTurnsBySession.delete(sessionId);
     }
   };
 
@@ -620,6 +728,11 @@ function createTurnTimingRuntime(options = {}) {
         messageId,
         finish: normalizeString(info.finish) || undefined,
       });
+      record.pendingTerminalFailure = buildTerminalFailure(record, info);
+      if (record.marks.session_status_idle && record.pendingTerminalFailure) {
+        captureTerminalFailure(record, record.pendingTerminalFailure);
+        record.pendingTerminalFailure = null;
+      }
     }
   };
 
@@ -742,12 +855,32 @@ function createTurnTimingRuntime(options = {}) {
         ? { ...record.diagnostics.cursorWorkspaceRepair }
         : null,
       mutatingToolCalls: record.diagnostics.mutatingToolCalls.map((item) => ({ ...item })),
+      terminalFailure: record.diagnostics.terminalFailure
+        ? { ...record.diagnostics.terminalFailure }
+        : null,
+      concurrency: {
+        evidenceOnly: true,
+        atAcceptance: record.diagnostics.concurrency.atAcceptance
+          ? { ...record.diagnostics.concurrency.atAcceptance }
+          : null,
+        atTerminalFailure: record.diagnostics.concurrency.atTerminalFailure
+          ? { ...record.diagnostics.concurrency.atTerminalFailure }
+          : null,
+      },
       toolCalls: record.toolCalls.map((item) => ({
         ordinal: item.ordinal,
         tool: item.tool,
         status: item.status,
         final: item.final,
       })),
+      latestToolCall: record.latestToolCall
+        ? {
+            ordinal: record.latestToolCall.ordinal,
+            tool: record.latestToolCall.tool,
+            status: record.latestToolCall.status,
+            final: record.latestToolCall.final,
+          }
+        : null,
     },
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
@@ -782,7 +915,10 @@ function createTurnTimingRuntime(options = {}) {
       if (!record) {
         return false;
       }
-      setMark(record, mark, input.metadata, true);
+      const marked = setMark(record, mark, input.metadata, true);
+      if (marked && mark === 'prompt_accepted') {
+        activateAcceptedTurn(record);
+      }
       if (input.directory && record) {
         record.directory = normalizeDirectory(input.directory);
       }
@@ -791,10 +927,17 @@ function createTurnTimingRuntime(options = {}) {
 
     processOpenCodeEvent(payload) {
       if (!isObject(payload)) return;
+      lifecycleTracker.processEvent(payload);
       const type = normalizeString(payload.type);
       const properties = getEventProperties(payload);
       if (type === 'session.status') {
         processSessionStatus(properties);
+      } else if (type === 'session.deleted') {
+        const info = isObject(properties.info) ? properties.info : {};
+        const sessionId = normalizeString(
+          info.id || properties.sessionID || properties.sessionId,
+        );
+        if (sessionId) activeTurnsBySession.delete(sessionId);
       } else if (type === 'session.updated') {
         processSessionUpdated(properties);
       } else if (type === 'message.updated') {
@@ -804,6 +947,14 @@ function createTurnTimingRuntime(options = {}) {
       } else if (type === 'message.part.delta') {
         processPartDelta(properties);
       }
+    },
+
+    recordPromptAccepted(input = {}) {
+      return lifecycleTracker.recordPromptAccepted(input);
+    },
+
+    subscribeLifecycle(listener) {
+      return lifecycleTracker.subscribe(listener);
     },
 
     getRecentTimings(options = {}) {
@@ -820,9 +971,10 @@ function createTurnTimingRuntime(options = {}) {
   };
 }
 
-function registerTurnTimingRoutes(app, runtime) {
+function registerTurnTimingRoutes(app, runtime, options = {}) {
   app.post('/api/diagnostics/turn-timing/mark', (req, res) => {
-    const accepted = runtime.recordClientMark(req.body || {});
+    const input = req.body || {};
+    const accepted = runtime.recordClientMark(input);
     if (!accepted) {
       res.status(400).json(withHarnessResult(
         { ok: false, error: 'Invalid turn timing mark' },
@@ -839,6 +991,7 @@ function registerTurnTimingRoutes(app, runtime) {
       ));
       return;
     }
+    options.onAcceptedMark?.(input);
     res.json(withHarnessResult(
       { ok: true },
       createHarnessSuccess({

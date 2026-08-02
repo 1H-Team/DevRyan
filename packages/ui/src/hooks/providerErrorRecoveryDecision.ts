@@ -4,6 +4,7 @@ import { isDefiniteProviderUsageLimit } from '@openchamber/orchestration-runtime
 import { isLikelyProviderAuthFailure } from '@/lib/messages/providerAuthError';
 import { isLikelyProviderModelNotFound } from '@/lib/messages/providerModelNotFound';
 import { isLikelyTransientStreamFailure, stripWrappedJsonQuotes } from '@/lib/messages/transientStreamError';
+import { isAssistantTurnComplete } from '@/sync/session-working';
 
 type Input = {
   messages: Message[];
@@ -13,6 +14,7 @@ type Input = {
 };
 
 export const MAX_TRANSIENT_PROVIDER_RETRY_ATTEMPTS = 3;
+export const INTERRUPTED_PROVIDER_RESPONSE_REASON = 'The previous response stopped before it completed.';
 
 export function isPrimaryProviderRecoverySession(
   session: { parentID?: string | null } | undefined,
@@ -61,5 +63,22 @@ export function decideProviderErrorRecovery(input: Input): { reason: string } | 
     || error.name === 'ProviderModelNotFoundError'
     || isLikelyTransientStreamFailure(error.name, reason)
   ) return { reason };
+  return null;
+}
+
+export function decideInterruptedProviderRecovery(
+  input: Pick<Input, 'messages' | 'queuedMessageCount' | 'blockingRequestCount'>,
+): { reason: string } | null {
+  if (input.queuedMessageCount > 0 || input.blockingRequestCount > 0) return null;
+  const latest = input.messages.at(-1);
+  if (!latest || latest.role !== 'assistant' || latest.error || isAssistantTurnComplete(latest)) {
+    return null;
+  }
+
+  for (let index = input.messages.length - 2; index >= 0; index -= 1) {
+    if (input.messages[index]?.role === 'user') {
+      return { reason: INTERRUPTED_PROVIDER_RESPONSE_REASON };
+    }
+  }
   return null;
 }

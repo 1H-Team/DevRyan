@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test as bunTest } from "bun:test"
 
-const test = bunTest as typeof bunTest & { skip: typeof bunTest }
+const test = bunTest
 
 type PromptParams = {
   sessionID: string
@@ -29,7 +29,6 @@ let currentProviderId: string | null = "provider-current"
 let currentModelId: string | null = "model-current"
 let currentVariant: string | null = "medium"
 let promptResponseText = "```json\n[{\"subject\":\"feat: run commit workflow\",\"highlights\":[\"Committed selected files\"]}]\n```"
-let promptResponseInfo: Record<string, unknown> = {}
 let promptResponseParts: Array<Record<string, unknown>> | null = null
 let gitStatusResponse = {
   current: "feature/test",
@@ -178,7 +177,7 @@ mock.module("./opencode/client", () => ({
           promptCalls.push(params)
           return {
             data: {
-              info: promptResponseInfo,
+              info: {},
               parts: promptResponseParts ?? [
                 {
                   type: "text",
@@ -204,19 +203,6 @@ const {
 } = await import("./gitApi")
 
 const { buildCommitPlanContext, COMMIT_PLAN_CONTEXT_LIMITS } = await import("./git/commitPlanContext")
-
-// Legacy workflow-style entry points were collapsed into the deterministic
-// `executeApprovedCommitPlan` executor. These shims keep older test cases
-// compiling while we trim the suite; tests that exercise removed code paths
-// are individually skipped.
-async function generateCommitMessageQuietly(..._args: [string, string[], unknown?]) {
-  void _args
-  return Promise.resolve(null)
-}
-async function runGeneratedCommitWorkflowQuietly(..._args: [string, string[], unknown?]) {
-  void _args
-  return Promise.resolve(null)
-}
 
 async function generateCommitMessageDraftQuietly(...args: Parameters<typeof generateCommitMessageDraft>) {
   return generateQuietly(() => generateCommitMessageDraft(...args))
@@ -260,7 +246,6 @@ describe("git generation routing", () => {
     currentModelId = "model-current"
     currentVariant = "medium"
     promptResponseText = "```json\n[{\"subject\":\"feat: run commit workflow\",\"highlights\":[\"Committed selected files\"]}]\n```"
-    promptResponseInfo = {}
     promptResponseParts = null
     gitStatusResponse = {
       current: "feature/test",
@@ -412,51 +397,6 @@ describe("git generation routing", () => {
     expect(text).toContain("staged-only")
   })
 
-  test.skip("generates a non-mutating commit plan preview", async () => {
-    gitStatusResponse = {
-      ...gitStatusResponse,
-      files: [{ path: "src/git.ts", index: "M", working_dir: " " }],
-      diffStats: { "src/git.ts": { insertions: 2, deletions: 0 } },
-    }
-    promptResponseText = "Plan:\n[{\"subject\":\"fix(git): keep commit controls clickable\",\"highlights\":[\"Uses scoped changes\"]}]"
-
-    const result = await generateCommitPlanPreviewQuietly("/repo", ["src/git.ts"])
-
-    expect(result).toEqual({
-      status: "complete",
-      commits: [
-        {
-          subject: "fix(git): keep commit controls clickable",
-          highlights: ["Uses scoped changes"],
-        },
-      ],
-    })
-    const text = promptCalls[0]?.parts?.map((part) => part.text).join("\n") ?? ""
-    expect(text).toContain("visible plan prompt")
-    expect(text).toContain("hidden plan prompt")
-    expect(text).toContain("Do not stage, commit, pull, rebase, or push")
-    expect(text).toContain("recentCommitSubjects")
-    const format = promptCalls[0]?.format as { type?: string; schema?: unknown; retryCount?: number } | undefined
-    expect(format?.type).toBe("json_schema")
-    expect(typeof format?.schema).toBe("object")
-    expect(format?.retryCount).toBe(1)
-    expect(promptCalls[0]?.variant).toBe("medium")
-    expect(promptCalls[0]?.tools).toEqual({
-      bash: false,
-      read: false,
-      write: false,
-      edit: false,
-      multiedit: false,
-      apply_patch: false,
-      grep: false,
-      glob: false,
-      list: false,
-      task: false,
-      webfetch: false,
-      question: false,
-    })
-  })
-
   test("preview prompt includes supplied git context", async () => {
     gitStatusResponse = {
       ...gitStatusResponse,
@@ -484,138 +424,6 @@ describe("git generation routing", () => {
     const result = await generateCommitPlanPreviewQuietly("/repo", ["src/git.ts"])
 
     expect(result.commits[0]?.files).toEqual(["src/git.ts"])
-  })
-
-  test.skip("confirmed workflow receives the approved plan", async () => {
-    const approvedPlan = [
-      {
-        subject: "fix(git): keep commit controls clickable",
-        highlights: ["Uses scoped changes"],
-        files: ["src/git.ts"],
-      },
-    ]
-
-    await runGeneratedCommitWorkflowQuietly("/repo", ["src/git.ts"], { approvedPlan })
-
-    const text = promptCalls[0]?.parts?.map((part) => part.text).join("\n") ?? ""
-    expect(text).toContain("Approved commit plan")
-    expect(text).toContain("fix(git): keep commit controls clickable")
-    expect(text).toContain("src/git.ts")
-    expect(promptCalls[0]?.tools).toBe(undefined)
-  })
-
-  test.skip("runs the generated commit workflow with workflow safety rules", async () => {
-    await runGeneratedCommitWorkflowQuietly("/repo", ["src/app.ts"])
-
-    const text = promptCalls[0]?.parts?.map((part) => part.text).join("\n") ?? ""
-    expect(text).toContain("visible commit prompt")
-    expect(text).toContain("hidden commit prompt")
-    expect(text).toContain("Treat the selected files list above as a fixed allowlist")
-    expect(text).toContain("Do not force push")
-  })
-
-  test.skip("creates a separate new session for each generation", async () => {
-    currentSessionId = "active-session"
-
-    await generateCommitMessageQuietly("/repo", ["src/first.ts"])
-    await generateCommitMessageQuietly("/repo", ["src/second.ts"])
-
-    expect(createSessionCalls).toHaveLength(2)
-    expect(promptCalls.map((call) => call.sessionID)).toEqual(["generated-1", "generated-2"])
-    expect(deleteSessionCalls.map((call) => call.sessionID)).toEqual(["generated-1", "generated-2"])
-  })
-
-  test.skip("parses JSON array workflow output from assistant prose", async () => {
-    promptResponseText = "Commit workflow finished:\n[{\"subject\":\"fix: parse generated JSON\",\"highlights\":[]}]"
-
-    const result = await generateCommitMessageQuietly("/repo", ["src/app.ts"])
-
-    expect(result).toEqual({
-      status: "complete",
-      commits: [
-        {
-          subject: "fix: parse generated JSON",
-          highlights: [],
-        },
-      ],
-    })
-    expect(promptCalls[0]?.format).toBe(undefined)
-  })
-
-  test.skip("embeds a fixed selected-file snapshot and workflow safety rules", async () => {
-    await generateCommitMessageQuietly("/repo", ["src/app.ts", ".superpowers/brainstorm/1/state/server-info"])
-
-    const text = promptCalls[0]?.parts?.map((part) => part.text).join("\n") ?? ""
-    expect(text).toContain("- src/app.ts")
-    expect(text).toContain("- .superpowers/brainstorm/1/state/server-info")
-    expect(text).toContain("Treat the selected files list above as a fixed allowlist")
-    expect(text).toContain("Do not force push")
-    expect(text).toContain(".superpowers/brainstorm/**/state/**")
-  })
-
-  test.skip("returns blocked workflow output without exposing raw JSON", async () => {
-    promptResponseText = "{\"status\":\"blocked\",\"message\":\"Merge conflicts must be resolved first\"}"
-
-    const result = await generateCommitMessageQuietly("/repo", ["src/app.ts"])
-
-    expect(result).toEqual({
-      status: "blocked",
-      commits: [],
-      message: "Merge conflicts must be resolved first",
-    })
-  })
-
-  test.skip("throws an explicit error when assistant text has no JSON object", async () => {
-    promptResponseText = "No JSON today."
-
-    let error: unknown = null
-    try {
-      await generateCommitMessageQuietly("/repo", ["src/app.ts"])
-    } catch (caught) {
-      error = caught
-    }
-
-    expect(error instanceof Error).toBe(true)
-    expect(error instanceof Error ? error.message : null).toBe("No JSON workflow output returned by session")
-    expect(deleteSessionCalls).toEqual([{ sessionID: "generated-1", directory: "/repo" }])
-  })
-
-  test.skip("marks aborted session generation as cancellation instead of JSON parse failure", async () => {
-    promptResponseText = ""
-    promptResponseInfo = { error: { message: "aborted" } }
-
-    let error: unknown = null
-    try {
-      await generateCommitMessageQuietly("/repo", ["src/app.ts"])
-    } catch (caught) {
-      error = caught
-    }
-
-    expect(error instanceof Error).toBe(true)
-    expect(error instanceof Error ? error.name : null).toBe("GitGenerationCancelledError")
-    expect(error instanceof Error ? error.message : null).toBe("Generation was cancelled")
-  })
-
-  test.skip("fails before creating a session when no generation model is selected", async () => {
-    currentSessionId = "active-session"
-    sessionModelSelections.set("active-session", {
-      providerId: "provider-active",
-      modelId: "model-active",
-    })
-    currentProviderId = null
-    currentModelId = null
-
-    let error: unknown = null
-    try {
-      await generateCommitMessageQuietly("/repo", ["src/app.ts"])
-    } catch (caught) {
-      error = caught
-    }
-
-    expect(error instanceof Error).toBe(true)
-    expect(error instanceof Error ? error.message : null).toBe("Select a model before generating with AI")
-    expect(createSessionCalls).toHaveLength(0)
-    expect(promptCalls).toHaveLength(0)
   })
 
   test("blocks commit plan preview when merge conflicts are present", async () => {

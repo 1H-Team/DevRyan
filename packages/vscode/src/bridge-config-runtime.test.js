@@ -74,6 +74,13 @@ const createDeps = (openCodeSkills = [], overrides = {}) => ({
       runtimeApplied: true,
     })),
   })),
+  checkForOpenCodeUpdates: vi.fn(async ({ currentVersion, supportedVersion }) => ({
+    currentVersion,
+    latestVersion: '1.18.11',
+    supportedVersion,
+    updateAvailable: true,
+    supportStatus: 'supported',
+  })),
   ...overrides,
 });
 
@@ -83,7 +90,7 @@ const createCtx = (workingDirectory = '/tmp/project') => ({
     restart: vi.fn(async () => {}),
     getDebugInfo: vi.fn(() => ({
       cliPath: '/usr/local/bin/opencode',
-      version: '1.18.9',
+      version: '1.18.11',
     })),
   },
 });
@@ -98,9 +105,67 @@ describe('handleConfigBridgeMessage OpenCode resolution', () => {
 
     expect(response?.success).toBe(true);
     expect(response?.data).toMatchObject({
-      targetVersion: '1.18.9',
-      detectedVersion: '1.18.9',
-      installCommand: 'curl -fsSL https://opencode.ai/install | bash -s -- --version 1.18.9 --no-modify-path',
+      targetVersion: '1.18.11',
+      detectedVersion: '1.18.11',
+      installCommand: 'curl -fsSL https://opencode.ai/install | bash -s -- --version 1.18.11 --no-modify-path',
+    });
+  });
+});
+
+describe('handleConfigBridgeMessage OpenCode update check', () => {
+  it.each([
+    ['managed', '1.18.11'],
+    ['external', '1.18.10'],
+  ])('uses the active %s runtime version', async (mode, version) => {
+    const checkForOpenCodeUpdates = vi.fn(async ({ currentVersion, supportedVersion }) => ({
+      currentVersion,
+      latestVersion: '1.18.11',
+      supportedVersion,
+      updateAvailable: true,
+      supportStatus: currentVersion === supportedVersion ? 'supported' : 'older',
+    }));
+    const ctx = createCtx();
+    ctx.manager.getDebugInfo = vi.fn(() => ({
+      mode,
+      cliPath: mode === 'managed' ? '/usr/local/bin/opencode' : null,
+      version,
+    }));
+
+    const response = await handleConfigBridgeMessage(
+      { id: 'opencode-update', type: 'api:opencode:update-check', payload: {} },
+      ctx,
+      createDeps([], { checkForOpenCodeUpdates }),
+    );
+
+    expect(checkForOpenCodeUpdates).toHaveBeenCalledWith({
+      currentVersion: version,
+      supportedVersion: '1.18.11',
+    });
+    expect(response).toMatchObject({
+      success: true,
+      data: {
+        currentVersion: version,
+        latestVersion: '1.18.11',
+      },
+    });
+  });
+
+  it('returns a safe bridge error when the upstream check fails', async () => {
+    const response = await handleConfigBridgeMessage(
+      { id: 'opencode-update', type: 'api:opencode:update-check', payload: {} },
+      createCtx(),
+      createDeps([], {
+        checkForOpenCodeUpdates: vi.fn(async () => {
+          throw new Error('OpenCode release check failed with 429');
+        }),
+      }),
+    );
+
+    expect(response).toEqual({
+      id: 'opencode-update',
+      type: 'api:opencode:update-check',
+      success: false,
+      error: 'OpenCode release check failed with 429',
     });
   });
 });
@@ -288,6 +353,39 @@ describe('handleConfigBridgeMessage skills discovery', () => {
 
     expect(response?.success).toBe(true);
     expect(response?.data.skills).toEqual([localSkill]);
+  });
+
+  it('denies retired Superpowers names returned by any harness skill source', async () => {
+    const controlSkill = {
+      name: 'systematic-debugging',
+      path: '/Users/test/.config/opencode/skills/superpowers/systematic-debugging/SKILL.md',
+      scope: 'user',
+      source: 'opencode',
+      description: 'Installed control skill',
+    };
+    const retiredSkills = [
+      {
+        name: 'test-driven-development',
+        path: '/tmp/project/.agents/skills/test-driven-development/SKILL.md',
+        scope: 'project',
+        source: 'agents',
+      },
+      {
+        name: 'subagent-driven-development',
+        path: '/Users/test/.agents/skills/subagent-driven-development/SKILL.md',
+        scope: 'user',
+        source: 'agents',
+      },
+    ];
+
+    const response = await handleConfigBridgeMessage(
+      { id: '1', type: 'api:config/skills', payload: { method: 'GET' } },
+      createCtx(),
+      createDeps([controlSkill, ...retiredSkills]),
+    );
+
+    expect(response?.success).toBe(true);
+    expect(response?.data.skills).toEqual([controlSkill]);
   });
 
   it('excludes Claude skills returned by the managed OpenCode API', async () => {

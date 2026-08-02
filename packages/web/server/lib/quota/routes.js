@@ -25,8 +25,15 @@ import {
   resolveCursorQuotaCredential,
   validateCursorQuotaCredential,
 } from './providers/cursor-acp.js';
+import { resolveSafeClaudeQuotaUrl } from './providers/claude-meridian.js';
 
 const jsonParser = express.json({ limit: MAX_QUOTA_CREDENTIAL_PAYLOAD_BYTES });
+const CLAUDE_PROVIDER_IDS = new Set([
+  'claude',
+  'anthropic',
+  'anthropic-oauth',
+  'opencode-with-claude',
+]);
 
 const sendCredentialError = (res, code, status) => res.status(status).json({
   code,
@@ -160,17 +167,21 @@ export function registerQuotaRoutes(app, {
     const providers = Array.isArray(payload?.providers) ? payload.providers : [];
     const anthropic = providers.find((provider) => provider?.id === 'anthropic');
     const baseUrl = anthropic?.options?.baseURL ?? anthropic?.baseURL;
-    return typeof baseUrl === 'string' ? baseUrl : null;
+    return typeof baseUrl === 'string' && resolveSafeClaudeQuotaUrl(baseUrl)
+      ? baseUrl
+      : null;
   };
 
   app.get('/api/quota/providers', async (req, res) => {
     try {
       const { listConfiguredQuotaProviders } = await getQuotaProviders();
       const workingDirectory = await resolveQuotaDirectory(req);
+      const claudeProxyBaseUrl = await resolveClaudeProxyBaseUrl(workingDirectory);
       res.json({
         providers: listConfiguredQuotaProviders({
           workingDirectory,
           isExternalRuntime: isExternalOpenCode(),
+          claudeProxyBaseUrl,
         }),
       });
     } catch (error) {
@@ -251,11 +262,14 @@ export function registerQuotaRoutes(app, {
       const { fetchQuotaForProvider } = await getQuotaProviders();
       const forceRefresh = req.query.refresh === 'true';
       const workingDirectory = await resolveQuotaDirectory(req);
+      const claudeProxyBaseUrl = CLAUDE_PROVIDER_IDS.has(providerId)
+        ? await resolveClaudeProxyBaseUrl(workingDirectory)
+        : null;
       res.json(await fetchQuotaForProvider(providerId, {
         forceRefresh,
         workingDirectory,
         isExternalRuntime: isExternalOpenCode(),
-        resolveProxyBaseUrl: () => resolveClaudeProxyBaseUrl(workingDirectory),
+        claudeProxyBaseUrl,
       }));
     } catch (error) {
       console.error('Failed to fetch quota:', error);

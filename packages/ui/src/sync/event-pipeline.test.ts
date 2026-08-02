@@ -234,6 +234,40 @@ describe("createEventPipeline", () => {
     }
   })
 
+  test("routes server-owned notification events before directory queues", () => {
+    const routed: unknown[] = []
+    let directoryEvents = 0
+    const pipeline = createEventPipeline({
+      sdk: createSdk([], () => undefined),
+      onEvent: () => {
+        directoryEvents += 1
+      },
+      onUserNotificationEvent: (event) => {
+        routed.push(event)
+      },
+      transport: "sse",
+      heartbeatTimeoutMs: 1_000,
+    })
+    const notificationEvent = {
+      type: "openchamber:notification",
+      properties: {
+        kind: "plan-ready",
+        title: "Plan ready",
+        body: "A plan is ready for review",
+        tag: "plan-ready-ses_1-plan_1",
+      },
+    } as unknown as OpencodeEvent
+
+    try {
+      pipeline.enqueueEvent("global", notificationEvent)
+      expect(routed).toEqual([notificationEvent])
+      expect(directoryEvents).toBe(0)
+      expect(pipeline.getDirectoryQueueCount()).toBe(0)
+    } finally {
+      pipeline.cleanup()
+    }
+  })
+
   test("normalizes synthetic session status events into canonical session.status events", async () => {
     let resolveStreamFinished!: () => void
     const streamFinished = new Promise<void>((resolve) => {

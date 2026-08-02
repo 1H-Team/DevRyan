@@ -1062,10 +1062,41 @@ export async function getGitWorktreeBootstrapStatus(
   return gitHttp.getGitWorktreeBootstrapStatus(directory);
 }
 
+export async function getGitWorktreeBootstrapOperation(
+  operationId: string,
+): Promise<import('./api/types').GitWorktreeBootstrapStatus> {
+  const runtime = getRuntimeGit();
+  if (runtime?.worktree?.operation) return runtime.worktree.operation(operationId);
+  if (runtime?.getGitWorktreeBootstrapOperation) {
+    return runtime.getGitWorktreeBootstrapOperation(operationId);
+  }
+  return gitHttp.getGitWorktreeBootstrapOperation(operationId);
+}
+
+export async function listActiveGitWorktreeBootstrapOperations(): Promise<import('./api/types').GitWorktreeBootstrapStatus[]> {
+  const runtime = getRuntimeGit();
+  if (runtime?.worktree?.activeOperations) return runtime.worktree.activeOperations();
+  if (runtime?.listActiveGitWorktreeBootstrapOperations) {
+    return runtime.listActiveGitWorktreeBootstrapOperations();
+  }
+  return gitHttp.listActiveGitWorktreeBootstrapOperations();
+}
+
+export async function retryGitWorktreeBootstrapOperation(
+  operationId: string,
+): Promise<import('./api/types').GitWorktreeBootstrapStatus> {
+  const runtime = getRuntimeGit();
+  if (runtime?.worktree?.retry) return runtime.worktree.retry(operationId);
+  if (runtime?.retryGitWorktreeBootstrapOperation) {
+    return runtime.retryGitWorktreeBootstrapOperation(operationId);
+  }
+  return gitHttp.retryGitWorktreeBootstrapOperation(operationId);
+}
+
 export async function previewGitWorktree(
   directory: string,
   payload: import('./api/types').CreateGitWorktreePayload
-): Promise<import('./api/types').GitWorktreeCreateResult> {
+): Promise<import('./api/types').GitWorktreePreviewResult> {
   const runtime = getRuntimeGit();
   if (runtime?.worktree?.preview) {
     return runtime.worktree.preview(directory, payload);
@@ -1109,7 +1140,12 @@ export const git = {
     list: listGitWorktrees,
     primaryRoot: getPrimaryWorktreeRoot,
     validate: validateGitWorktree,
+    bootstrapStatus: getGitWorktreeBootstrapStatus,
+    preview: previewGitWorktree,
     create: createGitWorktree,
+    operation: getGitWorktreeBootstrapOperation,
+    activeOperations: listActiveGitWorktreeBootstrapOperations,
+    retry: retryGitWorktreeBootstrapOperation,
     remove: deleteGitWorktree,
   },
 };

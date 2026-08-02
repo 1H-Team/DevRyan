@@ -3,11 +3,22 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveDevDataDirectory } from '../../../scripts/dev-data-directory.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '../../..');
 const electronDir = path.join(repoRoot, 'packages/electron');
+const devDataDirectory = resolveDevDataDirectory({
+  env: process.env,
+  repoRoot,
+  scope: 'electron',
+});
+const baseDevEnvironment = {
+  ...process.env,
+  OPENCHAMBER_ELECTRON_DEV: '1',
+  OPENCHAMBER_DATA_DIR: devDataDirectory,
+};
 
 // On macOS, prefer launching via the built & signed DevRyan.app binary so
 // macOS TCC consent (Documents/Desktop/Downloads) persists across dev
@@ -45,12 +56,13 @@ function resolveDevElectronCommand() {
 }
 
 function spawnProcess(command, args, options = {}) {
+  const { env = {}, ...spawnOptions } = options;
   return spawn(command, args, {
     cwd: repoRoot,
-    env: { ...process.env, OPENCHAMBER_ELECTRON_DEV: '1' },
+    env: { ...baseDevEnvironment, ...env },
     stdio: 'inherit',
     detached: process.platform !== 'win32',
-    ...options,
+    ...spawnOptions,
   });
 }
 
@@ -118,7 +130,7 @@ async function main() {
     const result = spawnSync('node', ['./scripts/build-speech-helper.mjs'], {
       cwd: electronDir,
       stdio: 'inherit',
-      env: { ...process.env, OPENCHAMBER_ELECTRON_DEV: '1' },
+      env: baseDevEnvironment,
     });
     if (result.error) throw result.error;
     if (result.status !== 0) {
@@ -128,8 +140,6 @@ async function main() {
 
   const devServer = spawnProcess('node', ['./scripts/dev-web-hmr.mjs'], {
     env: {
-      ...process.env,
-      OPENCHAMBER_ELECTRON_DEV: '1',
       OPENCHAMBER_HMR_UI_PORT: '5173',
       OPENCHAMBER_HMR_API_PORT: '3901',
       OPENCHAMBER_DISABLE_PWA_DEV: '1',

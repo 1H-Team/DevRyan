@@ -3,7 +3,11 @@ import React from 'react';
 import { useAssistantStatus, type AssistantActivePartType } from '@/hooks/useAssistantStatus';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useI18n } from '@/lib/i18n';
-import { useSessionRevertPending } from '@/sync/sync-context';
+import {
+    useSessionRevertPending,
+    useSyncChildStores,
+    useSyncResyncSession,
+} from '@/sync/sync-context';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { StatusRow } from './StatusRow';
 import { isManagedTaskToolName } from './message/parts/toolRenderUtils';
@@ -12,6 +16,14 @@ import {
     managedOrchestrationSelectors,
     useManagedOrchestrationStore,
 } from '@/stores/useManagedOrchestrationStore';
+import { getToolMetadata } from '@/lib/toolHelpers';
+import { useProviderRecoveryStore } from '@/stores/useProviderRecoveryStore';
+import {
+    providerStallSelector,
+    useProviderStallStore,
+} from '@/stores/useProviderStallStore';
+import { stopStalledProviderAndOfferRecovery } from '@/sync/provider-stall-recovery';
+import { haveSameProviderStallFingerprint } from '@/sync/reconnect-recovery';
 
 // Exported for focused regression tests; keep component exports unchanged otherwise.
 // eslint-disable-next-line react-refresh/only-export-components
@@ -62,7 +74,13 @@ export const resolveStatusRowAssistantDisplay = ({
 export const StatusRowContainer: React.FC = React.memo(() => {
     const { t } = useI18n();
     const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
+    const childStores = useSyncChildStores();
+    const resyncSession = useSyncResyncSession();
     const isRevertPending = useSessionRevertPending(currentSessionId ?? '');
+    const providerStall = useProviderStallStore(React.useMemo(
+        () => providerStallSelector(currentSessionId ?? ''),
+        [currentSessionId],
+    ));
     const abortRecord = useSessionUIStore(
         React.useCallback((state) => {
             if (!currentSessionId) {
@@ -111,6 +129,41 @@ export const StatusRowContainer: React.FC = React.memo(() => {
             : working.statusText,
         assistantIsGenericStatus: managedBarrierOwnsStatus ? false : working.isGenericStatus,
     });
+    const resolveProviderStall = React.useCallback(async () => {
+        if (!currentSessionId) return;
+        const current = useProviderStallStore.getState().stallsBySessionId[currentSessionId];
+        if (!current || current.pending) return;
+
+        useProviderStallStore.getState().setActionState(currentSessionId, true, null);
+        try {
+            const outcome = await stopStalledProviderAndOfferRecovery(current, {
+                resyncSession,
+                getState: () => childStores.getChild(current.directory)?.getState(),
+                isCurrent: () => {
+                    const latest = useProviderStallStore.getState().stallsBySessionId[currentSessionId];
+                    return haveSameProviderStallFingerprint(current, latest);
+                },
+                abort: async (sessionID, status) => {
+                    const { abortCurrentOperationConfirmed } = await import('@/sync/session-actions');
+                    const latest = useProviderStallStore.getState().stallsBySessionId[sessionID];
+                    if (!haveSameProviderStallFingerprint(current, latest)) return false;
+                    return abortCurrentOperationConfirmed(sessionID, status);
+                },
+                offerRecovery: (recovery) => useProviderRecoveryStore.getState().offerRecovery(recovery),
+            });
+            useProviderStallStore.getState().clearStall(currentSessionId, current);
+            if (outcome === 'stream-resumed') return;
+        } catch (error) {
+            useProviderStallStore.getState().setActionState(
+                currentSessionId,
+                false,
+                error instanceof Error ? error.message : String(error),
+            );
+        }
+    }, [childStores, currentSessionId, resyncSession]);
+    const providerStallTool = providerStall?.kind === 'tool-input'
+        ? getToolMetadata(providerStall.tool).displayName.replace(/:\s*$/, '')
+        : null;
 
     return (
         <StatusRow
@@ -121,6 +174,14 @@ export const StatusRowContainer: React.FC = React.memo(() => {
             wasAborted={isRevertPending ? false : wasAborted || working.wasAborted}
             abortActive={isRevertPending ? false : wasAborted || working.abortActive}
             retryInfo={isRevertPending ? null : working.retryInfo}
+            providerStallStatusText={providerStallTool
+                ? t('chat.statusRow.providerStall.status', { tool: providerStallTool })
+                : providerStall
+                    ? t('chat.statusRow.providerStall.inferenceStatus')
+                    : null}
+            providerStallPending={providerStall?.pending ?? false}
+            providerStallError={providerStall?.actionError ?? null}
+            onResolveProviderStall={providerStall ? resolveProviderStall : undefined}
             showAssistantStatus
             showTodos={false}
             agentName={currentAgentName}

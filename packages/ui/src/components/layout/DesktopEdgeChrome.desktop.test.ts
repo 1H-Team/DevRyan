@@ -38,6 +38,51 @@ describe('DesktopEdgeChrome desktop drag regions', () => {
     expect(source).toContain('<div className="app-region-no-drag flex items-center gap-1.5">');
   });
 
+  test('orders desktop chrome actions as terminal, browser, then right sidebar', () => {
+    const source = readSource('DesktopRightChromeActions.tsx');
+    const terminalIndex = source.indexOf('Icon={TerminalPanelIcon}');
+    const browserIndex = source.indexOf('data-desktop-browser-action-slot="true"');
+    const rightSidebarIndex = source.indexOf("title={t('header.actions.rightSidebarWithShortcut'");
+
+    expect(terminalIndex).toBeGreaterThan(-1);
+    expect(browserIndex).toBeGreaterThan(terminalIndex);
+    expect(rightSidebarIndex).toBeGreaterThan(browserIndex);
+  });
+
+  test('hosts the browser action only in the shared desktop web and Electron layout', () => {
+    const edgeChromeSource = readSource('DesktopEdgeChrome.tsx');
+    const headerSource = readSource('Header.tsx');
+    const layoutSource = readSource('MainLayout.tsx');
+    const vscodeSource = readFileSync(resolve(testDir, 'VSCodeLayout.tsx'), 'utf8');
+
+    expect(edgeChromeSource).toContain('if (isMobile || isVSCode)');
+    expect(edgeChromeSource).toContain('{isDesktopApp && !hideActions && (');
+    expect(headerSource).toContain('const showsDesktopRightChrome = !isMobile && !isVSCode');
+    expect(headerSource).toContain("? 'calc(11rem + var(--oc-wco-right-inset, 0px))'");
+    expect(headerSource).toContain('browserActionPortalTarget={browserActionPortalTarget}');
+    expect(layoutSource).toContain('isMobile={isMobile}');
+    expect(layoutSource).toContain('browserActionPortalRef={setBrowserActionPortalTarget}');
+    expect(vscodeSource).not.toContain('browserActionPortal');
+  });
+
+  test('opens only a blank browser tab without starting preview discovery', () => {
+    const source = readSource('ProjectActionsButton.tsx');
+
+    expect(source).toContain('toggleContextBrowser(normalizedDirectory)');
+    expect(source).not.toContain('openContextBrowser(normalizedDirectory)');
+    expect(source).toContain("openContextPreview(normalizedDirectory, 'about:blank')");
+    expect(source).not.toContain('resolveProjectPreviewBrowserAction');
+    expect(source).not.toContain('previewStartInFlightRef.current');
+    expect(source).toContain('createPortal(');
+  });
+
+  test('renders about:blank as an iframe instead of an invalid preview URL', () => {
+    const source = readSource('ContextPanel.tsx');
+
+    expect(source).toContain("const isBlankPreview = targetUrl === 'about:blank'");
+    expect(source).toContain("const directSrc = isBlankPreview ? 'about:blank'");
+  });
+
   test('orders service tabs as Usage, MCP, Instance', () => {
     const source = readSource('DesktopRightChromeActions.tsx');
     const usageIndex = source.indexOf("base.push({ value: 'usage'");
@@ -53,10 +98,11 @@ describe('DesktopEdgeChrome desktop drag regions', () => {
     const chromeSource = readSource('DesktopEdgeChrome.tsx');
     const layoutSource = readSource('MainLayout.tsx');
 
-    expect(layoutSource).toContain('<DesktopEdgeChrome hideActions={isSettingsDialogOpen} />');
+    expect(layoutSource).toContain('<DesktopEdgeChrome');
+    expect(layoutSource).toContain('hideActions={isSettingsDialogOpen}');
     expect(chromeSource).toContain('interface DesktopEdgeChromeProps {');
     expect(chromeSource).toContain('hideActions: boolean;');
-    expect(chromeSource).toContain('export const DesktopEdgeChrome: React.FC<DesktopEdgeChromeProps> = ({ hideActions }) => {');
+    expect(chromeSource).toContain('export const DesktopEdgeChrome: React.FC<DesktopEdgeChromeProps> = ({');
     expect(chromeSource.match(/!hideActions && \(/g)).toHaveLength(2);
 
     const dragFillerIndex = chromeSource.indexOf('app-region-drag pointer-events-auto absolute top-0 left-0 h-full');

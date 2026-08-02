@@ -7,8 +7,10 @@ Shared non-React application logic for the UI package: API clients, routing/seri
 - **Domain-partitioned utility modules**: subfolders (`opencode`, `router`, `theme`, `git`, `messages`, `permissions`, `quota`, `startup`, `terminal`, `tools`, `worktrees`) isolate contracts per concern.
 - **Client abstraction**: `opencode/client.ts` wraps SDK usage, directory scoping, retries/circuit checks, and path normalization so features avoid direct transport logic.
 - **Pure helper bias**: many modules expose deterministic transforms/serializers to keep component/store code thin.
+- **Shared byte presentation**: `formatBytes.ts` is the single 1024-based formatter used by diagnostic-journal and Electron-cache status UI.
 - **Authoritative session-change projection**: `sessionChangeAttribution.ts` derives repository-relative paths only from completed successful file-tool parts, records successful shell mutations as explicitly unattributed, and ignores shared-working-tree message summaries and patch snapshots.
 - **Runtime capability gates**: desktop/vscode/web differences are centralized (e.g., `desktop.ts`, runtime API detection helpers).
+- **Annotation screenshot capture**: `preview/screenshot-capture.ts` owns preview/browser annotation screenshots with a fixed strategy order (native `desktop_capture_page_rect` → snapDOM DOM capture → html-to-image), lazily importing the capture libraries so they stay out of the startup bundle; it deliberately excludes proxy-target caching and external-resource proxying (loopback-only cookie proxy model).
 - **Startup readiness and recovery**: `startup/readiness.ts` defines the low-frequency phase contract shared by web, Electron, and VS Code chat boot gates and coordinates a managed OpenCode restart before client reinitialization when health reports the runtime down; `startup/*-warmup.ts` contains non-fatal chunk/runtime warmups used before dismissing startup.
 - **Tool manifest helpers**: `tools/manifest.ts` normalizes runtime tool IDs and permission alias groups for web/VS Code runtime API parity.
 

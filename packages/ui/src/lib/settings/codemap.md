@@ -10,4 +10,6 @@ Separates settings schema logic from view components. `navigation-icons.ts` owns
 Settings UI reads defaults/current values, applies edits, then persists normalized payloads.
 
 ## Integration
-Integrated with settings sections, stores, and API endpoints.
+Integrated with settings sections, stores, and API endpoints. The exhaustive
+metadata/navigation maps expose the cross-runtime `about` page, which hosts
+diagnostics health and export controls through `AboutSettings`.

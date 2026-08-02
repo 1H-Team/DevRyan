@@ -22,8 +22,15 @@ export const createNotificationEmitterRuntime = (dependencies) => {
     onDesktopNotification = typeof cb === 'function' ? cb : null;
   };
 
+  // Slow/suspended clients otherwise accumulate an unbounded socket write
+  // queue; past the ceiling the connection is dropped and the client resyncs.
+  const SSE_MAX_BUFFERED_BYTES = 16 * 1024 * 1024;
+
   const writeSseEvent = (res, payload) => {
     res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    if ((res.socket?.writableLength ?? 0) > SSE_MAX_BUFFERED_BYTES) {
+      res.destroy?.();
+    }
   };
 
   const emitDesktopNotification = (payload) => {

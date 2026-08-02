@@ -47,6 +47,12 @@ export interface WorktreeMetadata {
 
   /** How this worktree was attached to a session. */
   worktreeSource?: 'existing' | 'created-for-session';
+
+  /** Durable setup operation returned by the host for newly-created worktrees. */
+  bootstrapOperationId?: string | null;
+
+  /** Initial durable setup receipt used to reconnect progress immediately. */
+  bootstrap?: import('@/lib/api/types').GitWorktreeBootstrapStatus;
 }
 
 export type WorktreeMap = Map<string, WorktreeMetadata>;

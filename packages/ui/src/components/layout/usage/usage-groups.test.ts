@@ -75,6 +75,35 @@ describe('usage dropdown group helpers', () => {
     expect(getVisibleUsageEntries(withResetCredits).map(([label]) => label)).toEqual(['5h']);
   });
 
+  test('orders Anthropic short-term usage before general and model-specific weekly limits', () => {
+    const anthropic = group('claude', [
+      ['7d', windowStub],
+      ['unknown', windowStub],
+      ['5h', windowStub],
+      ['7d-fable', windowStub],
+      ['future-window', windowStub],
+    ]);
+    const sourceOrder = anthropic.entries.map(([label]) => label);
+
+    expect(getVisibleUsageEntries(anthropic).map(([label]) => label)).toEqual([
+      '5h',
+      '7d',
+      '7d-fable',
+      'unknown',
+      'future-window',
+    ]);
+    expect(anthropic.entries.map(([label]) => label)).toEqual(sourceOrder);
+  });
+
+  test('preserves incoming usage-window order for other providers', () => {
+    const chatgpt = group('codex', [
+      ['weekly', windowStub],
+      ['5h', windowStub],
+    ]);
+
+    expect(getVisibleUsageEntries(chatgpt).map(([label]) => label)).toEqual(['weekly', '5h']);
+  });
+
   test('sorts reset credits by status and soonest expiry', () => {
     const sorted = sortResetCredits([
       {

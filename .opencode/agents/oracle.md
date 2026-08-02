@@ -43,7 +43,6 @@ permission:
     supabase-postgres-best-practices: allow
   supabase_*: deny
   websearch_*: deny
-  context7_*: deny
   grep_app_*: deny
 ---
 

@@ -57,6 +57,7 @@ type SystemRuntimeDeps = {
   resolveUserPath: (value: string, baseDirectory: string) => string;
   fetchModelsMetadata: () => Promise<unknown>;
   updateCheckUrl: string;
+  updateCheckUsesCompatibilityContract: boolean;
   clientReloadDelayMs: number;
 };
 
@@ -228,6 +229,40 @@ const mapNodeArchToApiArch = (value: string): 'arm64' | 'x64' | 'unknown' => {
   if (value === 'arm64' || value === 'aarch64') return 'arm64';
   if (value === 'x64' || value === 'amd64') return 'x64';
   return 'unknown';
+};
+
+const compareReleaseVersions = (left: string, right: string): number => {
+  const a = left.replace(/^v/, '').split('.').map((part) => Number.parseInt(part || '0', 10));
+  const b = right.replace(/^v/, '').split('.').map((part) => Number.parseInt(part || '0', 10));
+  const length = Math.max(a.length, b.length);
+
+  for (let index = 0; index < length; index += 1) {
+    const diff = (a[index] || 0) - (b[index] || 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+};
+
+export const normalizeGithubReleaseUpdate = (
+  value: unknown,
+  currentVersion: string,
+): Record<string, unknown> | null => {
+  const release = value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+  const version = typeof release?.tag_name === 'string'
+    ? release.tag_name.trim().replace(/^v/, '')
+    : '';
+  if (!version) return null;
+
+  return {
+    available: currentVersion !== 'unknown' && compareReleaseVersions(version, currentVersion) > 0,
+    version,
+    currentVersion,
+    body: typeof release?.body === 'string' ? release.body : undefined,
+    date: typeof release?.published_at === 'string' ? release.published_at : undefined,
+    nextSuggestedCheckInSec: 6 * 60 * 60,
+  };
 };
 
 type ParsedDiffHunk = {
@@ -650,6 +685,32 @@ export async function handleSystemBridgeMessage(
         const currentVersion = typeof body.currentVersion === 'string' && body.currentVersion.trim().length > 0
           ? body.currentVersion.trim()
           : String(ctx?.context?.extension?.packageJSON?.version || 'unknown');
+
+        if (!deps.updateCheckUsesCompatibilityContract) {
+          const response = await fetch(deps.updateCheckUrl, {
+            method: 'GET',
+            headers: {
+              Accept: 'application/vnd.github+json',
+              'User-Agent': `DevRyan-VSCode/${currentVersion}`,
+              'X-GitHub-Api-Version': '2022-11-28',
+            },
+            signal: AbortSignal.timeout(10_000),
+          });
+          if (!response.ok) {
+            return {
+              id,
+              type,
+              success: false,
+              error: `DevRyan release check failed with ${response.status}`,
+            };
+          }
+          const update = normalizeGithubReleaseUpdate(await response.json(), currentVersion);
+          if (!update) {
+            return { id, type, success: false, error: 'Invalid DevRyan release metadata' };
+          }
+          return { id, type, success: true, data: update };
+        }
+
         const instanceMode = typeof body.instanceMode === 'string' && body.instanceMode.trim().length > 0
           ? body.instanceMode.trim()
           : 'local';

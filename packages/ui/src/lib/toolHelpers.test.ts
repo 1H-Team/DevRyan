@@ -2,6 +2,27 @@ import { describe, expect, test } from "bun:test";
 import { getToolMetadata } from "./toolHelpers";
 
 describe("getToolMetadata", () => {
+  test("covers the current built-in and orchestration presentation families", () => {
+    const expectedNames = new Map([
+      ["read", "Read File"],
+      ["apply_patch", "Apply Patch"],
+      ["bash", "Shell Command"],
+      ["skill", "Loading Skill:"],
+      ["question", "Question"],
+      ["plan_enter", "Plan Mode"],
+      ["plan_exit", "Build Mode"],
+      ["todowrite", "Update Todo List:"],
+      ["structuredoutput", "Structured Output"],
+      ["StructuredOutput", "Structured Output"],
+      ["council", "Council"],
+      ["devryan_task", "Devryan Task"],
+    ])
+
+    for (const [tool, displayName] of expectedNames) {
+      expect(getToolMetadata(tool).displayName).toBe(displayName)
+    }
+  })
+
   test("labels skill tool activity as loading a skill", () => {
     expect(getToolMetadata("skill").displayName).toBe("Loading Skill:");
   });
@@ -23,5 +44,16 @@ describe("getToolMetadata", () => {
     expect(getToolMetadata("Linear_get_issue").displayName).toBe("Linear Get Issue");
     expect(getToolMetadata("linear_save_issue").displayName).toBe("Linear Save Issue");
     expect(getToolMetadata("custom_tool").displayName).toBe("Custom Tool");
+  });
+
+  test("prefixes direct Context Mode tool names", () => {
+    expect(getToolMetadata("ctx_execute_file").displayName).toBe("C-Mode: Execute File");
+    expect(getToolMetadata("ctx_execute").displayName).toBe("C-Mode: Execute");
+    expect(getToolMetadata("ctx_future_action").displayName).toBe("C-Mode: Future Action");
+  });
+
+  test("prefixes canonical MCP-wrapped Context Mode tool names", () => {
+    expect(getToolMetadata("mcp__context-mode__ctx_execute_file").displayName).toBe("C-Mode: Execute File");
+    expect(getToolMetadata("mcp__context_mode__ctx_execute").displayName).toBe("C-Mode: Execute");
   });
 });

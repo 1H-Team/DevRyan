@@ -21,11 +21,11 @@ describe("ChildStoreManager status subscriptions", () => {
     expect(getActiveDirectoryStoreKeys(directories, "")).toEqual([])
   })
 
-  test("notifies for session status changes but not unrelated streaming state", () => {
+  test("notifies provider recovery for session status changes but not unrelated state", () => {
     const childStores = new ChildStoreManager()
     const store = childStores.ensureChild("/test/project", { bootstrap: false })
     let notifications = 0
-    const unsubscribe = childStores.subscribeSessionStatuses(() => {
+    const unsubscribe = childStores.subscribeProviderRecoveryInputs(() => {
       notifications += 1
     })
 
@@ -38,6 +38,49 @@ describe("ChildStoreManager status subscriptions", () => {
     unsubscribe()
     store.setState({ session_status: { "session-a": { type: "idle" } } })
     expect(notifications).toBe(1)
+  })
+
+  test("notifies provider recovery for status and message-list changes but not part deltas", () => {
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild("/test/project", { bootstrap: false })
+    let notifications = 0
+    const unsubscribe = childStores.subscribeProviderRecoveryInputs(() => {
+      notifications += 1
+    })
+
+    store.setState({ part: { "message-a": [] } })
+    expect(notifications).toBe(0)
+
+    store.setState({ message: { "session-a": [] } })
+    expect(notifications).toBe(1)
+
+    store.setState({ session_status: { "session-a": { type: "idle" } } })
+    expect(notifications).toBe(2)
+
+    unsubscribe()
+  })
+
+  test("notifies browser ownership only for session-list or directory-registry changes", () => {
+    const childStores = new ChildStoreManager()
+    const first = childStores.ensureChild("/test/project", { bootstrap: false })
+    let notifications = 0
+    const unsubscribe = childStores.subscribeSessionLists(() => {
+      notifications += 1
+    })
+
+    first.setState({ part: { "message-a": [] } })
+    first.setState({ session_status: { "session-a": { type: "busy" } } })
+    expect(notifications).toBe(0)
+
+    first.setState({ session: [...first.getState().session] })
+    expect(notifications).toBe(1)
+
+    childStores.ensureChild("/test/worktree", { bootstrap: false })
+    expect(notifications).toBe(2)
+
+    unsubscribe()
+    first.setState({ session: [] })
+    expect(notifications).toBe(2)
   })
 
   test("disposeDirectory runs every registered disposer and passes its snapshot once", () => {

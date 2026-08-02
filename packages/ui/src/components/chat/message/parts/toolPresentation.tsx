@@ -47,6 +47,7 @@ export const getToolIcon = (toolName: string) => {
         return <RiGlobalLine className={iconClass} />;
     }
     if (
+        tool === 'devryan_browser' ||
         tool === 'web-search' ||
         tool === 'websearch' ||
         tool === 'search_web' ||

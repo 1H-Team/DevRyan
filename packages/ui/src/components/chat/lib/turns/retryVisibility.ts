@@ -1,5 +1,7 @@
 import * as React from 'react';
 
+import { isLikelyTransientProviderAvailabilityFailure } from '@/lib/messages/transientStreamError';
+
 export const RETRY_VISIBILITY_GRACE_MS = 1200;
 export const TRANSIENT_PROVIDER_RETRY_VISIBILITY_GRACE_MS = 10_000;
 
@@ -33,7 +35,10 @@ export const getRetryVisibilityStartTime = (retry: RetryVisibilityStatus, observ
 };
 
 export const getRetryVisibilityGraceMs = (retry: RetryVisibilityStatus): number => {
-    return TRANSIENT_PROVIDER_RESPONSE_HEADER_TIMEOUT.test(retry.message)
+    return (
+        TRANSIENT_PROVIDER_RESPONSE_HEADER_TIMEOUT.test(retry.message)
+        || isLikelyTransientProviderAvailabilityFailure(retry.message)
+    )
         ? TRANSIENT_PROVIDER_RETRY_VISIBILITY_GRACE_MS
         : RETRY_VISIBILITY_GRACE_MS;
 };

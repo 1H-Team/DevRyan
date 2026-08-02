@@ -1,9 +1,8 @@
+import { stat } from 'node:fs/promises';
 import { getRemotes, getStatus } from '../git/index.js';
 import { resolveGitHubRepoFromDirectory } from './repo/index.js';
-
-const REPO_DEFAULT_BRANCH_TTL_MS = 5 * 60_000;
-const defaultBranchCache = new Map();
-const repoMetadataCache = new Map();
+import { getRepoDefaultBranch, getRepoMetadata } from './repo/fork-detection.js';
+import { classifyGitHubApiError } from './rate-limit.js';
 
 const normalizeText = (value) => typeof value === 'string' ? value.trim() : '';
 const normalizeLower = (value) => normalizeText(value).toLowerCase();
@@ -149,74 +148,33 @@ const buildSourceMatcher = (sourceCandidates) => {
   return { matches, compare };
 };
 
-const getRepoDefaultBranch = async (octokit, repo) => {
-  const repoKey = normalizeRepoKey(repo?.owner, repo?.repo);
-  if (!repoKey) {
-    return null;
+const directoryExists = async (directory) => {
+  if (!normalizeText(directory)) {
+    return false;
   }
-
-  const cached = defaultBranchCache.get(repoKey);
-  if (cached && Date.now() - cached.fetchedAt < REPO_DEFAULT_BRANCH_TTL_MS) {
-    return cached.defaultBranch;
-  }
-
   try {
-    const response = await octokit.rest.repos.get({
-      owner: repo.owner,
-      repo: repo.repo,
-    });
-    const defaultBranch = normalizeText(response?.data?.default_branch) || null;
-    defaultBranchCache.set(repoKey, {
-      defaultBranch,
-      fetchedAt: Date.now(),
-    });
-    return defaultBranch;
-  } catch {
-    return null;
-  }
-};
-
-const getRepoMetadata = async (octokit, repo) => {
-  const repoKey = normalizeRepoKey(repo?.owner, repo?.repo);
-  if (!repoKey) {
-    return null;
-  }
-
-  const cached = repoMetadataCache.get(repoKey);
-  if (cached && Date.now() - cached.fetchedAt < REPO_DEFAULT_BRANCH_TTL_MS) {
-    return cached.data;
-  }
-
-  try {
-    const response = await octokit.rest.repos.get({
-      owner: repo.owner,
-      repo: repo.repo,
-    });
-    const data = response?.data ?? null;
-    repoMetadataCache.set(repoKey, {
-      data,
-      fetchedAt: Date.now(),
-    });
-    return data;
+    return (await stat(directory)).isDirectory();
   } catch (error) {
-    if (error?.status === 403 || error?.status === 404) {
-      repoMetadataCache.set(repoKey, {
-        data: null,
-        fetchedAt: Date.now(),
-      });
-      return null;
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') {
+      return false;
     }
     throw error;
   }
 };
 
-const resolveRemoteCandidates = async (directory, rankedRemoteNames) => {
+export const resolveRemoteCandidates = async (
+  directory,
+  rankedRemoteNames,
+  resolveRepo = resolveGitHubRepoFromDirectory,
+) => {
+  const resolvedByRemote = await Promise.all(rankedRemoteNames.map(async (remoteName) => {
+    const resolved = await resolveRepo(directory, remoteName).catch(() => ({ repo: null }));
+    return { remoteName, repo: resolved?.repo || null };
+  }));
   const results = [];
   const seenRepoKeys = new Set();
 
-  for (const remoteName of rankedRemoteNames) {
-    const resolved = await resolveGitHubRepoFromDirectory(directory, remoteName).catch(() => ({ repo: null }));
-    const repo = resolved?.repo || null;
+  for (const { remoteName, repo } of resolvedByRemote) {
     const repoKey = normalizeRepoKey(repo?.owner, repo?.repo);
     if (!repo || !repoKey || seenRepoKeys.has(repoKey)) {
       continue;
@@ -231,7 +189,11 @@ const resolveRemoteCandidates = async (directory, rankedRemoteNames) => {
   return results;
 };
 
-const expandRepoNetwork = async (octokit, candidates) => {
+export const expandRepoNetwork = async (
+  octokit,
+  candidates,
+  resolveMetadata = getRepoMetadata,
+) => {
   const expanded = [];
   const seenRepoKeys = new Set();
 
@@ -244,8 +206,12 @@ const expandRepoNetwork = async (octokit, candidates) => {
     expanded.push({ repo, remoteName, priority });
   };
 
-  for (const candidate of candidates) {
-    const metadata = await getRepoMetadata(octokit, candidate.repo);
+  const metadataByCandidate = await Promise.all(candidates.map(async (candidate) => ({
+    candidate,
+    metadata: await resolveMetadata(octokit, candidate.repo),
+  })));
+
+  for (const { candidate, metadata } of metadataByCandidate) {
     if (!metadata) {
       continue;
     }
@@ -279,6 +245,9 @@ const safeListPulls = async (octokit, options) => {
     const response = await octokit.rest.pulls.list(options);
     return Array.isArray(response?.data) ? response.data : [];
   } catch (error) {
+    if (classifyGitHubApiError(error) === 'rate_limit') {
+      throw error;
+    }
     if (error?.status === 404 || error?.status === 403) {
       return [];
     }
@@ -335,6 +304,9 @@ const searchFallbackPr = async ({ octokit, branch, repoNames }) => {
       _searchApiDisabledRepos.delete(repoKey);
     } catch (error) {
       if (error?.status === 403) {
+        if (classifyGitHubApiError(error) === 'rate_limit') {
+          throw error;
+        }
         _searchApiDisabledRepos.set(repoKey, Date.now());
         return null;
       }
@@ -372,6 +344,9 @@ const searchFallbackPr = async ({ octokit, branch, repoNames }) => {
           pr,
         };
       } catch (error) {
+        if (classifyGitHubApiError(error) === 'rate_limit') {
+          throw error;
+        }
         if (error?.status === 403 || error?.status === 404) {
           continue;
         }
@@ -423,13 +398,31 @@ const findFirstMatchingPr = async ({ octokit, target, branch, sourceCandidates }
   return null;
 };
 
-export async function resolveGitHubPrStatus({ octokit, directory, branch, remoteName }) {
+export async function resolveGitHubPrStatus(
+  { octokit, directory, branch, remoteName },
+  dependencies = {},
+) {
   const normalizedBranch = normalizeText(branch);
   const normalizedRemoteName = normalizeText(remoteName) || 'origin';
+  const hasDirectory = dependencies.directoryExists ?? directoryExists;
+  if (!await hasDirectory(directory)) {
+    return {
+      repo: null,
+      pr: null,
+      defaultBranch: null,
+      resolvedRemoteName: null,
+    };
+  }
+
+  const readStatus = dependencies.getStatus ?? getStatus;
+  const readRemotes = dependencies.getRemotes ?? getRemotes;
+  const resolveRepo = dependencies.resolveRepo ?? resolveGitHubRepoFromDirectory;
+  const resolveMetadata = dependencies.getRepoMetadata ?? getRepoMetadata;
+  const resolveDefaultBranch = dependencies.getRepoDefaultBranch ?? getRepoDefaultBranch;
 
   const [status, remotes] = await Promise.all([
-    getStatus(directory).catch(() => null),
-    getRemotes(directory).catch(() => []),
+    readStatus(directory).catch(() => null),
+    readRemotes(directory).catch(() => []),
   ]);
 
   const trackingRemoteName = parseTrackingRemoteName(status?.tracking);
@@ -443,10 +436,11 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
     trackingRemoteName,
   );
 
-  const resolvedRemoteTargets = await resolveRemoteCandidates(directory, rankedRemoteNames);
+  const resolvedRemoteTargets = await resolveRemoteCandidates(directory, rankedRemoteNames, resolveRepo);
   const resolvedTargets = await expandRepoNetwork(
     octokit,
     resolvedRemoteTargets.map((target, index) => ({ ...target, priority: index })),
+    resolveMetadata,
   );
   if (resolvedTargets.length === 0) {
     return {
@@ -461,10 +455,10 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
 
   let fallbackRepo = resolvedTargets[0].repo;
   let fallbackRemoteName = resolvedTargets[0].remoteName;
-  let fallbackDefaultBranch = await getRepoDefaultBranch(octokit, fallbackRepo);
+  let fallbackDefaultBranch = await resolveDefaultBranch(octokit, fallbackRepo);
 
   for (const target of resolvedTargets) {
-    const defaultBranch = await getRepoDefaultBranch(octokit, target.repo);
+    const defaultBranch = await resolveDefaultBranch(octokit, target.repo);
     if (!fallbackRepo) {
       fallbackRepo = target.repo;
       fallbackRemoteName = target.remoteName;
@@ -504,7 +498,7 @@ export async function resolveGitHubPrStatus({ octokit, directory, branch, remote
       return {
         repo: fallbackSearch.repo,
         pr: fallbackSearch.pr,
-        defaultBranch: await getRepoDefaultBranch(octokit, fallbackSearch.repo),
+        defaultBranch: await resolveDefaultBranch(octokit, fallbackSearch.repo),
         resolvedRemoteName: null,
       };
     }

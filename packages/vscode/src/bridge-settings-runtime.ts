@@ -6,6 +6,7 @@ import { type DiscoveredSkill, type SkillScope, type SkillSource } from './openc
 import type { BridgeContext } from './bridge';
 
 const SETTINGS_KEY = 'openchamber.settings';
+const PROJECT_EVIDENCE_SETTINGS_KEY = 'openchamber.projectEvidenceCheckpoints';
 const OPENCHAMBER_SHARED_SETTINGS_PATH = path.join(os.homedir(), '.config', 'openchamber', 'settings.json');
 const OPENCHAMBER_MAGIC_PROMPTS_PATH = path.join(os.homedir(), '.config', 'openchamber', 'magic-prompts.json');
 const MAGIC_PROMPTS_FILE_VERSION = 1;
@@ -327,6 +328,33 @@ export const persistSettings = async (changes: Record<string, unknown>, ctx?: Br
         ? persistable.opencodeBinary
         : undefined,
   };
+};
+
+export const readProjectEvidenceCheckpointSetting = (
+  projectID: string,
+  ctx?: BridgeContext,
+): { enabled: boolean } => {
+  const settings = ctx?.context?.globalState.get<Record<string, boolean>>(
+    PROJECT_EVIDENCE_SETTINGS_KEY,
+  ) || {};
+  return { enabled: settings[projectID] === true };
+};
+
+export const persistProjectEvidenceCheckpointSetting = async (
+  projectID: string,
+  value: { enabled?: boolean },
+  ctx?: BridgeContext,
+): Promise<{ enabled: boolean }> => {
+  if (!ctx?.context) throw new Error('VS Code extension context is unavailable');
+  const current = ctx.context.globalState.get<Record<string, boolean>>(
+    PROJECT_EVIDENCE_SETTINGS_KEY,
+  ) || {};
+  const next = {
+    ...current,
+    [projectID]: value.enabled === true,
+  };
+  await ctx.context.globalState.update(PROJECT_EVIDENCE_SETTINGS_KEY, next);
+  return { enabled: next[projectID] };
 };
 
 export const readMagicPromptOverrides = (): { version: number; overrides: Record<string, string> } => {

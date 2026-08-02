@@ -95,6 +95,26 @@ describe('settings helpers', () => {
     expect(helpers.sanitizeSettingsUpdate({ desktopKeepAwakeEnabled: 'true' })).toEqual({});
   });
 
+  it('sanitizes Plan Ready notification preferences and templates', () => {
+    const helpers = createTestHelpers();
+    const result = helpers.sanitizeSettingsUpdate({
+      notifyOnPlanReady: false,
+      notificationTemplates: {
+        planReady: { title: 'Review plan', message: '{last_message}' },
+        completion: { title: 123, message: 'invalid' },
+        unknown: { title: 'Unknown', message: 'Unknown' },
+      },
+    });
+
+    expect(result).toEqual({
+      notifyOnPlanReady: false,
+      notificationTemplates: {
+        planReady: { title: 'Review plan', message: '{last_message}' },
+      },
+    });
+    expect(helpers.sanitizeSettingsUpdate({ notifyOnPlanReady: 'false' })).toEqual({});
+  });
+
   it('accepts hiddenSkills as a persisted shared setting', () => {
     const helpers = createTestHelpers();
     const hiddenSkills = [

@@ -1,3 +1,7 @@
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import { createManagedTaskRecord } from '@openchamber/orchestration-runtime';
@@ -379,9 +383,11 @@ describe('web managed orchestration runtime', () => {
     });
     const submitted = await runtime.handleRpc({
       method: 'submit',
-      params: submitParams(1, { dispatchGroupId: 'msg_parent' }),
+      params: submitParams(1, { dispatchGroupId: 'msg_parent', readOnly: true }),
     });
     expect(submitted.task).not.toHaveProperty('dispatchGroupId');
+    expect(submitted.task).not.toHaveProperty('readOnly');
+    expect(runs[0].task.readOnly).toBe(true);
     expect(await runtime.handleRpc({
       method: 'barrier',
       params: { rootSessionId: 'ses_other' },
@@ -740,6 +746,8 @@ describe('web managed orchestration runtime', () => {
   });
 
   it('starts one private host, reports recovery warnings, and releases all owners', async () => {
+    const acquireOwnership = vi.fn(async () => undefined);
+    const releaseOwnership = vi.fn(async () => true);
     const host = {
       start: vi.fn(async () => ({
         DEVRYAN_ORCHESTRATION_URL: 'http://127.0.0.1:43210/rpc',
@@ -751,6 +759,8 @@ describe('web managed orchestration runtime', () => {
     };
     const runtime = createWebManagedOrchestrationRuntime({
       persistence: {
+        acquireOwnership,
+        releaseOwnership,
         async load() { return null; },
         async save() {},
         getDiagnostics() {
@@ -776,7 +786,73 @@ describe('web managed orchestration runtime', () => {
     await runtime.shutdown();
     expect(host.start).toHaveBeenCalledTimes(1);
     expect(host.stop).toHaveBeenCalledTimes(1);
+    expect(acquireOwnership).toHaveBeenCalledTimes(1);
+    expect(releaseOwnership).toHaveBeenCalledTimes(1);
   });
+
+  it('fails closed when another process owns the ledger and suppresses recovery scans', async () => {
+    const dataDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-runtime-owner-'));
+    const createScheduler = () => ({
+      initialize: vi.fn(async () => undefined),
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    });
+    const firstScheduler = createScheduler();
+    const secondScheduler = createScheduler();
+    const firstHost = {
+      start: vi.fn(async () => ({
+        DEVRYAN_ORCHESTRATION_URL: 'http://127.0.0.1:41001/rpc',
+        DEVRYAN_ORCHESTRATION_TOKEN: 'first-token',
+      })),
+      stop: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    };
+    const secondHost = {
+      start: vi.fn(async () => ({
+        DEVRYAN_ORCHESTRATION_URL: 'http://127.0.0.1:41002/rpc',
+        DEVRYAN_ORCHESTRATION_TOKEN: 'second-token',
+      })),
+      stop: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    };
+    const first = createWebManagedOrchestrationRuntime({
+      dataDirectory,
+      scheduler: firstScheduler,
+      executor: {},
+      privateHost: firstHost,
+    });
+    const second = createWebManagedOrchestrationRuntime({
+      dataDirectory,
+      scheduler: secondScheduler,
+      executor: {},
+      privateHost: secondHost,
+    });
+
+    try {
+      await first.prepareBridge();
+      await expect(second.prepareBridge()).rejects.toMatchObject({
+        code: 'managed_orchestration_owner_conflict',
+        statusCode: 409,
+      });
+      await expect(second.getSnapshot()).resolves.toMatchObject({
+        available: false,
+        bridgeReady: false,
+        recoveryWarning: expect.stringContaining('another DevRyan runtime'),
+        tasks: [],
+      });
+      expect(secondHost.start).not.toHaveBeenCalled();
+      expect(secondScheduler.initialize).not.toHaveBeenCalled();
+
+      await first.shutdown();
+      await expect(second.prepareBridge()).resolves.toMatchObject({
+        DEVRYAN_ORCHESTRATION_TOKEN: 'second-token',
+      });
+    } finally {
+      await Promise.allSettled([first.shutdown(), second.shutdown()]);
+      await fs.rm(dataDirectory, { recursive: true, force: true });
+    }
+  }, 15_000);
 
   it('keeps managed tools unavailable for configured external OpenCode', async () => {
     const runtime = createWebManagedOrchestrationRuntime({

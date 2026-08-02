@@ -12,7 +12,7 @@ const encodeForm = (params) => {
 };
 
 async function postForm(url, params) {
-  const response = await fetch(url, {
+  const response = await fetchGitHubApi(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -48,3 +48,4 @@ export async function exchangeDeviceCode({ clientId, deviceCode }) {
   });
   return payload;
 }
+import { fetchGitHubApi } from './api-client.js';

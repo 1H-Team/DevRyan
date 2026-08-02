@@ -178,6 +178,30 @@ describe('useUIStore openContextPlan', () => {
     });
   });
 
+  test('closes an active preview immediately and returns to the remaining plan tab', () => {
+    useUIStore.getState().openContextPlan('/repo/Test', '/plans/session-msg.md');
+    const entranceRequest = useUIStore.getState().contextPlanMotionRequest;
+    if (entranceRequest) {
+      useUIStore.getState().consumeContextPlanMotionRequest(entranceRequest.id);
+    }
+
+    useUIStore.getState().openContextPreview('/repo/Test', 'http://127.0.0.1:3000');
+    const panel = useUIStore.getState().contextPanelByDirectory['/repo/Test'];
+    const previewTabID = panel?.tabs.find((tab) => tab.mode === 'preview')?.id;
+    const planTabID = panel?.tabs.find((tab) => tab.mode === 'plan')?.id;
+    expect(previewTabID).toBeTruthy();
+    expect(planTabID).toBeTruthy();
+    if (!previewTabID || !planTabID) return;
+
+    useUIStore.getState().requestContextPanelTabClose('/repo/Test', previewTabID);
+
+    const state = useUIStore.getState();
+    expect(state.contextPanelByDirectory['/repo/Test']?.tabs.map((tab) => tab.id)).toEqual([planTabID]);
+    expect(state.contextPanelByDirectory['/repo/Test']?.activeTabId).toBe(planTabID);
+    expect(state.contextPanelByDirectory['/repo/Test']?.isOpen).toBe(true);
+    expect(state.contextPlanMotionRequest).toBeNull();
+  });
+
   test('does not include transient motion state in persisted UI preferences', () => {
     useUIStore.getState().openContextPlan('/repo/Test', '/plans/session-msg.md');
 

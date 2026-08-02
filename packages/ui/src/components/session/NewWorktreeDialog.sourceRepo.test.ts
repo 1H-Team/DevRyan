@@ -13,4 +13,14 @@ describe('NewWorktreeDialog fork repository routing', () => {
     expect(source).toContain('sourceRepo: args.pr.sourceRepo ?? null');
     expect((source.match(/sourceRepo: args\.issue\.sourceRepo \?\? null/g) ?? []).length).toBe(2);
   });
+
+  test('forwards the authoritative project when worktree bootstrap completes', () => {
+    expect(source).toContain('projectId: projectRef.id');
+    expect((source.match(/projectId: projectRef\.id/g) ?? []).length).toBe(2);
+  });
+
+  test('does not reset submitted branch fields when the worktree list updates', () => {
+    expect(source).toContain('const initializedOpenCycleRef = React.useRef(false)');
+    expect(source).toContain('if (initializedOpenCycleRef.current) return');
+  });
 });

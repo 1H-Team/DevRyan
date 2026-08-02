@@ -45,6 +45,14 @@ import * as sessionActions from '@/sync/session-actions';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useContextStore } from '@/stores/contextStore';
 import { validateWorktreeCreate, createWorktree } from '@/lib/worktrees/worktreeManager';
+import {
+  clearWorktreeBootstrapState,
+  getWorktreeBootstrapState,
+  markWorktreeBootstrapPending,
+  setWorktreeBootstrapState,
+  subscribeWorktreeBootstrap,
+  waitForWorktreeBootstrap,
+} from '@/lib/worktrees/worktreeBootstrap';
 import { withWorktreeUpstreamDefaults } from '@/lib/worktrees/worktreeCreate';
 import { getWorktreeSetupCommands } from '@/lib/openchamberConfig';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
@@ -63,9 +71,14 @@ import type {
   GitHubIssuesListResult,
   GitHubPullRequestContextResult,
   GitHubPullRequestSummary,
+  GitWorktreeBootstrapStatus,
 } from '@/lib/api/types';
 import type { ProjectRef } from '@/lib/worktrees/worktreeManager';
 import { useI18n } from '@/lib/i18n';
+
+const normalizeDirectory = (value: string): string => (
+  value.replace(/\\/g, '/').replace(/\/+$/, '') || value
+);
 
 type Mode = 'new-branch' | 'existing-branch';
 
@@ -207,7 +220,10 @@ const resolvePrWorktreeConfig = (pr: GitHubPullRequestSummary, localBranches: st
 interface NewWorktreeDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onWorktreeCreated?: (worktreePath: string, options?: { sessionId?: string }) => void;
+  onWorktreeCreated?: (worktreePath: string, options?: {
+    sessionId?: string;
+    projectId?: string;
+  }) => void;
 }
 
 const buildIssueContextText = (args: {
@@ -439,7 +455,69 @@ export function NewWorktreeDialog({
   
   // Creation state
   const [isCreating, setIsCreating] = React.useState(false);
+  const [bootstrapDirectory, setBootstrapDirectory] = React.useState<string | null>(null);
+  const [bootstrapProgress, setBootstrapProgress] = React.useState<GitWorktreeBootstrapStatus | null>(null);
+  const pendingFinalizeRef = React.useRef<(() => Promise<void>) | null>(null);
+  const pendingResumeRef = React.useRef<(() => Promise<void>) | null>(null);
+  const pendingIdempotencyKeyRef = React.useRef<string | null>(null);
   const [validationAbortController, setValidationAbortController] = React.useState<AbortController | null>(null);
+
+  React.useEffect(() => {
+    if (!bootstrapDirectory) return;
+    setBootstrapProgress(getWorktreeBootstrapState(bootstrapDirectory));
+    return subscribeWorktreeBootstrap(bootstrapDirectory, () => {
+      setBootstrapProgress(getWorktreeBootstrapState(bootstrapDirectory));
+    });
+  }, [bootstrapDirectory]);
+
+  React.useEffect(() => {
+    if (!open || bootstrapDirectory || !projectDirectory) return;
+    const listActive = git.worktree?.activeOperations
+      ?? git.listActiveGitWorktreeBootstrapOperations;
+    if (!listActive) return;
+    let cancelled = false;
+    void listActive()
+      .then(async (operations) => {
+        if (cancelled) return;
+        const operation = operations.find((candidate) => (
+          typeof candidate.metadata?.primaryWorktree !== 'string'
+          || normalizeDirectory(candidate.metadata.primaryWorktree) === normalizeDirectory(projectDirectory)
+        ));
+        if (!operation) return;
+        markWorktreeBootstrapPending(operation.directory, operation);
+        setBootstrapDirectory(operation.directory);
+        setBootstrapProgress(operation);
+        setIsCreating(true);
+        pendingFinalizeRef.current = async () => {
+          onWorktreeCreated?.(operation.directory);
+          onOpenChange(false);
+        };
+        try {
+          await waitForWorktreeBootstrap(
+            operation.directory,
+            undefined,
+            operation.operationId,
+          );
+          if (!cancelled) await pendingFinalizeRef.current?.();
+        } catch {
+          // The durable failure state is rendered with Retry and Remove.
+        } finally {
+          if (!cancelled) setIsCreating(false);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    bootstrapDirectory,
+    git.listActiveGitWorktreeBootstrapOperations,
+    git.worktree,
+    onOpenChange,
+    onWorktreeCreated,
+    open,
+    projectDirectory,
+  ]);
 
   const resolveDefaultAgentName = React.useCallback((): string | undefined => {
     const configState = useConfigStore.getState();
@@ -687,8 +765,14 @@ export function NewWorktreeDialog({
 
   // Reset state on each open. Resetting on close would empty the form during
   // the close animation, causing visible flicker.
+  const initializedOpenCycleRef = React.useRef(false);
   React.useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      initializedOpenCycleRef.current = false;
+      return;
+    }
+    if (initializedOpenCycleRef.current) return;
+    initializedOpenCycleRef.current = true;
 
     setMode('new-branch');
     setExistingBranchState({
@@ -910,67 +994,105 @@ export function NewWorktreeDialog({
         };
       })();
       
-      const resolvedArgs = await withWorktreeUpstreamDefaults(projectDirectory, args);
-      const metadata = await createWorktree(projectRef, resolvedArgs);
-
+      pendingIdempotencyKeyRef.current ??= `worktree_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+      const resolvedArgs = await withWorktreeUpstreamDefaults(projectDirectory, {
+        ...args,
+        idempotencyKey: pendingIdempotencyKeyRef.current,
+      });
       const linkedIssue = mode === 'new-branch' ? newBranchState.linkedIssue : null;
       const linkedPrState = mode === 'new-branch' ? newBranchState.linkedPr : null;
       const includePrDiff = mode === 'new-branch' ? newBranchState.includePrDiff : false;
 
-      let createdSessionId: string | null = null;
+      const finalizeCreation = async (metadata: Awaited<ReturnType<typeof createWorktree>>) => {
+        let createdSessionId: string | null = null;
 
-      if (linkedIssue || linkedPrState) {
-        const sessionTitle = linkedIssue
-          ? `#${linkedIssue.number} ${linkedIssue.title}`.trim()
-          : linkedPrState
-            ? `#${linkedPrState.number} ${linkedPrState.title}`.trim()
-            : t('session.newWorktree.newSessionTitle');
+        if (linkedIssue || linkedPrState) {
+          const sessionTitle = linkedIssue
+            ? `#${linkedIssue.number} ${linkedIssue.title}`.trim()
+            : linkedPrState
+              ? `#${linkedPrState.number} ${linkedPrState.title}`.trim()
+              : t('session.newWorktree.newSessionTitle');
 
-        const session = await sessionActions.createSession(sessionTitle, metadata.path, null);
-        if (!session?.id) {
-          throw new Error('Failed to create session');
+          const session = await sessionActions.createSession(sessionTitle, metadata.path, null);
+          if (!session?.id) {
+            throw new Error('Failed to create session');
+          }
+
+          createdSessionId = session.id;
+          void sessionActions.updateSessionTitle(session.id, sessionTitle).catch(() => undefined);
+
+          try {
+            useSessionUIStore.getState().initializeNewOpenChamberSession(session.id, useConfigStore.getState().agents);
+          } catch {
+            // ignore
+          }
         }
-
-        createdSessionId = session.id;
-        void sessionActions.updateSessionTitle(session.id, sessionTitle).catch(() => undefined);
-
-        try {
-          useSessionUIStore.getState().initializeNewOpenChamberSession(session.id, useConfigStore.getState().agents);
-        } catch {
-          // ignore
+      
+        // Save source branch preference (only if not from PR)
+        if (newBranchState.sourceBranch && mode === 'new-branch' && !newBranchState.linkedPr) {
+          localStorage.setItem(LAST_SOURCE_BRANCH_KEY, newBranchState.sourceBranch);
         }
-      }
       
-      // Save source branch preference (only if not from PR)
-      if (newBranchState.sourceBranch && mode === 'new-branch' && !newBranchState.linkedPr) {
-        localStorage.setItem(LAST_SOURCE_BRANCH_KEY, newBranchState.sourceBranch);
-      }
-      
-      toast.success(t('session.newWorktree.toast.worktreeCreated'), {
-        description: t('session.newWorktree.toast.worktreeCreatedDescription', {
-          target: `${metadata.branch || metadata.name}${sourceLabel ? ` ${t('session.newWorktree.fromSource', { source: sourceLabel })}` : ''}`,
-        }),
-      });
-
-      onOpenChange(false);
-
-      if (createdSessionId) {
-        onWorktreeCreated?.(metadata.path, { sessionId: createdSessionId });
-        void sendLinkedContextMessage({
-          sessionId: createdSessionId,
-          issue: linkedIssue,
-          pr: linkedPrState,
-          includeDiff: includePrDiff,
-        }).catch((error) => {
-          const message = error instanceof Error ? error.message : t('session.newWorktree.error.sendGitHubContextFailed');
-          toast.error(t('session.newWorktree.error.sendGitHubContextFailed'), { description: message });
+        toast.success(t('session.newWorktree.toast.worktreeCreated'), {
+          description: t('session.newWorktree.toast.worktreeCreatedDescription', {
+            target: `${metadata.branch || metadata.name}${sourceLabel ? ` ${t('session.newWorktree.fromSource', { source: sourceLabel })}` : ''}`,
+          }),
         });
-      } else {
-        onWorktreeCreated?.(metadata.path);
-      }
+
+        onOpenChange(false);
+
+        if (createdSessionId) {
+          onWorktreeCreated?.(metadata.path, {
+            sessionId: createdSessionId,
+            projectId: projectRef.id,
+          });
+          void sendLinkedContextMessage({
+            sessionId: createdSessionId,
+            issue: linkedIssue,
+            pr: linkedPrState,
+            includeDiff: includePrDiff,
+          }).catch((error) => {
+            const message = error instanceof Error ? error.message : t('session.newWorktree.error.sendGitHubContextFailed');
+            toast.error(t('session.newWorktree.error.sendGitHubContextFailed'), { description: message });
+          });
+        } else {
+          onWorktreeCreated?.(metadata.path, { projectId: projectRef.id });
+        }
+        pendingFinalizeRef.current = null;
+        pendingResumeRef.current = null;
+        pendingIdempotencyKeyRef.current = null;
+      };
+
+      const resumeCreation = async () => {
+        const metadata = await createWorktree(projectRef, resolvedArgs);
+        setBootstrapDirectory(metadata.path);
+        setBootstrapProgress(metadata.bootstrap ?? null);
+        pendingFinalizeRef.current = () => finalizeCreation(metadata);
+        await waitForWorktreeBootstrap(
+          metadata.path,
+          undefined,
+          metadata.bootstrapOperationId,
+        );
+        await pendingFinalizeRef.current?.();
+      };
+      pendingResumeRef.current = resumeCreation;
+      await resumeCreation();
     } catch (error) {
+      const operationError = error as Error & {
+        operationId?: string;
+        bootstrap?: GitWorktreeBootstrapStatus;
+      };
+      if (operationError.bootstrap?.directory) {
+        markWorktreeBootstrapPending(operationError.bootstrap.directory, operationError.bootstrap);
+        setBootstrapDirectory(operationError.bootstrap.directory);
+        setBootstrapProgress(operationError.bootstrap);
+      }
       const message = error instanceof Error ? error.message : t('session.newWorktree.error.createWorktreeFailed');
       toast.error(t('session.newWorktree.error.createWorktreeFailed'), { description: message });
+      if (!operationError.bootstrap && !pendingFinalizeRef.current) {
+        pendingResumeRef.current = null;
+        pendingIdempotencyKeyRef.current = null;
+      }
     } finally {
       setIsCreating(false);
     }
@@ -1034,6 +1156,55 @@ export function NewWorktreeDialog({
     : !!normalizeBranchName(newBranchState.branchName) && !!newBranchState.worktreeName && !validation.branchError && !validation.worktreeError;
 
   const canCreate = isFormValid && !isCreating;
+  const bootstrapFailed = bootstrapProgress?.status === 'failed'
+    || bootstrapProgress?.status === 'needs_attention';
+  const worktreeApi = git.worktree;
+
+  const handleRetryBootstrap = async () => {
+    const operationId = bootstrapProgress?.operationId;
+    if (!operationId || !bootstrapDirectory || !worktreeApi?.retry) return;
+    setIsCreating(true);
+    try {
+      const retried = await worktreeApi.retry(operationId);
+      setWorktreeBootstrapState(bootstrapDirectory, retried);
+      await waitForWorktreeBootstrap(bootstrapDirectory, undefined, operationId);
+      if (pendingFinalizeRef.current) {
+        await pendingFinalizeRef.current();
+      } else {
+        await pendingResumeRef.current?.();
+      }
+    } catch (error) {
+      toast.error('Worktree setup retry failed', {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const handleRemoveFailedWorktree = async () => {
+    if (!projectDirectory || !bootstrapDirectory || !worktreeApi?.remove) return;
+    setIsCreating(true);
+    try {
+      await worktreeApi.remove(projectDirectory, {
+        directory: bootstrapDirectory,
+        deleteLocalBranch: true,
+      });
+      clearWorktreeBootstrapState(bootstrapDirectory);
+      setBootstrapDirectory(null);
+      setBootstrapProgress(null);
+      pendingFinalizeRef.current = null;
+      pendingResumeRef.current = null;
+      pendingIdempotencyKeyRef.current = null;
+      toast.success('Failed worktree removed');
+    } catch (error) {
+      toast.error('Failed to remove worktree', {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      setIsCreating(false);
+    }
+  };
 
   const handleClearLinkedItem = () => {
     setNewBranchState(prev => ({
@@ -1051,6 +1222,21 @@ export function NewWorktreeDialog({
     <div className={cn('flex gap-2', isMobile ? 'flex-col w-full' : 'flex-row items-center')}>
       {/* Validation error */}
       <div className={cn('flex items-center gap-1.5 text-destructive', isMobile ? 'w-full justify-center order-first' : 'mr-auto')}> 
+        {bootstrapProgress && (
+          <div className={cn(
+            'flex items-center gap-1.5 typography-micro',
+            bootstrapFailed ? 'text-destructive' : 'text-muted-foreground',
+          )}>
+            {!bootstrapFailed && bootstrapProgress.status !== 'ready' && bootstrapProgress.status !== 'ready_with_warnings' && (
+              <RiLoader4Line className="h-3.5 w-3.5 animate-spin" />
+            )}
+            <span>
+              {bootstrapProgress.stage.replaceAll('_', ' ')}
+              {' · '}
+              {bootstrapProgress.status.replaceAll('_', ' ')}
+            </span>
+          </div>
+        )}
         {validation.touched && (validation.branchError || validation.worktreeError) && (
           <>
             <RiErrorWarningLine className="h-3.5 w-3.5" />
@@ -1063,6 +1249,26 @@ export function NewWorktreeDialog({
       
       {/* Buttons */}
       <div className={cn('flex gap-2', isMobile && 'w-full')}>
+        {bootstrapFailed && (
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleRetryBootstrap()}
+              disabled={isCreating}
+            >
+              Retry Setup
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleRemoveFailedWorktree()}
+              disabled={isCreating}
+            >
+              Remove
+            </Button>
+          </>
+        )}
         <Button
           variant="outline"
           size="sm"
@@ -2016,37 +2222,7 @@ export function NewWorktreeDialog({
 
             {/* Footer */}
             <DialogFooter className="mt-1 flex items-center justify-between">
-              {/* Validation error - inline with buttons */}
-              <div className="flex items-center gap-1.5 text-destructive">
-                {validation.touched && (validation.branchError || validation.worktreeError) && (
-                  <>
-                    <RiErrorWarningLine className="h-3.5 w-3.5" />
-                    <span className="typography-micro">
-                      {validation.branchError || validation.worktreeError}
-                    </span>
-                  </>
-                )}
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onOpenChange(false)}
-                  disabled={isCreating}
-                >
-                  {t('session.newWorktree.actions.cancel')}
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={handleCreate}
-                  disabled={!canCreate || isCreating}
-                  className="gap-1.5"
-                >
-                  {isCreating && <RiLoader4Line className="h-3.5 w-3.5 animate-spin" />}
-                  {isCreating ? t('session.newWorktree.actions.creating') : t('session.newWorktree.actions.createWorktree')}
-                </Button>
-              </div>
+              {footerContent}
             </DialogFooter>
           </DialogContent>
         </Dialog>

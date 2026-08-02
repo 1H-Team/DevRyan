@@ -1,6 +1,6 @@
 # VS Code Backend Modules
 
-Managed OpenCode startup provisions the same sanitized repository-owned user profile used by web/Electron before generating runtime overlays. It resolves `default-config/user-profile` from the extension bundle, preserves user-modified managed files, installs missing declared plugins into the user's OpenCode config directory, and fails visibly when required package installation cannot complete. Shared provisioning also gives Meridian's OpenCode adapter a client-only prompt default, performs only the ownership-tracked exact-legacy-default migration, preserves explicit user prompt choices and unrelated Meridian settings, and reports combined prompting without overriding it. Managed agent overlays allow the active workspace, its worktree root, and the matching canonical `~/.config/openchamber/projects/<project-id>/plans` directory while preserving each agent's role-level read/edit restrictions. They also apply the web-owned visible-skill policy: only OpenCode and `.agents` sources are discovered, hidden and package-cache skills are removed, and each effective agent receives deny-by-default skill permissions plus only its visible named directories. Managed launches remove a broad external-skill disable flag and force the Claude-only skill disable flag so `.agents` remains available while `.claude` is never registered. When OpenAI is active through auth, `OPENAI_API_KEY`, or provider config, the managed overlay adds liveness bounds of 60 seconds for response headers, 120 seconds between stream chunks, and 10 minutes for the total request while preserving explicit numeric values or `false`; it removes the generated row when OpenAI becomes inactive and never creates model availability. Configured external OpenCode URLs remain read-only.
+Managed OpenCode startup provisions the same sanitized repository-owned user profile used by web/Electron before generating runtime overlays. It resolves `default-config/user-profile` from the extension bundle, preserves user-modified managed files, installs missing declared plugins into the user's OpenCode config directory, and fails visibly when required package installation cannot complete. Shared provisioning also gives Meridian's OpenCode adapter a client-only prompt default, performs only the ownership-tracked exact-legacy-default migration, preserves explicit user prompt choices and unrelated Meridian settings, and reports combined prompting without overriding it. Managed agent overlays allow the active workspace, its worktree root, and the matching canonical `~/.config/openchamber/projects/<project-id>/plans` directory while preserving each agent's role-level read/edit restrictions. They also apply the web-owned visible-skill policy: only OpenCode and `.agents` sources are discovered, hidden and package-cache skills are removed, and each effective agent receives deny-by-default skill permissions plus only its visible named directories. Managed launches remove a broad external-skill disable flag and force the Claude-only skill disable flag so `.agents` remains available while `.claude` is never registered. When OpenAI is active through auth, `OPENAI_API_KEY`, or provider config, the managed overlay adds liveness bounds of 120 seconds for response headers, 300 seconds between stream chunks, and 15 minutes for the whole request. Explicit numeric values or `false` remain authoritative; each startup sync replaces stale DevRyan-generated values, removes the generated row when OpenAI becomes inactive, and never creates model availability. Configured external OpenCode URLs remain read-only.
 
 The extension copies root `opencode.json`, agents, runtime-safe plugins, and sanitized profile assets through the web-owned default-config asset policy. Its packaged VSIX gate SHA-verifies that inventory and smoke-tests provisioning/overlay behavior from the extracted artifact; configured external runtimes are never provisioned or rewritten.
 
@@ -17,7 +17,28 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Delegates to specialized runtimes in order and handles only unmatched fallthrough cases.
 
 - `bridge-git-runtime.ts`
-  - Standard Git message handlers.
+  - Standard Git message handlers, including durable worktree receipt lookup,
+    active-list, retry, preview, and legacy directory-status parity.
+  - Repository checks and status are rooted at the exact requested project;
+    nested non-repository projects do not inherit an ancestor's Git state.
+
+- `worktreeLockRecovery.ts`
+  - Applies the same bounded, file-identity-safe `populate_worktree` index-lock
+    recovery used by web/Electron. Replaced locks are never removed.
+
+- `harnessRuntime.ts`
+  - Extension-host owner for the shared lifecycle tracker, 256 MiB sanitized
+    journal, durable worktree store/reconciliation, and optional project turn
+    evidence under `globalStorageUri/harness/`.
+- `harness-runtime-access.ts`
+  - Dependency-light active-runtime registry used by SSE and proxy hot paths
+    without loading VS Code-only Git host code.
+
+- `bridge-diagnostics-runtime.ts` / `bridge-evidence-runtime.ts`
+  - Mirror the web diagnostics and evidence contracts through the extension
+    bridge, including status, export, and journal clearing. Diagnostics ZIPs
+    use a native save dialog and private atomic sibling file; evidence remains
+    default-off and read-only.
 
 - `bridge-git-special-runtime.ts`
   - Specialized Git flows (`commit-message`, `pr-description`, `conflict-details`) and generation helpers.
@@ -51,26 +72,30 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 - `bridge-config-runtime.ts`
   - Config and skills message handlers (`api:config/*`).
   - Includes OpenCode resolution diagnostics parity handler used by shared UI (`/api/config/opencode-resolution`).
-  - Uses `opencodeConfig.ts` to expose the shared four-item DevRyan default-plugin catalog, including pinned Context Mode, plus read-only plugin entries and both singular `plugin/` and plural `plugins/` user/project files. Matching entries/files carry their default identity so Settings can preserve effective overrides without duplicate rows.
+  - Includes the read-only OpenCode update-check parity handler used by shared About settings. It compares the manager's active managed or external runtime version without installing or restarting OpenCode.
+  - Uses `opencodeConfig.ts` to expose the shared manifest-derived DevRyan default-plugin catalog, plus read-only plugin entries and both singular `plugin/` and plural `plugins/` user/project files. Matching entries/files carry their default identity so Settings can preserve effective overrides without duplicate rows. Managed entries are local installed or bundled paths; VS Code does not reintroduce package or Git registrations.
   - Delegates `/api/behavior/agents-md` bridge reads and saves to the injected `globalAgentsMdRuntime.ts`, keeping the actual global file authoritative while matching web/Electron read-only and partial-refresh semantics.
   - Routes agent model/variant defaults through OpenCode Slim config when `oh-my-opencode-slim` owns the active agent catalog, using Slim-installed global `agents/*.md` prompts plus Slim preset/root model metadata.
   - Passes Slim's active preset into managed OpenCode with `OH_MY_OPENCODE_SLIM_PRESET`, copies the active Slim config into the runtime overlay `OPENCODE_CONFIG_DIR`, and keeps background subagents enabled for Slim orchestration.
 
 - `opencodeVersionPolicy.ts`
-  - Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.9 and exposes the upstream install command in diagnostics while still using the user/system `opencode` binary.
+  - Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.11 and exposes the upstream install command in diagnostics while still using the user/system `opencode` binary.
 
 - `bridge-settings-runtime.ts`
   - Settings read/write and OpenCode skills discovery via API for bridge consumers.
 
 - `bridge-system-runtime.ts`
   - System/editor/provider/quota/notification/update-check message handlers.
+  - Update checks use the latest stable release from the canonical
+    `zoubenr/DevRyan` GitHub repository by default. The compatibility
+    `OPENCHAMBER_UPDATE_API_URL` override retains its legacy request contract.
   - Includes session activity snapshot bridge handler used by webview parity routes (`/api/session-activity`).
   - Includes Zen utility model parity handler used by shared notification settings (`/api/zen/models`).
   - Mirrors web/Electron Claude Code status and configuration with `claude auth status --json`, avoiding model requests during authentication checks and returning structured signed-in, signed-out, unavailable, and execution-error states.
   - Hosts the HTTP-shaped managed quota credential contract for the webview, including independent host-side 16 KB enforcement and the same safe error/status shapes as web/Electron.
 
 - `anthropicOAuthPlugin.ts` and `claudeAuthStatus.ts`
-  - Own VS Code parity for the reviewed Claude proxy plugin spec and safe Claude Code authentication-status parsing. Bare DevRyan-managed specs migrate to `opencode-with-claude@1.6.18`; explicit user pins are preserved.
+  - Own VS Code parity for the reviewed installed Claude proxy entrypoint and safe Claude Code authentication-status parsing. Known DevRyan-managed package specs migrate to the provisioned local path; explicit user pins are preserved.
 
 - `quotaCredentials.ts`
   - Owns VS Code's contract-equivalent managed quota credential files for `opencode-go`, `ollama-cloud`, and canonical `cursor-acp` (`cursor` is an API alias only).
@@ -80,7 +105,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 - `quotaProviders.ts`
   - Resolves quota credentials with web parity: OpenCode Go environment → managed → legacy; Cursor environment/token-file OAuth → managed OAuth/dashboard → legacy dashboard token; Ollama managed → legacy cookie file.
   - Persists a refreshed Cursor OAuth access token only when its source is managed.
-  - Resolves managed Claude proxy quota from the active OpenCode provider catalog, uses the loopback-only Meridian structured endpoint, falls back to the non-billable Claude `/usage` command, and never substitutes local usage for external OpenCode runtimes.
+  - Resolves managed Claude discovery and fetching from the same active OpenCode provider context, recognizes all supported Anthropic auth aliases, validates OAuth primary windows, uses the loopback-only Meridian structured endpoint, falls back to the non-billable Claude `/usage` command, keeps configured failures visible, and never substitutes local usage for external OpenCode runtimes.
 
 - `managedOrchestrationRuntime.ts`
   - Composes the one VS Code-owned `@openchamber/orchestration-runtime` scheduler.

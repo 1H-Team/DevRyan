@@ -1,7 +1,10 @@
 export type DevRyanDefaultPluginId =
+  | 'opencode-antigravity-auth'
+  | '@rama_nigg/open-cursor'
   | 'oh-my-opencode-slim'
   | 'opencode-with-claude'
   | 'context-mode'
+  | 'superpowers'
   | 'openai-tool-schema-sanitizer';
 
 export type DevRyanDefaultPlugin = {
@@ -11,16 +14,19 @@ export type DevRyanDefaultPlugin = {
   shippedSpec: string;
   effectiveSpec: string;
   version: string | null;
-  delivery: 'npm' | 'bundled-file';
+  delivery: 'installed-local' | 'bundled-file' | 'curated-skills';
   sourcePath: string;
   configuredSourcePath?: string;
   kind: 'default';
 };
 
 export const DEVRYAN_DEFAULT_PLUGIN_IDS: Readonly<{
+  ANTIGRAVITY: 'opencode-antigravity-auth';
+  OPEN_CURSOR: '@rama_nigg/open-cursor';
   SLIM: 'oh-my-opencode-slim';
   CLAUDE: 'opencode-with-claude';
   CONTEXT_MODE: 'context-mode';
+  SUPERPOWERS: 'superpowers';
   OPENAI_TOOL_SCHEMA_SANITIZER: 'openai-tool-schema-sanitizer';
 }>;
 export const DEVRYAN_DEFAULT_PLUGINS: ReadonlyArray<Omit<DevRyanDefaultPlugin, 'effectiveSpec' | 'kind' | 'configuredSourcePath'>>;

@@ -38,7 +38,7 @@ describe('GitView staged changes workflow', () => {
     expect(code).toContain('await generateCommitMessageDraft(currentDirectory, commitScope.files, {');
     expect(code).toContain('commitMessageGuidance');
     expect(code).toContain('setCommitMessage(generatedSubject);');
-    expect(code).toContain("toast.success(t('gitView.toast.commitMessageGenerated'))");
+    expect(code).not.toContain("toast.success(t('gitView.toast.commitMessageGenerated'))");
     expect(code).toContain('commitGenerationRequestRef');
     expect(code).toContain('if (!isCurrentRequest())');
     expect(code).toContain('setIsGeneratingCommitMessage(false);');
@@ -77,6 +77,23 @@ describe('GitView staged changes workflow', () => {
     expect(code).toContain('if (!message) {');
     expect(code).toContain("toast.error(t('gitView.toast.selectFileToCommit'));");
     expect(code).toContain('await git.createGitCommit(currentDirectory, message, {');
+  });
+
+  test('awaits repository and history refreshes after a successful commit', () => {
+    const code = source();
+    const commitStart = code.indexOf('const handleCommit = async');
+    const commitEnd = code.indexOf('const handleCreateBranch = async', commitStart);
+    const commitHandler = code.slice(commitStart, commitEnd);
+
+    const createCommit = commitHandler.indexOf('await git.createGitCommit');
+    const refreshRepository = commitHandler.indexOf('await refreshStatusAndBranches();', createCommit);
+    const refreshHistory = commitHandler.indexOf('await refreshLog();', refreshRepository);
+
+    expect(commitStart).toBeGreaterThan(-1);
+    expect(commitEnd).toBeGreaterThan(commitStart);
+    expect(createCommit).toBeGreaterThan(-1);
+    expect(refreshRepository).toBeGreaterThan(createCommit);
+    expect(refreshHistory).toBeGreaterThan(refreshRepository);
   });
 
   test('wires stage and unstage actions through the runtime git API', () => {

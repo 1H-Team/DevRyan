@@ -1,6 +1,7 @@
 import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 import type { OpenCodeManager } from './opencode';
 import { waitForApiUrl } from './opencode-ready';
+import { getVsCodeHarnessRuntime } from './harness-runtime-access';
 
 type StreamEvent<TData = unknown> = {
   data: TData;
@@ -98,6 +99,7 @@ const getSseOptions = (
   signal: AbortSignal,
   onChunk: (chunk: string) => void,
   wrapDirectory?: string,
+  directoryHint?: string,
 ) => ({
   signal,
   sseMaxRetryAttempts: 0,
@@ -111,6 +113,7 @@ const getSseOptions = (
           },
         }
       : event;
+    getVsCodeHarnessRuntime()?.recordOpenCodeEvent(nextEvent.data, directoryHint || null);
     onChunk(`${serializeSseEventBlock(nextEvent)}\n\n`);
   },
 });
@@ -147,7 +150,7 @@ export const openSseProxy = async ({
           console.warn('[SSE] Global event failed, falling back to directory event', error);
           const result = client.event.subscribe(
             { directory: resolvedDirectory },
-            getSseOptions(signal, onChunk, resolvedDirectory),
+            getSseOptions(signal, onChunk, resolvedDirectory, resolvedDirectory),
           );
           reconnectAttempts = 0;
           return result;
@@ -156,7 +159,7 @@ export const openSseProxy = async ({
 
       const result = client.event.subscribe(
         { directory: resolvedDirectory },
-        getSseOptions(signal, onChunk),
+        getSseOptions(signal, onChunk, undefined, resolvedDirectory),
       );
       reconnectAttempts = 0;
       return result;

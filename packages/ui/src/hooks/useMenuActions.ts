@@ -6,7 +6,7 @@ import { useUpdateStore } from '@/stores/useUpdateStore';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { createWorktreeSession } from '@/lib/worktreeSessionCreator';
-import { showOpenCodeStatus } from '@/lib/openCodeStatus';
+import type { DiagnosticsAPI } from '@/lib/api/types';
 
 const getActiveElementSelectedText = (): string => {
   if (typeof document === 'undefined') {
@@ -86,7 +86,8 @@ type MenuAction =
   | 'download-logs';
 
 export const useMenuActions = (
-  onToggleMemoryDebug?: () => void
+  onToggleMemoryDebug?: () => void,
+  diagnostics?: DiagnosticsAPI,
 ) => {
   const openNewSessionDraft = useSessionUIStore((s) => s.openNewSessionDraft);
   const toggleCommandPalette = useUIStore((s) => s.toggleCommandPalette);
@@ -95,6 +96,8 @@ export const useMenuActions = (
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
   const setSessionSwitcherOpen = useUIStore((s) => s.setSessionSwitcherOpen);
   const setActiveMainTab = useUIStore((s) => s.setActiveMainTab);
+  const setRightSidebarOpen = useUIStore((s) => s.setRightSidebarOpen);
+  const setRightSidebarTab = useUIStore((s) => s.setRightSidebarTab);
   const setSettingsDialogOpen = useUIStore((s) => s.setSettingsDialogOpen);
   const setAboutDialogOpen = useUIStore((s) => s.setAboutDialogOpen);
   const checkForUpdates = useUpdateStore((state) => state.checkForUpdates);
@@ -178,8 +181,10 @@ export const useMenuActions = (
         }
 
         case 'open-files-tab': {
-          const { activeMainTab } = useUIStore.getState();
-          setActiveMainTab(activeMainTab === 'files' ? 'chat' : 'files');
+          // The 'files' main tab was removed; the file tree now lives in the
+          // right sidebar, so mirror the open_right_sidebar_files shortcut.
+          setRightSidebarOpen(true);
+          setRightSidebarTab('files');
           break;
         }
 
@@ -223,19 +228,30 @@ export const useMenuActions = (
           break;
 
         case 'download-logs': {
-          void showOpenCodeStatus().catch(() => {
-            toast.error('Failed to collect OpenCode status');
-          });
+          if (!diagnostics) {
+            toast.error('Diagnostics are unavailable in this runtime');
+            break;
+          }
+          void diagnostics.export({ scope: 'runtime' })
+            .then((result) => {
+              if (!result.cancelled) toast.success(`Exported ${result.fileName}`);
+            })
+            .catch(() => {
+              toast.error('Failed to export diagnostics');
+            });
           break;
         }
       }
     },
     [
       handleChangeWorkspace,
+      diagnostics,
       onToggleMemoryDebug,
       openNewSessionDraft,
       setAboutDialogOpen,
       setActiveMainTab,
+      setRightSidebarOpen,
+      setRightSidebarTab,
       setSessionSwitcherOpen,
       setCommandPaletteOpen,
       setSettingsDialogOpen,

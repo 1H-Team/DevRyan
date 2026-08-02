@@ -2,6 +2,7 @@ import type { BridgeContext, BridgeResponse } from './bridge';
 import { waitForApiUrl } from './opencode-ready';
 import { readAuthFile } from './opencodeAuth';
 import { annotateOpenAIModelAvailability } from './openaiModelAvailability';
+import { getVsCodeHarnessRuntime } from './harness-runtime-access';
 
 type BridgeMessageInput = {
   id: string;
@@ -106,6 +107,89 @@ const mergeCachedCursorProvider = (
   };
 };
 
+const decodeJsonBody = (value: string | undefined, encoding: 'base64' | 'text'): unknown => {
+  if (!value) return null;
+  try {
+    const text = encoding === 'base64' ? Buffer.from(value, 'base64').toString('utf8') : value;
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+};
+
+const promptPathDetails = (requestPath: string): {
+  sessionID: string;
+  directory: string | undefined;
+} | null => {
+  const parsed = new URL(requestPath, 'https://openchamber.invalid');
+  const match = parsed.pathname.match(/^\/session\/([^/]+)\/(?:prompt|prompt_async|message)$/);
+  if (!match) return null;
+  return {
+    sessionID: decodeURIComponent(match[1]),
+    directory: parsed.searchParams.get('directory') || undefined,
+  };
+};
+
+const getPromptMessageID = (body: unknown): string | undefined => {
+  if (!body || typeof body !== 'object') return undefined;
+  const record = body as Record<string, unknown>;
+  const value = record.messageID ?? record.messageId ?? record.id;
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+};
+
+const unavailableHarnessResponse = (
+  deps: ProxyRuntimeDeps,
+): ApiProxyResponsePayload => ({
+  status: 503,
+  headers: {
+    'content-type': 'application/json',
+    'retry-after': '1',
+  },
+  bodyBase64: deps.base64EncodeUtf8(JSON.stringify({
+    error: 'DevRyan harness is initializing or shutting down',
+    code: 'HARNESS_NOT_ACCEPTING_PROMPTS',
+  })),
+});
+
+const admitPrompt = (
+  requestPath: string,
+  body: unknown,
+  deps: ProxyRuntimeDeps,
+): ApiProxyResponsePayload | null => {
+  const details = promptPathDetails(requestPath);
+  if (!details) return null;
+  const runtime = getVsCodeHarnessRuntime();
+  if (!runtime) return unavailableHarnessResponse(deps);
+  if (!runtime.isReady() || !runtime.isAcceptingPrompts()) {
+    return unavailableHarnessResponse(deps);
+  }
+  runtime.recordPrompt({
+    ...details,
+    messageID: getPromptMessageID(body),
+    path: requestPath,
+    body,
+  });
+  return null;
+};
+
+const recordSessionControl = (
+  method: string,
+  requestPath: string,
+  body: unknown,
+): void => {
+  if (method === 'GET' || method === 'HEAD') return;
+  const parsed = new URL(requestPath, 'https://openchamber.invalid');
+  const match = parsed.pathname.match(/^\/session\/([^/]+)\/(abort|revert|fork|share|unshare)$/);
+  if (!match) return;
+  getVsCodeHarnessRuntime()?.recordControl({
+    sessionID: decodeURIComponent(match[1]),
+    action: match[2],
+    directory: parsed.searchParams.get('directory') || undefined,
+    path: requestPath,
+    body,
+  });
+};
+
 export async function handleProxyBridgeMessage(
   message: BridgeMessageInput,
   ctx: BridgeContext | undefined,
@@ -128,6 +212,20 @@ export async function handleProxyBridgeMessage(
       if (localFsResponse) {
         return { id, type, success: true, data: localFsResponse };
       }
+      const decodedBody = normalizedMethod !== 'GET' && normalizedMethod !== 'HEAD'
+        ? decodeJsonBody(bodyBase64, 'base64')
+        : null;
+      if (normalizedMethod === 'POST') {
+        const admissionFailure = admitPrompt(
+          normalizedPath,
+          decodedBody,
+          deps,
+        );
+        if (admissionFailure) {
+          return { id, type, success: true, data: admissionFailure };
+        }
+      }
+      recordSessionControl(normalizedMethod, normalizedPath, decodedBody);
 
       const apiUrl = await waitForApiUrl(ctx?.manager);
       if (!apiUrl) {
@@ -192,6 +290,15 @@ export async function handleProxyBridgeMessage(
           headers: deps.collectHeaders(response.headers),
           bodyBase64: Buffer.from(arrayBuffer).toString('base64'),
         };
+        if (response.ok && normalizedMethod === 'POST') {
+          const details = promptPathDetails(normalizedPath);
+          if (details) {
+            getVsCodeHarnessRuntime()?.lifecycle.recordPromptAccepted({
+              ...details,
+              messageID: getPromptMessageID(decodedBody),
+            });
+          }
+        }
 
         return { id, type, success: true, data };
       } catch (error) {
@@ -231,6 +338,14 @@ export async function handleProxyBridgeMessage(
         };
         return { id, type, success: true, data };
       }
+      const admissionFailure = admitPrompt(
+        normalizedPath,
+        decodeJsonBody(bodyText, 'text'),
+        deps,
+      );
+      if (admissionFailure) {
+        return { id, type, success: true, data: admissionFailure };
+      }
 
       const base = `${apiUrl.replace(/\/+$/, '')}/`;
       const targetUrl = new URL(normalizedPath.replace(/^\/+/, ''), base).toString();
@@ -253,6 +368,15 @@ export async function handleProxyBridgeMessage(
           headers: deps.collectHeaders(response.headers),
           bodyBase64: Buffer.from(arrayBuffer).toString('base64'),
         };
+        if (response.ok) {
+          const details = promptPathDetails(normalizedPath);
+          if (details) {
+            getVsCodeHarnessRuntime()?.lifecycle.recordPromptAccepted({
+              ...details,
+              messageID: getPromptMessageID(decodeJsonBody(bodyText, 'text')),
+            });
+          }
+        }
 
         return { id, type, success: true, data };
       } catch (error) {

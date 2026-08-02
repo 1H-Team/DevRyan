@@ -13,6 +13,8 @@ const storage = new Map<string, string>()
 const installWindow = () => {
   storage.clear()
   const mockWindow = {
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
     localStorage: {
       getItem: (key: string) => storage.get(key) ?? null,
       setItem: (key: string, value: string) => {
@@ -173,5 +175,72 @@ describe("stream responsiveness diagnostics", () => {
         },
       },
     ])
+  })
+
+  test("records a confirmed tool-input stall even when stream debug is disabled", () => {
+    const calls: Array<{ url: string; body: unknown }> = []
+    globalThis.fetch = ((url, init) => {
+      calls.push({
+        url: String(url),
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+      })
+      return Promise.resolve(Response.json({ ok: true }))
+    }) as typeof fetch
+
+    postRendererTurnTimingMark({
+      sessionId: "ses_1",
+      assistantMessageId: "msg_assistant",
+      mark: "renderer_tool_input_stall_confirmed",
+      directory: "/project",
+      metadata: { source: "active-session-watchdog" },
+    })
+
+    expect(calls).toEqual([{
+      url: "/api/diagnostics/turn-timing/mark",
+      body: {
+        sessionId: "ses_1",
+        assistantMessageId: "msg_assistant",
+        mark: "renderer_tool_input_stall_confirmed",
+        directory: "/project",
+        metadata: { source: "active-session-watchdog" },
+      },
+    }])
+  })
+
+  test("records a confirmed inference stall with sanitized duration when stream debug is disabled", () => {
+    const calls: Array<{ url: string; body: unknown }> = []
+    globalThis.fetch = ((url, init) => {
+      calls.push({
+        url: String(url),
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+      })
+      return Promise.resolve(Response.json({ ok: true }))
+    }) as typeof fetch
+
+    postRendererTurnTimingMark({
+      sessionId: "ses_1",
+      assistantMessageId: "msg_assistant",
+      mark: "renderer_provider_inference_stall_confirmed",
+      directory: "/project",
+      metadata: {
+        source: "active-session-watchdog",
+        stalledForMs: 300_123.9,
+        text: "secret response",
+      },
+    })
+
+    expect(calls).toEqual([{
+      url: "/api/diagnostics/turn-timing/mark",
+      body: {
+        sessionId: "ses_1",
+        assistantMessageId: "msg_assistant",
+        mark: "renderer_provider_inference_stall_confirmed",
+        directory: "/project",
+        metadata: {
+          source: "active-session-watchdog",
+          stalledForMs: 300_123,
+        },
+      },
+    }])
   })
 })

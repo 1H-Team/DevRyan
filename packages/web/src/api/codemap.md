@@ -7,6 +7,8 @@ Implements web-platform `RuntimeAPIs` adapters that bridge shared UI calls to se
 - **Per-domain adapter modules** (`terminal`, `git`, `files`, `settings`, `permissions`, `notifications`, `github`, `push`, `tools`).
 - **Composition root**: `index.ts` returns a single `RuntimeAPIs` object with fixed `runtime.platform = "web"` metadata.
 - **Contract parity**: adapter shapes mirror interfaces defined in `@openchamber/ui/lib/api/types`.
+- **Tool discovery contract**: dynamic tool IDs are validated, deduplicated, sorted, and attributed to the active directory through the shared tool-manifest helper; unknown plugin tools remain available through generic presentation fallback.
+- **Adapter regression contract**: `index.test.ts` asserts required shared capabilities and records web-only optional capabilities explicitly.
 
 ## Flow
 1. `createWebAPIs()` instantiates each feature adapter.

@@ -16,6 +16,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     getMessageStreamRuntime,
     setMessageStreamRuntime,
     getManagedOrchestrationRuntime,
+    getBrowserLeaseRuntime,
     getCursorSdkRuntime,
     shouldSkipOpenCodeStop,
     getOpenCodePort,
@@ -29,6 +30,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     getActiveTunnelController,
     setActiveTunnelController,
     tunnelAuthController,
+    getHarnessRuntime,
   } = dependencies;
 
   const gracefulShutdown = async (options = {}) => {
@@ -38,6 +40,8 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     syncToHmrState();
     console.log('Starting graceful shutdown...');
     const exitProcess = typeof options.exitProcess === 'boolean' ? options.exitProcess : getExitOnShutdown();
+    const harnessRuntime = typeof getHarnessRuntime === 'function' ? getHarnessRuntime() : null;
+    harnessRuntime?.beginDrain?.();
 
     openCodeWatcherRuntime.stop();
     sessionRuntime.dispose();
@@ -65,6 +69,36 @@ export const createGracefulShutdownRuntime = (dependencies) => {
       } catch {
       } finally {
         setMessageStreamRuntime(null);
+      }
+    }
+
+    if (harnessRuntime && typeof harnessRuntime.drain === 'function') {
+      let harnessDrainTimeout = null;
+      try {
+        await Promise.race([
+          harnessRuntime.drain(),
+          new Promise((resolve) => {
+            harnessDrainTimeout = setTimeout(() => {
+              console.warn('Harness drain timeout reached, continuing shutdown');
+              resolve();
+            }, 5000);
+          }),
+        ]);
+      } catch (error) {
+        console.warn('Error draining harness runtime:', error);
+      } finally {
+        if (harnessDrainTimeout) clearTimeout(harnessDrainTimeout);
+      }
+    }
+
+    const browserLeaseRuntime = typeof getBrowserLeaseRuntime === 'function'
+      ? getBrowserLeaseRuntime()
+      : null;
+    if (browserLeaseRuntime && typeof browserLeaseRuntime.closeAll === 'function') {
+      try {
+        await browserLeaseRuntime.closeAll('shutdown');
+      } catch (error) {
+        console.warn('Error stopping agent browser leases:', error);
       }
     }
 

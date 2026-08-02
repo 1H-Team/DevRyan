@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- OpenCode: update the bundled SDK dependency and managed runtime target to 1.18.11 across web, UI, VS Code, and the workspace lockfile.
+
+## [1.1.0] - 2026-07-29
+
+- Harness: add durable worktree operation receipts, diagnostic journals, lifecycle correlation, and optional turn-evidence capture across web, Electron, and VS Code.
+- Worktrees: make creation resumable and idempotent, expose bootstrap progress and failure recovery, and support source-repository selection with safer cross-runtime Git behavior.
+- Agents: bundle DevRyan-managed Superpowers integration, tighten managed plugin policy, and preserve agent and skill behavior across packaged runtimes.
+- Reliability: classify transient provider transport failures for bounded recovery while keeping authentication, model, certificate, cancellation, and user-action failures explicit.
+- UI: add turn-evidence controls and transcript access, improve plugin and settings presentation, and surface updater repository diagnostics.
+- Release: point Electron updates at `zoubenr/DevRyan`, include the harness runtime in validation and packaging, and require DevRyan-branded public assets.
+
 ## [1.0.12] - 2026-07-26
 
 - Orchestration: recover provider-limited managed subtasks even when the original parent tool wait detaches, using durable retry lineage and a restart-safe one-shot parent continuation.

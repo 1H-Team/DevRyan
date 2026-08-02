@@ -11,6 +11,10 @@
  * Leaving @openchamber/web external means the conditional
  * `if (isBunRuntime) await import('bun-pty')` stays dynamic and is never
  * reached under Electron.
+ *
+ * @openchamber/harness-runtime intentionally remains inline if Electron ever
+ * imports it directly. Today it is consumed through the external in-process
+ * web server; the package is dependency-free ESM with no native loader edge.
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

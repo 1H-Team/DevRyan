@@ -31,6 +31,7 @@ import {
     shouldSuppressPostPlanText,
 } from '@/lib/messages/planCardRender';
 import { isOrphanNarrationFragment } from '@/lib/messages/orphanNarration';
+import { usePlanRevisionPresentation } from '../usePlanTurnTraceEntry';
 import { useMessageTTS } from '@/hooks/useMessageTTS';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
@@ -1370,13 +1371,30 @@ const AssistantMessageBody = React.memo(({
         && !isCursorAssistantProvider
         && lastRenderableTextPartIndex < 0;
 
+    const planRevision = usePlanRevisionPresentation(messageId, turnGroupingContext?.turnId);
+    // Continuation-turn members inherit the revision's plan-mode status so a
+    // plan emitted by a synthetic continuation resolves like its user-authored
+    // origin turn would.
+    const isPlanRevisionModeSource = isPlanModeSource || planRevision.entry?.isPlanModeRevision === true;
+    // Only the revision's selected source message mounts the PlanCard; earlier
+    // siblings consume their superseded plan bodies without a card.
+    const mountPlanCard = planRevision.role !== 'before-source';
+    const isPlanRevisionPostSourceMessage = planRevision.role === 'after-source';
+
     const messagePlan = React.useMemo(
-        () => (sessionId != null ? resolveMessagePlanCard(visibleParts, { isPlanModeSource }) : null),
-        [isPlanModeSource, sessionId, visibleParts],
+        () => (sessionId != null ? resolveMessagePlanCard(visibleParts, { isPlanModeSource: isPlanRevisionModeSource }) : null),
+        [isPlanRevisionModeSource, sessionId, visibleParts],
     );
 
     const renderedParts = React.useMemo(() => {
         const rendered: React.ReactNode[] = [];
+
+        // Assistant siblings after a plan revision's selected source (late
+        // epilogue text, stray continuation output) render no output — the
+        // revision ends at its plan card.
+        if (isPlanRevisionPostSourceMessage) {
+            return rendered;
+        }
 
         if (shouldRenderActivityGroup && toggleActivityGroup) {
             activityGroupSegmentsForMessage.forEach((segment) => {
@@ -1424,7 +1442,7 @@ const AssistantMessageBody = React.memo(({
             // may append late reasoning/tool parts after the final plan text;
             // keep those authoritative parts in sync state, but do not let them
             // visually displace the plan from the end of the response.
-            if (shouldStopAfterPlanCard(messagePlan, isPlanModeSource, hasRenderedPlanCard)) {
+            if (shouldStopAfterPlanCard(messagePlan, isPlanRevisionModeSource, hasRenderedPlanCard)) {
                 break;
             }
 
@@ -1477,7 +1495,7 @@ const AssistantMessageBody = React.memo(({
                 hasSeenTextGroup = true;
 
                 if (messagePlan && sessionId != null) {
-                    const suppressPostPlanText = shouldSuppressPostPlanText(messagePlan, isPlanModeSource);
+                    const suppressPostPlanText = shouldSuppressPostPlanText(messagePlan, isPlanRevisionModeSource);
                     const { segments, planCardRendered } = buildPlanCardRenderSegments({
                         groupText: renderPartText,
                         groupStart,
@@ -1485,6 +1503,7 @@ const AssistantMessageBody = React.memo(({
                         messagePlan,
                         planCardRendered: hasRenderedPlanCard,
                         suppressPostPlanText,
+                        mountPlanCard,
                     });
                     hasRenderedPlanCard = planCardRendered;
 
@@ -1808,6 +1827,9 @@ const AssistantMessageBody = React.memo(({
         expandedTools,
         isMessageCompleted,
         isPlanModeSource,
+        isPlanRevisionModeSource,
+        isPlanRevisionPostSourceMessage,
+        mountPlanCard,
         isMobile,
         isActivityOwnerMessage,
         isSortedRenderMode,
@@ -1903,7 +1925,15 @@ const AssistantMessageBody = React.memo(({
             </Tooltip> : null}
         </>
     );
- 
+
+    // A plan revision ends at its selected plan card: siblings and synthetic
+    // continuation output after the source message render nothing at all
+    // (no footer, actions, or file rows). The canonical messages stay in
+    // sync state untouched.
+    if (isPlanRevisionPostSourceMessage) {
+        return null;
+    }
+
       return (
 
          <div
@@ -1965,7 +1995,7 @@ const AssistantMessageBody = React.memo(({
                 )}
                 {shouldShowTurnFooter && (
                     <div
-                        className="mt-2 mb-1 flex items-center justify-start gap-1.5"
+                        className="mt-2 mb-1 flex items-center justify-start gap-3"
                         style={MESSAGE_FOOTER_CONTAINER_STYLE}
                     >
                         <div className="flex items-center gap-1.5" data-message-action-group="true">

@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/electron",
-  "version": "1.0.12",
+  "version": "1.1.0",
   "private": true,
   "description": "Electron desktop runtime for DevRyan",
   "author": "DevRyan",
@@ -10,7 +10,8 @@
     "@openchamber/web": "workspace:*",
     "electron-context-menu": "^4.1.2",
     "electron-log": "^5.4.3",
-    "electron-updater": "^6.8.3"
+    "electron-updater": "^6.8.3",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@electron/rebuild": "^3.7.0",
@@ -31,9 +32,9 @@
     "rebuild:native": "node ./scripts/rebuild-native.mjs",
     "build:speech-helper": "node ./scripts/build-speech-helper.mjs",
     "package": "bun run build:web-assets && bun run build:speech-helper && bun run bundle:main && bun run rebuild:native && electron-builder",
-    "test": "bun test startup-splash.test.mjs scripts/rebuild-native.test.mjs tests/*.test.mjs",
+    "test": "node ../../scripts/test-electron.mjs",
     "finalize:latest-yml": "node ./scripts/finalize-latest-yml.mjs",
-    "type-check": "node --check ./origin-policy.mjs && node --check ./main.mjs && node --check ./preload.mjs",
+    "type-check": "node --check ./origin-policy.mjs && node --check ./browser-webview-policy.mjs && node --check ./browser-devtools-controller.mjs && node --check ./browser-cdp-bridge.mjs && node --check ./main.mjs && node --check ./preload.mjs",
     "lint": "node -e \"process.exit(0)\""
   },
   "build": {
@@ -43,6 +44,8 @@
       "dist-bundle/main.mjs",
       "preload.mjs",
       "origin-policy.mjs",
+      "browser-webview-policy.mjs",
+      "browser-cdp-bridge.mjs",
       "!node_modules/@openchamber/web/server/default-config/plugins/*.test.*",
       "!node_modules/@openchamber/web/server/default-config/plugins/*.spec.*",
       "!node_modules/@openchamber/web/server/default-config/user-profile/**/test-*.md"
@@ -111,8 +114,8 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "btriapitsyn",
-      "repo": "openchamber"
+      "owner": "zoubenr",
+      "repo": "DevRyan"
     }
   }
 }

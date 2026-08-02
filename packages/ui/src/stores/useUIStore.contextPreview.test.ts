@@ -54,4 +54,15 @@ describe('useUIStore context preview navigation', () => {
     ]);
     expect(panel?.activeTabId).toBe('preview:http://127.0.0.1:4000/');
   });
+
+  test('opens and reuses one blank browser tab', () => {
+    useUIStore.getState().openContextPreview(DIRECTORY, 'about:blank');
+    useUIStore.getState().openContextPreview(DIRECTORY, 'about:blank');
+
+    const panel = useUIStore.getState().contextPanelByDirectory[DIRECTORY];
+    expect(panel?.isOpen).toBe(true);
+    expect(panel?.tabs).toHaveLength(1);
+    expect(panel?.tabs[0]?.targetPath).toBe('about:blank');
+    expect(panel?.activeTabId).toBe('preview:about:blank');
+  });
 });

@@ -4,13 +4,37 @@ import {
   generateCommitMessageDirect,
 } from './commit-message.js';
 
-export function registerGitRoutes(app, { resolveZenModel = async (override) => override || 'gpt-5-nano' } = {}) {
+const extractGitErrorText = (error) => {
+  const message = typeof error?.message === 'string' ? error.message : '';
+  const stderr = typeof error?.stderr === 'string' ? error.stderr : '';
+  const stdout = typeof error?.stdout === 'string' ? error.stdout : '';
+  return [message, stderr, stdout]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .join('\n');
+};
+
+const nonRepositoryStatus = () => ({
+  isGitRepository: false,
+  files: [],
+  branch: null,
+  ahead: 0,
+  behind: 0,
+});
+
+export function registerGitRoutes(app, {
+  resolveZenModel = async (override) => override || 'gpt-5-nano',
+  generateCommitMessage = generateCommitMessageDirect,
+  loadGitLibraries,
+} = {}) {
   registerCommitTemplateRoutes(app);
 
   let gitLibraries = null;
   const getGitLibraries = async () => {
     if (!gitLibraries) {
-      gitLibraries = await import('./index.js');
+      gitLibraries = typeof loadGitLibraries === 'function'
+        ? await loadGitLibraries()
+        : await import('./index.js');
     }
     return gitLibraries;
   };
@@ -194,17 +218,7 @@ export function registerGitRoutes(app, { resolveZenModel = async (override) => o
   });
 
   app.get('/api/git/status', async (req, res) => {
-    const { getStatus, isGitRepository } = await getGitLibraries();
-
-    const extractGitErrorText = (error) => {
-      const message = typeof error?.message === 'string' ? error.message : '';
-      const stderr = typeof error?.stderr === 'string' ? error.stderr : '';
-      const stdout = typeof error?.stdout === 'string' ? error.stdout : '';
-      return [message, stderr, stdout]
-        .map((value) => String(value || '').trim())
-        .filter(Boolean)
-        .join('\n');
-    };
+    const { getStatus, isGitRepository, isMissingDirectoryError } = await getGitLibraries();
 
     try {
       const directory = req.query.directory;
@@ -214,7 +228,7 @@ export function registerGitRoutes(app, { resolveZenModel = async (override) => o
 
       const isRepo = await isGitRepository(directory);
       if (!isRepo) {
-        return res.json({ isGitRepository: false, files: [], branch: null, ahead: 0, behind: 0 });
+        return res.json(nonRepositoryStatus());
       }
 
       const mode = req.query.mode === 'light' ? 'light' : undefined;
@@ -222,8 +236,9 @@ export function registerGitRoutes(app, { resolveZenModel = async (override) => o
       res.json(status);
     } catch (error) {
       const errorText = extractGitErrorText(error);
-      if (/not a git repository/i.test(errorText)) {
-        return res.json({ isGitRepository: false, files: [], branch: null, ahead: 0, behind: 0 });
+      if (/not a git repository|repository root does not match requested project directory/i.test(errorText)
+        || isMissingDirectoryError?.(error, req.query.directory)) {
+        return res.json(nonRepositoryStatus());
       }
       console.error('Failed to get git status:', error);
       res.status(500).json({ error: error.message || 'Failed to get git status' });
@@ -690,7 +705,7 @@ export function registerGitRoutes(app, { resolveZenModel = async (override) => o
 
       const requestedModel = typeof requestedZenModel === 'string' ? requestedZenModel.trim() : '';
       const zenModel = await resolveZenModel(requestedModel || COMMIT_GENERATION_DEFAULT_ZEN_MODEL);
-      const message = await generateCommitMessageDirect({
+      const message = await generateCommitMessage({
         context,
         guidance: typeof guidance === 'string' ? guidance : undefined,
         zenModel,
@@ -897,7 +912,11 @@ export function registerGitRoutes(app, { resolveZenModel = async (override) => o
       res.json(created);
     } catch (error) {
       console.error('Failed to create worktree:', error);
-      res.status(500).json({ error: error.message || 'Failed to create worktree' });
+      res.status(error?.statusCode || 500).json({
+        error: error.message || 'Failed to create worktree',
+        ...(error?.operationId ? { operationId: error.operationId } : {}),
+        ...(error?.bootstrap ? { bootstrap: error.bootstrap } : {}),
+      });
     }
   });
 
@@ -937,7 +956,50 @@ export function registerGitRoutes(app, { resolveZenModel = async (override) => o
       res.json(status);
     } catch (error) {
       console.error('Failed to get worktree bootstrap status:', error);
-      res.status(500).json({ error: error.message || 'Failed to get worktree bootstrap status' });
+      res.status(error?.statusCode || 500).json({ error: error.message || 'Failed to get worktree bootstrap status' });
+    }
+  });
+
+  app.get('/api/git/worktrees/operations/:operationId', async (req, res) => {
+    const { getWorktreeBootstrapOperation } = await getGitLibraries();
+    if (typeof getWorktreeBootstrapOperation !== 'function') {
+      return res.status(501).json({ error: 'Worktree operation receipts are not available' });
+    }
+    try {
+      res.json(await getWorktreeBootstrapOperation(req.params.operationId));
+    } catch (error) {
+      res.status(error?.statusCode || 500).json({
+        error: error?.message || 'Failed to get worktree operation',
+      });
+    }
+  });
+
+  app.get('/api/git/worktrees/operations', async (req, res) => {
+    const { listActiveWorktreeBootstrapOperations } = await getGitLibraries();
+    if (typeof listActiveWorktreeBootstrapOperations !== 'function') {
+      return res.status(501).json({ error: 'Worktree operation receipts are not available' });
+    }
+    try {
+      const operations = await listActiveWorktreeBootstrapOperations();
+      res.json({ operations });
+    } catch (error) {
+      res.status(error?.statusCode || 500).json({
+        error: error?.message || 'Failed to list worktree operations',
+      });
+    }
+  });
+
+  app.post('/api/git/worktrees/operations/:operationId/retry', async (req, res) => {
+    const { retryWorktreeBootstrapOperation } = await getGitLibraries();
+    if (typeof retryWorktreeBootstrapOperation !== 'function') {
+      return res.status(501).json({ error: 'Worktree operation retry is not available' });
+    }
+    try {
+      res.json(await retryWorktreeBootstrapOperation(req.params.operationId));
+    } catch (error) {
+      res.status(error?.statusCode || 500).json({
+        error: error?.message || 'Failed to retry worktree operation',
+      });
     }
   });
 

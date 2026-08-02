@@ -21,6 +21,10 @@ const originalSlimPreset = process.env.OH_MY_OPENCODE_SLIM_PRESET;
 const originalDisableDefaultPlugins = process.env.OPENCODE_DISABLE_DEFAULT_PLUGINS;
 const originalDisableExternalSkills = process.env.OPENCODE_DISABLE_EXTERNAL_SKILLS;
 const originalDisableClaudeCodeSkills = process.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS;
+const originalBrowserDiscoveryUrl = process.env.DEVRYAN_BROWSER_CDP_DISCOVERY_URL;
+const originalBrowserToken = process.env.DEVRYAN_BROWSER_CDP_TOKEN;
+const originalAgentBrowserBinary = process.env.DEVRYAN_AGENT_BROWSER_BIN;
+const originalAgentBrowserConfig = process.env.AGENT_BROWSER_CONFIG;
 const originalFetch = globalThis.fetch;
 const tempDirs = [];
 
@@ -73,6 +77,15 @@ afterEach(() => {
     process.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS = originalDisableClaudeCodeSkills;
   } else {
     delete process.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS;
+  }
+  for (const [key, value] of Object.entries({
+    DEVRYAN_BROWSER_CDP_DISCOVERY_URL: originalBrowserDiscoveryUrl,
+    DEVRYAN_BROWSER_CDP_TOKEN: originalBrowserToken,
+    DEVRYAN_AGENT_BROWSER_BIN: originalAgentBrowserBinary,
+    AGENT_BROWSER_CONFIG: originalAgentBrowserConfig,
+  })) {
+    if (typeof value === 'string') process.env[key] = value;
+    else delete process.env[key];
   }
 });
 
@@ -189,6 +202,29 @@ describe('OpenCode lifecycle', () => {
     await server.close();
   });
 
+  it('prepares managed browser provisioning before skill-aware runtime sync', async () => {
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n'));
+      return child;
+    });
+    const calls = [];
+    const runtime = createRuntime({
+      getManagedBrowserEnvironment: vi.fn(async () => { calls.push('browser'); return {}; }),
+      provisionUserProfile: vi.fn(async () => { calls.push('profile'); return { ok: true, changed: false, conflicts: [] }; }),
+      syncPackagedAgents: vi.fn(async () => { calls.push('agents'); return { changed: false, conflicts: [] }; }),
+      syncRuntimeAgentOverlays: vi.fn(async () => {
+        calls.push('overlays');
+        return { changed: false, targetConfigDirectory: '/tmp/overlay', conflicts: [] };
+      }),
+    });
+
+    const server = await runtime.startOpenCode();
+
+    expect(calls).toEqual(['browser', 'profile', 'agents', 'overlays']);
+    await server.close();
+  });
+
   it('fails managed startup when required user plugins cannot be installed', async () => {
     const provisionUserProfile = vi.fn(async () => ({ ok: false, error: 'network unavailable' }));
     const runtime = createRuntime({ provisionUserProfile });
@@ -291,6 +327,38 @@ describe('OpenCode lifecycle', () => {
     expect(options.env.DEVRYAN_ORCHESTRATION_URL).toBe('http://127.0.0.1:43210/rpc');
     expect(options.env.DEVRYAN_ORCHESTRATION_TOKEN).toBe('opaque-private-token');
     expect(options.env.UNTRUSTED_EXTRA_KEY).toBeUndefined();
+    await server.close();
+  });
+
+  it('injects only the managed agent-browser contract and scrubs inherited browser config', async () => {
+    process.env.DEVRYAN_BROWSER_CDP_DISCOVERY_URL = 'http://127.0.0.1:9999/untrusted';
+    process.env.DEVRYAN_BROWSER_CDP_TOKEN = 'untrusted-token';
+    process.env.DEVRYAN_AGENT_BROWSER_BIN = '/untrusted/agent-browser';
+    process.env.AGENT_BROWSER_CONFIG = '/untrusted/config.json';
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+    const getManagedBrowserEnvironment = vi.fn(async () => ({
+      DEVRYAN_BROWSER_CDP_DISCOVERY_URL: 'http://127.0.0.1:43211/api/desktop/browser-cdp',
+      DEVRYAN_BROWSER_CDP_TOKEN: 'managed-token',
+      DEVRYAN_AGENT_BROWSER_BIN: '/managed/agent-browser',
+      AGENT_BROWSER_CONFIG: '/must/not/pass',
+    }));
+    const runtime = createRuntime({ getManagedBrowserEnvironment });
+
+    const server = await runtime.startOpenCode();
+    const [, , options] = spawnMock.mock.calls[0];
+
+    expect(getManagedBrowserEnvironment).toHaveBeenCalledTimes(1);
+    expect(options.env.DEVRYAN_BROWSER_CDP_DISCOVERY_URL)
+      .toBe('http://127.0.0.1:43211/api/desktop/browser-cdp');
+    expect(options.env.DEVRYAN_BROWSER_CDP_TOKEN).toBe('managed-token');
+    expect(options.env.DEVRYAN_AGENT_BROWSER_BIN).toBe('/managed/agent-browser');
+    expect(options.env.AGENT_BROWSER_CONFIG).toBeUndefined();
     await server.close();
   });
 
@@ -631,16 +699,98 @@ describe('OpenCode lifecycle', () => {
     await runtime.__testState.openCodeProcess.close();
   });
 
-  it('does not fire the restart callback after a failed restart', async () => {
+  it('holds managed browser lease admission closed across managed child replacement', async () => {
+    const order = [];
+    let releasePause;
+    const pauseGate = new Promise((resolve) => { releasePause = resolve; });
+    const resetHandle = { epoch: 2 };
+    const existingProcess = {
+      close: vi.fn(async () => { order.push('process-close'); }),
+    };
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      order.push('spawn');
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+    const pauseManagedBrowserLeases = vi.fn(async (reason) => {
+      order.push(`leases:pause:${reason}`);
+      await pauseGate;
+      return resetHandle;
+    });
+    const resumeManagedBrowserLeases = vi.fn(async (handle) => {
+      expect(handle).toBe(resetHandle);
+      order.push('leases:resume');
+      return true;
+    });
+    const runtime = createRuntime({
+      initialState: {
+        openCodeProcess: existingProcess,
+        openCodePort: 45678,
+      },
+      pauseManagedBrowserLeases,
+      resumeManagedBrowserLeases,
+    });
+
+    const restart = runtime.restartOpenCode();
+    await vi.waitFor(() => expect(pauseManagedBrowserLeases).toHaveBeenCalledOnce());
+    expect(existingProcess.close).not.toHaveBeenCalled();
+    expect(spawnMock).not.toHaveBeenCalled();
+    releasePause();
+    await restart;
+
+    expect(order.slice(0, 4)).toEqual([
+      'leases:pause:opencode_restart',
+      'process-close',
+      'spawn',
+      'leases:resume',
+    ]);
+    expect(resumeManagedBrowserLeases).toHaveBeenCalledOnce();
+    await runtime.__testState.openCodeProcess.close();
+  });
+
+  it('does not touch managed browser leases while re-probing an external OpenCode runtime', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ healthy: true }),
+    }));
+    const pauseManagedBrowserLeases = vi.fn();
+    const resumeManagedBrowserLeases = vi.fn();
+    const runtime = createRuntime({
+      initialState: {
+        isExternalOpenCode: true,
+        openCodePort: 45678,
+      },
+      pauseManagedBrowserLeases,
+      resumeManagedBrowserLeases,
+    });
+
+    await runtime.restartOpenCode();
+
+    expect(pauseManagedBrowserLeases).not.toHaveBeenCalled();
+    expect(resumeManagedBrowserLeases).not.toHaveBeenCalled();
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('resumes managed browser lease admission after a failed restart', async () => {
     const onOpenCodeRestarted = vi.fn();
+    const resetHandle = { epoch: 3 };
+    const pauseManagedBrowserLeases = vi.fn(async () => resetHandle);
+    const resumeManagedBrowserLeases = vi.fn(async () => true);
     const runtime = createRuntime({
       initialState: { openCodePort: 45678 },
       provisionUserProfile: vi.fn(async () => ({ ok: false, error: 'profile unavailable' })),
+      pauseManagedBrowserLeases,
+      resumeManagedBrowserLeases,
       onOpenCodeRestarted,
     });
 
     await expect(runtime.restartOpenCode()).rejects.toThrow('profile unavailable');
 
+    expect(pauseManagedBrowserLeases).toHaveBeenCalledWith('opencode_restart');
+    expect(resumeManagedBrowserLeases).toHaveBeenCalledWith(resetHandle);
     expect(onOpenCodeRestarted).not.toHaveBeenCalled();
   });
 

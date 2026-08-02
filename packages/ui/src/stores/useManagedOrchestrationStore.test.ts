@@ -180,6 +180,70 @@ describe('managed orchestration store', () => {
     )).toBe(true);
   });
 
+  test('keeps manual recovery indexed for every failed sibling child', () => {
+    const store = createManagedOrchestrationStore({ api: fakeApi() });
+    const tasks = [
+      {
+        ...taskRecord(1, 'failed', {
+          agent: 'designer',
+          childSessionId: 'ses_child_designer',
+          failureReason: 'Usage limit reached',
+        }),
+        dispatchGroupId: 'msg_parent',
+      },
+      {
+        ...taskRecord(2, 'failed', {
+          agent: 'fixer',
+          childSessionId: 'ses_child_fixer_a',
+          failureReason: 'Managed task timed out',
+          attempt: 2,
+          priorTaskId: 'dvr_task_fixer_a_initial',
+          executionKind: 'resume',
+        }),
+        dispatchGroupId: 'msg_parent',
+      },
+      {
+        ...taskRecord(3, 'failed', {
+          agent: 'fixer',
+          childSessionId: 'ses_child_fixer_b',
+          failureReason: 'Managed task timed out',
+          attempt: 2,
+          priorTaskId: 'dvr_task_fixer_b_initial',
+          executionKind: 'resume',
+        }),
+        dispatchGroupId: 'msg_parent',
+      },
+    ];
+    const projected = tasks.map((task, index) => {
+      const envelope = createManagedTaskResultEnvelope(task, {
+        sequence: index + 1,
+        createdAt: 4_000 + index,
+        resumable: true,
+      });
+      const taskProjection = toManagedTaskEvent(task, envelope).properties.task;
+      store.getState().ingestEvent(taskEvent(taskProjection, envelope));
+      return { envelope, task, taskProjection };
+    });
+
+    expect(store.getState().manualRecoveryTaskIdByChildSessionId).toEqual({
+      ses_child_designer: tasks[0].taskId,
+      ses_child_fixer_a: tasks[1].taskId,
+      ses_child_fixer_b: tasks[2].taskId,
+    });
+
+    store.getState().ingestEvent(taskEvent(projected[1].taskProjection, {
+      ...projected[1].envelope,
+      acknowledgedAt: 5_000,
+      action: 'retry_in_place',
+      followUpTaskId: 'dvr_task_fixer_a_manual',
+    }));
+
+    expect(store.getState().manualRecoveryTaskIdByChildSessionId).toEqual({
+      ses_child_designer: tasks[0].taskId,
+      ses_child_fixer_b: tasks[2].taskId,
+    });
+  });
+
   test('indexes only final manual recovery and clears or restores it with the envelope lifecycle', () => {
     const store = createManagedOrchestrationStore({ api: fakeApi() });
     const firstFailed = {

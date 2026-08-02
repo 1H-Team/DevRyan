@@ -98,20 +98,35 @@ export interface TurnIndexes {
 export interface PlanTurnTraceEntry {
     sessionId: string | null;
     planVersion: number;
+    /** Root turn of the logical plan revision — the user-authored request. */
     turnId: string;
     userMessageId: string;
+    /** Root turn plus folded compaction/synthetic continuation turns, in order. */
+    memberTurnIds: string[];
+    /** Member turn containing the selected source message. */
+    sourceTurnId: string | null;
+    isPlanModeRevision: boolean;
     assistantSourceMessageId: string | null;
     assistantParentMessageId: string | null;
     completedAt: number | null;
     isLatestPlan: boolean;
     isSuperseded: boolean;
+    /** True once every assistant sibling across member turns has completed. */
+    isSettled: boolean;
     isActionable: boolean;
 }
 
+export type PlanRevisionMessageRole = 'before-source' | 'source' | 'after-source';
+
 export interface PlanTurnTraceIndex {
     entries: PlanTurnTraceEntry[];
+    /** Keyed by every member turn id (root and folded continuations). */
     byTurnId: Map<string, PlanTurnTraceEntry>;
     bySourceMessageId: Map<string, PlanTurnTraceEntry>;
+    /** Position of each assistant sibling relative to its revision's source. */
+    messageRoleById: Map<string, PlanRevisionMessageRole>;
+    /** Member turns rendered as no output because they follow the source turn. */
+    suppressedTurnIds: Set<string>;
     latestPlanTurnId: string | null;
     latestPlanSourceMessageId: string | null;
     pendingPlanTurnId: string | null;

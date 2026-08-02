@@ -1,11 +1,17 @@
 import { createProjectIdFromPath } from '../projects/project-id.js';
 
 const DEFAULT_NOTIFICATION_TEMPLATES = {
-  completion: { title: '{agent_name} is ready', message: '{model_name} completed the task' },
+  completion: { title: 'Session complete', message: '{session_name} is ready to review' },
+  planReady: { title: 'Plan ready', message: 'A plan is ready for review' },
   error: { title: 'Tool error', message: '{last_message}' },
   question: { title: 'Input needed', message: '{last_message}' },
   subtask: { title: '{agent_name} is ready', message: '{model_name} completed the task' },
 };
+
+const LEGACY_COMPLETION_NOTIFICATION_TEMPLATES = [
+  { title: '{agent_name} is ready', message: '{model_name} completed the task' },
+  { title: '{agent_name} is ready', message: '{last_message}' },
+];
 
 const THEME_CATALOG_VERSION = 2;
 const DEFAULT_LIGHT_THEME_ID = 'devryan-default-light';
@@ -23,8 +29,19 @@ const ensureNotificationTemplateShape = (templates) => {
   for (const event of Object.keys(DEFAULT_NOTIFICATION_TEMPLATES)) {
     const currentEntry = input[event];
     const base = DEFAULT_NOTIFICATION_TEMPLATES[event];
-    const currentTitle = typeof currentEntry?.title === 'string' ? currentEntry.title : base.title;
-    const currentMessage = typeof currentEntry?.message === 'string' ? currentEntry.message : base.message;
+    const isLegacyCompletion = event === 'completion'
+      && LEGACY_COMPLETION_NOTIFICATION_TEMPLATES.some((legacy) => (
+        currentEntry?.title === legacy.title && currentEntry?.message === legacy.message
+      ));
+    const currentTitle = isLegacyCompletion
+      ? base.title
+      : (typeof currentEntry?.title === 'string' ? currentEntry.title : base.title);
+    const currentMessage = isLegacyCompletion
+      ? base.message
+      : (typeof currentEntry?.message === 'string' ? currentEntry.message : base.message);
+    if (isLegacyCompletion) {
+      changed = true;
+    }
     if (!currentEntry || typeof currentEntry.title !== 'string' || typeof currentEntry.message !== 'string') {
       changed = true;
     }
@@ -633,11 +650,15 @@ export const createSettingsRuntime = (deps) => {
     const next = { ...settings };
 
     if (typeof settings.notifyOnSubtasks !== 'boolean') {
-      next.notifyOnSubtasks = true;
+      next.notifyOnSubtasks = false;
       changed = true;
     }
     if (typeof settings.notifyOnCompletion !== 'boolean') {
       next.notifyOnCompletion = true;
+      changed = true;
+    }
+    if (typeof settings.notifyOnPlanReady !== 'boolean') {
+      next.notifyOnPlanReady = true;
       changed = true;
     }
     if (typeof settings.notifyOnError !== 'boolean') {

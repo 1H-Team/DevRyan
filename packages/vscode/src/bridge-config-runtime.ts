@@ -41,11 +41,20 @@ import {
 import type { BridgeContext, BridgeResponse } from './bridge';
 import { OPENCODE_TARGET_INSTALL_COMMAND, TARGET_OPENCODE_VERSION } from './opencodeVersionPolicy';
 import type { GlobalAgentsMdRuntime } from './globalAgentsMdRuntime';
+import { isRetiredDevRyanSkillName } from '../../web/server/lib/opencode/skill-policy.js';
 
 type BridgeMessageInput = {
   id: string;
   type: string;
   payload?: unknown;
+};
+
+type OpenCodeUpdateInfo = {
+  currentVersion: string | null;
+  latestVersion: string;
+  supportedVersion: string;
+  updateAvailable: boolean | null;
+  supportStatus: 'supported' | 'older' | 'newer' | 'unknown';
 };
 
 type ConfigRuntimeDeps = {
@@ -58,6 +67,10 @@ type ConfigRuntimeDeps = {
   fetchOpenCodeSkillsFromApi: (ctx: BridgeContext | undefined, workingDirectory?: string) => Promise<DiscoveredSkill[] | null>;
   clientReloadDelayMs: number;
   getGlobalAgentsMdRuntime: (ctx?: BridgeContext) => GlobalAgentsMdRuntime;
+  checkForOpenCodeUpdates: (input: {
+    currentVersion: string | null;
+    supportedVersion: string;
+  }) => Promise<OpenCodeUpdateInfo>;
 };
 
 const resolveWorkingDirectory = (ctx: BridgeContext | undefined, directory?: string): string | undefined => (
@@ -154,6 +167,10 @@ const filterVisibleSkills = (skills: DiscoveredSkill[], hiddenSkills: HiddenSkil
   let changed = false;
 
   for (const skill of skills) {
+    if (isRetiredDevRyanSkillName(skill.name)) {
+      changed = true;
+      continue;
+    }
     if (skill.source === 'claude') {
       changed = true;
       continue;
@@ -201,6 +218,9 @@ const findSkillByIdentity = (
   scope: SkillScope | 'all',
   strictPath = false,
 ): DiscoveredSkill | null => {
+  if (isRetiredDevRyanSkillName(skillName)) {
+    return null;
+  }
   const normalizedRequestedPath = normalizeSkillPath(requestedPath);
   if (normalizedRequestedPath) {
     const byPath = skills.find((skill) => (
@@ -373,6 +393,24 @@ export async function handleConfigBridgeMessage(
           bun: null,
         },
       };
+    }
+
+    case 'api:opencode:update-check': {
+      const currentVersion = ctx?.manager?.getDebugInfo()?.version ?? null;
+      try {
+        const updateInfo = await deps.checkForOpenCodeUpdates({
+          currentVersion,
+          supportedVersion: TARGET_OPENCODE_VERSION,
+        });
+        return { id, type, success: true, data: updateInfo };
+      } catch (error) {
+        return {
+          id,
+          type,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unable to check the latest OpenCode version',
+        };
+      }
     }
 
     case 'api:config/settings:get': {

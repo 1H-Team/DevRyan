@@ -6,6 +6,7 @@ import {
   RiArrowUpSLine,
   RiCheckboxCircleLine,
   RiCloseCircleLine,
+  RiErrorWarningLine,
   RiRecordCircleLine,
   RiTimeLine,
 } from "@remixicon/react";
@@ -148,6 +149,10 @@ interface StatusRowProps {
   wasAborted?: boolean;
   abortActive?: boolean;
   retryInfo?: { attempt?: number; next?: number } | null;
+  providerStallStatusText?: string | null;
+  providerStallPending?: boolean;
+  providerStallError?: string | null;
+  onResolveProviderStall?: () => void;
   // Abort state (for mobile/vscode)
   showAbort?: boolean;
   onAbort?: () => void;
@@ -167,6 +172,10 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   wasAborted,
   abortActive,
   retryInfo,
+  providerStallStatusText,
+  providerStallPending,
+  providerStallError,
+  onResolveProviderStall,
   showAbort,
   onAbort,
   showAbortStatus,
@@ -282,7 +291,8 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   const hasAssistantContent = showAssistantStatus && (
     isWorking ||
     Boolean(wasAborted) ||
-    Boolean(showAbortStatus)
+    Boolean(showAbortStatus) ||
+    Boolean(providerStallStatusText)
   );
   const hasLeftAccessory = Boolean(leftAccessory);
   // Original logic from ChatInput
@@ -386,6 +396,19 @@ export const StatusRow: React.FC<StatusRowProps> = ({
       </TooltipContent>
     </Tooltip>
   ) : null;
+  const resolveProviderStallButton = providerStallStatusText && onResolveProviderStall ? (
+    <button
+      type="button"
+      className="typography-ui-label shrink-0 text-[var(--status-warning)] transition-opacity hover:opacity-80 disabled:cursor-wait disabled:opacity-50"
+      disabled={providerStallPending}
+      onClick={onResolveProviderStall}
+      aria-label={t('chat.statusRow.providerStall.actionAria')}
+    >
+      {providerStallPending
+        ? t('chat.statusRow.providerStall.stopping')
+        : t('chat.statusRow.providerStall.action')}
+    </button>
+  ) : null;
 
   // Don't render if nothing to show
   if (!hasContent) {
@@ -403,6 +426,17 @@ export const StatusRow: React.FC<StatusRowProps> = ({
                 <RiCloseCircleLine size={16} aria-hidden="true" />
                 {t('chat.statusRow.aborted')}
               </span>
+            </div>
+          ) : providerStallStatusText ? (
+            <div
+              className={cn(
+                "flex min-w-0 items-center gap-1.5 pl-0.5 typography-ui-label",
+                providerStallError ? "text-[var(--status-error)]" : "text-[var(--status-warning)]",
+              )}
+              title={providerStallError ?? providerStallStatusText}
+            >
+              <RiErrorWarningLine size={16} className="shrink-0" aria-hidden="true" />
+              <span className="truncate">{providerStallError ?? providerStallStatusText}</span>
             </div>
           ) : showAssistantStatus && shouldRenderPlaceholder ? (
             <WorkingPlaceholder
@@ -422,6 +456,7 @@ export const StatusRow: React.FC<StatusRowProps> = ({
         {/* Right: Abort (mobile only) + Todo + View Plan */}
         <div className={cn("relative flex items-center gap-2 flex-shrink-0", hasLeftAccessory ? "pr-1.5" : "-mr-3")} ref={popoverRef}>
           {abortButton}
+          {resolveProviderStallButton}
           {todoTrigger}
           {viewPlanButton}
 

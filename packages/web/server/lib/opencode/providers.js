@@ -18,6 +18,11 @@ import {
   isAnthropicOAuthPluginSpec,
   reconcileAnthropicOAuthPluginSpecs,
 } from './anthropic-oauth-plugin.js';
+import {
+  DEVRYAN_MANAGED_PLUGIN_IDS,
+  getDevRyanManagedPluginRegistrationForConfigPath,
+  getDevRyanManagedPluginForSpec,
+} from './managed-plugins.js';
 
 const ANTHROPIC_OAUTH_PROVIDER_IDS = new Set([
   'anthropic',
@@ -29,7 +34,9 @@ const ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID = 'anthropic';
 const ANTHROPIC_OAUTH_PLUGIN_NAME = ANTHROPIC_OAUTH_PLUGIN_PACKAGE;
 const ANTHROPIC_OAUTH_DEFAULT_BASE_URL = 'http://127.0.0.1:3456';
 const CURSOR_ACP_PROVIDER_ID = 'cursor-acp';
-const CURSOR_ACP_PLUGIN_NAME = '@rama_nigg/open-cursor@latest';
+const CURSOR_ACP_PLUGIN_NAME = getDevRyanManagedPluginRegistrationForConfigPath(
+  DEVRYAN_MANAGED_PLUGIN_IDS.OPEN_CURSOR,
+);
 const CURSOR_ACP_NPM_PROVIDER = '@ai-sdk/openai-compatible';
 const CURSOR_ACP_DEFAULT_BASE_URL = 'http://127.0.0.1:32124/v1';
 const CURSOR_ACP_PROXY_HEALTH_URL = 'http://127.0.0.1:32124/health';
@@ -235,7 +242,16 @@ function ensureAnthropicOAuthProviderConfig({
   const targetConfig = workingDirectory ? layers.projectConfig : layers.userConfig;
 
   const plugin = Array.isArray(targetConfig.plugin) ? [...targetConfig.plugin] : [];
-  const nextPlugin = reconcileAnthropicOAuthPluginSpecs(plugin);
+  const nextPlugin = reconcileAnthropicOAuthPluginSpecs(
+    plugin,
+    getDevRyanManagedPluginRegistrationForConfigPath(
+      DEVRYAN_MANAGED_PLUGIN_IDS.CLAUDE,
+      {
+        configDirectory: OPENCODE_CONFIG_DIR,
+        configPath: targetPath || CONFIG_FILE,
+      },
+    ),
+  );
 
   const provider = isPlainObject(targetConfig.provider) ? targetConfig.provider : {};
   const existingAnthropic = isPlainObject(provider[ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID])
@@ -295,7 +311,9 @@ function resolveDefaultCursorAcpUserConfigPath(userConfigPath = null) {
 
 function hasCursorAcpPlugin(config) {
   const plugins = Array.isArray(config?.plugin) ? config.plugin : [];
-  return plugins.includes(CURSOR_ACP_PLUGIN_NAME);
+  return plugins.some((entry) => (
+    getDevRyanManagedPluginForSpec(entry)?.id === DEVRYAN_MANAGED_PLUGIN_IDS.OPEN_CURSOR
+  ));
 }
 
 function normalizeCursorModelName(model) {

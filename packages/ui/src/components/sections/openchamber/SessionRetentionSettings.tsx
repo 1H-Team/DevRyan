@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { RiInformationLine, RiRestartLine } from '@remixicon/react';
+import { RiDeleteBinLine, RiDownloadLine, RiInformationLine, RiLoaderLine, RiRestartLine } from '@remixicon/react';
 import { toast } from '@/components/ui';
 import { NumberInput } from '@/components/ui/number-input';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,17 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useSessionAutoCleanup } from '@/hooks/useSessionAutoCleanup';
 import { useI18n } from '@/lib/i18n';
 import { clearDesktopCache, getDesktopCacheInfo, isDesktopLocalOriginActive, isElectronShell } from '@/lib/desktop';
-import { formatCacheSize } from './applicationCache';
+import { formatBytes } from '@/lib/formatBytes';
+import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
+import type { DiagnosticsStatus } from '@/lib/api/types';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 const MIN_DAYS = 1;
 const MAX_DAYS = 365;
@@ -21,96 +31,203 @@ const RETENTION_ACTION_OPTIONS = [
 
 type CacheSizeStatus = 'loading' | 'ready' | 'unavailable';
 
-const ApplicationCacheCleanup: React.FC = () => {
+const DiagnosticDataCleanup: React.FC = () => {
   const { t } = useI18n();
-  const isAvailable = isElectronShell() && isDesktopLocalOriginActive();
-  const [sizeBytes, setSizeBytes] = React.useState(0);
-  const [sizeStatus, setSizeStatus] = React.useState<CacheSizeStatus>('loading');
-  const [isClearing, setIsClearing] = React.useState(false);
+  const { diagnostics } = useRuntimeAPIs();
+  const hasDesktopCache = isElectronShell() && isDesktopLocalOriginActive();
+  const [status, setStatus] = React.useState<DiagnosticsStatus | null>(null);
+  const [cacheSizeBytes, setCacheSizeBytes] = React.useState(0);
+  const [cacheSizeStatus, setCacheSizeStatus] = React.useState<CacheSizeStatus>('loading');
+  const [exporting, setExporting] = React.useState(false);
+  const [clearOpen, setClearOpen] = React.useState(false);
+  const [clearing, setClearing] = React.useState(false);
 
   React.useEffect(() => {
-    if (!isAvailable) return;
+    let cancelled = false;
+    if (!diagnostics) return;
+    void diagnostics.getStatus()
+      .then((nextStatus) => {
+        if (!cancelled) setStatus(nextStatus);
+      })
+      .catch(() => {
+        if (!cancelled) setStatus(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [diagnostics]);
 
-    let isActive = true;
+  React.useEffect(() => {
+    if (!hasDesktopCache) return;
+    let cancelled = false;
     void getDesktopCacheInfo()
       .then((info) => {
-        if (!isActive) return;
+        if (cancelled) return;
         if (!info) {
-          setSizeStatus('unavailable');
+          setCacheSizeStatus('unavailable');
           return;
         }
-        setSizeBytes(info.sizeBytes);
-        setSizeStatus('ready');
+        setCacheSizeBytes(info.sizeBytes);
+        setCacheSizeStatus('ready');
       })
       .catch((error) => {
         console.warn('Failed to load application cache size', error);
-        if (isActive) setSizeStatus('unavailable');
+        if (!cancelled) setCacheSizeStatus('unavailable');
       });
-
     return () => {
-      isActive = false;
+      cancelled = true;
     };
-  }, [isAvailable]);
+  }, [hasDesktopCache]);
 
-  const handleClearCache = React.useCallback(async () => {
-    setIsClearing(true);
+  const exportDiagnostics = React.useCallback(async () => {
+    if (!diagnostics || exporting) return;
+    setExporting(true);
     try {
-      const info = await clearDesktopCache();
-      if (!info) {
-        setSizeStatus('unavailable');
-        toast.error(t('settings.openchamber.sessionRetention.applicationCache.toast.clearFailed'));
-        return;
+      const result = await diagnostics.export({ scope: 'runtime' });
+      if (!result.cancelled) {
+        toast.success(t('settings.openchamber.about.diagnostics.exported', { fileName: result.fileName }));
       }
-      setSizeBytes(info.sizeBytes);
-      setSizeStatus('ready');
-      toast.success(t('settings.openchamber.sessionRetention.applicationCache.toast.cleared'));
     } catch (error) {
-      console.warn('Failed to clear application cache', error);
-      setSizeStatus('unavailable');
-      toast.error(t('settings.openchamber.sessionRetention.applicationCache.toast.clearFailed'));
+      toast.error(t('settings.openchamber.about.diagnostics.failed'), {
+        description: error instanceof Error ? error.message : undefined,
+      });
     } finally {
-      setIsClearing(false);
+      setExporting(false);
     }
-  }, [t]);
+  }, [diagnostics, exporting, t]);
 
-  if (!isAvailable) return null;
+  const clearAllData = React.useCallback(async () => {
+    if (!diagnostics || clearing) return;
+    setClearing(true);
+    try {
+      await diagnostics.clear();
+      let cacheClearFailed = false;
+      if (hasDesktopCache) {
+        try {
+          const clearedCache = await clearDesktopCache();
+          if (!clearedCache) throw new Error('Application cache cleanup is unavailable');
+        } catch (error) {
+          cacheClearFailed = true;
+          console.warn('Failed to clear application cache', error);
+        }
+      }
 
-  let sizeLabel: string;
-  if (sizeStatus === 'loading') {
-    sizeLabel = t('settings.openchamber.sessionRetention.applicationCache.state.loadingSize');
-  } else if (sizeStatus === 'unavailable') {
-    sizeLabel = t('settings.openchamber.sessionRetention.applicationCache.state.sizeUnavailable');
+      const refreshedStatus = await diagnostics.getStatus();
+      setStatus(refreshedStatus);
+      if (hasDesktopCache) {
+        try {
+          const cacheInfo = await getDesktopCacheInfo();
+          if (!cacheInfo) throw new Error('Application cache size is unavailable');
+          setCacheSizeBytes(cacheInfo.sizeBytes);
+          setCacheSizeStatus('ready');
+        } catch (error) {
+          cacheClearFailed = true;
+          setCacheSizeStatus('unavailable');
+          console.warn('Failed to refresh application cache size', error);
+        }
+      }
+      setClearOpen(false);
+      if (cacheClearFailed) {
+        toast.error(t('settings.openchamber.about.diagnostics.clearPartialFailed'));
+      } else {
+        toast.success(t('settings.openchamber.about.diagnostics.cleared'));
+      }
+    } catch (error) {
+      toast.error(t('settings.openchamber.about.diagnostics.clearFailed'), {
+        description: error instanceof Error ? error.message : undefined,
+      });
+    } finally {
+      setClearing(false);
+    }
+  }, [clearing, diagnostics, hasDesktopCache, t]);
+
+  if (!diagnostics) return null;
+
+  let cacheStatusLabel = '';
+  if (cacheSizeStatus === 'loading') {
+    cacheStatusLabel = t('settings.openchamber.about.diagnostics.cacheLoading');
+  } else if (cacheSizeStatus === 'unavailable') {
+    cacheStatusLabel = t('settings.openchamber.about.diagnostics.cacheUnavailable');
   } else {
-    sizeLabel = t('settings.openchamber.sessionRetention.applicationCache.state.size', {
-      size: formatCacheSize(sizeBytes),
+    cacheStatusLabel = t('settings.openchamber.about.diagnostics.cacheLine', {
+      size: formatBytes(cacheSizeBytes),
     });
   }
 
   return (
-    <div className="pt-2 space-y-1">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-8">
-        <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
-          <p className="typography-meta text-foreground font-medium">
-            {t('settings.openchamber.sessionRetention.applicationCache.title')}
+    <>
+      <div className="border-t border-border/40 pt-3 space-y-1">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-8">
+          <div className="flex min-w-0 flex-col sm:w-56 shrink-0">
+            <p className="typography-meta text-foreground font-medium">
+              {t('settings.openchamber.about.diagnostics.title')}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 sm:w-fit">
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              onClick={() => { void exportDiagnostics(); }}
+              disabled={exporting || clearing}
+              className="!font-normal normal-case"
+            >
+              {exporting
+                ? <RiLoaderLine className="mr-1 h-3.5 w-3.5 animate-spin" />
+                : <RiDownloadLine className="mr-1 h-3.5 w-3.5" />}
+              {t('settings.openchamber.about.diagnostics.export')}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="xs"
+              onClick={() => setClearOpen(true)}
+              disabled={exporting || clearing}
+              className="!font-normal normal-case"
+            >
+              <RiDeleteBinLine className="mr-1 h-3.5 w-3.5" />
+              {t('settings.openchamber.about.diagnostics.clearAll')}
+            </Button>
+          </div>
+        </div>
+        <p className="typography-meta text-muted-foreground">
+          {status
+            ? t('settings.openchamber.about.diagnostics.health', {
+                size: formatBytes(status.diskBytes),
+                sessions: status.sessionCount,
+              })
+            : t('settings.openchamber.about.diagnostics.collecting')}
+        </p>
+        {hasDesktopCache && (
+          <p className="typography-meta text-muted-foreground">
+            {cacheStatusLabel}
           </p>
-        </div>
-        <div className="flex items-center gap-2 sm:w-fit">
-          <Button
-            type="button"
-            variant="outline"
-            size="xs"
-            onClick={handleClearCache}
-            disabled={isClearing}
-            className="!font-normal normal-case"
-          >
-            {isClearing
-              ? t('settings.openchamber.sessionRetention.applicationCache.actions.clearing')
-              : t('settings.openchamber.sessionRetention.applicationCache.actions.clear')}
-          </Button>
-        </div>
+        )}
       </div>
-      <p className="typography-meta text-muted-foreground">{sizeLabel}</p>
-    </div>
+
+      <Dialog open={clearOpen} onOpenChange={setClearOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('settings.openchamber.about.diagnostics.clearDialog.title')}</DialogTitle>
+            <DialogDescription>
+              {t(hasDesktopCache
+                ? 'settings.openchamber.about.diagnostics.clearDialog.descriptionDesktop'
+                : 'settings.openchamber.about.diagnostics.clearDialog.description')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClearOpen(false)} disabled={clearing}>
+              {t('settings.common.actions.cancel')}
+            </Button>
+            <Button variant="destructive" onClick={() => { void clearAllData(); }} disabled={clearing}>
+              {clearing
+                ? t('settings.openchamber.about.diagnostics.clearing')
+                : t('settings.openchamber.about.diagnostics.clearAll')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 
@@ -267,7 +384,7 @@ export const SessionRetentionSettings: React.FC = () => {
             ? t('settings.openchamber.sessionRetention.manualCleanup.eligibleArchiveNow', { count: pendingCount })
             : t('settings.openchamber.sessionRetention.manualCleanup.eligibleDeleteNow', { count: pendingCount })}
         </p>
-        <ApplicationCacheCleanup />
+        <DiagnosticDataCleanup />
       </div>
     </div>
   );

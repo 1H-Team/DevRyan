@@ -7,7 +7,7 @@ import yaml from 'yaml';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 16_625;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 16_634;
 
 const LOCAL_PATH_PATTERNS = [
   /(^|[\s"'`])\/Users\//,
@@ -273,8 +273,9 @@ describe('packaged agent defaults', () => {
     expect(content).toContain('wait for every dispatched task');
     expect(content).toContain('Disposition every collected non-provider-limit result');
     expect(content).toContain(
-      'If `wait` returns `queued`, `starting`, or `running`, immediately call `wait` again',
+      'Each `wait` stays attached while DevRyan repeats bounded polling slices internally',
     );
+    expect(content).toContain('use `status` only when a non-blocking live snapshot is explicitly needed');
     expect(content).toContain('Only after every result is dispositioned may you resume local work');
     expect(content).toContain('successful result requires `continue` after `wait`');
   });
@@ -384,7 +385,6 @@ describe('packaged agent defaults', () => {
       council_session: 'deny',
     });
     expect(frontmatter.permission).not.toHaveProperty('websearch_*');
-    expect(frontmatter.permission).not.toHaveProperty('context7_*');
     expect(frontmatter.permission).not.toHaveProperty('grep_app_*');
   });
 

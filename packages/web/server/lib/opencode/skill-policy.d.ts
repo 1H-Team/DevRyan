@@ -10,6 +10,12 @@ export type VisibleSkillPolicy = {
   runtimeExternalDirectories: string[];
 };
 
+export const RETIRED_DEVRYAN_SKILL_NAMES: readonly [
+  'test-driven-development',
+  'subagent-driven-development',
+];
+export function isRetiredDevRyanSkillName(value: unknown): boolean;
+
 export function buildVisibleSkillPolicy(input?: {
   skills?: SkillPolicyEntry[];
   hiddenSkills?: SkillPolicyEntry[];

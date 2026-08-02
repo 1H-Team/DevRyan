@@ -46,7 +46,7 @@ describe('oh-my-opencode-slim config adapter', () => {
       "preset": "openai",
       "presets": {
         "openai": {
-          "orchestrator": { "model": "openai/gpt-5.5", "variant": "medium", "skills": ["*"], "mcps": ["*", "!context7"] },
+          "orchestrator": { "model": "openai/gpt-5.5", "variant": "medium", "skills": ["*"], "mcps": ["*"] },
           "designer": { "model": "openai/gpt-5.4-mini", "variant": "medium", "skills": [], "mcps": [] },
           "fixer": { "model": "openai/gpt-5.5", "variant": "low", "skills": [], "mcps": [] },
           "observer": { "model": "openai/gpt-5.4-mini" }
@@ -59,7 +59,7 @@ describe('oh-my-opencode-slim config adapter', () => {
     }`);
     await writeJson(path.join(projectDirectory, '.opencode', 'oh-my-opencode-slim.json'), {
       agents: {
-        fixer: { variant: 'high', mcps: ['context7'] },
+        fixer: { variant: 'high', mcps: ['docs-mcp'] },
       },
     });
 
@@ -78,7 +78,7 @@ describe('oh-my-opencode-slim config adapter', () => {
       model: { providerID: 'openai', modelID: 'gpt-5.5' },
       modelRefs: ['openai/gpt-5.5'],
       variant: 'high',
-      mcps: ['context7'],
+      mcps: ['docs-mcp'],
     });
     expect(resolved.agents.orchestrator).toMatchObject({
       model: { providerID: 'openai', modelID: 'gpt-5.5' },

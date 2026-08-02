@@ -1,6 +1,7 @@
 import { getGitBranches, getGitStatus } from '@/lib/gitApi';
 import type { CreateWorktreeArgs, ProjectRef } from '@/lib/worktrees/worktreeManager';
 import { createWorktree } from '@/lib/worktrees/worktreeManager';
+import { waitForWorktreeBootstrap } from '@/lib/worktrees/worktreeBootstrap';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
 
 const parseTrackingRef = (tracking: string | null | undefined): { remote: string; branch: string } | null => {
@@ -116,5 +117,17 @@ export const createWorktreeWithDefaults = async (
   options?: { resolvedRootTrackingRemote?: string | null }
 ) => {
   const resolvedArgs = await withWorktreeUpstreamDefaults(project.path, args, options);
-  return createWorktree(project, resolvedArgs);
+  const metadata = await createWorktree(project, resolvedArgs);
+  try {
+    await waitForWorktreeBootstrap(
+      metadata.path,
+      undefined,
+      metadata.bootstrapOperationId,
+    );
+    return metadata;
+  } catch (cause) {
+    const error = cause instanceof Error ? cause : new Error(String(cause));
+    Object.assign(error, { worktreeMetadata: metadata });
+    throw error;
+  }
 };

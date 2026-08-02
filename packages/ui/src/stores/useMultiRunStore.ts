@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { devtools } from 'zustand/middleware';
+import { devtools } from './utils/devtoolsGate';
 import type { CreateMultiRunParams, CreateMultiRunResult } from '@/types/multirun';
 import { opencodeClient } from '@/lib/opencode/client';
 import { saveWorktreeSetupCommands } from '@/lib/openchamberConfig';

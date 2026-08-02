@@ -6,18 +6,25 @@ import {
   spawnManagedChild,
   stopChildTree,
 } from './dev-child-utils.mjs';
+import { resolveDevDataDirectory } from './dev-data-directory.mjs';
 import { shouldRestartDevChild } from './dev-restart-policy.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..');
 const restartDelayMs = Number.parseInt(process.env.OPENCHAMBER_DEV_RESTART_DELAY_MS || '1000', 10);
+const devDataDirectory = resolveDevDataDirectory({
+  env: process.env,
+  repoRoot,
+  scope: 'web-stack',
+});
 
 const baseDevEnv = {
   OPENCHAMBER_DEV_MODE: 'true',
   OPENCHAMBER_DEV_SHUTDOWN: 'true',
   OPENCHAMBER_ALLOW_DEV_SHUTDOWN: 'true',
   OPENCHAMBER_DEV_ORCHESTRATOR_PID: String(process.pid),
+  OPENCHAMBER_DATA_DIR: devDataDirectory,
 };
 
 /** @type {Array<{ label: string, command: string, args: string[], cwd?: string }>} */

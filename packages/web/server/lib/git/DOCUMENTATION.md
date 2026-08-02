@@ -48,7 +48,17 @@ The following functions are exported and used by the web server:
 - `getWorktrees(directory)`: List all git worktrees for a repository.
 - `getPrimaryWorktreeRoot(directory)`: Resolve the primary worktree root for a repository or linked worktree without going through generic command execution.
 - `validateWorktreeCreate(directory, input)`: Validate worktree creation parameters (mode, branchName, startRef, upstream config).
-- `createWorktree(directory, input)`: Create a new worktree (supports 'new' and 'existing' modes, upstream setup).
+- `createWorktree(directory, input)`: Create a new worktree through the shared
+  durable receipt state machine. The caller may provide `idempotencyKey`; the
+  response preserves the legacy fields and adds `operationId` plus `bootstrap`.
+- `getWorktreeBootstrapStatus(directory)`: Resolve the latest receipt by
+  directory. A receipt-less existing workspace directory (including a legacy
+  Git worktree or non-Git project) returns `not_applicable`; a missing directory
+  returns 404 rather than claiming readiness.
+- `getWorktreeBootstrapOperation(operationId)`,
+  `listActiveWorktreeBootstrapOperations()`, and
+  `retryWorktreeBootstrapOperation(operationId)`: durable reconnect/retry
+  operations mirrored by VS Code.
 - `removeWorktree(directory, input)`: Remove a worktree (optionally delete local branch).
 - `isLinkedWorktree(directory)`: Check if directory is a linked worktree (not primary).
 
@@ -61,6 +71,7 @@ The following functions are exported and used by the web server:
 ### Commit Message Generation
 - `POST /api/git/commit-message`: Accept bounded, pre-collected worktree context plus optional wording guidance and return `{ message: { subject, highlights } }`.
 - Generation uses the commit-specific free Zen model `deepseek-v4-flash-free` through the direct `opencode.ai/zen` API, with a 60-second request deadline. Explicit API model overrides remain supported, and the web runtime validates the preferred model against the live free-model catalog before falling back to another available free model. It never creates, prompts, switches, or deletes an OpenCode session.
+- Route registration accepts an injected direct generator for deterministic contract tests; production defaults to `generateCommitMessageDirect`.
 - Subjects must match the repository Conventional Commit types, remain at or below 72 characters, and omit trailing punctuation. The route does not stage, commit, or otherwise mutate Git state.
 - `removeRemote(directory, options)`: Remove a configured remote (except `origin`).
 - `deleteRemoteBranch(directory, options)`: Delete a remote branch.
@@ -98,6 +109,9 @@ The following functions are internal helpers used by exported functions:
 - `buildSshCommand(sshKeyPath)`: Build SSH command string for git config.
 - `buildGitEnv()`: Build Git environment with SSH_AUTH_SOCK resolution.
 - `createGit(directory)`: Create simple-git instance with environment.
+- `createGlobalConfigGit()`: Create the dedicated global-config client from a
+  stable existing directory; repository clients always require a non-empty
+  project directory.
 - `normalizeDirectoryPath(value)`: Normalize directory paths (supports ~ expansion).
 - `cleanBranchName(branch)`: Remove refs/heads/ or refs/ prefixes.
 - `parseWorktreePorcelain(raw)`: Parse `git worktree list --porcelain` output.
@@ -125,6 +139,22 @@ The following functions are internal helpers used by exported functions:
 - `name`: Worktree name.
 - `branch`: Local branch name.
 - `path`: Absolute path to worktree directory.
+- `operationId`: Opaque durable bootstrap operation ID.
+- `bootstrap`: Current receipt with per-stage status/timestamps/errors,
+  warnings, attempt number, and tombstone state.
+
+Synchronous stages are `prepare_remote`, `create_worktree`, and
+`sync_project_metadata`. Population, upstream configuration, project setup, and
+requested setup continue asynchronously. Metadata/upstream failures can settle
+as `ready_with_warnings`; known setup failures are `failed`; setup interrupted
+by process exit becomes `needs_attention` and is rerun only after explicit
+Retry.
+
+The `populate_worktree` stage performs one bounded recovery when Git reports an
+`index.lock` collision. It resolves the worktree-specific lock through Git,
+waits briefly, and removes the lock only when its filesystem identity remains
+unchanged. A replacement lock is preserved and the original failure remains
+visible in the receipt. Web/Electron and VS Code use the same policy.
 
 ### Primary Worktree Root Response
 - Route: `GET /api/git/worktree-root?directory=<path>`
@@ -170,6 +200,11 @@ The following functions are internal helpers used by exported functions:
 ### Error Handling
 - All exported functions should throw errors with descriptive messages.
 - Use `console.error` for logging Git operation failures.
+- Missing-directory errors during status collection remain rejections but are
+  not logged because project deletion is an expected race.
+- Repository checks and status collection require the requested project
+  directory itself to be the Git worktree root. A nested non-repository project
+  never inherits Git state from an ancestor repository.
 - Return structured objects for operations that need partial success reporting (e.g., merge/rebase conflicts).
 
 ### Testing

@@ -38,9 +38,9 @@ const DEFAULT_PACKAGED_PLUGIN_DIR = path.join(DEFAULT_CONFIG_DIR, 'plugins');
 const DEFAULT_RUNTIME_AGENT_OVERLAY_ROOT = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'runtime-agent-overlays');
 const DEFAULT_RUNTIME_AGENT_OVERLAY_MANIFEST_PATH = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'runtime-agent-overlays.json');
 const DEFAULT_REMOTE_MCP_TIMEOUT_MS = 5_000;
-const DEFAULT_OPENAI_HEADER_TIMEOUT_MS = 60_000;
-const DEFAULT_OPENAI_CHUNK_TIMEOUT_MS = 120_000;
-const DEFAULT_OPENAI_REQUEST_TIMEOUT_MS = 600_000;
+const DEFAULT_OPENAI_HEADER_TIMEOUT_MS = 120_000;
+const DEFAULT_OPENAI_CHUNK_TIMEOUT_MS = 300_000;
+const DEFAULT_OPENAI_REQUEST_TIMEOUT_MS = 15 * 60_000;
 const ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID = 'anthropic';
 const SLIM_CONFIG_FILE_NAMES = ['oh-my-opencode-slim.jsonc', 'oh-my-opencode-slim.json'];
 
@@ -197,7 +197,6 @@ const buildAnthropicOAuthProxyOverlay = (workingDirectory, options = {}) => {
   }
 
   return {
-    plugin: [anthropicPlugin],
     provider: {
       [ANTHROPIC_OAUTH_CONFIG_PROVIDER_ID]: {
         ...anthropic,

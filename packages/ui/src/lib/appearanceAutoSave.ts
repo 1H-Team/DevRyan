@@ -11,10 +11,12 @@ type AppearanceSlice = {
   notificationMode: 'always' | 'hidden-only';
   notifyOnSubtasks: boolean;
   notifyOnCompletion: boolean;
+  notifyOnPlanReady: boolean;
   notifyOnError: boolean;
   notifyOnQuestion: boolean;
   notificationTemplates: {
     completion: { title: string; message: string };
+    planReady: { title: string; message: string };
     error: { title: string; message: string };
     question: { title: string; message: string };
     subtask: { title: string; message: string };
@@ -55,6 +57,7 @@ export const startAppearanceAutoSave = (): void => {
     notificationMode: useUIStore.getState().notificationMode,
     notifyOnSubtasks: useUIStore.getState().notifyOnSubtasks,
     notifyOnCompletion: useUIStore.getState().notifyOnCompletion,
+    notifyOnPlanReady: useUIStore.getState().notifyOnPlanReady,
     notifyOnError: useUIStore.getState().notifyOnError,
     notifyOnQuestion: useUIStore.getState().notifyOnQuestion,
     notificationTemplates: useUIStore.getState().notificationTemplates,
@@ -106,6 +109,7 @@ export const startAppearanceAutoSave = (): void => {
       notificationMode: state.notificationMode,
       notifyOnSubtasks: state.notifyOnSubtasks,
       notifyOnCompletion: state.notifyOnCompletion,
+      notifyOnPlanReady: state.notifyOnPlanReady,
       notifyOnError: state.notifyOnError,
       notifyOnQuestion: state.notifyOnQuestion,
       notificationTemplates: state.notificationTemplates,
@@ -148,6 +152,9 @@ export const startAppearanceAutoSave = (): void => {
     }
     if (current.notifyOnCompletion !== previous.notifyOnCompletion) {
       diff.notifyOnCompletion = current.notifyOnCompletion;
+    }
+    if (current.notifyOnPlanReady !== previous.notifyOnPlanReady) {
+      diff.notifyOnPlanReady = current.notifyOnPlanReady;
     }
     if (current.notifyOnError !== previous.notifyOnError) {
       diff.notifyOnError = current.notifyOnError;

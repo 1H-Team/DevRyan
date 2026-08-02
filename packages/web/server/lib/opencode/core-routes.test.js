@@ -1,7 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from '../../test-supertest.js';
-import { registerServerStatusRoutes } from './core-routes.js';
+import {
+  registerCommonRequestMiddleware,
+  registerServerStatusRoutes,
+} from './core-routes.js';
 
 describe('core-routes', () => {
   const createApp = () => {
@@ -152,5 +155,39 @@ describe('core-routes', () => {
         }
       }
     }
+  });
+});
+
+describe('common request middleware', () => {
+  it.each([
+    '/api/diagnostics/export',
+    '/api/evidence/project',
+    '/api/desktop/browser-leases',
+  ])(
+    'parses JSON request bodies for %s',
+    async (route) => {
+      const app = express();
+      registerCommonRequestMiddleware(app, { express });
+      app.post(route, (req, res) => res.json(req.body));
+
+      const response = await request(app)
+        .post(route)
+        .send({ directory: '/tmp/project', enabled: true });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual({ directory: '/tmp/project', enabled: true });
+    },
+  );
+
+  it('caps private browser lease request bodies at 16 KiB', async () => {
+    const app = express();
+    registerCommonRequestMiddleware(app, { express });
+    app.post('/api/desktop/browser-leases', (req, res) => res.json(req.body));
+
+    const response = await request(app)
+      .post('/api/desktop/browser-leases')
+      .send({ directory: `/${'x'.repeat(17 * 1024)}` });
+
+    expect(response.status).toBe(413);
   });
 });

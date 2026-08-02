@@ -40,7 +40,6 @@ permission:
     "*": deny
     codemap: allow
   websearch_*: deny
-  context7_*: deny
   grep_app_*: deny
 modelRefs:
   - github-copilot/gemini-3-flash-preview

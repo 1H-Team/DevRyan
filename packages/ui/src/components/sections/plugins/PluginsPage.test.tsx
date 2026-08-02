@@ -12,10 +12,10 @@ const defaultPlugin = {
   id: 'devryan-default:opencode-with-claude',
   pluginId: 'opencode-with-claude' as const,
   displayName: 'OpenCode with Claude',
-  shippedSpec: 'opencode-with-claude@1.6.18',
+  shippedSpec: './node_modules/opencode-with-claude/dist/index.js',
   effectiveSpec: 'opencode-with-claude@1.6.17',
   version: '1.6.18',
-  delivery: 'npm' as const,
+  delivery: 'installed-local' as const,
   sourcePath: 'default-config/user-profile/package.json',
   configuredSourcePath: '/tmp/opencode.json',
   kind: 'default' as const,
@@ -51,8 +51,9 @@ describe('PluginsPage default details', () => {
       );
 
       expect(markup).toContain('Included with DevRyan');
-      expect(markup).toContain('opencode-with-claude@1.6.18');
+      expect(markup).toContain('./node_modules/opencode-with-claude/dist/index.js');
       expect(markup).toContain('opencode-with-claude@1.6.17');
+      expect(markup).toContain('Installed locally (no runtime fetch)');
       expect(markup).toContain('/tmp/opencode.json');
     } finally {
       usePluginsStore.setState(initialPluginsState, true);

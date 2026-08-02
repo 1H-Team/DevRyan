@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { getGitLog, getGitStatus, getGitWorktreeBootstrapStatus, getPrimaryWorktreeRoot, gitFetch, resolveGitApiBaseOrigin } from "./gitApiHttp"
+import { createGitWorktree, getGitLog, getGitStatus, getGitWorktreeBootstrapStatus, getPrimaryWorktreeRoot, gitFetch, resolveGitApiBaseOrigin } from "./gitApiHttp"
 
 type TestWindow = {
   location: { origin: string }
@@ -97,6 +97,81 @@ describe("gitApiHttp URL routing", () => {
       }
       const message = thrown instanceof Error ? thrown.message : String(thrown)
       expect(message.includes("Base ref not found")).toBe(true)
+    } finally {
+      restoreGlobals()
+    }
+  })
+
+  test("bypasses browser caching while preserving git log query parameters", async () => {
+    try {
+      setTestWindow({
+        location: { origin: "http://127.0.0.1:5173" },
+      })
+      const requests: Array<{ url: string; init?: RequestInit }> = []
+      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push({ url: String(input), init })
+        return new Response(JSON.stringify({ all: [], latest: null, total: 0 }), { status: 200 })
+      }) as typeof fetch
+
+      await getGitLog("/repo", {
+        maxCount: 25,
+        from: "main",
+        to: "feature/history-refresh",
+        file: "packages/ui/src/lib/gitApiHttp.ts",
+      })
+
+      expect(requests).toEqual([{
+        url: "http://127.0.0.1:5173/api/git/log?directory=%2Frepo&maxCount=25&from=main&to=feature%2Fhistory-refresh&file=packages%2Fui%2Fsrc%2Flib%2FgitApiHttp.ts",
+        init: { cache: "no-store" },
+      }])
+    } finally {
+      restoreGlobals()
+    }
+  })
+
+  test("preserves durable worktree operation details on create failure", async () => {
+    try {
+      setTestWindow({
+        location: { origin: "http://127.0.0.1:5173" },
+      })
+      const bootstrap = {
+        operationId: "wt_failed",
+        directory: "/repo-worktrees/failed",
+        status: "failed",
+        stage: "create_worktree",
+      }
+      globalThis.fetch = (async () => (
+        new Response(JSON.stringify({
+          error: "Failed to create git worktree",
+          operationId: "wt_failed",
+          bootstrap,
+        }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        })
+      )) as typeof fetch
+
+      let thrown: unknown = null
+      try {
+        await createGitWorktree("/repo", {
+          mode: "new",
+          branchName: "feature",
+          worktreeName: "feature",
+        })
+      } catch (error) {
+        thrown = error
+      }
+      expect(thrown instanceof Error).toBe(true)
+      if (!(thrown instanceof Error)) {
+        throw new Error("Expected worktree creation to throw an Error")
+      }
+      const worktreeError = thrown as Error & {
+        operationId?: string
+        bootstrap?: typeof bootstrap
+      }
+      expect(worktreeError.message).toBe("Failed to create git worktree")
+      expect(worktreeError.operationId).toBe("wt_failed")
+      expect(worktreeError.bootstrap).toEqual(bootstrap)
     } finally {
       restoreGlobals()
     }

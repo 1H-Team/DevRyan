@@ -1,6 +1,6 @@
 import React from 'react';
 import { create } from 'zustand';
-import { devtools } from 'zustand/middleware';
+import { devtools } from './utils/devtoolsGate';
 import type {
   GitStatus,
   GitBranch,

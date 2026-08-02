@@ -2064,8 +2064,18 @@ async fn probe_host_with_timeout(url: &str, timeout: Duration) -> Result<HostPro
             let status = resp.status();
             let latency_ms = started.elapsed().as_millis() as u64;
             if status.is_success() {
+                let is_devryan_health = resp
+                    .json::<serde_json::Value>()
+                    .await
+                    .ok()
+                    .and_then(|payload| payload.get("openCodeRunning").and_then(|value| value.as_bool()))
+                    == Some(true);
                 Ok(HostProbeResult {
-                    status: "ok".to_string(),
+                    status: if is_devryan_health {
+                        "ok".to_string()
+                    } else {
+                        "wrong-service".to_string()
+                    },
                     latency_ms,
                 })
             } else if status.as_u16() == 401 || status.as_u16() == 403 {
@@ -4326,9 +4336,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn probe_returns_ok_for_valid_openchamber_health_payload() {
+    async fn probe_returns_ok_for_valid_devryan_health_payload() {
         let url = spawn_test_http_server(200, r#"{"openCodeRunning":true}"#).await;
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
         let result = probe_host_with_timeout(&url, Duration::from_secs(2))
             .await
@@ -4339,7 +4348,6 @@ mod tests {
     #[tokio::test]
     async fn probe_returns_auth_for_401_health() {
         let url = spawn_test_http_server(401, r#"{"message":"unauthorized"}"#).await;
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
         let result = probe_host_with_timeout(&url, Duration::from_secs(2))
             .await
@@ -4347,7 +4355,37 @@ mod tests {
         assert_eq!(result.status, "auth");
     }
 
-    async fn spawn_flaky_openchamber_health_server() -> String {
+    #[tokio::test]
+    async fn probe_returns_auth_for_403_health() {
+        let url = spawn_test_http_server(403, r#"{"message":"forbidden"}"#).await;
+
+        let result = probe_host_with_timeout(&url, Duration::from_secs(2))
+            .await
+            .expect("probe should not error");
+        assert_eq!(result.status, "auth");
+    }
+
+    #[tokio::test]
+    async fn probe_returns_unreachable_for_non_auth_http_failure() {
+        let url = spawn_test_http_server(503, r#"{"message":"starting"}"#).await;
+
+        let result = probe_host_with_timeout(&url, Duration::from_secs(2))
+            .await
+            .expect("probe should not error");
+        assert_eq!(result.status, "unreachable");
+    }
+
+    #[tokio::test]
+    async fn probe_returns_wrong_service_for_malformed_success_payload() {
+        let url = spawn_test_http_server(200, "not-json").await;
+
+        let result = probe_host_with_timeout(&url, Duration::from_secs(2))
+            .await
+            .expect("probe should not error");
+        assert_eq!(result.status, "wrong-service");
+    }
+
+    async fn spawn_flaky_devryan_health_server() -> String {
         use tokio::net::TcpListener;
 
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind flaky test server");
@@ -4385,8 +4423,7 @@ mod tests {
 
     #[tokio::test]
     async fn wait_for_local_opencode_ready_retries_until_health_payload_is_ready() {
-        let url = spawn_flaky_openchamber_health_server().await;
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        let url = spawn_flaky_devryan_health_server().await;
 
         let result = wait_for_local_opencode_ready_with(
             &url,
@@ -4407,8 +4444,6 @@ mod tests {
             r#"{"status":"ok","openCodeRunning":false,"isOpenCodeReady":false}"#,
         )
         .await;
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
         let result = wait_for_local_opencode_ready_with(
             &url,
             Duration::from_millis(120),

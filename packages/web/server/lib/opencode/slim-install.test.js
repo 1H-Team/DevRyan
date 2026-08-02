@@ -74,7 +74,7 @@ describe('Slim setup runtime', () => {
         anthropic: { npm: '@ai-sdk/anthropic' },
       },
       mcp: {
-        context7: { type: 'remote', url: 'https://mcp.example.test' },
+        docs: { type: 'remote', url: 'https://mcp.example.test' },
       },
       plugin: [
         'opencode-with-claude',
@@ -109,7 +109,7 @@ describe('Slim setup runtime', () => {
     expect(opencodeConfig.provider).toEqual({
       anthropic: { npm: '@ai-sdk/anthropic' },
     });
-    expect(opencodeConfig.mcp.context7.url).toBe('https://mcp.example.test');
+    expect(opencodeConfig.mcp.docs.url).toBe('https://mcp.example.test');
     expect(opencodeConfig.plugin).toEqual([
       'opencode-with-claude',
       ['local-plugin', { enabled: true }],

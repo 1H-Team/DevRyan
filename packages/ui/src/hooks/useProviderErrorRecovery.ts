@@ -17,6 +17,7 @@ import { abortCurrentOperationConfirmed } from '@/sync/session-actions';
 import {
   decideProviderErrorRecovery,
   decideProviderRetryLoopRecovery,
+  decideInterruptedProviderRecovery,
   isPrimaryProviderRecoverySession,
 } from './providerErrorRecoveryDecision';
 
@@ -33,18 +34,21 @@ export function useProviderErrorRecovery(enabled = true): void {
   const activeUserMessageIdsRef = React.useRef<Map<string, string>>(new Map());
   const cappedRetryUserMessageIdsRef = React.useRef<Map<string, string>>(new Map());
   const cappedRetryAbortsInFlightRef = React.useRef<Set<string>>(new Set());
+  const pendingInitialIdleRecoveryRef = React.useRef<Set<string>>(new Set());
 
   React.useEffect(() => {
     const previousStatuses = previousStatusesRef.current;
     const activeUserMessageIds = activeUserMessageIdsRef.current;
     const cappedRetryUserMessageIds = cappedRetryUserMessageIdsRef.current;
     const cappedRetryAbortsInFlight = cappedRetryAbortsInFlightRef.current;
+    const pendingInitialIdleRecovery = pendingInitialIdleRecoveryRef.current;
     let active = true;
     if (!enabled) {
       previousStatuses.clear();
       activeUserMessageIds.clear();
       cappedRetryUserMessageIds.clear();
       cappedRetryAbortsInFlight.clear();
+      pendingInitialIdleRecovery.clear();
       return;
     }
 
@@ -61,10 +65,15 @@ export function useProviderErrorRecovery(enabled = true): void {
         if (!isPrimaryProviderRecoverySession(session)) continue;
 
         nextStatuses.set(sessionId, status.type);
+        const messages = directory ? getSyncMessages(sessionId, directory) : [];
+        const userMessageId = latestUserMessageId(messages);
+        const recoveryStore = useProviderRecoveryStore.getState();
+        if (recoveryStore.recoveriesBySessionId[sessionId]) {
+          recoveryStore.reconcileLatestUserMessage(sessionId, userMessageId);
+        }
         if (status.type === 'busy' || status.type === 'retry') {
+          pendingInitialIdleRecovery.delete(sessionId);
           if (directory) {
-            const messages = getSyncMessages(sessionId, directory);
-            const userMessageId = latestUserMessageId(messages);
             if (userMessageId) activeUserMessageIds.set(sessionId, userMessageId);
             const retryDecision = decideProviderRetryLoopRecovery(status);
             const hasPendingWork = useMessageQueueStore.getState().getQueueForSession(sessionId).length > 0
@@ -100,15 +109,31 @@ export function useProviderErrorRecovery(enabled = true): void {
           continue;
         }
         const previous = previousStatuses.get(sessionId);
-        if ((previous !== 'busy' && previous !== 'retry') || status.type !== 'idle' || !directory) continue;
-        const messages = getSyncMessages(sessionId, directory);
-        const decision = decideProviderErrorRecovery({
-          messages,
-          observedActiveUserMessageId: activeUserMessageIds.get(sessionId),
-          queuedMessageCount: useMessageQueueStore.getState().getQueueForSession(sessionId).length
-            + (isQueuedMessageFlushInFlight(sessionId) ? 1 : 0),
-          blockingRequestCount: getSyncBlockingRequestCountAnyDirectory(sessionId),
-        });
+        if (status.type !== 'idle' || !directory) continue;
+        const queuedMessageCount = useMessageQueueStore.getState().getQueueForSession(sessionId).length
+          + (isQueuedMessageFlushInFlight(sessionId) ? 1 : 0);
+        const blockingRequestCount = getSyncBlockingRequestCountAnyDirectory(sessionId);
+        let decision: { reason: string } | null = null;
+        if (previous === 'busy' || previous === 'retry') {
+          pendingInitialIdleRecovery.delete(sessionId);
+          decision = decideProviderErrorRecovery({
+            messages,
+            observedActiveUserMessageId: activeUserMessageIds.get(sessionId),
+            queuedMessageCount,
+            blockingRequestCount,
+          });
+        } else if (previous === undefined || pendingInitialIdleRecovery.has(sessionId)) {
+          if (messages.length === 0) {
+            pendingInitialIdleRecovery.add(sessionId);
+          } else {
+            pendingInitialIdleRecovery.delete(sessionId);
+            decision = decideInterruptedProviderRecovery({
+              messages,
+              queuedMessageCount,
+              blockingRequestCount,
+            });
+          }
+        }
         activeUserMessageIds.delete(sessionId);
         if (!decision) continue;
         const recovery = buildProviderRecoveryInput({
@@ -121,10 +146,13 @@ export function useProviderErrorRecovery(enabled = true): void {
       }
       previousStatuses.clear();
       for (const [sessionId, status] of nextStatuses) previousStatuses.set(sessionId, status);
+      for (const sessionId of pendingInitialIdleRecovery) {
+        if (!nextStatuses.has(sessionId)) pendingInitialIdleRecovery.delete(sessionId);
+      }
     };
 
     processStatusSnapshot();
-    const unsubscribe = childStores.subscribeSessionStatuses(processStatusSnapshot);
+    const unsubscribe = childStores.subscribeProviderRecoveryInputs(processStatusSnapshot);
     return () => {
       active = false;
       unsubscribe();
@@ -132,6 +160,7 @@ export function useProviderErrorRecovery(enabled = true): void {
       activeUserMessageIds.clear();
       cappedRetryUserMessageIds.clear();
       cappedRetryAbortsInFlight.clear();
+      pendingInitialIdleRecovery.clear();
       useProviderRecoveryStore.getState().reset();
     };
   }, [childStores, enabled]);

@@ -14,6 +14,11 @@ export type ManagedTaskMode = 'builder' | 'orchestrator';
 export type ManagedTaskExecutionKind = 'start' | 'retry' | 'resume' | 'recover_in_place' | 'retry_in_place';
 export type ManagedTaskResultAction = 'continue' | 'resume' | 'retry' | 'recover_in_place' | 'retry_in_place' | 'abandon';
 export type ManagedTaskFailureKind = 'provider_usage_limit' | null;
+export type ProviderTransportFailureKind =
+  | 'request_timeout'
+  | 'response_header_timeout'
+  | 'stream_idle_timeout'
+  | 'connection_failure';
 
 export interface ManagedTaskCanonicalRef {
   type: string;
@@ -32,6 +37,7 @@ export interface ManagedTaskRecord {
   directory: string;
   sequence: number;
   mode: ManagedTaskMode;
+  readOnly: boolean;
   providerId: string;
   modelId: string;
   agent: string;
@@ -53,8 +59,10 @@ export interface ManagedTaskRecord {
   canonicalRefs: ManagedTaskCanonicalRef[];
 }
 
+export function isManagedTaskAgentRetryAvailable(task: ManagedTaskRecord): boolean;
+
 export type ManagedTaskEventRecord = Omit<ManagedTaskRecord,
-  'prompt' | 'idempotencyKey' | 'dispatchGroupId' | 'leaseToken'> & {
+  'prompt' | 'idempotencyKey' | 'dispatchGroupId' | 'readOnly' | 'leaseToken'> & {
     failureKind: ManagedTaskFailureKind;
     agentRetryAvailable: boolean;
   };
@@ -114,6 +122,7 @@ export interface ManagedTaskSubmitInput {
   childSessionId?: string | null;
   directory: string;
   mode: ManagedTaskMode;
+  readOnly?: boolean;
   providerId: string;
   modelId: string;
   agent: string;
@@ -211,6 +220,9 @@ export interface ManagedOpenCodeExecutorOptions {
   /** How often a still-live child's transcript is re-read to refresh the
    * partial-work snapshot. Status is still polled at `pollIntervalMs`. */
   liveTranscriptRefreshMs?: number;
+  /** How long a busy child with no running tool may make no transcript progress
+   * before one bounded same-child timeout recovery is attempted. */
+  liveProgressTimeoutMs?: number;
   now?: () => number;
   sleep?: (delayMs: number, options: { signal: AbortSignal }) => Promise<void>;
 }
@@ -344,15 +356,22 @@ export const MAX_MANAGED_TASK_PROMPT_BYTES: number;
 export const MAX_MANAGED_TASK_PREVIEW_BYTES: number;
 export const MAX_MANAGED_TASK_FAILURE_BYTES: number;
 export const PROVIDER_USAGE_LIMIT_FAILURE_KIND: 'provider_usage_limit';
+export const PROVIDER_TRANSPORT_FAILURE_KINDS: readonly ProviderTransportFailureKind[];
 export const MANAGED_RETRY_IN_PLACE_PROMPT: string;
 export const MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT: string;
+export const MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT: string;
 export const MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT: string;
+export const MANAGED_READ_ONLY_PROMPT: string;
 export const DEFAULT_MANAGED_TERMINAL_MAX_RECORDS: number;
 export const DEFAULT_MANAGED_TERMINAL_MAX_AGE_MS: number;
 export const DEFAULT_MANAGED_LEDGER_MAX_BYTES: number;
 
 export function formatManagedTaskDisplayName(label: string): string;
 export function classifyProviderRetryFailure(value: unknown): ManagedTaskFailureKind;
+export function classifyProviderTransportFailure(
+  name: unknown,
+  detail: unknown,
+): ProviderTransportFailureKind | null;
 export function isDefiniteProviderUsageLimit(value: unknown): boolean;
 export function truncateManagedText(value: unknown, maxBytes: number): string;
 export function isTerminalManagedTaskStatus(status: unknown): status is ManagedTaskTerminalStatus;
@@ -361,6 +380,7 @@ export function createManagedTaskRecord(input: Omit<ManagedTaskRecord,
   | 'owner'
   | 'status'
   | 'dispatchGroupId'
+  | 'readOnly'
   | 'childSessionId'
   | 'leaseToken'
   | 'startedAt'
@@ -369,7 +389,11 @@ export function createManagedTaskRecord(input: Omit<ManagedTaskRecord,
   | 'partial'
   | 'recoverablePreview'
   | 'canonicalRefs'
-> & { childSessionId?: string | null; dispatchGroupId?: string | null }): ManagedTaskRecord;
+> & {
+  childSessionId?: string | null;
+  dispatchGroupId?: string | null;
+  readOnly?: boolean;
+}): ManagedTaskRecord;
 export function toManagedTaskEvent(task: ManagedTaskRecord, resultEnvelope?: ManagedTaskResultEnvelope | null): ManagedTaskEvent;
 export function toManagedTaskRemovalEvent(task: ManagedTaskRecord): ManagedTaskRemovalEvent;
 export function createManagedTaskResultEnvelope(task: ManagedTaskRecord, options: {
@@ -393,6 +417,10 @@ export function compactManagedOrchestrationState(state: ManagedOrchestrationStat
   serializedBytes: number;
   overLimit: boolean;
 };
-export function resolveProviderPromptTools(providerId: unknown, agent?: unknown): Readonly<Record<string, boolean>> | undefined;
+export function resolveProviderPromptTools(
+  providerId: unknown,
+  agent?: unknown,
+  options?: { readOnly?: boolean },
+): Readonly<Record<string, boolean>> | undefined;
 export function createManagedOpenCodeExecutor(options: ManagedOpenCodeExecutorOptions): ManagedTaskExecutor;
 export function createManagedTaskScheduler(options: ManagedTaskSchedulerOptions): ManagedTaskScheduler;

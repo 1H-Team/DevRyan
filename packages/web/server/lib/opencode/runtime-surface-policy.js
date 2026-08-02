@@ -1,18 +1,6 @@
-const ALLOWED_MANAGED_RUNTIME_PLUGIN_SPEC_PREFIXES = [
-  '@rama_nigg/open-cursor',
-  'context-mode@',
-  'opencode-antigravity-auth',
-];
-
-const ALLOWED_MANAGED_RUNTIME_PLUGIN_SPECS = new Set([
-  'context-mode',
-  'cursor-acp',
-  'oh-my-opencode-slim',
-  './plugins/devryan-oh-my-opencode-slim.mjs',
-]);
+import { getDevRyanManagedPluginForSpec } from './managed-plugins.js';
 
 const BLOCKED_MANAGED_RUNTIME_MCP_NAMES = [
-  'context7',
   'ghgrep',
   'gh-grep',
   'gh_grep',
@@ -21,7 +9,6 @@ const BLOCKED_MANAGED_RUNTIME_MCP_NAMES = [
 ];
 
 const FORBIDDEN_MANAGED_RUNTIME_TOOL_PREFIXES = [
-  'context7_',
   'ghgrep_',
   'grep_app_',
 ];
@@ -47,13 +34,11 @@ const isAllowedManagedRuntimePluginSpec = (spec) => {
   if (!normalized) {
     return false;
   }
-  if (ALLOWED_MANAGED_RUNTIME_PLUGIN_SPECS.has(normalized)) {
-    return true;
-  }
-  if (isAnthropicOAuthPluginSpec(normalized)) {
-    return true;
-  }
-  return ALLOWED_MANAGED_RUNTIME_PLUGIN_SPEC_PREFIXES.some((prefix) => normalized.startsWith(prefix));
+  const plugin = getDevRyanManagedPluginForSpec(normalized);
+  return Boolean(
+    plugin?.profileRegistration
+    && !plugin.legacySpecs.includes(normalized),
+  );
 };
 
 const filterManagedRuntimePluginEntries = (entries) => (
@@ -105,4 +90,3 @@ export {
   isBlockedManagedRuntimeMcpName,
   isForbiddenManagedRuntimeToolId,
 };
-import { isAnthropicOAuthPluginSpec } from './anthropic-oauth-plugin.js';

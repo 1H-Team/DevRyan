@@ -16,6 +16,19 @@ const formatOptions = (options: Record<string, unknown> | undefined): string => 
   return JSON.stringify(options, null, 2);
 };
 
+const getDefaultPluginDeliveryLabel = (
+  delivery: DevRyanDefaultPlugin["delivery"],
+  t: ReturnType<typeof useI18n>["t"],
+): string => {
+  if (delivery === "installed-local") {
+    return t("settings.plugins.default.value.installedLocal");
+  }
+  if (delivery === "curated-skills") {
+    return t("settings.plugins.default.value.curatedSkills");
+  }
+  return t("settings.plugins.default.value.bundledFile");
+};
+
 const DetailRow: React.FC<{ label: string; value: React.ReactNode; mono?: boolean }> = ({ label, value, mono }) => (
   <div className="grid gap-1 border-b border-border/70 py-3 last:border-b-0 sm:grid-cols-[150px_minmax(0,1fr)]">
     <div className="typography-meta text-muted-foreground">{label}</div>
@@ -214,7 +227,7 @@ const DefaultDetails: React.FC<{ plugin: DevRyanDefaultPlugin }> = ({ plugin }) 
         />
         <DetailRow
           label={t("settings.plugins.default.field.delivery")}
-          value={plugin.delivery === "npm" ? t("settings.plugins.default.value.npm") : t("settings.plugins.default.value.bundledFile")}
+          value={getDefaultPluginDeliveryLabel(plugin.delivery, t)}
         />
         <DetailRow
           label={t("settings.plugins.default.field.source")}

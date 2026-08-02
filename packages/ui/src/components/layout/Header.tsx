@@ -90,6 +90,7 @@ interface HeaderProps {
   onToggleRightDrawer?: () => void;
   leftDrawerOpen?: boolean;
   rightDrawerOpen?: boolean;
+  browserActionPortalTarget?: HTMLElement | null;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -97,6 +98,7 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleRightDrawer,
   leftDrawerOpen,
   rightDrawerOpen,
+  browserActionPortalTarget,
 }) => {
   const { t } = useI18n();
   const setSessionSwitcherOpen = useUIStore((state) => state.setSessionSwitcherOpen);
@@ -587,6 +589,7 @@ export const Header: React.FC<HeaderProps> = ({
     }
     return 'pl-3';
   }, [isDesktopApp, isSidebarOpen, isTabletStandalonePwa]);
+  const showsDesktopRightChrome = !isMobile && !isVSCode;
 
   const desktopHeaderRowInsetStyle = React.useMemo<React.CSSProperties | undefined>(() => {
     if (!isDesktopApp || isSidebarOpen) {
@@ -618,11 +621,13 @@ export const Header: React.FC<HeaderProps> = ({
       paddingLeft: isTabletStandalonePwa && !isSidebarOpen
         ? 'max(calc(0.75rem + var(--oc-wco-left-inset, 0px)), 5.5rem)'
         : 'calc(0.75rem + var(--oc-wco-left-inset, 0px))',
-      paddingRight: 'calc(0.75rem + var(--oc-wco-right-inset, 0px))',
+      paddingRight: showsDesktopRightChrome
+        ? 'calc(11rem + var(--oc-wco-right-inset, 0px))'
+        : 'calc(0.75rem + var(--oc-wco-right-inset, 0px))',
       minHeight: 'max(3rem, var(--oc-wco-titlebar-height, 0px))',
       height: 'max(3rem, var(--oc-wco-titlebar-height, 0px))',
     };
-  }, [isDesktopApp, isSidebarOpen, isTabletStandalonePwa, isVSCode]);
+  }, [isDesktopApp, isSidebarOpen, isTabletStandalonePwa, isVSCode, showsDesktopRightChrome]);
 
   const updateHeaderHeight = React.useCallback(() => {
     if (typeof document === 'undefined') {
@@ -717,7 +722,7 @@ export const Header: React.FC<HeaderProps> = ({
   }, [shortcutOverrides]);
 
   useEffect(() => {
-    if (!isMobile && (activeMainTab === 'git' || activeMainTab === 'terminal' || activeMainTab === 'diff' || activeMainTab === 'files')) {
+    if (!isMobile && (activeMainTab === 'git' || activeMainTab === 'terminal' || activeMainTab === 'diff')) {
       setActiveMainTab('chat');
     }
   }, [activeMainTab, isMobile, setActiveMainTab]);
@@ -801,7 +806,7 @@ export const Header: React.FC<HeaderProps> = ({
       onMouseDown={handleDragStart}
       className={cn(
         'app-region-drag relative flex h-12 w-full select-none items-center',
-        isDesktopApp ? 'pr-[calc(11rem+var(--oc-wco-right-inset,0px))]' : 'pr-3',
+        showsDesktopRightChrome ? 'pr-[calc(11rem+var(--oc-wco-right-inset,0px))]' : 'pr-3',
         desktopPaddingClass,
         macosHeaderSizeClass
       )}
@@ -867,12 +872,11 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         <div className="app-region-no-drag pointer-events-auto relative ml-auto flex shrink-0 items-center gap-1.5">
-          {projectActionsContext && (
-            <ProjectActionsButton
-              projectRef={projectActionsContext.projectRef}
-              directory={projectActionsContext.directory}
-            />
-          )}
+          <ProjectActionsButton
+            projectRef={projectActionsContext?.projectRef ?? null}
+            directory={projectActionsContext?.directory ?? ''}
+            browserActionPortalTarget={browserActionPortalTarget}
+          />
           <OpenInAppButton directory={actionDirectory} />
         </div>
       </div>

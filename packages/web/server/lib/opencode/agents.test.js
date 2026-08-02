@@ -160,7 +160,7 @@ describe('agent model overrides', () => {
       preset: 'openai',
       presets: {
         openai: {
-          orchestrator: { model: 'openai/gpt-5.5', variant: 'medium', skills: ['*'], mcps: ['*', '!context7'] },
+          orchestrator: { model: 'openai/gpt-5.5', variant: 'medium', skills: ['*'], mcps: ['*'] },
           designer: { model: 'openai/gpt-5.4-mini', variant: 'medium', skills: [], mcps: [] },
           fixer: { model: 'openai/gpt-5.5', variant: 'low', skills: [], mcps: [] },
         },
@@ -234,11 +234,11 @@ describe('agent model overrides', () => {
       preset: 'openai',
       presets: {
         openai: {
-          orchestrator: { model: 'openai/gpt-5.5', variant: 'medium', skills: ['*'], mcps: ['*', '!context7'] },
+          orchestrator: { model: 'openai/gpt-5.5', variant: 'medium', skills: ['*'], mcps: ['*'] },
         },
       },
       agents: {
-        orchestrator: { skills: ['*'], mcps: ['*', '!context7'] },
+        orchestrator: { skills: ['*'], mcps: ['*'] },
       },
     });
 
@@ -253,7 +253,7 @@ describe('agent model overrides', () => {
     expect(slimConfig.agents.orchestrator).toEqual({
       model: 'openai/gpt-5.4-mini',
       skills: ['*'],
-      mcps: ['*', '!context7'],
+      mcps: ['*'],
     });
     await expect(fs.stat(path.join(path.dirname(userConfigPath), '.openchamber', 'config.json'))).rejects.toMatchObject({ code: 'ENOENT' });
 

@@ -12,6 +12,7 @@ import { WorktreeSectionContent } from '@/components/sections/openchamber/Worktr
 import { ProjectActionsSection } from '@/components/sections/projects/ProjectActionsSection';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useI18n } from '@/lib/i18n';
+import { TurnEvidenceSettingsSection } from './TurnEvidenceSettingsSection';
 
 export const ProjectsPage: React.FC = () => {
   const { t } = useI18n();
@@ -476,6 +477,8 @@ export const ProjectsPage: React.FC = () => {
             </Button>
           </div>
         </div>
+
+        <TurnEvidenceSettingsSection directory={selectedProject.path} />
 
         {/* Worktree Group */}
         <div className="mb-8">

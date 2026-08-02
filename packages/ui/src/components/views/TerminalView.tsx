@@ -143,7 +143,7 @@ export const TerminalView: React.FC = () => {
         return (directoryTerminalState?.tabs ?? []).map((tab) => ({
             icon: (() => {
                 const Icon = tab.iconKey ? PROJECT_ACTION_ICON_MAP[tab.iconKey as ProjectActionIconKey] ?? RiTerminalLine : RiTerminalLine;
-                return <Icon className="h-4 w-4" />;
+                return <Icon className="h-3.5 w-3.5" />;
             })(),
             id: tab.id,
             label: tab.label,
@@ -1055,7 +1055,7 @@ export const TerminalView: React.FC = () => {
                                 onSelect={handleSelectTab}
                                 onClose={handleCloseTab}
                                 layoutMode="scrollable"
-                                variant="default"
+                                variant="soft-pill"
                                 className="h-full bg-transparent"
                             />
                         </div>

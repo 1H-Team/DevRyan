@@ -1,7 +1,8 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, session, shell, systemPreferences } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, session, shell, systemPreferences, webContents, WebContentsView } from 'electron';
 import contextMenu from 'electron-context-menu';
 import log from 'electron-log/main.js';
 import dgram from 'node:dgram';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
@@ -9,6 +10,8 @@ import path from 'node:path';
 import { execFile, spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import updaterPkg from 'electron-updater';
 import { ElectronSshManager } from './ssh-manager.mjs';
 import { MacosSpeechManager } from './speech-manager.mjs';
@@ -22,6 +25,13 @@ import {
   isPrivilegedRendererUrl,
   privilegedOriginGuardJs,
 } from './origin-policy.mjs';
+import {
+  BROWSER_WEBVIEW_PARTITION,
+  hardenWebviewAttachParams,
+  isAllowedWebviewNavigationUrl,
+  isAllowedWebviewSourceUrl,
+} from './browser-webview-policy.mjs';
+import { createBrowserDevToolsController } from './browser-devtools-controller.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -62,6 +72,7 @@ log.transports.console.level = isDev ? 'debug' : 'warn';
 Object.assign(console, log.functions);
 
 const LOG_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const DIAGNOSTICS_TEMP_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 try {
   const logPath = log.transports.file.getFile().path;
   const logDir = path.dirname(logPath);
@@ -78,6 +89,19 @@ try {
   }
 } catch {
 }
+
+const cleanupExpiredDiagnosticsTemps = async (destination) => {
+  const directory = path.dirname(destination);
+  const prefix = `.${path.basename(destination)}.diagnostics-`;
+  const entries = await fsp.readdir(directory, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.startsWith(prefix) || !entry.name.endsWith('.tmp')) continue;
+    const candidate = path.join(directory, entry.name);
+    const stat = await fsp.stat(candidate).catch(() => null);
+    if (!stat || Date.now() - stat.mtimeMs < DIAGNOSTICS_TEMP_MAX_AGE_MS) continue;
+    await fsp.unlink(candidate).catch(() => undefined);
+  }
+};
 
 try {
   if (!app.isDefaultProtocolClient(DEEP_LINK_PROTOCOL)) {
@@ -122,9 +146,14 @@ const MINI_CHAT_MIN_WINDOW_HEIGHT = 480;
 const MAX_CAPTURE_PAGE_RECT_AREA = 4_000_000;
 const LOCAL_HOST_ID = 'local';
 const ENV_OVERRIDE_HOST_ID = '__env';
-const UPDATE_METADATA_URL = 'https://github.com/btriapitsyn/openchamber/releases/latest/download/latest.json';
-const GITHUB_BUG_REPORT_URL = 'https://github.com/btriapitsyn/openchamber/issues/new?template=bug_report.yml';
-const GITHUB_FEATURE_REQUEST_URL = 'https://github.com/btriapitsyn/openchamber/issues/new?template=feature_request.yml';
+const GITHUB_REPOSITORY_OWNER = 'zoubenr';
+const GITHUB_REPOSITORY_NAME = 'DevRyan';
+const GITHUB_REPOSITORY_URL = `https://github.com/${GITHUB_REPOSITORY_OWNER}/${GITHUB_REPOSITORY_NAME}`;
+const GITHUB_REPOSITORY_API_URL =
+  `https://api.github.com/repos/${GITHUB_REPOSITORY_OWNER}/${GITHUB_REPOSITORY_NAME}`;
+const UPDATE_METADATA_URL = `${GITHUB_REPOSITORY_API_URL}/releases/latest`;
+const GITHUB_BUG_REPORT_URL = `${GITHUB_REPOSITORY_URL}/issues/new?template=bug_report.yml`;
+const GITHUB_FEATURE_REQUEST_URL = `${GITHUB_REPOSITORY_URL}/issues/new?template=feature_request.yml`;
 const DISCORD_INVITE_URL = 'https://discord.gg/ZYRSdnwwKA';
 const INSTALLED_APPS_CACHE_TTL_SECS = 60 * 60 * 24;
 const INSTALLED_APPS_CACHE_FILE = 'discovered-apps.json';
@@ -152,6 +181,16 @@ const state = {
   miniChatWindowsBySession: new Map(),
   sshStatuses: new Map(),
   sshLogs: new Map(),
+  browserCdpDiscoveryUrl: '',
+  browserCdpDiscoveryToken: '',
+  agentBrowserInstaller: null,
+  agentBrowserInstallStatus: null,
+  agentBrowserSkillStatus: null,
+  agentBrowserSkillProvisioner: null,
+  agentBrowserSkillWithdrawer: null,
+  agentBrowserSetupPromise: null,
+  agentBrowserManagedRuntime: false,
+  agentBrowserRuntimeMode: 'pending',
 };
 
 const quitRisk = {
@@ -189,6 +228,7 @@ const prepareForQuit = ({ installingUpdate = false } = {}) => {
   state.quitConfirmed = true;
   state.installingUpdate = installingUpdate;
   state.quitConfirmationPending = false;
+  browserCdpBridge?.closeAll('app_quit');
   releaseDesktopKeepAwake();
 
   if (state.mainWindow && !state.mainWindow.isDestroyed()) {
@@ -326,6 +366,8 @@ const settingsFilePath = () => {
   }
   return path.join(os.homedir(), '.config', 'openchamber', 'settings.json');
 };
+
+const dataRootDirectory = () => path.dirname(settingsFilePath());
 
 const sshManager = new ElectronSshManager({
   settingsFilePath: settingsFilePath(),
@@ -828,6 +870,49 @@ const spawnLocalServer = async () => {
   process.env.NO_PROXY = process.env.NO_PROXY || 'localhost,127.0.0.1';
   process.env.no_proxy = process.env.no_proxy || 'localhost,127.0.0.1';
 
+  // Private browser capability handoff for the managed OpenCode child. Keep
+  // these out of ambient process.env: lifecycle.js scrubs inherited values and
+  // injects only this callback's exact trio into a child we own.
+  state.browserCdpDiscoveryToken = crypto.randomBytes(32).toString('hex');
+  state.browserCdpDiscoveryUrl = `http://127.0.0.1:${chosenPort}/api/desktop/browser-cdp`;
+  state.agentBrowserRuntimeMode = (
+    process.env.OPENCODE_SKIP_START === 'true'
+    || process.env.OPENCHAMBER_SKIP_OPENCODE_START === 'true'
+  ) ? 'external' : 'pending';
+  delete process.env.DEVRYAN_BROWSER_CDP_DISCOVERY_URL;
+  delete process.env.DEVRYAN_BROWSER_CDP_TOKEN;
+  delete process.env.DEVRYAN_AGENT_BROWSER_BIN;
+
+  try {
+    const {
+      createAgentBrowserInstaller,
+      provisionAgentBrowserSkill,
+      withdrawAgentBrowserSkill,
+    } = await import('@openchamber/web/server/lib/agent-browser/install.js');
+    const dataRoot = dataRootDirectory();
+    const skillOptions = {
+      dataRoot,
+      homeDir: os.homedir(),
+      managedElectron: true,
+      log,
+    };
+    state.agentBrowserInstaller = createAgentBrowserInstaller({ dataRoot, env: process.env, log });
+    state.agentBrowserSkillProvisioner = () => provisionAgentBrowserSkill(skillOptions);
+    state.agentBrowserSkillWithdrawer = () => withdrawAgentBrowserSkill(skillOptions);
+  } catch (error) {
+    // Browser automation is optional. A failed local tool install must not
+    // prevent the editor or managed OpenCode runtime from starting.
+    state.agentBrowserInstallStatus = {
+      ok: false,
+      state: 'unavailable',
+      expectedVersion: '0.33.2',
+      installedVersion: null,
+      binaryPath: '',
+      issues: [{ code: 'startup-failed', message: error instanceof Error ? error.message : String(error) }],
+    };
+    log.warn('[agent-browser] managed setup failed; continuing without browser automation');
+  }
+
   const { startWebUiServer } = await import('@openchamber/web/server/index.js');
 
   const handle = await startWebUiServer({
@@ -837,6 +922,60 @@ const spawnLocalServer = async () => {
     exitOnShutdown: false,
     onDesktopNotification: (payload) => maybeShowNativeNotification(payload),
     getIsWindowFocused: isAnyWindowFocused,
+    getBrowserCdpBridgeStatus: () => resolveBridgeStatusForDiscovery(),
+    getBrowserCdpDiscoveryToken: () => state.browserCdpDiscoveryToken || '',
+    createBrowserLease: (request) => createDesktopBrowserLease(request),
+    touchBrowserLease: (request) => touchDesktopBrowserLease(request),
+    releaseBrowserLease: (request) => releaseDesktopBrowserLease(request),
+    getManagedBrowserEnvironment: async () => {
+      // This callback is invoked only on the managed-child launch path. Keep
+      // installation and ~/.agents skill provisioning lazy so configured
+      // external/remote OpenCode runtimes remain completely untouched.
+      state.agentBrowserManagedRuntime = true;
+      state.agentBrowserRuntimeMode = 'managed';
+      if (!state.agentBrowserSetupPromise) {
+        state.agentBrowserSetupPromise = (async () => {
+          try {
+            state.agentBrowserInstallStatus = await state.agentBrowserInstaller?.ensureInstalled?.();
+            state.agentBrowserSkillStatus = state.agentBrowserInstallStatus?.ok
+              ? await state.agentBrowserSkillProvisioner?.()
+              : await state.agentBrowserSkillWithdrawer?.();
+          } catch (error) {
+            state.agentBrowserInstallStatus = {
+              ...(state.agentBrowserInstallStatus || {}),
+              ok: false,
+              state: 'unavailable',
+              expectedVersion: '0.33.2',
+              installedVersion: null,
+              binaryPath: '',
+              issues: [{
+                code: 'managed-setup-failed',
+                message: error instanceof Error ? error.message : String(error),
+              }],
+            };
+            state.agentBrowserSkillStatus = await state.agentBrowserSkillWithdrawer?.();
+            log.warn('[agent-browser] managed setup failed; continuing without browser automation');
+          }
+        })().finally(() => {
+          state.agentBrowserSetupPromise = null;
+        });
+      }
+      await state.agentBrowserSetupPromise;
+      const binaryPath = state.agentBrowserInstallStatus?.binaryPath;
+      if (state.agentBrowserInstallStatus?.ok !== true
+        || !state.browserCdpDiscoveryUrl
+        || !state.browserCdpDiscoveryToken
+        || typeof binaryPath !== 'string'
+        || !path.isAbsolute(binaryPath)) {
+        return {};
+      }
+      return {
+        DEVRYAN_BROWSER_CDP_DISCOVERY_URL: state.browserCdpDiscoveryUrl,
+        DEVRYAN_BROWSER_CDP_TOKEN: state.browserCdpDiscoveryToken,
+        DEVRYAN_AGENT_BROWSER_BIN: binaryPath,
+      };
+    },
+    getAppMetrics: () => app.getAppMetrics(),
   });
 
   const port = handle.getPort();
@@ -844,6 +983,21 @@ const spawnLocalServer = async () => {
 
   state.serverHandle = handle;
   state.sidecarUrl = url;
+
+  // Managed startup invokes getManagedBrowserEnvironment before it can become
+  // ready. If readiness arrives without that callback, the lifecycle selected
+  // an existing external runtime (for example an occupied OPENCODE_PORT).
+  const runtimeModeTimer = setInterval(() => {
+    if (state.agentBrowserRuntimeMode !== 'pending') {
+      clearInterval(runtimeModeTimer);
+      return;
+    }
+    if (handle.isReady?.()) {
+      state.agentBrowserRuntimeMode = 'external';
+      clearInterval(runtimeModeTimer);
+    }
+  }, 250);
+  runtimeModeTimer.unref?.();
 
   await mutateSettingsRoot((root) => {
     root.desktopLocalPort = port;
@@ -1109,6 +1263,671 @@ const readThemeSource = () => {
   return 'system';
 };
 
+// ---------------------------------------------------------------------------
+// In-app browser pane (<webview>) guest management.
+//
+// Guests are registered per owning window in did-attach-webview and validated
+// against this registry before any privileged operation (screenshots, and the
+// future CDP bridge). Popup containment and the navigation protocol allowlist
+// live here in main — the pane's injected page scripts are UX only.
+const browserWebviewGuests = new Map(); // guest webContents.id -> { ownerWindowId, leaseId?, cleanup? }
+const browserLeaseOwners = new Map(); // leaseId -> { ownerWindowId, metadata }
+const browserLeaseWindowClaims = new Map(); // directory + rootSessionId -> { ownerWindowId, claimedAt }
+const observedBrowserLeaseByWindow = new Map(); // ownerWindowId -> leaseId
+let browserLeaseRevision = 0;
+let browserLeaseGlobalCountPublishQueued = false;
+const MAX_BROWSER_LEASE_CONTEXT_CLAIMS_PER_REQUEST = 1_000;
+const browserDevToolsController = createBrowserDevToolsController({
+  createDevToolsView: () => new WebContentsView(),
+});
+
+const readAgentBrowserControlEnabled = () => {
+  const settings = readSettingsRoot();
+  // Default on. Capability paths are loopback-only and each lease is bound to
+  // one renderer-owned guest before the private URL is returned to an agent.
+  return settings.agentBrowserControlEnabled !== false;
+};
+
+const safeLeaseString = (value, maxLength = 2048) => (
+  typeof value === 'string' ? value.slice(0, maxLength) : ''
+);
+
+const hostnameForBrowserUrl = (rawUrl) => {
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.hostname : '';
+  } catch {
+    return '';
+  }
+};
+
+const isPrivilegedLeaseWindow = (browserWindow) => {
+  if (!browserWindow || browserWindow.isDestroyed() || browserWindow.__ocMiniChat === true) return false;
+  try {
+    return isPrivilegedRendererUrl(browserWindow.webContents.getURL(), state.localOrigin);
+  } catch {
+    return false;
+  }
+};
+
+const browserWindowById = (windowId) => BrowserWindow.getAllWindows().find(
+  (candidate) => !candidate.isDestroyed() && candidate.id === windowId,
+) || null;
+
+// Renderer claims use UI-normalized paths while OpenCode tool context keeps
+// native platform separators. Canonicalize both at the ownership boundary.
+const normalizeBrowserLeaseClaimDirectory = (value) => {
+  const slashNormalized = safeLeaseString(value, 8192).trim().replace(/\\/g, '/');
+  if (!slashNormalized) return '';
+
+  const withoutTrailingSeparators = slashNormalized === '/'
+    ? slashNormalized
+    : slashNormalized.replace(/\/+$/g, '');
+  return withoutTrailingSeparators.replace(
+    /^([A-Za-z]):(?=\/|$)/,
+    (_match, driveLetter) => `${driveLetter.toLowerCase()}:`,
+  );
+};
+
+const browserLeaseWindowClaimKey = (directory, rootSessionId) => {
+  const normalizedDirectory = normalizeBrowserLeaseClaimDirectory(directory);
+  const normalizedRootSessionId = safeLeaseString(rootSessionId, 256).trim();
+  if (normalizedDirectory.includes('\u0000') || normalizedRootSessionId.includes('\u0000')) return null;
+  return normalizedDirectory && normalizedRootSessionId
+    ? `${normalizedDirectory}\u0000${normalizedRootSessionId}`
+    : null;
+};
+
+const collectBrowserLeaseWindowClaimKeys = (contexts) => {
+  if (!Array.isArray(contexts)) throw new Error('Browser lease contexts must be an array');
+  if (contexts.length > MAX_BROWSER_LEASE_CONTEXT_CLAIMS_PER_REQUEST) {
+    throw new Error(`Browser lease contexts cannot exceed ${MAX_BROWSER_LEASE_CONTEXT_CLAIMS_PER_REQUEST}`);
+  }
+
+  const claimKeys = [];
+  const seen = new Set();
+  for (const context of contexts) {
+    const claimKey = browserLeaseWindowClaimKey(context?.directory, context?.rootSessionId);
+    if (!claimKey) throw new Error('Browser lease context requires a directory and rootSessionId');
+    if (seen.has(claimKey)) continue;
+    seen.add(claimKey);
+    claimKeys.push(claimKey);
+  }
+  return claimKeys;
+};
+
+const resolveBrowserLeaseOwnerWindow = (metadata) => {
+  const claimKey = browserLeaseWindowClaimKey(metadata?.directory, metadata?.rootSessionId);
+  if (!claimKey) return null;
+  const claim = browserLeaseWindowClaims.get(claimKey);
+  if (!claim) return null;
+  const claimedWindow = browserWindowById(claim.ownerWindowId);
+  if (isPrivilegedLeaseWindow(claimedWindow)) return claimedWindow;
+  browserLeaseWindowClaims.delete(claimKey);
+  return null;
+};
+
+const safeBrowserLeaseSnapshot = (leaseId, owner) => {
+  const status = browserCdpBridge?.getLeaseStatus(leaseId);
+  if (!status?.ok) return null;
+  const metadata = status.metadata && typeof status.metadata === 'object' ? status.metadata : owner.metadata;
+  const url = safeLeaseString(metadata.url, 8192);
+  return {
+    leaseId,
+    rootSessionId: safeLeaseString(metadata.rootSessionId, 256),
+    opencodeSessionID: safeLeaseString(metadata.opencodeSessionID, 256),
+    directory: safeLeaseString(metadata.directory, 8192),
+    agent: safeLeaseString(metadata.agent, 256) || 'Agent',
+    title: safeLeaseString(metadata.title, 1024),
+    hostname: safeLeaseString(metadata.hostname, 1024) || hostnameForBrowserUrl(url),
+    url,
+    lastActivityAt: Number.isFinite(status.lastActivityAt) ? status.lastActivityAt : Date.now(),
+    clientAttached: (status.clients ?? 0) > 0,
+  };
+};
+
+const createBrowserLeaseSnapshot = (ownerWindowId) => {
+  const leases = [];
+  for (const [leaseId, owner] of browserLeaseOwners) {
+    if (owner.ownerWindowId !== ownerWindowId) continue;
+    const lease = safeBrowserLeaseSnapshot(leaseId, owner);
+    if (lease) leases.push(lease);
+  }
+  leases.sort((left, right) => right.lastActivityAt - left.lastActivityAt);
+  browserLeaseRevision += 1;
+  return {
+    revision: browserLeaseRevision,
+    globalActiveLeaseCount: browserLeaseOwners.size,
+    leases,
+  };
+};
+
+const scheduleBrowserLeaseGlobalCountPublish = () => {
+  if (browserLeaseGlobalCountPublishQueued) return;
+  browserLeaseGlobalCountPublishQueued = true;
+  queueMicrotask(() => {
+    browserLeaseGlobalCountPublishQueued = false;
+    const detail = { activeLeaseCount: browserLeaseOwners.size };
+    for (const browserWindow of BrowserWindow.getAllWindows()) {
+      if (!isPrivilegedLeaseWindow(browserWindow)) continue;
+      emitToWindow(browserWindow, 'browser-agent-lease-total', detail);
+    }
+  });
+};
+
+const publishBrowserLeaseSnapshot = (ownerWindowId = null) => {
+  const targetWindowIds = ownerWindowId === null
+    ? Array.from(new Set(Array.from(browserLeaseOwners.values(), (owner) => owner.ownerWindowId)))
+    : [ownerWindowId];
+
+  for (const windowId of targetWindowIds) {
+    const browserWindow = browserWindowById(windowId);
+    if (!isPrivilegedLeaseWindow(browserWindow)) continue;
+    emitToWindow(browserWindow, 'browser-agent-leases', createBrowserLeaseSnapshot(windowId));
+  }
+};
+
+const removeBrowserLeaseOwner = (leaseId) => {
+  const owner = browserLeaseOwners.get(leaseId);
+  if (!owner) return null;
+  browserLeaseOwners.delete(leaseId);
+  scheduleBrowserLeaseGlobalCountPublish();
+  if (observedBrowserLeaseByWindow.get(owner.ownerWindowId) === leaseId) {
+    observedBrowserLeaseByWindow.delete(owner.ownerWindowId);
+  }
+  for (const [guestId, entry] of browserWebviewGuests) {
+    if (entry.leaseId === leaseId) {
+      entry.cleanup?.();
+      entry.cleanup = null;
+      entry.leaseId = null;
+      const guest = webContents.fromId(guestId);
+      if (guest && !guest.isDestroyed() && guest.getType() === 'webview') {
+        try {
+          guest.close({ waitForBeforeUnload: false });
+        } catch (error) {
+          log.warn(`[webview] failed to close released browser lease guest ${guestId}`, error);
+        }
+      }
+    }
+  }
+  publishBrowserLeaseSnapshot(owner.ownerWindowId);
+  return owner;
+};
+
+const registerBrowserWebviewGuest = (browserWindow, guestContents) => {
+  if (!guestContents || typeof guestContents.id !== 'number') return;
+  if (typeof guestContents.isDestroyed === 'function' && guestContents.isDestroyed()) return;
+  const guestId = guestContents.id;
+  const entry = { ownerWindowId: browserWindow.id, leaseId: null, cleanup: null };
+  browserWebviewGuests.set(guestId, entry);
+  guestContents.once('destroyed', () => {
+    entry.cleanup?.();
+    entry.cleanup = null;
+    browserDevToolsController.destroyGuest(guestId);
+    browserWebviewGuests.delete(guestId);
+    if (entry.leaseId) {
+      browserCdpBridge?.closeLease(entry.leaseId, 'guest_closed');
+    }
+  });
+};
+
+const resolveBrowserWebviewGuest = (browserWindow, rawWebContentsId) => {
+  const guestId = Number.isFinite(rawWebContentsId) ? Math.trunc(rawWebContentsId) : null;
+  if (guestId === null || guestId < 0) throw new Error('webContentsId is required');
+  const entry = browserWebviewGuests.get(guestId);
+  if (!entry) throw new Error('Unknown browser webview');
+  if (!browserWindow || browserWindow.isDestroyed() || entry.ownerWindowId !== browserWindow.id) {
+    throw new Error('Webview does not belong to the requesting window');
+  }
+  const guest = webContents.fromId(guestId);
+  if (!guest || guest.isDestroyed()) {
+    browserWebviewGuests.delete(guestId);
+    throw new Error('WebContents not found');
+  }
+  if (guest.getType() !== 'webview') throw new Error('WebContents is not a webview');
+  if (guest.session !== session.fromPartition(BROWSER_WEBVIEW_PARTITION)) {
+    throw new Error('Webview is not on the browser partition');
+  }
+  return guest;
+};
+
+// The CDP bridge is created lazily on the first lease. It owns one shared
+// listener and a separately fenced target/client/debugger state per lease.
+let browserCdpBridge = null;
+let browserCdpBridgePromise = null;
+
+const ensureBrowserCdpBridge = async () => {
+  if (browserCdpBridge) return browserCdpBridge;
+  if (!browserCdpBridgePromise) {
+    browserCdpBridgePromise = (async () => {
+      const { WebSocketServer } = await import('ws');
+      const { createBrowserCdpBridge } = await import('./browser-cdp-bridge.mjs');
+      if (browserCdpBridge) return browserCdpBridge;
+      browserCdpBridge = createBrowserCdpBridge({
+        createWebSocketServer: (options) => new WebSocketServer(options),
+        crypto,
+        onAgentInput: (input) => {
+          const owner = browserLeaseOwners.get(input?.leaseId);
+          if (!owner || observedBrowserLeaseByWindow.get(owner.ownerWindowId) !== input.leaseId) return;
+          const browserWindow = browserWindowById(owner.ownerWindowId);
+          if (!isPrivilegedLeaseWindow(browserWindow)) return;
+          emitToWindow(browserWindow, 'browser-agent-input', input);
+        },
+        onStatusChange: () => publishBrowserLeaseSnapshot(),
+        log: (message, error) => (error ? log.warn(message, error) : log.info(message)),
+      });
+      return browserCdpBridge;
+    })().finally(() => {
+      browserCdpBridgePromise = null;
+    });
+  }
+  return await browserCdpBridgePromise;
+};
+
+const LEASE_GUEST_BIND_TIMEOUT_MS = 8_000;
+const LEASE_GUEST_BIND_POLL_MS = 50;
+const LEASE_OWNER_CLAIM_TIMEOUT_MS = 5_000;
+
+const waitForBrowserLeaseOwnerWindow = async (metadata) => {
+  const deadline = Date.now() + LEASE_OWNER_CLAIM_TIMEOUT_MS;
+  while (!state.quitRequested) {
+    const ownerWindow = resolveBrowserLeaseOwnerWindow(metadata);
+    if (ownerWindow) return ownerWindow;
+    if (Date.now() >= deadline) return null;
+    await new Promise((resolve) => setTimeout(resolve, LEASE_GUEST_BIND_POLL_MS));
+  }
+  return null;
+};
+
+const createDesktopBrowserLease = async ({ leaseId, metadata = {}, onClosed } = {}) => {
+  if (!readAgentBrowserControlEnabled()) throw new Error('agent_browser_disabled');
+  if (typeof leaseId !== 'string' || !leaseId) throw new Error('invalid_browser_lease');
+  if (browserLeaseOwners.has(leaseId)) throw new Error('browser_lease_exists');
+
+  // Task/session events can reach the managed child just before the renderer's
+  // exact context-claim IPC. Wait briefly for that exact claim; never fall back
+  // to focus, another directory, or another root.
+  const ownerWindow = await waitForBrowserLeaseOwnerWindow(metadata);
+  if (!ownerWindow) throw new Error('browser_lease_window_unavailable');
+  const owner = { ownerWindowId: ownerWindow.id, metadata: { ...metadata } };
+  browserLeaseOwners.set(leaseId, owner);
+
+  let bridge;
+  let started;
+  try {
+    bridge = await ensureBrowserCdpBridge();
+    if (!readAgentBrowserControlEnabled() || state.quitRequested) {
+      throw new Error(state.quitRequested ? 'browser_runtime_stopping' : 'agent_browser_disabled');
+    }
+    started = await bridge.createLease({
+      leaseId,
+      metadata,
+      onClosed: (detail) => {
+        removeBrowserLeaseOwner(leaseId);
+        if (typeof onClosed === 'function') {
+          Promise.resolve(onClosed(detail)).catch((error) => {
+            log.warn(`[cdp-bridge] lease close callback failed for ${leaseId}`, error);
+          });
+        }
+      },
+    });
+  } catch (error) {
+    removeBrowserLeaseOwner(leaseId);
+    throw error;
+  }
+  if (!started.ok) {
+    removeBrowserLeaseOwner(leaseId);
+    throw new Error(`browser_lease_${started.state || 'start_failed'}`);
+  }
+
+  scheduleBrowserLeaseGlobalCountPublish();
+  // Publishing the safe lease snapshot is the renderer's mount request. The
+  // fleet exists outside the visible panel tree, so this never opens UI.
+  publishBrowserLeaseSnapshot(ownerWindow.id);
+  const deadline = Date.now() + LEASE_GUEST_BIND_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    const status = bridge.getLeaseStatus(leaseId);
+    if (!status.ok) throw new Error('browser_lease_closed_before_bind');
+    if (status.guestAttached) return { ...started, state: 'ready' };
+    if (!isPrivilegedLeaseWindow(browserWindowById(ownerWindow.id))) {
+      bridge.closeLease(leaseId, 'owner_window_unavailable');
+      throw new Error('browser_lease_window_unavailable');
+    }
+    await new Promise((resolve) => setTimeout(resolve, LEASE_GUEST_BIND_POLL_MS));
+  }
+
+  bridge.closeLease(leaseId, 'guest_bind_timeout');
+  throw new Error('browser_lease_guest_bind_timeout');
+};
+
+const touchDesktopBrowserLease = async ({ leaseId, metadata = {} } = {}) => {
+  if (typeof leaseId !== 'string') return { ok: false, state: 'not_found' };
+  if (!browserCdpBridge) {
+    removeBrowserLeaseOwner(leaseId);
+    return { ok: false, state: 'not_found' };
+  }
+  const owner = browserLeaseOwners.get(leaseId);
+  if (owner && metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
+    owner.metadata = { ...owner.metadata, ...metadata };
+  }
+  const result = browserCdpBridge.touchLease(leaseId, metadata);
+  if (result?.ok === false || result?.state === 'not_found') removeBrowserLeaseOwner(leaseId);
+  return result;
+};
+
+const releaseDesktopBrowserLease = async ({ leaseId, reason = 'released' } = {}) => {
+  if (typeof leaseId !== 'string') return { ok: true, state: 'not_found' };
+  if (!browserCdpBridge) {
+    removeBrowserLeaseOwner(leaseId);
+    return { ok: true, state: 'not_found' };
+  }
+  const closed = browserCdpBridge.closeLease(leaseId, safeLeaseString(reason, 128) || 'released');
+  if (!closed) removeBrowserLeaseOwner(leaseId);
+  return { ok: true, state: closed ? 'closed' : 'not_found' };
+};
+
+const bindDesktopBrowserLeaseGuest = async (browserWindow, { leaseId, webContentsId } = {}) => {
+  if (typeof leaseId !== 'string' || !leaseId) throw new Error('leaseId is required');
+  const owner = browserLeaseOwners.get(leaseId);
+  if (!owner || !browserWindow || owner.ownerWindowId !== browserWindow.id) {
+    throw new Error('Browser lease does not belong to the requesting window');
+  }
+  const guest = resolveBrowserWebviewGuest(browserWindow, webContentsId);
+  const entry = browserWebviewGuests.get(guest.id);
+  if (!entry) throw new Error('Unknown browser webview');
+  if (entry.leaseId && entry.leaseId !== leaseId) throw new Error('Webview is already bound to another lease');
+  for (const [guestId, candidate] of browserWebviewGuests) {
+    if (guestId !== guest.id && candidate.leaseId === leaseId) throw new Error('Lease is already bound to another webview');
+  }
+
+  const bridge = await ensureBrowserCdpBridge();
+  const result = bridge.bindLeaseGuest(leaseId, guest, { ownerWindowId: browserWindow.id });
+  if (!result.ok) return result;
+  entry.leaseId = leaseId;
+
+  entry.cleanup?.();
+  let metadataTimer = null;
+  const flushMetadata = () => {
+    metadataTimer = null;
+    if (entry.leaseId !== leaseId || guest.isDestroyed()) return;
+    const url = safeLeaseString(guest.getURL?.(), 8192);
+    bridge.updateLeaseMetadata(leaseId, {
+      url,
+      title: safeLeaseString(guest.getTitle?.(), 1024),
+      hostname: hostnameForBrowserUrl(url),
+    });
+  };
+  const scheduleMetadataSync = () => {
+    if (metadataTimer) return;
+    metadataTimer = setTimeout(flushMetadata, 250);
+    metadataTimer.unref?.();
+  };
+  const events = ['did-navigate', 'did-navigate-in-page', 'page-title-updated'];
+  for (const event of events) guest.on(event, scheduleMetadataSync);
+  entry.cleanup = () => {
+    if (metadataTimer) clearTimeout(metadataTimer);
+    metadataTimer = null;
+    for (const event of events) guest.off?.(event, scheduleMetadataSync);
+  };
+  flushMetadata();
+  return bridge.getLeaseStatus(leaseId);
+};
+
+const setObservedDesktopBrowserLease = (browserWindow, { leaseId } = {}) => {
+  if (!browserWindow || browserWindow.isDestroyed()) throw new Error('Window is not available');
+  if (leaseId === null || leaseId === undefined || leaseId === '') {
+    observedBrowserLeaseByWindow.delete(browserWindow.id);
+    return { ok: true, leaseId: null };
+  }
+  const owner = browserLeaseOwners.get(leaseId);
+  if (!owner || owner.ownerWindowId !== browserWindow.id) {
+    throw new Error('Browser lease does not belong to the requesting window');
+  }
+  observedBrowserLeaseByWindow.set(browserWindow.id, leaseId);
+  return { ok: true, leaseId };
+};
+
+const claimDesktopBrowserLeaseContexts = (browserWindow, { contexts } = {}) => {
+  if (!isPrivilegedLeaseWindow(browserWindow)) throw new Error('Window is not available');
+  const claimKeys = collectBrowserLeaseWindowClaimKeys(contexts);
+  const claimedAt = Date.now();
+  for (const claimKey of claimKeys) {
+    // Refresh insertion order so authoritative, still-known contexts survive
+    // the stale-claim cap. Other roots/directories remain additive.
+    browserLeaseWindowClaims.delete(claimKey);
+    browserLeaseWindowClaims.set(claimKey, { ownerWindowId: browserWindow.id, claimedAt });
+  }
+  while (browserLeaseWindowClaims.size > MAX_BROWSER_LEASE_CONTEXT_CLAIMS_PER_REQUEST) {
+    browserLeaseWindowClaims.delete(browserLeaseWindowClaims.keys().next().value);
+  }
+  return { ok: true, claimed: claimKeys.length };
+};
+
+const claimDesktopBrowserLeaseContext = (browserWindow, { directory, rootSessionId } = {}) => {
+  return claimDesktopBrowserLeaseContexts(browserWindow, {
+    contexts: [{ directory, rootSessionId }],
+  });
+};
+
+const getBrowserCdpBridgeStatus = () => {
+  if (!readAgentBrowserControlEnabled()) return { state: 'disabled' };
+  return browserCdpBridge?.status() || { state: 'stopped', running: false, clients: 0, leaseCount: 0 };
+};
+
+// Kept as a compatibility diagnostic endpoint, but never publishes any
+// lease's capability URL. New agents acquire a scoped URL through the private
+// lease API instead.
+const resolveBridgeStatusForDiscovery = async () => (
+  readAgentBrowserControlEnabled() ? { state: 'lease_required' } : { state: 'disabled' }
+);
+
+// Disabling the setting must drop an active session immediately, not merely
+// prevent the next one.
+const enforceAgentBrowserControlSetting = () => {
+  if (readAgentBrowserControlEnabled()) return;
+  if (browserCdpBridge) {
+    log.info('[cdp-bridge] closing all leases: agent browser control disabled');
+    browserCdpBridge.closeAll('disabled');
+    return;
+  }
+  if (browserCdpBridgePromise) {
+    void browserCdpBridgePromise.then((bridge) => {
+      if (!readAgentBrowserControlEnabled()) bridge.closeAll('disabled');
+    }).catch(() => undefined);
+  }
+};
+
+const readAgentBrowserRuntimeStatus = async ({ refresh = true } = {}) => {
+  if (state.agentBrowserRuntimeMode === 'pending') {
+    return {
+      ok: false,
+      state: 'pending',
+      expectedVersion: '0.33.2',
+      installedVersion: null,
+      binaryPath: '',
+      issues: [],
+      skill: null,
+      activeLeaseCount: browserLeaseOwners.size,
+    };
+  }
+  if (!state.agentBrowserManagedRuntime || state.agentBrowserRuntimeMode === 'external') {
+    return {
+      ok: false,
+      state: 'external-runtime',
+      expectedVersion: '0.33.2',
+      installedVersion: null,
+      binaryPath: '',
+      issues: [{
+        code: 'external-runtime-noop',
+        message: 'Agent browser setup is available only for the Electron-managed OpenCode runtime',
+      }],
+      skill: null,
+      activeLeaseCount: browserLeaseOwners.size,
+    };
+  }
+  if (state.agentBrowserSetupPromise) {
+    await state.agentBrowserSetupPromise;
+  }
+  if (refresh && state.agentBrowserInstaller?.status) {
+    try {
+      state.agentBrowserInstallStatus = await state.agentBrowserInstaller.status();
+    } catch (error) {
+      state.agentBrowserInstallStatus = {
+        ...(state.agentBrowserInstallStatus || {}),
+        ok: false,
+        state: 'unavailable',
+        issues: [{ code: 'status-failed', message: error instanceof Error ? error.message : String(error) }],
+      };
+    }
+  }
+  return {
+    ...(state.agentBrowserInstallStatus || {
+      ok: false,
+      state: 'unavailable',
+      expectedVersion: '0.33.2',
+      installedVersion: null,
+      issues: [{ code: 'installer-unavailable', message: 'Agent browser installer is unavailable' }],
+    }),
+    skill: state.agentBrowserSkillStatus,
+    activeLeaseCount: browserLeaseOwners.size,
+  };
+};
+
+const createAgentBrowserMutationResult = (
+  status,
+  { applied = false, restartSucceeded = false, restartFailed = false } = {},
+) => {
+  const result = {
+    ...(status && typeof status === 'object' ? status : {}),
+    applied,
+    restartSucceeded,
+  };
+  if (!restartFailed) return result;
+
+  const issues = Array.isArray(result.issues)
+    ? result.issues.filter((issue) => issue?.code !== 'restart-failed')
+    : [];
+  return {
+    ...result,
+    state: 'restart-failed',
+    applied: false,
+    restartSucceeded: false,
+    issues: [
+      ...issues,
+      {
+        code: 'restart-failed',
+        message: 'Agent browser is installed, but OpenCode could not restart. Restart DevRyan to apply it.',
+      },
+    ],
+  };
+};
+
+const mutateAgentBrowserInstallation = async (operation) => {
+  if (!state.agentBrowserManagedRuntime || state.agentBrowserRuntimeMode !== 'managed') {
+    return createAgentBrowserMutationResult(
+      await readAgentBrowserRuntimeStatus({ refresh: false }),
+    );
+  }
+  if (state.agentBrowserSetupPromise) {
+    await state.agentBrowserSetupPromise;
+  }
+  const installer = state.agentBrowserInstaller;
+  const action = installer?.[operation];
+  if (typeof action !== 'function') {
+    return createAgentBrowserMutationResult(
+      await readAgentBrowserRuntimeStatus({ refresh: false }),
+    );
+  }
+  try {
+    state.agentBrowserInstallStatus = await action.call(installer);
+  } catch (error) {
+    state.agentBrowserInstallStatus = {
+      ...(state.agentBrowserInstallStatus || {}),
+      ok: false,
+      state: 'unavailable',
+      issues: [{ code: `${operation}-failed`, message: error instanceof Error ? error.message : String(error) }],
+    };
+  }
+
+  state.agentBrowserSkillStatus = state.agentBrowserInstallStatus?.ok
+    ? await state.agentBrowserSkillProvisioner?.()
+    : await state.agentBrowserSkillWithdrawer?.();
+
+  const runtimeStatus = await readAgentBrowserRuntimeStatus({ refresh: false });
+  if (!runtimeStatus.ok) {
+    return createAgentBrowserMutationResult(runtimeStatus);
+  }
+  if (typeof state.serverHandle?.restartOpenCode !== 'function') {
+    log.warn('[agent-browser] installed successfully but managed OpenCode restart is unavailable');
+    return createAgentBrowserMutationResult(runtimeStatus, { restartFailed: true });
+  }
+
+  try {
+    await state.serverHandle.restartOpenCode();
+  } catch (error) {
+    log.warn('[agent-browser] installed successfully but managed OpenCode restart failed', error);
+    return createAgentBrowserMutationResult(runtimeStatus, { restartFailed: true });
+  }
+  return createAgentBrowserMutationResult(
+    await readAgentBrowserRuntimeStatus({ refresh: false }),
+    { applied: true, restartSucceeded: true },
+  );
+};
+
+const loadUrlInsideWebContents = (contents, rawUrl) => {
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+    if (contents.isDestroyed()) return false;
+    void contents.loadURL(url.toString()).catch((error) => {
+      log.warn('[webview] failed to load popup URL in place:', error);
+    });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+// Popup containment + navigation protocol allowlist for every webview guest.
+// setWindowOpenHandler is the real popup boundary (the in-page window.open
+// patch is cosmetic); the will-navigate guard also constrains navigations
+// initiated over CDP once the agent bridge lands.
+app.on('web-contents-created', (_event, contents) => {
+  if (contents.getType() !== 'webview') return;
+
+  contents.setWindowOpenHandler(({ url }) => {
+    loadUrlInsideWebContents(contents, url);
+    return { action: 'deny' };
+  });
+
+  contents.on('will-navigate', (event, url) => {
+    if (isAllowedWebviewNavigationUrl(url)) return;
+    event.preventDefault();
+  });
+});
+
+// The browser partition denies permission prompts (camera, mic, geolocation,
+// notifications, …) and downloads outright. Electron needs BOTH the request
+// and check handlers for complete permission coverage. Fullscreen stays
+// allowed so video sites behave.
+const configureBrowserWebviewSession = () => {
+  const browserSession = session.fromPartition(BROWSER_WEBVIEW_PARTITION);
+  browserSession.setPermissionRequestHandler((_contents, permission, callback) => {
+    callback(permission === 'fullscreen');
+  });
+  browserSession.setPermissionCheckHandler((_contents, permission) => permission === 'fullscreen');
+  browserSession.on('will-download', (event) => {
+    event.preventDefault();
+  });
+};
+
+// Cache reporting/clearing spans the app session and the browser pane's
+// persistent partition; keep both in sync so neither hides disk usage.
+const cacheMaintenanceSessions = () => ({
+  defaultSession: session.defaultSession,
+  browserSession: session.fromPartition(BROWSER_WEBVIEW_PARTITION),
+});
+
 const createBrowserWindow = ({ label, restoreGeometry, url }) => {
   const saved = restoreGeometry ? readWindowState() : null;
   const useSaved = saved && typeof saved.width === 'number' && typeof saved.height === 'number';
@@ -1146,6 +1965,9 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
       // keep the renderer world walled off from Node. Do NOT flip to true —
       // the preload would fail to load and __TAURI__ would go undefined.
       sandbox: false,
+      // Required for the context panel's browser pane. Guests are hardened in
+      // will-attach-webview (preload stripped, sandboxed, pinned partition).
+      webviewTag: true,
     },
   };
 
@@ -1214,6 +2036,18 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
     debounceWindowStatePersist(browserWindow, true);
   });
   browserWindow.on('closed', () => {
+    observedBrowserLeaseByWindow.delete(browserWindow.id);
+    for (const [claimKey, claim] of browserLeaseWindowClaims) {
+      if (claim.ownerWindowId === browserWindow.id) browserLeaseWindowClaims.delete(claimKey);
+    }
+    if (browserCdpBridge) {
+      const ownedLeaseIds = Array.from(browserLeaseOwners)
+        .filter(([, owner]) => owner.ownerWindowId === browserWindow.id)
+        .map(([leaseId]) => leaseId);
+      for (const leaseId of ownedLeaseIds) {
+        browserCdpBridge.closeLease(leaseId, 'owner_window_closed');
+      }
+    }
     state.focusedWindowIds.delete(browserWindow.id);
     if (state.mainWindow && browserWindow.id === state.mainWindow.id) {
       state.mainWindow = null;
@@ -1245,6 +2079,37 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
     if (isAllowedNavigationUrl(url)) return;
     event.preventDefault();
     void shell.openExternal(url).catch(() => {});
+  });
+
+  // Harden every <webview> guest this window tries to attach. The embedder
+  // must be our own privileged UI (never a remote host page), and the guest
+  // never inherits the preload/__TAURI__ IPC surface, runs sandboxed, and is
+  // pinned to the browser partition. Tighter than upstream, which ships no
+  // will-attach-webview handler at all.
+  browserWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
+    const embedderUrl = browserWindow.webContents.getURL();
+    if (!isPrivilegedRendererUrl(embedderUrl, state.localOrigin)) {
+      log.warn(`[webview] refused attach from non-privileged embedder: ${embedderUrl || '(unknown)'}`);
+      event.preventDefault();
+      return;
+    }
+    if (!isAllowedWebviewSourceUrl(params?.src)) {
+      log.warn('[webview] refused attach with disallowed src');
+      event.preventDefault();
+      return;
+    }
+    hardenWebviewAttachParams(webPreferences, params);
+  });
+
+  // Exact ownership registry for guests: capture/CDP commands must name a
+  // guest that this specific window attached, on the pinned partition, and
+  // that is still alive.
+  browserWindow.webContents.on('did-attach-webview', (_event, guestContents) => {
+    try {
+      registerBrowserWebviewGuest(browserWindow, guestContents);
+    } catch (error) {
+      log.warn('[webview] failed to register guest:', error);
+    }
   });
 
   browserWindow.webContents.setZoomFactor(1);
@@ -1510,7 +2375,7 @@ const compareSemver = (left, right) => {
 };
 
 const parseGithubRepo = () => {
-  return { owner: 'btriapitsyn', repo: 'openchamber' };
+  return { owner: GITHUB_REPOSITORY_OWNER, repo: GITHUB_REPOSITORY_NAME };
 };
 
 const setupAutoUpdater = () => {
@@ -1777,6 +2642,56 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
     case 'desktop_get_app_version':
       return APP_VERSION;
 
+    case 'desktop_browser_cdp_status': {
+      return getBrowserCdpBridgeStatus();
+    }
+
+    case 'desktop_browser_lease_snapshot':
+      return createBrowserLeaseSnapshot(browserWindow.id);
+
+    case 'desktop_browser_lease_claim_context':
+      return claimDesktopBrowserLeaseContext(browserWindow, args);
+
+    case 'desktop_browser_lease_claim_contexts':
+      return claimDesktopBrowserLeaseContexts(browserWindow, args);
+
+    case 'desktop_browser_lease_bind_guest':
+      return bindDesktopBrowserLeaseGuest(browserWindow, args);
+
+    case 'desktop_browser_lease_set_observed':
+      return setObservedDesktopBrowserLease(browserWindow, args);
+
+    case 'desktop_agent_browser_status':
+      return readAgentBrowserRuntimeStatus();
+
+    case 'desktop_agent_browser_install':
+      return mutateAgentBrowserInstallation('install');
+
+    case 'desktop_agent_browser_repair':
+      return mutateAgentBrowserInstallation('repair');
+
+    case 'desktop_browser_capture_page': {
+      const guest = resolveBrowserWebviewGuest(browserWindow, args?.webContentsId);
+      const image = await guest.capturePage();
+      const buffer = image.toJPEG(82);
+      return {
+        mime: 'image/jpeg',
+        base64: buffer.toString('base64'),
+        width: image.getSize().width,
+        height: image.getSize().height,
+      };
+    }
+
+    case 'desktop_browser_devtools_set_open': {
+      const guest = resolveBrowserWebviewGuest(browserWindow, args?.webContentsId);
+      return browserDevToolsController.setOpen({
+        guest,
+        ownerWindow: browserWindow,
+        bounds: args?.bounds,
+        open: args?.open === true,
+      });
+    }
+
     case 'desktop_capture_page_rect': {
       if (!browserWindow || browserWindow.isDestroyed()) {
         throw new Error('Window is not available');
@@ -1826,6 +2741,83 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
 
       await fsp.writeFile(result.filePath, content, 'utf8');
       return result.filePath;
+    }
+
+    case 'desktop_export_diagnostics': {
+      const requestedScope = args?.scope && typeof args.scope === 'object'
+        ? args.scope
+        : { scope: 'runtime' };
+      const scope = requestedScope.scope === 'task'
+        ? {
+            scope: 'task',
+            sessionID: String(requestedScope.sessionID || '').trim(),
+            directory: String(requestedScope.directory || '').trim() || undefined,
+          }
+        : { scope: 'runtime' };
+      if (scope.scope === 'task' && !scope.sessionID) {
+        throw new Error('Session ID is required for a task diagnostics export');
+      }
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const defaultFileName = `DevRyan-diagnostics-${scope.scope}-${stamp}.zip`;
+      const result = await dialog.showSaveDialog(browserWindow || undefined, {
+        defaultPath: defaultFileName,
+        filters: [{ name: 'ZIP archive', extensions: ['zip'] }],
+        title: scope.scope === 'task' ? 'Export Task Diagnostics' : 'Export Runtime Diagnostics',
+      });
+      if (result.canceled || !result.filePath) {
+        return { cancelled: true, fileName: defaultFileName };
+      }
+      const localOrigin = state.localOrigin || state.sidecarUrl;
+      if (!localOrigin) {
+        throw new Error('Local diagnostics server is unavailable');
+      }
+      const response = await fetch(`${localOrigin.replace(/\/+$/, '')}/api/diagnostics/export`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/zip',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(scope),
+      });
+      if (!response.ok || !response.body) {
+        const message = await response.text().catch(() => '');
+        throw new Error(message || `Diagnostics export failed (${response.status})`);
+      }
+
+      await cleanupExpiredDiagnosticsTemps(result.filePath);
+      const temporaryPath = path.join(
+        path.dirname(result.filePath),
+        `.${path.basename(result.filePath)}.diagnostics-${crypto.randomUUID()}.tmp`,
+      );
+      try {
+        await pipeline(
+          Readable.fromWeb(response.body),
+          fs.createWriteStream(temporaryPath, { flags: 'wx', mode: 0o600 }),
+        );
+        const temporaryHandle = await fsp.open(temporaryPath, 'r+');
+        try {
+          await temporaryHandle.chmod(0o600);
+          await temporaryHandle.sync();
+        } finally {
+          await temporaryHandle.close();
+        }
+        await fsp.rename(temporaryPath, result.filePath);
+        const parentHandle = await fsp.open(path.dirname(result.filePath), 'r').catch(() => null);
+        if (parentHandle) {
+          try {
+            await parentHandle.sync().catch(() => undefined);
+          } finally {
+            await parentHandle.close();
+          }
+        }
+      } catch (error) {
+        await fsp.unlink(temporaryPath).catch(() => undefined);
+        throw error;
+      }
+      return {
+        cancelled: false,
+        fileName: path.basename(result.filePath),
+      };
     }
 
     case 'desktop_read_file': {
@@ -1940,17 +2932,17 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       return speechManager.cancel();
 
     case 'desktop_get_cache_info':
-      return getElectronRuntimeCacheInfo({ defaultSession: session.defaultSession });
+      return getElectronRuntimeCacheInfo(cacheMaintenanceSessions());
 
     case 'desktop_clear_cache': {
       const result = await clearElectronRuntimeCaches({
-        defaultSession: session.defaultSession,
+        ...cacheMaintenanceSessions(),
         log,
       });
       if (!result.ok) {
         throw new Error('Failed to clear application cache');
       }
-      return getElectronRuntimeCacheInfo({ defaultSession: session.defaultSession });
+      return getElectronRuntimeCacheInfo(cacheMaintenanceSessions());
     }
 
     case 'desktop_open_path': {
@@ -2143,11 +3135,28 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
     case 'desktop_set_keep_awake':
       return applyDesktopKeepAwake(args.enabled === true);
 
+    case 'desktop_set_agent_browser_control': {
+      const enabled = args.enabled === true;
+      await mutateSettingsRoot((root) => {
+        root.agentBrowserControlEnabled = enabled;
+      });
+      // Enforced in main: turning this off drops any live bridge session now.
+      enforceAgentBrowserControlSetting();
+      return { enabled };
+    }
+
     case 'desktop_check_for_updates': {
       const currentVersion = APP_VERSION;
       let payload = null;
       try {
-        const response = await fetch(UPDATE_METADATA_URL, { signal: AbortSignal.timeout(10_000) });
+        const response = await fetch(UPDATE_METADATA_URL, {
+          headers: {
+            Accept: 'application/vnd.github+json',
+            'User-Agent': `DevRyan/${currentVersion}`,
+            'X-GitHub-Api-Version': '2022-11-28',
+          },
+          signal: AbortSignal.timeout(10_000),
+        });
         payload = await response.json();
       } catch {
       }
@@ -2159,13 +3168,16 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       }
 
       const updateInfo = updateResult?.updateInfo;
-      const nextVersion =
+      const nextVersion = String(
         (typeof updateInfo?.version === 'string' && updateInfo.version) ||
         (typeof payload?.version === 'string' && payload.version) ||
-        currentVersion;
+        (typeof payload?.tag_name === 'string' && payload.tag_name) ||
+        currentVersion
+      ).replace(/^v/, '');
       const available = compareSemver(nextVersion, currentVersion) > 0;
       const body =
         (typeof payload?.notes === 'string' && payload.notes.trim() ? payload.notes : null) ||
+        (typeof payload?.body === 'string' && payload.body.trim() ? payload.body : null) ||
         (typeof updateInfo?.releaseNotes === 'string' && updateInfo.releaseNotes.trim() ? updateInfo.releaseNotes : null);
       state.pendingUpdate = available ? { version: nextVersion, metadata: payload, electronUpdate: updateResult } : null;
       return {
@@ -2175,7 +3187,8 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         body: body || null,
         date:
           (typeof updateInfo?.releaseDate === 'string' && updateInfo.releaseDate) ||
-          (typeof payload?.pub_date === 'string' ? payload.pub_date : null),
+          (typeof payload?.pub_date === 'string' && payload.pub_date) ||
+          (typeof payload?.published_at === 'string' ? payload.published_at : null),
       };
     }
 
@@ -2245,6 +3258,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
           }
         }
       }
+      browserCdpBridge?.closeAll('app_restart');
       // Defer so the IPC reply flushes before the app starts shutting down.
       // Without this, quitAndInstall() can race with the renderer's pending
       // invoke and the restart appears to do nothing from the UI side.
@@ -2434,7 +3448,6 @@ const buildMacMenu = () => {
       submenu: [
         { label: 'Git', accelerator: 'Cmd+G', click: () => dispatchAction('open-git-tab') },
         { label: 'Diff', accelerator: 'Cmd+E', click: () => dispatchAction('open-diff-tab') },
-        { label: 'Files', click: () => dispatchAction('open-files-tab') },
         { label: 'Terminal', accelerator: 'Cmd+T', click: () => dispatchAction('open-terminal-tab') },
         { type: 'separator' },
         { label: 'Light Theme', click: () => dispatchAction('theme-light') },
@@ -2519,7 +3532,10 @@ const COMMANDS_SAFE_FOR_REMOTE = new Set([
   'desktop_start_window_drag',
   'desktop_get_app_version',
   'desktop_get_lan_address',
-  'desktop_capture_page_rect',
+  // desktop_capture_page_rect is deliberately NOT in this set: it reads app
+  // window pixels, and a remote host's UI must not be able to capture them.
+  // Remote-origin UIs fall back to browser-side DOM capture for annotation
+  // screenshots (lib/preview/screenshot-capture.ts).
 ]);
 
 ipcMain.handle('openchamber:invoke', async (event, command, args) => {
@@ -2592,6 +3608,7 @@ app.on('before-quit', (event) => {
 });
 
 app.on('will-quit', () => {
+  browserCdpBridge?.closeAll('app_quit');
   releaseDesktopKeepAwake();
 });
 
@@ -2639,6 +3656,11 @@ app.whenReady().then(async () => {
   });
   nativeTheme.themeSource = readThemeSource();
   try {
+    configureBrowserWebviewSession();
+  } catch (error) {
+    log.warn('[electron] failed to configure browser webview session:', error);
+  }
+  try {
     applyDesktopKeepAwake(readDesktopKeepAwakeEnabled());
   } catch (error) {
     log.warn('[electron] failed to apply persisted desktop keep awake setting:', error);
@@ -2657,7 +3679,7 @@ app.whenReady().then(async () => {
 
   if (app.isPackaged) {
     await clearElectronRuntimeCaches({
-      defaultSession: session.defaultSession,
+      ...cacheMaintenanceSessions(),
       log,
     });
   }

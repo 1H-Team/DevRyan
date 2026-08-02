@@ -21,6 +21,7 @@ import {
   getAncestors,
   findWorktreeRoot,
 } from './shared.js';
+import { isRetiredDevRyanSkillName } from './skill-policy.js';
 
 function ensureProjectSkillDir(workingDirectory) {
   const projectSkillDir = path.join(workingDirectory, '.opencode', 'skills');
@@ -223,7 +224,7 @@ function discoverSkills(workingDirectory) {
     }
   }
 
-  return Array.from(skills.values());
+  return Array.from(skills.values()).filter((skill) => !isRetiredDevRyanSkillName(skill?.name));
 }
 
 function getSkillSources(skillName, workingDirectory, discoveredSkill = null) {
@@ -322,6 +323,9 @@ function getSkillSources(skillName, workingDirectory, discoveredSkill = null) {
 function createSkill(skillName, config, workingDirectory, scope) {
   ensureDirs();
 
+  if (isRetiredDevRyanSkillName(skillName)) {
+    throw new Error(`Skill "${skillName}" is retired from DevRyan's managed skill runtime`);
+  }
   if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/.test(skillName) || skillName.length > 64) {
     throw new Error(`Invalid skill name "${skillName}". Must be 1-64 lowercase alphanumeric characters with hyphens, cannot start or end with hyphen.`);
   }

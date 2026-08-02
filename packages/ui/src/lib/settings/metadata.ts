@@ -21,7 +21,8 @@ export type SettingsPageSlug =
   | 'magic-prompts'
   | 'notifications'
   | 'voice'
-  | 'tunnel';
+  | 'tunnel'
+  | 'about';
 
 export type SettingsPageGroup =
   | 'appearance'
@@ -182,7 +183,7 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     title: 'Sessions',
     group: 'general',
     kind: 'single',
-    keywords: ['defaults', 'default agent', 'default model', 'retention', 'memory', 'limits', 'zen'],
+    keywords: ['defaults', 'default agent', 'default model', 'memory', 'limits', 'zen'],
   },
   {
     slug: 'magic-prompts',
@@ -196,6 +197,7 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
   { slug: 'notifications', title: 'Notifications', group: 'general', kind: 'single', keywords: ['alerts', 'native', 'summary', 'summarization'], },
   { slug: 'voice', title: 'Voice', group: 'advanced', kind: 'single', keywords: ['tts', 'speech', 'voice'], isAvailable: (ctx) => !ctx.isVSCode },
   { slug: 'tunnel', title: 'Remote Tunnel', group: 'advanced', kind: 'single', keywords: ['tunnel', 'cloudflare', 'qr', 'remote', 'mobile', 'share'], isAvailable: (ctx) => !ctx.isVSCode },
+  { slug: 'about', title: 'About', group: 'general', kind: 'single', keywords: ['about', 'version', 'data', 'retention', 'diagnostics', 'logs', 'export', 'support'], },
 ] as const;
 
 export const LEGACY_SIDEBAR_SECTION_TO_SETTINGS_SLUG: Record<SidebarSection, SettingsPageSlug> = {

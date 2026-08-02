@@ -15,11 +15,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
+import {
+  createNotificationTemplateDraftController,
+  type NotificationTemplateField,
+} from './notificationTemplateDraft';
 
 const DEFAULT_NOTIFICATION_TEMPLATES = {
   completion: {
     titleKey: 'settings.notifications.page.template.defaults.completion.title',
     messageKey: 'settings.notifications.page.template.defaults.completion.message',
+  },
+  planReady: {
+    titleKey: 'settings.notifications.page.template.defaults.planReady.title',
+    messageKey: 'settings.notifications.page.template.defaults.planReady.message',
   },
   error: {
     titleKey: 'settings.notifications.page.template.defaults.error.title',
@@ -37,6 +45,7 @@ const DEFAULT_NOTIFICATION_TEMPLATES = {
 type NotificationTemplateEvent = keyof typeof DEFAULT_NOTIFICATION_TEMPLATES;
 const TEMPLATE_EVENT_LABEL_KEYS = {
   completion: 'settings.notifications.page.template.event.completion',
+  planReady: 'settings.notifications.page.template.event.planReady',
   subtask: 'settings.notifications.page.template.event.subtask',
   error: 'settings.notifications.page.template.event.error',
   question: 'settings.notifications.page.template.event.question',
@@ -48,6 +57,65 @@ const UTILITY_NOT_SELECTED_VALUE = '__not_selected__';
 const DEFAULT_SUMMARY_THRESHOLD = 200;
 const DEFAULT_SUMMARY_LENGTH = 100;
 const DEFAULT_MAX_LAST_MESSAGE_LENGTH = 250;
+
+const NotificationTemplateEditor = React.memo(function NotificationTemplateEditor({
+  event,
+}: {
+  event: NotificationTemplateEvent;
+}) {
+  const { t } = useI18n();
+  const template = useUIStore((state) => state.notificationTemplates[event]);
+  const [draft, setDraft] = React.useState(template);
+  const controllerRef = React.useRef<ReturnType<typeof createNotificationTemplateDraftController> | null>(null);
+
+  if (!controllerRef.current) {
+    controllerRef.current = createNotificationTemplateDraftController({
+      initial: template,
+      onDraftChange: setDraft,
+      commit: (field, value) => {
+        useUIStore.getState().updateNotificationTemplate(event, field, value);
+      },
+    });
+  }
+
+  React.useEffect(() => {
+    controllerRef.current?.sync(template);
+  }, [template]);
+
+  React.useEffect(() => {
+    const controller = controllerRef.current;
+    return () => controller?.dispose();
+  }, []);
+
+  const renderField = (field: NotificationTemplateField) => (
+    <div>
+      <label className="typography-micro text-muted-foreground block mb-1">
+        {t(`settings.notifications.page.template.field.${field}`)}
+      </label>
+      <Input
+        value={draft[field]}
+        onChange={(changeEvent) => controllerRef.current?.update(field, changeEvent.target.value)}
+        onBlur={() => controllerRef.current?.flush(field)}
+        onCompositionStart={() => controllerRef.current?.beginComposition(field)}
+        onCompositionEnd={(compositionEvent) => controllerRef.current?.endComposition(field, compositionEvent.currentTarget.value)}
+        className="h-7"
+        placeholder={t(DEFAULT_NOTIFICATION_TEMPLATES[event][field === 'title' ? 'titleKey' : 'messageKey'])}
+      />
+    </div>
+  );
+
+  return (
+    <section className="p-2">
+      <span className="typography-ui-label text-foreground font-normal block">
+        {t(TEMPLATE_EVENT_LABEL_KEYS[event])}
+      </span>
+      <div className="mt-1.5 space-y-2">
+        {renderField('title')}
+        {renderField('message')}
+      </div>
+    </section>
+  );
+});
 
 export const NotificationSettings: React.FC = () => {
   const { t } = useI18n();
@@ -63,12 +131,12 @@ export const NotificationSettings: React.FC = () => {
   const setNotifyOnSubtasks = useUIStore(state => state.setNotifyOnSubtasks);
   const notifyOnCompletion = useUIStore(state => state.notifyOnCompletion);
   const setNotifyOnCompletion = useUIStore(state => state.setNotifyOnCompletion);
+  const notifyOnPlanReady = useUIStore(state => state.notifyOnPlanReady);
+  const setNotifyOnPlanReady = useUIStore(state => state.setNotifyOnPlanReady);
   const notifyOnError = useUIStore(state => state.notifyOnError);
   const setNotifyOnError = useUIStore(state => state.setNotifyOnError);
   const notifyOnQuestion = useUIStore(state => state.notifyOnQuestion);
   const setNotifyOnQuestion = useUIStore(state => state.setNotifyOnQuestion);
-  const notificationTemplates = useUIStore(state => state.notificationTemplates);
-  const setNotificationTemplates = useUIStore(state => state.setNotificationTemplates);
   const summarizeLastMessage = useUIStore(state => state.summarizeLastMessage);
   const setSummarizeLastMessage = useUIStore(state => state.setSummarizeLastMessage);
   const summaryThreshold = useUIStore(state => state.summaryThreshold);
@@ -228,20 +296,6 @@ export const NotificationSettings: React.FC = () => {
   };
 
   const canShowNotifications = isDesktop || isVSCode || (isBrowser && typeof Notification !== 'undefined' && Notification.permission === 'granted');
-
-  const updateTemplate = (
-    event: 'completion' | 'error' | 'question' | 'subtask',
-    field: 'title' | 'message',
-    value: string,
-  ) => {
-    setNotificationTemplates({
-      ...notificationTemplates,
-      [event]: {
-        ...notificationTemplates[event],
-        [field]: value,
-      },
-    });
-  };
 
   const base64UrlToUint8Array = (base64Url: string): Uint8Array<ArrayBuffer> => {
     const padding = '='.repeat((4 - (base64Url.length % 4)) % 4);
@@ -666,6 +720,23 @@ export const NotificationSettings: React.FC = () => {
                   className="group flex cursor-pointer items-center gap-2 py-1.5"
                   role="button"
                   tabIndex={0}
+                  aria-pressed={notifyOnPlanReady}
+                  onClick={() => setNotifyOnPlanReady(!notifyOnPlanReady)}
+                  onKeyDown={(event) => {
+                    if (event.key === ' ' || event.key === 'Enter') {
+                      event.preventDefault();
+                      setNotifyOnPlanReady(!notifyOnPlanReady);
+                    }
+                  }}
+                >
+                  <Checkbox checked={notifyOnPlanReady} onChange={setNotifyOnPlanReady} ariaLabel={t('settings.notifications.page.events.planReadyAria')} />
+                  <span className="typography-ui-label text-foreground">{t('settings.notifications.page.events.planReadyLabel')}</span>
+                </div>
+
+                <div
+                  className="group flex cursor-pointer items-center gap-2 py-1.5"
+                  role="button"
+                  tabIndex={0}
                   aria-pressed={notifyOnSubtasks}
                   onClick={() => setNotifyOnSubtasks(!notifyOnSubtasks)}
                   onKeyDown={(event) => {
@@ -734,32 +805,8 @@ export const NotificationSettings: React.FC = () => {
               </div>
 
               <div className="grid grid-cols-1 gap-2 md:grid-cols-2 md:gap-3">
-                {(['completion', 'subtask', 'error', 'question'] as const).map((event: NotificationTemplateEvent) => (
-                  <section key={event} className="p-2">
-                    <span className="typography-ui-label text-foreground font-normal block">
-                      {t(TEMPLATE_EVENT_LABEL_KEYS[event])}
-                    </span>
-                    <div className="mt-1.5 space-y-2">
-                      <div>
-                        <label className="typography-micro text-muted-foreground block mb-1">{t('settings.notifications.page.template.field.title')}</label>
-                        <Input
-                          value={notificationTemplates[event].title}
-                          onChange={(e) => updateTemplate(event, 'title', e.target.value)}
-                          className="h-7"
-                          placeholder={t(DEFAULT_NOTIFICATION_TEMPLATES[event].titleKey)}
-                        />
-                      </div>
-                      <div>
-                        <label className="typography-micro text-muted-foreground block mb-1">{t('settings.notifications.page.template.field.message')}</label>
-                        <Input
-                          value={notificationTemplates[event].message}
-                          onChange={(e) => updateTemplate(event, 'message', e.target.value)}
-                          className="h-7"
-                          placeholder={t(DEFAULT_NOTIFICATION_TEMPLATES[event].messageKey)}
-                        />
-                      </div>
-                    </div>
-                  </section>
+                {(['completion', 'planReady', 'subtask', 'error', 'question'] as const).map((event: NotificationTemplateEvent) => (
+                  <NotificationTemplateEditor key={event} event={event} />
                 ))}
               </div>
             </div>

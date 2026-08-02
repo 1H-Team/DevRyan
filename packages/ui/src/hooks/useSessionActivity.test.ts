@@ -29,6 +29,7 @@ describe("resolveSessionActivityState", () => {
       status: { type: "busy" },
       messages: [incompleteAssistant],
       permissions: [],
+      questions: [],
       liveStreamingMessageId: "msg_assistant",
       hasProviderRecovery: true,
     })).toEqual({
@@ -45,6 +46,7 @@ describe("resolveSessionActivityState", () => {
       status: { type: "busy" } as SessionStatus,
       messages: [],
       permissions: [],
+      questions: [],
     })
 
     expect(result.phase).toBe("busy")
@@ -58,6 +60,7 @@ describe("resolveSessionActivityState", () => {
       status: undefined,
       messages: [incompleteAssistant],
       permissions: [],
+      questions: [],
     })
 
     expect(result.phase).toBe("busy")
@@ -70,6 +73,7 @@ describe("resolveSessionActivityState", () => {
       status: { type: "idle" } as SessionStatus,
       messages: [incompleteAssistant],
       permissions: [],
+      questions: [],
     })
 
     expect(result.phase).toBe("idle")
@@ -82,6 +86,7 @@ describe("resolveSessionActivityState", () => {
       status: { type: "busy" } as SessionStatus,
       messages: [cancelledAssistant],
       permissions: [],
+      questions: [],
       liveStreamingMessageId: "msg_assistant_cancelled",
     })
 
@@ -95,6 +100,7 @@ describe("resolveSessionActivityState", () => {
       status: { type: "busy" } as SessionStatus,
       messages: [toolCallsAssistant],
       permissions: [],
+      questions: [],
       liveStreamingMessageId: "msg_assistant_tool_calls",
     })
 
@@ -114,9 +120,53 @@ describe("resolveSessionActivityState", () => {
       status: undefined,
       messages: [incompleteAssistant, completedAssistant],
       permissions: [],
+      questions: [],
     })
 
     expect(result.phase).toBe("idle")
     expect(result.isWorking).toBe(false)
+  })
+
+  test("returns idle when busy status has a pending question", () => {
+    const result = resolveSessionActivityState({
+      sessionId: "session-child",
+      status: { type: "busy" } as SessionStatus,
+      messages: [],
+      permissions: [],
+      questions: [{}],
+    })
+
+    expect(result).toEqual({
+      phase: "idle",
+      isWorking: false,
+      isBusy: false,
+      isCooldown: false,
+    })
+  })
+
+  test("returns idle when inferred assistant activity has a pending question", () => {
+    const result = resolveSessionActivityState({
+      sessionId: "session-child",
+      status: undefined,
+      messages: [incompleteAssistant],
+      permissions: [],
+      questions: [{}],
+    })
+
+    expect(result.phase).toBe("idle")
+    expect(result.isWorking).toBe(false)
+  })
+
+  test("preserves working behavior when no questions are pending", () => {
+    const result = resolveSessionActivityState({
+      sessionId: "session-child",
+      status: { type: "busy" } as SessionStatus,
+      messages: [],
+      permissions: [],
+      questions: [],
+    })
+
+    expect(result.phase).toBe("busy")
+    expect(result.isWorking).toBe(true)
   })
 })

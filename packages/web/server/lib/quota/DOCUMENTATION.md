@@ -51,12 +51,14 @@ The reset-credit endpoint is undocumented and can change independently of the st
 
 ## Anthropic usage sources
 
-The Claude provider has two usage data sources, in priority order:
+Anthropic discovery and fetching use the same resolved runtime context. For managed runtimes, the quota route combines OpenCode auth/config with the safe effective Anthropic `baseURL` from the active `/config/providers` response before listing or fetching `claude`. External OpenCode runtimes never use host-local Anthropic credentials, proxies, or Claude Code state.
 
-1. When OpenCode auth contains an Anthropic OAuth access token, `providers/claude.js` calls Anthropic's OAuth usage endpoint (`https://api.anthropic.com/api/oauth/usage`) and maps `five_hour`, `seven_day`, and arbitrary model-specific seven-day windows into the shared quota response shape.
+The Claude provider uses these sources in priority order:
+
+1. When OpenCode auth contains an Anthropic OAuth access token under any supported alias, `providers/claude.js` calls Anthropic's OAuth usage endpoint (`https://api.anthropic.com/api/oauth/usage`) and maps `five_hour`, `seven_day`, and arbitrary model-specific seven-day windows into the shared quota response shape. HTTP failures, malformed responses, and payloads without a valid primary five-hour or seven-day window fall through to the managed-runtime sources instead of terminating refresh.
 2. For a locally managed `opencode-with-claude` runtime, the quota route resolves Anthropic's effective `baseURL` from the active OpenCode `/config/providers` response and calls Meridian's structured quota endpoint. Only explicit `http://127.0.0.1:<port>` and `http://localhost:<port>` origins are allowed; the request has a timeout and a 64 KB response limit.
 3. If the structured endpoint is unavailable (including older Meridian versions), DevRyan runs `claude -p /usage --output-format json --no-session-persistence --max-turns 1` and maps the returned subscription limits.
-4. Legacy status-line data may be returned only with `ok: false` and a visible warning after both live sources fail. DevRyan never substitutes the local Claude account for a configured external OpenCode runtime.
+4. Legacy status-line data may be returned only with `ok: false` and a visible warning after all live sources fail. A provider with a viable configured source remains `configured: true` on total refresh failure so the Usage UI shows the error instead of hiding Anthropic.
 
 ## OpenCode Go usage source
 

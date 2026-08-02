@@ -6,11 +6,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { getSortedQuotaProviders } from '@/lib/quota';
 import { quotaRefreshCoordinator, useQuotaStore } from '@/stores/useQuotaStore';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { RiRefreshLine } from '@remixicon/react';
 import { useI18n } from '@/lib/i18n';
+import { getVisibleUsageProviders } from './usage-provider-visibility';
 
 interface UsageSidebarProps {
   onItemSelect?: () => void;
@@ -32,13 +32,7 @@ export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect }) => {
   const setUsageDisplayMode = useQuotaStore((state) => state.setDisplayMode);
   const setShowPredictionValues = useQuotaStore((state) => state.setShowPredictionValues);
 
-  const visibleProviders = React.useMemo(() => {
-    const configuredByProviderId = new Map(results.map((entry) => [entry.providerId, entry.configured]));
-    return getSortedQuotaProviders().filter((provider) => (
-      configuredByProviderId.get(provider.id) === true
-      || (provider.id === 'cursor-acp' && configuredByProviderId.has(provider.id))
-    ));
-  }, [results]);
+  const visibleProviders = React.useMemo(() => getVisibleUsageProviders(results), [results]);
 
   const persistUsageSettings = React.useCallback(async (changes: { usageAutoRefresh?: boolean; usageRefreshIntervalMs?: number; usageDisplayMode?: 'usage' | 'remaining'; usageShowPredValues?: boolean; usageDropdownProviders?: string[] }) => {
     try {

@@ -121,6 +121,7 @@ const toCreatePayload = (args: {
   upstreamBranch?: string;
   ensureRemoteName?: string;
   ensureRemoteUrl?: string;
+  idempotencyKey?: string;
 }, projectDirectory: string): CreateGitWorktreePayload => {
   const mode = args.mode === 'existing' ? 'existing' : 'new';
 
@@ -151,6 +152,7 @@ const toCreatePayload = (args: {
     ...(args.upstreamBranch ? { upstreamBranch: args.upstreamBranch } : {}),
     ...(args.ensureRemoteName ? { ensureRemoteName: args.ensureRemoteName } : {}),
     ...(args.ensureRemoteUrl ? { ensureRemoteUrl: args.ensureRemoteUrl } : {}),
+    ...(args.idempotencyKey ? { idempotencyKey: args.idempotencyKey } : {}),
   };
 };
 
@@ -231,6 +233,7 @@ export type CreateWorktreeArgs = {
   upstreamBranch?: string;
   ensureRemoteName?: string;
   ensureRemoteUrl?: string;
+  idempotencyKey?: string;
 };
 
 export async function createWorktree(project: ProjectRef, args: CreateWorktreeArgs): Promise<WorktreeMetadata> {
@@ -258,9 +261,11 @@ export async function createWorktree(project: ProjectRef, args: CreateWorktreeAr
     worktreeStatus: 'ready',
     headState: returnedBranch ? 'branch' : 'unborn',
     worktreeSource: 'created-for-session',
+    bootstrapOperationId: created.operationId,
+    bootstrap: created.bootstrap,
   };
 
-  markWorktreeBootstrapPending(metadata.path);
+  markWorktreeBootstrapPending(metadata.path, created.bootstrap);
 
   _worktreeListCache.delete(projectDirectory);
   invalidateRootBranchCache(projectDirectory);

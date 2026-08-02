@@ -157,6 +157,9 @@ export const validateManagedTaskRecord = (task) => {
   if (!MODE_SET.has(task.mode)) {
     throw new TypeError('mode must be builder or orchestrator');
   }
+  if (typeof task.readOnly !== 'boolean') {
+    throw new TypeError('readOnly must be a boolean');
+  }
   assertString(task.providerId, 'providerId');
   assertString(task.modelId, 'modelId');
   assertString(task.agent, 'agent');
@@ -206,6 +209,7 @@ export const createManagedTaskRecord = (input) => {
     owner: MANAGED_TASK_OWNER,
     status: 'queued',
     dispatchGroupId: input.dispatchGroupId ?? null,
+    readOnly: input.readOnly ?? false,
     childSessionId: input.childSessionId ?? null,
     leaseToken: null,
     startedAt: null,
@@ -216,6 +220,21 @@ export const createManagedTaskRecord = (input) => {
     canonicalRefs: [],
   };
   return validateManagedTaskRecord(task);
+};
+
+const resolveManagedTaskAgentRetryAvailable = (task, failureKind) => (
+  task.mode === 'orchestrator'
+  && task.dispatchGroupId !== null
+  && task.attempt < 2
+  && failureKind !== PROVIDER_USAGE_LIMIT_FAILURE_KIND
+);
+
+export const isManagedTaskAgentRetryAvailable = (task) => {
+  validateManagedTaskRecord(task);
+  return resolveManagedTaskAgentRetryAvailable(
+    task,
+    classifyProviderRetryFailure(task.failureReason),
+  );
 };
 
 const projectTaskForEvent = (task) => {
@@ -247,12 +266,7 @@ const projectTaskForEvent = (task) => {
     partial: task.partial,
     recoverablePreview: task.recoverablePreview,
     canonicalRefs: task.canonicalRefs,
-    agentRetryAvailable: (
-      task.mode === 'orchestrator'
-      && task.dispatchGroupId !== null
-      && task.attempt < 2
-      && failureKind !== PROVIDER_USAGE_LIMIT_FAILURE_KIND
-    ),
+    agentRetryAvailable: resolveManagedTaskAgentRetryAvailable(task, failureKind),
   };
 };
 

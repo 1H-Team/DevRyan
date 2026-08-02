@@ -31,7 +31,6 @@ permission:
     code-simplification: allow
     deprecation-and-migration: allow
   websearch_*: deny
-  context7_*: deny
   grep_app_*: deny
 ---
 

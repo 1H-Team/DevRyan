@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/web",
-  "version": "1.0.12",
+  "version": "1.1.0",
   "private": false,
   "type": "module",
   "main": "./server/index.js",
@@ -25,9 +25,10 @@
   "dependencies": {
     "@clack/prompts": "^1.1.0",
     "@openchamber/cursor-sdk-runtime": "workspace:*",
+    "@openchamber/harness-runtime": "workspace:*",
     "@openchamber/orchestration-runtime": "workspace:*",
     "@octokit/rest": "^22.0.1",
-    "@opencode-ai/sdk": "^1.18.9",
+    "@opencode-ai/sdk": "^1.18.11",
     "@simplewebauthn/server": "13.3.0",
     "adm-zip": "^0.5.16",
     "better-sqlite3": "^12.10.0",
@@ -46,7 +47,8 @@
     "simple-git": "^3.28.0",
     "web-push": "^3.6.7",
     "ws": "^8.18.3",
-    "yaml": "^2.8.1"
+    "yaml": "^2.8.1",
+    "yazl": "^3.3.1"
   },
   "devDependencies": {
     "@base-ui/react": "^1.4.0",
@@ -64,6 +66,7 @@
     "@types/react-dom": "^19.1.7",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/supertest": "^7.2.0",
+    "@types/yazl": "^3.3.0",
     "@vitejs/plugin-react": "^5.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

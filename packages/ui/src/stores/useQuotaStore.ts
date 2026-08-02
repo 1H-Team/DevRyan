@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { devtools } from 'zustand/middleware';
+import { devtools } from './utils/devtoolsGate';
 import type { ProviderResult, QuotaProviderId } from '@/types';
 import { QUOTA_PROVIDERS, recordProviderUsageTrends, type UsageTrendHistory } from '@/lib/quota';
 import { isVSCodeRuntime } from '@/lib/desktop';

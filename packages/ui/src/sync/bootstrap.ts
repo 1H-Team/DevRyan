@@ -2,6 +2,7 @@ import type { OpencodeClient, PermissionRequest, Project, QuestionRequest, Sessi
 import { filterSessionStatusSnapshotThroughAbortGuard } from "./abort-retry-guard"
 import { isTransientError, retry } from "./retry"
 import { requestSignature } from "./request-signature"
+import { settleStreamingSessions } from "./streaming"
 import type { GlobalState, State } from "./types"
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
@@ -310,13 +311,16 @@ export async function bootstrapDirectory(input: {
     await Promise.resolve(input.loadSessions(directory))
     const loadedState = getState()
     let reconciledStatuses = loadedState.session_status
+    const materializedIdleSessionIds: string[] = []
     for (const session of loadedState.session) {
       if (!session?.id || Object.hasOwn(reconciledStatuses, session.id)) continue
       if (reconciledStatuses === loadedState.session_status) {
         reconciledStatuses = { ...loadedState.session_status }
       }
       reconciledStatuses[session.id] = { type: "idle" } as SessionStatus
+      materializedIdleSessionIds.push(session.id)
     }
+    settleStreamingSessions(materializedIdleSessionIds)
     set({
       status: "complete",
       sessionListStatus: "ready",

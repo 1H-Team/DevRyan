@@ -175,6 +175,10 @@ Ownership and safety rules:
     while the child still reports provider `retry` during cleanup. Accepting a
     user `retry_in_place` removes the index; another failed attempt restores it.
     Transient non-provider-limit failures retain the single agent recovery.
+    If that recovery also fails or is interrupted while remaining resumable,
+    the host keeps the envelope unacknowledged and rejects agent `abandon`, so
+    every failed sibling child retains its own Model Recovery card until the
+    user starts a `retry_in_place` attempt.
     Events, snapshots, acknowledgement responses, and compaction recompute only
     affected child leaves; unrelated task, root, and index references remain
     stable. The sidebar consumes the narrow one-root recovery selector so
@@ -200,7 +204,19 @@ provider/model/variant selection plus pending/action error leaves. Normal user
 sends clear it, while a manual recovery send preserves it until the send
 succeeds so failed retries remain actionable. Successful recovery sends clear
 only the recovery record they started from; a newer limit failure cannot be
-erased by the older send resolving afterward.
+erased by the older send resolving afterward. An authoritative newer user
+message clears a stale record, including continuations created by another
+connected surface; the record is retained while its own replacement send is
+pending so the optimistic user message cannot clear it prematurely.
+
+`useProviderStallStore.ts` is the separate, low-frequency pre-error projection
+for a semantically silent empty pending tool call or exact blank inference
+shell. It stores only the discriminant, session, directory, message/part
+identity, tool/call or step-start identity, confirmation time, and action
+state. It does not retain provider output/tool input or join high-frequency
+sync state. Semantic output and lifecycle cleanup remove the record; exact
+fingerprint checks prevent an older manual tool action or automatic inference
+recovery from clearing or aborting newer work.
 
 ### MCP runtime store
 

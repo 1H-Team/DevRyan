@@ -4,6 +4,13 @@ import { RiAddLine, RiSubtractLine } from "@remixicon/react"
 import { useDeviceInfo } from "@/lib/device"
 import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
+import {
+  consumeMobileSyntheticClick,
+  normalizeNumberInputValue,
+  resolveNumberInputBaseValue,
+  stepNumberInputValue,
+  type NumberInputDirection,
+} from "./number-input-value"
 
 export interface NumberInputProps
   extends Omit<React.ComponentProps<"input">, "value" | "onChange" | "type"> {
@@ -16,27 +23,6 @@ export interface NumberInputProps
   fallbackValue?: number
   onClear?: () => void
   emptyLabel?: string
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value))
-}
-
-function getStepDecimals(step: number) {
-  if (!Number.isFinite(step)) return 0
-  const stepString = String(step)
-  if (stepString.includes("e-")) {
-    const [, exp] = stepString.split("e-")
-    return Number(exp) || 0
-  }
-  const parts = stepString.split(".")
-  return parts.length === 2 ? parts[1]!.length : 0
-}
-
-function normalizeToStep(value: number, step: number) {
-  const decimals = getStepDecimals(step)
-  if (decimals <= 0) return value
-  return Number(value.toFixed(decimals))
 }
 
 const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
@@ -62,6 +48,7 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
     const [draft, setDraft] = React.useState(() => (value === undefined ? '' : String(value)))
     const { isMobile } = useDeviceInfo()
     const ignoreNextClickRef = React.useRef(false)
+    const optimisticValueRef = React.useRef<number | undefined>(value)
     const swallowNextClickCleanupRef = React.useRef<(() => void) | null>(null)
 
     const swallowNextClick = React.useCallback(() => {
@@ -100,23 +87,39 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
     }, [])
 
     React.useEffect(() => {
+      optimisticValueRef.current = value
       setDraft(value === undefined ? '' : String(value))
     }, [value])
 
-    const baseValue = React.useMemo(() => {
-      if (value !== undefined) return value
-      if (fallbackValue !== undefined) return fallbackValue
-      if (Number.isFinite(min)) return min
-      return 0
-    }, [fallbackValue, min, value])
+    const baseValue = resolveNumberInputBaseValue(optimisticValueRef.current, fallbackValue, min)
 
     const commitValue = React.useCallback(
-      (rawValue: number) => {
-        const clamped = clamp(rawValue, min, max)
-        onValueChange(normalizeToStep(clamped, step))
+      (rawValue: number, options: { syncDraft?: boolean; notifyIfUnchanged?: boolean } = {}) => {
+        const normalized = normalizeNumberInputValue(rawValue, min, max, step)
+        const previous = optimisticValueRef.current
+        optimisticValueRef.current = normalized
+        if (options.syncDraft) {
+          setDraft(String(normalized))
+        }
+        if (options.notifyIfUnchanged !== false || !Object.is(previous, normalized)) {
+          onValueChange(normalized)
+        }
+        return normalized
       },
       [max, min, onValueChange, step]
     )
+
+    const commitStep = React.useCallback((direction: NumberInputDirection) => {
+      const nextValue = stepNumberInputValue({
+        optimisticValue: optimisticValueRef.current,
+        fallbackValue,
+        min,
+        max,
+        step,
+        direction,
+      })
+      commitValue(nextValue, { syncDraft: true })
+    }, [commitValue, fallbackValue, max, min, step])
 
     const handleChange = React.useCallback(
       (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -124,6 +127,7 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
         setDraft(nextDraft)
 
         if (nextDraft.trim() === '') {
+          optimisticValueRef.current = undefined
           onClear?.()
           return
         }
@@ -142,7 +146,8 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
       (event: React.FocusEvent<HTMLInputElement>) => {
         if (draft.trim() === '') {
           if (!onClear) {
-            setDraft(value === undefined ? '' : String(value))
+            const currentValue = optimisticValueRef.current
+            setDraft(currentValue === undefined ? '' : String(currentValue))
           }
           onBlur?.(event)
           return
@@ -150,19 +155,15 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
 
         const parsed = Number(draft)
         if (!Number.isFinite(parsed)) {
-          setDraft(value === undefined ? '' : String(value))
+          const currentValue = optimisticValueRef.current
+          setDraft(currentValue === undefined ? '' : String(currentValue))
         } else {
-          const clamped = clamp(parsed, min, max)
-          const normalized = normalizeToStep(clamped, step)
-          if (normalized !== value) {
-            onValueChange(normalized)
-          }
-          setDraft(String(normalized))
+          commitValue(parsed, { syncDraft: true, notifyIfUnchanged: false })
         }
 
         onBlur?.(event)
       },
-      [draft, max, min, onBlur, onClear, onValueChange, step, value]
+      [commitValue, draft, onBlur, onClear]
     )
 
     const incrementDisabled = Boolean(disabled || baseValue >= max)
@@ -170,13 +171,13 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
 
     const handleMobileDecrement = () => {
       if (!decrementDisabled) {
-        commitValue(baseValue - step)
+        commitStep(-1)
       }
     }
 
     const handleMobileIncrement = () => {
       if (!incrementDisabled) {
-        commitValue(baseValue + step)
+        commitStep(1)
       }
     }
 
@@ -191,8 +192,7 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
     }
 
     const handleMobileClickActivate = (handler: () => void) => (event: React.MouseEvent) => {
-      if (ignoreNextClickRef.current) {
-        ignoreNextClickRef.current = false
+      if (!consumeMobileSyntheticClick(ignoreNextClickRef)) {
         event.preventDefault()
         event.stopPropagation()
         return
@@ -269,7 +269,7 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
           type="button"
           aria-label={t('numberInput.actions.decreaseAria')}
           disabled={decrementDisabled}
-          onClick={() => commitValue(baseValue - step)}
+          onClick={() => commitStep(-1)}
           className={cn(
             "flex h-full w-7 items-center justify-center overflow-x-hidden overflow-y-hidden border-r border-border p-0 leading-none touch-manipulation",
             "text-muted-foreground hover:bg-interactive-hover hover:text-foreground",
@@ -303,7 +303,7 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
           type="button"
           aria-label={t('numberInput.actions.increaseAria')}
           disabled={incrementDisabled}
-          onClick={() => commitValue(baseValue + step)}
+          onClick={() => commitStep(1)}
           className={cn(
             "flex h-full w-7 items-center justify-center overflow-x-hidden overflow-y-hidden border-l border-border p-0 leading-none touch-manipulation",
             "text-muted-foreground hover:bg-interactive-hover hover:text-foreground",

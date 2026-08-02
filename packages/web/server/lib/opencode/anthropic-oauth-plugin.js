@@ -1,57 +1,64 @@
-export const ANTHROPIC_OAUTH_PLUGIN_PACKAGE = 'opencode-with-claude';
-export const ANTHROPIC_OAUTH_PLUGIN_VERSION = '1.6.18';
-export const ANTHROPIC_OAUTH_PLUGIN_SPEC = `${ANTHROPIC_OAUTH_PLUGIN_PACKAGE}@${ANTHROPIC_OAUTH_PLUGIN_VERSION}`;
+import {
+  DEVRYAN_MANAGED_PLUGIN_IDS,
+  getDevRyanManagedPlugin,
+  getDevRyanManagedPluginForSpec,
+} from './managed-plugins.js';
 
-export const isAnthropicOAuthPluginSpec = (value) => {
-  const rawSpec = Array.isArray(value) ? value[0] : value;
-  if (typeof rawSpec !== 'string') {
-    return false;
-  }
-  const spec = rawSpec.trim();
-  const versionPrefix = `${ANTHROPIC_OAUTH_PLUGIN_PACKAGE}@`;
-  return spec === ANTHROPIC_OAUTH_PLUGIN_PACKAGE
-    || (spec.startsWith(versionPrefix) && spec.length > versionPrefix.length);
+const definition = getDevRyanManagedPlugin(DEVRYAN_MANAGED_PLUGIN_IDS.CLAUDE);
+
+export const ANTHROPIC_OAUTH_PLUGIN_PACKAGE = definition.packageName;
+export const ANTHROPIC_OAUTH_PLUGIN_VERSION = definition.version;
+export const ANTHROPIC_OAUTH_PLUGIN_SPEC = definition.registrationPath;
+
+const getPluginSpec = (entry) => {
+  const rawSpec = Array.isArray(entry) ? entry[0] : entry;
+  return typeof rawSpec === 'string' ? rawSpec.trim().replace(/\\/g, '/') : '';
 };
 
-const replaceAnthropicPluginSpec = (entry, nextSpec) => (
+const replacePluginSpec = (entry, nextSpec) => (
   Array.isArray(entry) ? [nextSpec, ...entry.slice(1)] : nextSpec
 );
 
-const getAnthropicPluginSpec = (entry) => {
-  const rawSpec = Array.isArray(entry) ? entry[0] : entry;
-  return typeof rawSpec === 'string' ? rawSpec.trim() : '';
+const isManagedAnthropicSpec = (entry) => {
+  const spec = getPluginSpec(entry);
+  if (!spec) return false;
+  return definition.legacySpecs.includes(spec)
+    || spec === definition.registrationPath
+    || spec.endsWith(definition.registrationPath.replace(/^\.\//, '/'));
 };
 
-// DevRyan-owned unversioned entries are upgraded to the reviewed release. An
-// explicit user pin remains authoritative, and any old bare duplicate is
-// removed so OpenCode cannot load two versions of the same plugin.
-export const reconcileAnthropicOAuthPluginSpecs = (entries) => {
-  const plugins = Array.isArray(entries) ? entries : [];
-  const explicitPin = plugins.find((entry) => (
-    isAnthropicOAuthPluginSpec(entry)
-    && getAnthropicPluginSpec(entry) !== ANTHROPIC_OAUTH_PLUGIN_PACKAGE
-  ));
+export const isAnthropicOAuthPluginSpec = (value) => (
+  getDevRyanManagedPluginForSpec(value)?.id === DEVRYAN_MANAGED_PLUGIN_IDS.CLAUDE
+);
 
-  if (explicitPin) {
+export const reconcileAnthropicOAuthPluginSpecs = (
+  entries,
+  nextSpec = ANTHROPIC_OAUTH_PLUGIN_SPEC,
+) => {
+  const plugins = Array.isArray(entries) ? entries : [];
+  const hasExplicitCustomSpec = plugins.some((entry) => (
+    isAnthropicOAuthPluginSpec(entry) && !isManagedAnthropicSpec(entry)
+  ));
+  if (hasExplicitCustomSpec) {
     return plugins.filter((entry) => (
-      getAnthropicPluginSpec(entry) !== ANTHROPIC_OAUTH_PLUGIN_PACKAGE
+      !isAnthropicOAuthPluginSpec(entry) || !isManagedAnthropicSpec(entry)
     ));
   }
 
   let added = false;
   const reconciled = [];
   for (const entry of plugins) {
-    if (getAnthropicPluginSpec(entry) === ANTHROPIC_OAUTH_PLUGIN_PACKAGE) {
-      if (!added) {
-        reconciled.push(replaceAnthropicPluginSpec(entry, ANTHROPIC_OAUTH_PLUGIN_SPEC));
-        added = true;
-      }
+    if (!isAnthropicOAuthPluginSpec(entry)) {
+      reconciled.push(entry);
       continue;
     }
-    reconciled.push(entry);
+    if (!added) {
+      reconciled.push(replacePluginSpec(entry, nextSpec));
+      added = true;
+    }
   }
   if (!added) {
-    reconciled.push(ANTHROPIC_OAUTH_PLUGIN_SPEC);
+    reconciled.push(nextSpec);
   }
   return reconciled;
 };

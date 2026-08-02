@@ -13,6 +13,7 @@ import {
   RiFoldersLine,
   RiGithubLine,
   RiGlobalLine,
+  RiInformationLine,
   RiMicLine,
   RiNotification3Line,
   RiPaletteLine,
@@ -49,6 +50,7 @@ export const SETTINGS_NAV_ICONS = {
   usage: RiBarChart2Line,
   voice: RiMicLine,
   tunnel: RiGlobalLine,
+  about: RiInformationLine,
 } satisfies Record<SettingsPageSlug, SettingsNavIcon | null>;
 
 export function getSettingsNavIcon(slug: SettingsPageSlug): SettingsNavIcon | null {
