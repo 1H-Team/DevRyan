@@ -755,6 +755,7 @@ export const createManagedTaskScheduler = (options = {}) => {
           const task = validateManagedTaskRecord({
             ...rawTask,
             dispatchGroupId: rawTask?.dispatchGroupId ?? null,
+            dispatchCallId: rawTask?.dispatchCallId ?? null,
             readOnly: rawTask?.readOnly ?? false,
           });
           if (tasks.has(task.taskId)) {
@@ -891,6 +892,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         idempotencyKey: input.idempotencyKey,
         rootSessionId: input.rootSessionId,
         dispatchGroupId: input.dispatchGroupId ?? null,
+        dispatchCallId: input.dispatchCallId ?? null,
         parentTaskId: input.parentTaskId ?? null,
         childSessionId: input.childSessionId ?? null,
         directory: input.directory,
@@ -1535,6 +1537,7 @@ export const createManagedTaskScheduler = (options = {}) => {
           idempotencyKey: actionOptions.idempotencyKey,
           rootSessionId: sourceTask.rootSessionId,
           dispatchGroupId: sourceTask.dispatchGroupId,
+          dispatchCallId: sourceTask.dispatchCallId,
           parentTaskId: sourceTask.parentTaskId,
           childSessionId: action === 'resume' || action === 'retry_in_place'
             ? sourceTask.childSessionId

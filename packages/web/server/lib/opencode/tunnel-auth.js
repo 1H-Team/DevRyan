@@ -65,6 +65,19 @@ const buildCookie = ({ name, value, maxAge, secure }) => {
   return attributes.join('; ');
 };
 
+const appendSetCookie = (res, cookie) => {
+  const existing = res.getHeader?.('Set-Cookie');
+  if (Array.isArray(existing)) {
+    res.setHeader('Set-Cookie', [...existing, cookie]);
+    return;
+  }
+  if (typeof existing === 'string' && existing) {
+    res.setHeader('Set-Cookie', [existing, cookie]);
+    return;
+  }
+  res.setHeader('Set-Cookie', cookie);
+};
+
 const nowTs = () => Date.now();
 
 const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
@@ -232,7 +245,7 @@ export const createTunnelAuth = () => {
       maxAge: 0,
       secure,
     });
-    res.setHeader('Set-Cookie', header);
+    appendSetCookie(res, header);
   };
 
   const setTunnelSessionCookie = (req, res, sessionId, ttlMs) => {
@@ -244,7 +257,7 @@ export const createTunnelAuth = () => {
       maxAge,
       secure,
     });
-    res.setHeader('Set-Cookie', header);
+    appendSetCookie(res, header);
   };
 
   const classifyRequestScope = (req) => {
@@ -373,6 +386,17 @@ export const createTunnelAuth = () => {
     };
   };
 
+  const recognizesBootstrapToken = (token) => {
+    if (!bootstrapRecord || typeof token !== 'string' || token.length === 0) {
+      return false;
+    }
+
+    const incomingHash = hashToken(token);
+    const expected = bootstrapRecord.tokenHash;
+    return incomingHash.length === expected.length
+      && crypto.timingSafeEqual(Buffer.from(incomingHash), Buffer.from(expected));
+  };
+
   const checkConnectRateLimit = (req) => {
     const key = getRateLimitKey(req);
     const now = nowTs();
@@ -468,7 +492,7 @@ export const createTunnelAuth = () => {
     });
   };
 
-  const exchangeBootstrapToken = ({ req, res, token, sessionTtlMs }) => {
+  const exchangeBootstrapToken = async ({ req, res, token, sessionTtlMs, beforeCommit }) => {
     const rateLimit = checkConnectRateLimit(req);
     if (!rateLimit.allowed) {
       return {
@@ -498,17 +522,44 @@ export const createTunnelAuth = () => {
       return { ok: false, reason: 'tunnel-mismatch' };
     }
 
-    const incomingHash = hashToken(token);
-    const expected = bootstrapRecord.tokenHash;
-    const validHash = incomingHash.length === expected.length
-      && crypto.timingSafeEqual(Buffer.from(incomingHash), Buffer.from(expected));
-
-    if (!validHash) {
+    if (!recognizesBootstrapToken(token)) {
       recordConnectFailedAttempt(req);
       return { ok: false, reason: 'invalid-token' };
     }
 
+    if (bootstrapRecord.exchangeId) {
+      return { ok: false, reason: 'exchange-in-progress' };
+    }
+
+    const exchangeId = crypto.randomUUID();
+    bootstrapRecord.exchangeId = exchangeId;
+    try {
+      if (typeof beforeCommit === 'function') {
+        await beforeCommit();
+      }
+    } catch (error) {
+      if (bootstrapRecord?.exchangeId === exchangeId) {
+        bootstrapRecord.exchangeId = null;
+      }
+      return {
+        ok: false,
+        reason: 'precondition-failed',
+        code: typeof error?.code === 'string' ? error.code : null,
+      };
+    }
+
+    if (
+      !bootstrapRecord
+      || bootstrapRecord.exchangeId !== exchangeId
+      || bootstrapRecord.tunnelId !== activeTunnelId
+      || !isBootstrapRecordUsable(bootstrapRecord)
+      || !recognizesBootstrapToken(token)
+    ) {
+      return { ok: false, reason: 'inactive' };
+    }
+
     bootstrapRecord.usedAt = nowTs();
+    bootstrapRecord.exchangeId = null;
     clearConnectRateLimit(req);
 
     const sessionId = crypto.randomBytes(32).toString('base64url');
@@ -575,6 +626,7 @@ export const createTunnelAuth = () => {
     revokeTunnelArtifacts,
     issueBootstrapToken,
     getBootstrapStatus,
+    recognizesBootstrapToken,
     requireTunnelSession,
     getTunnelSessionFromRequest,
     exchangeBootstrapToken,

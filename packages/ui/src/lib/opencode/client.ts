@@ -1,3 +1,4 @@
+import { getSafeStorage } from '@/stores/utils/safeStorage';
 import { createOpencodeClient, OpencodeClient } from "@opencode-ai/sdk/v2";
 import type { FilesAPI, RuntimeAPIs } from "../api/types";
 import { getDesktopHomeDirectory } from "../desktop";
@@ -24,6 +25,7 @@ import {
   getRetryDelayMs,
 } from "./provider-tracker";
 import { resolveProviderPromptTools } from "./provider-prompt-tools";
+import { getSdkErrorMessage } from './sdk-error';
 
 // Use relative path by default (works with both dev and nginx proxy server)
 // Can be overridden with VITE_OPENCODE_URL for absolute URLs in special deployments
@@ -170,15 +172,6 @@ const getSdkErrorStatus = (error: unknown): number | undefined => {
   if (typeof directStatus === "number") return directStatus;
   const responseStatus = (error as { response?: { status?: unknown } }).response?.status;
   return typeof responseStatus === "number" ? responseStatus : undefined;
-};
-
-const getSdkErrorMessage = (error: unknown): string => {
-  if (error instanceof Error && error.message) return error.message;
-  if (error && typeof error === "object" && "message" in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === "string" && message.length > 0) return message;
-  }
-  return String(error);
 };
 
 const createFormattedSdkError = (operation: string, message: string, status?: number): Error => {
@@ -621,8 +614,8 @@ class OpencodeService {
 
     if (typeof window !== 'undefined') {
       try {
-        addCandidate(window.localStorage.getItem('lastDirectory'));
-        addCandidate(window.localStorage.getItem('homeDirectory'));
+        addCandidate(getSafeStorage().getItem('lastDirectory'));
+        addCandidate(getSafeStorage().getItem('homeDirectory'));
       } catch {
         // Access to storage failed (e.g. privacy mode)
       }
@@ -1306,6 +1299,7 @@ class OpencodeService {
             'content-type': 'application/json',
             accept: 'application/json',
             'x-openchamber-message-id': messageId,
+            'x-devryan-prompt-origin': 'human',
           },
           body: JSON.stringify({
             model: {
@@ -1788,13 +1782,18 @@ class OpencodeService {
     return result;
   }
 
-  async getProviders(): Promise<{
+  async getProviders(options?: { directory?: string | null }): Promise<{
     providers: Provider[];
     default: { [key: string]: string };
   }> {
     try {
+      const hasDirectoryOverride = options !== undefined
+        && Object.prototype.hasOwnProperty.call(options, 'directory');
+      const directory = hasDirectoryOverride
+        ? this.normalizeCandidatePath(options.directory)
+        : this.currentDirectory;
       const response = await this.client.config.providers(
-        this.currentDirectory ? { directory: this.currentDirectory } : undefined
+        directory ? { directory } : undefined
       );
       return unwrapSdkData(response as SdkResult<{
         providers: Provider[];

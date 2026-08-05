@@ -20,6 +20,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { useI18n } from '@/lib/i18n';
 import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
+import { copyTextToClipboard } from '@/lib/clipboard';
 
 interface DebugPanelProps {
   onClose?: () => void;
@@ -275,7 +276,10 @@ export const DebugPanel: React.FC<DebugPanelProps> = ({ onClose }) => {
         vscode: getVsCodeStreamPerfSnapshot(),
         responsiveness: getResponsivenessPerfSnapshot(),
       };
-      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+      const result = await copyTextToClipboard(JSON.stringify(payload, null, 2), {
+        sourceSurface: 'unknown', copyKind: 'text',
+      });
+      if (!result.ok) throw new Error(result.error);
       setCopyState('copied');
     } catch {
       setCopyState('error');

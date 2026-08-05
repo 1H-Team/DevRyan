@@ -20,6 +20,11 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
 
 - `lifecycle.js`: synchronous canonical OpenCode-event correlation.
 - `worktree-bootstrap.js`: durable idempotent receipt state machine.
+  Version 2 receipts include an `ownerId`; version 1 records migrate to the
+  explicit `local-admin` owner so shared-host retries cannot cross principals.
+  A terminal receipt can be explicitly superseded when the same idempotency key
+  is reused with a different request fingerprint; active queued/running work is
+  never superseded and still returns a conflict.
 - `session-id.js`: canonical four-way record attribution plus session-parent
   relations shared by storage and export selection.
 - `journal-trim.js`: bounded pre-sanitization policy that drops streaming
@@ -32,6 +37,9 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
   `README.md` and `index.json` make the format self-describing. Clear removes
   all current and legacy journal data while preserving those discovery files
   and accepting newly arriving records afterward.
+  Supported record schemas retain a sanitized `actor` identifier supplied by
+  the host, allowing shared-host diagnostics to be attributed without exposing
+  authentication material.
 - `export.js`: task/runtime export selection and second-pass redaction. Bundle
   version 2 streams one plain NDJSON entry per session plus `runtime.ndjson`,
   an included-manifest index, and decompressed plain-text blobs.

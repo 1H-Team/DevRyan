@@ -53,6 +53,7 @@ import { sessionEvents } from '@/lib/sessionEvents';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { filterUserVisibleSessions } from '@/lib/sessionVisibility';
 import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
+import { canAccessSettingsPage, hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
 
 type CommandEntry = {
   id: string;
@@ -78,6 +79,11 @@ const normalizePath = (value: string): string => {
 };
 
 export const CommandPalette: React.FC = () => {
+  const authPrincipal = useAuthPrincipal();
+  const canManageProjects = hasAuthCapability(authPrincipal, 'manageProjects');
+  const canUseFiles = hasAuthCapability(authPrincipal, 'files');
+  const canUseGit = hasAuthCapability(authPrincipal, 'manageGit');
+  const canUseTerminal = hasAuthCapability(authPrincipal, 'terminal');
   const { t } = useI18n();
 
   const isCommandPaletteOpen = useUIStore((s) => s.isCommandPaletteOpen);
@@ -258,7 +264,12 @@ export const CommandPalette: React.FC = () => {
         }),
       });
     }
-    return list;
+    return list.filter((item) => {
+      if ((item.id === 'new-worktree' || item.id === 'add-project') && !canManageProjects) return false;
+      if (item.id === 'toggle-terminal' && !canUseTerminal) return false;
+      if (item.id === 'toggle-right-sidebar' && !canUseFiles && !canUseGit) return false;
+      return true;
+    });
   }, [
     t,
     run,
@@ -274,6 +285,10 @@ export const CommandPalette: React.FC = () => {
     setSettingsDialogOpen,
     activeProject?.id,
     activeProject?.path,
+    canManageProjects,
+    canUseFiles,
+    canUseGit,
+    canUseTerminal,
   ]);
 
   // ---------------------------------------------------------------------------
@@ -287,6 +302,7 @@ export const CommandPalette: React.FC = () => {
   const settingsEntries = React.useMemo<CommandEntry[]>(() => {
     return SETTINGS_PAGE_METADATA
       .filter((p) => p.slug !== 'home')
+      .filter((p) => canAccessSettingsPage(authPrincipal, p.slug))
       .filter((p) => (p.isAvailable ? p.isAvailable(settingsRuntimeCtx) : true))
       .map((page) => {
         const Icon = getSettingsNavIcon(page.slug) ?? RiSettings3Line;
@@ -302,7 +318,7 @@ export const CommandPalette: React.FC = () => {
           }),
         } satisfies CommandEntry;
       });
-  }, [settingsRuntimeCtx, run, setSettingsPage, setSettingsDialogOpen]);
+  }, [authPrincipal, settingsRuntimeCtx, run, setSettingsPage, setSettingsDialogOpen]);
 
   // ---------------------------------------------------------------------------
   // Sessions
@@ -334,7 +350,7 @@ export const CommandPalette: React.FC = () => {
   const [isSearchingFiles, setIsSearchingFiles] = React.useState(false);
 
   React.useEffect(() => {
-    if (!isCommandPaletteOpen) {
+    if (!isCommandPaletteOpen || !canUseFiles) {
       setFileResults([]);
       setIsSearchingFiles(false);
       return;
@@ -366,7 +382,7 @@ export const CommandPalette: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [isCommandPaletteOpen, currentRoot, trimmedQuery, searchFiles]);
+  }, [canUseFiles, isCommandPaletteOpen, currentRoot, trimmedQuery, searchFiles]);
 
   // ---------------------------------------------------------------------------
   // Filter visible items
@@ -398,14 +414,14 @@ export const CommandPalette: React.FC = () => {
   }, [sortedActiveSessions, liveTrimmed, hasQuery]);
 
   const scoredFiles = React.useMemo(() => {
-    if (!hasQuery || fileResults.length === 0) return [];
+    if (!canUseFiles || !hasQuery || fileResults.length === 0) return [];
     // Server already ranked by relevance; compute a comparable client score on
     // basename so we can decide file group placement vs sessions/commands.
     return scoreByFuzzyQuery(fileResults, liveTrimmed, (f) => f.name, {
       limit: 10,
       threshold: 0.4,
     });
-  }, [fileResults, liveTrimmed, hasQuery]);
+  }, [canUseFiles, fileResults, liveTrimmed, hasQuery]);
 
   const visibleCommands = scoredCommands.map((x) => x.item);
   const visibleSettings = scoredSettings.map((x) => x.item);
@@ -558,7 +574,7 @@ export const CommandPalette: React.FC = () => {
               return null;
             })}
 
-            {hasQuery && isSearchingFiles && visibleFiles.length === 0 ? (
+            {canUseFiles && hasQuery && isSearchingFiles && visibleFiles.length === 0 ? (
               <div className="px-3 py-2 typography-meta text-muted-foreground">
                 {t('commandPalette.empty.searchingFiles')}
               </div>

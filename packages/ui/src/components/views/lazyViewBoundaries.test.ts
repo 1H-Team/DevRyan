@@ -108,13 +108,18 @@ describe('shared lazy view boundaries', () => {
     // FilesView is no longer a main tab; it is mounted by ContextPanel (asserted below).
     expect(mainLayout).not.toContain('LazyFilesView');
     expect(mainLayout).toContain('<LazySettingsView onClose=');
+    expect(mainLayout).toContain('<LazyManagedSettingsView onClose=');
+    expect(mainLayout).toContain("principal.scope === 'managed' && principal.role !== 'admin'");
     expect(mainLayout).toContain('<LazyMultiRunWindow');
-    expect(mainLayout).toContain('<DeferredLazyView active={isMultiRunLauncherOpen}>');
+    expect(mainLayout).toContain('<DeferredLazyView active={canManageProjects && isMultiRunLauncherOpen}>');
 
     expect(rightSidebarTabs).toContain("from '@/components/views/lazyViews'");
     expect(rightSidebarTabs).not.toContain("from '@/components/views/GitView'");
     expect(rightSidebarTabs).toContain('<LazyViewBoundary>');
     expect(rightSidebarTabs).toContain('<LazyGitView />');
+    expect(rightSidebarTabs).toContain('if (!isRightSidebarOpen)');
+    expect(rightSidebarTabs.indexOf('if (!isRightSidebarOpen)'))
+      .toBeLessThan(rightSidebarTabs.indexOf('<LazyGitView />'));
 
     for (const viewName of ['DiffView', 'FilesView', 'PlanView']) {
       expect(contextPanel).not.toContain(`from '@/components/views/${viewName}'`);
@@ -136,6 +141,33 @@ describe('shared lazy view boundaries', () => {
     expect(settingsView).not.toContain('export function getSettingsNavIcon');
     expect(commandPalette).toContain("from '@/lib/settings/navigation-icons'");
     expect(commandPalette).not.toContain("from '@/components/views/SettingsView'");
+  });
+
+  test('loads settings sections only after their page is selected', () => {
+    const settingsView = readSource('components/views/SettingsView.tsx');
+
+    expect(settingsView).toContain("import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery'");
+    expect(settingsView).toContain('const LazyOpenChamberPage = /* @__PURE__ */ lazyWithChunkRecovery');
+    expect(settingsView).toContain('const LazyUserManagementPage = /* @__PURE__ */ lazyWithChunkRecovery');
+    expect(settingsView).toContain('<SettingsSectionBoundary>{renderPageContent(settingsSlug)}</SettingsSectionBoundary>');
+    expect(settingsView).not.toContain("import { OpenChamberPage } from '@/components/sections/openchamber/OpenChamberPage'");
+    expect(settingsView).not.toContain("import { UserManagementPage } from '@/components/sections/users/UserManagementPage'");
+  });
+
+  test('keeps managed users outside the administrator settings entry chunk', () => {
+    const source = readSource('components/views/lazyViews.tsx');
+    const managedSettingsView = readSource('components/views/ManagedSettingsView.tsx');
+
+    expect(source).toContain('export const LazyManagedSettingsView = /* @__PURE__ */ lazyWithChunkRecovery');
+    expect(source).toContain("import('@/components/views/ManagedSettingsView')");
+    expect(managedSettingsView).not.toContain("from '@/components/views/SettingsView'");
+    expect(managedSettingsView).toContain('canAccessSettingsPage(principal, page.slug)');
+    expect(managedSettingsView).toContain('<SettingsPagePermissionBoundary slug={activeSlug}>');
+    expect(managedSettingsView).toContain('backButtonRef.current?.focus({ preventScroll: true })');
+    expect(managedSettingsView).toContain('aria-modal="true"');
+    for (const page of ['appearance', 'chat', 'shortcuts', 'sessions', 'notifications', 'agents', 'providers', 'usage', 'mcp']) {
+      expect(managedSettingsView).toContain(`slug: '${page}'`);
+    }
   });
 
   test('loads Agent Manager only inside the VS Code agent-manager panel branch', () => {

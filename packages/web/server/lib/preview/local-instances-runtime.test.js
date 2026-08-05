@@ -25,7 +25,12 @@ const createSocketNet = () => {
   return { net, sockets };
 };
 
-const createRouteHarness = ({ runtime, originAllowed = true, uiAuthController = null } = {}) => {
+const createRouteHarness = ({
+  runtime,
+  originAllowed = true,
+  uiAuthController = null,
+  requestScope = 'local',
+} = {}) => {
   let handler;
   const app = {
     post(path, ...handlers) {
@@ -37,6 +42,7 @@ const createRouteHarness = ({ runtime, originAllowed = true, uiAuthController = 
     express: { json: () => (_req, _res, next) => next() },
     uiAuthController,
     isRequestOriginAllowed: async () => originAllowed,
+    classifyRequestScope: () => requestScope,
   });
 
   const request = async (body) => {
@@ -180,6 +186,11 @@ describe('local instance status runtime', () => {
       },
     });
     expect((await unauthenticated.request({ urls: [] })).statusCode).toBe(401);
+
+    const remote = createRouteHarness({ runtime, requestScope: 'tunnel' });
+    const remoteResponse = await remote.request({ urls: ['http://127.0.0.1:3001/'] });
+    expect(remoteResponse.statusCode).toBe(403);
+    expect(remoteResponse.body.error).toContain('only from loopback');
 
     const allowed = createRouteHarness({ runtime });
     expect((await allowed.request({})).statusCode).toBe(400);

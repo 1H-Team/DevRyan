@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DevRyanSuperpowersPlugin } from './devryan-superpowers.mjs';
 
@@ -21,13 +21,21 @@ afterEach(() => {
 });
 
 describe('DevRyan Superpowers plugin', () => {
-  it('fails visibly when the curated installed bootstrap is missing', async () => {
+  it('disables itself with one warning when the optional bootstrap is missing', async () => {
     temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-superpowers-missing-'));
     process.env.DEVRYAN_OPENCODE_USER_CONFIG_DIR = temporaryRoot;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    await expect(DevRyanSuperpowersPlugin()).rejects.toThrow(
-      'Installed Superpowers bootstrap skill is missing',
+    const first = await DevRyanSuperpowersPlugin();
+    const second = await DevRyanSuperpowersPlugin();
+
+    expect(first).toEqual({});
+    expect(second).toEqual({});
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      '[DevRyan] Superpowers skills are not installed; the optional adapter is disabled.',
     );
+    warn.mockRestore();
   });
 
   it('registers only the installed curated directory and injects bootstrap once', async () => {

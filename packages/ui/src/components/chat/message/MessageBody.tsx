@@ -911,6 +911,7 @@ const AssistantMessageBody = React.memo(({
     const isTouchContext = Boolean(hasTouchInput ?? isMobile);
     const alwaysShowMessageActions = Boolean(alwaysShowActions ?? isMobile);
     const awaitingMessageCompletion = !isMessageCompleted;
+    const shouldRecoverMissingManagedDispatches = streamPhase === 'completed';
     const animateActivityRows = awaitingMessageCompletion || Boolean(turnGroupingContext?.isWorking);
     const visibleParts = React.useMemo(() => {
         return collapseSupersededTodoWrites(parts, turnGroupingContext?.lastTodoToolPartId ?? null)
@@ -2036,9 +2037,11 @@ const AssistantMessageBody = React.memo(({
                 )}
                 {(managedTaskDispatch.taskIds.length > 0 || managedTaskDispatch.pendingDispatches.length > 0) ? (
                     <ManagedTaskList
+                        rootSessionId={sessionId}
                         taskIds={managedTaskDispatch.taskIds}
                         pendingDispatches={managedTaskDispatch.pendingDispatches}
                         fallbackTasks={managedTaskFallbacks}
+                        recoverMissingDispatches={shouldRecoverMissingManagedDispatches}
                         onContentChange={onContentChange}
                         isMobile={isMobile}
                     />

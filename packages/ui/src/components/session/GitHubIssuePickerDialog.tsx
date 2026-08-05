@@ -36,6 +36,7 @@ import { createWorktreeSessionForNewBranch } from '@/lib/worktreeSessionCreator'
 import { generateBranchSlug } from '@/lib/git/branchNameGenerator';
 import type { GitHubIssue, GitHubIssueComment, GitHubIssuesListResult, GitHubIssueSummary, GitHubRepoSelector } from '@/lib/api/types';
 import { useI18n } from '@/lib/i18n';
+import { useAuthPrincipal } from '@/lib/authSession';
 
 const isPrimaryAgent = (mode?: string) => mode === 'primary' || mode === 'all' || mode === undefined || mode === null;
 const normalizeAgentName = (name?: string | null) => name?.trim().toLowerCase() ?? '';
@@ -97,6 +98,7 @@ export function GitHubIssuePickerDialog({
   onSelect?: (issue: { number: number; title: string; url: string; contextText: string; author?: { login: string; avatarUrl?: string } }) => void;
 }) {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
   const { github } = useRuntimeAPIs();
   const githubAuthStatus = useGitHubAuthStore((state) => state.status);
   const githubAuthChecked = useGitHubAuthStore((state) => state.hasChecked);
@@ -214,9 +216,10 @@ export function GitHubIssuePickerDialog({
   const repoUrl = result?.repo?.url ?? null;
 
   const openGitHubSettings = React.useCallback(() => {
-    setSettingsPage('github');
+    setSettingsPage('users');
     setSettingsDialogOpen(true);
   }, [setSettingsDialogOpen, setSettingsPage]);
+  const canManageGitHubAccounts = principal.scope === 'local-admin' || principal.role === 'admin';
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -521,12 +524,14 @@ export function GitHubIssuePickerDialog({
 
           {connected === false ? (
             <div className="text-center text-muted-foreground py-8 space-y-3">
-              <div>{t('session.githubIssuePicker.empty.notConnected')}</div>
-              <div className="flex justify-center">
-                <Button variant="outline" size="sm" onClick={openGitHubSettings}>
-                  {t('session.githubIssuePicker.actions.openSettings')}
-                </Button>
-              </div>
+              <div>{canManageGitHubAccounts ? t('session.githubIssuePicker.empty.notConnected') : t('settings.github.accountManagement.adminRequired')}</div>
+              {canManageGitHubAccounts && (
+                <div className="flex justify-center">
+                  <Button variant="outline" size="sm" onClick={openGitHubSettings}>
+                    {t('session.githubIssuePicker.actions.openSettings')}
+                  </Button>
+                </div>
+              )}
             </div>
           ) : null}
 

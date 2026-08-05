@@ -1,11 +1,52 @@
+import path from 'node:path';
 import {
   classifyGitHubApiError,
   githubRateLimitTracker,
 } from './rate-limit.js';
+import { getRequestPrincipal } from '../multi-user/request-context.js';
 
 const PR_STATUS_CACHE_TTL_MS = 90_000;
 const PR_STATUS_CACHE_MAX_ENTRIES = 200;
 const prStatusCache = new Map();
+
+function getManagedAssignment(directory) {
+  const principal = getRequestPrincipal();
+  if (principal?.scope !== 'managed') return { principal: null, assignment: null };
+  const candidate = path.resolve(directory);
+  const assignment = principal.assignments?.find((entry) => {
+    return [entry.repositoryPath, entry.worktreeContainerPath]
+      .filter((value) => typeof value === 'string' && value.trim())
+      .some((value) => {
+        const root = path.resolve(value);
+        const relative = path.relative(root, candidate);
+        return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+      });
+  }) || null;
+  return { principal, assignment };
+}
+
+function requireManagedBranch(directory, branch) {
+  const { principal, assignment } = getManagedAssignment(directory);
+  if (!principal) return null;
+  if (!assignment || typeof branch !== 'string' || !branch.trim()) {
+    const error = new Error('Pull request target is outside your assigned project');
+    error.statusCode = 403;
+    throw error;
+  }
+  return assignment;
+}
+
+async function requireManagedPullRequest(octokit, repo, number, directory) {
+  const { principal } = getManagedAssignment(directory);
+  if (!principal) return null;
+  const response = await octokit.rest.pulls.get({
+    owner: repo.owner,
+    repo: repo.repo,
+    pull_number: number,
+  });
+  requireManagedBranch(directory, response?.data?.base?.ref);
+  return response?.data || null;
+}
 
 function getRequestedRepo(req) {
   const owner = typeof req.query?.owner === 'string' ? req.query.owner.trim() : '';
@@ -89,24 +130,57 @@ export function registerGitHubRoutes(app, dependencies = {}) {
   app.get('/api/github/auth/status', async (_req, res) => {
     try {
       const { getGitHubAuth, getOctokitOrNull, clearGitHubAuth, getGitHubAuthAccounts, isGhCliDisabled } = await getGitHubLibraries();
-      const { getGhCliToken } = await import('./gh-cli-credential.js');
+      const getGhCliToken = dependencies.getGhCliToken
+        ?? (await import('./gh-cli-credential.js')).getGhCliToken;
 
       const auth = getGitHubAuth();
       const accounts = getGitHubAuthAccounts();
+      const principal = getRequestPrincipal();
+      const isManaged = principal?.scope === 'managed';
       const ghCliDisabled = isGhCliDisabled();
       const ghToken = getGhCliToken();
       const usingOwnToken = Boolean(auth?.accessToken);
+      const activeAccountId = isManaged
+        ? (typeof principal.githubAccountId === 'string' && principal.githubAccountId.trim() ? principal.githubAccountId.trim() : null)
+        : (typeof auth?.accountId === 'string' && auth.accountId.trim()
+          ? auth.accountId.trim()
+          : (accounts.find((account) => account.current)?.id || accounts[0]?.id || null));
+
+      const normalizeAccounts = (liveUser = null, accountList = accounts) => accountList.map((account) => {
+        const isActive = Boolean(activeAccountId) && account.id === activeAccountId;
+        return {
+          ...account,
+          current: isActive,
+          ...(isActive && liveUser ? { user: { ...(account.user || {}), ...liveUser } } : {}),
+        };
+      });
 
       const buildGhCli = (activeUser = null) => ({
-        available: ghToken !== null,
+        available: !isManaged && ghToken !== null,
         disabled: ghCliDisabled,
-        active: !usingOwnToken && ghToken !== null && !ghCliDisabled,
+        active: !isManaged && !usingOwnToken && ghToken !== null && !ghCliDisabled,
         ...(activeUser ? { user: activeUser } : {}),
       });
 
+      // An assigned account is profile metadata even when repository-level
+      // GitHub operations are disabled. Return only its stored public identity
+      // in that case; do not exercise the credential against GitHub.
+      if (isManaged && principal?.policy?.github === false) {
+        const storedUser = auth?.user
+          ?? accounts.find((account) => account.id === activeAccountId)?.user
+          ?? null;
+        return res.json({
+          connected: Boolean(auth),
+          activeAccountId,
+          ...(storedUser ? { user: storedUser } : {}),
+          accounts: normalizeAccounts(storedUser),
+          ghCli: buildGhCli(),
+        });
+      }
+
       const octokit = getOctokitOrNull();
       if (!octokit) {
-        return res.json({ connected: false, accounts, ghCli: buildGhCli() });
+        return res.json({ connected: false, activeAccountId, accounts: normalizeAccounts(), ghCli: buildGhCli() });
       }
 
       let user = null;
@@ -117,20 +191,21 @@ export function registerGitHubRoutes(app, dependencies = {}) {
           rateLimitTracker.recordFailure(error);
         }
         if (isGitHubAuthInvalid(error)) {
-          if (usingOwnToken) clearGitHubAuth();
-          return res.json({ connected: false, accounts: getGitHubAuthAccounts(), ghCli: buildGhCli() });
+          if (usingOwnToken && !isManaged) clearGitHubAuth();
+          return res.json({ connected: false, activeAccountId, accounts: normalizeAccounts(null, getGitHubAuthAccounts()), ghCli: buildGhCli() });
         }
       }
 
       const fallback = usingOwnToken ? auth.user : null;
-      const mergedUser = user || fallback;
+      const mergedUser = user ? { ...(fallback || {}), ...user } : fallback;
       const ghIsActive = !usingOwnToken && ghToken !== null && !ghCliDisabled;
 
       return res.json({
         connected: true,
+        activeAccountId,
         user: mergedUser,
         scope: usingOwnToken ? auth.scope : undefined,
-        accounts,
+        accounts: normalizeAccounts(mergedUser),
         ghCli: buildGhCli(ghIsActive ? mergedUser : null),
       });
     } catch (error) {
@@ -141,6 +216,12 @@ export function registerGitHubRoutes(app, dependencies = {}) {
 
   app.post('/api/github/auth/gh-cli', async (req, res) => {
     try {
+      if (getRequestPrincipal()?.scope === 'managed') {
+        return res.status(409).json({
+          code: 'MANAGED_GITHUB_ACCOUNT_REQUIRED',
+          error: 'Managed hosts use profile-assigned GitHub accounts',
+        });
+      }
       const { setGhCliDisabled, isGhCliDisabled } = await getGitHubLibraries();
       const { clearGhCliTokenCache } = await import('./gh-cli-credential.js');
       const disabled = Boolean(req.body?.disabled);
@@ -232,6 +313,7 @@ export function registerGitHubRoutes(app, dependencies = {}) {
         scope: typeof payload.scope === 'string' ? payload.scope : '',
         tokenType: typeof payload.token_type === 'string' ? payload.token_type : 'bearer',
         user,
+        makeCurrent: getRequestPrincipal()?.scope !== 'managed',
       });
 
       return res.json({
@@ -248,6 +330,12 @@ export function registerGitHubRoutes(app, dependencies = {}) {
 
   app.post('/api/github/auth/activate', async (req, res) => {
     try {
+      if (getRequestPrincipal()?.scope === 'managed') {
+        return res.status(409).json({
+          code: 'MANAGED_GITHUB_ACCOUNT_REQUIRED',
+          error: 'Managed GitHub accounts are assigned in User Management',
+        });
+      }
       const { activateGitHubAuth, getGitHubAuth, getOctokitOrNull, clearGitHubAuth, getGitHubAuthAccounts } = await getGitHubLibraries();
       const accountId = typeof req.body?.accountId === 'string' ? req.body.accountId : '';
       if (!accountId) {
@@ -296,6 +384,12 @@ export function registerGitHubRoutes(app, dependencies = {}) {
 
   app.delete('/api/github/auth', async (_req, res) => {
     try {
+      if (getRequestPrincipal()?.scope === 'managed') {
+        return res.status(409).json({
+          code: 'MANAGED_GITHUB_ACCOUNT_REQUIRED',
+          error: 'Managed GitHub accounts are disconnected in User Management',
+        });
+      }
       const { clearGitHubAuth } = await getGitHubLibraries();
       const removed = clearGitHubAuth();
       return res.json({ success: true, removed });
@@ -317,7 +411,7 @@ export function registerGitHubRoutes(app, dependencies = {}) {
         user = await getGitHubUserSummary(octokit);
       } catch (error) {
         if (isGitHubAuthInvalid(error)) {
-          clearGitHubAuth();
+          if (getRequestPrincipal()?.scope !== 'managed') clearGitHubAuth();
           return res.status(401).json({ error: 'GitHub token expired or revoked' });
         }
         throw error;
@@ -641,6 +735,11 @@ export function registerGitHubRoutes(app, dependencies = {}) {
       if (!base) {
         return res.status(400).json({ error: 'Invalid base branch name' });
       }
+      const normalizedHead = normalizeBranchRef(head, remoteNames);
+      if (!normalizedHead) {
+        return res.status(400).json({ error: 'Invalid head branch name' });
+      }
+      requireManagedBranch(directory, normalizedHead);
 
       // For fork workflows: we need to determine the correct head reference
       let headRef = head;
@@ -734,7 +833,7 @@ export function registerGitHubRoutes(app, dependencies = {}) {
         });
       }
       
-      return res.status(500).json({ error: error.message || 'Failed to create GitHub PR' });
+      return res.status(error?.statusCode || 500).json({ error: error.message || 'Failed to create GitHub PR' });
     }
   });
 
@@ -759,7 +858,6 @@ export function registerGitHubRoutes(app, dependencies = {}) {
       if (!repo) {
         return res.status(400).json({ error: 'Unable to resolve GitHub repo from git remote' });
       }
-
       let updated;
       try {
         updated = await octokit.rest.pulls.update({
@@ -810,7 +908,7 @@ export function registerGitHubRoutes(app, dependencies = {}) {
       });
     } catch (error) {
       console.error('Failed to update GitHub PR:', error);
-      return res.status(500).json({ error: error.message || 'Failed to update GitHub PR' });
+      return res.status(error?.statusCode || 500).json({ error: error.message || 'Failed to update GitHub PR' });
     }
   });
 
@@ -834,6 +932,7 @@ export function registerGitHubRoutes(app, dependencies = {}) {
       if (!repo) {
         return res.status(400).json({ error: 'Unable to resolve GitHub repo from git remote' });
       }
+      await requireManagedPullRequest(octokit, repo, number, directory);
 
       try {
         const result = await octokit.rest.pulls.merge({
@@ -854,7 +953,7 @@ export function registerGitHubRoutes(app, dependencies = {}) {
       }
     } catch (error) {
       console.error('Failed to merge GitHub PR:', error);
-      return res.status(500).json({ error: error.message || 'Failed to merge GitHub PR' });
+      return res.status(error?.statusCode || 500).json({ error: error.message || 'Failed to merge GitHub PR' });
     }
   });
 
@@ -903,7 +1002,7 @@ export function registerGitHubRoutes(app, dependencies = {}) {
       return res.json({ ready: true });
     } catch (error) {
       console.error('Failed to mark PR ready:', error);
-      return res.status(500).json({ error: error.message || 'Failed to mark PR ready' });
+      return res.status(error?.statusCode || 500).json({ error: error.message || 'Failed to mark PR ready' });
     }
   });
 

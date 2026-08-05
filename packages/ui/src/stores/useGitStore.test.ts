@@ -98,4 +98,19 @@ describe('useGitStore', () => {
     const state = useGitStore.getState().getDirectoryState('/repo');
     expect(state?.historySectionOpen).toBe(true);
   });
+
+  test('skips host Git identity reads when repository data is requested without identity', async () => {
+    let identityCalls = 0;
+    const git = createGitApi(async () => createStatus({}));
+    git.getCurrentGitIdentity = async () => {
+      identityCalls += 1;
+      return null;
+    };
+
+    await useGitStore.getState().ensureAll('/repo', git, { includeIdentity: false });
+    expect(identityCalls).toBe(0);
+
+    await useGitStore.getState().ensureAll('/repo-with-identity', git, { includeIdentity: true });
+    expect(identityCalls).toBe(1);
+  });
 });

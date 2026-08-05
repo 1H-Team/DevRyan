@@ -14,6 +14,8 @@ export const createServerStartupRuntime = (dependencies) => {
     TUNNEL_MODE_QUICK,
     TUNNEL_MODE_MANAGED_LOCAL,
     TUNNEL_MODE_MANAGED_REMOTE,
+    bootstrapOpenCodeAtStartup = async () => {},
+    getRuntimeReady = () => true,
   } = dependencies;
 
   const resolveBindHost = (host) =>
@@ -54,6 +56,13 @@ export const createServerStartupRuntime = (dependencies) => {
         console.log(`Health check: http://${displayHost}:${activePort}/health`);
         console.log(`Web interface: http://${displayHost}:${activePort}`);
 
+        try {
+          await bootstrapOpenCodeAtStartup();
+        } catch (error) {
+          reject(error);
+          return;
+        }
+
         if (startupTunnelRequest) {
           const startupModeLabel = startupTunnelRequest.mode === TUNNEL_MODE_QUICK
             ? 'Quick Tunnel'
@@ -62,6 +71,11 @@ export const createServerStartupRuntime = (dependencies) => {
               : (startupTunnelRequest.mode === TUNNEL_MODE_MANAGED_REMOTE ? 'Managed Remote Tunnel' : 'Tunnel'));
           console.log(`\nInitializing ${startupModeLabel} for provider '${startupTunnelRequest.provider}'...`);
           try {
+            if (!getRuntimeReady()) {
+              throw Object.assign(new Error('DevRyan runtime is not ready; tunnel startup is paused'), {
+                code: 'runtime_not_ready',
+              });
+            }
             const { publicUrl, mode } = await startTunnelWithNormalizedRequest({
               provider: startupTunnelRequest.provider,
               mode: startupTunnelRequest.mode,
@@ -69,6 +83,7 @@ export const createServerStartupRuntime = (dependencies) => {
               hostname: startupTunnelRequest.hostname,
               token: startupTunnelRequest.token,
               configPath: startupTunnelRequest.configPath,
+              originPort: startupTunnelRequest.originPort,
               selectedPresetId: '',
               selectedPresetName: '',
             });
@@ -83,7 +98,7 @@ export const createServerStartupRuntime = (dependencies) => {
                 ? null
                 : normalizeTunnelBootstrapTtlMs(settings?.tunnelBootstrapTtlMs);
               const bootstrapToken = tunnelAuthController.issueBootstrapToken({ ttlMs: bootstrapTtlMs });
-              const connectUrl = `${publicUrl.replace(/\/$/, '')}/connect?t=${encodeURIComponent(bootstrapToken.token)}`;
+              const connectUrl = `${publicUrl.replace(/\/$/, '')}/tunnel/connect?t=${encodeURIComponent(bootstrapToken.token)}`;
               if (onTunnelReady) {
                 onTunnelReady(publicUrl, connectUrl);
               } else {

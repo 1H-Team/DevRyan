@@ -32,6 +32,7 @@ export interface ManagedTaskRecord {
   idempotencyKey: string;
   rootSessionId: string;
   dispatchGroupId: string | null;
+  dispatchCallId: string | null;
   parentTaskId: string | null;
   childSessionId: string | null;
   directory: string;
@@ -118,6 +119,7 @@ export interface ManagedTaskSubmitInput {
   idempotencyKey: string;
   rootSessionId: string;
   dispatchGroupId?: string | null;
+  dispatchCallId?: string | null;
   parentTaskId?: string | null;
   childSessionId?: string | null;
   directory: string;
@@ -380,6 +382,7 @@ export function createManagedTaskRecord(input: Omit<ManagedTaskRecord,
   | 'owner'
   | 'status'
   | 'dispatchGroupId'
+  | 'dispatchCallId'
   | 'readOnly'
   | 'childSessionId'
   | 'leaseToken'
@@ -392,6 +395,7 @@ export function createManagedTaskRecord(input: Omit<ManagedTaskRecord,
 > & {
   childSessionId?: string | null;
   dispatchGroupId?: string | null;
+  dispatchCallId?: string | null;
   readOnly?: boolean;
 }): ManagedTaskRecord;
 export function toManagedTaskEvent(task: ManagedTaskRecord, resultEnvelope?: ManagedTaskResultEnvelope | null): ManagedTaskEvent;

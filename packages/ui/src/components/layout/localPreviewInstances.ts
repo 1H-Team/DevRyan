@@ -25,6 +25,77 @@ type LocalInstanceStatusResponse = {
   results?: LocalInstanceProbeResult[];
 };
 
+type ProjectPreviewInstancesResponse = {
+  instances?: Array<{
+    id?: unknown;
+    label?: unknown;
+    url?: unknown;
+    origin?: unknown;
+    port?: unknown;
+  }>;
+};
+
+export const registerProjectPreviewInstance = async ({
+  directory,
+  terminalSessionId,
+  url,
+  label,
+  signal,
+  fetchImpl = fetch,
+}: {
+  directory: string;
+  terminalSessionId: string;
+  url: string;
+  label?: string;
+  signal?: AbortSignal;
+  fetchImpl?: typeof fetch;
+}): Promise<boolean> => {
+  const response = await fetchImpl('/api/preview/instances/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-DevRyan-CSRF': '1' },
+    credentials: 'include',
+    cache: 'no-store',
+    body: JSON.stringify({ directory, terminalSessionId, url, label }),
+    signal,
+  });
+  if (response.ok) return true;
+  if (response.status === 422 || response.status === 404) return false;
+  const payload = await response.json().catch(() => ({})) as { error?: unknown };
+  throw new Error(typeof payload.error === 'string'
+    ? payload.error
+    : `Preview registration failed with HTTP ${response.status}`);
+};
+
+export const fetchProjectPreviewInstances = async (
+  directory: string,
+  signal?: AbortSignal,
+  fetchImpl: typeof fetch = fetch,
+): Promise<LocalPreviewInstance[]> => {
+  const response = await fetchImpl(`/api/preview/instances?directory=${encodeURIComponent(directory)}`, {
+    credentials: 'include',
+    cache: 'no-store',
+    signal,
+  });
+  if (!response.ok) throw new Error(`Preview instance list failed with HTTP ${response.status}`);
+  const payload = await response.json() as ProjectPreviewInstancesResponse;
+  return (payload.instances ?? []).flatMap((instance): LocalPreviewInstance[] => {
+    if (
+      typeof instance.id !== 'string'
+      || typeof instance.url !== 'string'
+      || typeof instance.origin !== 'string'
+      || typeof instance.port !== 'string'
+    ) return [];
+    return [{
+      id: instance.id,
+      terminalSessionId: '',
+      label: typeof instance.label === 'string' && instance.label ? instance.label : 'Local app',
+      url: instance.url,
+      origin: instance.origin,
+      port: instance.port,
+    }];
+  });
+};
+
 const LOCAL_INSTANCE_POLL_INTERVAL_MS = 3_000;
 const ACTION_LABEL_PREFIX = /^Action:\s*/i;
 
@@ -132,35 +203,22 @@ export const fetchReachableLocalInstanceOrigins = async (
   return reachable;
 };
 
-const setsEqual = (left: Set<string>, right: Set<string>): boolean => {
-  if (left.size !== right.size) return false;
-  for (const value of left) {
-    if (!right.has(value)) return false;
-  }
-  return true;
-};
-
 export const useReachableLocalPreviewInstances = (
   candidates: LocalPreviewInstance[],
   enabled: boolean,
+  directory: string,
 ): LocalPreviewInstance[] => {
-  const [reachableOrigins, setReachableOrigins] = React.useState<Set<string>>(() => new Set());
+  const [confirmed, setConfirmed] = React.useState<{ directory: string; instances: LocalPreviewInstance[] }>({
+    directory: '',
+    instances: [],
+  });
   const candidateKey = React.useMemo(
     () => candidates.map((candidate) => `${candidate.origin}\u0000${candidate.url}`).join('\u0001'),
     [candidates],
   );
 
   React.useEffect(() => {
-    const currentOrigins = new Set(candidates.map((candidate) => candidate.origin));
-    setReachableOrigins((previous) => {
-      const retained = new Set([...previous].filter((origin) => currentOrigins.has(origin)));
-      return setsEqual(previous, retained) ? previous : retained;
-    });
-
-    if (!enabled || candidates.length === 0) {
-      if (candidates.length === 0) {
-        setReachableOrigins((previous) => (previous.size === 0 ? previous : new Set()));
-      }
+    if (!enabled || !directory) {
       return;
     }
 
@@ -171,12 +229,21 @@ export const useReachableLocalPreviewInstances = (
       if (controller) return;
       controller = new AbortController();
       try {
-        const reachable = await fetchReachableLocalInstanceOrigins(
-          candidates.map((candidate) => candidate.url),
-          controller.signal,
-        );
+        await Promise.all(candidates.map((candidate) => registerProjectPreviewInstance({
+          directory,
+          terminalSessionId: candidate.terminalSessionId,
+          url: candidate.url,
+          label: candidate.label,
+          signal: controller?.signal,
+        })));
+        if (!directory) return;
+        const next = await fetchProjectPreviewInstances(directory, controller.signal);
         if (!disposed) {
-          setReachableOrigins((previous) => (setsEqual(previous, reachable) ? previous : reachable));
+          setConfirmed((previous) => (
+            previous.directory === directory && instanceSignature(previous.instances) === instanceSignature(next)
+              ? previous
+              : { directory, instances: next }
+          ));
         }
       } catch (error) {
         if (!disposed && !(error instanceof DOMException && error.name === 'AbortError')) {
@@ -194,10 +261,7 @@ export const useReachableLocalPreviewInstances = (
       controller?.abort();
       window.clearInterval(intervalID);
     };
-  }, [candidateKey, candidates, enabled]);
+  }, [candidateKey, candidates, directory, enabled]);
 
-  return React.useMemo(
-    () => candidates.filter((candidate) => reachableOrigins.has(candidate.origin)),
-    [candidates, reachableOrigins],
-  );
+  return enabled && confirmed.directory === directory ? confirmed.instances : [];
 };

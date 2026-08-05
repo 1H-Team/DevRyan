@@ -4,6 +4,7 @@ import { useVisibleConfigAgents } from '@/stores/useConfigStore';
 import { useAgentsStore, isAgentBuiltIn, type AgentWithExtras } from '@/stores/useAgentsStore';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { useI18n } from '@/lib/i18n';
+import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
 
 interface AgentInfo {
   name: string;
@@ -42,6 +43,8 @@ export const AgentMentionAutocomplete = React.forwardRef<AgentMentionAutocomplet
   onTabSelect,
 }, ref) => {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
+  const canUseFiles = hasAuthCapability(principal, 'files');
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const [agents, setAgents] = React.useState<AgentInfo[]>([]);
@@ -186,7 +189,7 @@ export const AgentMentionAutocomplete = React.forwardRef<AgentMentionAutocomplet
     { id: 'commands' as const, label: t('chat.autocomplete.tabs.commands') },
     { id: 'agents' as const, label: t('chat.autocomplete.tabs.agents') },
     { id: 'files' as const, label: t('chat.autocomplete.tabs.files') },
-  ]), [t]);
+  ]).filter((tab) => tab.id !== 'files' || canUseFiles), [canUseFiles, t]);
 
   return (
     <div

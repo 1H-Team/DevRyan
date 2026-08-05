@@ -10,6 +10,20 @@ export const FEATURE_TEST_MATRIX = Object.freeze([
     testPaths: ['packages/web/server/opencode-proxy.test.js', 'packages/web/src/api/index.test.ts'],
   },
   {
+    id: 'multi-user-authentication',
+    sourcePaths: [
+      'packages/web/server/lib/multi-user/runtime.js',
+      'packages/web/server/lib/multi-user/auth-compat.js',
+      'packages/ui/src/components/auth/SessionAuthGate.tsx',
+      'packages/ui/src/components/auth/sessionAuthState.ts',
+    ],
+    testPaths: [
+      'packages/web/server/lib/multi-user/runtime.auth.test.js',
+      'packages/web/server/lib/multi-user/auth-compat.test.js',
+      'packages/ui/src/components/auth/sessionAuthState.test.ts',
+    ],
+  },
+  {
     id: 'electron-native-shell',
     sourcePaths: ['packages/electron/main.mjs', 'packages/electron/preload.mjs'],
     testPaths: ['packages/electron/tests/origin-policy.test.mjs', 'packages/electron/tests/quit-cleanup.test.mjs'],

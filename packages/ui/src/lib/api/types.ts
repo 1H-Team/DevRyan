@@ -198,6 +198,8 @@ export interface GitPushResult {
 
 export interface GitPullResult {
   success: boolean;
+  conflict?: boolean;
+  conflictFiles?: string[];
   summary: GitCommitSummary;
   files: string[];
   insertions: number;
@@ -658,6 +660,11 @@ export interface FilesAPI {
 export interface ProjectEntry {
   id: string;
   path: string;
+  branches?: Array<{
+    name: string;
+    directory: string;
+    isDefault?: boolean;
+  }>;
   label?: string;
   icon?: string | null;
   iconImage?: {
@@ -1163,6 +1170,7 @@ export type GitHubIssueCommentsResult = {
 
 export type GitHubAuthStatus = {
   connected: boolean;
+  activeAccountId?: string | null;
   user?: GitHubUserSummary | null;
   scope?: string;
   accounts?: GitHubAuthAccount[];

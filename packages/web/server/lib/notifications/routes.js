@@ -25,6 +25,7 @@ const parsePushUnsubscribeBody = (body) => {
 export const registerNotificationRoutes = (app, dependencies) => {
   const {
     uiAuthController,
+    multiUserRuntime,
     ensurePushInitialized,
     ensureGlobalWatcherStarted,
     getOrCreateVapidKeys,
@@ -58,6 +59,30 @@ export const registerNotificationRoutes = (app, dependencies) => {
     } catch (error) {
       console.warn('[OpenCodeWatcher] lazy start failed:', error?.message ?? error);
     }
+  };
+
+  const ownsSessionForRequest = async (req, sessionId) => (
+    req.principal?.scope !== 'managed'
+    || typeof multiUserRuntime?.ownsSession !== 'function'
+    || multiUserRuntime.ownsSession(req.principal, sessionId)
+  );
+
+  const filterSessionSnapshot = async (req, snapshot) => {
+    if (req.principal?.scope !== 'managed') return snapshot;
+    if (Array.isArray(snapshot)) {
+      const visible = [];
+      for (const entry of snapshot) {
+        const sessionId = typeof entry === 'string' ? entry : entry?.sessionId || entry?.sessionID || entry?.id;
+        if (sessionId && await ownsSessionForRequest(req, sessionId)) visible.push(entry);
+      }
+      return visible;
+    }
+    if (!snapshot || typeof snapshot !== 'object') return snapshot;
+    const visible = {};
+    for (const [sessionId, value] of Object.entries(snapshot)) {
+      if (await ownsSessionForRequest(req, sessionId)) visible[sessionId] = value;
+    }
+    return visible;
   };
 
   app.get('/api/push/vapid-public-key', async (_req, res) => {
@@ -149,8 +174,10 @@ export const registerNotificationRoutes = (app, dependencies) => {
     return res.json({ ok: true });
   });
 
-  app.get('/api/push/visibility', (req, res) => {
-    const uiToken = getUiSessionTokenFromRequest(req);
+  app.get('/api/push/visibility', async (req, res) => {
+    const uiToken = uiAuthController?.ensureSessionToken
+      ? await uiAuthController.ensureSessionToken(req, res)
+      : getUiSessionTokenFromRequest(req);
     if (!uiToken) {
       return res.status(401).json({ error: 'UI session missing' });
     }
@@ -176,6 +203,8 @@ export const registerNotificationRoutes = (app, dependencies) => {
     res.flushHeaders?.();
 
     const clients = getUiNotificationClients();
+    res.devRyanPrincipal = req.principal;
+    res.devRyanEventFilter = multiUserRuntime?.filterEventForPrincipal || null;
     clients.add(res);
 
     try {
@@ -191,25 +220,25 @@ export const registerNotificationRoutes = (app, dependencies) => {
     });
   });
 
-  app.get('/api/session-activity', (_req, res) => {
+  app.get('/api/session-activity', async (req, res) => {
     void ensureSessionWatcher();
-    res.json(getSessionActivitySnapshot());
+    res.json(await filterSessionSnapshot(req, getSessionActivitySnapshot()));
   });
 
-  app.get('/api/sessions/snapshot', async (_req, res) => {
+  app.get('/api/sessions/snapshot', async (req, res) => {
     await ensureSessionWatcher();
     res.json({
-      statusSessions: getSessionStateSnapshot(),
-      attentionSessions: getSessionAttentionSnapshot(),
+      statusSessions: await filterSessionSnapshot(req, getSessionStateSnapshot()),
+      attentionSessions: await filterSessionSnapshot(req, getSessionAttentionSnapshot()),
       serverTime: Date.now(),
     });
   });
 
-  app.get('/api/sessions/status', async (_req, res) => {
+  app.get('/api/sessions/status', async (req, res) => {
     await ensureSessionWatcher();
     const snapshot = getSessionStateSnapshot();
     res.json({
-      sessions: snapshot,
+      sessions: await filterSessionSnapshot(req, snapshot),
       serverTime: Date.now(),
     });
   });
@@ -217,6 +246,7 @@ export const registerNotificationRoutes = (app, dependencies) => {
   app.get('/api/sessions/:id/status', async (req, res) => {
     await ensureSessionWatcher();
     const sessionId = req.params.id;
+    if (!await ownsSessionForRequest(req, sessionId)) return res.status(404).json({ error: 'Session not found' });
     const state = getSessionState(sessionId);
 
     if (!state) {
@@ -232,11 +262,11 @@ export const registerNotificationRoutes = (app, dependencies) => {
     });
   });
 
-  app.get('/api/sessions/attention', async (_req, res) => {
+  app.get('/api/sessions/attention', async (req, res) => {
     await ensureSessionWatcher();
     const snapshot = getSessionAttentionSnapshot();
     res.json({
-      sessions: snapshot,
+      sessions: await filterSessionSnapshot(req, snapshot),
       serverTime: Date.now(),
     });
   });
@@ -244,6 +274,7 @@ export const registerNotificationRoutes = (app, dependencies) => {
   app.get('/api/sessions/:id/attention', async (req, res) => {
     await ensureSessionWatcher();
     const sessionId = req.params.id;
+    if (!await ownsSessionForRequest(req, sessionId)) return res.status(404).json({ error: 'Session not found' });
     const state = getSessionAttentionState(sessionId);
 
     if (!state) {
@@ -259,8 +290,9 @@ export const registerNotificationRoutes = (app, dependencies) => {
     });
   });
 
-  app.post('/api/sessions/:id/view', (req, res) => {
+  app.post('/api/sessions/:id/view', async (req, res) => {
     const sessionId = req.params.id;
+    if (!await ownsSessionForRequest(req, sessionId)) return res.status(404).json({ error: 'Session not found' });
     const clientId = req.headers['x-client-id'] || req.ip || 'anonymous';
 
     markSessionViewed(sessionId, clientId);
@@ -272,8 +304,9 @@ export const registerNotificationRoutes = (app, dependencies) => {
     });
   });
 
-  app.post('/api/sessions/:id/unview', (req, res) => {
+  app.post('/api/sessions/:id/unview', async (req, res) => {
     const sessionId = req.params.id;
+    if (!await ownsSessionForRequest(req, sessionId)) return res.status(404).json({ error: 'Session not found' });
     const clientId = req.headers['x-client-id'] || req.ip || 'anonymous';
 
     markSessionUnviewed(sessionId, clientId);
@@ -285,8 +318,9 @@ export const registerNotificationRoutes = (app, dependencies) => {
     });
   });
 
-  app.post('/api/sessions/:id/message-sent', (req, res) => {
+  app.post('/api/sessions/:id/message-sent', async (req, res) => {
     const sessionId = req.params.id;
+    if (!await ownsSessionForRequest(req, sessionId)) return res.status(404).json({ error: 'Session not found' });
 
     markUserMessageSent(sessionId);
 
@@ -300,13 +334,14 @@ export const registerNotificationRoutes = (app, dependencies) => {
   // Mirror client-side Permission Auto-Accept state to the server so it can
   // suppress permission notifications at the source (the 500ms debounce race
   // otherwise leaks notifications for auto-accepted permissions).
-  app.post('/api/notifications/auto-accept', (req, res) => {
+  app.post('/api/notifications/auto-accept', async (req, res) => {
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     const sessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : '';
     const enabled = body.enabled === true;
     if (!sessionId) {
       return res.status(400).json({ error: 'sessionId required' });
     }
+    if (!await ownsSessionForRequest(req, sessionId)) return res.status(404).json({ error: 'Session not found' });
     if (typeof setAutoAcceptSession === 'function') {
       setAutoAcceptSession(sessionId, enabled);
     }

@@ -23,11 +23,16 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { copyTextToClipboard } from '@/lib/clipboard';
 import { requestFileAccess } from '@/lib/desktop';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { openExternalUrl } from '@/lib/url';
+import {
+  isManagedRemoteStatusDegraded,
+  type ManagedRemoteConnectorState,
+} from './tunnelStatusPresentation';
 
 type TunnelState =
   | 'checking'
@@ -35,6 +40,7 @@ type TunnelState =
   | 'idle'
   | 'starting'
   | 'active'
+  | 'degraded'
   | 'stopping'
   | 'error';
 
@@ -46,7 +52,13 @@ interface ManagedRemoteTunnelPreset {
   id: string;
   name: string;
   hostname: string;
+  originPort: number;
 }
+
+const DEFAULT_MANAGED_REMOTE_ORIGIN_PORT = 3000;
+const isValidManagedRemoteOriginPort = (value: number): boolean => (
+  Number.isInteger(value) && value >= 1024 && value <= 65535
+);
 
 const BOOTSTRAP_TTL_OPTIONS: TtlOption[] = [
   { value: '1800000', label: '30m', ms: 30 * 60 * 1000 },
@@ -114,6 +126,8 @@ interface TunnelSessionRecord {
 interface TunnelStatusResponse {
   active: boolean;
   url: string | null;
+  runtimeReady?: boolean;
+  connectReady?: boolean;
   mode?: ApiTunnelMode;
   hasManagedRemoteTunnelToken?: boolean;
   managedRemoteTunnelHostname?: string | null;
@@ -121,6 +135,7 @@ interface TunnelStatusResponse {
   bootstrapExpiresAt?: number | null;
   managedRemoteTunnelTokenPresetIds?: string[];
   managedRemoteTunnelPresets?: ManagedRemoteTunnelPreset[];
+  originPort?: number;
   activeTunnelMode?: ApiTunnelMode | null;
   providerMetadata?: {
     configPath?: string | null;
@@ -129,6 +144,18 @@ interface TunnelStatusResponse {
     expectedHostname?: string | null;
     localOriginUrl?: string | null;
     cloudflareConfigRequiresManualOriginMatch?: boolean;
+    originPort?: number;
+    cloudflareOriginUrl?: string | null;
+    activeOriginUrl?: string | null;
+    originRelayActive?: boolean;
+    publicReachabilityVerified?: boolean;
+    connectorState?: ManagedRemoteConnectorState;
+    effectiveTransportProtocol?: 'auto' | 'http2';
+    transportProtocol?: 'auto' | 'http2';
+    lastPublicVerificationAt?: string | null;
+    lastPublicVerificationAttemptAt?: string | null;
+    publicReachabilityReason?: string | null;
+    lastPublicStatus?: number | null;
   };
   activeSessions?: TunnelSessionRecord[];
   localPort?: number;
@@ -145,6 +172,8 @@ interface TunnelStartResponse {
   code?: string;
   details?: TunnelDiagnosticDetails | null;
   url?: string;
+  runtimeReady?: boolean;
+  connectReady?: boolean;
   connectUrl?: string | null;
   bootstrapExpiresAt?: number | null;
   activeTunnelMode?: ApiTunnelMode | null;
@@ -155,12 +184,16 @@ interface TunnelStartResponse {
   replacedTunnel?: boolean;
   revokedBootstrapCount?: number;
   invalidatedSessionCount?: number;
+  originPort?: number;
+  providerMetadata?: TunnelStatusResponse['providerMetadata'];
 }
 
 interface TunnelDiagnosticDetails {
   startupLogExcerpt?: string[];
   hint?: string;
   localOriginUrl?: string | null;
+  cloudflareOriginUrl?: string | null;
+  activeOriginUrl?: string | null;
   expectedHostname?: string | null;
   cloudflareConfigRequiresManualOriginMatch?: boolean;
 }
@@ -268,6 +301,9 @@ const sanitizePresets = (value: unknown): ManagedRemoteTunnelPreset[] => {
     const id = typeof candidate.id === 'string' ? candidate.id.trim() : '';
     const name = typeof candidate.name === 'string' ? candidate.name.trim() : '';
     const hostname = normalizePresetHostname(typeof candidate.hostname === 'string' ? candidate.hostname : '');
+    const originPort = typeof candidate.originPort === 'number' && isValidManagedRemoteOriginPort(candidate.originPort)
+      ? candidate.originPort
+      : DEFAULT_MANAGED_REMOTE_ORIGIN_PORT;
     if (!id || !name || !hostname) {
       continue;
     }
@@ -276,7 +312,7 @@ const sanitizePresets = (value: unknown): ManagedRemoteTunnelPreset[] => {
     }
     seenIds.add(id);
     seenHosts.add(hostname);
-    result.push({ id, name, hostname });
+    result.push({ id, name, hostname, originPort });
   }
 
   return result;
@@ -297,6 +333,8 @@ const sanitizeTunnelDiagnostics = (message: string, code?: string, details?: Tun
     : [],
   hint: typeof details?.hint === 'string' && details.hint.trim().length > 0 ? details.hint : undefined,
   localOriginUrl: typeof details?.localOriginUrl === 'string' && details.localOriginUrl.trim().length > 0 ? details.localOriginUrl : null,
+  cloudflareOriginUrl: typeof details?.cloudflareOriginUrl === 'string' && details.cloudflareOriginUrl.trim().length > 0 ? details.cloudflareOriginUrl : null,
+  activeOriginUrl: typeof details?.activeOriginUrl === 'string' && details.activeOriginUrl.trim().length > 0 ? details.activeOriginUrl : null,
   expectedHostname: typeof details?.expectedHostname === 'string' && details.expectedHostname.trim().length > 0 ? details.expectedHostname : null,
   cloudflareConfigRequiresManualOriginMatch: details?.cloudflareConfigRequiresManualOriginMatch === true,
 });
@@ -327,12 +365,15 @@ export const TunnelSettings: React.FC = () => {
   const [newPresetName, setNewPresetName] = React.useState('');
   const [newPresetHostname, setNewPresetHostname] = React.useState('');
   const [newPresetToken, setNewPresetToken] = React.useState('');
+  const [newPresetOriginPort, setNewPresetOriginPort] = React.useState(String(DEFAULT_MANAGED_REMOTE_ORIGIN_PORT));
   const [bootstrapTtlMs, setBootstrapTtlMs] = React.useState<number | null>(30 * 60 * 1000);
   const [sessionTtlMs, setSessionTtlMs] = React.useState<number>(8 * 60 * 60 * 1000);
   const [remainingText, setRemainingText] = React.useState<string>('');
   const [sessionRecords, setSessionRecords] = React.useState<TunnelSessionRecord[]>([]);
   const [nowTs, setNowTs] = React.useState<number>(() => Date.now());
-  const [localPort, setLocalPort] = React.useState<number | null>(null);
+  const [activeProviderMetadata, setActiveProviderMetadata] = React.useState<TunnelStatusResponse['providerMetadata'] | null>(null);
+  const [runtimeReady, setRuntimeReady] = React.useState(false);
+  const [connectReady, setConnectReady] = React.useState(false);
   const managedLocalConfigExtensionError = t(MANAGED_LOCAL_CONFIG_EXTENSION_ERROR_KEY);
   const managedLocalConfigFileInputRef = React.useRef<HTMLInputElement>(null);
   const isManagedLocalConfigPathInvalid = React.useMemo(() => {
@@ -382,33 +423,27 @@ export const TunnelSettings: React.FC = () => {
     if (!tunnelInfo) {
       return false;
     }
-    if (state !== 'active' && state !== 'stopping') {
+    if (state !== 'active' && state !== 'degraded' && state !== 'stopping') {
       return false;
     }
     return activeTunnelMode === tunnelMode;
   }, [activeTunnelMode, state, tunnelInfo, tunnelMode]);
   const willReplaceActiveTunnel = React.useMemo(() => {
-    if (!tunnelInfo || state !== 'active') {
+    if (!tunnelInfo || (state !== 'active' && state !== 'degraded')) {
       return false;
     }
     if (!activeTunnelMode) {
       return false;
     }
-    return activeTunnelMode !== tunnelMode;
-  }, [activeTunnelMode, state, tunnelInfo, tunnelMode]);
-  const suggestedConnectorPort = React.useMemo(() => {
-    if (typeof localPort === 'number' && Number.isFinite(localPort) && localPort > 0) {
-      return localPort;
+    if (activeTunnelMode !== tunnelMode) {
+      return true;
     }
-    if (typeof window === 'undefined') {
-      return null;
+    if (tunnelMode === 'managed-remote' && selectedPreset) {
+      return activeProviderMetadata?.expectedHostname !== selectedPreset.hostname
+        || activeProviderMetadata?.originPort !== selectedPreset.originPort;
     }
-    const parsed = Number(window.location.port);
-    if (Number.isFinite(parsed) && parsed > 0) {
-      return parsed;
-    }
-    return null;
-  }, [localPort]);
+    return false;
+  }, [activeProviderMetadata?.expectedHostname, activeProviderMetadata?.originPort, activeTunnelMode, selectedPreset, state, tunnelInfo, tunnelMode]);
   const openExternal = React.useCallback(async (url: string) => {
     await openExternalUrl(url);
   }, []);
@@ -458,6 +493,9 @@ export const TunnelSettings: React.FC = () => {
             id: `legacy-${normalizePresetHostname(loadedHostname)}`,
             name: loadedHostname,
             hostname: normalizePresetHostname(loadedHostname),
+            originPort: typeof statusData.originPort === 'number'
+              ? statusData.originPort
+              : DEFAULT_MANAGED_REMOTE_ORIGIN_PORT,
           }]
           : []);
 
@@ -478,7 +516,9 @@ export const TunnelSettings: React.FC = () => {
           : (statusData.active && statusData.mode ? toUiTunnelMode(statusData.mode) : null)
       );
       setSavedTokenPresetIds(new Set(Array.isArray(statusData.managedRemoteTunnelTokenPresetIds) ? statusData.managedRemoteTunnelTokenPresetIds : []));
-      setLocalPort(typeof statusData.localPort === 'number' ? statusData.localPort : null);
+      setActiveProviderMetadata(statusData.providerMetadata ?? null);
+      setRuntimeReady(statusData.runtimeReady === true);
+      setConnectReady(statusData.connectReady === true);
 
       if (statusData.active && statusData.url) {
         setTunnelInfo({
@@ -486,7 +526,7 @@ export const TunnelSettings: React.FC = () => {
           connectUrl: null,
           bootstrapExpiresAt: typeof statusData.bootstrapExpiresAt === 'number' ? statusData.bootstrapExpiresAt : null,
         });
-        setState('active');
+        setState(isManagedRemoteStatusDegraded(statusData) ? 'degraded' : 'active');
         return;
       }
 
@@ -625,7 +665,7 @@ export const TunnelSettings: React.FC = () => {
   }, []);
 
   React.useEffect(() => {
-    if (state === 'starting' || state === 'stopping' || state === 'checking') {
+    if ((state !== 'active' && state !== 'degraded') || activeTunnelMode !== 'managed-remote') {
       return;
     }
 
@@ -642,7 +682,26 @@ export const TunnelSettings: React.FC = () => {
         }
         setSessionRecords(Array.isArray(statusData.activeSessions) ? statusData.activeSessions : []);
         setSavedTokenPresetIds(new Set(Array.isArray(statusData.managedRemoteTunnelTokenPresetIds) ? statusData.managedRemoteTunnelTokenPresetIds : []));
-        setLocalPort(typeof statusData.localPort === 'number' ? statusData.localPort : null);
+        setActiveProviderMetadata(statusData.providerMetadata ?? null);
+        setRuntimeReady(statusData.runtimeReady === true);
+        setConnectReady(statusData.connectReady === true);
+        if (statusData.active && statusData.url) {
+          setTunnelInfo((current) => ({
+            url: statusData.url as string,
+            connectUrl: statusData.connectReady === true && current?.url === statusData.url ? current.connectUrl : null,
+            bootstrapExpiresAt: current?.url === statusData.url
+              ? current.bootstrapExpiresAt
+              : (typeof statusData.bootstrapExpiresAt === 'number' ? statusData.bootstrapExpiresAt : null),
+          }));
+          const refreshedMode = toUiTunnelMode(statusData.activeTunnelMode ?? statusData.mode);
+          setActiveTunnelMode(refreshedMode);
+          setState(isManagedRemoteStatusDegraded({ ...statusData, mode: refreshedMode }) ? 'degraded' : 'active');
+          return;
+        }
+
+        setTunnelInfo(null);
+        setActiveTunnelMode(null);
+        setState('idle');
       } catch {
         // ignore transient refresh failures
       }
@@ -660,7 +719,7 @@ export const TunnelSettings: React.FC = () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [state]);
+  }, [activeTunnelMode, state]);
 
   const saveTunnelSettings = React.useCallback(async (payload: {
     tunnelProvider?: string;
@@ -842,6 +901,7 @@ export const TunnelSettings: React.FC = () => {
           ...(tunnelMode === 'managed-remote' && selectedPreset ? {
             managedRemoteTunnelPresetId: selectedPreset.id,
             managedRemoteTunnelPresetName: selectedPreset.name,
+            originPort: selectedPreset.originPort,
           } : {}),
           ...(tunnelMode === 'managed-remote' && managedRemoteTunnelHostname ? { managedRemoteTunnelHostname } : {}),
           ...(tunnelMode === 'managed-remote' && managedRemoteTunnelToken ? { managedRemoteTunnelToken } : {}),
@@ -875,9 +935,11 @@ export const TunnelSettings: React.FC = () => {
 
       setTunnelInfo({
         url: startedUrl,
-        connectUrl: typeof data.connectUrl === 'string' ? data.connectUrl : null,
+        connectUrl: data.connectReady === true && typeof data.connectUrl === 'string' ? data.connectUrl : null,
         bootstrapExpiresAt: typeof data.bootstrapExpiresAt === 'number' ? data.bootstrapExpiresAt : null,
       });
+      setRuntimeReady(data.runtimeReady === true);
+      setConnectReady(data.connectReady === true);
       setActiveTunnelMode(
         data.activeTunnelMode
           ? toUiTunnelMode(data.activeTunnelMode)
@@ -887,13 +949,15 @@ export const TunnelSettings: React.FC = () => {
       if (Array.isArray(data.managedRemoteTunnelTokenPresetIds)) {
         setSavedTokenPresetIds(new Set(data.managedRemoteTunnelTokenPresetIds));
       }
-      if (typeof data.localPort === 'number') {
-        setLocalPort(data.localPort);
-      }
+      setActiveProviderMetadata(data.providerMetadata ?? null);
       if (typeof data.mode === 'string') {
         setTunnelMode(toUiTunnelMode(data.mode));
       }
-      setState('active');
+      setState(isManagedRemoteStatusDegraded({
+        active: true,
+        mode: data.mode ?? tunnelMode,
+        providerMetadata: data.providerMetadata,
+      }) ? 'degraded' : 'active');
       if (data.replacedTunnel) {
         const revokedBootstrapCount = typeof data.revokedBootstrapCount === 'number' ? data.revokedBootstrapCount : 0;
         const invalidatedSessionCount = typeof data.invalidatedSessionCount === 'number' ? data.invalidatedSessionCount : 0;
@@ -937,9 +1001,11 @@ export const TunnelSettings: React.FC = () => {
         const statusData = (await statusRes.json()) as TunnelStatusResponse;
         setSessionRecords(Array.isArray(statusData.activeSessions) ? statusData.activeSessions : []);
         setSavedTokenPresetIds(new Set(Array.isArray(statusData.managedRemoteTunnelTokenPresetIds) ? statusData.managedRemoteTunnelTokenPresetIds : []));
-        setLocalPort(typeof statusData.localPort === 'number' ? statusData.localPort : null);
       }
       setTunnelInfo(null);
+      setRuntimeReady(false);
+      setConnectReady(false);
+      setActiveProviderMetadata(null);
       setActiveTunnelMode(null);
       setQrDataUrl(null);
       setErrorDiagnostics(null);
@@ -958,7 +1024,8 @@ export const TunnelSettings: React.FC = () => {
     }
 
     try {
-      await navigator.clipboard.writeText(tunnelInfo.connectUrl);
+      const result = await copyTextToClipboard(tunnelInfo.connectUrl, { sourceSurface: 'settings', copyKind: 'text' });
+      if (!result.ok) throw new Error(result.error);
       setCopied(true);
       toast.success(t('settings.openchamber.tunnel.toast.connectLinkCopied'));
       setTimeout(() => setCopied(false), 2000);
@@ -989,7 +1056,7 @@ export const TunnelSettings: React.FC = () => {
     setManagedRemoteValidationError(null);
     setErrorMessage(null);
     setErrorDiagnostics(null);
-    if (state !== 'active' && state !== 'stopping' && state !== 'starting') {
+    if (state !== 'active' && state !== 'degraded' && state !== 'stopping' && state !== 'starting') {
       setState('idle');
     }
 
@@ -1024,6 +1091,7 @@ export const TunnelSettings: React.FC = () => {
     const name = newPresetName.trim();
     const hostname = normalizePresetHostname(newPresetHostname);
     const token = newPresetToken.trim();
+    const originPort = Number(newPresetOriginPort);
 
     if (!name) {
       toast.error(t('settings.openchamber.tunnel.toast.tunnelNameRequired'));
@@ -1037,6 +1105,10 @@ export const TunnelSettings: React.FC = () => {
       toast.error(t('settings.openchamber.tunnel.toast.managedRemoteTokenRequired'));
       return;
     }
+    if (!isValidManagedRemoteOriginPort(originPort)) {
+      toast.error(t('settings.openchamber.tunnel.toast.invalidOriginPort'));
+      return;
+    }
 
     if (managedRemoteTunnelPresets.some((preset) => preset.hostname === hostname)) {
       toast.error(t('settings.openchamber.tunnel.toast.hostnameAlreadyExists'));
@@ -1047,6 +1119,7 @@ export const TunnelSettings: React.FC = () => {
       id: createPresetId(),
       name,
       hostname,
+      originPort,
     };
     const nextPresets = [...managedRemoteTunnelPresets, nextPreset];
 
@@ -1059,6 +1132,7 @@ export const TunnelSettings: React.FC = () => {
     setNewPresetName('');
     setNewPresetHostname('');
     setNewPresetToken('');
+    setNewPresetOriginPort(String(DEFAULT_MANAGED_REMOTE_ORIGIN_PORT));
 
     await saveTunnelSettings({
       tunnelMode: 'managed-remote',
@@ -1075,7 +1149,22 @@ export const TunnelSettings: React.FC = () => {
       token,
     });
     toast.success(t('settings.openchamber.tunnel.toast.managedRemoteSaved'));
-  }, [managedRemoteTunnelPresets, newPresetHostname, newPresetName, newPresetToken, persistManagedRemoteTunnelToken, saveTunnelSettings, sessionTokensByPresetId, t]);
+  }, [managedRemoteTunnelPresets, newPresetHostname, newPresetName, newPresetOriginPort, newPresetToken, persistManagedRemoteTunnelToken, saveTunnelSettings, sessionTokensByPresetId, t]);
+
+  const handlePresetOriginPortChange = React.useCallback(async (presetId: string, rawValue: string) => {
+    const originPort = Number(rawValue);
+    if (!isValidManagedRemoteOriginPort(originPort)) {
+      toast.error(t('settings.openchamber.tunnel.toast.invalidOriginPort'));
+      return false;
+    }
+
+    const nextPresets = managedRemoteTunnelPresets.map((preset) => (
+      preset.id === presetId ? { ...preset, originPort } : preset
+    ));
+    setManagedRemoteTunnelPresets(nextPresets);
+    await saveTunnelSettings({ managedRemoteTunnelPresets: nextPresets });
+    return true;
+  }, [managedRemoteTunnelPresets, saveTunnelSettings, t]);
 
   const handleRemovePreset = React.useCallback(async (presetId: string) => {
     const preset = managedRemoteTunnelPresets.find((entry) => entry.id === presetId);
@@ -1119,6 +1208,13 @@ export const TunnelSettings: React.FC = () => {
   }, [managedRemoteTunnelPresets, saveTunnelSettings, selectedPresetId, sessionTokensByPresetId, t]);
 
   const primaryCtaClass = 'gap-2 border-[var(--primary-base)] bg-[var(--primary-base)] text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] hover:text-[var(--primary-foreground)]';
+  const isManagedRemoteDegraded = state === 'degraded' && activeTunnelMode === 'managed-remote';
+  const isManagedRemoteRuntimeStarting = activeTunnelMode === 'managed-remote' && !runtimeReady;
+  const connectorTransport = activeProviderMetadata?.effectiveTransportProtocol
+    ?? activeProviderMetadata?.transportProtocol;
+  const lastPublicVerificationLabel = activeProviderMetadata?.lastPublicVerificationAt
+    ? new Date(activeProviderMetadata.lastPublicVerificationAt).toLocaleString()
+    : null;
 
   if (state === 'checking') {
     return (
@@ -1140,6 +1236,9 @@ export const TunnelSettings: React.FC = () => {
         </p>
         <p className="typography-meta mt-0 text-muted-foreground/60">
           {t('settings.openchamber.tunnel.note.connectLinksOneTime')}
+        </p>
+        <p className="typography-meta mt-0 text-muted-foreground/60">
+          {t('settings.openchamber.tunnel.note.multiUserConnectSignIn')}
         </p>
       </div>
 
@@ -1332,10 +1431,13 @@ export const TunnelSettings: React.FC = () => {
 
           {tunnelMode === 'managed-remote' && (
             <div className="space-y-2 rounded-lg border border-[var(--interactive-border)] bg-[var(--surface-elevated)] p-3">
-              {typeof suggestedConnectorPort === 'number' && (
+              {selectedPreset && (
                 <div className="rounded-md border border-[var(--status-info-border)] bg-[var(--status-info-background)]/35 px-2 py-1.5">
                   <p className="typography-meta text-[var(--status-info)]">
-                    {t('settings.openchamber.tunnel.note.cloudflareConnectorTarget')} <code>http://localhost:{suggestedConnectorPort}</code>
+                    {t('settings.openchamber.tunnel.note.cloudflareConnectorTarget')} <code>http://127.0.0.1:{selectedPreset.originPort}</code>
+                  </p>
+                  <p className="typography-meta text-[var(--status-info)]/80">
+                    {t('settings.openchamber.tunnel.note.stableOriginRelay')}
                   </p>
                 </div>
               )}
@@ -1405,6 +1507,26 @@ export const TunnelSettings: React.FC = () => {
                           <CollapsibleContent className="pt-1.5">
                             <div className="space-y-1 px-3 pb-2">
                               <p className="typography-meta text-muted-foreground/70">{t('settings.openchamber.tunnel.field.hostnameLabel')} <code>{preset.hostname}</code></p>
+                              <label className="block space-y-1">
+                                <span className="typography-meta text-muted-foreground/70">{t('settings.openchamber.tunnel.field.originPortLabel')}</span>
+                                <Input
+                                  type="number"
+                                  min={1024}
+                                  max={65535}
+                                  defaultValue={preset.originPort}
+                                  onBlur={(event) => {
+                                    const input = event.currentTarget;
+                                    void handlePresetOriginPortChange(preset.id, input.value).then((saved) => {
+                                      if (!saved) input.value = String(preset.originPort);
+                                    });
+                                  }}
+                                  className="h-7"
+                                  disabled={state === 'starting' || state === 'stopping' || isSavingMode}
+                                />
+                              </label>
+                              <p className="typography-meta text-muted-foreground/70">
+                                {t('settings.openchamber.tunnel.note.cloudflareConnectorTarget')} <code>http://127.0.0.1:{preset.originPort}</code>
+                              </p>
                               <Input
                                 type="password"
                                 value={rowToken}
@@ -1482,11 +1604,19 @@ export const TunnelSettings: React.FC = () => {
                     className="h-7"
                     disabled={isSavingMode || state === 'starting' || state === 'stopping'}
                   />
-                  {typeof suggestedConnectorPort === 'number' && (
-                    <p className="typography-meta text-muted-foreground/70">
-                      {t('settings.openchamber.tunnel.note.cloudflareConnectorTargetUse')} <code>http://localhost:{suggestedConnectorPort}</code>.
-                    </p>
-                  )}
+                  <Input
+                    type="number"
+                    min={1024}
+                    max={65535}
+                    value={newPresetOriginPort}
+                    onChange={(event) => setNewPresetOriginPort(event.target.value)}
+                    placeholder={t('settings.openchamber.tunnel.field.originPortPlaceholder')}
+                    className="h-7"
+                    disabled={isSavingMode || state === 'starting' || state === 'stopping'}
+                  />
+                  <p className="typography-meta text-muted-foreground/70">
+                    {t('settings.openchamber.tunnel.note.cloudflareConnectorTargetUse')} <code>http://127.0.0.1:{newPresetOriginPort || DEFAULT_MANAGED_REMOTE_ORIGIN_PORT}</code>.
+                  </p>
                   <div className="flex items-center gap-2">
                     <Button
                       variant="ghost"
@@ -1508,6 +1638,7 @@ export const TunnelSettings: React.FC = () => {
                         setNewPresetName('');
                         setNewPresetHostname('');
                         setNewPresetToken('');
+                        setNewPresetOriginPort(String(DEFAULT_MANAGED_REMOTE_ORIGIN_PORT));
                       }}
                       disabled={isSavingMode || state === 'starting' || state === 'stopping'}
                     >
@@ -1608,6 +1739,16 @@ export const TunnelSettings: React.FC = () => {
 
           {!isSelectedModeTunnelReady && (
             <div className="space-y-6">
+              {!runtimeReady && (
+                <div className="rounded-lg border border-[var(--status-warning-border)] bg-[var(--status-warning-background)] p-3">
+                  <div className="flex items-start gap-2">
+                    <RiLoader4Line className="mt-0.5 size-4 shrink-0 animate-spin text-[var(--status-warning)]" />
+                    <p className="typography-meta text-[var(--status-warning)]">
+                      {t('settings.openchamber.tunnel.state.devRyanStartingHint')}
+                    </p>
+                  </div>
+                </div>
+              )}
               <div className="rounded-lg border border-[var(--status-info-border)] bg-[var(--status-info-background)] p-3">
                 <div className="flex items-start gap-2">
                   <RiInformationLine className="mt-0.5 size-4 shrink-0 text-[var(--status-info)]" />
@@ -1699,7 +1840,8 @@ export const TunnelSettings: React.FC = () => {
                 variant="outline"
                 onClick={handleStart}
                 disabled={
-                  state === 'starting'
+                  !runtimeReady
+                  || state === 'starting'
                   || isSavingMode
                   || (tunnelMode === 'managed-remote' && !selectedPreset)
                   || (tunnelMode === 'managed-local' && isManagedLocalConfigPathInvalid)
@@ -1708,7 +1850,9 @@ export const TunnelSettings: React.FC = () => {
               >
                 {state === 'starting'
                   ? <><RiLoader4Line className="size-3.5 animate-spin" /> {t('settings.openchamber.tunnel.actions.startingTunnel')}</>
-                  : t('settings.openchamber.tunnel.actions.startTunnel')}
+                  : !runtimeReady
+                    ? <><RiLoader4Line className="size-3.5 animate-spin" /> {t('settings.openchamber.tunnel.state.devRyanStarting')}</>
+                    : t('settings.openchamber.tunnel.actions.startTunnel')}
               </Button>
             </div>
           )}
@@ -1720,9 +1864,54 @@ export const TunnelSettings: React.FC = () => {
         <section className="space-y-4 px-2 pb-2 pt-0">
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <div className="size-2 shrink-0 rounded-full bg-[var(--status-success)]" />
-              <p className="typography-meta font-medium text-foreground">{t('settings.openchamber.tunnel.state.tunnelReady')}</p>
+              <div className={cn(
+                'size-2 shrink-0 rounded-full',
+                isManagedRemoteDegraded ? 'bg-[var(--status-warning)]' : 'bg-[var(--status-success)]',
+              )} />
+              <p className="typography-meta font-medium text-foreground">
+                {isManagedRemoteDegraded
+                  ? t('settings.openchamber.tunnel.state.tunnelDegraded')
+                  : activeTunnelMode === 'managed-remote'
+                    ? t('settings.openchamber.tunnel.state.cloudflareConnected')
+                    : t('settings.openchamber.tunnel.state.tunnelReady')}
+              </p>
             </div>
+
+            {activeTunnelMode === 'managed-remote' && (
+              <div className="flex items-center gap-2">
+                <div className={cn(
+                  'size-2 shrink-0 rounded-full',
+                  runtimeReady ? 'bg-[var(--status-success)]' : 'bg-[var(--status-warning)] animate-busy-pulse',
+                )} />
+                <p className="typography-meta font-medium text-foreground">
+                  {runtimeReady
+                    ? t('settings.openchamber.tunnel.state.devRyanReady')
+                    : t('settings.openchamber.tunnel.state.devRyanStarting')}
+                </p>
+              </div>
+            )}
+
+            {isManagedRemoteRuntimeStarting && (
+              <div className="rounded-lg border border-[var(--status-warning-border)] bg-[var(--status-warning-background)] p-3">
+                <div className="flex items-start gap-2">
+                  <RiLoader4Line className="mt-0.5 size-4 shrink-0 animate-spin text-[var(--status-warning)]" />
+                  <p className="typography-meta text-[var(--status-warning)]">
+                    {t('settings.openchamber.tunnel.state.devRyanStartingHint')}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {isManagedRemoteDegraded && (
+              <div className="rounded-lg border border-[var(--status-warning-border)] bg-[var(--status-warning-background)] p-3">
+                <div className="flex items-start gap-2">
+                  <RiErrorWarningLine className="mt-0.5 size-4 shrink-0 text-[var(--status-warning)]" />
+                  <p className="typography-meta text-[var(--status-warning)]">
+                    {t('settings.openchamber.tunnel.state.tunnelDegradedHint')}
+                  </p>
+                </div>
+              </div>
+            )}
 
             <div>
               <p className="typography-meta mb-1 text-muted-foreground/70">{t('settings.openchamber.tunnel.field.publicUrlHint')}</p>
@@ -1731,7 +1920,35 @@ export const TunnelSettings: React.FC = () => {
               </code>
             </div>
 
-            {isConnectLinkLive && tunnelInfo.connectUrl && (
+            {activeTunnelMode === 'managed-remote' && activeProviderMetadata?.cloudflareOriginUrl && activeProviderMetadata.activeOriginUrl && (
+              <div className={cn(
+                'rounded-md border px-2 py-1.5',
+                isManagedRemoteDegraded
+                  ? 'border-[var(--status-warning-border)] bg-[var(--status-warning-background)]'
+                  : 'border-[var(--status-success)]/25 bg-[var(--status-success)]/5',
+              )}>
+                <p className="typography-meta text-foreground">
+                  {t('settings.openchamber.tunnel.field.originMapping')}: <code>{activeProviderMetadata.cloudflareOriginUrl}</code> → <code>{activeProviderMetadata.activeOriginUrl}</code>
+                </p>
+                <p className="typography-meta text-muted-foreground/70">
+                  {activeProviderMetadata.originRelayActive
+                    ? t('settings.openchamber.tunnel.state.originRelayActive')
+                    : t('settings.openchamber.tunnel.state.originDirect')}
+                </p>
+                {connectorTransport && (
+                  <p className="typography-meta text-muted-foreground/70">
+                    {t('settings.openchamber.tunnel.state.transportProtocol')}: <code>{connectorTransport === 'http2' ? 'HTTP/2' : 'Auto'}</code>
+                  </p>
+                )}
+                {lastPublicVerificationLabel && (
+                  <p className="typography-meta text-muted-foreground/70">
+                    {t('settings.openchamber.tunnel.state.lastVerified')}: {lastPublicVerificationLabel}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {!isManagedRemoteDegraded && connectReady && isConnectLinkLive && tunnelInfo.connectUrl && (
               <>
                 <div>
                   <p className="typography-meta mb-1 text-muted-foreground/70">{t('settings.openchamber.tunnel.field.connectLink')}</p>
@@ -1766,11 +1983,13 @@ export const TunnelSettings: React.FC = () => {
               <Button size="sm"
                 variant="outline"
                 onClick={handleStart}
-                disabled={state === 'stopping' || isSavingMode || (tunnelMode === 'managed-local' && isManagedLocalConfigPathInvalid)}
+                disabled={!runtimeReady || state === 'stopping' || isSavingMode || (tunnelMode === 'managed-local' && isManagedLocalConfigPathInvalid)}
                 className={primaryCtaClass}
               >
                 <RiRestartLine className="size-3.5" />
-                {t('settings.openchamber.tunnel.actions.newConnectLink')}
+                {isManagedRemoteDegraded
+                  ? t('settings.openchamber.tunnel.actions.retryConnection')
+                  : t('settings.openchamber.tunnel.actions.newConnectLink')}
               </Button>
 
               <Button size="sm"
@@ -1808,6 +2027,16 @@ export const TunnelSettings: React.FC = () => {
                 {errorDiagnostics?.localOriginUrl && (
                   <p className="typography-meta text-muted-foreground/80">
                     {t('settings.openchamber.tunnel.diagnostic.localOrigin')}: <code>{errorDiagnostics.localOriginUrl}</code>
+                  </p>
+                )}
+                {errorDiagnostics?.cloudflareOriginUrl && (
+                  <p className="typography-meta text-muted-foreground/80">
+                    {t('settings.openchamber.tunnel.diagnostic.cloudflareOrigin')}: <code>{errorDiagnostics.cloudflareOriginUrl}</code>
+                  </p>
+                )}
+                {errorDiagnostics?.activeOriginUrl && (
+                  <p className="typography-meta text-muted-foreground/80">
+                    {t('settings.openchamber.tunnel.diagnostic.activeOrigin')}: <code>{errorDiagnostics.activeOriginUrl}</code>
                   </p>
                 )}
                 {errorDiagnostics?.cloudflareConfigRequiresManualOriginMatch && errorDiagnostics.localOriginUrl && (

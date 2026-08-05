@@ -471,6 +471,7 @@ export const InstallFromRepoDialog: React.FC<InstallFromRepoDialogProps> = ({ op
               <div className="h-full flex flex-col gap-3">
                 <div className="flex items-center justify-between gap-2">
                   <Input
+                    type="search"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                     placeholder={t('settings.skills.catalog.shared.field.searchSkillsPlaceholder')}

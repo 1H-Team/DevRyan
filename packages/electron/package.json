@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/electron",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "private": true,
   "description": "Electron desktop runtime for DevRyan",
   "author": "DevRyan",
@@ -34,7 +34,7 @@
     "package": "bun run build:web-assets && bun run build:speech-helper && bun run bundle:main && bun run rebuild:native && electron-builder",
     "test": "node ../../scripts/test-electron.mjs",
     "finalize:latest-yml": "node ./scripts/finalize-latest-yml.mjs",
-    "type-check": "node --check ./origin-policy.mjs && node --check ./browser-webview-policy.mjs && node --check ./browser-devtools-controller.mjs && node --check ./browser-cdp-bridge.mjs && node --check ./main.mjs && node --check ./preload.mjs",
+    "type-check": "node --check ./origin-policy.mjs && node --check ./browser-webview-policy.mjs && node --check ./browser-devtools-controller.mjs && node --check ./browser-surface-manager.mjs && node --check ./browser-cdp-bridge.mjs && node --check ./main.mjs && node --check ./preload.mjs",
     "lint": "node -e \"process.exit(0)\""
   },
   "build": {

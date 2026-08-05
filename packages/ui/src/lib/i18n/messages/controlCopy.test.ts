@@ -33,6 +33,7 @@ const MINOR_TITLE_WORDS = new Set([
 
 const LOWERCASE_TECHNICAL_WORDS = new Set(['cloudflared', 'macOS', 'npm']);
 const LOWERCASE_TECHNICAL_CONTROL_LITERALS = new Set(['bun', 'localhost']);
+const APPROVED_SENTENCE_CASE_CONTROL_LITERALS = new Set(['Sign out']);
 const CONTROL_ELEMENT_NAMES = new Set([
   'button',
   'Button',
@@ -284,7 +285,11 @@ function findHardcodedControlCopyViolations(): string[] {
         }
 
         for (const value of values) {
-          if (LOWERCASE_TECHNICAL_CONTROL_LITERALS.has(value) || /^\d+[a-z]+$/i.test(value)) {
+          if (
+            LOWERCASE_TECHNICAL_CONTROL_LITERALS.has(value)
+            || APPROVED_SENTENCE_CASE_CONTROL_LITERALS.has(value)
+            || /^\d+[a-z]+$/i.test(value)
+          ) {
             continue;
           }
 

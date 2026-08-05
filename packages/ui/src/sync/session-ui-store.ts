@@ -44,7 +44,16 @@ import { flattenAssistantTextParts } from "@/lib/messages/messageText"
 import { EXECUTION_FORK_META_TEXT } from "@/lib/messages/executionMeta"
 import { isSyntheticPart } from "@/lib/messages/synthetic"
 import { waitForWorktreeBootstrap } from "@/lib/worktrees/worktreeBootstrap"
-import { waitForPendingDraftWorktreeRequest } from "@/lib/worktrees/pendingDraftWorktree"
+import {
+  createPendingDraftWorktreeRequest,
+  hasPendingDraftWorktreeRequest,
+  rejectPendingDraftWorktreeRequest,
+  resolvePendingDraftWorktreeRequest,
+  waitForPendingDraftWorktreeRequest,
+} from "@/lib/worktrees/pendingDraftWorktree"
+import { ensureManagedBranchTarget } from "@/lib/worktrees/managedBranchTarget"
+import { getAuthPrincipal } from "@/lib/authSession"
+import { normalizeManagedBranchName } from "@/lib/worktrees/managedBranches"
 import { resolveProjectForSessionDirectory } from "@/lib/projectResolution"
 import { streamDebugMark } from "@/stores/utils/streamDebug"
 import { isUserVisibleSessionRecord } from "@/lib/sessionVisibility"
@@ -537,6 +546,8 @@ export type NewSessionDraftState = {
   pendingWorktreeRequestId?: string | null
   bootstrapPendingDirectory?: string | null
   preserveDirectoryOverride?: boolean
+  targetBranchName?: string | null
+  targetPreparationError?: string | null
   parentID: string | null
   title?: string
   initialPrompt?: string
@@ -1361,6 +1372,8 @@ const toNewSessionDraftState = (draft: ChatDraft | null | undefined): NewSession
     pendingWorktreeRequestId: draft.pendingWorktreeRequestId ?? null,
     bootstrapPendingDirectory: draft.bootstrapPendingDirectory ?? null,
     preserveDirectoryOverride: draft.preserveDirectoryOverride === true,
+    targetBranchName: draft.targetBranchName ?? null,
+    targetPreparationError: draft.targetPreparationError ?? null,
     parentID: draft.parentID ?? null,
     title: draft.title,
     initialPrompt: draft.initialPrompt,
@@ -1372,6 +1385,24 @@ const toNewSessionDraftState = (draft: ChatDraft | null | undefined): NewSession
 }
 
 const resolveDraftProjectForDirectory = resolveProjectForSessionDirectory
+
+const resolveManagedDraftAssignment = (
+  projectId: string,
+  preferredBranch?: string | null,
+) => {
+  const principal = getAuthPrincipal()
+  if (principal.scope !== "managed" || principal.role === "admin") return null
+
+  const assignments = principal.assignments.filter((entry) => entry.projectId === projectId)
+  const preferredName = normalizeManagedBranchName(preferredBranch || "")
+  if (preferredName) {
+    const preferred = assignments.find((entry) => (
+      normalizeManagedBranchName(entry.branchName) === preferredName
+    ))
+    if (preferred) return preferred
+  }
+  return assignments.find((entry) => entry.isDefault) ?? assignments[0] ?? null
+}
 
 const getAttachmentForSession = (sessionId: string | null | undefined): SessionWorktreeAttachment | undefined => {
   if (!sessionId) return undefined
@@ -1396,6 +1427,7 @@ const resolveSessionDirectory = (
 const resolveDirectoryForDraftSend = (draft: NewSessionDraftState): string | null => {
   const explicit = normalizePath(draft.bootstrapPendingDirectory ?? draft.directoryOverride ?? null)
   if (explicit) return explicit
+  if (draft.pendingWorktreeRequestId || draft.targetPreparationError) return null
 
   const projectsState = useProjectsStore.getState()
   const selectedProject = draft.selectedProjectId
@@ -1418,6 +1450,37 @@ const activateConfigForDirectory = async (directory: string | null | undefined):
 const activateConfigForDirectoryInBackground = (directory: string | null | undefined): void => {
   void activateConfigForDirectory(directory).catch((error) => {
     console.warn("[session-ui-store] Background directory activation failed after draft send", error)
+  })
+}
+
+const prepareManagedDraftTarget = (input: {
+  projectId: string
+  branchName: string
+  requestId: string
+}): void => {
+  void ensureManagedBranchTarget({
+    projectId: input.projectId,
+    branchName: input.branchName,
+    idempotencyKey: input.requestId,
+  }).then((result) => {
+    resolvePendingDraftWorktreeRequest(input.requestId, result.directory)
+    useSessionUIStore.getState().resolvePendingDraftWorktreeTarget(input.requestId, result.directory, {
+      projectId: input.projectId,
+      bootstrapPendingDirectory: result.status === "pending" ? result.directory : null,
+      preserveDirectoryOverride: true,
+      targetBranchName: result.branchName,
+      targetPreparationError: null,
+    })
+  }).catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : "Failed to prepare assigned branch"
+    rejectPendingDraftWorktreeRequest(input.requestId, new Error(message))
+    useSessionUIStore.getState().resolvePendingDraftWorktreeTarget(input.requestId, null, {
+      projectId: input.projectId,
+      bootstrapPendingDirectory: null,
+      preserveDirectoryOverride: true,
+      targetBranchName: input.branchName,
+      targetPreparationError: message,
+    })
   })
 }
 
@@ -1559,6 +1622,11 @@ const applyCurrentSessionSideEffects = (
 const DEFAULT_DRAFT: NewSessionDraftState = {
   open: false,
   directoryOverride: null,
+  pendingWorktreeRequestId: null,
+  bootstrapPendingDirectory: null,
+  preserveDirectoryOverride: false,
+  targetBranchName: null,
+  targetPreparationError: null,
   parentID: null,
 }
 
@@ -1776,7 +1844,21 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       return persistedProjectByDir ?? persistedProjectById ?? fallbackProject
     })()
 
+    const principal = getAuthPrincipal()
+    const defaultAssignment = selectedProject
+      ? resolveManagedDraftAssignment(selectedProject.id, options?.targetBranchName)
+      : null
+    const projectRoot = normalizePath(selectedProject?.path ?? null)
+    const shouldPrepareManagedTarget = principal.scope === "managed"
+      && principal.role !== "admin"
+      && Boolean(defaultAssignment?.branchName)
+      && (options?.directoryOverride === undefined || explicitDirectory === projectRoot)
+    const managedTargetRequestId = shouldPrepareManagedTarget
+      ? (options?.pendingWorktreeRequestId ?? createPendingDraftWorktreeRequest())
+      : null
+
     const directory = (() => {
+      if (shouldPrepareManagedTarget) return null
       if (explicitDirectory !== null) return explicitDirectory
       if (explicitProject) return normalizePath(explicitProject.path ?? null)
       if (currentDirectory) return currentDirectory
@@ -1794,9 +1876,11 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       updatedAt: now,
       selectedProjectId: selectedProject?.id ?? null,
       directoryOverride: directory,
-      pendingWorktreeRequestId: options?.pendingWorktreeRequestId ?? null,
+      pendingWorktreeRequestId: managedTargetRequestId ?? options?.pendingWorktreeRequestId ?? null,
       bootstrapPendingDirectory: normalizePath(options?.bootstrapPendingDirectory ?? null),
       preserveDirectoryOverride: options?.preserveDirectoryOverride === true,
+      targetBranchName: shouldPrepareManagedTarget ? defaultAssignment?.branchName ?? null : options?.targetBranchName ?? null,
+      targetPreparationError: options?.targetPreparationError ?? null,
       parentID: options?.parentID ?? null,
       title: options?.title,
       initialPrompt: options?.initialPrompt,
@@ -1840,6 +1924,14 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       useInputStore.getState().setPendingInputText(options.initialPrompt)
     }
 
+    if (shouldPrepareManagedTarget && managedTargetRequestId && selectedProject && defaultAssignment) {
+      prepareManagedDraftTarget({
+        projectId: selectedProject.id,
+        branchName: defaultAssignment.branchName,
+        requestId: managedTargetRequestId,
+      })
+    }
+
     void activateConfigForDirectory(directory).then(() => {
       const state = get()
       if (state.currentSessionId || state.currentDraftId !== draft.id) return
@@ -1847,17 +1939,71 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       const hasExplicitDraftModel = hasExplicitDraftModelIntent(currentDraftSendConfig)
       useConfigStore.getState().applyDefaultsToCurrent({
         preserveCurrentModel: hasExplicitDraftModel,
-        preserveRehydratedDraftModel: false,
       })
     })
   },
 
   selectNewSessionDraft: (draftId) => {
-    const draft = get().draftsById[draftId]
-    if (!draft) return
+    const existingDraft = get().draftsById[draftId]
+    if (!existingDraft) return
+
+    const project = existingDraft.selectedProjectId
+      ? useProjectsStore.getState().projects.find((entry) => entry.id === existingDraft.selectedProjectId) ?? null
+      : null
+    const projectRoot = normalizePath(project?.path ?? null)
+    const draftDirectory = normalizePath(
+      existingDraft.bootstrapPendingDirectory ?? existingDraft.directoryOverride ?? null,
+    )
+    const assignment = project && (!draftDirectory || draftDirectory === projectRoot)
+      ? resolveManagedDraftAssignment(project.id, existingDraft.targetBranchName)
+      : null
+    const shouldPrepareManagedTarget = Boolean(project && assignment?.branchName)
+
+    let requestId = existingDraft.pendingWorktreeRequestId ?? null
+    let shouldLaunchPreparation = false
+    if (shouldPrepareManagedTarget && !hasPendingDraftWorktreeRequest(requestId)) {
+      requestId = createPendingDraftWorktreeRequest()
+      shouldLaunchPreparation = true
+    }
+
+    const draft: ChatDraft = shouldPrepareManagedTarget && project && assignment
+      ? {
+          ...existingDraft,
+          directoryOverride: null,
+          pendingWorktreeRequestId: requestId,
+          bootstrapPendingDirectory: null,
+          preserveDirectoryOverride: true,
+          targetBranchName: assignment.branchName,
+          targetPreparationError: null,
+          updatedAt: Date.now(),
+        }
+      : existingDraft
+
     persistDraftTarget({ projectId: draft.selectedProjectId ?? null, directory: normalizePath(draft.directoryOverride ?? null) })
-    set({ currentSessionId: null, currentDraftId: draftId, newSessionDraft: toNewSessionDraftState(draft), error: null })
+    set((state) => {
+      const draftsById = draft === existingDraft
+        ? state.draftsById
+        : { ...state.draftsById, [draftId]: draft }
+      if (draftsById !== state.draftsById) persistDrafts(safeStorage, draftsById, state.draftOrder)
+      return {
+        draftsById,
+        currentSessionId: null,
+        currentDraftId: draftId,
+        newSessionDraft: toNewSessionDraftState(draft),
+        error: null,
+      }
+    })
     setActiveSession("", "")
+
+    if (shouldLaunchPreparation && project && assignment && requestId) {
+      prepareManagedDraftTarget({
+        projectId: project.id,
+        branchName: assignment.branchName,
+        requestId,
+      })
+    }
+
+    if (draft.pendingWorktreeRequestId) return
     void activateConfigForDirectory(draft.directoryOverride ?? null).then(() => {
       if (get().currentDraftId !== draftId) return
       restoreLiveConfigForSelectedDraft(draftId, get)
@@ -1914,6 +2060,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         pendingWorktreeRequestId: null,
         bootstrapPendingDirectory: null,
         preserveDirectoryOverride: false,
+        targetBranchName: null,
+        targetPreparationError: null,
         parentID: null,
         title: undefined,
         initialPrompt: undefined,
@@ -2115,12 +2263,17 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       )
       const currentDraft = s.currentDraftId ? s.draftsById[s.currentDraftId] : null
       const draftOptions = options as Partial<ChatDraft>
+      const hasDraftOption = (key: keyof ChatDraft): boolean => Object.prototype.hasOwnProperty.call(draftOptions, key)
       const updatedDraft = currentDraft
         ? {
             ...currentDraft,
             ...draftOptions,
-            directoryOverride: normalizePath(draftOptions.directoryOverride ?? currentDraft.directoryOverride),
-            bootstrapPendingDirectory: normalizePath(draftOptions.bootstrapPendingDirectory ?? currentDraft.bootstrapPendingDirectory),
+            directoryOverride: normalizePath(hasDraftOption("directoryOverride")
+              ? draftOptions.directoryOverride
+              : currentDraft.directoryOverride),
+            bootstrapPendingDirectory: normalizePath(hasDraftOption("bootstrapPendingDirectory")
+              ? draftOptions.bootstrapPendingDirectory
+              : currentDraft.bootstrapPendingDirectory),
             updatedAt: Date.now(),
           }
         : null
@@ -2131,35 +2284,67 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     void activateConfigForDirectory(nextDirectory)
   },
 
-  resolvePendingDraftWorktreeTarget: (requestId, directory, options) =>
+  resolvePendingDraftWorktreeTarget: (requestId, directory, options) => {
+    let resolvedCurrentDraftId: string | null = null
+    let resolvedProjectId: string | null = null
+    const hasOption = (key: string): boolean => Object.prototype.hasOwnProperty.call(options ?? {}, key)
+
     set((s) => {
-      if (!s.newSessionDraft?.open || s.newSessionDraft.pendingWorktreeRequestId !== requestId) return s
-      const currentDraft = s.currentDraftId ? s.draftsById[s.currentDraftId] : null
-      const updatedDraft = currentDraft
-        ? {
-            ...currentDraft,
-            selectedProjectId: (options as Record<string, unknown> | undefined)?.projectId as string ?? currentDraft.selectedProjectId ?? null,
-            directoryOverride: normalizePath(directory),
-            pendingWorktreeRequestId: null,
-            bootstrapPendingDirectory: normalizePath((options as Record<string, unknown> | undefined)?.bootstrapPendingDirectory as string ?? currentDraft.bootstrapPendingDirectory ?? null),
-            preserveDirectoryOverride: ((options as Record<string, unknown> | undefined)?.preserveDirectoryOverride ?? true) as boolean,
-            updatedAt: Date.now(),
-          }
-        : null
-      const draftsById = updatedDraft ? { ...s.draftsById, [updatedDraft.id]: updatedDraft } : s.draftsById
-      if (updatedDraft) persistDrafts(safeStorage, draftsById, s.draftOrder)
+      const draftEntry = Object.entries(s.draftsById).find(([, draft]) => (
+        draft.pendingWorktreeRequestId === requestId
+      ))
+      if (!draftEntry) return s
+
+      const [draftId, currentDraft] = draftEntry
+      const bootstrapPendingDirectory = hasOption("bootstrapPendingDirectory")
+        ? normalizePath(options?.bootstrapPendingDirectory as string | null | undefined)
+        : normalizePath(currentDraft.bootstrapPendingDirectory ?? null)
+      const updatedDraft: ChatDraft = {
+        ...currentDraft,
+        selectedProjectId: hasOption("projectId")
+          ? (options?.projectId as string | null | undefined) ?? null
+          : currentDraft.selectedProjectId ?? null,
+        directoryOverride: normalizePath(directory),
+        pendingWorktreeRequestId: null,
+        bootstrapPendingDirectory,
+        preserveDirectoryOverride: hasOption("preserveDirectoryOverride")
+          ? options?.preserveDirectoryOverride === true
+          : true,
+        targetBranchName: hasOption("targetBranchName")
+          ? (options?.targetBranchName as string | null | undefined) ?? null
+          : currentDraft.targetBranchName ?? null,
+        targetPreparationError: hasOption("targetPreparationError")
+          ? (options?.targetPreparationError as string | null | undefined) ?? null
+          : null,
+        updatedAt: Date.now(),
+      }
+      const draftsById = { ...s.draftsById, [draftId]: updatedDraft }
+      persistDrafts(safeStorage, draftsById, s.draftOrder)
+
+      const isCurrentDraft = s.currentDraftId === draftId && s.newSessionDraft?.open
+      if (isCurrentDraft) {
+        resolvedCurrentDraftId = draftId
+        resolvedProjectId = updatedDraft.selectedProjectId ?? null
+      }
       return {
         draftsById,
-        newSessionDraft: {
-          ...s.newSessionDraft,
-          selectedProjectId: (options as Record<string, unknown> | undefined)?.projectId as string ?? s.newSessionDraft.selectedProjectId ?? null,
-          directoryOverride: normalizePath(directory),
-          pendingWorktreeRequestId: null,
-          bootstrapPendingDirectory: normalizePath((options as Record<string, unknown> | undefined)?.bootstrapPendingDirectory as string ?? s.newSessionDraft.bootstrapPendingDirectory ?? null),
-          preserveDirectoryOverride: ((options as Record<string, unknown> | undefined)?.preserveDirectoryOverride ?? true) as boolean,
-        },
+        newSessionDraft: isCurrentDraft ? toNewSessionDraftState(updatedDraft) : s.newSessionDraft,
       }
-    }),
+    })
+
+    if (!resolvedCurrentDraftId) return
+    persistDraftTarget({
+      projectId: resolvedProjectId,
+      directory: normalizePath(directory),
+    })
+    if (!directory) return
+    const draftId = resolvedCurrentDraftId
+    void activateConfigForDirectory(directory).then(() => {
+      restoreLiveConfigForSelectedDraft(draftId, get)
+    }).catch((error) => {
+      console.warn("[session-ui-store] Failed to activate prepared managed draft directory", error)
+    })
+  },
 
   setDraftBootstrapPendingDirectory: (directory) =>
     set((s) => {
@@ -2230,6 +2415,10 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       const capturedDraftId = get().currentDraftId ?? draft.id ?? null
       const draftAbortKey = capturedDraftId ? `draft:${capturedDraftId}` : "draft"
       const draftAbortController = get().registerPendingSendAbort(draftAbortKey)
+      if (draft.targetPreparationError) {
+        get().clearPendingSendAbort(draftAbortKey, draftAbortController)
+        throw new Error(draft.targetPreparationError)
+      }
       const capturedDraft = capturedDraftId ? get().draftsById[capturedDraftId] : null
       const draftSendConfig = normalizeDraftSendConfig(capturedDraft?.sendConfig ?? draft.sendConfig)
       const resolvedPlanMode = typeof draftSendConfig?.planMode === "boolean"
@@ -2255,6 +2444,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         draftDirectoryOverride = await waitForPendingDraftWorktreeRequest(draft.pendingWorktreeRequestId)
         throwIfAborted(draftAbortController.signal)
         get().resolvePendingDraftWorktreeTarget(draft.pendingWorktreeRequestId, draftDirectoryOverride)
+        await activateConfigForDirectory(draftDirectoryOverride)
+        throwIfAborted(draftAbortController.signal)
       }
 
       const configState = useConfigStore.getState()
@@ -2296,6 +2487,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         throw new Error("Failed to create session")
       }
       const createdDirectory = normalizePath(draftDirectoryOverride ?? created.directory ?? null)
+      if (effectiveDraftAgent?.trim().toLowerCase() === "builder") {
+        useSelectionStore.getState().markBuilderHandoffCleared(created.id)
+      }
       const promotedAbortController = get().promotePendingSendAbort(draftAbortKey, created.id) ?? draftAbortController
       if (promotedAbortController.signal.aborted) {
         await abortCurrentOperationAction(created.id)
@@ -2447,6 +2641,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
       targetSessionId = created.id
       targetSessionDirectory = normalizePath((created as { directory?: string }).directory ?? fallbackDirectory)
+      if (effectiveAgent?.trim().toLowerCase() === "builder") {
+        useSelectionStore.getState().markBuilderHandoffCleared(created.id)
+      }
       get().setCurrentSession(created.id, targetSessionDirectory)
       get().initializeNewOpenChamberSession(created.id, useConfigStore.getState().agents ?? [])
       if (targetSessionDirectory) {

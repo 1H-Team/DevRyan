@@ -380,6 +380,9 @@ export const createUiAuth = ({
       handlePasskeyAuthenticationVerify: (_req, res) => {
         res.status(400).json({ error: 'UI password not configured' });
       },
+      verifyPasskeyAuthentication: async () => {
+        throw Object.assign(new Error('UI password not configured'), { statusCode: 400 });
+      },
       handlePasskeyList: (_req, res) => {
         res.json({ passkeys: [] });
       },
@@ -610,6 +613,10 @@ export const createUiAuth = ({
     }
   };
 
+  const verifyPasskeyAuthentication = async (payload) => {
+    await passkeyController.finishAuthentication(payload);
+  };
+
   const handlePasskeyList = (req, res) => {
     try {
       res.json({ passkeys: passkeyController.listPasskeys(req) });
@@ -661,6 +668,7 @@ export const createUiAuth = ({
     handlePasskeyRegistrationVerify,
     handlePasskeyAuthenticationOptions,
     handlePasskeyAuthenticationVerify,
+    verifyPasskeyAuthentication,
     handlePasskeyList,
     handlePasskeyRevoke,
     handleResetAuth,

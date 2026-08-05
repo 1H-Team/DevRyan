@@ -1,3 +1,4 @@
+import { getSafeStorage } from '@/stores/utils/safeStorage';
 import React from 'react';
 import {
   Select,
@@ -13,6 +14,7 @@ import { useGitStore, useGitBranches, useGitLoadingBranches } from '@/stores/use
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
 import { useI18n } from '@/lib/i18n';
+import { normalizeManagedBranchName } from '@/lib/worktrees/managedBranches';
 
 /** localStorage key matching NewWorktreeDialog */
 const LAST_SOURCE_BRANCH_KEY = 'oc:lastWorktreeSourceBranch';
@@ -36,6 +38,8 @@ export interface BranchSelectorProps {
   disabled?: boolean;
   /** ID for accessibility */
   id?: string;
+  /** Logical branches granted to the current user. Omit for unrestricted access. */
+  allowedBranches?: readonly string[];
 }
 
 export interface BranchSelectorState {
@@ -101,12 +105,29 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
   className,
   disabled,
   id,
+  allowedBranches,
 }) => {
   const { t } = useI18n();
   const { localBranches, remoteBranches, isLoading, isGitRepository } = useBranchOptions(directory);
+  const allowedBranchNames = React.useMemo(
+    () => allowedBranches ? new Set(allowedBranches.map(normalizeManagedBranchName).filter(Boolean)) : null,
+    [allowedBranches],
+  );
+  const visibleLocalBranches = React.useMemo(
+    () => allowedBranchNames
+      ? localBranches.filter((branch) => allowedBranchNames.has(normalizeManagedBranchName(branch)))
+      : localBranches,
+    [allowedBranchNames, localBranches],
+  );
+  const visibleRemoteBranches = React.useMemo(
+    () => allowedBranchNames
+      ? remoteBranches.filter((branch) => allowedBranchNames.has(normalizeManagedBranchName(`remotes/${branch}`)))
+      : remoteBranches,
+    [allowedBranchNames, remoteBranches],
+  );
   const allBranches = React.useMemo(
-    () => [...localBranches, ...remoteBranches.map(b => `remotes/${b}`)],
-    [localBranches, remoteBranches],
+    () => [...visibleLocalBranches, ...visibleRemoteBranches.map(b => `remotes/${b}`)],
+    [visibleLocalBranches, visibleRemoteBranches],
   );
 
   // Resolve default source branch (same priority as NewWorktreeDialog)
@@ -118,7 +139,7 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
     const resolve = async () => {
       try {
         const rootBranch = directory ? await getRootBranch(directory).catch(() => null) : null;
-        const saved = localStorage.getItem(LAST_SOURCE_BRANCH_KEY);
+        const saved = getSafeStorage().getItem(LAST_SOURCE_BRANCH_KEY);
 
         if (saved && allBranches.includes(saved)) {
           onChange(saved);
@@ -160,29 +181,29 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
             <div className="px-2 py-4 text-center typography-meta text-muted-foreground">
               {t('multiRun.branchSelector.status.loadingBranches')}
             </div>
-          ) : localBranches.length === 0 && remoteBranches.length === 0 ? (
+          ) : visibleLocalBranches.length === 0 && visibleRemoteBranches.length === 0 ? (
             <div className="px-2 py-4 text-center typography-meta text-muted-foreground">
               {t('multiRun.branchSelector.status.noBranchesFound')}
             </div>
           ) : (
             <>
-              {localBranches.length > 0 && (
+              {visibleLocalBranches.length > 0 && (
                 <SelectGroup>
                   <SelectLabel className="font-semibold text-foreground">{t('multiRun.branchSelector.groups.localBranches')}</SelectLabel>
-                  {localBranches.map((branch) => (
+                  {visibleLocalBranches.map((branch) => (
                     <SelectItem key={branch} value={branch} className="whitespace-normal break-all">
                       {branch}
                     </SelectItem>
                   ))}
                 </SelectGroup>
               )}
-              {localBranches.length > 0 && remoteBranches.length > 0 && (
+              {visibleLocalBranches.length > 0 && visibleRemoteBranches.length > 0 && (
                 <SelectSeparator />
               )}
-              {remoteBranches.length > 0 && (
+              {visibleRemoteBranches.length > 0 && (
                 <SelectGroup>
                   <SelectLabel className="font-semibold text-foreground">{t('multiRun.branchSelector.groups.remoteBranches')}</SelectLabel>
-                  {remoteBranches.map((branch) => (
+                  {visibleRemoteBranches.map((branch) => (
                     <SelectItem key={`remotes/${branch}`} value={`remotes/${branch}`} className="whitespace-normal break-all">
                       {branch}
                     </SelectItem>

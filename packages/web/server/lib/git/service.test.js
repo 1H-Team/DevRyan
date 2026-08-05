@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -75,6 +75,69 @@ describe('worktree bootstrap compatibility status', () => {
       statusCode: 404,
     });
     await runtime.drain();
+  });
+
+  it('preserves user edits when a populated worktree bootstrap is replayed', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'openchamber-bootstrap-replay-'));
+    tempDirs.push(directory);
+    const git = simpleGit(directory);
+    await git.init();
+    await git.addConfig('user.name', 'DevRyan Test');
+    await git.addConfig('user.email', 'devryan@example.com');
+    await writeFile(join(directory, 'tracked.txt'), 'initial\n');
+    await git.add('tracked.txt');
+    await git.commit('initial commit');
+
+    const runtime = configureWorktreeBootstrapRuntime({
+      store: createRecordStore({ directory: join(directory, '.operations') }),
+    });
+    const { receipt } = await runtime.beginOperation({
+      idempotencyKey: 'replay-preserves-edit',
+      directory,
+    });
+    await runtime.executeStage(receipt.operationId, 'prepare_remote', async () => undefined);
+    await runtime.executeStage(receipt.operationId, 'create_worktree', async () => undefined);
+    await runtime.executeStage(receipt.operationId, 'sync_project_metadata', async () => undefined);
+    await writeFile(join(directory, 'tracked.txt'), 'user edit\n');
+
+    await runtime.queue(receipt.operationId);
+    await runtime.drain();
+
+    expect(await readFile(join(directory, 'tracked.txt'), 'utf8')).toBe('user edit\n');
+    expect(await runtime.getReceipt(receipt.operationId)).toMatchObject({ status: 'ready' });
+  });
+
+  it('populates a newly created no-checkout worktree before treating it as replay-safe', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'openchamber-bootstrap-populate-'));
+    tempDirs.push(parent);
+    const repository = join(parent, 'repository');
+    const worktree = join(parent, 'worktree');
+    await mkdir(repository);
+    const git = simpleGit(repository);
+    await git.init();
+    await git.addConfig('user.name', 'DevRyan Test');
+    await git.addConfig('user.email', 'devryan@example.com');
+    await writeFile(join(repository, 'tracked.txt'), 'initial\n');
+    await git.add('tracked.txt');
+    await git.commit('initial commit');
+    await git.raw(['worktree', 'add', '--no-checkout', '-b', 'populate-test', worktree]);
+
+    const runtime = configureWorktreeBootstrapRuntime({
+      store: createRecordStore({ directory: join(parent, '.operations') }),
+    });
+    const { receipt } = await runtime.beginOperation({
+      idempotencyKey: 'populate-no-checkout',
+      directory: worktree,
+    });
+    await runtime.executeStage(receipt.operationId, 'prepare_remote', async () => undefined);
+    await runtime.executeStage(receipt.operationId, 'create_worktree', async () => undefined);
+    await runtime.executeStage(receipt.operationId, 'sync_project_metadata', async () => undefined);
+
+    await runtime.queue(receipt.operationId);
+    await runtime.drain();
+
+    expect(await readFile(join(worktree, 'tracked.txt'), 'utf8')).toBe('initial\n');
+    expect(await runtime.getReceipt(receipt.operationId)).toMatchObject({ status: 'ready' });
   });
 });
 

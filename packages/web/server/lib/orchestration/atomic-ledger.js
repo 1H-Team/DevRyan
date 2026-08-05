@@ -58,6 +58,7 @@ const validateSnapshot = (value) => {
     const task = {
       ...candidate,
       dispatchGroupId: candidate?.dispatchGroupId ?? null,
+      dispatchCallId: candidate?.dispatchCallId ?? null,
       readOnly: candidate?.readOnly ?? false,
     };
     validateManagedTaskRecord(task);

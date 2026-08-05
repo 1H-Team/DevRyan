@@ -148,6 +148,7 @@ export const validateManagedTaskRecord = (task) => {
   assertString(task.idempotencyKey, 'idempotencyKey', { maxBytes: 1024 });
   assertString(task.rootSessionId, 'rootSessionId');
   assertNullableString(task.dispatchGroupId, 'dispatchGroupId', { maxBytes: 1024 });
+  assertNullableString(task.dispatchCallId, 'dispatchCallId', { maxBytes: 1024 });
   assertNullableString(task.parentTaskId, 'parentTaskId', { prefix: 'dvr_task_' });
   assertNullableString(task.childSessionId, 'childSessionId');
   assertString(task.directory, 'directory');
@@ -209,6 +210,7 @@ export const createManagedTaskRecord = (input) => {
     owner: MANAGED_TASK_OWNER,
     status: 'queued',
     dispatchGroupId: input.dispatchGroupId ?? null,
+    dispatchCallId: input.dispatchCallId ?? null,
     readOnly: input.readOnly ?? false,
     childSessionId: input.childSessionId ?? null,
     leaseToken: null,
@@ -243,6 +245,7 @@ const projectTaskForEvent = (task) => {
     owner: task.owner,
     taskId: task.taskId,
     rootSessionId: task.rootSessionId,
+    dispatchCallId: task.dispatchCallId,
     parentTaskId: task.parentTaskId,
     childSessionId: task.childSessionId,
     directory: task.directory,

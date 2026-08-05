@@ -52,6 +52,8 @@ export const createStartupPipelineRuntime = (dependencies) => {
       onTunnelReady,
       tunnelRuntimeContext,
       attachSignals,
+      multiUserRuntime,
+      onTerminalSessionClosed,
     } = options;
 
     const terminalRuntime = createTerminalRuntime({
@@ -69,6 +71,8 @@ export const createStartupPipelineRuntime = (dependencies) => {
       TERMINAL_INPUT_WS_HEARTBEAT_INTERVAL_MS: terminalHeartbeatIntervalMs,
       TERMINAL_INPUT_WS_REBIND_WINDOW_MS: terminalRebindWindowMs,
       TERMINAL_INPUT_WS_MAX_REBINDS_PER_WINDOW: terminalMaxRebindsPerWindow,
+      multiUserRuntime,
+      onTerminalSessionClosed,
     });
 
     const messageStreamRuntime = createMessageStreamWsRuntime({
@@ -83,17 +87,19 @@ export const createStartupPipelineRuntime = (dependencies) => {
       wsClients: messageStreamWsClients,
       triggerHealthCheck,
       upstreamStallTimeoutMs,
+      eventFilter: multiUserRuntime?.filterEventForPrincipal,
     });
 
     if (globalEventHub && typeof createGlobalMessageStreamSseHandler === 'function') {
       app.get('/api/global/event', createGlobalMessageStreamSseHandler({
         globalHub: globalEventHub,
+        eventFilter: multiUserRuntime?.filterEventForPrincipal,
+        registerConnection: multiUserRuntime?.registerConnection,
       }));
     }
 
     setupProxy(app);
     scheduleOpenCodeApiDetection();
-    void bootstrapOpenCodeAtStartup();
 
     staticRoutesRuntime.registerStaticRoutes(app);
 
@@ -112,6 +118,8 @@ export const createStartupPipelineRuntime = (dependencies) => {
       TUNNEL_MODE_QUICK,
       TUNNEL_MODE_MANAGED_LOCAL,
       TUNNEL_MODE_MANAGED_REMOTE,
+      bootstrapOpenCodeAtStartup,
+      getRuntimeReady: options.getRuntimeReady,
     });
 
     const bindHost = serverStartupRuntime.resolveBindHost(host);

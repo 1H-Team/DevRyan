@@ -195,6 +195,8 @@ export type NewSessionDraftState = {
     pendingWorktreeRequestId?: string | null;
     bootstrapPendingDirectory?: string | null;
     preserveDirectoryOverride?: boolean;
+    targetBranchName?: string | null;
+    targetPreparationError?: string | null;
     parentID: string | null;
     title?: string;
     initialPrompt?: string;
@@ -311,14 +313,14 @@ export interface SessionStore {
     setSessionAgentEditMode: (sessionId: string, agentName: string | undefined, mode: EditPermissionMode, defaultMode?: EditPermissionMode) => void;
     loadSessions: () => Promise<void>;
 
-    openNewSessionDraft: (options?: { projectId?: string | null; directoryOverride?: string | null; pendingWorktreeRequestId?: string | null; bootstrapPendingDirectory?: string | null; preserveDirectoryOverride?: boolean; parentID?: string | null; title?: string; initialPrompt?: string; syntheticParts?: SyntheticContextPart[]; targetFolderId?: string }) => void;
+    openNewSessionDraft: (options?: { projectId?: string | null; directoryOverride?: string | null; pendingWorktreeRequestId?: string | null; bootstrapPendingDirectory?: string | null; preserveDirectoryOverride?: boolean; targetBranchName?: string | null; targetPreparationError?: string | null; parentID?: string | null; title?: string; initialPrompt?: string; syntheticParts?: SyntheticContextPart[]; targetFolderId?: string }) => void;
     selectNewSessionDraft: (draftId: string) => void;
     updateNewSessionDraftText: (draftId: string, text: string) => void;
     deleteNewSessionDraft: (draftId: string) => void;
-    overrideNewSessionDraftTarget: (options: { projectId?: string | null; directoryOverride?: string | null; pendingWorktreeRequestId?: string | null; bootstrapPendingDirectory?: string | null; preserveDirectoryOverride?: boolean; title?: string; initialPrompt?: string }) => void;
+    overrideNewSessionDraftTarget: (options: { projectId?: string | null; directoryOverride?: string | null; pendingWorktreeRequestId?: string | null; bootstrapPendingDirectory?: string | null; preserveDirectoryOverride?: boolean; targetBranchName?: string | null; targetPreparationError?: string | null; title?: string; initialPrompt?: string }) => void;
     setNewSessionDraftTarget: (target: { projectId?: string | null; directoryOverride?: string | null }, options?: { force?: boolean }) => void;
     setPendingDraftWorktreeRequest: (requestId: string | null) => void;
-    resolvePendingDraftWorktreeTarget: (requestId: string, directory: string | null, options?: { projectId?: string | null; bootstrapPendingDirectory?: string | null; preserveDirectoryOverride?: boolean }) => void;
+    resolvePendingDraftWorktreeTarget: (requestId: string, directory: string | null, options?: { projectId?: string | null; bootstrapPendingDirectory?: string | null; preserveDirectoryOverride?: boolean; targetBranchName?: string | null; targetPreparationError?: string | null }) => void;
     setDraftBootstrapPendingDirectory: (directory: string | null) => void;
     setDraftPreserveDirectoryOverride: (value: boolean) => void;
     closeNewSessionDraft: () => void;

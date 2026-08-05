@@ -1,0 +1,75 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, test } from 'bun:test';
+
+const detailSource = readFileSync(new URL('./UserDetail.tsx', import.meta.url), 'utf8');
+const analyticsSource = readFileSync(new URL('./UserAnalytics.tsx', import.meta.url), 'utf8');
+const chartSource = readFileSync(new URL('./MetricTrendChart.tsx', import.meta.url), 'utf8');
+const presentationSource = readFileSync(new URL('./userAnalyticsPresentation.ts', import.meta.url), 'utf8');
+const permissionsSource = readFileSync(new URL('./SettingsPermissionMatrix.tsx', import.meta.url), 'utf8');
+
+describe('user detail tabs and analytics source contract', () => {
+  test('keeps drafts mounted under the ordered accessible tab list', () => {
+    const core = detailSource.indexOf('>Core Details</Tabs.Tab>');
+    const policy = detailSource.indexOf('>Policy Overrides</Tabs.Tab>');
+    const analytics = detailSource.indexOf('>Analytics</Tabs.Tab>');
+    expect(core).toBeGreaterThan(-1);
+    expect(policy).toBeGreaterThan(core);
+    expect(analytics).toBeGreaterThan(policy);
+    expect(detailSource).toContain('value="core" keepMounted');
+    expect(detailSource).toContain('value="policy" keepMounted');
+    expect(detailSource).toContain('value="analytics" keepMounted');
+  });
+
+  test('defaults the two primary policy groups open and advanced JSON closed', () => {
+    expect(detailSource).toContain('React.useState(true);\n  const [capabilityPolicyOpen');
+    expect(detailSource).toContain('const [advancedPolicyOpen, setAdvancedPolicyOpen] = React.useState(false)');
+    expect(detailSource).toContain('{permissionOverrideCount} Overrides');
+    expect(detailSource).toContain('{capabilityOverrideCount} Overrides');
+    expect(detailSource).toContain('{advancedOverrideCount} Keys');
+  });
+
+  test('renders every inherited permission and capability with its effective On or Off value', () => {
+    expect(permissionsSource).toContain("`Inherit (${inherited[slug].read ? 'On' : 'Off'})`");
+    expect(permissionsSource).toContain("`Inherit (${inherited[slug].edit ? 'On' : 'Off'})`");
+    expect(detailSource).toContain("`Inherit (${policyDraft.inheritedCapabilities[key] ? 'On' : 'Off'})`");
+    expect(permissionsSource).not.toContain('Inherit ·');
+  });
+
+  test('centers the detail tabs in a content-width container', () => {
+    expect(detailSource).toContain('<div className="flex justify-center">');
+    expect(detailSource).toContain('inline-flex max-w-full overflow-x-auto');
+    expect(detailSource).not.toContain('flex min-w-max items-center gap-1');
+  });
+
+  test('lazily fetches ranged analytics and renders the metric graph', () => {
+    expect(analyticsSource).toContain("if (!active || !canViewDetailed) return");
+    expect(analyticsSource).toContain('controller.abort()');
+    expect(analyticsSource).toContain('devryan.user-analytics.time-zone');
+    expect(analyticsSource).toContain("supported.includes('UTC') ? supported : ['UTC', ...supported]");
+    expect(analyticsSource).toContain('/analytics/range?');
+    expect(analyticsSource).toContain('new URLSearchParams({ start: range.start, end: range.end, timeZone })');
+    expect(analyticsSource).toContain('<MetricTrendChart series={rangeData.series} />');
+    expect(analyticsSource).toContain('<details key={event.id}');
+    expect(analyticsSource).toContain("params.set('limit', '50')");
+    expect(analyticsSource).toContain('Analytics could not be loaded');
+    expect(analyticsSource).toContain('No analytics are available.');
+  });
+
+  test('formats prompt agent, model, and thinking metadata through shared helpers', () => {
+    expect(analyticsSource).toContain("formatPromptAgentLabel(metadataString(event, 'agent'))");
+    expect(analyticsSource).toContain("formatPromptThinkingLabel(metadataString(event, 'variant'), provider)");
+    expect(analyticsSource).toContain('formatPromptModelLabel(provider, model)');
+    expect(presentationSource).toContain('formatAgentDisplayName');
+    expect(presentationSource).toContain('formatEffortLabel');
+    expect(presentationSource).toContain("'Default Agent'");
+  });
+
+  test('renders a range control with presets and a theme-aware metric chart', () => {
+    expect(analyticsSource).toContain('const RANGE_PRESETS = [7, 14, 30]');
+    expect(analyticsSource.match(/<label className="flex flex-col gap-1 typography-micro text-muted-foreground">/g)).toHaveLength(3);
+    expect(analyticsSource).toContain('<Button variant="outline" onClick={() => setReloadNonce');
+    expect(chartSource).toContain('role="img"');
+    expect(chartSource).toContain('var(--chart-1)');
+    expect(chartSource).toContain('aria-pressed={active}');
+  });
+});

@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 
-import { formatBrowserAddress, isLocalDevServerHost, normalizeBrowserUrl } from './browserUrl';
+import {
+  formatBrowserAddress,
+  isLocalDevServerHost,
+  normalizeBrowserUrl,
+  reconcileWebBrowserDisplayUrl,
+  sanitizeWebBrowserDisplayUrl,
+} from './browserUrl';
 
 describe('formatBrowserAddress', () => {
   test('hides the internal blank-page URL', () => {
@@ -69,5 +75,31 @@ describe('isLocalDevServerHost', () => {
     expect(isLocalDevServerHost('example.com')).toBe(false);
     expect(isLocalDevServerHost('localhost.evil.com')).toBe(false);
     expect(isLocalDevServerHost('')).toBe(false);
+  });
+});
+
+describe('standalone web Browser display URLs', () => {
+  test('never presents internal reload parameters', () => {
+    expect(sanitizeWebBrowserDisplayUrl(
+      'http://localhost:4173/docs?viewer=admin&ocPreview=2&ocBrowser=1#intro',
+    )).toBe('http://localhost:4173/docs?viewer=admin#intro');
+  });
+
+  test('preserves the user-entered loopback hostname when the proxy reports its canonical origin', () => {
+    expect(reconcileWebBrowserDisplayUrl(
+      'http://127.0.0.1:4173/page-two?tab=logs',
+      'http://localhost:4173/',
+    )).toBe('http://localhost:4173/page-two?tab=logs');
+  });
+
+  test('does not merge different ports or public origins', () => {
+    expect(reconcileWebBrowserDisplayUrl(
+      'http://127.0.0.1:5000/page-two',
+      'http://localhost:4173/',
+    )).toBe('http://127.0.0.1:5000/page-two');
+    expect(reconcileWebBrowserDisplayUrl(
+      'https://example.net/page-two',
+      'https://example.com/',
+    )).toBe('https://example.net/page-two');
   });
 });

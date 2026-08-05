@@ -17,6 +17,9 @@ export const LazyPlanView = /* @__PURE__ */ lazyWithChunkRecovery(loadPlanView);
 export const LazySettingsView = /* @__PURE__ */ lazyWithChunkRecovery(() =>
   import('@/components/views/SettingsView').then((module) => ({ default: module.SettingsView })),
 );
+export const LazyManagedSettingsView = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/views/ManagedSettingsView').then((module) => ({ default: module.ManagedSettingsView })),
+);
 export const LazyTerminalView = /* @__PURE__ */ lazyWithChunkRecovery(() =>
   import('@/components/views/TerminalView').then((module) => ({ default: module.TerminalView })),
 );

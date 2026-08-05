@@ -41,6 +41,7 @@ type Args = {
   filterSessionNodesForSearch: (nodes: SessionNode[], query: string) => SessionNode[];
   buildGroupSearchText: (group: SessionGroup) => string;
   foldersMap: SessionFoldersMap;
+  hiddenProjectRootIds?: ReadonlySet<string>;
 };
 
 export const useSessionSidebarSections = (args: Args) => {
@@ -58,6 +59,7 @@ export const useSessionSidebarSections = (args: Args) => {
     filterSessionNodesForSearch,
     buildGroupSearchText,
     foldersMap,
+    hiddenProjectRootIds,
   } = args;
 
   const projectSections = React.useMemo<ProjectSection[]>(() => {
@@ -70,13 +72,16 @@ export const useSessionSidebarSections = (args: Args) => {
       const isRepo = projectRepoStatus.has(project.id)
         ? Boolean(projectRepoStatus.get(project.id))
         : lastRepoStatus;
-      const groups = buildGroupedSessions(
+      const groupedSessions = buildGroupedSessions(
         projectSessions,
         project.normalizedPath,
         worktreesForProject,
         projectRootBranches.get(project.id) ?? null,
         isRepo,
       );
+      const groups = hiddenProjectRootIds?.has(project.id)
+        ? groupedSessions.filter((group) => group.id !== 'root')
+        : groupedSessions;
       return { project, groups };
     });
   }, [
@@ -88,6 +93,7 @@ export const useSessionSidebarSections = (args: Args) => {
     lastRepoStatus,
     buildGroupedSessions,
     projectRootBranches,
+    hiddenProjectRootIds,
   ]);
 
   const visibleProjectSections = React.useMemo(() => {

@@ -3,7 +3,9 @@ import { describe, expect, test } from 'bun:test';
 import type { DirectoryTerminalState, TerminalTab } from '@/stores/useTerminalStore';
 import {
   fetchReachableLocalInstanceOrigins,
+  fetchProjectPreviewInstances,
   projectLocalPreviewInstances,
+  registerProjectPreviewInstance,
 } from './localPreviewInstances';
 
 const createTab = (overrides: Partial<TerminalTab> = {}): TerminalTab => ({
@@ -127,5 +129,52 @@ describe('local instance liveness client', () => {
     }
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toContain('HTTP 503');
+  });
+});
+
+describe('project preview grant client', () => {
+  test('registers terminal-discovered URLs with directory and CSRF protection', async () => {
+    const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(input).toBe('/api/preview/instances/register');
+      expect(init?.method).toBe('POST');
+      expect((init?.headers as Record<string, string>)['X-DevRyan-CSRF']).toBe('1');
+      expect(JSON.parse(String(init?.body))).toEqual({
+        directory: '/project',
+        terminalSessionId: 'terminal-1',
+        url: 'http://localhost:4173/',
+        label: 'Web app',
+      });
+      return Response.json({ instance: { id: 'grant-1' } });
+    };
+    expect(await registerProjectPreviewInstance({
+      directory: '/project',
+      terminalSessionId: 'terminal-1',
+      url: 'http://localhost:4173/',
+      label: 'Web app',
+      fetchImpl: fetchImpl as typeof fetch,
+    })).toBe(true);
+  });
+
+  test('lists shared grants without requiring terminal identifiers', async () => {
+    const fetchImpl = async (input: RequestInfo | URL) => {
+      expect(input).toBe('/api/preview/instances?directory=%2Fproject');
+      return Response.json({
+        instances: [{
+          id: 'grant-1',
+          label: 'Shared app',
+          url: 'http://127.0.0.1:4173/',
+          origin: 'http://127.0.0.1:4173',
+          port: '4173',
+        }],
+      });
+    };
+    expect(await fetchProjectPreviewInstances('/project', undefined, fetchImpl as typeof fetch)).toEqual([{
+      id: 'grant-1',
+      terminalSessionId: '',
+      label: 'Shared app',
+      url: 'http://127.0.0.1:4173/',
+      origin: 'http://127.0.0.1:4173',
+      port: '4173',
+    }]);
   });
 });

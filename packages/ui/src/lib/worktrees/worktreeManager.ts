@@ -202,7 +202,13 @@ export async function listProjectWorktrees(project: ProjectRef): Promise<Worktre
           worktreeSource: canonical.worktreeSource,
         };
       })
-      .filter((entry) => normalizePath(entry.path) !== normalizedProjectDirectory);
+      // Exclude the primary checkout under both its raw and resolved paths —
+      // symlink or /private/var divergence must not surface it as a worktree.
+      .filter((entry) => {
+        const entryPath = normalizePath(entry.path);
+        return entryPath !== normalizedProjectDirectory
+          && entryPath !== normalizePath(metadataProjectDirectory);
+      });
 
     const sorted = results.sort((a, b) => {
       const aLabel = (a.label || a.branch || a.path).toLowerCase();

@@ -1,3 +1,4 @@
+import { getSafeStorage } from '@/stores/utils/safeStorage';
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -249,7 +250,7 @@ export const DirectoryTree: React.FC<DirectoryTreeProps> = ({
 
     const loadFromLocalStorage = () => {
       try {
-        const raw = localStorage.getItem('pinnedDirectories');
+        const raw = getSafeStorage().getItem('pinnedDirectories');
         if (!raw) {
           return;
         }

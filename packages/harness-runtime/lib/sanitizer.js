@@ -4,32 +4,32 @@ import crypto from 'node:crypto';
 const REDACTED = '[REDACTED]';
 
 const RECORD_FIELDS = Object.freeze({
-  open_code_event: new Set(['type', 'at', 'runtime', 'directory', 'sessionID', 'coalesced', 'payload']),
-  prompt: new Set(['type', 'at', 'runtime', 'directory', 'sessionID', 'messageID', 'payload']),
-  control: new Set(['type', 'at', 'runtime', 'directory', 'sessionID', 'action', 'payload']),
+  open_code_event: new Set(['type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'coalesced', 'payload']),
+  prompt: new Set(['type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'messageID', 'payload']),
+  control: new Set(['type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'action', 'payload']),
   lifecycle: new Set([
-    'type', 'at', 'runtime', 'directory', 'sessionID', 'turnID', 'userMessageID',
+    'type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'turnID', 'userMessageID',
     'assistantMessageID', 'event', 'payload',
   ]),
   worktree_transition: new Set([
-    'type', 'at', 'runtime', 'directory', 'sessionID', 'operationID', 'stage', 'status', 'payload',
+    'type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'operationID', 'stage', 'status', 'payload',
   ]),
   evidence_transition: new Set([
-    'type', 'at', 'runtime', 'directory', 'sessionID', 'turnID', 'checkpointID',
+    'type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'turnID', 'checkpointID',
     'status', 'payload',
   ]),
-  connection: new Set(['type', 'at', 'runtime', 'directory', 'sessionID', 'status', 'attempt', 'payload']),
+  connection: new Set(['type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'status', 'attempt', 'payload']),
   timing: new Set([
-    'type', 'at', 'runtime', 'directory', 'sessionID', 'messageID', 'mark', 'payload',
+    'type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'messageID', 'mark', 'payload',
   ]),
-  log: new Set(['type', 'at', 'runtime', 'directory', 'sessionID', 'level', 'source', 'message', 'payload']),
-  gap: new Set(['type', 'at', 'runtime', 'directory', 'sessionID', 'reason', 'count', 'source', 'payload']),
+  log: new Set(['type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'level', 'source', 'message', 'payload']),
+  gap: new Set(['type', 'at', 'runtime', 'actor', 'directory', 'sessionID', 'reason', 'count', 'source', 'payload']),
 });
 
 const NESTED_FIELDS = new Set([
-  'type', 'properties', 'payload', 'info', 'part', 'status', 'state', 'time',
+  'type', 'properties', 'payload', 'actor', 'info', 'part', 'status', 'state', 'time',
   'id', 'sessionID', 'sessionId', 'messageID', 'messageId', 'parentID', 'parentId',
-  'role', 'finish', 'completed', 'created', 'updated', 'started', 'ended',
+  'role', 'scope', 'finish', 'completed', 'created', 'updated', 'started', 'ended',
   'version', 'phase', 'outcome', 'settledAt',
   'title', 'description', 'text', 'delta', 'reasoning', 'reasoningText',
   'tool', 'name', 'callID', 'callId', 'input', 'output', 'error', 'message',

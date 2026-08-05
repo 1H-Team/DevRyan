@@ -18,6 +18,8 @@ This module owns OpenChamber UI authentication for browser access, including pas
   - `handlePasskeyRegistrationVerify(req, res)`
   - `handlePasskeyAuthenticationOptions(req, res)`
   - `handlePasskeyAuthenticationVerify(req, res)`
+  - `verifyPasskeyAuthentication(payload)` (server-only verification hook for
+    the Supabase runtime's loopback-administrator session exchange)
   - `handlePasskeyList(req, res)`
   - `handlePasskeyRevoke(req, res)`
   - `handleResetAuth(req, res)`

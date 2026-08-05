@@ -18,6 +18,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { browserVoiceService } from '@/lib/voice/browserVoiceService';
 import { audioStreamService } from '@/lib/voice/audioStreamService';
 import { nativeMacosSpeechService, type MacosMicrophoneStatus, type MacosSpeechCapability, type MacosSpeechInputDevice } from '@/lib/voice/nativeMacosSpeechService';
+import { WASM_MODELS, wasmSttService, type WasmModelStatus } from '@/lib/voice/wasmSttService';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
 import { getSelectableVoiceInputProviders, getVoiceInputSourceMode, normalizeVoiceInputProvider } from './voiceSettingsUtils';
@@ -73,6 +74,8 @@ export const VoiceSettings: React.FC = () => {
     const setSttServerUrl = useConfigStore((state) => state.setSttServerUrl);
     const sttModel = useConfigStore((state) => state.sttModel);
     const setSttModel = useConfigStore((state) => state.setSttModel);
+    const wasmSttModel = useConfigStore((state) => state.wasmSttModel);
+    const setWasmSttModel = useConfigStore((state) => state.setWasmSttModel);
     const sttLanguage = useConfigStore((state) => state.sttLanguage);
     const setSttLanguage = useConfigStore((state) => state.setSttLanguage);
     const sttSilenceThresholdDb = useConfigStore((state) => state.sttSilenceThresholdDb);
@@ -102,6 +105,7 @@ export const VoiceSettings: React.FC = () => {
     const [macosInputDevices, setMacosInputDevices] = useState<MacosSpeechInputDevice[]>([]);
     const [macosSpeechCapability, setMacosSpeechCapability] = useState<MacosSpeechCapability | null>(null);
     const [macosAppMicrophoneStatus, setMacosAppMicrophoneStatus] = useState<MacosMicrophoneStatus>('unknown');
+    const [wasmModelStatus, setWasmModelStatus] = useState<WasmModelStatus>(() => wasmSttService.getModelStatus());
 
     const refreshMacosCapability = useCallback(async () => {
         try {
@@ -173,6 +177,8 @@ export const VoiceSettings: React.FC = () => {
         void loadMacosInputDevices();
         void refreshMacosMicrophoneStatus();
     }, [loadMacosInputDevices, refreshMacosCapability, refreshMacosMicrophoneStatus]);
+
+    useEffect(() => wasmSttService.subscribeModelStatus(setWasmModelStatus), []);
 
     const filteredBrowserVoices = useMemo(() => {
         return browserVoices
@@ -310,7 +316,11 @@ export const VoiceSettings: React.FC = () => {
     const visibleVoiceProvider = voiceProvider === 'say' ? 'say' : 'browser';
     const inputSourceMode = getVoiceInputSourceMode(sttProvider);
     const isMacosSpeechAvailable = Boolean(macosSpeechCapability?.available);
-    const selectableVoiceInputProviders = useMemo(() => getSelectableVoiceInputProviders(isMacosSpeechAvailable), [isMacosSpeechAvailable]);
+    const isLocalSpeechAvailable = wasmSttService.isSupported();
+    const selectableVoiceInputProviders = useMemo(
+        () => getSelectableVoiceInputProviders(isMacosSpeechAvailable, isLocalSpeechAvailable),
+        [isLocalSpeechAvailable, isMacosSpeechAvailable],
+    );
     const selectedBrowserInputDeviceId = inputDevices.some((device) => device.deviceId === voiceInputDeviceId) ? voiceInputDeviceId : '';
     const selectedMacosInputDeviceId = macosInputDevices.some((device) => device.id === voiceInputDeviceId) ? voiceInputDeviceId : '';
     const hasUndeterminedMacosPermission = macosAppMicrophoneStatus === 'not-determined'
@@ -335,6 +345,13 @@ export const VoiceSettings: React.FC = () => {
     const handleOpenMacosSettings = useCallback((target: 'microphone' | 'speech') => {
         void nativeMacosSpeechService.openPrivacySettings(target);
     }, []);
+    const handleLoadWasmModel = useCallback(async () => {
+        try {
+            await wasmSttService.loadModel(wasmSttModel);
+        } catch {
+            // The service publishes its actionable error through wasmModelStatus.
+        }
+    }, [wasmSttModel]);
     const macosSpeechPermissionMessage = useMemo(() => {
         if (sttProvider !== 'macos' || !macosSpeechCapability) return null;
         if (macosSpeechCapability.speechAuthorization === 'denied' || macosSpeechCapability.speechAuthorization === 'restricted') {
@@ -348,14 +365,26 @@ export const VoiceSettings: React.FC = () => {
         }
         return null;
     }, [macosAppMicrophoneStatus, macosSpeechCapability, sttProvider, t]);
+    const isSelectedWasmModelReady = wasmModelStatus.state === 'ready'
+        && wasmSttService.getCurrentModelId() === wasmSttModel;
+    const isWasmModelBusy = wasmModelStatus.state === 'downloading' || wasmModelStatus.state === 'loading';
+    const wasmModelStatusText = isSelectedWasmModelReady
+        ? t('settings.voice.page.stt.wasmLoaded')
+        : wasmModelStatus.state === 'downloading'
+            ? `${t('settings.voice.page.stt.wasmDownloading')} ${Math.round(wasmModelStatus.progress)}%`
+            : wasmModelStatus.state === 'loading'
+                ? t('settings.voice.page.stt.wasmLoading')
+                : wasmModelStatus.state === 'error'
+                    ? wasmModelStatus.error
+                    : t('settings.voice.page.stt.wasmNotLoaded');
 
     useEffect(() => {
         if (!macosSpeechCapability) return;
-        const normalizedProvider = normalizeVoiceInputProvider(sttProvider, isMacosSpeechAvailable);
+        const normalizedProvider = normalizeVoiceInputProvider(sttProvider, isMacosSpeechAvailable, isLocalSpeechAvailable);
         if (normalizedProvider !== sttProvider) {
             setSttProvider(normalizedProvider);
         }
-    }, [isMacosSpeechAvailable, macosSpeechCapability, setSttProvider, sttProvider]);
+    }, [isLocalSpeechAvailable, isMacosSpeechAvailable, macosSpeechCapability, setSttProvider, sttProvider]);
 
     useEffect(() => {
         if (!voiceInputDeviceId) return;
@@ -465,6 +494,7 @@ export const VoiceSettings: React.FC = () => {
                                                 <ul className="space-y-1">
                                                     {selectableVoiceInputProviders.includes('macos') && <li><strong>{t('settings.voice.page.provider.macos')}</strong> {t('settings.voice.page.tooltip.sttMacos')}</li>}
                                                     {selectableVoiceInputProviders.includes('browser') && <li><strong>{t('settings.voice.page.provider.browser')}</strong> {t('settings.voice.page.tooltip.sttBrowser')}</li>}
+                                                    {selectableVoiceInputProviders.includes('wasm') && <li><strong>{t('settings.voice.page.provider.wasm')}</strong> {t('settings.voice.page.tooltip.sttWasm')}</li>}
                                                     {selectableVoiceInputProviders.includes('server') && <li><strong>{t('settings.voice.page.provider.server')}</strong> {t('settings.voice.page.tooltip.sttServer')}</li>}
                                                 </ul>
                                             </TooltipContent>
@@ -521,6 +551,72 @@ export const VoiceSettings: React.FC = () => {
                                                 ))}
                                             </SelectContent>
                                         </Select>
+                                    </div>
+                                </div>
+                            )}
+
+                            {sttProvider === 'wasm' && (
+                                <div className="py-1.5 space-y-2">
+                                    <p className="typography-meta text-muted-foreground">
+                                        {t('settings.voice.page.stt.wasmPrivacyHint')}
+                                    </p>
+                                    <div className="flex flex-wrap items-end gap-2">
+                                        <div>
+                                            <span className="typography-ui-label text-foreground">{t('settings.voice.page.stt.wasmModel')}</span>
+                                            <Select value={wasmSttModel} onValueChange={setWasmSttModel} disabled={isWasmModelBusy}>
+                                                <SelectTrigger className="mt-1.5 w-fit max-w-[320px]">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {WASM_MODELS.map((model) => (
+                                                        <SelectItem key={model.id} value={model.id}>
+                                                            {model.name} · {model.size} · {model.languages}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                        <Button
+                                            variant="outline"
+                                            size="xs"
+                                            disabled={isWasmModelBusy || isSelectedWasmModelReady}
+                                            onClick={() => void handleLoadWasmModel()}
+                                            className="!font-normal"
+                                        >
+                                            {wasmModelStatus.state === 'error'
+                                                ? t('settings.voice.page.stt.wasmRetry')
+                                                : t('settings.voice.page.stt.wasmDownload')}
+                                        </Button>
+                                    </div>
+                                    <p className={cn(
+                                        'typography-meta',
+                                        wasmModelStatus.state === 'error' ? 'text-[var(--status-error)]' : 'text-muted-foreground',
+                                    )}>
+                                        {wasmModelStatusText}
+                                    </p>
+                                    <p className="typography-meta text-muted-foreground">
+                                        {WASM_MODELS.find((model) => model.id === wasmSttModel)?.description}
+                                    </p>
+                                    <div className="flex items-center gap-8 py-0.5">
+                                        <span className="typography-ui-label text-foreground sm:w-56 shrink-0">{t('settings.voice.page.field.language')}</span>
+                                        <div className="relative max-w-[8rem]">
+                                            <input type="text" value={sttLanguage} onChange={(e) => setSttLanguage(e.target.value)} placeholder="auto" className="w-full h-7 rounded-lg border border-input bg-transparent px-2 typography-ui-label text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/70" />
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-8 py-0.5">
+                                        <span className="typography-ui-label text-foreground sm:w-56 shrink-0">{t('settings.voice.page.field.silenceThreshold')}</span>
+                                        <div className="flex items-center gap-2 w-fit">
+                                            {!isMobile && <input type="range" min={-60} max={-20} step={1} value={sttSilenceThresholdDb} onChange={(e) => setSttSilenceThresholdDb(Number(e.target.value))} className={sliderClass} />}
+                                            <span className="typography-ui-label text-foreground tabular-nums min-w-[3.5rem] text-right">{sttSilenceThresholdDb} dB</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-8 py-0.5">
+                                        <span className="typography-ui-label text-foreground sm:w-56 shrink-0">{t('settings.voice.page.field.silenceHold')}</span>
+                                        <div className="flex items-center gap-2 w-fit">
+                                            {!isMobile && <input type="range" min={500} max={3000} step={100} value={sttSilenceHoldMs} onChange={(e) => setSttSilenceHoldMs(Number(e.target.value))} className={sliderClass} />}
+                                            <NumberInput value={sttSilenceHoldMs} onValueChange={setSttSilenceHoldMs} min={500} max={3000} step={100} className="w-20 tabular-nums" />
+                                            <span className="typography-meta text-muted-foreground">{t('settings.voice.page.field.millisecondsUnit')}</span>
+                                        </div>
                                     </div>
                                 </div>
                             )}

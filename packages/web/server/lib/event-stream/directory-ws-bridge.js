@@ -26,6 +26,8 @@ export function acceptDirectoryMessageStreamWsConnection({
   upstreamStallTimeoutMs,
   upstreamReconnectDelayMs,
   fetchImpl,
+  eventFilter = null,
+  principal = null,
 }) {
   const controller = new AbortController();
   let upstreamConnected = false;
@@ -71,17 +73,28 @@ export function acceptDirectoryMessageStreamWsConnection({
   });
 
   const run = async () => {
-    const forwardEvent = ({ envelope, payload }) => {
+    let eventQueue = Promise.resolve();
+    const forwardOne = async ({ envelope, payload }) => {
       const directory = requestedDirectory || envelope?.directory || 'global';
+
+      if (eventFilter && !await eventFilter(principal, { payload, directory, eventId: envelope?.eventId })) {
+        return;
+      }
 
       sendMessageStreamWsEvent(socket, payload, {
         directory,
         eventId: typeof envelope?.eventId === 'string' && envelope.eventId.length > 0 ? envelope.eventId : undefined,
       });
 
-      processForwardedEventPayload(payload, (syntheticPayload) => {
+      const syntheticPayloads = [];
+      processForwardedEventPayload(payload, (syntheticPayload) => syntheticPayloads.push(syntheticPayload));
+      for (const syntheticPayload of syntheticPayloads) {
+        if (eventFilter && !await eventFilter(principal, { payload: syntheticPayload, directory: 'global' })) continue;
         sendMessageStreamWsEvent(socket, syntheticPayload, { directory: 'global' });
-      });
+      }
+    };
+    const forwardEvent = (entry) => {
+      eventQueue = eventQueue.then(() => forwardOne(entry)).catch(() => undefined);
     };
 
     try {

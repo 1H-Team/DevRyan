@@ -62,3 +62,52 @@ describe('tunnel request scope classification', () => {
     }))).toBe('local');
   });
 });
+
+describe('tunnel bootstrap recognition', () => {
+  it('recognizes only the current bootstrap token, including after it is consumed', async () => {
+    const controller = createTunnelAuth();
+    controller.setActiveTunnel({
+      tunnelId: 'tunnel-1',
+      publicUrl: 'https://tunnel.example.com',
+      mode: 'managed-remote',
+    });
+    const { token } = controller.issueBootstrapToken({ ttlMs: 60_000 });
+    const req = requestFor({ host: 'tunnel.example.com', remoteAddress: '203.0.113.10' });
+    const res = { setHeader: () => {} };
+
+    expect(controller.recognizesBootstrapToken(token)).toBe(true);
+    expect(controller.recognizesBootstrapToken('different-token')).toBe(false);
+
+    const exchange = await controller.exchangeBootstrapToken({ req, res, token, sessionTtlMs: 60_000 });
+
+    expect(exchange.ok).toBe(true);
+    expect(controller.recognizesBootstrapToken(token)).toBe(true);
+  });
+
+  it('keeps the token unconsumed when the asynchronous pre-commit hook fails', async () => {
+    const controller = createTunnelAuth();
+    controller.setActiveTunnel({
+      tunnelId: 'tunnel-1',
+      publicUrl: 'https://tunnel.example.com',
+      mode: 'managed-remote',
+    });
+    const { token } = controller.issueBootstrapToken({ ttlMs: 60_000 });
+    const req = requestFor({ host: 'tunnel.example.com', remoteAddress: '203.0.113.10' });
+    const res = { setHeader: () => {} };
+
+    const failed = await controller.exchangeBootstrapToken({
+      req,
+      res,
+      token,
+      sessionTtlMs: 60_000,
+      beforeCommit: async () => {
+        throw Object.assign(new Error('not ready'), { code: 'runtime_not_ready' });
+      },
+    });
+
+    expect(failed).toEqual({ ok: false, reason: 'precondition-failed', code: 'runtime_not_ready' });
+    expect(controller.getBootstrapStatus().hasBootstrapToken).toBe(true);
+    await expect(controller.exchangeBootstrapToken({ req, res, token, sessionTtlMs: 60_000 }))
+      .resolves.toMatchObject({ ok: true });
+  });
+});

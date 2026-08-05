@@ -21,6 +21,7 @@ import {
   RiRobot2Line,
   RiServerLine,
   RiSlashCommands2,
+  RiTeamLine,
 } from '@remixicon/react';
 
 import { McpIcon } from '@/components/icons/McpIcon';
@@ -30,6 +31,7 @@ type SettingsNavIcon = React.ComponentType<{ className?: string }>;
 
 export const SETTINGS_NAV_ICONS = {
   home: null,
+  users: RiTeamLine,
   projects: RiFoldersLine,
   'remote-instances': RiServerLine,
   appearance: RiPaletteLine,

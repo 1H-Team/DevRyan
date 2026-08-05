@@ -14,6 +14,7 @@ import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { applyDraftAwareModelChange, persistCycledThinkingVariant } from '@/components/chat/draftAwareAgentChange';
 import { buildFavoriteModelsList, getNextFavoriteModelRef } from '@/hooks/useModelLists';
+import { getAuthPrincipal, hasAuthCapability } from '@/lib/authSession';
 
 export const useKeyboardShortcuts = () => {
   const openNewSessionDraft = useSessionUIStore((s) => s.openNewSessionDraft);
@@ -94,6 +95,9 @@ export const useKeyboardShortcuts = () => {
     };
 
     const handleTerminalShortcutCapture = (e: KeyboardEvent) => {
+      if (!hasAuthCapability(getAuthPrincipal(), 'terminal')) {
+        return;
+      }
       if (!isTerminalEventTarget(e.target)) {
         return;
       }
@@ -122,6 +126,11 @@ export const useKeyboardShortcuts = () => {
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      const principal = getAuthPrincipal();
+      const canUseFiles = hasAuthCapability(principal, 'files');
+      const canUseGit = hasAuthCapability(principal, 'manageGit');
+      const canUseTerminal = hasAuthCapability(principal, 'terminal');
+      const canManageProjects = hasAuthCapability(principal, 'manageProjects');
       if (isTerminalEventTarget(e.target)) {
         return;
       }
@@ -170,10 +179,12 @@ export const useKeyboardShortcuts = () => {
         setActiveMainTab('chat');
         setSessionSwitcherOpen(false);
 
-        if (!isVSCodeRuntime() && matchedWorktreeShortcut) {
+        if (!isVSCodeRuntime() && matchedWorktreeShortcut && canManageProjects) {
           createWorktreeSession();
           return;
         }
+
+        if (matchedWorktreeShortcut && !canManageProjects) return;
 
         openNewSessionDraft();
         return;
@@ -227,7 +238,7 @@ export const useKeyboardShortcuts = () => {
 
       if (eventMatchesShortcut(e, combo('toggle_right_sidebar'))) {
         const { isMobile } = useUIStore.getState();
-        if (isMobile) {
+        if (isMobile || (!canUseFiles && !canUseGit)) {
           return;
         }
         e.preventDefault();
@@ -237,7 +248,7 @@ export const useKeyboardShortcuts = () => {
 
       if (eventMatchesShortcut(e, combo('open_right_sidebar_git'))) {
         const { isMobile } = useUIStore.getState();
-        if (isMobile) {
+        if (isMobile || !canUseGit) {
           return;
         }
         e.preventDefault();
@@ -248,7 +259,7 @@ export const useKeyboardShortcuts = () => {
 
       if (eventMatchesShortcut(e, combo('open_right_sidebar_files'))) {
         const { isMobile } = useUIStore.getState();
-        if (isMobile) {
+        if (isMobile || !canUseFiles) {
           return;
         }
         e.preventDefault();
@@ -263,7 +274,11 @@ export const useKeyboardShortcuts = () => {
           return;
         }
 
-        const tabs = ['git', 'files'] as const;
+        const tabs = [
+          ...(canUseGit ? ['git'] as const : []),
+          ...(canUseFiles ? ['files'] as const : []),
+        ];
+        if (tabs.length === 0) return;
         const currentIndex = tabs.indexOf(rightSidebarTab);
         const nextTab = tabs[(currentIndex + 1) % tabs.length];
 
@@ -275,7 +290,7 @@ export const useKeyboardShortcuts = () => {
 
       if (eventMatchesShortcut(e, combo('toggle_terminal'))) {
         const { isMobile } = useUIStore.getState();
-        if (isMobile) {
+        if (isMobile || !canUseTerminal) {
           return;
         }
         e.preventDefault();
@@ -285,7 +300,7 @@ export const useKeyboardShortcuts = () => {
 
       if (eventMatchesShortcut(e, combo('toggle_terminal_expanded'))) {
         const { isMobile, isBottomTerminalExpanded } = useUIStore.getState();
-        if (isMobile) {
+        if (isMobile || !canUseTerminal) {
           return;
         }
         e.preventDefault();

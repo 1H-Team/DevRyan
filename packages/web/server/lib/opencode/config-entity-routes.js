@@ -4,6 +4,60 @@ import {
   createHarnessWarning,
   withHarnessResult,
 } from './harness-result.js';
+import { canReadSettingsPage } from '../multi-user/policy.js';
+
+const sanitizeModel = (model) => {
+  if (typeof model === 'string') return model;
+  if (!model || typeof model !== 'object' || Array.isArray(model)) return undefined;
+  const providerID = typeof model.providerID === 'string' ? model.providerID : undefined;
+  const modelID = typeof model.modelID === 'string' ? model.modelID : undefined;
+  return providerID && modelID ? { providerID, modelID } : undefined;
+};
+
+export const sanitizeAgentRuntimeMetadata = (agent) => {
+  const sanitized = { name: String(agent?.name || '') };
+  const model = sanitizeModel(agent?.model);
+  if (model) sanitized.model = model;
+  if (Object.prototype.hasOwnProperty.call(agent || {}, 'variant')) {
+    sanitized.variant = typeof agent.variant === 'string' ? agent.variant : null;
+  }
+  if (Array.isArray(agent?.modelRefs)) {
+    sanitized.modelRefs = agent.modelRefs.filter((entry) => typeof entry === 'string' && entry.trim());
+  }
+  if (Array.isArray(agent?.councillors)) {
+    sanitized.councillors = agent.councillors.flatMap((entry) => {
+      const councillorModel = sanitizeModel(entry?.model);
+      if (!councillorModel) return [];
+      return [{
+        model: councillorModel,
+        ...(Object.prototype.hasOwnProperty.call(entry || {}, 'variant')
+          ? { variant: typeof entry.variant === 'string' ? entry.variant : null }
+          : {}),
+      }];
+    });
+  }
+  if (agent?.modelResolution && typeof agent.modelResolution === 'object' && !Array.isArray(agent.modelResolution)) {
+    const source = ['root-override', 'preset', 'root'].includes(agent.modelResolution.source)
+      ? agent.modelResolution.source
+      : null;
+    if (source) {
+      sanitized.modelResolution = {
+        presetName: typeof agent.modelResolution.presetName === 'string' ? agent.modelResolution.presetName : null,
+        source,
+        presetModelRef: typeof agent.modelResolution.presetModelRef === 'string' ? agent.modelResolution.presetModelRef : null,
+        presetVariant: typeof agent.modelResolution.presetVariant === 'string' ? agent.modelResolution.presetVariant : null,
+      };
+    }
+  }
+  return sanitized;
+};
+
+const canReadFullAgentConfig = (principal) => (
+  !principal
+  || principal.scope === 'local-admin'
+  || principal.role === 'admin'
+  || canReadSettingsPage(principal, 'agents')
+);
 
 export const registerConfigEntityRoutes = (app, dependencies) => {
   const {
@@ -97,9 +151,11 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
         return res.status(400).json({ error });
       }
 
+      const fullAccess = canReadFullAgentConfig(req.principal);
+      const agents = listConfigAgents(directory);
       res.json({
-        agents: listConfigAgents(directory),
-        staleOverrides: listStaleOverrides(directory),
+        agents: fullAccess ? agents : agents.map(sanitizeAgentRuntimeMetadata),
+        staleOverrides: fullAccess ? listStaleOverrides(directory) : [],
       });
     } catch (error) {
       console.error('Failed to list project agents:', error);

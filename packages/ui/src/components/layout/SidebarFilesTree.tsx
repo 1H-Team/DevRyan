@@ -45,6 +45,7 @@ import { useGitStatus } from '@/stores/useGitStore';
 import { useDirectoryShowHidden } from '@/lib/directoryShowHidden';
 import { useFilesViewShowGitignored } from '@/lib/filesViewShowGitignored';
 import { copyTextToClipboard } from '@/lib/clipboard';
+import { recordFileOpened } from '@/lib/interactionAnalytics';
 import { cn, getRevealLabelKey } from '@/lib/utils';
 import { opencodeClient } from '@/lib/opencode/client';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
@@ -198,9 +199,10 @@ const FileRow: React.FC<FileRowProps> = ({
     if (isDir) {
       onToggle(node.path);
     } else {
+      recordFileOpened({ path: node.path, directory: root, sourceSurface: 'files' });
       onSelect(node);
     }
-  }, [isDir, node, onSelect, onToggle]);
+  }, [isDir, node, onSelect, onToggle, root]);
 
   const handleMenuButtonClick = React.useCallback((event: React.MouseEvent) => {
     event.stopPropagation();
@@ -276,7 +278,9 @@ const FileRow: React.FC<FileRowProps> = ({
               )}
               <DropdownMenuItem onClick={(e) => {
                 e.stopPropagation();
-                void copyTextToClipboard(node.path).then((result) => {
+                void copyTextToClipboard(node.path, {
+                  sourceSurface: 'files', copyKind: 'path', path: node.path, directory: root,
+                }).then((result) => {
                   if (result.ok) {
                     toast.success(t('sidebarFilesTree.toast.pathCopied'));
                     return;

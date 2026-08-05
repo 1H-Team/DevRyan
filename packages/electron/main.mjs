@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, session, shell, systemPreferences, webContents, WebContentsView } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, Notification, powerMonitor, powerSaveBlocker, session, shell, systemPreferences, WebContentsView } from 'electron';
 import contextMenu from 'electron-context-menu';
 import log from 'electron-log/main.js';
 import dgram from 'node:dgram';
@@ -32,6 +32,8 @@ import {
   isAllowedWebviewSourceUrl,
 } from './browser-webview-policy.mjs';
 import { createBrowserDevToolsController } from './browser-devtools-controller.mjs';
+import { createBrowserSurfaceManager } from './browser-surface-manager.mjs';
+import { isBenignNavigationAbort } from './browser-navigation-error.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -193,6 +195,8 @@ const state = {
   agentBrowserRuntimeMode: 'pending',
 };
 
+let browserSurfaceManager = null;
+
 const quitRisk = {
   hasActiveTunnel: false,
   hasRunningScheduledTasks: false,
@@ -229,6 +233,7 @@ const prepareForQuit = ({ installingUpdate = false } = {}) => {
   state.installingUpdate = installingUpdate;
   state.quitConfirmationPending = false;
   browserCdpBridge?.closeAll('app_quit');
+  browserSurfaceManager?.closeAll('app_quit');
   releaseDesktopKeepAwake();
 
   if (state.mainWindow && !state.mainWindow.isDestroyed()) {
@@ -1087,19 +1092,6 @@ const buildStartupSplashHtml = () => {
   return buildStartupSplashHtmlFromSettings(readSettingsRoot());
 };
 
-const isBenignNavigationAbort = (error) => {
-  if (!error || typeof error !== 'object') {
-    return false;
-  }
-
-  if (error.errno === -3) {
-    return true;
-  }
-
-  const message = typeof error.message === 'string' ? error.message : '';
-  return message.includes('ERR_ABORTED') || message.includes(' (-3) loading ');
-};
-
 const navigateWindow = async (browserWindow, url, { allowAbort = false } = {}) => {
   try {
     await browserWindow.loadURL(url);
@@ -1264,13 +1256,7 @@ const readThemeSource = () => {
 };
 
 // ---------------------------------------------------------------------------
-// In-app browser pane (<webview>) guest management.
-//
-// Guests are registered per owning window in did-attach-webview and validated
-// against this registry before any privileged operation (screenshots, and the
-// future CDP bridge). Popup containment and the navigation protocol allowlist
-// live here in main — the pane's injected page scripts are UX only.
-const browserWebviewGuests = new Map(); // guest webContents.id -> { ownerWindowId, leaseId?, cleanup? }
+// Main-owned browser surface and agent-lease management.
 const browserLeaseOwners = new Map(); // leaseId -> { ownerWindowId, metadata }
 const browserLeaseWindowClaims = new Map(); // directory + rootSessionId -> { ownerWindowId, claimedAt }
 const observedBrowserLeaseByWindow = new Map(); // ownerWindowId -> leaseId
@@ -1281,10 +1267,34 @@ const browserDevToolsController = createBrowserDevToolsController({
   createDevToolsView: () => new WebContentsView(),
 });
 
+const getBrowserSurfaceManager = () => {
+  if (browserSurfaceManager) return browserSurfaceManager;
+  browserSurfaceManager = createBrowserSurfaceManager({
+    createPopoutWindow: (surfaceId) => createBrowserPopoutWindow(surfaceId),
+    emitToWindow,
+    getWindowById: browserWindowById,
+    devToolsController: browserDevToolsController,
+    onLeaseMetadata: (leaseId, metadata) => {
+      const owner = browserLeaseOwners.get(leaseId);
+      if (owner) owner.metadata = { ...owner.metadata, ...metadata };
+      browserCdpBridge?.updateLeaseMetadata(leaseId, {
+        ...metadata,
+        hostname: hostnameForBrowserUrl(metadata?.url),
+      });
+    },
+    onLeaseSurfaceDestroyed: (leaseId, reason) => {
+      browserCdpBridge?.closeLease(leaseId, reason || 'surface_destroyed');
+    },
+    shouldQuit: () => state.quitRequested,
+    log: (message, error) => (error ? log.warn(message, error) : log.info(message)),
+  });
+  return browserSurfaceManager;
+};
+
 const readAgentBrowserControlEnabled = () => {
   const settings = readSettingsRoot();
   // Default on. Capability paths are loopback-only and each lease is bound to
-  // one renderer-owned guest before the private URL is returned to an agent.
+  // one main-owned browser surface before the private URL is returned.
   return settings.agentBrowserControlEnabled !== false;
 };
 
@@ -1302,7 +1312,12 @@ const hostnameForBrowserUrl = (rawUrl) => {
 };
 
 const isPrivilegedLeaseWindow = (browserWindow) => {
-  if (!browserWindow || browserWindow.isDestroyed() || browserWindow.__ocMiniChat === true) return false;
+  if (
+    !browserWindow
+    || browserWindow.isDestroyed()
+    || browserWindow.__ocMiniChat === true
+    || browserWindow.__ocBrowserPopout === true
+  ) return false;
   try {
     return isPrivilegedRendererUrl(browserWindow.webContents.getURL(), state.localOrigin);
   } catch {
@@ -1374,6 +1389,7 @@ const safeBrowserLeaseSnapshot = (leaseId, owner) => {
   const url = safeLeaseString(metadata.url, 8192);
   return {
     leaseId,
+    surfaceId: browserSurfaceManager?.snapshotForLease(leaseId)?.surfaceId || '',
     rootSessionId: safeLeaseString(metadata.rootSessionId, 256),
     opencodeSessionID: safeLeaseString(metadata.opencodeSessionID, 256),
     directory: safeLeaseString(metadata.directory, 8192),
@@ -1417,7 +1433,8 @@ const scheduleBrowserLeaseGlobalCountPublish = () => {
 
 const publishBrowserLeaseSnapshot = (ownerWindowId = null) => {
   const targetWindowIds = ownerWindowId === null
-    ? Array.from(new Set(Array.from(browserLeaseOwners.values(), (owner) => owner.ownerWindowId)))
+    ? Array.from(new Set(Array.from(browserLeaseOwners.values(), (owner) => owner.ownerWindowId)
+      .filter(Number.isInteger)))
     : [ownerWindowId];
 
   for (const windowId of targetWindowIds) {
@@ -1431,64 +1448,13 @@ const removeBrowserLeaseOwner = (leaseId) => {
   const owner = browserLeaseOwners.get(leaseId);
   if (!owner) return null;
   browserLeaseOwners.delete(leaseId);
+  browserSurfaceManager?.releaseLease(leaseId, 'lease_closed');
   scheduleBrowserLeaseGlobalCountPublish();
   if (observedBrowserLeaseByWindow.get(owner.ownerWindowId) === leaseId) {
     observedBrowserLeaseByWindow.delete(owner.ownerWindowId);
   }
-  for (const [guestId, entry] of browserWebviewGuests) {
-    if (entry.leaseId === leaseId) {
-      entry.cleanup?.();
-      entry.cleanup = null;
-      entry.leaseId = null;
-      const guest = webContents.fromId(guestId);
-      if (guest && !guest.isDestroyed() && guest.getType() === 'webview') {
-        try {
-          guest.close({ waitForBeforeUnload: false });
-        } catch (error) {
-          log.warn(`[webview] failed to close released browser lease guest ${guestId}`, error);
-        }
-      }
-    }
-  }
   publishBrowserLeaseSnapshot(owner.ownerWindowId);
   return owner;
-};
-
-const registerBrowserWebviewGuest = (browserWindow, guestContents) => {
-  if (!guestContents || typeof guestContents.id !== 'number') return;
-  if (typeof guestContents.isDestroyed === 'function' && guestContents.isDestroyed()) return;
-  const guestId = guestContents.id;
-  const entry = { ownerWindowId: browserWindow.id, leaseId: null, cleanup: null };
-  browserWebviewGuests.set(guestId, entry);
-  guestContents.once('destroyed', () => {
-    entry.cleanup?.();
-    entry.cleanup = null;
-    browserDevToolsController.destroyGuest(guestId);
-    browserWebviewGuests.delete(guestId);
-    if (entry.leaseId) {
-      browserCdpBridge?.closeLease(entry.leaseId, 'guest_closed');
-    }
-  });
-};
-
-const resolveBrowserWebviewGuest = (browserWindow, rawWebContentsId) => {
-  const guestId = Number.isFinite(rawWebContentsId) ? Math.trunc(rawWebContentsId) : null;
-  if (guestId === null || guestId < 0) throw new Error('webContentsId is required');
-  const entry = browserWebviewGuests.get(guestId);
-  if (!entry) throw new Error('Unknown browser webview');
-  if (!browserWindow || browserWindow.isDestroyed() || entry.ownerWindowId !== browserWindow.id) {
-    throw new Error('Webview does not belong to the requesting window');
-  }
-  const guest = webContents.fromId(guestId);
-  if (!guest || guest.isDestroyed()) {
-    browserWebviewGuests.delete(guestId);
-    throw new Error('WebContents not found');
-  }
-  if (guest.getType() !== 'webview') throw new Error('WebContents is not a webview');
-  if (guest.session !== session.fromPartition(BROWSER_WEBVIEW_PARTITION)) {
-    throw new Error('Webview is not on the browser partition');
-  }
-  return guest;
 };
 
 // The CDP bridge is created lazily on the first lease. It owns one shared
@@ -1507,11 +1473,22 @@ const ensureBrowserCdpBridge = async () => {
         createWebSocketServer: (options) => new WebSocketServer(options),
         crypto,
         onAgentInput: (input) => {
+          browserSurfaceManager?.showAgentInput(input?.leaseId, input);
           const owner = browserLeaseOwners.get(input?.leaseId);
           if (!owner || observedBrowserLeaseByWindow.get(owner.ownerWindowId) !== input.leaseId) return;
           const browserWindow = browserWindowById(owner.ownerWindowId);
           if (!isPrivilegedLeaseWindow(browserWindow)) return;
           emitToWindow(browserWindow, 'browser-agent-input', input);
+        },
+        onBeforeCommand: ({ leaseId, method }) => {
+          if (method === 'Page.captureScreenshot') {
+            return browserSurfaceManager?.setAgentCursorSuppressed(leaseId, true);
+          }
+        },
+        onAfterCommand: ({ leaseId, method }) => {
+          if (method === 'Page.captureScreenshot') {
+            return browserSurfaceManager?.setAgentCursorSuppressed(leaseId, false);
+          }
         },
         onStatusChange: () => publishBrowserLeaseSnapshot(),
         log: (message, error) => (error ? log.warn(message, error) : log.info(message)),
@@ -1524,7 +1501,6 @@ const ensureBrowserCdpBridge = async () => {
   return await browserCdpBridgePromise;
 };
 
-const LEASE_GUEST_BIND_TIMEOUT_MS = 8_000;
 const LEASE_GUEST_BIND_POLL_MS = 50;
 const LEASE_OWNER_CLAIM_TIMEOUT_MS = 5_000;
 
@@ -1580,24 +1556,21 @@ const createDesktopBrowserLease = async ({ leaseId, metadata = {}, onClosed } = 
     throw new Error(`browser_lease_${started.state || 'start_failed'}`);
   }
 
-  scheduleBrowserLeaseGlobalCountPublish();
-  // Publishing the safe lease snapshot is the renderer's mount request. The
-  // fleet exists outside the visible panel tree, so this never opens UI.
-  publishBrowserLeaseSnapshot(ownerWindow.id);
-  const deadline = Date.now() + LEASE_GUEST_BIND_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    const status = bridge.getLeaseStatus(leaseId);
-    if (!status.ok) throw new Error('browser_lease_closed_before_bind');
-    if (status.guestAttached) return { ...started, state: 'ready' };
-    if (!isPrivilegedLeaseWindow(browserWindowById(ownerWindow.id))) {
-      bridge.closeLease(leaseId, 'owner_window_unavailable');
-      throw new Error('browser_lease_window_unavailable');
-    }
-    await new Promise((resolve) => setTimeout(resolve, LEASE_GUEST_BIND_POLL_MS));
+  try {
+    const { webContents: surfaceContents } = getBrowserSurfaceManager().createLeaseSurface(ownerWindow, {
+      leaseId,
+      initialUrl: metadata?.url,
+    });
+    const bound = bridge.bindLeaseGuest(leaseId, surfaceContents, { ownerWindowId: ownerWindow.id });
+    if (!bound.ok) throw new Error(`browser_lease_${bound.state || 'bind_failed'}`);
+  } catch (error) {
+    bridge.closeLease(leaseId, 'surface_bind_failed');
+    throw error;
   }
 
-  bridge.closeLease(leaseId, 'guest_bind_timeout');
-  throw new Error('browser_lease_guest_bind_timeout');
+  scheduleBrowserLeaseGlobalCountPublish();
+  publishBrowserLeaseSnapshot(ownerWindow.id);
+  return { ...started, state: 'ready' };
 };
 
 const touchDesktopBrowserLease = async ({ leaseId, metadata = {} } = {}) => {
@@ -1626,51 +1599,15 @@ const releaseDesktopBrowserLease = async ({ leaseId, reason = 'released' } = {})
   return { ok: true, state: closed ? 'closed' : 'not_found' };
 };
 
-const bindDesktopBrowserLeaseGuest = async (browserWindow, { leaseId, webContentsId } = {}) => {
+const bindDesktopBrowserLeaseGuest = async (browserWindow, { leaseId } = {}) => {
   if (typeof leaseId !== 'string' || !leaseId) throw new Error('leaseId is required');
   const owner = browserLeaseOwners.get(leaseId);
   if (!owner || !browserWindow || owner.ownerWindowId !== browserWindow.id) {
     throw new Error('Browser lease does not belong to the requesting window');
   }
-  const guest = resolveBrowserWebviewGuest(browserWindow, webContentsId);
-  const entry = browserWebviewGuests.get(guest.id);
-  if (!entry) throw new Error('Unknown browser webview');
-  if (entry.leaseId && entry.leaseId !== leaseId) throw new Error('Webview is already bound to another lease');
-  for (const [guestId, candidate] of browserWebviewGuests) {
-    if (guestId !== guest.id && candidate.leaseId === leaseId) throw new Error('Lease is already bound to another webview');
-  }
-
-  const bridge = await ensureBrowserCdpBridge();
-  const result = bridge.bindLeaseGuest(leaseId, guest, { ownerWindowId: browserWindow.id });
-  if (!result.ok) return result;
-  entry.leaseId = leaseId;
-
-  entry.cleanup?.();
-  let metadataTimer = null;
-  const flushMetadata = () => {
-    metadataTimer = null;
-    if (entry.leaseId !== leaseId || guest.isDestroyed()) return;
-    const url = safeLeaseString(guest.getURL?.(), 8192);
-    bridge.updateLeaseMetadata(leaseId, {
-      url,
-      title: safeLeaseString(guest.getTitle?.(), 1024),
-      hostname: hostnameForBrowserUrl(url),
-    });
-  };
-  const scheduleMetadataSync = () => {
-    if (metadataTimer) return;
-    metadataTimer = setTimeout(flushMetadata, 250);
-    metadataTimer.unref?.();
-  };
-  const events = ['did-navigate', 'did-navigate-in-page', 'page-title-updated'];
-  for (const event of events) guest.on(event, scheduleMetadataSync);
-  entry.cleanup = () => {
-    if (metadataTimer) clearTimeout(metadataTimer);
-    metadataTimer = null;
-    for (const event of events) guest.off?.(event, scheduleMetadataSync);
-  };
-  flushMetadata();
-  return bridge.getLeaseStatus(leaseId);
+  const surface = browserSurfaceManager?.surfaceForLease(leaseId);
+  if (!surface) throw new Error('Browser lease surface is not available');
+  return browserCdpBridge?.getLeaseStatus(leaseId) || { ok: false, state: 'not_found' };
 };
 
 const setObservedDesktopBrowserLease = (browserWindow, { leaseId } = {}) => {
@@ -1697,9 +1634,17 @@ const claimDesktopBrowserLeaseContexts = (browserWindow, { contexts } = {}) => {
     browserLeaseWindowClaims.delete(claimKey);
     browserLeaseWindowClaims.set(claimKey, { ownerWindowId: browserWindow.id, claimedAt });
   }
+  for (const [leaseId, owner] of browserLeaseOwners) {
+    if (Number.isInteger(owner.ownerWindowId)) continue;
+    const ownerClaimKey = browserLeaseWindowClaimKey(owner.metadata?.directory, owner.metadata?.rootSessionId);
+    if (!ownerClaimKey || !claimKeys.includes(ownerClaimKey)) continue;
+    owner.ownerWindowId = browserWindow.id;
+    browserSurfaceManager?.setLeaseHomeWindow(leaseId, browserWindow);
+  }
   while (browserLeaseWindowClaims.size > MAX_BROWSER_LEASE_CONTEXT_CLAIMS_PER_REQUEST) {
     browserLeaseWindowClaims.delete(browserLeaseWindowClaims.keys().next().value);
   }
+  publishBrowserLeaseSnapshot(browserWindow.id);
   return { ok: true, claimed: claimKeys.length };
 };
 
@@ -2036,17 +1981,13 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
     debounceWindowStatePersist(browserWindow, true);
   });
   browserWindow.on('closed', () => {
+    browserSurfaceManager?.handleHomeWindowClosed(browserWindow.id);
     observedBrowserLeaseByWindow.delete(browserWindow.id);
     for (const [claimKey, claim] of browserLeaseWindowClaims) {
       if (claim.ownerWindowId === browserWindow.id) browserLeaseWindowClaims.delete(claimKey);
     }
-    if (browserCdpBridge) {
-      const ownedLeaseIds = Array.from(browserLeaseOwners)
-        .filter(([, owner]) => owner.ownerWindowId === browserWindow.id)
-        .map(([leaseId]) => leaseId);
-      for (const leaseId of ownedLeaseIds) {
-        browserCdpBridge.closeLease(leaseId, 'owner_window_closed');
-      }
+    for (const owner of browserLeaseOwners.values()) {
+      if (owner.ownerWindowId === browserWindow.id) owner.ownerWindowId = null;
     }
     state.focusedWindowIds.delete(browserWindow.id);
     if (state.mainWindow && browserWindow.id === state.mainWindow.id) {
@@ -2099,17 +2040,6 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
       return;
     }
     hardenWebviewAttachParams(webPreferences, params);
-  });
-
-  // Exact ownership registry for guests: capture/CDP commands must name a
-  // guest that this specific window attached, on the pinned partition, and
-  // that is still alive.
-  browserWindow.webContents.on('did-attach-webview', (_event, guestContents) => {
-    try {
-      registerBrowserWebviewGuest(browserWindow, guestContents);
-    } catch (error) {
-      log.warn('[webview] failed to register guest:', error);
-    }
   });
 
   browserWindow.webContents.setZoomFactor(1);
@@ -2194,6 +2124,68 @@ const buildMiniChatUrl = ({ mode, sessionId, directory, projectId }) => {
   if (directory) url.searchParams.set('directory', directory);
   if (projectId) url.searchParams.set('projectId', projectId);
   return url.toString();
+};
+
+const buildBrowserPopoutUrl = (surfaceId) => {
+  const base = state.localOrigin || state.sidecarUrl;
+  if (!base) throw new Error('Local UI is not available');
+  const url = new URL('/browser.html', base);
+  url.searchParams.set('surfaceId', safeLeaseString(surfaceId, 220));
+  return url.toString();
+};
+
+const createBrowserPopoutWindow = async (surfaceId) => {
+  const desktopLocalOrigin = state.localOrigin || '';
+  const desktopServerOrigin = state.sidecarUrl || state.localOrigin || '';
+  const browserWindow = new BrowserWindow({
+    title: 'DevRyan Browser',
+    width: 1180,
+    height: 760,
+    minWidth: 640,
+    minHeight: 420,
+    show: false,
+    backgroundColor: '#151313',
+    titleBarStyle: process.platform === 'darwin' ? 'hidden' : 'default',
+    trafficLightPosition: process.platform === 'darwin' ? { x: 16, y: 12 } : undefined,
+    webPreferences: {
+      additionalArguments: [
+        `--openchamber-local-origin=${desktopLocalOrigin}`,
+        `--openchamber-server-origin=${desktopServerOrigin}`,
+      ],
+      preload: isDev ? path.join(__dirname, 'preload.mjs') : path.join(app.getAppPath(), 'preload.mjs'),
+      backgroundThrottling: false,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      webviewTag: false,
+    },
+  });
+  browserWindow.__ocLabel = `browser-${safeLeaseString(surfaceId, 120)}`;
+  browserWindow.__ocBrowserPopout = true;
+  browserWindow.__ocBrowserSurfaceId = surfaceId;
+  browserWindow.webContents.setWindowOpenHandler(({ url }) => {
+    void shell.openExternal(url).catch(() => {});
+    return { action: 'deny' };
+  });
+  browserWindow.webContents.on('will-navigate', (event, url) => {
+    try {
+      const target = new URL(url);
+      const local = new URL(state.localOrigin || state.sidecarUrl || '');
+      if (target.origin === local.origin && target.pathname === '/browser.html') return;
+    } catch {
+    }
+    event.preventDefault();
+  });
+  browserWindow.once('ready-to-show', () => {
+    if (browserWindow.isDestroyed()) return;
+    browserWindow.show();
+    browserWindow.focus();
+  });
+  void navigateWindow(browserWindow, buildBrowserPopoutUrl(surfaceId)).catch((error) => {
+    log.warn('[browser-surface] failed to load pop-out shell', error);
+    if (!browserWindow.isDestroyed()) browserWindow.destroy();
+  });
+  return browserWindow;
 };
 
 const createMiniChatWindow = async ({ mode, sessionId = '', directory = '', projectId = '' } = {}) => {
@@ -2661,6 +2653,33 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
     case 'desktop_browser_lease_set_observed':
       return setObservedDesktopBrowserLease(browserWindow, args);
 
+    case 'desktop_browser_surface_create':
+      return getBrowserSurfaceManager().createManualSurface(browserWindow, args);
+
+    case 'desktop_browser_surface_snapshot':
+      return getBrowserSurfaceManager().getSurfaceSnapshot(browserWindow, args);
+
+    case 'desktop_browser_surface_layout':
+      return getBrowserSurfaceManager().layout(browserWindow, args);
+
+    case 'desktop_browser_surface_command':
+      return getBrowserSurfaceManager().command(browserWindow, args);
+
+    case 'desktop_browser_surface_popout':
+      return getBrowserSurfaceManager().popout(browserWindow, args);
+
+    case 'desktop_browser_surface_dock':
+      return getBrowserSurfaceManager().dock(browserWindow, args);
+
+    case 'desktop_browser_surface_focus_popout':
+      return getBrowserSurfaceManager().focusPopout(browserWindow, args);
+
+    case 'desktop_browser_surface_release':
+      return { released: getBrowserSurfaceManager().releaseOwned(browserWindow, args) };
+
+    case 'desktop_browser_surface_inspect':
+      return getBrowserSurfaceManager().inspect(browserWindow, args);
+
     case 'desktop_agent_browser_status':
       return readAgentBrowserRuntimeStatus();
 
@@ -2671,25 +2690,11 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       return mutateAgentBrowserInstallation('repair');
 
     case 'desktop_browser_capture_page': {
-      const guest = resolveBrowserWebviewGuest(browserWindow, args?.webContentsId);
-      const image = await guest.capturePage();
-      const buffer = image.toJPEG(82);
-      return {
-        mime: 'image/jpeg',
-        base64: buffer.toString('base64'),
-        width: image.getSize().width,
-        height: image.getSize().height,
-      };
+      return getBrowserSurfaceManager().capture(browserWindow, args);
     }
 
     case 'desktop_browser_devtools_set_open': {
-      const guest = resolveBrowserWebviewGuest(browserWindow, args?.webContentsId);
-      return browserDevToolsController.setOpen({
-        guest,
-        ownerWindow: browserWindow,
-        bounds: args?.bounds,
-        open: args?.open === true,
-      });
+      return getBrowserSurfaceManager().setDevTools(browserWindow, args);
     }
 
     case 'desktop_capture_page_rect': {
@@ -3609,6 +3614,7 @@ app.on('before-quit', (event) => {
 
 app.on('will-quit', () => {
   browserCdpBridge?.closeAll('app_quit');
+  browserSurfaceManager?.closeAll('app_quit');
   releaseDesktopKeepAwake();
 });
 

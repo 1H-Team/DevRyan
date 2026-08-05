@@ -56,6 +56,7 @@ import { useI18n } from '@/lib/i18n';
 import type { Session } from '@opencode-ai/sdk/v2/client';
 import { DESKTOP_LEFT_CHROME_CLUSTER_WIDTH } from '@/components/layout/desktopChromeInsets';
 import { DESKTOP_HEADER_ICON_BUTTON_CLASS, HeaderIconActionButton } from '@/components/layout/headerIconButton';
+import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
 
 const MOBILE_HEADER_ICON_BUTTON_CLASS = 'app-region-no-drag inline-flex h-9 w-9 items-center justify-center gap-2 p-2 rounded-md typography-ui-label font-medium text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50 hover:text-foreground hover:bg-interactive-hover transition-colors';
 
@@ -101,6 +102,9 @@ export const Header: React.FC<HeaderProps> = ({
   browserActionPortalTarget,
 }) => {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
+  const canUseFiles = hasAuthCapability(principal, 'files');
+  const canUseTerminal = hasAuthCapability(principal, 'terminal');
   const setSessionSwitcherOpen = useUIStore((state) => state.setSessionSwitcherOpen);
   const toggleSidebar = useUIStore((state) => state.toggleSidebar);
   const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
@@ -488,12 +492,12 @@ export const Header: React.FC<HeaderProps> = ({
   }, [activeProject]);
 
   const lastProjectActionsContextRef = React.useRef<{
-    projectRef: { id: string; path: string };
+    projectRef: { id: string; path: string } | null;
     directory: string;
   } | null>(null);
 
   React.useEffect(() => {
-    if (!activeProjectRef || !actionDirectory) {
+    if (!actionDirectory) {
       return;
     }
     lastProjectActionsContextRef.current = {
@@ -503,7 +507,7 @@ export const Header: React.FC<HeaderProps> = ({
   }, [actionDirectory, activeProjectRef]);
 
   const projectActionsContext = React.useMemo(() => {
-    if (activeProjectRef && actionDirectory) {
+    if (actionDirectory) {
       return { projectRef: activeProjectRef, directory: actionDirectory };
     }
     return lastProjectActionsContextRef.current;
@@ -705,27 +709,29 @@ export const Header: React.FC<HeaderProps> = ({
         base.push({ id: 'plan', label: t('layout.mainTab.plan'), icon: PlanDocumentIcon });
       }
 
-      base.push(
-        { id: 'diff', label: t('layout.mainTab.diff'), icon: 'diff' },
-        { id: 'terminal', label: t('layout.mainTab.terminal'), icon: TerminalPanelIcon },
-      );
+      base.push({ id: 'diff', label: t('layout.mainTab.diff'), icon: 'diff' });
+      if (canUseTerminal) {
+        base.push({ id: 'terminal', label: t('layout.mainTab.terminal'), icon: TerminalPanelIcon });
+      }
 
       return base;
     }
 
     // Desktop: no tabs in header
     return [];
-  }, [isMobile, showPlanTab, t]);
+  }, [canUseTerminal, isMobile, showPlanTab, t]);
 
   const shortcutLabel = React.useCallback((actionId: string) => {
     return formatShortcutForDisplay(getEffectiveShortcutCombo(actionId, shortcutOverrides));
   }, [shortcutOverrides]);
 
   useEffect(() => {
-    if (!isMobile && (activeMainTab === 'git' || activeMainTab === 'terminal' || activeMainTab === 'diff')) {
+    const desktopOnlyTabIsActive = !isMobile
+      && (activeMainTab === 'git' || activeMainTab === 'terminal' || activeMainTab === 'diff');
+    if (desktopOnlyTabIsActive || (!canUseTerminal && activeMainTab === 'terminal')) {
       setActiveMainTab('chat');
     }
-  }, [activeMainTab, isMobile, setActiveMainTab]);
+  }, [activeMainTab, canUseTerminal, isMobile, setActiveMainTab]);
 
   const mobileServicesTabItems = React.useMemo<SortableTabsStripItem[]>(() => {
     return [
@@ -872,12 +878,14 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         <div className="app-region-no-drag pointer-events-auto relative ml-auto flex shrink-0 items-center gap-1.5">
-          <ProjectActionsButton
-            projectRef={projectActionsContext?.projectRef ?? null}
-            directory={projectActionsContext?.directory ?? ''}
-            browserActionPortalTarget={browserActionPortalTarget}
-          />
-          <OpenInAppButton directory={actionDirectory} />
+          {canUseTerminal ? (
+            <ProjectActionsButton
+              projectRef={projectActionsContext?.projectRef ?? null}
+              directory={actionDirectory}
+              browserActionPortalTarget={browserActionPortalTarget}
+            />
+          ) : null}
+          {canUseFiles ? <OpenInAppButton directory={actionDirectory} /> : null}
         </div>
       </div>
     </div>
@@ -989,15 +997,15 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
-            {projectActionsContext && (
+            {canUseTerminal && projectActionsContext && actionDirectory ? (
               <ProjectActionsButton
                 projectRef={projectActionsContext.projectRef}
-                directory={projectActionsContext.directory}
+                directory={actionDirectory}
                 compact
                 allowMobile
                 className="h-9"
               />
-            )}
+            ) : null}
 
             {/* Mobile Services Menu (Usage + MCP) */}
             <DropdownMenu

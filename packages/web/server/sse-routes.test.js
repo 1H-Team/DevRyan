@@ -144,9 +144,9 @@ describe('local SSE routes', () => {
     expect(res.getHeader('x-accel-buffering')).toBe('no');
     expect(res.flushed).toBe(true);
     expect(res.body).toContain('openchamber:event-stream-ready');
-    expect(clients.has(res)).toBe(true);
+    expect([...clients].some((client) => client.response === res)).toBe(true);
 
     req.emit('close');
-    expect(clients.has(res)).toBe(false);
+    expect([...clients].some((client) => client.response === res)).toBe(false);
   });
 });

@@ -2,6 +2,7 @@ export const STARTUP_READINESS_PHASES = [
   "health",
   "providers",
   "agents",
+  "initialization",
   "globalSync",
   "directorySync",
   "sessionList",
@@ -38,6 +39,16 @@ export interface StartupRecoveryHealth {
   isOpenCodeReady?: unknown
 }
 
+export interface StartupBootstrapReadiness {
+  desktopBootReady: boolean
+  isConnected: boolean
+  isInitialized: boolean
+  retriesExhausted: boolean
+  providers: StartupPhaseSnapshot
+  agents: StartupPhaseSnapshot
+  initialization: StartupPhaseSnapshot
+}
+
 export interface StartupRecoveryDependencies {
   loadHealth: () => Promise<StartupRecoveryHealth | null>
   restartOpenCode?: () => Promise<unknown>
@@ -69,6 +80,27 @@ export const withStartupReadinessPhase = (
   ...snapshot,
   [phase]: clonePhase(next),
 })
+
+export const withStartupBootstrapReadiness = (
+  snapshot: StartupReadinessSnapshot,
+  readiness: StartupBootstrapReadiness,
+): StartupReadinessSnapshot => {
+  let next = snapshot
+  const healthReady = readiness.desktopBootReady && readiness.isConnected
+  next = withStartupReadinessPhase(next, "health", healthReady
+    ? { status: "ready" }
+    : readiness.desktopBootReady && readiness.retriesExhausted
+      ? { status: "error", error: "DevRyan could not connect to OpenCode." }
+      : { status: "loading" })
+  next = withStartupReadinessPhase(next, "providers", readiness.providers)
+  next = withStartupReadinessPhase(next, "agents", readiness.agents)
+  next = withStartupReadinessPhase(next, "initialization", readiness.isInitialized
+    ? { status: "ready" }
+    : readiness.initialization.status === "error"
+      ? readiness.initialization
+      : { status: "loading" })
+  return next
+}
 
 export const summarizeStartupReadiness = (
   snapshot: StartupReadinessSnapshot,

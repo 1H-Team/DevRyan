@@ -582,6 +582,7 @@ describe('managed task presentation', () => {
         id: 'explorer-start',
         type: 'tool',
         tool: 'devryan_task',
+        callID: 'call_explorer_start',
         state: {
           status: 'pending',
           input: { action: 'start', agent: 'explorer', label: 'inspect-runtime' },
@@ -591,6 +592,7 @@ describe('managed task presentation', () => {
         id: 'designer-start',
         type: 'tool',
         tool: 'devryan_task',
+        callID: 'call_designer_start',
         state: {
           status: 'running',
           input: { action: 'start', agent: 'designer', label: 'review-layout' },
@@ -610,8 +612,8 @@ describe('managed task presentation', () => {
 
     expect(presentation.contentParts).toEqual([reasoningBefore, reasoningAfter]);
     expect(presentation.pendingDispatches).toEqual([
-      { partId: 'explorer-start', agent: 'explorer', label: 'inspect-runtime', status: 'preparing' },
-      { partId: 'designer-start', agent: 'designer', label: 'review-layout', status: 'preparing' },
+      { partId: 'explorer-start', dispatchCallId: 'call_explorer_start', agent: 'explorer', label: 'inspect-runtime', status: 'preparing' },
+      { partId: 'designer-start', dispatchCallId: 'call_designer_start', agent: 'designer', label: 'review-layout', status: 'preparing' },
     ]);
   });
 
@@ -656,13 +658,23 @@ describe('managed task presentation', () => {
   test('renders each Agent Dispatch from its message-local projection', () => {
     const messageListSource = readFileSync(fileURLToPath(new URL('./MessageList.tsx', import.meta.url)), 'utf8');
     const messageBodySource = readFileSync(fileURLToPath(new URL('./message/MessageBody.tsx', import.meta.url)), 'utf8');
+    const managedTaskListSource = readFileSync(fileURLToPath(new URL('./ManagedTaskList.tsx', import.meta.url)), 'utf8');
 
     expect(messageListSource).not.toContain('resolveManagedTaskTurnPlacement');
     expect(messageListSource).not.toContain('managedTaskOwnerMessageId');
     expect(messageBodySource).not.toContain('managedTaskProjection');
+    expect(messageBodySource).toContain('rootSessionId={sessionId}');
     expect(messageBodySource).toContain('taskIds={managedTaskDispatch.taskIds}');
     expect(messageBodySource).toContain('pendingDispatches={managedTaskDispatch.pendingDispatches}');
     expect(messageBodySource).toContain('fallbackTasks={managedTaskFallbacks}');
+    expect(messageBodySource).toContain("shouldRecoverMissingManagedDispatches = streamPhase === 'completed'");
+    expect(messageBodySource).toContain('recoverMissingDispatches={shouldRecoverMissingManagedDispatches}');
+    expect(messageBodySource).not.toContain('recoverMissingDispatches={isMessageCompleted}');
+    expect(managedTaskListSource).toContain('managedOrchestrationSelectors.task(task.taskId)');
+    expect(managedTaskListSource).toContain('<ManagedTaskReconciledFallbackRow');
+    expect(managedTaskListSource).toContain('managedOrchestrationSelectors.taskIdForDispatchCall');
+    expect(managedTaskListSource).toContain('fallbackTasksByDispatchCallId.get(dispatch.dispatchCallId)');
+    expect(managedTaskListSource).toContain('loadSnapshot({ rootSessionId })');
   });
 
   test('surfaces an active managed start before an authoritative task id exists', () => {
@@ -670,6 +682,7 @@ describe('managed task presentation', () => {
       id: 'start-part',
       type: 'tool',
       tool: 'devryan_task',
+      callID: 'call_start',
       state: {
         status: 'running',
         input: { action: 'start', agent: 'explorer', label: 'workspace-surface_map' },
@@ -679,6 +692,7 @@ describe('managed task presentation', () => {
       taskIds: [],
       pendingDispatches: [{
         partId: 'start-part',
+        dispatchCallId: 'call_start',
         agent: 'explorer',
         label: 'workspace-surface_map',
         status: 'preparing',
@@ -706,6 +720,7 @@ describe('managed task presentation', () => {
   test('reconstructs the latest persisted task row from managed tool results after a runtime restart', () => {
     const task = {
       taskId: 'dvr_task_restart',
+      dispatchCallId: 'call_restart',
       agent: 'oracle',
       label: 'review-error-precedence-contract',
       status: 'running',
@@ -738,6 +753,7 @@ describe('managed task presentation', () => {
     expect(fallbacks).toEqual([{
       partId: 'wait-part',
       taskId: 'dvr_task_restart',
+      dispatchCallId: 'call_restart',
       agent: 'oracle',
       label: 'review-error-precedence-contract',
       status: 'completed',
@@ -761,6 +777,7 @@ describe('managed task presentation', () => {
       id: 'start-part',
       type: 'tool',
       tool: 'devryan_task',
+      callID: 'call_failed_start',
       state: {
         status: 'error',
         input: { action: 'start', agent: 'explorer', label: 'workspace-surface_map' },
@@ -771,6 +788,7 @@ describe('managed task presentation', () => {
       taskIds: [],
       pendingDispatches: [{
         partId: 'start-part',
+        dispatchCallId: 'call_failed_start',
         agent: 'explorer',
         label: 'workspace-surface_map',
         status: 'error',
@@ -785,6 +803,7 @@ describe('managed task presentation', () => {
         id: 'explorer-start',
         type: 'tool',
         tool: 'devryan_task',
+        callID: 'call_parallel_explorer',
         state: {
           status: 'pending',
           input: { action: 'start', agent: 'explorer', label: 'inspect-runtime' },
@@ -794,6 +813,7 @@ describe('managed task presentation', () => {
         id: 'designer-start',
         type: 'tool',
         tool: 'devryan_task',
+        callID: 'call_parallel_designer',
         state: {
           status: 'running',
           input: { action: 'start', agent: 'designer', label: 'review-layout' },
@@ -803,8 +823,8 @@ describe('managed task presentation', () => {
       contentParts: [],
       taskIds: [],
       pendingDispatches: [
-        { partId: 'explorer-start', agent: 'explorer', label: 'inspect-runtime', status: 'preparing' },
-        { partId: 'designer-start', agent: 'designer', label: 'review-layout', status: 'preparing' },
+        { partId: 'explorer-start', dispatchCallId: 'call_parallel_explorer', agent: 'explorer', label: 'inspect-runtime', status: 'preparing' },
+        { partId: 'designer-start', dispatchCallId: 'call_parallel_designer', agent: 'designer', label: 'review-layout', status: 'preparing' },
       ],
     });
   });
@@ -814,6 +834,7 @@ describe('managed task presentation', () => {
       <I18nProvider>
         <ManagedTaskPreparingRow dispatch={{
           partId: 'start-part',
+          dispatchCallId: null,
           agent: 'explorer',
           label: 'locate-chat_ui',
           status: 'preparing',

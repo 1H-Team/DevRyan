@@ -408,6 +408,9 @@ function applySlimModelMetadata(agent, slimAgent) {
   } else {
     delete next.variant;
   }
+  if (slimAgent.modelResolution) {
+    next.modelResolution = { ...slimAgent.modelResolution };
+  }
   return next;
 }
 

@@ -4,7 +4,10 @@ import { managedOrchestrationApi } from '@/lib/orchestrationApi';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
-import { createAgentHandoffCoordinator } from './agentHandoffCoordinator';
+import {
+  createAgentHandoffCoordinator,
+  shouldReconcileBuilderSession,
+} from './agentHandoffCoordinator';
 import { DeferredChatDialog, LazyAgentHandoffDialog } from './lazyChatDialogs';
 import { LazyViewBoundary } from '@/components/views/lazyViews';
 import {
@@ -52,13 +55,21 @@ export const AgentHandoffGuardProvider: React.FC<React.PropsWithChildren> = ({ c
   }, []);
 
   const commitBuilder = React.useCallback((sessionId: string) => {
+    useSelectionStore.getState().markBuilderHandoffCleared(sessionId);
     commitExistingSessionAgent(sessionId, 'Builder');
   }, []);
 
   React.useEffect(() => {
-    if (!currentSessionId || normalizedAgent(sessionSavedAgentName) !== 'builder') {
+    if (!shouldReconcileBuilderSession({
+      sessionId: currentSessionId,
+      savedAgentName: sessionSavedAgentName,
+      handoffCleared: currentSessionId
+        ? useSelectionStore.getState().hasBuilderHandoffClearance(currentSessionId)
+        : false,
+    })) {
       return;
     }
+    if (!currentSessionId) return;
 
     void coordinator.reconcileBuilderSession({
       sessionId: currentSessionId,

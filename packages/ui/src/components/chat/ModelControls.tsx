@@ -686,6 +686,18 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         }
         return getCurrentAgent?.();
     }, [agents, getCurrentAgent, uiAgentName]);
+    const currentAgentModelResolution = (currentAgent as (typeof currentAgent & {
+        modelResolution?: {
+            presetName: string | null;
+            source: 'root-override' | 'preset' | 'root';
+            presetModelRef: string | null;
+            presetVariant: string | null;
+        };
+        variant?: string | null;
+    }) | undefined)?.modelResolution;
+    const currentAgentVariant = typeof (currentAgent as { variant?: unknown } | undefined)?.variant === 'string'
+        ? (currentAgent as { variant: string }).variant
+        : null;
 
     const sizeVariant: 'mobile' | 'vscode' | 'default' = isMobile ? 'mobile' : isVSCodeRuntime ? 'vscode' : 'default';
     const buttonHeight = sizeVariant === 'mobile' ? 'h-9' : sizeVariant === 'vscode' ? 'h-6' : 'h-8';
@@ -913,7 +925,10 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             modelId: string,
             agentName?: string,
             variant?: string,
-            options?: { modelProvenance?: SendConfigModelProvenance },
+            options?: {
+                modelProvenance?: SendConfigModelProvenance;
+                preserveSelectedProvider?: boolean;
+            },
         ): ModelApplyResult => {
             if (!providerId || !modelId) {
                 return 'model-missing';
@@ -954,7 +969,9 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 return 'applied';
             }
 
-            setProviderModel(providerId, modelId, variant);
+            setProviderModel(providerId, modelId, variant, {
+                preserveSelectedProvider: options?.preserveSelectedProvider,
+            });
 
             if (currentSessionId) {
                 saveSessionModelSelection(currentSessionId, providerId, modelId);
@@ -1070,7 +1087,10 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         modelId: string,
         variant: string | undefined,
         agentNameOverride?: string | null,
-        options?: { modelProvenance?: SendConfigModelProvenance },
+        options?: {
+            modelProvenance?: SendConfigModelProvenance;
+            preserveSelectedProvider?: boolean;
+        },
     ) => {
         const provider = providers.find((entry) => entry.id === providerId);
         const variantOptions = getModelVariantOptions(providerId, modelId);
@@ -1122,7 +1142,10 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         modelId: string,
         variant: string | undefined,
         agentNameOverride?: string | null,
-        options?: { modelProvenance?: SendConfigModelProvenance },
+        options?: {
+            modelProvenance?: SendConfigModelProvenance;
+            preserveSelectedProvider?: boolean;
+        },
     ) => {
         const effectiveAgentName = agentNameOverride ?? resolveLiveAgentName() ?? undefined;
         const result = tryApplyModelSelection(providerId, modelId, effectiveAgentName, variant, options);
@@ -1179,6 +1202,8 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             firstVisibleModelSelection.providerID,
             firstVisibleModelSelection.modelID,
             undefined,
+            undefined,
+            { preserveSelectedProvider: true },
         );
     }, [
         applyModelSelectionWithVariant,
@@ -1658,7 +1683,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
 
     const getCurrentModelDisplayName = () => {
         if (!currentProviderId || !currentModelId) return 'Not selected';
-        if (models.length === 0) return 'Not selected';
+        if (models.length === 0) return currentModelId;
         const currentProvider = providers.find((provider) => provider.id === currentProviderId);
         const genericDisplayState = getModelVariantDisplayState(currentProvider, currentModelId, currentVariant);
         if (genericDisplayState?.displayModelId && genericDisplayState.displayModelId !== currentModelId) {
@@ -1674,7 +1699,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
             }
         }
         const currentModel = models.find((m: ProviderModel) => m.id === currentModelId);
-        return getModelDisplayName(currentModel);
+        return currentModel ? getModelDisplayName(currentModel) : currentModelId;
     };
 
     const currentModelDisplayName = getCurrentModelDisplayName();
@@ -1893,9 +1918,19 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                         <div className="rounded-xl border border-border/40 bg-sidebar/30 px-2 py-1.5">
                             <div className="typography-micro text-muted-foreground mb-1">{t('chat.modelControls.model')}</div>
                             {hasModelConfig && (
-                                <div className="typography-meta text-foreground font-medium mb-1">
-                                    {currentAgent.model!.providerID} / {currentAgent.model!.modelID}
-                                </div>
+                                <>
+                                    <div className="typography-meta text-foreground font-medium mb-1">
+                                        {currentAgent.model!.providerID}/{currentAgent.model!.modelID}
+                                        {currentAgentVariant ? ` / ${currentAgentVariant}` : ''}
+                                    </div>
+                                    {currentAgentModelResolution?.presetName && currentAgentModelResolution.presetModelRef && (
+                                        <div className="typography-micro text-muted-foreground">
+                                            {t('chat.modelControls.presetModel', { preset: currentAgentModelResolution.presetName })}: {currentAgentModelResolution.presetModelRef}
+                                            {currentAgentModelResolution.presetVariant ? ` / ${currentAgentModelResolution.presetVariant}` : ''}
+                                            {currentAgentModelResolution.source === 'root-override' ? ` · ${t('chat.modelControls.rootOverride')}` : ''}
+                                        </div>
+                                    )}
+                                </>
                             )}
                             {hasTemperatureOrTopP && (
                                 <div className="flex flex-col gap-0.5">
@@ -3504,9 +3539,19 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                         <div className="flex flex-col gap-1">
                             <span className="typography-meta font-semibold uppercase tracking-wide text-muted-foreground/90">{t('chat.modelControls.model')}</span>
                             {hasModelConfig ? (
-                                <span className="typography-meta text-foreground">
-                                    {currentAgent.model!.providerID} / {currentAgent.model!.modelID}
-                                </span>
+                                <>
+                                    <span className="typography-meta text-foreground">
+                                        {currentAgent.model!.providerID}/{currentAgent.model!.modelID}
+                                        {currentAgentVariant ? ` / ${currentAgentVariant}` : ''}
+                                    </span>
+                                    {currentAgentModelResolution?.presetName && currentAgentModelResolution.presetModelRef && (
+                                        <span className="typography-micro text-muted-foreground">
+                                            {t('chat.modelControls.presetModel', { preset: currentAgentModelResolution.presetName })}: {currentAgentModelResolution.presetModelRef}
+                                            {currentAgentModelResolution.presetVariant ? ` / ${currentAgentModelResolution.presetVariant}` : ''}
+                                            {currentAgentModelResolution.source === 'root-override' ? ` · ${t('chat.modelControls.rootOverride')}` : ''}
+                                        </span>
+                                    )}
+                                </>
                             ) : (
                                 <span className="typography-meta text-muted-foreground">{t('chat.modelControls.modeValue.none')}</span>
                             )}

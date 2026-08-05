@@ -18,6 +18,7 @@ const input = (index, overrides = {}) => ({
   idempotencyKey: `task-${index}`,
   rootSessionId: 'ses_root',
   dispatchGroupId: 'msg_parent_01',
+  dispatchCallId: 'call_dispatch_01',
   parentTaskId: null,
   directory: '/workspace',
   mode: 'orchestrator',
@@ -157,6 +158,7 @@ describe('managed scheduler dispatch barrier', () => {
 
     const retry = await disposition(scheduler, original.taskId, 'retry');
     expect(retry.followUpTask.dispatchGroupId).toBe(original.dispatchGroupId);
+    expect(retry.followUpTask.dispatchCallId).toBe(original.dispatchCallId);
     const followUpBarrier = scheduler.waitForDispatchBarrier('ses_root');
     runs[1].result.resolve({ status: 'completed' });
 
@@ -199,8 +201,9 @@ describe('managed scheduler dispatch barrier', () => {
       finishedAt: 1_200,
     };
     delete terminal.dispatchGroupId;
+    delete terminal.dispatchCallId;
     const envelope = createManagedTaskResultEnvelope(
-      { ...terminal, dispatchGroupId: null },
+      { ...terminal, dispatchGroupId: null, dispatchCallId: null },
       { sequence: 1, createdAt: 1_200, resumable: false },
     );
     let savedState = null;
@@ -223,7 +226,9 @@ describe('managed scheduler dispatch barrier', () => {
     await scheduler.initialize();
 
     expect(scheduler.getTask(terminal.taskId).dispatchGroupId).toBeNull();
+    expect(scheduler.getTask(terminal.taskId).dispatchCallId).toBeNull();
     expect(savedState.tasks[0].dispatchGroupId).toBeNull();
+    expect(savedState.tasks[0].dispatchCallId).toBeNull();
     expect((await scheduler.waitForDispatchBarrier('ses_root')).state).toBe('clear');
   });
 });

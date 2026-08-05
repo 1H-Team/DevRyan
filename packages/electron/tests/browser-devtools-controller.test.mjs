@@ -175,6 +175,40 @@ describe('browser DevTools controller', () => {
     expect(harness.views[0].bounds).toEqual({ x: 650, y: 450, width: 550, height: 350 });
   });
 
+  test('rehosts an open dock with the same guest and DevTools view', async () => {
+    const harness = createHarness();
+    const guest = createGuest();
+    await harness.controller.setOpen({
+      guest,
+      ownerWindow: harness.ownerWindow,
+      bounds: { x: 700, y: 500, width: 500, height: 300 },
+      open: true,
+    });
+    const otherViews = [];
+    const otherWindow = {
+      contentView: {
+        addChildView(view) { otherViews.push(view); },
+        removeChildView(view) {
+          const index = otherViews.indexOf(view);
+          if (index >= 0) otherViews.splice(index, 1);
+        },
+      },
+      getContentBounds: () => ({ width: 900, height: 600 }),
+      isDestroyed: () => false,
+    };
+
+    expect(harness.controller.isOpen(guest.id)).toBe(true);
+    expect(harness.controller.rehost({
+      guest,
+      ownerWindow: otherWindow,
+      bounds: { x: 0, y: 300, width: 900, height: 300 },
+    })).toEqual({ open: true });
+    expect(harness.childViews).toEqual([]);
+    expect(otherViews).toEqual([harness.views[0]]);
+    expect(harness.views[0].bounds).toEqual({ x: 0, y: 300, width: 900, height: 300 });
+    expect(guest.calls.filter((call) => call.method === 'openDevTools')).toHaveLength(1);
+  });
+
   test('clamps renderer-provided bounds to the owning window', async () => {
     const harness = createHarness();
     const guest = createGuest();
@@ -205,21 +239,14 @@ describe('browser DevTools controller', () => {
 describe('desktop browser DevTools IPC boundary', () => {
   const mainSource = readFileSync(new URL('../main.mjs', import.meta.url), 'utf8');
 
-  test('resolves the owning browser guest before opening DevTools', () => {
-    const resolverStart = mainSource.indexOf('const resolveBrowserWebviewGuest =');
-    const resolverEnd = mainSource.indexOf('// The CDP bridge is created lazily', resolverStart);
-    const resolverBlock = mainSource.slice(resolverStart, resolverEnd);
+  test('routes DevTools through an owner-validated surface ID', () => {
     const commandStart = mainSource.indexOf("case 'desktop_browser_devtools_set_open':");
     const commandEnd = mainSource.indexOf("case 'desktop_capture_page_rect':", commandStart);
     const commandBlock = mainSource.slice(commandStart, commandEnd);
 
-    expect(resolverBlock).toContain('entry.ownerWindowId !== browserWindow.id');
-    expect(resolverBlock).toContain("guest.getType() !== 'webview'");
-    expect(resolverBlock).toContain('guest.session !== session.fromPartition(BROWSER_WEBVIEW_PARTITION)');
     expect(commandStart).toBeGreaterThan(-1);
-    expect(commandBlock).toContain('const guest = resolveBrowserWebviewGuest(browserWindow, args?.webContentsId);');
-    expect(commandBlock).toContain('return browserDevToolsController.setOpen({');
-    expect(commandBlock).toContain('bounds: args?.bounds');
+    expect(commandBlock).toContain('getBrowserSurfaceManager().setDevTools(browserWindow, args)');
+    expect(commandBlock).not.toContain('webContentsId');
   });
 
   test('does not grant the DevTools command to remote-origin renderers', () => {

@@ -16,6 +16,7 @@ import {
   TUNNEL_MODE_QUICK,
   TUNNEL_PROVIDER_CLOUDFLARE,
   TunnelServiceError,
+  isValidManagedRemoteOriginPort,
 } from '../types.js';
 
 export const cloudflareTunnelProviderCapabilities = {
@@ -37,8 +38,8 @@ export const cloudflareTunnelProviderCapabilities = {
       key: TUNNEL_MODE_MANAGED_REMOTE,
       label: 'Managed Remote Tunnel',
       intent: TUNNEL_INTENT_PERSISTENT_PUBLIC,
-      requires: ['token', 'hostname'],
-      supports: ['customDomain', 'sessionTTL'],
+      requires: ['token', 'hostname', 'originPort'],
+      supports: ['customDomain', 'fixedOriginPort', 'sessionTTL'],
       stability: 'ga',
     },
     {
@@ -206,6 +207,14 @@ export function createCloudflareTunnelProvider() {
             ? savedProfileReadyDetail
             : remoteTokenValidation.detail,
         },
+        {
+          id: 'managed_remote_origin_port',
+          label: 'Managed remote origin port',
+          status: isValidManagedRemoteOriginPort(request.originPort) ? 'pass' : 'fail',
+          detail: isValidManagedRemoteOriginPort(request.originPort)
+            ? `Cloudflare service target: http://127.0.0.1:${request.originPort}`
+            : 'Managed remote origin port must be an integer between 1024 and 65535.',
+        },
       ];
 
       const allModes = [
@@ -230,6 +239,9 @@ export function createCloudflareTunnelProvider() {
           token: request.token,
           hostname: request.hostname,
           activePort: context.activePort,
+          originPort: request.originPort,
+          runtimeInstanceId: context.runtimeInstanceId,
+          fetchImpl: context.fetchImpl,
         });
       }
 
@@ -250,6 +262,14 @@ export function createCloudflareTunnelProvider() {
       });
     },
     stop: (controller) => controller?.stop?.(),
+    isControllerCompatible: (controller, request) => {
+      if (request.mode === TUNNEL_MODE_MANAGED_REMOTE) {
+        return controller?.matchesManagedRemoteRequest?.(request) === true;
+      }
+      return controller?.mode === request.mode;
+    },
+    verifyPublicReachability: (controller) => controller?.verifyPublicReachability?.(),
+    refreshHealth: (controller, options) => controller?.refreshHealth?.(options),
     resolvePublicUrl: (controller) => controller?.getPublicUrl?.() ?? null,
     getMetadata: (controller) => ({
       configPath: controller?.getEffectiveConfigPath?.() ?? null,

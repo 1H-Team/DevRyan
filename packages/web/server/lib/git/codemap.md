@@ -25,5 +25,6 @@ Git service layer for repository operations, direct commit-message generation, a
 
 ## Integration
 - Called by server route registration and consumed by `src/api/git.ts`.
+- Managed chat and scheduled-task branch attachment is orchestrated by `../multi-user/branch-target.js`, which consumes `getBranches`, `getStatus`, `getWorktrees`, and `createWorktree` without switching a shared checkout.
 - Works with GitHub repo parsing/auth modules for remote-aware features.
 - Uses filesystem and process-level git binaries through server runtime deps.

@@ -15,7 +15,11 @@ import { hasExplicitDraftModelIntent } from "@/sync/send-config";
 import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry";
 import { updateDesktopSettings } from "@/lib/persistence";
 import { useDirectoryStore } from "@/stores/useDirectoryStore";
+import { getAuthPrincipal } from "@/lib/authSession";
+import { toast } from "@/components/ui";
 import { streamDebugEnabled } from "@/stores/utils/streamDebug";
+import { DEFAULT_WASM_STT_MODEL } from "@/lib/voice/wasmSttService";
+import { resolveVoiceModeEnabledPreference } from "@/lib/voice/voicePreferences";
 import {
     findSelectableAgentByName,
     resolveDefaultAgentName,
@@ -31,7 +35,6 @@ const MODELS_DEV_PROXY_URL = "/api/openchamber/models-metadata";
 const GIT_UTILITY_PROVIDER_ID = "zen";
 const GIT_UTILITY_PREFERRED_MODEL_ID = "big-pickle";
 type SttProvider = 'browser' | 'server' | 'macos' | 'wasm';
-type ActiveSttProvider = Exclude<SttProvider, 'wasm'>;
 export type ConfigLoadStatus = "idle" | "loading" | "ready" | "error";
 
 const isElectronMacHost = (): boolean => {
@@ -40,13 +43,6 @@ const isElectronMacHost = (): boolean => {
     const macosMajor = (window as unknown as { __OPENCHAMBER_MACOS_MAJOR__?: unknown }).__OPENCHAMBER_MACOS_MAJOR__;
     if (electron?.runtime === 'electron' && typeof macosMajor === 'number' && macosMajor > 0) return true;
     return electron?.runtime === 'electron' && /mac/i.test(window.navigator?.platform ?? '');
-};
-
-const normalizeSttProviderForRuntime = (provider: SttProvider): ActiveSttProvider => {
-    if (provider === 'wasm') {
-        return isElectronMacHost() ? 'macos' : 'browser';
-    }
-    return provider;
 };
 
 interface OpenChamberDefaults {
@@ -192,6 +188,31 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
     return fallback;
 };
 
+const isWorkspaceDirectoryAccessError = (error: unknown): boolean => {
+    const message = getErrorMessage(error, "").toLowerCase();
+    if (!message.includes("outside your assigned workspace")) {
+        return false;
+    }
+    const status = error && typeof error === "object"
+        ? (error as { status?: unknown; response?: { status?: unknown } }).status
+            ?? (error as { response?: { status?: unknown } }).response?.status
+        : undefined;
+    return status === undefined || status === 403 || message.includes("(403)");
+};
+
+const resolveDefaultWorkspaceDirectory = (): string => {
+    const directoryState = useDirectoryStore.getState();
+    const principal = getAuthPrincipal();
+    if (principal.scope === "managed") {
+        const assignment = principal.assignments.find((entry) => entry.isDefault)
+            ?? principal.assignments[0];
+        if (assignment?.publicDirectory) {
+            return assignment.publicDirectory;
+        }
+    }
+    return directoryState.homeDirectory;
+};
+
 const hasProviderModel = (
     providers: ProviderWithModelList[],
     providerId: string,
@@ -204,6 +225,17 @@ const hasProviderModel = (
     return provider.models.some((model) => model.id === modelId && isProviderModelAvailable(model));
 };
 
+const getConfiguredAgentModel = (agent?: Agent): { providerId: string; modelId: string; variant?: string } | null => {
+    const model = agent?.model;
+    if (!model?.providerID || !model?.modelID) {
+        return null;
+    }
+    const variant = typeof (agent as Agent & { variant?: unknown }).variant === 'string'
+        ? (agent as Agent & { variant: string }).variant
+        : undefined;
+    return { providerId: model.providerID, modelId: model.modelID, variant };
+};
+
 export const mergeRuntimeAgentsWithConfigOverrides = (runtimeAgents: Agent[], configAgents: Agent[]): Agent[] => {
     const configByName = new Map(configAgents.map((agent) => [agent.name, agent]));
     return runtimeAgents.map((agent) => {
@@ -211,6 +243,12 @@ export const mergeRuntimeAgentsWithConfigOverrides = (runtimeAgents: Agent[], co
             variant?: string | null;
             modelRefs?: string[];
             councillors?: Array<{ model: string; variant?: string | null }>;
+            modelResolution?: {
+                presetName: string | null;
+                source: 'root-override' | 'preset' | 'root';
+                presetModelRef: string | null;
+                presetVariant: string | null;
+            };
         }) | undefined;
         if (!configAgent) {
             return agent;
@@ -222,6 +260,7 @@ export const mergeRuntimeAgentsWithConfigOverrides = (runtimeAgents: Agent[], co
             ...(Object.prototype.hasOwnProperty.call(configAgent, 'variant') ? { variant: configAgent.variant ?? undefined } : {}),
             ...(Array.isArray(configAgent.modelRefs) ? { modelRefs: configAgent.modelRefs } : {}),
             ...(Array.isArray(configAgent.councillors) ? { councillors: configAgent.councillors } : {}),
+            ...(configAgent.modelResolution ? { modelResolution: configAgent.modelResolution } : {}),
         } as Agent;
     });
 };
@@ -567,6 +606,8 @@ interface ConfigStore {
     connectionPhase: "connecting" | "connected" | "reconnecting";
     lastDisconnectReason: string | null;
     isInitialized: boolean;
+    initializationLoadStatus: ConfigLoadStatus;
+    initializationLoadError: string | undefined;
     providersLoadStatus: ConfigLoadStatus;
     providersLoadError: string | undefined;
     agentsLoadStatus: ConfigLoadStatus;
@@ -645,7 +686,12 @@ interface ConfigStore {
     loadAgents: (options?: { directory?: string | null }) => Promise<boolean>;
     invalidateModelMetadataCache: () => void;
     setProvider: (providerId: string) => void;
-    setProviderModel: (providerId: string, modelId: string, variant?: string) => void;
+    setProviderModel: (
+        providerId: string,
+        modelId: string,
+        variant?: string,
+        options?: { preserveSelectedProvider?: boolean },
+    ) => void;
     setModel: (modelId: string) => void;
     setCurrentVariant: (variant: string | undefined) => void;
     cycleCurrentVariant: () => void;
@@ -656,7 +702,6 @@ interface ConfigStore {
     ) => void;
     applyDefaultsToCurrent: (options?: {
         preserveCurrentModel?: boolean;
-        preserveRehydratedDraftModel?: boolean;
     }) => void;
     setSelectedProvider: (providerId: string) => void;
     setSettingsDefaultModel: (model: string | undefined) => void;
@@ -749,6 +794,8 @@ export const useConfigStore = create<ConfigStore>()(
                 connectionPhase: "connecting",
                 lastDisconnectReason: null,
                 isInitialized: false,
+                initializationLoadStatus: "idle",
+                initializationLoadError: undefined,
                 providersLoadStatus: "idle",
                 providersLoadError: undefined,
                 agentsLoadStatus: "idle",
@@ -767,7 +814,7 @@ export const useConfigStore = create<ConfigStore>()(
                 // Voice provider preference - load from localStorage or default to 'browser'
                 voiceProvider: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('voiceProvider');
+                        const saved = getSafeStorage().getItem('voiceProvider');
                         if (saved === 'openai' || saved === 'browser' || saved === 'say' || saved === 'openai-compatible') return saved;
                     }
                     return 'browser';
@@ -775,7 +822,7 @@ export const useConfigStore = create<ConfigStore>()(
                 // TTS settings - load from localStorage with defaults
                 speechRate: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('speechRate');
+                        const saved = getSafeStorage().getItem('speechRate');
                         if (saved) {
                             const parsed = parseFloat(saved);
                             if (!isNaN(parsed) && parsed >= 0.5 && parsed <= 2) return parsed;
@@ -785,7 +832,7 @@ export const useConfigStore = create<ConfigStore>()(
                 })(),
                 speechPitch: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('speechPitch');
+                        const saved = getSafeStorage().getItem('speechPitch');
                         if (saved) {
                             const parsed = parseFloat(saved);
                             if (!isNaN(parsed) && parsed >= 0.5 && parsed <= 2) return parsed;
@@ -795,7 +842,7 @@ export const useConfigStore = create<ConfigStore>()(
                 })(),
                 speechVolume: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('speechVolume');
+                        const saved = getSafeStorage().getItem('speechVolume');
                         if (saved) {
                             const parsed = parseFloat(saved);
                             if (!isNaN(parsed) && parsed >= 0 && parsed <= 1) return parsed;
@@ -806,7 +853,7 @@ export const useConfigStore = create<ConfigStore>()(
                 // macOS Say voice - load from localStorage or default to 'Samantha'
                 sayVoice: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('sayVoice');
+                        const saved = getSafeStorage().getItem('sayVoice');
                         if (saved) return saved;
                     }
                     return 'Samantha';
@@ -814,7 +861,7 @@ export const useConfigStore = create<ConfigStore>()(
                 // Browser voice - load from localStorage or default to empty (auto-select)
                 browserVoice: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('browserVoice');
+                        const saved = getSafeStorage().getItem('browserVoice');
                         if (saved) return saved;
                     }
                     return '';
@@ -822,23 +869,22 @@ export const useConfigStore = create<ConfigStore>()(
                 // OpenAI voice - load from localStorage or default to 'nova'
                 openaiVoice: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('openaiVoice');
+                        const saved = getSafeStorage().getItem('openaiVoice');
                         if (saved) return saved;
                     }
                     return 'nova';
                 })(),
-                // OpenAI API key for TTS - load from localStorage or default to empty
+                // TTS credentials are server-owned. Remove any legacy browser copy.
                 openaiApiKey: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('openaiApiKey');
-                        if (saved) return saved;
+                        getSafeStorage().removeItem('openaiApiKey');
                     }
                     return '';
                 })(),
                 // OpenAI-compatible custom server URL
                 openaiCompatibleUrl: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('openaiCompatibleUrl');
+                        const saved = getSafeStorage().getItem('openaiCompatibleUrl');
                         if (saved) return saved;
                     }
                     return '';
@@ -846,7 +892,7 @@ export const useConfigStore = create<ConfigStore>()(
                 // OpenAI-compatible custom server voice
                 openaiCompatibleVoice: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('openaiCompatibleVoice');
+                        const saved = getSafeStorage().getItem('openaiCompatibleVoice');
                         if (saved) return saved;
                     }
                     return 'af_sky';
@@ -854,17 +900,17 @@ export const useConfigStore = create<ConfigStore>()(
                 // OpenAI-compatible custom server TTS model
                 openaiCompatibleTtsModel: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('openaiCompatibleTtsModel');
+                        const saved = getSafeStorage().getItem('openaiCompatibleTtsModel');
                         if (saved && saved !== 'speaches-ai/Kokoro-82M-v1.0-ONNX') return saved;
                     }
                     return 'kokoro';
                 })(),
-                // STT provider: 'browser' (Web Speech API), 'server' (OpenAI-compat), or 'macos' (native Apple Speech).
+                // STT provider: Browser Web Speech, OpenAI-compatible server, native macOS, or local Whisper.
                 sttProvider: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('sttProvider');
+                        const saved = getSafeStorage().getItem('sttProvider');
                         if (saved === 'browser' || saved === 'server' || saved === 'macos' || saved === 'wasm') {
-                            return normalizeSttProviderForRuntime(saved);
+                            return saved;
                         }
                     }
                     if (isElectronMacHost()) return 'macos' as const;
@@ -872,42 +918,42 @@ export const useConfigStore = create<ConfigStore>()(
                 })(),
                 voiceInputDeviceId: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('voiceInputDeviceId');
+                        const saved = getSafeStorage().getItem('voiceInputDeviceId');
                         if (saved) return saved;
                     }
                     return '';
                 })(),
                 sttServerUrl: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('sttServerUrl');
+                        const saved = getSafeStorage().getItem('sttServerUrl');
                         if (saved) return saved;
                     }
                     return 'http://localhost:8001/v1';
                 })(),
                 sttModel: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('sttModel');
+                        const saved = getSafeStorage().getItem('sttModel');
                         if (saved) return saved;
                     }
                     return 'deepdml/faster-whisper-large-v3-turbo-ct2';
                 })(),
                 wasmSttModel: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('wasmSttModel');
+                        const saved = getSafeStorage().getItem('wasmSttModel');
                         if (saved) return saved;
                     }
-                    return 'Xenova/whisper-base.en';
+                    return DEFAULT_WASM_STT_MODEL;
                 })(),
                 sttLanguage: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('sttLanguage');
+                        const saved = getSafeStorage().getItem('sttLanguage');
                         if (saved !== null) return saved;
                     }
                     return '';
                 })(),
                 sttSilenceThresholdDb: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('sttSilenceThresholdDb');
+                        const saved = getSafeStorage().getItem('sttSilenceThresholdDb');
                         if (saved) {
                             const parsed = parseFloat(saved);
                             if (!isNaN(parsed)) return parsed;
@@ -917,7 +963,7 @@ export const useConfigStore = create<ConfigStore>()(
                 })(),
                 sttSilenceHoldMs: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('sttSilenceHoldMs');
+                        const saved = getSafeStorage().getItem('sttSilenceHoldMs');
                         if (saved) {
                             const parsed = parseInt(saved, 10);
                             if (!isNaN(parsed)) return parsed;
@@ -928,7 +974,7 @@ export const useConfigStore = create<ConfigStore>()(
                 // Show TTS buttons on messages - disabled by default until user enables it
                 showMessageTTSButtons: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('showMessageTTSButtons');
+                        const saved = getSafeStorage().getItem('showMessageTTSButtons');
                         if (saved === 'true') return true;
                     }
                     return false;
@@ -936,15 +982,14 @@ export const useConfigStore = create<ConfigStore>()(
                 // Voice mode enabled - load from localStorage or default to false
                 voiceModeEnabled: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('voiceModeEnabled');
-                        if (saved === 'false') return false;
-                        if (saved === 'true') return true;
+                        const saved = getSafeStorage().getItem('voiceModeEnabled');
+                        return resolveVoiceModeEnabledPreference(saved);
                     }
-                    return true;
+                    return false;
                 })(),
                 voicePlaybackEnabled: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('voicePlaybackEnabled');
+                        const saved = getSafeStorage().getItem('voicePlaybackEnabled');
                         if (saved === 'true') return true;
                         if (saved === 'false') return false;
                     }
@@ -953,14 +998,14 @@ export const useConfigStore = create<ConfigStore>()(
                 // Summarization settings
                 summarizeMessageTTS: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('summarizeMessageTTS');
+                        const saved = getSafeStorage().getItem('summarizeMessageTTS');
                         if (saved === 'true') return true;
                     }
                     return false;
                 })(),
                 summarizeCharacterThreshold: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('summarizeCharacterThreshold');
+                        const saved = getSafeStorage().getItem('summarizeCharacterThreshold');
                         if (saved) {
                             const parsed = parseInt(saved, 10);
                             if (!isNaN(parsed) && parsed >= 50 && parsed <= 2000) return parsed;
@@ -970,7 +1015,7 @@ export const useConfigStore = create<ConfigStore>()(
                 })(),
                 summarizeMaxLength: (() => {
                     if (typeof window !== 'undefined') {
-                        const saved = localStorage.getItem('summarizeMaxLength');
+                        const saved = getSafeStorage().getItem('summarizeMaxLength');
                         if (saved) {
                             const parsed = parseInt(saved, 10);
                             if (!isNaN(parsed) && parsed >= 50 && parsed <= 2000) return parsed;
@@ -1017,6 +1062,17 @@ export const useConfigStore = create<ConfigStore>()(
                     }
 
                     await get().loadProviders({ directory: fromDirectoryKey(directoryKey) });
+                    const currentDirectory = useDirectoryStore.getState().currentDirectory;
+                    const currentDirectoryKey = toDirectoryKey(currentDirectory);
+                    if (currentDirectoryKey !== directoryKey) {
+                        if (get().activeDirectoryKey !== currentDirectoryKey) {
+                            await get().activateDirectory(currentDirectory);
+                        }
+                        return;
+                    }
+                    if (get().activeDirectoryKey !== directoryKey) {
+                        return;
+                    }
                     await get().loadAgents({ directory: fromDirectoryKey(directoryKey) });
                 },
 
@@ -1036,63 +1092,65 @@ export const useConfigStore = create<ConfigStore>()(
                     const previousDefaults = existingSnapshot?.defaultProviders ?? (get().activeDirectoryKey === directoryKey ? get().defaultProviders : {});
                     let lastError: unknown = null;
 
-                    for (let attempt = 0; attempt < 3; attempt++) {
-                        try {
-                            ensureModelsMetadataFetch(
-                                () => get().modelsMetadata,
-                                (metadata) => set({ modelsMetadata: metadata }),
-                            );
-                            const apiResult = await opencodeClient.withDirectory(
-                                fromDirectoryKey(directoryKey),
-                                () => opencodeClient.getProviders()
-                            );
-                            const providers = Array.isArray(apiResult?.providers) ? apiResult.providers : [];
-                            const defaults = apiResult?.default || {};
+                    const commitProviders = (apiResult: {
+                        providers?: Provider[];
+                        default?: { [key: string]: string };
+                    }) => {
+                        const providers = Array.isArray(apiResult?.providers) ? apiResult.providers : [];
+                        const defaults = apiResult?.default || {};
 
-                            const processedProviders: ProviderWithModelList[] = providers.map((provider) => {
-                                const modelRecord = provider.models ?? {};
-                                const models: ProviderModel[] = Object.keys(modelRecord).map((modelId) => modelRecord[modelId]);
-                                return {
-                                    ...provider,
-                                    name: normalizeProviderDisplayName(provider.name),
-                                    models,
-                                };
-                            });
+                        const processedProviders: ProviderWithModelList[] = providers.map((provider) => {
+                            const modelRecord = provider.models ?? {};
+                            const models: ProviderModel[] = Object.keys(modelRecord).map((modelId) => modelRecord[modelId]);
+                            return {
+                                ...provider,
+                                name: normalizeProviderDisplayName(provider.name),
+                                models,
+                            };
+                        });
 
-                            set((state) => {
-                                const baseSnapshot = getDirectoryScopedConfigBase(state, directoryKey);
+                        set((state) => {
+                            const baseSnapshot = getDirectoryScopedConfigBase(state, directoryKey);
 
-                                const nextSnapshot: DirectoryScopedConfig = {
-                                    ...baseSnapshot,
-                                    providers: processedProviders,
-                                    defaultProviders: defaults,
-                                };
+                            const nextSnapshot: DirectoryScopedConfig = {
+                                ...baseSnapshot,
+                                providers: processedProviders,
+                                defaultProviders: defaults,
+                            };
 
-                                const nextState: Partial<ConfigStore> = {
-                                    directoryScoped: {
-                                        ...state.directoryScoped,
-                                        [directoryKey]: nextSnapshot,
-                                    },
-                                };
+                            const nextState: Partial<ConfigStore> = {
+                                directoryScoped: {
+                                    ...state.directoryScoped,
+                                    [directoryKey]: nextSnapshot,
+                                },
+                            };
 
-                                if (state.activeDirectoryKey === directoryKey) {
-                                    nextState.providers = processedProviders;
-                                    nextState.defaultProviders = defaults;
-                                    nextState.providersLoadStatus = "ready";
-                                    nextState.providersLoadError = undefined;
+                            if (state.activeDirectoryKey === directoryKey) {
+                                nextState.providers = processedProviders;
+                                nextState.defaultProviders = defaults;
+                                nextState.providersLoadStatus = "ready";
+                                nextState.providersLoadError = undefined;
 
-                                    // Ensure a valid model stays selected after (re)loading providers.
-                                    // Otherwise switching to an uncached directory (which blanks the
-                                    // selection in activateDirectory) leaves the composer stuck on
-                                    // "Not selected" even though a model is available. Only resolve a
-                                    // default when the current selection is missing/unavailable — never
-                                    // override a still-valid explicit choice.
-                                    const selectionIsValid = Boolean(state.currentProviderId)
-                                        && Boolean(state.currentModelId)
-                                        && processedProviders.some((p) => p.id === state.currentProviderId
-                                            && p.models.some((m) => m.id === state.currentModelId && isProviderModelAvailable(m)));
-                                    if (!selectionIsValid) {
-                                        let resolved: { providerId: string; modelId: string } | null = null;
+                                // Ensure a valid model stays selected after (re)loading providers.
+                                // Otherwise switching to an uncached directory (which blanks the
+                                // selection in activateDirectory) leaves the composer stuck on
+                                // "Not selected" even though a model is available. Only resolve a
+                                // default when the current selection is missing/unavailable — never
+                                // override a still-valid explicit choice.
+                                const selectionIsValid = Boolean(state.currentProviderId)
+                                    && Boolean(state.currentModelId)
+                                    && processedProviders.some((p) => p.id === state.currentProviderId
+                                        && p.models.some((m) => m.id === state.currentModelId && isProviderModelAvailable(m)));
+                                if (!selectionIsValid) {
+                                    let resolved: { providerId: string; modelId: string } | null = null;
+                                    const configuredAgentModel = getConfiguredAgentModel(
+                                        state.agents.find((agent) => agent.name === state.currentAgentName),
+                                    );
+                                    if (configuredAgentModel) {
+                                        resolved = configuredAgentModel;
+                                        nextState.currentVariant = configuredAgentModel.variant;
+                                        nextSnapshot.currentVariant = configuredAgentModel.variant;
+                                    } else {
                                         for (const p of processedProviders) {
                                             const def = defaults?.[p.id];
                                             if (def && p.models.some((m) => m.id === def && isProviderModelAvailable(m))) {
@@ -1109,25 +1167,57 @@ export const useConfigStore = create<ConfigStore>()(
                                                 };
                                             }
                                         }
-                                        if (resolved) {
-                                            nextState.currentProviderId = resolved.providerId;
-                                            nextState.currentModelId = resolved.modelId;
-                                            nextState.selectedProviderId = resolved.providerId;
-                                            nextSnapshot.currentProviderId = resolved.providerId;
-                                            nextSnapshot.currentModelId = resolved.modelId;
-                                            nextSnapshot.selectedProviderId = resolved.providerId;
-                                        }
+                                    }
+                                    if (resolved) {
+                                        nextState.currentProviderId = resolved.providerId;
+                                        nextState.currentModelId = resolved.modelId;
+                                        nextState.selectedProviderId = resolved.providerId;
+                                        nextSnapshot.currentProviderId = resolved.providerId;
+                                        nextSnapshot.currentModelId = resolved.modelId;
+                                        nextSnapshot.selectedProviderId = resolved.providerId;
                                     }
                                 }
+                            }
 
-                                return nextState;
-                            });
+                            return nextState;
+                        });
+                    };
+
+                    for (let attempt = 0; attempt < 3; attempt++) {
+                        try {
+                            ensureModelsMetadataFetch(
+                                () => get().modelsMetadata,
+                                (metadata) => set({ modelsMetadata: metadata }),
+                            );
+                            const apiResult = await opencodeClient.withDirectory(
+                                fromDirectoryKey(directoryKey),
+                                () => opencodeClient.getProviders()
+                            );
+                            commitProviders(apiResult);
 
                             return;
                         } catch (error) {
                             lastError = error;
+                            if (isWorkspaceDirectoryAccessError(error)) {
+                                break;
+                            }
                             const waitMs = 200 * (attempt + 1);
                             await new Promise((resolve) => setTimeout(resolve, waitMs));
+                        }
+                    }
+
+                    if (isWorkspaceDirectoryAccessError(lastError)) {
+                        try {
+                            const apiResult = await opencodeClient.getProviders({ directory: null });
+                            commitProviders(apiResult);
+                            const fallbackDirectory = resolveDefaultWorkspaceDirectory();
+                            if (fallbackDirectory) {
+                                useDirectoryStore.getState().setDirectory(fallbackDirectory, { showOverlay: false });
+                            }
+                            toast.warning("Saved project folder is no longer accessible — reverted to your default workspace");
+                            return;
+                        } catch (fallbackError) {
+                            lastError = fallbackError;
                         }
                     }
 
@@ -1199,7 +1289,7 @@ export const useConfigStore = create<ConfigStore>()(
                     });
                 },
 
-                setProviderModel: (providerId: string, modelId: string, variant?: string) => {
+                setProviderModel: (providerId, modelId, variant, options) => {
                     const { providers } = get();
                     const provider = providers.find((p) => p.id === providerId);
                     if (!provider?.models.some((model) => model.id === modelId && isProviderModelAvailable(model))) {
@@ -1215,14 +1305,18 @@ export const useConfigStore = create<ConfigStore>()(
                             currentProviderId: providerId,
                             currentModelId: modelId,
                             currentVariant: variant,
-                            selectedProviderId: providerId,
+                            selectedProviderId: options?.preserveSelectedProvider
+                                ? baseSnapshot.selectedProviderId
+                                : providerId,
                         };
 
                         return {
                             currentProviderId: providerId,
                             currentModelId: modelId,
                             currentVariant: variant,
-                            selectedProviderId: providerId,
+                            selectedProviderId: options?.preserveSelectedProvider
+                                ? state.selectedProviderId
+                                : providerId,
                             directoryScoped: {
                                 ...state.directoryScoped,
                                 [directoryKey]: nextSnapshot,
@@ -1367,19 +1461,10 @@ export const useConfigStore = create<ConfigStore>()(
                         ? (sessionState.draftsById[currentDraftId]?.sendConfig ?? sessionState.newSessionDraft?.sendConfig)
                         : undefined;
                     const hasExplicitDraftModel = !!currentDraftId && hasExplicitDraftModelIntent(draftSendConfig);
-                    const isReapplyingCurrentAgent = !state.currentAgentName || state.currentAgentName === target.name;
-                    const hasRehydratedDraftVariant = !sessionState.currentSessionId
-                        && options?.preserveRehydratedDraftModel !== false
-                        && isReapplyingCurrentAgent
-                        && draftSendConfig?.modelProvenance !== 'agent-default'
-                        && typeof state.currentVariant === 'string'
-                        && state.currentVariant.trim().length > 0
-                        && hasProviderModel(state.providers, state.currentProviderId, state.currentModelId);
 
                     get().setAgent(target.name, {
                         preserveCurrentModel: options?.preserveCurrentModel === true
-                            || hasExplicitDraftModel
-                            || hasRehydratedDraftVariant,
+                            || hasExplicitDraftModel,
                         recordSessionSelection: false,
                     });
                 },
@@ -1601,18 +1686,69 @@ export const useConfigStore = create<ConfigStore>()(
                         currentModelId,
                     } = get();
                     const agentOptions = options?.agents?.length ? options.agents : agents;
+                    const currentSessionId = useSessionUIStore.getState().currentSessionId;
+                    let resolvedModel: { providerId: string; modelId: string; variant?: string } | null = null;
+
+                    if (agentName && options?.preserveCurrentModel !== true) {
+                        if (currentSessionId) {
+                            const existingAgentModel = useSelectionStore.getState().getAgentModelForSession(currentSessionId, agentName);
+                            if (existingAgentModel && hasProviderModel(providers, existingAgentModel.providerId, existingAgentModel.modelId)) {
+                                resolvedModel = {
+                                    providerId: existingAgentModel.providerId,
+                                    modelId: existingAgentModel.modelId,
+                                    variant: useSelectionStore.getState().getAgentModelVariantForSession(
+                                        currentSessionId,
+                                        agentName,
+                                        existingAgentModel.providerId,
+                                        existingAgentModel.modelId,
+                                    ),
+                                };
+                            }
+                        }
+
+                        if (!resolvedModel) {
+                            const agent = agentOptions.find((candidate) => candidate.name === agentName);
+                            const configuredAgentModel = getConfiguredAgentModel(agent);
+                            if (configuredAgentModel) {
+                                const { providerId: providerID, modelId: modelID, variant: agentVariant } = configuredAgentModel;
+                                const agentProvider = providers.find((provider) => provider.id === providerID);
+                                const agentModel = agentProvider?.models.find((model) => model.id === modelID) as { variants?: Record<string, unknown> } | undefined;
+                                resolvedModel = {
+                                    providerId: providerID,
+                                    modelId: modelID,
+                                    variant: agentVariant && agentModel && isProviderModelAvailable(agentModel)
+                                        ? resolveProviderModelVariant(agentProvider, modelID, agentVariant)
+                                        : agentVariant,
+                                };
+                            }
+                        }
+
+                        if (!resolvedModel && !hasProviderModel(providers, currentProviderId, currentModelId)) {
+                            const fallback = resolveAvailableProviderModel(providers, currentProviderId, currentModelId);
+                            if (fallback) resolvedModel = fallback;
+                        }
+                    }
 
                     set((state) => {
                         const directoryKey = state.activeDirectoryKey;
                         const baseSnapshot = getDirectoryScopedConfigBase(state, directoryKey);
-
+                        const modelFields = resolvedModel
+                            ? {
+                                currentProviderId: resolvedModel.providerId,
+                                currentModelId: resolvedModel.modelId,
+                                currentVariant: resolvedModel.variant,
+                                selectedProviderId: resolvedModel.providerId,
+                            }
+                            : {};
                         const nextSnapshot: DirectoryScopedConfig = {
                             ...baseSnapshot,
                             currentAgentName: agentName,
+                            ...modelFields,
                         };
 
                         return {
                             currentAgentName: agentName,
+                            ...modelFields,
                             directoryScoped: {
                                 ...state.directoryScoped,
                                 [directoryKey]: nextSnapshot,
@@ -1621,7 +1757,6 @@ export const useConfigStore = create<ConfigStore>()(
                     });
 
                     if (agentName && options?.recordSessionSelection !== false) {
-                        const { currentSessionId } = useSessionUIStore.getState();
                         const selState = useSelectionStore.getState();
 
                         if (currentSessionId) {
@@ -1633,94 +1768,6 @@ export const useConfigStore = create<ConfigStore>()(
                             if (!existingAgentModel) {
                                 useSessionUIStore.getState().initializeNewOpenChamberSession(currentSessionId, agents);
                             }
-                        }
-                    }
-
-                    if (options?.preserveCurrentModel) {
-                        return;
-                    }
-
-                    if (agentName) {
-                        const { currentSessionId } = useSessionUIStore.getState();
-
-                        const applyResolvedModelSelection = (providerId: string, modelId: string, variant?: string) => {
-                            set((state) => {
-                                const directoryKey = state.activeDirectoryKey;
-                                const baseSnapshot = getDirectoryScopedConfigBase(state, directoryKey);
-
-                                const nextSnapshot: DirectoryScopedConfig = {
-                                    ...baseSnapshot,
-                                    currentProviderId: providerId,
-                                    currentModelId: modelId,
-                                    currentVariant: variant,
-                                    selectedProviderId: providerId,
-                                };
-
-                                return {
-                                    currentProviderId: providerId,
-                                    currentModelId: modelId,
-                                    currentVariant: variant,
-                                    selectedProviderId: providerId,
-                                    directoryScoped: {
-                                        ...state.directoryScoped,
-                                        [directoryKey]: nextSnapshot,
-                                    },
-                                };
-                            });
-                        };
-
-                        if (currentSessionId) {
-                            const existingAgentModel = useSelectionStore.getState().getAgentModelForSession(currentSessionId, agentName);
-                            if (existingAgentModel && hasProviderModel(providers, existingAgentModel.providerId, existingAgentModel.modelId)) {
-                                const savedVariant = useSelectionStore.getState().getAgentModelVariantForSession(
-                                    currentSessionId,
-                                    agentName,
-                                    existingAgentModel.providerId,
-                                    existingAgentModel.modelId,
-                                );
-                                if (
-                                    currentProviderId !== existingAgentModel.providerId
-                                    || currentModelId !== existingAgentModel.modelId
-                                    || get().currentVariant !== savedVariant
-                                ) {
-                                    applyResolvedModelSelection(existingAgentModel.providerId, existingAgentModel.modelId, savedVariant);
-                                }
-                                return;
-                            }
-                        }
-
-                        // Agent-specific model configuration is an override. It should apply
-                        // when switching agents even if the current model is otherwise valid.
-                        const agent = agentOptions.find((candidate) => candidate.name === agentName);
-                        const agentModelSelection = agent?.model;
-                        if (agentModelSelection?.providerID && agentModelSelection?.modelID) {
-                            const { providerID, modelID } = agentModelSelection;
-                            const agentProvider = providers.find((provider) => provider.id === providerID);
-                            const agentModel = agentProvider?.models.find((model) => model.id === modelID) as { variants?: Record<string, unknown> } | undefined;
-
-                            if (agentModel && isProviderModelAvailable(agentModel)) {
-                                const agentVariant = typeof (agent as { variant?: unknown }).variant === 'string'
-                                    ? (agent as { variant: string }).variant
-                                    : undefined;
-                                const nextVariant = agentVariant
-                                    ? resolveProviderModelVariant(agentProvider, modelID, agentVariant)
-                                    : undefined;
-                                applyResolvedModelSelection(providerID, modelID, nextVariant);
-                                return;
-                            }
-                        }
-
-                        if (hasProviderModel(providers, currentProviderId, currentModelId)) {
-                            return;
-                        }
-
-                        const fallback = resolveAvailableProviderModel(
-                            providers,
-                            currentProviderId,
-                            currentModelId,
-                        );
-                        if (fallback) {
-                            applyResolvedModelSelection(fallback.providerId, fallback.modelId);
                         }
                     }
                 },
@@ -1776,7 +1823,7 @@ export const useConfigStore = create<ConfigStore>()(
                 setVoiceProvider: (provider: 'browser' | 'openai' | 'openai-compatible' | 'say') => {
                     set({ voiceProvider: provider });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('voiceProvider', provider);
+                        getSafeStorage().setItem('voiceProvider', provider);
                     }
                 },
 
@@ -1784,7 +1831,7 @@ export const useConfigStore = create<ConfigStore>()(
                     const clampedRate = Math.max(0.5, Math.min(2, rate));
                     set({ speechRate: clampedRate });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('speechRate', String(clampedRate));
+                        getSafeStorage().setItem('speechRate', String(clampedRate));
                     }
                 },
 
@@ -1792,7 +1839,7 @@ export const useConfigStore = create<ConfigStore>()(
                     const clampedPitch = Math.max(0.5, Math.min(2, pitch));
                     set({ speechPitch: clampedPitch });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('speechPitch', String(clampedPitch));
+                        getSafeStorage().setItem('speechPitch', String(clampedPitch));
                     }
                 },
 
@@ -1800,79 +1847,78 @@ export const useConfigStore = create<ConfigStore>()(
                     const clampedVolume = Math.max(0, Math.min(1, volume));
                     set({ speechVolume: clampedVolume });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('speechVolume', String(clampedVolume));
+                        getSafeStorage().setItem('speechVolume', String(clampedVolume));
                     }
                 },
 
                 setSayVoice: (voice: string) => {
                     set({ sayVoice: voice });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('sayVoice', voice);
+                        getSafeStorage().setItem('sayVoice', voice);
                     }
                 },
 
                 setBrowserVoice: (voice: string) => {
                     set({ browserVoice: voice });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('browserVoice', voice);
+                        getSafeStorage().setItem('browserVoice', voice);
                     }
                 },
 
                 setOpenaiVoice: (voice: string) => {
                     set({ openaiVoice: voice });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('openaiVoice', voice);
+                        getSafeStorage().setItem('openaiVoice', voice);
                     }
                 },
 
                 setOpenaiApiKey: (apiKey: string) => {
                     set({ openaiApiKey: apiKey });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('openaiApiKey', apiKey);
+                        getSafeStorage().removeItem('openaiApiKey');
                     }
                 },
 
                 setOpenaiCompatibleUrl: (url: string) => {
                     set({ openaiCompatibleUrl: url });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('openaiCompatibleUrl', url);
+                        getSafeStorage().setItem('openaiCompatibleUrl', url);
                     }
                 },
 
                 setOpenaiCompatibleVoice: (voice: string) => {
                     set({ openaiCompatibleVoice: voice });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('openaiCompatibleVoice', voice);
+                        getSafeStorage().setItem('openaiCompatibleVoice', voice);
                     }
                 },
 
                 setOpenaiCompatibleTtsModel: (model: string) => {
                     set({ openaiCompatibleTtsModel: model });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('openaiCompatibleTtsModel', model);
+                        getSafeStorage().setItem('openaiCompatibleTtsModel', model);
                     }
                 },
 
                 setSttProvider: (provider: SttProvider) => {
-                    const normalizedProvider = normalizeSttProviderForRuntime(provider);
-                    set({ sttProvider: normalizedProvider });
+                    set({ sttProvider: provider });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('sttProvider', normalizedProvider);
+                        getSafeStorage().setItem('sttProvider', provider);
                     }
-                    updateDesktopSettings({ sttProvider: normalizedProvider }).catch(() => {});
+                    updateDesktopSettings({ sttProvider: provider }).catch(() => {});
                 },
 
                 setVoiceInputDeviceId: (deviceId: string) => {
                     set({ voiceInputDeviceId: deviceId });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('voiceInputDeviceId', deviceId);
+                        getSafeStorage().setItem('voiceInputDeviceId', deviceId);
                     }
                 },
 
                 setSttServerUrl: (url: string) => {
                     set({ sttServerUrl: url });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('sttServerUrl', url);
+                        getSafeStorage().setItem('sttServerUrl', url);
                     }
                     updateDesktopSettings({ sttServerUrl: url }).catch(() => {});
                 },
@@ -1880,7 +1926,7 @@ export const useConfigStore = create<ConfigStore>()(
                 setSttModel: (model: string) => {
                     set({ sttModel: model });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('sttModel', model);
+                        getSafeStorage().setItem('sttModel', model);
                     }
                     updateDesktopSettings({ sttModel: model }).catch(() => {});
                 },
@@ -1888,7 +1934,7 @@ export const useConfigStore = create<ConfigStore>()(
                 setWasmSttModel: (model: string) => {
                     set({ wasmSttModel: model });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('wasmSttModel', model);
+                        getSafeStorage().setItem('wasmSttModel', model);
                     }
                     updateDesktopSettings({ wasmSttModel: model }).catch(() => {});
                 },
@@ -1896,7 +1942,7 @@ export const useConfigStore = create<ConfigStore>()(
                 setSttLanguage: (lang: string) => {
                     set({ sttLanguage: lang });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('sttLanguage', lang);
+                        getSafeStorage().setItem('sttLanguage', lang);
                     }
                     updateDesktopSettings({ sttLanguage: lang }).catch(() => {});
                 },
@@ -1904,7 +1950,7 @@ export const useConfigStore = create<ConfigStore>()(
                 setSttSilenceThresholdDb: (db: number) => {
                     set({ sttSilenceThresholdDb: db });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('sttSilenceThresholdDb', String(db));
+                        getSafeStorage().setItem('sttSilenceThresholdDb', String(db));
                     }
                     updateDesktopSettings({ sttSilenceThresholdDb: db }).catch(() => {});
                 },
@@ -1912,7 +1958,7 @@ export const useConfigStore = create<ConfigStore>()(
                 setSttSilenceHoldMs: (ms: number) => {
                     set({ sttSilenceHoldMs: ms });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('sttSilenceHoldMs', String(ms));
+                        getSafeStorage().setItem('sttSilenceHoldMs', String(ms));
                     }
                     updateDesktopSettings({ sttSilenceHoldMs: ms }).catch(() => {});
                 },
@@ -1920,28 +1966,28 @@ export const useConfigStore = create<ConfigStore>()(
                 setShowMessageTTSButtons: (show: boolean) => {
                     set({ showMessageTTSButtons: show });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('showMessageTTSButtons', String(show));
+                        getSafeStorage().setItem('showMessageTTSButtons', String(show));
                     }
                 },
 
                 setVoiceModeEnabled: (enabled: boolean) => {
                     set({ voiceModeEnabled: enabled });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('voiceModeEnabled', String(enabled));
+                        getSafeStorage().setItem('voiceModeEnabled', String(enabled));
                     }
                 },
 
                 setVoicePlaybackEnabled: (enabled: boolean) => {
                     set({ voicePlaybackEnabled: enabled });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('voicePlaybackEnabled', String(enabled));
+                        getSafeStorage().setItem('voicePlaybackEnabled', String(enabled));
                     }
                 },
 
                 setSummarizeMessageTTS: (enabled: boolean) => {
                     set({ summarizeMessageTTS: enabled });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('summarizeMessageTTS', String(enabled));
+                        getSafeStorage().setItem('summarizeMessageTTS', String(enabled));
                     }
                 },
 
@@ -1949,7 +1995,7 @@ export const useConfigStore = create<ConfigStore>()(
                     const clamped = Math.max(50, Math.min(2000, threshold));
                     set({ summarizeCharacterThreshold: clamped });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('summarizeCharacterThreshold', String(clamped));
+                        getSafeStorage().setItem('summarizeCharacterThreshold', String(clamped));
                     }
                 },
 
@@ -1957,7 +2003,7 @@ export const useConfigStore = create<ConfigStore>()(
                     const clamped = Math.max(50, Math.min(2000, maxLength));
                     set({ summarizeMaxLength: clamped });
                     if (typeof window !== 'undefined') {
-                        localStorage.setItem('summarizeMaxLength', String(clamped));
+                        getSafeStorage().setItem('summarizeMaxLength', String(clamped));
                     }
                 },
 
@@ -2023,7 +2069,13 @@ export const useConfigStore = create<ConfigStore>()(
                     }
 
                     const run = (async () => {
+                        let connectionConfirmed = false;
                         try {
+                            set({
+                                isInitialized: false,
+                                initializationLoadStatus: "loading",
+                                initializationLoadError: undefined,
+                            });
                             const debug = streamDebugEnabled();
                             if (debug) console.log("Starting app initialization...");
 
@@ -2039,6 +2091,7 @@ export const useConfigStore = create<ConfigStore>()(
                                 });
                                 return;
                             }
+                            connectionConfirmed = true;
 
                             if (debug) console.log("Loading providers...");
                             await get().loadProviders();
@@ -2052,16 +2105,25 @@ export const useConfigStore = create<ConfigStore>()(
                                 throw new Error(get().agentsLoadError || "Failed to load agents");
                             }
 
-                            set({ isInitialized: true, isConnected: true, hasEverConnected: true, connectionPhase: "connected" });
+                            set({
+                                isInitialized: true,
+                                initializationLoadStatus: "ready",
+                                initializationLoadError: undefined,
+                                isConnected: true,
+                                hasEverConnected: true,
+                                connectionPhase: "connected",
+                                lastDisconnectReason: null,
+                            });
                             if (debug) console.log("App initialized successfully");
                         } catch (error) {
                             console.error("Failed to initialize app:", error);
-                            const coreDataLoadFailed =
-                                get().providersLoadStatus === "error" || get().agentsLoadStatus === "error";
+                            const message = error instanceof Error ? error.message : String(error);
                             set({
                                 isInitialized: false,
-                                isConnected: coreDataLoadFailed ? true : false,
-                                connectionPhase: coreDataLoadFailed
+                                initializationLoadStatus: "error",
+                                initializationLoadError: message || "Failed to initialize DevRyan",
+                                isConnected: connectionConfirmed,
+                                connectionPhase: connectionConfirmed
                                     ? "connected"
                                     : get().hasEverConnected ? "reconnecting" : "connecting",
                                 lastDisconnectReason: 'init_error',

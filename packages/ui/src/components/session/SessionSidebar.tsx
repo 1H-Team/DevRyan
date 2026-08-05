@@ -87,6 +87,11 @@ import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
 import type { GitHubAuthStatus } from '@/lib/api/types';
 import { markWorktreeBootstrapPending } from '@/lib/worktrees/worktreeBootstrap';
+import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
+import {
+  filterWorktreesByGrantedBranches,
+  isManagedBranchGranted,
+} from '@/lib/worktrees/managedBranches';
 
 const PROJECT_COLLAPSE_STORAGE_KEY = 'oc.sessions.projectCollapse';
 const GROUP_ORDER_STORAGE_KEY = 'oc.sessions.groupOrder';
@@ -270,6 +275,10 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   showOnlyMainWorkspace = false,
 }) => {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
+  const canManageProjects = hasAuthCapability(principal, 'manageProjects');
+  const canEditProjectMetadata = principal.scope !== 'managed' || principal.role === 'admin';
+  const shouldHideProjectAdminControls = hideDirectoryControls || !canManageProjects || !canEditProjectMetadata;
   const isSessionSearchOpen = useUIStore((state) => state.isSessionSearchOpen);
   const setIsSessionSearchOpen = useUIStore((state) => state.setSessionSearchOpen);
   const [sessionSearchQuery, setSessionSearchQuery] = React.useState('');
@@ -461,6 +470,21 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     ));
   }, [globalActiveSessions, knownSessionDirectories, liveSessions]);
 
+  const managedVisibleWorktreeDirectories = React.useMemo(() => {
+    const directories = new Set<string>();
+    const addDirectory = (value: string | null | undefined) => {
+      const normalized = normalizePath(value ?? null);
+      if (normalized) directories.add(normalized);
+    };
+    [...globalActiveSessions, ...liveSessions].forEach((session) => {
+      addDirectory((session as Session & { directory?: string | null }).directory);
+    });
+    chatDrafts.forEach((draft) => {
+      addDirectory(draft.directoryOverride ?? draft.bootstrapPendingDirectory ?? null);
+    });
+    return directories;
+  }, [chatDrafts, globalActiveSessions, liveSessions]);
+
   useSidebarUserActivityHydration(sessions, sessionUserActivity, currentDirectory);
   const archivedAssistantActivity = useSidebarArchivedAssistantActivityHydration(
     sessions,
@@ -503,12 +527,16 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         projectEntries.map(async (project) => {
           const projectPath = normalizePath(project.path);
           if (!projectPath) return;
+          const filterByGrant = principal.scope === 'managed' && principal.role !== 'admin';
           try {
             // Use store-cached isGitRepo when available; fall back to direct check for initial worktree discovery
             const cachedIsGitRepo = useGitStore.getState().directories.get(projectPath)?.isGitRepo;
             const isGitRepo = cachedIsGitRepo ?? await import('@/lib/gitApi').then(m => m.checkIsGitRepository(projectPath));
             if (!isGitRepo) return;
-            const worktrees = await listProjectWorktrees({ id: project.id, path: projectPath });
+            const discoveredWorktrees = await listProjectWorktrees({ id: project.id, path: projectPath });
+            const worktrees = filterByGrant
+              ? filterWorktreesByGrantedBranches(discoveredWorktrees, project, managedVisibleWorktreeDirectories)
+              : discoveredWorktrees;
             if (cancelled || worktrees.length === 0) return;
             worktreesByProject.set(projectPath, worktrees);
             allWorktrees.push(...worktrees);
@@ -531,7 +559,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [currentDirectory, projects]);
+  }, [currentDirectory, managedVisibleWorktreeDirectories, principal.role, principal.scope, projects]);
 
   React.useEffect(() => {
     let refreshTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -970,6 +998,15 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     sessionProjectOwnership,
   });
 
+  const hiddenProjectRootIds = React.useMemo(() => {
+    if (principal.scope !== 'managed' || principal.role === 'admin') {
+      return new Set<string>();
+    }
+    return new Set(projects
+      .filter((project) => !isManagedBranchGranted(project, projectRootBranches.get(project.id)))
+      .map((project) => project.id));
+  }, [principal.role, principal.scope, projectRootBranches, projects]);
+
   useArchivedAutoFolders({
     normalizedProjects,
     sessions,
@@ -1008,6 +1045,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     filterSessionNodesForSearch,
     buildGroupSearchText,
     foldersMap,
+    hiddenProjectRootIds,
   });
 
   const sidebarChildHydrationTargets = React.useMemo<SidebarChildHydrationTarget[]>(() => {
@@ -1499,7 +1537,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         groupSearchDataByGroup={groupSearchDataByGroup}
         expandedSessionGroups={expandedSessionGroups}
         collapsedGroups={collapsedGroups}
-        hideDirectoryControls={hideDirectoryControls}
+        hideDirectoryControls={shouldHideProjectAdminControls}
         collapsedFolderIds={collapsedFolderIds}
         toggleFolderCollapse={toggleFolderCollapse}
         renameFolder={renameFolder}
@@ -1549,7 +1587,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       groupSearchDataByGroup,
       expandedSessionGroups,
       collapsedGroups,
-      hideDirectoryControls,
+      shouldHideProjectAdminControls,
       collapsedFolderIds,
       toggleFolderCollapse,
       renameFolder,
@@ -1791,6 +1829,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         handleNewSession={handleSidebarNewSession}
         onOpenScheduledTasks={() => setScheduledTasksDialogOpen(true)}
         onOpenMultiRun={() => setMultiRunLauncherOpen(true)}
+        showMultiRun={!hideDirectoryControls}
         headerActionIconClass={headerActionIconClass}
         reserveHeaderActionsSpace={reserveHeaderActionsSpace}
         headerActionButtonClass={headerActionButtonClass}
@@ -1833,7 +1872,8 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         renderGroupSessions={renderGroupSessions}
         homeDirectory={homeDirectory}
         collapsedProjects={collapsedProjects}
-        hideDirectoryControls={hideDirectoryControls}
+        hideProjectAdminControls={shouldHideProjectAdminControls}
+        hideWorktreeControls={hideDirectoryControls}
         projectRepoStatus={projectRepoStatus}
         isDesktopShellRuntime={isDesktopShellRuntime}
         stuckProjectHeaders={stuckProjectHeaders}
@@ -1876,9 +1916,11 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         onOpenSettings={handleOpenSettings}
         githubAuthStatus={githubAuthStatus}
         isSwitchingGitHubAccount={isSwitchingGitHubAccount}
-        onGitHubAccountSwitch={handleGitHubAccountSwitch}
+        onGitHubAccountSwitch={principal.scope === 'managed' ? undefined : handleGitHubAccountSwitch}
+        showGitHubProfilePlaceholder={principal.scope === 'managed'
+          && principal.assignments.some((assignment) => Boolean(assignment.githubAccountId))}
         showRuntimeButtons={!isVSCode}
-        hideDirectoryControls={hideDirectoryControls}
+        hideDirectoryControls={shouldHideProjectAdminControls}
         handleOpenDirectoryDialog={handleOpenDirectoryDialog}
       />
 
@@ -1898,6 +1940,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
               initialIcon={editingProject.icon}
               initialColor={editingProject.color}
               initialIconBackground={editingProject.iconBackground}
+              readOnly={!canEditProjectMetadata}
               onSave={handleSaveProjectEdit}
             />
           </LazyViewBoundary>

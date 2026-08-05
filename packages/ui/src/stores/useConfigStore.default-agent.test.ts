@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from "bun:test"
 import type { Agent, Model, Provider } from "@opencode-ai/sdk/v2"
 import { useSessionUIStore } from "@/sync/session-ui-store"
 import { useSelectionStore } from "@/sync/selection-store"
+import { resolveCurrentDraftSendConfig } from "@/sync/send-config"
 import { mergeRuntimeAgentsWithConfigOverrides, useConfigStore } from "./useConfigStore"
 
 type TestProvider = Omit<Provider, "models"> & { models: Model[] }
@@ -107,6 +108,91 @@ describe("useConfigStore default agent selection", () => {
     expect(useConfigStore.getState().currentVariant).toBe("high")
   })
 
+  test("shows the Orchestrator GPT 5.6 Sol High selection that draft send will use", () => {
+    const openaiProvider: TestProvider = {
+      id: "openai",
+      name: "OpenAI",
+      source: "custom",
+      options: {},
+      env: [],
+      models: [createModel("openai", "gpt-5.6-sol", { low: {}, medium: {}, high: {} })],
+    }
+    const anthropicProvider: TestProvider = {
+      id: "anthropic",
+      name: "Anthropic",
+      source: "custom",
+      options: {},
+      env: [],
+      models: [createModel("anthropic", "claude-fable-5", { medium: {} })],
+    }
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      currentDraftId: "draft-orchestrator",
+      draftsById: {
+        "draft-orchestrator": {
+          id: "draft-orchestrator",
+          text: "",
+          createdAt: 1,
+          updatedAt: 1,
+          selectedProjectId: null,
+          directoryOverride: null,
+          parentID: null,
+        },
+      },
+      draftOrder: ["draft-orchestrator"],
+      newSessionDraft: {
+        open: true,
+        id: "draft-orchestrator",
+        directoryOverride: null,
+        parentID: null,
+      },
+    })
+    useConfigStore.setState({
+      providers: [openaiProvider, anthropicProvider],
+      agents: [{
+        name: "Orchestrator",
+        mode: "primary",
+        model: { providerID: "openai", modelID: "gpt-5.6-sol" },
+        variant: "high",
+        permission: [],
+        options: {},
+      }],
+      settingsDefaultAgent: "Orchestrator",
+      currentAgentName: "Orchestrator",
+      currentProviderId: "anthropic",
+      currentModelId: "claude-fable-5",
+      currentVariant: "medium",
+      selectedProviderId: "anthropic",
+    })
+
+    useConfigStore.getState().applyDefaultsToCurrent()
+
+    const display = useConfigStore.getState()
+    const send = resolveCurrentDraftSendConfig("draft-orchestrator")
+    expect({
+      agent: display.currentAgentName,
+      providerID: display.currentProviderId,
+      modelID: display.currentModelId,
+      variant: display.currentVariant,
+    }).toEqual({
+      agent: "Orchestrator",
+      providerID: "openai",
+      modelID: "gpt-5.6-sol",
+      variant: "high",
+    })
+    expect({
+      agent: send.agent,
+      providerID: send.providerID,
+      modelID: send.modelID,
+      variant: send.variant,
+    }).toEqual({
+      agent: "Orchestrator",
+      providerID: "openai",
+      modelID: "gpt-5.6-sol",
+      variant: "high",
+    })
+  })
+
   test("preserves Ultra from an advertised agent default", () => {
     useConfigStore.setState({
       providers: [{
@@ -135,7 +221,7 @@ describe("useConfigStore default agent selection", () => {
     expect(useConfigStore.getState().currentVariant).toBe("ultra")
   })
 
-  test("keeps a rehydrated draft model and variant when startup reapplies the default agent", () => {
+  test("replaces an ambient model when startup reapplies the default agent", () => {
     useConfigStore.setState({
       providers: [
         ...providers,
@@ -158,12 +244,12 @@ describe("useConfigStore default agent selection", () => {
     useConfigStore.getState().applyDefaultsToCurrent()
 
     expect(useConfigStore.getState().currentAgentName).toBe("Builder")
-    expect(useConfigStore.getState().currentProviderId).toBe("openai")
-    expect(useConfigStore.getState().currentModelId).toBe("gpt-5.6-sol")
-    expect(useConfigStore.getState().currentVariant).toBe("ultra")
+    expect(useConfigStore.getState().currentProviderId).toBe("opencode")
+    expect(useConfigStore.getState().currentModelId).toBe("builder-model")
+    expect(useConfigStore.getState().currentVariant).toBe("high")
   })
 
-  test("keeps a rehydrated draft variant when startup already created an empty draft placeholder", () => {
+  test("uses the configured agent model when startup already created an empty draft placeholder", () => {
     useSessionUIStore.setState({ currentSessionId: null, currentDraftId: "draft-placeholder" })
     useConfigStore.setState({
       providers: [
@@ -187,12 +273,12 @@ describe("useConfigStore default agent selection", () => {
     useConfigStore.getState().applyDefaultsToCurrent()
 
     expect(useConfigStore.getState().currentAgentName).toBe("Builder")
-    expect(useConfigStore.getState().currentProviderId).toBe("openai")
-    expect(useConfigStore.getState().currentModelId).toBe("gpt-5.6-sol")
-    expect(useConfigStore.getState().currentVariant).toBe("ultra")
+    expect(useConfigStore.getState().currentProviderId).toBe("opencode")
+    expect(useConfigStore.getState().currentModelId).toBe("builder-model")
+    expect(useConfigStore.getState().currentVariant).toBe("high")
   })
 
-  test("applies the default model and variant when a fresh draft disables rehydration preservation", () => {
+  test("applies the default model and variant atomically for a fresh draft", () => {
     useSessionUIStore.setState({ currentSessionId: null, currentDraftId: "draft-fresh" })
     useConfigStore.setState({
       providers: [
@@ -213,12 +299,26 @@ describe("useConfigStore default agent selection", () => {
       settingsDefaultAgent: "Builder",
     })
 
-    useConfigStore.getState().applyDefaultsToCurrent({ preserveRehydratedDraftModel: false })
+    const observed: Array<{ agent?: string; providerId: string; modelId: string; variant?: string }> = []
+    const unsubscribe = useConfigStore.subscribe((state) => observed.push({
+      agent: state.currentAgentName,
+      providerId: state.currentProviderId,
+      modelId: state.currentModelId,
+      variant: state.currentVariant,
+    }))
+    useConfigStore.getState().applyDefaultsToCurrent()
+    unsubscribe()
 
     expect(useConfigStore.getState().currentAgentName).toBe("Builder")
     expect(useConfigStore.getState().currentProviderId).toBe("opencode")
     expect(useConfigStore.getState().currentModelId).toBe("builder-model")
     expect(useConfigStore.getState().currentVariant).toBe("high")
+    expect(observed).toEqual([{
+      agent: "Builder",
+      providerId: "opencode",
+      modelId: "builder-model",
+      variant: "high",
+    }])
   })
 
   test("updates an empty draft immediately when the configured default agent changes", () => {
@@ -270,6 +370,26 @@ describe("useConfigStore default agent selection", () => {
     expect(observed).toEqual([
       { providerId: "opencode", modelId: "builder-model", variant: "high" },
     ])
+  })
+
+  test("can change the active model without changing the selected settings provider", () => {
+    useConfigStore.getState().setProviderModel(
+      "opencode",
+      "builder-model",
+      "high",
+      { preserveSelectedProvider: true },
+    )
+
+    const state = useConfigStore.getState()
+    expect(state.currentProviderId).toBe("opencode")
+    expect(state.currentModelId).toBe("builder-model")
+    expect(state.currentVariant).toBe("high")
+    expect(state.selectedProviderId).toBe("anthropic")
+    const snapshot = state.directoryScoped.__global__
+    expect(snapshot?.currentProviderId).toBe("opencode")
+    expect(snapshot?.currentModelId).toBe("builder-model")
+    expect(snapshot?.currentVariant).toBe("high")
+    expect(snapshot?.selectedProviderId).toBe("anthropic")
   })
 
   test("clears stale variants when activating a directory with no snapshot", async () => {
@@ -559,6 +679,29 @@ describe("useConfigStore default agent selection", () => {
     expect(useConfigStore.getState().currentModelId).toBe("builder-model")
     expect(useConfigStore.getState().currentVariant).toBe("high")
   })
+
+  test("setAgent keeps an unavailable configured model exact instead of selecting an unrelated fallback", () => {
+    useSessionUIStore.setState({ currentSessionId: null })
+    useConfigStore.setState({
+      agents: [{
+        name: "Orchestrator",
+        mode: "primary",
+        model: { providerID: "openai", modelID: "gpt-5.6-sol" },
+        variant: "high",
+        permission: [],
+        options: {},
+      }] as Agent[],
+      providers,
+      currentProviderId: "anthropic",
+      currentModelId: "claude",
+    })
+
+    useConfigStore.getState().setAgent("Orchestrator")
+
+    expect(useConfigStore.getState().currentProviderId).toBe("openai")
+    expect(useConfigStore.getState().currentModelId).toBe("gpt-5.6-sol")
+    expect(useConfigStore.getState().currentVariant).toBe("high")
+  })
 })
 
 describe("mergeRuntimeAgentsWithConfigOverrides", () => {
@@ -578,6 +721,12 @@ describe("mergeRuntimeAgentsWithConfigOverrides", () => {
       variant: "high",
       modelRefs: ["opencode/builder-model", "anthropic/claude"],
       councillors: [{ model: "anthropic/claude", variant: "medium" }],
+      modelResolution: {
+        presetName: "openai",
+        source: "root-override",
+        presetModelRef: "openai/gpt-5.5",
+        presetVariant: "medium",
+      },
       permission: [],
       options: {},
     }] as unknown as Agent[]
@@ -593,6 +742,12 @@ describe("mergeRuntimeAgentsWithConfigOverrides", () => {
     expect((merged[0] as Agent & { councillors?: unknown[] }).councillors).toEqual([
       { model: "anthropic/claude", variant: "medium" },
     ])
+    expect((merged[0] as Agent & { modelResolution?: unknown }).modelResolution).toEqual({
+      presetName: "openai",
+      source: "root-override",
+      presetModelRef: "openai/gpt-5.5",
+      presetVariant: "medium",
+    })
   })
 
   test("keeps metadata-only config agents out of the executable runtime list", () => {

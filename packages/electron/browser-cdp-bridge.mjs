@@ -1,7 +1,7 @@
 // Session-scoped CDP bridge for the in-app browser pane.
 //
 // One loopback WebSocket server is shared by every active lease. Each lease
-// gets an unguessable capability path, one explicitly bound <webview> guest,
+// gets an unguessable capability path, one explicitly bound browser surface,
 // and at most one controlling client. Closing any one of those resources only
 // tears down its lease; the listener is stopped after the final lease closes.
 
@@ -175,6 +175,8 @@ const webSocketCloseReason = (reason) => {
  * @param {(options: object) => object} deps.createWebSocketServer ws.WebSocketServer-compatible factory
  * @param {{ randomBytes: (size: number) => { toString: (enc: string) => string } }} deps.crypto
  * @param {(input: object) => void} [deps.onAgentInput]
+ * @param {(detail: object) => void | Promise<void>} [deps.onBeforeCommand]
+ * @param {(detail: object) => void | Promise<void>} [deps.onAfterCommand]
  * @param {(status: object) => void} [deps.onStatusChange]
  * @param {(message: string, error?: unknown) => void} [deps.log]
  * @param {string} [deps.host]
@@ -187,6 +189,8 @@ export const createBrowserCdpBridge = ({
   createWebSocketServer,
   crypto,
   onAgentInput,
+  onBeforeCommand,
+  onAfterCommand,
   onStatusChange,
   log = () => {},
   host = '127.0.0.1',
@@ -452,8 +456,17 @@ export const createBrowserCdpBridge = ({
     timer.unref?.();
     lease.inFlight.set(message.id, { fence: commandFence, timer });
 
-    Promise.resolve()
-      .then(() => guest.debugger.sendCommand(message.method, message.params))
+    const commandDetail = { leaseId: lease.leaseId, method: message.method };
+    let beforeCommand;
+    try {
+      beforeCommand = onBeforeCommand?.(commandDetail);
+    } catch (error) {
+      beforeCommand = Promise.reject(error);
+    }
+    const forwarded = beforeCommand && typeof beforeCommand.then === 'function'
+      ? Promise.resolve(beforeCommand).then(() => guest.debugger.sendCommand(message.method, message.params))
+      : Promise.resolve().then(() => guest.debugger.sendCommand(message.method, message.params));
+    forwarded
       .then((result) => {
         finishForwardedCommand(lease, message, commandFence, { ok: true, result });
       })
@@ -461,6 +474,11 @@ export const createBrowserCdpBridge = ({
         finishForwardedCommand(lease, message, commandFence, {
           ok: false,
           message: errorMessage(error, 'Command failed'),
+        });
+      })
+      .finally(() => {
+        Promise.resolve(onAfterCommand?.(commandDetail)).catch((error) => {
+          log(`[cdp-bridge] onAfterCommand failed for lease ${lease.leaseId}`, error);
         });
       });
   };

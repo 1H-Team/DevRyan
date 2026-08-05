@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { getRequestPrincipal } from '../multi-user/request-context.js';
 
 const OPENCHAMBER_DATA_DIR = process.env.OPENCHAMBER_DATA_DIR
   ? path.resolve(process.env.OPENCHAMBER_DATA_DIR)
@@ -8,6 +9,7 @@ const OPENCHAMBER_DATA_DIR = process.env.OPENCHAMBER_DATA_DIR
 
 const STORAGE_DIR = OPENCHAMBER_DATA_DIR;
 const STORAGE_FILE = path.join(STORAGE_DIR, 'github-auth.json');
+const STORAGE_LOCK_DIR = path.join(STORAGE_DIR, '.github-auth.lock');
 const SETTINGS_FILE = path.join(OPENCHAMBER_DATA_DIR, 'settings.json');
 
 const DEFAULT_GITHUB_CLIENT_ID = 'Ov23lizomPOC3eFYo56r';
@@ -15,7 +17,37 @@ const DEFAULT_GITHUB_SCOPES = 'repo read:org workflow read:user user:email';
 
 function ensureStorageDir() {
   if (!fs.existsSync(STORAGE_DIR)) {
-    fs.mkdirSync(STORAGE_DIR, { recursive: true });
+    fs.mkdirSync(STORAGE_DIR, { recursive: true, mode: 0o700 });
+  }
+  try { fs.chmodSync(STORAGE_DIR, 0o700); } catch { /* best-effort */ }
+}
+
+const lockSleepArray = new Int32Array(new SharedArrayBuffer(4));
+
+function withAuthFileLock(callback) {
+  ensureStorageDir();
+  const deadline = Date.now() + 5_000;
+  while (true) {
+    try {
+      fs.mkdirSync(STORAGE_LOCK_DIR, { mode: 0o700 });
+      break;
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      try {
+        const age = Date.now() - fs.statSync(STORAGE_LOCK_DIR).mtimeMs;
+        if (age > 30_000) {
+          fs.rmSync(STORAGE_LOCK_DIR, { recursive: true, force: true });
+          continue;
+        }
+      } catch { /* retry */ }
+      if (Date.now() >= deadline) throw new Error('Timed out acquiring GitHub auth storage lock');
+      Atomics.wait(lockSleepArray, 0, 0, 10);
+    }
+  }
+  try {
+    return callback();
+  } finally {
+    try { fs.rmdirSync(STORAGE_LOCK_DIR); } catch { /* stale-lock recovery handles this */ }
   }
 }
 
@@ -25,6 +57,7 @@ function readJsonFile() {
     return null;
   }
   try {
+    try { fs.chmodSync(STORAGE_FILE, 0o600); } catch { /* best-effort */ }
     const raw = fs.readFileSync(STORAGE_FILE, 'utf8');
     const trimmed = raw.trim();
     if (!trimmed) {
@@ -148,10 +181,7 @@ function readAuthList() {
   if (!data) {
     return [];
   }
-  const { list, changed } = normalizeAuthList(data);
-  if (changed) {
-    writeJsonFile(list);
-  }
+  const { list } = normalizeAuthList(data);
   return list;
 }
 
@@ -160,6 +190,13 @@ function writeAuthList(list) {
 }
 
 export function getGitHubAuth() {
+  const principal = getRequestPrincipal();
+  if (principal?.scope === 'managed') {
+    const accountId = principal.githubAccountId || null;
+    if (!accountId) return null;
+    const entry = readAuthList().find((candidate) => candidate.accountId === accountId);
+    return entry?.accessToken ? entry : null;
+  }
   const list = readAuthList();
   if (!list.length) {
     return null;
@@ -171,8 +208,28 @@ export function getGitHubAuth() {
   return current;
 }
 
+export function getGitHubAuthById(accountId) {
+  if (typeof accountId !== 'string' || !accountId.trim()) return null;
+  const entry = readAuthList().find((candidate) => candidate.accountId === accountId.trim());
+  return entry?.accessToken ? entry : null;
+}
+
 export function getGitHubAuthAccounts() {
-  const list = readAuthList();
+  const principal = getRequestPrincipal();
+  const assignedAccountId = principal?.scope === 'managed'
+    ? principal.githubAccountId || null
+    : null;
+  const list = assignedAccountId
+    ? readAuthList().filter((entry) => entry.accountId === assignedAccountId)
+    : principal?.scope === 'managed' ? [] : readAuthList();
+  return publicAuthAccounts(list);
+}
+
+export function getAllGitHubAuthAccounts() {
+  return publicAuthAccounts(readAuthList());
+}
+
+function publicAuthAccounts(list) {
   return list
     .filter((entry) => entry?.user && entry.accountId)
     .map((entry) => ({
@@ -183,7 +240,7 @@ export function getGitHubAuthAccounts() {
     }));
 }
 
-export function setGitHubAuth({ accessToken, scope, tokenType, user, accountId }) {
+export function setGitHubAuth({ accessToken, scope, tokenType, user, accountId, makeCurrent = false }) {
   if (!accessToken || typeof accessToken !== 'string') {
     throw new Error('accessToken is required');
   }
@@ -203,69 +260,75 @@ export function setGitHubAuth({ accessToken, scope, tokenType, user, accountId }
     accountId,
   });
 
-  const list = readAuthList();
-  const existingIndex = list.findIndex((entry) => entry.accountId === resolvedAccountId);
-  const nextEntry = {
-    accessToken,
-    scope: typeof scope === 'string' ? scope : '',
-    tokenType: typeof tokenType === 'string' ? tokenType : 'bearer',
-    createdAt: Date.now(),
-    user: normalizedUser || null,
-    current: true,
-    accountId: resolvedAccountId,
-  };
-
-  if (existingIndex >= 0) {
-    list[existingIndex] = nextEntry;
-  } else {
-    list.push(nextEntry);
-  }
-
-  list.forEach((entry, index) => {
-    entry.current = index === (existingIndex >= 0 ? existingIndex : list.length - 1);
+  return withAuthFileLock(() => {
+    const list = readAuthList();
+    const existingIndex = list.findIndex((entry) => entry.accountId === resolvedAccountId);
+    const existingCurrent = list.find((entry) => entry.current)?.accountId || null;
+    const shouldBecomeCurrent = makeCurrent === true || !existingCurrent;
+    const nextEntry = {
+      accessToken,
+      scope: typeof scope === 'string' ? scope : '',
+      tokenType: typeof tokenType === 'string' ? tokenType : 'bearer',
+      createdAt: Date.now(),
+      user: normalizedUser || null,
+      current: shouldBecomeCurrent,
+      accountId: resolvedAccountId,
+    };
+    if (existingIndex >= 0) list[existingIndex] = nextEntry;
+    else list.push(nextEntry);
+    list.forEach((entry) => {
+      if (entry.accountId !== resolvedAccountId && shouldBecomeCurrent) entry.current = false;
+      if (!shouldBecomeCurrent) entry.current = entry.accountId === existingCurrent;
+    });
+    writeAuthList(list);
+    return nextEntry;
   });
-  writeAuthList(list);
-  return nextEntry;
 }
 
 export function activateGitHubAuth(accountId) {
   if (typeof accountId !== 'string' || !accountId.trim()) {
     return false;
   }
-  const list = readAuthList();
-  const index = list.findIndex((entry) => entry.accountId === accountId.trim());
-  if (index === -1) {
-    return false;
-  }
-  list.forEach((entry, idx) => {
-    entry.current = idx === index;
+  return withAuthFileLock(() => {
+    const list = readAuthList();
+    const index = list.findIndex((entry) => entry.accountId === accountId.trim());
+    if (index === -1) return false;
+    list.forEach((entry, idx) => { entry.current = idx === index; });
+    writeAuthList(list);
+    return true;
   });
-  writeAuthList(list);
-  return true;
 }
 
-export function clearGitHubAuth() {
+export function clearGitHubAuth(accountId) {
   try {
-    const list = readAuthList();
-    if (!list.length) {
-      return true;
-    }
-    const remaining = list.filter((entry) => !entry.current);
-    if (!remaining.length) {
-      if (fs.existsSync(STORAGE_FILE)) {
-        fs.unlinkSync(STORAGE_FILE);
-      }
-      return true;
-    }
-    remaining.forEach((entry, index) => {
-      entry.current = index === 0;
-    });
-    writeAuthList(remaining);
-    return true;
+    const principal = getRequestPrincipal();
+    if (principal?.scope === 'managed') return false;
+    const requestedAccountId = typeof accountId === 'string' && accountId.trim()
+      ? accountId.trim()
+      : readAuthList().find((entry) => entry.current)?.accountId;
+    return requestedAccountId ? clearGitHubAuthById(requestedAccountId) : true;
   } catch (error) {
     console.error('Failed to clear GitHub auth file:', error);
     return false;
   }
+}
+
+export function clearGitHubAuthById(accountId) {
+  const requestedAccountId = typeof accountId === 'string' ? accountId.trim() : '';
+  if (!requestedAccountId) return false;
+  return withAuthFileLock(() => {
+    const list = readAuthList();
+    const remaining = list.filter((entry) => entry.accountId !== requestedAccountId);
+    if (remaining.length === list.length) return false;
+    if (!remaining.length) {
+      if (fs.existsSync(STORAGE_FILE)) fs.unlinkSync(STORAGE_FILE);
+      return true;
+    }
+    const hasCurrent = remaining.some((entry) => entry.current);
+    remaining.forEach((entry, index) => { entry.current = hasCurrent ? entry.current : index === 0; });
+    writeAuthList(remaining);
+    return true;
+  });
 }
 
 export function getGitHubClientId() {

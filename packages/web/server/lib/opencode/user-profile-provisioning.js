@@ -276,6 +276,19 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
       }
     }
 
+    const superpowersBootstrapPath = pathApi.join(
+      configDirectory,
+      'skills',
+      'superpowers',
+      'using-superpowers',
+      'SKILL.md',
+    );
+    if (!fsApi.existsSync(superpowersBootstrapPath)) {
+      result.warnings.push(
+        'Superpowers skills are not installed; the optional adapter will remain disabled.',
+      );
+    }
+
     for (const [relativePath, previousEntry] of Object.entries(previousFiles)) {
       if (relativePath.startsWith('skills/')) continue;
       if (Object.prototype.hasOwnProperty.call(nextFiles, relativePath) || !isRecord(previousEntry)) continue;

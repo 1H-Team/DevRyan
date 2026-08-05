@@ -15,15 +15,19 @@ const resolveInstalledSkillsDirectory = () => {
 };
 
 let bootstrapCache;
+const warnedMissingBootstrapPaths = new Set();
 
 export const DevRyanSuperpowersPlugin = async () => {
   const skillsDirectory = resolveInstalledSkillsDirectory();
   const bootstrapPath = path.join(skillsDirectory, 'using-superpowers', 'SKILL.md');
   if (!fs.existsSync(bootstrapPath)) {
-    throw new Error(
-      `[DevRyan] Installed Superpowers bootstrap skill is missing: ${bootstrapPath}. `
-      + 'Repair the managed OpenCode profile before starting OpenCode.',
-    );
+    if (!warnedMissingBootstrapPaths.has(bootstrapPath)) {
+      warnedMissingBootstrapPaths.add(bootstrapPath);
+      console.warn(
+        '[DevRyan] Superpowers skills are not installed; the optional adapter is disabled.',
+      );
+    }
+    return {};
   }
 
   const getBootstrapContent = () => {

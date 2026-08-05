@@ -398,6 +398,54 @@ A single store with N properties means every subscriber re-evaluates on every st
 - **Never cache directory strings in closures.** Directory can change at any time (worktree switch). Read it dynamically from `opencodeClient.getDirectory()` at call time.
 - **Pass directory hints when the source of truth isn't available yet.** Newly created sessions aren't in the sync store until SSE delivers them. Pass the known directory as a parameter instead of relying on lookup.
 
+## Multi-user visual verification (agent-test accounts)
+
+The Supabase multi-user control plane reserves two fixture accounts exclusively
+for AI agents doing visual verification. They are `account_kind = 'agent_test'`
+in `user_profiles`, are deliberately hidden from the Users settings page and
+`GET /api/admin/users`, and pass through the exact same authentication, policy,
+assignment, ownership, and audit enforcement as human accounts:
+
+- **Test Administrator** — `admin@1health.ae` (role `admin`; verifies admin
+  flows: host-path pass-through, project registration, user management).
+- **Test Developer** — `developer@1health.ae` (role `developer`; verifies the
+  restricted experience: path aliasing, out-of-scope 403s, hidden settings).
+
+**Agents must never type, store, or transmit passwords.** Instead use the
+loopback-only, password-free login endpoint (`handleAgentTestSession` in
+`packages/web/server/lib/multi-user/runtime.js`, mounted at
+`POST /auth/agent-test-session` in `server/lib/opencode/core-routes.js`). It
+only accepts active `agent_test` profiles, only from 127.0.0.1, and mints a
+normal 12-hour app session (audited as `auth.agent_test_login`). From the
+app's own browser tab:
+
+```js
+await fetch('/auth/agent-test-session', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'X-DevRyan-CSRF': '1' },
+  body: JSON.stringify({ email: 'developer@1health.ae' }),
+});
+location.reload();
+```
+
+Calling it again with the other email switches roles; `POST /auth/logout`
+(with the CSRF header) ends the session.
+
+**Verification server recipe.** Only one DevRyan runtime may own managed
+OpenCode orchestration per data directory. If the user's own app is running,
+do not fight it — start a second server against an isolated data directory
+(copy `supabase.json` into it so multi-user mode is enabled) on a spare port:
+
+```bash
+mkdir -p ~/.config/openchamber-verify
+cp ~/.config/openchamber/supabase.json ~/.config/openchamber-verify/
+OPENCHAMBER_DATA_DIR=~/.config/openchamber-verify bun packages/web/server/index.js --port 3101
+```
+
+Build first (`bun run build:ui && bun run build:web`) so the served UI matches
+the working tree. Prefer the in-app browser preview tooling over raw shells
+for the server so logs stay inspectable.
+
 ## Diagnostic journal (check it before theorizing)
 
 Whenever the user reports a DevRyan runtime issue — stuck or hung sessions, missing or duplicated events, failed/rejected prompts, aborts that did not take effect, streaming or sync anomalies, worktree or evidence lifecycle issues — inspect the journal before forming a code-only theory. Start from the repository root:

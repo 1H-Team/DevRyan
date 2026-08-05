@@ -5,6 +5,7 @@ const resetSelectionStore = () => {
   useSelectionStore.setState({
     sessionModelSelections: new Map(),
     sessionAgentSelections: new Map(),
+    builderHandoffClearedSessionIds: new Set(),
     sessionPlanModeSelections: new Map(),
     defaultPlanModeSelection: false,
     draftPlanModeSelection: false,
@@ -85,6 +86,7 @@ describe("selection-store agent model selections", () => {
 
     store.saveSessionModelSelection(targetSession, "openai", "gpt-5.5")
     store.saveSessionAgentSelection(targetSession, "builder")
+    store.markBuilderHandoffCleared(targetSession)
     store.setSessionPlanMode(targetSession, true)
     store.saveAgentModelForSession(targetSession, "builder", "anthropic", "claude")
     store.saveAgentModelVariantForSession(targetSession, "builder", "anthropic", "claude", "high")
@@ -101,6 +103,7 @@ describe("selection-store agent model selections", () => {
     const next = useSelectionStore.getState()
     expect(next.getSessionModelSelection(targetSession)).toBe(null)
     expect(next.getSessionAgentSelection(targetSession)).toBe(null)
+    expect(next.hasBuilderHandoffClearance(targetSession)).toBe(false)
     expect(next.getSessionPlanMode(targetSession)).toBe(false)
     expect(next.getAgentModelForSession(targetSession, "builder")).toBe(null)
     expect(next.getAgentModelVariantForSession(targetSession, "builder", "anthropic", "claude")).toBe(undefined)
@@ -110,6 +113,19 @@ describe("selection-store agent model selections", () => {
     expect(next.getSessionPlanMode(retainedSession)).toBe(true)
     expect(next.getAgentModelForSession(retainedSession, "reviewer")).toEqual({ providerId: "openai", modelId: "gpt-5.6" })
     expect(next.getAgentModelVariantForSession(retainedSession, "reviewer", "openai", "gpt-5.6")).toBe("medium")
+  })
+
+  test("retains explicit Builder clearance until the session leaves Builder mode", () => {
+    const store = useSelectionStore.getState()
+
+    store.markBuilderHandoffCleared("session-builder")
+    store.saveSessionAgentSelection("session-builder", "Builder")
+
+    expect(useSelectionStore.getState().hasBuilderHandoffClearance("session-builder")).toBe(true)
+
+    store.saveSessionAgentSelection("session-builder", "Orchestrator")
+
+    expect(useSelectionStore.getState().hasBuilderHandoffClearance("session-builder")).toBe(false)
   })
 
   test("promotes draft selections into a real session and clears the draft", () => {

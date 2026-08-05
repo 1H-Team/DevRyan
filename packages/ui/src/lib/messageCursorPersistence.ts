@@ -1,3 +1,4 @@
+import { getSafeStorage, getStoragePrincipal } from '@/stores/utils/safeStorage';
 const DB_NAME = 'openchamber-message-cursors';
 const STORE_NAME = 'cursors';
 const DB_VERSION = 1;
@@ -9,6 +10,7 @@ type CursorRecord = {
 };
 
 const isBrowser = () => typeof window !== 'undefined';
+const principalCursorKey = (sessionId: string): string => `${getStoragePrincipal()}:${sessionId}`;
 
 const hasIndexedDbSupport = () => {
   return isBrowser() && typeof indexedDB !== 'undefined';
@@ -67,7 +69,7 @@ const readFallback = (): Record<string, CursorRecord> => {
   }
 
   try {
-    const raw = window.localStorage.getItem(FALLBACK_KEY);
+    const raw = getSafeStorage().getItem(FALLBACK_KEY);
     if (!raw) {
       return {};
     }
@@ -84,7 +86,7 @@ const writeFallback = (map: Record<string, CursorRecord>) => {
   }
 
   try {
-    window.localStorage.setItem(FALLBACK_KEY, JSON.stringify(map));
+    getSafeStorage().setItem(FALLBACK_KEY, JSON.stringify(map));
   } catch { /* ignored */ }
 };
 
@@ -103,7 +105,7 @@ export const saveSessionCursor = async (
       await new Promise<void>((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
-        store.put({ messageId, completedAt }, sessionId);
+        store.put({ messageId, completedAt }, principalCursorKey(sessionId));
 
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error ?? new Error('Cursor write failed'));
@@ -131,7 +133,7 @@ export const readSessionCursor = async (
       const record = await new Promise<CursorRecord | null>((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, 'readonly');
         const store = tx.objectStore(STORE_NAME);
-        const request = store.get(sessionId);
+        const request = store.get(principalCursorKey(sessionId));
 
         request.onsuccess = () => {
           resolve((request.result as CursorRecord) ?? null);
@@ -160,7 +162,7 @@ export const clearSessionCursor = async (sessionId: string) => {
       await new Promise<void>((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
-        store.delete(sessionId);
+        store.delete(principalCursorKey(sessionId));
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error ?? new Error('Cursor delete failed'));
         tx.onabort = () => reject(tx.error ?? new Error('Cursor delete aborted'));

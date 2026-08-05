@@ -29,6 +29,7 @@ import {
     LazyDiffView,
     LazyGitView,
     LazyMultiRunWindow,
+    LazyManagedSettingsView,
     LazyPlanView,
     LazySettingsView,
     LazyTerminalView,
@@ -36,6 +37,7 @@ import {
 } from '@/components/views/lazyViews';
 
 import { ChatView } from '@/components/views/ChatView';
+import { canReadSettingsPage, hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
 import {
     getAutoClosedAfterPanelVisibilityChange,
     getResponsivePanelDecision,
@@ -51,6 +53,10 @@ const DESKTOP_RIGHT_SIDEBAR_MAX_WIDTH = 860;
 
 export const MainLayout: React.FC = () => {
     const { t } = useI18n();
+    const principal = useAuthPrincipal();
+    const canUseTerminal = hasAuthCapability(principal, 'terminal');
+    const canManageProjects = hasAuthCapability(principal, 'manageProjects');
+    const canCheckForUpdates = canReadSettingsPage(principal, 'about');
     const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
     const isRightSidebarOpen = useUIStore((state) => state.isRightSidebarOpen);
     const isBottomTerminalOpen = useUIStore((state) => state.isBottomTerminalOpen);
@@ -87,6 +93,18 @@ export const MainLayout: React.FC = () => {
     // Right drawer motion value
     const rightDrawerX = useMotionValue(0);
     const rightDrawerWidth = useRef(0);
+
+    React.useEffect(() => {
+        if (!canUseTerminal) {
+            setBottomTerminalOpen(false);
+            if (useUIStore.getState().activeMainTab === 'terminal') {
+                useUIStore.getState().setActiveMainTab('chat');
+            }
+        }
+        if (!canManageProjects) {
+            setMultiRunLauncherOpen(false);
+        }
+    }, [canManageProjects, canUseTerminal, setBottomTerminalOpen, setMultiRunLauncherOpen]);
 
     // Compute drawer width
     useEffect(() => {
@@ -153,6 +171,9 @@ export const MainLayout: React.FC = () => {
     // Trigger initial update check shortly after mount, then repeat using server-suggested cadence.
     const checkForUpdates = useUpdateStore((state) => state.checkForUpdates);
     React.useEffect(() => {
+        if (!canCheckForUpdates) {
+            return;
+        }
         const initialDelayMs = 3000;
         const defaultIntervalMs = 60 * 60 * 1000;
         const minIntervalMs = 5 * 60 * 1000;
@@ -184,7 +205,7 @@ export const MainLayout: React.FC = () => {
                 window.clearTimeout(timer);
             }
         };
-    }, [checkForUpdates]);
+    }, [canCheckForUpdates, checkForUpdates]);
 
     React.useEffect(() => {
         const previous = useUIStore.getState().isMobile;
@@ -330,11 +351,11 @@ export const MainLayout: React.FC = () => {
             case 'diff':
                 return <LazyViewBoundary><LazyDiffView /></LazyViewBoundary>;
             case 'terminal':
-                return <LazyViewBoundary><LazyTerminalView /></LazyViewBoundary>;
+                return canUseTerminal ? <LazyViewBoundary><LazyTerminalView /></LazyViewBoundary> : null;
             default:
                 return null;
         }
-    }, [activeMainTab]);
+    }, [activeMainTab, canUseTerminal]);
 
     const isChatActive = activeMainTab === 'chat';
     const visibleSidebarWidth = React.useMemo(() => {
@@ -548,7 +569,7 @@ export const MainLayout: React.FC = () => {
                                     <ErrorBoundary>{secondaryView}</ErrorBoundary>
                                 </div>
                             )}
-                            {isMultiRunLauncherOpen && (
+                            {canManageProjects && isMultiRunLauncherOpen && (
                                 <div className="absolute inset-0 z-10 bg-background">
                                     <ErrorBoundary>
                                         <MultiRunLauncher
@@ -667,13 +688,13 @@ export const MainLayout: React.FC = () => {
                                         <ContextPanel />
                                     </div>
                                 </div>
-                                <BottomTerminalDock isOpen={isBottomTerminalOpen} isMobile={isMobile}>
+                                {canUseTerminal ? <BottomTerminalDock isOpen={isBottomTerminalOpen} isMobile={isMobile}>
                                     {isBottomTerminalOpen ? (
                                         <LazyViewBoundary>
                                             <LazyTerminalView />
                                         </LazyViewBoundary>
                                     ) : null}
-                                </BottomTerminalDock>
+                                </BottomTerminalDock> : null}
                             </div>
                             <RightSidebar
                                 isOpen={isRightSidebarOpen}
@@ -689,13 +710,13 @@ export const MainLayout: React.FC = () => {
                         </div>
 
                     </div>
-                    <DeferredLazyView active={isMultiRunLauncherOpen}>
+                    <DeferredLazyView active={canManageProjects && isMultiRunLauncherOpen}>
                         <LazyViewBoundary>
-                            <LazyMultiRunWindow
-                                open={isMultiRunLauncherOpen}
+                            {canManageProjects ? <LazyMultiRunWindow
+                                open={canManageProjects && isMultiRunLauncherOpen}
                                 onOpenChange={setMultiRunLauncherOpen}
                                 initialPrompt={multiRunLauncherPrefillPrompt}
-                            />
+                            /> : null}
                         </LazyViewBoundary>
                     </DeferredLazyView>
                 </>
@@ -707,7 +728,11 @@ export const MainLayout: React.FC = () => {
                         style={isMobile ? { paddingTop: 'var(--oc-safe-area-top, 0px)' } : undefined}
                     >
                         <LazyViewBoundary>
-                            <LazySettingsView onClose={() => setSettingsDialogOpen(false)} />
+                            {principal.scope === 'managed' && principal.role !== 'admin' ? (
+                                <LazyManagedSettingsView onClose={() => setSettingsDialogOpen(false)} />
+                            ) : (
+                                <LazySettingsView onClose={() => setSettingsDialogOpen(false)} />
+                            )}
                         </LazyViewBoundary>
                     </div>
                 )}

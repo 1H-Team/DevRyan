@@ -2,7 +2,7 @@ import { DateTime, IANAZone } from 'luxon';
 import parser from 'cron-parser';
 import { writeFileAtomic } from '@openchamber/harness-runtime';
 
-const PROJECT_CONFIG_VERSION = 1;
+const PROJECT_CONFIG_VERSION = 2;
 const MAX_TASK_NAME_LENGTH = 80;
 const MAX_TASK_PROMPT_LENGTH = 20_000;
 const MAX_CRON_LENGTH = 200;
@@ -302,6 +302,12 @@ const normalizeTaskForStorage = (value, options) => {
 
   const schedule = normalizeSchedule(value.schedule, existingTask?.schedule);
   const execution = normalizeExecution(value.execution);
+  const ownerUserId = Object.prototype.hasOwnProperty.call(options, 'ownerUserId')
+    ? asNonEmptyString(options.ownerUserId)
+    : (asNonEmptyString(existingTask?.ownerUserId) || asNonEmptyString(value.ownerUserId));
+  const targetBranchName = Object.prototype.hasOwnProperty.call(options, 'targetBranchName')
+    ? asNonEmptyString(options.targetBranchName)
+    : (asNonEmptyString(value?.target?.branchName) || asNonEmptyString(existingTask?.target?.branchName));
 
   const nowMs = Math.max(0, Math.round(now));
   const baseState = normalizeState(value.state, existingTask?.state);
@@ -317,6 +323,8 @@ const normalizeTaskForStorage = (value, options) => {
     enabled,
     schedule,
     execution,
+    ...(ownerUserId ? { ownerUserId } : {}),
+    ...(targetBranchName ? { target: { branchName: targetBranchName } } : {}),
     state,
   };
 };
@@ -466,7 +474,7 @@ export const createProjectConfigRuntime = (deps) => {
     },
   );
 
-  const upsertScheduledTask = async (projectID, taskInput) => {
+  const upsertScheduledTask = async (projectID, taskInput, options = {}) => {
     return withProjectWriteLock(projectID, async () => {
       const now = Date.now();
       const current = await readProjectConfigFromDisk(projectID);
@@ -481,6 +489,8 @@ export const createProjectConfigRuntime = (deps) => {
         createId: taskIDFactory,
         existingTask,
         allowCreate: true,
+        ...(Object.prototype.hasOwnProperty.call(options, 'ownerUserId') ? { ownerUserId: options.ownerUserId } : {}),
+        ...(Object.prototype.hasOwnProperty.call(options, 'targetBranchName') ? { targetBranchName: options.targetBranchName } : {}),
       });
 
       const nextTasks = current.scheduledTasks.slice();

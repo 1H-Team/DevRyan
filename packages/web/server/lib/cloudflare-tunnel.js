@@ -1,10 +1,16 @@
 import { spawn, spawnSync } from 'child_process';
+import { createHash } from 'node:crypto';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import yaml from 'yaml';
 import { normalizeManagedRemoteTunnelToken } from './tunnels/managed-token.js';
+import { startLoopbackOriginRelay } from './tunnels/origin-relay.js';
+import {
+  ManagedRemotePublicReachabilityError,
+  verifyManagedRemotePublicReachability,
+} from './tunnels/public-reachability.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,6 +24,8 @@ const CLOUDFLARED_INTERRUPT_GRACE_MS = 1000;
 const CLOUDFLARED_TERMINATE_GRACE_MS = 1500;
 const CLOUDFLARED_KILL_GRACE_MS = 1000;
 const CLOUDFLARED_LOG_MAX_LINES = 20;
+const MANAGED_REMOTE_HEALTH_CACHE_MS = 5000;
+const MANAGED_REMOTE_HEALTH_TIMEOUT_MS = 3000;
 const TUNNEL_MODE_QUICK = 'quick';
 const TUNNEL_MODE_MANAGED_REMOTE = 'managed-remote';
 const TUNNEL_MODE_MANAGED_LOCAL = 'managed-local';
@@ -297,6 +305,12 @@ const FATAL_LOG_PATTERNS = [
   /provided tunnel credentials are invalid/i,
 ];
 
+const QUIC_FAILURE_LOG_PATTERNS = [
+  /failed to dial[^\n]*quic/i,
+  /quic[^\n]*(?:failed|timeout|unreachable|handshake)/i,
+  /timeout: no recent network activity/i,
+];
+
 function isCloudflaredReadyLogLine(line) {
   if (!line) {
     return false;
@@ -309,6 +323,10 @@ function isCloudflaredFatalLogLine(line) {
     return false;
   }
   return FATAL_LOG_PATTERNS.some((pattern) => pattern.test(line));
+}
+
+function hasCloudflaredQuicFailure(lines) {
+  return lines.some((line) => QUIC_FAILURE_LOG_PATTERNS.some((pattern) => pattern.test(line)));
 }
 
 function assertReadableFile(filePath, contextLabel) {
@@ -611,8 +629,20 @@ export async function startCloudflareQuickTunnel({ originUrl }) {
   };
 }
 
-export async function startCloudflareManagedRemoteTunnel({ token, hostname, tokenFilePath, activePort }) {
-  const cfCheck = await checkCloudflaredAvailable();
+export async function startCloudflareManagedRemoteTunnel({
+  token,
+  hostname,
+  tokenFilePath,
+  activePort,
+  originPort,
+  runtimeInstanceId,
+  fetchImpl = globalThis.fetch,
+  startOriginRelay = startLoopbackOriginRelay,
+  verifyPublicReachability = verifyManagedRemotePublicReachability,
+  checkAvailability = checkCloudflaredAvailable,
+  spawnManagedConnector = spawnCloudflared,
+}) {
+  const cfCheck = await checkAvailability();
 
   if (!cfCheck.available) {
     printCloudflareTunnelInstallHelp();
@@ -628,6 +658,38 @@ export async function startCloudflareManagedRemoteTunnel({ token, hostname, toke
   if (!normalizedHost) {
     throw new Error('Managed remote tunnel hostname is required');
   }
+  if (!Number.isInteger(activePort) || activePort <= 0) {
+    throw new Error('DevRyan active port is unavailable');
+  }
+  if (!Number.isInteger(originPort) || originPort <= 0) {
+    throw new Error('Managed remote origin port is required');
+  }
+  if (typeof runtimeInstanceId !== 'string' || runtimeInstanceId.length === 0) {
+    throw new Error('DevRyan runtime instance identity is unavailable');
+  }
+
+  const publicUrl = `https://${normalizedHost}`;
+  const cloudflareOriginUrl = `http://127.0.0.1:${originPort}`;
+  const activeOriginUrl = `http://127.0.0.1:${activePort}`;
+  const tokenDigest = createHash('sha256').update(normalizedToken).digest('hex');
+  let originRelay = null;
+  let publicReachabilityVerified = false;
+  let connectorState = 'connecting';
+  let effectiveTransportProtocol = 'auto';
+  let lastPublicVerificationAt = null;
+  let lastPublicVerificationAttemptAt = null;
+  let lastPublicVerificationAttemptAtMs = 0;
+  let publicReachabilityReason = null;
+  let lastPublicStatus = null;
+  let activeChild = null;
+  let controllerReady = false;
+  let intentionalStop = false;
+  let restartingConnector = false;
+  let terminated = false;
+  let stopPromise = null;
+  let healthRefreshPromise = null;
+  const terminationListeners = new Set();
+  const outputBuffer = createCloudflaredOutputBuffer();
 
   let effectiveTokenFilePath = typeof tokenFilePath === 'string' ? tokenFilePath : null;
   let tempTokenFile = null;
@@ -639,23 +701,14 @@ export async function startCloudflareManagedRemoteTunnel({ token, hostname, toke
     tempTokenFile = { dir: tempDir, path: effectiveTokenFilePath };
   }
 
-  const child = spawnCloudflared(['tunnel', 'run', '--token-file', effectiveTokenFilePath], {}, cfCheck.path);
-  const publicUrl = `https://${normalizedHost}`;
-  const outputBuffer = createCloudflaredOutputBuffer();
-  const localOriginUrl = Number.isFinite(activePort) && activePort > 0
-    ? `http://127.0.0.1:${activePort}`
-    : null;
-
-  child.stdout.on('data', (chunk) => {
-    outputBuffer.append(chunk);
-    // Keep stream drained, but avoid logging potentially sensitive output.
-  });
-
-  child.stderr.on('data', (chunk) => {
-    const text = chunk.toString('utf8');
-    outputBuffer.append(text);
-    process.stderr.write(text);
-  });
+  try {
+    originRelay = await startOriginRelay({ originPort, targetPort: activePort });
+  } catch (error) {
+    if (tempTokenFile) {
+      try { fs.rmSync(tempTokenFile.dir, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+    throw error;
+  }
 
   const cleanupTempTokenFile = () => {
     if (tempTokenFile) {
@@ -669,46 +722,280 @@ export async function startCloudflareManagedRemoteTunnel({ token, hostname, toke
     }
   };
 
-  child.on('error', (error) => {
-    console.error(`Cloudflared error: ${error.message}`);
-    cleanupTempTokenFile();
-  });
+  const updateVerificationFailure = (error) => {
+    publicReachabilityVerified = false;
+    connectorState = 'degraded';
+    publicReachabilityReason = typeof error?.details?.reason === 'string'
+      ? error.details.reason
+      : 'network_failure';
+    lastPublicStatus = Number.isFinite(error?.details?.lastStatus)
+      ? error.details.lastStatus
+      : null;
+  };
 
-  child.on('exit', () => {
+  const notifyUnexpectedTermination = () => {
+    if (terminated || intentionalStop) {
+      return;
+    }
+    terminated = true;
+    connectorState = 'stopped';
+    publicReachabilityVerified = false;
+    publicReachabilityReason = 'connector_stopped';
     cleanupTempTokenFile();
-  });
+    void originRelay?.stop().catch(() => {});
+
+    for (const listener of terminationListeners) {
+      try {
+        listener();
+      } catch {
+        // A lifecycle observer must not prevent connector cleanup.
+      }
+    }
+    terminationListeners.clear();
+  };
+
+  const attachConnectorLifecycle = (child) => {
+    child.stdout?.on('data', (chunk) => {
+      outputBuffer.append(chunk);
+      // Keep stream drained, but avoid logging potentially sensitive output.
+    });
+
+    child.stderr?.on('data', (chunk) => {
+      const text = chunk.toString('utf8');
+      outputBuffer.append(text);
+      process.stderr.write(redactCloudflaredLogLine(text));
+    });
+
+    child.on('error', (error) => {
+      console.error(`Cloudflared error: ${error.message}`);
+      if (controllerReady && child === activeChild && !restartingConnector && !intentionalStop) {
+        connectorState = 'degraded';
+        publicReachabilityVerified = false;
+        publicReachabilityReason = 'connector_error';
+      }
+    });
+
+    child.on('exit', () => {
+      if (controllerReady && child === activeChild && !restartingConnector && !intentionalStop) {
+        notifyUnexpectedTermination();
+      }
+    });
+  };
+
+  const startConnector = (transportProtocol) => {
+    effectiveTransportProtocol = transportProtocol;
+    const args = transportProtocol === 'http2'
+      ? ['tunnel', '--protocol', 'http2', 'run', '--token-file', effectiveTokenFilePath]
+      : ['tunnel', 'run', '--token-file', effectiveTokenFilePath];
+    const child = spawnManagedConnector(args, {}, cfCheck.path);
+    activeChild = child;
+    attachConnectorLifecycle(child);
+    return child;
+  };
+
+  const runPublicVerification = async (options = {}) => {
+    connectorState = 'connecting';
+    publicReachabilityVerified = false;
+    lastPublicVerificationAttemptAtMs = Date.now();
+    lastPublicVerificationAttemptAt = new Date(lastPublicVerificationAttemptAtMs).toISOString();
+    try {
+      const result = await verifyPublicReachability({
+        publicUrl,
+        expectedInstanceId: runtimeInstanceId,
+        cloudflareOriginUrl,
+        activeOriginUrl,
+        fetchImpl,
+        ...options,
+      });
+      publicReachabilityVerified = true;
+      connectorState = 'healthy';
+      publicReachabilityReason = null;
+      lastPublicStatus = Number.isFinite(result?.status) ? result.status : 200;
+      lastPublicVerificationAt = new Date().toISOString();
+      return true;
+    } catch (error) {
+      updateVerificationFailure(error);
+      throw error;
+    }
+  };
+
+  let child = startConnector('auto');
 
   try {
     await waitForManagedTunnelReady(child, { modeLabel: 'managed-remote tunnel' });
+    try {
+      await runPublicVerification();
+    } catch (error) {
+      const shouldRetryWithHttp2 = error?.code === 'managed_remote_public_unreachable'
+        && hasCloudflaredQuicFailure(outputBuffer.excerpt());
+      if (!shouldRetryWithHttp2) {
+        throw error;
+      }
+
+      restartingConnector = true;
+      try {
+        await stopCloudflaredProcess(child);
+      } finally {
+        restartingConnector = false;
+      }
+
+      connectorState = 'connecting';
+      publicReachabilityReason = null;
+      child = startConnector('http2');
+      await waitForManagedTunnelReady(child, { modeLabel: 'managed-remote tunnel over HTTP/2' });
+      await runPublicVerification();
+    }
   } catch (error) {
-    try { child.kill('SIGINT'); } catch { /* ignore */ }
+    let connectorStopped = false;
+    try {
+      await stopCloudflaredProcess(activeChild);
+      connectorStopped = true;
+    } catch {
+      // The exit handler retains relay ownership until the connector actually exits.
+    }
+    if (connectorStopped) {
+      await originRelay.stop().catch(() => {});
+    } else {
+      activeChild?.once?.('exit', () => {
+        cleanupTempTokenFile();
+        void originRelay?.stop().catch(() => {});
+      });
+    }
     cleanupTempTokenFile();
+    if (error?.code === 'managed_remote_public_unreachable') {
+      throw error;
+    }
     throw new CloudflareTunnelStartupError(
       'managed_remote_startup_failed',
       error instanceof Error ? error.message : 'Cloudflared failed to start managed remote tunnel',
       {
         startupLogExcerpt: outputBuffer.excerpt(),
         expectedHostname: normalizedHost,
-        localOriginUrl,
-        hint: 'The managed remote tunnel token starts the Cloudflare connector, but the Cloudflare public hostname ingress must route this hostname to the active DevRyan local port.',
+        cloudflareOriginUrl,
+        activeOriginUrl,
+        localOriginUrl: activeOriginUrl,
+        hint: `Configure the Cloudflare public hostname service as ${cloudflareOriginUrl}.`,
       }
     );
   }
 
+  const verifyCurrentPublicReachability = async () => {
+    if (connectorState === 'stopped' || hasCloudflaredExited(activeChild)) {
+      const error = new ManagedRemotePublicReachabilityError(
+        'The managed remote tunnel connector is not running.',
+        { cloudflareOriginUrl, activeOriginUrl, reason: 'connector_stopped', lastStatus: null },
+      );
+      updateVerificationFailure(error);
+      connectorState = 'stopped';
+      notifyUnexpectedTermination();
+      throw error;
+    }
+    return runPublicVerification();
+  };
+
+  const refreshHealth = ({ maxAgeMs = MANAGED_REMOTE_HEALTH_CACHE_MS } = {}) => {
+    if (healthRefreshPromise) {
+      return healthRefreshPromise;
+    }
+    if (connectorState === 'stopped' || hasCloudflaredExited(activeChild)) {
+      notifyUnexpectedTermination();
+      return Promise.resolve(false);
+    }
+    if (lastPublicVerificationAttemptAtMs > 0 && Date.now() - lastPublicVerificationAttemptAtMs < maxAgeMs) {
+      return Promise.resolve(publicReachabilityVerified);
+    }
+
+    healthRefreshPromise = runPublicVerification({
+      timeoutMs: MANAGED_REMOTE_HEALTH_TIMEOUT_MS,
+      requestTimeoutMs: MANAGED_REMOTE_HEALTH_TIMEOUT_MS,
+      maxAttempts: 1,
+    }).catch(() => false).finally(() => {
+      healthRefreshPromise = null;
+    });
+    return healthRefreshPromise;
+  };
+
+  const stop = () => {
+    if (stopPromise) {
+      return stopPromise;
+    }
+    const previousState = connectorState;
+    const previousVerified = publicReachabilityVerified;
+    const previousReason = publicReachabilityReason;
+    intentionalStop = true;
+    connectorState = 'stopped';
+    publicReachabilityVerified = false;
+    publicReachabilityReason = 'stopped';
+    stopPromise = (async () => {
+      try {
+        const result = await stopCloudflaredProcess(activeChild);
+        await originRelay.stop();
+        cleanupTempTokenFile();
+        return result;
+      } catch (error) {
+        intentionalStop = false;
+        connectorState = previousState;
+        publicReachabilityVerified = previousVerified;
+        publicReachabilityReason = previousReason;
+        throw error;
+      }
+    })().finally(() => {
+      stopPromise = null;
+    });
+    return stopPromise;
+  };
+
+  controllerReady = true;
+
   return {
     mode: TUNNEL_MODE_MANAGED_REMOTE,
-    stop: async () => {
-      const result = await stopCloudflaredProcess(child);
-      cleanupTempTokenFile();
-      return result;
+    stop,
+    get process() {
+      return activeChild;
     },
-    process: child,
     getPublicUrl: () => publicUrl,
+    matchesManagedRemoteRequest: (request) => {
+      const requestToken = normalizeManagedRemoteTunnelToken(request?.token);
+      const requestDigest = requestToken
+        ? createHash('sha256').update(requestToken).digest('hex')
+        : '';
+      return request?.mode === TUNNEL_MODE_MANAGED_REMOTE
+        && request?.provider === 'cloudflare'
+        && request?.hostname === normalizedHost
+        && request?.originPort === originPort
+        && requestDigest === tokenDigest;
+    },
+    verifyPublicReachability: verifyCurrentPublicReachability,
+    refreshHealth,
+    onTerminated: (listener) => {
+      if (typeof listener !== 'function') {
+        return () => {};
+      }
+      if (terminated) {
+        queueMicrotask(listener);
+        return () => {};
+      }
+      terminationListeners.add(listener);
+      return () => terminationListeners.delete(listener);
+    },
     getDiagnostics: () => ({
       startupLogExcerpt: outputBuffer.excerpt(),
       expectedHostname: normalizedHost,
-      localOriginUrl,
-      cloudflareConfigRequiresManualOriginMatch: true,
+      originPort,
+      cloudflareOriginUrl,
+      activeOriginUrl,
+      originRelayActive: originRelay.active,
+      publicReachabilityVerified,
+      connectorState,
+      effectiveTransportProtocol,
+      lastPublicVerificationAt,
+      lastPublicVerificationAttemptAt,
+      publicReachabilityReason,
+      lastPublicStatus,
+      // Compatibility aliases retained for one release.
+      localOriginUrl: activeOriginUrl,
+      transportProtocol: effectiveTransportProtocol,
+      cloudflareConfigRequiresManualOriginMatch: false,
     }),
   };
 }

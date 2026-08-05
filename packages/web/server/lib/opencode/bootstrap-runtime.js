@@ -16,6 +16,7 @@ export const createBootstrapRuntime = (dependencies) => {
       openchamberVersion,
       runtimeName,
       serverStartedAt,
+      runtimeInstanceId,
       gracefulShutdown,
       getHealthSnapshot,
       verboseRequestLogs,
@@ -23,6 +24,7 @@ export const createBootstrapRuntime = (dependencies) => {
       tunnelAuthController,
       readSettingsFromDiskMigrated,
       normalizeTunnelSessionTtlMs,
+      getRuntimeReady,
       resolveZenModel,
       sayTTSCapability,
       ensurePushInitialized,
@@ -49,7 +51,19 @@ export const createBootstrapRuntime = (dependencies) => {
       fetchFreeZenModels,
       getCachedZenModels,
       setAutoAcceptSession,
+      multiUserRuntime,
     } = options;
+
+    registerCommonRequestMiddleware(app, { express, verboseRequestLogs });
+
+    const legacyUiAuthController = createUiAuth({
+      password: uiPassword,
+      readSettingsFromDiskMigrated,
+    });
+    multiUserRuntime?.attachLoopbackPasskeyController?.(legacyUiAuthController);
+    const uiAuthController = multiUserRuntime?.enabled
+      ? multiUserRuntime.authController
+      : multiUserRuntime?.wrapLegacyAuthController?.(legacyUiAuthController) ?? legacyUiAuthController;
 
     registerServerStatusRoutes(app, {
       express,
@@ -57,15 +71,10 @@ export const createBootstrapRuntime = (dependencies) => {
       openchamberVersion,
       runtimeName,
       serverStartedAt,
+      runtimeInstanceId,
       gracefulShutdown,
       getHealthSnapshot,
-    });
-
-    registerCommonRequestMiddleware(app, { express, verboseRequestLogs });
-
-    const uiAuthController = createUiAuth({
-      password: uiPassword,
-      readSettingsFromDiskMigrated,
+      uiAuthController,
     });
     if (uiAuthController.enabled) {
       console.log('UI password protection enabled for browser sessions');
@@ -76,12 +85,14 @@ export const createBootstrapRuntime = (dependencies) => {
       uiAuthController,
       readSettingsFromDiskMigrated,
       normalizeTunnelSessionTtlMs,
+      getRuntimeReady,
     });
 
     registerTtsRoutes(app, { resolveZenModel, sayTTSCapability });
 
     registerNotificationRoutes(app, {
       uiAuthController,
+      multiUserRuntime,
       ensurePushInitialized,
       ensureGlobalWatcherStarted,
       getOrCreateVapidKeys,

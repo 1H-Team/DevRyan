@@ -25,6 +25,7 @@
 
 - `getGitHubAuth()`: current auth entry.
 - `getGitHubAuthAccounts()`: all configured accounts.
+- `getGitHubAuthById(accountId)`: exact stored account, including its token, for server-only request scoping.
 - `setGitHubAuth({ accessToken, scope, tokenType, user, accountId })`: save or update account.
 - `activateGitHubAuth(accountId)`: switch active account.
 - `clearGitHubAuth()`: clear current account.
@@ -40,6 +41,7 @@
 ### Octokit
 
 - `getOctokitOrNull()`: current Octokit or `null`.
+- `getOctokitForAccount(accountId)`: Octokit for one exact stored account, with no CLI/current-account fallback.
 - `createGitHubApiClient({ auth })`: construct a timeout-protected client for a selected token.
 - Every GitHub HTTP request has a 15-second deadline. Device-flow requests use the same timeout wrapper.
 
@@ -55,7 +57,32 @@
 - Client ID resolution order: `OPENCHAMBER_GITHUB_CLIENT_ID` -> `settings.json` -> default.
 - Scope resolution order: `OPENCHAMBER_GITHUB_SCOPES` -> `settings.json` -> default.
 - Account id resolution order: explicit `accountId` -> user login -> user id -> token prefix.
-- Client credential selection remains stored account first, then optional `gh` CLI token when CLI credentials are enabled. OAuth completion creates its verification client through the same shared factory.
+- Standalone credential selection remains the current stored account first,
+  then optional `gh` CLI token when CLI credentials are enabled. OAuth
+  completion creates its verification client through the same shared factory.
+- Managed principals always resolve the authoritative account id from their
+  user profile; assignment values are synchronized compatibility mirrors. They
+  never fall back to the host-current account or `gh` CLI credentials, never
+  mutate the shared account pool through runtime status controls, and do not
+  delete an assigned credential when GitHub reports an authentication failure.
+- `GET /api/github/auth/status` returns `activeAccountId`. Managed requests
+  derive it only from `principal.githubAccountId`, normalize that account as
+  active regardless of the host-global `current` flag, and merge the live
+  authenticated GitHub user over stored metadata before returning both `user`
+  and `accounts`. The sidebar selects by `activeAccountId`, so a stale or absent
+  stored avatar cannot replace the assigned account's current GitHub image.
+- The same status route remains a metadata-only read when a managed principal
+  has an assigned account but GitHub operations are disabled. It returns only
+  stored public identity fields and never exercises the credential; all other
+  GitHub routes remain capability-gated.
+- Administrators manage the token-free host inventory through
+  `GET /api/admin/github-accounts` and targeted deletes through
+  `DELETE /api/admin/github-accounts/:accountId`. Assigned credentials return a
+  conflict until the owning profile is explicitly unassigned.
+- Managed PR creation permits an assigned writable head to target a readable
+  base such as `main`; update/ready operations retain the assigned account.
+  Merge is rejected before GitHub when the PR target is not one of the caller's
+  assigned writable branches.
 
 ## PR integration overview
 

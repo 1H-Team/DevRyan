@@ -21,6 +21,10 @@ const createApp = (overrides = {}) => {
     normalizeTunnelMode: vi.fn(),
     normalizeOptionalPath: vi.fn(),
     normalizeManagedRemoteTunnelHostname: vi.fn((value) => value),
+    normalizeManagedRemoteOriginPort: vi.fn((value) => (
+      Number.isInteger(value) && value >= 1024 && value <= 65535 ? value : 3000
+    )),
+    isValidManagedRemoteOriginPort: vi.fn((value) => Number.isInteger(value) && value >= 1024 && value <= 65535),
     normalizeTunnelBootstrapTtlMs: vi.fn(),
     normalizeTunnelSessionTtlMs: vi.fn(),
     isSupportedTunnelMode: vi.fn(),
@@ -28,11 +32,17 @@ const createApp = (overrides = {}) => {
       throw new ManagedRemoteTunnelTokenValidationError();
     }),
     resolveManagedRemoteTunnelToken: vi.fn(),
+    resolveManagedRemoteTunnelPreset: vi.fn(async () => null),
     TUNNEL_MODE_QUICK: 'quick',
     TUNNEL_MODE_MANAGED_LOCAL: 'managed-local',
     TUNNEL_MODE_MANAGED_REMOTE: 'managed-remote',
     TUNNEL_PROVIDER_CLOUDFLARE: 'cloudflare',
-    TunnelServiceError: class TunnelServiceError extends Error {},
+    TunnelServiceError: class TunnelServiceError extends Error {
+      constructor(code, message) {
+        super(message);
+        this.code = code;
+      }
+    },
     getActivePort: vi.fn(),
     getRuntimeManagedRemoteTunnelHostname: vi.fn(),
     setRuntimeManagedRemoteTunnelHostname: vi.fn(),
@@ -40,6 +50,7 @@ const createApp = (overrides = {}) => {
     setRuntimeManagedRemoteTunnelToken: vi.fn(),
     getActiveTunnelController: vi.fn(),
     setActiveTunnelController: vi.fn(),
+    getRuntimeReady: vi.fn(() => true),
     ...overrides,
   };
   const runtime = createTunnelRoutesRuntime(dependencies);
@@ -139,5 +150,223 @@ describe('tunnel routes', () => {
     } finally {
       consoleError.mockRestore();
     }
+  });
+
+  it.each([
+    ['managed_remote_origin_port_in_use', 409],
+    ['managed_remote_public_unreachable', 502],
+  ])('does not issue a bootstrap token when startup fails with %s', async (code, expectedStatus) => {
+    const startupError = new Error('Managed tunnel startup failed safely');
+    startupError.code = code;
+    startupError.details = {
+      cloudflareOriginUrl: 'http://127.0.0.1:3000',
+      activeOriginUrl: 'http://127.0.0.1:57123',
+    };
+    const tunnelAuthController = {
+      getActiveTunnelId: vi.fn(() => null),
+      getActiveTunnelMode: vi.fn(() => null),
+      clearActiveTunnel: vi.fn(),
+      issueBootstrapToken: vi.fn(),
+    };
+    const tunnelService = {
+      resolveActiveMode: vi.fn(() => null),
+      resolveActiveProvider: vi.fn(() => null),
+      getPublicUrl: vi.fn(() => null),
+      start: vi.fn(async () => { throw startupError; }),
+    };
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const response = await request(createApp({
+        crypto: { randomUUID: vi.fn(() => 'id') },
+        tunnelService,
+        tunnelAuthController,
+        tunnelProviderRegistry: { get: vi.fn(() => ({})), listCapabilities: vi.fn(() => []) },
+        readSettingsFromDiskMigrated: vi.fn(async () => ({})),
+        readManagedRemoteTunnelConfigFromDisk: vi.fn(async () => ({ version: 2, tunnels: [] })),
+        normalizeTunnelProvider: vi.fn(() => 'cloudflare'),
+        normalizeTunnelMode: vi.fn((value) => value || 'quick'),
+        normalizeTunnelBootstrapTtlMs: vi.fn((value) => value ?? 1800000),
+        normalizeTunnelSessionTtlMs: vi.fn((value) => value ?? 28800000),
+        isSupportedTunnelMode: vi.fn(() => true),
+        upsertManagedRemoteTunnelToken: vi.fn(async () => {}),
+        resolveManagedRemoteTunnelToken: vi.fn(async () => ''),
+        getRuntimeManagedRemoteTunnelHostname: vi.fn(() => ''),
+        getRuntimeManagedRemoteTunnelToken: vi.fn(() => ''),
+        getActiveTunnelController: vi.fn(() => null),
+      }))
+        .post('/api/openchamber/tunnel/start')
+        .send({
+          provider: 'cloudflare',
+          mode: 'managed-remote',
+          hostname: 'app.example.com',
+          token: `eyJ${'x'.repeat(80)}`,
+          originPort: 3000,
+        });
+
+      expect(response.status).toBe(expectedStatus);
+      expect(response.body).toMatchObject({ ok: false, code });
+      expect(response.body.details).toEqual({
+        cloudflareOriginUrl: 'http://127.0.0.1:3000',
+        activeOriginUrl: 'http://127.0.0.1:57123',
+      });
+      expect(tunnelAuthController.issueBootstrapToken).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it('refreshes connector health before returning a degraded managed tunnel status', async () => {
+    const refreshHealth = vi.fn(async () => ({ connectorState: 'degraded' }));
+    const tunnelService = {
+      refreshHealth,
+      resolveActiveMode: vi.fn(() => 'managed-remote'),
+      resolveActiveProvider: vi.fn(() => 'cloudflare'),
+      getPublicUrl: vi.fn(() => 'https://app.example.com'),
+      getProviderMetadata: vi.fn(() => ({
+        connectorState: 'degraded',
+        publicReachabilityVerified: false,
+        publicReachabilityReason: 'cloudflare_error',
+        lastPublicStatus: 530,
+        originPort: 3000,
+      })),
+    };
+    const tunnelAuthController = {
+      listTunnelSessions: vi.fn(() => []),
+      getActiveTunnelId: vi.fn(() => 'tunnel-1'),
+      getActiveTunnelHost: vi.fn(() => 'app.example.com'),
+      getActiveTunnelMode: vi.fn(() => 'managed-remote'),
+      getBootstrapStatus: vi.fn(() => ({ hasBootstrapToken: false, bootstrapExpiresAt: null })),
+      setActiveTunnel: vi.fn(),
+    };
+
+    const response = await request(createApp({
+      tunnelService,
+      tunnelAuthController,
+      readSettingsFromDiskMigrated: vi.fn(async () => ({
+        tunnelMode: 'managed-remote',
+        tunnelProvider: 'cloudflare',
+        managedRemoteTunnelHostname: 'app.example.com',
+      })),
+      readManagedRemoteTunnelConfigFromDisk: vi.fn(async () => ({ version: 2, tunnels: [] })),
+      normalizeTunnelMode: vi.fn(() => 'managed-remote'),
+      normalizeTunnelProvider: vi.fn(() => 'cloudflare'),
+      normalizeTunnelBootstrapTtlMs: vi.fn((value) => value ?? 1_800_000),
+      normalizeTunnelSessionTtlMs: vi.fn((value) => value ?? 28_800_000),
+      getActivePort: vi.fn(() => 57123),
+      getRuntimeManagedRemoteTunnelToken: vi.fn(() => ''),
+    })).get('/api/openchamber/tunnel/status');
+
+    expect(response.status).toBe(200);
+    expect(refreshHealth).toHaveBeenCalledWith({ maxAgeMs: 5000 });
+    expect(response.body).toMatchObject({
+      active: true,
+      runtimeReady: true,
+      connectReady: false,
+      url: 'https://app.example.com',
+      providerMetadata: {
+        connectorState: 'degraded',
+        publicReachabilityVerified: false,
+        publicReachabilityReason: 'cloudflare_error',
+        lastPublicStatus: 530,
+      },
+    });
+  });
+
+  it('issues new managed tunnel links on the dedicated tunnel route', async () => {
+    const tunnelService = {
+      resolveActiveMode: vi.fn(() => null),
+      resolveActiveProvider: vi.fn(() => null),
+      getPublicUrl: vi.fn(() => null),
+      start: vi.fn(async () => ({
+        publicUrl: 'https://app.example.com',
+        activeMode: 'managed-remote',
+        provider: 'cloudflare',
+        controllerReused: false,
+        providerMetadata: { originPort: 3000 },
+      })),
+    };
+    const tunnelAuthController = {
+      getActiveTunnelId: vi.fn(() => null),
+      getActiveTunnelMode: vi.fn(() => null),
+      setActiveTunnel: vi.fn(),
+      issueBootstrapToken: vi.fn(() => ({ token: 'bootstrap-token', expiresAt: 12345 })),
+      listTunnelSessions: vi.fn(() => []),
+    };
+    const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    try {
+      const response = await request(createApp({
+        crypto: { randomUUID: vi.fn(() => 'tunnel-id') },
+        tunnelService,
+        tunnelAuthController,
+        tunnelProviderRegistry: { get: vi.fn(() => ({})), listCapabilities: vi.fn(() => []) },
+        readSettingsFromDiskMigrated: vi.fn(async () => ({})),
+        readManagedRemoteTunnelConfigFromDisk: vi.fn(async () => ({ version: 2, tunnels: [] })),
+        normalizeTunnelProvider: vi.fn(() => 'cloudflare'),
+        normalizeTunnelMode: vi.fn((value) => value || 'quick'),
+        normalizeTunnelBootstrapTtlMs: vi.fn((value) => value ?? 1_800_000),
+        normalizeTunnelSessionTtlMs: vi.fn((value) => value ?? 28_800_000),
+        isSupportedTunnelMode: vi.fn(() => true),
+        upsertManagedRemoteTunnelToken: vi.fn(async () => {}),
+        resolveManagedRemoteTunnelToken: vi.fn(async () => ''),
+        getRuntimeManagedRemoteTunnelHostname: vi.fn(() => ''),
+        getRuntimeManagedRemoteTunnelToken: vi.fn(() => ''),
+        getActivePort: vi.fn(() => 57123),
+      }))
+        .post('/api/openchamber/tunnel/start')
+        .send({
+          provider: 'cloudflare',
+          mode: 'managed-remote',
+          hostname: 'app.example.com',
+          token: `eyJ${'x'.repeat(80)}`,
+          originPort: 3000,
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.connectUrl).toBe('https://app.example.com/tunnel/connect?t=bootstrap-token');
+      expect(response.body).toMatchObject({ runtimeReady: true, connectReady: true });
+    } finally {
+      consoleLog.mockRestore();
+    }
+  });
+
+  it('returns runtime_not_ready without launching a connector or consuming configuration', async () => {
+    const tunnelService = {
+      resolveActiveMode: vi.fn(() => null),
+      resolveActiveProvider: vi.fn(() => null),
+      getPublicUrl: vi.fn(() => null),
+      start: vi.fn(),
+    };
+    const upsertManagedRemoteTunnelToken = vi.fn();
+    const response = await request(createApp({
+      tunnelService,
+      getRuntimeReady: vi.fn(() => false),
+      tunnelProviderRegistry: { get: vi.fn(() => ({})), listCapabilities: vi.fn(() => []) },
+      readSettingsFromDiskMigrated: vi.fn(async () => ({})),
+      readManagedRemoteTunnelConfigFromDisk: vi.fn(async () => ({ version: 2, tunnels: [] })),
+      normalizeTunnelProvider: vi.fn(() => 'cloudflare'),
+      normalizeTunnelMode: vi.fn((value) => value || 'managed-remote'),
+      normalizeTunnelBootstrapTtlMs: vi.fn((value) => value ?? 1_800_000),
+      normalizeTunnelSessionTtlMs: vi.fn((value) => value ?? 28_800_000),
+      isSupportedTunnelMode: vi.fn(() => true),
+      upsertManagedRemoteTunnelToken,
+      resolveManagedRemoteTunnelToken: vi.fn(async () => ''),
+      getRuntimeManagedRemoteTunnelHostname: vi.fn(() => ''),
+      getRuntimeManagedRemoteTunnelToken: vi.fn(() => ''),
+    }))
+      .post('/api/openchamber/tunnel/start')
+      .send({
+        provider: 'cloudflare',
+        mode: 'managed-remote',
+        hostname: 'app.example.com',
+        token: `eyJ${'x'.repeat(80)}`,
+        originPort: 3000,
+      });
+
+    expect(response.status).toBe(503);
+    expect(response.body).toMatchObject({ ok: false, code: 'runtime_not_ready' });
+    expect(tunnelService.start).not.toHaveBeenCalled();
+    expect(upsertManagedRemoteTunnelToken).not.toHaveBeenCalled();
   });
 });

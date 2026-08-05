@@ -7,6 +7,7 @@ Shared non-React application logic for the UI package: API clients, routing/seri
 - **Domain-partitioned utility modules**: subfolders (`opencode`, `router`, `theme`, `git`, `messages`, `permissions`, `quota`, `startup`, `terminal`, `tools`, `worktrees`) isolate contracts per concern.
 - **Client abstraction**: `opencode/client.ts` wraps SDK usage, directory scoping, retries/circuit checks, and path normalization so features avoid direct transport logic.
 - **Pure helper bias**: many modules expose deterministic transforms/serializers to keep component/store code thin.
+- **Managed workspace hydration**: `directoryPersistence.ts` validates persisted directories against the accepted principal, `managedProjectsApi.ts` persists administrator-owned metadata, and `worktrees/managedBranches.ts` filters discovered real worktrees and draft local-branch choices against assignment-backed visibility without replacing server UUIDs.
 - **Shared byte presentation**: `formatBytes.ts` is the single 1024-based formatter used by diagnostic-journal and Electron-cache status UI.
 - **Authoritative session-change projection**: `sessionChangeAttribution.ts` derives repository-relative paths only from completed successful file-tool parts, records successful shell mutations as explicitly unattributed, and ignores shared-working-tree message summaries and patch snapshots.
 - **Runtime capability gates**: desktop/vscode/web differences are centralized (e.g., `desktop.ts`, runtime API detection helpers).

@@ -11,6 +11,7 @@ import os from 'os';
 import crypto from 'crypto';
 import yaml from 'yaml';
 import { createUiAuth } from './lib/ui-auth/ui-auth.js';
+import { createMultiUserRuntime } from './lib/multi-user/index.js';
 import { createTunnelAuth } from './lib/opencode/tunnel-auth.js';
 import { createManagedTunnelConfigRuntime } from './lib/tunnels/managed-config.js';
 import { normalizeManagedRemoteTunnelToken } from './lib/tunnels/managed-token.js';
@@ -29,7 +30,9 @@ import {
   TUNNEL_PROVIDER_CLOUDFLARE,
   TunnelServiceError,
   isSupportedTunnelMode,
+  isValidManagedRemoteOriginPort,
   normalizeOptionalPath,
+  normalizeManagedRemoteOriginPort,
   normalizeTunnelStartRequest,
   normalizeTunnelMode,
   normalizeTunnelProvider,
@@ -105,8 +108,9 @@ import { createPushRuntime } from './lib/notifications/push-runtime.js';
 import { createNotificationTemplateRuntime } from './lib/notifications/template-runtime.js';
 import { createGracefulShutdownRuntime } from './lib/opencode/shutdown-runtime.js';
 import { createProjectConfigRuntime } from './lib/projects/project-config.js';
-import { createPreviewProxyRuntime } from './lib/preview/proxy-runtime.js';
+import { classifyPreviewRequestScope, createPreviewProxyRuntime } from './lib/preview/proxy-runtime.js';
 import { createLocalInstanceStatusRuntime } from './lib/preview/local-instances-runtime.js';
+import { createProjectPreviewInstancesRuntime } from './lib/preview/project-instances-runtime.js';
 import { createBrowserCdpDiscoveryRuntime } from './lib/browser-cdp/discovery-runtime.js';
 import { createBrowserLeaseRuntime } from './lib/browser-cdp/lease-runtime.js';
 import { dynamicNoStoreMiddleware } from './lib/http-cache-policy.js';
@@ -395,7 +399,7 @@ const SETTINGS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'settings.json');
 const PUSH_SUBSCRIPTIONS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'push-subscriptions.json');
 const CLOUDFLARE_MANAGED_REMOTE_TUNNELS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'cloudflare-managed-remote-tunnels.json');
 const CLOUDFLARE_LEGACY_NAMED_TUNNELS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'cloudflare-named-tunnels.json');
-const CLOUDFLARE_MANAGED_REMOTE_TUNNELS_VERSION = 1;
+const CLOUDFLARE_MANAGED_REMOTE_TUNNELS_VERSION = 2;
 const harnessRuntime = createWebHarnessRuntime({
   dataDirectory: OPENCHAMBER_DATA_DIR,
   runtime: process.env.OPENCHAMBER_RUNTIME || 'web',
@@ -429,6 +433,7 @@ const managedTunnelConfigRuntime = createManagedTunnelConfigRuntime({
   normalizeManagedRemoteTunnelHostname,
   normalizeManagedRemoteTunnelPresets,
   normalizeManagedRemoteTunnelToken,
+  normalizeManagedRemoteOriginPort,
   constants: {
     CLOUDFLARE_MANAGED_REMOTE_TUNNELS_FILE_PATH,
     CLOUDFLARE_LEGACY_NAMED_TUNNELS_FILE_PATH,
@@ -440,6 +445,7 @@ const readManagedRemoteTunnelConfigFromDisk = (...args) => managedTunnelConfigRu
 const syncManagedRemoteTunnelConfigWithPresets = (...args) => managedTunnelConfigRuntime.syncManagedRemoteTunnelConfigWithPresets(...args);
 const upsertManagedRemoteTunnelToken = (...args) => managedTunnelConfigRuntime.upsertManagedRemoteTunnelToken(...args);
 const resolveManagedRemoteTunnelToken = (...args) => managedTunnelConfigRuntime.resolveManagedRemoteTunnelToken(...args);
+const resolveManagedRemoteTunnelPreset = (...args) => managedTunnelConfigRuntime.resolveManagedRemoteTunnelPreset(...args);
 
 const settingsHelpers = createSettingsHelpers({
   normalizePathForPersistence,
@@ -537,6 +543,7 @@ const rejectWebSocketUpgrade = (...args) => requestSecurityRuntime.rejectWebSock
 
 const isRequestOriginAllowed = (...args) => requestSecurityRuntime.isRequestOriginAllowed(...args);
 let globalMessageStreamHub = null;
+let multiUserRuntime = null;
 
 const notificationEmitterRuntime = createNotificationEmitterRuntime({
   process,
@@ -577,6 +584,9 @@ const emitSyntheticOpenCodeEvent = (payload, options = {}) => {
   sessionRuntime.processOpenCodeSsePayload(payload);
   turnTimingRuntime.processOpenCodeEvent(payload);
   harnessRuntime.recordOpenCodeEvent(payload, options.directory ?? null);
+  void multiUserRuntime?.recordOpenCodeActivity?.(payload).catch((error) => {
+    console.warn('[MultiUser] Failed to project OpenCode activity:', error?.message || error);
+  });
   void evidenceRuntime?.processOpenCodeEvent(payload);
   broadcastGlobalUiEvent(payload, options);
 };
@@ -1005,6 +1015,9 @@ const openCodeWatcherRuntime = createOpenCodeWatcherRuntime({
     sessionRuntime.processOpenCodeSsePayload(payload);
     turnTimingRuntime.processOpenCodeEvent(payload);
     harnessRuntime.recordOpenCodeEvent(payload);
+    void multiUserRuntime?.recordOpenCodeActivity?.(payload).catch((error) => {
+      console.warn('[MultiUser] Failed to project OpenCode activity:', error?.message || error);
+    });
     void evidenceRuntime?.processOpenCodeEvent(payload);
     void browserLeaseRuntime?.processOpenCodeEvent(payload).catch((error) => {
       console.warn('[AgentBrowser] Failed to process session cleanup event:', error?.message ?? error);
@@ -1029,6 +1042,9 @@ const processForwardedEventPayload = (payload, emitSyntheticEvent) => {
   maybeCacheSessionInfoFromEvent(payload);
   turnTimingRuntime.processOpenCodeEvent(payload);
   harnessRuntime.recordOpenCodeEvent(payload);
+  void multiUserRuntime?.recordOpenCodeActivity?.(payload).catch((error) => {
+    console.warn('[MultiUser] Failed to project OpenCode activity:', error?.message || error);
+  });
   void evidenceRuntime?.processOpenCodeEvent(payload);
 
   if (payload.type !== 'session.status') {
@@ -1164,11 +1180,14 @@ const tunnelWiringRuntime = createTunnelWiringRuntime({
   normalizeTunnelMode,
   normalizeOptionalPath,
   normalizeManagedRemoteTunnelHostname,
+  normalizeManagedRemoteOriginPort,
+  isValidManagedRemoteOriginPort,
   normalizeTunnelBootstrapTtlMs,
   normalizeTunnelSessionTtlMs,
   isSupportedTunnelMode,
   upsertManagedRemoteTunnelToken,
   resolveManagedRemoteTunnelToken,
+  resolveManagedRemoteTunnelPreset,
   TUNNEL_MODE_QUICK,
   TUNNEL_MODE_MANAGED_LOCAL,
   TUNNEL_MODE_MANAGED_REMOTE,
@@ -1186,6 +1205,7 @@ const tunnelWiringRuntime = createTunnelWiringRuntime({
   setRuntimeManagedRemoteTunnelToken: (value) => {
     runtimeManagedRemoteTunnelToken = value;
   },
+  getRuntimeReady: () => Boolean(openCodePort && isOpenCodeReady && !isRestartingOpenCode),
 });
 const startupPipelineRuntime = createStartupPipelineRuntime({
   createTerminalRuntime,
@@ -1309,10 +1329,16 @@ const scheduledTasksRuntime = createScheduledTasksRuntime({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
   waitForOpenCodeReady,
+  resolveTaskExecutionContext: (input) => multiUserRuntime.resolveScheduledTaskExecution?.(input),
+  recordTaskSessionOwnership: (input) => multiUserRuntime.recordScheduledTaskSessionOwnership?.(input),
   emitTaskRunEvent: (event) => {
     for (const client of uiOpenChamberEventClients) {
+      const response = client?.response ?? client;
+      if (client?.principalId && !client.isAdmin && event.ownerUserId !== client.principalId) {
+        continue;
+      }
       try {
-        writeSseEvent(client, {
+        writeSseEvent(response, {
           type: 'openchamber:scheduled-task-ran',
           properties: {
             projectId: event.projectID,
@@ -1455,6 +1481,7 @@ async function main(options = {}) {
         configPath: normalizeOptionalPath(options.tunnelConfigPath),
         token: typeof options.tunnelToken === 'string' ? options.tunnelToken.trim() : '',
         hostname: normalizeManagedRemoteTunnelHostname(options.tunnelHostname),
+        originPort: options.tunnelOriginPort,
       })
     : (tryCfTunnel
       ? {
@@ -1486,6 +1513,7 @@ async function main(options = {}) {
 
   const app = express();
   const serverStartedAt = new Date().toISOString();
+  const runtimeInstanceId = crypto.randomUUID();
   app.set('trust proxy', true);
   registerIndexingPolicy(app);
   app.use(dynamicNoStoreMiddleware);
@@ -1499,12 +1527,25 @@ async function main(options = {}) {
   expressApp = app;
   server = http.createServer(app);
 
+  multiUserRuntime = await createMultiUserRuntime({
+    dataDirectory: OPENCHAMBER_DATA_DIR,
+    fetchImpl: fetch,
+    logger: console,
+  });
+  if (multiUserRuntime.enabled) {
+    console.log('Supabase multi-user identity and policy enforcement enabled');
+  }
+  pushRuntime.setSessionVisibilityFilter((tokenHash, sessionId) => (
+    multiUserRuntime.canSessionTokenHashAccess(tokenHash, sessionId)
+  ));
+
   const uiPassword = typeof options.uiPassword === 'string' ? options.uiPassword : null;
   const bootstrapResult = bootstrapRuntime.setupBaseRoutes(app, {
     process,
     openchamberVersion: OPENCHAMBER_VERSION,
     runtimeName: process.env.OPENCHAMBER_RUNTIME || 'web',
     serverStartedAt,
+    runtimeInstanceId,
     gracefulShutdown,
     getHealthSnapshot: () => {
       const launchSpec = resolvedOpencodeBinary && !useWslForOpencode
@@ -1541,6 +1582,7 @@ async function main(options = {}) {
     tunnelAuthController,
     readSettingsFromDiskMigrated,
     normalizeTunnelSessionTtlMs,
+    getRuntimeReady: () => Boolean(openCodePort && isOpenCodeReady && !isRestartingOpenCode),
     resolveZenModel,
     sayTTSCapability,
     ensurePushInitialized,
@@ -1567,8 +1609,14 @@ async function main(options = {}) {
     fetchFreeZenModels,
     getCachedZenModels,
     setAutoAcceptSession,
+    multiUserRuntime,
   });
   uiAuthController = bootstrapResult.uiAuthController;
+  multiUserRuntime.registerRoutes(app, {
+    readSettingsFromDiskMigrated,
+    buildOpenCodeUrl,
+    getOpenCodeAuthHeaders,
+  });
   app.use(
     '/api/session/:sessionID/prompt_async',
     express.json({ limit: '50mb' }),
@@ -1624,7 +1672,10 @@ async function main(options = {}) {
     getOpenCodeAuthHeaders,
   });
 
-  const tunnelRuntimeContext = tunnelWiringRuntime.initialize(app, port);
+  const tunnelRuntimeContext = tunnelWiringRuntime.initialize(app, port, {
+    runtimeInstanceId,
+    fetchImpl: fetch,
+  });
   const { tunnelService, startTunnelWithNormalizedRequest } = tunnelRuntimeContext;
 
   registerTurnTimingRoutes(app, turnTimingRuntime, {
@@ -1773,13 +1824,33 @@ async function main(options = {}) {
     writeSseEvent,
     emitSyntheticOpenCodeEvent,
     resolveZenModel,
+    resolveManagedProject: multiUserRuntime.resolveManagedProject?.bind(multiUserRuntime),
   });
 
+  const localInstanceStatusRuntime = createLocalInstanceStatusRuntime({ net, URL });
+  const projectPreviewInstancesRuntime = createProjectPreviewInstancesRuntime({
+    crypto,
+    fs,
+    path,
+    getTerminalRuntime: () => terminalRuntime,
+    probeUrl: async (url) => {
+      const [result] = await localInstanceStatusRuntime.checkUrls([url]);
+      return result;
+    },
+  });
   const previewProxyRuntime = createPreviewProxyRuntime({
     crypto,
     URL,
     createProxyMiddleware,
     responseInterceptor,
+  });
+  projectPreviewInstancesRuntime.setGrantRemovalHandler(({ id }) => {
+    previewProxyRuntime.revokeGrantTargets(id);
+  });
+  projectPreviewInstancesRuntime.attach(app, {
+    express,
+    uiAuthController,
+    isRequestOriginAllowed,
   });
   previewProxyRuntime.attach(app, {
     server,
@@ -1787,12 +1858,22 @@ async function main(options = {}) {
     uiAuthController,
     isRequestOriginAllowed,
     rejectWebSocketUpgrade,
+    classifyRequestScope: (req) => tunnelAuthController.classifyRequestScope(req),
+    previewInstancesRuntime: projectPreviewInstancesRuntime,
   });
 
-  createLocalInstanceStatusRuntime({ net, URL }).attach(app, {
+  localInstanceStatusRuntime.attach(app, {
     express,
     uiAuthController,
     isRequestOriginAllowed,
+    classifyRequestScope: (req) => classifyPreviewRequestScope(
+      req,
+      tunnelAuthController.classifyRequestScope(req),
+    ),
+  });
+  server.once('close', () => {
+    projectPreviewInstancesRuntime.shutdown();
+    previewProxyRuntime.shutdown();
   });
 
   // Desktop-only lookup for the in-app browser CDP bridge. Both callbacks are
@@ -1832,6 +1913,7 @@ async function main(options = {}) {
     setupProxy,
     scheduleOpenCodeApiDetection,
     bootstrapOpenCodeAtStartup,
+    getRuntimeReady: () => Boolean(openCodePort && isOpenCodeReady && !isRestartingOpenCode),
     triggerHealthCheck,
     staticRoutesRuntime,
     process,
@@ -1855,6 +1937,13 @@ async function main(options = {}) {
     onTunnelReady,
     tunnelRuntimeContext,
     attachSignals,
+    multiUserRuntime,
+    onTerminalSessionClosed: (event) => {
+      projectPreviewInstancesRuntime.handleTerminalSessionClosed(event);
+      if (event.reason === 'owner-revoked') {
+        previewProxyRuntime.revokeOwnerTargets(event.ownerUserId);
+      }
+    },
   });
   terminalRuntime = startupPipelineResult.terminalRuntime;
   messageStreamRuntime = startupPipelineResult.messageStreamRuntime;

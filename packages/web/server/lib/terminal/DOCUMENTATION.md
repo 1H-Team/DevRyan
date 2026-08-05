@@ -55,12 +55,20 @@ The terminal helpers are used by `packages/web/server/index.js` for:
 
 The web server combines these utilities with `bun-pty` or `node-pty` to drive full-duplex PTY sessions.
 
+### Runtime lifecycle contract
+
+`createTerminalRuntime(...)` returns `shutdown`, `terminateOwnerSessions`, and `getSessionDescriptor`. The descriptor lookup exposes only the live session id, canonical working directory, owner user id, and last-activity timestamp to in-process server runtimes. The project-preview grant registry uses it to prove that a registration came from a terminal owned by the caller in the exact project directory.
+
+Callers may provide `onTerminalSessionClosed`. The runtime invokes it exactly once after removing a session for exit, explicit close/restart, idle timeout, force kill, owner revocation, or shutdown. Session removal happens before signalling a PTY so synchronous exit callbacks cannot replace the authoritative close reason. Preview grants use this callback for immediate cleanup.
+
 ## Notes for contributors
 - Keep control frames backward-compatible when possible; use explicit `v` values for protocol changes.
 - Always normalize incoming WebSocket messages before processing them.
 - Keep replay buffering small and memory-only; it exists to cover startup races, not to implement persistent scrollback.
 - Add tests for new control frame types, websocket path changes, malformed payload handling, and replay trimming semantics.
 - Keep HTTP input and SSE output fallbacks functional unless the rollout explicitly removes them.
+- Keep terminal descriptors narrow and live-only; do not expose PTY handles or infer ownership from historical terminal output.
+- Route every session removal through the lifecycle callback so dependent in-memory grants cannot survive terminal closure or revocation.
 
 ## Verification notes
 ### Manual verification

@@ -10,6 +10,7 @@ import { useUIStore } from '@/stores/useUIStore';
 
 export type BrowserAgentLease = {
   leaseId: string;
+  surfaceId: string;
   rootSessionId: string;
   opencodeSessionID: string;
   directory: string;
@@ -155,6 +156,7 @@ const sanitizeLease = (value: unknown): BrowserAgentLease | null => {
 
   return {
     leaseId,
+    surfaceId: normalizeOptionalString(candidate.surfaceId, MAX_ID_LENGTH),
     rootSessionId,
     opencodeSessionID,
     directory,

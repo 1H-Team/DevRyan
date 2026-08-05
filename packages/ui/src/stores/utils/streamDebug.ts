@@ -1,7 +1,8 @@
+import { getSafeStorage } from '@/stores/utils/safeStorage';
 export const streamDebugEnabled = (): boolean => {
     if (typeof window === 'undefined') return false;
     try {
-        return window.localStorage.getItem('openchamber_stream_debug') === '1';
+        return getSafeStorage().getItem('openchamber_stream_debug') === '1';
     } catch {
         return false;
     }
@@ -10,7 +11,7 @@ export const streamDebugEnabled = (): boolean => {
 export const sessionStatusDebugEnabled = (): boolean => {
     if (typeof window === 'undefined') return false;
     try {
-        return window.localStorage.getItem('openchamber_session_status_debug') === '1';
+        return getSafeStorage().getItem('openchamber_session_status_debug') === '1';
     } catch {
         return false;
     }
@@ -65,7 +66,7 @@ declare global {
 export const streamPerfEnabled = (): boolean => {
     if (typeof window === 'undefined') return false;
     try {
-        return window.localStorage.getItem(STREAM_PERF_STORAGE_KEY) === '1';
+        return getSafeStorage().getItem(STREAM_PERF_STORAGE_KEY) === '1';
     } catch {
         return false;
     }
@@ -154,7 +155,7 @@ export const setStreamPerfEnabled = (enabled: boolean): void => {
 
     try {
         if (enabled) {
-            window.localStorage.setItem(STREAM_PERF_STORAGE_KEY, '1');
+            getSafeStorage().setItem(STREAM_PERF_STORAGE_KEY, '1');
             window.__openchamberStreamPerfState = {
                 counters: new Map<string, PerfCounter>(),
                 startedAt: Date.now(),
@@ -168,7 +169,7 @@ export const setStreamPerfEnabled = (enabled: boolean): void => {
             return;
         }
 
-        window.localStorage.removeItem(STREAM_PERF_STORAGE_KEY);
+        getSafeStorage().removeItem(STREAM_PERF_STORAGE_KEY);
         delete window.__openchamberStreamPerfState;
         delete window.__openchamberResponsivenessPerfState;
         delete window.__openchamberVsCodeStreamPerfState;

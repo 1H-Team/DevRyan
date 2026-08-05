@@ -6,32 +6,11 @@ import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import type { GitHubAuthStatus } from '@/lib/api/types';
 import { useDeviceInfo } from '@/lib/device';
 import { cn } from '@/lib/utils';
-import { openExternalUrl } from '@/lib/url';
 import { useI18n } from '@/lib/i18n';
 import { RiGithubFill, RiInformationLine, RiTerminalLine } from '@remixicon/react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-
-type GitHubUser = {
-  login: string;
-  id?: number;
-  avatarUrl?: string;
-  name?: string;
-  email?: string;
-};
-
-type DeviceFlowStartResponse = {
-  deviceCode: string;
-  userCode: string;
-  verificationUri: string;
-  verificationUriComplete?: string;
-  expiresIn: number;
-  interval: number;
-  scope?: string;
-};
-
-type DeviceFlowCompleteResponse =
-  | { connected: true; user: GitHubUser; scope?: string }
-  | { connected: false; status?: string; error?: string };
+import { GitHubDeviceFlowPanel } from './GitHubDeviceFlow';
+import { useGitHubDeviceFlow } from './useGitHubDeviceFlow';
 
 export const GitHubSettings: React.FC = () => {
   const { t } = useI18n();
@@ -43,22 +22,9 @@ export const GitHubSettings: React.FC = () => {
   const refreshStatus = useGitHubAuthStore((state) => state.refreshStatus);
   const setStatus = useGitHubAuthStore((state) => state.setStatus);
 
-  const openExternal = React.useCallback(async (url: string) => {
-    await openExternalUrl(url);
-  }, []);
-
   const [isBusy, setIsBusy] = React.useState(false);
-  const [flow, setFlow] = React.useState<DeviceFlowStartResponse | null>(null);
-  const [pollIntervalMs, setPollIntervalMs] = React.useState<number | null>(null);
-  const pollTimerRef = React.useRef<number | null>(null);
-
-  const stopPolling = React.useCallback(() => {
-    if (pollTimerRef.current != null) {
-      window.clearInterval(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
-    setPollIntervalMs(null);
-  }, []);
+  const { flow, isStarting, start: startConnect, cancel: cancelConnect } = useGitHubDeviceFlow();
+  const busy = isBusy || isStarting;
 
   React.useEffect(() => {
     (async () => {
@@ -70,108 +36,7 @@ export const GitHubSettings: React.FC = () => {
         console.warn('Failed to load GitHub auth status:', error);
       }
     })();
-    return () => {
-      stopPolling();
-    };
-  }, [hasChecked, refreshStatus, runtimeGitHub, stopPolling]);
-
-  const startConnect = React.useCallback(async () => {
-    setIsBusy(true);
-    try {
-      const payload = runtimeGitHub
-        ? await runtimeGitHub.authStart()
-        : await (async () => {
-            const response = await fetch('/api/github/auth/start', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Accept: 'application/json',
-              },
-              body: JSON.stringify({}),
-            });
-            const body = (await response.json().catch(() => null)) as DeviceFlowStartResponse | { error?: string } | null;
-            if (!response.ok || !body || !('deviceCode' in body)) {
-              throw new Error((body as { error?: string } | null)?.error || response.statusText);
-            }
-            return body;
-          })();
-
-      setFlow(payload);
-      setPollIntervalMs(Math.max(1, payload.interval) * 1000);
-
-      const url = payload.verificationUriComplete || payload.verificationUri;
-      void openExternal(url);
-    } catch (error) {
-      console.error('Failed to start GitHub connect:', error);
-      toast.error(t('settings.github.page.toast.startConnectFailed'));
-    } finally {
-      setIsBusy(false);
-    }
-  }, [openExternal, runtimeGitHub, t]);
-
-  const pollOnce = React.useCallback(async (deviceCode: string) => {
-    if (runtimeGitHub) {
-      return runtimeGitHub.authComplete(deviceCode) as Promise<DeviceFlowCompleteResponse>;
-    }
-
-    const response = await fetch('/api/github/auth/complete', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({ deviceCode }),
-    });
-
-    const payload = (await response.json().catch(() => null)) as DeviceFlowCompleteResponse | { error?: string } | null;
-    if (!response.ok || !payload) {
-      throw new Error((payload as { error?: string } | null)?.error || response.statusText);
-    }
-    return payload as DeviceFlowCompleteResponse;
-  }, [runtimeGitHub]);
-
-  React.useEffect(() => {
-    if (!flow?.deviceCode || !pollIntervalMs) {
-      return;
-    }
-    if (pollTimerRef.current != null) {
-      return;
-    }
-
-    pollTimerRef.current = window.setInterval(() => {
-      void (async () => {
-        try {
-          const result = await pollOnce(flow.deviceCode);
-            if (result.connected) {
-              toast.success(t('settings.github.page.toast.connected'));
-              setFlow(null);
-              stopPolling();
-              await refreshStatus(runtimeGitHub, { force: true });
-              return;
-            }
-
-          if (result.status === 'slow_down') {
-            setPollIntervalMs((prev) => (prev ? prev + 5000 : 5000));
-          }
-
-          if (result.status === 'expired_token' || result.status === 'access_denied') {
-            toast.error(result.error || t('settings.github.page.toast.authorizationFailed'));
-            setFlow(null);
-            stopPolling();
-          }
-        } catch (error) {
-          console.warn('GitHub polling failed:', error);
-        }
-      })();
-    }, pollIntervalMs);
-
-    return () => {
-      if (pollTimerRef.current != null) {
-        window.clearInterval(pollTimerRef.current);
-        pollTimerRef.current = null;
-      }
-    };
-  }, [flow, pollIntervalMs, pollOnce, refreshStatus, runtimeGitHub, stopPolling, t]);
+  }, [hasChecked, refreshStatus, runtimeGitHub]);
 
   const toggleGhCli = React.useCallback(async (disabled: boolean) => {
     setIsBusy(true);
@@ -200,8 +65,7 @@ export const GitHubSettings: React.FC = () => {
   const disconnect = React.useCallback(async () => {
     setIsBusy(true);
     try {
-      stopPolling();
-      setFlow(null);
+      cancelConnect();
       if (runtimeGitHub) {
         await runtimeGitHub.authDisconnect();
       } else {
@@ -221,7 +85,7 @@ export const GitHubSettings: React.FC = () => {
     } finally {
       setIsBusy(false);
     }
-  }, [refreshStatus, runtimeGitHub, stopPolling, t]);
+  }, [cancelConnect, refreshStatus, runtimeGitHub, t]);
 
   const activateAccount = React.useCallback(async (accountId: string) => {
     if (!accountId) return;
@@ -320,11 +184,11 @@ export const GitHubSettings: React.FC = () => {
             </div>
 
             {ghCli?.active ? (
-              <Button size="sm" variant="outline" onClick={() => toggleGhCli(true)} disabled={isBusy} className={cn(isMobile ? "w-full" : undefined)}>
+              <Button size="sm" variant="outline" onClick={() => toggleGhCli(true)} disabled={busy} className={cn(isMobile ? "w-full" : undefined)}>
                 {t('settings.github.page.ghCli.actions.disable')}
               </Button>
             ) : (
-              <Button size="sm" variant="outline" onClick={disconnect} disabled={isBusy} className={cn("text-[var(--status-error)] hover:text-[var(--status-error)]", isMobile ? "w-full" : undefined)}>
+              <Button size="sm" variant="outline" onClick={disconnect} disabled={busy} className={cn("text-[var(--status-error)] hover:text-[var(--status-error)]", isMobile ? "w-full" : undefined)}>
                 {t('settings.github.page.actions.disconnect')}
               </Button>
             )}
@@ -334,7 +198,7 @@ export const GitHubSettings: React.FC = () => {
             <div className="flex min-w-0 flex-col">
               <span className="typography-ui-label text-foreground">{t('settings.github.page.status.notConnected')}</span>
             </div>
-            <Button size="sm" variant="default" onClick={startConnect} disabled={isBusy}>
+            <Button size="sm" variant="default" onClick={startConnect} disabled={busy}>
               {t('settings.github.page.actions.connect')}
             </Button>
           </div>
@@ -387,7 +251,7 @@ export const GitHubSettings: React.FC = () => {
                       <Button size="sm"
                         variant="ghost"
                         onClick={() => activateAccount(account.id)}
-                        disabled={isBusy}
+                        disabled={busy}
                       >
                         {t('settings.github.page.actions.switchTo')}
                       </Button>
@@ -406,7 +270,7 @@ export const GitHubSettings: React.FC = () => {
           <Button size="sm"
             variant="outline"
             onClick={startConnect}
-            disabled={isBusy}
+            disabled={busy}
             className={cn(isMobile ? 'w-full' : undefined)}
           >
             {t('settings.github.page.actions.addAccount')}
@@ -414,39 +278,7 @@ export const GitHubSettings: React.FC = () => {
         </div>
       )}
 
-      {flow && (
-        <div className="mt-4 rounded-lg bg-[var(--surface-elevated)]/70 p-4 border border-[var(--interactive-border)]">
-          <div className="space-y-1">
-            <h4 className="typography-ui-label text-foreground">{t('settings.github.page.flow.title')}</h4>
-            <p className="typography-meta text-muted-foreground">
-              {t('settings.github.page.flow.description')}
-            </p>
-          </div>
-          <div className="flex items-center justify-between gap-3 mt-4">
-            <div className="font-mono text-xl tracking-widest text-foreground bg-[var(--surface-muted)] px-3 py-1.5 rounded-md border border-[var(--interactive-border)]">{flow.userCode}</div>
-            <Button size="sm" asChild>
-              <a
-                href={flow.verificationUriComplete || flow.verificationUri}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {t('settings.github.page.actions.openGithub')}
-              </a>
-            </Button>
-          </div>
-          <div className="mt-4 flex items-center justify-between">
-            <span className="typography-micro text-muted-foreground animate-pulse">
-              {t('settings.github.page.flow.waiting')}
-            </span>
-            <Button size="sm" variant="ghost" disabled={isBusy} onClick={() => {
-              stopPolling();
-              setFlow(null);
-            }}>
-              {t('settings.common.actions.cancel')}
-            </Button>
-          </div>
-        </div>
-      )}
+      {flow && <GitHubDeviceFlowPanel flow={flow} onCancel={cancelConnect} />}
 
       {ghCli?.available && !ghCli?.active && (
         <div className="mt-6">
@@ -471,7 +303,7 @@ export const GitHubSettings: React.FC = () => {
                 size="sm"
                 variant="outline"
                 onClick={() => toggleGhCli(!ghCli.disabled)}
-                disabled={isBusy}
+                disabled={busy}
                 className={cn(isMobile ? "w-full" : undefined)}
               >
                 {ghCli.disabled

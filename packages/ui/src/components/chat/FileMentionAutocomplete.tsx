@@ -12,6 +12,7 @@ import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { useDirectoryShowHidden } from '@/lib/directoryShowHidden';
 import { useFilesViewShowGitignored } from '@/lib/filesViewShowGitignored';
 import { useI18n } from '@/lib/i18n';
+import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
 
 type FileInfo = ProjectFileSearchHit;
 type AgentInfo = {
@@ -50,6 +51,8 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
   style,
 }, ref) => {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
+  const canUseFiles = hasAuthCapability(principal, 'files');
   const currentDirectory = useChatSearchDirectory() ?? '';
   const activeProjectId = useProjectsStore((state) => state.activeProjectId);
   const activeProjectPath = useProjectsStore(
@@ -90,6 +93,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
   const normalizedSearchQuery = (searchQuery ?? '').trim();
   const scopeResultsToActiveTab = showTabs === true;
   const recentFiles = React.useMemo(() => {
+    if (!canUseFiles) return [] as FileInfo[];
     if (!projectRoot || !projectTabs) {
       return [] as FileInfo[];
     }
@@ -125,16 +129,16 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
       });
 
     return mapped;
-  }, [normalizedSearchQuery, projectRoot, projectTabs]);
+  }, [canUseFiles, normalizedSearchQuery, projectRoot, projectTabs]);
   const visibleAgents = React.useMemo(
     () => !scopeResultsToActiveTab || activeTab === 'agents'
       ? (normalizedSearchQuery.length > 0 ? agents : agents.slice(0, 2))
       : EMPTY_AGENTS,
     [activeTab, agents, normalizedSearchQuery.length, scopeResultsToActiveTab],
   );
-  const visibleDirectories = !scopeResultsToActiveTab || activeTab === 'files' ? directories : EMPTY_FILES;
-  const visibleRecentFiles = !scopeResultsToActiveTab || activeTab === 'files' ? recentFiles : EMPTY_FILES;
-  const visibleFiles = !scopeResultsToActiveTab || activeTab === 'files' ? files : EMPTY_FILES;
+  const visibleDirectories = canUseFiles && (!scopeResultsToActiveTab || activeTab === 'files') ? directories : EMPTY_FILES;
+  const visibleRecentFiles = canUseFiles && (!scopeResultsToActiveTab || activeTab === 'files') ? recentFiles : EMPTY_FILES;
+  const visibleFiles = canUseFiles && (!scopeResultsToActiveTab || activeTab === 'files') ? files : EMPTY_FILES;
 
   React.useEffect(() => {
     const handlePointerDown = (event: MouseEvent | TouchEvent) => {
@@ -155,7 +159,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
   }, [onClose]);
 
   React.useEffect(() => {
-    if (!currentDirectory) {
+    if (!canUseFiles || !currentDirectory) {
       setFiles([]);
       return;
     }
@@ -210,10 +214,10 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
         setLoading(false);
       }
     };
-  }, [currentDirectory, debouncedQuery, recentFiles, searchFiles, showHidden, showGitignored]);
+  }, [canUseFiles, currentDirectory, debouncedQuery, recentFiles, searchFiles, showHidden, showGitignored]);
 
   React.useEffect(() => {
-    if (!currentDirectory) {
+    if (!canUseFiles || !currentDirectory) {
       setDirectories([]);
       return;
     }
@@ -265,7 +269,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
         setLoading(false);
       }
     };
-  }, [currentDirectory, debouncedQuery, searchFiles, showHidden, showGitignored]);
+  }, [canUseFiles, currentDirectory, debouncedQuery, searchFiles, showHidden, showGitignored]);
 
   React.useEffect(() => {
     const visibleAgents = visibleConfigAgents;
@@ -452,7 +456,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
     { id: 'commands' as const, label: t('chat.autocomplete.tabs.commands') },
     { id: 'agents' as const, label: t('chat.autocomplete.tabs.agents') },
     { id: 'files' as const, label: t('chat.autocomplete.tabs.files') },
-  ]), [t]);
+  ]).filter((tab) => tab.id !== 'files' || canUseFiles), [canUseFiles, t]);
 
   return (
       <div

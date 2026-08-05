@@ -24,6 +24,8 @@ import {
   migrateThemeCatalogLocalStorage,
   THEME_CATALOG_VERSION,
 } from '@/lib/theme/catalogMigration';
+import { getSafeStorage, isPrincipalStorageEvent } from '@/stores/utils/safeStorage';
+import { canEditSettingsPage, getAuthPrincipal } from '@/lib/authSession';
 
 type ThemePreferences = {
   themeMode: ThemeMode;
@@ -49,6 +51,12 @@ const getSystemPreference = (): boolean => {
 
 const fallbackThemeForVariant = (variant: 'light' | 'dark'): Theme =>
   getDefaultTheme(variant === 'dark');
+
+const sameThemePreferences = (left: ThemePreferences, right: ThemePreferences): boolean => (
+  left.themeMode === right.themeMode
+  && left.lightThemeId === right.lightThemeId
+  && left.darkThemeId === right.darkThemeId
+);
 
 const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? React.useLayoutEffect : React.useEffect;
 
@@ -148,13 +156,14 @@ const buildInitialPreferences = (defaultThemeId?: string): ThemePreferences => {
   let themeMode: ThemeMode = 'system';
 
   if (typeof window !== 'undefined') {
-    migrateThemeCatalogLocalStorage(localStorage);
-    const storedMode = localStorage.getItem('themeMode');
-    const storedLightId = localStorage.getItem('lightThemeId');
-    const storedDarkId = localStorage.getItem('darkThemeId');
-    const legacyUseSystem = localStorage.getItem('useSystemTheme');
-    const legacyThemeId = localStorage.getItem('selectedThemeId');
-    const legacyVariant = localStorage.getItem('selectedThemeVariant');
+    const storage = getSafeStorage();
+    migrateThemeCatalogLocalStorage(storage);
+    const storedMode = storage.getItem('themeMode');
+    const storedLightId = storage.getItem('lightThemeId');
+    const storedDarkId = storage.getItem('darkThemeId');
+    const legacyUseSystem = storage.getItem('useSystemTheme');
+    const legacyThemeId = storage.getItem('selectedThemeId');
+    const legacyVariant = storage.getItem('selectedThemeVariant');
 
     if (storedMode === 'light' || storedMode === 'dark' || storedMode === 'system') {
       themeMode = storedMode;
@@ -280,6 +289,47 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
       ? ensureThemeById(preferences.darkThemeId, 'dark')
       : ensureThemeById(preferences.lightThemeId, 'light');
   }, [ensureThemeById, isVSCode, preferences, systemPrefersDark, vscodeTheme]);
+
+  const persistUserThemePreferences = useCallback((next: ThemePreferences) => {
+    if (!canEditSettingsPage(getAuthPrincipal(), 'appearance')) {
+      return;
+    }
+    const lightTheme = ensureThemeById(next.lightThemeId, 'light');
+    const darkTheme = ensureThemeById(next.darkThemeId, 'dark');
+    const selectedTheme = next.themeMode === 'light'
+      ? lightTheme
+      : next.themeMode === 'dark'
+        ? darkTheme
+        : systemPrefersDark ? darkTheme : lightTheme;
+
+    void updateDesktopSettings({
+      themeId: selectedTheme.metadata.id,
+      themeCatalogVersion: THEME_CATALOG_VERSION,
+      themeVariant: selectedTheme.metadata.variant === 'light' ? 'light' : 'dark',
+      useSystemTheme: next.themeMode === 'system',
+      lightThemeId: next.lightThemeId,
+      darkThemeId: next.darkThemeId,
+      splashBgLight: lightTheme.colors.surface.background,
+      splashFgLight: lightTheme.colors.surface.foreground,
+      splashBgDark: darkTheme.colors.surface.background,
+      splashFgDark: darkTheme.colors.surface.foreground,
+    });
+  }, [ensureThemeById, systemPrefersDark]);
+
+  const preferencesRef = React.useRef(preferences);
+  preferencesRef.current = preferences;
+  const commitUserThemePreferences = useCallback((
+    update: (previous: ThemePreferences) => ThemePreferences,
+  ) => {
+    const previous = preferencesRef.current;
+    const next = update(previous);
+    if (sameThemePreferences(previous, next)) {
+      return;
+    }
+    preferencesRef.current = next;
+    setPreferences(next);
+    persistUserThemePreferences(next);
+  }, [persistUserThemePreferences]);
 
   const reloadCustomThemes = useCallback(async () => {
     if (typeof window === 'undefined' || isVSCode) {
@@ -420,12 +470,13 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
       return;
     }
 
-    localStorage.setItem('themeMode', preferences.themeMode);
-    localStorage.setItem('lightThemeId', preferences.lightThemeId);
-    localStorage.setItem('darkThemeId', preferences.darkThemeId);
-    localStorage.setItem('useSystemTheme', String(preferences.themeMode === 'system'));
-    localStorage.setItem('selectedThemeId', currentTheme.metadata.id);
-    localStorage.setItem(
+    const storage = getSafeStorage();
+    storage.setItem('themeMode', preferences.themeMode);
+    storage.setItem('lightThemeId', preferences.lightThemeId);
+    storage.setItem('darkThemeId', preferences.darkThemeId);
+    storage.setItem('useSystemTheme', String(preferences.themeMode === 'system'));
+    storage.setItem('selectedThemeId', currentTheme.metadata.id);
+    storage.setItem(
       'selectedThemeVariant',
       currentTheme.metadata.variant === 'light' ? 'light' : 'dark',
     );
@@ -435,10 +486,10 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
     const lightTheme = ensureThemeById(preferences.lightThemeId, 'light');
     const darkTheme = ensureThemeById(preferences.darkThemeId, 'dark');
 
-    localStorage.setItem('splashBgLight', lightTheme.colors.surface.background);
-    localStorage.setItem('splashFgLight', lightTheme.colors.surface.foreground);
-    localStorage.setItem('splashBgDark', darkTheme.colors.surface.background);
-    localStorage.setItem('splashFgDark', darkTheme.colors.surface.foreground);
+    storage.setItem('splashBgLight', lightTheme.colors.surface.background);
+    storage.setItem('splashFgLight', lightTheme.colors.surface.foreground);
+    storage.setItem('splashBgDark', darkTheme.colors.surface.background);
+    storage.setItem('splashFgDark', darkTheme.colors.surface.foreground);
   }, [preferences, currentTheme, ensureThemeById]);
 
   useEffect(() => {
@@ -447,27 +498,24 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
     }
 
     const handleStorage = (event: StorageEvent) => {
-      if (event.storageArea !== window.localStorage) {
-        return;
-      }
-
-      if (event.key !== 'themeMode' && event.key !== 'lightThemeId' && event.key !== 'darkThemeId') {
+      if (!['themeMode', 'lightThemeId', 'darkThemeId'].some((key) => isPrincipalStorageEvent(event, key))) {
         return;
       }
 
       setPreferences((prev) => {
-        const nextModeRaw = localStorage.getItem('themeMode');
+        const storage = getSafeStorage();
+        const nextModeRaw = storage.getItem('themeMode');
         const nextMode: ThemeMode =
           nextModeRaw === 'light' || nextModeRaw === 'dark' || nextModeRaw === 'system'
             ? nextModeRaw
             : prev.themeMode;
 
-        const nextLightRaw = localStorage.getItem('lightThemeId');
+        const nextLightRaw = storage.getItem('lightThemeId');
         const nextLight = typeof nextLightRaw === 'string' && nextLightRaw.trim().length > 0
           ? nextLightRaw.trim()
           : prev.lightThemeId;
 
-        const nextDarkRaw = localStorage.getItem('darkThemeId');
+        const nextDarkRaw = storage.getItem('darkThemeId');
         const nextDark = typeof nextDarkRaw === 'string' && nextDarkRaw.trim().length > 0
           ? nextDarkRaw.trim()
           : prev.darkThemeId;
@@ -564,24 +612,6 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
   }, [applyIncomingThemeSync]);
 
   useEffect(() => {
-    const lightTheme = ensureThemeById(preferences.lightThemeId, 'light');
-    const darkTheme = ensureThemeById(preferences.darkThemeId, 'dark');
-
-    void updateDesktopSettings({
-      themeId: currentTheme.metadata.id,
-      themeCatalogVersion: THEME_CATALOG_VERSION,
-      themeVariant: currentTheme.metadata.variant === 'light' ? 'light' : 'dark',
-      useSystemTheme: preferences.themeMode === 'system',
-      lightThemeId: preferences.lightThemeId,
-      darkThemeId: preferences.darkThemeId,
-      splashBgLight: lightTheme.colors.surface.background,
-      splashFgLight: lightTheme.colors.surface.foreground,
-      splashBgDark: darkTheme.colors.surface.background,
-      splashFgDark: darkTheme.colors.surface.foreground,
-    });
-  }, [currentTheme.metadata.id, currentTheme.metadata.variant, ensureThemeById, preferences.themeMode, preferences.lightThemeId, preferences.darkThemeId]);
-
-  useEffect(() => {
     if (!isDesktopShell) {
       return;
     }
@@ -649,7 +679,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
         return;
       }
 
-      setPreferences((prev) => {
+      commitUserThemePreferences((prev) => {
         if (theme.metadata.variant === 'dark') {
           if (prev.darkThemeId === theme.metadata.id && prev.themeMode === 'dark') {
             return prev;
@@ -672,11 +702,11 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
         };
       });
     },
-    [availableThemes],
+    [availableThemes, commitUserThemePreferences],
   );
 
   const setThemeModeHandler = useCallback((mode: ThemeMode) => {
-    setPreferences((prev) => {
+    commitUserThemePreferences((prev) => {
       if (prev.themeMode === mode) {
         return prev;
       }
@@ -685,12 +715,12 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
         themeMode: mode,
       };
     });
-  }, []);
+  }, [commitUserThemePreferences]);
 
   const setSystemPreferenceHandler = useCallback(
     (use: boolean) => {
       if (use) {
-        setPreferences((prev) => {
+        commitUserThemePreferences((prev) => {
           if (prev.themeMode === 'system') {
             return prev;
           }
@@ -704,7 +734,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
 
       const fallbackMode: ThemeMode =
         currentTheme.metadata.variant === 'dark' ? 'dark' : 'light';
-      setPreferences((prev) => {
+      commitUserThemePreferences((prev) => {
         if (prev.themeMode === fallbackMode) {
           return prev;
         }
@@ -714,7 +744,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
         };
       });
     },
-    [currentTheme.metadata.variant],
+    [commitUserThemePreferences, currentTheme.metadata.variant],
   );
 
   const setLightThemePreference = useCallback(
@@ -727,7 +757,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
         return;
       }
 
-      setPreferences((prev) => {
+      commitUserThemePreferences((prev) => {
         if (prev.lightThemeId === theme.metadata.id) {
           return prev;
         }
@@ -737,7 +767,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
         };
       });
     },
-    [availableThemes],
+    [availableThemes, commitUserThemePreferences],
   );
 
   const setDarkThemePreference = useCallback(
@@ -750,7 +780,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
         return;
       }
 
-      setPreferences((prev) => {
+      commitUserThemePreferences((prev) => {
         if (prev.darkThemeId === theme.metadata.id) {
           return prev;
         }
@@ -760,7 +790,7 @@ export function ThemeSystemProvider({ children, defaultThemeId }: ThemeSystemPro
         };
       });
     },
-    [availableThemes],
+    [availableThemes, commitUserThemePreferences],
   );
 
   const value: ThemeContextValue = {

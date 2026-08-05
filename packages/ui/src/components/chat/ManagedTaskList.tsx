@@ -26,6 +26,7 @@ import {
 
 const EMPTY_PENDING_DISPATCHES: readonly PendingManagedTaskDispatch[] = [];
 const EMPTY_FALLBACK_TASKS: readonly ManagedTaskDispatchFallback[] = [];
+const MISSING_DISPATCH_RECOVERY_DELAY_MS = 500;
 
 export const ManagedTaskPreparingRow = React.memo(({
   dispatch,
@@ -112,11 +113,107 @@ const ManagedTaskFallbackRow = React.memo(({
 
 ManagedTaskFallbackRow.displayName = 'ManagedTaskFallbackRow';
 
+const ManagedTaskReconciledFallbackRow = React.memo(({
+  rootSessionId,
+  task,
+  onContentChange,
+}: {
+  rootSessionId?: string;
+  task: ManagedTaskDispatchFallback;
+  onContentChange?: () => void;
+}) => {
+  const authoritativeTask = useManagedOrchestrationStore(React.useMemo(
+    () => managedOrchestrationSelectors.task(task.taskId),
+    [task.taskId],
+  ));
+  const recoveryRequestedRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!rootSessionId || authoritativeTask || recoveryRequestedRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      recoveryRequestedRef.current = true;
+      void useManagedOrchestrationStore.getState().loadSnapshot({ rootSessionId });
+    }, MISSING_DISPATCH_RECOVERY_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [authoritativeTask, rootSessionId]);
+
+  if (authoritativeTask) {
+    return <ManagedTaskRow taskId={task.taskId} onContentChange={onContentChange} />;
+  }
+  return <ManagedTaskFallbackRow task={task} />;
+});
+
+ManagedTaskReconciledFallbackRow.displayName = 'ManagedTaskReconciledFallbackRow';
+
+const ManagedTaskReconciledPendingRow = React.memo(({
+  rootSessionId,
+  dispatch,
+  fallbackTask,
+  recoverMissingDispatch,
+  onContentChange,
+}: {
+  rootSessionId?: string;
+  dispatch: PendingManagedTaskDispatch;
+  fallbackTask?: ManagedTaskDispatchFallback;
+  recoverMissingDispatch: boolean;
+  onContentChange?: () => void;
+}) => {
+  const taskId = useManagedOrchestrationStore(React.useMemo(
+    () => managedOrchestrationSelectors.taskIdForDispatchCall(
+      rootSessionId ?? '',
+      dispatch.dispatchCallId ?? '',
+    ),
+    [dispatch.dispatchCallId, rootSessionId],
+  ));
+  const recoveryRequestedRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (
+      !recoverMissingDispatch
+      || !rootSessionId
+      || !dispatch.dispatchCallId
+      || taskId
+      || fallbackTask
+      || recoveryRequestedRef.current
+    ) return;
+
+    const timer = window.setTimeout(() => {
+      recoveryRequestedRef.current = true;
+      void useManagedOrchestrationStore.getState().loadSnapshot({ rootSessionId });
+    }, MISSING_DISPATCH_RECOVERY_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [
+    dispatch.dispatchCallId,
+    fallbackTask,
+    recoverMissingDispatch,
+    rootSessionId,
+    taskId,
+  ]);
+
+  if (taskId) {
+    return <ManagedTaskRow taskId={taskId} onContentChange={onContentChange} />;
+  }
+  if (fallbackTask) {
+    return (
+      <ManagedTaskReconciledFallbackRow
+        rootSessionId={rootSessionId}
+        task={fallbackTask}
+        onContentChange={onContentChange}
+      />
+    );
+  }
+  return <ManagedTaskPreparingRow dispatch={dispatch} />;
+});
+
+ManagedTaskReconciledPendingRow.displayName = 'ManagedTaskReconciledPendingRow';
+
 export const ManagedTaskList = React.memo(({
   rootSessionId,
   taskIds: explicitTaskIds,
   pendingDispatches = EMPTY_PENDING_DISPATCHES,
   fallbackTasks = EMPTY_FALLBACK_TASKS,
+  recoverMissingDispatches = false,
   onContentChange,
   isMobile = false,
 }: {
@@ -124,13 +221,17 @@ export const ManagedTaskList = React.memo(({
   taskIds?: readonly string[];
   pendingDispatches?: readonly PendingManagedTaskDispatch[];
   fallbackTasks?: readonly ManagedTaskDispatchFallback[];
+  recoverMissingDispatches?: boolean;
   onContentChange?: () => void;
   isMobile?: boolean;
 }) => {
   const { t } = useI18n();
+  const usesRootTaskIds = explicitTaskIds === undefined;
   const rootTaskIds = useManagedOrchestrationStore(React.useMemo(
-    () => managedOrchestrationSelectors.taskIdsForRoot(rootSessionId ?? ''),
-    [rootSessionId],
+    () => managedOrchestrationSelectors.taskIdsForRoot(
+      usesRootTaskIds ? rootSessionId ?? '' : '',
+    ),
+    [rootSessionId, usesRootTaskIds],
   ));
   const taskIds = explicitTaskIds ?? rootTaskIds;
   const visibleTaskIds = React.useMemo(
@@ -144,6 +245,13 @@ export const ManagedTaskList = React.memo(({
     () => new Map(fallbackTasks.map((task) => [task.taskId, task])),
     [fallbackTasks],
   );
+  const fallbackTasksByDispatchCallId = React.useMemo(() => {
+    const tasksByCallId = new Map<string, ManagedTaskDispatchFallback>();
+    for (const task of fallbackTasks) {
+      if (task.dispatchCallId) tasksByCallId.set(task.dispatchCallId, task);
+    }
+    return tasksByCallId;
+  }, [fallbackTasks]);
   const available = useManagedOrchestrationStore((state) => state.available);
   const recoveryWarning = useManagedOrchestrationStore((state) => state.recoveryWarning);
   const snapshotError = useManagedOrchestrationStore((state) => state.snapshotError);
@@ -296,10 +404,24 @@ export const ManagedTaskList = React.memo(({
                     <ManagedTaskRow key={taskId} taskId={taskId} onContentChange={onContentChange} />
                   ))}
                   {group.fallbackTasks.map((task) => (
-                    <ManagedTaskFallbackRow key={task.taskId} task={task} />
+                    <ManagedTaskReconciledFallbackRow
+                      key={task.taskId}
+                      rootSessionId={rootSessionId}
+                      task={task}
+                      onContentChange={onContentChange}
+                    />
                   ))}
                   {group.pendingDispatches.map((dispatch) => (
-                    <ManagedTaskPreparingRow key={dispatch.partId} dispatch={dispatch} />
+                    <ManagedTaskReconciledPendingRow
+                      key={dispatch.partId}
+                      rootSessionId={rootSessionId}
+                      dispatch={dispatch}
+                      fallbackTask={dispatch.dispatchCallId
+                        ? fallbackTasksByDispatchCallId.get(dispatch.dispatchCallId)
+                        : undefined}
+                      recoverMissingDispatch={recoverMissingDispatches}
+                      onContentChange={onContentChange}
+                    />
                   ))}
                 </div>
               </section>

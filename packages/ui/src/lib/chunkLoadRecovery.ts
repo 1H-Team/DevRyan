@@ -1,3 +1,4 @@
+import { getSafeSessionStorage } from '@/stores/utils/safeStorage';
 import { lazy } from 'react';
 
 declare const __APP_VERSION__: string | undefined;
@@ -48,7 +49,7 @@ function scheduleReloadOnce(error: unknown): void {
 
   let marker: { signature?: unknown; timestamp?: unknown } | null = null;
   try {
-    const rawMarker = window.sessionStorage.getItem(RELOAD_STORAGE_KEY);
+    const rawMarker = getSafeSessionStorage().getItem(RELOAD_STORAGE_KEY);
     if (rawMarker) {
       try {
         marker = JSON.parse(rawMarker) as { signature?: unknown; timestamp?: unknown };
@@ -66,7 +67,7 @@ function scheduleReloadOnce(error: unknown): void {
   }
 
   try {
-    window.sessionStorage.setItem(RELOAD_STORAGE_KEY, JSON.stringify({ signature, timestamp: now }));
+    getSafeSessionStorage().setItem(RELOAD_STORAGE_KEY, JSON.stringify({ signature, timestamp: now }));
   } catch {
     return;
   }

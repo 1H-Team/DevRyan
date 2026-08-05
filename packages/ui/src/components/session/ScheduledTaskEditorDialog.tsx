@@ -21,6 +21,8 @@ import type { ScheduledTask } from '@/lib/scheduledTasksApi';
 import { useI18n } from '@/lib/i18n';
 import { getOrderedThinkingVariants, resolveThinkingVariant } from '@/lib/providers/variantControls';
 import { resolveAvailableProviderModel } from '@/lib/providers/modelAvailability';
+import type { ProjectEntry } from '@/lib/api/types';
+import { useAuthPrincipal } from '@/lib/authSession';
 
 const WEEKDAY_INDEXES = [0, 1, 2, 3, 4, 5, 6] as const;
 const NO_VARIANT_VALUE = '__no_variant__';
@@ -452,6 +454,7 @@ type ScheduledTaskDraft = {
   id?: string;
   name: string;
   enabled: boolean;
+  targetBranchName: string;
   schedule: {
     kind: 'daily' | 'weekly' | 'once';
     times: string[];
@@ -493,6 +496,7 @@ const toDraft = (
     modelID: string;
     variant: string;
     agent: string;
+    branchName: string;
   },
 ): ScheduledTaskDraft => {
   const timezoneFallback = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -500,6 +504,7 @@ const toDraft = (
     return {
       name: '',
       enabled: true,
+      targetBranchName: defaults.branchName,
       schedule: {
         kind: 'daily',
         times: ['09:00'],
@@ -522,6 +527,7 @@ const toDraft = (
     id: task.id,
     name: task.name,
     enabled: task.enabled,
+    targetBranchName: task.target?.branchName || defaults.branchName,
     schedule: {
       kind: task.schedule.kind === 'once'
         ? 'once'
@@ -547,7 +553,7 @@ const toDraft = (
   };
 };
 
-const validateDraft = (draft: ScheduledTaskDraft, t: ReturnType<typeof useI18n>['t']): string | null => {
+const validateDraft = (draft: ScheduledTaskDraft, t: ReturnType<typeof useI18n>['t'], requiresBranch: boolean): string | null => {
   if (!draft.name.trim()) {
     return t('sessions.scheduledTasks.editor.validation.taskNameRequired');
   }
@@ -556,6 +562,9 @@ const validateDraft = (draft: ScheduledTaskDraft, t: ReturnType<typeof useI18n>[
   }
   if (!draft.execution.providerID.trim() || !draft.execution.modelID.trim()) {
     return t('sessions.scheduledTasks.editor.validation.modelRequired');
+  }
+  if (requiresBranch && !draft.targetBranchName.trim()) {
+    return t('sessions.scheduledTasks.editor.validation.branchRequired');
   }
 
   if (draft.schedule.kind === 'once') {
@@ -591,10 +600,11 @@ const dedupeSortTimes = (times: string[]) => {
 export function ScheduledTaskEditorDialog(props: {
   open: boolean;
   task: ScheduledTask | null;
+  project: ProjectEntry | null;
   onOpenChange: (open: boolean) => void;
   onSave: (draft: Partial<ScheduledTask>) => Promise<void>;
 }) {
-  const { open, task, onOpenChange, onSave } = props;
+  const { open, task, project, onOpenChange, onSave } = props;
   const { t, locale } = useI18n();
   const loadProviders = useConfigStore((state) => state.loadProviders);
   const loadAgents = useConfigStore((state) => state.loadAgents);
@@ -603,9 +613,26 @@ export function ScheduledTaskEditorDialog(props: {
   const currentModelID = useConfigStore((state) => state.currentModelId);
   const currentVariant = useConfigStore((state) => state.currentVariant || '');
   const currentAgentName = useConfigStore((state) => state.currentAgentName || '');
+  const principal = useAuthPrincipal();
   const timeFormatPreference = useUIStore((state) => state.timeFormatPreference);
   const weekStartPreference = useUIStore((state) => state.weekStartPreference);
   const isMobile = useUIStore((state) => state.isMobile);
+  const branchOptions = React.useMemo(() => {
+    const branches = principal.scope === 'managed' && principal.role !== 'admin'
+      ? principal.assignments
+        .filter((assignment) => assignment.projectId === project?.id)
+        .map((assignment) => ({
+          name: assignment.branchName,
+          directory: assignment.publicDirectory,
+          isDefault: assignment.isDefault,
+        }))
+      : project?.branches || [];
+    return [...new Map(branches.map((branch) => [branch.name, branch])).values()];
+  }, [principal.assignments, principal.role, principal.scope, project?.branches, project?.id]);
+  const defaultBranchName = React.useMemo(
+    () => branchOptions.find((branch) => branch.isDefault)?.name || branchOptions[0]?.name || task?.target?.branchName || '',
+    [branchOptions, task?.target?.branchName],
+  );
 
   const [draft, setDraft] = React.useState<ScheduledTaskDraft>(() =>
     toDraft(task, {
@@ -613,6 +640,7 @@ export function ScheduledTaskEditorDialog(props: {
       modelID: currentModelID,
       variant: currentVariant,
       agent: currentAgentName,
+      branchName: defaultBranchName,
     })
   );
   const [saving, setSaving] = React.useState(false);
@@ -675,6 +703,7 @@ export function ScheduledTaskEditorDialog(props: {
         modelID: currentModelID,
         variant: currentVariant,
         agent: currentAgentName,
+        branchName: defaultBranchName,
       })
     );
     const sourceDate = parseISODateToLocal(task?.schedule?.date || '') || new Date();
@@ -684,7 +713,7 @@ export function ScheduledTaskEditorDialog(props: {
     setShowFileMention(false);
     setCommandQuery('');
     setMentionQuery('');
-  }, [open, task, currentProviderID, currentModelID, currentVariant, currentAgentName]);
+  }, [open, task, currentProviderID, currentModelID, currentVariant, currentAgentName, defaultBranchName]);
 
   React.useEffect(() => {
     if (!isDatePickerOpen) {
@@ -993,7 +1022,7 @@ export function ScheduledTaskEditorDialog(props: {
   }, [showCommandAutocomplete, showFileMention]);
 
   const handleSubmit = React.useCallback(async () => {
-    const validationError = validateDraft(draft, t);
+    const validationError = validateDraft(draft, t, branchOptions.length > 0);
     if (validationError) {
       toast.error(validationError);
       return;
@@ -1004,6 +1033,7 @@ export function ScheduledTaskEditorDialog(props: {
       ...(draft.id ? { id: draft.id } : {}),
       name: draft.name.trim(),
       enabled: draft.enabled,
+      ...(draft.targetBranchName.trim() ? { target: { branchName: draft.targetBranchName.trim() } } : {}),
       schedule: {
         kind: draft.schedule.kind,
         timezone: draft.schedule.timezone.trim(),
@@ -1036,7 +1066,7 @@ export function ScheduledTaskEditorDialog(props: {
     } finally {
       setSaving(false);
     }
-  }, [draft, onOpenChange, onSave, t]);
+  }, [branchOptions.length, draft, onOpenChange, onSave, t]);
 
   const descriptionId = React.useId();
   const hasOpenFloatingMenu = React.useCallback(() => {
@@ -1053,7 +1083,7 @@ export function ScheduledTaskEditorDialog(props: {
 
   const formBody = (
     <div className="flex flex-col gap-5">
-                <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-3">
                   <div className="flex flex-col gap-1">
                     <FieldLabel htmlFor="sched-name" required>{t('sessions.scheduledTasks.editor.taskName.label')}</FieldLabel>
                     <Input
@@ -1090,6 +1120,24 @@ export function ScheduledTaskEditorDialog(props: {
                         <SelectItem value="daily">{t('sessions.scheduledTasks.editor.scheduleType.daily')}</SelectItem>
                         <SelectItem value="weekly">{t('sessions.scheduledTasks.editor.scheduleType.weekly')}</SelectItem>
                         <SelectItem value="once">{t('sessions.scheduledTasks.editor.scheduleType.once')}</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <FieldLabel>{t('sessions.scheduledTasks.editor.branch.label')}</FieldLabel>
+                    <Select
+                      value={draft.targetBranchName}
+                      onValueChange={(targetBranchName) => setDraft((prev) => ({ ...prev, targetBranchName }))}
+                      disabled={branchOptions.length === 0}
+                    >
+                      <SelectTrigger className="w-fit max-w-full">
+                        <SelectValue placeholder={t('sessions.scheduledTasks.editor.branch.placeholder')} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {branchOptions.map((branch) => (
+                          <SelectItem key={branch.name} value={branch.name}>{branch.name}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>

@@ -73,6 +73,7 @@ const getTask = (value: unknown) => {
     taskId: string;
     status: string;
     childSessionId?: string | null;
+    dispatchCallId?: string | null;
     timeoutAt: number | null;
   };
 };
@@ -292,7 +293,10 @@ describe('VS Code managed orchestration owner', () => {
     });
     const submitted = await runtime.handleRpc({
       method: 'submit',
-      params: submitParams(1, { dispatchGroupId: 'msg_parent' }),
+      params: submitParams(1, {
+        dispatchGroupId: 'msg_parent',
+        dispatchCallId: 'call_vscode_handoff',
+      }),
     });
 
     const inspection = await runtime.handleRpc({
@@ -309,6 +313,7 @@ describe('VS Code managed orchestration owner', () => {
     expect(inspection.tasks[0].task).not.toHaveProperty('prompt');
     expect(inspection.tasks[0].task).not.toHaveProperty('idempotencyKey');
     expect(inspection.tasks[0].task).not.toHaveProperty('dispatchGroupId');
+    expect(inspection.tasks[0].task.dispatchCallId).toBe('call_vscode_handoff');
     expect(inspection.tasks[0].task).not.toHaveProperty('leaseToken');
 
     const confirmed = await runtime.handleRpc({
@@ -380,11 +385,12 @@ describe('VS Code managed orchestration owner', () => {
     expect((await fs.readdir(path.dirname(ledger.filePath))).filter((name) => name.includes('.tmp'))).toEqual([]);
   });
 
-  it('hydrates legacy tasks without dispatch groups or read-only policy instead of quarantining them', async () => {
+  it('hydrates legacy tasks without dispatch identity or read-only policy instead of quarantining them', async () => {
     const storageDirectory = await createTemporaryDirectory();
     const ledger = createVsCodeManagedOrchestrationLedger({ storageDirectory });
     const legacyTask = { ...queuedTask(1) } as Record<string, unknown>;
     delete legacyTask.dispatchGroupId;
+    delete legacyTask.dispatchCallId;
     delete legacyTask.readOnly;
     await fs.mkdir(path.dirname(ledger.filePath), { recursive: true });
     await fs.writeFile(ledger.filePath, JSON.stringify({
@@ -396,6 +402,7 @@ describe('VS Code managed orchestration owner', () => {
     const loaded = await ledger.load();
 
     expect(loaded?.tasks[0].dispatchGroupId).toBeNull();
+    expect(loaded?.tasks[0].dispatchCallId).toBeNull();
     expect(loaded?.tasks[0].readOnly).toBe(false);
     expect(ledger.getDiagnostics?.().quarantinedPath).toBeNull();
   });

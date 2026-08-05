@@ -20,6 +20,14 @@ const createRuntime = (initialFiles = []) => {
     writeFile: async (filePath, contents) => {
       files.set(filePath, contents);
     },
+    rename: async (source, destination) => {
+      files.set(destination, files.get(source));
+      files.delete(source);
+    },
+    chmod: async () => {},
+    rm: async (filePath) => {
+      files.delete(filePath);
+    },
   };
   const configPath = '/config/cloudflare-managed-remote-tunnels.json';
   const legacyConfigPath = '/config/cloudflare-named-tunnels.json';
@@ -29,10 +37,13 @@ const createRuntime = (initialFiles = []) => {
     normalizeManagedRemoteTunnelHostname: (value) => value.trim().toLowerCase(),
     normalizeManagedRemoteTunnelPresets: (value) => value,
     normalizeManagedRemoteTunnelToken,
+    normalizeManagedRemoteOriginPort: (value) => (
+      Number.isInteger(value) && value >= 1024 && value <= 65535 ? value : 3000
+    ),
     constants: {
       CLOUDFLARE_MANAGED_REMOTE_TUNNELS_FILE_PATH: configPath,
       CLOUDFLARE_LEGACY_NAMED_TUNNELS_FILE_PATH: legacyConfigPath,
-      CLOUDFLARE_MANAGED_REMOTE_TUNNELS_VERSION: 1,
+      CLOUDFLARE_MANAGED_REMOTE_TUNNELS_VERSION: 2,
     },
   });
 
@@ -52,6 +63,10 @@ describe('createManagedTunnelConfigRuntime', () => {
 
     const persisted = files.get(configPath);
     expect(JSON.parse(persisted).tunnels[0].token).toBe(TOKEN);
+    expect(JSON.parse(persisted)).toMatchObject({
+      version: 2,
+      tunnels: [{ originPort: 3000 }],
+    });
     expect(persisted).not.toContain('cloudflared');
   });
 
@@ -73,5 +88,23 @@ describe('createManagedTunnelConfigRuntime', () => {
     ]);
     expect(persisted).not.toContain('cloudflared');
     expect(persisted).not.toContain('invalid legacy secret');
+  });
+
+  it('atomically migrates a v1 profile to schema v2 with the stable default origin port', async () => {
+    const configPath = '/config/cloudflare-managed-remote-tunnels.json';
+    const existing = JSON.stringify({
+      version: 1,
+      tunnels: [{ id: 'v1', name: 'Legacy', hostname: 'legacy.example.com', token: TOKEN }],
+    });
+    const { files, runtime } = createRuntime([[configPath, existing]]);
+
+    const migrated = await runtime.readManagedRemoteTunnelConfigFromDisk();
+
+    expect(migrated).toMatchObject({
+      version: 2,
+      tunnels: [{ id: 'v1', originPort: 3000, token: TOKEN }],
+    });
+    expect(JSON.parse(files.get(configPath))).toMatchObject({ version: 2 });
+    expect([...files.keys()].some((entry) => entry.includes('.tmp-'))).toBe(false);
   });
 });

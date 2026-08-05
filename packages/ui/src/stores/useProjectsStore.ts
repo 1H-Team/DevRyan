@@ -10,6 +10,10 @@ import { useDirectoryStore } from './useDirectoryStore';
 import { streamDebugEnabled } from '@/stores/utils/streamDebug';
 import { PROJECT_COLORS } from '@/lib/projectMeta';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { getAuthPrincipal, type AuthPrincipal } from '@/lib/authSession';
+import { toast } from '@/components/ui';
+import { updateManagedProject, type ManagedProjectMetadataPatch } from '@/lib/managedProjectsApi';
+import { formatMessage, useI18nStore, type I18nKey } from '@/lib/i18n/store';
 
 /** Pick a color key that's least used among existing projects */
 const pickAutoColor = (projects: ProjectEntry[]): string => {
@@ -55,6 +59,7 @@ interface ProjectsStore {
   discoverProjectIcon: (id: string, options?: { force?: boolean }) => Promise<{ ok: boolean; skipped?: boolean; reason?: string; error?: string }>;
   reorderProjects: (fromIndex: number, toIndex: number) => void;
   validateProjectPath: (path: string) => ProjectPathValidationResult;
+  synchronizeManagedAssignments: (principal: AuthPrincipal) => void;
   synchronizeFromSettings: (settings: DesktopSettings) => void;
   syncVSCodeWorkspaceFolders: (folders: VSCodeWorkspaceFolderConfig[], activePath?: string | null) => ProjectEntry | null;
   getActiveProject: () => ProjectEntry | null;
@@ -141,6 +146,38 @@ const sanitizeProjectIconImage = (value: unknown): ProjectEntry['iconImage'] | u
   return { mime, updatedAt, source };
 };
 
+const sanitizeProjectBranches = (value: unknown): ProjectEntry['branches'] | undefined => {
+  if (!Array.isArray(value)) return undefined;
+  const branches: NonNullable<ProjectEntry['branches']> = [];
+  const seenBranches = new Set<string>();
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue;
+    const candidate = entry as Record<string, unknown>;
+    const name = typeof candidate.name === 'string' ? candidate.name.trim() : '';
+    const directory = typeof candidate.directory === 'string'
+      ? normalizeProjectPath(candidate.directory)
+      : '';
+    const key = `${name}\0${directory}`;
+    if (!name || !directory || seenBranches.has(key)) continue;
+    seenBranches.add(key);
+    branches.push({
+      name,
+      directory,
+      ...(typeof candidate.isDefault === 'boolean' ? { isDefault: candidate.isDefault } : {}),
+    });
+  }
+  return branches.length > 0 ? branches : undefined;
+};
+
+const translateNow = (key: I18nKey): string => (
+  formatMessage(useI18nStore.getState().dictionary, key)
+);
+
+const canEditManagedProjectMetadata = (): boolean => {
+  const principal = getAuthPrincipal();
+  return principal.scope !== 'managed' || principal.role === 'admin';
+};
+
 const resolveUploadMime = (file: File): 'image/png' | 'image/jpeg' | 'image/svg+xml' | null => {
   const rawType = typeof file.type === 'string' ? file.type.trim().toLowerCase() : '';
   if (rawType === 'image/png' || rawType === 'image/jpeg' || rawType === 'image/svg+xml') {
@@ -192,7 +229,8 @@ const sanitizeProjects = (value: unknown): ProjectEntry[] => {
     const normalizedPath = normalizeProjectPath(rawPath);
     if (!normalizedPath) continue;
 
-    const id = createProjectIdFromPath(normalizedPath);
+    const providedId = typeof candidate.id === 'string' ? candidate.id.trim() : '';
+    const id = providedId || createProjectIdFromPath(normalizedPath);
     if (!id) continue;
 
     if (seenIds.has(id) || seenPaths.has(normalizedPath)) continue;
@@ -203,6 +241,9 @@ const sanitizeProjects = (value: unknown): ProjectEntry[] => {
       id,
       path: normalizedPath,
     };
+
+    const branches = sanitizeProjectBranches(candidate.branches);
+    if (branches) project.branches = branches;
 
     if (typeof candidate.label === 'string' && candidate.label.trim().length > 0) {
       project.label = candidate.label.trim();
@@ -242,6 +283,80 @@ const sanitizeProjects = (value: unknown): ProjectEntry[] => {
   }
 
   return result;
+};
+
+export interface ManagedProjectProjection {
+  projects: ProjectEntry[];
+  activeProjectId: string | null;
+}
+
+/**
+ * Managed assignments are the project registry for non-admin users. Global
+ * desktop settings may still contain host projects from an administrator;
+ * never hydrate those paths into a managed developer's client store.
+ */
+export const projectManagedAssignments = (
+  principal: Pick<AuthPrincipal, 'assignments'>,
+  existingProjects: ProjectEntry[] = [],
+): ManagedProjectProjection => {
+  const grouped = new Map<string, Array<AuthPrincipal['assignments'][number] & { publicDirectory: string }>>();
+  const orderedIds: string[] = [];
+
+  for (const assignment of principal.assignments) {
+    const publicDirectory = normalizeProjectPath(assignment.publicDirectory);
+    if (!publicDirectory) continue;
+    const projectId = assignment.projectId.trim() || createProjectIdFromPath(publicDirectory);
+    if (!grouped.has(projectId)) {
+      grouped.set(projectId, []);
+      orderedIds.push(projectId);
+    }
+    grouped.get(projectId)?.push({ ...assignment, projectId, publicDirectory });
+  }
+
+  const projects = orderedIds.flatMap((projectId) => {
+    const assignments = grouped.get(projectId) ?? [];
+    const primary = assignments.find((assignment) => assignment.isDefault) ?? assignments[0];
+    if (!primary) return [];
+
+    const existing = existingProjects.find((project) => (
+      project.id === projectId || project.path === primary.publicDirectory
+    ));
+    const presentation: Partial<ProjectEntry> = existing ? {
+      ...(existing.icon !== undefined ? { icon: existing.icon } : {}),
+      ...(existing.iconImage !== undefined ? { iconImage: existing.iconImage } : {}),
+      ...(existing.iconBackground !== undefined ? { iconBackground: existing.iconBackground } : {}),
+      ...(existing.color !== undefined ? { color: existing.color } : {}),
+      ...(existing.addedAt !== undefined ? { addedAt: existing.addedAt } : {}),
+      ...(existing.lastOpenedAt !== undefined ? { lastOpenedAt: existing.lastOpenedAt } : {}),
+      ...(existing.sidebarCollapsed !== undefined ? { sidebarCollapsed: existing.sidebarCollapsed } : {}),
+    } : {};
+    const branches = assignments
+      .filter((assignment) => assignment.branchName.trim().length > 0)
+      .map((assignment) => ({
+        name: assignment.branchName.trim(),
+        directory: assignment.publicDirectory,
+        isDefault: assignment.isDefault,
+      }));
+
+    return [{
+      ...presentation,
+      id: projectId,
+      path: primary.publicDirectory,
+      label: primary.label.trim() || existing?.label || deriveProjectLabel(primary.publicDirectory),
+      ...(branches.length > 0 ? { branches } : {}),
+    }];
+  });
+
+  const defaultAssignment = principal.assignments.find((assignment) => assignment.isDefault)
+    ?? principal.assignments[0];
+  const defaultProjectId = defaultAssignment
+    ? (defaultAssignment.projectId.trim() || createProjectIdFromPath(normalizeProjectPath(defaultAssignment.publicDirectory)))
+    : null;
+  const activeProjectId = projects.some((project) => project.id === defaultProjectId)
+    ? defaultProjectId
+    : projects[0]?.id ?? null;
+
+  return { projects, activeProjectId };
 };
 
 const readPersistedProjects = (): ProjectEntry[] => {
@@ -288,6 +403,10 @@ const cacheProjects = (projects: ProjectEntry[], activeProjectId: string | null)
 
 const persistProjects = (projects: ProjectEntry[], activeProjectId: string | null) => {
   cacheProjects(projects, activeProjectId);
+  const principal = getAuthPrincipal();
+  if (principal.scope === 'managed' && principal.role !== 'admin') {
+    return;
+  }
   void updateDesktopSettings({ projects, activeProjectId: activeProjectId ?? undefined });
 };
 
@@ -604,19 +723,21 @@ export const useProjectsStore = create<ProjectsStore>()(
         return;
       }
 
-      const { projects, activeProjectId } = get();
-      const nextProjects = projects.map((project) =>
-        project.id === id ? { ...project, label: trimmed } : project
-      );
-      set({ projects: nextProjects });
-      persistProjects(nextProjects, activeProjectId);
+      get().updateProjectMeta(id, { label: trimmed });
     },
 
     updateProjectMeta: (id: string, meta: { label?: string; icon?: string | null; color?: string | null; iconBackground?: string | null }) => {
       if (isVSCodeProjectsRuntime) {
         return;
       }
+      const principal = getAuthPrincipal();
+      if (principal.scope === 'managed' && principal.role !== 'admin') {
+        toast.error(translateNow('projectEditDialog.toast.adminOnly'));
+        return;
+      }
       const { projects, activeProjectId } = get();
+      const previousProject = projects.find((project) => project.id === id);
+      if (!previousProject) return;
       const nextProjects = projects.map((project) => {
         if (project.id !== id) return project;
         const updated = { ...project };
@@ -632,12 +753,38 @@ export const useProjectsStore = create<ProjectsStore>()(
         return updated;
       });
       set({ projects: nextProjects });
-      persistProjects(nextProjects, activeProjectId);
+      if (principal.scope !== 'managed') {
+        persistProjects(nextProjects, activeProjectId);
+        return;
+      }
+
+      cacheProjects(nextProjects, activeProjectId);
+      const patch: ManagedProjectMetadataPatch = { ...meta };
+      void updateManagedProject(id, patch).catch((error) => {
+        const current = get();
+        const rolledBack = current.projects.map((project) => {
+          if (project.id !== id) return project;
+          const restored = { ...project };
+          if (meta.label !== undefined) restored.label = previousProject.label;
+          if (meta.icon !== undefined) restored.icon = previousProject.icon;
+          if (meta.color !== undefined) restored.color = previousProject.color;
+          if (meta.iconBackground !== undefined) restored.iconBackground = previousProject.iconBackground;
+          return restored;
+        });
+        set({ projects: rolledBack });
+        cacheProjects(rolledBack, current.activeProjectId);
+        toast.error(translateNow('projectEditDialog.toast.failedToSave'), {
+          description: error instanceof Error ? error.message : String(error),
+        });
+      });
     },
 
     uploadProjectIcon: async (id: string, file: File) => {
       if (isVSCodeProjectsRuntime) {
         return { ok: false, error: 'Custom icons are not supported in this runtime' };
+      }
+      if (!canEditManagedProjectMetadata()) {
+        return { ok: false, error: translateNow('projectEditDialog.toast.adminOnly') };
       }
 
       const mime = resolveUploadMime(file);
@@ -660,6 +807,7 @@ export const useProjectsStore = create<ProjectsStore>()(
           headers: {
             'Content-Type': 'application/json',
             Accept: 'application/json',
+            'X-DevRyan-CSRF': '1',
           },
           body: JSON.stringify({ dataUrl: normalizedDataUrl }),
         });
@@ -669,9 +817,16 @@ export const useProjectsStore = create<ProjectsStore>()(
           return { ok: false, error: payload?.error || 'Failed to upload project icon' };
         }
 
-        const payload = (await response.json().catch(() => null)) as { settings?: DesktopSettings } | null;
+        const payload = (await response.json().catch(() => null)) as { settings?: DesktopSettings; project?: ProjectEntry } | null;
         if (payload?.settings) {
           get().synchronizeFromSettings(payload.settings);
+        } else if (payload?.project) {
+          const current = get();
+          const nextProjects = current.projects.map((project) => (
+            project.id === id ? { ...project, iconImage: payload.project?.iconImage ?? null } : project
+          ));
+          set({ projects: nextProjects });
+          cacheProjects(nextProjects, current.activeProjectId);
         }
         return { ok: true };
       } catch (error) {
@@ -684,12 +839,16 @@ export const useProjectsStore = create<ProjectsStore>()(
       if (isVSCodeProjectsRuntime) {
         return { ok: false, error: 'Custom icons are not supported in this runtime' };
       }
+      if (!canEditManagedProjectMetadata()) {
+        return { ok: false, error: translateNow('projectEditDialog.toast.adminOnly') };
+      }
 
       try {
         const response = await fetch(`/api/projects/${encodeURIComponent(id)}/icon`, {
           method: 'DELETE',
           headers: {
             Accept: 'application/json',
+            'X-DevRyan-CSRF': '1',
           },
         });
 
@@ -698,9 +857,16 @@ export const useProjectsStore = create<ProjectsStore>()(
           return { ok: false, error: payload?.error || 'Failed to remove project icon' };
         }
 
-        const payload = (await response.json().catch(() => null)) as { settings?: DesktopSettings } | null;
+        const payload = (await response.json().catch(() => null)) as { settings?: DesktopSettings; project?: ProjectEntry } | null;
         if (payload?.settings) {
           get().synchronizeFromSettings(payload.settings);
+        } else if (payload?.project) {
+          const current = get();
+          const nextProjects = current.projects.map((project) => (
+            project.id === id ? { ...project, iconImage: payload.project?.iconImage ?? null } : project
+          ));
+          set({ projects: nextProjects });
+          cacheProjects(nextProjects, current.activeProjectId);
         }
         return { ok: true };
       } catch (error) {
@@ -713,6 +879,9 @@ export const useProjectsStore = create<ProjectsStore>()(
       if (isVSCodeProjectsRuntime) {
         return { ok: false, error: 'Custom icons are not supported in this runtime' };
       }
+      if (!canEditManagedProjectMetadata()) {
+        return { ok: false, error: translateNow('projectEditDialog.toast.adminOnly') };
+      }
 
       try {
         const response = await fetch(`/api/projects/${encodeURIComponent(id)}/icon/discover`, {
@@ -720,6 +889,7 @@ export const useProjectsStore = create<ProjectsStore>()(
           headers: {
             'Content-Type': 'application/json',
             Accept: 'application/json',
+            'X-DevRyan-CSRF': '1',
           },
           body: JSON.stringify({ force: options?.force === true }),
         });
@@ -729,6 +899,7 @@ export const useProjectsStore = create<ProjectsStore>()(
           skipped?: boolean;
           reason?: string;
           settings?: DesktopSettings;
+          project?: ProjectEntry;
         } | null;
 
         if (!response.ok) {
@@ -737,6 +908,13 @@ export const useProjectsStore = create<ProjectsStore>()(
 
         if (payload?.settings) {
           get().synchronizeFromSettings(payload.settings);
+        } else if (payload?.project) {
+          const current = get();
+          const nextProjects = current.projects.map((project) => (
+            project.id === id ? { ...project, iconImage: payload.project?.iconImage ?? null } : project
+          ));
+          set({ projects: nextProjects });
+          cacheProjects(nextProjects, current.activeProjectId);
         }
 
         return {
@@ -773,22 +951,43 @@ export const useProjectsStore = create<ProjectsStore>()(
       persistProjects(nextProjects, activeProjectId);
     },
 
+    synchronizeManagedAssignments: (principal: AuthPrincipal) => {
+      if (principal.scope !== 'managed' || principal.role === 'admin') {
+        return;
+      }
+      const current = get();
+      const projection = projectManagedAssignments(principal, current.projects);
+      const projectsChanged = JSON.stringify(current.projects) !== JSON.stringify(projection.projects);
+      const activeChanged = current.activeProjectId !== projection.activeProjectId;
+      if (!projectsChanged && !activeChanged) {
+        return;
+      }
+      set({ projects: projection.projects, activeProjectId: projection.activeProjectId });
+      cacheProjects(projection.projects, projection.activeProjectId);
+    },
+
     synchronizeFromSettings: (settings: DesktopSettings) => {
       if (isVSCodeProjectsRuntime) {
         return;
       }
-      const incomingProjects = sanitizeProjects(settings.projects ?? []);
-      const incomingActive = typeof settings.activeProjectId === 'string' && settings.activeProjectId.trim()
+      const settingsProjects = sanitizeProjects(settings.projects ?? []);
+      const settingsActive = typeof settings.activeProjectId === 'string' && settings.activeProjectId.trim()
         ? settings.activeProjectId.trim()
         : null;
 
       const current = get();
+      const principal = getAuthPrincipal();
+      const managedProjection = principal.scope === 'managed' && principal.role !== 'admin'
+        ? projectManagedAssignments(principal, [...settingsProjects, ...current.projects])
+        : null;
+      const incomingProjects = managedProjection?.projects ?? settingsProjects;
+      const incomingActive = managedProjection?.activeProjectId ?? settingsActive;
 
       // Race guard: settings load can return empty projects during app
       // rebuild/reinstall or an incomplete settings read. Don't clobber
       // a populated cache with empty — the sidebar would go blank and
       // localStorage would be overwritten, losing the list entirely.
-      if (incomingProjects.length === 0 && current.projects.length > 0) {
+      if (principal.scope !== 'managed' && incomingProjects.length === 0 && current.projects.length > 0) {
         if (incomingActive !== current.activeProjectId) {
           // Active project may still be valid within the cached list.
           const activeExists = incomingActive
@@ -817,6 +1016,15 @@ export const useProjectsStore = create<ProjectsStore>()(
         if (activeProject) {
           opencodeClient.setDirectory(activeProject.path);
           useDirectoryStore.getState().setDirectory(activeProject.path, { showOverlay: false });
+        }
+      }
+
+      if (principal.scope === 'managed') {
+        const currentDraftId = useSessionUIStore.getState().currentDraftId;
+        if (currentDraftId) {
+          queueMicrotask(() => {
+            useSessionUIStore.getState().selectNewSessionDraft(currentDraftId);
+          });
         }
       }
     },

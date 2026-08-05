@@ -61,6 +61,7 @@ import type {
 } from '@/lib/api/types';
 import { useI18n } from '@/lib/i18n';
 import { resolveGitHubSourceRepo } from '@/lib/github/sourceRepo';
+import { useAuthPrincipal } from '@/lib/authSession';
 
 type MergeMethod = 'merge' | 'squash' | 'rebase';
 type DetectedUpstream = { owner: string; repo: string; url: string; defaultBranch?: string; defaultBranchSha?: string | null; remoteName?: string | null };
@@ -328,6 +329,7 @@ export const PullRequestSection: React.FC<{
   onGeneratedDescription?: () => void;
 }> = ({ directory, branch, baseBranch, trackingBranch, remotes = [], remoteBranches = [], onGeneratedDescription }) => {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
   const { github } = useRuntimeAPIs();
   const githubAuthStatus = useGitHubAuthStore((state) => state.status);
   const githubAuthChecked = useGitHubAuthStore((state) => state.hasChecked);
@@ -338,9 +340,10 @@ export const PullRequestSection: React.FC<{
   const { isMobile, hasTouchInput } = useDeviceInfo();
 
   const openGitHubSettings = React.useCallback(() => {
-    setSettingsPage('github');
+    setSettingsPage('users');
     setSettingsDialogOpen(true);
   }, [setSettingsDialogOpen, setSettingsPage]);
+  const canManageGitHubAccounts = principal.scope === 'local-admin' || principal.role === 'admin';
 
   const snapshotKey = React.useMemo(() => getPullRequestSnapshotKey(directory, branch), [directory, branch]);
   const initialSnapshot = React.useMemo(
@@ -1503,11 +1506,13 @@ export const PullRequestSection: React.FC<{
         {shouldShowConnectionNotice ? (
           <div className="space-y-2">
               <div className="typography-meta text-muted-foreground">
-              {t('gitView.pr.githubNotConnected')}
-            </div>
+                {canManageGitHubAccounts ? t('gitView.pr.githubNotConnected') : t('settings.github.accountManagement.adminRequired')}
+              </div>
+              {canManageGitHubAccounts && (
                 <Button variant="outline" size="sm" onClick={openGitHubSettings} className="w-fit">
                   {t('gitView.pr.actions.openSettings')}
                 </Button>
+              )}
               </div>
             ) : null}
 

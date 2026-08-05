@@ -45,6 +45,18 @@ phrase with `Preparing project…` when their active directory matches. The app
 clears the value on warmup settlement and effect cleanup only when it still owns
 the same directory value.
 
+`useConfigStore.ts` keeps OpenCode connection state separate from its low-frequency
+provider/agent initialization status. A confirmed healthy connection stays connected
+when a later bootstrap phase fails, while the non-persisted initialization status and
+error let the startup gate identify the actual failing phase and retry it without an
+unnecessary runtime restart.
+
+Applying a default agent updates its agent, configured provider/model, and thinking
+variant in one store transition. Only an explicit draft model selection (including
+legacy drafts that persist both provider and model) may preserve a different model;
+ambient directory or reload state cannot make the display diverge from send-time
+agent-default routing.
+
 These stores coordinate visible app state, navigation, selected tabs, dialogs, and lightweight feature flags.
 
 ### Session / project coordination stores
@@ -56,6 +68,15 @@ Examples:
 - `useSessionFoldersStore.ts`
 
 These stores coordinate persistent project/session metadata across multiple views.
+
+For a managed principal, `useProjectsStore.ts` derives the visible project registry and
+active project from the authenticated assignment snapshot during settings hydration.
+Each repository keeps the server-owned UUID and contains an ordered branch projection;
+the store does not generate path-based replacement IDs or apply browser-local metadata
+overrides. Persisted host-path projects are not replayed into the live directory store;
+the default assignment's public `/projects/<project>/<branch>` path becomes authoritative
+instead. Managed metadata changes are admin-only, persisted through the server, and
+rolled back optimistically if that request fails.
 
 `useGlobalSessionsStore.ts` combines complete global HTTP listings with low-frequency
 `session.created`, `session.updated`, and `session.deleted` events from the sync pipeline. Lifecycle
@@ -138,6 +159,7 @@ Core model:
 
 - safe task records keyed by `dvr_task_*` identity
 - root-session task ID arrays with stable references
+- an exact `(rootSessionId, dispatchCallId)` leaf selector for provisional chat rows
 - terminal result envelopes keyed by task ID
 - one narrow child-session-to-task index for unacknowledged manual recovery
 - per-task pending action and visible action-error leaves
@@ -161,6 +183,17 @@ Ownership and safety rules:
    remain visible, and retry reuses its idempotency key.
 7. Components subscribe through one-root or one-task selectors. Do not select
    `tasksById` or `resultEnvelopesByTaskId` from rendering components.
+   Provisional dispatch rows use the exact call selector, which returns only a
+   stable task ID and never reconciles by mutable label or agent text. Once a
+   completed start output exposes a task ID, its fallback row subscribes to that
+   exact task leaf and may immediately request one root-scoped snapshot if the
+   live event was missed. Once the shared sync layer receives the root session's
+   authoritative idle event, it makes one final scoped request if the managed
+   projection is still active, so a missed terminal event cannot strand
+   `Preparing...`, `Running...`, or the root barrier. This
+   recovery does not infer live activity from the invoking assistant record's
+   historical completion; snapshot-load deduplication coalesces parallel rows
+   and no poller is created.
 8. The app owner resets the projection on real runtime shutdown; generation
    tokens prevent late requests from repopulating the reset store.
 9. Identity-only compaction events remove the exact task, result, action state,

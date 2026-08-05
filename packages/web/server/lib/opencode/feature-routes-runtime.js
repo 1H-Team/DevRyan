@@ -70,6 +70,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       writeSseEvent,
       emitSyntheticOpenCodeEvent,
       resolveZenModel,
+      resolveManagedProject,
     } = routeDependencies;
 
     const {
@@ -124,6 +125,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       createFsSearchRuntime,
       spawn,
       resolveGitBinaryForSpawn,
+      resolveManagedProject,
     });
 
     registerScheduledTaskRoutes(app, {
@@ -133,6 +135,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       scheduledTasksRuntime,
       getOpenChamberEventClients,
       writeSseEvent,
+      resolveManagedProject,
     });
 
     const pluginReadModel = createPluginReadModel({ fs, path, os });

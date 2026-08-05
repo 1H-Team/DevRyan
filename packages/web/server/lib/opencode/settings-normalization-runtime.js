@@ -287,11 +287,16 @@ export const createSettingsNormalizationRuntime = (dependencies) => {
       const id = typeof candidate.id === 'string' ? candidate.id.trim() : '';
       const name = typeof candidate.name === 'string' ? candidate.name.trim() : '';
       const hostname = normalizeManagedRemoteTunnelHostname(candidate.hostname);
+      const originPort = Number.isInteger(candidate.originPort)
+        && candidate.originPort >= 1024
+        && candidate.originPort <= 65535
+        ? candidate.originPort
+        : 3000;
       if (!id || !name || !hostname) continue;
       if (seenIds.has(id) || seenHostnames.has(hostname)) continue;
       seenIds.add(id);
       seenHostnames.add(hostname);
-      result.push({ id, name, hostname });
+      result.push({ id, name, hostname, originPort });
     }
 
     return result;

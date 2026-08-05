@@ -132,6 +132,24 @@ describe("opencode client sends", () => {
     expect(fetchCalls[0]?.init).toBe(undefined)
   })
 
+  test("can request providers without the saved directory", async () => {
+    opencodeClient.setDirectory("/projects/stale/main")
+    globalThis.fetch = mock((url: string | URL | Request, init?: RequestInit) => {
+      const request = typeof Request !== "undefined" && url instanceof Request ? url : undefined
+      fetchCalls.push({ url: request?.url ?? String(url), init, request })
+      return Promise.resolve(new Response(JSON.stringify({ providers: [], default: {} }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }))
+    }) as typeof fetch
+
+    await opencodeClient.getProviders({ directory: null })
+
+    const requestUrl = new URL(fetchCalls[0]?.url ?? "http://127.0.0.1:5180")
+    expect(requestUrl.pathname).toBe("/api/config/providers")
+    expect(requestUrl.searchParams.has("directory")).toBe(false)
+  })
+
   test("waits for worktree bootstrap before slash commands", async () => {
     await opencodeClient.sendCommand({
       id: "session-a",

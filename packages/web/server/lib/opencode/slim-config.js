@@ -213,13 +213,14 @@ const resolveAgentMode = (name) => {
   return 'subagent';
 };
 
-const normalizeSlimAgent = (name, rawConfig, rootOverride) => {
+const normalizeSlimAgent = (name, rawConfig, rootOverride, { activePreset = null, presetConfig = null } = {}) => {
   const config = isPlainObject(rawConfig) ? rawConfig : {};
   const modelRef = getPrimaryModelRef(config.model);
   const modelRefs = getModelRefs(config.model);
   const parsedModel = parseModelReference(modelRef);
   const root = isPlainObject(rootOverride) ? rootOverride : {};
-  const presetHadVariant = typeof rawConfig?.variant === 'string';
+  const preset = isPlainObject(presetConfig) ? presetConfig : {};
+  const presetHadVariant = typeof preset.variant === 'string';
   const modelWasRootOverridden = Object.prototype.hasOwnProperty.call(root, 'model');
   const rootHasVariant = Object.prototype.hasOwnProperty.call(root, 'variant');
   const variantWasRootOverridden = Object.prototype.hasOwnProperty.call(root, 'variant')
@@ -243,6 +244,16 @@ const normalizeSlimAgent = (name, rawConfig, rootOverride) => {
     native: true,
     builtIn: true,
     slim: true,
+    modelResolution: {
+      presetName: activePreset,
+      source: modelWasRootOverridden || rootHasVariant
+        ? 'root-override'
+        : (activePreset && Object.keys(preset).length > 0 ? 'preset' : 'root'),
+      presetModelRef: getPrimaryModelRef(preset.model),
+      presetVariant: typeof preset.variant === 'string'
+        ? preset.variant.trim() || null
+        : (getFirstModelVariant(preset.model) || null),
+    },
     overrides: {
       model: modelWasRootOverridden,
       variant: variantWasRootOverridden,
@@ -278,12 +289,17 @@ const buildEffectiveAgents = (config, activePreset) => {
 
 const normalizeSlimAgents = (config, activePreset) => {
   const effectiveAgents = buildEffectiveAgents(config, activePreset);
+  const presets = isPlainObject(config?.presets) ? config.presets : {};
+  const presetAgents = activePreset && isPlainObject(presets[activePreset]) ? presets[activePreset] : {};
   const rootAgents = isPlainObject(config?.agents) ? config.agents : {};
   const disabled = getDisabledAgents(config);
   const agents = {};
   for (const [name, rawAgent] of Object.entries(effectiveAgents)) {
     if (disabled.has(name) || !isPlainObject(rawAgent)) continue;
-    agents[name] = normalizeSlimAgent(name, rawAgent, rootAgents[name]);
+    agents[name] = normalizeSlimAgent(name, rawAgent, rootAgents[name], {
+      activePreset,
+      presetConfig: presetAgents[name],
+    });
   }
   return agents;
 };

@@ -5,6 +5,7 @@ import { useSessionWorktreeStore } from '@/sync/session-worktree-store';
 import { getAttachedSessionDirectory } from '@/sync/session-worktree-contract';
 import { useSessions } from '@/sync/sync-context';
 import type { Session } from '@opencode-ai/sdk/v2';
+import { resolveDraftEffectiveDirectory } from './useEffectiveDirectory';
 
 export const useChatSearchDirectory = (): string | undefined => {
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
@@ -37,8 +38,11 @@ export const useChatSearchDirectory = (): string | undefined => {
     }
   }
 
-  if (newSessionDraft?.open && (newSessionDraft.bootstrapPendingDirectory || newSessionDraft.directoryOverride)) {
-    return (newSessionDraft.bootstrapPendingDirectory || newSessionDraft.directoryOverride) ?? undefined;
+  if (newSessionDraft?.open) {
+    const draftDirectory = resolveDraftEffectiveDirectory(newSessionDraft, null);
+    if (draftDirectory || newSessionDraft.pendingWorktreeRequestId || newSessionDraft.targetPreparationError) {
+      return draftDirectory;
+    }
   }
 
   if (activeProjectId) {

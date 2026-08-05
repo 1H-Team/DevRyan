@@ -11,6 +11,7 @@ import {
   getArchivedScopeKey,
   normalizeForBranchComparison,
   normalizePath,
+  resolveSessionGroupDirectoryKey,
 } from '../utils';
 import { formatDirectoryName, formatPathForDisplay } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
@@ -222,10 +223,12 @@ export const useSessionGrouping = (args: Args) => {
         if (!metadataPath && !sessionDirectory) return archivedKey;
         const fallbackDirectory = normalizePath((session as Session & { project?: { worktree?: string | null } | null }).project?.worktree ?? null);
         const normalizedDir = metadataPath ?? sessionDirectory ?? fallbackDirectory;
-        if (!normalizedDir) return archivedKey;
-        if (normalizedDir !== normalizedProjectRoot && worktreeByPath.has(normalizedDir)) return normalizedDir;
-        if (normalizedDir === normalizedProjectRoot) return normalizedProjectRoot ?? '__project_root__';
-        return archivedKey;
+        return resolveSessionGroupDirectoryKey(
+          normalizedDir,
+          normalizedProjectRoot,
+          (directory) => worktreeByPath.has(directory),
+          archivedKey,
+        );
       };
 
       const archivedSessions = buildArchivedSessionTree(
@@ -246,8 +249,8 @@ export const useSessionGrouping = (args: Args) => {
       const groups: SessionGroup[] = [{
         id: 'root',
         label: (projectIsRepo && projectRootBranch && projectRootBranch !== 'HEAD')
-          ? t('sessions.sidebar.grouping.projectRootWithBranch', { branch: projectRootBranch })
-          : t('sessions.sidebar.grouping.projectRoot'),
+          ? projectRootBranch
+          : '',
         branch: projectRootBranch ?? null,
         description: normalizedProjectRoot ? formatPathForDisplay(normalizedProjectRoot, args.homeDirectory) : null,
         isMain: true,
@@ -301,6 +304,8 @@ export const useSessionGrouping = (args: Args) => {
 
       sortedWorktrees.forEach((meta) => {
         const directory = normalizePath(meta.path) ?? meta.path;
+        // Never surface the project root itself as a branch node.
+        if (directory === normalizedProjectRoot) return;
         const currentBranch = args.gitBranches.get(directory)?.trim() || null;
         const metadataBranch = meta.branch?.trim() || null;
         const shouldSyncLabelWithBranch = Boolean(

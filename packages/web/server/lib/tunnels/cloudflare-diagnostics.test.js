@@ -42,8 +42,13 @@ describe('Cloudflare tunnel diagnostics', () => {
     const metadata = provider.getMetadata({
       getDiagnostics: () => ({
         expectedHostname: 'devryan.1health.ae',
+        originPort: 3000,
+        cloudflareOriginUrl: 'http://127.0.0.1:3000',
+        activeOriginUrl: 'http://127.0.0.1:55676',
+        originRelayActive: true,
+        publicReachabilityVerified: true,
         localOriginUrl: 'http://127.0.0.1:55676',
-        cloudflareConfigRequiresManualOriginMatch: true,
+        cloudflareConfigRequiresManualOriginMatch: false,
         startupLogExcerpt: ['INF registered tunnel connection'],
       }),
     });
@@ -52,8 +57,13 @@ describe('Cloudflare tunnel diagnostics', () => {
       configPath: null,
       resolvedHostname: null,
       expectedHostname: 'devryan.1health.ae',
+      originPort: 3000,
+      cloudflareOriginUrl: 'http://127.0.0.1:3000',
+      activeOriginUrl: 'http://127.0.0.1:55676',
+      originRelayActive: true,
+      publicReachabilityVerified: true,
       localOriginUrl: 'http://127.0.0.1:55676',
-      cloudflareConfigRequiresManualOriginMatch: true,
+      cloudflareConfigRequiresManualOriginMatch: false,
       startupLogExcerpt: ['INF registered tunnel connection'],
     });
   });

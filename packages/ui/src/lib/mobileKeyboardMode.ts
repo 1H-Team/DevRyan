@@ -1,3 +1,4 @@
+import { getSafeStorage } from '@/stores/utils/safeStorage';
 export type MobileKeyboardMode = 'native' | 'resize-content';
 
 export const MOBILE_KEYBOARD_MODE_STORAGE_KEY = 'openchamber.mobileKeyboardMode';
@@ -51,7 +52,7 @@ export const getStoredMobileKeyboardMode = (): MobileKeyboardMode => {
   }
 
   try {
-    return getSupportedMobileKeyboardMode(normalizeMobileKeyboardMode(localStorage.getItem(MOBILE_KEYBOARD_MODE_STORAGE_KEY)));
+    return getSupportedMobileKeyboardMode(normalizeMobileKeyboardMode(getSafeStorage().getItem(MOBILE_KEYBOARD_MODE_STORAGE_KEY)));
   } catch {
     return 'native';
   }
@@ -63,9 +64,9 @@ export const setStoredMobileKeyboardMode = (value: unknown): MobileKeyboardMode 
   if (typeof window !== 'undefined') {
     try {
       if (mode === 'native') {
-        localStorage.removeItem(MOBILE_KEYBOARD_MODE_STORAGE_KEY);
+        getSafeStorage().removeItem(MOBILE_KEYBOARD_MODE_STORAGE_KEY);
       } else {
-        localStorage.setItem(MOBILE_KEYBOARD_MODE_STORAGE_KEY, mode);
+        getSafeStorage().setItem(MOBILE_KEYBOARD_MODE_STORAGE_KEY, mode);
       }
     } catch {
       // Ignore storage failures in restricted browsing contexts.

@@ -19,6 +19,7 @@ const validInput = (overrides = {}) => ({
   idempotencyKey: 'root-1:research-auth',
   rootSessionId: 'ses_root',
   dispatchGroupId: 'msg_parent_01',
+  dispatchCallId: 'call_dispatch_01',
   parentTaskId: null,
   directory: '/workspace',
   sequence: 1,
@@ -96,15 +97,19 @@ describe('managed orchestration contract', () => {
     expect(validateManagedTaskRecord(task)).toBe(task);
   });
 
-  test('defaults legacy and ungrouped work to no private dispatch group', () => {
+  test('defaults legacy work to no private dispatch identity', () => {
     const input = validInput();
     delete input.dispatchGroupId;
+    delete input.dispatchCallId;
 
     const task = createManagedTaskRecord(input);
 
     expect(task.dispatchGroupId).toBeNull();
+    expect(task.dispatchCallId).toBeNull();
     expect(() => validateManagedTaskRecord({ ...task, dispatchGroupId: '' }))
       .toThrow('dispatchGroupId is required');
+    expect(() => validateManagedTaskRecord({ ...task, dispatchCallId: '' }))
+      .toThrow('dispatchCallId is required');
   });
 
   test('defaults legacy work to writable and validates an explicit read-only policy', () => {
@@ -165,6 +170,7 @@ describe('managed orchestration contract', () => {
     expect(event.type).toBe('openchamber:managed-task');
     expect(event.properties.owner).toBe('devryan');
     expect(event.properties.task.taskId).toBe(task.taskId);
+    expect(event.properties.task.dispatchCallId).toBe('call_dispatch_01');
     expect(event.properties.task.label).toBe(task.label);
     expect(event.properties.task).not.toHaveProperty('prompt');
     expect(event.properties.task).not.toHaveProperty('idempotencyKey');

@@ -14,7 +14,7 @@ import {
   writeAgentModelOverride,
 } from './lib/opencode/agents.js';
 import { listPackagedAgents } from './lib/opencode/packaged-agents.js';
-import { registerConfigEntityRoutes } from './lib/opencode/config-entity-routes.js';
+import { registerConfigEntityRoutes, sanitizeAgentRuntimeMetadata } from './lib/opencode/config-entity-routes.js';
 
 const originalOpencodeConfigDir = process.env.OPENCODE_CONFIG_DIR;
 let isolatedOpencodeConfigDir;
@@ -43,6 +43,25 @@ afterEach(async () => {
 });
 
 describe('OpenCode agent model normalization', () => {
+  it('sanitizes chat-bootstrap metadata without leaking configuration internals', () => {
+    expect(sanitizeAgentRuntimeMetadata({
+      name: 'builder',
+      model: { providerID: 'openai', modelID: 'gpt-5.6', secret: 'nope' },
+      variant: 'high',
+      modelRefs: ['openai/gpt-5.6'],
+      councillors: [{ model: 'anthropic/claude', variant: 'max', prompt: 'secret' }],
+      prompt: 'private prompt',
+      path: '/private/agent.md',
+      permission: { bash: true },
+      source: 'project',
+    })).toEqual({
+      name: 'builder',
+      model: { providerID: 'openai', modelID: 'gpt-5.6' },
+      variant: 'high',
+      modelRefs: ['openai/gpt-5.6'],
+      councillors: [{ model: 'anthropic/claude', variant: 'max' }],
+    });
+  });
   let projectDirectory;
   let userConfigPath;
 

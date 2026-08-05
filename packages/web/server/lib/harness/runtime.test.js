@@ -45,6 +45,7 @@ describe('web harness prompt admission', () => {
     const middleware = runtime.promptAdmissionMiddleware({ recordPromptAccepted });
     const request = {
       method: 'POST',
+      principal: { id: 'user-1', role: 'developer', scope: 'managed' },
       params: { sessionID: 'ses_1' },
       query: { directory: '/repo' },
       headers: { 'x-openchamber-message-id': 'msg_1' },
@@ -77,6 +78,40 @@ describe('web harness prompt admission', () => {
     rejectedResponse.statusCode = 500;
     rejectedResponse.emit('finish');
     expect(recordPromptAccepted).toHaveBeenCalledOnce();
+    await runtime.journal.flush();
+    const records = await runtime.journal.readRecords();
+    expect(records.find((record) => record.type === 'prompt')).toMatchObject({
+      actor: { id: 'user-1', role: 'developer', scope: 'managed' },
+      sessionID: 'ses_1',
+    });
+    await runtime.drain();
+  });
+
+  it('bounds oversized prompt audit bodies while retaining a hash and actor', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-web-harness-'));
+    temporaryDirectories.push(directory);
+    const runtime = createWebHarnessRuntime({ dataDirectory: directory, runtime: 'test' });
+    await runtime.initialize();
+    const middleware = runtime.promptAdmissionMiddleware();
+    const response = createResponse();
+    middleware({
+      method: 'POST',
+      principal: { id: 'user-large', role: 'developer', scope: 'managed' },
+      params: { sessionID: 'ses_large' },
+      query: { directory: '/projects/project/developer' },
+      headers: {},
+      body: { parts: [{ type: 'text', text: 'x'.repeat(70 * 1024) }] },
+    }, response, vi.fn());
+    await runtime.journal.flush();
+
+    const prompt = (await runtime.journal.readRecords()).find((record) => record.type === 'prompt');
+    expect(prompt.actor).toEqual({ id: 'user-large', role: 'developer', scope: 'managed' });
+    expect(prompt.payload.body).toMatchObject({
+      truncated: true,
+      size: expect.any(Number),
+      sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    expect(prompt.payload.body.size).toBeGreaterThan(64 * 1024);
     await runtime.drain();
   });
 });

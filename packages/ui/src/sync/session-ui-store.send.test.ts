@@ -54,10 +54,12 @@ const configSetAgentCalls: Array<{ agentName: string; options?: Record<string, u
 const configSetProviderModelCalls: Array<{ providerId: string; modelId: string; variant?: string }> = []
 const configApplyDefaultsCalls: Array<{
   preserveCurrentModel?: boolean
-  preserveRehydratedDraftModel?: boolean
 }> = []
+const activatedConfigDirectories: Array<string | null | undefined> = []
+const managedBranchTargetCalls: Array<{ projectId: string; branchName: string; idempotencyKey: string }> = []
 const rejectQuestionCalls: Array<{ sessionId: string; requestId: string }> = []
 let sessionAgentSelections = new Map<string, string>()
+let builderHandoffClearedSessions = new Set<string>()
 let draftAgentSelections = new Map<string, string>()
 let draftModelSelections = new Map<string, { providerId: string; modelId: string }>()
 let draftAgentModelSelections = new Map<string, Map<string, { providerId: string; modelId: string }>>()
@@ -87,6 +89,12 @@ let deferNextCreateSession = false
 let deferredCreateSession: { promise: Promise<unknown>; resolve: (value: unknown) => void; reject: (reason?: unknown) => void } | null = null
 let selectCreatedSessionDuringCreate = false
 let deferredActivateDirectoryResolve: (() => void) | null = null
+let deferManagedBranchTarget = false
+let deferredManagedBranchTarget: {
+  promise: Promise<Record<string, unknown>>
+  resolve: (value: Record<string, unknown>) => void
+  reject: (reason?: unknown) => void
+} | null = null
 
 function createDeferredSend() {
   let resolve!: (value: unknown) => void
@@ -240,10 +248,12 @@ mock.module("@/stores/useConfigStore", () => ({
       settingsDefaultAgent: undefined,
       agents: [],
       providers: [],
-      activateDirectory: mock(() => Promise.resolve()),
+      activateDirectory: mock((directory?: string | null) => {
+        activatedConfigDirectories.push(directory)
+        return Promise.resolve()
+      }),
       applyDefaultsToCurrent: mock((options?: {
         preserveCurrentModel?: boolean
-        preserveRehydratedDraftModel?: boolean
       }) => {
         configApplyDefaultsCalls.push(options ?? {})
       }),
@@ -265,10 +275,37 @@ mock.module("@/stores/useConfigStore", () => ({
   },
 }))
 
+mock.module("@/lib/worktrees/managedBranchTarget", () => ({
+  ensureManagedBranchTarget: mock((input: { projectId: string; branchName: string; idempotencyKey: string }) => {
+    managedBranchTargetCalls.push(input)
+    if (deferManagedBranchTarget) {
+      deferManagedBranchTarget = false
+      let resolve!: (value: Record<string, unknown>) => void
+      let reject!: (reason?: unknown) => void
+      const promise = new Promise<Record<string, unknown>>((innerResolve, innerReject) => {
+        resolve = innerResolve
+        reject = innerReject
+      })
+      deferredManagedBranchTarget = { promise, resolve, reject }
+      return promise
+    }
+    return Promise.resolve({
+      status: "success",
+      source: "worktree",
+      branchName: input.branchName,
+      directory: `/worktrees/${input.branchName}`,
+    })
+  }),
+}))
+
 mock.module("./selection-store", () => ({
   useSelectionStore: {
     getState: () => ({
       getSessionAgentSelection: (sessionId: string) => sessionAgentSelections.get(sessionId) ?? null,
+      markBuilderHandoffCleared: (sessionId: string) => {
+        builderHandoffClearedSessions.add(sessionId)
+      },
+      hasBuilderHandoffClearance: (sessionId: string) => builderHandoffClearedSessions.has(sessionId),
       getDraftAgentSelection: (draftId: string) => draftAgentSelections.get(draftId) ?? null,
       getDraftModelSelection: (draftId: string) => draftModelSelections.get(draftId) ?? null,
       getDraftAgentModelForSelection: (draftId: string, agent: string) =>
@@ -528,6 +565,7 @@ const { useProjectsStore } = await import("@/stores/useProjectsStore")
 const { getSafeStorage } = await import("@/stores/utils/safeStorage")
 const { useSessionWorktreeStore } = await import("./session-worktree-store")
 const { useSessionPlanFileStore } = await import("@/stores/useSessionPlanFileStore")
+const { setAuthPrincipal } = await import("@/lib/authSession")
 
 const SESSION_COMPLETION_INDICATOR_SETTLE_MS = 250
 const CURSOR_DRAFT_PREWARM_STORAGE_KEY = "openchamber.cursorDraftPrewarmSessions.v1"
@@ -575,6 +613,33 @@ const createPdfAttachment = () => ({
   source: "local" as const,
 })
 
+const setManagedDeveloper = () => setAuthPrincipal({
+  id: "developer-1",
+  email: "developer@example.test",
+  displayName: "Developer",
+  role: "developer",
+  scope: "managed",
+  policy: {
+    settingsPages: [],
+    files: true,
+    terminal: true,
+    manageProjects: false,
+    manageUsers: false,
+    manageGlobalSettings: false,
+    manageGit: true,
+    push: true,
+    github: true,
+  },
+  assignments: [{
+    projectId: "project-1",
+    label: "Project",
+    branchName: "Dev",
+    publicDirectory: "/repo",
+    githubAccountId: "github-1",
+    isDefault: true,
+  }],
+})
+
 describe("session-ui-store send routing", () => {
   beforeEach(() => {
     restoreOpencodeClientMock()
@@ -604,8 +669,11 @@ describe("session-ui-store send routing", () => {
     configSetAgentCalls.length = 0
     configSetProviderModelCalls.length = 0
     configApplyDefaultsCalls.length = 0
+    activatedConfigDirectories.length = 0
+    managedBranchTargetCalls.length = 0
     rejectQuestionCalls.length = 0
     sessionAgentSelections = new Map()
+    builderHandoffClearedSessions = new Set()
     draftAgentSelections = new Map()
     draftModelSelections = new Map()
     draftAgentModelSelections = new Map()
@@ -635,6 +703,9 @@ describe("session-ui-store send routing", () => {
     deferredCreateSession = null
     selectCreatedSessionDuringCreate = false
     deferredActivateDirectoryResolve = null
+    deferManagedBranchTarget = false
+    deferredManagedBranchTarget = null
+    setAuthPrincipal(null)
     const storage = getSafeStorage()
     storage.removeItem(CURSOR_DRAFT_PREWARM_STORAGE_KEY)
     storage.removeItem(PLAN_MESSAGE_STATE_STORAGE_KEY)
@@ -816,6 +887,122 @@ describe("session-ui-store send routing", () => {
     expect(activeSessionCalls).toEqual([{ directory: "", sessionId: "" }])
   })
 
+  test("a managed root draft stays fail-closed until its assigned Dev worktree resolves", async () => {
+    setManagedDeveloper()
+    useProjectsStore.setState({
+      projects: [{
+        id: "project-1",
+        path: "/repo",
+        branches: [{ name: "Dev", directory: "/repo", isDefault: true }],
+      }],
+      activeProjectId: "project-1",
+    })
+    deferManagedBranchTarget = true
+
+    useSessionUIStore.getState().openNewSessionDraft({
+      selectedProjectId: "project-1",
+      directoryOverride: "/repo",
+      preserveDirectoryOverride: true,
+    })
+
+    const pending = useSessionUIStore.getState().newSessionDraft
+    expect(pending.directoryOverride).toBeNull()
+    expect(pending.bootstrapPendingDirectory).toBeNull()
+    expect(pending.pendingWorktreeRequestId).toBeTruthy()
+    expect(pending.targetBranchName).toBe("Dev")
+    expect(managedBranchTargetCalls).toHaveLength(1)
+
+    deferredManagedBranchTarget?.resolve({
+      status: "success",
+      source: "worktree",
+      branchName: "Dev",
+      directory: "/worktrees/Dev",
+    })
+    await deferredManagedBranchTarget?.promise
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const resolved = useSessionUIStore.getState().newSessionDraft
+    expect(resolved.pendingWorktreeRequestId).toBeNull()
+    expect(resolved.directoryOverride).toBe("/worktrees/Dev")
+    expect(resolved.bootstrapPendingDirectory).toBeNull()
+  })
+
+  test("selecting a restored managed root draft reconciles it to the assigned branch", async () => {
+    setManagedDeveloper()
+    useProjectsStore.setState({
+      projects: [{
+        id: "project-1",
+        path: "/repo",
+        branches: [{ name: "Dev", directory: "/repo", isDefault: true }],
+      }],
+      activeProjectId: "project-1",
+    })
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      currentDraftId: null,
+      draftsById: {
+        "draft-stale-root": {
+          id: "draft-stale-root",
+          text: "restored",
+          createdAt: 1,
+          updatedAt: 1,
+          selectedProjectId: "project-1",
+          directoryOverride: "/repo",
+          parentID: null,
+        },
+      },
+      draftOrder: ["draft-stale-root"],
+    })
+
+    useSessionUIStore.getState().selectNewSessionDraft("draft-stale-root")
+
+    const pending = useSessionUIStore.getState().newSessionDraft
+    expect(pending.directoryOverride).toBeNull()
+    expect(pending.targetBranchName).toBe("Dev")
+    expect(managedBranchTargetCalls).toHaveLength(1)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(useSessionUIStore.getState().newSessionDraft.directoryOverride).toBe("/worktrees/Dev")
+  })
+
+  test("a send queued during managed preparation creates the session only in Dev", async () => {
+    setManagedDeveloper()
+    useProjectsStore.setState({
+      projects: [{
+        id: "project-1",
+        path: "/repo",
+        branches: [{ name: "Dev", directory: "/repo", isDefault: true }],
+      }],
+      activeProjectId: "project-1",
+    })
+    deferManagedBranchTarget = true
+    mockCreatedSession = { id: "session-managed", directory: "/worktrees/Dev" }
+    useSessionUIStore.getState().openNewSessionDraft({ selectedProjectId: "project-1" })
+
+    const sendPromise = useSessionUIStore.getState().sendMessage(
+      "hello",
+      "provider-current",
+      "model-current",
+      "Orchestrator",
+    )
+    await Promise.resolve()
+    expect(createSessionCalls).toHaveLength(0)
+
+    deferredManagedBranchTarget?.resolve({
+      status: "success",
+      source: "worktree",
+      branchName: "Dev",
+      directory: "/worktrees/Dev",
+    })
+    await sendPromise
+
+    expect(createSessionCalls[0]?.directory).toBe("/worktrees/Dev")
+    expect(activatedConfigDirectories).toContain("/worktrees/Dev")
+    expect(createSessionCalls.some((call) => call.directory === "/repo")).toBe(false)
+  })
+
   test("opening a fresh draft applies defaults without preserving the previous session model", async () => {
     useSessionUIStore.getState().setCurrentSession("session-a", "/repo/a")
 
@@ -825,7 +1012,6 @@ describe("session-ui-store send routing", () => {
 
     expect(configApplyDefaultsCalls).toEqual([{
       preserveCurrentModel: false,
-      preserveRehydratedDraftModel: false,
     }])
   })
 
@@ -844,7 +1030,6 @@ describe("session-ui-store send routing", () => {
 
     expect(configApplyDefaultsCalls).toEqual([{
       preserveCurrentModel: true,
-      preserveRehydratedDraftModel: false,
     }])
   })
 
@@ -3273,6 +3458,7 @@ describe("session-ui-store send routing", () => {
     )
 
     expect(savedSessionAgents.some((entry) => entry.sessionId === "session-new" && entry.agent === "builder")).toBe(true)
+    expect(builderHandoffClearedSessions.has("session-new")).toBe(true)
     expect(savedSessionModels.some((entry) =>
       entry.sessionId === "session-new"
       && entry.providerID === "provider-builder"
@@ -3960,6 +4146,7 @@ describe("session-ui-store send routing", () => {
       entry.sessionId === "session-new"
       && entry.agent === "builder"
     )).toBe(true)
+    expect(builderHandoffClearedSessions.has("session-new")).toBe(true)
     expect(savedSessionModels.some((entry) =>
       entry.sessionId === "session-new"
       && entry.providerID === "provider-selected"

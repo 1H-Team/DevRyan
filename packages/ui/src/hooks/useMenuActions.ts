@@ -6,7 +6,9 @@ import { useUpdateStore } from '@/stores/useUpdateStore';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { createWorktreeSession } from '@/lib/worktreeSessionCreator';
+import { getAuthPrincipal, hasAuthCapability } from '@/lib/authSession';
 import type { DiagnosticsAPI } from '@/lib/api/types';
+import { copyTextToClipboard } from '@/lib/clipboard';
 
 const getActiveElementSelectedText = (): string => {
   if (typeof document === 'undefined') {
@@ -38,16 +40,8 @@ const copyCurrentSelectionFallback = async (): Promise<boolean> => {
     return false;
   }
 
-  try {
-    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(selectionText);
-      return true;
-    }
-  } catch {
-    // Fall through to execCommand fallback when Clipboard API is unavailable.
-  }
-
-  return document.execCommand('copy');
+  const result = await copyTextToClipboard(selectionText, { sourceSurface: 'unknown', copyKind: 'text' });
+  return result.ok;
 };
 
 const MENU_ACTION_EVENT = 'openchamber:menu-action';
@@ -130,6 +124,7 @@ export const useMenuActions = (
   }, [checkForUpdates]);
 
   const handleChangeWorkspace = React.useCallback(() => {
+    if (!hasAuthCapability(getAuthPrincipal(), 'manageProjects')) return;
     sessionEvents.requestDirectoryDialog();
   }, []);
 
@@ -159,6 +154,7 @@ export const useMenuActions = (
           break;
 
         case 'new-worktree-session':
+          if (!hasAuthCapability(getAuthPrincipal(), 'manageProjects')) break;
           setActiveMainTab('chat');
           setSessionSwitcherOpen(false);
           createWorktreeSession();
@@ -169,6 +165,7 @@ export const useMenuActions = (
           break;
 
         case 'open-git-tab': {
+          if (!hasAuthCapability(getAuthPrincipal(), 'manageGit')) break;
           const { activeMainTab } = useUIStore.getState();
           setActiveMainTab(activeMainTab === 'git' ? 'chat' : 'git');
           break;
@@ -181,6 +178,7 @@ export const useMenuActions = (
         }
 
         case 'open-files-tab': {
+          if (!hasAuthCapability(getAuthPrincipal(), 'files')) break;
           // The 'files' main tab was removed; the file tree now lives in the
           // right sidebar, so mirror the open_right_sidebar_files shortcut.
           setRightSidebarOpen(true);
@@ -189,6 +187,7 @@ export const useMenuActions = (
         }
 
         case 'open-terminal-tab': {
+          if (!hasAuthCapability(getAuthPrincipal(), 'terminal')) break;
           const { activeMainTab } = useUIStore.getState();
           setActiveMainTab(activeMainTab === 'terminal' ? 'chat' : 'terminal');
           break;

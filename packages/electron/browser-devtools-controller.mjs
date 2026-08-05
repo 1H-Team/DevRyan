@@ -176,11 +176,12 @@ export const createBrowserDevToolsController = ({ createDevToolsView }) => {
       ownerWindow.contentView.addChildView(view);
       guest.setDevToolsWebContents(view.webContents);
       const onClosed = () => destroyEntry(guestId);
-      entry = { guest, ownerWindow, view, onClosed, open: false };
+      entry = { guest, ownerWindow, view, onClosed, open: false, bounds: dockBounds };
       entries.set(guestId, entry);
       guest.once?.('devtools-closed', onClosed);
     }
 
+    entry.bounds = dockBounds;
     entry.view.setBounds(dockBounds);
     if (!entry.open) {
       const opening = waitForDevToolsState(guest, true);
@@ -190,7 +191,7 @@ export const createBrowserDevToolsController = ({ createDevToolsView }) => {
         || (await opening)
         || (await viewOpening);
     }
-    // Electron's <webview> can keep isDevToolsOpened() false when DevTools is
+    // Electron can keep isDevToolsOpened() false when DevTools is
     // rendered in caller-owned WebContents, even though devtools-opened fired.
     // The lifecycle event and owned entry are authoritative for that case.
     const actualOpen = entry.open || guest.isDevToolsOpened();
@@ -200,5 +201,23 @@ export const createBrowserDevToolsController = ({ createDevToolsView }) => {
 
   const destroyGuest = (guestId) => destroyEntry(guestId);
 
-  return { destroyGuest, setOpen };
+  const isOpen = (guestId) => entries.has(guestId);
+
+  const rehost = ({ guest, ownerWindow, bounds }) => {
+    assertControllableGuest(guest);
+    assertOwnerWindow(ownerWindow);
+    const entry = entries.get(guest.id);
+    if (!entry) return { open: false };
+    const dockBounds = normalizeDockBounds(bounds || entry.bounds, ownerWindow);
+    if (entry.ownerWindow !== ownerWindow) {
+      try { entry.ownerWindow.contentView.removeChildView(entry.view); } catch { }
+      ownerWindow.contentView.addChildView(entry.view);
+      entry.ownerWindow = ownerWindow;
+    }
+    entry.bounds = dockBounds;
+    entry.view.setBounds(dockBounds);
+    return { open: true };
+  };
+
+  return { destroyGuest, isOpen, rehost, setOpen };
 };

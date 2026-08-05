@@ -224,6 +224,8 @@ export const createScheduledTasksRuntime = (deps) => {
     getOpenCodeAuthHeaders,
     waitForOpenCodeReady,
     emitTaskRunEvent,
+    resolveTaskExecutionContext,
+    recordTaskSessionOwnership,
     logger = console,
     maxGlobalConcurrency = DEFAULT_GLOBAL_CONCURRENCY,
     maxProjectConcurrency = DEFAULT_PROJECT_CONCURRENCY,
@@ -470,10 +472,23 @@ export const createScheduledTasksRuntime = (deps) => {
   const runTaskWithWatchdog = async (projectID, task, reason) => {
     const startedAt = Date.now();
     const title = formatScheduledSessionTitle(task, startedAt);
-    const projectPath = projectPathByID.get(projectID);
+    let projectPath = projectPathByID.get(projectID);
     if (!projectPath) {
       throw new Error('project path is unavailable');
     }
+
+    const executionContext = task.ownerUserId && typeof resolveTaskExecutionContext === 'function'
+      ? await resolveTaskExecutionContext({
+          ownerUserId: task.ownerUserId,
+          projectId: projectID,
+          branchName: task.target?.branchName,
+          taskId: task.id,
+        })
+      : null;
+    if (task.ownerUserId && !executionContext?.directory) {
+      throw new Error('scheduled task owner or branch target is unavailable');
+    }
+    if (executionContext?.directory) projectPath = executionContext.directory;
 
     if (typeof waitForOpenCodeReady === 'function') {
       await waitForOpenCodeReady(10_000, 250);
@@ -495,6 +510,23 @@ export const createScheduledTasksRuntime = (deps) => {
       throw new Error('failed to create session');
     }
 
+    if (task.ownerUserId) {
+      try {
+        if (typeof recordTaskSessionOwnership !== 'function') {
+          throw new Error('scheduled task session ownership is unavailable');
+        }
+        await recordTaskSessionOwnership({
+          ownerUserId: task.ownerUserId,
+          projectId: projectID,
+          branchName: task.target?.branchName,
+          sessionId: sessionID,
+        });
+      } catch (error) {
+        await client.session.delete({ sessionID, directory: projectPath }).catch(() => {});
+        throw error;
+      }
+    }
+
     try {
       emitTaskRunEvent?.({
         projectID,
@@ -502,6 +534,7 @@ export const createScheduledTasksRuntime = (deps) => {
         ranAt: startedAt,
         status: 'running',
         sessionID,
+        ownerUserId: task.ownerUserId || null,
       });
     } catch {
     }
@@ -647,6 +680,7 @@ export const createScheduledTasksRuntime = (deps) => {
         ranAt: finishedAt,
         status,
         ...(sessionID ? { sessionID } : {}),
+        ownerUserId: task.ownerUserId || null,
       });
     } catch {
     }

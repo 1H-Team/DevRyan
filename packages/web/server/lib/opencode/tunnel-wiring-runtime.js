@@ -14,11 +14,14 @@ export const createTunnelWiringRuntime = (dependencies) => {
     normalizeTunnelMode,
     normalizeOptionalPath,
     normalizeManagedRemoteTunnelHostname,
+    normalizeManagedRemoteOriginPort,
+    isValidManagedRemoteOriginPort,
     normalizeTunnelBootstrapTtlMs,
     normalizeTunnelSessionTtlMs,
     isSupportedTunnelMode,
     upsertManagedRemoteTunnelToken,
     resolveManagedRemoteTunnelToken,
+    resolveManagedRemoteTunnelPreset,
     TUNNEL_MODE_QUICK,
     TUNNEL_MODE_MANAGED_LOCAL,
     TUNNEL_MODE_MANAGED_REMOTE,
@@ -30,9 +33,10 @@ export const createTunnelWiringRuntime = (dependencies) => {
     setRuntimeManagedRemoteTunnelHostname,
     getRuntimeManagedRemoteTunnelToken,
     setRuntimeManagedRemoteTunnelToken,
+    getRuntimeReady,
   } = dependencies;
 
-  const initialize = (app, initialPort) => {
+  const initialize = (app, initialPort, runtimeOptions = {}) => {
     let activePort = initialPort;
 
     const tunnelService = createTunnelService({
@@ -43,6 +47,11 @@ export const createTunnelWiringRuntime = (dependencies) => {
       onQuickTunnelWarning: () => {
         printTunnelWarning();
       },
+      onControllerTerminated: () => {
+        tunnelAuthController.clearActiveTunnel();
+      },
+      runtimeInstanceId: runtimeOptions.runtimeInstanceId,
+      fetchImpl: runtimeOptions.fetchImpl,
     });
 
     const tunnelRoutesRuntime = createTunnelRoutesRuntime({
@@ -57,11 +66,14 @@ export const createTunnelWiringRuntime = (dependencies) => {
       normalizeTunnelMode,
       normalizeOptionalPath,
       normalizeManagedRemoteTunnelHostname,
+      normalizeManagedRemoteOriginPort,
+      isValidManagedRemoteOriginPort,
       normalizeTunnelBootstrapTtlMs,
       normalizeTunnelSessionTtlMs,
       isSupportedTunnelMode,
       upsertManagedRemoteTunnelToken,
       resolveManagedRemoteTunnelToken,
+      resolveManagedRemoteTunnelPreset,
       TUNNEL_MODE_QUICK,
       TUNNEL_MODE_MANAGED_LOCAL,
       TUNNEL_MODE_MANAGED_REMOTE,
@@ -74,6 +86,7 @@ export const createTunnelWiringRuntime = (dependencies) => {
       setRuntimeManagedRemoteTunnelToken,
       getActiveTunnelController,
       setActiveTunnelController,
+      getRuntimeReady,
     });
 
     tunnelRoutesRuntime.registerRoutes(app);

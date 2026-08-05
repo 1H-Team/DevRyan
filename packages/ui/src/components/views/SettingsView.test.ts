@@ -9,7 +9,7 @@ import {
   getSettingsPageSidebarClassName,
 } from './SettingsView.styles';
 import { resolveMobileSettingsBackStage } from './SettingsView.mobileNavigation';
-import { resolveSettingsSlug } from '@/lib/settings/metadata';
+import { getSettingsPageMeta, resolveSettingsSlug } from '@/lib/settings/metadata';
 import { SETTINGS_NAV_SECTIONS } from '@/lib/settings/navigation';
 
 describe('SettingsView navigation', () => {
@@ -153,6 +153,10 @@ describe('SettingsView navigation', () => {
     expect(resolveSettingsSlug('behavior')).toBe('agents');
   });
 
+  test('legacy GitHub settings destinations open User Management', () => {
+    expect(resolveSettingsSlug('github')).toBe('users');
+  });
+
   test('plugins sits between skills and magic prompts in workflow navigation', () => {
     const workflowPages = SETTINGS_NAV_SECTIONS
       .find((section) => section.labelKey === 'settings.view.nav.group.workflow')
@@ -173,5 +177,18 @@ describe('SettingsView navigation', () => {
 
     expect(resolveSettingsSlug('about')).toBe('about');
     expect(generalPages).toContain('about');
+  });
+
+  test('places User Management first in development navigation', () => {
+    const generalPages = SETTINGS_NAV_SECTIONS
+      .find((section) => section.labelKey === 'settings.view.nav.group.general')
+      ?.pages ?? [];
+    const developmentPages = SETTINGS_NAV_SECTIONS
+      .find((section) => section.labelKey === 'settings.view.nav.group.development')
+      ?.pages ?? [];
+
+    expect(generalPages).not.toContain('users');
+    expect(developmentPages[0]).toBe('users');
+    expect(getSettingsPageMeta('users')?.title).toBe('User Management');
   });
 });

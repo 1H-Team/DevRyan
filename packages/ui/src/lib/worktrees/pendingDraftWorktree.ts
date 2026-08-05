@@ -13,6 +13,9 @@ const createDeferred = (): Deferred => {
     resolve = innerResolve;
     reject = innerReject;
   });
+  // A branch target may fail before the user presses Send. Attach a handler
+  // immediately while preserving rejection for the eventual send waiter.
+  void promise.catch(() => {});
   return { promise, resolve, reject };
 };
 
@@ -49,3 +52,7 @@ export const waitForPendingDraftWorktreeRequest = (id: string): Promise<string> 
   }
   return entry.promise;
 };
+
+export const hasPendingDraftWorktreeRequest = (id: string | null | undefined): boolean => (
+  Boolean(id && requests.has(id))
+);

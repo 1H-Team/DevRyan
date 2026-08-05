@@ -10,6 +10,7 @@ export const registerProjectIconRoutes = (app, dependencies) => {
     createFsSearchRuntime,
     spawn,
     resolveGitBinaryForSpawn,
+    resolveManagedProject,
   } = dependencies;
 
   const projectIconsDirPath = path.join(openchamberDataDir, 'project-icons');
@@ -169,6 +170,36 @@ export const registerProjectIconRoutes = (app, dependencies) => {
     return { projects, index, project: projects[index] };
   };
 
+  const resolveProjectById = async (req, projectId) => {
+    const settings = await readSettingsFromDiskMigrated();
+    const local = findProjectById(settings, projectId);
+    if (local.project) return { ...local, managed: null };
+    if (typeof resolveManagedProject !== 'function') return { ...local, managed: null };
+    const managed = await resolveManagedProject(req, projectId);
+    return {
+      projects: local.projects,
+      index: -1,
+      project: managed?.project ?? null,
+      managed: managed ?? null,
+    };
+  };
+
+  const persistProjectIconImage = async ({ projects, projectId, iconImage, managed }) => {
+    if (managed) {
+      if (!managed.canMutate) {
+        throw Object.assign(new Error('Project metadata can only be changed by an administrator'), { statusCode: 403 });
+      }
+      const project = await managed.persistIconImage(iconImage);
+      return { project, settings: null };
+    }
+    const nextProjects = projects.map((entry) => (
+      entry.id === projectId ? { ...entry, iconImage } : entry
+    ));
+    const settings = await persistSettings({ projects: nextProjects });
+    const project = (settings.projects || []).find((entry) => entry.id === projectId) || null;
+    return { project, settings };
+  };
+
   const fsSearchRuntime = createFsSearchRuntime({
     fsPromises,
     path,
@@ -183,8 +214,7 @@ export const registerProjectIconRoutes = (app, dependencies) => {
     }
 
     try {
-      const settings = await readSettingsFromDiskMigrated();
-      const { project } = findProjectById(settings, projectId);
+      const { project } = await resolveProjectById(req, projectId);
       if (!project) {
         return res.status(404).json({ error: 'Project not found' });
       }
@@ -253,10 +283,12 @@ export const registerProjectIconRoutes = (app, dependencies) => {
     }
 
     try {
-      const settings = await readSettingsFromDiskMigrated();
-      const { projects, project } = findProjectById(settings, projectId);
+      const { projects, project, managed } = await resolveProjectById(req, projectId);
       if (!project) {
         return res.status(404).json({ error: 'Project not found' });
+      }
+      if (managed && !managed.canMutate) {
+        return res.status(403).json({ error: 'Project metadata can only be changed by an administrator' });
       }
 
       const iconPath = projectIconPathForMime(projectId, parsed.mime);
@@ -269,18 +301,17 @@ export const registerProjectIconRoutes = (app, dependencies) => {
       await removeProjectIconFiles(projectId, iconPath);
 
       const updatedAt = Date.now();
-      const nextProjects = projects.map((entry) => (
-        entry.id === projectId
-          ? { ...entry, iconImage: { mime: parsed.mime, updatedAt, source: 'custom' } }
-          : entry
-      ));
-      const updatedSettings = await persistSettings({ projects: nextProjects });
-      const updatedProject = (updatedSettings.projects || []).find((entry) => entry.id === projectId) || null;
+      const persisted = await persistProjectIconImage({
+        projects,
+        projectId,
+        iconImage: { mime: parsed.mime, updatedAt, source: 'custom' },
+        managed,
+      });
 
-      return res.json({ project: updatedProject, settings: updatedSettings });
+      return res.json({ project: persisted.project, ...(persisted.settings ? { settings: persisted.settings } : {}) });
     } catch (error) {
       console.warn('Failed to upload project icon:', error);
-      return res.status(500).json({ error: 'Failed to upload project icon' });
+      return res.status(error?.statusCode || 500).json({ error: error?.message || 'Failed to upload project icon' });
     }
   });
 
@@ -291,26 +322,22 @@ export const registerProjectIconRoutes = (app, dependencies) => {
     }
 
     try {
-      const settings = await readSettingsFromDiskMigrated();
-      const { projects, project } = findProjectById(settings, projectId);
+      const { projects, project, managed } = await resolveProjectById(req, projectId);
       if (!project) {
         return res.status(404).json({ error: 'Project not found' });
+      }
+      if (managed && !managed.canMutate) {
+        return res.status(403).json({ error: 'Project metadata can only be changed by an administrator' });
       }
 
       await removeProjectIconFiles(projectId);
 
-      const nextProjects = projects.map((entry) => (
-        entry.id === projectId
-          ? { ...entry, iconImage: null }
-          : entry
-      ));
-      const updatedSettings = await persistSettings({ projects: nextProjects });
-      const updatedProject = (updatedSettings.projects || []).find((entry) => entry.id === projectId) || null;
+      const persisted = await persistProjectIconImage({ projects, projectId, iconImage: null, managed });
 
-      return res.json({ project: updatedProject, settings: updatedSettings });
+      return res.json({ project: persisted.project, ...(persisted.settings ? { settings: persisted.settings } : {}) });
     } catch (error) {
       console.warn('Failed to remove project icon:', error);
-      return res.status(500).json({ error: 'Failed to remove project icon' });
+      return res.status(error?.statusCode || 500).json({ error: error?.message || 'Failed to remove project icon' });
     }
   });
 
@@ -321,10 +348,12 @@ export const registerProjectIconRoutes = (app, dependencies) => {
     }
 
     try {
-      const settings = await readSettingsFromDiskMigrated();
-      const { projects, project } = findProjectById(settings, projectId);
+      const { projects, project, managed } = await resolveProjectById(req, projectId);
       if (!project) {
         return res.status(404).json({ error: 'Project not found' });
+      }
+      if (managed && !managed.canDiscover) {
+        return res.status(400).json({ error: 'Icon discovery requires administrator repository access' });
       }
 
       const force = req.body?.force === true;
@@ -376,22 +405,21 @@ export const registerProjectIconRoutes = (app, dependencies) => {
       await removeProjectIconFiles(projectId, iconPath);
 
       const updatedAt = Date.now();
-      const nextProjects = projects.map((entry) => (
-        entry.id === projectId
-          ? { ...entry, iconImage: { mime, updatedAt, source: 'auto' } }
-          : entry
-      ));
-      const updatedSettings = await persistSettings({ projects: nextProjects });
-      const updatedProject = (updatedSettings.projects || []).find((entry) => entry.id === projectId) || null;
+      const persisted = await persistProjectIconImage({
+        projects,
+        projectId,
+        iconImage: { mime, updatedAt, source: 'auto' },
+        managed,
+      });
 
       return res.json({
-        project: updatedProject,
-        settings: updatedSettings,
+        project: persisted.project,
+        ...(persisted.settings ? { settings: persisted.settings } : {}),
         discoveredPath: selected.path,
       });
     } catch (error) {
       console.warn('Failed to discover project icon:', error);
-      return res.status(500).json({ error: 'Failed to discover project icon' });
+      return res.status(error?.statusCode || 500).json({ error: error?.message || 'Failed to discover project icon' });
     }
   });
 };

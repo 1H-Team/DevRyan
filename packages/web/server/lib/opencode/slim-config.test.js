@@ -53,6 +53,7 @@ describe('oh-my-opencode-slim config adapter', () => {
         }
       },
       "agents": {
+        "orchestrator": { "model": "openai/gpt-5.6-sol", "variant": "high" },
         "designer": { "model": "openai/gpt-5.5", "variant": "high", "skills": ["simplify"], "mcps": ["websearch"] }
       },
       "disabled_agents": ["observer"],
@@ -81,10 +82,16 @@ describe('oh-my-opencode-slim config adapter', () => {
       mcps: ['docs-mcp'],
     });
     expect(resolved.agents.orchestrator).toMatchObject({
-      model: { providerID: 'openai', modelID: 'gpt-5.5' },
-      modelRefs: ['openai/gpt-5.5'],
-      variant: 'medium',
+      model: { providerID: 'openai', modelID: 'gpt-5.6-sol' },
+      modelRefs: ['openai/gpt-5.6-sol'],
+      variant: 'high',
       skills: ['*'],
+      modelResolution: {
+        presetName: 'openai',
+        source: 'root-override',
+        presetModelRef: 'openai/gpt-5.5',
+        presetVariant: 'medium',
+      },
     });
     expect(resolved.agents.observer).toBeUndefined();
   });

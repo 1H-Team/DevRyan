@@ -45,7 +45,6 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { McpOAuthCallbackPage } from '@/components/sections/mcp/McpOAuthCallbackPage';
 import { MCP_OAUTH_CALLBACK_PATH } from '@/components/sections/mcp/mcpOAuth';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
-import { useI18n } from '@/lib/i18n';
 import { applyMobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 import { applyWideChatLayoutClass, clearWideChatLayoutClass } from '@/lib/chatLayout';
 import { SyncAppEffects } from '@/apps/AppEffects';
@@ -55,6 +54,7 @@ import {
   recoverStartupInitialization,
   shouldShowStartupReadinessScreen,
   summarizeStartupReadiness,
+  withStartupBootstrapReadiness,
   withStartupReadinessPhase,
   type StartupPhaseSnapshot,
   type StartupReadinessSummary,
@@ -63,6 +63,8 @@ import { warmAgentRuntime } from '@/lib/startup/agent-runtime-warmup';
 import { warmChatRuntime } from '@/lib/startup/chat-runtime-warmup';
 import { primeWorktreeBootstrap } from '@/lib/worktrees/worktreeBootstrap';
 import { useAgentRuntimeWarmupStore } from '@/stores/useAgentRuntimeWarmupStore';
+import { isPrincipalStorageEvent } from '@/stores/utils/safeStorage';
+import { useAuthPrincipal } from '@/lib/authSession';
 
 // Lazy-loaded heavy views — loaded on demand to reduce initial bundle size.
 const OnboardingScreen = lazyWithChunkRecovery(() =>
@@ -77,27 +79,6 @@ const AboutDialogWrapper: React.FC = () => {
       open={isAboutDialogOpen}
       onOpenChange={setAboutDialogOpen}
     />
-  );
-};
-
-const StartupInitializationRecovery: React.FC<{
-  onRetry: () => void;
-  isRetrying: boolean;
-}> = ({ onRetry, isRetrying }) => {
-  const { t } = useI18n();
-
-  return (
-    <div className="flex h-full items-center justify-center bg-background px-6 text-foreground">
-      <div className="flex max-w-md flex-col items-center gap-4 text-center">
-        <div className="flex flex-col gap-2">
-          <h1 className="typography-title text-foreground">{t('startup.initRecovery.title')}</h1>
-          <p className="typography-body text-muted-foreground">{t('startup.initRecovery.description')}</p>
-        </div>
-        <Button type="button" onClick={onRetry} disabled={isRetrying}>
-          {isRetrying ? t('startup.initRecovery.retrying') : t('startup.initRecovery.retry')}
-        </Button>
-      </div>
-    </div>
   );
 };
 
@@ -218,6 +199,7 @@ const STARTUP_PHASE_LABELS = {
   health: 'Waiting for OpenCode',
   providers: 'Loading providers',
   agents: 'Loading agents',
+  initialization: 'Finishing initialization',
   globalSync: 'Syncing workspace',
   directorySync: 'Preparing directory',
   sessionList: 'Loading sessions',
@@ -310,6 +292,7 @@ const StartupReadinessGate: React.FC<{
   isConnected: boolean;
   isDesktopRuntime: boolean;
   isInitialized: boolean;
+  initializationRetriesExhausted: boolean;
   bootOutcomeKnown: boolean;
   bootViewIsMain: boolean;
   isRetrying: boolean;
@@ -320,6 +303,7 @@ const StartupReadinessGate: React.FC<{
   isConnected,
   isDesktopRuntime,
   isInitialized,
+  initializationRetriesExhausted,
   bootOutcomeKnown,
   bootViewIsMain,
   isRetrying,
@@ -329,6 +313,8 @@ const StartupReadinessGate: React.FC<{
   const providersLoadError = useConfigStore((state) => state.providersLoadError);
   const agentsLoadStatus = useConfigStore((state) => state.agentsLoadStatus);
   const agentsLoadError = useConfigStore((state) => state.agentsLoadError);
+  const initializationLoadStatus = useConfigStore((state) => state.initializationLoadStatus);
+  const initializationLoadError = useConfigStore((state) => state.initializationLoadError);
   const responseStyleInstructionLoaded = useConfigStore((state) => state.responseStyleInstructionLoaded);
   const globalReady = useGlobalSyncSelector((state) => state.ready);
   const globalError = useGlobalSyncSelector((state) => state.error?.message);
@@ -464,20 +450,17 @@ const StartupReadinessGate: React.FC<{
 
   const summary = React.useMemo(() => {
     let snapshot = createStartupReadinessSnapshot('ready');
-
-    if (isDesktopRuntime && (!bootOutcomeKnown || !bootViewIsMain)) {
-      snapshot = withStartupReadinessPhase(snapshot, 'health', { status: 'loading' });
-    } else if (!isConnected || !isInitialized) {
-      snapshot = withStartupReadinessPhase(snapshot, 'health', { status: 'loading' });
-    }
-
-    snapshot = withStartupReadinessPhase(snapshot, 'providers', {
-      status: providersLoadStatus,
-      error: providersLoadError,
-    });
-    snapshot = withStartupReadinessPhase(snapshot, 'agents', {
-      status: agentsLoadStatus,
-      error: agentsLoadError,
+    snapshot = withStartupBootstrapReadiness(snapshot, {
+      desktopBootReady: !isDesktopRuntime || (bootOutcomeKnown && bootViewIsMain),
+      isConnected,
+      isInitialized,
+      retriesExhausted: initializationRetriesExhausted,
+      providers: { status: providersLoadStatus, error: providersLoadError },
+      agents: { status: agentsLoadStatus, error: agentsLoadError },
+      initialization: {
+        status: initializationLoadStatus,
+        error: initializationLoadError,
+      },
     });
     snapshot = withStartupReadinessPhase(snapshot, 'globalSync', globalError
       ? { status: 'error', error: globalError }
@@ -514,6 +497,9 @@ const StartupReadinessGate: React.FC<{
     isConnected,
     isDesktopRuntime,
     isInitialized,
+    initializationLoadError,
+    initializationLoadStatus,
+    initializationRetriesExhausted,
     providersLoadError,
     providersLoadStatus,
     responseStyleInstructionLoaded,
@@ -593,6 +579,7 @@ function App({ apis }: AppProps) {
   const isSwitchingDirectory = useDirectoryStore((state) => state.isSwitchingDirectory);
   const [showMemoryDebug, setShowMemoryDebug] = React.useState(false);
   const refreshGitHubAuthStatus = useGitHubAuthStore((state) => state.refreshStatus);
+  const authPrincipal = useAuthPrincipal();
   const [isVSCodeRuntime, setIsVSCodeRuntime] = React.useState<boolean>(() => apis.runtime.isVSCode);
   const [isEmbeddedVisible, setIsEmbeddedVisible] = React.useState(true);
   const [initRetryExhausted, setInitRetryExhausted] = React.useState(false);
@@ -648,7 +635,7 @@ function App({ apis }: AppProps) {
     }
 
     void refreshGitHubAuthStatus(apis.github, { force: true });
-  }, [apis.github, embeddedSessionChat, refreshGitHubAuthStatus]);
+  }, [apis.github, authPrincipal.id, authPrincipal.scope, embeddedSessionChat, refreshGitHubAuthStatus]);
 
   useAppFontEffects();
 
@@ -843,11 +830,7 @@ function App({ apis }: AppProps) {
     }
 
     const handleStorage = (event: StorageEvent) => {
-      if (event.storageArea !== window.localStorage) {
-        return;
-      }
-
-      if (event.key !== 'ui-store') {
+      if (!isPrincipalStorageEvent(event, 'ui-store')) {
         return;
       }
 
@@ -1153,17 +1136,6 @@ function App({ apis }: AppProps) {
     );
   }
 
-  if (initRetryExhausted && !isInitialized && !isVSCodeRuntime && !embeddedSessionChat) {
-    return (
-      <ErrorBoundary>
-        <StartupInitializationRecovery
-          onRetry={() => { void handleManualInitRetry(); }}
-          isRetrying={manualInitRetrying}
-        />
-      </ErrorBoundary>
-    );
-  }
-
   // Always mount the full provider tree to avoid remounts when isInitialized
   // flips from false → true. FireworksProvider and VoiceProvider are lightweight
   // shells; their heavy children are only activated when actually needed.
@@ -1181,6 +1153,7 @@ function App({ apis }: AppProps) {
                     isConnected={isConnected}
                     isDesktopRuntime={isDesktopRuntime}
                     isInitialized={isInitialized}
+                    initializationRetriesExhausted={initRetryExhausted}
                     bootOutcomeKnown={bootOutcomeKnown}
                     bootViewIsMain={bootViewIsMain}
                     onRetry={() => { void handleManualInitRetry(); }}

@@ -12,6 +12,9 @@ export function createTunnelService({
   setController,
   getActivePort,
   onQuickTunnelWarning,
+  onControllerTerminated,
+  runtimeInstanceId,
+  fetchImpl,
 }) {
   if (!registry) {
     throw new Error('Tunnel service requires a provider registry');
@@ -34,6 +37,23 @@ export function createTunnelService({
   };
 
   let stopPromise = null;
+
+  const observeControllerTermination = (controller) => {
+    if (typeof controller?.onTerminated !== 'function') {
+      return;
+    }
+    controller.onTerminated(() => {
+      if (getController() !== controller) {
+        return;
+      }
+      setController(null);
+      try {
+        onControllerTerminated?.(controller);
+      } catch {
+        // Controller cleanup must remain authoritative even if an observer fails.
+      }
+    });
+  };
 
   const stop = () => {
     if (stopPromise) {
@@ -98,12 +118,33 @@ export function createTunnelService({
 
       validateTunnelStartRequest(request, provider.capabilities);
 
-      let publicUrl = provider.resolvePublicUrl(getController());
+      const activeController = getController();
+      let publicUrl = activeController?.getPublicUrl?.() ?? null;
       const activeMode = resolveActiveMode();
+      const activeProvider = resolveActiveProvider();
+      const activePort = Number.isFinite(getActivePort?.()) ? getActivePort() : null;
+      const originUrl = activePort !== null ? `http://127.0.0.1:${activePort}` : undefined;
+      const context = {
+        activePort,
+        originUrl,
+        runtimeInstanceId,
+        fetchImpl,
+        ...options,
+      };
 
-      if (publicUrl && activeMode !== request.mode) {
+      const controllerCompatible = Boolean(publicUrl)
+        && activeMode === request.mode
+        && activeProvider === request.provider
+        && (typeof provider.isControllerCompatible !== 'function'
+          || provider.isControllerCompatible(activeController, request, context));
+
+      if (publicUrl && !controllerCompatible) {
         await stop();
         publicUrl = null;
+      }
+
+      if (publicUrl && typeof provider.verifyPublicReachability === 'function') {
+        await provider.verifyPublicReachability(getController(), request, context);
       }
 
       if (!publicUrl) {
@@ -117,16 +158,10 @@ export function createTunnelService({
           throw new TunnelServiceError('missing_dependency', missingDependencyMessage);
         }
 
-        const activePort = Number.isFinite(getActivePort?.()) ? getActivePort() : null;
-        const originUrl = activePort !== null ? `http://127.0.0.1:${activePort}` : undefined;
-
-        const controller = await provider.start(request, {
-          activePort,
-          originUrl,
-          ...options,
-        });
+        const controller = await provider.start(request, context);
         controller.provider = request.provider;
         setController(controller);
+        observeControllerTermination(controller);
 
         publicUrl = provider.resolvePublicUrl(controller);
         if (!publicUrl) {
@@ -144,6 +179,7 @@ export function createTunnelService({
         request,
         activeMode: request.mode,
         provider: request.provider,
+        controllerReused: Boolean(activeController) && getController() === activeController,
         providerMetadata: provider.getMetadata?.(getController()) ?? null,
       };
     } finally {
@@ -172,12 +208,26 @@ export function createTunnelService({
     return provider?.getMetadata?.(controller) ?? null;
   };
 
+  const refreshHealth = async (options = {}) => {
+    const controller = getController();
+    if (!controller) {
+      return null;
+    }
+    const provider = registry.get(controller.provider);
+    await provider?.refreshHealth?.(controller, options);
+    if (getController() !== controller) {
+      return null;
+    }
+    return provider?.getMetadata?.(controller) ?? null;
+  };
+
   return {
     start,
     stop,
     checkAvailability,
     getPublicUrl,
     getProviderMetadata,
+    refreshHealth,
     resolveActiveMode,
     resolveActiveProvider,
   };

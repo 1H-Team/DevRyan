@@ -11,6 +11,8 @@ import {
   createWorktreeBootstrapRuntime,
 } from '@openchamber/harness-runtime';
 import { populateWorktreeWithLockRecovery } from './worktree-lock-recovery.js';
+import { getRequestPrincipal } from '../multi-user/request-context.js';
+import { getGitHubAuthById } from '../github/auth.js';
 
 const fsp = fs.promises;
 const require = createRequire(import.meta.url);
@@ -19,6 +21,7 @@ const gpgconfCandidates = ['gpgconf', '/opt/homebrew/bin/gpgconf', '/usr/local/b
 let resolvedGitBinary = null;
 let worktreeBootstrapRuntime = null;
 let worktreeBootstrapInitialization = null;
+let gitAskPassHelperPromise = null;
 
 const isExecutableFile = (candidate) => {
   if (typeof candidate !== 'string' || candidate.trim().length === 0) {
@@ -232,8 +235,103 @@ const resolveSshAuthSock = async () => {
   return null;
 };
 
-const buildGitEnv = async () => {
+const resolveManagedGitAssignment = (directory) => {
+  const principal = getRequestPrincipal();
+  if (principal?.scope !== 'managed') return { principal: null, assignment: null };
+  const directoryPath = normalizeDirectoryPath(directory);
+  const assignment = principal.assignments?.find((entry) => {
+    if (!directoryPath) return false;
+    const candidate = path.resolve(directoryPath);
+    return [entry.repositoryPath, entry.worktreeContainerPath]
+      .filter((value) => typeof value === 'string' && value.trim())
+      .some((value) => {
+        const root = path.resolve(value);
+        const relative = path.relative(root, candidate);
+        return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+      });
+  }) || null;
+  return { principal, assignment };
+};
+
+const assertManagedMutationBranch = async (directory) => {
+  const { principal, assignment } = resolveManagedGitAssignment(directory);
+  if (!principal) return null;
+  if (!assignment) throw new Error('Directory is not assigned to this user');
+  return assignment;
+};
+
+const validateManagedSourceRef = async (directory, value) => {
+  const candidate = String(value || '').trim();
+  if (!candidate || candidate.startsWith('-') || /[\0-\x20\\]/.test(candidate)) {
+    throw new Error('Invalid Git source ref');
+  }
+  const verified = await runGitCommand(directory, ['rev-parse', '--verify', '--quiet', `${candidate}^{commit}`]);
+  if (!verified.success) throw new Error('Git source ref does not exist');
+  return candidate;
+};
+
+const getCheckedOutBranch = async (git) => {
+  const branch = String(await git.raw(['symbolic-ref', '--quiet', '--short', 'HEAD'])).trim();
+  if (!branch) throw new Error('Git operation requires a checked-out branch');
+  return branch;
+};
+
+const ensureGitAskPassHelper = async () => {
+  if (gitAskPassHelperPromise) return gitAskPassHelperPromise;
+  gitAskPassHelperPromise = (async () => {
+    const dataDirectory = process.env.OPENCHAMBER_DATA_DIR
+      ? path.resolve(process.env.OPENCHAMBER_DATA_DIR)
+      : path.join(os.homedir(), '.config', 'openchamber');
+    const runtimeDirectory = path.join(dataDirectory, 'runtime');
+    await fsp.mkdir(runtimeDirectory, { recursive: true, mode: 0o700 });
+    if (process.platform === 'win32') {
+      const helperPath = path.join(runtimeDirectory, 'git-askpass.cmd');
+      const source = '@echo off\r\necho %* | findstr /I "username" >nul\r\nif not errorlevel 1 (echo x-access-token) else (echo %DEVRYAN_GIT_ASKPASS_TOKEN%)\r\n';
+      await fsp.writeFile(helperPath, source, { encoding: 'utf8', mode: 0o700 });
+      return helperPath;
+    }
+    const helperPath = path.join(runtimeDirectory, 'git-askpass');
+    const source = '#!/bin/sh\ncase "$1" in\n  *[Uu]sername*) printf "%s\\n" "x-access-token" ;;\n  *) printf "%s\\n" "$DEVRYAN_GIT_ASKPASS_TOKEN" ;;\nesac\n';
+    await fsp.writeFile(helperPath, source, { encoding: 'utf8', mode: 0o700 });
+    await fsp.chmod(helperPath, 0o700);
+    return helperPath;
+  })().catch((error) => {
+    gitAskPassHelperPromise = null;
+    throw error;
+  });
+  return gitAskPassHelperPromise;
+};
+
+export const buildGitEnv = async (
+  directory = null,
+  { includeCredentials = false, githubAccountId = null } = {},
+) => {
   const env = { ...process.env };
+  const { principal, assignment } = resolveManagedGitAssignment(directory);
+  const selectedAccountId = principal
+    ? principal.githubAccountId || null
+    : githubAccountId || null;
+  const auth = selectedAccountId ? getGitHubAuthById(selectedAccountId) : null;
+  if (principal) {
+    const authorName = auth?.user?.name || auth?.user?.login || principal.displayName || principal.email;
+    const authorEmail = auth?.user?.email
+      || (auth?.user?.id && auth?.user?.login
+        ? `${auth.user.id}+${auth.user.login}@users.noreply.github.com`
+        : principal.email);
+    if (authorName) {
+      env.GIT_AUTHOR_NAME = authorName;
+      env.GIT_COMMITTER_NAME = authorName;
+    }
+    if (authorEmail) {
+      env.GIT_AUTHOR_EMAIL = authorEmail;
+      env.GIT_COMMITTER_EMAIL = authorEmail;
+    }
+  }
+  if (includeCredentials && auth?.accessToken) {
+    env.GIT_ASKPASS = await ensureGitAskPassHelper();
+    env.GIT_TERMINAL_PROMPT = '0';
+    env.DEVRYAN_GIT_ASKPASS_TOKEN = auth.accessToken;
+  }
   if (!env.SSH_AUTH_SOCK || !env.SSH_AUTH_SOCK.trim()) {
     const resolved = await resolveSshAuthSock();
     if (resolved) {
@@ -243,12 +341,12 @@ const buildGitEnv = async () => {
   return env;
 };
 
-const createGit = async (directory) => {
+const createGit = async (directory, options = {}) => {
   const directoryPath = normalizeDirectoryPath(directory);
   if (!directoryPath) {
     throw new TypeError('Git directory is required');
   }
-  const env = await buildGitEnv();
+  const env = await buildGitEnv(directoryPath, options);
   const spawnOptions = { windowsHide: true };
   const binary = getGitBinary();
   const hasCustomBinary = typeof binary === 'string' && binary.trim() && binary !== 'git' && binary !== 'git.exe';
@@ -372,7 +470,7 @@ const OPENCODE_NOUNS = [
 
 const OPENCODE_WORKTREE_ATTEMPTS = 26;
 
-const getOpenCodeDataPath = () => {
+export const getOpenCodeDataPath = () => {
   const xdgDataHome = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
   return path.join(xdgDataHome, 'opencode');
 };
@@ -560,6 +658,25 @@ const parseGitErrorText = (error) => {
     .trim();
 };
 
+const GIT_CONFLICT_PATTERN = /conflict|could not apply|automatic merge failed|needs merge|could not write index|unmerged|you have unmerged files|middle of a merge|fix conflicts/i;
+const GIT_DIVERGENCE_PATTERN = /not possible to fast-forward|cannot fast-forward|divergent branches|branches have diverged/i;
+
+const isGitConflictError = (error) => GIT_CONFLICT_PATTERN.test(parseGitErrorText(error));
+
+const readConflictResult = async (git) => {
+  const status = await git.status().catch(() => ({ conflicted: [] }));
+  return {
+    success: false,
+    conflict: true,
+    conflictFiles: status.conflicted || [],
+  };
+};
+
+const createGitOperationError = (message, code, statusCode, conflictFiles = []) => Object.assign(
+  new Error(message),
+  { code, statusCode, conflictFiles },
+);
+
 const isNotGitRepositoryError = (error) => {
   const text = parseGitErrorText(error);
   return /not a git repository/i.test(text);
@@ -577,11 +694,11 @@ export const isMissingDirectoryError = (error, directory) => {
     || /no such file or directory.*(?:working directory|cwd)/i.test(text);
 };
 
-const runGitCommand = async (cwd, args) => {
+const runGitCommand = async (cwd, args, options = {}) => {
   try {
     const { stdout, stderr } = await execFileAsync(getGitBinary(), args, {
       cwd,
-      env: await buildGitEnv(),
+      env: await buildGitEnv(cwd, options),
       windowsHide: true,
       maxBuffer: 20 * 1024 * 1024,
     });
@@ -602,15 +719,15 @@ const runGitCommand = async (cwd, args) => {
   }
 };
 
-const runGitCommandOrThrow = async (cwd, args, fallbackMessage) => {
-  const result = await runGitCommand(cwd, args);
+const runGitCommandOrThrow = async (cwd, args, fallbackMessage, options = {}) => {
+  const result = await runGitCommand(cwd, args, options);
   if (!result.success) {
     throw new Error(result.message || fallbackMessage || 'Git command failed');
   }
   return result;
 };
 
-const ensureOpenCodeProjectId = async (primaryWorktree) => {
+export const ensureOpenCodeProjectId = async (primaryWorktree) => {
   const gitDir = path.join(primaryWorktree, '.git');
   const idFile = path.join(gitDir, 'opencode');
   const existing = await fsp.readFile(idFile, 'utf8').then((value) => value.trim()).catch(() => '');
@@ -956,6 +1073,8 @@ export const configureWorktreeBootstrapRuntime = (options = {}) => {
             metadata.primaryWorktree,
             metadata.fetchRemote,
             metadata.fetchBranch,
+            metadata.githubAccountId || null,
+            metadata.fetchRemoteUrl || '',
           );
         }
       },
@@ -981,6 +1100,15 @@ export const configureWorktreeBootstrapRuntime = (options = {}) => {
         );
       },
       populate_worktree: async (receipt) => {
+        const head = await runGitCommand(receipt.directory, ['rev-parse', '--verify', 'HEAD']);
+        const status = await runGitCommand(receipt.directory, ['status', '--porcelain']);
+        if (head.success && status.success) {
+          const index = await runGitCommand(receipt.directory, ['ls-files', '--stage']);
+          // `worktree add --no-checkout` creates a valid HEAD but leaves the
+          // index empty. Any indexed tree means checkout already happened, so
+          // a replay must preserve the current files and local edits.
+          if (!index.success || String(index.stdout || '').trim()) return;
+        }
         await populateWorktreeWithLockRecovery(receipt.directory, { runGitCommandOrThrow });
       },
       configure_upstream: async (receipt) => {
@@ -995,6 +1123,8 @@ export const configureWorktreeBootstrapRuntime = (options = {}) => {
           upstreamBranch: metadata.upstreamBranch,
           ensureRemoteName: metadata.ensureRemoteName,
           ensureRemoteUrl: metadata.ensureRemoteUrl,
+          fetchRemoteUrl: metadata.fetchRemoteUrl,
+          githubAccountId: metadata.githubAccountId,
         });
       },
       run_project_setup: async (receipt) => {
@@ -1041,9 +1171,16 @@ const ensureRemoteWithUrl = async (primaryWorktree, remoteName, remoteUrl) => {
   await runGitCommandOrThrow(primaryWorktree, ['remote', 'add', name, url], 'Failed to add git remote');
 };
 
-const fetchRemoteBranchRef = async (primaryWorktree, remoteName, branchName) => {
+const fetchRemoteBranchRef = async (
+  primaryWorktree,
+  remoteName,
+  branchName,
+  githubAccountId = null,
+  remoteUrl = '',
+) => {
   const remote = String(remoteName || '').trim();
   const branch = String(branchName || '').trim();
+  const fetchTarget = String(remoteUrl || '').trim() || remote;
   if (!remote || !branch) {
     return;
   }
@@ -1051,8 +1188,9 @@ const fetchRemoteBranchRef = async (primaryWorktree, remoteName, branchName) => 
   const refspec = `+refs/heads/${branch}:refs/remotes/${remote}/${branch}`;
   await runGitCommandOrThrow(
     primaryWorktree,
-    ['fetch', remote, refspec],
-    `Failed to fetch ${remote}/${branch}`
+    ['fetch', fetchTarget, refspec],
+    `Failed to fetch ${remote}/${branch}`,
+    { includeCredentials: true, githubAccountId },
   );
 };
 
@@ -1102,6 +1240,8 @@ const applyUpstreamConfiguration = async (args) => {
     upstreamBranch,
     ensureRemoteName,
     ensureRemoteUrl,
+    fetchRemoteUrl,
+    githubAccountId,
   } = args;
 
   if (!setUpstream) {
@@ -1119,7 +1259,13 @@ const applyUpstreamConfiguration = async (args) => {
 
   let fetched = true;
   try {
-    await fetchRemoteBranchRef(primaryWorktree, upstream.remote, upstream.branch);
+    await fetchRemoteBranchRef(
+      primaryWorktree,
+      upstream.remote,
+      upstream.branch,
+      githubAccountId || null,
+      fetchRemoteUrl,
+    );
   } catch {
     fetched = false;
   }
@@ -1851,6 +1997,7 @@ export async function getFileDiff(directory, { path: filePath, staged = false } 
 export async function revertFile(directory, filePath) {
   const directoryPath = normalizeDirectoryPath(directory);
   const git = await createGit(directoryPath);
+  await assertManagedMutationBranch(directoryPath, git);
   const repoRoot = path.resolve(directoryPath);
   const absoluteTarget = path.resolve(repoRoot, filePath);
 
@@ -1911,6 +2058,7 @@ const assertPathInsideRepo = (directoryPath, filePath) => {
 export async function stageFile(directory, filePath) {
   const directoryPath = normalizeDirectoryPath(directory);
   const git = await createGit(directoryPath);
+  await assertManagedMutationBranch(directoryPath, git);
   assertPathInsideRepo(directoryPath, filePath);
   await git.raw(['add', '--', filePath]);
 }
@@ -1918,6 +2066,7 @@ export async function stageFile(directory, filePath) {
 export async function unstageFile(directory, filePath) {
   const directoryPath = normalizeDirectoryPath(directory);
   const git = await createGit(directoryPath);
+  await assertManagedMutationBranch(directoryPath, git);
   assertPathInsideRepo(directoryPath, filePath);
 
   try {
@@ -1968,6 +2117,7 @@ export async function applyHunk(directory, filePath, options = {}) {
   const directoryPath = normalizeDirectoryPath(directory);
   assertPathInsideRepo(directoryPath, filePath);
   const git = await createGit(directoryPath);
+  await assertManagedMutationBranch(directoryPath, git);
 
   const targetPath = extractPatchTargetPath(patch);
   if (targetPath && targetPath !== filePath) {
@@ -2014,7 +2164,41 @@ export async function collectDiffs(directory, files = []) {
 }
 
 export async function pull(directory, options = {}) {
-  const git = await createGit(directory);
+  const git = await createGit(directory, { includeCredentials: true });
+  const { principal, assignment } = resolveManagedGitAssignment(directory);
+  if (principal) {
+    await assertManagedMutationBranch(directory, git);
+    const currentBranch = await getCheckedOutBranch(git);
+    if (options.remote && options.remote !== 'origin') throw new Error('Managed workspaces may only pull from origin');
+    if (options.branch && cleanBranchName(options.branch) !== currentBranch) {
+      throw new Error('Managed workspaces may only pull the checked-out branch');
+    }
+    try {
+      const remote = assignment.remoteUrl || 'origin';
+      await git.raw(['fetch', remote, `refs/heads/${currentBranch}:refs/remotes/origin/${currentBranch}`]);
+      if (options.rebase === true) await git.raw(['rebase', `origin/${currentBranch}`]);
+      else await git.raw(['merge', '--ff-only', `origin/${currentBranch}`]);
+      return { success: true, summary: {}, files: [], insertions: 0, deletions: 0 };
+    } catch (error) {
+      if (isGitConflictError(error)) {
+        return {
+          ...(await readConflictResult(git)),
+          summary: {},
+          files: [],
+          insertions: 0,
+          deletions: 0,
+        };
+      }
+      if (GIT_DIVERGENCE_PATTERN.test(parseGitErrorText(error))) {
+        throw createGitOperationError(
+          'The managed branch has diverged from its remote branch. Rebase or merge it before pulling again.',
+          'GIT_DIVERGED',
+          409,
+        );
+      }
+      throw error;
+    }
+  }
   const pullOptions = options.rebase === true
     ? { ...(options.options && typeof options.options === 'object' && !Array.isArray(options.options) ? options.options : {}), '--rebase': null }
     : options.options || {};
@@ -2081,13 +2265,26 @@ export async function stashPush(directory, options = {}) {
   const message = typeof options.message === 'string' && options.message.trim()
     ? options.message.trim()
     : `OpenChamber stash ${new Date().toISOString()}`;
-  const output = await git.raw(['stash', 'push', '--include-untracked', '-m', message]);
-  return {
-    success: true,
-    created: !/no local changes/i.test(String(output || '')),
-    message,
-    output: String(output || '').trim(),
-  };
+  try {
+    const output = await git.raw(['stash', 'push', '--include-untracked', '-m', message]);
+    return {
+      success: true,
+      created: !/no local changes/i.test(String(output || '')),
+      message,
+      output: String(output || '').trim(),
+    };
+  } catch (error) {
+    if (isGitConflictError(error)) {
+      const conflict = await readConflictResult(git);
+      throw createGitOperationError(
+        'Resolve merge conflicts before continuing',
+        'GIT_UNMERGED_INDEX',
+        409,
+        conflict.conflictFiles,
+      );
+    }
+    throw error;
+  }
 }
 
 export async function stashApply(directory, options = {}) {
@@ -2112,7 +2309,30 @@ export async function stashPop(directory, options = {}) {
 }
 
 export async function push(directory, options = {}) {
-  const git = await createGit(directory);
+  const git = await createGit(directory, { includeCredentials: true });
+  const { principal, assignment } = resolveManagedGitAssignment(directory);
+  if (principal) {
+    await assertManagedMutationBranch(directory, git);
+    const currentBranch = await getCheckedOutBranch(git);
+    if (!principal.githubAccountId || !getGitHubAuthById(principal.githubAccountId)) {
+      throw new Error('The assigned GitHub account is not connected on this host');
+    }
+    if (options.remote && options.remote !== 'origin') throw new Error('Managed workspaces may only push to origin');
+    if (options.branch && cleanBranchName(options.branch) !== currentBranch) {
+      throw new Error('Managed workspaces may only push the checked-out branch');
+    }
+    await git.raw([
+      'push',
+      assignment.remoteUrl || 'origin',
+      `refs/heads/${currentBranch}:refs/heads/${currentBranch}`,
+    ]);
+    return {
+      success: true,
+      pushed: [{ local: currentBranch, remote: currentBranch }],
+      repo: directory,
+      ref: currentBranch,
+    };
+  }
 
   const describePushError = (error) => {
     const fromNestedGit = error?.git && typeof error.git === 'object'
@@ -2268,7 +2488,22 @@ export async function deleteRemoteBranch(directory, options = {}) {
 }
 
 export async function fetch(directory, options = {}) {
-  const git = await createGit(directory);
+  const git = await createGit(directory, { includeCredentials: true });
+  const { principal, assignment } = resolveManagedGitAssignment(directory);
+  if (principal) {
+    await assertManagedMutationBranch(directory, git);
+    const currentBranch = await getCheckedOutBranch(git);
+    if (options.remote && options.remote !== 'origin') throw new Error('Managed workspaces may only fetch from origin');
+    if (options.branch && cleanBranchName(options.branch) !== currentBranch) {
+      throw new Error('Managed workspaces may only fetch the checked-out branch');
+    }
+    await git.raw([
+      'fetch',
+      assignment.remoteUrl || 'origin',
+      `refs/heads/${currentBranch}:refs/remotes/origin/${currentBranch}`,
+    ]);
+    return { success: true };
+  }
 
   try {
     await git.fetch(
@@ -2288,6 +2523,7 @@ export async function commit(directory, message, options = {}) {
   const git = await createGit(directory);
 
   try {
+    await assertManagedMutationBranch(directory, git);
     const requestedFiles = Array.isArray(options.files)
       ? options.files
         .map((value) => String(value || '').trim())
@@ -2355,13 +2591,22 @@ export async function commit(directory, message, options = {}) {
       summary: result.summary
     };
   } catch (error) {
+    if (isGitConflictError(error)) {
+      const conflict = await readConflictResult(git);
+      throw createGitOperationError(
+        'Resolve merge conflicts before continuing',
+        'GIT_UNMERGED_INDEX',
+        409,
+        conflict.conflictFiles,
+      );
+    }
     console.error('Failed to commit:', error);
     throw error;
   }
 }
 
 export async function getBranches(directory) {
-  const git = await createGit(directory);
+  const git = await createGit(directory, { includeCredentials: true });
 
   try {
     const result = await git.branch();
@@ -2877,6 +3122,7 @@ export async function createWorktree(directory, input = {}) {
   const begun = await bootstrapRuntime.beginOperation({
     idempotencyKey,
     fingerprint,
+    ownerId: String(input?.ownerId || getRequestPrincipal()?.id || 'local-admin'),
     directory: existingReceipt?.directory ?? candidate?.directory,
     ...(metadata ? { metadata } : {}),
   });
@@ -3583,7 +3829,10 @@ export async function getRemotes(directory) {
   try {
     const remotes = await git.getRemotes(true);
     
-    return remotes.map((remote) => ({
+    const { principal } = resolveManagedGitAssignment(directory);
+    return remotes
+      .filter((remote) => !principal || principal.role === 'admin' || remote.name === 'origin')
+      .map((remote) => ({
       name: remote.name,
       fetchUrl: remote.refs.fetch,
       pushUrl: remote.refs.push
@@ -3621,10 +3870,12 @@ export async function rebase(directory, options = {}) {
   const git = await createGit(directory);
 
   try {
-    const { onto } = options;
+    let { onto } = options;
     if (!onto) {
       throw new Error('onto parameter is required for rebase');
     }
+    const assignment = await assertManagedMutationBranch(directory, git);
+    if (assignment) onto = await validateManagedSourceRef(directory, onto);
 
     await git.rebase([onto]);
 
@@ -3633,20 +3884,7 @@ export async function rebase(directory, options = {}) {
       conflict: false
     };
   } catch (error) {
-    const errorMessage = String(error?.message || error || '').toLowerCase();
-    const isConflict = errorMessage.includes('conflict') || 
-                       errorMessage.includes('could not apply') ||
-                       errorMessage.includes('merge conflict');
-
-    if (isConflict) {
-      // Get list of conflicted files
-      const status = await git.status().catch(() => ({ conflicted: [] }));
-      return {
-        success: false,
-        conflict: true,
-        conflictFiles: status.conflicted || []
-      };
-    }
+    if (isGitConflictError(error)) return readConflictResult(git);
 
     console.error('Failed to rebase:', error);
     throw error;
@@ -3657,6 +3895,7 @@ export async function abortRebase(directory) {
   const git = await createGit(directory);
 
   try {
+    await assertManagedMutationBranch(directory, git);
     await git.rebase(['--abort']);
     return { success: true };
   } catch (error) {
@@ -3669,10 +3908,12 @@ export async function merge(directory, options = {}) {
   const git = await createGit(directory);
 
   try {
-    const { branch } = options;
+    let { branch } = options;
     if (!branch) {
       throw new Error('branch parameter is required for merge');
     }
+    const assignment = await assertManagedMutationBranch(directory, git);
+    if (assignment) branch = await validateManagedSourceRef(directory, branch);
 
     await git.merge([branch]);
 
@@ -3681,20 +3922,7 @@ export async function merge(directory, options = {}) {
       conflict: false
     };
   } catch (error) {
-    const errorMessage = String(error?.message || error || '').toLowerCase();
-    const isConflict = errorMessage.includes('conflict') || 
-                       errorMessage.includes('merge conflict') ||
-                       errorMessage.includes('automatic merge failed');
-
-    if (isConflict) {
-      // Get list of conflicted files
-      const status = await git.status().catch(() => ({ conflicted: [] }));
-      return {
-        success: false,
-        conflict: true,
-        conflictFiles: status.conflicted || []
-      };
-    }
+    if (isGitConflictError(error)) return readConflictResult(git);
 
     console.error('Failed to merge:', error);
     throw error;
@@ -3705,6 +3933,7 @@ export async function abortMerge(directory) {
   const git = await createGit(directory);
 
   try {
+    await assertManagedMutationBranch(directory, git);
     await git.merge(['--abort']);
     return { success: true };
   } catch (error) {
@@ -3718,15 +3947,13 @@ export async function continueRebase(directory) {
   const git = await createGit(directoryPath);
 
   try {
+    await assertManagedMutationBranch(directoryPath, git);
     // Set GIT_EDITOR to prevent editor prompts
     await git.env('GIT_EDITOR', 'true').rebase(['--continue']);
     return { success: true, conflict: false };
   } catch (error) {
     const errorMessage = String(error?.message || error || '').toLowerCase();
-    const isConflict = errorMessage.includes('conflict') || 
-                       errorMessage.includes('needs merge') ||
-                       errorMessage.includes('unmerged') ||
-                       errorMessage.includes('fix conflicts');
+    const isConflict = isGitConflictError(error);
 
     if (isConflict) {
       const status = await git.status().catch(() => ({ conflicted: [] }));
@@ -3759,6 +3986,7 @@ export async function continueMerge(directory) {
   const git = await createGit(directoryPath);
 
   try {
+    await assertManagedMutationBranch(directoryPath, git);
     // Check if there are still unmerged files
     const status = await git.status();
     if (status.conflicted && status.conflicted.length > 0) {
@@ -3775,10 +4003,7 @@ export async function continueMerge(directory) {
     return { success: true, conflict: false };
   } catch (error) {
     const errorMessage = String(error?.message || error || '').toLowerCase();
-    const isConflict = errorMessage.includes('conflict') || 
-                       errorMessage.includes('needs merge') ||
-                       errorMessage.includes('unmerged') ||
-                       errorMessage.includes('fix conflicts');
+    const isConflict = isGitConflictError(error);
 
     if (isConflict) {
       const status = await git.status().catch(() => ({ conflicted: [] }));

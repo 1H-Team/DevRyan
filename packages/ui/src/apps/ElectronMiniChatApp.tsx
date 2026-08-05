@@ -21,6 +21,8 @@ import { useAppFontEffects } from './useAppFontEffects';
 import { useMiniChatKeyboardShortcuts } from '@/hooks/useMiniChatKeyboardShortcuts';
 import { listProjectWorktrees } from '@/lib/worktrees/worktreeManager';
 import type { WorktreeMetadata } from '@/types/worktree';
+import { useAuthPrincipal } from '@/lib/authSession';
+import { filterWorktreesByGrantedBranches } from '@/lib/worktrees/managedBranches';
 
 const MINI_CHAT_PRESENCE_CHANNEL = 'openchamber:mini-chat-presence';
 
@@ -66,6 +68,7 @@ const MiniChatBootstrap: React.FC<{ config: MiniChatConfig }> = ({ config }) => 
   const loadAgents = useConfigStore((state) => state.loadAgents);
   const providersCount = useConfigStore((state) => state.providers.length);
   const agentsCount = useConfigStore((state) => state.agents.length);
+  const principal = useAuthPrincipal();
 
   React.useEffect(() => {
     void initializeApp();
@@ -139,11 +142,15 @@ const MiniChatBootstrap: React.FC<{ config: MiniChatConfig }> = ({ config }) => 
       await Promise.all(projects.map(async (project) => {
         const projectPath = project.path.replace(/\\/g, '/').replace(/\/+$/, '');
         if (!projectPath) return;
+        const filterByGrant = principal.scope === 'managed' && principal.role !== 'admin';
         try {
           const cachedIsGitRepo = useGitStore.getState().directories.get(projectPath)?.isGitRepo;
           const isGitRepo = cachedIsGitRepo ?? await import('@/lib/gitApi').then((m) => m.checkIsGitRepository(projectPath));
           if (!isGitRepo) return;
-          const worktrees = await listProjectWorktrees({ id: project.id, path: projectPath });
+          const discoveredWorktrees = await listProjectWorktrees({ id: project.id, path: projectPath });
+          const worktrees = filterByGrant
+            ? filterWorktreesByGrantedBranches(discoveredWorktrees, project)
+            : discoveredWorktrees;
           if (cancelled || worktrees.length === 0) return;
           worktreesByProject.set(projectPath, worktrees);
           allWorktrees.push(...worktrees);
@@ -164,7 +171,7 @@ const MiniChatBootstrap: React.FC<{ config: MiniChatConfig }> = ({ config }) => 
     return () => {
       cancelled = true;
     };
-  }, [projects]);
+  }, [principal.role, principal.scope, projects]);
 
   return null;
 };

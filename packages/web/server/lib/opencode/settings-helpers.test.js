@@ -203,9 +203,10 @@ describe('settings helpers', () => {
     expect(helpers.sanitizeSettingsUpdate({ mobileKeyboardMode: 'fixed-layout' })).toEqual({});
   });
 
-  it('rejects removed local voice input provider values', () => {
+  it('accepts local voice input provider values and rejects unknown providers', () => {
     const helpers = createTestHelpers();
 
-    expect(helpers.sanitizeSettingsUpdate({ sttProvider: 'wasm' })).toEqual({});
+    expect(helpers.sanitizeSettingsUpdate({ sttProvider: 'wasm' })).toEqual({ sttProvider: 'wasm' });
+    expect(helpers.sanitizeSettingsUpdate({ sttProvider: 'remote-vendor' })).toEqual({});
   });
 });

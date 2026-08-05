@@ -72,12 +72,18 @@ const getBridge = () => {
   return { url: url.toString(), token };
 };
 
-const buildIdempotencyKey = (context, action, args) => {
+const buildIdempotencyKey = (context, action, args, dispatchCallId = null) => {
   const fingerprint = crypto.createHash('sha256')
-    .update(JSON.stringify({ action, args }))
+    .update(JSON.stringify(dispatchCallId
+      ? { action, args, dispatchCallId }
+      : { action, args }))
     .digest('hex');
   return `tool:${context.sessionID}:${context.messageID || 'unknown'}:${fingerprint}`;
 };
+
+const fingerprintPendingStart = (args) => crypto.createHash('sha256')
+  .update(JSON.stringify(args ?? null))
+  .digest('hex');
 
 const callRpc = async (method, params, { signal } = {}) => {
   const bridge = getBridge();
@@ -356,7 +362,7 @@ const waitThroughManualModelRecovery = async (initialResult, scoped, signal) => 
   return result;
 };
 
-const executeAction = async (args, context, client) => {
+const executeAction = async (args, context, client, dispatchCallId = null) => {
   const action = requireText(args.action, 'action');
   if (!ACTIONS.includes(action)) throw new Error(`Unsupported managed task action: ${action}`);
 
@@ -379,11 +385,12 @@ const executeAction = async (args, context, client) => {
       timeoutSeconds,
     };
     return await callRpc('submit', {
-      idempotencyKey: buildIdempotencyKey(context, action, normalizedArgs),
+      idempotencyKey: buildIdempotencyKey(context, action, normalizedArgs, dispatchCallId),
       rootSessionId: requireText(context.sessionID, 'context.sessionID'),
       dispatchGroupId: context.agent === 'builder'
         ? null
         : requireText(context.messageID, 'context.messageID'),
+      dispatchCallId,
       parentTaskId: null,
       directory: requireText(context.directory, 'context.directory'),
       mode: context.agent === 'builder' ? 'builder' : 'orchestrator',
@@ -464,6 +471,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
   scheduleTimeout = globalThis.setTimeout,
 } = {}) => {
   const sessionStates = new Map();
+  const pendingStartsByArgs = new WeakMap();
   const agentOwnershipCache = new Map();
   const recoveryContinuationsInFlight = new Set();
   const recoveryContinuationsSent = new Set();
@@ -831,23 +839,38 @@ export const DevRyanManagedOrchestrationPlugin = async ({
     return state;
   };
 
-  const registerPendingStart = (rootSessionId) => {
+  const registerPendingStart = (rootSessionId, callID, args) => {
     const state = getSessionState(rootSessionId);
+    const normalizedCallID = requireText(callID, 'callID');
     let resolve;
     const entry = {
+      callID: normalizedCallID,
+      args: isRecord(args) ? args : null,
+      fingerprint: fingerprintPendingStart(args),
       claimed: false,
+      settled: false,
       promise: new Promise((resolvePromise) => { resolve = resolvePromise; }),
       settle() {
+        if (entry.settled) return;
+        entry.settled = true;
         const index = state.pendingStarts.indexOf(entry);
         if (index >= 0) state.pendingStarts.splice(index, 1);
+        if (entry.args) pendingStartsByArgs.delete(entry.args);
         resolve();
       },
     };
     state.pendingStarts.push(entry);
+    if (entry.args) pendingStartsByArgs.set(entry.args, entry);
   };
 
-  const claimPendingStart = (rootSessionId) => {
-    const entry = getSessionState(rootSessionId).pendingStarts.find((candidate) => !candidate.claimed);
+  const claimPendingStart = (rootSessionId, args) => {
+    const state = getSessionState(rootSessionId);
+    const exactEntry = isRecord(args) ? pendingStartsByArgs.get(args) : null;
+    const entry = exactEntry && state.pendingStarts.includes(exactEntry) && !exactEntry.claimed
+      ? exactEntry
+      : state.pendingStarts.find((candidate) => (
+        !candidate.claimed && candidate.fingerprint === fingerprintPendingStart(args)
+      )) ?? state.pendingStarts.find((candidate) => !candidate.claimed);
     if (entry) entry.claimed = true;
     return entry ?? null;
   };
@@ -883,7 +906,9 @@ export const DevRyanManagedOrchestrationPlugin = async ({
     const rootSessionId = requireText(input?.sessionID, 'sessionID');
     const toolName = requireText(input?.tool, 'tool');
     if (toolName === 'devryan_task') {
-      if (output?.args?.action === 'start') registerPendingStart(rootSessionId);
+      if (output?.args?.action === 'start') {
+        registerPendingStart(rootSessionId, input?.callID, output.args);
+      }
       return;
     }
     if (toolName === 'task') {
@@ -959,7 +984,11 @@ export const DevRyanManagedOrchestrationPlugin = async ({
       async execute(args, context) {
         const action = requireText(args.action, 'action');
         const state = getSessionState(context.sessionID);
-        const pendingStart = action === 'start' ? claimPendingStart(context.sessionID) : null;
+        const pendingStart = action === 'start' ? claimPendingStart(context.sessionID, args) : null;
+        const contextCallID = typeof context.callID === 'string' ? context.callID.trim() : '';
+        const dispatchCallId = action === 'start'
+          ? contextCallID || pendingStart?.callID || null
+          : null;
         try {
           if (RESULT_ACTIONS.has(action)) {
             const taskId = requireText(args.task_id, 'task_id');
@@ -974,7 +1003,12 @@ export const DevRyanManagedOrchestrationPlugin = async ({
               throw new Error('Manual model recovery requires the user-facing Model Recovery controls; leave this result unacknowledged');
             }
           }
-          const result = await executeAction({ ...args, action }, context, client);
+          const result = await executeAction(
+            { ...args, action },
+            context,
+            client,
+            dispatchCallId,
+          );
           if (action === 'start' && context.agent !== 'builder') state.knownBarrier = true;
           if (action === 'wait') {
             const requestedTaskId = requireText(args.task_id, 'task_id');

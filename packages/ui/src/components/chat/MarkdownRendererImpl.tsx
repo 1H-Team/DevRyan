@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
 import { RiFileCopyLine, RiCheckLine, RiDownloadLine, RiEyeLine, RiCodeLine } from '@remixicon/react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { toast } from '@/components/ui';
-import { copyTextToClipboard } from '@/lib/clipboard';
+import { copyRichTextToClipboard, copyTextToClipboard } from '@/lib/clipboard';
 import { useI18n } from '@/lib/i18n';
 
 import { isExternalHttpUrl, isLoopbackHttpUrl, openExternalUrl } from '@/lib/url';
@@ -205,23 +205,14 @@ const TableCopyButton: React.FC<{ tableRef: React.RefObject<HTMLDivElement | nul
     const content = format === 'csv' ? tableToCSV(data) : tableToTSV(data);
 
     try {
-      await navigator.clipboard.write([
-        new ClipboardItem({
-          'text/plain': new Blob([content], { type: 'text/plain' }),
-          'text/html': new Blob([tableEl.outerHTML], { type: 'text/html' }),
-        }),
-      ]);
+      const result = await copyRichTextToClipboard(content, tableEl.outerHTML, {
+        sourceSurface: 'chat', copyKind: 'text',
+      });
+      if (!result.ok) throw new Error(result.error);
       setCopied(true);
       setShowMenu(false);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      const fallbackResult = await copyTextToClipboard(content);
-      if (fallbackResult.ok) {
-        setCopied(true);
-        setShowMenu(false);
-        setTimeout(() => setCopied(false), 2000);
-        return;
-      }
       console.error('Failed to copy table:', err);
     }
   };

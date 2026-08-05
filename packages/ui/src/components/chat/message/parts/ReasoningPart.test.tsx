@@ -115,6 +115,8 @@ describe("ReasoningPart", () => {
     }))
 
     expect(html).toContain(`<div data-testid="markdown-renderer" data-streaming="false" data-variant="reasoning">${reasoning}</div>`)
+    expect(html).toContain('data-reasoning-block-id="anthropic-reasoning"')
+    expect(html).not.toContain('data-assistant-update-block-id')
     expectNoDisclosurePresentation(html)
   })
 
@@ -330,8 +332,17 @@ describe("JustificationBlock", () => {
     const html = renderJustification(markdown)
 
     expect(html.replaceAll("&gt;", ">")).toContain(
-      `<div data-testid="markdown-renderer" data-streaming="false" data-variant="reasoning">${markdown}</div>`,
+      `<div data-testid="markdown-renderer" data-streaming="false" data-variant="assistant">${markdown}</div>`,
     )
+  })
+
+  test("uses assistant presentation and update semantics for public narration", () => {
+    const html = renderJustification("I’m checking the existing helper first.")
+
+    expect(html).toContain('data-assistant-update-block-id="justification-1"')
+    expect(html).toContain('data-variant="assistant"')
+    expect(html).not.toContain('data-reasoning-block-id')
+    expect(html).not.toContain('data-variant="reasoning"')
   })
 
   test("does not split ordinary leading bold prose that already has whitespace", () => {

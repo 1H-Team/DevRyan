@@ -55,23 +55,33 @@ const validateStageState = (value) => {
 };
 
 export const validateWorktreeBootstrapReceipt = (value) => {
-  if (!value || typeof value !== 'object' || Array.isArray(value) || value.version !== 1) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || ![1, 2].includes(value.version)) {
     throw new TypeError('worktree bootstrap receipt version is invalid');
   }
-  for (const field of ['operationId', 'idempotencyKey', 'fingerprint', 'directory']) {
-    if (!asString(value[field])) throw new TypeError(`worktree bootstrap ${field} is required`);
+  const receipt = value.version === 1
+    ? { ...value, version: 2, ownerId: 'local-admin' }
+    : value;
+  if (!asString(receipt.ownerId)) {
+    throw new TypeError('worktree bootstrap ownerId is required');
   }
-  if (![...TERMINAL_STATUSES, 'queued', 'running'].includes(value.status)) {
+  for (const field of ['operationId', 'idempotencyKey', 'fingerprint', 'directory']) {
+    if (!asString(receipt[field])) throw new TypeError(`worktree bootstrap ${field} is required`);
+  }
+  if (![...TERMINAL_STATUSES, 'queued', 'running'].includes(receipt.status)) {
     throw new TypeError('worktree bootstrap status is invalid');
   }
-  if (!WORKTREE_BOOTSTRAP_STAGES.includes(value.stage)) {
+  if (receipt.supersededAt !== undefined && receipt.supersededAt !== null
+    && (!Number.isFinite(receipt.supersededAt) || receipt.supersededAt < 0)) {
+    throw new TypeError('worktree bootstrap supersededAt is invalid');
+  }
+  if (!WORKTREE_BOOTSTRAP_STAGES.includes(receipt.stage)) {
     throw new TypeError('worktree bootstrap stage is invalid');
   }
-  const stages = value.stages && typeof value.stages === 'object' ? value.stages : {};
+  const stages = receipt.stages && typeof receipt.stages === 'object' ? receipt.stages : {};
   for (const stage of WORKTREE_BOOTSTRAP_STAGES) {
     if (stages[stage]) validateStageState(stages[stage]);
   }
-  return value;
+  return receipt;
 };
 
 export const createWorktreeBootstrapRuntime = (options = {}) => {
@@ -145,13 +155,20 @@ export const createWorktreeBootstrapRuntime = (options = {}) => {
     if (existingID) {
       const existing = operations.get(existingID);
       if (existing.fingerprint !== fingerprint) {
-        throw createError(
-          'Idempotency key was already used for a different worktree request',
-          'WORKTREE_IDEMPOTENCY_CONFLICT',
-          409,
-        );
+        if (input.supersedeTerminal === true && TERMINAL_STATUSES.has(existing.status)) {
+          existing.tombstone = true;
+          existing.supersededAt = now();
+          await persist(existing);
+        } else {
+          throw createError(
+            'Idempotency key was already used for a different worktree request',
+            'WORKTREE_IDEMPOTENCY_CONFLICT',
+            409,
+          );
+        }
+      } else {
+        return { receipt: clone(existing), replay: true };
       }
-      return { receipt: clone(existing), replay: true };
     }
 
     const requestedDirectory = asString(input.directory);
@@ -170,7 +187,8 @@ export const createWorktreeBootstrapRuntime = (options = {}) => {
       },
     ]));
     const receipt = {
-      version: 1,
+      version: 2,
+      ownerId: asString(input.ownerId) || 'local-admin',
       operationId: asString(input.operationId) || `wt_${crypto.randomUUID().replaceAll('-', '')}`,
       idempotencyKey,
       fingerprint,
@@ -414,7 +432,8 @@ export const createWorktreeBootstrapRuntime = (options = {}) => {
       throw createError('Worktree not found', 'WORKTREE_NOT_FOUND', 404);
     }
     return {
-      version: 1,
+      version: 2,
+      ownerId: 'local-admin',
       operationId: null,
       idempotencyKey: null,
       fingerprint: null,

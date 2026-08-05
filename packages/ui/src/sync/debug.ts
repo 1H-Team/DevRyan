@@ -1,11 +1,12 @@
+import { getSafeStorage } from '@/stores/utils/safeStorage';
 /**
  * Sync debug logging — gated behind localStorage flag.
  *
  * Enable in browser console:
- *   localStorage.setItem("openchamber:sync:debug", "1")
+ *   getSafeStorage().setItem("openchamber:sync:debug", "1")
  *
  * Disable:
- *   localStorage.removeItem("openchamber:sync:debug")
+ *   getSafeStorage().removeItem("openchamber:sync:debug")
  *
  * All checks are early-returns on the hot path — zero cost when disabled.
  */
@@ -17,7 +18,7 @@ let _enabled: boolean | undefined
 export function isSyncDebugEnabled(): boolean {
   if (_enabled !== undefined) return _enabled
   try {
-    _enabled = typeof localStorage !== "undefined" && localStorage.getItem(FLAG_KEY) === "1"
+    _enabled = typeof localStorage !== "undefined" && getSafeStorage().getItem(FLAG_KEY) === "1"
   } catch {
     _enabled = false
   }

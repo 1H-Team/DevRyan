@@ -1,9 +1,12 @@
 export {
   getGitHubAuth,
   getGitHubAuthAccounts,
+  getAllGitHubAuthAccounts,
+  getGitHubAuthById,
   setGitHubAuth,
   activateGitHubAuth,
   clearGitHubAuth,
+  clearGitHubAuthById,
   getGitHubClientId,
   getGitHubScopes,
   isGhCliDisabled,
@@ -18,6 +21,7 @@ export {
 
 export {
   getOctokitOrNull,
+  getOctokitForAccount,
 } from './octokit.js';
 
 export {

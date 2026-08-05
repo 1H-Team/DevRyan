@@ -45,6 +45,7 @@ export function registerTtsRoutes(app, { resolveZenModel, sayTTSCapability }) {
   app.post('/api/tts/speak', async (req, res) => {
     try {
       const { text, voice = 'nova', model = 'gpt-4o-mini-tts', speed = 0.9, instructions, summarize = false, providerId, modelId, threshold = 200, maxLength = 500, apiKey, baseURL } = req.body || {};
+      const clientApiKey = req.principal?.scope === 'managed' ? undefined : apiKey;
 
       const normalizedBaseURLResult = normalizeCustomOpenAIBaseURL(baseURL);
       if (normalizedBaseURLResult.error) {
@@ -52,7 +53,7 @@ export function registerTtsRoutes(app, { resolveZenModel, sayTTSCapability }) {
       }
       const normalizedBaseURL = normalizedBaseURLResult.value;
 
-      console.log('[TTS] Request received:', { voice, model, speed, textLength: text?.length, hasApiKey: !!apiKey, hasBaseURL: !!baseURL });
+      console.log('[TTS] Request received:', { voice, model, speed, textLength: text?.length, hasApiKey: !!clientApiKey, hasBaseURL: !!baseURL });
 
       if (!text || typeof text !== 'string' || !text.trim()) {
         return res.status(400).json({ error: 'Text is required' });
@@ -63,7 +64,7 @@ export function registerTtsRoutes(app, { resolveZenModel, sayTTSCapability }) {
 
       // Check availability - server-configured key, client-provided key, or custom server URL
       const hasServerKey = ttsService.isAvailable();
-      const hasClientKey = apiKey && typeof apiKey === 'string' && apiKey.trim().length > 0;
+      const hasClientKey = clientApiKey && typeof clientApiKey === 'string' && clientApiKey.trim().length > 0;
       const hasCustomBaseURL = typeof normalizedBaseURL === 'string' && normalizedBaseURL.length > 0;
       
       if (!hasServerKey && !hasClientKey && !hasCustomBaseURL) {
@@ -95,7 +96,7 @@ export function registerTtsRoutes(app, { resolveZenModel, sayTTSCapability }) {
         model,
         speed,
         instructions,
-        apiKey: hasClientKey ? apiKey.trim() : undefined,
+        apiKey: hasClientKey ? clientApiKey.trim() : undefined,
         baseURL: hasCustomBaseURL ? normalizedBaseURL : undefined,
       });
 

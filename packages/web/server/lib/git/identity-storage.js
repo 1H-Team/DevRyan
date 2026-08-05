@@ -2,13 +2,16 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-const STORAGE_DIR = path.join(os.homedir(), '.config', 'openchamber');
+const STORAGE_DIR = process.env.OPENCHAMBER_DATA_DIR
+  ? path.resolve(process.env.OPENCHAMBER_DATA_DIR)
+  : path.join(os.homedir(), '.config', 'openchamber');
 const STORAGE_FILE = path.join(STORAGE_DIR, 'git-identities.json');
 
 function ensureStorageDir() {
   if (!fs.existsSync(STORAGE_DIR)) {
-    fs.mkdirSync(STORAGE_DIR, { recursive: true });
+    fs.mkdirSync(STORAGE_DIR, { recursive: true, mode: 0o700 });
   }
+  fs.chmodSync(STORAGE_DIR, 0o700);
 }
 
 export function loadProfiles() {
@@ -32,7 +35,10 @@ export function saveProfiles(data) {
   ensureStorageDir();
 
   try {
-    fs.writeFileSync(STORAGE_FILE, JSON.stringify(data, null, 2), 'utf8');
+    const temporaryFile = `${STORAGE_FILE}.${process.pid}.${Date.now()}.tmp`;
+    fs.writeFileSync(temporaryFile, `${JSON.stringify(data, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+    fs.renameSync(temporaryFile, STORAGE_FILE);
+    fs.chmodSync(STORAGE_FILE, 0o600);
     return true;
   } catch (error) {
     console.error('Failed to save git identity profiles:', error);

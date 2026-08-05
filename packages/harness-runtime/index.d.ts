@@ -127,7 +127,8 @@ export type WorktreeBootstrapStatus =
   | 'not_applicable';
 
 export interface WorktreeBootstrapReceipt {
-  version: 1;
+  version: 2;
+  ownerId: string;
   operationId: string | null;
   idempotencyKey: string | null;
   fingerprint: string | null;
@@ -143,6 +144,7 @@ export interface WorktreeBootstrapReceipt {
   }>>;
   attempt: number;
   tombstone: boolean;
+  supersededAt?: number | null;
   warnings: Array<{ stage: WorktreeBootstrapStage; message: string; at: number }>;
   error: string | null;
   metadata: Record<string, unknown>;
@@ -161,8 +163,10 @@ export interface WorktreeBootstrapRuntime {
     request?: unknown;
     operationId?: string;
     directory: string;
+    ownerId?: string;
     metadata?: Record<string, unknown>;
     result?: Record<string, unknown>;
+    supersedeTerminal?: boolean;
   }): Promise<{ receipt: WorktreeBootstrapReceipt; replay: boolean }>;
   executeStage(
     operationId: string,

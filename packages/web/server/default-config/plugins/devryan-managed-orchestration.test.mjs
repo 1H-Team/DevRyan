@@ -630,6 +630,7 @@ describe('DevRyan managed orchestration plugin', () => {
     await vi.waitFor(() => {
       expect(requests.map(({ method }) => method)).toEqual(['submit']);
     });
+    expect(requests[0].params.dispatchCallId).toBe('call_start');
     resolveSubmit(new Response(JSON.stringify({
       ok: true,
       result: { task: { taskId: 'dvr_task_1', status: 'queued' } },
@@ -638,6 +639,53 @@ describe('DevRyan managed orchestration plugin', () => {
     await starting;
     await expect(guardedWork).rejects.toThrow('dvr_task_1');
     expect(requests.map(({ method }) => method)).toEqual(['submit', 'barrier_status']);
+  });
+
+  it('correlates parallel starts to their exact call ids even when execution order reverses', async () => {
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      return new Response(JSON.stringify({
+        ok: true,
+        result: { task: { taskId: `dvr_task_${request.params.dispatchCallId}` } },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+    const explorerArgs = {
+      action: 'start',
+      agent: 'explorer',
+      label: 'Inspect runtime',
+      prompt: 'Inspect the runtime.',
+      provider_id: 'github-copilot',
+      model_id: 'gpt-4.1',
+    };
+    const designerArgs = {
+      action: 'start',
+      agent: 'designer',
+      label: 'Inspect layout',
+      prompt: 'Inspect the layout.',
+      provider_id: 'github-copilot',
+      model_id: 'gpt-4.1',
+    };
+
+    await plugin['tool.execute.before'](
+      { tool: 'devryan_task', sessionID: 'ses_root', callID: 'call_explorer' },
+      { args: explorerArgs },
+    );
+    await plugin['tool.execute.before'](
+      { tool: 'devryan_task', sessionID: 'ses_root', callID: 'call_designer' },
+      { args: designerArgs },
+    );
+
+    await plugin.tool.devryan_task.execute(designerArgs, context());
+    await plugin.tool.devryan_task.execute(explorerArgs, context());
+
+    expect(requests.map(({ params }) => params.dispatchCallId)).toEqual([
+      'call_designer',
+      'call_explorer',
+    ]);
+    expect(requests[0].params.idempotencyKey).not.toBe(requests[1].params.idempotencyKey);
   });
 
   it('releases an abandoned pending start only when its session becomes idle', async () => {

@@ -13,6 +13,7 @@ const tasks: ManagedTaskProjection[] = Array.from({ length: 12 }, (_, index) => 
     owner: 'devryan',
     taskId: `dvr_task_${index + 1}`,
     rootSessionId: 'ses_root',
+    dispatchCallId: null,
     parentTaskId: null,
     childSessionId: null,
     directory: '/workspace',
@@ -43,6 +44,7 @@ const tasks: ManagedTaskProjection[] = Array.from({ length: 12 }, (_, index) => 
 const state = (overrides: Partial<AgentHandoffViewState> = {}): AgentHandoffViewState => ({
   open: true,
   phase: 'confirmation',
+  errorKind: null,
   sessionId: 'ses_root',
   tasks,
   failures: [],
@@ -91,6 +93,7 @@ describe('AgentHandoffDialogView', () => {
         <AgentHandoffDialogView
           state={state({
             phase: 'error',
+            errorKind: 'cleanup',
             errorMessage: 'Cleanup could not finish.',
             failures: [{ taskId: 'dvr_task_2', code: 'cleanup_failed', message: 'Managed task cleanup failed' }],
           })}
@@ -104,5 +107,29 @@ describe('AgentHandoffDialogView', () => {
     expect(error).toContain('Cleanup could not finish.');
     expect(error).toContain('Retry Cleanup');
     expect(error).toContain('Keep Orchestrator');
+  });
+
+  test('does not claim ownership or show zero counts when inspection itself fails', () => {
+    const error = renderToStaticMarkup(
+      <I18nProvider>
+        <AgentHandoffDialogView
+          state={state({
+            phase: 'error',
+            errorKind: 'inspection',
+            tasks: [],
+            errorMessage: 'Managed orchestration request failed (403)',
+          })}
+          onCancel={() => undefined}
+          onConfirm={() => undefined}
+          onRetry={() => undefined}
+        />
+      </I18nProvider>,
+    );
+
+    expect(error).toContain('Couldn’t check managed tasks');
+    expect(error).toContain('Retry Check');
+    expect(error).not.toContain('Orchestrator still owns managed task work');
+    expect(error).not.toContain('0 active');
+    expect(error).not.toContain('0 unreviewed');
   });
 });

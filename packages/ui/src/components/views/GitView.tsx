@@ -1,12 +1,15 @@
+import { getSafeStorage } from '@/stores/utils/safeStorage';
 import React from 'react';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useConfigStore } from '@/stores/useConfigStore';
+import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useFireworksCelebration } from '@/contexts/FireworksContext';
 import type { GitIdentityProfile, CommitFileEntry, GitStatus, GitWorktreeBootstrapStatus } from '@/lib/api/types';
 import { useGitIdentitiesStore } from '@/stores/useGitIdentitiesStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { copyTextToClipboard } from '@/lib/clipboard';
+import { recordFileOpened } from '@/lib/interactionAnalytics';
 import {
   useGitStore,
   useGitStatus,
@@ -81,6 +84,9 @@ import { validateCommitMessage } from '@/lib/commitTemplate';
 import { shouldAutoSelectGitChange } from '@/lib/git/commitWorkflowSafety';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { useI18n } from '@/lib/i18n';
+import { useAuthPrincipal } from '@/lib/authSession';
+import { resolveProjectForSessionDirectory } from '@/lib/projectResolution';
+import { splitVisibleGitBranches } from './git/gitBranchVisibility';
 
 type SyncAction = 'fetch' | 'pull' | 'push' | 'sync' | null;
 type CommitAction = 'commit' | 'commitAmend' | 'commitAndPush' | 'commitAndSync' | null;
@@ -151,7 +157,7 @@ const isGitmojiEntry = (value: unknown): value is GitmojiEntry => {
 const readGitmojiCache = (): GitmojiCachePayload | null => {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(GITMOJI_CACHE_KEY);
+    const raw = getSafeStorage().getItem(GITMOJI_CACHE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<GitmojiCachePayload>;
     if (!parsed || parsed.version !== GITMOJI_CACHE_VERSION || typeof parsed.fetchedAt !== 'number') {
@@ -173,7 +179,7 @@ const writeGitmojiCache = (gitmojis: GitmojiEntry[]) => {
       fetchedAt: Date.now(),
       version: GITMOJI_CACHE_VERSION,
     };
-    localStorage.setItem(GITMOJI_CACHE_KEY, JSON.stringify(payload));
+    getSafeStorage().setItem(GITMOJI_CACHE_KEY, JSON.stringify(payload));
   } catch {
     return;
   }
@@ -206,6 +212,8 @@ const hasUnstagedGitChange = (file: { index?: string; working_dir?: string }) =>
 export const GitView: React.FC = () => {
   const { t } = useI18n();
   const { git } = useRuntimeAPIs();
+  const principal = useAuthPrincipal();
+  const canUseHostGitIdentity = principal.scope !== 'managed' || principal.role === 'admin';
   const currentDirectory = useEffectiveDirectory();
   const [worktreeBootstrapStatus, setWorktreeBootstrapStatus] = React.useState<GitWorktreeBootstrapStatus['status'] | null>(null);
   const [isWaitingForGitRefreshAfterBootstrap, setIsWaitingForGitRefreshAfterBootstrap] = React.useState(false);
@@ -214,7 +222,14 @@ export const GitView: React.FC = () => {
   const setDraftBootstrapPendingDirectory = useSessionUIStore((s) => s.setDraftBootstrapPendingDirectory);
   const worktreeMap = useSessionUIStore((s) => s.worktreeMetadata);
   const availableWorktrees = useSessionUIStore((s) => s.availableWorktrees);
+  const availableWorktreesByProject = useSessionUIStore((s) => s.availableWorktreesByProject);
+  const projects = useProjectsStore((s) => s.projects);
   const normalizedCurrentDirectory = normalizePath(currentDirectory);
+  const currentProject = React.useMemo(
+    () => resolveProjectForSessionDirectory(projects, availableWorktreesByProject, currentDirectory ?? null),
+    [availableWorktreesByProject, currentDirectory, projects],
+  );
+  const restrictToGrantedBranches = principal.scope === 'managed' && principal.role !== 'admin';
   const inferredWorktreeMetadata = React.useMemo(() => {
     if (!normalizedCurrentDirectory) {
       return undefined;
@@ -272,7 +287,12 @@ export const GitView: React.FC = () => {
     ? worktreeAttachment.worktreeRoot ?? undefined
     : undefined;
 
-  const worktreeMetadata = useDetectedWorktreeMetadata(currentDirectory, storeWorktreeMetadata, status?.current ?? undefined);
+  const worktreeMetadata = useDetectedWorktreeMetadata(
+    currentDirectory,
+    storeWorktreeMetadata,
+    status?.current ?? undefined,
+    canUseHostGitIdentity,
+  );
   const branches = useGitBranches(currentDirectory ?? null);
   const log = useGitLog(currentDirectory ?? null);
   const currentIdentity = useGitIdentity(currentDirectory ?? null);
@@ -324,7 +344,7 @@ export const GitView: React.FC = () => {
       || worktreeBootstrapStatus === 'not_applicable';
     if (wasPending && isReady) {
       setIsWaitingForGitRefreshAfterBootstrap(true);
-      void fetchAll(currentDirectory, git).finally(() => {
+      void fetchAll(currentDirectory, git, { includeIdentity: canUseHostGitIdentity }).finally(() => {
         window.setTimeout(() => {
           setIsWaitingForGitRefreshAfterBootstrap(false);
         }, 1200);
@@ -335,7 +355,7 @@ export const GitView: React.FC = () => {
       setDraftBootstrapPendingDirectory(null);
       setIsWaitingForGitRefreshAfterBootstrap(false);
     }
-  }, [currentDirectory, fetchAll, git, setDraftBootstrapPendingDirectory, worktreeBootstrapStatus]);
+  }, [canUseHostGitIdentity, currentDirectory, fetchAll, git, setDraftBootstrapPendingDirectory, worktreeBootstrapStatus]);
 
   const normalizedDraftBootstrapPendingDirectory = normalizePath(newSessionDraft?.bootstrapPendingDirectory ?? null);
   const isDraftBootstrapPendingForCurrentDirectory = Boolean(
@@ -491,7 +511,7 @@ export const GitView: React.FC = () => {
     if (typeof window === 'undefined') {
       return 'commit';
     }
-    const stored = window.localStorage.getItem(GIT_ACTION_TAB_STORAGE_KEY);
+    const stored = getSafeStorage().getItem(GIT_ACTION_TAB_STORAGE_KEY);
     if (stored === 'worktree') {
       return 'branch';
     }
@@ -587,27 +607,27 @@ export const GitView: React.FC = () => {
   ) => {
     if (!conflictStorageKey || typeof window === 'undefined') return;
     const payload = { directory, conflictFiles: files, operation };
-    window.localStorage.setItem(conflictStorageKey, JSON.stringify(payload));
+    getSafeStorage().setItem(conflictStorageKey, JSON.stringify(payload));
   }, [conflictStorageKey]);
 
   // Clear conflict state from localStorage
   const clearConflictState = React.useCallback(() => {
     if (!conflictStorageKey || typeof window === 'undefined') return;
-    window.localStorage.removeItem(conflictStorageKey);
+    getSafeStorage().removeItem(conflictStorageKey);
   }, [conflictStorageKey]);
 
   React.useEffect(() => {
     if (typeof window === 'undefined') {
       return;
     }
-    window.localStorage.setItem(GIT_ACTION_TAB_STORAGE_KEY, actionTab);
+    getSafeStorage().setItem(GIT_ACTION_TAB_STORAGE_KEY, actionTab);
   }, [actionTab]);
 
   // Restore conflict state from localStorage on mount
   React.useEffect(() => {
     if (!conflictStorageKey || typeof window === 'undefined' || !currentDirectory) return;
 
-    const raw = window.localStorage.getItem(conflictStorageKey);
+    const raw = getSafeStorage().getItem(conflictStorageKey);
     if (!raw) return;
 
     try {
@@ -619,7 +639,7 @@ export const GitView: React.FC = () => {
 
       // Validate the stored state matches current directory
       if (parsed.directory !== currentDirectory) {
-        window.localStorage.removeItem(conflictStorageKey);
+        getSafeStorage().removeItem(conflictStorageKey);
         return;
       }
 
@@ -628,7 +648,7 @@ export const GitView: React.FC = () => {
       setConflictOperation(parsed.operation ?? 'merge');
       setConflictDialogOpen(true);
     } catch {
-      window.localStorage.removeItem(conflictStorageKey);
+      getSafeStorage().removeItem(conflictStorageKey);
     }
   }, [conflictStorageKey, currentDirectory]);
   const [stashDialogOpen, setStashDialogOpen] = React.useState(false);
@@ -705,10 +725,11 @@ export const GitView: React.FC = () => {
   }, [commitMessage, currentDirectory, selectedPaths]);
 
   React.useEffect(() => {
+    if (!canUseHostGitIdentity) return;
     loadProfiles();
     loadGlobalIdentity();
     loadDefaultGitIdentityId();
-  }, [loadProfiles, loadGlobalIdentity, loadDefaultGitIdentityId]);
+  }, [canUseHostGitIdentity, loadProfiles, loadGlobalIdentity, loadDefaultGitIdentityId]);
 
   React.useEffect(() => {
     if (!currentDirectory || !git?.getRemoteUrl) {
@@ -782,9 +803,9 @@ export const GitView: React.FC = () => {
   React.useEffect(() => {
     if (currentDirectory) {
       setActiveDirectory(currentDirectory);
-      void ensureAll(currentDirectory, git);
+      void ensureAll(currentDirectory, git, { includeIdentity: canUseHostGitIdentity });
     }
-  }, [currentDirectory, setActiveDirectory, ensureAll, git]);
+  }, [canUseHostGitIdentity, currentDirectory, setActiveDirectory, ensureAll, git]);
 
   React.useEffect(() => {
     if (!currentDirectory) {
@@ -825,11 +846,12 @@ export const GitView: React.FC = () => {
   }, [currentDirectory, git, fetchLog, logMaxCountLocal]);
 
   const refreshIdentity = React.useCallback(async () => {
-    if (!currentDirectory) return;
+    if (!canUseHostGitIdentity || !currentDirectory) return;
     await fetchIdentity(currentDirectory, git);
-  }, [currentDirectory, git, fetchIdentity]);
+  }, [canUseHostGitIdentity, currentDirectory, git, fetchIdentity]);
 
   React.useEffect(() => {
+    if (!canUseHostGitIdentity) return;
     if (!currentDirectory) return;
     if (!git?.hasLocalIdentity) return;
     if (isGitRepo !== true) return;
@@ -866,7 +888,7 @@ export const GitView: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [beginIdentityApply, currentDirectory, defaultGitIdentityId, endIdentityApply, git, isGitRepo, refreshIdentity]);
+  }, [beginIdentityApply, canUseHostGitIdentity, currentDirectory, defaultGitIdentityId, endIdentityApply, git, isGitRepo, refreshIdentity]);
 
   const changeEntries = React.useMemo(() => {
     if (!status) return [];
@@ -1020,6 +1042,16 @@ export const GitView: React.FC = () => {
           throw new Error('No remote available for pull');
         }
         const result = await git.gitPull(currentDirectory, getPullOptions(remote));
+        if (result.conflict) {
+          const files = result.conflictFiles ?? [];
+          setConflictFiles(files);
+          setConflictOperation(getPullOptions(remote).rebase ? 'rebase' : 'merge');
+          setConflictDialogOpen(true);
+          persistConflictState(currentDirectory, files, getPullOptions(remote).rebase ? 'rebase' : 'merge');
+          await refreshStatusAndBranches(false);
+          await refreshLog();
+          return;
+        }
         toast.success(
           result.files.length === 1
             ? t('gitView.toast.pulledFilesSingle', { count: result.files.length, name: remote.name })
@@ -1340,7 +1372,7 @@ export const GitView: React.FC = () => {
   };
 
   const handleApplyIdentity = async (profile: GitIdentityProfile) => {
-    if (!currentDirectory) return;
+    if (!canUseHostGitIdentity || !currentDirectory) return;
     beginIdentityApply();
 
     try {
@@ -1355,20 +1387,14 @@ export const GitView: React.FC = () => {
     }
   };
 
-  const localBranches = React.useMemo(() => {
-    if (!branches?.all) return [];
-    return branches.all
-      .filter((branchName: string) => !branchName.startsWith('remotes/'))
-      .sort();
-  }, [branches]);
-
-  const remoteBranches = React.useMemo(() => {
-    if (!branches?.all) return [];
-    return branches.all
-      .filter((branchName: string) => branchName.startsWith('remotes/'))
-      .map((branchName: string) => branchName.replace(/^remotes\//, ''))
-      .sort();
-  }, [branches]);
+  const { localBranches, remoteBranches } = React.useMemo(
+    () => splitVisibleGitBranches({
+      allBranches: branches?.all ?? [],
+      project: currentProject,
+      restrictToGrantedBranches,
+    }),
+    [branches?.all, currentProject, restrictToGrantedBranches],
+  );
 
   const effectiveRemotes = React.useMemo<GitRemote[]>(() => {
     if (remotes.length > 0) {
@@ -2543,6 +2569,7 @@ export const GitView: React.FC = () => {
                               revertingPaths={revertingPaths}
                               stagingPaths={stagingPaths}
                               onViewDiff={(path) => {
+                                recordFileOpened({ path, directory: currentDirectory || undefined, sourceSurface: 'git-changes' });
                                 if (currentDirectory && !isMobile) {
                                   openContextDiff(currentDirectory, path, true);
                                   return;
@@ -2568,6 +2595,7 @@ export const GitView: React.FC = () => {
                             stagingPaths={stagingPaths}
                             onRevertAll={handleRevertAll}
                             onViewDiff={(path) => {
+                              recordFileOpened({ path, directory: currentDirectory || undefined, sourceSurface: 'git-changes' });
                               if (currentDirectory && !isMobile) {
                                 openContextDiff(currentDirectory, path);
                                 return;

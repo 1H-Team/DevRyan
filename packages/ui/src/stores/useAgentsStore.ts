@@ -344,6 +344,12 @@ export type AgentWithExtras = Agent & {
   /** Ordered raw model refs for council-style multi-model agents. */
   modelRefs?: string[];
   councillors?: Array<{ model: string; variant?: string | null }>;
+  modelResolution?: {
+    presetName: string | null;
+    source: 'root-override' | 'preset' | 'root';
+    presetModelRef: string | null;
+    presetVariant: string | null;
+  };
 };
 
 export const buildAgentModelOverridePayload = (config: Partial<AgentConfig>): Record<string, unknown> => {

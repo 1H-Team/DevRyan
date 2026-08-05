@@ -27,6 +27,29 @@ import {
 
 const normalizePath = (value: string): string => value.replace(/\\/g, '/').replace(/\/+$/, '') || value;
 
+export const createWorktreeRequestSignature = (
+  projectDirectory: string,
+  request: Record<string, unknown>,
+): string => JSON.stringify({
+  projectDirectory: normalizePath(projectDirectory),
+  mode: request.mode ?? null,
+  branchName: request.branchName ?? null,
+  existingBranch: request.existingBranch ?? null,
+  worktreeName: request.worktreeName ?? null,
+  startRef: request.startRef ?? null,
+  startCommand: request.startCommand ?? null,
+  setupCommands: Array.isArray(request.setupCommands) ? request.setupCommands : null,
+  setUpstream: request.setUpstream ?? null,
+  upstreamRemote: request.upstreamRemote ?? null,
+  upstreamBranch: request.upstreamBranch ?? null,
+  ensureRemoteName: request.ensureRemoteName ?? null,
+  ensureRemoteUrl: request.ensureRemoteUrl ?? null,
+});
+
+export const createWorktreeIdempotencyKey = (): string => (
+  `worktree_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+);
+
 const isPrimaryAgent = (mode?: string) => mode === 'primary' || mode === 'all' || mode === undefined || mode === null;
 const normalizeAgentName = (name?: string | null) => name?.trim().toLowerCase() ?? '';
 

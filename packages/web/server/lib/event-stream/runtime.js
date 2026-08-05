@@ -46,8 +46,10 @@ function serializeMessageStreamSseEvent({ payload, directory, eventId }) {
 export function createGlobalMessageStreamSseHandler({
   globalHub,
   heartbeatIntervalMs = MESSAGE_STREAM_WS_HEARTBEAT_INTERVAL_MS,
+  eventFilter = null,
+  registerConnection = null,
 }) {
-  return (req, res) => {
+  return async (req, res) => {
     if (!globalHub || typeof globalHub.subscribeEvent !== 'function') {
       res.status?.(503);
       res.end?.(JSON.stringify({ error: 'Global message stream is unavailable' }));
@@ -74,9 +76,12 @@ export function createGlobalMessageStreamSseHandler({
     // bound in the socket write queue. Past this ceiling, drop the connection —
     // the client reconnects with Last-Event-ID and replays the gap.
     const SSE_MAX_BUFFERED_BYTES = 16 * 1024 * 1024;
-    const writeEntry = (entry) => {
+    const writeEntry = async (entry) => {
       if (res.writableEnded || res.destroyed) {
         return false;
+      }
+      if (eventFilter && !await eventFilter(req.principal, entry)) {
+        return true;
       }
       if (replayPhase && typeof entry?.eventId === 'string' && entry.eventId.length > 0) {
         deliveredEventIds.add(entry.eventId);
@@ -89,7 +94,14 @@ export function createGlobalMessageStreamSseHandler({
       return true;
     };
 
-    const unsubscribe = globalHub.subscribeEvent(writeEntry);
+    let eventQueue = Promise.resolve(true);
+    const enqueueEntry = (entry) => {
+      eventQueue = eventQueue.then((canContinue) => canContinue ? writeEntry(entry) : false);
+      return eventQueue;
+    };
+    const unsubscribe = globalHub.subscribeEvent((entry) => {
+      void enqueueEntry(entry);
+    });
     const requestedLastEventId = getRequestLastEventId(req);
     const { events } = typeof globalHub.replayAfter === 'function'
       ? globalHub.replayAfter(requestedLastEventId)
@@ -98,7 +110,7 @@ export function createGlobalMessageStreamSseHandler({
       if (entry?.eventId && deliveredEventIds.has(entry.eventId)) {
         continue;
       }
-      writeEntry(entry);
+      await enqueueEntry(entry);
     }
     replayPhase = false;
     deliveredEventIds.clear();
@@ -113,9 +125,13 @@ export function createGlobalMessageStreamSseHandler({
     }, heartbeatIntervalMs);
     heartbeat.unref?.();
 
+    const unregisterConnection = typeof registerConnection === 'function'
+      ? registerConnection(req.principal, () => res.destroy?.())
+      : () => {};
     const cleanup = () => {
       clearInterval(heartbeat);
       unsubscribe?.();
+      unregisterConnection();
       req.off?.('close', cleanup);
       req.off?.('error', cleanup);
     };
@@ -147,6 +163,15 @@ export function createGlobalUiEventBroadcaster({
 
     if (hasSseClients) {
       for (const res of sseClients) {
+        const filter = res.devRyanEventFilter;
+        if (typeof filter === 'function') {
+          void Promise.resolve(filter(res.devRyanPrincipal, { payload, directory, eventId }))
+            .then((allowed) => {
+              if (allowed) writeSseEvent(res, payload);
+            })
+            .catch(() => undefined);
+          continue;
+        }
         try {
           writeSseEvent(res, payload);
         } catch {
@@ -183,6 +208,7 @@ export function createMessageStreamWsRuntime({
   upstreamReconnectDelayMs = DEFAULT_UPSTREAM_RECONNECT_DELAY_MS,
   fetchImpl = fetch,
   globalEventHub = null,
+  eventFilter = null,
 }) {
   const wsServer = new WebSocketServer({
     noServer: true,
@@ -204,9 +230,14 @@ export function createMessageStreamWsRuntime({
     processForwardedEventPayload,
     triggerHealthCheck,
     heartbeatIntervalMs,
+    eventFilter,
   });
 
   wsServer.on('connection', (socket, req) => {
+    const unregisterConnection = typeof uiAuthController?.registerConnection === 'function'
+      ? uiAuthController.registerConnection(req.principal, () => socket.close(4001, 'Access revoked'))
+      : () => {};
+    socket.once('close', unregisterConnection);
     const rawUrl = typeof req?.url === 'string' ? req.url : MESSAGE_STREAM_GLOBAL_WS_PATH;
     const pathname = parseRequestPathname(rawUrl);
     const requestUrl = new URL(rawUrl, 'http://127.0.0.1');
@@ -217,6 +248,7 @@ export function createMessageStreamWsRuntime({
     if (isGlobalStream) {
       globalBridge.accept(socket, {
         requestedLastEventId,
+        principal: req.principal,
       });
       return;
     }
@@ -234,6 +266,8 @@ export function createMessageStreamWsRuntime({
       upstreamStallTimeoutMs,
       upstreamReconnectDelayMs,
       fetchImpl,
+      eventFilter,
+      principal: req.principal,
     });
   });
 
@@ -245,7 +279,7 @@ export function createMessageStreamWsRuntime({
 
     const handleUpgrade = async () => {
       try {
-        if (uiAuthController?.enabled) {
+        if (typeof uiAuthController?.ensureSessionToken === 'function') {
           const sessionToken = await uiAuthController?.ensureSessionToken?.(req, null);
           if (!sessionToken) {
             rejectWebSocketUpgrade(socket, 401, 'UI authentication required');

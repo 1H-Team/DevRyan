@@ -45,7 +45,8 @@ type Props = {
   renderGroupSessions: (group: SessionGroup, groupKey: string, projectId?: string | null, hideGroupLabel?: boolean, dragHandleProps?: SortableDragHandleProps | null, compactBodyPadding?: boolean) => React.ReactNode;
   homeDirectory: string | null;
   collapsedProjects: Set<string>;
-  hideDirectoryControls: boolean;
+  hideProjectAdminControls: boolean;
+  hideWorktreeControls: boolean;
   projectRepoStatus: Map<string, boolean | null>;
   isDesktopShellRuntime: boolean;
   stuckProjectHeaders: Set<string>;
@@ -112,7 +113,8 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
 
             return groupsToRender.map((group) => {
               const groupKey = `${activeSection.project.id}:${group.id}`;
-              const hideGroupLabel = group.id === primaryGroup.id;
+              const hideGroupLabel = group.id === primaryGroup.id
+                && !props.projectRepoStatus.get(activeSection.project.id);
               return (
                 <React.Fragment key={groupKey}>
                   {props.renderGroupSessions(group, groupKey, activeSection.project.id, hideGroupLabel, null, true)}
@@ -172,7 +174,8 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
                     isRepo={Boolean(isRepo)}
                     isDesktopShell={props.isDesktopShellRuntime}
                     isStuck={props.stuckProjectHeaders.has(projectKey)}
-                    hideDirectoryControls={props.hideDirectoryControls}
+                    hideProjectAdminControls={props.hideProjectAdminControls}
+                    hideWorktreeControls={props.hideWorktreeControls}
                     mobileVariant={props.mobileVariant}
                     alwaysShowActions={props.alwaysShowActions}
                     onToggle={() => props.toggleProject(projectKey)}
@@ -226,7 +229,7 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
                                   });
                                 }}
                               >
-                                {rootGroup ? props.renderGroupSessions(rootGroup, `${projectKey}:${rootGroup.id}`, projectKey, true) : null}
+                                {rootGroup ? props.renderGroupSessions(rootGroup, `${projectKey}:${rootGroup.id}`, projectKey, !isRepo || !rootGroup.branch) : null}
                                 <SortableContext items={sortableNestedGroups.map((group) => group.id)} strategy={verticalListSortingStrategy}>
                                   {sortableNestedGroups.map((group) => {
                                     const groupKey = `${projectKey}:${group.id}`;

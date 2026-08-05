@@ -365,6 +365,7 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
           idempotencyKey: requireString(params, 'idempotencyKey'),
           rootSessionId: requireString(params, 'rootSessionId'),
           dispatchGroupId: optionalString(params, 'dispatchGroupId'),
+          dispatchCallId: optionalString(params, 'dispatchCallId'),
           parentTaskId: optionalString(params, 'parentTaskId'),
           childSessionId: optionalString(params, 'childSessionId'),
           directory: requireString(params, 'directory'),

@@ -5,6 +5,7 @@ export const createManagedTunnelConfigRuntime = (deps) => {
     normalizeManagedRemoteTunnelHostname,
     normalizeManagedRemoteTunnelPresets,
     normalizeManagedRemoteTunnelToken,
+    normalizeManagedRemoteOriginPort,
     constants,
   } = deps;
 
@@ -39,6 +40,7 @@ export const createManagedTunnelConfigRuntime = (deps) => {
         continue;
       }
       const updatedAt = Number.isFinite(entry.updatedAt) ? entry.updatedAt : Date.now();
+      const originPort = normalizeManagedRemoteOriginPort(entry.originPort);
 
       if (!id || !name || !hostname || !token) {
         continue;
@@ -49,7 +51,7 @@ export const createManagedTunnelConfigRuntime = (deps) => {
 
       seenIds.add(id);
       seenHostnames.add(hostname);
-      result.push({ id, name, hostname, token, updatedAt });
+      result.push({ id, name, hostname, originPort, token, updatedAt });
     }
 
     return result;
@@ -57,7 +59,16 @@ export const createManagedTunnelConfigRuntime = (deps) => {
 
   const writeManagedRemoteTunnelConfigToDisk = async (data) => {
     await fsPromises.mkdir(path.dirname(CLOUDFLARE_MANAGED_REMOTE_TUNNELS_FILE_PATH), { recursive: true });
-    await fsPromises.writeFile(CLOUDFLARE_MANAGED_REMOTE_TUNNELS_FILE_PATH, JSON.stringify(data, null, 2), { encoding: 'utf8', mode: 0o600 });
+    const tempPath = `${CLOUDFLARE_MANAGED_REMOTE_TUNNELS_FILE_PATH}.tmp-${process.pid}-${Date.now()}`;
+    try {
+      await fsPromises.writeFile(tempPath, JSON.stringify(data, null, 2), { encoding: 'utf8', mode: 0o600 });
+      await fsPromises.chmod?.(tempPath, 0o600);
+      await fsPromises.rename(tempPath, CLOUDFLARE_MANAGED_REMOTE_TUNNELS_FILE_PATH);
+      await fsPromises.chmod?.(CLOUDFLARE_MANAGED_REMOTE_TUNNELS_FILE_PATH, 0o600);
+    } catch (error) {
+      await fsPromises.rm?.(tempPath, { force: true }).catch(() => {});
+      throw error;
+    }
   };
 
   const migrateManagedRemoteTunnelConfigFromLegacyFile = async () => {
@@ -88,10 +99,18 @@ export const createManagedTunnelConfigRuntime = (deps) => {
         return { version: CLOUDFLARE_MANAGED_REMOTE_TUNNELS_VERSION, tunnels: [] };
       }
 
-      return {
+      const migrated = {
         version: CLOUDFLARE_MANAGED_REMOTE_TUNNELS_VERSION,
         tunnels: sanitizeManagedRemoteTunnelConfigEntries(parsed.tunnels),
       };
+      if (parsed.version !== CLOUDFLARE_MANAGED_REMOTE_TUNNELS_VERSION) {
+        try {
+          await writeManagedRemoteTunnelConfigToDisk(migrated);
+        } catch (error) {
+          console.warn('Failed to persist managed remote tunnel schema migration:', error);
+        }
+      }
+      return migrated;
     } catch (error) {
       if (error && typeof error === 'object' && error.code === 'ENOENT') {
         return migrateManagedRemoteTunnelConfigFromLegacyFile();
@@ -137,6 +156,7 @@ export const createManagedTunnelConfigRuntime = (deps) => {
           id: preset.id,
           name: preset.name,
           hostname: preset.hostname,
+          originPort: normalizeManagedRemoteOriginPort(preset.originPort),
         });
       }
 
@@ -147,13 +167,14 @@ export const createManagedTunnelConfigRuntime = (deps) => {
     });
   };
 
-  const upsertManagedRemoteTunnelToken = async ({ id, name, hostname, token }) => {
+  const upsertManagedRemoteTunnelToken = async ({ id, name, hostname, originPort, token }) => {
     if (typeof id !== 'string' || typeof name !== 'string' || typeof hostname !== 'string' || typeof token !== 'string') {
       return;
     }
     const normalizedId = id.trim();
     const normalizedName = name.trim();
     const normalizedHostname = normalizeManagedRemoteTunnelHostname(hostname);
+    const normalizedOriginPort = normalizeManagedRemoteOriginPort(originPort);
     const normalizedToken = normalizeManagedRemoteTunnelToken(token);
     if (!normalizedId || !normalizedName || !normalizedHostname || !normalizedToken) {
       return;
@@ -165,6 +186,7 @@ export const createManagedTunnelConfigRuntime = (deps) => {
         id: normalizedId,
         name: normalizedName,
         hostname: normalizedHostname,
+        originPort: normalizedOriginPort,
         token: normalizedToken,
         updatedAt: Date.now(),
       });
@@ -176,7 +198,7 @@ export const createManagedTunnelConfigRuntime = (deps) => {
     });
   };
 
-  const resolveManagedRemoteTunnelToken = async ({ presetId, hostname }) => {
+  const resolveManagedRemoteTunnelPreset = async ({ presetId, hostname }) => {
     const normalizedPresetId = typeof presetId === 'string' ? presetId.trim() : '';
     const normalizedHostname = normalizeManagedRemoteTunnelHostname(hostname);
     const config = await readManagedRemoteTunnelConfigFromDisk();
@@ -184,24 +206,30 @@ export const createManagedTunnelConfigRuntime = (deps) => {
     if (normalizedPresetId) {
       const byId = config.tunnels.find((entry) => entry.id === normalizedPresetId);
       if (byId?.token) {
-        return byId.token;
+        return byId;
       }
     }
 
     if (normalizedHostname) {
       const byHostname = config.tunnels.find((entry) => entry.hostname === normalizedHostname);
       if (byHostname?.token) {
-        return byHostname.token;
+        return byHostname;
       }
     }
 
-    return '';
+    return null;
+  };
+
+  const resolveManagedRemoteTunnelToken = async (selector) => {
+    const preset = await resolveManagedRemoteTunnelPreset(selector);
+    return preset?.token || '';
   };
 
   return {
     readManagedRemoteTunnelConfigFromDisk,
     syncManagedRemoteTunnelConfigWithPresets,
     upsertManagedRemoteTunnelToken,
+    resolveManagedRemoteTunnelPreset,
     resolveManagedRemoteTunnelToken,
   };
 };

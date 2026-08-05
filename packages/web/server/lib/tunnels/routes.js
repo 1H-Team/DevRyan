@@ -13,11 +13,14 @@ export const createTunnelRoutesRuntime = (dependencies) => {
     normalizeTunnelMode,
     normalizeOptionalPath,
     normalizeManagedRemoteTunnelHostname,
+    normalizeManagedRemoteOriginPort,
+    isValidManagedRemoteOriginPort,
     normalizeTunnelBootstrapTtlMs,
     normalizeTunnelSessionTtlMs,
     isSupportedTunnelMode,
     upsertManagedRemoteTunnelToken,
     resolveManagedRemoteTunnelToken,
+    resolveManagedRemoteTunnelPreset,
     TUNNEL_MODE_QUICK,
     TUNNEL_MODE_MANAGED_LOCAL,
     TUNNEL_MODE_MANAGED_REMOTE,
@@ -29,6 +32,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
     getRuntimeManagedRemoteTunnelToken,
     setRuntimeManagedRemoteTunnelToken,
     getActiveTunnelController,
+    getRuntimeReady = () => true,
   } = dependencies;
 
   const resolveActiveNormalizedTunnelMode = () => {
@@ -74,8 +78,22 @@ export const createTunnelRoutesRuntime = (dependencies) => {
     configPath,
     selectedPresetId,
     selectedPresetName,
+    originPort,
   }) => {
+    if (!getRuntimeReady()) {
+      throw new TunnelServiceError(
+        'runtime_not_ready',
+        'DevRyan is still starting. Wait for OpenCode to become ready before starting a tunnel.'
+      );
+    }
+
     if (provider === TUNNEL_PROVIDER_CLOUDFLARE && mode === TUNNEL_MODE_MANAGED_REMOTE) {
+      if (!isValidManagedRemoteOriginPort(originPort)) {
+        throw new TunnelServiceError(
+          'validation_error',
+          'Managed remote origin port must be an integer between 1024 and 65535'
+        );
+      }
       setRuntimeManagedRemoteTunnelHostname(hostname);
       setRuntimeManagedRemoteTunnelToken(token);
 
@@ -84,6 +102,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
           id: selectedPresetId || hostname,
           name: selectedPresetName || hostname,
           hostname,
+          originPort,
           token,
         });
       }
@@ -96,6 +115,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
       configPath,
       token,
       hostname,
+      originPort,
     });
 
     console.log(`Tunnel active (${result.provider}): ${result.publicUrl}`);
@@ -103,6 +123,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
       publicUrl: result.publicUrl,
       mode: result.activeMode,
       provider: result.provider,
+      controllerReused: result.controllerReused,
       providerMetadata: result.providerMetadata,
     };
   };
@@ -298,6 +319,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
           hostnameProvided: requestHostnameProvided,
           configPath: requestConfigPath,
           hasSavedManagedRemoteProfile,
+          originPort: normalizeManagedRemoteOriginPort(params.originPort),
         };
 
         const result = await runTunnelDoctor({
@@ -324,6 +346,8 @@ export const createTunnelRoutesRuntime = (dependencies) => {
 
     app.get('/api/openchamber/tunnel/status', async (_req, res) => {
       try {
+        await tunnelService.refreshHealth?.({ maxAgeMs: 5000 });
+        const runtimeReady = Boolean(getRuntimeReady());
         const settings = await readSettingsFromDiskMigrated();
         const normalizedMode = normalizeTunnelMode(settings?.tunnelMode);
         const managedRemoteHostname = normalizeManagedRemoteTunnelHostname(settings?.managedRemoteTunnelHostname);
@@ -332,7 +356,13 @@ export const createTunnelRoutesRuntime = (dependencies) => {
           id: entry.id,
           name: entry.name,
           hostname: entry.hostname,
+          originPort: entry.originPort,
         }));
+        const selectedManagedRemotePreset = managedRemoteTunnelConfig.tunnels.find(
+          (entry) => entry.id === settings?.managedRemoteTunnelSelectedPresetId
+        ) || managedRemoteTunnelConfig.tunnels[0] || null;
+        const configuredOriginPort = selectedManagedRemotePreset?.originPort
+          ?? normalizeManagedRemoteOriginPort(undefined);
         const hasStoredManagedRemoteToken = typeof settings?.managedRemoteTunnelToken === 'string' && settings.managedRemoteTunnelToken.trim().length > 0;
         const hasManagedRemoteTunnelToken = getRuntimeManagedRemoteTunnelToken().length > 0 || managedRemoteTunnelConfig.tunnels.length > 0 || hasStoredManagedRemoteToken;
         const bootstrapTtlMs = settings?.tunnelBootstrapTtlMs === null
@@ -351,12 +381,15 @@ export const createTunnelRoutesRuntime = (dependencies) => {
             mode: normalizedMode,
             provider,
             providerMetadata: null,
+            originPort: configuredOriginPort,
             hasManagedRemoteTunnelToken,
             managedRemoteTunnelHostname: managedRemoteHostname || null,
             managedRemoteTunnelPresets: managedRemoteTunnelPresetSummaries,
             managedRemoteTunnelTokenPresetIds: managedRemoteTunnelConfig.tunnels.map((entry) => entry.id),
             hasBootstrapToken: false,
             bootstrapExpiresAt: null,
+            runtimeReady,
+            connectReady: false,
             policy: 'tunnel-gated',
             activeTunnelMode: tunnelAuthController.getActiveTunnelMode() || null,
             activeSessions,
@@ -388,6 +421,8 @@ export const createTunnelRoutesRuntime = (dependencies) => {
 
         const bootstrapStatus = tunnelAuthController.getBootstrapStatus();
         const providerMetadata = tunnelService.getProviderMetadata();
+        const connectorHealthy = providerMetadata?.connectorState !== 'degraded';
+        const connectReady = runtimeReady && connectorHealthy && bootstrapStatus.hasBootstrapToken;
 
         return res.json({
           active: true,
@@ -395,12 +430,15 @@ export const createTunnelRoutesRuntime = (dependencies) => {
           mode: activeNormalizedMode,
           provider,
           providerMetadata,
+          originPort: providerMetadata?.originPort ?? configuredOriginPort,
           hasManagedRemoteTunnelToken,
           managedRemoteTunnelHostname: managedRemoteHostname || null,
           managedRemoteTunnelPresets: managedRemoteTunnelPresetSummaries,
           managedRemoteTunnelTokenPresetIds: managedRemoteTunnelConfig.tunnels.map((entry) => entry.id),
           hasBootstrapToken: bootstrapStatus.hasBootstrapToken,
           bootstrapExpiresAt: bootstrapStatus.bootstrapExpiresAt,
+          runtimeReady,
+          connectReady,
           policy: 'tunnel-gated',
           activeTunnelMode: activeNormalizedMode,
           activeSessions: tunnelAuthController.listTunnelSessions(),
@@ -421,15 +459,20 @@ export const createTunnelRoutesRuntime = (dependencies) => {
         const presetName = typeof req?.body?.presetName === 'string' ? req.body.presetName.trim() : '';
         const managedRemoteTunnelHostname = normalizeManagedRemoteTunnelHostname(req?.body?.managedRemoteTunnelHostname);
         const managedRemoteTunnelToken = typeof req?.body?.managedRemoteTunnelToken === 'string' ? req.body.managedRemoteTunnelToken.trim() : '';
+        const originPortInput = req?.body?.originPort ?? req?.body?.managedRemoteTunnelOriginPort;
+        const originPort = originPortInput === undefined
+          ? normalizeManagedRemoteOriginPort(undefined)
+          : (typeof originPortInput === 'string' ? Number(originPortInput.trim()) : originPortInput);
 
-        if (!presetId || !presetName || !managedRemoteTunnelHostname || !managedRemoteTunnelToken) {
-          return res.status(400).json({ ok: false, error: 'presetId, presetName, managedRemoteTunnelHostname and managedRemoteTunnelToken are required' });
+        if (!presetId || !presetName || !managedRemoteTunnelHostname || !managedRemoteTunnelToken || !isValidManagedRemoteOriginPort(originPort)) {
+          return res.status(400).json({ ok: false, error: 'presetId, presetName, managedRemoteTunnelHostname, managedRemoteTunnelToken and a valid originPort are required' });
         }
 
         await upsertManagedRemoteTunnelToken({
           id: presetId,
           name: presetName,
           hostname: managedRemoteTunnelHostname,
+          originPort,
           token: managedRemoteTunnelToken,
         });
 
@@ -445,6 +488,14 @@ export const createTunnelRoutesRuntime = (dependencies) => {
 
     app.post('/api/openchamber/tunnel/start', async (_req, res) => {
       try {
+        if (!getRuntimeReady()) {
+          return res.status(503).json({
+            ok: false,
+            code: 'runtime_not_ready',
+            error: 'DevRyan is still starting. Wait for OpenCode to become ready before starting a tunnel.',
+            details: null,
+          });
+        }
         const settings = await readSettingsFromDiskMigrated();
         if (typeof _req?.body?.provider === 'string' && _req.body.provider.trim().length > 0) {
           const rawProvider = _req.body.provider.trim().toLowerCase();
@@ -470,13 +521,23 @@ export const createTunnelRoutesRuntime = (dependencies) => {
         const requestHostname = normalizeManagedRemoteTunnelHostname(_req?.body?.hostname);
         const hostnameFromSettings = normalizeManagedRemoteTunnelHostname(settings?.managedRemoteTunnelHostname);
         const hostname = requestHostname || requestTunnelHostname || requestManagedRemoteHostname || hostnameFromSettings;
+        const configuredManagedRemotePreset = provider === TUNNEL_PROVIDER_CLOUDFLARE
+          ? await resolveManagedRemoteTunnelPreset({ presetId: selectedPresetId, hostname })
+          : null;
+        const rawOriginPort = _req?.body?.originPort
+          ?? _req?.body?.managedRemoteTunnelOriginPort
+          ?? configuredManagedRemotePreset?.originPort;
+        const originPort = rawOriginPort === undefined || rawOriginPort === null || rawOriginPort === ''
+          ? normalizeManagedRemoteOriginPort(undefined)
+          : (typeof rawOriginPort === 'string' ? Number(rawOriginPort.trim()) : rawOriginPort);
         const requestManagedRemoteToken = typeof _req?.body?.managedRemoteTunnelToken === 'string' ? _req.body.managedRemoteTunnelToken.trim() : '';
         const requestTunnelToken = typeof _req?.body?.tunnelToken === 'string' ? _req.body.tunnelToken.trim() : '';
         const requestToken = typeof _req?.body?.token === 'string' ? _req.body.token.trim() : '';
         const storedManagedRemoteToken = typeof settings?.managedRemoteTunnelToken === 'string' ? settings.managedRemoteTunnelToken.trim() : '';
-        const configManagedRemoteToken = provider === TUNNEL_PROVIDER_CLOUDFLARE
-          ? await resolveManagedRemoteTunnelToken({ presetId: selectedPresetId, hostname })
-          : '';
+        const configManagedRemoteToken = configuredManagedRemotePreset?.token
+          || (provider === TUNNEL_PROVIDER_CLOUDFLARE
+            ? await resolveManagedRemoteTunnelToken({ presetId: selectedPresetId, hostname })
+            : '');
         const runtimeHostname = getRuntimeManagedRemoteTunnelHostname();
         const runtimeToken = getRuntimeManagedRemoteTunnelToken();
         const token = requestToken
@@ -501,7 +562,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
         const previousProvider = tunnelService.resolveActiveProvider();
         const previousUrl = tunnelService.getPublicUrl();
 
-        const { publicUrl, provider: activeProvider, providerMetadata } = await startTunnelWithNormalizedRequest({
+        const { publicUrl, provider: activeProvider, providerMetadata, controllerReused } = await startTunnelWithNormalizedRequest({
           provider,
           mode,
           intent,
@@ -510,9 +571,12 @@ export const createTunnelRoutesRuntime = (dependencies) => {
           configPath: requestConfigPath,
           selectedPresetId,
           selectedPresetName,
+          originPort,
         });
 
         const replacedTunnel = Boolean(previousTunnelId) && (
+          !controllerReused
+          ||
           previousMode !== mode
           || previousProvider !== activeProvider
           || previousUrl !== publicUrl
@@ -532,7 +596,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
         });
 
         const bootstrapToken = tunnelAuthController.issueBootstrapToken({ ttlMs: bootstrapTtlMs });
-        const connectUrl = `${publicUrl.replace(/\/$/, '')}/connect?t=${encodeURIComponent(bootstrapToken.token)}`;
+        const connectUrl = `${publicUrl.replace(/\/$/, '')}/tunnel/connect?t=${encodeURIComponent(bootstrapToken.token)}`;
         const managedRemoteTunnelConfig = await readManagedRemoteTunnelConfigFromDisk();
         const isCloudflareProvider = activeProvider === TUNNEL_PROVIDER_CLOUDFLARE;
 
@@ -542,10 +606,13 @@ export const createTunnelRoutesRuntime = (dependencies) => {
           mode,
           provider: activeProvider,
           providerMetadata,
+          originPort: providerMetadata?.originPort ?? originPort,
           managedRemoteTunnelHostname: isCloudflareProvider ? (hostname || null) : null,
           managedRemoteTunnelTokenPresetIds: isCloudflareProvider ? managedRemoteTunnelConfig.tunnels.map((entry) => entry.id) : [],
           connectUrl,
           bootstrapExpiresAt: bootstrapToken.expiresAt,
+          runtimeReady: true,
+          connectReady: providerMetadata?.connectorState !== 'degraded',
           replacedTunnel,
           replaced: replacedTunnel
             ? {
@@ -573,9 +640,11 @@ export const createTunnelRoutesRuntime = (dependencies) => {
         if (error instanceof TunnelServiceError) {
           const status = error.code === 'missing_dependency'
             ? 400
+            : (error.code === 'runtime_not_ready'
+              ? 503
             : (error.code === 'validation_error' || error.code === 'provider_unsupported' || error.code === 'mode_unsupported'
               ? 422
-              : 500);
+              : 500));
           return res.status(status).json({ ok: false, error: error.message, code: error.code, details: error.details ?? null });
         }
         const safeDetails = error && typeof error === 'object' && error.details && typeof error.details === 'object'
@@ -587,7 +656,10 @@ export const createTunnelRoutesRuntime = (dependencies) => {
         const errorMessage = error instanceof Error && error.message.trim().length > 0
           ? error.message
           : 'Failed to start tunnel';
-        return res.status(500).json({ ok: false, error: errorMessage, code: errorCode, details: safeDetails });
+        const status = errorCode === 'managed_remote_origin_port_in_use'
+          ? 409
+          : (errorCode === 'managed_remote_public_unreachable' ? 502 : 500);
+        return res.status(status).json({ ok: false, error: errorMessage, code: errorCode, details: safeDetails });
       }
     });
 

@@ -8,6 +8,7 @@ import { create } from "zustand"
 export type SelectionState = {
   sessionModelSelections: Map<string, { providerId: string; modelId: string }>
   sessionAgentSelections: Map<string, string>
+  builderHandoffClearedSessionIds: Set<string>
   sessionPlanModeSelections: Map<string, boolean>
   defaultPlanModeSelection: boolean
   draftPlanModeSelection: boolean
@@ -22,6 +23,8 @@ export type SelectionState = {
   getSessionModelSelection: (sessionId: string) => { providerId: string; modelId: string } | null
   saveSessionAgentSelection: (sessionId: string, agentName: string) => void
   getSessionAgentSelection: (sessionId: string) => string | null
+  markBuilderHandoffCleared: (sessionId: string) => void
+  hasBuilderHandoffClearance: (sessionId: string) => boolean
   setSessionPlanMode: (sessionId: string, enabled: boolean) => void
   getSessionPlanMode: (sessionId: string) => boolean
   setDefaultPlanModeSelection: (enabled: boolean, options?: { syncDraft?: boolean }) => void
@@ -53,6 +56,7 @@ const agentModelVariantSelections = new Map<string, Map<string, Map<string, stri
 export const useSelectionStore = create<SelectionState>()((set, get) => ({
   sessionModelSelections: new Map(),
   sessionAgentSelections: new Map(),
+  builderHandoffClearedSessionIds: new Set(),
   sessionPlanModeSelections: new Map(),
   defaultPlanModeSelection: false,
   draftPlanModeSelection: false,
@@ -74,13 +78,32 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
 
   saveSessionAgentSelection: (sessionId, agentName) =>
     set((s) => {
-      if (s.sessionAgentSelections.get(sessionId) === agentName) return s
+      const normalizedAgentName = agentName.trim().toLowerCase()
+      const clearsBuilderHandoff = normalizedAgentName !== "builder"
+        && s.builderHandoffClearedSessionIds.has(sessionId)
+      if (s.sessionAgentSelections.get(sessionId) === agentName && !clearsBuilderHandoff) return s
       const map = new Map(s.sessionAgentSelections)
       map.set(sessionId, agentName)
-      return { sessionAgentSelections: map }
+      if (!clearsBuilderHandoff) return { sessionAgentSelections: map }
+      const builderHandoffClearedSessionIds = new Set(s.builderHandoffClearedSessionIds)
+      builderHandoffClearedSessionIds.delete(sessionId)
+      return { sessionAgentSelections: map, builderHandoffClearedSessionIds }
     }),
 
   getSessionAgentSelection: (sessionId) => get().sessionAgentSelections.get(sessionId) ?? null,
+
+  markBuilderHandoffCleared: (sessionId) =>
+    set((s) => {
+      const normalizedSessionId = sessionId.trim()
+      if (!normalizedSessionId || s.builderHandoffClearedSessionIds.has(normalizedSessionId)) return s
+      const builderHandoffClearedSessionIds = new Set(s.builderHandoffClearedSessionIds)
+      builderHandoffClearedSessionIds.add(normalizedSessionId)
+      return { builderHandoffClearedSessionIds }
+    }),
+
+  hasBuilderHandoffClearance: (sessionId) => (
+    get().builderHandoffClearedSessionIds.has(sessionId.trim())
+  ),
 
   setSessionPlanMode: (sessionId, enabled) =>
     set((s) => {
@@ -287,9 +310,10 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
     set((s) => {
       const hasModel = s.sessionModelSelections.has(normalizedSessionId)
       const hasAgent = s.sessionAgentSelections.has(normalizedSessionId)
+      const hasBuilderHandoffClearance = s.builderHandoffClearedSessionIds.has(normalizedSessionId)
       const hasPlanMode = s.sessionPlanModeSelections.has(normalizedSessionId)
       const hasAgentModels = s.sessionAgentModelSelections.has(normalizedSessionId)
-      if (!hasModel && !hasAgent && !hasPlanMode && !hasAgentModels) return s
+      if (!hasModel && !hasAgent && !hasBuilderHandoffClearance && !hasPlanMode && !hasAgentModels) return s
 
       const sessionModelSelections = hasModel
         ? new Map(s.sessionModelSelections)
@@ -300,18 +324,23 @@ export const useSelectionStore = create<SelectionState>()((set, get) => ({
       const sessionPlanModeSelections = hasPlanMode
         ? new Map(s.sessionPlanModeSelections)
         : s.sessionPlanModeSelections
+      const builderHandoffClearedSessionIds = hasBuilderHandoffClearance
+        ? new Set(s.builderHandoffClearedSessionIds)
+        : s.builderHandoffClearedSessionIds
       const sessionAgentModelSelections = hasAgentModels
         ? new Map(s.sessionAgentModelSelections)
         : s.sessionAgentModelSelections
 
       sessionModelSelections.delete(normalizedSessionId)
       sessionAgentSelections.delete(normalizedSessionId)
+      builderHandoffClearedSessionIds.delete(normalizedSessionId)
       sessionPlanModeSelections.delete(normalizedSessionId)
       sessionAgentModelSelections.delete(normalizedSessionId)
 
       return {
         sessionModelSelections,
         sessionAgentSelections,
+        builderHandoffClearedSessionIds,
         sessionPlanModeSelections,
         sessionAgentModelSelections,
       }

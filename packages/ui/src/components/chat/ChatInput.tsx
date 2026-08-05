@@ -7,6 +7,7 @@ import {
     RiCloseLine,
     RiExternalLinkLine,
     RiFolderLine,
+    RiGitBranchLine,
     RiGitPullRequestLine,
     RiArrowUpLine,
     RiShieldCheckLine,
@@ -54,6 +55,7 @@ import { MobileModelButton } from './MobileModelButton';
 import { MobileSessionStatusBar } from './MobileSessionStatusBar';
 import { useCurrentSessionActivity } from '@/hooks/useSessionActivity';
 import { toast } from '@/components/ui';
+import { isProviderModelAvailable } from '@/lib/providers/modelAvailability';
 // useMessageStore removed — messages now come from sync system
 import { isTauriShell, isVSCodeRuntime } from '@/lib/desktop';
 import { isIMECompositionEvent } from '@/lib/ime';
@@ -77,6 +79,12 @@ import { useGitBranches, useGitStatus, useGitStore } from '@/stores/useGitStore'
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { createWorktreeDraft } from '@/lib/worktreeSessionCreator';
+import { ensureManagedBranchTarget } from '@/lib/worktrees/managedBranchTarget';
+import {
+    createPendingDraftWorktreeRequest,
+    rejectPendingDraftWorktreeRequest,
+    resolvePendingDraftWorktreeRequest,
+} from '@/lib/worktrees/pendingDraftWorktree';
 import { buildSessionTargetOptions } from '@/sync/session-worktree-contract';
 import {
     checkoutBranchWithOptionalStash,
@@ -88,6 +96,13 @@ import {
 } from './chatInputBranchOptions';
 import { usePermissionStore } from '@/stores/permissionStore';
 import { useI18n } from '@/lib/i18n';
+import { useAuthPrincipal } from '@/lib/authSession';
+import {
+    filterBranchNamesByGrantedBranches,
+    filterWorktreesByGrantedBranches,
+    isManagedBranchGranted,
+    normalizeManagedBranchName,
+} from '@/lib/worktrees/managedBranches';
 import {
     getCachedResponseStyleInstruction,
     getCachedResponseStyleLevel,
@@ -625,6 +640,7 @@ type PendingTextareaSelectionRestore = {
 
 const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBottom }) => {
     const { t } = useI18n();
+    const principal = useAuthPrincipal();
     const { guardBuilderSend, requestAgentChange } = useAgentHandoffGuard();
     const draftStorage = React.useMemo(() => getSafeStorage(), []);
     const draftTextUpdateRef = React.useRef<(draftId: string, text: string) => void>(() => {});
@@ -1349,7 +1365,9 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
     const hasContent = message.trim().length > 0 || sendableAttachedFiles.length > 0 || hasDrafts;
     const hasQueuedMessages = queuedMessages.length > 0;
-    const canSend = !isCurrentSessionRevertPending && (hasContent || hasQueuedMessages);
+    const canSend = !isCurrentSessionRevertPending
+        && !newSessionDraft?.targetPreparationError
+        && (hasContent || hasQueuedMessages);
 
     const pendingSendAbortKey = currentSessionId ?? (currentDraftId && newSessionDraftOpen ? `draft:${currentDraftId}` : null);
     const hasPendingSendAbort = useSessionUIStore((state) =>
@@ -1594,6 +1612,15 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
             if (!sendProviderId || !sendModelId) {
                 console.warn('Cannot send message: provider or model not selected');
+                toast.error('Select an available model before sending.');
+                return;
+            }
+
+            const configProviders = useConfigStore.getState().providers;
+            const configuredProvider = configProviders.find((provider) => provider.id === sendProviderId);
+            const configuredModel = configuredProvider?.models.find((model) => model.id === sendModelId);
+            if (!configuredModel || !isProviderModelAvailable(configuredModel)) {
+                toast.error(`Configured model ${sendProviderId}/${sendModelId} is unavailable. Connect that provider or update the agent model.`);
                 return;
             }
 
@@ -3491,33 +3518,26 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
     const selectedDraftProjectCurrentBranch = selectedDraftProjectBranches?.current?.trim() ?? '';
     const draftLocalBranchOptions = React.useMemo(() => buildDraftLocalBranchOptions({
-        allBranches: selectedDraftProjectBranches?.all ?? [],
+        allBranches: principal.scope === 'managed' && principal.role !== 'admin' && selectedDraftProject
+            ? filterBranchNamesByGrantedBranches(selectedDraftProjectBranches?.all ?? [], selectedDraftProject)
+            : selectedDraftProjectBranches?.all ?? [],
         currentBranch: selectedDraftProjectCurrentBranch,
-    }), [selectedDraftProjectBranches?.all, selectedDraftProjectCurrentBranch]);
-
-    const projectRootBranchOption = React.useMemo(() => {
-        if (!selectedDraftProject) {
-            return null;
-        }
-        const value = normalizePath(selectedDraftProject.path);
-        if (!value) {
-            return null;
-        }
-        if (!selectedDraftProjectCurrentBranch) {
-            return null;
-        }
-        return {
-            value,
-            label: selectedDraftProjectCurrentBranch,
-        };
-    }, [selectedDraftProject, selectedDraftProjectCurrentBranch]);
+    }), [principal.role, principal.scope, selectedDraftProject, selectedDraftProjectBranches?.all, selectedDraftProjectCurrentBranch]);
+    const draftLocalOnlyBranchOptions = React.useMemo(
+        () => draftLocalBranchOptions.filter((option) => !option.remoteOnly),
+        [draftLocalBranchOptions],
+    );
+    const draftRemoteOnlyBranchOptions = React.useMemo(
+        () => draftLocalBranchOptions.filter((option) => option.remoteOnly),
+        [draftLocalBranchOptions],
+    );
 
     const worktreeBranchOptions = React.useMemo(() => {
         if (!selectedDraftProject) {
             return [];
         }
 
-        const worktrees = (() => {
+        const discoveredWorktrees = (() => {
             if (!selectedDraftProjectPath) {
                 return [];
             }
@@ -3526,13 +3546,20 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 ?? [];
         })();
 
+        const isRestrictedManagedProject = principal.scope === 'managed' && principal.role !== 'admin';
+        const worktrees = isRestrictedManagedProject
+            ? filterWorktreesByGrantedBranches(discoveredWorktrees, selectedDraftProject)
+            : discoveredWorktrees;
+
         return buildSessionTargetOptions({
             projectRoot: normalizePath(selectedDraftProject.path) ?? '',
             rootBranch: selectedDraftProjectCurrentBranch,
             worktrees,
             pendingBootstrapDirectory: newSessionDraft?.bootstrapPendingDirectory ?? null,
+            includeRoot: !isRestrictedManagedProject
+                || isManagedBranchGranted(selectedDraftProject, selectedDraftProjectCurrentBranch),
         });
-    }, [availableWorktreesByProject, newSessionDraft?.bootstrapPendingDirectory, selectedDraftProject, selectedDraftProjectCurrentBranch, selectedDraftProjectPath]);
+    }, [availableWorktreesByProject, newSessionDraft?.bootstrapPendingDirectory, principal.role, principal.scope, selectedDraftProject, selectedDraftProjectCurrentBranch, selectedDraftProjectPath]);
 
     const selectedDraftDirectory = React.useMemo(
         () => normalizePath(newSessionDraft?.bootstrapPendingDirectory ?? null)
@@ -3551,12 +3578,25 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         );
     }, [newSessionDraft?.bootstrapPendingDirectory, newSessionDraft?.pendingWorktreeRequestId, newSessionDraft?.preserveDirectoryOverride, selectedDraftDirectory]);
 
-    const draftBranchItems = React.useMemo(() => {
-        const baseItems: Array<{ value: string; label: string }> = [];
-        if (projectRootBranchOption) {
-            baseItems.push(projectRootBranchOption);
+    const selectedDraftTargetValue = React.useMemo(() => {
+        const branchName = newSessionDraft?.targetBranchName?.trim();
+        if (branchName && (newSessionDraft?.pendingWorktreeRequestId || newSessionDraft?.bootstrapPendingDirectory || newSessionDraft?.targetPreparationError)) {
+            return `branch:${branchName}`;
         }
+        return selectedDraftDirectory;
+    }, [newSessionDraft?.bootstrapPendingDirectory, newSessionDraft?.pendingWorktreeRequestId, newSessionDraft?.targetBranchName, newSessionDraft?.targetPreparationError, selectedDraftDirectory]);
+
+    const draftBranchItems = React.useMemo(() => {
+        const baseItems: Array<{ value: string; label: string }> = [...draftLocalBranchOptions];
         baseItems.push(...worktreeBranchOptions);
+
+        if (selectedDraftTargetValue?.startsWith('branch:')
+            && !baseItems.some((option) => option.value === selectedDraftTargetValue)) {
+            baseItems.push({
+                value: selectedDraftTargetValue,
+                label: newSessionDraft?.targetBranchName ?? selectedDraftTargetValue.slice('branch:'.length),
+            });
+        }
 
         if (!selectedDraftDirectory) {
             return baseItems;
@@ -3571,25 +3611,24 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             ...baseItems,
             { value: selectedDraftDirectory, label: formatDirectoryName(selectedDraftDirectory) },
         ];
-    }, [projectRootBranchOption, selectedDraftDirectory, shouldKeepMissingSelectedDraftDirectory, worktreeBranchOptions]);
+    }, [draftLocalBranchOptions, newSessionDraft?.targetBranchName, selectedDraftDirectory, selectedDraftTargetValue, shouldKeepMissingSelectedDraftDirectory, worktreeBranchOptions]);
 
     const selectedDraftBranchLabel = React.useMemo(() => {
-        const selectedValue = selectedDraftDirectory ?? draftBranchItems[0]?.value ?? null;
+        const selectedValue = selectedDraftTargetValue ?? draftBranchItems[0]?.value ?? null;
         if (!selectedValue) {
             return null;
         }
-        return draftBranchItems.find((item) => item.value === selectedValue)?.label ?? formatDirectoryName(selectedValue);
-    }, [draftBranchItems, selectedDraftDirectory]);
+        return draftBranchItems.find((item) => item.value === selectedValue)?.label
+            ?? newSessionDraft?.targetBranchName
+            ?? formatDirectoryName(selectedValue);
+    }, [draftBranchItems, newSessionDraft?.targetBranchName, selectedDraftTargetValue]);
 
     const selectedDraftBranchIsKnown = React.useMemo(() => {
-        if (!selectedDraftDirectory) {
+        if (!selectedDraftTargetValue) {
             return true;
         }
-        if (projectRootBranchOption?.value === selectedDraftDirectory) {
-            return true;
-        }
-        return worktreeBranchOptions.some((option) => option.value === selectedDraftDirectory);
-    }, [projectRootBranchOption?.value, selectedDraftDirectory, worktreeBranchOptions]);
+        return draftBranchItems.some((option) => option.value === selectedDraftTargetValue);
+    }, [draftBranchItems, selectedDraftTargetValue]);
 
     React.useEffect(() => {
         if (!newSessionDraft?.open || !newSessionDraft?.preserveDirectoryOverride) {
@@ -3605,14 +3644,50 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         if (isDiscoveringDraftBranches) {
             return false;
         }
-        if (projectRootBranchOption) {
-            return true;
-        }
         if (draftLocalBranchOptions.length > 0) {
             return true;
         }
         return worktreeBranchOptions.length > 0;
-    }, [draftLocalBranchOptions.length, isDiscoveringDraftBranches, projectRootBranchOption, worktreeBranchOptions.length]);
+    }, [draftLocalBranchOptions.length, isDiscoveringDraftBranches, worktreeBranchOptions.length]);
+
+    const prepareManagedDraftBranchTarget = React.useCallback(async (
+        projectId: string,
+        branchName: string,
+    ) => {
+        const requestId = createPendingDraftWorktreeRequest();
+        const logicalBranch = normalizeManagedBranchName(branchName);
+        useSessionUIStore.getState().overrideNewSessionDraftTarget({
+            projectId,
+            directoryOverride: null,
+            pendingWorktreeRequestId: requestId,
+            bootstrapPendingDirectory: null,
+            preserveDirectoryOverride: true,
+            targetBranchName: logicalBranch,
+            targetPreparationError: null,
+        });
+        try {
+            const result = await ensureManagedBranchTarget({ projectId, branchName: logicalBranch, idempotencyKey: requestId });
+            resolvePendingDraftWorktreeRequest(requestId, result.directory);
+            useSessionUIStore.getState().resolvePendingDraftWorktreeTarget(requestId, result.directory, {
+                projectId,
+                bootstrapPendingDirectory: result.status === 'pending' ? result.directory : null,
+                preserveDirectoryOverride: true,
+                targetBranchName: result.branchName,
+                targetPreparationError: null,
+            });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : t('chat.chatInput.branchTargetFailed');
+            rejectPendingDraftWorktreeRequest(requestId, new Error(message));
+            useSessionUIStore.getState().resolvePendingDraftWorktreeTarget(requestId, null, {
+                projectId,
+                bootstrapPendingDirectory: null,
+                preserveDirectoryOverride: true,
+                targetBranchName: logicalBranch,
+                targetPreparationError: message,
+            });
+            toast.error(message);
+        }
+    }, [t]);
 
     const handleDraftProjectChange = React.useCallback((projectId: string) => {
         const draft = useSessionUIStore.getState().newSessionDraft;
@@ -3626,11 +3701,19 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         if (activeProjectId !== projectId) {
             setActiveProjectIdOnly(projectId);
         }
+        if (principal.scope === 'managed' && principal.role !== 'admin') {
+            const assignment = principal.assignments.find((entry) => entry.projectId === projectId && entry.isDefault)
+                ?? principal.assignments.find((entry) => entry.projectId === projectId);
+            if (assignment) {
+                void prepareManagedDraftBranchTarget(projectId, assignment.branchName);
+                return;
+            }
+        }
         setNewSessionDraftTarget({
             projectId,
             directoryOverride: project.path,
         }, { force: true });
-    }, [activeProjectId, projects, setActiveProjectIdOnly, setNewSessionDraftTarget]);
+    }, [activeProjectId, prepareManagedDraftBranchTarget, principal.assignments, principal.role, principal.scope, projects, setActiveProjectIdOnly, setNewSessionDraftTarget]);
 
     const refreshSelectedDraftProjectGit = React.useCallback(async (projectRoot: string) => {
         if (!runtimeGit) {
@@ -3650,12 +3733,16 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         if (draft?.pendingWorktreeRequestId || draft?.bootstrapPendingDirectory || draft?.preserveDirectoryOverride) {
             return;
         }
-        if (!runtimeGit) {
-            return;
-        }
         const projectId = options.projectId ?? selectedDraftProject?.id;
         const projectRoot = options.projectRoot ?? selectedDraftProjectPath;
         if (!projectId || !projectRoot) {
+            return;
+        }
+        if (principal.scope === 'managed' && principal.role !== 'admin') {
+            await prepareManagedDraftBranchTarget(projectId, branch);
+            return;
+        }
+        if (!runtimeGit) {
             return;
         }
 
@@ -3706,7 +3793,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             toast.error(message);
             await refreshSelectedDraftProjectGit(projectRoot);
         }
-    }, [refreshSelectedDraftProjectGit, runtimeGit, selectedDraftProject?.id, selectedDraftProjectPath, selectedDraftProjectStatus, setNewSessionDraftTarget, t]);
+    }, [prepareManagedDraftBranchTarget, principal.role, principal.scope, refreshSelectedDraftProjectGit, runtimeGit, selectedDraftProject?.id, selectedDraftProjectPath, selectedDraftProjectStatus, setNewSessionDraftTarget, t]);
 
     const canFinishDraftCheckoutIntoMain = React.useMemo(() => {
         if (!draftCheckoutDialog) {
@@ -3835,7 +3922,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         if (newSessionDraft?.pendingWorktreeRequestId || newSessionDraft?.bootstrapPendingDirectory || newSessionDraft?.preserveDirectoryOverride) {
             return;
         }
-        const valid = draftBranchItems.some((option) => option.value === selectedDraftDirectory);
+        const valid = draftBranchItems.some((option) => option.value === selectedDraftTargetValue);
         if (valid) {
             return;
         }
@@ -3843,7 +3930,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             projectId: selectedDraftProject.id,
             directoryOverride: selectedDraftProject.path,
         });
-    }, [draftBranchItems, newSessionDraft?.bootstrapPendingDirectory, newSessionDraft?.pendingWorktreeRequestId, newSessionDraft?.preserveDirectoryOverride, selectedDraftDirectory, selectedDraftProject, setNewSessionDraftTarget, showDraftTargetSelectors]);
+    }, [draftBranchItems, newSessionDraft?.bootstrapPendingDirectory, newSessionDraft?.pendingWorktreeRequestId, newSessionDraft?.preserveDirectoryOverride, selectedDraftDirectory, selectedDraftProject, selectedDraftTargetValue, setNewSessionDraftTarget, showDraftTargetSelectors]);
 
     const footerPaddingClass = isMobile ? 'px-1.5 py-0.5' : (isVSCode ? 'px-1.5 py-0.5' : 'px-2.5 pt-0 pb-0.5');
     const buttonSizeClass = isMobile ? 'h-8 w-8' : (isVSCode ? 'h-5 w-5' : 'h-6 w-6');
@@ -4118,7 +4205,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
                         {shouldShowDraftBranchSelector ? (
                             <Select
-                                value={selectedDraftDirectory ?? draftBranchItems[0]?.value ?? normalizePath(selectedDraftProject.path) ?? ''}
+                                value={selectedDraftTargetValue ?? draftBranchItems[0]?.value ?? ''}
                                 onValueChange={handleDraftDirectoryChange}
                             >
                                 <SelectTrigger
@@ -4126,32 +4213,39 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                     className="h-7 min-w-0 w-fit max-w-[48vw] sm:max-w-[20rem] border-transparent bg-transparent px-1.5 hover:bg-transparent data-[popup-open]:bg-transparent"
                                 >
                                     <SelectValue>
-                                        {selectedDraftBranchLabel ?? t('chat.chatInput.branch')}
+                                        <span className="inline-flex min-w-0 items-center gap-1.5">
+                                            <RiGitBranchLine className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                            <span className="truncate">{selectedDraftBranchLabel ?? t('chat.chatInput.branch')}</span>
+                                        </span>
                                     </SelectValue>
                                 </SelectTrigger>
                                 <SelectContent fitContent>
-                                    {projectRootBranchOption ? (
-                                        <SelectGroup>
-                                            <SelectLabel>{t('chat.chatInput.projectRoot')}</SelectLabel>
-                                            <SelectItem key={projectRootBranchOption.value} value={projectRootBranchOption.value} className="max-w-[24rem] truncate">
-                                                {projectRootBranchOption.label}
-                                            </SelectItem>
-                                        </SelectGroup>
-                                    ) : null}
-                                    {projectRootBranchOption && (draftLocalBranchOptions.length > 0 || worktreeBranchOptions.length > 0) ? <SelectSeparator /> : null}
-                                    {draftLocalBranchOptions.length > 0 ? (
+                                    {draftLocalOnlyBranchOptions.length > 0 ? (
                                         <SelectGroup>
                                             <SelectLabel>{t('chat.chatInput.localBranches')}</SelectLabel>
-                                            {draftLocalBranchOptions.map((option) => (
+                                            {draftLocalOnlyBranchOptions.map((option) => (
                                                 <SelectItem key={option.value} value={option.value} className="max-w-[24rem] truncate">
                                                     {option.label}
                                                 </SelectItem>
                                             ))}
                                         </SelectGroup>
                                     ) : null}
-                                    {draftLocalBranchOptions.length > 0 ? <SelectSeparator /> : null}
+                                    {draftRemoteOnlyBranchOptions.length > 0 ? (
+                                        <>
+                                            {draftLocalOnlyBranchOptions.length > 0 ? <SelectSeparator /> : null}
+                                            <SelectGroup>
+                                                <SelectLabel>{t('chat.chatInput.remoteBranches')}</SelectLabel>
+                                                {draftRemoteOnlyBranchOptions.map((option) => (
+                                                    <SelectItem key={option.value} value={option.value} className="max-w-[24rem] truncate">
+                                                        {option.label}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectGroup>
+                                        </>
+                                    ) : null}
+                                    {(draftLocalBranchOptions.length > 0 && worktreeBranchOptions.length > 0) ? <SelectSeparator /> : null}
                                     <SelectGroup>
-                                        <div className="flex items-center justify-between px-2 py-1.5">
+                                        <div className="flex min-w-48 items-center justify-between px-2 py-1.5">
                                             <span className="text-muted-foreground typography-meta">{t('chat.chatInput.worktrees')}</span>
                                             <button
                                                 type="button"
@@ -4176,6 +4270,11 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                 </SelectContent>
                             </Select>
                         ) : null}
+                    </div>
+                ) : null}
+                {showDraftTargetSelectors && newSessionDraft?.targetPreparationError ? (
+                    <div className="mb-1.5 px-2 typography-micro text-destructive" role="alert">
+                        {newSessionDraft.targetPreparationError}
                     </div>
                 ) : null}
                 <div

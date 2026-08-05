@@ -1628,6 +1628,16 @@ const getSessionIdFromPayload = (event: Event): string | null => {
   return null
 }
 
+export const getManagedTaskRecoveryRootForIdleEvent = (
+  payload: Event,
+  hasActiveTasksForRoot: (rootSessionId: string) => boolean,
+): string | null => {
+  if (payload.type !== "session.idle" && !isIdleSessionStatusEvent(payload)) return null
+  const sessionID = getSessionIdFromPayload(payload)
+  if (!sessionID || !hasActiveTasksForRoot(sessionID)) return null
+  return sessionID
+}
+
 const getMessageIdFromPayload = (event: Event): string | null => {
   const properties = (event as { properties?: unknown }).properties
   if (!properties || typeof properties !== "object") {
@@ -2752,6 +2762,15 @@ function handleEvent(
   }
 
   settleTerminalAttentionForAcceptedWorkingStatus(payload, store)
+
+  const managedStore = useManagedOrchestrationStore.getState()
+  const managedRecoveryRoot = getManagedTaskRecoveryRootForIdleEvent(
+    payload,
+    (rootSessionId) => managedOrchestrationSelectors.hasActiveTasksForRoot(rootSessionId)(managedStore),
+  )
+  if (managedRecoveryRoot) {
+    void managedStore.loadSnapshot({ rootSessionId: managedRecoveryRoot })
+  }
 
   replayPendingPartDeltasForEvent(resolvedDirectory, payload, store)
 

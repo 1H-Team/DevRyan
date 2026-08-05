@@ -46,12 +46,40 @@ export const createProjectDirectoryRuntime = (dependencies) => {
     }
   };
 
+  const resolveAssignedDirectory = async (assignment) => {
+    const validated = await validateDirectoryPath(assignment.repositoryPath);
+    if (validated.ok) {
+      return { directory: validated.directory, error: null };
+    }
+    if (validated.error === 'Directory not found') {
+      const intendedDirectory = resolveDirectoryCandidate(assignment.repositoryPath);
+      if (intendedDirectory) {
+        return { directory: intendedDirectory, error: null };
+      }
+    }
+    return { directory: null, error: validated.error };
+  };
+
   const resolveProjectDirectory = async (req) => {
     const headerDirectory = typeof req.get === 'function' ? req.get('x-opencode-directory') : null;
     const queryDirectory = Array.isArray(req.query?.directory)
       ? req.query.directory[0]
       : req.query?.directory;
     const requested = headerDirectory || queryDirectory || null;
+
+    if (req.principal?.scope === 'managed') {
+      const assignments = Array.isArray(req.principal.assignments) ? req.principal.assignments : [];
+      const assignment = requested
+        ? assignments.find((entry) => requested === entry.repositoryPath || requested === entry.publicDirectory)
+        : assignments.find((entry) => entry.isDefault) || assignments[0];
+      if (assignment) {
+        return resolveAssignedDirectory(assignment);
+      }
+      // Administrators are not path-jailed: fall through to local-mode resolution.
+      if (req.principal.role !== 'admin') {
+        return { directory: null, error: 'Directory is outside your assigned workspace' };
+      }
+    }
 
     if (requested) {
       const validated = await validateDirectoryPath(requested);
@@ -105,6 +133,19 @@ export const createProjectDirectoryRuntime = (dependencies) => {
       ? req.query.directory[0]
       : req.query?.directory;
     const requested = headerDirectory || queryDirectory || null;
+
+    if (req.principal?.scope === 'managed') {
+      if (!requested) return { directory: null, error: null };
+      const assignment = (req.principal.assignments || [])
+        .find((entry) => requested === entry.repositoryPath || requested === entry.publicDirectory);
+      if (assignment) {
+        return resolveAssignedDirectory(assignment);
+      }
+      // Administrators are not path-jailed: fall through to local-mode validation.
+      if (req.principal.role !== 'admin') {
+        return { directory: null, error: 'Directory is outside your assigned workspace' };
+      }
+    }
 
     if (!requested) {
       return { directory: null, error: null };

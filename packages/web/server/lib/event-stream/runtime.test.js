@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createGlobalMessageStreamHub } from './global-hub.js';
 import {
@@ -695,6 +695,85 @@ describe('message stream websocket runtime', () => {
     });
 
     socket.close();
+    await runtime.close();
+  });
+
+  it('rejects unauthenticated upgrades and accepts a resolved managed principal', async () => {
+    const server = new EventEmitter();
+    const rejectWebSocketUpgrade = vi.fn();
+    const ensureSessionToken = vi.fn(async () => null);
+    const runtime = createMessageStreamWsRuntime({
+      server,
+      uiAuthController: { ensureSessionToken },
+      isRequestOriginAllowed: async () => true,
+      rejectWebSocketUpgrade,
+      buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      processForwardedEventPayload() {},
+      wsClients: new Set(),
+    });
+    const firstRequest = { url: '/api/global/event/ws', headers: {} };
+    const firstSocket = new EventEmitter();
+
+    server.emit('upgrade', firstRequest, firstSocket, Buffer.alloc(0));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(ensureSessionToken).toHaveBeenCalledWith(firstRequest, null);
+    expect(rejectWebSocketUpgrade).toHaveBeenCalledWith(firstSocket, 401, 'UI authentication required');
+
+    ensureSessionToken.mockImplementationOnce(async (req) => {
+      req.principal = { id: 'user-1', role: 'developer', scope: 'managed' };
+      return 'opaque-session';
+    });
+    const handleUpgrade = vi.spyOn(runtime.wsServer, 'handleUpgrade').mockImplementation(() => {});
+    const secondRequest = { url: '/api/global/event/ws', headers: {} };
+    server.emit('upgrade', secondRequest, new EventEmitter(), Buffer.alloc(0));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(handleUpgrade).toHaveBeenCalledOnce();
+    expect(secondRequest.principal).toMatchObject({ id: 'user-1', scope: 'managed' });
+    await runtime.close();
+  });
+
+  it('closes an authenticated websocket immediately when its principal is revoked', async () => {
+    const server = new EventEmitter();
+    let revoke = null;
+    const unregister = vi.fn();
+    const globalEventHub = {
+      subscribeEvent: () => () => {},
+      subscribeStatus: () => () => {},
+      replayAfter: () => ({ events: [], gap: false }),
+      start() {},
+      stop() {},
+      isConnected: () => false,
+    };
+    const runtime = createMessageStreamWsRuntime({
+      server,
+      uiAuthController: {
+        registerConnection(_principal, close) {
+          revoke = close;
+          return unregister;
+        },
+      },
+      isRequestOriginAllowed: async () => true,
+      rejectWebSocketUpgrade() {},
+      buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      processForwardedEventPayload() {},
+      wsClients: new Set(),
+      globalEventHub,
+    });
+    const socket = new FakeSocket();
+    runtime.wsServer.emit('connection', socket, {
+      url: '/api/global/event/ws',
+      principal: { id: 'user-1', role: 'developer', scope: 'managed' },
+    });
+
+    expect(revoke).toBeTypeOf('function');
+    revoke();
+
+    expect(socket.closeCalls).toContainEqual({ code: 4001, reason: 'Access revoked' });
+    expect(unregister).toHaveBeenCalledOnce();
     await runtime.close();
   });
 });

@@ -10,7 +10,7 @@ type GitHubAuthStore = {
   setStatus: (status: GitHubAuthStatusWithError | null) => void;
   refreshStatus: (
     runtimeGitHub?: RuntimeAPIs['github'],
-    options?: { force?: boolean }
+    options?: { force?: boolean; retryDelays?: readonly number[] }
   ) => Promise<GitHubAuthStatusWithError | null>;
 };
 
@@ -33,6 +33,30 @@ const fetchStatus = async (
   return payload;
 };
 
+const AUTH_STATUS_RETRY_DELAYS_MS = [250, 750] as const;
+
+const wait = async (delayMs: number): Promise<void> => {
+  await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+};
+
+export const fetchGitHubAuthStatusWithRetry = async (
+  runtimeGitHub?: RuntimeAPIs['github'],
+  retryDelays: readonly number[] = AUTH_STATUS_RETRY_DELAYS_MS,
+): Promise<GitHubAuthStatusWithError> => {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt <= retryDelays.length; attempt += 1) {
+    try {
+      return await fetchStatus(runtimeGitHub);
+    } catch (error) {
+      lastError = error;
+      const retryDelay = retryDelays[attempt];
+      if (retryDelay === undefined) break;
+      await wait(retryDelay);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+};
+
 // In-flight dedup for refreshStatus
 let _inFlightAuthRefresh: Promise<GitHubAuthStatusWithError | null> | null = null;
 
@@ -52,17 +76,21 @@ export const useGitHubAuthStore = create<GitHubAuthStore>((set, get) => ({
     set({ isLoading: true });
     _inFlightAuthRefresh = (async () => {
       try {
-        const payload = await fetchStatus(runtimeGitHub);
+        const payload = await fetchGitHubAuthStatusWithRetry(runtimeGitHub, options?.retryDelays);
         set({ status: payload, isLoading: false, hasChecked: true });
         return payload;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+        const previousStatus = get().status;
+        const preservedStatus = previousStatus
+          ? { ...previousStatus, error: message }
+          : { connected: false, error: message };
         set({
-          status: { connected: false, error: message },
+          status: preservedStatus,
           isLoading: false,
           hasChecked: true,
         });
-        return null;
+        return previousStatus ? preservedStatus : null;
       }
     })().finally(() => { _inFlightAuthRefresh = null; });
 

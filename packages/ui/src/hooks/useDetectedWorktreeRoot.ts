@@ -43,11 +43,12 @@ export function useDetectedWorktreeMetadata(
   currentDirectory: string | undefined,
   storeMetadata: WorktreeMetadata | undefined,
   currentBranch: string | undefined,
+  allowHostDetection = true,
 ): WorktreeMetadata | undefined {
   const [detected, setDetected] = React.useState<WorktreeMetadata | undefined>();
 
   React.useEffect(() => {
-    if (storeMetadata) {
+    if (storeMetadata || !allowHostDetection) {
       setDetected(undefined);
       return;
     }
@@ -110,7 +111,7 @@ export function useDetectedWorktreeMetadata(
     return () => {
       cancelled = true;
     };
-  }, [currentDirectory, storeMetadata, currentBranch]);
+  }, [allowHostDetection, currentDirectory, storeMetadata, currentBranch]);
 
   return storeMetadata ?? detected;
 }

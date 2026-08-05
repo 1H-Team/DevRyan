@@ -107,6 +107,9 @@ describe('user profile provisioning', () => {
       promptMode: 'client-only',
       managedFields: ['codeSystemPrompt', 'clientSystemPrompt'],
     });
+    expect(result.warnings).toContain(
+      'Superpowers skills are not installed; the optional adapter will remain disabled.',
+    );
     expect(commands).toEqual([{
       command: 'bun',
       args: ['install', '--ignore-scripts'],
@@ -284,9 +287,10 @@ describe('user profile provisioning', () => {
       promptMode: 'combined',
       preservedFields: ['codeSystemPrompt', 'clientSystemPrompt'],
     });
-    expect(preserved.warnings).toEqual([
+    expect(preserved.warnings).toEqual(expect.arrayContaining([
       expect.stringContaining('both the Claude Code and client system prompts'),
-    ]);
+      'Superpowers skills are not installed; the optional adapter will remain disabled.',
+    ]));
     expect(readJson(explicitFeaturesPath).opencode.codeSystemPrompt).toBe(true);
   });
 
@@ -385,6 +389,28 @@ describe('user profile provisioning', () => {
 
     expect(fs.readFileSync(agentPath, 'utf8')).toBe('user-owned change\n');
     expect(result.conflicts).toContain(agentPath);
+  });
+
+  it('keeps a user-installed Superpowers bootstrap active without warning', async () => {
+    const bootstrapPath = path.join(
+      home,
+      '.config',
+      'opencode',
+      'skills',
+      'superpowers',
+      'using-superpowers',
+      'SKILL.md',
+    );
+    fs.mkdirSync(path.dirname(bootstrapPath), { recursive: true });
+    fs.writeFileSync(bootstrapPath, '---\nname: using-superpowers\n---\nUser-installed skill.\n', 'utf8');
+
+    const result = await createRuntime().provision();
+
+    expect(result.ok).toBe(true);
+    expect(fs.readFileSync(bootstrapPath, 'utf8')).toContain('User-installed skill.');
+    expect(result.warnings).not.toContain(
+      'Superpowers skills are not installed; the optional adapter will remain disabled.',
+    );
   });
 
   it('retires previously managed skills without claiming user-modified files', async () => {

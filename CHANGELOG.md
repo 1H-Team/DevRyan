@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-08-05
+
+- OpenCode: update the bundled SDK dependency and managed runtime target to 1.18.13 across web, UI, VS Code, and the workspace lockfile.
+- OpenCode: update the bundled SDK dependency and managed runtime target to 1.18.12 across web, UI, VS Code, and the workspace lockfile.
+- Shared hosting: let administrators reassign managed GitHub accounts safely, with database migration coverage and authenticated runtime enforcement.
+- Shared hosting: add a Supabase-backed multi-user control plane with opaque app sessions, role and user policies, managed project and branch assignments, session ownership, live revocation, and administrator user management.
+- Security: enforce CSRF protection, host-path opacity, owner-filtered HTTP/SSE/WebSocket/terminal access, encrypted token storage, scoped notifications and previews, and content-safe actor audit records across managed hosts.
+- Desktop browser: move Electron browsing into native managed surfaces that preserve one live page between inline, pop-out, and parked states, with navigation, DevTools, element inspection, and agent cursor support.
+- Git and GitHub: scope credentials, accounts, repositories, remotes, branches, worktrees, and mutations to the active managed assignment while preserving unrestricted local-admin behavior.
+- UI and reliability: harden browser storage access, authentication bootstrap, settings navigation, lazy view loading, session chrome, and streamed reasoning presentation across web, Electron, and VS Code.
 - OpenCode: update the bundled SDK dependency and managed runtime target to 1.18.11 across web, UI, VS Code, and the workspace lockfile.
 
 ## [1.1.0] - 2026-07-29

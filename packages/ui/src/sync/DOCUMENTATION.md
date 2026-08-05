@@ -124,6 +124,13 @@ pagination state.
 `selection-store.ts` retains reversible archive context, but permanent
 `session.deleted` events clear every selection keyed by the deleted session:
 model, agent, plan mode, per-agent model, and module-local variant choices.
+The same store owns a non-persisted Builder handoff-clearance set. A newly
+created Builder-first session records clearance before its session selection is
+published, and a successful scheduler inspection records clearance before
+Builder is committed. This prevents post-promotion hydration from treating a
+new session as a restored Orchestrator handoff. Leaving Builder or permanently
+deleting the session clears the entry. Builder sends still run the authoritative
+scheduler inspection, so clearance never replaces the live safety gate.
 Cleanup happens on the authoritative event rather than optimistic delete
 initiation, so failed deletes and archived sessions keep their selections.
 That same permanent-delete boundary clears the deleted session's persisted

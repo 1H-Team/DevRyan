@@ -26,6 +26,7 @@ type Props = {
   githubAuthStatus?: GitHubAuthStatus | null;
   isSwitchingGitHubAccount?: boolean;
   onGitHubAccountSwitch?: (accountId: string) => Promise<void> | void;
+  showGitHubProfilePlaceholder?: boolean;
   showRuntimeButtons?: boolean;
   hideDirectoryControls: boolean;
   handleOpenDirectoryDialog: () => void;
@@ -33,33 +34,57 @@ type Props = {
 
 const footerButtonClassName = 'inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-interactive-hover/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50';
 
-function GitHubProfileControl({
+export function GitHubProfileControl({
   githubAuthStatus,
   isSwitchingGitHubAccount = false,
   onGitHubAccountSwitch,
+  showPlaceholder = false,
 }: {
   githubAuthStatus?: GitHubAuthStatus | null;
   isSwitchingGitHubAccount?: boolean;
   onGitHubAccountSwitch?: (accountId: string) => Promise<void> | void;
+  showPlaceholder?: boolean;
 }): React.ReactNode {
   const { t } = useI18n();
 
-  if (!githubAuthStatus?.connected) {
+  const githubAccounts = githubAuthStatus?.accounts ?? [];
+  const activeAccountId = githubAuthStatus?.activeAccountId ?? null;
+  const currentAccount = githubAccounts.find((account) => account.id === activeAccountId)
+    ?? githubAccounts.find((account) => account.current)
+    ?? githubAccounts[0]
+    ?? null;
+  const statusUser = githubAuthStatus?.user ?? null;
+  const accountUser = currentAccount?.user ?? null;
+  const statusMatchesAccount = Boolean(statusUser && accountUser && (
+    (typeof statusUser.id === 'number' && typeof accountUser.id === 'number' && statusUser.id === accountUser.id)
+    || (statusUser.login && accountUser.login && statusUser.login.toLowerCase() === accountUser.login.toLowerCase())
+  ));
+  const githubUser = accountUser
+    ? (statusMatchesAccount ? { ...accountUser, ...statusUser } : accountUser)
+    : statusUser;
+  const githubAvatarUrl = githubUser?.avatarUrl ?? null;
+  const githubLogin = githubUser?.login ?? null;
+  const [avatarFailed, setAvatarFailed] = React.useState(false);
+
+  React.useEffect(() => {
+    setAvatarFailed(false);
+  }, [githubAvatarUrl]);
+
+  if (!githubAuthStatus?.connected && !githubUser && !showPlaceholder) {
     return null;
   }
+  const title = githubAuthStatus?.connected
+    ? (githubLogin ? t('header.github.connectedWithLogin', { login: githubLogin }) : t('header.github.connected'))
+    : (githubLogin ? `GitHub @${githubLogin}` : 'GitHub');
 
-  const githubAvatarUrl = githubAuthStatus.user?.avatarUrl ?? null;
-  const githubLogin = githubAuthStatus.user?.login ?? null;
-  const githubAccounts = githubAuthStatus.accounts ?? [];
-  const title = githubLogin ? t('header.github.connectedWithLogin', { login: githubLogin }) : t('header.github.connected');
-
-  const avatar = githubAvatarUrl ? (
+  const avatar = githubAvatarUrl && !avatarFailed ? (
     <img
       src={githubAvatarUrl}
       alt={githubLogin ? t('header.github.avatarWithLogin', { login: githubLogin }) : t('header.github.avatar')}
       className="h-full w-full object-cover"
       loading="lazy"
       referrerPolicy="no-referrer"
+      onError={() => setAvatarFailed(true)}
     />
   ) : (
     <RiGithubFill className="h-3.5 w-3.5 text-foreground" />
@@ -86,7 +111,7 @@ function GitHubProfileControl({
           <DropdownMenuSeparator />
           {githubAccounts.map((account) => {
             const accountUser = account.user;
-            const isCurrent = Boolean(account.current);
+            const isCurrent = activeAccountId ? account.id === activeAccountId : Boolean(account.current);
             return (
               <DropdownMenuItem
                 key={account.id}
@@ -99,13 +124,17 @@ function GitHubProfileControl({
                 }}
               >
                 {accountUser?.avatarUrl ? (
-                  <img
-                    src={accountUser.avatarUrl}
-                    alt={accountUser.login ? t('header.github.avatarWithLogin', { login: accountUser.login }) : t('header.github.avatar')}
-                    className="h-6 w-6 rounded-full border border-border/60 bg-muted object-cover"
-                    loading="lazy"
-                    referrerPolicy="no-referrer"
-                  />
+                  <div className="relative flex h-6 w-6 items-center justify-center rounded-full border border-border/60 bg-muted">
+                    <RiGithubFill className="h-3 w-3 text-muted-foreground" />
+                    <img
+                      src={accountUser.avatarUrl}
+                      alt={accountUser.login ? t('header.github.avatarWithLogin', { login: accountUser.login }) : t('header.github.avatar')}
+                      className="absolute inset-0 h-full w-full rounded-full bg-muted object-cover"
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      onError={(event) => { event.currentTarget.style.display = 'none'; }}
+                    />
+                  </div>
                 ) : (
                   <div className="flex h-6 w-6 items-center justify-center rounded-full border border-border/60 bg-muted">
                     <RiGithubFill className="h-3 w-3 text-muted-foreground" />
@@ -146,6 +175,7 @@ export function SidebarFooter({
   githubAuthStatus,
   isSwitchingGitHubAccount = false,
   onGitHubAccountSwitch,
+  showGitHubProfilePlaceholder = false,
   showRuntimeButtons = true,
   hideDirectoryControls,
   handleOpenDirectoryDialog,
@@ -174,6 +204,7 @@ export function SidebarFooter({
             githubAuthStatus={githubAuthStatus}
             isSwitchingGitHubAccount={isSwitchingGitHubAccount}
             onGitHubAccountSwitch={onGitHubAccountSwitch}
+            showPlaceholder={showGitHubProfilePlaceholder}
           />
           {!hideDirectoryControls ? (
             <Tooltip>

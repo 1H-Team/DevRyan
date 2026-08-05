@@ -33,11 +33,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const DEFAULT_PORT = 3000;
+const DEFAULT_MANAGED_REMOTE_ORIGIN_PORT = 3000;
+const MIN_MANAGED_REMOTE_ORIGIN_PORT = 1024;
+const MAX_MANAGED_REMOTE_ORIGIN_PORT = 65535;
 const DEFAULT_TAIL_LINES = 200;
 const DEFAULT_DAEMON_READY_TIMEOUT_MS = 60000;
 const LOG_ROTATE_MAX_BYTES = 10 * 1024 * 1024;
 const LOG_ROTATE_KEEP = 5;
-const TUNNEL_PROFILES_VERSION = 1;
+const TUNNEL_PROFILES_VERSION = 2;
 const TUNNEL_PROFILES_FILE_NAME = 'tunnel-profiles.json';
 const LEGACY_CLOUDFLARE_MANAGED_REMOTE_FILE_NAME = 'cloudflare-managed-remote-tunnels.json';
 const TUNNEL_CLI_STATE_FILE_NAME = 'tunnel-cli-state.json';
@@ -190,6 +193,30 @@ function assertSafeBrowserPort(port, { context = 'This action' } = {}) {
   );
 }
 
+function isValidManagedRemoteOriginPort(value) {
+  return Number.isInteger(value)
+    && value >= MIN_MANAGED_REMOTE_ORIGIN_PORT
+    && value <= MAX_MANAGED_REMOTE_ORIGIN_PORT;
+}
+
+function normalizeManagedRemoteOriginPort(value) {
+  const candidate = typeof value === 'string' && value.trim().length > 0
+    ? Number(value.trim())
+    : value;
+  return isValidManagedRemoteOriginPort(candidate)
+    ? candidate
+    : DEFAULT_MANAGED_REMOTE_ORIGIN_PORT;
+}
+
+function assertManagedRemoteOriginPort(value) {
+  if (!isValidManagedRemoteOriginPort(value)) {
+    throw new TunnelCliError(
+      `Managed remote origin port must be an integer between ${MIN_MANAGED_REMOTE_ORIGIN_PORT} and ${MAX_MANAGED_REMOTE_ORIGIN_PORT}.`,
+      EXIT_CODE.USAGE_ERROR,
+    );
+  }
+}
+
 function parseHumanDurationToMs(value) {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return Math.round(value);
@@ -286,6 +313,7 @@ function buildTunnelStartReplayCommand({
   profileName,
   configPath,
   hostname,
+  originPort,
   connectTtlMs,
   sessionTtlMs,
   qr,
@@ -313,6 +341,9 @@ function buildTunnelStartReplayCommand({
   if (typeof hostname === 'string' && hostname.trim().length > 0) {
     parts.push('--hostname', shellQuote(hostname));
   }
+  if (Number.isInteger(originPort)) {
+    parts.push('--origin-port', String(originPort));
+  }
   const connectTtl = formatDurationForCli(connectTtlMs);
   if (connectTtl) {
     parts.push('--connect-ttl', connectTtl);
@@ -337,7 +368,7 @@ function buildTunnelStartReplayCommand({
   return parts.join(' ');
 }
 
-function buildTunnelProfileAddCommand({ provider, hostname }) {
+function buildTunnelProfileAddCommand({ provider, hostname, originPort }) {
   const parts = [
     'openchamber',
     'tunnel',
@@ -351,6 +382,8 @@ function buildTunnelProfileAddCommand({ provider, hostname }) {
     '<name>',
     '--hostname',
     shellQuote(hostname || '<hostname>'),
+    '--origin-port',
+    String(normalizeManagedRemoteOriginPort(originPort)),
     '--token',
     '<token>',
   ];
@@ -616,6 +649,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     tokenFile: undefined,
     tokenStdin: false,
     hostname: undefined,
+    originPort: undefined,
     connectTtl: undefined,
     sessionTtl: undefined,
     qr: false,
@@ -626,6 +660,7 @@ function parseArgs(argv = process.argv.slice(2)) {
     plain: false,
     quiet: false,
     explicitPort: false,
+    explicitOriginPort: false,
     explicitUiPassword: false,
     foreground: false,
   };
@@ -756,6 +791,26 @@ function parseArgs(argv = process.argv.slice(2)) {
         const { value, nextIndex } = consumeValue(i, inlineValue);
         i = nextIndex;
         options.hostname = typeof value === 'string' ? value : options.hostname;
+        break;
+      }
+      case 'origin-port': {
+        const { value: consumedValue, nextIndex: consumedIndex } = consumeValue(i, inlineValue);
+        let value = consumedValue;
+        let nextIndex = consumedIndex;
+        if (value === undefined && typeof inlineValue !== 'string') {
+          const candidate = args[i + 1];
+          if (typeof candidate === 'string' && /^-\d+$/.test(candidate)) {
+            value = candidate;
+            nextIndex = i + 1;
+          }
+        }
+        i = nextIndex;
+        if (typeof value !== 'string' || !/^-?\d+$/.test(value.trim())) {
+          throw new TunnelCliError('Missing or invalid value for --origin-port.', EXIT_CODE.USAGE_ERROR);
+        }
+        options.originPort = Number.parseInt(value, 10);
+        assertManagedRemoteOriginPort(options.originPort);
+        options.explicitOriginPort = true;
         break;
       }
       case 'connect-ttl': {
@@ -945,6 +1000,7 @@ START OPTIONS:
   --token-file <path>     Read token from file (recommended)
   --token-stdin           Read token from stdin
   --hostname <hostname>   Managed-remote hostname
+  --origin-port <port>    Fixed Cloudflare origin port (default: 3000)
   --connect-ttl <value>   Connect-link TTL (e.g. 30m, 24h, 1d)
   --session-ttl <value>   Session TTL (e.g. 8h, 24h, 1d)
   --qr                    Print QR code for resulting tunnel URL
@@ -965,8 +1021,8 @@ BEHAVIOR NOTES:
 PROFILE USAGE:
   openchamber tunnel profile list [--provider <id>] [--json]
   openchamber tunnel profile show --name <name> [--provider <id>] [--json]
-  openchamber tunnel profile add --provider <id> --mode managed-remote --name <name> --hostname <host> --token <token> [--force] [--json]
-  openchamber tunnel profile add --provider <id> --mode managed-remote --name <name> --hostname <host> --token-file <path> [--force] [--json]
+  openchamber tunnel profile add --provider <id> --mode managed-remote --name <name> --hostname <host> --origin-port <port> --token <token> [--force] [--json]
+  openchamber tunnel profile add --provider <id> --mode managed-remote --name <name> --hostname <host> --origin-port <port> --token-file <path> [--force] [--json]
   openchamber tunnel profile remove --name <name> [--provider <id>] [--json]
 
 SHELL COMPLETION:
@@ -981,10 +1037,10 @@ EXAMPLES:
   openchamber tunnel status
   openchamber tunnel start --qr
   openchamber tunnel start --profile prod-main
-  openchamber tunnel start --provider cloudflare --mode managed-remote --token-file ~/.secrets/cf-token --hostname app.example.com
+  openchamber tunnel start --provider cloudflare --mode managed-remote --token-file ~/.secrets/cf-token --hostname app.example.com --origin-port 3000
   openchamber tunnel start --provider cloudflare --mode managed-local --config ~/.cloudflared/config.yml
-  openchamber tunnel start --dry-run --provider cloudflare --mode managed-remote --token-file ~/.secrets/cf-token --hostname app.example.com
-  echo "$TOKEN" | openchamber tunnel profile add --provider cloudflare --mode managed-remote --name prod-main --hostname app.example.com --token-stdin
+  openchamber tunnel start --dry-run --provider cloudflare --mode managed-remote --token-file ~/.secrets/cf-token --hostname app.example.com --origin-port 3000
+  echo "$TOKEN" | openchamber tunnel profile add --provider cloudflare --mode managed-remote --name prod-main --hostname app.example.com --origin-port 3000 --token-stdin
   openchamber tunnel profile list --provider cloudflare
   openchamber tunnel profile list --json --show-secrets
   openchamber tunnel stop --port 3000
@@ -1007,7 +1063,7 @@ _openchamber_tunnel() {
   tunnel_commands="help providers ready doctor status start stop profile completion"
   profile_commands="list show add remove"
   common_flags="--port --foreground --no-daemon --json --all --help --version --plain --quiet"
-  start_flags="--provider --mode --profile --config --token --token-file --token-stdin --hostname --connect-ttl --session-ttl --qr --no-qr --dry-run --show-secrets"
+  start_flags="--provider --mode --profile --config --token --token-file --token-stdin --hostname --origin-port --connect-ttl --session-ttl --qr --no-qr --dry-run --show-secrets"
 
   if [[ \${COMP_CWORD} -eq 1 ]]; then
     COMPREPLY=( $(compgen -W "\${commands}" -- "\${cur}") )
@@ -1080,6 +1136,7 @@ _openchamber() {
   )
 
   _arguments -C \\
+    '--origin-port[Fixed Cloudflare origin port]:port:' \\
     '1:command:->command' \\
     '*::arg:->args'
 
@@ -1139,6 +1196,7 @@ complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_
 complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l token-file -d 'Token file path'
 complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l token-stdin -d 'Read token from stdin'
 complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l hostname -d 'Hostname'
+complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start profile' -l origin-port -d 'Fixed Cloudflare origin port'
 complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l dry-run -d 'Validate without applying'
 complete -c openchamber -n '__fish_seen_subcommand_from tunnel; and __fish_seen_subcommand_from start' -l qr -d 'Show QR code'
 `;
@@ -1256,6 +1314,24 @@ function normalizeProfileHostname(value) {
 function normalizeProfileToken(value) {
   if (typeof value !== 'string') return '';
   return value.trim();
+}
+
+function writePrivateJsonAtomic(filePath, data) {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const tempPath = `${filePath}.tmp-${process.pid}-${crypto.randomUUID()}`;
+  try {
+    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), { encoding: 'utf8', mode: 0o600 });
+    if (process.platform !== 'win32') {
+      fs.chmodSync(tempPath, 0o600);
+    }
+    fs.renameSync(tempPath, filePath);
+    if (process.platform !== 'win32') {
+      fs.chmodSync(filePath, 0o600);
+    }
+  } catch (error) {
+    try { fs.rmSync(tempPath, { force: true }); } catch { /* ignore */ }
+    throw error;
+  }
 }
 
 function suggestProfileNameFromHostname(hostname) {
@@ -1399,6 +1475,7 @@ function sanitizeTunnelProfilesData(data) {
     const name = normalizeProfileName(entry.name);
     const hostname = normalizeProfileHostname(entry.hostname);
     const token = normalizeProfileToken(entry.token);
+    const originPort = normalizeManagedRemoteOriginPort(entry.originPort);
     if (!provider || !mode || !name || !hostname || !token) continue;
     const key = `${provider}::${name.toLowerCase()}`;
     if (seen.has(key)) continue;
@@ -1409,6 +1486,7 @@ function sanitizeTunnelProfilesData(data) {
       provider,
       mode,
       hostname,
+      originPort,
       token,
       createdAt: Number.isFinite(entry.createdAt) ? entry.createdAt : Date.now(),
       updatedAt: Number.isFinite(entry.updatedAt) ? entry.updatedAt : Date.now(),
@@ -1444,7 +1522,12 @@ function readTunnelProfilesFromDisk() {
   try {
     warnIfUnsafeFilePermissions(filePath);
     const raw = fs.readFileSync(filePath, 'utf8');
-    return sanitizeTunnelProfilesData(JSON.parse(raw));
+    const parsed = JSON.parse(raw);
+    const sanitized = sanitizeTunnelProfilesData(parsed);
+    if (parsed?.version !== TUNNEL_PROFILES_VERSION) {
+      writeTunnelProfilesToDisk(sanitized);
+    }
+    return sanitized;
   } catch {
     return { version: TUNNEL_PROFILES_VERSION, profiles: [] };
   }
@@ -1452,8 +1535,7 @@ function readTunnelProfilesFromDisk() {
 
 function writeTunnelProfilesToDisk(data) {
   const filePath = getTunnelProfilesFilePath();
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(sanitizeTunnelProfilesData(data), null, 2), { encoding: 'utf8', mode: 0o600 });
+  writePrivateJsonAtomic(filePath, sanitizeTunnelProfilesData(data));
 }
 
 function writeManagedRemotePairsToDiskFromProfiles(profilesData) {
@@ -1466,13 +1548,13 @@ function writeManagedRemotePairsToDiskFromProfiles(profilesData) {
     id: entry.id,
     name: entry.name,
     hostname: entry.hostname,
+    originPort: entry.originPort,
     token: entry.token,
     updatedAt: Number.isFinite(entry.updatedAt) ? entry.updatedAt : Date.now(),
   }));
 
   const filePath = getLegacyCloudflareManagedRemoteFilePath();
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify({ version: 1, tunnels }, null, 2), { encoding: 'utf8', mode: 0o600 });
+  writePrivateJsonAtomic(filePath, { version: 2, tunnels });
 }
 
 function readLegacyManagedRemoteEntries() {
@@ -1487,6 +1569,7 @@ function readLegacyManagedRemoteEntries() {
         const name = normalizeProfileName(entry.name);
         const hostname = normalizeProfileHostname(entry.hostname);
         const token = normalizeProfileToken(entry.token);
+        const originPort = normalizeManagedRemoteOriginPort(entry.originPort);
         if (!name || !hostname || !token) return null;
         return {
           id,
@@ -1494,6 +1577,7 @@ function readLegacyManagedRemoteEntries() {
           provider: 'cloudflare',
           mode: 'managed-remote',
           hostname,
+          originPort,
           token,
           createdAt: Number.isFinite(entry.updatedAt) ? entry.updatedAt : Date.now(),
           updatedAt: Number.isFinite(entry.updatedAt) ? entry.updatedAt : Date.now(),
@@ -2637,10 +2721,13 @@ function formatTunnelStatusLine(statusBody, port) {
   const provider = statusBody?.provider || 'unknown';
   const mode = statusBody?.mode || 'unknown';
   const url = statusBody?.url || 'n/a';
+  const originDetail = mode === 'managed-remote' && statusBody?.providerMetadata?.cloudflareOriginUrl
+    ? ` ${statusBody.providerMetadata.cloudflareOriginUrl} → ${statusBody.providerMetadata.activeOriginUrl}`
+    : '';
   return {
     status: active ? 'success' : 'neutral',
     line: `port ${port} ${active ? 'active' : 'inactive'} (${clackFormatProviderWithIcon(provider)}/${mode})`,
-    detail: url,
+    detail: `${url}${originDetail}`,
   };
 }
 
@@ -2742,7 +2829,7 @@ async function handleTunnelProfileSubcommand(options, action) {
       logStatus('info', 'Available subcommands', 'list, show, add, remove');
       clackLog.step('List profiles: `openchamber tunnel profile list`');
       clackLog.step('Show one profile: `openchamber tunnel profile show --name <name>`');
-      clackLog.step('Add profile: `openchamber tunnel profile add --provider cloudflare --mode managed-remote --name <name> --hostname <host> --token <token>`');
+      clackLog.step('Add profile: `openchamber tunnel profile add --provider cloudflare --mode managed-remote --name <name> --hostname <host> --origin-port 3000 --token <token>`');
       clackLog.step('Remove profile: `openchamber tunnel profile remove --name <name>`');
       clackOutro('Choose a subcommand');
     }
@@ -2761,14 +2848,14 @@ async function handleTunnelProfileSubcommand(options, action) {
 
     if (isQuietMode(options)) {
       for (const profile of profiles) {
-        process.stdout.write(`${profile.name} ${profile.provider}/${profile.mode} ${profile.hostname}\n`);
+        process.stdout.write(`${profile.name} ${profile.provider}/${profile.mode} ${profile.hostname} origin:${profile.originPort}\n`);
       }
       return;
     }
 
     clackIntro('Tunnel Profiles');
     for (const profile of profiles) {
-      logStatus('success', `${profile.name} (${profile.provider}/${profile.mode})`, `${profile.hostname} ${formatProfileTokenStatus(profile, options.showSecrets)}`);
+      logStatus('success', `${profile.name} (${profile.provider}/${profile.mode})`, `${profile.hostname} origin:${profile.originPort} ${formatProfileTokenStatus(profile, options.showSecrets)}`);
     }
     clackOutro(`${profiles.length} profile(s)`);
     return;
@@ -2788,11 +2875,11 @@ async function handleTunnelProfileSubcommand(options, action) {
       return;
     }
     if (isQuietMode(options)) {
-      process.stdout.write(`${profile.name} ${profile.provider}/${profile.mode} ${profile.hostname} ${formatProfileTokenStatus(profile, options.showSecrets)}\n`);
+      process.stdout.write(`${profile.name} ${profile.provider}/${profile.mode} ${profile.hostname} origin:${profile.originPort} ${formatProfileTokenStatus(profile, options.showSecrets)}\n`);
       return;
     }
     clackIntro('Tunnel Profile');
-    logStatus('success', `${profile.name} (${profile.provider}/${profile.mode})`, `${profile.hostname} ${formatProfileTokenStatus(profile, options.showSecrets)}`);
+    logStatus('success', `${profile.name} (${profile.provider}/${profile.mode})`, `${profile.hostname} origin:${profile.originPort} ${formatProfileTokenStatus(profile, options.showSecrets)}`);
     clackOutro('show complete');
     return;
   }
@@ -2802,6 +2889,7 @@ async function handleTunnelProfileSubcommand(options, action) {
     let mode = normalizeProfileMode(options.mode);
     let name = normalizeProfileName(options.name);
     let hostname = normalizeProfileHostname(options.hostname);
+    let originPort = options.explicitOriginPort ? options.originPort : undefined;
     const resolvedTokenValue = resolveToken(options);
     let token = normalizeProfileToken(resolvedTokenValue);
 
@@ -2870,6 +2958,26 @@ async function handleTunnelProfileSubcommand(options, action) {
         hostname = normalizeProfileHostname(enteredHostname);
       }
 
+      if (!originPort) {
+        const suggestedOriginPort = normalizeManagedRemoteOriginPort(existingProfile?.originPort);
+        const enteredOriginPort = await clackText({
+          message: 'Fixed Cloudflare origin port',
+          placeholder: String(suggestedOriginPort),
+          initialValue: String(suggestedOriginPort),
+          validate(value) {
+            const parsed = Number(value);
+            return isValidManagedRemoteOriginPort(parsed)
+              ? undefined
+              : 'Origin port must be an integer between 1024 and 65535.';
+          },
+        });
+        if (clackIsCancel(enteredOriginPort)) {
+          clackCancel('Profile add cancelled.');
+          return;
+        }
+        originPort = Number(enteredOriginPort);
+      }
+
       if (!token && existingProfile?.token) {
         const useExistingToken = await clackConfirm({
           message: `Reuse saved token for profile '${existingProfile.name}'?`,
@@ -2907,6 +3015,8 @@ async function handleTunnelProfileSubcommand(options, action) {
     if (mode !== 'managed-remote') {
       throw new Error('`tunnel profile add` currently supports only --mode managed-remote.');
     }
+    originPort = normalizeManagedRemoteOriginPort(originPort);
+    assertManagedRemoteOriginPort(originPort);
 
     const existingIndex = store.profiles.findIndex(
       (entry) => entry.provider === provider && entry.name.toLowerCase() === name.toLowerCase()
@@ -2931,7 +3041,7 @@ async function handleTunnelProfileSubcommand(options, action) {
         ok: true,
         dryRun: true,
         action: existingIndex >= 0 ? 'overwrite' : 'create',
-        profile: redactProfileForOutput({ name, provider, mode, hostname, token }, options.showSecrets),
+        profile: redactProfileForOutput({ name, provider, mode, hostname, originPort, token }, options.showSecrets),
       };
       if (isJsonMode(options)) {
         printJson(dryRunResult);
@@ -2951,6 +3061,7 @@ async function handleTunnelProfileSubcommand(options, action) {
         ...current,
         mode,
         hostname,
+        originPort,
         token,
         updatedAt: now,
       };
@@ -2961,6 +3072,7 @@ async function handleTunnelProfileSubcommand(options, action) {
         provider,
         mode,
         hostname,
+        originPort,
         token,
         createdAt: now,
         updatedAt: now,
@@ -2978,13 +3090,13 @@ async function handleTunnelProfileSubcommand(options, action) {
     }
 
     if (isQuietMode(options)) {
-      process.stdout.write(`saved ${added.name} ${added.provider}/${added.mode} ${added.hostname}\n`);
+      process.stdout.write(`saved ${added.name} ${added.provider}/${added.mode} ${added.hostname} origin:${added.originPort}\n`);
       return;
     }
 
     console.log('');
     clackIntro(boldText('Tunnel Profile Saved'));
-    logStatus('success', `${added.name} (${added.provider}/${added.mode})`, `${added.hostname} ${formatProfileTokenStatus(added, options.showSecrets)}`);
+    logStatus('success', `${added.name} (${added.provider}/${added.mode})`, `${added.hostname} origin:${added.originPort} ${formatProfileTokenStatus(added, options.showSecrets)}`);
     clackOutro('save complete');
     logStatus('info', '[START_PROFILE]', `openchamber tunnel start --profile ${added.name}`);
     clackOutro('');
@@ -3931,6 +4043,7 @@ const commands = {
           || (typeof options.token === 'string' && options.token.trim().length > 0)
           || (typeof options.tokenFile === 'string' && options.tokenFile.trim().length > 0);
         let doctorTokenValue = resolveToken(options);
+        let doctorOriginPort = options.explicitOriginPort ? options.originPort : DEFAULT_MANAGED_REMOTE_ORIGIN_PORT;
         let hasSavedManagedRemoteProfile = false;
         const normalizedMode = typeof options.mode === 'string' ? options.mode.trim().toLowerCase() : '';
 
@@ -3966,6 +4079,9 @@ const commands = {
           if ((!doctorTokenValue || doctorTokenValue.trim().length === 0) && typeof doctorProfile.token === 'string') {
             doctorTokenValue = doctorProfile.token.trim();
           }
+          if (!options.explicitOriginPort) {
+            doctorOriginPort = normalizeManagedRemoteOriginPort(doctorProfile.originPort);
+          }
         }
 
         let doctorResult = null;
@@ -3981,6 +4097,7 @@ const commands = {
           if (doctorHostnameOverride.length > 0) {
             query.set('managedRemoteTunnelHostname', doctorHostnameOverride);
           }
+          query.set('originPort', String(doctorOriginPort));
           if (hasSavedManagedRemoteProfile) {
             query.set('hasSavedManagedRemoteProfile', '1');
           }
@@ -4217,9 +4334,9 @@ const commands = {
                 key: 'managed-remote-port',
                 code: '[PORT_MISMATCH]',
                 lines: [
-                  'Cloudflare target must match the active DevRyan CLI port.',
-                  'Example: `http://127.0.0.1:<port>`',
-                  'If CLI picked a different port, update Cloudflare or run `openchamber serve --port <port>`.',
+                  `Keep Cloudflare's service fixed at \`http://127.0.0.1:${doctorOriginPort}\`.`,
+                  'DevRyan relays that fixed origin to the current application port.',
+                  'If the fixed port is occupied, choose another with `--origin-port <port>` and update Cloudflare once.',
                 ],
               });
             }
@@ -4270,6 +4387,7 @@ const commands = {
         let resolvedTokenValue = resolveToken(options);
         let token = typeof resolvedTokenValue === 'string' ? resolvedTokenValue : undefined;
         let hostname = typeof options.hostname === 'string' ? options.hostname : undefined;
+        let originPort = options.explicitOriginPort ? options.originPort : undefined;
         let selectedProfile = null;
 
         if (options.explicitPort) {
@@ -4287,6 +4405,7 @@ const commands = {
           mode = mode || selectedProfile.mode;
           token = (typeof token === 'string' && token.trim().length > 0) ? token : selectedProfile.token;
           hostname = typeof options.hostname === 'string' && options.hostname.trim().length > 0 ? options.hostname : selectedProfile.hostname;
+          originPort = options.explicitOriginPort ? options.originPort : selectedProfile.originPort;
         }
 
         // Interactive profile selection when no profile/mode specified in TTY
@@ -4315,6 +4434,7 @@ const commands = {
                 mode = mode || selectedProfile.mode;
                 token = (typeof token === 'string' && token.trim().length > 0) ? token : selectedProfile.token;
                 hostname = typeof options.hostname === 'string' && options.hostname.trim().length > 0 ? options.hostname : selectedProfile.hostname;
+                originPort = options.explicitOriginPort ? options.originPort : selectedProfile.originPort;
               }
             }
           }
@@ -4347,6 +4467,8 @@ const commands = {
 
         mode = mode || 'quick';
         if (mode === 'managed-remote') {
+          originPort = normalizeManagedRemoteOriginPort(originPort);
+          assertManagedRemoteOriginPort(originPort);
           if (!(typeof hostname === 'string' && hostname.trim().length > 0)) {
             if (canPrompt(options)) {
               const profilesStore = ensureTunnelProfilesMigrated();
@@ -4443,6 +4565,7 @@ const commands = {
                   ...current,
                   mode: 'managed-remote',
                   hostname,
+                  originPort,
                   token,
                   updatedAt: now,
                 };
@@ -4453,6 +4576,7 @@ const commands = {
                   provider,
                   mode: 'managed-remote',
                   hostname,
+                  originPort,
                   token,
                   createdAt: now,
                   updatedAt: now,
@@ -4550,6 +4674,7 @@ const commands = {
             provider,
             mode,
             hostname: hostname || null,
+            originPort: mode === 'managed-remote' ? originPort : null,
             hasToken: typeof token === 'string' && token.trim().length > 0,
             profile: selectedProfile ? selectedProfile.name : null,
             configPath: options.configPath || null,
@@ -4670,6 +4795,7 @@ const commands = {
             presetId: selectedProfile.id,
             presetName: selectedProfile.name,
             managedRemoteTunnelHostname: hostname,
+            originPort,
             managedRemoteTunnelToken: token,
           };
           const { response: presetResponse, body: presetBody } = await requestJson(instance.port, '/api/openchamber/tunnel/managed-remote-token', {
@@ -4690,6 +4816,7 @@ const commands = {
           ...(typeof options.configPath === 'string' ? { configPath: options.configPath } : {}),
           ...(typeof token === 'string' ? { token } : {}),
           ...(typeof hostname === 'string' ? { hostname } : {}),
+          ...(mode === 'managed-remote' ? { originPort } : {}),
           ...(selectedProfile ? {
             managedRemoteTunnelPresetId: selectedProfile.id,
             managedRemoteTunnelPresetName: selectedProfile.name,
@@ -4740,6 +4867,7 @@ const commands = {
           profileName: selectedProfile?.name,
           configPath: options.configPath,
           hostname,
+          originPort: mode === 'managed-remote' ? originPort : undefined,
           connectTtlMs,
           sessionTtlMs,
           qr: options.qr === true,
@@ -4759,6 +4887,13 @@ const commands = {
           clackIntro(boldText('Tunnel Started'));
           logStatus('success', `port ${instance.port} ${clackFormatProviderWithIcon(body.provider)}/${body.mode}`);
           logStatus('success', body.connectUrl || body.url || 'n/a');
+          if (body.mode === 'managed-remote' && body.providerMetadata?.cloudflareOriginUrl) {
+            logStatus(
+              'success',
+              `Cloudflare service ${body.providerMetadata.cloudflareOriginUrl}`,
+              `${body.providerMetadata.originRelayActive ? 'relay' : 'direct'} → ${body.providerMetadata.activeOriginUrl}`,
+            );
+          }
           if (body.replacedTunnel) {
             const revokedBootstrapCount = Number.isFinite(body.revokedBootstrapCount) ? body.revokedBootstrapCount : 0;
             const invalidatedSessionCount = Number.isFinite(body.invalidatedSessionCount) ? body.invalidatedSessionCount : 0;
@@ -4778,7 +4913,7 @@ const commands = {
           ];
 
           if (!selectedProfile && mode === 'managed-remote' && typeof hostname === 'string' && hostname.trim().length > 0) {
-            const profileSaveCommand = buildTunnelProfileAddCommand({ provider, hostname });
+            const profileSaveCommand = buildTunnelProfileAddCommand({ provider, hostname, originPort });
             optionalTips.push({ line: 'Optional: save reusable profile (stores hostname + token locally)', detail: profileSaveCommand });
             optionalTips.push({ line: 'Start from saved profile', detail: 'openchamber tunnel start --profile <name>' });
           }
@@ -5257,6 +5392,8 @@ if (isCliExecution) {
 export {
   commands,
   parseArgs,
+  buildTunnelStartReplayCommand,
+  sanitizeTunnelProfilesData,
   assertAuthenticatedNetworkExposure,
   hasUiPasswordConfigured,
   DEFAULT_DAEMON_READY_TIMEOUT_MS,

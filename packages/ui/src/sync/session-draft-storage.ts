@@ -143,6 +143,8 @@ const parseCanonicalDrafts = (raw: string): { draftsById: Record<string, ChatDra
       pendingWorktreeRequestId: typeof record.pendingWorktreeRequestId === "string" ? record.pendingWorktreeRequestId : null,
       bootstrapPendingDirectory: normalizePath(record.bootstrapPendingDirectory ?? null),
       preserveDirectoryOverride: record.preserveDirectoryOverride === true,
+      targetBranchName: typeof record.targetBranchName === "string" ? record.targetBranchName : null,
+      targetPreparationError: typeof record.targetPreparationError === "string" ? record.targetPreparationError : null,
       parentID: typeof record.parentID === "string" ? record.parentID : null,
       title: typeof record.title === "string" ? record.title : undefined,
       initialPrompt: typeof record.initialPrompt === "string" ? record.initialPrompt : undefined,

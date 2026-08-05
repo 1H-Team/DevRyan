@@ -93,6 +93,7 @@ export const AgentHandoffDialogView: React.FC<{
   const summary = getAgentHandoffTaskSummary(state.tasks);
   const cleaning = state.phase === 'cleaning';
   const failed = state.phase === 'error';
+  const inspectionFailed = failed && state.errorKind === 'inspection';
 
   return (
     <>
@@ -100,16 +101,18 @@ export const AgentHandoffDialogView: React.FC<{
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h2 id={TITLE_ID} className="typography-markdown text-lg font-semibold leading-tight text-foreground">
-              {t('chat.agentHandoff.title')}
+              {t(inspectionFailed ? 'chat.agentHandoff.inspectionErrorTitle' : 'chat.agentHandoff.title')}
             </h2>
             <p id={DESCRIPTION_ID} className="mt-2 max-w-[52ch] typography-ui-label leading-relaxed text-muted-foreground">
-              {t('chat.agentHandoff.description')}
+              {t(inspectionFailed ? 'chat.agentHandoff.inspectionErrorDescription' : 'chat.agentHandoff.description')}
             </p>
           </div>
-          <div className="mt-0.5 flex shrink-0 flex-col items-end gap-1 font-mono typography-micro tabular-nums text-muted-foreground">
-            <span>{t('chat.agentHandoff.activeCount', { count: summary.activeCount })}</span>
-            <span>{t('chat.agentHandoff.unreviewedCount', { count: summary.unreviewedCount })}</span>
-          </div>
+          {!inspectionFailed ? (
+            <div className="mt-0.5 flex shrink-0 flex-col items-end gap-1 font-mono typography-micro tabular-nums text-muted-foreground">
+              <span>{t('chat.agentHandoff.activeCount', { count: summary.activeCount })}</span>
+              <span>{t('chat.agentHandoff.unreviewedCount', { count: summary.unreviewedCount })}</span>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -150,7 +153,11 @@ export const AgentHandoffDialogView: React.FC<{
         >
           <RiAlertLine className="mt-0.5 size-4 shrink-0" />
           <span className="typography-ui-label leading-relaxed">
-            {state.errorMessage || t('chat.agentHandoff.errorFallback')}
+            {state.errorMessage || t(
+              inspectionFailed
+                ? 'chat.agentHandoff.inspectionErrorFallback'
+                : 'chat.agentHandoff.errorFallback',
+            )}
           </span>
         </div>
       ) : null}
@@ -166,7 +173,9 @@ export const AgentHandoffDialogView: React.FC<{
           onClick={failed ? onRetry : onConfirm}
         >
           {cleaning ? <RiLoader4Line className="animate-spin" /> : null}
-          {failed ? t('chat.agentHandoff.retry') : t('chat.agentHandoff.stopAndSwitch')}
+          {failed
+            ? t(inspectionFailed ? 'chat.agentHandoff.retryInspection' : 'chat.agentHandoff.retry')
+            : t('chat.agentHandoff.stopAndSwitch')}
         </Button>
       </div>
     </>

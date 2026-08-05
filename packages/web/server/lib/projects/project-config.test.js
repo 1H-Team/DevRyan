@@ -108,7 +108,29 @@ describe('project-config runtime', () => {
       expect(raw.projectPlanFiles).toEqual([{ id: 'p1', path: '/tmp/plans/p1.md', createdAt: 2 }]);
       expect(raw.projectPath).toBe('/tmp/demo');
       expect(raw.scheduledTasks).toHaveLength(1);
-      expect(raw.version).toBe(1);
+      expect(raw.version).toBe(2);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('persists server-controlled task ownership and branch targets compatibly', async () => {
+    const { runtime, cleanup } = await createRuntime();
+    try {
+      const created = await runtime.upsertScheduledTask('project-test', {
+        name: 'Developer digest',
+        schedule: { kind: 'daily', time: '09:00', timezone: 'UTC' },
+        execution: { prompt: 'summarize', providerID: 'openai', modelID: 'gpt-4.1' },
+        ownerUserId: 'client-spoof',
+        target: { branchName: 'client-spoof' },
+      }, { ownerUserId: 'user-1', targetBranchName: 'dev' });
+
+      expect(created.task).toMatchObject({ ownerUserId: 'user-1', target: { branchName: 'dev' } });
+      const updated = await runtime.upsertScheduledTask('project-test', {
+        ...created.task,
+        name: 'Updated digest',
+      });
+      expect(updated.task).toMatchObject({ ownerUserId: 'user-1', target: { branchName: 'dev' } });
     } finally {
       await cleanup();
     }

@@ -8,7 +8,7 @@ Transport-neutral DevRyan-managed task contracts and scheduler policy shared by 
 
 - No third-party runtime dependencies.
 - Only `owner: "devryan"` records with `dvr_*` identities enter this boundary.
-- Full queued prompt input and optional parent-message `dispatchGroupId` remain bounded and private to the durable ledger; broadcast projections omit prompt, idempotency, and dispatch-group content.
+- Full queued prompt input and optional parent-message `dispatchGroupId` remain bounded and private to the durable ledger. The originating managed-tool `dispatchCallId` is durable and safely projected so a provisional chat row can reconcile to its exact task without label heuristics; broadcast projections still omit prompt, idempotency, and dispatch-group content.
 - Scheduler policy, persistence limits, transitions, cancellation, recovery, and result envelopes belong here rather than in UI or runtime adapters.
 
 ## Entrypoints

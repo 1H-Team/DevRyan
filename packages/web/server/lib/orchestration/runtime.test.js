@@ -383,10 +383,16 @@ describe('web managed orchestration runtime', () => {
     });
     const submitted = await runtime.handleRpc({
       method: 'submit',
-      params: submitParams(1, { dispatchGroupId: 'msg_parent', readOnly: true }),
+      params: submitParams(1, {
+        dispatchGroupId: 'msg_parent',
+        dispatchCallId: 'call_barrier_start',
+        readOnly: true,
+      }),
     });
     expect(submitted.task).not.toHaveProperty('dispatchGroupId');
     expect(submitted.task).not.toHaveProperty('readOnly');
+    expect(submitted.task.dispatchCallId).toBe('call_barrier_start');
+    expect(runs[0].task.dispatchCallId).toBe('call_barrier_start');
     expect(runs[0].task.readOnly).toBe(true);
     expect(await runtime.handleRpc({
       method: 'barrier',

@@ -37,6 +37,8 @@ export interface VoiceStatusIndicatorProps {
     className?: string;
     /** Optional normalized microphone level for waveform rendering */
     audioLevel?: number | null;
+    /** Optional status label override, for example local-model download progress */
+    statusLabel?: string;
 }
 
 const sizeClasses = {
@@ -142,6 +144,7 @@ export function VoiceStatusIndicator({
     size = 'md',
     className = '',
     audioLevel = null,
+    statusLabel,
 }: VoiceStatusIndicatorProps) {
     const { t } = useI18n();
     const config = statusConfig[status];
@@ -167,10 +170,10 @@ export function VoiceStatusIndicator({
             </div>
             {showLabel && status !== 'listening' && (
                 <span className={`typography-meta ${config.color}`}>
-                    {t(config.labelKey)}
+                    {statusLabel ?? t(config.labelKey)}
                 </span>
             )}
-            {status === 'listening' && <span className="sr-only">{t(config.labelKey)}</span>}
+            {status === 'listening' && <span className="sr-only">{statusLabel ?? t(config.labelKey)}</span>}
         </div>
     );
 }

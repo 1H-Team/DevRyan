@@ -79,7 +79,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Passes Slim's active preset into managed OpenCode with `OH_MY_OPENCODE_SLIM_PRESET`, copies the active Slim config into the runtime overlay `OPENCODE_CONFIG_DIR`, and keeps background subagents enabled for Slim orchestration.
 
 - `opencodeVersionPolicy.ts`
-  - Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.11 and exposes the upstream install command in diagnostics while still using the user/system `opencode` binary.
+  - Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.13 and exposes the upstream install command in diagnostics while still using the user/system `opencode` binary.
 
 - `bridge-settings-runtime.ts`
   - Settings read/write and OpenCode skills discovery via API for bridge consumers.
@@ -113,7 +113,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Publishes safe task projections without private dispatch groups, identity-only compaction removals, and corrupt-ledger recovery warnings to open webviews.
 
 - `managedOrchestrationPersistence.ts`
-  - Stores the versioned scheduler ledger under extension global storage with atomic replacement, mode `0600`, serialized writes, pre-barrier task hydration to `dispatchGroupId: null`, validation, and quarantine-on-corruption.
+  - Stores the versioned scheduler ledger under extension global storage with atomic replacement, mode `0600`, serialized writes, pre-barrier task hydration to `dispatchGroupId: null`, pre-correlation task hydration to `dispatchCallId: null`, validation, and quarantine-on-corruption.
 
 - `managedOrchestrationHost.ts`
   - Hosts the private bearer-authenticated `127.0.0.1` RPC endpoint used by the bundled managed-orchestration tool.

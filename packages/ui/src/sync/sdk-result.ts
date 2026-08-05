@@ -1,3 +1,5 @@
+import { getSdkErrorMessage } from '@/lib/opencode/sdk-error';
+
 export function unwrapSdkResult<T>(
   result: { data?: T; error?: unknown; response?: { status?: number } },
   name: string,
@@ -5,10 +7,8 @@ export function unwrapSdkResult<T>(
   if (result.error) {
     const rawError = result.error
     const status = result.response?.status
-    const message = typeof rawError === "object" && rawError !== null && "message" in rawError
-      ? String((rawError as { message?: unknown }).message)
-      : String(rawError)
-    const error = new Error(`${name} failed${status ? ` (${status})` : ""}: ${message}`)
+    const message = getSdkErrorMessage(rawError)
+    const error = new Error(`${name} failed${status !== undefined ? ` (${status})` : ""}: ${message}`)
     if (status !== undefined) {
       ;(error as Error & { status?: number }).status = status
     }

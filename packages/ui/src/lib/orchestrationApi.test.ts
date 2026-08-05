@@ -69,13 +69,20 @@ describe('managed orchestration API', () => {
         variant: 'high',
       },
     ]);
+    expect(requests.map(({ init }) => new Headers(init?.headers).get('X-DevRyan-CSRF'))).toEqual([
+      '1',
+      '1',
+    ]);
   });
 
   test('posts inspection and confirmed handoff requests without changing their idempotency scope', async () => {
-    const requests: Array<Record<string, unknown>> = [];
+    const requests: Array<{ body: Record<string, unknown>; csrf: string | null }> = [];
     const api = createManagedOrchestrationApi({
       fetchImpl: async (_input, init) => {
-        requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        requests.push({
+          body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+          csrf: new Headers(init?.headers).get('X-DevRyan-CSRF'),
+        });
         return Response.json({
           rootSessionId: 'ses_root',
           fromMode: 'orchestrator',
@@ -102,16 +109,22 @@ describe('managed orchestration API', () => {
     });
 
     expect(requests).toEqual([{
-      rootSessionId: 'ses_root',
-      fromMode: 'orchestrator',
-      toMode: 'builder',
-      confirm: false,
+      body: {
+        rootSessionId: 'ses_root',
+        fromMode: 'orchestrator',
+        toMode: 'builder',
+        confirm: false,
+      },
+      csrf: '1',
     }, {
-      rootSessionId: 'ses_root',
-      fromMode: 'orchestrator',
-      toMode: 'builder',
-      confirm: true,
-      idempotencyKey: 'switch-ui-01',
+      body: {
+        rootSessionId: 'ses_root',
+        fromMode: 'orchestrator',
+        toMode: 'builder',
+        confirm: true,
+        idempotencyKey: 'switch-ui-01',
+      },
+      csrf: '1',
     }]);
   });
 

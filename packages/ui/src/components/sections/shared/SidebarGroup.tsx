@@ -1,3 +1,4 @@
+import { getSafeStorage } from '@/stores/utils/safeStorage';
 import React, { useState, useEffect } from 'react';
 import { RiArrowDownSLine } from '@remixicon/react';
 import { cn } from '@/lib/utils';
@@ -34,7 +35,7 @@ export const SidebarGroup: React.FC<SidebarGroupProps> = ({
 
   const [expanded, setExpanded] = useState<boolean>(() => {
     try {
-      const stored = localStorage.getItem(key);
+      const stored = getSafeStorage().getItem(key);
       if (stored !== null) return stored === 'true';
     } catch {
       // ignore storage errors
@@ -44,7 +45,7 @@ export const SidebarGroup: React.FC<SidebarGroupProps> = ({
 
   useEffect(() => {
     try {
-      localStorage.setItem(key, String(expanded));
+      getSafeStorage().setItem(key, String(expanded));
     } catch {
       // ignore storage errors
     }

@@ -34,7 +34,8 @@ export interface SortableProjectItemProps {
   isRepo: boolean;
   isDesktopShell: boolean;
   isStuck: boolean;
-  hideDirectoryControls: boolean;
+  hideProjectAdminControls: boolean;
+  hideWorktreeControls: boolean;
   mobileVariant: boolean;
   alwaysShowActions: boolean;
   onToggle: () => void;
@@ -68,7 +69,8 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
   isRepo,
   isDesktopShell,
   isStuck,
-  hideDirectoryControls,
+  hideProjectAdminControls,
+  hideWorktreeControls,
   alwaysShowActions,
   onToggle,
   onNewSession,
@@ -175,7 +177,7 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
                       {...listeners}
                       className={cn(
                         'flex-1 min-w-0 flex items-center gap-1.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 rounded-md cursor-grab active:cursor-grabbing transition-[padding]',
-                        isRepo && !hideDirectoryControls
+                        isRepo && !hideWorktreeControls
                           ? (alwaysShowActions ? 'pr-20' : 'pr-7 group-hover/project:pr-20 group-focus-within/project:pr-20')
                           : (alwaysShowActions ? 'pr-14' : 'pr-7 group-hover/project:pr-14 group-focus-within/project:pr-14'),
                       )}
@@ -220,7 +222,7 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
                 'absolute top-1/2 z-10 flex -translate-y-1/2 items-center gap-1',
                 showCreateButtons ? 'right-7' : 'right-0.5',
               )}>
-                {showCreateButtons && isRepo && !hideDirectoryControls && onNewWorktreeSession ? (
+                {showCreateButtons && isRepo && !hideWorktreeControls && onNewWorktreeSession ? (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
@@ -244,7 +246,7 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
                   </Tooltip>
                 ) : null}
 
-                <DropdownMenu
+                {!hideProjectAdminControls ? <DropdownMenu
                   open={isMenuOpen}
                   onOpenChange={handleMenuOpenChange}
                 >
@@ -268,7 +270,7 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="min-w-[180px]">
-                      {showCreateButtons && !isRepo && !hideDirectoryControls && onNewSession && (
+                      {showCreateButtons && !isRepo && onNewSession && (
                       <DropdownMenuItem onClick={onNewSession}>
                         <RiAddLine className="mr-1.5 h-4 w-4" />
                         {t('sessions.sidebar.project.actions.newSession')}
@@ -286,7 +288,7 @@ export const SortableProjectItem: React.FC<SortableProjectItemProps> = ({
                       {t('sessions.sidebar.project.actions.closeProject')}
                     </DropdownMenuItem>
                     </DropdownMenuContent>
-                  </DropdownMenu>
+                  </DropdownMenu> : null}
               </div>
 
               {showCreateButtons && onNewSession ? (

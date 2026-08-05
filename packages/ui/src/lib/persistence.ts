@@ -1,3 +1,4 @@
+import { getSafeStorage } from '@/stores/utils/safeStorage';
 import type { DesktopSettings } from '@/lib/desktop';
 import { createProjectIdFromPath } from '@/lib/projectId';
 import { useUIStore } from '@/stores/useUIStore';
@@ -26,28 +27,28 @@ const persistToLocalStorage = (settings: DesktopSettings) => {
   }
 
   if (settings.themeId) {
-    localStorage.setItem('selectedThemeId', settings.themeId);
+    getSafeStorage().setItem('selectedThemeId', settings.themeId);
   }
   if (typeof settings.themeCatalogVersion === 'number' && settings.themeCatalogVersion >= THEME_CATALOG_VERSION) {
-    localStorage.setItem('themeCatalogVersion', String(settings.themeCatalogVersion));
+    getSafeStorage().setItem('themeCatalogVersion', String(settings.themeCatalogVersion));
   }
   if (settings.themeVariant) {
-    localStorage.setItem('selectedThemeVariant', settings.themeVariant);
+    getSafeStorage().setItem('selectedThemeVariant', settings.themeVariant);
   }
   if (settings.lightThemeId) {
-    localStorage.setItem('lightThemeId', settings.lightThemeId);
+    getSafeStorage().setItem('lightThemeId', settings.lightThemeId);
   }
   if (settings.darkThemeId) {
-    localStorage.setItem('darkThemeId', settings.darkThemeId);
+    getSafeStorage().setItem('darkThemeId', settings.darkThemeId);
   }
   if (typeof settings.useSystemTheme === 'boolean') {
-    localStorage.setItem('useSystemTheme', String(settings.useSystemTheme));
+    getSafeStorage().setItem('useSystemTheme', String(settings.useSystemTheme));
   }
   if (settings.lastDirectory) {
-    localStorage.setItem('lastDirectory', settings.lastDirectory);
+    getSafeStorage().setItem('lastDirectory', settings.lastDirectory);
   }
   if (settings.homeDirectory) {
-    localStorage.setItem('homeDirectory', settings.homeDirectory);
+    getSafeStorage().setItem('homeDirectory', settings.homeDirectory);
     // Electron's preload exposes __OPENCHAMBER_HOME__ as a read-only
     // contextBridge property; assignment throws TypeError there. In VSCode
     // webview and plain web runtime the property is writable. Swallow the
@@ -59,19 +60,19 @@ const persistToLocalStorage = (settings: DesktopSettings) => {
     }
   }
   if (Array.isArray(settings.projects) && settings.projects.length > 0) {
-    localStorage.setItem('projects', JSON.stringify(settings.projects));
+    getSafeStorage().setItem('projects', JSON.stringify(settings.projects));
   } else {
-    localStorage.removeItem('projects');
+    getSafeStorage().removeItem('projects');
   }
   if (settings.activeProjectId) {
-    localStorage.setItem('activeProjectId', settings.activeProjectId);
+    getSafeStorage().setItem('activeProjectId', settings.activeProjectId);
   } else {
-    localStorage.removeItem('activeProjectId');
+    getSafeStorage().removeItem('activeProjectId');
   }
   if (Array.isArray(settings.pinnedDirectories) && settings.pinnedDirectories.length > 0) {
-    localStorage.setItem('pinnedDirectories', JSON.stringify(settings.pinnedDirectories));
+    getSafeStorage().setItem('pinnedDirectories', JSON.stringify(settings.pinnedDirectories));
   } else {
-    localStorage.removeItem('pinnedDirectories');
+    getSafeStorage().removeItem('pinnedDirectories');
   }
 
   if (Array.isArray(settings.projects) && settings.projects.length > 0) {
@@ -80,31 +81,31 @@ const persistToLocalStorage = (settings: DesktopSettings) => {
       .map((project) => project.id)
       .filter((id): id is string => typeof id === 'string' && id.length > 0);
     if (collapsed.length > 0) {
-      localStorage.setItem('oc.sessions.projectCollapse', JSON.stringify(collapsed));
+      getSafeStorage().setItem('oc.sessions.projectCollapse', JSON.stringify(collapsed));
     } else {
-      localStorage.removeItem('oc.sessions.projectCollapse');
+      getSafeStorage().removeItem('oc.sessions.projectCollapse');
     }
   }
   if (typeof settings.gitmojiEnabled === 'boolean') {
-    localStorage.setItem('gitmojiEnabled', String(settings.gitmojiEnabled));
+    getSafeStorage().setItem('gitmojiEnabled', String(settings.gitmojiEnabled));
   } else {
-    localStorage.removeItem('gitmojiEnabled');
+    getSafeStorage().removeItem('gitmojiEnabled');
   }
   if (typeof settings.directoryShowHidden === 'boolean') {
-    localStorage.setItem('directoryTreeShowHidden', settings.directoryShowHidden ? 'true' : 'false');
+    getSafeStorage().setItem('directoryTreeShowHidden', settings.directoryShowHidden ? 'true' : 'false');
   }
   if (typeof settings.filesViewShowGitignored === 'boolean') {
-    localStorage.setItem('filesViewShowGitignored', settings.filesViewShowGitignored ? 'true' : 'false');
+    getSafeStorage().setItem('filesViewShowGitignored', settings.filesViewShowGitignored ? 'true' : 'false');
   }
   if (typeof settings.openInAppId === 'string' && settings.openInAppId.length > 0) {
-    localStorage.setItem('openInAppId', settings.openInAppId);
+    getSafeStorage().setItem('openInAppId', settings.openInAppId);
   }
   if (typeof settings.pwaAppName === 'string') {
     const normalized = settings.pwaAppName.trim().replace(/\s+/g, ' ').slice(0, 64);
     if (normalized.length > 0) {
-      localStorage.setItem('openchamber.pwaName', normalized);
+      getSafeStorage().setItem('openchamber.pwaName', normalized);
     } else {
-      localStorage.removeItem('openchamber.pwaName');
+      getSafeStorage().removeItem('openchamber.pwaName');
     }
   }
   if (typeof settings.mobileKeyboardMode === 'string') {
@@ -217,7 +218,11 @@ const sanitizeProjects = (value: unknown): DesktopSettings['projects'] | undefin
     const normalizedPath = rawPath === '/' ? rawPath : rawPath.replace(/\\/g, '/').replace(/\/+$/, '');
     if (!normalizedPath) continue;
 
-    const id = createProjectIdFromPath(normalizedPath);
+    const suppliedOpaqueId = typeof candidate.id === 'string'
+      && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(candidate.id.trim())
+      ? candidate.id.trim()
+      : '';
+    const id = suppliedOpaqueId || createProjectIdFromPath(normalizedPath);
     if (!id) continue;
 
     if (seenIds.has(id) || seenPaths.has(normalizedPath)) continue;
@@ -296,13 +301,19 @@ const sanitizeManagedRemoteTunnelPresets = (value: unknown): DesktopSettings['ma
     const id = typeof candidate.id === 'string' ? candidate.id.trim() : '';
     const name = typeof candidate.name === 'string' ? candidate.name.trim() : '';
     const hostname = typeof candidate.hostname === 'string' ? candidate.hostname.trim().toLowerCase() : '';
+    const originPort = typeof candidate.originPort === 'number'
+      && Number.isInteger(candidate.originPort)
+      && candidate.originPort >= 1024
+      && candidate.originPort <= 65535
+      ? candidate.originPort
+      : 3000;
 
     if (!id || !name || !hostname) continue;
     if (seenIds.has(id) || seenHostnames.has(hostname)) continue;
     seenIds.add(id);
     seenHostnames.add(hostname);
 
-    result.push({ id, name, hostname });
+    result.push({ id, name, hostname, originPort });
   }
 
   return result;
@@ -1303,6 +1314,10 @@ const persistSettingsChanges = async (changes: Partial<DesktopSettings>): Promis
       return null;
     } catch (error) {
       console.warn('Failed to update settings via runtime settings API:', error);
+      // A registered runtime API is authoritative. Retrying through fetch
+      // repeats the same policy rejection (or transport failure) and turns one
+      // failed user action into duplicate requests and console noise.
+      return null;
     }
   }
 

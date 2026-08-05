@@ -28,6 +28,7 @@ import { PROJECT_ICON_MAP, PROJECT_COLOR_MAP, getProjectIconImageUrl } from '@/l
 import type { ProjectEntry } from '@/lib/api/types';
 import { startDesktopWindowDrag } from '@/lib/desktopNative';
 import { useI18n } from '@/lib/i18n';
+import { useAuthPrincipal } from '@/lib/authSession';
 
 /** Max file size in bytes (10MB) */
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -96,6 +97,7 @@ export const MultiRunLauncher: React.FC<MultiRunLauncherProps> = ({
   isWindowed = false,
 }) => {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
   const [name, setName] = React.useState('');
   const [prompt, setPrompt] = React.useState(() => initialPrompt ?? '');
   const [selectedModels, setSelectedModels] = React.useState<ModelSelectionWithId[]>([]);
@@ -694,6 +696,9 @@ export const MultiRunLauncher: React.FC<MultiRunLauncherProps> = ({
                   value={worktreeBaseBranch}
                   onChange={setWorktreeBaseBranch}
                   id="multirun-worktree-base-branch"
+                  allowedBranches={principal.scope === 'managed' && principal.role !== 'admin'
+                    ? selectedProject?.branches?.map((branch) => branch.name) ?? []
+                    : undefined}
                 />
               </div>
 

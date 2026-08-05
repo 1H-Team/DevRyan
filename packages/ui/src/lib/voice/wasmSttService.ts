@@ -13,7 +13,16 @@ export type WasmModelInfo = {
   description: string;
 };
 
+export const DEFAULT_WASM_STT_MODEL = 'Xenova/whisper-tiny';
+
 export const WASM_MODELS: WasmModelInfo[] = [
+  {
+    id: DEFAULT_WASM_STT_MODEL,
+    name: 'Whisper Tiny',
+    size: '~40 MB',
+    languages: 'Multilingual',
+    description: 'Fast multilingual model. Default for local voice input.',
+  },
   {
     id: 'Xenova/whisper-tiny.en',
     name: 'Whisper Tiny (EN)',
@@ -26,7 +35,7 @@ export const WASM_MODELS: WasmModelInfo[] = [
     name: 'Whisper Base (EN)',
     size: '~73 MB',
     languages: 'English',
-    description: 'Balanced speed and accuracy. Default for local voice input.',
+    description: 'Balanced speed and accuracy for English dictation.',
   },
   {
     id: 'Xenova/whisper-small.en',
@@ -76,14 +85,14 @@ class WasmSttService {
   private onError: ErrorCallback | null = null;
   private onAudioLevel: AudioLevelCallback | null = null;
   private finishResolver: (() => void) | null = null;
+  private loadPromise: Promise<void> | null = null;
+  private modelStatusListeners = new Set<(status: WasmModelStatus) => void>();
   private language = 'en';
   private config: Required<WasmSttConfig> = {
     deviceId: '',
     silenceThresholdDb: -45,
     silenceHoldMs: 1500,
   };
-
-  onModelStatusChange: ((status: WasmModelStatus) => void) | null = null;
 
   configure(config: WasmSttConfig): void {
     this.config = { ...this.config, ...config };
@@ -93,6 +102,7 @@ class WasmSttService {
     return typeof window !== 'undefined'
       && typeof navigator !== 'undefined'
       && typeof navigator.mediaDevices?.getUserMedia === 'function'
+      && typeof window.Worker !== 'undefined'
       && typeof window.MediaRecorder !== 'undefined'
       && typeof window.AudioContext !== 'undefined';
   }
@@ -105,15 +115,29 @@ class WasmSttService {
     return this.currentModelId;
   }
 
+  subscribeModelStatus(listener: (status: WasmModelStatus) => void): () => void {
+    this.modelStatusListeners.add(listener);
+    listener(this.modelStatus);
+    return () => {
+      this.modelStatusListeners.delete(listener);
+    };
+  }
+
   async loadModel(modelId: string): Promise<void> {
     if (this.currentModelId === modelId && this.modelStatus.state === 'ready') return;
-    if (this.modelStatus.state === 'downloading' || this.modelStatus.state === 'loading') return;
+    if (this.loadPromise) {
+      if (this.currentModelId === modelId) {
+        return this.loadPromise;
+      }
+      await this.loadPromise.catch(() => {});
+      return this.loadModel(modelId);
+    }
 
     this.terminateWorker();
     this.currentModelId = modelId;
     this.setModelStatus({ state: 'downloading', progress: 0 });
 
-    try {
+    this.loadPromise = (async () => {
       this.worker = new Worker(new URL('./wasmSttWorker.ts', import.meta.url), { type: 'module' });
       await new Promise<void>((resolve, reject) => {
         const timer = window.setTimeout(() => reject(new Error('Worker initialization timed out')), 10_000);
@@ -143,12 +167,18 @@ class WasmSttService {
       });
 
       this.setModelStatus({ state: 'ready' });
+    })();
+
+    try {
+      await this.loadPromise;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to load Whisper model';
       this.terminateWorker();
       this.currentModelId = null;
       this.setModelStatus({ state: 'error', error: message });
       throw error;
+    } finally {
+      this.loadPromise = null;
     }
   }
 
@@ -226,7 +256,9 @@ class WasmSttService {
 
   private setModelStatus(status: WasmModelStatus): void {
     this.modelStatus = status;
-    this.onModelStatusChange?.(status);
+    for (const listener of this.modelStatusListeners) {
+      listener(status);
+    }
   }
 
   private terminateWorker(): void {
@@ -434,6 +466,7 @@ class WasmSttService {
   }
 
   private resolveLanguageHint(): string | undefined {
+    if (this.currentModelId?.endsWith('.en')) return 'en';
     const normalized = this.language.trim();
     if (!normalized || normalized === 'auto') return undefined;
     return normalized.split('-')[0];

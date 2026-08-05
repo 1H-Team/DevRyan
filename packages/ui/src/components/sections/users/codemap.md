@@ -1,0 +1,81 @@
+# packages/ui/src/components/sections/users/
+
+## Responsibility
+
+Role-aware shared-host user and access administration inside Settings.
+
+## Design
+
+- `UserManagementPage.tsx` is a slim container: users table → per-user detail
+  page (in-page `selectedUserId` drill-down with a Back button), plus the
+  one-time temporary-password / invite-URL banners. In local web/Electron mode
+  it renders the standalone GitHub account controls instead of requesting the
+  managed-only `/api/admin/*` datasets; VS Code receives an explanatory state.
+- `useAdminUsersData.ts` owns all fetching with per-domain reloaders
+  (`reloadUsers`, `reloadInvites`, `reloadActivity`, `reloadProjects`,
+  `reloadRoles`, `reloadGithubAccounts`, `reloadAll`) so mutations refresh only
+  what changed.
+- `UsersTable.tsx` lists users (row click opens detail; admin-only) with the
+  Create User button; `CreateUserDialog.tsx` creates accounts — non-admin roles
+  require an initial project and branch, while admins may omit them.
+- `UserDetail.tsx` owns the accessible Core Details / Policy Overrides /
+  Analytics tab shell. Panels remain mounted so profile, branch, permission,
+  capability, and advanced-JSON drafts survive tab changes. Core contains
+  Profile, Projects & Branches, and Access Links; Policy uses three independent
+  collapsibles with explicit `Inherit (On|Off)` effective values.
+- `UserAnalytics.tsx` lazily loads administrator-only daily analytics for one
+  user/date/time zone, renders the variable-length activity ribbon and
+  event-derived work blocks, and browses prompt-only plus safe change and
+  interaction detail. `userAnalyticsPresentation.ts` formats immutable
+  send-time model identifiers for prompt rows, including legacy missing-data
+  fallbacks. Senior developers retain the sanitized audit list.
+- `GitHubAccountsSection.tsx` sits directly below Users for administrators. It
+  lists the token-free host account inventory, shows the exclusive profile
+  owner, atomically reassigns credentials to visible humans or the signed-in
+  administrator, reuses the shared OAuth device flow, and disconnects only
+  unassigned credentials. A hidden agent-test owner is shown only as the
+  current value so an administrator can move away from it without exposing
+  other fixtures as targets.
+- `openchamber/GitHubSettings.tsx` is mounted here for local administrators so
+  connect, switch, disconnect, and `gh` CLI fallback controls share the User
+  Management destination used by managed account assignment.
+- `SettingsPermissionMatrix.tsx` renders the shared category-grouped Read/Edit
+  ledger: binary role cells and tri-state inherited/On/Off user cells.
+- `ProjectsSection.tsx` (register-project dialog), `RolePoliciesSection.tsx`,
+  `AccessLinksSection.tsx` (`AccessLinksList` reused by detail),
+  `ActivitySection.tsx` (`ActivityList` reused by detail), and
+  `ConfirmActionDialog.tsx` (replaces `window.confirm`) complete the overview.
+- Senior developers can review non-admin users and their activity and manage
+  targeted access links; mutation controls for accounts, assignments, policies,
+  passwords, export, and purge are rendered only for administrators.
+- Project paths remain administrator-only inputs. Assignment controls expose
+  project labels, branch-visibility filters, and one default branch. They do
+  not choose credentials; branch saves derive the GitHub identity from the
+  user's saved profile.
+- Account selectors offer only unassigned credentials plus the current user's
+  saved credential. The server and database enforce the same one-to-one rule.
+- The server omits profiles classified as `agent_test`, keeping AI-only feature
+  fixtures out of the Users list and all human account selectors.
+
+## Flow
+
+1. Load the current principal from the auth-session snapshot.
+2. Fetch only the administration datasets allowed by the effective User
+   Management Read/Edit permission.
+3. Submit every mutation with the DevRyan CSRF header.
+4. Refresh the affected server state and surface generated passwords or
+   targeted invite links transiently for out-of-band delivery.
+5. Initialize one bounded session-storage interaction collector after the auth
+   gate mounts. Programmatic and native copies emit metadata only, and explicit
+   file navigation emits project-relative paths without blocking the action.
+
+## Integration
+
+- Routed by `components/views/SettingsView.tsx` through the `users` settings slug.
+- Consumes `/api/admin/*` contracts owned by
+  `packages/web/server/lib/multi-user/runtime.js`.
+- `lib/interactionAnalytics.ts` owns low-frequency file-open/copy batching;
+  `lib/clipboard.ts` is the single programmatic copy boundary and suppresses
+  duplicate native-copy observations for its `execCommand` fallback.
+- Shared primitives: `components/ui/table.tsx`, `components/ui/dialog.tsx`,
+  `sections/shared/SettingsPageLayout` and `SettingsSection`.

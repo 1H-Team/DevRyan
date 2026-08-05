@@ -11,38 +11,16 @@ import { usePluginsStore } from '@/stores/usePluginsStore';
 import {
   RiArrowLeftSLine,
   RiListUnordered,
+  RiLogoutBoxRLine,
   RiRestartLine,
 } from '@remixicon/react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
-import { AgentsSidebar } from '@/components/sections/agents/AgentsSidebar';
-import { AgentsPage } from '@/components/sections/agents/AgentsPage';
-import { BehaviorPage } from '@/components/sections/behavior/BehaviorPage';
-import { CommandsSidebar } from '@/components/sections/commands/CommandsSidebar';
-import { CommandsPage } from '@/components/sections/commands/CommandsPage';
-import { McpSidebar } from '@/components/sections/mcp/McpSidebar';
-import { McpPage } from '@/components/sections/mcp/McpPage';
-import { SkillsSidebar } from '@/components/sections/skills/SkillsSidebar';
-import { SkillsPage } from '@/components/sections/skills/SkillsPage';
-import { PluginsSidebar } from '@/components/sections/plugins/PluginsSidebar';
-import { PluginsPage } from '@/components/sections/plugins/PluginsPage';
-import { ProjectsSidebar } from '@/components/sections/projects/ProjectsSidebar';
-import { ProjectsPage } from '@/components/sections/projects/ProjectsPage';
-import { RemoteInstancesSidebar } from '@/components/sections/remote-instances/RemoteInstancesSidebar';
-import { RemoteInstancesPage } from '@/components/sections/remote-instances/RemoteInstancesPage';
-import { ProvidersSidebar } from '@/components/sections/providers/ProvidersSidebar';
-import { ProvidersPage } from '@/components/sections/providers/ProvidersPage';
-import { UsageSidebar } from '@/components/sections/usage/UsageSidebar';
-import { UsagePage } from '@/components/sections/usage/UsagePage';
-import { MagicPromptsSidebar } from '@/components/sections/magic-prompts/MagicPromptsSidebar';
-import { MagicPromptsPage } from '@/components/sections/magic-prompts/MagicPromptsPage';
-import { GitPage } from '@/components/sections/git-identities/GitPage';
 import type { OpenChamberSection } from '@/components/sections/openchamber/types';
-import { OpenChamberPage } from '@/components/sections/openchamber/OpenChamberPage';
-import { AboutSettings } from '@/components/sections/openchamber/AboutSettings';
 import { useDeviceInfo } from '@/lib/device';
 import { isDesktopShell, isVSCodeRuntime, isWebRuntime } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
+import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
 import {
   SETTINGS_PAGE_METADATA,
@@ -66,6 +44,93 @@ import {
   resolveMobileSettingsBackStage,
   type MobileStage,
 } from './SettingsView.mobileNavigation';
+import { canAccessSettingsPage, useAuthPrincipal } from '@/lib/authSession';
+import { SettingsPagePermissionBoundary } from '@/lib/settings/permission-context';
+import { setStoragePrincipal } from '@/stores/utils/safeStorage';
+
+const LazyAgentsSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/agents/AgentsSidebar').then((module) => ({ default: module.AgentsSidebar })),
+);
+const LazyAgentsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/agents/AgentsPage').then((module) => ({ default: module.AgentsPage })),
+);
+const LazyBehaviorPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/behavior/BehaviorPage').then((module) => ({ default: module.BehaviorPage })),
+);
+const LazyCommandsSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/commands/CommandsSidebar').then((module) => ({ default: module.CommandsSidebar })),
+);
+const LazyCommandsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/commands/CommandsPage').then((module) => ({ default: module.CommandsPage })),
+);
+const LazyMcpSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/mcp/McpSidebar').then((module) => ({ default: module.McpSidebar })),
+);
+const LazyMcpPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/mcp/McpPage').then((module) => ({ default: module.McpPage })),
+);
+const LazySkillsSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/skills/SkillsSidebar').then((module) => ({ default: module.SkillsSidebar })),
+);
+const LazySkillsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/skills/SkillsPage').then((module) => ({ default: module.SkillsPage })),
+);
+const LazyPluginsSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/plugins/PluginsSidebar').then((module) => ({ default: module.PluginsSidebar })),
+);
+const LazyPluginsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/plugins/PluginsPage').then((module) => ({ default: module.PluginsPage })),
+);
+const LazyProjectsSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/projects/ProjectsSidebar').then((module) => ({ default: module.ProjectsSidebar })),
+);
+const LazyProjectsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/projects/ProjectsPage').then((module) => ({ default: module.ProjectsPage })),
+);
+const LazyRemoteInstancesSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/remote-instances/RemoteInstancesSidebar').then((module) => ({ default: module.RemoteInstancesSidebar })),
+);
+const LazyRemoteInstancesPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/remote-instances/RemoteInstancesPage').then((module) => ({ default: module.RemoteInstancesPage })),
+);
+const LazyProvidersSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/providers/ProvidersSidebar').then((module) => ({ default: module.ProvidersSidebar })),
+);
+const LazyProvidersPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/providers/ProvidersPage').then((module) => ({ default: module.ProvidersPage })),
+);
+const LazyUsageSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/usage/UsageSidebar').then((module) => ({ default: module.UsageSidebar })),
+);
+const LazyUsagePage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/usage/UsagePage').then((module) => ({ default: module.UsagePage })),
+);
+const LazyMagicPromptsSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/magic-prompts/MagicPromptsSidebar').then((module) => ({ default: module.MagicPromptsSidebar })),
+);
+const LazyMagicPromptsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/magic-prompts/MagicPromptsPage').then((module) => ({ default: module.MagicPromptsPage })),
+);
+const LazyGitPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/git-identities/GitPage').then((module) => ({ default: module.GitPage })),
+);
+const LazyOpenChamberPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/openchamber/OpenChamberPage').then((module) => ({ default: module.OpenChamberPage })),
+);
+const LazyAboutSettings = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/openchamber/AboutSettings').then((module) => ({ default: module.AboutSettings })),
+);
+const LazyUserManagementPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/users/UserManagementPage').then((module) => ({ default: module.UserManagementPage })),
+);
+
+const SettingsSectionBoundary: React.FC<React.PropsWithChildren> = ({ children }) => (
+  <ErrorBoundary>
+    <React.Suspense fallback={<div className="h-full min-h-0 bg-background" aria-busy="true" />}>
+      {children}
+    </React.Suspense>
+  </ErrorBoundary>
+);
 
 // Same constraints as main sidebar
 const SETTINGS_NAV_MIN_WIDTH = 176;
@@ -97,6 +162,21 @@ function isPageAvailable(page: SettingsPageMeta, ctx: SettingsRuntimeContext): b
 
 const SettingsHome: React.FC<{ onOpen: (slug: SettingsPageSlug) => void }> = ({ onOpen }) => {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
+  const cards = ([
+    { slug: 'users', title: 'User Management', description: 'Manage roles, projects, GitHub accounts, branch grants, and activity.' },
+    { slug: 'appearance', title: 'Appearance', description: 'Theme, typography, spacing, and interface preferences.' },
+    { slug: 'chat', title: 'Chat', description: 'Message, tool, reasoning, and rendering preferences.' },
+    { slug: 'sessions', title: 'Sessions', description: 'Defaults, retention, and session behavior.' },
+    { slug: 'notifications', title: 'Notifications', description: 'Choose when and how DevRyan notifies you.' },
+    { slug: 'providers', title: t('settings.view.home.cards.providers.title'), description: t('settings.view.home.cards.providers.description') },
+    { slug: 'agents', title: t('settings.view.home.cards.agents.title'), description: t('settings.view.home.cards.agents.description') },
+    { slug: 'skills.catalog', title: t('settings.view.home.cards.skillsCatalog.title'), description: t('settings.view.home.cards.skillsCatalog.description') },
+    { slug: 'mcp', title: t('settings.view.home.cards.mcp.title'), description: t('settings.view.home.cards.mcp.description') },
+    { slug: 'usage', title: t('settings.view.home.cards.usage.title'), description: t('settings.view.home.cards.usage.description') },
+  ] satisfies Array<{ slug: SettingsPageSlug; title: string; description: string }>).filter(
+    (card) => canAccessSettingsPage(principal, card.slug),
+  );
   return (
     <div className="h-full overflow-auto">
       <div className="mx-auto w-full max-w-3xl px-6 py-6 space-y-6">
@@ -106,65 +186,20 @@ const SettingsHome: React.FC<{ onOpen: (slug: SettingsPageSlug) => void }> = ({ 
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
-          <button
-            type="button"
-            onClick={() => onOpen('providers')}
-            className={cn(
-              'rounded-lg border border-border bg-[var(--surface-elevated)] p-4 text-left',
-              'hover:bg-[var(--interactive-hover)] transition-colors'
-            )}
-          >
-            <div className="typography-ui-label text-foreground">{t('settings.view.home.cards.providers.title')}</div>
-            <div className="typography-micro text-muted-foreground/70">{t('settings.view.home.cards.providers.description')}</div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onOpen('agents')}
-            className={cn(
-              'rounded-lg border border-border bg-[var(--surface-elevated)] p-4 text-left',
-              'hover:bg-[var(--interactive-hover)] transition-colors'
-            )}
-          >
-            <div className="typography-ui-label text-foreground">{t('settings.view.home.cards.agents.title')}</div>
-            <div className="typography-micro text-muted-foreground/70">{t('settings.view.home.cards.agents.description')}</div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onOpen('skills.catalog')}
-            className={cn(
-              'rounded-lg border border-border bg-[var(--surface-elevated)] p-4 text-left',
-              'hover:bg-[var(--interactive-hover)] transition-colors'
-            )}
-          >
-            <div className="typography-ui-label text-foreground">{t('settings.view.home.cards.skillsCatalog.title')}</div>
-            <div className="typography-micro text-muted-foreground/70">{t('settings.view.home.cards.skillsCatalog.description')}</div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onOpen('mcp')}
-            className={cn(
-              'rounded-lg border border-border bg-[var(--surface-elevated)] p-4 text-left',
-              'hover:bg-[var(--interactive-hover)] transition-colors'
-            )}
-          >
-            <div className="typography-ui-label text-foreground">{t('settings.view.home.cards.mcp.title')}</div>
-            <div className="typography-micro text-muted-foreground/70">{t('settings.view.home.cards.mcp.description')}</div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => onOpen('usage')}
-            className={cn(
-              'rounded-lg border border-border bg-[var(--surface-elevated)] p-4 text-left',
-              'hover:bg-[var(--interactive-hover)] transition-colors'
-            )}
-          >
-            <div className="typography-ui-label text-foreground">{t('settings.view.home.cards.usage.title')}</div>
-            <div className="typography-micro text-muted-foreground/70">{t('settings.view.home.cards.usage.description')}</div>
-          </button>
+          {cards.map((card) => (
+            <button
+              key={card.slug}
+              type="button"
+              onClick={() => onOpen(card.slug)}
+              className={cn(
+                'rounded-lg border border-border bg-[var(--surface-elevated)] p-4 text-left',
+                'hover:bg-[var(--interactive-hover)] transition-colors'
+              )}
+            >
+              <div className="typography-ui-label text-foreground">{card.title}</div>
+              <div className="typography-micro text-muted-foreground/70">{card.description}</div>
+            </button>
+          ))}
         </div>
       </div>
     </div>
@@ -173,6 +208,7 @@ const SettingsHome: React.FC<{ onOpen: (slug: SettingsPageSlug) => void }> = ({ 
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile }) => {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
   const deviceInfo = useDeviceInfo();
   const isMobile = forceMobile ?? deviceInfo.isMobile;
 
@@ -202,13 +238,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
 
   const runtimeCtx = React.useMemo(() => buildRuntimeContext(isDesktopApp), [isDesktopApp]);
 
+  const handleLogout = React.useCallback(async () => {
+    const response = await fetch('/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Accept: 'application/json', 'X-DevRyan-CSRF': '1' },
+    });
+    const payload = await response.json().catch(() => ({})) as { localSessionCleared?: boolean };
+    if (!response.ok && payload.localSessionCleared !== true) return;
+    setStoragePrincipal('anonymous');
+    window.location.reload();
+  }, []);
+
   const visiblePages = React.useMemo(() => {
     return SETTINGS_PAGE_METADATA
       .filter((page) => page.slug !== 'home')
+      .filter((page) => canAccessSettingsPage(principal, page.slug))
       .filter((page) => isPageAvailable(page, runtimeCtx))
-      .filter((page) => !(runtimeCtx.isVSCode && page.slug === 'projects'))
-      .filter((page) => !(isMobile && page.slug === 'shortcuts'));
-  }, [runtimeCtx, isMobile]);
+      .filter((page) => !(runtimeCtx.isVSCode && page.slug === 'projects'));
+  }, [runtimeCtx, principal]);
+
+  React.useEffect(() => {
+    if (settingsSlug !== 'home' && !canAccessSettingsPage(principal, settingsSlug)) {
+      setSettingsPage('home');
+      setMobileStage('nav');
+    }
+  }, [principal, setSettingsPage, settingsSlug]);
 
   const groupedVisiblePages = React.useMemo(() => {
     const visiblePageBySlug = new Map(visiblePages.map((page) => [page.slug, page]));
@@ -356,6 +411,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
 
   const getPageTitle = React.useCallback((slug: SettingsPageSlug): string => {
     switch (slug) {
+      case 'users':
+        return 'User Management';
       case 'projects':
         return t('settings.page.projects.title');
       case 'remote-instances':
@@ -418,31 +475,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
   const renderPageSidebar = React.useCallback((slug: SettingsPageSlug, opts: { onItemSelect?: () => void }) => {
     switch (slug) {
       case 'projects':
-        return <ProjectsSidebar onItemSelect={opts.onItemSelect} />;
+        return <LazyProjectsSidebar onItemSelect={opts.onItemSelect} />;
       case 'remote-instances':
-        return <RemoteInstancesSidebar onItemSelect={opts.onItemSelect} />;
+        return <LazyRemoteInstancesSidebar onItemSelect={opts.onItemSelect} />;
       case 'agents':
-        return <AgentsSidebar onItemSelect={opts.onItemSelect} />;
+        return <LazyAgentsSidebar onItemSelect={opts.onItemSelect} />;
       case 'commands':
-        return <CommandsSidebar onItemSelect={opts.onItemSelect} />;
+        return <LazyCommandsSidebar onItemSelect={opts.onItemSelect} />;
       case 'mcp':
-        return <McpSidebar onItemSelect={opts.onItemSelect} />;
+        return <LazyMcpSidebar onItemSelect={opts.onItemSelect} />;
       case 'skills.installed':
-        return <SkillsSidebar onItemSelect={opts.onItemSelect} />;
+        return <LazySkillsSidebar onItemSelect={opts.onItemSelect} />;
       case 'plugins':
-        return <PluginsSidebar onItemSelect={opts.onItemSelect} />;
+        return <LazyPluginsSidebar onItemSelect={opts.onItemSelect} />;
       case 'providers':
-        return <ProvidersSidebar onItemSelect={opts.onItemSelect} />;
+        return <LazyProvidersSidebar onItemSelect={opts.onItemSelect} />;
       case 'usage':
-        return <UsageSidebar onItemSelect={opts.onItemSelect} />;
+        return <LazyUsageSidebar onItemSelect={opts.onItemSelect} />;
       case 'magic-prompts':
-        return <MagicPromptsSidebar onItemSelect={opts.onItemSelect} />;
+        return <LazyMagicPromptsSidebar onItemSelect={opts.onItemSelect} />;
       default:
         return null;
     }
   }, []);
 
-  const renderPageContent = React.useCallback((slug: SettingsPageSlug) => {
+  const renderRawPageContent = React.useCallback((slug: SettingsPageSlug) => {
     const meta = getSettingsPageMeta(slug);
     if (meta && !isPageAvailable(meta, runtimeCtx)) {
       return renderUnavailable();
@@ -451,37 +508,39 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     switch (slug) {
       case 'home':
         return <SettingsHome onOpen={openPage} />;
+      case 'users':
+        return <LazyUserManagementPage />;
       case 'projects':
-        return <ProjectsPage />;
+        return <LazyProjectsPage />;
       case 'remote-instances':
-        return <RemoteInstancesPage />;
+        return <LazyRemoteInstancesPage />;
       case 'agents':
-        return <AgentsPage />;
+        return <LazyAgentsPage />;
       case 'behavior':
-        return <BehaviorPage />;
+        return <LazyBehaviorPage />;
       case 'commands':
-        return <CommandsPage />;
+        return <LazyCommandsPage />;
       case 'mcp':
-        return <McpPage />;
+        return <LazyMcpPage />;
       case 'skills.installed':
-        return <SkillsPage view="installed" />;
+        return <LazySkillsPage view="installed" />;
       case 'skills.catalog':
-        return <SkillsPage view="catalog" />;
+        return <LazySkillsPage view="catalog" />;
       case 'plugins':
-        return <PluginsPage />;
+        return <LazyPluginsPage />;
       case 'providers':
-        return <ProvidersPage />;
+        return <LazyProvidersPage />;
       case 'usage':
-        return <UsagePage />;
+        return <LazyUsagePage />;
       case 'magic-prompts':
-        return <MagicPromptsPage />;
+        return <LazyMagicPromptsPage />;
       case 'git':
-        return <GitPage />;
+        return <LazyGitPage />;
       case 'about':
         return (
           <div className="h-full overflow-auto">
             <div className="mx-auto w-full max-w-3xl p-3 sm:p-6 sm:pt-8">
-              <AboutSettings />
+              <LazyAboutSettings />
             </div>
           </div>
         );
@@ -493,12 +552,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       case 'voice':
       case 'tunnel': {
         const section = openChamberSectionBySlug[slug] ?? 'visual';
-        return <OpenChamberPage section={section} />;
+        return <LazyOpenChamberPage section={section} />;
       }
       default:
         return <SettingsHome onOpen={openPage} />;
     }
   }, [openChamberSectionBySlug, openPage, renderUnavailable, runtimeCtx]);
+
+  const renderPageContent = React.useCallback((slug: SettingsPageSlug) => (
+    <SettingsPagePermissionBoundary slug={slug}>
+      {renderRawPageContent(slug)}
+    </SettingsPagePermissionBoundary>
+  ), [renderRawPageContent]);
 
   // Mobile: if opened via deep-link / palette to a non-home page, jump into it once.
   React.useEffect(() => {
@@ -603,7 +668,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         {/* Footer */}
         <div className="overflow-hidden transition-opacity duration-150 opacity-100">
           <div className="border-t border-border bg-sidebar px-2 py-1 space-y-0.5">
-            {!runtimeCtx.isVSCode && (
+            {!runtimeCtx.isVSCode && principal.role === 'admin' && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
@@ -624,6 +689,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
                 </TooltipContent>
               </Tooltip>
             )}
+
+            {!runtimeCtx.isVSCode && principal.scope === 'managed' ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      'flex h-7 w-full items-center gap-2 rounded-md px-2 overflow-hidden whitespace-nowrap',
+                      'typography-ui-label font-medium text-sidebar-foreground/90',
+                      'hover:text-sidebar-foreground hover:bg-interactive-hover',
+                    )}
+                    onClick={() => void handleLogout()}
+                  >
+                    <RiLogoutBoxRLine className="h-4 w-4 shrink-0" />
+                    <span>Sign out</span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>End this DevRyan session</TooltipContent>
+              </Tooltip>
+            ) : null}
 
           </div>
         </div>
@@ -652,15 +737,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         const fallback = renderPageContent(settingsSlug);
         return (
           <div className="flex-1 min-h-0 overflow-hidden bg-background">
-            <ErrorBoundary>{fallback}</ErrorBoundary>
+            <SettingsSectionBoundary>{fallback}</SettingsSectionBoundary>
           </div>
         );
       }
       return (
         <div className={cn('flex-1 min-h-0 overflow-hidden', runtimeCtx.isVSCode ? 'bg-background' : 'bg-sidebar')}>
-          <ErrorBoundary>
-            {renderPageSidebar(settingsSlug, { onItemSelect: () => setMobileStage('page-content') })}
-          </ErrorBoundary>
+          <SettingsPagePermissionBoundary slug={settingsSlug}>
+            <SettingsSectionBoundary>
+              {renderPageSidebar(settingsSlug, { onItemSelect: () => setMobileStage('page-content') })}
+            </SettingsSectionBoundary>
+          </SettingsPagePermissionBoundary>
         </div>
       );
     }
@@ -670,7 +757,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
 
     return (
       <div className="flex-1 min-h-0 overflow-hidden bg-background">
-        <ErrorBoundary>{content}</ErrorBoundary>
+        <SettingsSectionBoundary>{content}</SettingsSectionBoundary>
       </div>
     );
   };
@@ -682,20 +769,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
 
     if (activePageMeta.kind === 'split') {
       return (
-        <div className="flex h-full min-h-0 overflow-hidden">
-          <div className={cn(getSettingsPageSidebarClassName(settingsSlug), 'border-r', runtimeCtx.isVSCode ? 'bg-background' : 'bg-sidebar')} style={{ borderColor: 'var(--interactive-border)' }}>
-            <ErrorBoundary>{renderPageSidebar(settingsSlug, {})}</ErrorBoundary>
+        <SettingsPagePermissionBoundary slug={settingsSlug}>
+          <div className="flex h-full min-h-0 overflow-hidden">
+            <div className={cn(getSettingsPageSidebarClassName(settingsSlug), 'border-r', runtimeCtx.isVSCode ? 'bg-background' : 'bg-sidebar')} style={{ borderColor: 'var(--interactive-border)' }}>
+              <SettingsSectionBoundary>{renderPageSidebar(settingsSlug, {})}</SettingsSectionBoundary>
+            </div>
+            <div className="flex-1 min-h-0 overflow-hidden bg-background">
+              <SettingsSectionBoundary>{renderRawPageContent(settingsSlug)}</SettingsSectionBoundary>
+            </div>
           </div>
-          <div className="flex-1 min-h-0 overflow-hidden bg-background">
-            <ErrorBoundary>{renderPageContent(settingsSlug)}</ErrorBoundary>
-          </div>
-        </div>
+        </SettingsPagePermissionBoundary>
       );
     }
 
     return (
       <div className="h-full min-h-0 overflow-hidden bg-background">
-        <ErrorBoundary>{renderPageContent(settingsSlug)}</ErrorBoundary>
+        <SettingsSectionBoundary>{renderPageContent(settingsSlug)}</SettingsSectionBoundary>
       </div>
     );
   };

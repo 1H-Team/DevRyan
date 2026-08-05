@@ -1930,6 +1930,7 @@ export async function createWorktree(
   const begun = await bootstrapRuntime.beginOperation({
     idempotencyKey,
     fingerprint,
+    ownerId: 'local-admin',
     directory: existingReceipt?.directory ?? candidate?.directory ?? '',
     ...(metadata ? { metadata } : {}),
   });

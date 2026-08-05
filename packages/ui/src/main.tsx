@@ -7,11 +7,8 @@ import { SessionAuthGate } from './components/auth/SessionAuthGate'
 import { ThemeSystemProvider } from './contexts/ThemeSystemContext'
 import { ThemeProvider } from './components/providers/ThemeProvider'
 import './lib/debug'
-import { syncDesktopSettings, initializeAppearancePreferences } from './lib/persistence'
-import { startAppearanceAutoSave } from './lib/appearanceAutoSave'
-import { applyPersistedDirectoryPreferences } from './lib/directoryPersistence'
+import { initializeAppearancePreferences } from './lib/persistence'
 import { startTypographyWatcher } from './lib/typographyWatcher'
-import { startModelPrefsAutoSave } from './lib/modelPrefsAutoSave'
 import { initializeLocale, I18nProvider } from './lib/i18n'
 import type { RuntimeAPIs } from './lib/api/types'
 
@@ -32,21 +29,10 @@ initializeLocale();
 // themes may briefly see default appearance on cold start; accepted trade-off
 // for faster time-to-first-paint.
 void initializeAppearancePreferences().then(() => {
-  const settingsInit = Promise.all([
-    syncDesktopSettings(),
-    applyPersistedDirectoryPreferences(),
-  ]).catch((err) => {
-    console.error('[main] settings init failed:', err);
-  });
-
-  // Start appearance/typography watchers immediately after appearance init.
-  startAppearanceAutoSave();
+  // Network-backed settings and directory synchronization start only after
+  // SessionAuthGate has accepted the authoritative principal. Running them
+  // here would use the local-admin client default against a managed session.
   startTypographyWatcher();
-  // Model prefs mirror shared settings, so subscribe only after the initial
-  // settings sync attempt cannot overwrite the first user change with stale data.
-  void settingsInit.finally(() => {
-    startModelPrefsAutoSave();
-  });
 }).catch((err) => {
   console.error('[main] appearance init failed:', err);
 });

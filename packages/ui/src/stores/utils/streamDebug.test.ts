@@ -7,6 +7,7 @@ import {
   resetStreamPerf,
   setStreamPerfEnabled,
 } from "./streamDebug"
+import { getSafeStorage } from "./safeStorage"
 
 const storage = new Map<string, string>()
 
@@ -110,7 +111,7 @@ describe("stream responsiveness diagnostics", () => {
     })
     expect(calls).toEqual([])
 
-    window.localStorage.setItem("openchamber_stream_debug", "1")
+    getSafeStorage().setItem("openchamber_stream_debug", "1")
     postTurnTimingMark({
       sessionId: "ses_1",
       messageId: "msg_1",
@@ -143,7 +144,7 @@ describe("stream responsiveness diagnostics", () => {
       return Promise.resolve(Response.json({ ok: true }))
     }) as typeof fetch
 
-    window.localStorage.setItem("openchamber_stream_debug", "1")
+    getSafeStorage().setItem("openchamber_stream_debug", "1")
     postRendererTurnTimingMark({
       sessionId: "ses_1",
       assistantMessageId: "msg_assistant",

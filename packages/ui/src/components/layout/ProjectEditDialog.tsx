@@ -24,6 +24,7 @@ interface ProjectEditDialogProps {
   initialIcon?: string | null;
   initialColor?: string | null;
   initialIconBackground?: string | null;
+  readOnly?: boolean;
   onSave: (data: { label: string; icon: string | null; color: string | null; iconBackground: string | null }) => void;
 }
 
@@ -49,6 +50,7 @@ export const ProjectEditDialog: React.FC<ProjectEditDialogProps> = ({
   initialIcon = null,
   initialColor = null,
   initialIconBackground = null,
+  readOnly = false,
   onSave,
 }) => {
   const { t } = useI18n();
@@ -99,6 +101,7 @@ export const ProjectEditDialog: React.FC<ProjectEditDialogProps> = ({
   }, [clearPendingUploadIcon]);
 
   const handleSave = async () => {
+    if (readOnly) return;
     const trimmed = name.trim();
     if (!trimmed) return;
 
@@ -236,7 +239,12 @@ export const ProjectEditDialog: React.FC<ProjectEditDialogProps> = ({
           <DialogTitle>{t('projectEditDialog.title')}</DialogTitle>
         </DialogHeader>
 
-        <div className="min-w-0 space-y-5 py-1">
+        <fieldset disabled={readOnly} className="min-w-0 space-y-5 py-1 disabled:opacity-70">
+          {readOnly ? (
+            <p className="typography-meta text-muted-foreground">
+              {t('projectEditDialog.readOnly')}
+            </p>
+          ) : null}
           {/* Name */}
           <div className="min-w-0 space-y-1.5">
             <label className="typography-ui-label font-medium text-foreground">
@@ -419,13 +427,13 @@ export const ProjectEditDialog: React.FC<ProjectEditDialogProps> = ({
               </div>
             </div>
           )}
-        </div>
+        </fieldset>
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             {t('projectEditDialog.actions.cancel')}
           </Button>
-          <Button onClick={handleSave} disabled={!name.trim() || isUploadingIcon || isRemovingCustomIcon}>
+          <Button onClick={handleSave} disabled={readOnly || !name.trim() || isUploadingIcon || isRemovingCustomIcon}>
             {t('projectEditDialog.actions.save')}
           </Button>
         </DialogFooter>

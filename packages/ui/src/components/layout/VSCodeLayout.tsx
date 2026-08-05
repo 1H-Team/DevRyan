@@ -1,3 +1,4 @@
+import { getSafeStorage } from '@/stores/utils/safeStorage';
 import React from 'react';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { SessionSidebar } from '@/components/session/SessionSidebar';
@@ -293,7 +294,7 @@ export const VSCodeLayout: React.FC = () => {
         const debugEnabled = (() => {
           if (typeof window === 'undefined') return false;
           try {
-            return window.localStorage.getItem('openchamber_stream_debug') === '1';
+            return getSafeStorage().getItem('openchamber_stream_debug') === '1';
           } catch {
             return false;
           }

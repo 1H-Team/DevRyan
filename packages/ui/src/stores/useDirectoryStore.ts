@@ -6,6 +6,7 @@ import { updateDesktopSettings } from '@/lib/persistence';
 import { useFileSearchStore } from '@/stores/useFileSearchStore';
 import { streamDebugEnabled } from '@/stores/utils/streamDebug';
 import { getSafeStorage } from './utils/safeStorage';
+import { getAuthPrincipal } from '@/lib/authSession';
 
 interface DirectoryStore {
 
@@ -23,6 +24,7 @@ interface DirectoryStore {
   goToParent: () => void;
   goHome: () => Promise<void>;
   synchronizeHomeDirectory: (path: string) => void;
+  refreshHomeDirectory: () => Promise<void>;
 }
 
 let cachedHomeDirectory: string | null = null;
@@ -30,6 +32,14 @@ const safeStorage = getSafeStorage();
 const persistedLastDirectory = safeStorage.getItem('lastDirectory');
 const initialHasPersistedDirectory =
   typeof persistedLastDirectory === 'string' && persistedLastDirectory.length > 0;
+
+const persistDirectorySettings = (changes: { homeDirectory?: string; lastDirectory?: string }) => {
+  const principal = getAuthPrincipal();
+  if (principal.scope === 'managed' && principal.role !== 'admin') {
+    return;
+  }
+  void updateDesktopSettings(changes);
+};
 
 
 const invalidateFileSearchCache = (scope?: string | null) => {
@@ -172,7 +182,7 @@ const persistResolvedHome = (resolved: string) => {
   if (typeof window !== 'undefined') {
     safeStorage.setItem('homeDirectory', resolved);
   }
-  void updateDesktopSettings({ homeDirectory: resolved });
+  persistDirectorySettings({ homeDirectory: resolved });
   return resolved;
 };
 
@@ -274,7 +284,7 @@ export const useDirectoryStore = create<DirectoryStore>()(
           const newHistory = [...state.directoryHistory.slice(0, state.historyIndex + 1), resolvedPath];
 
           safeStorage.setItem('lastDirectory', resolvedPath);
-          void updateDesktopSettings({ lastDirectory: resolvedPath });
+          persistDirectorySettings({ lastDirectory: resolvedPath });
 
           return {
             currentDirectory: resolvedPath,
@@ -298,7 +308,7 @@ export const useDirectoryStore = create<DirectoryStore>()(
 
           safeStorage.setItem('lastDirectory', newDirectory);
 
-          void updateDesktopSettings({ lastDirectory: newDirectory });
+          persistDirectorySettings({ lastDirectory: newDirectory });
 
           set({
             currentDirectory: newDirectory,
@@ -321,7 +331,7 @@ export const useDirectoryStore = create<DirectoryStore>()(
 
           safeStorage.setItem('lastDirectory', newDirectory);
 
-          void updateDesktopSettings({ lastDirectory: newDirectory });
+          persistDirectorySettings({ lastDirectory: newDirectory });
 
           set({
             currentDirectory: newDirectory,
@@ -362,6 +372,11 @@ export const useDirectoryStore = create<DirectoryStore>()(
           get().homeDirectory ||
           (await initializeHomeDirectory());
         get().setDirectory(homeDir);
+      },
+
+      refreshHomeDirectory: async () => {
+        const home = await initializeHomeDirectory();
+        get().synchronizeHomeDirectory(home);
       },
 
       synchronizeHomeDirectory: (homePath: string) => {
@@ -420,11 +435,11 @@ export const useDirectoryStore = create<DirectoryStore>()(
           opencodeClient.setDirectory(nextDirectory);
           invalidateFileSearchCache();
           safeStorage.setItem('lastDirectory', nextDirectory);
-          void updateDesktopSettings({ lastDirectory: nextDirectory });
+          persistDirectorySettings({ lastDirectory: nextDirectory });
 
         }
 
-        void updateDesktopSettings({ homeDirectory: resolvedHome });
+        persistDirectorySettings({ homeDirectory: resolvedHome });
       }
     }),
     {
@@ -432,9 +447,3 @@ export const useDirectoryStore = create<DirectoryStore>()(
     }
   )
 );
-
-if (typeof window !== 'undefined') {
-  initializeHomeDirectory().then((home) => {
-    useDirectoryStore.getState().synchronizeHomeDirectory(home);
-  });
-}

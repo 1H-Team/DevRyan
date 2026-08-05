@@ -1,3 +1,4 @@
+import { getSafeStorage } from '@/stores/utils/safeStorage';
 import * as React from 'react';
 import { RiArrowDownSLine, RiLoader4Line, RiSplitCellsHorizontal, RiSparklingLine } from '@remixicon/react';
 import {
@@ -94,20 +95,20 @@ export const IntegrateCommitsSection: React.FC<{
 
   React.useEffect(() => {
     if (!conflictStorageKey || typeof window === 'undefined') return;
-    const raw = window.localStorage.getItem(conflictStorageKey);
+    const raw = getSafeStorage().getItem(conflictStorageKey);
     if (!raw) return;
     let cancelled = false;
     try {
       const parsed = JSON.parse(raw) as IntegrateInProgress;
       if (!parsed?.tempWorktreePath || parsed.repoRoot !== repoRoot) {
-        window.localStorage.removeItem(conflictStorageKey);
+        getSafeStorage().removeItem(conflictStorageKey);
         return;
       }
       void (async () => {
         const ok = await isCherryPickInProgress(parsed.tempWorktreePath).catch(() => false);
         if (cancelled) return;
         if (!ok) {
-          window.localStorage.removeItem(conflictStorageKey);
+          getSafeStorage().removeItem(conflictStorageKey);
           return;
         }
         const details = await getIntegrateConflictDetails(parsed.tempWorktreePath).catch(() => null);
@@ -118,7 +119,7 @@ export const IntegrateCommitsSection: React.FC<{
         setUi({ kind: 'conflict', state: parsed, details });
       })();
     } catch {
-      window.localStorage.removeItem(conflictStorageKey);
+      getSafeStorage().removeItem(conflictStorageKey);
     }
     return () => {
       cancelled = true;
@@ -278,7 +279,7 @@ export const IntegrateCommitsSection: React.FC<{
         toast.error(t('gitView.integrate.cherryPickConflictToast'), { description: t('gitView.integrate.cherryPickConflictDescription') });
         setUi({ kind: 'conflict', state: result.state, details: result.details });
         if (conflictStorageKey && typeof window !== 'undefined') {
-          window.localStorage.setItem(conflictStorageKey, JSON.stringify(result.state));
+          getSafeStorage().setItem(conflictStorageKey, JSON.stringify(result.state));
         }
       }
     } catch (e) {
@@ -296,7 +297,7 @@ export const IntegrateCommitsSection: React.FC<{
       await abortIntegrate(ui.state);
       toast.message(t('gitView.integrate.cherryPickAbortedToast'));
       if (conflictStorageKey && typeof window !== 'undefined') {
-        window.localStorage.removeItem(conflictStorageKey);
+        getSafeStorage().removeItem(conflictStorageKey);
       }
     } finally {
       const next = await computeIntegratePlan({ repoRoot, sourceBranch, targetBranch }).catch(() => null);
@@ -315,7 +316,7 @@ export const IntegrateCommitsSection: React.FC<{
         if (next) setUi({ kind: 'ready', plan: next });
         else setUi({ kind: 'idle' });
         if (conflictStorageKey && typeof window !== 'undefined') {
-          window.localStorage.removeItem(conflictStorageKey);
+          getSafeStorage().removeItem(conflictStorageKey);
         }
         onRefresh?.();
         return;
@@ -323,7 +324,7 @@ export const IntegrateCommitsSection: React.FC<{
       if (result.kind === 'conflict') {
         setUi({ kind: 'conflict', state: result.state, details: result.details });
         if (conflictStorageKey && typeof window !== 'undefined') {
-          window.localStorage.setItem(conflictStorageKey, JSON.stringify(result.state));
+          getSafeStorage().setItem(conflictStorageKey, JSON.stringify(result.state));
         }
       }
     } catch (e) {

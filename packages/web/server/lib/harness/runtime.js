@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import os from 'node:os';
 
 import {
@@ -60,6 +61,25 @@ export const createWebHarnessRuntime = (options = {}) => {
     ...entry,
   });
 
+  const requestActor = (req) => {
+    const principal = req?.principal;
+    if (!principal?.id) return null;
+    return { id: principal.id, role: principal.role || null, scope: principal.scope || null };
+  };
+
+  const boundedPromptBody = (body) => {
+    const serialized = JSON.stringify(body ?? null);
+    const encoded = Buffer.from(serialized, 'utf8');
+    const bytes = encoded.byteLength;
+    if (bytes <= 64 * 1024) return body;
+    return {
+      body: encoded.subarray(0, 60 * 1024).toString('utf8'),
+      truncated: true,
+      size: bytes,
+      sha256: crypto.createHash('sha256').update(serialized).digest('hex'),
+    };
+  };
+
   const promptAdmissionMiddleware = (turnTimingRuntime) => (req, res, next) => {
     if (!ready || !acceptingPrompts) {
       res.setHeader('Retry-After', '1');
@@ -79,12 +99,13 @@ export const createWebHarnessRuntime = (options = {}) => {
       : null;
     record({
       type: 'prompt',
+      actor: requestActor(req),
       sessionID,
       directory,
       messageID,
       payload: {
         method: req.method,
-        body: req.body,
+        body: boundedPromptBody(req.body),
       },
     });
     res.once('finish', () => {
@@ -108,6 +129,7 @@ export const createWebHarnessRuntime = (options = {}) => {
     ) {
       record({
         type: 'control',
+        actor: requestActor(req),
         sessionID: typeof req.params?.sessionID === 'string' ? req.params.sessionID : null,
         directory: typeof req.query?.directory === 'string' ? req.query.directory : null,
         action,

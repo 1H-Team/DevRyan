@@ -7,6 +7,7 @@ import {
   shouldShowStartupReadinessScreen,
   shouldRestartOpenCodeForStartupRecovery,
   summarizeStartupReadiness,
+  withStartupBootstrapReadiness,
   withStartupReadinessPhase,
 } from "./readiness"
 
@@ -37,6 +38,64 @@ describe("startup readiness", () => {
 
     const recovered = withStartupReadinessPhase(failed, "agents", { status: "ready" })
     expect(summarizeStartupReadiness(recovered).ready).toBe(true)
+  })
+
+  test("surfaces provider failure after a healthy OpenCode connection", () => {
+    const snapshot = withStartupBootstrapReadiness(createStartupReadinessSnapshot("ready"), {
+      desktopBootReady: true,
+      isConnected: true,
+      isInitialized: false,
+      retriesExhausted: false,
+      providers: { status: "error", error: "Provider bootstrap failed" },
+      agents: { status: "idle" },
+      initialization: { status: "error", error: "Provider bootstrap failed" },
+    })
+
+    expect(summarizeStartupReadiness(snapshot)).toEqual({
+      ready: false,
+      phase: "providers",
+      status: "error",
+      error: "Provider bootstrap failed",
+    })
+  })
+
+  test("surfaces unexpected initialization failure without downgrading health", () => {
+    const snapshot = withStartupBootstrapReadiness(createStartupReadinessSnapshot("ready"), {
+      desktopBootReady: true,
+      isConnected: true,
+      isInitialized: false,
+      retriesExhausted: true,
+      providers: { status: "ready" },
+      agents: { status: "ready" },
+      initialization: { status: "error", error: "Unexpected startup failure" },
+    })
+
+    expect(snapshot.health.status).toBe("ready")
+    expect(summarizeStartupReadiness(snapshot)).toEqual({
+      ready: false,
+      phase: "initialization",
+      status: "error",
+      error: "Unexpected startup failure",
+    })
+  })
+
+  test("turns an exhausted connection attempt into an actionable health error", () => {
+    const snapshot = withStartupBootstrapReadiness(createStartupReadinessSnapshot("ready"), {
+      desktopBootReady: true,
+      isConnected: false,
+      isInitialized: false,
+      retriesExhausted: true,
+      providers: { status: "idle" },
+      agents: { status: "idle" },
+      initialization: { status: "loading" },
+    })
+
+    expect(summarizeStartupReadiness(snapshot)).toEqual({
+      ready: false,
+      phase: "health",
+      status: "error",
+      error: "DevRyan could not connect to OpenCode.",
+    })
   })
 
   test("treats an empty session list as valid after the list request succeeds", () => {

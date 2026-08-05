@@ -1,3 +1,4 @@
+import { getSafeStorage } from '@/stores/utils/safeStorage';
 import { create } from 'zustand';
 
 import { fetchDesktopInstalledApps, isDesktopLocalOriginActive, isTauriShell, type DesktopSettings, type InstalledDesktopAppInfo } from '@/lib/desktop';
@@ -30,7 +31,7 @@ const getStoredAppId = (): string => {
     return DEFAULT_OPEN_IN_APP_ID;
   }
 
-  const stored = window.localStorage.getItem('openInAppId');
+  const stored = getSafeStorage().getItem('openInAppId');
   if (stored && getOpenInAppById(stored)) {
     return stored;
   }
@@ -170,7 +171,7 @@ export const useOpenInAppsStore = create<OpenInAppsState>()((set, get) => ({
         return;
       }
 
-      window.localStorage.setItem('openInAppId', nextId);
+      getSafeStorage().setItem('openInAppId', nextId);
       set({ selectedAppId: nextId });
     };
 
@@ -273,7 +274,7 @@ export const useOpenInAppsStore = create<OpenInAppsState>()((set, get) => ({
     set({ selectedAppId: appId });
 
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem('openInAppId', appId);
+      getSafeStorage().setItem('openInAppId', appId);
     }
 
     await updateDesktopSettings({ openInAppId: appId });

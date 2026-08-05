@@ -7,9 +7,13 @@ Session-oriented UI components outside the chat stream itself.
 Feature components encapsulate session metadata, controls, and supporting panes.
 `NewWorktreeDialog.tsx` remains open through durable bootstrap progress,
 reconnects active receipts after reload, and exposes explicit Retry/Remove for
-failed or needs-attention setup.
+failed or needs-attention setup. Its idempotency key is bound to a normalized
+request signature, so changing branch/setup inputs after a terminal attempt
+starts a new operation while an unchanged retry reuses the prior key.
 Sidebar utilities keep sorting, grouping, visible draft selection, and hint-first
-session directory routing logic testable outside React rendering.
+session directory routing logic testable outside React rendering. Every role
+discovers real Git worktrees; managed non-admin results are filtered by the
+authoritative branch-visibility projection before entering shared UI state.
 
 ## Flow
 Session state enters via selectors/hooks; actions trigger archive/delete/switch workflows.

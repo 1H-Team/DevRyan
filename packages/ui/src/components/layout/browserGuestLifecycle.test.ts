@@ -65,10 +65,11 @@ describe('session-scoped browser lease lifecycle', () => {
     expect(uiStore).toContain("tab.mode === 'browser' && !tab.leaseId");
   });
 
-  test('binds lease guests after attach and never starts the retired global bridge', () => {
-    expect(browserPane).toContain("webview.addEventListener('did-attach', bindLeaseGuest)");
-    expect(browserPane).toContain("webview.addEventListener('dom-ready', bindLeaseGuest)");
-    expect(browserPane).toContain("invokeDesktop('desktop_browser_lease_bind_guest', { leaseId, webContentsId })");
+  test('uses the main-owned lease surface and never starts the retired global bridge', () => {
+    expect(browserPane).toContain("const surfaceId = leaseId ? (lease?.surfaceId ?? '') : manualSurfaceId;");
+    expect(browserPane).toContain("invokeDesktop<unknown>('desktop_browser_surface_snapshot', { surfaceId })");
+    expect(browserPane).not.toContain('<webview');
+    expect(browserPane).not.toContain('webContentsId');
     expect(browserPane).not.toContain("invokeDesktop('desktop_browser_cdp_start')");
     expect(browserPane).not.toContain("window.addEventListener('browser-agent-status'");
   });

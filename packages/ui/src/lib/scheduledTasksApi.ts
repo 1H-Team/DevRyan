@@ -4,6 +4,10 @@ export type ScheduledTask = {
   id: string;
   name: string;
   enabled: boolean;
+  ownerUserId?: string;
+  target?: {
+    branchName: string;
+  };
   schedule: {
     kind: 'daily' | 'weekly' | 'once' | 'cron';
     times?: string[];
@@ -72,6 +76,7 @@ export const upsertScheduledTask = async (projectID: string, task: Partial<Sched
     headers: {
       'content-type': 'application/json',
       accept: 'application/json',
+      'X-DevRyan-CSRF': '1',
     },
     body: JSON.stringify({ task }),
   });
@@ -92,6 +97,7 @@ export const deleteScheduledTask = async (projectID: string, taskID: string): Pr
     method: 'DELETE',
     headers: {
       accept: 'application/json',
+      'X-DevRyan-CSRF': '1',
     },
   });
   if (!response.ok) {
@@ -111,6 +117,7 @@ export const runScheduledTaskNow = async (projectID: string, taskID: string): Pr
     method: 'POST',
     headers: {
       accept: 'application/json',
+      'X-DevRyan-CSRF': '1',
     },
   });
   if (!response.ok) {

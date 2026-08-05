@@ -644,7 +644,7 @@ export const createSettingsHelpers = (dependencies) => {
 
     if (typeof candidate.sttProvider === 'string') {
       const provider = candidate.sttProvider.trim();
-      if (provider === 'browser' || provider === 'server' || provider === 'macos') {
+      if (provider === 'browser' || provider === 'server' || provider === 'macos' || provider === 'wasm') {
         result.sttProvider = provider;
       }
     }

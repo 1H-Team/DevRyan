@@ -36,7 +36,25 @@ declare global {
 // Callback types
 export type SpeechResultCallback = (text: string, isFinal: boolean) => void;
 export type SpeechEndCallback = () => void;
-export type ErrorCallback = (error: string) => void;
+export type BrowserVoiceErrorCode =
+  | 'aborted'
+  | 'audio-capture'
+  | 'bad-grammar'
+  | 'language-not-supported'
+  | 'network'
+  | 'no-speech'
+  | 'not-allowed'
+  | 'service-not-allowed'
+  | 'unsupported'
+  | 'start-failed'
+  | (string & {});
+
+export type BrowserVoiceError = {
+  code: BrowserVoiceErrorCode;
+  message: string;
+};
+
+export type ErrorCallback = (error: BrowserVoiceError) => void;
 
 /**
  * Browser Voice Service class
@@ -181,7 +199,7 @@ class BrowserVoiceService {
   ): void {
     if (!this.isSupported()) {
       const errorMsg = 'Web Speech API not supported in this browser';
-      onError?.(errorMsg);
+      onError?.({ code: 'unsupported', message: errorMsg });
       throw new Error(errorMsg);
     }
 
@@ -251,15 +269,17 @@ class BrowserVoiceService {
         return;
       }
 
-      const errorMessage = this.getErrorMessage(event.error);
-      this.onErrorCallback?.(errorMessage);
-
       // Don't restart on fatal/service errors. Network errors otherwise create a tight
       // start/end loop with repeated microphone activation and duplicate toasts.
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed' || event.error === 'network') {
         this.restartOnEnd = false;
         this.isListening = false;
       }
+
+      this.onErrorCallback?.({
+        code: event.error,
+        message: this.getErrorMessage(event.error),
+      });
     };
 
     this.recognition.onend = () => {
@@ -280,7 +300,7 @@ class BrowserVoiceService {
       this.recognition.start();
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : 'Failed to start speech recognition';
-      onError?.(errorMsg);
+      onError?.({ code: 'start-failed', message: errorMsg });
       throw new Error(errorMsg);
     }
   }

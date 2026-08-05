@@ -1,3 +1,4 @@
+import { getSafeStorage } from '@/stores/utils/safeStorage';
 import { useUIStore } from '@/stores/useUIStore';
 
 export interface AppearancePreferences {
@@ -41,7 +42,7 @@ export const saveAppearancePreferences = (preferences: AppearancePreferences): b
   }
 
   try {
-    localStorage.setItem('appearance-preferences', JSON.stringify(preferences));
+    getSafeStorage().setItem('appearance-preferences', JSON.stringify(preferences));
     return true;
   } catch {
     return false;
@@ -61,7 +62,7 @@ export const loadAppearancePreferences = async (): Promise<AppearancePreferences
     return null;
   }
 
-  const stored = localStorage.getItem('appearance-preferences');
+  const stored = getSafeStorage().getItem('appearance-preferences');
   if (!stored) {
     return null;
   }

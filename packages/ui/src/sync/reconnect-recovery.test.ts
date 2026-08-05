@@ -206,6 +206,13 @@ describe("getReconnectCandidateSessionIds", () => {
       response: { status: 503 },
     }, "session.messages")).toThrow("session.messages failed (503): OpenCode API unavailable")
 
+    expect(() => unwrapSdkResult({
+      error: { error: "Directory is outside your assigned workspace" },
+      response: { status: 403 },
+    }, "config.providers")).toThrow(
+      "config.providers failed (403): Directory is outside your assigned workspace",
+    )
+
     try {
       unwrapSdkResult({
         error: "OpenCode API unavailable",

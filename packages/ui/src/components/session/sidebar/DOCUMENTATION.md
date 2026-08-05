@@ -5,7 +5,10 @@
 - `SessionSidebar.tsx` now acts mainly as orchestration; core logic moved to focused hooks/components.
 - Sidebar is now a single multi-project tree: `recent` top section, then projects, then worktrees/archived groups, then sessions.
 - `NavRail` is no longer part of sidebar/navigation flow.
-- Project headers now own root sessions directly; there is no separate rendered `project root` subgroup.
+- Git projects render the primary checkout branch as a normal icon-bearing group; non-Git sessions remain directly under the project without a synthetic group label.
+- Runtime controls (collapse/expand, New Chat, New Multi-Run, Scheduled Tasks, and worktree creation) are independent of project-registry administration. Managed developers receive runtime controls while Add Project and project rename/remove remain administrator-only.
+- Managed worktree discovery keeps assigned base branches plus non-root worktrees referenced by the current user's sessions or drafts, so generated Multi-Run branches stay visible without re-exposing an ungranted primary checkout. The root group is hidden unless its real checked-out branch is granted; hidden root sessions therefore cannot become the cold-load selection.
+- The footer keeps the assigned GitHub profile as its leftmost control, retries transient startup status failures, retains the last valid avatar on refresh failure, and falls back to the GitHub glyph while an assigned profile is loading or has no usable image.
 - Active/hover row styling is text-first; selected sessions use primary text instead of background fills.
 - Archived groups are collapsed by default on cold load/refresh, preserve their collapsed state when sessions are archived into them, and support bulk deletion at group/folder level.
 - Archived project ownership is resolved once from registered project roots and known worktrees. An explicit session directory maps to the deepest matching registered directory; project/worktree metadata is a fallback, and no-directory child sessions inherit their parent's owner. Archived lists, auto-folders, and folder cleanup consume the same ownership map so nested projects cannot duplicate or delete each other's folder entries.

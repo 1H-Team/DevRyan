@@ -58,10 +58,10 @@ interface GitStore {
   fetchBranches: (directory: string, git: GitAPI) => Promise<void>;
   fetchLog: (directory: string, git: GitAPI, maxCount?: number) => Promise<void>;
   fetchIdentity: (directory: string, git: GitAPI) => Promise<void>;
-  fetchAll: (directory: string, git: GitAPI, options?: { force?: boolean; silentIfCached?: boolean }) => Promise<void>;
+  fetchAll: (directory: string, git: GitAPI, options?: { force?: boolean; silentIfCached?: boolean; includeIdentity?: boolean }) => Promise<void>;
 
   ensureStatus: (directory: string, git: GitAPI) => Promise<void>;
-  ensureAll: (directory: string, git: GitAPI) => Promise<void>;
+  ensureAll: (directory: string, git: GitAPI, options?: { includeIdentity?: boolean }) => Promise<void>;
 
   getDiff: (directory: string, filePath: string, options?: { staged?: boolean }) => { original: string; modified: string; fetchedAt: number; isBinary?: boolean } | null;
   setDiff: (directory: string, filePath: string, diff: { original: string; modified: string; isBinary?: boolean }, options?: { staged?: boolean }) => void;
@@ -540,7 +540,7 @@ export const useGitStore = create<GitStore>()(
           set({ directories: newDirectories });
         }
 
-        const { force = false, silentIfCached = false } = options;
+        const { force = false, silentIfCached = false, includeIdentity = true } = options;
         const now = Date.now();
 
         await get().fetchStatus(directory, git, {
@@ -557,7 +557,9 @@ export const useGitStore = create<GitStore>()(
           await get().fetchLog(directory, git);
         }
 
-        await get().fetchIdentity(directory, git);
+        if (includeIdentity) {
+          await get().fetchIdentity(directory, git);
+        }
 
         // Diff prefetch deferred — triggered on-demand when Git tab opens (GitView reactive prefetch)
 
@@ -737,8 +739,10 @@ export const useGitStore = create<GitStore>()(
         await get().fetchStatus(directory, git, { silent: Boolean(dirState?.status) });
       },
 
-      ensureAll: (directory, git) => {
-        const existing = inFlightEnsureAllByDirectory.get(directory);
+      ensureAll: (directory, git, options = {}) => {
+        const includeIdentity = options.includeIdentity !== false;
+        const ensureKey = `${includeIdentity ? 'identity' : 'repository'}:${directory}`;
+        const existing = inFlightEnsureAllByDirectory.get(ensureKey);
         if (existing) return existing;
 
         const promise = (async () => {
@@ -761,17 +765,17 @@ export const useGitStore = create<GitStore>()(
           if (!updatedState.log || now - updatedState.lastLogFetch >= LOG_STALE_THRESHOLD) {
             fetches.push(get().fetchLog(directory, git));
           }
-          if (!updatedState.identity || now - updatedState.lastIdentityFetch >= IDENTITY_STALE_THRESHOLD) {
+          if (includeIdentity && (!updatedState.identity || now - updatedState.lastIdentityFetch >= IDENTITY_STALE_THRESHOLD)) {
             fetches.push(get().fetchIdentity(directory, git));
           }
 
           if (fetches.length > 0) await Promise.all(fetches);
         })();
 
-        inFlightEnsureAllByDirectory.set(directory, promise);
+        inFlightEnsureAllByDirectory.set(ensureKey, promise);
         promise.finally(() => {
-          if (inFlightEnsureAllByDirectory.get(directory) === promise) {
-            inFlightEnsureAllByDirectory.delete(directory);
+          if (inFlightEnsureAllByDirectory.get(ensureKey) === promise) {
+            inFlightEnsureAllByDirectory.delete(ensureKey);
           }
         });
 

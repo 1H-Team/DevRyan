@@ -4,8 +4,8 @@ import type { ManagedTaskStatus } from '@openchamber/orchestration-runtime';
 import { isManagedTaskToolName } from './message/parts/toolRenderUtils';
 
 type ManagedTaskPayload = {
-  task?: { taskId?: unknown };
-  followUpTask?: { task?: { taskId?: unknown } };
+  task?: { taskId?: unknown; dispatchCallId?: unknown };
+  followUpTask?: { task?: { taskId?: unknown; dispatchCallId?: unknown } };
 };
 
 const MANAGED_DISPATCH_ACTIONS = new Set(['start', 'retry']);
@@ -21,6 +21,7 @@ const MANAGED_CONTROL_ACTIONS = new Set([
 
 export type PendingManagedTaskDispatch = {
   partId: string;
+  dispatchCallId: string | null;
   agent: string;
   label: string;
   status: 'preparing' | 'error';
@@ -30,6 +31,7 @@ export type PendingManagedTaskDispatch = {
 export type ManagedTaskDispatchFallback = {
   partId: string;
   taskId: string;
+  dispatchCallId: string | null;
   agent: string;
   label: string;
   status: ManagedTaskStatus;
@@ -95,6 +97,11 @@ const fallbackFromTask = (
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const task = value as Record<string, unknown>;
   const taskId = typeof task.taskId === 'string' ? task.taskId.trim() : '';
+  const dispatchCallId = typeof task.dispatchCallId === 'string'
+    ? task.dispatchCallId.trim()
+    : task.dispatchCallId === null || task.dispatchCallId === undefined
+      ? null
+      : undefined;
   const agent = typeof task.agent === 'string' ? task.agent.trim() : '';
   const label = typeof task.label === 'string' ? task.label.trim() : '';
   const status = typeof task.status === 'string' ? task.status.trim() : '';
@@ -106,6 +113,7 @@ const fallbackFromTask = (
       : undefined;
   if (
     !taskId.startsWith('dvr_task_')
+    || dispatchCallId === undefined
     || !agent
     || !label
     || !MANAGED_TASK_STATUSES.has(status as ManagedTaskStatus)
@@ -115,6 +123,7 @@ const fallbackFromTask = (
   return {
     partId,
     taskId,
+    dispatchCallId: dispatchCallId || null,
     agent,
     label,
     status: status as ManagedTaskStatus,
@@ -167,10 +176,12 @@ const pendingDispatchFromPart = (part: ToolPart): PendingManagedTaskDispatch | n
 
   const agent = typeof input?.agent === 'string' ? input.agent.trim() : '';
   const label = typeof input?.label === 'string' ? input.label.trim() : '';
+  const dispatchCallId = typeof part.callID === 'string' ? part.callID.trim() : '';
   const normalizedAgent = agent || 'agent';
   if (status === 'pending' || status === 'running') {
     return {
       partId: part.id,
+      dispatchCallId: dispatchCallId || null,
       agent: normalizedAgent,
       label: label || `Managed ${normalizedAgent} task`,
       status: 'preparing',
@@ -181,6 +192,7 @@ const pendingDispatchFromPart = (part: ToolPart): PendingManagedTaskDispatch | n
   }
   return {
     partId: part.id,
+    dispatchCallId: dispatchCallId || null,
     agent: normalizedAgent,
     label: label || `Managed ${normalizedAgent} task`,
     status: 'error',

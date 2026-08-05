@@ -35,6 +35,7 @@ const IMMUTABLE_PROJECTED_TASK_FIELDS = [
   'owner',
   'taskId',
   'rootSessionId',
+  'dispatchCallId',
   'parentTaskId',
   'directory',
   'sequence',
@@ -106,6 +107,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> => (
 );
 
 const isNullableString = (value: unknown): value is string | null => value === null || typeof value === 'string';
+const isOptionalNullableString = (value: unknown): value is string | null | undefined => (
+  value === undefined || isNullableString(value)
+);
 const isTimestamp = (value: unknown): value is number => (
   typeof value === 'number' && Number.isFinite(value) && value >= 0
 );
@@ -126,6 +130,7 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskEventRecord | n
     && value.taskId.startsWith('dvr_task_')
     && typeof value.rootSessionId === 'string'
     && Boolean(value.rootSessionId.trim())
+    && isOptionalNullableString(value.dispatchCallId)
     && isNullableString(value.parentTaskId)
     && isNullableString(value.childSessionId)
     && typeof value.directory === 'string'
@@ -162,6 +167,9 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskEventRecord | n
     owner: 'devryan',
     taskId: value.taskId as string,
     rootSessionId: value.rootSessionId as string,
+    dispatchCallId: value.dispatchCallId === null || value.dispatchCallId === undefined
+      ? null
+      : truncateManagedText(value.dispatchCallId, 1_024),
     parentTaskId: value.parentTaskId as string | null,
     childSessionId: value.childSessionId as string | null,
     directory: value.directory as string,
@@ -978,6 +986,15 @@ export const managedOrchestrationSelectors = {
   taskIdsForRoot: (rootSessionId: string) => (state: ManagedOrchestrationStore) => (
     state.taskIdsByRootId[rootSessionId] ?? EMPTY_TASK_IDS
   ),
+  taskIdForDispatchCall: (rootSessionId: string, dispatchCallId: string) => (
+    state: ManagedOrchestrationStore
+  ) => {
+    if (!rootSessionId || !dispatchCallId) return undefined;
+    const taskIds = state.taskIdsByRootId[rootSessionId] ?? EMPTY_TASK_IDS;
+    return taskIds.find((taskId) => (
+      state.tasksById[taskId]?.dispatchCallId === dispatchCallId
+    ));
+  },
   hasUndispositionedTasksForRoot: (rootSessionId: string) => (
     state: ManagedOrchestrationStore
   ) => {

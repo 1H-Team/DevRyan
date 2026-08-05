@@ -1,3 +1,4 @@
+import { getSafeStorage } from '@/stores/utils/safeStorage';
 /**
  * useBrowserVoice Hook
  * 
@@ -26,15 +27,30 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { browserVoiceService } from '@/lib/voice/browserVoiceService';
+import {
+  browserVoiceService,
+  type BrowserVoiceError,
+  type BrowserVoiceErrorCode,
+} from '@/lib/voice/browserVoiceService';
 import { audioStreamService } from '@/lib/voice/audioStreamService';
 import { nativeMacosSpeechService } from '@/lib/voice/nativeMacosSpeechService';
-import { wasmSttService } from '@/lib/voice/wasmSttService';
+import {
+  WASM_MODELS,
+  wasmSttService,
+  type WasmModelStatus,
+} from '@/lib/voice/wasmSttService';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useInputStore } from '@/sync/input-store';
 import { useConfigStore } from '@/stores/useConfigStore';
 
 export type BrowserVoiceStatus = 'idle' | 'listening' | 'processing' | 'speaking' | 'error';
+
+export type LocalVoiceRecovery = {
+  reason: Extract<BrowserVoiceErrorCode, 'network' | 'service-not-allowed'>;
+  modelId: string;
+  modelName: string;
+  modelSize: string;
+};
 
 export interface UseBrowserVoiceReturn {
   /** Current voice status */
@@ -48,7 +64,7 @@ export interface UseBrowserVoiceReturn {
   /** Set Browser provider recognition language */
   setBrowserLanguage: (lang: string) => void;
   /** Start voice mode (listening) */
-  startVoice: () => void;
+  startVoice: () => Promise<void>;
   /** Stop voice mode */
   stopVoice: () => void;
   /** Prepare voice for mobile (request permission) */
@@ -57,6 +73,12 @@ export interface UseBrowserVoiceReturn {
   isMobile: boolean;
   /** Current microphone level, normalized from 0 to 1 when available */
   audioLevel: number | null;
+  /** Local model download/load status */
+  localModelStatus: WasmModelStatus;
+  /** Consent-based Local fallback offered for browser service failures */
+  localRecovery: LocalVoiceRecovery | null;
+  /** Download the configured Local model, persist it, and resume listening */
+  recoverWithLocal: () => Promise<boolean>;
   /** Current voice provider */
   voiceProvider: 'browser' | 'openai' | 'openai-compatible' | 'say';
 }
@@ -70,6 +92,10 @@ const BLOCKED_SPEECH_LANGUAGES = new Set(['ru', 'ru-RU']);
 const SERVER_STT_AUTO_LANGUAGE = 'auto';
 // Intentionally no app language override: macOS should use Apple/system default speech language.
 const MACOS_SYSTEM_LANGUAGE: string | undefined = undefined;
+
+export const isBrowserServiceRecoveryError = (
+  code: BrowserVoiceErrorCode,
+): code is LocalVoiceRecovery['reason'] => code === 'network' || code === 'service-not-allowed';
 
 const getChatInput = (): HTMLTextAreaElement | null => {
   if (typeof document === 'undefined') return null;
@@ -332,10 +358,12 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
   const [status, setStatus] = useState<BrowserVoiceStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [audioLevel, setAudioLevel] = useState<number | null>(null);
+  const [localModelStatus, setLocalModelStatus] = useState<WasmModelStatus>(() => wasmSttService.getModelStatus());
+  const [localRecovery, setLocalRecovery] = useState<LocalVoiceRecovery | null>(null);
   const [browserLanguage, setBrowserLanguageState] = useState<string>(() => {
     // Try to load from localStorage, fallback to navigator.language
     if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+      const saved = getSafeStorage().getItem(LANGUAGE_STORAGE_KEY);
       if (saved) return sanitizeSpeechLanguage(saved);
     }
     return sanitizeSpeechLanguage(navigator.language || 'en-US');
@@ -353,14 +381,18 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
   const processingMessageRef = useRef(false);
   const voiceDraftStateRef = useRef<VoiceTranscriptDraftState | null>(null);
   const deviceChangeRestartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const localRecoveryOfferedRef = useRef(false);
   
   // Store access
   const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
+  const currentSessionIdRef = useRef(currentSessionId);
+  currentSessionIdRef.current = currentSessionId;
   const setPendingInputText = useInputStore((s) => s.setPendingInputText);
   const voiceProvider = useConfigStore((state) => state.voiceProvider);
 
   // STT provider config
   const sttProvider = useConfigStore((state) => state.sttProvider);
+  const setSttProvider = useConfigStore((state) => state.setSttProvider);
   const sttServerUrl = useConfigStore((state) => state.sttServerUrl);
   const sttModel = useConfigStore((state) => state.sttModel);
   const wasmSttModel = useConfigStore((state) => state.wasmSttModel);
@@ -376,6 +408,8 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
       : sttProvider === 'wasm'
         ? wasmSttService.isSupported()
         : browserVoiceService.isSupported();
+
+  useEffect(() => wasmSttService.subscribeModelStatus(setLocalModelStatus), []);
 
   // Stop voice when session changes to prevent microphone from staying active
   // This ensures voice mode doesn't carry over between sessions
@@ -393,6 +427,8 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
         wasmSttService.stopListening();
         browserVoiceService.cancelSpeech();
         voiceDraftStateRef.current = null;
+        localRecoveryOfferedRef.current = false;
+        setLocalRecovery(null);
         setAudioLevel(null);
         setStatus('idle');
         setError(null);
@@ -406,7 +442,7 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
     const nextLang = sanitizeSpeechLanguage(lang);
     setBrowserLanguageState(nextLang);
     if (typeof window !== 'undefined') {
-      localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLang);
+      getSafeStorage().setItem(LANGUAGE_STORAGE_KEY, nextLang);
       window.dispatchEvent(new CustomEvent<string>(LANGUAGE_CHANGE_EVENT, { detail: nextLang }));
     }
   }, []);
@@ -418,7 +454,7 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
 
     const handleLanguageEvent = (event: Event) => {
       const customEvent = event as CustomEvent<string>;
-      const nextLang = sanitizeSpeechLanguage(customEvent.detail || localStorage.getItem(LANGUAGE_STORAGE_KEY) || 'en-US');
+      const nextLang = sanitizeSpeechLanguage(customEvent.detail || getSafeStorage().getItem(LANGUAGE_STORAGE_KEY) || 'en-US');
       setBrowserLanguageState((prev) => (prev === nextLang ? prev : nextLang));
     };
 
@@ -441,6 +477,7 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
 
   // Refs for callbacks to avoid circular dependencies
   const handleSpeechErrorRef = useRef<((errorMsg: string) => void) | null>(null);
+  const handleBrowserSpeechErrorRef = useRef<((error: BrowserVoiceError) => void) | null>(null);
   const handleSpeechResultRef = useRef<((text: string, isFinal: boolean) => Promise<void>) | null>(null);
 
   const handleAudioLevel = useCallback((level: number) => {
@@ -514,7 +551,10 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
           });
           wasmSttService.startListening(sttLanguage || browserLanguage, handleSpeechResultRef.current!, handleSpeechError, handleAudioLevel).catch(() => {});
         } else {
-          browserVoiceService.startListening(browserLanguage, handleSpeechResultRef.current!, handleSpeechError);
+          const browserErrorHandler = handleBrowserSpeechErrorRef.current;
+          if (browserErrorHandler) {
+            browserVoiceService.startListening(browserLanguage, handleSpeechResultRef.current!, browserErrorHandler);
+          }
         }
       }
     }, 1000);
@@ -524,6 +564,45 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
   useEffect(() => {
     handleSpeechErrorRef.current = handleSpeechError;
   }, [handleSpeechError]);
+
+  const handleBrowserSpeechError = useCallback((browserError: BrowserVoiceError) => {
+    if (!isActiveRef.current) {
+      console.log('[useBrowserVoice] Ignoring browser error after voice stopped:', browserError);
+      return;
+    }
+
+    if (
+      sttProvider === 'browser'
+      && isBrowserServiceRecoveryError(browserError.code)
+      && wasmSttService.isSupported()
+    ) {
+      if (localRecoveryOfferedRef.current) {
+        return;
+      }
+
+      localRecoveryOfferedRef.current = true;
+      browserVoiceService.stopListening();
+      isActiveRef.current = false;
+      setAudioLevel(null);
+      setError(browserError.message);
+      setStatus('error');
+
+      const model = WASM_MODELS.find((candidate) => candidate.id === wasmSttModel);
+      setLocalRecovery({
+        reason: browserError.code,
+        modelId: wasmSttModel,
+        modelName: model?.name ?? wasmSttModel,
+        modelSize: model?.size ?? 'one-time download',
+      });
+      return;
+    }
+
+    handleSpeechError(browserError.message);
+  }, [handleSpeechError, sttProvider, wasmSttModel]);
+
+  useEffect(() => {
+    handleBrowserSpeechErrorRef.current = handleBrowserSpeechError;
+  }, [handleBrowserSpeechError]);
 
   // Handle speech recognition result
   const handleSpeechResult = useCallback(async (text: string, isFinal: boolean) => {
@@ -600,10 +679,12 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
             void wasmSttService.startListening(sttLanguage || browserLanguage, handleSpeechResultRef.current!, handleSpeechErrorRef.current!, handleAudioLevel);
           } else {
             browserVoiceService.stopListening();
+            const browserErrorHandler = handleBrowserSpeechErrorRef.current;
+            if (!browserErrorHandler) return;
             if (isMobile) {
-              browserVoiceService.startListeningSync(browserLanguage, handleSpeechResultRef.current!, handleSpeechErrorRef.current!);
+              browserVoiceService.startListeningSync(browserLanguage, handleSpeechResultRef.current!, browserErrorHandler);
             } else {
-              void browserVoiceService.startListening(browserLanguage, handleSpeechResultRef.current!, handleSpeechErrorRef.current!);
+              void browserVoiceService.startListening(browserLanguage, handleSpeechResultRef.current!, browserErrorHandler);
             }
           }
         } catch (err) {
@@ -630,6 +711,61 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
   useEffect(() => {
     handleSpeechResultRef.current = handleSpeechResult;
   }, [handleSpeechResult]);
+
+  const recoverWithLocal = useCallback(async (): Promise<boolean> => {
+    if (!localRecovery || !wasmSttService.isSupported()) {
+      return false;
+    }
+
+    const recoverySessionId = currentSessionIdRef.current;
+    browserVoiceService.stopListening();
+    isActiveRef.current = true;
+    setError(null);
+    setAudioLevel(null);
+    setStatus('processing');
+    focusChatInput();
+
+    try {
+      const modelStatus = wasmSttService.getModelStatus();
+      if (modelStatus.state !== 'ready' || wasmSttService.getCurrentModelId() !== localRecovery.modelId) {
+        await wasmSttService.loadModel(localRecovery.modelId);
+      }
+      if (!isActiveRef.current || currentSessionIdRef.current !== recoverySessionId) {
+        isActiveRef.current = false;
+        voiceDraftStateRef.current = null;
+        setLocalRecovery(null);
+        setError(null);
+        setAudioLevel(null);
+        setStatus('idle');
+        return false;
+      }
+
+      wasmSttService.configure({
+        deviceId: voiceInputDeviceId || undefined,
+        silenceThresholdDb: sttSilenceThresholdDb,
+        silenceHoldMs: sttSilenceHoldMs,
+      });
+      setSttProvider('wasm');
+      setLocalRecovery(null);
+      setStatus('listening');
+      await wasmSttService.startListening(
+        sttLanguage || browserLanguage,
+        handleSpeechResult,
+        handleSpeechError,
+        handleAudioLevel,
+      );
+      return wasmSttService.getIsListening();
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to load the local voice model';
+      console.error('[useBrowserVoice] Local fallback failed:', errorMsg);
+      isActiveRef.current = false;
+      setLocalRecovery(null);
+      setError(`Local voice setup failed: ${errorMsg}`);
+      setStatus('error');
+      setAudioLevel(null);
+      return false;
+    }
+  }, [browserLanguage, handleAudioLevel, handleSpeechError, handleSpeechResult, localRecovery, setSttProvider, sttLanguage, sttSilenceHoldMs, sttSilenceThresholdDb, voiceInputDeviceId]);
 
   // Prepare voice for mobile (request permission)
   const prepareVoice = useCallback(async (): Promise<boolean> => {
@@ -670,6 +806,8 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
       return;
     }
     
+    localRecoveryOfferedRef.current = false;
+    setLocalRecovery(null);
     isActiveRef.current = true;
     const initialInput = getChatInput();
     const initialPosition = initialInput?.selectionEnd ?? readChatInputText().length;
@@ -776,7 +914,7 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
         browserVoiceService.unlockAudio().catch(() => {
           // Audio unlock failed, but continue anyway
         });
-        browserVoiceService.startListeningSync(browserLanguage, handleSpeechResult, handleSpeechError);
+        browserVoiceService.startListeningSync(browserLanguage, handleSpeechResult, handleBrowserSpeechError);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Failed to start voice';
         console.error('[useBrowserVoice] Mobile voice start error:', errorMsg);
@@ -791,7 +929,7 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
       focusChatInput();
       // Desktop can use async path with permission check
       try {
-        await browserVoiceService.startListening(browserLanguage, handleSpeechResult, handleSpeechError);
+        await browserVoiceService.startListening(browserLanguage, handleSpeechResult, handleBrowserSpeechError);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Failed to start voice';
         console.error('[useBrowserVoice] Desktop voice start error:', errorMsg);
@@ -802,7 +940,7 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
         setAudioLevel(null);
       }
     }
-  }, [isSupported, browserLanguage, handleSpeechResult, handleSpeechError, handleAudioLevel, isMobile, sttProvider, sttServerUrl, sttModel, wasmSttModel, sttLanguage, voiceInputDeviceId, sttSilenceThresholdDb, sttSilenceHoldMs]);
+  }, [isSupported, browserLanguage, handleSpeechResult, handleSpeechError, handleBrowserSpeechError, handleAudioLevel, isMobile, sttProvider, sttServerUrl, sttModel, wasmSttModel, sttLanguage, voiceInputDeviceId, sttSilenceThresholdDb, sttSilenceHoldMs]);
 
   // Stop voice mode
   const stopVoice = useCallback(() => {
@@ -818,6 +956,8 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
     wasmSttService.stopListening();
     browserVoiceService.cancelSpeech();
     voiceDraftStateRef.current = null;
+    localRecoveryOfferedRef.current = false;
+    setLocalRecovery(null);
     setAudioLevel(null);
     setStatus('idle');
     setError(null);
@@ -837,6 +977,7 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
       wasmSttService.stopListening();
       browserVoiceService.cancelSpeech();
       voiceDraftStateRef.current = null;
+      localRecoveryOfferedRef.current = false;
       setAudioLevel(null);
     };
   }, []);
@@ -852,6 +993,9 @@ export function useBrowserVoice(): UseBrowserVoiceReturn {
     prepareVoice,
     isMobile,
     audioLevel,
+    localModelStatus,
+    localRecovery,
+    recoverWithLocal,
     voiceProvider,
   };
 }

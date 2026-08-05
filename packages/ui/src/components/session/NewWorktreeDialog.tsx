@@ -1,3 +1,4 @@
+import { getSafeStorage } from '@/stores/utils/safeStorage';
 import * as React from 'react';
 import {
   Dialog,
@@ -75,6 +76,9 @@ import type {
 } from '@/lib/api/types';
 import type { ProjectRef } from '@/lib/worktrees/worktreeManager';
 import { useI18n } from '@/lib/i18n';
+import { createWorktreeIdempotencyKey, createWorktreeRequestSignature } from '@/lib/worktreeSessionCreator';
+import { useAuthPrincipal } from '@/lib/authSession';
+import { filterBranchNamesByGrantedBranches } from '@/lib/worktrees/managedBranches';
 
 const normalizeDirectory = (value: string): string => (
   value.replace(/\\/g, '/').replace(/\/+$/, '') || value
@@ -249,6 +253,7 @@ export function NewWorktreeDialog({
   onWorktreeCreated,
 }: NewWorktreeDialogProps) {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
   const { github, git } = useRuntimeAPIs();
   const isMobile = useUIStore((state) => state.isMobile);
   const githubAuthStatus = useGitHubAuthStore((state) => state.status);
@@ -286,22 +291,25 @@ export function NewWorktreeDialog({
   const branches = useGitBranches(projectDirectory);
   const isLoadingBranches = useGitLoadingBranches(projectDirectory);
   const fetchBranches = useGitStore((state) => state.fetchBranches);
+  const visibleBranchNames = React.useMemo(() => {
+    const allBranches = branches?.all ?? [];
+    if (principal.scope !== 'managed' || principal.role === 'admin' || !activeProject) return allBranches;
+    return filterBranchNamesByGrantedBranches(allBranches, activeProject);
+  }, [activeProject, branches?.all, principal.role, principal.scope]);
 
   // Compute local and remote branch lists (same pattern as GitView)
   const localBranches = React.useMemo(() => {
-    if (!branches?.all) return [];
-    return branches.all
+    return visibleBranchNames
       .filter((branchName: string) => !branchName.startsWith('remotes/'))
       .sort();
-  }, [branches]);
+  }, [visibleBranchNames]);
   
   const remoteBranches = React.useMemo(() => {
-    if (!branches?.all) return [];
-    return branches.all
+    return visibleBranchNames
       .filter((branchName: string) => branchName.startsWith('remotes/'))
       .map((branchName: string) => branchName.replace(/^remotes\//, ''))
       .sort();
-  }, [branches]);
+  }, [visibleBranchNames]);
   
   // Get existing worktrees for the current project to avoid conflicts
   const availableWorktreesByProject = useSessionUIStore((state) => state.availableWorktreesByProject);
@@ -460,6 +468,7 @@ export function NewWorktreeDialog({
   const pendingFinalizeRef = React.useRef<(() => Promise<void>) | null>(null);
   const pendingResumeRef = React.useRef<(() => Promise<void>) | null>(null);
   const pendingIdempotencyKeyRef = React.useRef<string | null>(null);
+  const pendingRequestSignatureRef = React.useRef<string | null>(null);
   const [validationAbortController, setValidationAbortController] = React.useState<AbortController | null>(null);
 
   React.useEffect(() => {
@@ -732,22 +741,22 @@ export function NewWorktreeDialog({
 
   // Set default source branch when branches become available
   React.useEffect(() => {
-    if (!branches?.all || !projectDirectory) return;
+    if (visibleBranchNames.length === 0 || !projectDirectory) return;
     if (newBranchState.sourceBranch) return; // Already set
     
     const loadDefaultSourceBranch = async () => {
       try {
         const rootBranch = await getRootBranch(projectDirectory).catch(() => null);
-        const savedSourceBranch = localStorage.getItem(LAST_SOURCE_BRANCH_KEY);
-        const defaultSourceBranch = savedSourceBranch && branches.all?.includes(savedSourceBranch)
+        const savedSourceBranch = getSafeStorage().getItem(LAST_SOURCE_BRANCH_KEY);
+        const defaultSourceBranch = savedSourceBranch && visibleBranchNames.includes(savedSourceBranch)
           ? savedSourceBranch
-          : rootBranch && branches.all?.includes(rootBranch)
+          : rootBranch && visibleBranchNames.includes(rootBranch)
             ? rootBranch
-            : branches.all?.includes('main')
+            : visibleBranchNames.includes('main')
               ? 'main'
-              : branches.all?.includes('master')
+              : visibleBranchNames.includes('master')
                 ? 'master'
-                : branches.all?.[0] || '';
+                : visibleBranchNames[0] || '';
         
         if (defaultSourceBranch) {
           setNewBranchState(prev => ({
@@ -761,7 +770,7 @@ export function NewWorktreeDialog({
     };
     
     void loadDefaultSourceBranch();
-  }, [branches, projectDirectory, newBranchState.sourceBranch]);
+  }, [projectDirectory, newBranchState.sourceBranch, visibleBranchNames]);
 
   // Reset state on each open. Resetting on close would empty the form during
   // the close animation, causing visible flicker.
@@ -791,6 +800,8 @@ export function NewWorktreeDialog({
       worktreeError: null,
       touched: false,
     });
+    pendingIdempotencyKeyRef.current = null;
+    pendingRequestSignatureRef.current = null;
 
     const uniqueSlug = generateUniqueSlug();
     setNewBranchState({
@@ -994,11 +1005,16 @@ export function NewWorktreeDialog({
         };
       })();
       
-      pendingIdempotencyKeyRef.current ??= `worktree_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-      const resolvedArgs = await withWorktreeUpstreamDefaults(projectDirectory, {
-        ...args,
-        idempotencyKey: pendingIdempotencyKeyRef.current,
-      });
+      const upstreamArgs = await withWorktreeUpstreamDefaults(projectDirectory, args);
+      const requestSignature = createWorktreeRequestSignature(projectDirectory, upstreamArgs);
+      if (pendingRequestSignatureRef.current !== requestSignature) {
+        pendingRequestSignatureRef.current = requestSignature;
+        pendingIdempotencyKeyRef.current = createWorktreeIdempotencyKey();
+      }
+      const resolvedArgs = {
+        ...upstreamArgs,
+        idempotencyKey: pendingIdempotencyKeyRef.current ?? createWorktreeIdempotencyKey(),
+      };
       const linkedIssue = mode === 'new-branch' ? newBranchState.linkedIssue : null;
       const linkedPrState = mode === 'new-branch' ? newBranchState.linkedPr : null;
       const includePrDiff = mode === 'new-branch' ? newBranchState.includePrDiff : false;
@@ -1030,7 +1046,7 @@ export function NewWorktreeDialog({
       
         // Save source branch preference (only if not from PR)
         if (newBranchState.sourceBranch && mode === 'new-branch' && !newBranchState.linkedPr) {
-          localStorage.setItem(LAST_SOURCE_BRANCH_KEY, newBranchState.sourceBranch);
+          getSafeStorage().setItem(LAST_SOURCE_BRANCH_KEY, newBranchState.sourceBranch);
         }
       
         toast.success(t('session.newWorktree.toast.worktreeCreated'), {
@@ -1061,6 +1077,7 @@ export function NewWorktreeDialog({
         pendingFinalizeRef.current = null;
         pendingResumeRef.current = null;
         pendingIdempotencyKeyRef.current = null;
+        pendingRequestSignatureRef.current = null;
       };
 
       const resumeCreation = async () => {
@@ -1092,6 +1109,7 @@ export function NewWorktreeDialog({
       if (!operationError.bootstrap && !pendingFinalizeRef.current) {
         pendingResumeRef.current = null;
         pendingIdempotencyKeyRef.current = null;
+        pendingRequestSignatureRef.current = null;
       }
     } finally {
       setIsCreating(false);
@@ -1196,6 +1214,7 @@ export function NewWorktreeDialog({
       pendingFinalizeRef.current = null;
       pendingResumeRef.current = null;
       pendingIdempotencyKeyRef.current = null;
+      pendingRequestSignatureRef.current = null;
       toast.success('Failed worktree removed');
     } catch (error) {
       toast.error('Failed to remove worktree', {

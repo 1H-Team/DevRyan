@@ -9,6 +9,7 @@ export type AgentHandoffPhase = 'idle' | 'inspecting' | 'confirmation' | 'cleani
 export type AgentHandoffViewState = {
   open: boolean;
   phase: AgentHandoffPhase;
+  errorKind: 'inspection' | 'cleanup' | null;
   sessionId: string | null;
   tasks: ManagedTaskProjection[];
   failures: ManagedAgentHandoffResponse['failures'];
@@ -51,6 +52,16 @@ export const shouldGuardAgentChange = (request: AgentChangeRequest) => (
   && normalizedAgent(request.nextAgentName) === 'builder'
 );
 
+export const shouldReconcileBuilderSession = (input: {
+  sessionId: string | null;
+  savedAgentName: string | null | undefined;
+  handoffCleared: boolean;
+}) => (
+  Boolean(input.sessionId)
+  && normalizedAgent(input.savedAgentName) === 'builder'
+  && !input.handoffCleared
+);
+
 const defaultIdempotencyKey = () => {
   const id = globalThis.crypto?.randomUUID?.()
     ?? `${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
@@ -60,6 +71,7 @@ const defaultIdempotencyKey = () => {
 const idleState = (sessionId: string | null): AgentHandoffViewState => ({
   open: false,
   phase: 'idle',
+  errorKind: null,
   sessionId,
   tasks: [],
   failures: [],
@@ -150,6 +162,7 @@ export const createAgentHandoffCoordinator = (options: CoordinatorOptions) => {
         emit({
           open: true,
           phase: result.state === 'confirmation_required' ? 'confirmation' : 'error',
+          errorKind: result.state === 'confirmation_required' ? null : 'cleanup',
           sessionId: request.sessionId,
           tasks: result.tasks,
           failures: result.failures,
@@ -165,6 +178,7 @@ export const createAgentHandoffCoordinator = (options: CoordinatorOptions) => {
         emit({
           open: true,
           phase: 'error',
+          errorKind: 'inspection',
           sessionId: request.sessionId,
           tasks: state.tasks,
           failures: [],
@@ -228,7 +242,7 @@ export const createAgentHandoffCoordinator = (options: CoordinatorOptions) => {
     cleanupConfirmed = true;
     idempotencyKey ??= (options.createIdempotencyKey ?? defaultIdempotencyKey)();
     const requestGeneration = ++generation;
-    emit({ ...state, open: true, phase: 'cleaning', errorMessage: null });
+    emit({ ...state, open: true, phase: 'cleaning', errorKind: null, errorMessage: null });
 
     try {
       const result = await options.api.handoff({
@@ -249,6 +263,7 @@ export const createAgentHandoffCoordinator = (options: CoordinatorOptions) => {
       emit({
         open: true,
         phase: 'error',
+        errorKind: 'cleanup',
         sessionId: request.sessionId,
         tasks: result.tasks,
         failures: result.failures,
@@ -262,6 +277,7 @@ export const createAgentHandoffCoordinator = (options: CoordinatorOptions) => {
         ...state,
         open: true,
         phase: 'error',
+        errorKind: 'cleanup',
         errorMessage: errorMessage(error),
       });
       return null;

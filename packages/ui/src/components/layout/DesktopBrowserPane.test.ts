@@ -2,100 +2,158 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 
 const source = readFileSync(new URL('./DesktopBrowserPane.tsx', import.meta.url), 'utf8');
+const storeSource = readFileSync(new URL('../../stores/useBrowserSurfaceStore.ts', import.meta.url), 'utf8');
+const viteSource = readFileSync(new URL('../../../../web/vite.config.ts', import.meta.url), 'utf8');
+const projectActionsSource = readFileSync(new URL('./ProjectActionsButton.tsx', import.meta.url), 'utf8');
+const headerSource = readFileSync(new URL('./Header.tsx', import.meta.url), 'utf8');
+const desktopRuntimeSource = readFileSync(new URL('../../lib/desktop.ts', import.meta.url), 'utf8');
+const browserRuntimeSource = readFileSync(new URL('./browserRuntime.ts', import.meta.url), 'utf8');
+const diagnosticsSource = readFileSync(new URL('./previewDiagnostics.tsx', import.meta.url), 'utf8');
+const diagnosticsStateSource = readFileSync(new URL('./previewDiagnosticsState.ts', import.meta.url), 'utf8');
 
-describe('DesktopBrowserPane address bar', () => {
-  test('selects the full address when the field receives focus', () => {
+describe('shared browser surface shell', () => {
+  test('gates the browser on a normalized directory rather than a project record', () => {
+    expect(projectActionsSource).toContain('const canOpenBlankBrowser = Boolean(normalizedDirectory);');
+    expect(projectActionsSource).not.toContain('Boolean(stableProjectRef && normalizedDirectory)');
+    expect(headerSource).toContain("if (!actionDirectory) {");
+    expect(headerSource).toContain('return { projectRef: activeProjectRef, directory: actionDirectory };');
+    expect(headerSource).toContain('directory={actionDirectory}');
+  });
+  test('keeps browser state outside the broad UI store and uses surface snapshots', () => {
+    expect(storeSource).toContain('export type BrowserSurfaceSnapshot');
+    expect(storeSource).toContain("placement: 'inline' | 'popout' | 'parked'");
+    expect(storeSource).toContain('surfaceIdByTabId');
+    expect(source).toContain('useBrowserSurfaceStore((state) => surfaceId');
+  });
+
+  test('renders navigation, pop-out, inspect, DevTools, and regular-browser actions', () => {
     expect(source).toContain('onFocus={(event) => event.currentTarget.select()}');
+    expect(source).toContain("aria-label={popped ? 'Dock Browser' : 'Pop Out Browser'}");
+    expect(source).toContain("title=\"Open in Regular Browser\"");
+    expect(source).toContain("'desktop_browser_surface_inspect'");
+    expect(source).toContain("'desktop_browser_devtools_set_open'");
   });
 
-  test('does not render the browser trust notice', () => {
-    expect(source).not.toContain('contextPanel.browser.trustNotice');
+  test('aligns toolbar controls and uses picture-in-picture placement icons', () => {
+    expect(source).toContain("const BROWSER_TOOLBAR_BUTTON_CLASS = 'size-7 p-0 leading-none';");
+    expect(source).toContain("const BROWSER_TOOLBAR_ICON_CLASS = 'size-3.5';");
+    expect(source).toContain('<RiPictureInPicture2Line');
+    expect(source).toContain('<RiPictureInPictureExitLine');
+    expect(source).not.toContain('RiFullscreenLine');
+    expect(source).not.toContain('RiFullscreenExitLine');
   });
 
-  test('does not render a proxy connection message while loading websites', () => {
-    expect(source).not.toContain('contextPanel.preview.loading');
+  test('uses configured interface typography in the address field and pop-out root', () => {
+    expect(source).toContain('font-sans typography-ui-label font-normal leading-none tracking-normal');
+    expect(source).toContain("import { useAppFontEffects } from '@/apps/useAppFontEffects';");
+    expect(source).toContain('export const BrowserPopoutApp: React.FC = () => {\n  useAppFontEffects();');
   });
 
-  test('loads a selected local instance in the existing webview', () => {
-    expect(source).toContain('onClick={() => loadUrl(instance.url)}');
-    expect(source).toContain("setIsLoading(nextUrl !== 'about:blank')");
-    expect(source).toContain("webview.addEventListener('did-fail-load', onFailLoading)");
-    expect(source).toContain("webview.removeEventListener('did-fail-load', onFailLoading)");
+  test('keeps the blank surface detachable', () => {
+    expect(source).toContain("currentUrl === 'about:blank'");
+    expect(source).toContain("const commandName = popped ? 'desktop_browser_surface_dock' : 'desktop_browser_surface_popout'");
+    expect(source).not.toContain('disabled={!currentUrl}');
   });
-});
 
-describe('DesktopBrowserPane local instance launcher', () => {
-  test('shows confirmed local previews only in the active blank state', () => {
+  test('offers confirmed local preview instances in the empty state', () => {
     expect(source).toContain('useLocalPreviewInstances(');
     expect(source).toContain('useReachableLocalPreviewInstances(');
-    expect(source).toContain('!leaseId && active && isBlankPage && !isLoading');
-    expect(source).toContain('reachableLocalPreviews.length > 0');
-  });
-
-  test('renders the screenshot-inspired grouped server rows accessibly', () => {
+    expect(source).toContain('reachable.map((instance, index) => (');
+    expect(source).toContain('onClick={() => onNavigate(instance.url)}');
     expect(source).toContain('role="list"');
-    expect(source).toContain("aria-label={t('contextPanel.browser.localInstancesAria')}");
     expect(source).toContain('<RiServerLine');
-    expect(source).toContain('<RiPlayLine');
-    expect(source).toContain("t('contextPanel.browser.openLocalInstance'");
   });
 });
 
-describe('DesktopBrowserPane lease binding', () => {
-  test('binds only an explicitly leased guest after Electron attaches it', () => {
-    expect(source).toContain('leaseId?: string;');
-    expect(source).toContain("webview.addEventListener('did-attach', bindLeaseGuest)");
-    expect(source).toContain("webview.addEventListener('dom-ready', bindLeaseGuest)");
-    expect(source).toContain("invokeDesktop('desktop_browser_lease_bind_guest', { leaseId, webContentsId })");
-    expect(source).toContain('data-browser-lease-id={leaseId ?? undefined}');
+describe('Electron browser surface', () => {
+  test('creates and lays out a main-owned view without a renderer webview', () => {
+    expect(source).toContain('createDesktopBrowserSurface(tabID');
+    expect(source).toContain("'desktop_browser_surface_layout'");
+    expect(source).toContain("const surfaceId = leaseId ? (lease?.surfaceId ?? '') : manualSurfaceId;");
+    expect(source).not.toContain('<webview');
+    expect(source).not.toContain('webContentsId');
   });
 
-  test('uses the lease leaf for observed cursor presentation without global status listeners', () => {
-    expect(source).toContain('const isAgentDriving = Boolean(leaseId && lease?.clientAttached);');
-    expect(source).toContain('<BrowserAgentCursor active={active && isAgentDriving} leaseId={leaseId} />');
-    expect(source).not.toContain("window.addEventListener('browser-agent-status'");
-    expect(source).not.toContain("desktop_browser_cdp_start");
-  });
-});
-
-describe('DesktopBrowserPane native DevTools', () => {
-  test('places Inspect Element between the address field and chat selector', () => {
-    const addressEnd = source.indexOf('</form>');
-    const devToolsButton = source.indexOf('data-browser-devtools-toggle="true"');
-    const chatSelector = source.indexOf('<RiCursorLine');
-
-    expect(addressEnd).toBeGreaterThan(-1);
-    expect(devToolsButton).toBeGreaterThan(addressEnd);
-    expect(chatSelector).toBeGreaterThan(devToolsButton);
-  });
-
-  test('tracks native lifecycle and exposes an accessible pressed state', () => {
-    expect(source).toContain("webview.addEventListener('devtools-opened', onDevToolsOpened)");
-    expect(source).toContain("webview.addEventListener('devtools-closed', onDevToolsClosed)");
-    expect(source).toContain("webview.addEventListener('devtools-open-url', onDevToolsOpenUrl)");
-    expect(source).toContain('aria-pressed={isDevToolsOpen}');
-    expect(source).toContain("variant={isDevToolsOpen ? 'secondary' : 'ghost'}");
-  });
-
-  test('reserves a resizable bottom dock and synchronizes native bounds', () => {
-    expect(source).toContain('getDevToolsDockBounds');
-    expect(source).toContain('new ResizeObserver(syncBounds)');
+  test('retains annotation capture and resizable native DevTools by surface id', () => {
+    expect(source).toContain("'desktop_browser_capture_page', { surfaceId }");
+    expect(source).toContain('desktopAnnotationToFile(');
     expect(source).toContain('role="separator"');
-    expect(source).toContain("aria-label={t('contextPanel.browser.devtoolsResize')}");
-    expect(source).toContain('onPointerDown={handleDevToolsDockResizeStart}');
-    expect(source).toContain('height: isDevToolsOpen ? `calc(100% - ${devToolsDockHeight}px)`');
+    expect(source).toContain("window.addEventListener('pointermove', onMove)");
+    expect(source).toContain('snapshot?.devToolsOpen');
   });
 
-  test('closes the dock for inactive tabs and preserves the chat annotation cursor', () => {
-    expect(source).toContain('if (active || !isDevToolsOpen) return;');
-    expect(source).toContain('void requestDevToolsOpen(false).catch(() => {});');
-    expect(source).toContain("title={t('contextPanel.browser.selectForChat')}");
-    expect(source).toContain('onClick={handleInspect}');
+  test('shows Focus and Dock controls while the live view is popped out', () => {
+    expect(source).toContain('Browser is open in another window');
+    expect(source).toContain("'desktop_browser_surface_focus_popout'");
+    expect(source).toContain('onClick={togglePopout}>Dock</Button>');
+  });
+});
+
+describe('standalone web browser surface', () => {
+  test('supports local, managed, and tunneled standalone web origins', () => {
+    expect(desktopRuntimeSource).toContain('export const isStandaloneWebRuntime');
+    expect(browserRuntimeSource).toContain('isElectronShell() || isStandaloneWebRuntime()');
+    expect(source).toContain('if (isStandaloneWebRuntime()) return <WebBrowserPane {...props} />;');
+    expect(projectActionsSource).toContain('openContextBrowser(targetDirectory, url);');
   });
 
-  test('surfaces unavailable and agent-disconnect outcomes', () => {
-    expect(source).toContain("toast.error(t('contextPanel.browser.devtoolsUnavailable'))");
-    expect(source).toContain('!agentDisconnectToastShownRef.current');
-    expect(source).toContain("toast.info(t('contextPanel.browser.devtoolsAgentDisconnected'))");
+  test('has a dedicated Vite entry and a sandboxed iframe with loopback proxy registration', () => {
+    expect(viteSource).toContain("browser: path.resolve(__dirname, 'browser.html')");
+    expect(source).toContain("fetch('/api/preview/targets'");
+    expect(source).toContain('body: JSON.stringify({ url: target, directory })');
+    expect(source).toContain("'allow-downloads allow-forms allow-modals allow-pointer-lock allow-popups allow-same-origin allow-scripts'");
+    expect(source).toContain("'allow-forms allow-modals allow-popups allow-scripts'");
+  });
+
+  test('shows shared console and element tools only for host-routed project apps', () => {
+    expect(source).toContain('showWebDiagnostics');
+    expect(source).toContain('webDiagnosticsEnabled={diagnosticsEnabled}');
+    expect(source).toContain('Console and Select Element are available only for project apps routed through DevRyan.');
+    expect(source).toContain('<PreviewConsolePanel {...diagnostics} />');
+    expect(diagnosticsStateSource).toContain('export const PREVIEW_CONSOLE_EVENT_LIMIT = 200;');
+    expect(diagnosticsSource).toContain("type: 'set-inspect-mode'");
+    expect(diagnosticsSource).toContain('renderPreviewScreenshot');
+  });
+
+  test('opens synchronously, transfers versioned state by random id, and handles popup blocking and close', () => {
+    expect(source).toContain('window.open(`/browser.html?surfaceId=${encodeURIComponent(surfaceId)}`');
+    expect(source).toContain('new BroadcastChannel(`devryan-browser-surface:${surfaceId}`)');
+    expect(source).toContain("source: 'devryan-browser-surface', version: 1, surfaceId");
+    expect(source).toContain("event.origin !== window.location.origin");
+    expect(source).toContain('popup.postMessage(envelope, window.location.origin)');
+    expect(source).toContain("message.type === 'ready'");
+    expect(source).toContain("message.type === 'dock' || message.type === 'closed'");
+    expect(source).toContain("message.type === 'ping'");
+    expect(source).toContain("sendToPopup({ type: 'pong' })");
+    expect(source).toContain("Date.now() - lastOpenerPongAtRef.current > 12_000");
+    expect(source).toContain("useReachableLocalPreviewInstances(previewCandidates, placement === 'popout', directory)");
+    expect(source).toContain('The browser pop-out was blocked');
+    expect(source).toContain('crypto.getRandomValues(bytes)');
+    expect(source).not.toContain('/browser.html?url=');
+    expect(source).not.toContain('/browser.html?directory=');
+  });
+
+  test('preserves serializable history and diagnostics across detach and dock', () => {
+    expect(source).toContain('export type WebBrowserSessionState');
+    expect(source).toContain('historyIndex: number;');
+    expect(source).toContain('diagnostics: PreviewDiagnosticsState;');
+    expect(source).toContain("send({ type: 'dock', state: stateRef.current ?? undefined })");
+    expect(source).toContain("send({ type: 'closed', state: stateRef.current ?? undefined })");
+    expect(source).toContain("type: 'attach-console'");
+    expect(source).toContain("type: 'attach-annotation'");
+    expect(source).toContain('pendingNavigationRef.current');
+    expect(source).toContain('reconcileWebBrowserDisplayUrl(value, currentUrl)');
+  });
+
+  test('keeps the internal reload cache key out of the displayed project URL', () => {
+    expect(source).toContain('sanitizeWebBrowserDisplayUrl(initialUrl)');
+    expect(source).not.toContain("params.set('ocPreview'");
+    expect(source).not.toContain("params.set('ocBrowser'");
+  });
+
+  test('invalidates a popup when logout or a user switch changes authentication identity', () => {
+    expect(source).toContain('getAuthenticatedBrowserIdentity');
+    expect(source).toContain('session.authenticated !== true');
+    expect(source).toContain('authIdentityRef.current !== identity');
   });
 });

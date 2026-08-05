@@ -19,16 +19,37 @@ export function createGlobalMessageStreamWsBridge({
   processForwardedEventPayload,
   triggerHealthCheck,
   heartbeatIntervalMs,
+  eventFilter = null,
 }) {
   const clients = new Set();
   const clientLastEventIds = new Map();
   const readyClients = new Set();
+  const clientPrincipals = new Map();
+  const clientQueues = new Map();
 
   const removeClient = (socket) => {
     clients.delete(socket);
     clientLastEventIds.delete(socket);
     readyClients.delete(socket);
+    clientPrincipals.delete(socket);
+    clientQueues.delete(socket);
     wsClients.delete(socket);
+  };
+
+  const sendIfAllowed = (socket, entry) => {
+    const previous = clientQueues.get(socket) || Promise.resolve(true);
+    const next = previous.then(async (canContinue) => {
+      if (!canContinue || !clients.has(socket)) return false;
+      if (eventFilter && !await eventFilter(clientPrincipals.get(socket), entry)) return true;
+      return sendMessageStreamWsEvent(socket, entry.payload, {
+        directory: entry.directory,
+        eventId: entry.eventId,
+      });
+    });
+    clientQueues.set(socket, next.catch(() => false));
+    void next.then((sent) => {
+      if (!sent) removeClient(socket);
+    });
   };
 
   const replayEvents = (socket, requestedLastEventId) => {
@@ -45,14 +66,7 @@ export function createGlobalMessageStreamWsBridge({
       });
     }
     for (const entry of events) {
-      const sent = sendMessageStreamWsEvent(socket, entry.payload, {
-        directory: entry.directory,
-        eventId: entry.eventId,
-      });
-      if (!sent) {
-        removeClient(socket);
-        return;
-      }
+      sendIfAllowed(socket, entry);
     }
   };
 
@@ -105,13 +119,7 @@ export function createGlobalMessageStreamWsBridge({
       if (!readyClients.has(socket)) {
         continue;
       }
-      const sent = sendMessageStreamWsEvent(socket, payload, {
-        directory,
-        eventId,
-      });
-      if (!sent) {
-        removeClient(socket);
-      }
+      sendIfAllowed(socket, { payload, directory, eventId });
     }
 
     processForwardedEventPayload(payload, (syntheticPayload) => {
@@ -119,10 +127,7 @@ export function createGlobalMessageStreamWsBridge({
         if (!readyClients.has(socket)) {
           continue;
         }
-        const sent = sendMessageStreamWsEvent(socket, syntheticPayload, { directory: 'global' });
-        if (!sent) {
-          removeClient(socket);
-        }
+        sendIfAllowed(socket, { payload: syntheticPayload, directory: 'global' });
       }
     });
   });
@@ -161,7 +166,7 @@ export function createGlobalMessageStreamWsBridge({
     }
   });
 
-  const accept = (socket, { requestedLastEventId = '' } = {}) => {
+  const accept = (socket, { requestedLastEventId = '', principal = null } = {}) => {
     const pingInterval = setInterval(() => {
       if (socket.readyState !== 1) {
         return;
@@ -193,6 +198,7 @@ export function createGlobalMessageStreamWsBridge({
     });
 
     clients.add(socket);
+    clientPrincipals.set(socket, principal);
     clientLastEventIds.set(socket, requestedLastEventId);
     globalHub.start();
     if (globalHub.isConnected()) {

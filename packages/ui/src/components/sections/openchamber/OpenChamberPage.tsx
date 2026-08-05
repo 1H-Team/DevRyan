@@ -5,7 +5,6 @@ import { PasskeySettings } from './PasskeySettings';
 import { DefaultsSettings } from './DefaultsSettings';
 import { GitSettings } from './GitSettings';
 import { NotificationSettings } from './NotificationSettings';
-import { GitHubSettings } from './GitHubSettings';
 import { VoiceSettings } from './VoiceSettings';
 import { TunnelSettings } from './TunnelSettings';
 import { OpenCodeCliSettings } from './OpenCodeCliSettings';
@@ -79,8 +78,6 @@ export const OpenChamberPage: React.FC<OpenChamberPageProps> = ({ section }) => 
                 return <ShortcutsSectionContent />;
             case 'git':
                 return <GitSectionContent />;
-            case 'github':
-                return <GitHubSectionContent />;
             case 'notifications':
                 return <NotificationSectionContent />;
             case 'voice':
@@ -161,14 +158,6 @@ const GitSectionContent: React.FC = () => {
             <GitSettings />
         </div>
     );
-};
-
-// GitHub section: Connect account for PR/issue workflows
-const GitHubSectionContent: React.FC = () => {
-    if (isVSCodeRuntime()) {
-        return null;
-    }
-    return <GitHubSettings />;
 };
 
 // Notifications section: Native browser notifications

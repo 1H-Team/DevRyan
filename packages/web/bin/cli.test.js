@@ -10,6 +10,8 @@ import {
   isDevRyanPidFileCommand,
   normalizeDaemonReadyTimeoutMs,
   parseArgs,
+  buildTunnelStartReplayCommand,
+  sanitizeTunnelProfilesData,
   terminateDaemonChild,
   validatePidFileIdentity,
   waitForDaemonReadyMessage,
@@ -50,6 +52,45 @@ describe('cli args', () => {
   it('accepts legacy daemon flags as no-ops', () => {
     expect(parseArgs(['serve', '--daemon']).removedFlagErrors).toEqual([]);
     expect(parseArgs(['serve', '-d']).removedFlagErrors).toEqual([]);
+  });
+
+  it('parses and validates managed remote origin ports in every output mode', () => {
+    for (const outputFlag of [[], ['--json'], ['--quiet']]) {
+      const parsed = parseArgs([
+        'tunnel', 'start', '--mode', 'managed-remote', '--origin-port', '3000', ...outputFlag,
+      ]);
+      expect(parsed.options).toMatchObject({ originPort: 3000, explicitOriginPort: true });
+    }
+
+    expect(() => parseArgs(['tunnel', 'start', '--origin-port', '1023'])).toThrow(/between 1024 and 65535/);
+    expect(() => parseArgs(['tunnel', 'start', '--origin-port', '65536'])).toThrow(/between 1024 and 65535/);
+  });
+
+  it('migrates v1 profile data to schema v2 defaults and includes the port in replay commands', () => {
+    const token = `eyJ${'x'.repeat(80)}`;
+    const migrated = sanitizeTunnelProfilesData({
+      version: 1,
+      profiles: [{
+        id: 'legacy',
+        name: 'Legacy',
+        provider: 'cloudflare',
+        mode: 'managed-remote',
+        hostname: 'app.example.com',
+        token,
+      }],
+    });
+
+    expect(migrated).toMatchObject({
+      version: 2,
+      profiles: [{ id: 'legacy', originPort: 3000 }],
+    });
+    expect(buildTunnelStartReplayCommand({
+      port: 57123,
+      provider: 'cloudflare',
+      mode: 'managed-remote',
+      hostname: 'app.example.com',
+      originPort: 3000,
+    })).toContain('--origin-port 3000');
   });
 });
 

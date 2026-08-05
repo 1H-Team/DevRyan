@@ -1,3 +1,4 @@
+import { getSafeStorage } from '@/stores/utils/safeStorage';
 /**
  * Persisted child-store metadata caches.
  *
@@ -44,7 +45,7 @@ function cacheKey(directory: string, key: CacheKey): string {
 
 function readCache<T>(directory: string, key: CacheKey): T | undefined {
   try {
-    const raw = localStorage.getItem(cacheKey(directory, key))
+    const raw = getSafeStorage().getItem(cacheKey(directory, key))
     if (!raw) return undefined
     return JSON.parse(raw) as T
   } catch {
@@ -56,9 +57,9 @@ function writeCache<T>(directory: string, key: CacheKey, value: T | undefined): 
   try {
     const k = cacheKey(directory, key)
     if (value === undefined) {
-      localStorage.removeItem(k)
+      getSafeStorage().removeItem(k)
     } else {
-      localStorage.setItem(k, JSON.stringify(value))
+      getSafeStorage().setItem(k, JSON.stringify(value))
     }
   } catch {
     // localStorage quota exceeded — ignore
@@ -69,11 +70,11 @@ function clearCache(directory: string): void {
   try {
     const prefix = storagePrefix(directory)
     const keys: string[] = []
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i)
+    for (let i = 0; i < getSafeStorage().length; i++) {
+      const k = getSafeStorage().key(i)
       if (k?.startsWith(prefix)) keys.push(k)
     }
-    for (const k of keys) localStorage.removeItem(k)
+    for (const k of keys) getSafeStorage().removeItem(k)
   } catch {
     // ignore
   }

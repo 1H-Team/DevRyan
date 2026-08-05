@@ -5,7 +5,10 @@ import type {
   ManagedAgentHandoffResponse,
   ManagedOrchestrationApi,
 } from '@/lib/orchestrationApi';
-import { createAgentHandoffCoordinator } from './agentHandoffCoordinator';
+import {
+  createAgentHandoffCoordinator,
+  shouldReconcileBuilderSession,
+} from './agentHandoffCoordinator';
 import {
   guardQueuedBuilderSend,
   registerQueuedBuilderSendGuard,
@@ -35,6 +38,24 @@ const createApi = (handler: (request: ManagedAgentHandoffRequest) => Promise<Man
 }) as Pick<ManagedOrchestrationApi, 'handoff'>;
 
 describe('agent handoff coordinator', () => {
+  test('reconciles only Builder sessions without explicit handoff clearance', () => {
+    expect(shouldReconcileBuilderSession({
+      sessionId: 'ses_new',
+      savedAgentName: 'Builder',
+      handoffCleared: true,
+    })).toBe(false);
+    expect(shouldReconcileBuilderSession({
+      sessionId: 'ses_restored',
+      savedAgentName: 'builder',
+      handoffCleared: false,
+    })).toBe(true);
+    expect(shouldReconcileBuilderSession({
+      sessionId: 'ses_orchestrator',
+      savedAgentName: 'Orchestrator',
+      handoffCleared: false,
+    })).toBe(false);
+  });
+
   test('fails closed for background Builder queue dispatch until a guard owner is mounted', async () => {
     expect(await guardQueuedBuilderSend({ sessionId: 'ses_root', agentName: 'Builder' })).toBe(false);
     expect(await guardQueuedBuilderSend({ sessionId: 'ses_root', agentName: 'Orchestrator' })).toBe(true);
@@ -150,6 +171,7 @@ describe('agent handoff coordinator', () => {
     expect(commitCount).toBe(0);
     expect(coordinator.getState().open).toBe(true);
     expect(coordinator.getState().phase).toBe('error');
+    expect(coordinator.getState().errorKind).toBe('cleanup');
     expect(coordinator.getState().tasks[0]?.task.taskId).toBe('dvr_task_1');
     expect(coordinator.getState().tasks[0]?.task.status).toBe('aborted');
     await coordinator.retry();
@@ -232,6 +254,7 @@ describe('agent handoff coordinator', () => {
 
     expect(restored).toBe(1);
     expect(committed).toBe(0);
+    expect(coordinator.getState().errorKind).toBe('inspection');
     await coordinator.retry();
     expect(committed).toBe(1);
     expect(coordinator.getState().open).toBe(false);

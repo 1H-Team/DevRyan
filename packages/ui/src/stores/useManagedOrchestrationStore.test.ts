@@ -102,6 +102,34 @@ const fakeApi = (overrides: Partial<ManagedOrchestrationApi> = {}): ManagedOrche
 });
 
 describe('managed orchestration store', () => {
+  test('indexes parallel same-label dispatches by exact root and call identity', () => {
+    const store = createManagedOrchestrationStore({ api: fakeApi() });
+    const first = projectedTask(1, 'running', {
+      dispatchCallId: 'call_parallel_first',
+      label: 'Inspect runtime',
+    });
+    const second = projectedTask(2, 'completed', {
+      dispatchCallId: 'call_parallel_second',
+      label: 'Inspect runtime',
+    });
+
+    store.getState().ingestEvent(taskEvent(first));
+    store.getState().ingestEvent(taskEvent(second));
+
+    expect(managedOrchestrationSelectors.taskIdForDispatchCall(
+      'ses_root',
+      'call_parallel_first',
+    )(store.getState())).toBe(first.taskId);
+    expect(managedOrchestrationSelectors.taskIdForDispatchCall(
+      'ses_root',
+      'call_parallel_second',
+    )(store.getState())).toBe(second.taskId);
+    expect(managedOrchestrationSelectors.taskIdForDispatchCall(
+      'ses_other',
+      'call_parallel_first',
+    )(store.getState())).toBe(undefined);
+  });
+
   test('indexes the first grouped usage-limit failure for immediate manual recovery', () => {
     const store = createManagedOrchestrationStore({ api: fakeApi() });
     const failed = {

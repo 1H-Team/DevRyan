@@ -26,6 +26,7 @@ import { renderMagicPrompt } from '@/lib/magicPrompts';
 import { useDeviceInfo } from '@/lib/device';
 import type { GitHubPullRequestContextResult, GitHubPullRequestSummary, GitHubPullRequestsListResult, GitHubRepoSelector } from '@/lib/api/types';
 import { useI18n } from '@/lib/i18n';
+import { useAuthPrincipal } from '@/lib/authSession';
 
 const parsePrNumber = (value: string): number | null => {
   const trimmed = value.trim();
@@ -70,6 +71,7 @@ export function GitHubPrPickerDialog({
   }) => void;
 }) {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
   const { github } = useRuntimeAPIs();
   const githubAuthStatus = useGitHubAuthStore((state) => state.status);
   const githubAuthChecked = useGitHubAuthStore((state) => state.hasChecked);
@@ -183,9 +185,10 @@ export function GitHubPrPickerDialog({
   const connected = githubAuthChecked ? result?.connected !== false : true;
 
   const openGitHubSettings = React.useCallback(() => {
-    setSettingsPage('github');
+    setSettingsPage('users');
     setSettingsDialogOpen(true);
   }, [setSettingsDialogOpen, setSettingsPage]);
+  const canManageGitHubAccounts = principal.scope === 'local-admin' || principal.role === 'admin';
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -313,12 +316,14 @@ export function GitHubPrPickerDialog({
 
           {connected === false ? (
             <div className="text-center text-muted-foreground py-8 space-y-3">
-              <div>{t('session.githubPrPicker.empty.notConnected')}</div>
-              <div className="flex justify-center">
-                <Button variant="outline" size="sm" onClick={openGitHubSettings}>
-                  {t('session.githubPrPicker.actions.openSettings')}
-                </Button>
-              </div>
+              <div>{canManageGitHubAccounts ? t('session.githubPrPicker.empty.notConnected') : t('settings.github.accountManagement.adminRequired')}</div>
+              {canManageGitHubAccounts && (
+                <div className="flex justify-center">
+                  <Button variant="outline" size="sm" onClick={openGitHubSettings}>
+                    {t('session.githubPrPicker.actions.openSettings')}
+                  </Button>
+                </div>
+              )}
             </div>
           ) : null}
 

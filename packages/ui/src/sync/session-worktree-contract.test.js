@@ -496,6 +496,24 @@ describe('buildSessionTargetOptions', () => {
     expect(options[0]?.kind).toBe('root');
   });
 
+  test('can omit an ungranted project root while retaining granted worktrees', () => {
+    const options = buildSessionTargetOptions({
+      projectRoot: '/repo',
+      rootBranch: 'main',
+      includeRoot: false,
+      worktrees: [
+        { path: '/repo/worktrees/Dev', branch: 'Dev', label: 'Dev', projectDirectory: '/repo' },
+      ],
+    });
+
+    expect(options).toEqual([{
+      value: '/repo/worktrees/Dev',
+      label: 'Dev',
+      kind: 'worktree',
+      pending: undefined,
+    }]);
+  });
+
   test('marks pending bootstrap worktree distinctly', () => {
     const options = buildSessionTargetOptions({
       projectRoot: '/repo',
@@ -657,4 +675,3 @@ describe('getMutationBlockingReasons', () => {
     expect(reasons[0]).toEqual({ reason: 'dirty' });
   });
 });
-

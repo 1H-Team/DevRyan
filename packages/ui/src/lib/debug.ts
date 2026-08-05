@@ -1,3 +1,4 @@
+import { getSafeStorage } from '@/stores/utils/safeStorage';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
@@ -207,8 +208,8 @@ export const debugUtils = {
       try {
         return {
           available: true,
-          lastDirectory: window.localStorage.getItem('lastDirectory'),
-          homeDirectory: window.localStorage.getItem('homeDirectory'),
+          lastDirectory: getSafeStorage().getItem('lastDirectory'),
+          homeDirectory: getSafeStorage().getItem('homeDirectory'),
         };
       } catch (error) {
         return {

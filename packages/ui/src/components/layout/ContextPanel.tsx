@@ -13,7 +13,6 @@ import {
 } from '@/components/views/lazyViews';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { openExternalUrl } from '@/lib/url';
-import { copyTextToClipboard } from '@/lib/clipboard';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
@@ -36,12 +35,19 @@ import {
 } from './previewLifecycle';
 import {
   formatPreviewAnnotationMarkdown,
-  isPreviewElementMetadata,
-  renderPreviewScreenshot,
-  type PreviewElementMetadata,
 } from '@/lib/preview/screenshot-capture';
+import {
+  usePreviewDiagnostics,
+  type PreviewAnnotationAttachment,
+} from './previewDiagnostics';
+import { PreviewConsolePanel } from './PreviewConsolePanel';
+import {
+  formatPreviewConsoleText,
+  type PreviewConsoleEvent,
+} from './previewDiagnosticsState';
 import { resolveContextPlanSessionChange } from './contextPlanSessionLifecycle';
 import { DesktopBrowserPane } from './DesktopBrowserPane';
+import { isBrowserPanelRuntimeSupported } from './browserRuntime';
 import { useGuestRetention } from './useGuestRetention';
 import {
   browserAgentLeaseSelectors,
@@ -49,7 +55,7 @@ import {
   setObservedBrowserAgentLease,
   useBrowserAgentStore,
 } from '@/stores/useBrowserAgentStore';
-import { isElectronShell } from '@/lib/desktop';
+import { useBrowserSurfaceStore } from '@/stores/useBrowserSurfaceStore';
 import { resolveRootSessionID } from '@/lib/sessionLineage';
 
 const CONTEXT_PANEL_MIN_WIDTH = 360;
@@ -64,45 +70,6 @@ type ActiveContextPlanMotion = {
   requestID: number;
   direction: 'enter' | 'exit';
   closeTabID?: string;
-};
-
-type PreviewConsoleEvent = {
-  id: number;
-  level: 'log' | 'info' | 'warn' | 'error' | 'debug' | 'resource' | 'runtime';
-  message: string;
-  details?: string;
-  ts: number;
-};
-
-type PreviewConsoleFilter = 'all' | 'errors' | 'warnings' | 'logs';
-
-type PreviewBridgeMessage = {
-  source?: string;
-  version?: number;
-  type?: string;
-  level?: PreviewConsoleEvent['level'];
-  args?: unknown[];
-  message?: unknown;
-  stack?: unknown;
-  filename?: unknown;
-  line?: unknown;
-  column?: unknown;
-  tag?: unknown;
-  url?: unknown;
-  outerHTML?: unknown;
-  title?: unknown;
-  ts?: unknown;
-  target?: unknown;
-  navigation?: unknown;
-};
-
-const PREVIEW_CONSOLE_EVENT_LIMIT = 200;
-
-const getPreviewConsoleFilterMatch = (event: PreviewConsoleEvent, filter: PreviewConsoleFilter): boolean => {
-  if (filter === 'all') return true;
-  if (filter === 'errors') return event.level === 'error' || event.level === 'runtime' || event.level === 'resource';
-  if (filter === 'warnings') return event.level === 'warn';
-  return event.level === 'log' || event.level === 'info' || event.level === 'debug';
 };
 
 const normalizeDirectoryKey = (value: string): string => {
@@ -353,6 +320,7 @@ const truncateTabLabel = (value: string, maxChars: number): string => {
 
 type PreviewPaneProps = {
   tabID: string;
+  directory: string;
   targetUrl: string;
   displayUrl: string;
   onDisplayNavigate: (url: string) => void;
@@ -388,6 +356,7 @@ const getCachedProxyTarget = (url: string): CachedProxyTarget | null => {
 
 const PreviewPane: React.FC<PreviewPaneProps> = ({
   tabID,
+  directory,
   targetUrl,
   displayUrl,
   onDisplayNavigate,
@@ -404,13 +373,6 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
   }));
   const [proxyState, setProxyState] = React.useState<PreviewProxyState>({ status: 'idle' });
   const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
-  const nextConsoleEventIdRef = React.useRef(1);
-  const [bridgeReady, setBridgeReady] = React.useState(false);
-  const [consoleOpen, setConsoleOpen] = React.useState(false);
-  const [consoleFilter, setConsoleFilter] = React.useState<PreviewConsoleFilter>('all');
-  const [consoleEvents, setConsoleEvents] = React.useState<PreviewConsoleEvent[]>([]);
-  const [inspectMode, setInspectMode] = React.useState(false);
-  const [hoverTarget, setHoverTarget] = React.useState<PreviewElementMetadata | null>(null);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const currentDraftId = useSessionUIStore((state) => state.currentDraftId);
   const newSessionDraftOpen = useSessionUIStore((state) => Boolean(state.currentDraftId && state.newSessionDraft?.open));
@@ -448,9 +410,9 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
       try {
         const response = await fetch('/api/preview/targets', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-DevRyan-CSRF': '1' },
           credentials: 'include',
-          body: JSON.stringify({ url: targetKey }),
+          body: JSON.stringify({ url: targetKey, directory }),
         });
 
         if (!response.ok) {
@@ -492,7 +454,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [isLoopback, proxyRegistrationNonce, t, targetKey]);
+  }, [directory, isLoopback, proxyRegistrationNonce, t, targetKey]);
 
   const directSrc = isBlankPreview ? 'about:blank' : (frameUrl?.toString() ?? '');
 
@@ -518,26 +480,18 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
     bumpProbe();
   }, [currentDisplayUrl, targetUrl]);
 
-  const attachPreviewAnnotation = React.useCallback((target: PreviewElementMetadata) => {
+  const attachPreviewAnnotation = React.useCallback((attachment: PreviewAnnotationAttachment) => {
     const sessionKey = currentSessionId ?? (currentDraftId ? `draft:${currentDraftId}` : newSessionDraftOpen ? 'draft' : null);
     if (!sessionKey) {
       toast.error(t('contextPanel.preview.inspect.attachNoSession'));
       return;
     }
 
-    const pageUrl = currentDisplayUrl || effectiveSrc || '';
-    const viewport = typeof window !== 'undefined'
-      ? { width: window.innerWidth, height: window.innerHeight }
-      : { width: 0, height: 0 };
-    const devicePixelRatio = typeof window !== 'undefined' ? window.devicePixelRatio : 1;
-
     void (async () => {
       let attachedScreenshot = false;
       try {
-        const iframe = iframeRef.current;
-        const screenshot = iframe ? await renderPreviewScreenshot(iframe, target) : null;
-        if (screenshot) {
-          await addAttachedFile(screenshot);
+        if (attachment.screenshot) {
+          await addAttachedFile(attachment.screenshot);
           attachedScreenshot = true;
         }
       } catch {
@@ -547,14 +501,14 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
       addInlineCommentDraft({
         sessionKey,
         source: 'preview-annotation',
-        fileLabel: pageUrl || 'preview',
+        fileLabel: attachment.pageUrl || 'preview',
         startLine: 1,
         endLine: 1,
         code: formatPreviewAnnotationMarkdown({
-          pageUrl,
-          viewport,
-          devicePixelRatio,
-          target,
+          pageUrl: attachment.pageUrl,
+          viewport: attachment.viewport,
+          devicePixelRatio: attachment.devicePixelRatio,
+          target: attachment.target,
           screenshotAttached: attachedScreenshot,
           intro: attachedScreenshot
             ? t('contextPanel.preview.inspect.attachAnnotationWithScreenshot')
@@ -565,234 +519,49 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
       });
       toast.success(t('contextPanel.preview.inspect.attached'));
     })();
-  }, [addAttachedFile, addInlineCommentDraft, currentDisplayUrl, currentDraftId, currentSessionId, effectiveSrc, newSessionDraftOpen, t]);
+  }, [addAttachedFile, addInlineCommentDraft, currentDraftId, currentSessionId, newSessionDraftOpen, t]);
 
-  React.useEffect(() => {
-    setBridgeReady(false);
-    setConsoleEvents([]);
-    setConsoleOpen(false);
-    setConsoleFilter('all');
-    setInspectMode(false);
-    setHoverTarget(null);
-    nextConsoleEventIdRef.current = 1;
-  }, [intentionalFrameKey]);
-
-  React.useEffect(() => {
-    const frameWindow = iframeRef.current?.contentWindow;
-    if (!bridgeReady || !frameWindow) {
-      return;
-    }
-    frameWindow.postMessage({
-      source: 'openchamber-preview-parent',
-      version: 1,
-      type: 'set-inspect-mode',
-      enabled: inspectMode,
-    }, window.location.origin);
-  }, [bridgeReady, inspectMode]);
-
-  React.useEffect(() => {
-    const frameWindow = iframeRef.current?.contentWindow;
-    if (!bridgeReady || !frameWindow) {
-      return;
-    }
-    frameWindow.postMessage({
-      source: 'openchamber-preview-parent',
-      version: 1,
-      type: 'set-color-scheme',
-      scheme: previewColorScheme,
-    }, window.location.origin);
-  }, [bridgeReady, previewColorScheme]);
-
-  React.useEffect(() => {
-    if (!inspectMode || typeof window === 'undefined') return;
-    const handler = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        setInspectMode(false);
-      }
-    };
-    window.addEventListener('keydown', handler, true);
-    return () => window.removeEventListener('keydown', handler, true);
-  }, [inspectMode]);
-
-  React.useEffect(() => {
-    if (!isLoopback || typeof window === 'undefined') {
-      return;
-    }
-
-    const stringify = (value: unknown): string => {
-      if (typeof value === 'string') return value;
-      if (value === null || value === undefined) return '';
-      try {
-        return JSON.stringify(value);
-      } catch {
-        return String(value);
-      }
-    };
-
-    const pushConsoleEvent = (event: Omit<PreviewConsoleEvent, 'id'>) => {
-      const id = nextConsoleEventIdRef.current;
-      nextConsoleEventIdRef.current += 1;
-      setConsoleEvents((current) => {
-        const next = [...current, { ...event, id }];
-        return next.length > PREVIEW_CONSOLE_EVENT_LIMIT
-          ? next.slice(next.length - PREVIEW_CONSOLE_EVENT_LIMIT)
-          : next;
-      });
-    };
-
-    const handler = (event: MessageEvent<PreviewBridgeMessage>) => {
-      if (event.source !== iframeRef.current?.contentWindow) {
-        return;
-      }
-      const data = event.data;
-      if (!data || data.source !== 'openchamber-preview-bridge' || data.version !== 1) {
-        return;
-      }
-
-      if (data.type === 'ready') {
-        setBridgeReady(true);
-        const nextUrl = typeof data.url === 'string' ? data.url : '';
-        if (nextUrl) onDisplayNavigate(nextUrl);
-        return;
-      }
-
-      if (data.type === 'console') {
-        const level = data.level === 'error' || data.level === 'warn' || data.level === 'info' || data.level === 'debug'
-          ? data.level
-          : 'log';
-        const args = Array.isArray(data.args) ? data.args.map(stringify).filter(Boolean) : [];
-        pushConsoleEvent({
-          level,
-          message: args.join(' '),
-          ts: typeof data.ts === 'number' ? data.ts : Date.now(),
-        });
-        return;
-      }
-
-      if (data.type === 'runtime-error') {
-        const filename = stringify(data.filename);
-        const line = typeof data.line === 'number' ? data.line : null;
-        const column = typeof data.column === 'number' ? data.column : null;
-        const location = filename
-          ? `${filename}${line !== null ? `:${line}${column !== null ? `:${column}` : ''}` : ''}`
-          : '';
-        const stack = stringify(data.stack);
-        pushConsoleEvent({
-          level: 'runtime',
-          message: stringify(data.message) || t('contextPanel.preview.console.runtimeError'),
-          details: [location, stack].filter(Boolean).join('\n'),
-          ts: typeof data.ts === 'number' ? data.ts : Date.now(),
-        });
-        return;
-      }
-
-      if (data.type === 'resource-error') {
-        const tag = stringify(data.tag) || 'resource';
-        const url = stringify(data.url);
-        pushConsoleEvent({
-          level: 'resource',
-          message: url ? `${tag}: ${url}` : tag,
-          details: stringify(data.outerHTML),
-          ts: typeof data.ts === 'number' ? data.ts : Date.now(),
-        });
-        return;
-      }
-
-      if (data.type === 'hover') {
-        setHoverTarget(isPreviewElementMetadata(data.target) ? data.target : null);
-        return;
-      }
-
-      if (data.type === 'select' && isPreviewElementMetadata(data.target)) {
-        setHoverTarget(data.target);
-        setInspectMode(false);
-        attachPreviewAnnotation(data.target);
-        return;
-      }
-
-      if (data.type === 'navigate-preview') {
-        const nextUrl = typeof data.url === 'string' ? data.url : '';
-        const navigation = data.navigation === 'external'
-          ? 'external'
-          : data.navigation === 'target'
-            ? 'target'
-            : 'display';
-        if (nextUrl && navigation === 'external') {
-          void openExternalUrl(nextUrl);
-          return;
-        }
-        if (nextUrl) {
-          if (navigation === 'target') {
-            onTargetNavigate(nextUrl);
-          } else {
-            onDisplayNavigate(nextUrl);
-          }
-        }
-      }
-    };
-
-    window.addEventListener('message', handler);
-    return () => {
-      window.removeEventListener('message', handler);
-    };
-  }, [attachPreviewAnnotation, isLoopback, onDisplayNavigate, onTargetNavigate, t]);
-
-  const consoleErrorCount = consoleEvents.filter((event) => event.level === 'error' || event.level === 'runtime' || event.level === 'resource').length;
-  const filteredConsoleEvents = consoleEvents.filter((event) => getPreviewConsoleFilterMatch(event, consoleFilter));
-
-  const copyConsoleEvents = React.useCallback(() => {
-    const header = [
-      `Preview URL: ${currentDisplayUrl || effectiveSrc || ''}`,
-      `Events: ${consoleEvents.length}`,
-      '',
-    ].join('\n');
-    const text = consoleEvents.map((event) => {
-      const timestamp = new Date(event.ts).toISOString();
-      const details = event.details ? `\n${event.details}` : '';
-      return `[${timestamp}] [${event.level}] ${event.message}${details}`;
-    }).join('\n');
-
-    void copyTextToClipboard(`${header}${text}`).then((result) => {
-      if (result.ok) {
-        toast.success(t('contextPanel.preview.console.copied'));
-      } else {
-        toast.error(t('contextPanel.preview.console.copyFailed'));
-      }
-    });
-  }, [consoleEvents, currentDisplayUrl, effectiveSrc, t]);
-
-  const attachConsoleEvents = React.useCallback(() => {
+  const attachConsoleEvents = React.useCallback((events: PreviewConsoleEvent[], pageUrl: string) => {
     const sessionKey = currentSessionId ?? (currentDraftId ? `draft:${currentDraftId}` : newSessionDraftOpen ? 'draft' : null);
     if (!sessionKey) {
       toast.error(t('contextPanel.preview.console.attachNoSession'));
       return;
     }
 
-    const header = [
-      `Preview URL: ${currentDisplayUrl || effectiveSrc || ''}`,
-      `Events: ${consoleEvents.length}`,
-      '',
-    ].join('\n');
-    const text = consoleEvents.map((event) => {
-      const timestamp = new Date(event.ts).toISOString();
-      const details = event.details ? `\n${event.details}` : '';
-      return `[${timestamp}] [${event.level}] ${event.message}${details}`;
-    }).join('\n');
-
     addInlineCommentDraft({
       sessionKey,
       source: 'preview-console',
-      fileLabel: currentDisplayUrl || effectiveSrc || 'preview',
+      fileLabel: pageUrl || 'preview',
       startLine: 1,
-      endLine: Math.max(1, consoleEvents.length),
-      code: `${header}${text}`,
+      endLine: Math.max(1, events.length),
+      code: formatPreviewConsoleText(events, pageUrl),
       language: 'text',
       text: t('contextPanel.preview.console.attachAnnotation'),
     });
     toast.success(t('contextPanel.preview.console.attached'));
-  }, [addInlineCommentDraft, consoleEvents, currentDisplayUrl, currentDraftId, currentSessionId, effectiveSrc, newSessionDraftOpen, t]);
+  }, [addInlineCommentDraft, currentDraftId, currentSessionId, newSessionDraftOpen, t]);
+
+  const diagnostics = usePreviewDiagnostics({
+    iframeRef,
+    enabled: isLoopback,
+    frameKey: intentionalFrameKey,
+    pageUrl: currentDisplayUrl || effectiveSrc || '',
+    colorScheme: previewColorScheme,
+    onDisplayNavigate,
+    onTargetNavigate,
+    onAttachConsole: attachConsoleEvents,
+    onAttachAnnotation: attachPreviewAnnotation,
+  });
+  const {
+    bridgeReady,
+    consoleOpen,
+    setConsoleOpen,
+    consoleEvents,
+    inspectMode,
+    setInspectMode,
+    hoverTarget,
+    consoleErrorCount,
+  } = diagnostics;
 
   // Out-of-band upstream probe: iframes don't expose HTTP status to the parent,
   // so when the proxy returns a 502 (upstream dev server is offline) the iframe
@@ -1049,84 +818,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
             {t('contextPanel.preview.invalidUrl')}
           </div>
         )}
-        {consoleOpen ? (
-          <div className="absolute inset-x-3 bottom-3 z-10 max-h-[45%] overflow-hidden rounded-xl border border-border/70 bg-[var(--surface-elevated)] shadow-lg">
-            <div className="flex items-center justify-between border-b border-border/50 px-3 py-2">
-              <div className="typography-ui-label text-foreground">{t('contextPanel.preview.console.title')}</div>
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  size="xs"
-                  variant="ghost"
-                  onClick={attachConsoleEvents}
-                  disabled={consoleEvents.length === 0}
-                >
-                  {t('contextPanel.preview.console.attach')}
-                </Button>
-                <Button
-                  type="button"
-                  size="xs"
-                  variant="ghost"
-                  onClick={copyConsoleEvents}
-                  disabled={consoleEvents.length === 0}
-                >
-                  {t('contextPanel.preview.console.copy')}
-                </Button>
-                <Button
-                  type="button"
-                  size="xs"
-                  variant="ghost"
-                  onClick={() => setConsoleEvents([])}
-                  disabled={consoleEvents.length === 0}
-                >
-                  {t('contextPanel.preview.console.clear')}
-                </Button>
-              </div>
-            </div>
-            <div className="flex items-center gap-1 border-b border-border/30 px-3 py-1.5">
-              {(['all', 'errors', 'warnings', 'logs'] as const).map((filter) => (
-                <Button
-                  key={filter}
-                  type="button"
-                  size="xs"
-                  variant={consoleFilter === filter ? 'secondary' : 'ghost'}
-                  onClick={() => setConsoleFilter(filter)}
-                >
-                  {filter === 'all'
-                    ? t('contextPanel.preview.console.filter.all')
-                    : filter === 'errors'
-                      ? t('contextPanel.preview.console.filter.errors')
-                      : filter === 'warnings'
-                        ? t('contextPanel.preview.console.filter.warnings')
-                        : t('contextPanel.preview.console.filter.logs')}
-                </Button>
-              ))}
-            </div>
-            <div className="max-h-64 overflow-auto p-2 typography-code text-xs">
-              {consoleEvents.length === 0 ? (
-                <div className="px-2 py-3 text-muted-foreground">{t('contextPanel.preview.console.empty')}</div>
-              ) : filteredConsoleEvents.length === 0 ? (
-                <div className="px-2 py-3 text-muted-foreground">{t('contextPanel.preview.console.noFilteredEvents')}</div>
-              ) : filteredConsoleEvents.map((event) => (
-                <div key={event.id} className="border-b border-border/30 px-2 py-1 last:border-b-0">
-                  <div className="flex gap-2">
-                    <span className={cn(
-                      'shrink-0 uppercase',
-                      event.level === 'error' || event.level === 'runtime' || event.level === 'resource'
-                        ? 'text-status-error'
-                        : event.level === 'warn'
-                          ? 'text-status-warning'
-                          : 'text-muted-foreground'
-                    )}>
-                      {event.level}
-                    </span>
-                    <span className="min-w-0 break-words text-foreground">{event.message}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : null}
+        {consoleOpen ? <PreviewConsolePanel {...diagnostics} /> : null}
       </div>
     </div>
   );
@@ -1612,6 +1304,7 @@ export const ContextPanel: React.FC = () => {
                 ? (
                   <PreviewPane
                     tabID={activeTab.id}
+                    directory={directoryKey}
                     targetUrl={activeTab.targetPath ?? ''}
                     displayUrl={activeTab.displayUrl ?? activeTab.targetPath ?? ''}
                     onDisplayNavigate={handlePreviewDisplayNavigate}
@@ -1634,13 +1327,18 @@ export const ContextPanel: React.FC = () => {
     () => tabs.filter((tab) => tab.mode === 'browser' && !tab.leaseId),
     [tabs],
   );
+  const poppedManualBrowserTabIDs = useBrowserSurfaceStore((state) => state.poppedManualTabIds);
 
   // Manual browser guests retain the existing sleep policy. Lease guests are
   // not part of this set: the invariant lease fleet mounts directly from the
   // authoritative snapshot and unmounts only when a lease disappears.
   const manualBrowserKeepIDs = React.useMemo(
-    () => (isOpen && activeTab?.mode === 'browser' && !activeTab.leaseId ? [activeTab.id] : []),
-    [activeTab, isOpen],
+    () => {
+      const keep = new Set(poppedManualBrowserTabIDs);
+      if (isOpen && activeTab?.mode === 'browser' && !activeTab.leaseId) keep.add(activeTab.id);
+      return Array.from(keep);
+    },
+    [activeTab, isOpen, poppedManualBrowserTabIDs],
   );
   const retainedBrowserTabIDs = useGuestRetention({
     keepIDs: manualBrowserKeepIDs,
@@ -1818,7 +1516,7 @@ export const ContextPanel: React.FC = () => {
                 )}
                 aria-hidden={!isActive}
               >
-                {isElectronShell() ? (
+                {isBrowserPanelRuntimeSupported() ? (
                   <DesktopBrowserPane
                     initialUrl={tab.targetPath ?? ''}
                     directory={directoryKey ?? ''}

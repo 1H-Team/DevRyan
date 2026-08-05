@@ -1,10 +1,16 @@
-# Preview — Remote-host relay (design)
+# Preview — Remote-user laptop relay (design)
 
-Status: design only, no implementation.
+Status: same-host tunnel preview is implemented; the separate user-laptop relay described below is design only.
 Owner: TBD.
 Audience: contributors planning the next phase of the embedded preview feature.
 
-## Problem
+## Implemented same-host tunnel path
+
+When a user opens DevRyan through a Cloudflare or managed tunnel and the project app is running on the **DevRyan tunnel host**, the Browser now routes approved loopback app traffic through that host. Terminal-discovered apps register an in-memory, project-scoped grant; assigned users can consume the shared endpoint, but receive neither terminal IDs nor host paths. Each viewer gets a separate target bound to their authenticated app/tunnel session, path-scoped HttpOnly token, history, console, inspector, cookies, and pop-out state. Relative resources, API calls, same-origin redirects, generic application sockets, and framework HMR WebSockets stay on the authenticated proxy path. The app's original URL remains visible; internal target paths never become Browser history.
+
+This does not make arbitrary host ports reachable. Tunnel and unknown-public target registration requires a matching live grant, and the proxy remains loopback-only. Public sites continue loading directly from the viewer's device. A different topology—DevRyan on a remote host while the project app runs on an individual user's laptop—still requires the separate relay designed below and is not implemented.
+
+## Remaining problem
 
 The current preview implementation (`packages/web/server/lib/preview/proxy-runtime.js`,
 `packages/ui/src/components/layout/ContextPanel.tsx`) terminates inside the
@@ -17,10 +23,11 @@ OpenChamber server process and forwards requests to a **loopback** target
 | Electron desktop, dev server on same host                                | yes          |
 | VS Code extension, dev server on same host                               | yes          |
 | Mobile/tablet hitting OpenChamber over LAN, dev server on host           | yes          |
-| **Remote OpenChamber** (cloud / shared / tunneled), dev server on user's local machine | **no**       |
+| DevRyan reached through a tunnel, dev server on the DevRyan tunnel host    | yes          |
+| **Remote DevRyan** (cloud / shared), dev server on user's laptop           | **no**       |
 
-The blocked case is real: a user runs `openchamber serve` on a remote box (or a
-hosted OpenChamber instance) but their dev server (`vite`, `next dev`, etc.)
+The remaining blocked case is a user running DevRyan on a remote box (or a
+hosted instance) while their dev server (`vite`, `next dev`, etc.)
 runs on their laptop. The proxy correctly refuses to talk to non-loopback
 targets — that is a deliberate SSRF gate, not a bug. We need a separate path
 that tunnels traffic from the remote OpenChamber back to the user's laptop

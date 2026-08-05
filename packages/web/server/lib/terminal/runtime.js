@@ -29,6 +29,8 @@ export function createTerminalRuntime({
   TERMINAL_INPUT_WS_HEARTBEAT_INTERVAL_MS,
   TERMINAL_INPUT_WS_REBIND_WINDOW_MS,
   TERMINAL_INPUT_WS_MAX_REBINDS_PER_WINDOW,
+  multiUserRuntime,
+  onTerminalSessionClosed,
 }) {
   let ptyProviderPromise = null;
   const getPtyProvider = async () => {
@@ -169,8 +171,13 @@ export function createTerminalRuntime({
   const MAX_TERMINAL_SESSIONS = 20;
   const TERMINAL_IDLE_TIMEOUT = 30 * 60 * 1000;
   const terminalRuntimeName = typeof globalThis.Bun === 'undefined' ? 'node' : 'bun';
-  const sanitizeTerminalEnv = (env) => {
-    const next = { ...env };
+  const sanitizeTerminalEnv = (env, principal) => {
+    const next = principal?.scope === 'managed'
+      ? Object.fromEntries(Object.entries(env).filter(([key]) => (
+          ['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'TERM', 'COLORTERM'].includes(key)
+          || key.startsWith('LC_')
+        )))
+      : { ...env };
     delete next.BASH_XTRACEFD;
     delete next.BASH_ENV;
     delete next.ENV;
@@ -197,6 +204,23 @@ export function createTerminalRuntime({
     },
   };
 
+  const removeTerminalSession = (sessionId, reason) => {
+    const session = terminalSessions.get(sessionId);
+    if (!session) return false;
+    terminalSessions.delete(sessionId);
+    try {
+      onTerminalSessionClosed?.({
+        sessionId,
+        cwd: session.cwd,
+        ownerUserId: session.ownerUserId,
+        reason,
+      });
+    } catch (error) {
+      console.warn('[terminal] Failed to notify session cleanup:', error?.message || error);
+    }
+    return true;
+  };
+
   const killTerminalProcess = (ptyProcess, mode = 'term') => {
     if (!ptyProcess) return;
 
@@ -219,6 +243,18 @@ export function createTerminalRuntime({
     }
   };
 
+  const terminateTerminalSession = (sessionId, reason, mode = 'term') => {
+    const session = terminalSessions.get(sessionId);
+    if (!session) return false;
+
+    // Remove the authoritative session record before signalling the PTY. Some
+    // PTY implementations emit `onExit` synchronously from `kill()`, and that
+    // callback must not replace the more specific close reason.
+    removeTerminalSession(sessionId, reason);
+    killTerminalProcess(session.ptyProcess, mode);
+    return true;
+  };
+
   const sendTerminalInputWsControl = (socket, payload) => {
     if (!socket || socket.readyState !== 1) {
       return;
@@ -235,7 +271,10 @@ export function createTerminalRuntime({
     maxPayload: TERMINAL_INPUT_WS_MAX_PAYLOAD_BYTES,
   });
 
-  terminalInputWsServer.on('connection', (socket) => {
+  terminalInputWsServer.on('connection', (socket, req) => {
+    const unregisterConnection = typeof uiAuthController?.registerConnection === 'function'
+      ? uiAuthController.registerConnection(req.principal, () => socket.close(4001, 'Access revoked'))
+      : () => {};
     const connectionState = {
       socket,
       boundSessionId: null,
@@ -243,6 +282,7 @@ export function createTerminalRuntime({
       rebindTimestamps: [],
       replayCursorBySession: new Map(),
       lastActivityAt: Date.now(),
+      principalId: req.principal?.id || 'local-admin',
     };
 
     terminalWsConnections.add(connectionState);
@@ -319,6 +359,11 @@ export function createTerminalRuntime({
           sendTerminalInputWsControl(socket, { t: 'e', c: 'SESSION_NOT_FOUND', f: false });
           return;
         }
+        if (targetSession.ownerUserId !== connectionState.principalId) {
+          connectionState.boundSessionId = null;
+          sendTerminalInputWsControl(socket, { t: 'e', c: 'SESSION_NOT_FOUND', f: false });
+          return;
+        }
 
         const replaySinceRaw =
           typeof controlMessage.r === 'number' && Number.isFinite(controlMessage.r)
@@ -376,6 +421,7 @@ export function createTerminalRuntime({
 
     socket.on('close', () => {
       clearInterval(heartbeatInterval);
+      unregisterConnection();
       connectionState.boundSessionId = null;
       terminalWsConnections.delete(connectionState);
     });
@@ -393,7 +439,7 @@ export function createTerminalRuntime({
 
     const handleUpgrade = async () => {
       try {
-        if (uiAuthController?.enabled) {
+        if (typeof uiAuthController?.ensureSessionToken === 'function') {
           // Must be awaited: this call performs async token verification.
           const sessionToken = await uiAuthController?.ensureSessionToken?.(req, null);
           if (!sessionToken) {
@@ -472,7 +518,7 @@ export function createTerminalRuntime({
         });
       }
 
-      terminalSessions.delete(sessionId);
+      removeTerminalSession(sessionId, 'exit');
     });
   };
 
@@ -481,12 +527,7 @@ export function createTerminalRuntime({
     for (const [sessionId, session] of terminalSessions.entries()) {
       if (now - session.lastActivity > TERMINAL_IDLE_TIMEOUT) {
         console.log(`Cleaning up idle terminal session: ${sessionId}`);
-        try {
-          killTerminalProcess(session.ptyProcess, 'term');
-        } catch (error) {
-
-        }
-        terminalSessions.delete(sessionId);
+        terminateTerminalSession(sessionId, 'idle-timeout');
       }
     }
   }, 5 * 60 * 1000);
@@ -512,7 +553,7 @@ export function createTerminalRuntime({
                         Math.random().toString(36).substring(2, 15);
 
       const envPath = buildAugmentedPath();
-      const resolvedEnv = sanitizeTerminalEnv({ ...process.env, PATH: envPath });
+      const resolvedEnv = sanitizeTerminalEnv({ ...process.env, PATH: envPath }, req.principal);
 
       const pty = await getPtyProvider();
       const { ptyProcess, shell } = spawnTerminalPtyWithFallback(pty, {
@@ -529,6 +570,7 @@ export function createTerminalRuntime({
         lastActivity: Date.now(),
         clients: new Set(),
         outputReplayBuffer: createTerminalOutputReplayBuffer(),
+        ownerUserId: req.principal?.id || 'local-admin',
       };
 
       terminalSessions.set(sessionId, session);
@@ -540,6 +582,15 @@ export function createTerminalRuntime({
       console.error('Failed to create terminal session:', error);
       res.status(500).json({ error: error.message || 'Failed to create terminal session' });
     }
+  });
+
+  app.use('/api/terminal/:sessionId', (req, res, next) => {
+    if (req.params.sessionId === 'force-kill') return next();
+    const session = terminalSessions.get(req.params.sessionId);
+    if (!session || session.ownerUserId !== (req.principal?.id || 'local-admin')) {
+      return res.status(404).json({ error: 'Terminal session not found' });
+    }
+    return next();
   });
 
   app.get('/api/terminal/:sessionId/stream', (req, res) => {
@@ -693,8 +744,7 @@ export function createTerminalRuntime({
     }
 
     try {
-      killTerminalProcess(session.ptyProcess, 'term');
-      terminalSessions.delete(sessionId);
+      terminateTerminalSession(sessionId, 'closed');
       console.log(`Closed terminal session: ${sessionId}`);
       res.json({ success: true });
     } catch (error) {
@@ -713,11 +763,7 @@ export function createTerminalRuntime({
 
     const existingSession = terminalSessions.get(sessionId);
     if (existingSession) {
-      try {
-        killTerminalProcess(existingSession.ptyProcess, 'term');
-      } catch (error) {
-      }
-      terminalSessions.delete(sessionId);
+      terminateTerminalSession(sessionId, 'restart');
     }
 
     try {
@@ -734,7 +780,7 @@ export function createTerminalRuntime({
                           Math.random().toString(36).substring(2, 15);
 
       const envPath = buildAugmentedPath();
-      const resolvedEnv = sanitizeTerminalEnv({ ...process.env, PATH: envPath });
+      const resolvedEnv = sanitizeTerminalEnv({ ...process.env, PATH: envPath }, req.principal);
 
       const pty = await getPtyProvider();
       const { ptyProcess, shell } = spawnTerminalPtyWithFallback(pty, {
@@ -751,6 +797,7 @@ export function createTerminalRuntime({
         lastActivity: Date.now(),
         clients: new Set(),
         outputReplayBuffer: createTerminalOutputReplayBuffer(),
+        ownerUserId: req.principal?.id || 'local-admin',
       };
 
       terminalSessions.set(newSessionId, session);
@@ -768,34 +815,26 @@ export function createTerminalRuntime({
     const { sessionId, cwd } = req.body;
     let killedCount = 0;
 
+    if (req.principal?.scope === 'managed' && !sessionId) {
+      return res.status(403).json({ error: 'A terminal session id is required' });
+    }
+
     if (sessionId) {
       const session = terminalSessions.get(sessionId);
-      if (session) {
-        try {
-          killTerminalProcess(session.ptyProcess, 'kill');
-        } catch (error) {
-        }
-        terminalSessions.delete(sessionId);
+      if (session && session.ownerUserId === (req.principal?.id || 'local-admin')) {
+        terminateTerminalSession(sessionId, 'force-kill', 'kill');
         killedCount++;
       }
     } else if (cwd) {
       for (const [id, session] of terminalSessions) {
-        if (session.cwd === cwd) {
-          try {
-            killTerminalProcess(session.ptyProcess, 'kill');
-          } catch (error) {
-          }
-          terminalSessions.delete(id);
+        if (session.cwd === cwd && session.ownerUserId === (req.principal?.id || 'local-admin')) {
+          terminateTerminalSession(id, 'force-kill', 'kill');
           killedCount++;
         }
       }
     } else {
-      for (const [id, session] of terminalSessions) {
-        try {
-          killTerminalProcess(session.ptyProcess, 'kill');
-        } catch (error) {
-        }
-        terminalSessions.delete(id);
+      for (const [id] of terminalSessions) {
+        terminateTerminalSession(id, 'force-kill', 'kill');
         killedCount++;
       }
     }
@@ -804,6 +843,24 @@ export function createTerminalRuntime({
     res.json({ success: true, killedCount });
   });
 
+  const terminateOwnerSessions = async (userId) => {
+    const ownerUserId = String(userId || '');
+    if (!ownerUserId) return 0;
+    let killedCount = 0;
+    for (const [sessionId, session] of terminalSessions) {
+      if (session.ownerUserId !== ownerUserId) continue;
+      terminateTerminalSession(sessionId, 'owner-revoked', 'kill');
+      killedCount += 1;
+    }
+    for (const connection of terminalWsConnections) {
+      if (connection.principalId !== ownerUserId) continue;
+      try { connection.socket?.close(4001, 'Access revoked'); } catch { }
+    }
+    return killedCount;
+  };
+
+  multiUserRuntime?.setTerminalOwnerTerminator?.(terminateOwnerSessions);
+
   const shutdown = async () => {
     server.off('upgrade', upgradeHandler);
 
@@ -811,12 +868,8 @@ export function createTerminalRuntime({
       clearInterval(idleSweepInterval);
     }
 
-    for (const [sessionId, session] of terminalSessions.entries()) {
-      try {
-        killTerminalProcess(session.ptyProcess, 'kill');
-      } catch {
-      }
-      terminalSessions.delete(sessionId);
+    for (const [sessionId] of terminalSessions) {
+      terminateTerminalSession(sessionId, 'shutdown', 'kill');
     }
 
     if (!terminalInputWsServer) {
@@ -840,5 +893,16 @@ export function createTerminalRuntime({
     }
   };
 
-  return { shutdown };
+  const getSessionDescriptor = (sessionId) => {
+    const session = terminalSessions.get(String(sessionId || ''));
+    if (!session) return null;
+    return {
+      sessionId: String(sessionId),
+      cwd: session.cwd,
+      ownerUserId: session.ownerUserId,
+      lastActivity: session.lastActivity,
+    };
+  };
+
+  return { shutdown, terminateOwnerSessions, getSessionDescriptor };
 }

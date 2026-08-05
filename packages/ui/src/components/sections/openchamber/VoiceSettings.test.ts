@@ -10,16 +10,19 @@ describe('VoiceSettings input source behavior', () => {
     expect(getVoiceInputSourceMode('browser')).toBe('fixed-default');
     expect(getVoiceInputSourceMode('server')).toBe('media-device');
     expect(getVoiceInputSourceMode('macos')).toBe('native-device');
+    expect(getVoiceInputSourceMode('wasm')).toBe('media-device');
   });
 
-  test('does not expose the local input provider in selectable settings options', () => {
-    expect(getSelectableVoiceInputProviders(true)).toEqual(['macos', 'browser', 'server']);
-    expect(getSelectableVoiceInputProviders(false)).toEqual(['browser', 'server']);
+  test('exposes the local input provider when its browser APIs are available', () => {
+    expect(getSelectableVoiceInputProviders(true, true)).toEqual(['macos', 'browser', 'wasm', 'server']);
+    expect(getSelectableVoiceInputProviders(false, true)).toEqual(['browser', 'wasm', 'server']);
+    expect(getSelectableVoiceInputProviders(false, false)).toEqual(['browser', 'server']);
   });
 
-  test('normalizes legacy local input provider to macos when available', () => {
-    expect(normalizeVoiceInputProvider('wasm', true)).toBe('macos');
-    expect(normalizeVoiceInputProvider('wasm', false)).toBe('browser');
+  test('preserves local input when supported and normalizes unavailable providers', () => {
+    expect(normalizeVoiceInputProvider('wasm', true, true)).toBe('wasm');
+    expect(normalizeVoiceInputProvider('wasm', false, false)).toBe('browser');
+    expect(normalizeVoiceInputProvider('macos', false, true)).toBe('browser');
     expect(normalizeVoiceInputProvider('server', true)).toBe('server');
   });
 });

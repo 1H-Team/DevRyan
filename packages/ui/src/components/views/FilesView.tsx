@@ -1,3 +1,4 @@
+import { getSafeStorage } from '@/stores/utils/safeStorage';
 import React from 'react';
 
 import {
@@ -31,6 +32,7 @@ import {
 } from '@remixicon/react';
 import { toast } from '@/components/ui';
 import { copyTextToClipboard } from '@/lib/clipboard';
+import { recordFileOpened } from '@/lib/interactionAnalytics';
 
 import {
   DropdownMenu,
@@ -275,7 +277,7 @@ const getInitialAutoSaveEnabled = (): boolean => {
   }
 
   try {
-    return window.localStorage.getItem(FILE_EDITOR_AUTO_SAVE_KEY) !== 'false';
+    return getSafeStorage().getItem(FILE_EDITOR_AUTO_SAVE_KEY) !== 'false';
   } catch {
     return true;
   }
@@ -362,9 +364,10 @@ const FileRow: React.FC<FileRowProps> = ({
     if (isDir) {
       onToggle(node.path);
     } else {
+      recordFileOpened({ path: node.path, directory: root, sourceSurface: 'files' });
       onSelect(node);
     }
-  }, [isDir, node, onSelect, onToggle]);
+  }, [isDir, node, onSelect, onToggle, root]);
 
   const handleMenuButtonClick = React.useCallback((event: React.MouseEvent) => {
     event.stopPropagation();
@@ -435,7 +438,9 @@ const FileRow: React.FC<FileRowProps> = ({
               )}
               <DropdownMenuItem onClick={(e) => {
                 e.stopPropagation();
-                void copyTextToClipboard(node.path).then((result) => {
+                void copyTextToClipboard(node.path, {
+                  sourceSurface: 'files', copyKind: 'path', path: node.path, directory: root,
+                }).then((result) => {
                   if (result.ok) {
                     toast.success(t('sidebarFilesTree.toast.pathCopied'));
                     return;
@@ -448,7 +453,9 @@ const FileRow: React.FC<FileRowProps> = ({
               <DropdownMenuItem onClick={(e) => {
                 e.stopPropagation();
                 const relativePath = getDisplayPath(root, node.path) || node.path;
-                void copyTextToClipboard(relativePath).then((result) => {
+                void copyTextToClipboard(relativePath, {
+                  sourceSurface: 'files', copyKind: 'path', path: node.path, directory: root,
+                }).then((result) => {
                   if (result.ok) {
                     toast.success(t('filesView.toast.relativePathCopied'));
                     return;
@@ -1352,7 +1359,7 @@ export const FilesView: React.FC = () => {
 
   React.useEffect(() => {
     try {
-      window.localStorage.setItem(FILE_EDITOR_AUTO_SAVE_KEY, autoSaveEnabled ? 'true' : 'false');
+      getSafeStorage().setItem(FILE_EDITOR_AUTO_SAVE_KEY, autoSaveEnabled ? 'true' : 'false');
     } catch {
       // Ignore localStorage errors; the in-memory preference still applies.
     }
@@ -1985,7 +1992,7 @@ export const FilesView: React.FC = () => {
     // falling back to the setting-derived default when nothing is stored.
     let mdDefault: PreviewViewMode = settingsDefaultFileViewerPreview ? 'preview' : 'edit';
     try {
-      const stored = localStorage.getItem(MD_VIEWER_MODE_KEY);
+      const stored = getSafeStorage().getItem(MD_VIEWER_MODE_KEY);
       if (stored === 'preview' || stored === 'edit') {
         mdDefault = stored;
       }
@@ -1996,7 +2003,7 @@ export const FilesView: React.FC = () => {
 
     let htmlDefault: PreviewViewMode = settingsDefaultFileViewerPreview ? 'preview' : 'edit';
     try {
-      const stored = localStorage.getItem(HTML_VIEWER_MODE_KEY);
+      const stored = getSafeStorage().getItem(HTML_VIEWER_MODE_KEY);
       if (stored === 'preview' || stored === 'edit') {
         htmlDefault = stored;
       }
@@ -2007,7 +2014,7 @@ export const FilesView: React.FC = () => {
 
     let jsonDefault: 'tree' | 'text' = settingsDefaultFileViewerPreview ? 'tree' : 'text';
     try {
-      const stored = localStorage.getItem(JSON_VIEWER_MODE_KEY);
+      const stored = getSafeStorage().getItem(JSON_VIEWER_MODE_KEY);
       if (stored === 'tree' || stored === 'text') {
         jsonDefault = stored;
       }
@@ -2032,7 +2039,7 @@ export const FilesView: React.FC = () => {
     }
     setMdViewMode(mode);
     try {
-      localStorage.setItem(MD_VIEWER_MODE_KEY, mode);
+      getSafeStorage().setItem(MD_VIEWER_MODE_KEY, mode);
     } catch {
       // Ignore localStorage errors
     }
@@ -2045,7 +2052,7 @@ export const FilesView: React.FC = () => {
   const saveJsonViewMode = React.useCallback((mode: 'tree' | 'text') => {
     setJsonViewMode(mode);
     try {
-      localStorage.setItem(JSON_VIEWER_MODE_KEY, mode);
+      getSafeStorage().setItem(JSON_VIEWER_MODE_KEY, mode);
     } catch {
       // Ignore localStorage errors
     }
@@ -2058,7 +2065,7 @@ export const FilesView: React.FC = () => {
     }
     setHtmlViewMode(mode);
     try {
-      localStorage.setItem(HTML_VIEWER_MODE_KEY, mode);
+      getSafeStorage().setItem(HTML_VIEWER_MODE_KEY, mode);
     } catch {
       // Ignore localStorage errors
     }
@@ -2719,7 +2726,9 @@ export const FilesView: React.FC = () => {
             variant="ghost"
             size="sm"
             onClick={async () => {
-              const result = await copyTextToClipboard(fileContent);
+              const result = await copyTextToClipboard(fileContent, {
+                sourceSurface: 'editor', copyKind: 'text', path: selectedFilePath, directory: root || undefined,
+              });
               if (result.ok) {
                 setCopiedContent(true);
                 if (copiedContentTimeoutRef.current !== null) {
@@ -2749,7 +2758,9 @@ export const FilesView: React.FC = () => {
             variant="ghost"
             size="sm"
             onClick={async () => {
-              const result = await copyTextToClipboard(displaySelectedPath);
+              const result = await copyTextToClipboard(displaySelectedPath, {
+                sourceSurface: 'editor', copyKind: 'path', path: selectedFilePath, directory: root || undefined,
+              });
               if (result.ok) {
                 setCopiedPath(true);
                 if (copiedPathTimeoutRef.current !== null) {
@@ -3202,7 +3213,10 @@ export const FilesView: React.FC = () => {
                 <li key={node.path}>
                   <button
                     type="button"
-                    onClick={() => void handleSelectFile(node)}
+                    onClick={() => {
+                      recordFileOpened({ path: node.path, directory: root, sourceSurface: 'search' });
+                      void handleSelectFile(node);
+                    }}
                     className={cn(
                       'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-foreground transition-colors',
                       isActive ? 'bg-interactive-selection/70' : 'hover:bg-interactive-hover/40'
@@ -3231,7 +3245,12 @@ export const FilesView: React.FC = () => {
   );
 
   return (
-    <div className="flex h-full min-h-0 overflow-hidden bg-background relative">
+    <div
+      className="flex h-full min-h-0 overflow-hidden bg-background relative"
+      data-analytics-surface="editor"
+      data-analytics-file-path={selectedFilePath || undefined}
+      data-analytics-directory={root || undefined}
+    >
       {renderDialogs()}
       {isMobile ? (
         showMobilePageContent ? (

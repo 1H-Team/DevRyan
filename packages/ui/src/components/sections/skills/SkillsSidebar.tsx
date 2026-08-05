@@ -30,6 +30,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import type { SkillLocationValue } from './skillLocations';
 import { groupSkillsForSidebar } from './skillSidebarGrouping';
 import { getSkillRowBadgeKeys } from './skillBadges';
+import { canEditSettingsPage, canReadSettingsPage, useAuthPrincipal } from '@/lib/authSession';
 
 interface SkillsSidebarProps {
   onItemSelect?: () => void;
@@ -37,6 +38,9 @@ interface SkillsSidebarProps {
 
 export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) => {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
+  const canReadCatalog = canReadSettingsPage(principal, 'skills.catalog');
+  const canEditSkills = canEditSettingsPage(principal, 'skills.installed');
   const [renameDialogSkill, setRenameDialogSkill] = React.useState<DiscoveredSkill | null>(null);
   const [renameNewName, setRenameNewName] = React.useState('');
   const [deleteDialogSkill, setDeleteDialogSkill] = React.useState<DiscoveredSkill | null>(null);
@@ -236,7 +240,7 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
         <div className="flex items-center justify-between gap-2">
           <span className="typography-meta text-muted-foreground">{t('settings.skills.sidebar.total', { count: skills.length })}</span>
           <div className="flex items-center gap-1">
-            <Button
+            {canReadCatalog ? <Button
               type="button"
               variant="outline"
               size="xs"
@@ -248,11 +252,12 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
             >
               <RiBookOpenLine className="h-3.5 w-3.5" />
               {t('settings.page.skillsCatalog.title')}
-            </Button>
+            </Button> : null}
             <Button size="sm"
               variant="ghost"
               className="h-7 w-7 px-0 -my-1 text-muted-foreground"
               onClick={handleCreateNew}
+              disabled={!canEditSkills}
             >
               <RiAddLine className="h-3.5 w-3.5" />
             </Button>

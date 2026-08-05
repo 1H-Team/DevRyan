@@ -7,6 +7,7 @@ import { useCommandsStore } from '@/stores/useCommandsStore';
 import { useSkillsStore } from '@/stores/useSkillsStore';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { useI18n } from '@/lib/i18n';
+import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
 
 type CommandSource = 'openchamber' | 'opencode';
 
@@ -49,6 +50,8 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
   style,
 }, ref) => {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
+  const canUseFiles = hasAuthCapability(principal, 'files');
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const sessionMessages = useSessionMessages(currentSessionId ?? '');
   const hasMessagesInCurrentSession = sessionMessages.length > 0;
@@ -279,7 +282,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
               { id: 'commands' as const, label: t('chat.autocomplete.tabs.commands') },
               { id: 'agents' as const, label: t('chat.autocomplete.tabs.agents') },
               { id: 'files' as const, label: t('chat.autocomplete.tabs.files') },
-            ]).map((tab) => (
+            ]).filter((tab) => tab.id !== 'files' || canUseFiles).map((tab) => (
               <button
                 key={tab.id}
                 type="button"

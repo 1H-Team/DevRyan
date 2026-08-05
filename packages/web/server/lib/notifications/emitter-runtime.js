@@ -92,11 +92,16 @@ export const createNotificationEmitterRuntime = (dependencies) => {
     }
 
     for (const res of clients) {
-      try {
-        writeSseEvent(res, syntheticPayload);
-      } catch {
-        // ignore
+      const filter = res.devRyanEventFilter;
+      if (typeof filter === 'function') {
+        void Promise.resolve(filter(res.devRyanPrincipal, { payload: syntheticPayload, directory: 'global' }))
+          .then((allowed) => {
+            if (allowed) writeSseEvent(res, syntheticPayload);
+          })
+          .catch(() => undefined);
+        continue;
       }
+      try { writeSseEvent(res, syntheticPayload); } catch { /* ignore */ }
     }
   };
 

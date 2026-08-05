@@ -2,6 +2,9 @@ import os from 'os';
 import path from 'path';
 
 export const TUNNEL_PROVIDER_CLOUDFLARE = 'cloudflare';
+export const DEFAULT_MANAGED_REMOTE_ORIGIN_PORT = 3000;
+export const MIN_MANAGED_REMOTE_ORIGIN_PORT = 1024;
+export const MAX_MANAGED_REMOTE_ORIGIN_PORT = 65535;
 
 export const TUNNEL_MODE_QUICK = 'quick';
 export const TUNNEL_MODE_MANAGED_REMOTE = 'managed-remote';
@@ -131,6 +134,19 @@ export function isSupportedTunnelMode(mode) {
   return SUPPORTED_TUNNEL_MODES.has(mode);
 }
 
+export function isValidManagedRemoteOriginPort(value) {
+  return Number.isInteger(value)
+    && value >= MIN_MANAGED_REMOTE_ORIGIN_PORT
+    && value <= MAX_MANAGED_REMOTE_ORIGIN_PORT;
+}
+
+export function normalizeManagedRemoteOriginPort(value, fallback = DEFAULT_MANAGED_REMOTE_ORIGIN_PORT) {
+  const normalized = typeof value === 'string' && value.trim().length > 0
+    ? Number(value.trim())
+    : value;
+  return isValidManagedRemoteOriginPort(normalized) ? normalized : fallback;
+}
+
 export function normalizeTunnelStartRequest(input = {}, defaults = {}) {
   const provider = normalizeTunnelProvider(input.provider ?? defaults.provider);
   const mode = normalizeTunnelModeForRequest(input.mode ?? defaults.mode);
@@ -149,6 +165,13 @@ export function normalizeTunnelStartRequest(input = {}, defaults = {}) {
     ? (input.hostname ?? defaults.hostname).trim().toLowerCase()
     : '';
 
+  const originPortInput = Object.prototype.hasOwnProperty.call(input, 'originPort')
+    ? input.originPort
+    : defaults.originPort;
+  const originPort = originPortInput === undefined || originPortInput === null || originPortInput === ''
+    ? DEFAULT_MANAGED_REMOTE_ORIGIN_PORT
+    : (typeof originPortInput === 'string' ? Number(originPortInput.trim()) : originPortInput);
+
   return {
     provider,
     mode,
@@ -156,6 +179,7 @@ export function normalizeTunnelStartRequest(input = {}, defaults = {}) {
     configPath,
     token,
     hostname,
+    originPort,
   };
 }
 
@@ -209,6 +233,13 @@ export function validateTunnelStartRequest(request, capabilities) {
     if (!request.hostname) {
       throw new TunnelServiceError('validation_error', 'Managed remote tunnel hostname is required');
     }
+  }
+
+  if (request.mode === TUNNEL_MODE_MANAGED_REMOTE && !isValidManagedRemoteOriginPort(request.originPort)) {
+    throw new TunnelServiceError(
+      'validation_error',
+      `Managed remote origin port must be an integer between ${MIN_MANAGED_REMOTE_ORIGIN_PORT} and ${MAX_MANAGED_REMOTE_ORIGIN_PORT}`
+    );
   }
 
   if (requiredFields.includes('configPath')) {

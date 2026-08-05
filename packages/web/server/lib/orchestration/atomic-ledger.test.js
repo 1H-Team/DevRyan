@@ -70,11 +70,12 @@ describe('atomic managed orchestration ledger', () => {
     expect((await fs.readdir(path.dirname(ledger.filePath))).filter((name) => name.includes('.tmp'))).toEqual([]);
   });
 
-  it('hydrates legacy tasks without dispatch groups or read-only policy instead of quarantining them', async () => {
+  it('hydrates legacy tasks without dispatch identity or read-only policy instead of quarantining them', async () => {
     const dataDirectory = await createTemporaryDirectory();
     const ledger = await createOwnedLedger({ dataDirectory });
     const legacyTask = { ...queuedTask(1) };
     delete legacyTask.dispatchGroupId;
+    delete legacyTask.dispatchCallId;
     delete legacyTask.readOnly;
     await fs.mkdir(path.dirname(ledger.filePath), { recursive: true });
     await fs.writeFile(ledger.filePath, JSON.stringify(snapshot([legacyTask])), { mode: 0o600 });
@@ -82,6 +83,7 @@ describe('atomic managed orchestration ledger', () => {
     const loaded = await ledger.load();
 
     expect(loaded.tasks[0].dispatchGroupId).toBeNull();
+    expect(loaded.tasks[0].dispatchCallId).toBeNull();
     expect(loaded.tasks[0].readOnly).toBe(false);
     expect(ledger.getDiagnostics().quarantinedPath).toBeNull();
   });

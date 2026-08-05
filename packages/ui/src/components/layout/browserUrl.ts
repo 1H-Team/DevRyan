@@ -57,3 +57,50 @@ export const normalizeBrowserUrl = (value: string): string => {
     return 'about:blank';
   }
 };
+
+const INTERNAL_WEB_BROWSER_QUERY_PARAMS = ['ocPreview', 'ocBrowser'] as const;
+const canonicalDisplayHostname = (hostname: string): string => {
+  const host = hostname.toLowerCase();
+  return host === 'localhost' || host === '0.0.0.0' || host === '::1' || host === '[::1]'
+    ? '127.0.0.1'
+    : host;
+};
+
+export const sanitizeWebBrowserDisplayUrl = (value: string): string => {
+  const normalized = normalizeBrowserUrl(value);
+  if (normalized === 'about:blank') return normalized;
+  try {
+    const parsed = new URL(normalized);
+    for (const param of INTERNAL_WEB_BROWSER_QUERY_PARAMS) parsed.searchParams.delete(param);
+    return parsed.toString();
+  } catch {
+    return 'about:blank';
+  }
+};
+
+export const reconcileWebBrowserDisplayUrl = (reportedUrl: string, currentUrl: string): string => {
+  const reported = sanitizeWebBrowserDisplayUrl(reportedUrl);
+  const current = sanitizeWebBrowserDisplayUrl(currentUrl);
+  if (reported === 'about:blank' || current === 'about:blank') return reported;
+
+  try {
+    const reportedParsed = new URL(reported);
+    const currentParsed = new URL(current);
+    if (!isLocalDevServerHost(reportedParsed.hostname) || !isLocalDevServerHost(currentParsed.hostname)) {
+      return reported;
+    }
+
+    const reportedCanonical = new URL(reportedParsed.toString());
+    const currentCanonical = new URL(currentParsed.toString());
+    reportedCanonical.hostname = canonicalDisplayHostname(reportedParsed.hostname);
+    currentCanonical.hostname = canonicalDisplayHostname(currentParsed.hostname);
+    if (reportedCanonical.origin !== currentCanonical.origin) return reported;
+
+    currentParsed.pathname = reportedParsed.pathname;
+    currentParsed.search = reportedParsed.search;
+    currentParsed.hash = reportedParsed.hash;
+    return currentParsed.toString();
+  } catch {
+    return reported;
+  }
+};

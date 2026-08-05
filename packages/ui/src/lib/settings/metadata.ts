@@ -2,6 +2,7 @@ import type { SidebarSection } from '@/constants/sidebar';
 
 export type SettingsPageSlug =
   | 'home'
+  | 'users'
   | 'projects'
   | 'remote-instances'
   | 'providers'
@@ -69,6 +70,14 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     kind: 'single',
     description: 'Search and jump to common pages.',
     keywords: ['search', 'settings'],
+  },
+  {
+    slug: 'users',
+    title: 'User Management',
+    group: 'general',
+    kind: 'single',
+    description: 'Manage users, roles, projects, branches, GitHub accounts, and audit activity.',
+    keywords: ['users', 'roles', 'access', 'permissions', 'branches', 'github', 'accounts', 'oauth', 'audit'],
   },
   {
     slug: 'projects',
@@ -229,6 +238,10 @@ export function resolveSettingsSlug(value: string | null | undefined): SettingsP
 
   if (isBehaviorSettingsAlias(normalized)) {
     return 'agents';
+  }
+
+  if (normalized === 'github') {
+    return 'users';
   }
 
   const legacy = (LEGACY_SIDEBAR_SECTION_TO_SETTINGS_SLUG as Record<string, SettingsPageSlug>)[normalized];

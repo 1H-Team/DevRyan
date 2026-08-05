@@ -116,6 +116,21 @@ export const normalizePath = (value?: string | null) => {
   return normalized.length === 0 ? '/' : normalized;
 };
 
+// Decides which sidebar group a session directory belongs to. The project
+// root always wins over a worktree entry aliasing it, and unknown directories
+// fall back to the root group so sessions never vanish into Archived.
+export const resolveSessionGroupDirectoryKey = (
+  normalizedDir: string | null,
+  normalizedProjectRoot: string | null,
+  isKnownWorktree: (directory: string) => boolean,
+  archivedKey: string,
+): string => {
+  if (!normalizedDir) return archivedKey;
+  if (normalizedDir === normalizedProjectRoot) return normalizedProjectRoot ?? '__project_root__';
+  if (isKnownWorktree(normalizedDir)) return normalizedDir;
+  return normalizedProjectRoot ?? '__project_root__';
+};
+
 export const resolveSessionRoutingDirectory = (
   routingHint?: string | null,
   sessionDirectory?: string | null,

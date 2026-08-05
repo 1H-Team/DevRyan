@@ -31,6 +31,7 @@ import { sessionEvents } from '@/lib/sessionEvents';
 import { useI18n } from '@/lib/i18n';
 import type { I18nKey } from '@/lib/i18n/store';
 import { getFirstChangedModifiedLineFromPatch } from '@/lib/diff/firstChangedLine';
+import { recordFileOpened } from '@/lib/interactionAnalytics';
 
 // Minimum width for side-by-side diff view (px)
 const SIDE_BY_SIDE_MIN_WIDTH = 1100;
@@ -1348,6 +1349,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
     }, []);
 
     const handleSelectFileAndScroll = React.useCallback((value: string) => {
+        recordFileOpened({ path: value, directory: effectiveDirectory || undefined, sourceSurface: 'diff' });
         if (pendingScrollFrameRef.current !== null) {
             window.cancelAnimationFrame(pendingScrollFrameRef.current);
             pendingScrollFrameRef.current = null;
@@ -1365,7 +1367,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
         shouldPinAfterAlignRef.current = true;
         pendingScrollTargetRef.current = value;
         scrollToFile(value);
-    }, [isStackedView, scrollToFile]);
+    }, [effectiveDirectory, isStackedView, scrollToFile]);
 
     const handleDiffViewModeChange = React.useCallback((mode: DiffTabViewMode) => {
         setDiffViewMode(mode);
@@ -1461,6 +1463,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
                 return;
             }
 
+            recordFileOpened({ path: filePath, directory: effectiveDirectory, sourceSurface: 'editor' });
             openContextFileAtLine(
                 effectiveDirectory,
                 absolutePath,
@@ -1690,7 +1693,12 @@ export const DiffView: React.FC<DiffViewProps> = ({
     };
 
     return (
-        <div className="flex h-full flex-col overflow-hidden bg-background">
+        <div
+            className="flex h-full flex-col overflow-hidden bg-background"
+            data-analytics-surface="diff"
+            data-analytics-file-path={selectedFile || undefined}
+            data-analytics-directory={effectiveDirectory || undefined}
+        >
             <div className="flex items-center gap-3 px-3 py-2 bg-background">
                 {!isMobile && (
                     <div className="flex items-center gap-1 rounded-md px-2 py-1 text-muted-foreground shrink-0">

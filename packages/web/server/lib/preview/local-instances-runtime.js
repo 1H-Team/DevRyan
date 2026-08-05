@@ -111,6 +111,7 @@ export const createLocalInstanceStatusRuntime = ({
     express,
     uiAuthController,
     isRequestOriginAllowed,
+    classifyRequestScope = () => 'local',
   }) => {
     app.post('/api/preview/local-instances/status', express.json({ limit: '16kb' }), async (req, res) => {
       try {
@@ -119,6 +120,10 @@ export const createLocalInstanceStatusRuntime = ({
           if (!sessionToken) {
             return res.status(401).json({ error: 'UI authentication required' });
           }
+        }
+
+        if (classifyRequestScope(req) !== 'local') {
+          return res.status(403).json({ error: 'Local instance probing is available only from loopback' });
         }
 
         const originAllowed = await isRequestOriginAllowed(req);

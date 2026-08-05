@@ -1,3 +1,4 @@
+import { getSafeStorage } from '@/stores/utils/safeStorage';
 import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { opencodeClient } from '@/lib/opencode/client';
@@ -24,7 +25,7 @@ type MissingCache = Record<string, number>; // directory -> timestamp
 
 function loadMissingCache(): MissingCache {
   try {
-    const raw = localStorage.getItem(MISSING_CACHE_KEY);
+    const raw = getSafeStorage().getItem(MISSING_CACHE_KEY);
     if (!raw) return {};
     return JSON.parse(raw) as MissingCache;
   } catch {
@@ -34,7 +35,7 @@ function loadMissingCache(): MissingCache {
 
 function saveMissingCache(cache: MissingCache): void {
   try {
-    localStorage.setItem(MISSING_CACHE_KEY, JSON.stringify(cache));
+    getSafeStorage().setItem(MISSING_CACHE_KEY, JSON.stringify(cache));
   } catch {
     // ignore quota errors
   }

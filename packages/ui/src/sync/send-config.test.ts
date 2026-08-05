@@ -232,6 +232,32 @@ describe("send config resolution", () => {
     })
   })
 
+  test("keeps the orchestrator effective model and variant exact while its provider catalog is still loading", () => {
+    const result = resolveDraftSendSelection({
+      requestedAgent: "orchestrator",
+      currentAgent: undefined,
+      settingsDefaultAgent: "orchestrator",
+      agents: [{
+        name: "orchestrator",
+        mode: "primary",
+        model: { providerID: "openai", modelID: "gpt-5.6-sol" },
+        variant: "high",
+      }],
+      providers: snapshot().providers,
+      inputProviderID: "anthropic",
+      inputModelID: "claude-sonnet-4-5",
+      currentProviderID: "anthropic",
+      currentModelID: "claude-sonnet-4-5",
+    })
+
+    expect(result).toEqual({
+      agent: "orchestrator",
+      providerID: "openai",
+      modelID: "gpt-5.6-sol",
+      variant: "high",
+    })
+  })
+
   test("uses the canonical builder model for a legacy build default", () => {
     const result = resolveDraftSendSelection({
       requestedAgent: undefined,

@@ -122,10 +122,11 @@ describe('Electron browser lease host contract', () => {
     assert.match(mainSource, /if \(!readAgentBrowserControlEnabled\(\) \|\| state\.quitRequested\)/);
   });
 
-  test('replays snapshots and destroys the dedicated guest on release', () => {
+  test('replays snapshots and destroys the main-owned surface on release', () => {
     assert.match(mainSource, /desktop_browser_lease_snapshot/);
-    assert.match(mainSource, /guest\.close\(\{ waitForBeforeUnload: false \}\)/);
-    assert.match(mainSource, /bridge\.updateLeaseMetadata\(leaseId/);
+    assert.match(mainSource, /browserSurfaceManager\?\.releaseLease\(leaseId, 'lease_closed'\)/);
+    assert.match(mainSource, /browserCdpBridge\?\.updateLeaseMetadata\(leaseId/);
+    assert.match(mainSource, /bridge\.bindLeaseGuest\(leaseId, surfaceContents/);
   });
 
   test('publishes a token-free global count while keeping lease snapshots owner-scoped', () => {

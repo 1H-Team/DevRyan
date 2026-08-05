@@ -3,6 +3,8 @@
 ## Purpose
 This module provides Git repository operations for the web server runtime, including repository management, branch/worktree operations, status/diff queries, commit handling, direct commit-message generation, conventional commit template setup, and merge/rebase workflows.
 
+Managed callers are additionally constrained by the multi-user layer: worktree creation must start from a logical assigned branch, while durable chat/schedule targets use the shared branch-target resolver to reuse or create the correct checkout without switching the repository root.
+
 ## Entrypoints and structure
 - `packages/web/server/lib/git/`: Git module directory containing all Git-related functionality.
   - `index.js`: Public API entry point imported by `packages/web/server/index.js`.
@@ -11,7 +13,7 @@ This module provides Git repository operations for the web server runtime, inclu
   - `service.js`: Core Git operations (repository, branch, worktree, commit, merge/rebase, status/diff, log).
   - `commit-message.js`: Session-free commit-subject prompt, normalization, validation, and direct Zen utility-model generation.
   - `credentials.js`: Git credentials management.
-  - `identity-storage.js`: Git identity (user.name, user.email) storage.
+  - `identity-storage.js`: Git identity storage under `OPENCHAMBER_DATA_DIR` with mode-`0600` atomic writes.
 
 ## Public API
 
@@ -67,6 +69,14 @@ The following functions are exported and used by the web server:
 - `pull(directory, options)`: Pull changes from remote.
 - `push(directory, options)`: Push changes to remote (auto-sets upstream if needed).
 - `fetch(directory, options)`: Fetch changes from remote.
+
+Managed multi-user requests take their author identity and exact GitHub token
+from the authoritative request principal. Managed directories may be the real
+repository root or any path inside that repository's shared OpenCode worktree
+container. Pull, push, and fetch use the worktree's actual checked-out branch,
+reject alternate remotes, and never fall back to host-current GitHub
+credentials. Branch grants are presentation metadata, so branch listings and
+merge/rebase sources are not filtered by them.
 
 ### Commit Message Generation
 - `POST /api/git/commit-message`: Accept bounded, pre-collected worktree context plus optional wording guidance and return `{ message: { subject, highlights } }`.
@@ -154,7 +164,20 @@ The `populate_worktree` stage performs one bounded recovery when Git reports an
 `index.lock` collision. It resolves the worktree-specific lock through Git,
 waits briefly, and removes the lock only when its filesystem identity remains
 unchanged. A replacement lock is preserved and the original failure remains
-visible in the receipt. Web/Electron and VS Code use the same policy.
+visible in the receipt. Before replaying population, the stage checks `HEAD`,
+status, and the Git index: populated worktrees are preserved rather than reset
+destructively, while a fresh `--no-checkout` worktree with an empty index still
+receives its initial checkout. Web/Electron and VS Code use the same policy.
+
+Terminal bootstrap receipts replay only when the idempotency key and request
+fingerprint still match. Reusing that key for a changed request supersedes the
+old terminal receipt and starts a fresh operation; queued or running receipts
+remain conflict-protected.
+
+Pull, merge, rebase, stash, and commit classify Git's unmerged-index and
+conflict responses into stable HTTP 409 results with conflict files where Git
+can provide them. Filesystem writes and deletes share the same per-directory
+mutation lock as Git operations so API-driven edits cannot race a merge.
 
 ### Primary Worktree Root Response
 - Route: `GET /api/git/worktree-root?directory=<path>`

@@ -166,6 +166,8 @@ export function resolveDraftSendSelection(params: {
     ? findProviderModel(params.providers, params.draftModelSelection?.providerId, params.draftModelSelection?.modelId)
     : null
   const agentModel = findProviderModel(params.providers, agent?.model?.providerID, agent?.model?.modelID)
+  const configuredAgentProviderID = clean(agent?.model?.providerID)
+  const configuredAgentModelID = clean(agent?.model?.modelID)
   const inputModel = findProviderModel(params.providers, params.inputProviderID, params.inputModelID)
   const currentModel = findProviderModel(params.providers, params.currentProviderID, params.currentModelID)
 
@@ -194,6 +196,10 @@ export function resolveDraftSendSelection(params: {
     modelID = agent?.model?.modelID
     variant = clean(agent?.variant)
     selectedModel = agentModel.model
+  } else if (configuredAgentProviderID && configuredAgentModelID) {
+    providerID = configuredAgentProviderID
+    modelID = configuredAgentModelID
+    variant = clean(agent?.variant)
   } else if (inputModel) {
     providerID = params.inputProviderID
     modelID = params.inputModelID
@@ -215,7 +221,9 @@ export function resolveDraftSendSelection(params: {
     agent: agent?.name,
     providerID: providerID ?? "",
     modelID: modelID ?? "",
-    variant: resolveVariantForModel(params.providers, providerID, modelID, variant),
+    variant: findProviderModel(params.providers, providerID, modelID)
+      ? resolveVariantForModel(params.providers, providerID, modelID, variant)
+      : clean(variant),
   }
 }
 

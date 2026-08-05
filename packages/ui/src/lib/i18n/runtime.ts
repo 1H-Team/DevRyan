@@ -1,3 +1,4 @@
+import { getSafeStorage } from '@/stores/utils/safeStorage';
 export type Locale = 'en';
 
 export const LOCALES = ['en'] as const satisfies readonly Locale[];
@@ -27,7 +28,7 @@ export function readStoredLocale(): Locale | undefined {
   }
 
   try {
-    const raw = window.localStorage.getItem(LOCALE_STORAGE_KEY);
+    const raw = getSafeStorage().getItem(LOCALE_STORAGE_KEY);
     if (!raw) {
       return undefined;
     }
@@ -44,7 +45,7 @@ export function writeStoredLocale(locale: Locale): void {
   }
 
   try {
-    window.localStorage.setItem(LOCALE_STORAGE_KEY, JSON.stringify({ locale }));
+    getSafeStorage().setItem(LOCALE_STORAGE_KEY, JSON.stringify({ locale }));
   } catch {
     return;
   }

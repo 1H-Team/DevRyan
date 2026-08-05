@@ -5,9 +5,17 @@ export const registerServerStatusRoutes = (app, dependencies) => {
     openchamberVersion,
     runtimeName,
     serverStartedAt,
+    runtimeInstanceId,
     gracefulShutdown,
     getHealthSnapshot,
+    uiAuthController,
   } = dependencies;
+  const requireSystemAdmin = (req, res, next) => {
+    if (typeof uiAuthController?.authorizeSystemRequest === 'function') {
+      return uiAuthController.authorizeSystemRequest(req, res, next);
+    }
+    return uiAuthController?.requireAuth?.(req, res, next) ?? next();
+  };
 
   const allocateLoopbackPort = async () => {
     const net = await import('node:net');
@@ -142,6 +150,9 @@ export const registerServerStatusRoutes = (app, dependencies) => {
   };
 
   const sendHealth = (_req, res) => {
+    if (typeof runtimeInstanceId === 'string' && runtimeInstanceId.length > 0) {
+      res.set('X-DevRyan-Instance-ID', runtimeInstanceId);
+    }
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
@@ -152,7 +163,7 @@ export const registerServerStatusRoutes = (app, dependencies) => {
   app.get('/health', sendHealth);
   app.get('/api/health', sendHealth);
 
-  app.post('/api/system/shutdown', (req, res) => {
+  app.post('/api/system/shutdown', requireSystemAdmin, (req, res) => {
     const rawOrigin = typeof req.get === 'function' ? req.get('origin') : '';
     if (rawOrigin && !isSameOriginRequest(req)) {
       return res.status(403).json({ ok: false, error: 'Invalid origin' });
@@ -168,7 +179,7 @@ export const registerServerStatusRoutes = (app, dependencies) => {
     });
   });
 
-  app.post('/api/system/dev-shutdown', express.json({ limit: '64kb' }), async (req, res) => {
+  app.post('/api/system/dev-shutdown', express.json({ limit: '64kb' }), requireSystemAdmin, async (req, res) => {
     if (!isDevShutdownAllowed()) {
       return res.status(403).json({ ok: false, error: 'Dev shutdown is disabled' });
     }
@@ -239,7 +250,7 @@ export const registerServerStatusRoutes = (app, dependencies) => {
     }
   });
 
-  app.get('/api/system/info', (_req, res) => {
+  app.get('/api/system/info', requireSystemAdmin, (_req, res) => {
     res.json({
       openchamberVersion,
       runtime: runtimeName,
@@ -252,7 +263,7 @@ export const registerServerStatusRoutes = (app, dependencies) => {
 
   // Allocates a best-effort free TCP port hint on 127.0.0.1.
   // Another process can still claim it before the preview server binds.
-  app.get('/api/system/free-port', async (_req, res) => {
+  app.get('/api/system/free-port', requireSystemAdmin, async (_req, res) => {
     try {
       const port = await allocateLoopbackPort();
       if (!Number.isFinite(port) || port <= 0) {
@@ -271,11 +282,19 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     uiAuthController,
     readSettingsFromDiskMigrated,
     normalizeTunnelSessionTtlMs,
+    getRuntimeReady = () => true,
   } = dependencies;
+  const requireMultiUserCsrf = (req, res) => {
+    if (!uiAuthController.multiUser) return true;
+    const header = typeof req.get === 'function' ? req.get('x-devryan-csrf') : req.headers?.['x-devryan-csrf'];
+    if (header === '1') return true;
+    res.status(403).json({ error: 'Missing CSRF request header' });
+    return false;
+  };
 
   app.get('/auth/session', async (req, res) => {
     const requestScope = tunnelAuthController.classifyRequestScope(req);
-    if (requestScope === 'tunnel' || requestScope === 'unknown-public') {
+    if (!uiAuthController.multiUser && (requestScope === 'tunnel' || requestScope === 'unknown-public')) {
       const tunnelSession = tunnelAuthController.getTunnelSessionFromRequest(req);
       if (tunnelSession) {
         return res.json({ authenticated: true, scope: 'tunnel' });
@@ -292,40 +311,84 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
   });
 
   app.post('/auth/session', (req, res) => {
+    if (!requireMultiUserCsrf(req, res)) return;
     const requestScope = tunnelAuthController.classifyRequestScope(req);
-    if (requestScope === 'tunnel' || requestScope === 'unknown-public') {
+    if (!uiAuthController.multiUser && (requestScope === 'tunnel' || requestScope === 'unknown-public')) {
       return res.status(403).json({ error: 'Password login is disabled for tunnel scope', tunnelLocked: true });
     }
     return uiAuthController.handleSessionCreate(req, res);
   });
 
+  app.post('/auth/agent-test-session', (req, res) => {
+    if (!requireMultiUserCsrf(req, res)) return;
+    if (!uiAuthController.multiUser || typeof uiAuthController.handleAgentTestSession !== 'function') {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    return uiAuthController.handleAgentTestSession(req, res);
+  });
+
+  app.post('/auth/claim', (req, res) => {
+    if (!requireMultiUserCsrf(req, res)) return;
+    if (!uiAuthController.multiUser || typeof uiAuthController.handleClaim !== 'function') {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    return uiAuthController.handleClaim(req, res);
+  });
+
+  app.post('/auth/invite', (req, res) => {
+    if (!requireMultiUserCsrf(req, res)) return;
+    if (!uiAuthController.multiUser || typeof uiAuthController.handleInviteAccept !== 'function') {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    return uiAuthController.handleInviteAccept(req, res);
+  });
+
+  app.post('/auth/logout', (req, res) => {
+    if (!requireMultiUserCsrf(req, res)) return;
+    if (typeof uiAuthController.handleLogout !== 'function') {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    return uiAuthController.handleLogout(req, res);
+  });
+
+  app.delete('/auth/session', (req, res) => {
+    if (!requireMultiUserCsrf(req, res)) return;
+    if (typeof uiAuthController.handleLogout !== 'function') {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    return uiAuthController.handleLogout(req, res);
+  });
+
   app.get('/auth/passkey/status', (req, res) => {
     const requestScope = tunnelAuthController.classifyRequestScope(req);
-    if (requestScope === 'tunnel' || requestScope === 'unknown-public') {
+    if (!uiAuthController.multiUser && (requestScope === 'tunnel' || requestScope === 'unknown-public')) {
       return res.json({ enabled: false, hasPasskeys: false, passkeyCount: 0, rpID: null, tunnelLocked: true });
     }
     return uiAuthController.handlePasskeyStatus(req, res);
   });
 
   app.post('/auth/passkey/authenticate/options', (req, res) => {
+    if (!requireMultiUserCsrf(req, res)) return;
     const requestScope = tunnelAuthController.classifyRequestScope(req);
-    if (requestScope === 'tunnel' || requestScope === 'unknown-public') {
+    if (!uiAuthController.multiUser && (requestScope === 'tunnel' || requestScope === 'unknown-public')) {
       return res.status(403).json({ error: 'Passkey login is disabled for tunnel scope', tunnelLocked: true });
     }
     return uiAuthController.handlePasskeyAuthenticationOptions(req, res);
   });
 
   app.post('/auth/passkey/authenticate/verify', (req, res) => {
+    if (!requireMultiUserCsrf(req, res)) return;
     const requestScope = tunnelAuthController.classifyRequestScope(req);
-    if (requestScope === 'tunnel' || requestScope === 'unknown-public') {
+    if (!uiAuthController.multiUser && (requestScope === 'tunnel' || requestScope === 'unknown-public')) {
       return res.status(403).json({ error: 'Passkey login is disabled for tunnel scope', tunnelLocked: true });
     }
     return uiAuthController.handlePasskeyAuthenticationVerify(req, res);
   });
 
   app.post('/auth/passkey/register/options', async (req, res, next) => {
+    if (!requireMultiUserCsrf(req, res)) return;
     const requestScope = tunnelAuthController.classifyRequestScope(req);
-    if (requestScope === 'tunnel' || requestScope === 'unknown-public') {
+    if (!uiAuthController.multiUser && (requestScope === 'tunnel' || requestScope === 'unknown-public')) {
       return res.status(403).json({ error: 'Passkey setup is disabled for tunnel scope', tunnelLocked: true });
     }
     try {
@@ -338,8 +401,9 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
   });
 
   app.post('/auth/passkey/register/verify', async (req, res, next) => {
+    if (!requireMultiUserCsrf(req, res)) return;
     const requestScope = tunnelAuthController.classifyRequestScope(req);
-    if (requestScope === 'tunnel' || requestScope === 'unknown-public') {
+    if (!uiAuthController.multiUser && (requestScope === 'tunnel' || requestScope === 'unknown-public')) {
       return res.status(403).json({ error: 'Passkey setup is disabled for tunnel scope', tunnelLocked: true });
     }
     try {
@@ -353,7 +417,7 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
 
   app.get('/api/passkeys', async (req, res, next) => {
     const requestScope = tunnelAuthController.classifyRequestScope(req);
-    if (requestScope === 'tunnel' || requestScope === 'unknown-public') {
+    if (!uiAuthController.multiUser && (requestScope === 'tunnel' || requestScope === 'unknown-public')) {
       return res.status(403).json({ error: 'Passkey management is disabled for tunnel scope', tunnelLocked: true });
     }
     try {
@@ -367,7 +431,7 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
 
   app.delete('/api/passkeys/:id', async (req, res, next) => {
     const requestScope = tunnelAuthController.classifyRequestScope(req);
-    if (requestScope === 'tunnel' || requestScope === 'unknown-public') {
+    if (!uiAuthController.multiUser && (requestScope === 'tunnel' || requestScope === 'unknown-public')) {
       return res.status(403).json({ error: 'Passkey management is disabled for tunnel scope', tunnelLocked: true });
     }
     try {
@@ -381,7 +445,7 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
 
   app.post('/api/auth/reset', async (req, res, next) => {
     const requestScope = tunnelAuthController.classifyRequestScope(req);
-    if (requestScope === 'tunnel' || requestScope === 'unknown-public') {
+    if (!uiAuthController.multiUser && (requestScope === 'tunnel' || requestScope === 'unknown-public')) {
       return res.status(403).json({ error: 'Global sign-out is disabled for tunnel scope', tunnelLocked: true });
     }
     try {
@@ -393,25 +457,44 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     }
   });
 
-  app.get('/connect', async (req, res) => {
+  const handleTunnelConnect = async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
     try {
       const token = typeof req.query?.t === 'string' ? req.query.t : '';
       const settings = await readSettingsFromDiskMigrated();
       const tunnelSessionTtlMs = normalizeTunnelSessionTtlMs(settings?.tunnelSessionTtlMs);
 
-      const exchange = tunnelAuthController.exchangeBootstrapToken({
+      const exchange = await tunnelAuthController.exchangeBootstrapToken({
         req,
         res,
         token,
         sessionTtlMs: tunnelSessionTtlMs,
+        beforeCommit: async () => {
+          if (!getRuntimeReady()) {
+            throw Object.assign(new Error('DevRyan runtime is still starting'), { code: 'runtime_not_ready' });
+          }
+          if (uiAuthController.multiUser && typeof uiAuthController.prepareFreshTunnelLogin === 'function') {
+            await uiAuthController.prepareFreshTunnelLogin(req, res);
+          }
+        },
       });
-
-      res.setHeader('Cache-Control', 'no-store');
 
       if (!exchange.ok) {
         if (exchange.reason === 'rate-limited') {
           res.setHeader('Retry-After', String(exchange.retryAfter || 60));
           return res.status(429).type('text/plain').send('Too many attempts. Please try again later.');
+        }
+        if (exchange.reason === 'exchange-in-progress') {
+          res.setHeader('Retry-After', '1');
+          return res.status(503).type('text/plain').send('Connection is already being prepared. Please retry.');
+        }
+        if (exchange.reason === 'precondition-failed') {
+          res.setHeader('Retry-After', exchange.code === 'runtime_not_ready' ? '2' : '5');
+          return res.status(503).type('text/plain').send(
+            exchange.code === 'runtime_not_ready'
+              ? 'DevRyan is still starting. Please retry this connection link shortly.'
+              : 'Fresh sign-in could not be prepared. Please retry this connection link.',
+          );
         }
         return res.status(401).type('text/plain').send('Connection link is invalid or expired.');
       }
@@ -420,12 +503,37 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     } catch {
       return res.status(500).type('text/plain').send('Failed to process connect request.');
     }
+  };
+
+  const handleInviteConnect = async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (!uiAuthController.multiUser) {
+      return res.status(404).type('text/plain').send('Invitation not found');
+    }
+    return uiAuthController.handleConnect(req, res);
+  };
+
+  app.get('/tunnel/connect', handleTunnelConnect);
+  app.get('/invite', handleInviteConnect);
+
+  // Compatibility dispatcher for links issued before tunnel and invitation
+  // URLs were separated. Recognize the current tunnel token even after it was
+  // consumed or expired so it cannot fall through to the invitation flow.
+  app.get('/connect', async (req, res) => {
+    const token = typeof req.query?.t === 'string' ? req.query.t : '';
+    if (tunnelAuthController.recognizesBootstrapToken(token)) {
+      return handleTunnelConnect(req, res);
+    }
+    if (uiAuthController.multiUser) {
+      return handleInviteConnect(req, res);
+    }
+    return handleTunnelConnect(req, res);
   });
 
   app.use('/api', async (req, res, next) => {
     try {
       const requestScope = tunnelAuthController.classifyRequestScope(req);
-      if (requestScope === 'tunnel' || requestScope === 'unknown-public') {
+      if (!uiAuthController.multiUser && (requestScope === 'tunnel' || requestScope === 'unknown-public')) {
         return tunnelAuthController.requireTunnelSession(req, res, next);
       }
       await uiAuthController.requireAuth(req, res, next);
@@ -484,7 +592,10 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
         return res.status(413).json({ error: 'Content exceeds maximum size of 1048576 bytes' });
       }
       express.json({ limit: '1mb' })(req, res, next);
-    } else if (req.path.startsWith('/api/desktop/browser-leases')) {
+    } else if (
+      req.path.startsWith('/api/desktop/browser-leases')
+      || req.path.startsWith('/api/preview')
+    ) {
       express.json({ limit: '16kb' })(req, res, next);
     } else if (
       req.path.startsWith('/api/config/agents') ||
@@ -493,6 +604,8 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
       req.path.startsWith('/api/config/settings') ||
       req.path.startsWith('/api/config/skills') ||
       req.path.startsWith('/api/config/plugins') ||
+      req.path.startsWith('/api/admin') ||
+      req.path.startsWith('/api/analytics') ||
       req.path.startsWith('/api/auth') ||
       req.path.startsWith('/api/diagnostics') ||
       req.path.startsWith('/api/evidence') ||

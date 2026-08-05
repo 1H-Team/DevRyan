@@ -22,7 +22,7 @@ import { toast } from '@/components/ui';
 import { cn } from '@/lib/utils';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useDeviceInfo } from '@/lib/device';
-import { isDesktopLocalOriginActive, isDesktopShell, isElectronShell } from '@/lib/desktop';
+import { isDesktopLocalOriginActive, isDesktopShell, isElectronShell, isStandaloneWebRuntime } from '@/lib/desktop';
 import { useUIStore } from '@/stores/useUIStore';
 import {
   browserAgentLeaseSelectors,
@@ -260,6 +260,7 @@ export const ProjectActionsButton = ({
   const setSettingsDialogOpen = useUIStore((state) => state.setSettingsDialogOpen);
   const setSettingsProjectsSelectedId = useUIStore((state) => state.setSettingsProjectsSelectedId);
   const openContextPreview = useUIStore((state) => state.openContextPreview);
+  const openContextBrowser = useUIStore((state) => state.openContextBrowser);
   const toggleContextBrowser = useUIStore((state) => state.toggleContextBrowser);
   const openContextBrowserLease = useUIStore((state) => state.openContextBrowserLease);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
@@ -282,6 +283,15 @@ export const ProjectActionsButton = ({
   );
   const rootLeaseIds = useBrowserAgentStore(rootLeaseIdsSelector);
   const rootLeaseCount = useBrowserAgentStore(rootLeaseCountSelector);
+  const isLocalElectronBrowser = isElectronShell() && isDesktopLocalOriginActive();
+  const isManagedBrowserRuntime = isLocalElectronBrowser || isStandaloneWebRuntime();
+  const openProjectUrl = React.useCallback((targetDirectory: string, url: string) => {
+    if (isManagedBrowserRuntime) {
+      openContextBrowser(targetDirectory, url);
+      return;
+    }
+    openContextPreview(targetDirectory, url);
+  }, [isManagedBrowserRuntime, openContextBrowser, openContextPreview]);
 
   const terminalSessions = useTerminalStore((state) => state.sessions);
   const ensureDirectory = useTerminalStore((state) => state.ensureDirectory);
@@ -527,7 +537,7 @@ export const ProjectActionsButton = ({
             }
             window.clearTimeout(previewWaitTimeoutByRunKeyRef.current[runKey]);
             delete previewWaitTimeoutByRunKeyRef.current[runKey];
-            openContextPreview(run.directory, maybeUrl);
+            openProjectUrl(run.directory, maybeUrl);
           }
         } else {
           void openExternal(maybeUrl);
@@ -545,7 +555,7 @@ export const ProjectActionsButton = ({
       }
     }
 
-  }, [displayActions, openContextPreview, openExternal, projectActionRuns, setTabPreviewUrl, t, terminalSessions, updateProjectActionRunStatus]);
+  }, [displayActions, openExternal, openProjectUrl, projectActionRuns, setTabPreviewUrl, t, terminalSessions, updateProjectActionRunStatus]);
 
   const getOrCreateActionTab = React.useCallback(async (action: OpenChamberProjectAction, options: { revealTerminal?: boolean } = {}) => {
     if (!normalizedDirectory) {
@@ -715,7 +725,7 @@ export const ProjectActionsButton = ({
         toast.success(t('projectActions.toast.openedForwardedUrl'));
       } else if (manualOpenUrl) {
         setTabPreviewUrl(normalizedDirectory, tabId, manualOpenUrl, { locked: true, autoOpened: true });
-        openContextPreview(normalizedDirectory, manualOpenUrl);
+        openProjectUrl(normalizedDirectory, manualOpenUrl);
         toast.success(t('projectActions.toast.openedActionUrl'));
       } else if (hasCustomOpenUrl) {
         setTabPreviewUrl(normalizedDirectory, tabId, null, { locked: true });
@@ -753,7 +763,7 @@ export const ProjectActionsButton = ({
     isDesktopShellApp,
     normalizedDirectory,
     openExternal,
-    openContextPreview,
+    openProjectUrl,
     projectActionRuns,
     runtime.isVSCode,
     removeProjectActionRun,
@@ -866,8 +876,7 @@ export const ProjectActionsButton = ({
     setSettingsDialogOpen(true);
   }, [setSettingsDialogOpen, setSettingsPage, setSettingsProjectsSelectedId, stableProjectRef?.id]);
 
-  const canOpenBlankBrowser = Boolean(stableProjectRef && normalizedDirectory);
-  const isLocalElectronBrowser = isElectronShell() && isDesktopLocalOriginActive();
+  const canOpenBlankBrowser = Boolean(normalizedDirectory);
   const browserActionLabel = !canOpenBlankBrowser
     ? t('header.actions.browserNoProject')
     : rootLeaseCount > 0
@@ -878,12 +887,12 @@ export const ProjectActionsButton = ({
     if (!canOpenBlankBrowser) {
       return;
     }
-    if (isLocalElectronBrowser) {
+    if (isManagedBrowserRuntime) {
       toggleContextBrowser(normalizedDirectory);
       return;
     }
     openContextPreview(normalizedDirectory, 'about:blank');
-  }, [canOpenBlankBrowser, isLocalElectronBrowser, normalizedDirectory, openContextPreview, toggleContextBrowser]);
+  }, [canOpenBlankBrowser, isManagedBrowserRuntime, normalizedDirectory, openContextPreview, toggleContextBrowser]);
 
   const handleObserveBrowserLease = React.useCallback((leaseId: string) => {
     const lease = useBrowserAgentStore.getState().leasesById.get(leaseId);
@@ -925,9 +934,7 @@ export const ProjectActionsButton = ({
     </button>
   );
 
-  const browserActionPortal = browserActionPortalTarget
-    ? createPortal(
-      isLocalElectronBrowser ? (
+  const browserControl = isLocalElectronBrowser ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>{browserTrigger}</DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-80 max-h-[70vh] overflow-y-auto">
@@ -979,18 +986,23 @@ export const ProjectActionsButton = ({
           <TooltipTrigger asChild>{browserTrigger}</TooltipTrigger>
           <TooltipContent><p>{browserActionLabel}</p></TooltipContent>
         </Tooltip>
-      ),
-      browserActionPortalTarget,
-    )
-    : null;
+      );
 
-  if (runtime.isVSCode || (!allowMobile && isMobile) || !stableProjectRef || !normalizedDirectory) {
+  const browserActionPortal = browserActionPortalTarget
+    ? createPortal(browserControl, browserActionPortalTarget)
+    : null;
+  const browserAction = browserActionPortal ?? browserControl;
+
+  if (runtime.isVSCode || (!allowMobile && isMobile)) {
     return browserActionPortal;
+  }
+  if (!stableProjectRef || !normalizedDirectory) {
+    return browserAction;
   }
 
   const resolvedSelected = resolvedSelectedAction;
   if (!resolvedSelected) {
-    return browserActionPortal;
+    return browserAction;
   }
 
   const selectedIconKey = (resolvedSelected.icon || 'play') as keyof typeof PROJECT_ACTION_ICON_MAP;
@@ -1014,13 +1026,13 @@ export const ProjectActionsButton = ({
     if (!selectedRunning || !selectedRunPreviewUrl) {
       return;
     }
-    openContextPreview(selectedRunning.directory, selectedRunPreviewUrl);
+    openProjectUrl(selectedRunning.directory, selectedRunPreviewUrl);
   };
 
   if (compact) {
     return (
       <div className="inline-flex items-center">
-        {browserActionPortal}
+        {browserAction}
         <button
           type="button"
           disabled={isLoading || isStoppingSelected}
@@ -1117,7 +1129,7 @@ export const ProjectActionsButton = ({
         className
       )}
     >
-      {browserActionPortal}
+      {browserAction}
       <button
         type="button"
         onClick={handlePrimaryClick}

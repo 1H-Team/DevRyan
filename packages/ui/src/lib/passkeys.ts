@@ -42,6 +42,7 @@ const postJson = async (url: string, body?: unknown): Promise<Response> => fetch
   headers: {
     'Content-Type': 'application/json',
     Accept: 'application/json',
+    'X-DevRyan-CSRF': '1',
   },
   body: body === undefined ? undefined : JSON.stringify(body),
 });

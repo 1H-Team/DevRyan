@@ -55,7 +55,7 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Owns the pure OpenAI summary projection and punctuation rules used by `ReasoningPart.tsx`.
 
 - `JustificationBlock.tsx`
-  - Renders provider-authored intermediate narration through the same compact timeline presentation as reasoning.
+  - Renders provider-authored intermediate narration in the compact activity timeline using normal assistant typography and foreground color. Only runtime `reasoning` parts use the muted reasoning presentation.
   - Turn projection classifies non-final `text` from tool/non-stop assistant steps as justification in both Live and Sorted modes; final `stop` text remains normal assistant Markdown.
   - Preserves natural Markdown and streaming updates. A leading bold activity title that is directly joined to prose receives render-only paragraph separation; persisted and copied message text remain unchanged.
 
@@ -67,7 +67,7 @@ Use this doc when you ask an agent to change tool/header/description behavior.
 - Terminal tool failures remain visible alongside retained partial output. A genuinely empty terminal payload renders an explicit provider-no-details message instead of an empty expansion.
 - `perplexity` is currently treated as static and grouped into search/web-search style rows (through static grouping + short description extraction).
 - Reasoning remains inline across streaming/completion and respects the global reasoning visibility setting. Rationale Display affects only the presentation depth of OpenAI's provider-generated summary; it never exposes hidden chain-of-thought or mutates persisted message data.
-- Provider-authored intermediate narration remains visible independently of the reasoning setting and uses the compact activity hierarchy in both Live and Sorted modes.
+- Provider-authored intermediate narration remains visible independently of the reasoning setting and uses normal assistant presentation in the compact activity hierarchy in both Live and Sorted modes. Tool adjacency and message finish reason never make visible assistant `text` look like reasoning.
 
 ## "I want to change description for Perplexity" (example recipe)
 

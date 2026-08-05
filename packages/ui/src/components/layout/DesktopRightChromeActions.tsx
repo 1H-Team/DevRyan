@@ -34,6 +34,7 @@ import { useI18n } from '@/lib/i18n';
 import { DesktopServicesMenu } from '@/components/layout/DesktopServicesMenu';
 import { DESKTOP_HEADER_ICON_BUTTON_CLASS, HeaderIconActionButton } from '@/components/layout/headerIconButton';
 import { useSessionPlanFileStore } from '@/stores/useSessionPlanFileStore';
+import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
 
 const SidebarRightExpandIcon = (props: React.ComponentProps<typeof SidebarRightIcon>) => (
   <SidebarRightIcon {...props} chevronDirection="left" />
@@ -66,6 +67,8 @@ export const DesktopRightChromeActions: React.FC<DesktopRightChromeActionsProps>
   browserActionPortalRef,
 }) => {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
+  const canUseTerminal = hasAuthCapability(principal, 'terminal');
   const toggleBottomTerminal = useUIStore((state) => state.toggleBottomTerminal);
   const toggleRightSidebar = useUIStore((state) => state.toggleRightSidebar);
   const isRightSidebarOpen = useUIStore((state) => state.isRightSidebarOpen);
@@ -449,14 +452,16 @@ export const DesktopRightChromeActions: React.FC<DesktopRightChromeActionsProps>
         toggleFamilyExpanded={toggleFamilyExpanded}
         shortcutLabel={shortcutLabel}
       />
-      <HeaderIconActionButton
-        title={t('header.actions.terminalPanelWithShortcut', { shortcut: shortcutLabel('toggle_terminal') })}
-        ariaLabel={t('header.actions.toggleTerminalPanelAria')}
-        onClick={toggleBottomTerminal}
-        className={cn(DESKTOP_HEADER_ICON_BUTTON_CLASS, 'h-[37.5px] w-[37.5px]')}
-        iconClassName="h-[18px] w-[18px]"
-        Icon={TerminalPanelIcon}
-      />
+      {canUseTerminal ? (
+        <HeaderIconActionButton
+          title={t('header.actions.terminalPanelWithShortcut', { shortcut: shortcutLabel('toggle_terminal') })}
+          ariaLabel={t('header.actions.toggleTerminalPanelAria')}
+          onClick={toggleBottomTerminal}
+          className={cn(DESKTOP_HEADER_ICON_BUTTON_CLASS, 'h-[37.5px] w-[37.5px]')}
+          iconClassName="h-[18px] w-[18px]"
+          Icon={TerminalPanelIcon}
+        />
+      ) : null}
       <span
         ref={browserActionPortalRef}
         className="contents"

@@ -11,6 +11,10 @@ Workspace package for the shared React UI runtime used by web, Electron, and VS 
 - **Header usage composition**: reusable provider-tab and selected-provider quota panels live under `src/components/layout/usage/` and are shared by the desktop/mobile header menus plus the VS Code header surface.
 - **Authoritative plan files**: `src/lib/plans/sessionPlanFile.ts` creates revision-specific Markdown under `~/.config/openchamber/projects/<project-id>/plans`; `src/lib/plans/sessionPlanPersistence.ts` deduplicates lifecycle/card saves and updates `src/stores/useSessionPlanFileStore.ts`, which exposes only the latest in-memory session pointer and save status to plan UI surfaces.
 - **User-facing session visibility**: `src/lib/sessionVisibility.ts` centralizes exact internal-session classification for navigation surfaces, composing DevRyan-owned Git helper registration with external SmartFetch secondary-model helper titles while leaving authoritative sync state untouched.
+- **Managed interaction analytics**: `src/lib/interactionAnalytics.ts` is a
+  bounded, session-scoped collector for explicit file navigation and copy
+  metadata. It stays outside Zustand hot paths; `src/lib/clipboard.ts` is the
+  shared programmatic-copy boundary and never sends clipboard text.
 
 ## Flow
 1. Host runtime injects runtime APIs and loads UI entrypoint.

@@ -3,6 +3,18 @@ import { useSessionWorktreeStore } from '@/sync/session-worktree-store';
 import { getAttachedSessionDirectory } from '@/sync/session-worktree-contract';
 import { useSessionDirectory } from '@/sync/sync-context';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
+import type { NewSessionDraftState } from '@/sync/session-ui-store';
+
+export const resolveDraftEffectiveDirectory = (
+    draft: NewSessionDraftState | null | undefined,
+    fallbackDirectory: string | null | undefined,
+): string | undefined => {
+    if (!draft?.open) return fallbackDirectory ?? undefined;
+    const explicitDirectory = draft.bootstrapPendingDirectory || draft.directoryOverride;
+    if (explicitDirectory) return explicitDirectory;
+    if (draft.pendingWorktreeRequestId || draft.targetPreparationError) return undefined;
+    return fallbackDirectory ?? undefined;
+};
 
 /**
  * Hook that resolves the effective working directory for tabs (Git, Diff, Files, Terminal).
@@ -40,10 +52,5 @@ export const useEffectiveDirectory = (): string | undefined => {
     }
 
     // If a draft session is open, use its directoryOverride
-    if (newSessionDraft?.open && (newSessionDraft.bootstrapPendingDirectory || newSessionDraft.directoryOverride)) {
-        return (newSessionDraft.bootstrapPendingDirectory || newSessionDraft.directoryOverride) ?? undefined;
-    }
-
-    // Fall back to the global directory
-    return fallbackDirectory ?? undefined;
+    return resolveDraftEffectiveDirectory(newSessionDraft, fallbackDirectory);
 };

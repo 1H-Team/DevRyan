@@ -1,3 +1,4 @@
+import { getSafeStorage } from '@/stores/utils/safeStorage';
 import React from 'react';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessions } from '@/sync/sync-context';
@@ -72,9 +73,9 @@ export const usePwaManifestSync = () => {
 
     try {
       if (recentShortcuts.length === 0) {
-        localStorage.removeItem(PWA_RECENT_SESSIONS_STORAGE_KEY);
+        getSafeStorage().removeItem(PWA_RECENT_SESSIONS_STORAGE_KEY);
       } else {
-        localStorage.setItem(PWA_RECENT_SESSIONS_STORAGE_KEY, signature);
+        getSafeStorage().setItem(PWA_RECENT_SESSIONS_STORAGE_KEY, signature);
       }
     } catch {
       return;

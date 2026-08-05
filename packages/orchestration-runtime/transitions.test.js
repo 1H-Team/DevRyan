@@ -80,6 +80,7 @@ describe('managed task transitions', () => {
       ['taskId', 'dvr_task_other'],
       ['rootSessionId', 'ses_other'],
       ['dispatchGroupId', 'msg_other'],
+      ['dispatchCallId', 'call_other'],
       ['directory', '/other'],
       ['mode', 'builder'],
       ['providerId', 'cursor-acp'],

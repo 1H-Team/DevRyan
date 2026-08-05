@@ -15,6 +15,7 @@ type Props = {
   handleNewSession: () => void;
   onOpenMultiRun: () => void;
   onOpenScheduledTasks: () => void;
+  showMultiRun?: boolean;
   headerActionIconClass: string;
   reserveHeaderActionsSpace: boolean;
   headerActionButtonClass: string;
@@ -44,6 +45,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
     hideSearchAction = false,
     avoidWindowControlsOverlay = false,
     reserveExternalDesktopChromeRow = false,
+    showMultiRun = true,
   } = props;
 
   if (hideDirectoryControls) {
@@ -76,7 +78,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
         <TooltipContent side="bottom" sideOffset={4}><p>{t('sessions.sidebar.header.actions.newChat')}</p></TooltipContent>
       </Tooltip>
 
-      <Tooltip>
+      {showMultiRun ? <Tooltip>
         <TooltipTrigger asChild>
           <button
             type="button"
@@ -88,7 +90,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
           </button>
         </TooltipTrigger>
         <TooltipContent side="bottom" sideOffset={4}><p>{t('sessions.sidebar.header.actions.newMultiRun')}</p></TooltipContent>
-      </Tooltip>
+      </Tooltip> : null}
 
       <Tooltip>
         <TooltipTrigger asChild>

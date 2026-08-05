@@ -56,6 +56,7 @@ describe('full test-suite contract', () => {
     const ignoredDirectories = new Set([
       '.git',
       '.cache',
+      '.worktrees',
       'node_modules',
       'dist',
       'dist-bundle',
@@ -96,7 +97,7 @@ describe('full test-suite contract', () => {
 
   test('contains no silent skip or todo declarations in deterministic tests', () => {
     const files = discoverTestFiles(repositoryRoot, repositoryRoot, {
-      ignoredDirectories: new Set(['.git', '.cache', 'node_modules', 'dist', 'dist-bundle', 'target', 'resources']),
+      ignoredDirectories: new Set(['.git', '.cache', '.worktrees', 'node_modules', 'dist', 'dist-bundle', 'target', 'resources']),
     }).filter((file) => file !== 'scripts/test-suite-contract.test.mjs');
     const forbidden = new RegExp(String.raw`\b(?:test|it|describe)\.(?:skip|todo)\s*\(|\bskip\s*:`);
     const offenders = files.filter((file) => forbidden.test(readFileSync(path.join(repositoryRoot, file), 'utf8')));

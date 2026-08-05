@@ -58,6 +58,61 @@ describe('durable worktree bootstrap state machine', () => {
     });
   });
 
+  test('supersedes a terminal receipt for a changed fingerprint only when requested', async () => {
+    const { runtime } = await makeRuntime();
+    const input = {
+      idempotencyKey: 'request-supersede',
+      fingerprint: 'first',
+      directory: '/tmp/worktree-supersede',
+    };
+    const first = await runtime.beginOperation(input);
+    await runtime.fail(first.receipt.operationId, new Error('first request failed'));
+
+    await expect(runtime.beginOperation({ ...input, fingerprint: 'second' })).rejects.toMatchObject({
+      code: 'WORKTREE_IDEMPOTENCY_CONFLICT',
+    });
+
+    const second = await runtime.beginOperation({
+      ...input,
+      fingerprint: 'second',
+      supersedeTerminal: true,
+    });
+    expect(second.replay).toBe(false);
+    expect(second.receipt.operationId).not.toBe(first.receipt.operationId);
+    expect(await runtime.getReceipt(first.receipt.operationId)).toMatchObject({
+      tombstone: true,
+      supersededAt: expect.any(Number),
+    });
+
+    const replay = await runtime.beginOperation({
+      ...input,
+      fingerprint: 'second',
+      supersedeTerminal: true,
+    });
+    expect(replay).toMatchObject({ replay: true });
+    expect(replay.receipt.operationId).toBe(second.receipt.operationId);
+  });
+
+  test('does not supersede a queued or running receipt', async () => {
+    const { runtime } = await makeRuntime();
+    const first = await runtime.beginOperation({
+      idempotencyKey: 'request-running',
+      fingerprint: 'first',
+      directory: '/tmp/worktree-running',
+    });
+    expect(first.receipt.status).toBe('queued');
+
+    await expect(runtime.beginOperation({
+      idempotencyKey: 'request-running',
+      fingerprint: 'second',
+      directory: '/tmp/worktree-running',
+      supersedeTerminal: true,
+    })).rejects.toMatchObject({
+      code: 'WORKTREE_IDEMPOTENCY_CONFLICT',
+      statusCode: 409,
+    });
+  });
+
   test('surfaces warning stages but fails a known setup error', async () => {
     const calls = [];
     const { runtime } = await makeRuntime({

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   appendVoiceTranscript,
   applyVoiceTranscriptUpdate,
+  isBrowserServiceRecoveryError,
   isRecoverableVoiceSilenceError,
   resolveCommittedVoiceInputDraft,
   resolveVoiceInputDraft,
@@ -266,5 +267,15 @@ describe('isRecoverableVoiceSilenceError', () => {
     expect(isRecoverableVoiceSilenceError('Permission denied')).toBe(false);
     expect(isRecoverableVoiceSilenceError('Network error')).toBe(false);
     expect(isRecoverableVoiceSilenceError('No microphone found')).toBe(false);
+  });
+});
+
+describe('isBrowserServiceRecoveryError', () => {
+  test('offers Local recovery only for browser service failures', () => {
+    expect(isBrowserServiceRecoveryError('network')).toBe(true);
+    expect(isBrowserServiceRecoveryError('service-not-allowed')).toBe(true);
+    expect(isBrowserServiceRecoveryError('not-allowed')).toBe(false);
+    expect(isBrowserServiceRecoveryError('audio-capture')).toBe(false);
+    expect(isBrowserServiceRecoveryError('no-speech')).toBe(false);
   });
 });

@@ -1,5 +1,13 @@
 const DEFAULT_TARGET_TTL_MS = 30 * 60 * 1000;
 const TOKEN_COOKIE_NAME = 'oc_preview_token';
+const AUTH_SESSION_COOKIE_NAMES = ['oc_app_session', 'oc_ui_session', 'oc_tunnel_session'];
+const isReservedPreviewCookieName = (name) => {
+  const normalized = String(name || '').toLowerCase();
+  return normalized.startsWith('oc_')
+    || normalized.startsWith('devryan_')
+    || normalized.startsWith('openchamber_')
+    || normalized.startsWith('__host-');
+};
 const PREVIEW_PASSTHROUGH_REQUEST_HEADERS = ['x-inertia', 'x-inertia-version'];
 const PREVIEW_PASSTHROUGH_RESPONSE_HEADERS = ['x-inertia', 'x-inertia-location'];
 
@@ -10,6 +18,43 @@ const LOOPBACK_HOSTS = new Set([
   '[::1]',
   '0.0.0.0',
 ]);
+
+const normalizePreviewRequestHost = (value) => {
+  const input = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  if (!input) return '';
+  if (input.startsWith('[')) {
+    const closingBracket = input.indexOf(']');
+    return closingBracket >= 0 ? input.slice(1, closingBracket) : input.slice(1);
+  }
+  return input.replace(/:\d+$/, '');
+};
+
+const normalizePreviewRemoteAddress = (value) => {
+  const input = typeof value === 'string' ? value.trim().toLowerCase().split('%', 1)[0] : '';
+  if (input.startsWith('::ffff:')) return input.slice('::ffff:'.length);
+  return input;
+};
+
+const isPreviewLoopbackAddress = (value) => {
+  const address = normalizePreviewRemoteAddress(value);
+  if (address === '::1') return true;
+  const ipv4 = address.split('.').map((part) => Number(part));
+  return ipv4.length === 4
+    && ipv4.every((part) => Number.isInteger(part) && part >= 0 && part <= 255)
+    && ipv4[0] === 127;
+};
+
+export const classifyPreviewRequestScope = (req, classifiedScope = 'local') => {
+  if (classifiedScope === 'tunnel' || classifiedScope === 'unknown-public') return classifiedScope;
+  // Use the actual Host header before Express' derived hostname. A trusted
+  // reverse proxy may honor X-Forwarded-Host when deriving `req.hostname`,
+  // but that must never make a public request look like loopback traffic.
+  const host = normalizePreviewRequestHost(req?.headers?.host || req?.hostname);
+  const remoteAddress = req?.socket?.remoteAddress || req?.connection?.remoteAddress;
+  const trustedLoopback = (host === 'localhost' || isPreviewLoopbackAddress(host))
+    && isPreviewLoopbackAddress(remoteAddress);
+  return trustedLoopback ? 'local' : 'unknown-public';
+};
 
 const PREVIEW_BRIDGE_SCRIPT_ID = 'openchamber-preview-bridge';
 
@@ -222,6 +267,8 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
   const toDisplayUrl = (value) => {
     try {
       const parsed = new URL(value || window.location.href, window.location.href);
+      parsed.searchParams.delete('ocPreview');
+      parsed.searchParams.delete('ocBrowser');
       if (!targetOrigin || parsed.origin !== window.location.origin) return parsed.toString();
       const path = proxyBasePath && parsed.pathname.indexOf(proxyBasePath) === 0
         ? parsed.pathname.slice(proxyBasePath.length) || '/'
@@ -497,13 +544,17 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
       || text.indexOf('Cannot read properties of undefined (reading "send")') >= 0;
   };
 
-  const installViteHmrProxyPatch = () => {
-    if (window.__openchamberViteHmrProxyPatched || typeof window.WebSocket !== 'function') return;
-    window.__openchamberViteHmrProxyPatched = true;
+  const installWebSocketProxyPatch = () => {
+    if (window.__openchamberWebSocketProxyPatched || typeof window.WebSocket !== 'function') return;
+    window.__openchamberWebSocketProxyPatched = true;
     const NativeWebSocket = window.WebSocket;
     const proxyMatch = window.location.pathname.match(/^(\/api\/preview\/proxy\/[a-f0-9]{16,64})(?:\/|$)/i);
     if (!proxyMatch) return;
-    const proxyBase = proxyMatch[1] + '/';
+    const proxyBase = proxyMatch[1];
+    let registeredTarget = null;
+    try {
+      registeredTarget = new URL(targetOrigin);
+    } catch {}
     let reloadTimer = 0;
 
     const schedulePreviewReload = () => {
@@ -516,15 +567,34 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
       }, 80);
     };
 
-    const rewriteUrl = (url, protocols) => {
-      const protocolList = Array.isArray(protocols) ? protocols : [protocols];
-      const isViteSocket = protocolList.indexOf('vite-hmr') >= 0 || protocolList.indexOf('vite-ping') >= 0;
-      if (!isViteSocket) return url;
+    const normalizedHost = (hostname) => {
+      const host = String(hostname || '').toLowerCase();
+      if (host === 'localhost' || host === '0.0.0.0' || host === '::1' || host === '[::1]') return '127.0.0.1';
+      return host;
+    };
+
+    const effectivePort = (url) => {
+      if (url.port) return url.port;
+      return url.protocol === 'https:' || url.protocol === 'wss:' ? '443' : '80';
+    };
+
+    const belongsToRegisteredTarget = (url) => {
+      if (url.host === window.location.host) return true;
+      if (!registeredTarget) return false;
+      return normalizedHost(url.hostname) === normalizedHost(registeredTarget.hostname)
+        && effectivePort(url) === effectivePort(registeredTarget);
+    };
+
+    const rewriteUrl = (url) => {
       try {
         const parsed = new URL(String(url), window.location.href);
-        if (parsed.host !== window.location.host) return url;
+        if (!['http:', 'https:', 'ws:', 'wss:'].includes(parsed.protocol)) return url;
         if (parsed.pathname.indexOf(proxyBase) === 0) return url;
-        parsed.pathname = proxyBase;
+        if (!belongsToRegisteredTarget(parsed)) return url;
+        parsed.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        parsed.host = window.location.host;
+        const path = parsed.pathname && parsed.pathname.startsWith('/') ? parsed.pathname : '/';
+        parsed.pathname = proxyBase + path;
         return parsed.toString();
       } catch {
         return url;
@@ -534,7 +604,7 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
     function OpenChamberPreviewWebSocket(url, protocols) {
       const protocolList = Array.isArray(protocols) ? protocols : [protocols];
       const isViteSocket = protocolList.indexOf('vite-hmr') >= 0;
-      const nextUrl = rewriteUrl(url, protocols);
+      const nextUrl = rewriteUrl(url);
       const socket = arguments.length === 1
         ? new NativeWebSocket(nextUrl)
         : new NativeWebSocket(nextUrl, protocols);
@@ -566,29 +636,52 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
     if (!proxyMatch) return;
     const proxyBase = proxyMatch[1];
 
-    const shouldProxyPath = (pathname) => {
-      if (typeof pathname !== 'string' || !pathname.startsWith('/') || pathname.startsWith('//')) return false;
-      if (pathname.indexOf(proxyBase) === 0) return false;
-      return true;
+    let registeredTarget = null;
+    try {
+      registeredTarget = new URL(targetOrigin);
+    } catch {}
+
+    const normalizedHost = (hostname) => {
+      const host = String(hostname || '').toLowerCase();
+      if (host === 'localhost' || host === '0.0.0.0' || host === '::1' || host === '[::1]') return '127.0.0.1';
+      return host;
+    };
+
+    const effectivePort = (url) => {
+      if (url.port) return url.port;
+      return url.protocol === 'https:' ? '443' : '80';
+    };
+
+    const belongsToRegisteredTarget = (url) => {
+      if (url.origin === window.location.origin) return true;
+      if (!registeredTarget) return false;
+      return normalizedHost(url.hostname) === normalizedHost(registeredTarget.hostname)
+        && effectivePort(url) === effectivePort(registeredTarget);
     };
 
     const proxiedUrl = (value) => {
-      if (typeof value !== 'string' || !value.startsWith('/')) return value;
-      if (!shouldProxyPath(value)) return value;
-      return proxyBase + value;
+      if (typeof value !== 'string' && !(value instanceof URL)) return value;
+      try {
+        const parsed = new URL(String(value), window.location.href);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return value;
+        if (parsed.pathname.indexOf(proxyBase) === 0) return value;
+        if (!belongsToRegisteredTarget(parsed)) return value;
+        return proxyBase + (parsed.pathname || '/') + parsed.search + parsed.hash;
+      } catch {
+        return value;
+      }
     };
 
     if (typeof window.fetch === 'function') {
       const nativeFetch = window.fetch.bind(window);
       window.fetch = function(input, init) {
-        if (typeof input === 'string') {
+        if (typeof input === 'string' || input instanceof URL) {
           return nativeFetch(proxiedUrl(input), init);
         }
         if (input instanceof Request) {
           try {
-            const parsed = new URL(input.url);
-            if (parsed.origin === window.location.origin && shouldProxyPath(parsed.pathname)) {
-              const nextUrl = proxyBase + parsed.pathname + parsed.search + parsed.hash;
+            const nextUrl = proxiedUrl(input.url);
+            if (typeof nextUrl === 'string' && nextUrl !== input.url) {
               return nativeFetch(new Request(nextUrl, input), init);
             }
           } catch {}
@@ -601,9 +694,7 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
       const nativeOpen = window.XMLHttpRequest.prototype.open;
       window.XMLHttpRequest.prototype.open = function(method, url) {
         const args = Array.prototype.slice.call(arguments);
-        if (typeof url === 'string') {
-          args[1] = proxiedUrl(url);
-        }
+        args[1] = proxiedUrl(url);
         return nativeOpen.apply(this, args);
       };
     }
@@ -740,7 +831,7 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
     };
   }
 
-  installViteHmrProxyPatch();
+  installWebSocketProxyPatch();
   installAppRequestProxyPatch();
 
   window.addEventListener('error', (event) => {
@@ -889,6 +980,49 @@ const buildCookie = ({
   return chunks.join('; ');
 };
 
+export const buildPreviewUpstreamCookieHeader = (cookieHeader) => {
+  const cookies = parseCookieHeader(cookieHeader);
+  return [...cookies.entries()]
+    .filter(([name]) => !isReservedPreviewCookieName(name))
+    .map(([name, value]) => `${name}=${value}`)
+    .join('; ');
+};
+
+export const rewritePreviewSetCookieHeaders = (headers, proxyBasePath) => {
+  const raw = readHeader(headers, 'set-cookie');
+  if (raw === undefined) return;
+  const source = Array.isArray(raw) ? raw : [raw];
+  const rewritten = source.flatMap((cookieValue) => {
+    const parts = String(cookieValue || '').split(';').map((part) => part.trim()).filter(Boolean);
+    const first = parts[0] || '';
+    const separator = first.indexOf('=');
+    const name = separator > 0 ? first.slice(0, separator).trim() : '';
+    if (!name || isReservedPreviewCookieName(name)) return [];
+
+    let upstreamPath = '/';
+    const attributes = [];
+    for (const attribute of parts.slice(1)) {
+      const [rawName, ...rawValue] = attribute.split('=');
+      const attributeName = rawName.trim().toLowerCase();
+      if (attributeName === 'domain') continue;
+      if (attributeName === 'path') {
+        const candidate = rawValue.join('=').trim();
+        upstreamPath = candidate.startsWith('/') ? candidate : '/';
+        continue;
+      }
+      attributes.push(attribute);
+    }
+    const base = proxyBasePath.endsWith('/') ? proxyBasePath.slice(0, -1) : proxyBasePath;
+    const scopedPath = upstreamPath === '/' ? base : `${base}${upstreamPath}`;
+    return [[first, `Path=${scopedPath}`, ...attributes].join('; ')];
+  });
+
+  for (const key of Object.keys(headers || {})) {
+    if (key.toLowerCase() === 'set-cookie') delete headers[key];
+  }
+  if (rewritten.length > 0) headers['set-cookie'] = rewritten;
+};
+
 // Guard for a potential future `allowExternal` path: refuse to proxy private,
 // loopback and reserved addresses (incl. cloud-metadata 169.254.169.254).
 // Operates on the WHATWG-normalized hostname, so decimal/hex/octal IPv4 forms
@@ -965,6 +1099,31 @@ export const normalizeProxyTargetUrl = (rawUrl, { allowExternal = false } = {}) 
 };
 
 const normalizeLoopbackUrl = (rawUrl) => normalizeProxyTargetUrl(rawUrl, { allowExternal: false });
+
+export const rewritePreviewRedirectLocation = ({ location, targetOrigin, proxyBasePath, requestPath = '/' }) => {
+  if (typeof location !== 'string' || !location.trim()) {
+    return { ok: true, location };
+  }
+
+  let resolved;
+  try {
+    const upstreamRequestUrl = new URL(requestPath || '/', targetOrigin);
+    resolved = new URL(location, upstreamRequestUrl);
+  } catch {
+    return { ok: false, error: 'Preview redirect returned an invalid URL' };
+  }
+
+  const normalized = normalizeLoopbackUrl(resolved.toString());
+  if (!normalized.ok || normalized.origin !== targetOrigin) {
+    return { ok: false, error: 'Preview redirect attempted to leave the approved origin' };
+  }
+
+  const base = proxyBasePath.endsWith('/') ? proxyBasePath.slice(0, -1) : proxyBasePath;
+  return {
+    ok: true,
+    location: `${base}${resolved.pathname || '/'}${resolved.search}${resolved.hash}`,
+  };
+};
 
 export const rewritePreviewBody = ({ bodyText, proxyBasePath, targetOrigin, kind }) => {
   if (typeof bodyText !== 'string' || bodyText.length === 0) {
@@ -1103,17 +1262,44 @@ export const createPreviewProxyRuntime = ({
   URL,
   createProxyMiddleware,
   responseInterceptor,
+  now: nowFn = () => Date.now(),
 }) => {
   const targets = new Map();
   let sweepTimer = null;
 
-  const now = () => Date.now();
+  const now = nowFn;
+
+  const removeTarget = (id) => {
+    const entry = targets.get(id);
+    if (!entry) return false;
+    targets.delete(id);
+    try {
+      entry.unregisterRevocation?.();
+    } catch {
+    }
+    return true;
+  };
+
+  const requestOwnerKey = (req) => {
+    const cookies = parseCookieHeader(req?.headers?.cookie);
+    for (const cookieName of AUTH_SESSION_COOKIE_NAMES) {
+      const token = cookies.get(cookieName);
+      if (!token) continue;
+      if (typeof crypto.createHash === 'function') {
+        const digest = crypto.createHash('sha256').update(`${cookieName}:${token}`).digest('hex');
+        return `session-cookie:${digest}`;
+      }
+      return `session-cookie:${cookieName}:${token}`;
+    }
+    if (req?.principal?.appSessionId) return `app-session:${req.principal.appSessionId}`;
+    return `principal:${req?.principal?.id || 'local-admin'}`;
+  };
 
   const sweepExpired = () => {
     const t = now();
     for (const [id, entry] of targets.entries()) {
       if (entry.expiresAt <= t) {
-        targets.delete(id);
+        removeTarget(id);
       }
     }
   };
@@ -1127,18 +1313,33 @@ export const createPreviewProxyRuntime = ({
     sweepTimer.unref?.();
   };
 
-  const createTarget = (origin, ttlMs) => {
+  const createTarget = (origin, ttlMs, {
+    ownerKey,
+    ownerUserId,
+    grantId = null,
+    projectKey = null,
+    registerRevocation = null,
+  } = {}) => {
     const id = crypto.randomBytes(16).toString('hex');
     const token = crypto.randomBytes(16).toString('hex');
     const createdAt = now();
-    const expiresAt = createdAt + (Number.isFinite(ttlMs) ? Math.max(15_000, Math.trunc(ttlMs)) : DEFAULT_TARGET_TTL_MS);
+    const requestedTtl = Number.isFinite(ttlMs) ? Math.trunc(ttlMs) : DEFAULT_TARGET_TTL_MS;
+    const expiresAt = createdAt + Math.min(DEFAULT_TARGET_TTL_MS, Math.max(15_000, requestedTtl));
     targets.set(id, {
       id,
       origin,
       token,
+      ownerKey,
+      ownerUserId,
+      grantId,
+      projectKey,
       createdAt,
       expiresAt,
     });
+    const entry = targets.get(id);
+    if (entry && typeof registerRevocation === 'function') {
+      entry.unregisterRevocation = registerRevocation(() => removeTarget(id));
+    }
     return { id, token, expiresAt };
   };
 
@@ -1155,7 +1356,7 @@ export const createPreviewProxyRuntime = ({
 
     const entry = targets.get(id);
     if (!entry || entry.expiresAt <= now()) {
-      targets.delete(id);
+      removeTarget(id);
       return { ok: false, status: 404, error: 'Preview target expired' };
     }
 
@@ -1163,6 +1364,10 @@ export const createPreviewProxyRuntime = ({
     const token = cookies.get(TOKEN_COOKIE_NAME) || '';
     if (!token || token !== entry.token) {
       return { ok: false, status: 403, error: 'Preview token missing' };
+    }
+
+    if (!entry.ownerKey || requestOwnerKey(req) !== entry.ownerKey) {
+      return { ok: false, status: 403, error: 'Preview target belongs to another session' };
     }
 
     return { ok: true, id, entry, parsed };
@@ -1184,9 +1389,34 @@ export const createPreviewProxyRuntime = ({
     const query = search.startsWith('?') ? search.slice(1) : search;
     const parts = query.split('&').filter((part) => {
       const name = part.split('=', 1)[0] || '';
-      return decodeURIComponent(name.replace(/\+/g, ' ')) !== paramName;
+      try {
+        return decodeURIComponent(name.replace(/\+/g, ' ')) !== paramName;
+      } catch {
+        return name !== paramName;
+      }
     });
     return parts.length > 0 ? `?${parts.join('&')}` : '';
+  };
+
+  const stripInternalPreviewQuery = (search) => (
+    removeRawQueryParam(removeRawQueryParam(search, 'ocPreview'), 'ocBrowser')
+  );
+
+  const applyUpstreamNavigationHeaders = (proxyReq, req, resolved) => {
+    if (!resolved?.ok) return;
+    if (readHeader(req?.headers, 'origin') !== undefined) {
+      proxyReq.setHeader('origin', resolved.entry.origin);
+    }
+
+    const rawReferer = readHeader(req?.headers, 'referer');
+    if (typeof rawReferer !== 'string' || !rawReferer) return;
+    try {
+      const referer = new URL(rawReferer);
+      const path = stripProxyPrefix(referer.pathname, resolved.id);
+      proxyReq.setHeader('referer', new URL(`${path}${stripInternalPreviewQuery(referer.search)}${referer.hash}`, resolved.entry.origin).toString());
+    } catch {
+      proxyReq.removeHeader?.('referer');
+    }
   };
 
   // Drop response headers that prevent the dev server from being framed.
@@ -1227,6 +1457,8 @@ export const createPreviewProxyRuntime = ({
     uiAuthController,
     isRequestOriginAllowed,
     rejectWebSocketUpgrade,
+    classifyRequestScope = () => 'local',
+    previewInstancesRuntime = null,
   }) => {
     ensureSweeper();
 
@@ -1290,7 +1522,34 @@ export const createPreviewProxyRuntime = ({
           return res.status(400).json({ error: normalized.error });
         }
 
-        const target = createTarget(normalized.origin, ttlMs);
+        const requestScope = classifyPreviewRequestScope(req, classifyRequestScope(req));
+        let grantId = null;
+        let projectKey = null;
+        if (requestScope === 'tunnel' || requestScope === 'unknown-public') {
+          if (!previewInstancesRuntime) {
+            return res.status(503).json({ error: 'Remote preview grants are unavailable' });
+          }
+          const authorization = await previewInstancesRuntime.authorizeTarget({
+            principal: req.principal,
+            directory: req.body?.directory,
+            url: rawUrl,
+          });
+          if (!authorization.ok) {
+            return res.status(authorization.status).json({ error: authorization.error });
+          }
+          grantId = authorization.grantId;
+          projectKey = authorization.projectKey;
+        }
+
+        const target = createTarget(normalized.origin, ttlMs, {
+          ownerKey: requestOwnerKey(req),
+          ownerUserId: req.principal?.id || 'local-admin',
+          grantId,
+          projectKey,
+          registerRevocation: typeof uiAuthController?.registerConnection === 'function'
+            ? (close) => uiAuthController.registerConnection(req.principal, close)
+            : null,
+        });
         const cookiePath = `/api/preview/proxy/${target.id}`;
         const secure = Boolean(req.secure);
         res.setHeader('Set-Cookie', buildCookie({
@@ -1315,13 +1574,17 @@ export const createPreviewProxyRuntime = ({
     const proxy = createProxyMiddleware({
       target: 'http://127.0.0.1',
       changeOrigin: true,
-      ws: true,
+      // Targets are pinned to loopback; local HTTPS development commonly uses
+      // a self-signed certificate that the host proxy must still be able to
+      // reach.
+      secure: false,
+      // WebSocket upgrades are wired manually below so authentication and
+      // request-origin checks run before the proxy can touch the socket.
+      ws: false,
       selfHandleResponse: true,
-      // Restrict the proxy (especially its auto-attached `upgrade` listener,
-      // which is registered globally on the underlying HTTP server when
-      // `ws: true`) to preview paths. Without this, every WebSocket upgrade
-      // on the server (e.g. `/api/terminal/ws`) gets proxied to
-      // `http://127.0.0.1` and tears the socket down with ECONNREFUSED.
+      // Restrict the proxy to preview paths. WebSocket upgrades are attached
+      // manually below after authentication so terminal and message-stream
+      // sockets can never be claimed by this proxy.
       //
       // We use a function so the same filter handles both cases:
       //   - HTTP requests through Express, where `req.url` has been stripped
@@ -1348,16 +1611,28 @@ export const createPreviewProxyRuntime = ({
         const parsed = new URL(req.originalUrl || req.url || '', 'http://localhost');
         // Never forward our auth cookie token to the dev server.
         const strippedPath = stripProxyPrefix(parsed.pathname, resolved.id);
-        return `${strippedPath}${removeRawQueryParam(parsed.search, 'ocPreview')}`;
+        return `${strippedPath}${stripInternalPreviewQuery(parsed.search)}`;
       },
       on: {
         proxyReq: (proxyReq, req) => {
           applyPreviewPassthroughRequestHeaders(req, proxyReq);
+          applyUpstreamNavigationHeaders(proxyReq, req, resolveTargetFromRequest(req));
           // Keep local dev servers from receiving OpenChamber credentials.
-          proxyReq.removeHeader('cookie');
+          const upstreamCookies = buildPreviewUpstreamCookieHeader(req.headers?.cookie);
+          if (upstreamCookies) proxyReq.setHeader('cookie', upstreamCookies);
+          else proxyReq.removeHeader('cookie');
           proxyReq.removeHeader('authorization');
           proxyReq.removeHeader('x-openchamber-ui-session');
           proxyReq.setHeader('accept-encoding', 'identity');
+        },
+        proxyReqWs: (proxyReq, req) => {
+          applyPreviewPassthroughRequestHeaders(req, proxyReq);
+          applyUpstreamNavigationHeaders(proxyReq, req, resolveTargetFromRequest(req));
+          const upstreamCookies = buildPreviewUpstreamCookieHeader(req.headers?.cookie);
+          if (upstreamCookies) proxyReq.setHeader('cookie', upstreamCookies);
+          else proxyReq.removeHeader('cookie');
+          proxyReq.removeHeader('authorization');
+          proxyReq.removeHeader('x-openchamber-ui-session');
         },
         proxyRes: responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
           applyPreviewPassthroughResponseHeaders(proxyRes, res);
@@ -1368,6 +1643,35 @@ export const createPreviewProxyRuntime = ({
           // if it normally sets X-Frame-Options or a CSP frame-ancestors rule.
           // The proxy is same-origin so embedding is otherwise safe.
           stripFrameBustingHeaders(proxyRes.headers, bridgeNonce);
+
+          const resolved = resolveTargetFromRequest(req);
+          if (!resolved.ok) {
+            return responseBuffer;
+          }
+
+          const proxyBasePath = `/api/preview/proxy/${resolved.id}`;
+          rewritePreviewSetCookieHeaders(proxyRes.headers, proxyBasePath);
+          const parsed = new URL(req.originalUrl || req.url || '', 'http://localhost');
+          const upstreamPath = stripProxyPrefix(parsed.pathname, resolved.id);
+          const locationHeader = readHeader(proxyRes.headers, 'location');
+          if (locationHeader !== undefined) {
+            const redirect = rewritePreviewRedirectLocation({
+              location: Array.isArray(locationHeader) ? locationHeader[0] : String(locationHeader),
+              targetOrigin: resolved.entry.origin,
+              proxyBasePath,
+              requestPath: `${upstreamPath}${parsed.search}`,
+            });
+            if (!redirect.ok) {
+              res.statusCode = 502;
+              delete proxyRes.headers.location;
+              delete proxyRes.headers.Location;
+              delete proxyRes.headers['content-length'];
+              proxyRes.headers['content-type'] = 'application/json; charset=utf-8';
+              return Buffer.from(JSON.stringify({ error: redirect.error }), 'utf8');
+            }
+            proxyRes.headers.location = redirect.location;
+            delete proxyRes.headers.Location;
+          }
 
           const contentType = String(proxyRes.headers?.['content-type'] || '').toLowerCase();
           const isHtml = contentType.includes('text/html');
@@ -1383,14 +1687,6 @@ export const createPreviewProxyRuntime = ({
           delete proxyRes.headers.etag;
           delete proxyRes.headers['last-modified'];
 
-          const resolved = resolveTargetFromRequest(req);
-          if (!resolved.ok) {
-            return responseBuffer;
-          }
-
-          const proxyBasePath = `/api/preview/proxy/${resolved.id}`;
-          const parsed = new URL(req.originalUrl || req.url || '', 'http://localhost');
-          const upstreamPath = stripProxyPrefix(parsed.pathname, resolved.id);
           if (isJavaScript && upstreamPath === '/@vite/client') {
             return rewritePreviewBody({
               bodyText: rewriteViteClientHmr(responseBuffer.toString('utf8'), proxyBasePath),
@@ -1453,14 +1749,14 @@ export const createPreviewProxyRuntime = ({
     }, proxy);
 
     server.on('upgrade', (req, socket, head) => {
-      const resolved = resolveTargetFromRequest(req);
-      if (!resolved.ok) {
+      const rawUrl = req?.url || '';
+      if (!/^\/api\/preview\/proxy\/[a-f0-9]{16,64}(?:\/|$)/i.test(new URL(rawUrl, 'http://localhost').pathname)) {
         return;
       }
 
       const handleUpgrade = async () => {
         try {
-          if (uiAuthController?.enabled) {
+          if (typeof uiAuthController?.ensureSessionToken === 'function') {
             const sessionToken = await uiAuthController?.ensureSessionToken?.(req, null);
             if (!sessionToken) {
               rejectWebSocketUpgrade(socket, 401, 'UI authentication required');
@@ -1474,13 +1770,23 @@ export const createPreviewProxyRuntime = ({
             }
           }
 
+          const resolved = resolveTargetFromRequest(req);
+          if (!resolved.ok) {
+            rejectWebSocketUpgrade(socket, resolved.status, resolved.error);
+            return;
+          }
+
+          const unregisterConnection = typeof uiAuthController?.registerConnection === 'function'
+            ? uiAuthController.registerConnection(req.principal, () => socket.destroy())
+            : () => {};
+          socket.once('close', unregisterConnection);
+
           // Rewrite req.url to what the dev server expects.
           const rawUrl = req.url || '';
           req.originalUrl = rawUrl;
           const parsed = new URL(rawUrl, 'http://localhost');
           const nextPath = stripProxyPrefix(parsed.pathname, resolved.id);
-          const search = parsed.searchParams.toString();
-          req.url = `${nextPath}${search ? `?${search}` : ''}`;
+          req.url = `${nextPath}${stripInternalPreviewQuery(parsed.search)}`;
           proxy.upgrade(req, socket, head);
         } catch {
           rejectWebSocketUpgrade(socket, 500, 'Upgrade failed');
@@ -1493,5 +1799,38 @@ export const createPreviewProxyRuntime = ({
 
   return {
     attach,
+    revokeGrantTargets(grantId) {
+      if (!grantId) return 0;
+      let removed = 0;
+      for (const [targetId, target] of targets) {
+        if (target.grantId !== grantId) continue;
+        removeTarget(targetId);
+        removed += 1;
+      }
+      return removed;
+    },
+    revokeOwnerTargets(ownerUserId) {
+      if (!ownerUserId) return 0;
+      let removed = 0;
+      for (const [targetId, target] of targets) {
+        if (target.ownerUserId !== ownerUserId) continue;
+        removeTarget(targetId);
+        removed += 1;
+      }
+      return removed;
+    },
+    getSnapshot: () => [...targets.values()].map((target) => ({
+      id: target.id,
+      origin: target.origin,
+      grantId: target.grantId,
+      projectKey: target.projectKey,
+      createdAt: target.createdAt,
+      expiresAt: target.expiresAt,
+    })),
+    shutdown() {
+      if (sweepTimer) clearInterval(sweepTimer);
+      sweepTimer = null;
+      for (const targetId of [...targets.keys()]) removeTarget(targetId);
+    },
   };
 };

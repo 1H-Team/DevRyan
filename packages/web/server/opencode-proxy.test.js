@@ -6,10 +6,13 @@ import os from 'node:os';
 import express from 'express';
 import path from 'path';
 import { promisify } from 'node:util';
+import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 
 import { createSseBoundaryTracker, registerOpenCodeProxy, writeSseChunkWithBackpressure } from './lib/opencode/proxy.js';
+import { registerQuestionRoutes } from './lib/opencode/question-routes.js';
 import { bindScopedRevertRequestAbort, runScopedSessionRevert } from './lib/opencode/session-scoped-revert.js';
 import { createTurnTimingRuntime } from './lib/opencode/turn-timing.js';
+import { translateDirectoryHeaderValue } from './lib/multi-user/path-translation.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -434,6 +437,89 @@ describe('OpenCode proxy SSE forwarding', () => {
 
     expect(response.status).toBe(204);
     expect(upstreamBody).toEqual(body);
+  });
+
+  it('forwards an SDK-shaped question reply after canonicalizing its encoded directory header', async () => {
+    const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-question-proxy-'));
+    try {
+      let upstreamBody = null;
+      let upstreamDirectoryHeader = null;
+      let upstreamDirectoryQuery = null;
+      const upstream = express();
+      upstream.use(express.json());
+      upstream.post('/question/:requestID/reply', (req, res) => {
+        upstreamBody = req.body;
+        upstreamDirectoryHeader = req.headers['x-opencode-directory'] ?? null;
+        upstreamDirectoryQuery = req.query.directory ?? null;
+        res.json(true);
+      });
+      upstreamServer = await listen(upstream);
+      const upstreamPort = upstreamServer.address().port;
+      const principal = {
+        id: 'developer-1',
+        role: 'developer',
+        scope: 'managed',
+        assignments: [{
+          projectId: 'project-1',
+          publicDirectory: repositoryPath,
+          repositoryPath,
+          worktreeContainerPath: path.join(repositoryPath, '.worktrees'),
+        }],
+      };
+
+      const app = express();
+      app.use(async (req, res, next) => {
+        const header = req.headers['x-opencode-directory'];
+        if (typeof header !== 'string' || !header.trim()) return next();
+        const translated = await translateDirectoryHeaderValue(principal, header);
+        if (!translated) return res.status(403).json({ error: 'Directory is outside your assigned workspace' });
+        req.headers['x-opencode-directory'] = translated;
+        return next();
+      });
+      registerQuestionRoutes(app, {
+        cursorSdkRuntime: {
+          listPendingQuestions: () => [],
+          replyToQuestion: async () => false,
+          rejectQuestion: async () => false,
+        },
+        buildOpenCodeUrl: (requestPath) => `http://127.0.0.1:${upstreamPort}${requestPath}`,
+        getOpenCodeAuthHeaders: () => ({}),
+      });
+      registerOpenCodeProxy(app, {
+        fs: {},
+        os: {},
+        path,
+        OPEN_CODE_READY_GRACE_MS: 0,
+        getRuntime: () => ({
+          openCodePort: upstreamPort,
+          isOpenCodeReady: true,
+          openCodeNotReadySince: 0,
+          isRestartingOpenCode: false,
+        }),
+        getOpenCodeAuthHeaders: () => ({}),
+        buildOpenCodeUrl: (requestPath) => `http://127.0.0.1:${upstreamPort}${requestPath}`,
+        ensureOpenCodeApiPrefix: () => {},
+      });
+      proxyServer = await listen(app);
+      const client = createOpencodeClient({
+        baseUrl: `http://127.0.0.1:${proxyServer.address().port}/api`,
+        directory: repositoryPath,
+      });
+
+      const result = await client.question.reply({
+        requestID: 'que_sdk',
+        directory: repositoryPath,
+        answers: [['Entire web app']],
+      });
+
+      expect(result.error).toBeUndefined();
+      expect(result.data).toBe(true);
+      expect(upstreamBody).toEqual({ answers: [['Entire web app']] });
+      expect(upstreamDirectoryHeader).toBe(await fs.realpath(repositoryPath));
+      expect(upstreamDirectoryQuery).toBe(repositoryPath);
+    } finally {
+      await fs.rm(repositoryPath, { recursive: true, force: true });
+    }
   });
 });
 

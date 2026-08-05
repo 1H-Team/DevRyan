@@ -1,7 +1,7 @@
 # packages/web/
 
 ## Responsibility
-Web runtime package that ships three surfaces: browser app (Vite bundle), embedded Express server runtime, and `openchamber` CLI entrypoint.
+Web runtime package that ships the main app plus mini-chat and detachable-browser Vite entries, the embedded Express server runtime, and the `openchamber` CLI entrypoint.
 
 ## Design
 - **Split runtime model**: UI bootstrap in `src/`, server orchestration in `server/`, operator/automation UX in `bin/`.

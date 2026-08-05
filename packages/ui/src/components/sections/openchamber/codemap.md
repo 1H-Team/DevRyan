@@ -9,6 +9,14 @@ Section-per-domain pattern with shared primitives for consistency. The About sur
 ## Flow
 Settings navigation selects a section; section reads/writes config through hooks/APIs. `AboutSettings.tsx` is also routed as the cross-runtime Settings → About page. Its Data Retention section owns session cleanup and one unified diagnostic-data control: session-count/size status, export, and Clear All Data. In Electron the same confirmed clear also removes the Chromium application cache and shows its size on a second line; chat history is never part of this operation. Desktop-only components such as `DesktopKeepAwakeSettings.tsx` and `DesktopNetworkSettings.tsx` appear only for the local desktop origin.
 
+`TunnelSettings.tsx` owns managed-remote fixed-origin profiles. It edits `originPort`, shows the exact
+Cloudflare service URL, and displays the stable-origin-to-active-port relay mapping returned by the
+server instead of asking users to update Cloudflare when DevRyan's active port changes.
+
+`useGitHubDeviceFlow.ts` owns the reusable OAuth start/poll/cancel flow and
+`GitHubDeviceFlow.tsx` renders its shared verification panel for local and
+managed GitHub account controls in User Management.
+
 `AgentBrowserControlSettings.tsx` is local-Electron-only. Its existing enable toggle remains independent from the managed `agent-browser` installation status. The section reads expected/installed versions and repair issues through local-sender-gated desktop IPC, invokes Repair through IPC rather than HTTP, shows the global active-lease count, and surfaces concise managed-skill conflict/issue messages without exposing filesystem paths. Leases start hidden and each receives a separate local-only capability.
 
 ## Integration

@@ -22,6 +22,12 @@ const nonRepositoryStatus = () => ({
   behind: 0,
 });
 
+const sendGitError = (res, error, fallback) => res.status(error?.statusCode || 500).json({
+  error: error?.message || fallback,
+  ...(error?.code ? { code: error.code } : {}),
+  ...(Array.isArray(error?.conflictFiles) ? { conflictFiles: error.conflictFiles } : {}),
+});
+
 export function registerGitRoutes(app, {
   resolveZenModel = async (override) => override || 'gpt-5-nano',
   generateCommitMessage = generateCommitMessageDirect,
@@ -408,7 +414,7 @@ export function registerGitRoutes(app, {
       res.json(result);
     } catch (error) {
       console.error('Failed to pull:', error);
-      res.status(500).json({ error: error.message || 'Failed to pull from remote' });
+      sendGitError(res, error, 'Failed to pull from remote');
     }
   });
 
@@ -460,7 +466,7 @@ export function registerGitRoutes(app, {
       res.json(await stashPush(directory, req.body));
     } catch (error) {
       console.error('Failed to stash changes:', error);
-      res.status(500).json({ error: error.message || 'Failed to stash changes' });
+      sendGitError(res, error, 'Failed to stash changes');
     }
   });
 
@@ -565,7 +571,7 @@ export function registerGitRoutes(app, {
       res.json(result);
     } catch (error) {
       console.error('Failed to rebase:', error);
-      res.status(500).json({ error: error.message || 'Failed to rebase' });
+      sendGitError(res, error, 'Failed to rebase');
     }
   });
 
@@ -597,7 +603,7 @@ export function registerGitRoutes(app, {
       res.json(result);
     } catch (error) {
       console.error('Failed to merge:', error);
-      res.status(500).json({ error: error.message || 'Failed to merge' });
+      sendGitError(res, error, 'Failed to merge');
     }
   });
 
@@ -687,7 +693,7 @@ export function registerGitRoutes(app, {
       res.json(result);
     } catch (error) {
       console.error('Failed to commit:', error);
-      res.status(500).json({ error: error.message || 'Failed to create commit' });
+      sendGitError(res, error, 'Failed to create commit');
     }
   });
 

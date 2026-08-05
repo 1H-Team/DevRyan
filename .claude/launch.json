@@ -9,6 +9,12 @@
       "autoPort": false
     },
     {
+      "name": "web-verify",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["OPENCHAMBER_DATA_DIR=/Users/zoubair/.config/openchamber-verify", "bun", "packages/web/server/index.js", "--port", "3101"],
+      "port": 3101
+    },
+    {
       "name": "devryan-live",
       "runtimeExecutable": "sleep",
       "runtimeArgs": ["86400"],

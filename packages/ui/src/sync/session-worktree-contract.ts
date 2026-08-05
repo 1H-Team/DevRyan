@@ -206,10 +206,11 @@ export function buildSessionTargetOptions(input: {
   rootBranch: string;
   worktrees: Array<{ path: string; branch: string; label: string; projectDirectory: string }>;
   pendingBootstrapDirectory?: string | null;
+  includeRoot?: boolean;
 }): SessionTargetOption[] {
   const options: SessionTargetOption[] = [];
 
-  if (input.projectRoot) {
+  if (input.projectRoot && input.includeRoot !== false) {
     options.push({
       value: input.projectRoot,
       label: input.rootBranch || input.projectRoot.split('/').pop() || input.projectRoot,

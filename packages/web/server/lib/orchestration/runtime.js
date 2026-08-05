@@ -296,6 +296,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           idempotencyKey: params.idempotencyKey,
           rootSessionId: params.rootSessionId,
           dispatchGroupId: params.dispatchGroupId ?? null,
+          dispatchCallId: params.dispatchCallId ?? null,
           parentTaskId: params.parentTaskId ?? null,
           childSessionId: params.childSessionId ?? null,
           directory: params.directory,

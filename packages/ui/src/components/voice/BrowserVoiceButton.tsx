@@ -71,6 +71,9 @@ export function BrowserVoiceButton() {
         stopVoice,
         isMobile,
         audioLevel,
+        localModelStatus,
+        localRecovery,
+        recoverWithLocal,
     } = useBrowserVoice();
     
     const [isPressing, setIsPressing] = useState(false);
@@ -83,6 +86,7 @@ export function BrowserVoiceButton() {
     // Refs for touch handling
     const touchHandledRef = useRef(false);
     const lastToastedErrorRef = useRef<string | null>(null);
+    const localRecoveryToastIdRef = useRef<string | number | null>(null);
 
     // NOTE: Do NOT pre-request microphone permission on mount.
     // Permission is requested when the user explicitly taps the mic button.
@@ -93,9 +97,41 @@ export function BrowserVoiceButton() {
     const isError = status === 'error';
 
     const isSpeaking = status === 'speaking';
+    const localStatusLabel = status === 'processing'
+        ? localModelStatus.state === 'downloading'
+            ? `Downloading local voice (${Math.round(localModelStatus.progress)}%)`
+            : localModelStatus.state === 'loading'
+                ? 'Loading local voice'
+                : undefined
+        : undefined;
 
     // Show toast notification when voice error occurs
     useEffect(() => {
+        if (localRecovery) {
+            const recoveryKey = `local:${localRecovery.reason}:${localRecovery.modelId}`;
+            if (lastToastedErrorRef.current === recoveryKey) {
+                return;
+            }
+
+            lastToastedErrorRef.current = recoveryKey;
+            localRecoveryToastIdRef.current = toast.warning('Browser speech service unavailable', {
+                description: `Use ${localRecovery.modelName} locally? This requires a one-time ${localRecovery.modelSize} download. Your recorded audio stays on this device.`,
+                duration: Infinity,
+                action: {
+                    label: 'Use Local',
+                    onClick: () => {
+                        void recoverWithLocal();
+                    },
+                },
+            });
+            return;
+        }
+
+        if (localRecoveryToastIdRef.current !== null) {
+            toast.dismiss(localRecoveryToastIdRef.current);
+            localRecoveryToastIdRef.current = null;
+        }
+
         if (isError && error) {
             if (isRecoverableVoiceSilenceError(error)) {
                 return;
@@ -114,12 +150,18 @@ export function BrowserVoiceButton() {
         if (!isError) {
             lastToastedErrorRef.current = null;
         }
-    }, [isError, error]);
+    }, [isError, error, localRecovery, recoverWithLocal]);
+
+    useEffect(() => () => {
+        if (localRecoveryToastIdRef.current !== null) {
+            toast.dismiss(localRecoveryToastIdRef.current);
+        }
+    }, []);
 
     // Status text for accessibility
     const statusText = isError
         ? error || 'Voice Error'
-        : statusLabels[status] || 'Start Voice';
+        : (localStatusLabel ?? statusLabels[status]) || 'Start Voice';
 
     // Tooltip content based on state
     const getTooltipContent = () => {
@@ -257,6 +299,7 @@ export function BrowserVoiceButton() {
                     showLabel
                     size="sm"
                     audioLevel={audioLevel}
+                    statusLabel={localStatusLabel}
                     className="mr-1"
                 />
             )}

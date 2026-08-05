@@ -34,6 +34,7 @@ import type {
 } from '@/lib/api/types';
 import type { ProjectRef } from '@/lib/worktrees/worktreeManager';
 import { useI18n } from '@/lib/i18n';
+import { useAuthPrincipal } from '@/lib/authSession';
 
 type GitHubTab = 'issues' | 'prs';
 
@@ -58,6 +59,7 @@ export function GitHubIntegrationDialog({
   onSelect,
 }: GitHubIntegrationDialogProps) {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
   const isMobile = useUIStore((state) => state.isMobile);
   const { github } = useRuntimeAPIs();
   const githubAuthStatus = useGitHubAuthStore((state) => state.status);
@@ -247,9 +249,10 @@ export function GitHubIntegrationDialog({
   const isGitHubConnected = githubAuthChecked && githubAuthStatus?.connected === true;
 
   const openGitHubSettings = () => {
-    setSettingsPage('github');
+    setSettingsPage('users');
     setSettingsDialogOpen(true);
   };
+  const canManageGitHubAccounts = principal.scope === 'local-admin' || principal.role === 'admin';
 
   // Handle selection
   const handleSelectIssue = (issue: GitHubIssueSummary) => {
@@ -303,10 +306,12 @@ export function GitHubIntegrationDialog({
           <div className="text-center">
             <p className="typography-ui-label text-foreground">{t('session.githubIntegration.connect.title')}</p>
             <p className="typography-small text-muted-foreground mt-1">
-              {t('session.githubIntegration.connect.description')}
+              {canManageGitHubAccounts ? t('session.githubIntegration.connect.description') : t('settings.github.accountManagement.adminRequired')}
             </p>
           </div>
-          <Button onClick={openGitHubSettings} size="sm">{t('session.githubIntegration.connect.action')}</Button>
+          {canManageGitHubAccounts && (
+            <Button onClick={openGitHubSettings} size="sm">{t('session.githubIntegration.connect.action')}</Button>
+          )}
         </div>
       ) : (
         <>

@@ -802,6 +802,7 @@ export const createSettingsRuntime = (deps) => {
               id: preset.id,
               name: preset.name,
               hostname: preset.hostname,
+              originPort: preset.originPort,
               token: token.trim(),
             };
           })

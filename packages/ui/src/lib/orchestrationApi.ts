@@ -134,6 +134,7 @@ export const createManagedOrchestrationApi = (options: {
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/json',
+      'X-DevRyan-CSRF': '1',
     },
     body: JSON.stringify(body),
   });

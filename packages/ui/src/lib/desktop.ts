@@ -1,5 +1,6 @@
 import type { ProjectEntry } from '@/lib/api/types';
 import type { MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
+import { getAuthPrincipal } from '@/lib/authSession';
 
 export type AssistantNotificationPayload = {
   title?: string;
@@ -42,6 +43,7 @@ export type ManagedRemoteTunnelPreset = {
   id: string;
   name: string;
   hostname: string;
+  originPort: number;
 };
 
 export type DesktopSettings = {
@@ -185,7 +187,7 @@ export type DesktopSettings = {
   responseStyleEnabled?: boolean;
   responseStylePreset?: 'actions' | 'concise' | 'detailed' | 'mentor' | 'pushback' | 'noFiller' | 'matchEnergy' | 'warmPeer' | 'custom';
   responseStyleCustomInstructions?: string;
-  sttProvider?: 'browser' | 'server' | 'macos';
+  sttProvider?: 'browser' | 'server' | 'macos' | 'wasm';
   sttServerUrl?: string;
   sttModel?: string;
   wasmSttModel?: string;
@@ -415,6 +417,27 @@ export const isVSCodeRuntime = (): boolean => {
   if (typeof window === "undefined") return false;
   const apis = (window as { __OPENCHAMBER_RUNTIME_APIS__?: { runtime?: { isVSCode?: boolean } } }).__OPENCHAMBER_RUNTIME_APIS__;
   return apis?.runtime?.isVSCode === true;
+};
+
+export const isLoopbackStandaloneWebRuntime = (): boolean => {
+  if (typeof window === 'undefined' || isDesktopShell() || isVSCodeRuntime()) return false;
+  if (getAuthPrincipal().scope === 'managed') return false;
+  const current = parseUrl(window.location.href);
+  return Boolean(
+    current
+    && (current.protocol === 'http:' || current.protocol === 'https:')
+    && isLoopbackHost(current.hostname),
+  );
+};
+
+export const isStandaloneWebRuntime = (): boolean => {
+  if (typeof window === 'undefined' || isDesktopShell() || isVSCodeRuntime()) return false;
+  const current = parseUrl(window.location.href);
+  return Boolean(
+    current
+    && (current.protocol === 'http:' || current.protocol === 'https:')
+    && isWebRuntime(),
+  );
 };
 
 export const isWebRuntime = (): boolean => {

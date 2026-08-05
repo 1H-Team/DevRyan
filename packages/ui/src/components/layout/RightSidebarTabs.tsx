@@ -9,6 +9,7 @@ import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useI18n } from '@/lib/i18n';
 import { SidebarFilesTree } from './SidebarFilesTree';
+import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
 
 type RightTab = 'git' | 'files';
 
@@ -38,25 +39,41 @@ function useRightSidebarGitSync(directory: string | undefined, isSidebarOpen: bo
 
 export const RightSidebarTabs: React.FC = () => {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
+  const canUseFiles = hasAuthCapability(principal, 'files');
+  const canUseGit = hasAuthCapability(principal, 'manageGit');
   const rightSidebarTab = useUIStore((state) => state.rightSidebarTab);
   const setRightSidebarTab = useUIStore((state) => state.setRightSidebarTab);
   const isRightSidebarOpen = useUIStore((state) => state.isRightSidebarOpen);
   const directory = useEffectiveDirectory();
 
-  useRightSidebarGitSync(directory, isRightSidebarOpen);
+  useRightSidebarGitSync(directory, isRightSidebarOpen && canUseGit);
+
+  React.useEffect(() => {
+    if (rightSidebarTab === 'files' && !canUseFiles && canUseGit) {
+      setRightSidebarTab('git');
+    }
+  }, [canUseFiles, canUseGit, rightSidebarTab, setRightSidebarTab]);
 
   const tabItems = React.useMemo(() => [
-    {
+    ...(canUseGit ? [{
       id: 'git',
       label: t('layout.rightSidebar.git'),
       icon: <RiGitBranchLine className="h-3.5 w-3.5" />,
-    },
-    {
+    }] : []),
+    ...(canUseFiles ? [{
       id: 'files',
       label: t('layout.rightSidebar.files'),
       icon: <RiFolder3Line className="h-3.5 w-3.5" />,
-    },
-  ], [t]);
+    }] : []),
+  ], [canUseFiles, canUseGit, t]);
+
+  // The desktop container animates to zero width, but hidden heavy children
+  // must be unmounted. GitView owns substantial DOM and directory-bound
+  // effects that should exist only while the panel is actually visible.
+  if (!isRightSidebarOpen) {
+    return null;
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-sidebar">
@@ -73,12 +90,12 @@ export const RightSidebarTabs: React.FC = () => {
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        {rightSidebarTab === 'git' && (
+        {canUseGit && rightSidebarTab === 'git' && (
           <LazyViewBoundary>
             <LazyGitView />
           </LazyViewBoundary>
         )}
-        {rightSidebarTab === 'files' && <SidebarFilesTree />}
+        {canUseFiles && rightSidebarTab === 'files' && <SidebarFilesTree />}
       </div>
     </div>
   );

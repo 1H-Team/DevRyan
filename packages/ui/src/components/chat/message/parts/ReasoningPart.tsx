@@ -30,7 +30,7 @@ type ReasoningTimelineBlockProps = {
 
 export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
     text,
-    variant: _variant,
+    variant,
     onContentChange,
     blockId,
     time: _time,
@@ -39,7 +39,6 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
     isMobile = false,
     actions,
 }) => {
-    void _variant;
     void _time;
     void _showDuration;
 
@@ -55,7 +54,11 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
     }
 
     return (
-        <div data-reasoning-block-id={blockId} data-message-text-export-root="true">
+        <div
+            data-reasoning-block-id={variant === 'thinking' ? blockId : undefined}
+            data-assistant-update-block-id={variant === 'justification' ? blockId : undefined}
+            data-message-text-export-root="true"
+        >
             <div className={isMobile ? 'relative pr-2 py-1' : 'relative pr-2 py-1.5'}>
                 <div data-message-text-export-source="true">
                     <MarkdownRenderer
@@ -63,7 +66,7 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
                         messageId={blockId}
                         isAnimated={false}
                         isStreaming={isStreaming}
-                        variant="reasoning"
+                        variant={variant === 'thinking' ? 'reasoning' : 'assistant'}
                     />
                 </div>
                 {actions ? (

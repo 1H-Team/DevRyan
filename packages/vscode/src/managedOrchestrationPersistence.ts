@@ -46,6 +46,9 @@ const validateSnapshot = (value: unknown): ManagedOrchestrationState => {
       dispatchGroupId: isRecord(candidate) && candidate.dispatchGroupId !== undefined
         ? candidate.dispatchGroupId
         : null,
+      dispatchCallId: isRecord(candidate) && candidate.dispatchCallId !== undefined
+        ? candidate.dispatchCallId
+        : null,
       readOnly: isRecord(candidate) && candidate.readOnly !== undefined
         ? candidate.readOnly
         : false,

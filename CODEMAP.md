@@ -2,7 +2,7 @@
 
 ## Project Responsibility
 
-DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtimes for interacting with an OpenCode server. The shared React UI lives in `packages/ui`; `packages/web` owns the Express server, browser bootstrap, and CLI; `packages/cursor-sdk-runtime` owns shared Cursor SDK execution/auth helpers; `packages/harness-runtime` owns durable harness operations, diagnostics, lifecycle, and evidence primitives; `packages/electron` is the primary desktop shell; `packages/desktop` is the legacy Tauri shell; `packages/vscode` hosts the same experience inside VS Code.
+DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtimes for interacting with an OpenCode server. The shared React UI lives in `packages/ui`; `packages/web` owns the Express server, browser bootstrap, CLI, and the optional Supabase-backed shared-host control plane; `packages/cursor-sdk-runtime` owns shared Cursor SDK execution/auth helpers; `packages/harness-runtime` owns durable harness operations, diagnostics, lifecycle, and evidence primitives; `packages/electron` is the primary desktop shell; `packages/desktop` is the legacy Tauri shell; `packages/vscode` hosts the same experience inside VS Code.
 
 ## System Entry Points
 
@@ -43,10 +43,13 @@ DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtim
 
 - **Shared UI, views, stores, hooks, theme, chat, settings** → start in `packages/ui/codemap.md`, then the relevant `packages/ui/src/**/codemap.md`.
 - **Server routes, OpenCode integration, terminal/git/GitHub/quota/TTS/skills APIs** → start in `packages/web/codemap.md`, then `packages/web/server/codemap.md` and `packages/web/server/lib/codemap.md`.
+- **Cloudflare tunnel lifecycle, stable origin relay, public reachability, link exchange, and Remote Tunnel settings UI** → `packages/web/server/lib/tunnels/DOCUMENTATION.md`, `packages/web/server/lib/opencode/DOCUMENTATION.md`, and `packages/ui/src/components/sections/openchamber/TunnelSettings.tsx`.
+- **Shared-host identity, Supabase roles/policies, managed project and branch grants, session ownership, directory opacity, live revocation, or actor audit** → `packages/web/server/lib/multi-user/codemap.md` and `packages/web/server/lib/multi-user/DOCUMENTATION.md`; the administration UI starts in `packages/ui/src/components/sections/users/codemap.md`.
 - **Web browser bootstrap or web runtime API adapters** → `packages/web/src/codemap.md` and `packages/web/src/api/codemap.md`.
 - **CLI commands, prompts, output modes, tunnel/auth operator flows** → `packages/web/bin/codemap.md`.
 - **Electron desktop behavior, IPC, menus, dialogs, notifications, updater, deep links** → `packages/electron/codemap.md`.
-- **Session-scoped agent browser leases, managed browser CLI/skill, or private browser tool** → `packages/electron/codemap.md`, `packages/web/server/lib/browser-cdp/codemap.md`, `packages/web/server/lib/agent-browser/codemap.md`, and `packages/web/server/default-config/codemap.md`; renderer badge/fleet ownership starts in the nearest UI layout/store codemaps.
+- **Detachable manual/agent browser surfaces, session-scoped leases, managed browser CLI/skill, or private browser tool** → `packages/electron/codemap.md`, `packages/ui/src/components/layout/codemap.md`, `packages/ui/src/stores/codemap.md`, `packages/web/src/codemap.md`, `packages/web/server/lib/browser-cdp/codemap.md`, `packages/web/server/lib/agent-browser/codemap.md`, and `packages/web/server/default-config/codemap.md`.
+- **Standalone-web Browser tabs, project-preview grants, loopback host routing, console/element inspection, or detachable web pop-outs** → `packages/ui/src/components/layout/codemap.md`, `packages/ui/src/apps/codemap.md`, `packages/web/src/codemap.md`, and `packages/web/server/lib/preview/codemap.md`.
 - **Legacy Tauri compatibility only** → `packages/desktop/codemap.md`; do not add new desktop features there unless explicitly required for released Tauri users.
 - **VS Code extension host or webview bridge behavior** → `packages/vscode/codemap.md`, `packages/vscode/src/codemap.md`, and `packages/vscode/webview/codemap.md`.
 - **DevRyan-managed task identity, admission, dispatch barriers, cancellation, recovery, or persistence policy** → `packages/orchestration-runtime/codemap.md` and `packages/orchestration-runtime/DOCUMENTATION.md`.
@@ -63,9 +66,11 @@ DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtim
 1. A host runtime starts or connects to OpenCode: web CLI/server, Electron main process, legacy Tauri sidecar, or VS Code extension host.
 2. The host exposes runtime APIs over HTTP, WebSocket/SSE, IPC, or VS Code webview messaging.
 3. Shared UI initializes providers and stores, consumes runtime APIs, and renders session/chat/settings/tooling surfaces.
-4. Live OpenCode events flow through server/extension bridges into UI sync stores; user actions flow back through runtime adapters into host-owned capabilities.
-5. On managed Electron only, browser-using tool turns acquire a fenced server lease, bind an invisible renderer webview to a per-lease Electron CDP capability, and release it on explicit close or authoritative lifecycle cleanup.
-6. Packaging scripts build the shared UI/server outputs into Electron, legacy Tauri, VS Code, or standalone web deployments.
+4. On a Supabase-configured shared web host, the server resolves an opaque app session into one principal, confines non-admin paths to granted project roots and their shared OpenCode worktree containers, and filters HTTP/SSE/WS traffic by session ownership before feature handlers or OpenCode receive it.
+5. Live OpenCode events flow through server/extension bridges into UI sync stores; managed-host events are ownership-filtered and projected into the content-free actor audit feed.
+6. On managed Electron only, browser-using tool turns acquire a fenced server lease bound directly to a main-owned `WebContentsView`; that same live view moves inline, into a pop-out, or into the hidden paintable host without changing its CDP identity.
+7. In standalone web, Browser tabs keep public pages viewer-side while approved loopback project apps, relative resources, API requests, redirects, and WebSockets traverse a session-bound host proxy. Detachable surfaces exchange versioned state on the same DevRyan origin.
+8. Packaging scripts build the shared UI/server outputs into Electron, legacy Tauri, VS Code, or standalone web deployments.
 
 ## Integration Notes
 
