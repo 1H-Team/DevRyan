@@ -15,8 +15,9 @@ const gitErrorText = (error) => [error?.stderr, error?.stdout, error?.message]
 
 export const isIndexLockError = (error) => {
   const text = gitErrorText(error);
-  return /index\.lock/i.test(text)
-    && /(file exists|unable to create|another git process|could not lock)/i.test(text);
+  return (/index\.lock/i.test(text)
+      && /(file exists|unable to create|another git process|could not lock)/i.test(text))
+    || /(?:could not|unable to) write (?:a )?new index file/i.test(text);
 };
 
 export const resolveWorktreeLockPath = async (directory, runGitCommandOrThrow) => {

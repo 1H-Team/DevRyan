@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { generateZenText, sanitizeForTitle, summarizeText } from './summarization.js';
+import {
+  ZenApiError,
+  generateZenText,
+  isUnavailableZenModelError,
+  sanitizeForTitle,
+  summarizeText,
+} from './summarization.js';
 
 const originalFetch = globalThis.fetch;
 
@@ -115,11 +121,13 @@ describe('text summarization zen requests', () => {
     const result = await generateZenText({
       prompt: 'Generate a commit subject',
       zenModel: 'gpt-5-nano',
+      responsesMaxOutputTokens: 128,
     });
 
     expect(result).toBe('fix(ui): generate commit subject');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe('https://opencode.ai/zen/v1/responses');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ max_output_tokens: 128 });
     expect(String(fetchMock.mock.calls[0][0])).not.toMatch(/session|prompt_async/);
   });
 
@@ -135,8 +143,24 @@ describe('text summarization zen requests', () => {
     await expect(generateZenText({
       prompt: 'Generate a commit subject',
       zenModel: 'big-pickle',
+      chatMaxTokens: 64,
+      chatReasoningEffort: 'none',
+      stop: ['\n'],
     })).resolves.toBe('chore: update generated files');
     expect(fetchMock.mock.calls[0][0]).toBe('https://opencode.ai/zen/v1/chat/completions');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      max_tokens: 64,
+      reasoning_effort: 'none',
+      stop: ['\n'],
+    });
+  });
+
+  it('classifies only explicit unavailable-model responses as retryable', () => {
+    expect(isUnavailableZenModelError(new ZenApiError(404, 'model not found'))).toBe(true);
+    expect(isUnavailableZenModelError(new ZenApiError(400, 'unknown model name'))).toBe(true);
+    expect(isUnavailableZenModelError(new ZenApiError(429, 'model rate limited'))).toBe(false);
+    expect(isUnavailableZenModelError(new ZenApiError(500, 'model unavailable'))).toBe(false);
+    expect(isUnavailableZenModelError(new Error('model unavailable'))).toBe(false);
   });
 
   it('clamps successful model summaries to the requested max length', async () => {

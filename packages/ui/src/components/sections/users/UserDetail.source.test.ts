@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'bun:test';
 
 const source = readFileSync(new URL('./UserDetail.tsx', import.meta.url), 'utf8');
+const typesSource = readFileSync(new URL('./types.ts', import.meta.url), 'utf8');
+const rolesSource = readFileSync(new URL('./RolePoliciesSection.tsx', import.meta.url), 'utf8');
 
 describe('user profile editing source contract', () => {
   test('drafts and explicitly saves display name, role, status, and the profile GitHub association', () => {
@@ -27,5 +29,21 @@ describe('user profile editing source contract', () => {
 
     expect(branchSave).not.toContain('githubAccountId');
     expect(projectsSection).not.toContain('GitHub Account');
+  });
+
+  test('exposes Browser as both a role capability and a per-user tri-state override', () => {
+    expect(typesSource).toContain("['browser', 'Browser']");
+    expect(rolesSource).toContain("['can_use_browser', 'Browser']");
+    expect(rolesSource).toContain('browser: draft.can_use_browser');
+    expect(source).toContain('capabilityLabels.map(([key, label]) =>');
+    expect(source).toContain('<option value="inherit">{inheritedLabel}</option>');
+    expect(source).toContain('<option value="off">Off</option>');
+  });
+
+  test('exposes branch creation as a per-user tri-state capability override', () => {
+    expect(typesSource).toContain("['createBranches', 'Create branches']");
+    expect(typesSource).toContain("['createWorktrees', 'Create worktrees']");
+    expect(source).toContain('capabilityLabels.map(([key, label]) =>');
+    expect(source).toContain('value={policyDraft.capabilities[key]}');
   });
 });

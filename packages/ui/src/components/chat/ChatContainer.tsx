@@ -253,7 +253,6 @@ const ChatViewport = React.memo(({
                                     // Reply routing still splits answers back to each underlying
                                     // request id inside QuestionCard.
                                     <QuestionCard
-                                        key={sessionQuestions.map((q) => q.id).join('|')}
                                         requests={sessionQuestions}
                                     />
                                 ) : null}

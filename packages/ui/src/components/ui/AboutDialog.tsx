@@ -148,7 +148,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
 
           <div className="flex items-center gap-4 pt-2">
             <a
-              href="https://github.com/zoubenr/DevRyan"
+              href="https://github.com/1H-Team/DevRyan"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1.5 typography-meta text-muted-foreground hover:text-foreground transition-colors"

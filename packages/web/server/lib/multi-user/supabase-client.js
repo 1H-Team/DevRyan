@@ -32,6 +32,7 @@ export function createSupabaseServerClient({ url, publishableKey, secretKey, fet
     headers = {},
     key = secretKey,
     prefer,
+    timeoutMs = 15_000,
   } = {}) => {
     const requestHeaders = {
       Accept: 'application/json',
@@ -50,7 +51,7 @@ export function createSupabaseServerClient({ url, publishableKey, secretKey, fet
       method,
       headers: requestHeaders,
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const payload = await parseResponse(response);
     if (!response.ok) {
@@ -70,6 +71,7 @@ export function createSupabaseServerClient({ url, publishableKey, secretKey, fet
     single = false,
     maybeSingle = false,
     prefer,
+    timeoutMs,
   } = {}) => {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(query)) {
@@ -83,6 +85,7 @@ export function createSupabaseServerClient({ url, publishableKey, secretKey, fet
       method,
       body,
       prefer: preferences || undefined,
+      timeoutMs,
     });
     if (single || maybeSingle) {
       const row = Array.isArray(payload) ? payload[0] : payload;

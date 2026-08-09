@@ -2010,12 +2010,12 @@ export async function retryWorktreeBootstrapOperation(operationId: string): Prom
   return (await requireWorktreeBootstrapRuntime()).retry(operationId);
 }
 
-export async function removeWorktree(directory: string, input: RemoveGitWorktreePayload): Promise<boolean> {
-  const targetDirectory = normalizeDirectoryPath(input?.directory);
-  if (!targetDirectory) {
-    throw new Error('Worktree directory is required');
-  }
-
+const removeWorktreeNow = async (
+  directory: string,
+  input: RemoveGitWorktreePayload,
+  targetDirectory: string,
+  bootstrapRuntime: WorktreeBootstrapRuntime,
+): Promise<boolean> => {
   const context = await resolveWorktreeProjectContext(directory);
   const deleteLocalBranch = input?.deleteLocalBranch === true;
 
@@ -2057,7 +2057,7 @@ export async function removeWorktree(directory: string, input: RemoveGitWorktree
       console.warn('[GitService] Failed to sync OpenCode sandbox metadata (remove):', error instanceof Error ? error.message : String(error));
     }
 
-    await (await requireWorktreeBootstrapRuntime()).markRemoved(targetDirectory);
+    await bootstrapRuntime.markRemoved(targetDirectory);
 
     return true;
   }
@@ -2085,9 +2085,21 @@ export async function removeWorktree(directory: string, input: RemoveGitWorktree
     console.warn('[GitService] Failed to sync OpenCode sandbox metadata (remove):', error instanceof Error ? error.message : String(error));
   }
 
-  await (await requireWorktreeBootstrapRuntime()).markRemoved(matchedEntry.worktree);
+  await bootstrapRuntime.markRemoved(matchedEntry.worktree);
 
   return true;
+};
+
+export async function removeWorktree(directory: string, input: RemoveGitWorktreePayload): Promise<boolean> {
+  const targetDirectory = normalizeDirectoryPath(input?.directory);
+  if (!targetDirectory) {
+    throw new Error('Worktree directory is required');
+  }
+  const bootstrapRuntime = await requireWorktreeBootstrapRuntime();
+  return bootstrapRuntime.runDirectoryMaintenance(
+    targetDirectory,
+    () => removeWorktreeNow(directory, input, targetDirectory, bootstrapRuntime),
+  );
 }
 
 /**

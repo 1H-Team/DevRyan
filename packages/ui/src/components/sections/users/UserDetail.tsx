@@ -4,6 +4,8 @@ import {
   RiArrowLeftLine,
   RiArrowRightSLine,
   RiDeleteBinLine,
+  RiErrorWarningLine,
+  RiFileCopyLine,
   RiGitBranchLine,
   RiKey2Line,
   RiLink,
@@ -24,6 +26,7 @@ import {
 } from '@/lib/settings/permissions';
 import { AccessLinksList } from './AccessLinksSection';
 import { ConfirmActionDialog } from './ConfirmActionDialog';
+import { TunnelPresetPickerDialog, type TunnelPresetSelection } from './TunnelPresetPickerDialog';
 import { SettingsPermissionOverrideMatrix } from './SettingsPermissionMatrix';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { UserAnalytics } from './UserAnalytics';
@@ -40,6 +43,7 @@ import {
   type CapabilityOverride,
   type GitHubAccountRow,
   type InviteRow,
+  type McpPolicyOverride,
   type ProjectRow,
   type Role,
   type UserPolicyPayload,
@@ -59,7 +63,6 @@ interface UserDetailProps {
   onUsersChanged: () => Promise<void> | void;
   onInvitesChanged: () => Promise<void> | void;
   onTemporaryPassword: (password: string) => void;
-  onInviteUrl: (url: string) => void;
 }
 
 export const UserDetail: React.FC<UserDetailProps> = ({
@@ -74,13 +77,15 @@ export const UserDetail: React.FC<UserDetailProps> = ({
   onUsersChanged,
   onInvitesChanged,
   onTemporaryPassword,
-  onInviteUrl,
 }) => {
   const [busy, setBusy] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState<'core' | 'policy' | 'analytics'>('core');
   const [settingsPolicyOpen, setSettingsPolicyOpen] = React.useState(true);
   const [capabilityPolicyOpen, setCapabilityPolicyOpen] = React.useState(true);
+  const [agentsPolicyOpen, setAgentsPolicyOpen] = React.useState(false);
+  const [mcpPolicyOpen, setMcpPolicyOpen] = React.useState(false);
   const [advancedPolicyOpen, setAdvancedPolicyOpen] = React.useState(false);
+  const [mcpServerNames, setMcpServerNames] = React.useState<string[] | null>(null);
 
   const userInvites = React.useMemo(
     () => invites.filter((invite) => invite.email.toLowerCase() === user.email.toLowerCase()),
@@ -145,15 +150,32 @@ export const UserDetail: React.FC<UserDetailProps> = ({
     } finally { setBusy(false); }
   };
 
-  const createInvite = async () => {
+  const [invitePickerOpen, setInvitePickerOpen] = React.useState(false);
+  const [inviteBanner, setInviteBanner] = React.useState<{
+    url: string;
+    tunnelName: string | null;
+    tunnelActive: boolean;
+  } | null>(null);
+
+  const createInvite = async (selection: TunnelPresetSelection) => {
     setBusy(true);
     try {
       const payload = await requestJson<{ invite: { url: string } }>('/api/admin/invites', {
-        method: 'POST', body: JSON.stringify({ email: user.email, expiresInDays: 2 }),
+        method: 'POST',
+        body: JSON.stringify({
+          email: user.email,
+          expiresInDays: 2,
+          ...(selection.tunnelPresetId ? { tunnelPresetId: selection.tunnelPresetId } : {}),
+        }),
       });
       const url = new URL(payload.invite.url, window.location.origin).toString();
       await copyTextToClipboard(url, { sourceSurface: 'settings', copyKind: 'text' });
-      onInviteUrl(url);
+      setInvitePickerOpen(false);
+      setInviteBanner({
+        url,
+        tunnelName: selection.tunnelName,
+        tunnelActive: selection.tunnelPresetId ? selection.tunnelActive : true,
+      });
       await onInvitesChanged();
       toast.success('Single-use invitation copied');
     } catch (error) {
@@ -171,12 +193,16 @@ export const UserDetail: React.FC<UserDetailProps> = ({
     inheritedCapabilities: Record<CapabilityKey, boolean>;
     capabilities: Record<CapabilityKey, CapabilityOverride>;
     settingsOverrides: string;
+    agentsHidePermissionsUi: boolean;
+    mcpOverrides: Record<string, McpPolicyOverride>;
   }>({
     permissionOverrides: {},
     inheritedPermissions: fullSettingsPermissions(),
     inheritedCapabilities: Object.fromEntries(capabilityLabels.map(([key]) => [key, false])) as Record<CapabilityKey, boolean>,
     capabilities: Object.fromEntries(capabilityLabels.map(([key]) => [key, 'inherit'])) as Record<CapabilityKey, CapabilityOverride>,
     settingsOverrides: '{}',
+    agentsHidePermissionsUi: false,
+    mcpOverrides: {},
   });
   const effectivePermissions = React.useMemo(() => mergeSettingsPermissionOverrides(
     policyDraft.inheritedPermissions,
@@ -191,12 +217,16 @@ export const UserDetail: React.FC<UserDetailProps> = ({
         const value = payload.policy.capabilities?.[key];
         return [key, value === true ? 'on' : value === false ? 'off' : 'inherit'];
       })) as Record<CapabilityKey, CapabilityOverride>;
+      const featureOverrides = payload.policy.feature_overrides || {};
       setPolicyDraft({
         permissionOverrides: payload.policy.settings_permission_overrides || {},
         inheritedPermissions: payload.inheritedPolicy.settingsPermissions,
         inheritedCapabilities: Object.fromEntries(capabilityLabels.map(([key]) => [key, payload.inheritedPolicy[key] === true])) as Record<CapabilityKey, boolean>,
         capabilities,
         settingsOverrides: JSON.stringify(payload.policy.settings_overrides || {}, null, 2),
+        agentsHidePermissionsUi: featureOverrides.agents?.hidePermissionsUi === true,
+        mcpOverrides: Object.fromEntries(Object.entries(featureOverrides.mcp || {})
+          .filter(([, state]) => state === 'on' || state === 'off')),
       });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to load user policy');
@@ -206,6 +236,18 @@ export const UserDetail: React.FC<UserDetailProps> = ({
   }, [user.id]);
 
   React.useEffect(() => { void loadPolicy(); }, [loadPolicy]);
+
+  React.useEffect(() => {
+    if (activeTab !== 'policy' || mcpServerNames !== null) return;
+    void requestJson<Array<{ name?: string }>>('/api/config/mcp')
+      .then((servers) => {
+        setMcpServerNames((Array.isArray(servers) ? servers : [])
+          .map((server) => String(server?.name || '').trim())
+          .filter(Boolean)
+          .sort((left, right) => left.localeCompare(right)));
+      })
+      .catch(() => setMcpServerNames([]));
+  }, [activeTab, mcpServerNames]);
 
   const saveUserPolicy = async () => {
     setBusy(true);
@@ -217,12 +259,18 @@ export const UserDetail: React.FC<UserDetailProps> = ({
       const capabilities = Object.fromEntries(Object.entries(policyDraft.capabilities)
         .filter(([, value]) => value !== 'inherit')
         .map(([key, value]) => [key, value === 'on']));
+      const mcpFeatureOverrides = Object.fromEntries(Object.entries(policyDraft.mcpOverrides)
+        .filter(([, state]) => state === 'on' || state === 'off'));
       await requestJson(`/api/admin/users/${encodeURIComponent(user.id)}/policy`, {
         method: 'PUT',
         body: JSON.stringify({
           settingsPermissionOverrides: policyDraft.permissionOverrides,
           capabilities,
           settingsOverrides,
+          featureOverrides: {
+            ...(policyDraft.agentsHidePermissionsUi ? { agents: { hidePermissionsUi: true } } : {}),
+            ...(Object.keys(mcpFeatureOverrides).length > 0 ? { mcp: mcpFeatureOverrides } : {}),
+          },
         }),
       });
       await loadPolicy();
@@ -339,6 +387,15 @@ export const UserDetail: React.FC<UserDetailProps> = ({
     .reduce((total, permission) => total + Object.values(permission || {}).filter((value) => typeof value === 'boolean').length, 0), [policyDraft.permissionOverrides]);
   const capabilityOverrideCount = React.useMemo(() => Object.values(policyDraft.capabilities)
     .filter((value) => value !== 'inherit').length, [policyDraft.capabilities]);
+  const mcpOverrideCount = React.useMemo(
+    () => Object.values(policyDraft.mcpOverrides).filter((value) => value === 'on' || value === 'off').length,
+    [policyDraft.mcpOverrides],
+  );
+  const mcpPolicyRows = React.useMemo(() => {
+    const names = new Set(mcpServerNames || []);
+    for (const name of Object.keys(policyDraft.mcpOverrides)) names.add(name);
+    return [...names].sort((left, right) => left.localeCompare(right));
+  }, [mcpServerNames, policyDraft.mcpOverrides]);
   const advancedOverrideCount = React.useMemo(() => {
     try {
       const value = JSON.parse(policyDraft.settingsOverrides) as unknown;
@@ -455,7 +512,7 @@ export const UserDetail: React.FC<UserDetailProps> = ({
               </Button>
             )}
             {isAdmin && user.role !== 'admin' && (
-              <Button variant="outline" size="sm" onClick={() => void createInvite()} disabled={busy || user.status === 'archived'}>
+              <Button variant="outline" size="sm" onClick={() => setInvitePickerOpen(true)} disabled={busy || user.status === 'archived'}>
                 <RiLink className="h-4 w-4" /> Create Access Link
               </Button>
             )}
@@ -528,7 +585,32 @@ export const UserDetail: React.FC<UserDetailProps> = ({
         description="Single-use links issued for this user."
         divider
       >
-        <AccessLinksList invites={userInvites} onChanged={onInvitesChanged} canEdit={isAdmin} emptyLabel="No access links have been issued for this user." />
+        <div className="space-y-3">
+          {inviteBanner && (
+            <div className="rounded-lg border border-[var(--status-success)]/30 bg-[var(--status-success)]/10 p-3">
+              <div className="typography-ui-label font-medium">
+                Single-Use Invitation — Shown Once
+                {inviteBanner.tunnelName ? ` · via ${inviteBanner.tunnelName}` : ''}
+              </div>
+              <code className="mt-1 block break-all typography-code text-foreground">{inviteBanner.url}</code>
+              {!inviteBanner.tunnelActive && (
+                <p className="mt-2 flex items-start gap-2 typography-meta text-foreground">
+                  <RiErrorWarningLine className="mt-0.5 h-4 w-4 shrink-0 text-[var(--status-warning)]" />
+                  The selected managed tunnel is not running. Start it before the recipient opens this link.
+                </p>
+              )}
+              <Button
+                variant="ghost"
+                size="xs"
+                className="mt-2"
+                onClick={() => void copyTextToClipboard(inviteBanner.url, { sourceSurface: 'settings', copyKind: 'text' })}
+              >
+                <RiFileCopyLine className="h-4 w-4" /> Copy Invitation
+              </Button>
+            </div>
+          )}
+          <AccessLinksList invites={userInvites} onChanged={onInvitesChanged} canEdit={isAdmin} emptyLabel="No access links have been issued for this user." />
+        </div>
       </SettingsSection>
         </Tabs.Panel>
 
@@ -575,7 +657,7 @@ export const UserDetail: React.FC<UserDetailProps> = ({
                 <CollapsibleTrigger className="rounded-xl px-3 py-3">
                   <span className="min-w-0">
                     <span className="block typography-ui-label font-semibold text-foreground">Core Capability Overrides</span>
-                    <span className="block typography-micro text-muted-foreground">Independent Access to Files, Terminal, Git, GitHub, and Administration.</span>
+                    <span className="block typography-micro text-muted-foreground">Independent Access to Browser, Files, Terminal, Branch Creation, Git, GitHub, and Administration.</span>
                   </span>
                   <span className="flex shrink-0 items-center gap-2">
                     <span className="rounded-full bg-[var(--surface-elevated)] px-2 py-0.5 typography-micro text-muted-foreground">{capabilityOverrideCount} Overrides</span>
@@ -607,6 +689,92 @@ export const UserDetail: React.FC<UserDetailProps> = ({
                       );
                     })}
                   </div>
+                </CollapsibleContent>
+              </div>
+            </Collapsible>
+
+            <Collapsible open={agentsPolicyOpen} onOpenChange={setAgentsPolicyOpen}>
+              <div className="rounded-xl border border-border/60 bg-[var(--surface-subtle)]/25">
+                <CollapsibleTrigger className="rounded-xl px-3 py-3">
+                  <span className="min-w-0">
+                    <span className="block typography-ui-label font-semibold text-foreground">Agent Overrides</span>
+                    <span className="block typography-micro text-muted-foreground">Control Which Agent Settings This User Can See.</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <span className="rounded-full bg-[var(--surface-elevated)] px-2 py-0.5 typography-micro text-muted-foreground">{policyDraft.agentsHidePermissionsUi ? 1 : 0} Overrides</span>
+                    {agentsPolicyOpen ? <RiArrowDownSLine className="h-4 w-4" /> : <RiArrowRightSLine className="h-4 w-4" />}
+                  </span>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="px-3 pb-3">
+                  <label className="flex items-start gap-2 rounded-lg border border-border/60 bg-[var(--surface-elevated)] px-3 py-2 typography-meta text-foreground">
+                    <Checkbox
+                      checked={policyDraft.agentsHidePermissionsUi}
+                      disabled={!isAdmin || policyLoading || busy || user.role === 'admin'}
+                      onChange={(checked) => setPolicyDraft((current) => ({ ...current, agentsHidePermissionsUi: checked }))}
+                      ariaLabel="Hide Agent Permission Controls"
+                      className="mt-0.5 size-4"
+                      iconClassName="size-4"
+                    />
+                    <span>
+                      <span className="block typography-ui-label text-foreground">Hide Agent Permission Controls</span>
+                      <span className="block typography-micro text-muted-foreground">
+                        The Tool Permission Summary and Advanced Allow/Ask/Deny Editor Disappear from This User's Agents Page. Agents Stay Usable.
+                      </span>
+                    </span>
+                  </label>
+                </CollapsibleContent>
+              </div>
+            </Collapsible>
+
+            <Collapsible open={mcpPolicyOpen} onOpenChange={setMcpPolicyOpen}>
+              <div className="rounded-xl border border-border/60 bg-[var(--surface-subtle)]/25">
+                <CollapsibleTrigger className="rounded-xl px-3 py-3">
+                  <span className="min-w-0">
+                    <span className="block typography-ui-label font-semibold text-foreground">MCP Server Overrides</span>
+                    <span className="block typography-micro text-muted-foreground">Force Individual MCP Servers Enabled or Disabled for This User.</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <span className="rounded-full bg-[var(--surface-elevated)] px-2 py-0.5 typography-micro text-muted-foreground">{mcpOverrideCount} Overrides</span>
+                    {mcpPolicyOpen ? <RiArrowDownSLine className="h-4 w-4" /> : <RiArrowRightSLine className="h-4 w-4" />}
+                  </span>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="px-3 pb-3">
+                  {mcpServerNames === null ? (
+                    <p className="typography-meta text-muted-foreground">Loading MCP servers…</p>
+                  ) : mcpPolicyRows.length === 0 ? (
+                    <p className="typography-meta text-muted-foreground">No MCP servers are configured on this installation.</p>
+                  ) : (
+                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                      {mcpPolicyRows.map((serverName) => {
+                        const value = policyDraft.mcpOverrides[serverName] || 'inherit';
+                        return (
+                          <label key={serverName} className="space-y-1 typography-meta text-foreground">
+                            <span className="block truncate" title={serverName}>{serverName}</span>
+                            <select
+                              aria-label={`MCP Override for ${serverName}`}
+                              className={selectClassName}
+                              value={value}
+                              onChange={(event) => setPolicyDraft((current) => {
+                                const nextValue = event.target.value as McpPolicyOverride;
+                                const mcpOverrides = { ...current.mcpOverrides };
+                                if (nextValue === 'inherit') delete mcpOverrides[serverName];
+                                else mcpOverrides[serverName] = nextValue;
+                                return { ...current, mcpOverrides };
+                              })}
+                              disabled={!isAdmin || policyLoading || busy || user.role === 'admin'}
+                            >
+                              <option value="inherit">Inherit</option>
+                              <option value="on">Force On</option>
+                              <option value="off">Force Off</option>
+                            </select>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <p className="mt-2 typography-micro text-muted-foreground">
+                    Forced servers cannot be toggled by this user. Their own toggles never affect other accounts.
+                  </p>
                 </CollapsibleContent>
               </div>
             </Collapsible>
@@ -678,6 +846,12 @@ export const UserDetail: React.FC<UserDetailProps> = ({
         destructive
         busy={busy}
         onConfirm={() => void resetUserPolicy()}
+      />
+      <TunnelPresetPickerDialog
+        open={invitePickerOpen}
+        onOpenChange={setInvitePickerOpen}
+        busy={busy}
+        onCreate={(selection) => void createInvite(selection)}
       />
     </div>
   );

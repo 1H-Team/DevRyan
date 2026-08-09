@@ -521,6 +521,76 @@ describe('OpenCode proxy SSE forwarding', () => {
       await fs.rm(repositoryPath, { recursive: true, force: true });
     }
   });
+
+  it('holds a question reply while OpenCode is not ready and attributes the hold in the slow-request log', async () => {
+    let upstreamBody = null;
+    const upstream = express();
+    upstream.use(express.json());
+    upstream.post('/question/:requestID/reply', (req, res) => {
+      upstreamBody = req.body;
+      res.json(true);
+    });
+    upstreamServer = await listen(upstream);
+    const upstreamPort = upstreamServer.address().port;
+
+    const runtimeState = {
+      openCodePort: upstreamPort,
+      isOpenCodeReady: false,
+      openCodeNotReadySince: Date.now(),
+      isRestartingOpenCode: false,
+    };
+    const loggedSlowRequests = [];
+
+    const app = express();
+    registerQuestionRoutes(app, {
+      cursorSdkRuntime: {
+        listPendingQuestions: () => [],
+        replyToQuestion: async () => false,
+        rejectQuestion: async () => false,
+      },
+      buildOpenCodeUrl: (requestPath) => `http://127.0.0.1:${upstreamPort}${requestPath}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      logger: {
+        warn: (message, details) => {
+          if (message === '[questions] slow request') loggedSlowRequests.push(details);
+        },
+        error: () => {},
+      },
+      slowRequestThresholdMs: 0,
+    });
+    registerOpenCodeProxy(app, {
+      fs: {},
+      os: {},
+      path,
+      OPEN_CODE_READY_GRACE_MS: 5000,
+      getRuntime: () => runtimeState,
+      getOpenCodeAuthHeaders: () => ({}),
+      buildOpenCodeUrl: (requestPath) => `http://127.0.0.1:${upstreamPort}${requestPath}`,
+      ensureOpenCodeApiPrefix: () => {},
+    });
+    proxyServer = await listen(app);
+    const proxyPort = proxyServer.address().port;
+
+    setTimeout(() => {
+      runtimeState.isOpenCodeReady = true;
+    }, 150);
+
+    const response = await fetch(`http://127.0.0.1:${proxyPort}/api/question/que_held/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answers: [['Held answer']] }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toBe(true);
+    expect(upstreamBody).toEqual({ answers: [['Held answer']] });
+
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(loggedSlowRequests).toHaveLength(1);
+    expect(loggedSlowRequests[0].url).toBe('/api/question/que_held/reply');
+    expect(loggedSlowRequests[0].holdMs).toBeGreaterThan(0);
+    expect(loggedSlowRequests[0].totalMs).toBeGreaterThanOrEqual(loggedSlowRequests[0].holdMs);
+  });
 });
 
 describe('OpenCode scoped session revert', () => {

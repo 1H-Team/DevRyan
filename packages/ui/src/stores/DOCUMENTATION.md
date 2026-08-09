@@ -57,6 +57,12 @@ legacy drafts that persist both provider and model) may preserve a different mod
 ambient directory or reload state cannot make the display diverge from send-time
 agent-default routing.
 
+Managed non-admin accounts persist each per-agent provider, model, and optional
+thinking variant together in their settings overrides. Fresh drafts restore that
+selection atomically. Legacy model-only selections inherit a matching account-default
+variant first, then the matching configured agent variant, before using the provider's
+normal concrete fallback; explicit persisted variants remain authoritative.
+
 These stores coordinate visible app state, navigation, selected tabs, dialogs, and lightweight feature flags.
 
 ### Session / project coordination stores
@@ -72,19 +78,24 @@ These stores coordinate persistent project/session metadata across multiple view
 For a managed principal, `useProjectsStore.ts` derives the visible project registry and
 active project from the authenticated assignment snapshot during settings hydration.
 Each repository keeps the server-owned UUID and contains an ordered branch projection;
-the store does not generate path-based replacement IDs or apply browser-local metadata
-overrides. Persisted host-path projects are not replayed into the live directory store;
+the store does not generate path-based replacement IDs or apply browser-local visual
+metadata overrides. Assignment-provided icon, image, background, and color fields replace
+stale cached visuals while user-local collapse and recency fields retain their identity.
+Persisted host-path projects are not replayed into the live directory store;
 the default assignment's public `/projects/<project>/<branch>` path becomes authoritative
 instead. Managed metadata changes are admin-only, persisted through the server, and
-rolled back optimistically if that request fails.
+rolled back optimistically if that request fails. Active managed clients refresh their
+principal assignment snapshot after a scoped project-metadata event and after the
+OpenChamber event stream reconnects, recovering changes missed while disconnected.
 
 `useGlobalSessionsStore.ts` combines complete global HTTP listings with low-frequency
 `session.created`, `session.updated`, and `session.deleted` events from the sync pipeline. Lifecycle
 events from unopened directories update the sidebar cache without allocating a directory child store.
-A bounded module-level lifecycle overlay protects those events from stale in-flight HTTP snapshots:
-upserts remain until complete active+archived listings confirm equal-or-newer membership, and deletes
-remain tombstoned until both listings confirm absence. High-frequency message/part/status events stay
-out of this broad store.
+A bounded module-level lifecycle overlay protects those events from stale in-flight HTTP snapshots.
+Each global list request captures the current lifecycle revision and replays only newer events, so a
+later complete active+archived snapshot can authoritatively remove an orphaned create while a request
+that began before a concurrent create or delete cannot overwrite it. High-frequency
+message/part/status events stay out of this broad store.
 
 ### Message queue store
 
@@ -208,6 +219,10 @@ Ownership and safety rules:
     while the child still reports provider `retry` during cleanup. Accepting a
     user `retry_in_place` removes the index; another failed attempt restores it.
     Transient non-provider-limit failures retain the single agent recovery.
+    `failureKind: provider_prompt_rejected` also retains that first recovery,
+    but it is never indexed for same-child Model Recovery: scheduler policy
+    requires a different prompt in a fresh child and leaves a second rejection
+    dispositionable without opening a model picker.
     If that recovery also fails or is interrupted while remaining resumable,
     the host keeps the envelope unacknowledged and rejects agent `abandon`, so
     every failed sibling child retains its own Model Recovery card until the

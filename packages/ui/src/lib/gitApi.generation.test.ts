@@ -16,13 +16,14 @@ type PromptParams = {
   parts?: Array<{ type: "text"; text: string; synthetic?: boolean }>
 }
 
-const createSessionCalls: Array<{ title: string; directory: string; parentId: string | null }> = []
+const createSessionCalls: Array<{ title: string | undefined; directory: string; parentId: string | null }> = []
 const deleteSessionCalls: Array<{ sessionID: string; directory?: string }> = []
 const promptCalls: PromptParams[] = []
 const renderMagicPromptCalls: Array<{ key: string; variables?: Record<string, string> }> = []
 const sessionModelSelections = new Map<string, { providerId: string; modelId: string }>()
 
 let createdSessionCount = 0
+let sessionCreateError: Error | null = null
 let currentSessionId: string | null = null
 let currentAgentName: string | undefined = "build-agent"
 let currentProviderId: string | null = "provider-current"
@@ -58,6 +59,8 @@ let gitFileDiffResponse = {
 }
 const gitDiffCalls: Array<{ path: string; staged?: boolean }> = []
 const gitFileDiffCalls: Array<{ path: string; staged?: boolean }> = []
+let gitStatusCalls = 0
+let gitLogCalls = 0
 const directGenerationRequests: Array<Record<string, unknown>> = []
 let directGeneratedMessage = {
   subject: "feat: run commit workflow",
@@ -73,8 +76,9 @@ mock.module("@/sync/session-ui-store", () => ({
 }))
 
 mock.module("@/sync/session-actions", () => ({
-  createSession: mock(async (title: string, directory: string, parentId: string | null) => {
+  createSession: mock(async (title: string | undefined, directory: string, parentId: string | null) => {
     createSessionCalls.push({ title, directory, parentId })
+    if (sessionCreateError) return null
     createdSessionCount += 1
     const id = `legacy-generated-${createdSessionCount}`
     currentSessionId = id
@@ -86,11 +90,22 @@ mock.module("@/sync/session-actions", () => ({
     const id = `generated-${createdSessionCount}`
     return { id }
   }),
+  consumeLastCreateSessionError: mock(() => {
+    const error = sessionCreateError
+    sessionCreateError = null
+    return error
+  }),
 }))
 
 mock.module("./gitApiHttp", () => ({
-  getGitStatus: mock(async () => gitStatusResponse),
-  getGitLog: mock(async () => gitLogResponse),
+  getGitStatus: mock(async () => {
+    gitStatusCalls += 1
+    return gitStatusResponse
+  }),
+  getGitLog: mock(async () => {
+    gitLogCalls += 1
+    return gitLogResponse
+  }),
   getGitDiff: mock(async (_directory: string, options: { path: string; staged?: boolean }) => {
     gitDiffCalls.push({ path: options.path, staged: options.staged })
     return { diff: gitDiffResponse }
@@ -102,6 +117,10 @@ mock.module("./gitApiHttp", () => ({
   generateCommitMessage: mock(async (_directory: string, request: Record<string, unknown>) => {
     directGenerationRequests.push(request)
     return directGeneratedMessage
+  }),
+  generateCommitMessageDraft: mock(async (_directory: string, request: Record<string, unknown>) => {
+    directGenerationRequests.push(request)
+    return { status: "complete", commits: [directGeneratedMessage] }
   }),
   getCommitFiles: mock(async () => ({
     files: [
@@ -240,6 +259,7 @@ describe("git generation routing", () => {
     renderMagicPromptCalls.length = 0
     sessionModelSelections.clear()
     createdSessionCount = 0
+    sessionCreateError = null
     currentSessionId = null
     currentAgentName = "build-agent"
     currentProviderId = "provider-current"
@@ -275,6 +295,8 @@ describe("git generation routing", () => {
     }
     gitDiffCalls.length = 0
     gitFileDiffCalls.length = 0
+    gitStatusCalls = 0
+    gitLogCalls = 0
     directGenerationRequests.length = 0
     directGeneratedMessage = {
       subject: "feat: run commit workflow",
@@ -313,21 +335,19 @@ describe("git generation routing", () => {
     })
   })
 
-  test("draft generation delegates bounded worktree context without chat or magic prompts", async () => {
-    gitStatusResponse = {
-      ...gitStatusResponse,
-      files: [{ path: "src/app.ts", index: "M", working_dir: " " }],
-      diffStats: { "src/app.ts": { insertions: 2, deletions: 0 } },
-    }
-
+  test("draft generation delegates selected files to one host call without collecting client context", async () => {
     const result = await generateCommitMessageDraftQuietly("/repo", ["src/app.ts"])
 
     expect(result.commits[0]?.subject).toBe("feat: run commit workflow")
     expect(directGenerationRequests).toHaveLength(1)
-    const context = directGenerationRequests[0]?.context as { stagedOnly?: boolean; selectedFiles?: Array<{ path?: string; diff?: string }> }
-    expect(context.stagedOnly).toBe(false)
-    expect(context.selectedFiles?.[0]?.path).toBe("src/app.ts")
-    expect(context.selectedFiles?.[0]?.diff).toContain("export const updated")
+    expect(directGenerationRequests[0]).toEqual({
+      selectedFiles: ["src/app.ts"],
+      stagedOnly: false,
+    })
+    expect(gitDiffCalls).toHaveLength(0)
+    expect(gitFileDiffCalls).toHaveLength(0)
+    expect(gitStatusCalls).toBe(0)
+    expect(gitLogCalls).toBe(0)
     expect(renderMagicPromptCalls).toHaveLength(0)
     expect(createSessionCalls).toHaveLength(0)
     expect(promptCalls).toHaveLength(0)
@@ -474,6 +494,93 @@ describe("git generation routing", () => {
     expect(promptCalls).toHaveLength(1)
     expect(promptCalls[0]?.sessionID).toBe("active-session")
     expect(promptCalls[0]?.format).toBe(undefined)
+    expect(createSessionCalls).toHaveLength(0)
+    expect(deleteSessionCalls).toHaveLength(0)
+  })
+
+  test("creates and selects a visible session when PR generation has no active session", async () => {
+    promptResponseText = JSON.stringify({
+      title: "Create PR generation session",
+      body: "## Summary\n- Create a session before generating",
+    })
+
+    const result = await generatePullRequestDescriptionQuietly("/repo", {
+      base: "main",
+      head: "feature/pr-session",
+    })
+
+    expect(result).toEqual({
+      title: "Create PR generation session",
+      body: "## Summary\n- Create a session before generating",
+    })
+    expect(createSessionCalls).toEqual([{ title: undefined, directory: "/repo", parentId: null }])
+    expect(currentSessionId).toBe("legacy-generated-1")
+    expect(promptCalls).toHaveLength(1)
+    expect(promptCalls[0]?.sessionID).toBe("legacy-generated-1")
+    expect(promptCalls[0]?.directory).toBe("/repo")
+    expect(deleteSessionCalls).toHaveLength(0)
+  })
+
+  test("does not create a PR generation session when no model is selected", async () => {
+    currentProviderId = null
+    currentModelId = null
+
+    let generationError: unknown
+    try {
+      await generatePullRequestDescriptionQuietly("/repo", {
+        base: "main",
+        head: "feature/pr-session",
+      })
+    } catch (error) {
+      generationError = error
+    }
+
+    expect(generationError).toBeInstanceOf(Error)
+    expect((generationError as Error).message).toBe("Select a model before generating with AI")
+    expect(createSessionCalls).toHaveLength(0)
+    expect(promptCalls).toHaveLength(0)
+    expect(deleteSessionCalls).toHaveLength(0)
+  })
+
+  test("surfaces PR generation session creation failures without prompting", async () => {
+    sessionCreateError = new Error("session.create failed: OpenCode is unavailable")
+
+    let generationError: unknown
+    try {
+      await generatePullRequestDescriptionQuietly("/repo", {
+        base: "main",
+        head: "feature/pr-session",
+      })
+    } catch (error) {
+      generationError = error
+    }
+
+    expect(generationError).toBeInstanceOf(Error)
+    expect((generationError as Error).message).toBe("session.create failed: OpenCode is unavailable")
+    expect(createSessionCalls).toEqual([{ title: undefined, directory: "/repo", parentId: null }])
+    expect(currentSessionId).toBeNull()
+    expect(promptCalls).toHaveLength(0)
+    expect(deleteSessionCalls).toHaveLength(0)
+  })
+
+  test("retains an auto-created PR session when generation fails", async () => {
+    promptResponseText = "not json"
+
+    let generationError: unknown
+    try {
+      await generatePullRequestDescriptionQuietly("/repo", {
+        base: "main",
+        head: "feature/pr-session",
+      })
+    } catch (error) {
+      generationError = error
+    }
+
+    expect(generationError).toBeInstanceOf(Error)
+    expect((generationError as Error).message.startsWith("Generation failed: model did not return JSON")).toBe(true)
+    expect(currentSessionId).toBe("legacy-generated-1")
+    expect(promptCalls[0]?.sessionID).toBe("legacy-generated-1")
+    expect(deleteSessionCalls).toHaveLength(0)
   })
 })
 

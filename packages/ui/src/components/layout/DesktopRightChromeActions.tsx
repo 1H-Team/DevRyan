@@ -7,7 +7,8 @@ import {
 } from '@/components/ui/tooltip';
 import {
   PlanDocumentIcon,
-  SidebarRightIcon,
+  SidebarRightCollapseIcon,
+  SidebarRightExpandIcon,
   TerminalPanelIcon,
 } from '@/components/icons/ToolbarIcons';
 import { McpIcon } from '@/components/icons/McpIcon';
@@ -35,10 +36,6 @@ import { DesktopServicesMenu } from '@/components/layout/DesktopServicesMenu';
 import { DESKTOP_HEADER_ICON_BUTTON_CLASS, HeaderIconActionButton } from '@/components/layout/headerIconButton';
 import { useSessionPlanFileStore } from '@/stores/useSessionPlanFileStore';
 import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
-
-const SidebarRightExpandIcon = (props: React.ComponentProps<typeof SidebarRightIcon>) => (
-  <SidebarRightIcon {...props} chevronDirection="left" />
-);
 
 interface DesktopRightChromeActionsProps {
   browserActionPortalRef?: React.Ref<HTMLSpanElement>;
@@ -471,7 +468,7 @@ export const DesktopRightChromeActions: React.FC<DesktopRightChromeActionsProps>
         title={t('header.actions.rightSidebarWithShortcut', { shortcut: shortcutLabel('toggle_right_sidebar') })}
         ariaLabel={t('header.actions.toggleRightSidebarAria')}
         onClick={toggleRightSidebar}
-        Icon={isRightSidebarOpen ? SidebarRightIcon : SidebarRightExpandIcon}
+        Icon={isRightSidebarOpen ? SidebarRightCollapseIcon : SidebarRightExpandIcon}
       />
     </div>
   );

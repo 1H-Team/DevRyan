@@ -15,7 +15,7 @@ import type {
 } from "@opencode-ai/sdk/v2";
 import type { PermissionRequest } from "@/types/permission";
 import type { QuestionRequest } from "@/types/question";
-import { waitForWorktreeBootstrap } from "@/lib/worktrees/worktreeBootstrap";
+import { waitForWorktreeBootstrapForSend } from "@/lib/worktrees/worktreeBootstrap";
 import { postTurnTimingMark, streamDebugMark } from "@/stores/utils/streamDebug";
 import {
   assertProviderCircuitClosed,
@@ -1067,7 +1067,7 @@ class OpencodeService {
 
     const targetDirectory = this.normalizeCandidatePath(params.directory) ?? this.currentDirectory;
     if (targetDirectory) {
-      await waitForWorktreeBootstrap(targetDirectory);
+      await waitForWorktreeBootstrapForSend(targetDirectory);
     }
     if (params.signal?.aborted) {
       throw new DOMException('Aborted', 'AbortError');
@@ -1236,7 +1236,7 @@ class OpencodeService {
     });
 
     if (targetDirectory) {
-      await waitForWorktreeBootstrap(targetDirectory);
+      await waitForWorktreeBootstrapForSend(targetDirectory);
     }
     if (params.signal?.aborted) {
       throw new DOMException('Aborted', 'AbortError');
@@ -1405,7 +1405,7 @@ class OpencodeService {
     const url = new URL(`${base}/session/${encodeURIComponent(params.id)}/command`);
     const targetDirectory = this.normalizeCandidatePath(params.directory) ?? this.currentDirectory;
     if (targetDirectory) {
-      await waitForWorktreeBootstrap(targetDirectory);
+      await waitForWorktreeBootstrapForSend(targetDirectory);
       url.searchParams.set('directory', targetDirectory);
     }
     if (params.signal?.aborted) {

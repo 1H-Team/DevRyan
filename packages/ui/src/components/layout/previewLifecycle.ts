@@ -17,6 +17,11 @@ export const parsePreviewHttpUrl = (value: string): URL | null => {
   }
 };
 
+export const isBrowserHostRoutedUrl = (value: string): boolean => {
+  const parsed = parsePreviewHttpUrl(value);
+  return Boolean(parsed && isPreviewLoopbackHost(parsed.hostname));
+};
+
 /**
  * A reported in-frame route may be reused only by the proxy that owns the
  * same origin. A different origin is an intentional new target registration.
@@ -34,3 +39,23 @@ export const buildPreviewFrameKey = (
   targetKey: string,
   reloadGeneration: number,
 ): string => `${tabID}:${targetKey}:${reloadGeneration}`;
+
+type PreviewProxyRestoreInput = {
+  frameOrigin: string;
+  parentOrigin: string;
+  framePathname: string;
+  proxyBasePath: string;
+  bridgeInstalled: boolean;
+};
+
+export const shouldRestorePreviewProxyPath = ({
+  frameOrigin,
+  parentOrigin,
+  framePathname,
+  proxyBasePath,
+  bridgeInstalled,
+}: PreviewProxyRestoreInput): boolean => (
+  frameOrigin === parentOrigin
+  && !bridgeInstalled
+  && !framePathname.startsWith(proxyBasePath)
+);

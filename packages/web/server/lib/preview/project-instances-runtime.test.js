@@ -44,6 +44,7 @@ const createRuntime = ({
   probeUrl = async () => reachable,
   now,
   grantTtlMs,
+  resolveManagedProjectForDirectory,
 } = {}) => {
   const sessions = new Map();
   const runtime = createProjectPreviewInstancesRuntime({
@@ -53,6 +54,7 @@ const createRuntime = ({
     probeUrl,
     ...(now ? { now } : {}),
     ...(grantTtlMs ? { grantTtlMs } : {}),
+    ...(resolveManagedProjectForDirectory ? { resolveManagedProjectForDirectory } : {}),
     getTerminalRuntime: () => ({
       getSessionDescriptor: (sessionId) => sessions.get(sessionId) ?? null,
     }),
@@ -216,7 +218,66 @@ describe('project preview grants', () => {
     expect(runtime.getSnapshot()).toEqual([]);
   });
 
-  it('expires grants and reports their cleanup reason', async () => {
+  it('removes a grant when its source terminal descriptor disappears', async () => {
+    const { runtime, sessions } = createRuntime();
+    sessions.set('terminal-1', {
+      sessionId: 'terminal-1',
+      cwd: projectDirectory,
+      ownerUserId: 'owner',
+    });
+    await runtime.register({
+      principal: principal('owner'),
+      directory: projectDirectory,
+      terminalSessionId: 'terminal-1',
+      url: 'http://localhost:4173',
+    });
+    sessions.delete('terminal-1');
+
+    const result = await runtime.list({ principal: principal('viewer'), directory: projectDirectory });
+    expect(result).toMatchObject({ ok: true, instances: [] });
+    expect(runtime.getSnapshot()).toEqual([]);
+  });
+
+  it('coalesces concurrent project reads onto one liveness refresh', async () => {
+    let probeCalls = 0;
+    let releaseProbe = () => {};
+    const probeGate = new Promise((resolve) => { releaseProbe = resolve; });
+    let markProbeStarted = () => {};
+    const probeStarted = new Promise((resolve) => { markProbeStarted = resolve; });
+    const { runtime, sessions } = createRuntime({
+      probeUrl: async () => {
+        probeCalls += 1;
+        if (probeCalls > 1) {
+          markProbeStarted();
+          await probeGate;
+        }
+        return true;
+      },
+    });
+    sessions.set('terminal-1', {
+      sessionId: 'terminal-1',
+      cwd: projectDirectory,
+      ownerUserId: 'owner',
+    });
+    await runtime.register({
+      principal: principal('owner'),
+      directory: projectDirectory,
+      terminalSessionId: 'terminal-1',
+      url: 'http://localhost:4173',
+    });
+
+    const first = runtime.list({ principal: principal('viewer'), directory: projectDirectory });
+    const second = runtime.list({ principal: principal('viewer'), directory: projectDirectory });
+    await probeStarted;
+    expect(probeCalls).toBe(2);
+    releaseProbe();
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    expect(firstResult.instances).toHaveLength(1);
+    expect(secondResult.instances).toHaveLength(1);
+    expect(probeCalls).toBe(2);
+  });
+
+  it('renews an expired lease while its source terminal and app remain live', async () => {
     let clock = 1_000;
     const { runtime, sessions } = createRuntime({
       now: () => clock,
@@ -227,8 +288,6 @@ describe('project preview grants', () => {
       cwd: projectDirectory,
       ownerUserId: 'owner',
     });
-    const removed = [];
-    runtime.setGrantRemovalHandler((grant) => removed.push(grant));
     await runtime.register({
       principal: principal('owner'),
       directory: projectDirectory,
@@ -238,9 +297,53 @@ describe('project preview grants', () => {
 
     clock += 15_001;
     const result = await runtime.list({ principal: principal('viewer'), directory: projectDirectory });
-    expect(result).toMatchObject({ ok: true, instances: [] });
-    expect(removed).toHaveLength(1);
-    expect(removed[0].reason).toBe('expired');
+    expect(result.ok).toBe(true);
+    expect(result.instances).toHaveLength(1);
+    expect(result.instances[0].expiresAt).toBe(clock + 15_000);
+  });
+
+  it('maps an unassigned administrator grant to the registered project', async () => {
+    const { runtime, sessions } = createRuntime({
+      resolveManagedProjectForDirectory: async () => ({ id: 'project-1' }),
+    });
+    sessions.set('terminal-1', {
+      sessionId: 'terminal-1',
+      cwd: projectDirectory,
+      ownerUserId: 'admin-owner',
+    });
+    const admin = {
+      id: 'admin-owner',
+      role: 'admin',
+      scope: 'managed',
+      assignments: [],
+    };
+    const registered = await runtime.register({
+      principal: admin,
+      directory: projectDirectory,
+      terminalSessionId: 'terminal-1',
+      url: 'http://localhost:4173',
+    });
+    expect(registered.ok).toBe(true);
+    expect(registered.grant.projectKey).toBe('project:project-1');
+
+    const shared = await runtime.list({ principal: principal('viewer'), directory: projectDirectory });
+    expect(shared.ok).toBe(true);
+    expect(shared.instances).toHaveLength(1);
+  });
+
+  it('returns a stable code and actionable guidance for unapproved remote ports', async () => {
+    const { runtime } = createRuntime();
+    const result = await runtime.authorizeTarget({
+      principal: principal('viewer'),
+      directory: projectDirectory,
+      url: 'http://localhost:4173',
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      status: 403,
+      code: 'project_preview_not_approved',
+    });
+    expect(result.error).toContain('live DevRyan terminal');
   });
 
   it('removes every grant owned by a revoked user', async () => {
@@ -320,5 +423,36 @@ describe('project preview grants', () => {
     expect(response.statusCode).toBe(200);
     expect(response.body.instances).toHaveLength(1);
     expect(originChecks).toBe(0);
+  });
+
+  it('gates only Browser grant routes on the effective Browser capability', async () => {
+    const { runtime } = createRuntime();
+    const routes = new Map();
+    runtime.attach({
+      post(route, ...handlers) { routes.set(`POST ${route}`, handlers.at(-1)); },
+      get(route, handler) { routes.set(`GET ${route}`, handler); },
+    }, {
+      express: { json: () => (_req, _res, next) => next() },
+      uiAuthController: { enabled: false },
+      isRequestOriginAllowed: async () => true,
+      canUseBrowser: () => false,
+    });
+
+    const browserResponse = createResponse();
+    await routes.get('GET /api/browser/instances')({
+      principal: principal('viewer'),
+      query: { directory: projectDirectory },
+      headers: {},
+    }, browserResponse);
+    expect(browserResponse.statusCode).toBe(403);
+    expect(browserResponse.body).toEqual({ error: 'Browser access is disabled' });
+
+    const previewResponse = createResponse();
+    await routes.get('GET /api/preview/instances')({
+      principal: principal('viewer'),
+      query: { directory: projectDirectory },
+      headers: {},
+    }, previewResponse);
+    expect(previewResponse.statusCode).toBe(200);
   });
 });

@@ -38,7 +38,7 @@ import {
 } from "./revert-transactions"
 import { hasMessageRecordInfo, unwrapMessageRecordsResult } from "./message-fetch"
 import { isSessionWorkingFromState } from "./session-working"
-import { isTransientError, retry } from "./retry"
+import { retry } from "./retry"
 import { useManagedOrchestrationStore } from "@/stores/useManagedOrchestrationStore"
 import { createClientMessageId } from "./client-message-id"
 import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
@@ -1120,6 +1120,19 @@ function getRequestReplyClient(
   return getSessionReplyClient(sessionId)
 }
 
+function getQuestionReplyTarget(
+  sessionId: string,
+  requestId: string,
+): { client: OpencodeClient; directory: string | undefined } {
+  const directory = resolveDirectoryForBlockingRequest("question", sessionId, requestId)
+    || getSessionDirectory(sessionId)
+    || dir()
+  return {
+    client: directory ? opencodeClient.getScopedSdkClient(directory) : sdk(),
+    directory,
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Session CRUD
 // ---------------------------------------------------------------------------
@@ -1181,16 +1194,32 @@ function createSessionCreateError(error: unknown, status?: number): Error {
   if (status !== undefined) {
     (formatted as Error & { status?: number }).status = status
   }
+  if (error && typeof error === "object") {
+    const details = error as { code?: unknown; retryable?: unknown; restarting?: unknown }
+    const annotated = formatted as Error & {
+      code?: string
+      retryable?: boolean
+      restarting?: boolean
+    }
+    if (typeof details.code === "string") annotated.code = details.code
+    if (typeof details.retryable === "boolean") annotated.retryable = details.retryable
+    if (typeof details.restarting === "boolean") annotated.restarting = details.restarting
+  }
   return formatted
 }
 
 function isTransientSessionCreateError(error: unknown): boolean {
-  const status = readErrorStatus(error)
-  if (typeof status === "number" && status >= 500 && status < 600) {
-    return true
+  if (error && typeof error === "object") {
+    const details = error as { code?: unknown; retryable?: unknown; restarting?: unknown }
+    if (details.retryable === false || details.code === "identity_unavailable") {
+      return false
+    }
+    if (details.restarting === true) {
+      return true
+    }
   }
   const message = stringifyErrorMessage(error).toLowerCase()
-  return message.includes("opencode is restarting") || isTransientError(error)
+  return message.includes("opencode is restarting")
 }
 
 async function createSessionViaSdk(payload: SessionCreatePayload): Promise<Session> {
@@ -1885,22 +1914,29 @@ export async function dismissPermission(
 // Questions
 // ---------------------------------------------------------------------------
 
+const SLOW_QUESTION_REPLY_WARN_MS = 1000
+
 export async function respondToQuestion(
   sessionId: string,
   requestId: string,
   answers: string[] | string[][],
 ): Promise<void> {
-  await waitForConnectionOrThrow()
-  const directory = resolveDirectoryForBlockingRequest("question", sessionId, requestId)
-    || getSessionDirectory(sessionId)
-    || dir()
-  const result = await getRequestReplyClient("question", sessionId, requestId).question.reply({
-    requestID: requestId,
-    answers: answers as Array<Array<string>>,
-    ...(directory ? { directory } : {}),
-  })
-  if (!result.data) {
-    throw new Error("Question reply failed")
+  const { client, directory } = getQuestionReplyTarget(sessionId, requestId)
+  const startedAt = performance.now()
+  try {
+    const result = await client.question.reply({
+      requestID: requestId,
+      answers: answers as Array<Array<string>>,
+      ...(directory ? { directory } : {}),
+    })
+    if (!result.data) {
+      throw new Error("Question reply failed")
+    }
+  } finally {
+    const elapsed = Math.round(performance.now() - startedAt)
+    if (elapsed >= SLOW_QUESTION_REPLY_WARN_MS) {
+      console.warn(`[question] reply ${sessionId}/${requestId} took ${elapsed}ms`)
+    }
   }
 }
 
@@ -1908,16 +1944,21 @@ export async function rejectQuestion(
   sessionId: string,
   requestId: string,
 ): Promise<void> {
-  await waitForConnectionOrThrow()
-  const directory = resolveDirectoryForBlockingRequest("question", sessionId, requestId)
-    || getSessionDirectory(sessionId)
-    || dir()
-  const result = await getRequestReplyClient("question", sessionId, requestId).question.reject({
-    requestID: requestId,
-    ...(directory ? { directory } : {}),
-  })
-  if (!result.data) {
-    throw new Error("Question rejection failed")
+  const { client, directory } = getQuestionReplyTarget(sessionId, requestId)
+  const startedAt = performance.now()
+  try {
+    const result = await client.question.reject({
+      requestID: requestId,
+      ...(directory ? { directory } : {}),
+    })
+    if (!result.data) {
+      throw new Error("Question rejection failed")
+    }
+  } finally {
+    const elapsed = Math.round(performance.now() - startedAt)
+    if (elapsed >= SLOW_QUESTION_REPLY_WARN_MS) {
+      console.warn(`[question] reject ${sessionId}/${requestId} took ${elapsed}ms`)
+    }
   }
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createGitWorktree, getGitLog, getGitStatus, getGitWorktreeBootstrapStatus, getPrimaryWorktreeRoot, gitFetch, resolveGitApiBaseOrigin } from "./gitApiHttp"
+import { createGitWorktree, getGitLog, getGitStatus, getGitWorktreeBootstrapStatus, getPrimaryWorktreeRoot, gitFetch, resolveGitApiBaseOrigin, retryGitWorktreeBootstrapOperation } from "./gitApiHttp"
 
 type TestWindow = {
   location: { origin: string }
@@ -30,6 +30,25 @@ const restoreGlobals = (): void => {
 }
 
 describe("gitApiHttp URL routing", () => {
+  test("sends the CSRF marker when retrying a bootstrap operation", async () => {
+    try {
+      setTestWindow({ location: { origin: "http://127.0.0.1:5173" } })
+      const requests: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
+      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push({ input, init })
+        return new Response(JSON.stringify({ status: "queued" }), { status: 200 })
+      }) as typeof fetch
+
+      await retryGitWorktreeBootstrapOperation("wt_retry")
+
+      expect(String(requests[0]?.input)).toBe("/api/git/worktrees/operations/wt_retry/retry")
+      expect(requests[0]?.init?.method).toBe("POST")
+      expect(new Headers(requests[0]?.init?.headers).get("X-DevRyan-CSRF")).toBe("1")
+    } finally {
+      restoreGlobals()
+    }
+  })
+
   test("uses the Vite renderer origin in Electron dev so /api goes through the dev proxy", async () => {
     try {
       setTestWindow({
@@ -246,6 +265,57 @@ describe("gitApiHttp URL routing", () => {
 
       const [, next] = await Promise.all([firstStatus, secondStatus])
       expect(next.ahead).toBe(1)
+    } finally {
+      restoreGlobals()
+    }
+  })
+
+  test("forced status fetch bypasses in-flight requests and stale responses cannot repopulate the cache", async () => {
+    try {
+      setTestWindow({
+        location: { origin: "http://127.0.0.1:5173" },
+      })
+      const directory = `/repo-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      const statusResponses: Array<(response: Response) => void> = []
+      const requestedUrls: string[] = []
+      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        requestedUrls.push(`${init?.method || "GET"} ${url}`)
+        if (url.includes("/api/git/status")) {
+          return await new Promise<Response>((resolve) => {
+            statusResponses.push(resolve)
+          })
+        }
+        return new Response("not found", { status: 404 })
+      }) as typeof fetch
+
+      const statusBody = (ahead: number) => JSON.stringify({
+        current: "main",
+        tracking: "origin/main",
+        ahead,
+        behind: 0,
+        files: [],
+        isClean: true,
+      })
+
+      const staleStatus = getGitStatus(directory)
+      await Promise.resolve()
+      const forcedStatus = getGitStatus(directory, { force: true })
+      await Promise.resolve()
+
+      expect(requestedUrls.filter((url) => url.includes("/api/git/status"))).toHaveLength(2)
+
+      statusResponses[1]?.(new Response(statusBody(0), { status: 200 }))
+      const forced = await forcedStatus
+      expect(forced.ahead).toBe(0)
+
+      statusResponses[0]?.(new Response(statusBody(1), { status: 200 }))
+      const stale = await staleStatus
+      expect(stale.ahead).toBe(1)
+
+      const cachedAfter = await getGitStatus(directory)
+      expect(cachedAfter.ahead).toBe(0)
+      expect(requestedUrls.filter((url) => url.includes("/api/git/status"))).toHaveLength(2)
     } finally {
       restoreGlobals()
     }

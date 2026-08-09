@@ -3,6 +3,7 @@ import type { Agent, Model, Provider } from "@opencode-ai/sdk/v2"
 import { useSessionUIStore } from "@/sync/session-ui-store"
 import { useSelectionStore } from "@/sync/selection-store"
 import { resolveCurrentDraftSendConfig } from "@/sync/send-config"
+import { setAuthPrincipal } from "@/lib/authSession"
 import { mergeRuntimeAgentsWithConfigOverrides, useConfigStore } from "./useConfigStore"
 
 type TestProvider = Omit<Provider, "models"> & { models: Model[] }
@@ -70,8 +71,32 @@ const agents: Agent[] = [
   },
 ]
 
+const setManagedDeveloper = () => setAuthPrincipal({
+  id: "developer-1",
+  email: "developer@example.test",
+  displayName: "Developer",
+  role: "developer",
+  scope: "managed",
+  policy: {
+    settingsPages: ["sessions"],
+    files: false,
+    terminal: false,
+    browser: true,
+    createWorktrees: false,
+    createBranches: false,
+    manageProjects: false,
+    manageUsers: false,
+    manageGlobalSettings: false,
+    manageGit: true,
+    push: true,
+    github: true,
+  },
+  assignments: [],
+})
+
 describe("useConfigStore default agent selection", () => {
   beforeEach(() => {
+    setAuthPrincipal(null)
     useSessionUIStore.setState({ currentSessionId: null, currentDraftId: null })
     useSelectionStore.setState((state) => ({
       ...state,
@@ -89,6 +114,9 @@ describe("useConfigStore default agent selection", () => {
       activeDirectoryKey: "__global__",
       providers,
       agents,
+      agentModelSelections: {},
+      settingsDefaultModel: undefined,
+      settingsDefaultVariant: undefined,
       settingsDefaultAgent: "Builder",
       currentAgentName: "Orchestrator",
       currentProviderId: "anthropic",
@@ -189,6 +217,227 @@ describe("useConfigStore default agent selection", () => {
       agent: "Orchestrator",
       providerID: "openai",
       modelID: "gpt-5.6-sol",
+      variant: "high",
+    })
+  })
+
+  test("managed fresh drafts inherit High for a legacy GPT 5.6 Sol model-only selection", () => {
+    setManagedDeveloper()
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      currentDraftId: "draft-managed-legacy",
+      draftsById: {
+        "draft-managed-legacy": {
+          id: "draft-managed-legacy",
+          text: "",
+          createdAt: 1,
+          updatedAt: 1,
+          selectedProjectId: null,
+          directoryOverride: null,
+          parentID: null,
+        },
+      },
+      draftOrder: ["draft-managed-legacy"],
+      newSessionDraft: {
+        open: true,
+        id: "draft-managed-legacy",
+        directoryOverride: null,
+        parentID: null,
+      },
+    })
+    useConfigStore.setState({
+      providers: [{
+        id: "openai",
+        name: "OpenAI",
+        source: "custom",
+        options: {},
+        env: [],
+        models: [createModel("openai", "gpt-5.6-sol", { low: {}, medium: {}, high: {} })],
+      }],
+      agents: [{
+        name: "Orchestrator",
+        mode: "primary",
+        model: { providerID: "openai", modelID: "gpt-5.6-sol" },
+        variant: "high",
+        permission: [],
+        options: {},
+      }],
+      agentModelSelections: {
+        Orchestrator: { providerId: "openai", modelId: "gpt-5.6-sol" },
+      },
+      settingsDefaultAgent: "Orchestrator",
+      currentAgentName: "Orchestrator",
+      currentProviderId: "openai",
+      currentModelId: "gpt-5.6-sol",
+      currentVariant: undefined,
+      selectedProviderId: "openai",
+    })
+
+    useConfigStore.getState().applyDefaultsToCurrent()
+
+    const display = useConfigStore.getState()
+    const send = resolveCurrentDraftSendConfig("draft-managed-legacy")
+    expect({
+      agent: display.currentAgentName,
+      providerID: display.currentProviderId,
+      modelID: display.currentModelId,
+      variant: display.currentVariant,
+    }).toEqual({
+      agent: "Orchestrator",
+      providerID: "openai",
+      modelID: "gpt-5.6-sol",
+      variant: "high",
+    })
+    expect(send.variant).toBe("high")
+  })
+
+  test("fresh drafts show the agent's configured variant over a stale managed persisted variant", () => {
+    setManagedDeveloper()
+    useConfigStore.setState({
+      providers: [{
+        id: "openai",
+        name: "OpenAI",
+        source: "custom",
+        options: {},
+        env: [],
+        models: [createModel("openai", "gpt-5.6-sol", { low: {}, medium: {}, high: {} })],
+      }],
+      agents: [{
+        name: "Orchestrator",
+        mode: "primary",
+        model: { providerID: "openai", modelID: "gpt-5.6-sol" },
+        variant: "high",
+        permission: [],
+        options: {},
+      }],
+      agentModelSelections: {
+        Orchestrator: { providerId: "openai", modelId: "gpt-5.6-sol", variant: "medium" },
+      },
+      settingsDefaultAgent: "Orchestrator",
+    })
+
+    useConfigStore.getState().applyDefaultsToCurrent()
+
+    // The draft send path ignores agentModelSelections and uses the agent's
+    // configured variant, so the composer must display that same value.
+    expect(useConfigStore.getState().currentVariant).toBe("high")
+  })
+
+  test("managed developer fresh draft displays the variant the send resolves despite a stale saved selection", () => {
+    setManagedDeveloper()
+    setOrchestratorSolFixture()
+    useConfigStore.setState({
+      agentModelSelections: {
+        Orchestrator: { providerId: "openai", modelId: "gpt-5.6-sol", variant: "medium" },
+      },
+    })
+
+    useConfigStore.getState().applyDefaultsToCurrent()
+
+    expect(useConfigStore.getState().currentVariant).toBe("high")
+    expect(resolveCurrentDraftSendConfig("draft-sol").variant).toBe("high")
+  })
+
+  test("fresh drafts show the agent's configured variant over managed account defaults for the same model", () => {
+    setManagedDeveloper()
+    useConfigStore.setState({
+      providers: [{
+        id: "openai",
+        name: "OpenAI",
+        source: "custom",
+        options: {},
+        env: [],
+        models: [createModel("openai", "gpt-5.6-sol", { medium: {}, high: {}, xhigh: {} })],
+      }],
+      agents: [{
+        name: "Orchestrator",
+        mode: "primary",
+        model: { providerID: "openai", modelID: "gpt-5.6-sol" },
+        variant: "high",
+        permission: [],
+        options: {},
+      }],
+      agentModelSelections: {
+        Orchestrator: { providerId: "openai", modelId: "gpt-5.6-sol" },
+      },
+      settingsDefaultAgent: "Builder",
+      settingsDefaultModel: "openai/gpt-5.6-sol",
+      settingsDefaultVariant: "xhigh",
+    })
+
+    useConfigStore.getState().setAgent("Orchestrator")
+
+    // Account defaults are not consulted by the draft send path either; the
+    // agent's configured variant is what a fresh draft will send.
+    expect(useConfigStore.getState().currentVariant).toBe("high")
+  })
+
+  test("normalizes unsupported managed variants to the provider fallback", () => {
+    setManagedDeveloper()
+    useConfigStore.setState({
+      providers: [{
+        id: "openai",
+        name: "OpenAI",
+        source: "custom",
+        options: {},
+        env: [],
+        models: [createModel("openai", "gpt-5.6-sol", { low: {}, medium: {}, high: {} })],
+      }],
+      agents: [{
+        name: "Orchestrator",
+        mode: "primary",
+        model: { providerID: "openai", modelID: "gpt-5.6-sol" },
+        permission: [],
+        options: {},
+      }],
+      agentModelSelections: {
+        Orchestrator: { providerId: "openai", modelId: "gpt-5.6-sol", variant: "retired" },
+      },
+      settingsDefaultAgent: "Orchestrator",
+    })
+
+    useConfigStore.getState().applyDefaultsToCurrent()
+
+    expect(useConfigStore.getState().currentVariant).toBe("medium")
+  })
+
+  test("falls back from an unavailable managed selection to the configured agent model and variant", () => {
+    setManagedDeveloper()
+    useConfigStore.setState({
+      providers: [{
+        id: "openai",
+        name: "OpenAI",
+        source: "custom",
+        options: {},
+        env: [],
+        models: [createModel("openai", "gpt-5.6-sol", { medium: {}, high: {} })],
+      }],
+      agents: [{
+        name: "Orchestrator",
+        mode: "primary",
+        model: { providerID: "openai", modelID: "gpt-5.6-sol" },
+        variant: "high",
+        permission: [],
+        options: {},
+      }],
+      agentModelSelections: {
+        Orchestrator: { providerId: "openai", modelId: "retired-model", variant: "low" },
+      },
+      settingsDefaultAgent: "Orchestrator",
+    })
+
+    useConfigStore.getState().applyDefaultsToCurrent()
+
+    expect(useConfigStore.getState().currentModelId).toBe("gpt-5.6-sol")
+    expect(useConfigStore.getState().currentVariant).toBe("high")
+  })
+
+  test("stores model and variant together for later managed-account persistence", () => {
+    useConfigStore.getState().saveAgentModelSelection("Orchestrator", "openai", "gpt-5.6-sol", " high ")
+
+    expect(useConfigStore.getState().agentModelSelections.Orchestrator).toEqual({
+      providerId: "openai",
+      modelId: "gpt-5.6-sol",
       variant: "high",
     })
   })
@@ -613,6 +862,112 @@ describe("useConfigStore default agent selection", () => {
 
     expect(useConfigStore.getState().currentProviderId).toBe("anthropic")
     expect(useConfigStore.getState().currentModelId).toBe("claude")
+  })
+
+  const setOrchestratorSolFixture = (sendConfig?: Record<string, unknown>) => {
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      currentDraftId: "draft-sol",
+      draftsById: {
+        "draft-sol": {
+          id: "draft-sol",
+          text: "",
+          createdAt: 1,
+          updatedAt: 1,
+          selectedProjectId: null,
+          directoryOverride: null,
+          parentID: null,
+          ...(sendConfig ? { sendConfig } : {}),
+        },
+      },
+      draftOrder: ["draft-sol"],
+      newSessionDraft: {
+        open: true,
+        id: "draft-sol",
+        directoryOverride: null,
+        parentID: null,
+        ...(sendConfig ? { sendConfig } : {}),
+      },
+    })
+    useConfigStore.setState({
+      providers: [{
+        id: "openai",
+        name: "OpenAI",
+        source: "custom",
+        options: {},
+        env: [],
+        models: [createModel("openai", "gpt-5.6-sol", { low: {}, medium: {}, high: {} })],
+      }],
+      agents: [{
+        name: "Orchestrator",
+        mode: "primary",
+        model: { providerID: "openai", modelID: "gpt-5.6-sol" },
+        variant: "high",
+        permission: [],
+        options: {},
+      }],
+      settingsDefaultAgent: "Orchestrator",
+      currentAgentName: "Orchestrator",
+      currentProviderId: "openai",
+      currentModelId: "gpt-5.6-sol",
+      currentVariant: undefined,
+      selectedProviderId: "openai",
+    })
+  }
+
+  test("resolves the variant for a preserved legacy draft with a persisted variant", () => {
+    const sendConfig = {
+      providerID: "openai",
+      modelID: "gpt-5.6-sol",
+      agent: "Orchestrator",
+      variant: "high",
+    }
+    setOrchestratorSolFixture(sendConfig)
+
+    useConfigStore.getState().applyDefaultsToCurrent()
+
+    expect(useConfigStore.getState().currentVariant).toBe("high")
+    expect(resolveCurrentDraftSendConfig("draft-sol", sendConfig).variant).toBe("high")
+  })
+
+  test("displays the same variant the send resolves for a preserved legacy draft without a variant", () => {
+    const sendConfig = {
+      providerID: "openai",
+      modelID: "gpt-5.6-sol",
+      agent: "Orchestrator",
+    }
+    setOrchestratorSolFixture(sendConfig)
+
+    useConfigStore.getState().applyDefaultsToCurrent()
+
+    const send = resolveCurrentDraftSendConfig("draft-sol", sendConfig)
+    expect(useConfigStore.getState().currentVariant).toBe(send.variant)
+  })
+
+  test("preserveCurrentModel still resolves the agent variant when none is selected", () => {
+    setOrchestratorSolFixture()
+
+    useConfigStore.getState().applyDefaultsToCurrent({ preserveCurrentModel: true })
+
+    expect(useConfigStore.getState().currentVariant).toBe("high")
+    expect(resolveCurrentDraftSendConfig("draft-sol").variant).toBe("high")
+  })
+
+  test("preserveCurrentModel keeps an explicitly selected variant", () => {
+    const sendConfig = {
+      providerID: "openai",
+      modelID: "gpt-5.6-sol",
+      agent: "Orchestrator",
+      variant: "low",
+      modelProvenance: "explicit" as const,
+    }
+    setOrchestratorSolFixture(sendConfig)
+    useConfigStore.setState({ currentVariant: "low" })
+
+    useConfigStore.getState().applyDefaultsToCurrent()
+
+    expect(useConfigStore.getState().currentVariant).toBe("low")
+    expect(resolveCurrentDraftSendConfig("draft-sol", sendConfig).variant).toBe("low")
   })
 
   test("applyDefaultsToCurrent does not preserve agent-default draft model", () => {

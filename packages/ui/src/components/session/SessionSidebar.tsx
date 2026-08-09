@@ -37,7 +37,6 @@ import {
   collectSidebarChildHydrationTargets,
   type SidebarChildHydrationTarget,
 } from './sidebar/sidebarChildHydration';
-import { getGitHubPrStatusKey, usePrVisualSummaryByKeys, useGitHubPrStatusStore } from '@/stores/useGitHubPrStatusStore';
 import { SessionGroupSection } from './sidebar/SessionGroupSection';
 import { SidebarHeader } from './sidebar/SidebarHeader';
 import { SidebarFooter } from './sidebar/SidebarFooter';
@@ -53,11 +52,13 @@ import type { WorktreeMetadata } from '@/types/worktree';
 import type { SortableDragHandleProps } from './sidebar/sortableItems';
 import type {
   BulkDeleteSessionsConfirmState,
+  ArchiveBranchSessionsConfirmState,
   DeleteFolderConfirmState,
   DeleteSessionConfirmState,
 } from './sidebar/ConfirmDialogs';
 import {
   DeferredSessionDialog,
+  LazyBranchSessionArchiveConfirmDialog,
   LazyBulkSessionDeleteConfirmDialog,
   LazyFolderDeleteConfirmDialog,
   LazyNewWorktreeDialog,
@@ -81,7 +82,12 @@ import {
   removeExpandedSessionIds,
   selectVisibleChatDrafts,
 } from './sidebar/utils';
-import { refreshGlobalSessions, resolveGlobalSessionDirectory, useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
+import {
+  isGlobalSessionDeletionPending,
+  refreshGlobalSessions,
+  resolveGlobalSessionDirectory,
+  useGlobalSessionsStore,
+} from '@/stores/useGlobalSessionsStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
@@ -92,6 +98,7 @@ import {
   filterWorktreesByGrantedBranches,
   isManagedBranchGranted,
 } from '@/lib/worktrees/managedBranches';
+import { archiveBranchSessions } from './sidebar/branchSessionCleanup';
 
 const PROJECT_COLLAPSE_STORAGE_KEY = 'oc.sessions.projectCollapse';
 const GROUP_ORDER_STORAGE_KEY = 'oc.sessions.groupOrder';
@@ -99,32 +106,6 @@ const GROUP_COLLAPSE_STORAGE_KEY = 'oc.sessions.groupCollapse';
 const PROJECT_ACTIVE_SESSION_STORAGE_KEY = 'oc.sessions.activeSessionByProject';
 const SESSION_EXPANDED_STORAGE_KEY = 'oc.sessions.expandedParents';
 const SESSION_PINNED_STORAGE_KEY = 'oc.sessions.pinned';
-
-type PrVisualState = 'draft' | 'open' | 'blocked' | 'merged' | 'closed';
-
-type PrIndicator = {
-  visualState: PrVisualState;
-  number: number;
-  url: string | null;
-  state: 'open' | 'closed' | 'merged';
-  draft: boolean;
-  title: string | null;
-  base: string | null;
-  head: string | null;
-  checks: {
-    state: 'success' | 'failure' | 'pending' | 'unknown';
-    total: number;
-    success: number;
-    failure: number;
-    pending: number;
-  } | null;
-  canMerge: boolean | null;
-  mergeableState: string | null;
-  repo: {
-    owner: string;
-    repo: string;
-  } | null;
-};
 
 const buildKnownSessionDirectories = (
   projects: Array<{ path: string }>,
@@ -151,8 +132,6 @@ const isKnownActiveSessionDirectory = (session: Session, knownDirectories: Set<s
   if (knownDirectories.size === 0) return true;
   return knownDirectories.has(directory);
 };
-
-const SIDEBAR_PR_NO_PR_RETRY_MS = 5 * 60_000;
 
 const getDraftPreview = (draft: ChatDraft): string => {
   const text = draft.text.trim().split(/\r?\n/).find((line) => line.trim().length > 0)?.trim() ?? '';
@@ -277,13 +256,14 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const { t } = useI18n();
   const principal = useAuthPrincipal();
   const canManageProjects = hasAuthCapability(principal, 'manageProjects');
+  const canCreateWorktrees = hasAuthCapability(principal, 'createWorktrees');
+  const canCreateBranches = hasAuthCapability(principal, 'createBranches');
   const canEditProjectMetadata = principal.scope !== 'managed' || principal.role === 'admin';
   const shouldHideProjectAdminControls = hideDirectoryControls || !canManageProjects || !canEditProjectMetadata;
   const isSessionSearchOpen = useUIStore((state) => state.isSessionSearchOpen);
   const setIsSessionSearchOpen = useUIStore((state) => state.setSessionSearchOpen);
   const [sessionSearchQuery, setSessionSearchQuery] = React.useState('');
   const sessionSearchInputRef = React.useRef<HTMLInputElement | null>(null);
-  const retriedNoPrStatusKeysRef = React.useRef<Set<string>>(new Set());
   const [editingId, setEditingId] = React.useState<string | null>(null);
   const [editTitle, setEditTitle] = React.useState('');
   const [editingProjectDialogId, setEditingProjectDialogId] = React.useState<string | null>(null);
@@ -303,6 +283,9 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const [deleteSessionConfirm, setDeleteSessionConfirm] = React.useState<DeleteSessionConfirmState>(null);
   const [deleteFolderConfirm, setDeleteFolderConfirm] = React.useState<DeleteFolderConfirmState>(null);
   const [bulkDeleteConfirm, setBulkDeleteConfirm] = React.useState<BulkDeleteSessionsConfirmState>(null);
+  const [archiveBranchConfirm, setArchiveBranchConfirm] = React.useState<ArchiveBranchSessionsConfirmState>(null);
+  const [archiveBranchPending, setArchiveBranchPending] = React.useState(false);
+  const archiveBranchPendingRef = React.useRef(false);
   const [bulkDeletePending, setBulkDeletePending] = React.useState(false);
   const bulkDeletePendingRef = React.useRef(false);
   const [pinnedSessionIds, setPinnedSessionIds] = React.useState<Set<string>>(() => {
@@ -453,11 +436,13 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   );
 
   const sessions = React.useMemo(() => {
-    const liveById = new Map(liveSessions.map((session) => [session.id, session]));
-    const merged = globalActiveSessions.map((session) => liveById.get(session.id) ?? session);
+    const visibleLiveSessions = liveSessions.filter((session) => !isGlobalSessionDeletionPending(session.id));
+    const visibleGlobalSessions = globalActiveSessions.filter((session) => !isGlobalSessionDeletionPending(session.id));
+    const liveById = new Map(visibleLiveSessions.map((session) => [session.id, session]));
+    const merged = visibleGlobalSessions.map((session) => liveById.get(session.id) ?? session);
     const seenIds = new Set(merged.map((session) => session.id));
 
-    liveSessions.forEach((session) => {
+    visibleLiveSessions.forEach((session) => {
       if (seenIds.has(session.id)) {
         return;
       }
@@ -683,8 +668,9 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   }, [editingProjectDialogId, updateProjectMeta]);
 
   const openNewWorktreeDialog = React.useCallback(() => {
+    if (!canCreateWorktrees) return;
     setNewWorktreeDialogOpen(true);
-  }, []);
+  }, [canCreateWorktrees]);
 
   const handleOpenSettings = React.useCallback(() => {
     if (mobileVariant) {
@@ -899,14 +885,11 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   const { github, git } = useRuntimeAPIs();
   const githubAuthStatus = useGitHubAuthStore((state) => state.status);
   const setGitHubAuthStatus = useGitHubAuthStore((state) => state.setStatus);
-  const githubAuthChecked = useGitHubAuthStore((state) => state.hasChecked);
   const [isSwitchingGitHubAccount, setIsSwitchingGitHubAccount] = React.useState(false);
   const gitRepoStatus = useGitRepoStatusMap(normalizedProjectPaths);
-  const ensurePrStatusEntry = useGitHubPrStatusStore((state) => state.ensureEntry);
-  const setPrStatusParams = useGitHubPrStatusStore((state) => state.setParams);
-  const refreshPrStatusTargets = useGitHubPrStatusStore((state) => state.refreshTargets);
 
   React.useEffect(() => {
+    if (!canCreateWorktrees) return;
     const listActive = git.worktree?.activeOperations
       ?? git.listActiveGitWorktreeBootstrapOperations;
     if (!listActive) return;
@@ -929,7 +912,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [git.listActiveGitWorktreeBootstrapOperations, git.worktree, normalizedProjectPaths]);
+  }, [canCreateWorktrees, git.listActiveGitWorktreeBootstrapOperations, git.worktree, normalizedProjectPaths]);
 
   useProjectRepoStatus({
     normalizedProjects,
@@ -1070,7 +1053,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
 
   const reserveHeaderActionsSpace = true;
 
-  const { currentSessionDirectory } = useProjectSessionSelection({
+  useProjectSessionSelection({
     projectSections,
     activeProjectId,
     activeSessionByProject,
@@ -1227,107 +1210,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     ensureSessionRenderable: sync.ensureSessionRenderable,
   });
 
-  const prLookupKeys = React.useMemo(() => {
-    const keys = new Set<string>();
-    sectionsForRender.forEach((section) => {
-      section.groups.forEach((group) => {
-        const directory = normalizePath(group.directory ?? null);
-        const branch = group.branch?.trim() || gitBranches.get(directory || '')?.trim();
-        if (!directory || !branch) {
-          return;
-        }
-        keys.add(getGitHubPrStatusKey(directory, branch));
-      });
-    });
-    return [...keys];
-  }, [gitBranches, sectionsForRender]);
-
-  const prVisualSummaryMap = usePrVisualSummaryByKeys(prLookupKeys);
-
-  React.useEffect(() => {
-    if (!githubAuthChecked || !githubAuthStatus?.connected || !github) {
-      return;
-    }
-
-    const missingTargets: Array<{ directory: string; branch: string; remoteName?: string | null }> = [];
-    const now = Date.now();
-
-    sectionsForRender.forEach((section) => {
-      if (collapsedProjects.has(section.project.id)) {
-        return;
-      }
-
-      section.groups.forEach((group) => {
-        const directory = normalizePath(group.directory ?? null);
-        const branch = group.branch?.trim() || gitBranches.get(directory || '')?.trim();
-        if (!directory || !branch) {
-          return;
-        }
-        const key = getGitHubPrStatusKey(directory, branch);
-        const entry = useGitHubPrStatusStore.getState().entries[key];
-        const hasPr = Boolean(entry?.status?.pr);
-        const retryKey = `${directory}::${branch}`;
-        const noPrLastCheckedAt = Math.max(entry?.lastRefreshAt ?? 0, entry?.lastDiscoveryPollAt ?? 0);
-        const shouldRetryNoPr = Boolean(
-          entry?.isInitialStatusResolved
-          && !hasPr
-          && (
-            !retriedNoPrStatusKeysRef.current.has(retryKey)
-            || now - noPrLastCheckedAt >= SIDEBAR_PR_NO_PR_RETRY_MS
-          ),
-        );
-
-        if (!entry || !entry.isInitialStatusResolved || shouldRetryNoPr) {
-          if (shouldRetryNoPr) {
-            retriedNoPrStatusKeysRef.current.add(retryKey);
-          }
-          missingTargets.push({ directory, branch });
-        }
-      });
-    });
-
-    if (missingTargets.length === 0) {
-      return;
-    }
-
-    const uniqueTargets = new Map<string, { directory: string; branch: string; remoteName?: string | null }>();
-    missingTargets.forEach((target) => {
-      const key = getGitHubPrStatusKey(target.directory, target.branch, target.remoteName ?? null);
-      if (!uniqueTargets.has(key)) {
-        uniqueTargets.set(key, target);
-      }
-    });
-
-    uniqueTargets.forEach((target, key) => {
-      ensurePrStatusEntry(key);
-      setPrStatusParams(key, {
-        directory: target.directory,
-        branch: target.branch,
-        remoteName: target.remoteName ?? null,
-        canShow: true,
-        github,
-        githubAuthChecked,
-        githubConnected: githubAuthStatus.connected,
-      });
-    });
-
-    void refreshPrStatusTargets([...uniqueTargets.values()], {
-      force: true,
-      silent: true,
-      markInitialResolved: true,
-    });
-  }, [
-    collapsedProjects,
-    ensurePrStatusEntry,
-    github,
-    githubAuthChecked,
-    githubAuthStatus?.connected,
-    gitBranches,
-    refreshPrStatusTargets,
-    sectionsForRender,
-    setPrStatusParams,
-  ]);
-
   const desktopHeaderActionButtonClass =
     'inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-md leading-none text-foreground hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:cursor-not-allowed';
   const mobileHeaderActionButtonClass =
@@ -1452,26 +1334,67 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     });
   }, []);
 
-  const prVisualStateByDirectoryBranch = React.useMemo(() => {
-    const result = new Map<string, PrIndicator>();
-    for (const [key, summary] of prVisualSummaryMap) {
-      result.set(key, {
-        visualState: summary.visualState as PrVisualState,
-        number: summary.number,
-        url: summary.url,
-        state: summary.prState as 'open' | 'closed' | 'merged',
-        draft: summary.draft,
-        title: summary.title,
-        base: summary.base,
-        head: summary.head,
-        checks: summary.checks as PrIndicator['checks'],
-        canMerge: summary.canMerge,
-        mergeableState: summary.mergeableState,
-        repo: summary.repo,
-      });
+  const handleArchiveGroupSessions = React.useCallback((group: SessionGroup, sessions: Session[]) => {
+    const projectDirectory = normalizePath(group.worktree?.projectDirectory ?? null);
+    if (!projectDirectory || sessions.length === 0) {
+      return;
     }
-    return result;
-  }, [prVisualSummaryMap]);
+    setArchiveBranchConfirm({
+      branchLabel: group.branch?.trim() || group.label,
+      projectDirectory,
+      sessions,
+    });
+  }, []);
+
+  const confirmArchiveGroupSessions = React.useCallback(async () => {
+    const request = archiveBranchConfirm;
+    if (!request || archiveBranchPendingRef.current) {
+      return;
+    }
+
+    archiveBranchPendingRef.current = true;
+    setArchiveBranchPending(true);
+    const requestedIds = request.sessions.map((session) => session.id);
+    recordPendingArchiveRevealSessionIds(requestedIds);
+    try {
+      const result = await archiveBranchSessions(request.sessions, archiveSessions);
+      collapseArchivedSessionTrees(result.archivedIds);
+      discardPendingArchiveRevealSessionIdsFor(result.failedIds);
+
+      if (currentSessionId && result.archivedIds.includes(currentSessionId)) {
+        setCurrentSession(null);
+        setDirectory(request.projectDirectory, { showOverlay: false });
+      }
+
+      if (result.archivedIds.length > 0) {
+        toast.success(t('sessions.sidebar.dialogs.archiveBranchSessions.success', {
+          count: result.archivedIds.length,
+          branch: request.branchLabel,
+        }), {
+          description: t('sessions.sidebar.dialogs.archiveBranchSessions.preservedDescription'),
+        });
+      }
+      if (result.failedIds.length > 0) {
+        toast.error(t('sessions.sidebar.dialogs.archiveBranchSessions.partialFailure', {
+          count: result.failedIds.length,
+        }));
+      }
+      setArchiveBranchConfirm(null);
+    } finally {
+      archiveBranchPendingRef.current = false;
+      setArchiveBranchPending(false);
+    }
+  }, [
+    archiveBranchConfirm,
+    archiveSessions,
+    collapseArchivedSessionTrees,
+    currentSessionId,
+    discardPendingArchiveRevealSessionIdsFor,
+    recordPendingArchiveRevealSessionIds,
+    setCurrentSession,
+    setDirectory,
+    t,
+  ]);
 
   const visibleDrafts = React.useMemo(
     () => selectVisibleChatDrafts(chatDrafts, currentDraftId),
@@ -1545,9 +1468,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         showDeletionDialog={showDeletionDialog}
         setDeleteFolderConfirm={setDeleteFolderConfirm}
         renderSessionNode={renderSessionNode}
-        currentSessionDirectory={currentSessionDirectory}
-        projectRepoStatus={projectRepoStatus}
-        lastRepoStatus={lastRepoStatusRef.current}
         toggleGroupSessionLimit={toggleGroupSessionLimit}
         mobileVariant={mobileVariant}
         alwaysShowActions={alwaysShowSidebarActions}
@@ -1565,7 +1485,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         pinnedSessionIds={pinnedSessionIds}
         sessionOrderIndex={sessionOrderIndex}
         archivedAssistantActivity={archivedAssistantActivity}
-        prVisualStateByDirectoryBranch={prVisualStateByDirectoryBranch}
+        onArchiveGroupSessions={handleArchiveGroupSessions}
         onToggleCollapsedGroup={toggleCollapsedGroup}
         dragHandleProps={dragHandleProps}
         draftCount={groupDrafts.length}
@@ -1594,8 +1514,6 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       deleteFolder,
       showDeletionDialog,
       renderSessionNode,
-      currentSessionDirectory,
-      projectRepoStatus,
       toggleGroupSessionLimit,
       mobileVariant,
       alwaysShowSidebarActions,
@@ -1611,7 +1529,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
       pinnedSessionIds,
       sessionOrderIndex,
       archivedAssistantActivity,
-      prVisualStateByDirectoryBranch,
+      handleArchiveGroupSessions,
       toggleCollapsedGroup,
       getDraftsForGroup,
       currentDraftId,
@@ -1829,7 +1747,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         handleNewSession={handleSidebarNewSession}
         onOpenScheduledTasks={() => setScheduledTasksDialogOpen(true)}
         onOpenMultiRun={() => setMultiRunLauncherOpen(true)}
-        showMultiRun={!hideDirectoryControls}
+        showMultiRun={!hideDirectoryControls && canManageProjects && canCreateWorktrees && canCreateBranches}
         headerActionIconClass={headerActionIconClass}
         reserveHeaderActionsSpace={reserveHeaderActionsSpace}
         headerActionButtonClass={headerActionButtonClass}
@@ -1873,7 +1791,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         homeDirectory={homeDirectory}
         collapsedProjects={collapsedProjects}
         hideProjectAdminControls={shouldHideProjectAdminControls}
-        hideWorktreeControls={hideDirectoryControls}
+        hideWorktreeControls={hideDirectoryControls || !canCreateWorktrees}
         projectRepoStatus={projectRepoStatus}
         isDesktopShellRuntime={isDesktopShellRuntime}
         stuckProjectHeaders={stuckProjectHeaders}
@@ -1947,10 +1865,10 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
         ) : null}
       </DeferredSessionDialog>
 
-      <DeferredSessionDialog active={newWorktreeDialogOpen}>
+      <DeferredSessionDialog active={canCreateWorktrees && newWorktreeDialogOpen}>
         <LazyViewBoundary>
           <LazyNewWorktreeDialog
-            open={newWorktreeDialogOpen}
+            open={canCreateWorktrees && newWorktreeDialogOpen}
             onOpenChange={setNewWorktreeDialogOpen}
             onWorktreeCreated={(worktreePath, options) => {
               setActiveMainTab('chat');
@@ -2007,6 +1925,17 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
             showDeletionDialog={showDeletionDialog}
             setShowDeletionDialog={setShowDeletionDialog}
             onConfirm={confirmBulkDelete}
+          />
+        </LazyViewBoundary>
+      </DeferredSessionDialog>
+
+      <DeferredSessionDialog active={Boolean(archiveBranchConfirm)}>
+        <LazyViewBoundary>
+          <LazyBranchSessionArchiveConfirmDialog
+            value={archiveBranchConfirm}
+            setValue={setArchiveBranchConfirm}
+            pending={archiveBranchPending}
+            onConfirm={confirmArchiveGroupSessions}
           />
         </LazyViewBoundary>
       </DeferredSessionDialog>

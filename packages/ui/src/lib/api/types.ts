@@ -250,6 +250,37 @@ export interface MergeConflictDetails {
   operation: 'merge' | 'rebase';
 }
 
+export interface GitIntegratePlan {
+  repoRoot: string;
+  sourceBranch: string;
+  targetBranch: string;
+  commits: string[];
+}
+
+export interface GitIntegrateConflictDetails {
+  statusPorcelain: string;
+  unmergedFiles: string[];
+  diff: string;
+  currentPatchMeta: string;
+  currentPatch: string;
+}
+
+export interface GitIntegrateState {
+  operationId: string;
+  repoRoot: string;
+  tempWorktreePath: string;
+  sourceBranch: string;
+  targetBranch: string;
+  cleanTargetWorktrees: string[];
+  remainingCommits: string[];
+  currentCommit: string;
+}
+
+export type GitIntegrateResult =
+  | { kind: 'noop'; reason: string }
+  | { kind: 'success'; moved: number }
+  | { kind: 'conflict'; state: GitIntegrateState; details: GitIntegrateConflictDetails };
+
 export type GitIdentityAuthType = 'ssh' | 'token';
 
 export interface GitIdentityProfile {
@@ -476,6 +507,13 @@ export interface GenerateGitCommitMessageRequest {
   zenModel?: string;
 }
 
+export interface GenerateGitCommitMessageDraftRequest {
+  selectedFiles: string[];
+  stagedOnly?: boolean;
+  guidance?: string;
+  zenModel?: string;
+}
+
 export interface GeneratedCommitWorkflowResult {
   status: 'complete' | 'blocked';
   commits: GeneratedCommitMessage[];
@@ -518,6 +556,10 @@ export interface GitAPI {
   deleteRemoteBranch(directory: string, payload: GitDeleteRemoteBranchPayload): Promise<{ success: boolean }>;
   removeRemote(directory: string, payload: GitRemoveRemotePayload): Promise<{ success: boolean }>;
   generateCommitMessage(directory: string, request: GenerateGitCommitMessageRequest): Promise<GeneratedCommitMessage>;
+  generateCommitMessageDraft(
+    directory: string,
+    request: GenerateGitCommitMessageDraftRequest,
+  ): Promise<GeneratedCommitWorkflowResult>;
   generatePullRequestDescription(
     directory: string,
     payload: { base: string; head: string; context?: string; zenModel?: string; providerId?: string; modelId?: string }
@@ -564,6 +606,18 @@ export interface GitAPI {
   merge(directory: string, options: { branch: string }): Promise<GitMergeResult>;
   abortMerge(directory: string): Promise<{ success: boolean }>;
   continueMerge(directory: string): Promise<{ success: boolean; conflict: boolean; conflictFiles?: string[] }>;
+  computeIntegratePlan?(
+    directory: string,
+    input: { sourceBranch: string; targetBranch: string },
+  ): Promise<GitIntegratePlan>;
+  integrateCommits?(directory: string, plan: GitIntegratePlan): Promise<GitIntegrateResult>;
+  isIntegrateInProgress?(directory: string, state: GitIntegrateState): Promise<boolean>;
+  getIntegrateConflictDetails?(
+    directory: string,
+    state: GitIntegrateState,
+  ): Promise<GitIntegrateConflictDetails>;
+  abortIntegrate?(directory: string, state: GitIntegrateState): Promise<void>;
+  continueIntegrate?(directory: string, state: GitIntegrateState): Promise<GitIntegrateResult>;
   stash(directory: string, options?: { message?: string; includeUntracked?: boolean }): Promise<{ success: boolean }>;
   stashPop(directory: string): Promise<{ success: boolean }>;
   getConflictDetails(directory: string): Promise<MergeConflictDetails>;
@@ -655,6 +709,24 @@ export interface FilesAPI {
   revealPath?(path: string): Promise<{ success: boolean }>;
   execCommands?(commands: string[], cwd: string): Promise<{ success: boolean; results: CommandExecResult[] }>;
   downloadFile?(path: string, options?: FileReadOptions): Promise<void>;
+}
+
+export interface SessionPlanRevisionIdentity {
+  sessionId: string;
+  sourceMessageId: string;
+  directory: string;
+  sessionCreated: number;
+  sessionSlug: string;
+}
+
+export interface SessionPlanRevisionWrite extends SessionPlanRevisionIdentity {
+  markdown: string;
+}
+
+export interface SessionPlansAPI {
+  ensureRevision(input: SessionPlanRevisionWrite): Promise<{ path: string; created: boolean }>;
+  readRevision(input: SessionPlanRevisionIdentity): Promise<{ path: string; content: string }>;
+  updateRevision(input: SessionPlanRevisionWrite): Promise<{ path: string; saved: boolean }>;
 }
 
 export interface ProjectEntry {
@@ -1218,7 +1290,7 @@ export interface GitHubAPI {
   prMerge(payload: GitHubPullRequestMergeInput): Promise<GitHubPullRequestMergeResult>;
   prReady(payload: GitHubPullRequestReadyInput): Promise<GitHubPullRequestReadyResult>;
 
-  prsList(directory: string, options?: { page?: number }): Promise<GitHubPullRequestsListResult>;
+  prsList(directory: string, options?: { page?: number; state?: 'open' | 'all' }): Promise<GitHubPullRequestsListResult>;
   prContext(
     directory: string,
     number: number,
@@ -1237,6 +1309,7 @@ export interface RuntimeAPIs {
   terminal: TerminalAPI;
   git: GitAPI;
   files: FilesAPI;
+  sessionPlans: SessionPlansAPI;
   settings: SettingsAPI;
   permissions: PermissionsAPI;
   notifications: NotificationsAPI;

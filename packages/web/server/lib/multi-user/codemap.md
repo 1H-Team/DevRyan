@@ -24,12 +24,18 @@ ownership, directory opacity, and audit control plane.
   strict reconciliation matching, and server-backed per-principal folder state.
 - `branch-target.js`: logical branch normalization/provenance and idempotent
   assigned-branch worktree resolution shared by chat and scheduled execution.
+- `dotenv-visibility.js`: non-admin managed-role dotenv concealment for file
+  discovery, reads, Git changes/diffs, and OpenCode file/search responses.
+- `branch-authorization.js`: request-scoped project resolution and exact logical
+  branch-write authorization shared by Git integration and GitHub PR actions.
 - `request-context.js`: AsyncLocalStorage context consumed by Git and GitHub.
 - `audit-outbox.js`, `activity-projection.js`: durable idempotent actor audit,
   deferred telemetry delivery, and content-free OpenCode tool/file projection.
 - `analytics.js`: human-prompt extraction and truncation, strict interaction
   validation, privacy-safe field deltas, opaque event cursors, reviewer
   redaction, and DST-aware daily activity aggregation.
+- `analytics-retention.js`: monotonic managed-developer retention locks,
+  protected audit purge dispatch, and migration-contract errors.
 
 ## Flow
 
@@ -39,15 +45,19 @@ ownership, directory opacity, and audit control plane.
 3. Each API/WS request resolves a live profile, effective policy, and assignments.
 4. Non-admin request paths are confined to a granted repository root or that
    repository's shared OpenCode worktree container before feature routes run.
-5. Responses/events are ownership-filtered and host paths are publicized. The
+5. Responses/events are ownership-filtered and host paths are publicized.
+   Newly created root sessions remain provisional and invisible until durable
+   ownership commits, then publish one authoritative lifecycle event. The
    global experimental session list fills managed pages across hidden upstream
    rows without exposing another user's session metadata.
 6. Admin mutations and direct user actions are appended to the durable actor
    audit. Human prompts, explicit file opens, and copy metadata use the same
    outbox; OpenCode tool/file projections never contribute to user analytics.
-7. Missing session ownership is repaired only when a canonical directory maps
+7. Exact owned session deletion strips legacy directory scope, locks non-admin
+   analytics retention, deletes upstream content, and tombstones ownership.
+8. Missing session ownership is repaired only when a canonical directory maps
    to one active user; archived tombstones and ambiguous matches remain hidden.
-8. Revocation closes live connections and archives affected ownership records;
+9. Revocation closes live connections and archives affected ownership records;
    shared real worktrees are never moved or removed by visibility-grant changes.
 
 ## Integration

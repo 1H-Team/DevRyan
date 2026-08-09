@@ -3,6 +3,7 @@ import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 
 import { registerGitRoutes } from './routes.js';
+import { runWithRequestPrincipal } from '../multi-user/request-context.js';
 
 const receipt = {
   operationId: 'wt_1',
@@ -16,7 +17,7 @@ const receipt = {
   updatedAt: 1,
 };
 
-const makeApp = (overrides = {}) => {
+const makeApp = (overrides = {}, principal = null) => {
   const libraries = {
     createWorktree: vi.fn(async () => ({
       head: 'abc',
@@ -41,6 +42,9 @@ const makeApp = (overrides = {}) => {
   };
   const app = express();
   app.use(express.json());
+  if (principal) {
+    app.use((req, _res, next) => runWithRequestPrincipal(principal, next));
+  }
   registerGitRoutes(app, {
     loadGitLibraries: async () => libraries,
   });
@@ -83,5 +87,29 @@ describe('durable worktree operation routes', () => {
       .get('/api/git/worktrees/operations/missing')
       .expect(404);
     expect(response.body.error).toContain('not found');
+  });
+
+  it('prevents a managed developer from retrying a new-branch operation', async () => {
+    const { app, libraries } = makeApp({
+      getWorktreeBootstrapOperation: vi.fn(async () => ({
+        ...receipt,
+        metadata: { mode: 'new' },
+      })),
+    }, {
+      id: 'developer-1',
+      scope: 'managed',
+      role: 'developer',
+      policy: { createBranches: false },
+    });
+
+    const response = await request(app)
+      .post('/api/git/worktrees/operations/wt_1/retry')
+      .expect(403);
+
+    expect(response.body).toEqual({
+      error: 'Branch creation is disabled by policy',
+      code: 'BRANCH_CREATION_DISABLED',
+    });
+    expect(libraries.retryWorktreeBootstrapOperation).not.toHaveBeenCalled();
   });
 });

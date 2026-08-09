@@ -24,10 +24,19 @@ import { installApiFetchSecurity } from '@/lib/apiSecurity';
 import { initializeInteractionAnalytics } from '@/lib/interactionAnalytics';
 import { startAppearanceAutoSave } from '@/lib/appearanceAutoSave';
 import { startModelPrefsAutoSave } from '@/lib/modelPrefsAutoSave';
-import { setAuthPrincipal, type AuthPrincipal } from '@/lib/authSession';
+import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
+import {
+  hasAuthCapability,
+  registerAuthSessionRetry,
+  setAuthOfflineGrace,
+  setAuthPrincipal,
+  type AuthPrincipal,
+  useAuthOfflineGrace,
+} from '@/lib/authSession';
 import { fullSettingsPermissions } from '@/lib/settings/permissions';
 import { getDeviceStorage, setStoragePrincipal } from '@/stores/utils/safeStorage';
 import { useProjectsStore } from '@/stores/useProjectsStore';
+import { useUIStore } from '@/stores/useUIStore';
 import {
   buildPrincipalTransitionPath,
   classifySessionResponse,
@@ -244,14 +253,16 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
   const [supportsPasskeys, setSupportsPasskeys] = React.useState(false);
   const [isPasskeyBusy, setIsPasskeyBusy] = React.useState(false);
   const [trustDevice, setTrustDevice] = React.useState<boolean>(() => readStoredTrustDevice());
+  const offlineGrace = useAuthOfflineGrace();
   const [activePasskeyAction, setActivePasskeyAction] = React.useState<'auth' | 'register' | null>(null);
   const passwordInputRef = React.useRef<HTMLInputElement | null>(null);
   const hasResyncedRef = React.useRef(skipAuth);
   const acceptedPrincipalRef = React.useRef<AuthPrincipal | undefined>(undefined);
+  const offlineGraceRef = React.useRef(false);
 
   React.useEffect(() => initializeInteractionAnalytics(), []);
 
-  const acceptPrincipal = React.useCallback((principal: AuthPrincipal | undefined): boolean => {
+  const acceptPrincipal = React.useCallback((principal: AuthPrincipal | undefined, isOfflineGrace = false): boolean => {
     const nextPrincipal = principal ?? {
       id: 'local-admin',
       email: null,
@@ -260,14 +271,19 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
       scope: 'local-admin' as const,
       policy: {
         settingsPages: ['*'], settingsPermissions: fullSettingsPermissions(),
-        files: true, terminal: true, manageProjects: true,
+        files: true, terminal: true, browser: true, createWorktrees: true, createBranches: true, manageProjects: true,
         manageUsers: true, manageGlobalSettings: true, manageGit: true, push: true, github: true,
       },
       assignments: [],
     };
     acceptedPrincipalRef.current = nextPrincipal;
+    offlineGraceRef.current = isOfflineGrace;
+    setAuthOfflineGrace(isOfflineGrace);
     const changed = setStoragePrincipal(nextPrincipal.id);
     setAuthPrincipal(nextPrincipal);
+    if (!hasAuthCapability(nextPrincipal, 'browser')) {
+      useUIStore.getState().pruneAllBrowserTabs();
+    }
     useProjectsStore.getState().synchronizeManagedAssignments(nextPrincipal);
     if (changed && typeof window !== 'undefined') {
       window.history.replaceState(null, '', buildPrincipalTransitionPath(window.location.href));
@@ -358,7 +374,7 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
 
       const decision = classifySessionResponse(response.status, response.ok, data);
       if (decision.state === 'authenticated') {
-        if (!acceptPrincipal(data.principal)) return;
+        if (!acceptPrincipal(data.principal, data.offlineGrace === true)) return;
         setState('authenticated');
         setIsTunnelLocked(false);
         setErrorMessage('');
@@ -368,6 +384,8 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
         return;
       }
       if (decision.state === 'locked') {
+        offlineGraceRef.current = false;
+        setAuthOfflineGrace(false);
         setIsTunnelLocked(data.tunnelLocked === true);
         setPasskeyStatus(data.mode === 'multi-user' ? defaultPasskeyStatus : latestPasskeyStatus);
         setState('locked');
@@ -381,6 +399,8 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
         return;
       }
       setState(decision.state);
+      offlineGraceRef.current = false;
+      setAuthOfflineGrace(false);
       setIsTunnelLocked(false);
     } catch (error) {
       console.warn('Failed to check session status:', error);
@@ -390,6 +410,40 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
     }
   }, [acceptPrincipal, refreshPasskeyStatus, skipAuth]);
 
+  React.useEffect(() => registerAuthSessionRetry(checkStatus), [checkStatus]);
+
+  React.useEffect(() => {
+    if (skipAuth || state !== 'authenticated' || !offlineGrace) return;
+
+    let cancelled = false;
+    let attempt = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const schedule = () => {
+      if (cancelled) return;
+      const delayMs = Math.min(5_000 * (2 ** attempt), 60_000);
+      attempt += 1;
+      timer = setTimeout(() => {
+        void checkStatus().finally(() => {
+          if (offlineGraceRef.current) schedule();
+        });
+      }, delayMs);
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return;
+      attempt = 0;
+      void checkStatus();
+    };
+
+    schedule();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [checkStatus, offlineGrace, skipAuth, state]);
+
   React.useEffect(() => {
     if (skipAuth) {
       void checkStatus();
@@ -397,6 +451,86 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
     }
     void checkStatus();
   }, [checkStatus, skipAuth]);
+
+  React.useEffect(() => {
+    if (skipAuth || state !== 'authenticated' || acceptedPrincipalRef.current?.scope !== 'managed') {
+      return;
+    }
+
+    let cancelled = false;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let refreshInFlight = false;
+    let refreshQueued = false;
+    let retryAttempt = 0;
+
+    const scheduleRefresh = (delayMs = 75) => {
+      if (cancelled || refreshTimer) return;
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        void refreshPrincipal();
+      }, delayMs);
+    };
+
+    const refreshPrincipal = async () => {
+      if (cancelled) return;
+      if (refreshInFlight) {
+        refreshQueued = true;
+        return;
+      }
+      refreshInFlight = true;
+      try {
+        const response = await fetchSessionStatus();
+        const data = await response.json().catch(() => null) as AuthStatusPayload | null;
+        if (cancelled) return;
+        if (!response.ok && response.status !== 401 && response.status !== 403) {
+          throw new Error(`Managed project metadata refresh failed (${response.status})`);
+        }
+        const nextPrincipal = response.ok && data?.authenticated === true ? data.principal : null;
+        const currentPrincipal = acceptedPrincipalRef.current;
+        if (!nextPrincipal || !currentPrincipal || nextPrincipal.id !== currentPrincipal.id) {
+          void checkStatus();
+          return;
+        }
+        acceptedPrincipalRef.current = nextPrincipal;
+        const nextOfflineGrace = data?.offlineGrace === true;
+        offlineGraceRef.current = nextOfflineGrace;
+        setAuthOfflineGrace(nextOfflineGrace);
+        setAuthPrincipal(nextPrincipal);
+        useProjectsStore.getState().synchronizeManagedAssignments(nextPrincipal);
+        retryAttempt = 0;
+      } catch (error) {
+        retryAttempt += 1;
+        if (retryAttempt <= 3) {
+          scheduleRefresh(500 * retryAttempt);
+        } else {
+          console.warn('Failed to refresh managed project metadata:', error);
+        }
+      } finally {
+        refreshInFlight = false;
+        if (refreshQueued) {
+          refreshQueued = false;
+          scheduleRefresh(0);
+        }
+      }
+    };
+
+    const unsubscribe = subscribeOpenchamberEvents((event) => {
+      if (event.type === 'stream-ready') {
+        scheduleRefresh();
+        return;
+      }
+      if (event.type !== 'project-metadata-changed') return;
+      const principal = acceptedPrincipalRef.current;
+      if (!principal?.assignments.some((assignment) => assignment.projectId === event.projectId)) return;
+      scheduleRefresh();
+    });
+
+    return () => {
+      cancelled = true;
+      if (refreshTimer) clearTimeout(refreshTimer);
+      unsubscribe();
+    };
+  }, [checkStatus, skipAuth, state]);
 
   React.useEffect(() => {
     if (!skipAuth && state === 'locked') {
@@ -874,7 +1008,7 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
                   <span>{isSubmitting ? t('sessionAuth.actions.connecting') : t('sessionAuth.actions.connect')}</span>
                 </Button>
               </div>
-              {authMode === 'multi-user' && rememberAvailable && (
+              {authMode === 'multi-user' && rememberAvailable && !invitePending && (
                 <label className="flex items-center justify-center gap-2 pt-1 text-center typography-micro text-muted-foreground">
                   <Checkbox
                     checked={trustDevice}

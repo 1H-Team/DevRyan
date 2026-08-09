@@ -55,6 +55,22 @@ export function SidebarRightIcon({ chevronDirection = 'right', ...props }: Sideb
   );
 }
 
+export function SidebarLeftExpandIcon(props: ToolbarIconProps) {
+  return <SidebarLeftIcon {...props} chevronDirection="right" />;
+}
+
+export function SidebarLeftCollapseIcon(props: ToolbarIconProps) {
+  return <SidebarLeftIcon {...props} chevronDirection="left" />;
+}
+
+export function SidebarRightExpandIcon(props: ToolbarIconProps) {
+  return <SidebarRightIcon {...props} chevronDirection="left" />;
+}
+
+export function SidebarRightCollapseIcon(props: ToolbarIconProps) {
+  return <SidebarRightIcon {...props} chevronDirection="right" />;
+}
+
 export function TerminalPanelIcon(props: ToolbarIconProps) {
   return (
     <ToolbarIcon {...props}>

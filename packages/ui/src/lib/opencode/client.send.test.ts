@@ -9,6 +9,10 @@ mock.module("@/lib/worktrees/worktreeBootstrap", () => ({
     waitForWorktreeBootstrapCalls.push(directory)
     return waitForWorktreeBootstrapHandler(directory)
   }),
+  waitForWorktreeBootstrapForSend: mock((directory: string) => {
+    waitForWorktreeBootstrapCalls.push(directory)
+    return waitForWorktreeBootstrapHandler(directory)
+  }),
 }))
 
 ;(globalThis as typeof globalThis & { window?: Window & typeof globalThis }).window = {

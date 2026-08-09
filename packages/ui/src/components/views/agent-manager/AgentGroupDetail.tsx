@@ -32,6 +32,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useI18n } from '@/lib/i18n';
+import { useAuthPrincipal } from '@/lib/authSession';
 
 interface AgentGroupDetailProps {
   group: AgentGroup;
@@ -54,6 +55,8 @@ export const AgentGroupDetail: React.FC<AgentGroupDetailProps> = ({
   className,
 }) => {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
+  const canRemoveWorktrees = principal.scope !== 'managed' || principal.role === 'admin';
   const selectedSessionId = useAgentGroupsStore((s) => s.selectedSessionId);
   const selectSession = useAgentGroupsStore((s) => s.selectSession);
   const deleteGroupSessions = useAgentGroupsStore((s) => s.deleteGroupSessions);
@@ -258,19 +261,19 @@ export const AgentGroupDetail: React.FC<AgentGroupDetailProps> = ({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-[220px]">
-                <DropdownMenuItem
+                {canRemoveWorktrees ? <DropdownMenuItem
                   onSelect={handleRemoveSelectedWorktree}
                   closeOnClick={false}
                   variant="destructive"
                 >
                   {t('agentManager.detail.actions.removeThisWorktree')}
-                </DropdownMenuItem>
-                <DropdownMenuItem
+                </DropdownMenuItem> : null}
+                {canRemoveWorktrees ? <DropdownMenuItem
                   onSelect={handleKeepOnlySelectedWorktree}
                   closeOnClick={false}
                 >
                   {t('agentManager.detail.actions.keepThisRemoveOthers')}
-                </DropdownMenuItem>
+                </DropdownMenuItem> : null}
                 <DropdownMenuItem
                 onClick={(e) => {
                   e.stopPropagation();

@@ -33,6 +33,7 @@ export interface AdminUsersData {
 export const useAdminUsersData = (
   canEditUserManagement: boolean,
   canManageGitHubAccounts: boolean = canEditUserManagement,
+  enabled: boolean = true,
 ): AdminUsersData => {
   const [loading, setLoading] = React.useState(true);
   const [users, setUsers] = React.useState<UserRow[]>([]);
@@ -80,6 +81,17 @@ export const useAdminUsersData = (
   }, [canManageGitHubAccounts]);
 
   const reloadAll = React.useCallback(async () => {
+    if (!enabled) {
+      setUsers([]);
+      setProjects([]);
+      setRoles([]);
+      setActivity([]);
+      setInvites([]);
+      setGithubAccounts([]);
+      setAuditStatus(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     const results = await Promise.allSettled([
       reloadUsers(),
@@ -94,7 +106,7 @@ export const useAdminUsersData = (
       toast.error(error instanceof Error ? error.message : 'Failed to load user management');
     }
     setLoading(false);
-  }, [reloadUsers, reloadInvites, reloadActivity, reloadProjects, reloadRoles, reloadGithubAccounts]);
+  }, [enabled, reloadUsers, reloadInvites, reloadActivity, reloadProjects, reloadRoles, reloadGithubAccounts]);
 
   React.useEffect(() => { void reloadAll(); }, [reloadAll]);
 

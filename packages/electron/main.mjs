@@ -19,7 +19,10 @@ import { clearElectronRuntimeCaches, getElectronRuntimeCacheInfo } from './cache
 import { createKeepAwakeController } from './keep-awake-controller.mjs';
 import { finishQuitAfterCleanup } from './quit-cleanup.mjs';
 import { persistWindowState } from './window-state-persistence.mjs';
-import { buildStartupSplashHtml as buildStartupSplashHtmlFromSettings } from './startup-splash.mjs';
+import {
+  buildStartupErrorHtml as buildStartupErrorHtmlFromSettings,
+  buildStartupSplashHtml as buildStartupSplashHtmlFromSettings,
+} from './startup-splash.mjs';
 import {
   isAllowedElectronContentUrl,
   isPrivilegedRendererUrl,
@@ -34,6 +37,11 @@ import {
 import { createBrowserDevToolsController } from './browser-devtools-controller.mjs';
 import { createBrowserSurfaceManager } from './browser-surface-manager.mjs';
 import { isBenignNavigationAbort } from './browser-navigation-error.mjs';
+import {
+  MANUAL_BROWSER_PARTITION_PREFIX,
+  createManualBrowserContext,
+  readAuthorizedBrowserPrincipal,
+} from './native-browser-context.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -42,6 +50,7 @@ const __dirname = path.dirname(__filename);
 const isDev = process.env.OPENCHAMBER_ELECTRON_DEV === '1' || !app.isPackaged;
 
 const DEEP_LINK_PROTOCOL = 'openchamber';
+const STARTUP_RETRY_HOST = 'retry-startup';
 const APP_USER_MODEL_ID = 'dev.openchamber.desktop';
 
 if (!app.requestSingleInstanceLock()) {
@@ -148,7 +157,7 @@ const MINI_CHAT_MIN_WINDOW_HEIGHT = 480;
 const MAX_CAPTURE_PAGE_RECT_AREA = 4_000_000;
 const LOCAL_HOST_ID = 'local';
 const ENV_OVERRIDE_HOST_ID = '__env';
-const GITHUB_REPOSITORY_OWNER = 'zoubenr';
+const GITHUB_REPOSITORY_OWNER = '1H-Team';
 const GITHUB_REPOSITORY_NAME = 'DevRyan';
 const GITHUB_REPOSITORY_URL = `https://github.com/${GITHUB_REPOSITORY_OWNER}/${GITHUB_REPOSITORY_NAME}`;
 const GITHUB_REPOSITORY_API_URL =
@@ -196,6 +205,14 @@ const state = {
 };
 
 let browserSurfaceManager = null;
+const nativeBrowserContextsByWindow = new Map();
+const nativeBrowserAuthorizationPromises = new Map();
+const registeredManualBrowserPartitions = new Set();
+const configuredBrowserPartitions = new Set();
+let browserPartitionRegistryWrite = Promise.resolve();
+const NATIVE_BROWSER_AUTH_CACHE_MS = 5_000;
+const NATIVE_BROWSER_REVALIDATE_MS = 10_000;
+let nativeBrowserRevalidationTimer = null;
 
 const quitRisk = {
   hasActiveTunnel: false,
@@ -232,6 +249,10 @@ const prepareForQuit = ({ installingUpdate = false } = {}) => {
   state.quitConfirmed = true;
   state.installingUpdate = installingUpdate;
   state.quitConfirmationPending = false;
+  if (nativeBrowserRevalidationTimer) {
+    clearInterval(nativeBrowserRevalidationTimer);
+    nativeBrowserRevalidationTimer = null;
+  }
   browserCdpBridge?.closeAll('app_quit');
   browserSurfaceManager?.closeAll('app_quit');
   releaseDesktopKeepAwake();
@@ -1048,6 +1069,119 @@ const buildContentOriginPolicy = () => {
   };
 };
 
+const invalidateNativeBrowserContext = (browserWindow, reason = 'browser_context_invalid') => {
+  if (!browserWindow || !Number.isInteger(browserWindow.id)) return;
+  nativeBrowserContextsByWindow.delete(browserWindow.id);
+  browserSurfaceManager?.releaseManualForHomeWindow(browserWindow.id, reason);
+};
+
+const browserPartitionRegistryPath = () => path.join(app.getPath('userData'), 'browser-profile-partitions.json');
+
+const persistRegisteredManualBrowserPartitions = () => {
+  const targetPath = browserPartitionRegistryPath();
+  const temporaryPath = `${targetPath}.tmp-${process.pid}`;
+  const body = `${JSON.stringify([...registeredManualBrowserPartitions].sort(), null, 2)}\n`;
+  browserPartitionRegistryWrite = browserPartitionRegistryWrite
+    .catch(() => undefined)
+    .then(async () => {
+      await fsp.writeFile(temporaryPath, body, 'utf8');
+      await fsp.rename(temporaryPath, targetPath);
+    });
+  void browserPartitionRegistryWrite.catch((error) => {
+    log.warn('[browser-surface] failed to persist Browser profile registry:', error);
+  });
+};
+
+const loadRegisteredManualBrowserPartitions = () => {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(browserPartitionRegistryPath(), 'utf8'));
+    if (!Array.isArray(parsed)) return;
+    for (const value of parsed) {
+      if (typeof value !== 'string' || !value.startsWith(MANUAL_BROWSER_PARTITION_PREFIX)) continue;
+      registeredManualBrowserPartitions.add(value);
+      configureBrowserWebviewPartition(value);
+    }
+  } catch (error) {
+    if (error?.code !== 'ENOENT') log.warn('[browser-surface] failed to load Browser profile registry:', error);
+  }
+};
+
+const registerManualBrowserPartition = (partition) => {
+  if (registeredManualBrowserPartitions.has(partition)) return;
+  registeredManualBrowserPartitions.add(partition);
+  configureBrowserWebviewPartition(partition);
+  persistRegisteredManualBrowserPartitions();
+};
+
+const fetchNativeBrowserContext = async (browserWindow) => {
+  if (!browserWindow || browserWindow.isDestroyed?.()) {
+    throw new Error('Browser window is not available');
+  }
+  const contents = browserWindow.webContents;
+  const rendererUrl = contents?.getURL?.() || '';
+  if (!isAllowedElectronContentUrl(rendererUrl, buildContentOriginPolicy())) {
+    throw new Error('Native Browser is unavailable for this origin');
+  }
+  const origin = new URL(rendererUrl).origin;
+  const response = await contents.session.fetch(new URL('/auth/session', origin).toString(), {
+    method: 'GET',
+    credentials: 'include',
+    cache: 'no-store',
+    headers: { Accept: 'application/json' },
+  });
+  if (!response.ok) throw new Error('DevRyan authentication is unavailable');
+  const principal = readAuthorizedBrowserPrincipal(await response.json().catch(() => null));
+  if (!principal) throw new Error('Browser access is disabled');
+  const context = createManualBrowserContext({ origin, principalId: principal.id });
+  registerManualBrowserPartition(context.partition);
+  return { ...context, verifiedAt: Date.now() };
+};
+
+const authorizeNativeBrowserWindow = async (browserWindow, { force = false } = {}) => {
+  const windowId = browserWindow?.id;
+  if (!Number.isInteger(windowId)) throw new Error('Browser window is not available');
+  const current = nativeBrowserContextsByWindow.get(windowId);
+  if (!force && current && Date.now() - current.verifiedAt < NATIVE_BROWSER_AUTH_CACHE_MS) return current;
+  const pending = nativeBrowserAuthorizationPromises.get(windowId);
+  if (pending) return pending;
+
+  const authorization = fetchNativeBrowserContext(browserWindow)
+    .then((next) => {
+      const previous = nativeBrowserContextsByWindow.get(windowId);
+      if (previous && previous.contextKey !== next.contextKey) {
+        browserSurfaceManager?.releaseManualForHomeWindow(windowId, 'browser_context_changed');
+      }
+      nativeBrowserContextsByWindow.set(windowId, next);
+      return next;
+    })
+    .catch((error) => {
+      invalidateNativeBrowserContext(browserWindow);
+      throw error;
+    })
+    .finally(() => {
+      nativeBrowserAuthorizationPromises.delete(windowId);
+    });
+  nativeBrowserAuthorizationPromises.set(windowId, authorization);
+  return authorization;
+};
+
+const startNativeBrowserRevalidation = () => {
+  if (nativeBrowserRevalidationTimer) return;
+  nativeBrowserRevalidationTimer = setInterval(() => {
+    for (const windowId of nativeBrowserContextsByWindow.keys()) {
+      const browserWindow = browserWindowById(windowId);
+      if (!browserWindow || browserWindow.isDestroyed()) {
+        nativeBrowserContextsByWindow.delete(windowId);
+        continue;
+      }
+      void authorizeNativeBrowserWindow(browserWindow, { force: true }).catch((error) => {
+        log.warn('[browser-surface] native Browser authorization expired:', error?.message || error);
+      });
+    }
+  }, NATIVE_BROWSER_REVALIDATE_MS);
+  nativeBrowserRevalidationTimer.unref?.();
+};
+
 const buildInitScript = (localOrigin, bootOutcome, serverOrigin = localOrigin) => {
   const home = JSON.stringify(os.homedir() || '');
   const local = JSON.stringify(localOrigin || '');
@@ -1090,6 +1224,37 @@ const computeBootOutcome = ({ envTargetUrl, probe, config, localAvailable }) => 
 
 const buildStartupSplashHtml = () => {
   return buildStartupSplashHtmlFromSettings(readSettingsRoot());
+};
+
+const startupErrorDetails = (error) => {
+  const cause = error?.cause;
+  const message = error instanceof Error ? error.message : String(error || 'Unknown startup error');
+  const code = typeof cause?.code === 'string'
+    ? cause.code
+    : (typeof error?.code === 'string' ? error.code : null);
+  const causeMessage = cause instanceof Error ? cause.message : '';
+  return {
+    message,
+    code,
+    causeMessage,
+    displayMessage: code ? `${message} (${code})` : message,
+  };
+};
+
+const buildStartupErrorHtml = (error) => {
+  const details = startupErrorDetails(error);
+  return buildStartupErrorHtmlFromSettings(readSettingsRoot(), {
+    message: details.displayMessage,
+  });
+};
+
+const isStartupRetryUrl = (rawUrl) => {
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.protocol === `${DEEP_LINK_PROTOCOL}:` && parsed.hostname === STARTUP_RETRY_HOST;
+  } catch {
+    return false;
+  }
 };
 
 const navigateWindow = async (browserWindow, url, { allowAbort = false } = {}) => {
@@ -1285,6 +1450,7 @@ const getBrowserSurfaceManager = () => {
     onLeaseSurfaceDestroyed: (leaseId, reason) => {
       browserCdpBridge?.closeLease(leaseId, reason || 'surface_destroyed');
     },
+    getManualBrowserContext: (browserWindow) => nativeBrowserContextsByWindow.get(browserWindow?.id) || null,
     shouldQuit: () => state.quitRequested,
     log: (message, error) => (error ? log.warn(message, error) : log.info(message)),
   });
@@ -1855,8 +2021,9 @@ app.on('web-contents-created', (_event, contents) => {
 // notifications, …) and downloads outright. Electron needs BOTH the request
 // and check handlers for complete permission coverage. Fullscreen stays
 // allowed so video sites behave.
-const configureBrowserWebviewSession = () => {
-  const browserSession = session.fromPartition(BROWSER_WEBVIEW_PARTITION);
+const configureBrowserWebviewPartition = (partition) => {
+  if (configuredBrowserPartitions.has(partition)) return session.fromPartition(partition);
+  const browserSession = session.fromPartition(partition);
   browserSession.setPermissionRequestHandler((_contents, permission, callback) => {
     callback(permission === 'fullscreen');
   });
@@ -1864,6 +2031,20 @@ const configureBrowserWebviewSession = () => {
   browserSession.on('will-download', (event) => {
     event.preventDefault();
   });
+  configuredBrowserPartitions.add(partition);
+  return browserSession;
+};
+
+const configureBrowserWebviewSession = () => configureBrowserWebviewPartition(BROWSER_WEBVIEW_PARTITION);
+
+const clearLegacySharedBrowserProfileOnce = async () => {
+  const markerPath = path.join(app.getPath('userData'), 'browser-profile-isolation-v1');
+  if (fs.existsSync(markerPath)) return;
+  const legacySession = configureBrowserWebviewSession();
+  await legacySession.clearStorageData();
+  await legacySession.clearCache();
+  await legacySession.clearCodeCaches({ urls: [] });
+  await fsp.writeFile(markerPath, 'cleared\n', { encoding: 'utf8', flag: 'wx' });
 };
 
 // Cache reporting/clearing spans the app session and the browser pane's
@@ -1871,6 +2052,7 @@ const configureBrowserWebviewSession = () => {
 const cacheMaintenanceSessions = () => ({
   defaultSession: session.defaultSession,
   browserSession: session.fromPartition(BROWSER_WEBVIEW_PARTITION),
+  browserSessions: Array.from(registeredManualBrowserPartitions, (partition) => session.fromPartition(partition)),
 });
 
 const createBrowserWindow = ({ label, restoreGeometry, url }) => {
@@ -1982,6 +2164,8 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
   });
   browserWindow.on('closed', () => {
     browserSurfaceManager?.handleHomeWindowClosed(browserWindow.id);
+    nativeBrowserContextsByWindow.delete(browserWindow.id);
+    nativeBrowserAuthorizationPromises.delete(browserWindow.id);
     observedBrowserLeaseByWindow.delete(browserWindow.id);
     for (const [claimKey, claim] of browserLeaseWindowClaims) {
       if (claim.ownerWindowId === browserWindow.id) browserLeaseWindowClaims.delete(claimKey);
@@ -2017,6 +2201,11 @@ const createBrowserWindow = ({ label, restoreGeometry, url }) => {
   });
 
   browserWindow.webContents.on('will-navigate', (event, url) => {
+    if (isStartupRetryUrl(url)) {
+      event.preventDefault();
+      void startDesktopRuntime();
+      return;
+    }
     if (isAllowedNavigationUrl(url)) return;
     event.preventDefault();
     void shell.openExternal(url).catch(() => {});
@@ -2126,15 +2315,16 @@ const buildMiniChatUrl = ({ mode, sessionId, directory, projectId }) => {
   return url.toString();
 };
 
-const buildBrowserPopoutUrl = (surfaceId) => {
-  const base = state.localOrigin || state.sidecarUrl;
+const buildBrowserPopoutUrl = ({ surfaceId = '', workspaceId = '', baseOrigin = '' } = {}) => {
+  const base = baseOrigin || state.localOrigin || state.sidecarUrl;
   if (!base) throw new Error('Local UI is not available');
   const url = new URL('/browser.html', base);
-  url.searchParams.set('surfaceId', safeLeaseString(surfaceId, 220));
+  if (workspaceId) url.searchParams.set('workspaceId', safeLeaseString(workspaceId, 220));
+  else url.searchParams.set('surfaceId', safeLeaseString(surfaceId, 220));
   return url.toString();
 };
 
-const createBrowserPopoutWindow = async (surfaceId) => {
+const createBrowserPopoutWindow = async ({ surfaceId = '', workspaceId = '', baseOrigin = '' } = {}) => {
   const desktopLocalOrigin = state.localOrigin || '';
   const desktopServerOrigin = state.sidecarUrl || state.localOrigin || '';
   const browserWindow = new BrowserWindow({
@@ -2160,9 +2350,11 @@ const createBrowserPopoutWindow = async (surfaceId) => {
       webviewTag: false,
     },
   });
-  browserWindow.__ocLabel = `browser-${safeLeaseString(surfaceId, 120)}`;
+  const popoutId = workspaceId || surfaceId;
+  browserWindow.__ocLabel = `browser-${safeLeaseString(popoutId, 120)}`;
   browserWindow.__ocBrowserPopout = true;
-  browserWindow.__ocBrowserSurfaceId = surfaceId;
+  if (surfaceId) browserWindow.__ocBrowserSurfaceId = surfaceId;
+  if (workspaceId) browserWindow.__ocBrowserWorkspaceId = workspaceId;
   browserWindow.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url).catch(() => {});
     return { action: 'deny' };
@@ -2170,7 +2362,7 @@ const createBrowserPopoutWindow = async (surfaceId) => {
   browserWindow.webContents.on('will-navigate', (event, url) => {
     try {
       const target = new URL(url);
-      const local = new URL(state.localOrigin || state.sidecarUrl || '');
+      const local = new URL(baseOrigin || state.localOrigin || state.sidecarUrl || '');
       if (target.origin === local.origin && target.pathname === '/browser.html') return;
     } catch {
     }
@@ -2181,11 +2373,62 @@ const createBrowserPopoutWindow = async (surfaceId) => {
     browserWindow.show();
     browserWindow.focus();
   });
-  void navigateWindow(browserWindow, buildBrowserPopoutUrl(surfaceId)).catch((error) => {
+  try {
+    await navigateWindow(browserWindow, buildBrowserPopoutUrl({ surfaceId, workspaceId, baseOrigin }));
+  } catch (error) {
     log.warn('[browser-surface] failed to load pop-out shell', error);
     if (!browserWindow.isDestroyed()) browserWindow.destroy();
-  });
+    throw error;
+  }
   return browserWindow;
+};
+
+const hostRoutedBrowserPopouts = new Map();
+
+const hostRoutedBrowserPopoutKey = (browserWindow, workspaceId) => (
+  `${browserWindow.id}:${safeLeaseString(workspaceId, 220)}`
+);
+
+const openHostRoutedBrowserWorkspace = async (browserWindow, { workspaceId } = {}) => {
+  const normalizedWorkspaceId = safeLeaseString(workspaceId, 220);
+  if (!normalizedWorkspaceId) throw new Error('Browser workspace id is required');
+  const key = hostRoutedBrowserPopoutKey(browserWindow, normalizedWorkspaceId);
+  const existing = hostRoutedBrowserPopouts.get(key);
+  if (existing && !existing.isDestroyed()) {
+    existing.show();
+    existing.focus();
+    return { workspaceId: normalizedWorkspaceId, placement: 'popout' };
+  }
+
+  const rendererUrl = new URL(browserWindow.webContents.getURL());
+  if (rendererUrl.protocol !== 'http:' && rendererUrl.protocol !== 'https:') {
+    throw new Error('Host-routed Browser requires an HTTP(S) DevRyan host');
+  }
+  const popup = await createBrowserPopoutWindow({
+    workspaceId: normalizedWorkspaceId,
+    baseOrigin: rendererUrl.origin,
+  });
+  hostRoutedBrowserPopouts.set(key, popup);
+  const closeWithOwner = () => {
+    if (!popup.isDestroyed()) popup.destroy();
+  };
+  browserWindow.once('closed', closeWithOwner);
+  popup.once('closed', () => {
+    if (hostRoutedBrowserPopouts.get(key) === popup) hostRoutedBrowserPopouts.delete(key);
+    browserWindow.removeListener('closed', closeWithOwner);
+  });
+  return { workspaceId: normalizedWorkspaceId, placement: 'popout' };
+};
+
+const focusHostRoutedBrowserWorkspace = (browserWindow, { workspaceId } = {}) => {
+  const normalizedWorkspaceId = safeLeaseString(workspaceId, 220);
+  if (!normalizedWorkspaceId) throw new Error('Browser workspace id is required');
+  const popup = hostRoutedBrowserPopouts.get(hostRoutedBrowserPopoutKey(browserWindow, normalizedWorkspaceId));
+  if (!popup || popup.isDestroyed()) return { focused: false };
+  if (popup.isMinimized()) popup.restore();
+  popup.show();
+  popup.focus();
+  return { focused: true };
 };
 
 const createMiniChatWindow = async ({ mode, sessionId = '', directory = '', projectId = '' } = {}) => {
@@ -2353,6 +2596,55 @@ const resolveInitialUrl = async () => {
   });
 
   return { initialUrl, localOrigin, localUiUrl, bootOutcome };
+};
+
+let desktopStartupPromise = null;
+let powerResumeHookInstalled = false;
+let desktopStartupFailed = false;
+
+const showStartupFailure = async (error) => {
+  const mainWindow = state.mainWindow;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  await navigateWindow(
+    mainWindow,
+    `data:text/html;charset=utf-8,${encodeURIComponent(buildStartupErrorHtml(error))}`,
+    { allowAbort: true },
+  );
+  mainWindow.show();
+  mainWindow.focus();
+};
+
+const startDesktopRuntime = () => {
+  if (desktopStartupPromise) return desktopStartupPromise;
+  const current = (async () => {
+    try {
+      if (desktopStartupFailed) {
+        applyDesktopKeepAwake(readDesktopKeepAwakeEnabled());
+      }
+      const { initialUrl, localOrigin, bootOutcome } = await resolveInitialUrl();
+      await activateMainWindow(initialUrl, localOrigin, bootOutcome);
+      desktopStartupFailed = false;
+
+      if (!powerResumeHookInstalled) {
+        powerResumeHookInstalled = true;
+        powerMonitor.on('resume', () => {
+          emitToAllWindows('openchamber:system-resume', { timestamp: Date.now() });
+        });
+      }
+    } catch (error) {
+      desktopStartupFailed = true;
+      const details = startupErrorDetails(error);
+      log.error('[electron] startup failed', details);
+      releaseDesktopKeepAwake();
+      await killSidecar();
+      await showStartupFailure(error);
+    }
+  })();
+  desktopStartupPromise = current;
+  void current.finally(() => {
+    if (desktopStartupPromise === current) desktopStartupPromise = null;
+  });
+  return current;
 };
 
 const compareSemver = (left, right) => {
@@ -2673,6 +2965,24 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
 
     case 'desktop_browser_surface_focus_popout':
       return getBrowserSurfaceManager().focusPopout(browserWindow, args);
+
+    case 'desktop_browser_workspace_activate':
+      return getBrowserSurfaceManager().activateWorkspaceSurface(browserWindow, args);
+
+    case 'desktop_browser_workspace_popout':
+      return getBrowserSurfaceManager().popoutWorkspace(browserWindow, args);
+
+    case 'desktop_browser_workspace_dock':
+      return getBrowserSurfaceManager().dockWorkspace(browserWindow, args);
+
+    case 'desktop_browser_workspace_focus_popout':
+      return getBrowserSurfaceManager().focusWorkspacePopout(browserWindow, args);
+
+    case 'desktop_browser_host_workspace_popout':
+      return openHostRoutedBrowserWorkspace(browserWindow, args);
+
+    case 'desktop_browser_host_workspace_focus_popout':
+      return focusHostRoutedBrowserWorkspace(browserWindow, args);
 
     case 'desktop_browser_surface_release':
       return { released: getBrowserSurfaceManager().releaseOwned(browserWindow, args) };
@@ -3537,18 +3847,57 @@ const COMMANDS_SAFE_FOR_REMOTE = new Set([
   'desktop_start_window_drag',
   'desktop_get_app_version',
   'desktop_get_lan_address',
+  // These commands can only open/focus a Browser shell on the requesting
+  // renderer's own DevRyan origin. The embedded page still uses the host's
+  // authenticated /api/browser proxy and receives no local browser surface.
+  'desktop_browser_host_workspace_popout',
+  'desktop_browser_host_workspace_focus_popout',
   // desktop_capture_page_rect is deliberately NOT in this set: it reads app
   // window pixels, and a remote host's UI must not be able to capture them.
   // Remote-origin UIs fall back to browser-side DOM capture for annotation
   // screenshots (lib/preview/screenshot-capture.ts).
 ]);
 
+const NATIVE_BROWSER_COMMANDS = new Set([
+  'desktop_browser_surface_create',
+  'desktop_browser_surface_snapshot',
+  'desktop_browser_surface_layout',
+  'desktop_browser_surface_command',
+  'desktop_browser_surface_popout',
+  'desktop_browser_surface_dock',
+  'desktop_browser_surface_focus_popout',
+  'desktop_browser_workspace_activate',
+  'desktop_browser_workspace_popout',
+  'desktop_browser_workspace_dock',
+  'desktop_browser_workspace_focus_popout',
+  'desktop_browser_surface_release',
+  'desktop_browser_surface_inspect',
+  'desktop_browser_capture_page',
+  'desktop_browser_devtools_set_open',
+]);
+
+const SENSITIVE_NATIVE_BROWSER_COMMANDS = new Set([
+  'desktop_browser_surface_create',
+  'desktop_browser_surface_popout',
+  'desktop_browser_workspace_popout',
+  'desktop_browser_surface_inspect',
+  'desktop_browser_capture_page',
+  'desktop_browser_devtools_set_open',
+]);
+
 ipcMain.handle('openchamber:invoke', async (event, command, args) => {
+  const browserWindow = BrowserWindow.fromWebContents(event.sender);
+  if (NATIVE_BROWSER_COMMANDS.has(command)) {
+    const force = SENSITIVE_NATIVE_BROWSER_COMMANDS.has(command)
+      || (command === 'desktop_browser_surface_command'
+        && ['navigate', 'back', 'forward', 'reload'].includes(args?.action));
+    await authorizeNativeBrowserWindow(browserWindow, { force });
+    return handleInvoke(browserWindow, command, args);
+  }
   if (!isLocalSender(event.sender) && !COMMANDS_SAFE_FOR_REMOTE.has(command)) {
     log.warn(`[ipc] rejected ${command} from non-local origin: ${event.sender?.getURL?.() || '(unknown)'}`);
     throw new Error('IPC not available for this origin');
   }
-  const browserWindow = BrowserWindow.fromWebContents(event.sender);
   return handleInvoke(browserWindow, command, args);
 });
 
@@ -3666,6 +4015,13 @@ app.whenReady().then(async () => {
   } catch (error) {
     log.warn('[electron] failed to configure browser webview session:', error);
   }
+  loadRegisteredManualBrowserPartitions();
+  try {
+    await clearLegacySharedBrowserProfileOnce();
+  } catch (error) {
+    log.warn('[electron] failed to clear the legacy shared Browser profile:', error);
+  }
+  startNativeBrowserRevalidation();
   try {
     applyDesktopKeepAwake(readDesktopKeepAwakeEnabled());
   } catch (error) {
@@ -3693,16 +4049,14 @@ app.whenReady().then(async () => {
   const initial = extractInitialDeepLinks();
   if (initial.length > 0) handleDeepLinks(initial);
 
-  const { initialUrl, localOrigin, bootOutcome } = await resolveInitialUrl();
-  await activateMainWindow(initialUrl, localOrigin, bootOutcome);
-
-  // Notify renderer on OS wake-from-sleep so the SSE event pipeline can
-  // reconnect immediately instead of waiting for the heartbeat watchdog.
-  powerMonitor.on('resume', () => {
-    emitToAllWindows('openchamber:system-resume', { timestamp: Date.now() });
-  });
+  await startDesktopRuntime();
 }).catch((error) => {
-  log.error('[electron] startup failed:', error);
+  const details = startupErrorDetails(error);
+  log.error('[electron] app initialization failed', details);
   releaseDesktopKeepAwake();
+  if (state.mainWindow && !state.mainWindow.isDestroyed()) {
+    void showStartupFailure(error);
+    return;
+  }
   app.exit(1);
 });

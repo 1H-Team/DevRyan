@@ -3,6 +3,8 @@ import type { Session } from '@opencode-ai/sdk/v2';
 import {
   applyGlobalSessionLifecycleEvent,
   beginGlobalSessionMembershipMutation,
+  captureGlobalSessionLifecycleRevision,
+  isGlobalSessionDeletionPending,
   queueGlobalSessionsRefreshAfterMutation,
   resetGlobalSessionLifecycleOverlayForTest,
   settleGlobalSessionMembershipMutation,
@@ -137,15 +139,28 @@ describe('useGlobalSessionsStore snapshot helpers', () => {
       time: { created: 10, updated: 10 },
     } as Session;
 
+    const staleSnapshotRevision = captureGlobalSessionLifecycleRevision();
     expect(applyGlobalSessionLifecycleEvent({ type: 'upsert', session: created })).toBe(true);
     expect(applyGlobalSessionLifecycleEvent({ type: 'upsert', session: created })).toBe(true);
-    useGlobalSessionsStore.getState().applySnapshot([], []);
+    useGlobalSessionsStore.getState().applySnapshot(
+      [],
+      [],
+      'ready',
+      undefined,
+      staleSnapshotRevision,
+    );
 
     expect(useGlobalSessionsStore.getState().activeSessions).toEqual([created]);
     expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/remote')).toEqual([created]);
 
-    useGlobalSessionsStore.getState().applySnapshot([created], []);
-    useGlobalSessionsStore.getState().applySnapshot([], []);
+    const freshSnapshotRevision = captureGlobalSessionLifecycleRevision();
+    useGlobalSessionsStore.getState().applySnapshot(
+      [],
+      [],
+      'ready',
+      undefined,
+      freshSnapshotRevision,
+    );
     expect(useGlobalSessionsStore.getState().activeSessions).toEqual([]);
   });
 
@@ -160,8 +175,15 @@ describe('useGlobalSessionsStore snapshot helpers', () => {
     } as Session;
     useGlobalSessionsStore.getState().applySnapshot([active], []);
 
+    const staleSnapshotRevision = captureGlobalSessionLifecycleRevision();
     applyGlobalSessionLifecycleEvent({ type: 'upsert', session: archived });
-    useGlobalSessionsStore.getState().applySnapshot([active], []);
+    useGlobalSessionsStore.getState().applySnapshot(
+      [active],
+      [],
+      'ready',
+      undefined,
+      staleSnapshotRevision,
+    );
 
     expect(useGlobalSessionsStore.getState().activeSessions).toEqual([]);
     expect(useGlobalSessionsStore.getState().archivedSessions).toEqual([archived]);
@@ -172,11 +194,21 @@ describe('useGlobalSessionsStore snapshot helpers', () => {
     const deleted = session('remote-delete', '/remote');
     useGlobalSessionsStore.getState().applySnapshot([deleted], []);
 
+    const staleSnapshotRevision = captureGlobalSessionLifecycleRevision();
     applyGlobalSessionLifecycleEvent({ type: 'delete', sessionID: deleted.id });
-    useGlobalSessionsStore.getState().applySnapshot([deleted], []);
+    expect(isGlobalSessionDeletionPending(deleted.id)).toBe(true);
+    useGlobalSessionsStore.getState().applySnapshot(
+      [deleted],
+      [],
+      'ready',
+      undefined,
+      staleSnapshotRevision,
+    );
     expect(useGlobalSessionsStore.getState().activeSessions).toEqual([]);
+    expect(isGlobalSessionDeletionPending(deleted.id)).toBe(true);
 
     useGlobalSessionsStore.getState().applySnapshot([], []);
+    expect(isGlobalSessionDeletionPending(deleted.id)).toBe(false);
     useGlobalSessionsStore.getState().applySnapshot([deleted], []);
     expect(useGlobalSessionsStore.getState().activeSessions).toEqual([deleted]);
   });
@@ -210,9 +242,16 @@ describe('useGlobalSessionsStore snapshot helpers', () => {
       time: { created: 10, updated: 30 },
     } as Session;
 
+    const staleSnapshotRevision = captureGlobalSessionLifecycleRevision();
     applyGlobalSessionLifecycleEvent({ type: 'upsert', session: remote });
     useGlobalSessionsStore.getState().upsertSession(local);
-    useGlobalSessionsStore.getState().applySnapshot([remote], []);
+    useGlobalSessionsStore.getState().applySnapshot(
+      [remote],
+      [],
+      'ready',
+      undefined,
+      staleSnapshotRevision,
+    );
 
     expect(useGlobalSessionsStore.getState().activeSessions).toEqual([local]);
   });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { runInNewContext } from 'node:vm';
 
 import {
   applyPreviewPassthroughRequestHeaders,
@@ -8,7 +9,10 @@ import {
   classifyPreviewRequestScope,
   classifyPreviewResourceError,
   createPreviewBridgeScript,
+  createPreviewLocationVirtualizerScript,
+  createPreviewViewerNavigationHandoffHtml,
   createPreviewProxyRuntime,
+  isPreviewNavigationRequest,
   normalizeProxyTargetUrl,
   rewritePreviewBody,
   rewritePreviewCspHeader,
@@ -43,9 +47,12 @@ const createAttachedPreviewRuntime = ({
   classifyRequestScope = () => 'local',
   previewInstancesRuntime = null,
   uiAuthController = null,
+  canUseBrowser = () => true,
+  resolveHost = null,
   now,
 } = {}) => {
   let proxyOptions;
+  const proxyOptionsList = [];
   const postRoutes = new Map();
   const useRoutes = [];
   const upgradeCalls = [];
@@ -62,11 +69,18 @@ const createAttachedPreviewRuntime = ({
     URL,
     createProxyMiddleware(options) {
       proxyOptions = options;
+      proxyOptionsList.push(options);
       const middleware = () => {};
       middleware.upgrade = (req, socket, head) => upgradeCalls.push({ req, socket, head });
       return middleware;
     },
-    responseInterceptor: (handler) => handler,
+    responseInterceptor: (handler) => (proxyRes, req, res) => handler(
+      proxyRes.bodyBuffer || Buffer.alloc(0),
+      proxyRes,
+      req,
+      res,
+    ),
+    resolveHost,
     ...(now ? { now } : {}),
   });
   const app = {
@@ -89,10 +103,13 @@ const createAttachedPreviewRuntime = ({
     },
     classifyRequestScope,
     previewInstancesRuntime,
+    canUseBrowser,
   });
 
-  const registerTarget = async (url, { headers = {}, principal, directory, ttlMs } = {}) => {
-    const handlers = postRoutes.get('/api/preview/targets');
+  const registerTarget = async (url, {
+    headers = {}, principal, directory, ttlMs, browser = false,
+  } = {}) => {
+    const handlers = postRoutes.get(browser ? '/api/browser/targets' : '/api/preview/targets');
     const handler = handlers[handlers.length - 1];
     const res = createResponse();
     await handler({
@@ -104,11 +121,20 @@ const createAttachedPreviewRuntime = ({
     }, res);
     const cookie = String(res.headers.get('set-cookie') || '');
     const token = cookie.match(/oc_preview_token=([^;]+)/)?.[1] || '';
-    return { id: res.body.id, proxyBasePath: res.body.proxyBasePath, expiresAt: res.body.expiresAt, token };
+    return {
+      id: res.body.id,
+      proxyBasePath: res.body.proxyBasePath,
+      expiresAt: res.body.expiresAt,
+      error: res.body.error,
+      code: res.body.code,
+      statusCode: res.statusCode,
+      token,
+    };
   };
 
   return {
     proxyOptions: () => proxyOptions,
+    proxyOptionsList,
     registerTarget,
     runtime,
     useRoutes,
@@ -225,12 +251,41 @@ describe('preview resource error classification', () => {
 
 describe('preview body URL rewriting', () => {
   it('rewrites only HTML resource attributes in HTML responses', () => {
-    const input = '<img src="/logo.png"><a href="/docs">Docs</a><script>const url = "/api/data";</script>';
+    const input = '<img src="/logo.png"><img src=/plain.png><video poster="/poster.webp"></video><button formaction=/save>Save</button><div style="background:url(\'/tile.webp\')"></div><a href="/docs">Docs</a><script>const url = "/api/data";</script>';
     const output = rewrite(input, 'html');
 
     expect(output).toContain('src="/api/preview/proxy/abc123/logo.png"');
+    expect(output).toContain('src=/api/preview/proxy/abc123/plain.png');
+    expect(output).toContain('poster="/api/preview/proxy/abc123/poster.webp"');
+    expect(output).toContain('formaction=/api/preview/proxy/abc123/save');
+    expect(output).toContain("style=\"background:url('/api/preview/proxy/abc123/tile.webp')\"");
     expect(output).toContain('href="/api/preview/proxy/abc123/docs"');
     expect(output).toContain('const url = "/api/data";');
+  });
+
+  it('drops subresource integrity hashes that rewriting would invalidate', () => {
+    const output = rewrite(
+      '<script src="/app.js" integrity="sha384-abc+123/def=" crossorigin="anonymous"></script><link rel=stylesheet href="/a.css" integrity=\'sha256-xyz\'>',
+      'html',
+    );
+
+    expect(output).not.toContain('integrity');
+    expect(output).toContain('src="/api/preview/proxy/abc123/app.js"');
+    expect(output).toContain('crossorigin="anonymous"');
+    expect(output).toContain('href="/api/preview/proxy/abc123/a.css"');
+  });
+
+  it('routes absolute resources on the registered public origin through the proxy', () => {
+    const output = rewritePreviewBody({
+      bodyText: '<base href="https://www.google.com/"><script src="https://www.google.com/x.js"></script><img src="https://cdn.example/x.png">',
+      kind: 'html',
+      proxyBasePath: '/api/preview/proxy/public123',
+      targetOrigin: 'https://www.google.com',
+    });
+
+    expect(output).toContain('href="/api/preview/proxy/public123/"');
+    expect(output).toContain('src="/api/preview/proxy/public123/x.js"');
+    expect(output).toContain('src="https://cdn.example/x.png"');
   });
 
   it('rewrites only CSS imports and url references in CSS responses', () => {
@@ -240,6 +295,14 @@ describe('preview body URL rewriting', () => {
     expect(output).toContain('@import "/api/preview/proxy/abc123/theme.css"');
     expect(output).toContain('url(/api/preview/proxy/abc123/hero.png)');
     expect(output).toContain('content: "/not-a-url"');
+  });
+
+  it('rewrites root-relative assets inside inline style blocks', () => {
+    const input = '<style>@font-face { src: url("/fonts/app.woff2"); } main { background: url(/hero.webp); }</style>';
+    const output = rewrite(input, 'html');
+
+    expect(output).toContain('url("/api/preview/proxy/abc123/fonts/app.woff2")');
+    expect(output).toContain('url(/api/preview/proxy/abc123/hero.webp)');
   });
 
   it('rewrites only JavaScript static import specifiers in JavaScript responses', () => {
@@ -305,7 +368,7 @@ describe('preview redirect policy', () => {
     }).location).toBe('/api/preview/proxy/abc123/docs/next');
   });
 
-  it('rejects redirects that pivot to another origin or port', () => {
+  it('hands non-loopback redirects to the viewer but rejects unapproved loopback pivots', () => {
     expect(rewritePreviewRedirectLocation({
       location: 'http://127.0.0.1:4000/admin',
       targetOrigin: 'http://127.0.0.1:3000',
@@ -315,7 +378,68 @@ describe('preview redirect policy', () => {
       location: 'https://example.com',
       targetOrigin: 'http://127.0.0.1:3000',
       proxyBasePath: '/api/preview/proxy/abc123',
-    })).toMatchObject({ ok: false });
+    })).toEqual({ ok: true, externalUrl: 'https://example.com/' });
+    expect(rewritePreviewRedirectLocation({
+      location: 'http://192.168.1.20/admin',
+      targetOrigin: 'http://127.0.0.1:3000',
+      proxyBasePath: '/api/preview/proxy/abc123',
+    })).toEqual({ ok: true, externalUrl: 'http://192.168.1.20/admin' });
+
+    const html = createPreviewViewerNavigationHandoffHtml({
+      url: 'https://example.com/?next=<script>',
+      bridgeNonce: 'fixture-nonce',
+    });
+    expect(html).toContain('nonce="fixture-nonce"');
+    expect(html).not.toContain("navigation: 'external'");
+    expect(html).toContain('"navigation":"external"');
+    expect(html).not.toContain('<script>');
+  });
+
+  it('keeps a public target\'s own redirects inside the proxy', () => {
+    expect(rewritePreviewRedirectLocation({
+      location: '/auth?state=x',
+      targetOrigin: 'https://auth.example.com',
+      proxyBasePath: '/api/preview/proxy/abc123',
+      requestPath: '/login',
+    })).toEqual({
+      ok: true,
+      location: '/api/preview/proxy/abc123/auth?state=x',
+    });
+    expect(rewritePreviewRedirectLocation({
+      location: 'https://auth.example.com/next',
+      targetOrigin: 'https://auth.example.com',
+      proxyBasePath: '/api/preview/proxy/abc123',
+      requestPath: '/login',
+    }).location).toBe('/api/preview/proxy/abc123/next');
+    expect(rewritePreviewRedirectLocation({
+      location: 'https://other.example.com/',
+      targetOrigin: 'https://auth.example.com',
+      proxyBasePath: '/api/preview/proxy/abc123',
+      requestPath: '/login',
+    })).toEqual({ ok: true, externalUrl: 'https://other.example.com/' });
+  });
+
+  it('treats loopback spellings of the same target as one origin', () => {
+    expect(rewritePreviewRedirectLocation({
+      location: 'http://localhost:3000/next',
+      targetOrigin: 'http://127.0.0.1:3000',
+      proxyBasePath: '/api/preview/proxy/abc123',
+    }).location).toBe('/api/preview/proxy/abc123/next');
+  });
+
+  it('classifies only document and iframe requests as navigations', () => {
+    expect(isPreviewNavigationRequest({ headers: { 'sec-fetch-dest': 'iframe' } })).toBe(true);
+    expect(isPreviewNavigationRequest({ headers: { 'sec-fetch-dest': 'document' } })).toBe(true);
+    expect(isPreviewNavigationRequest({
+      headers: { 'sec-fetch-dest': 'empty', accept: 'application/json' },
+    })).toBe(false);
+    // A fetch that advertises text/html must not be mistaken for a navigation.
+    expect(isPreviewNavigationRequest({
+      headers: { 'sec-fetch-dest': 'empty', accept: 'text/html' },
+    })).toBe(false);
+    // Browsers without Fetch Metadata still fall back to Accept.
+    expect(isPreviewNavigationRequest({ headers: { accept: 'text/html,*/*' } })).toBe(true);
+    expect(isPreviewNavigationRequest({ headers: {} })).toBe(false);
   });
 });
 
@@ -345,6 +469,40 @@ describe('preview cookie isolation', () => {
       'theme=dark; Path=/api/preview/proxy/abc123/account',
     ]);
   });
+
+  it('carries prefixed auth cookies across the viewer origin and restores them upstream', () => {
+    const headers = {
+      'set-cookie': [
+        '__Host-Session=abc; Path=/; Secure; HttpOnly; SameSite=None',
+        '__Secure-Csrf=xyz; Path=/; Secure',
+        '__ocproxy-spoofed=evil; Path=/',
+      ],
+    };
+    rewritePreviewSetCookieHeaders(headers, '/api/preview/proxy/abc123');
+    expect(headers['set-cookie']).toEqual([
+      '__ocproxy-__Host-Session=abc; Path=/api/preview/proxy/abc123; Secure; HttpOnly; SameSite=None',
+      '__ocproxy-__Secure-Csrf=xyz; Path=/api/preview/proxy/abc123; Secure',
+    ]);
+
+    expect(buildPreviewUpstreamCookieHeader([
+      '__ocproxy-__Host-Session=abc',
+      '__ocproxy-__Secure-Csrf=xyz',
+      '__ocproxy-notprefixed=nope',
+      '__Host-direct=blocked',
+      'oc_app_session=secret',
+      'theme=dark',
+    ].join('; '))).toBe('__Host-Session=abc; __Secure-Csrf=xyz; theme=dark');
+  });
+
+  it('drops Secure and downgrades SameSite=None on an insecure viewer origin', () => {
+    const headers = {
+      'set-cookie': ['__Host-Session=abc; Path=/; Secure; HttpOnly; SameSite=None'],
+    };
+    rewritePreviewSetCookieHeaders(headers, '/api/preview/proxy/abc123', { viewerSecure: false });
+    expect(headers['set-cookie']).toEqual([
+      '__ocproxy-__Host-Session=abc; Path=/api/preview/proxy/abc123; HttpOnly; SameSite=Lax',
+    ]);
+  });
 });
 
 describe('preview bridge lifecycle', () => {
@@ -364,6 +522,199 @@ describe('preview bridge lifecycle', () => {
     expect(script).toContain("normalizedHost(url.hostname) === normalizedHost(registeredTarget.hostname)");
     expect(script).toContain("typeof input === 'string' || input instanceof URL");
     expect(script).toContain("if (!belongsToRegisteredTarget(parsed)) return value");
+    expect(script).toContain("window.navigation.addEventListener('navigate'");
+    expect(script).toContain('destination.sameDocument === true');
+    expect(script).toContain("window.addEventListener('submit'");
+    expect(script).toContain("type: 'render-ready'");
+    expect(script).toContain("document.addEventListener('readystatechange'");
+    expect(script).toContain('handOffExternalNavigation');
+  });
+
+  it('presents the target route to the SPA while keeping requests on the registered proxy', async () => {
+    const proxyBasePath = '/api/preview/proxy/0123456789abcdef0123456789abcdef';
+    const targetOrigin = 'http://127.0.0.1:8080';
+    let currentUrl = new URL(`http://127.0.0.1:3101${proxyBasePath}/?ocBrowser=1`);
+    const messages = [];
+    const fetches = [];
+    const listeners = new Map();
+    const navigationListeners = new Map();
+    const location = {
+      get href() { return currentUrl.toString(); },
+      get origin() { return currentUrl.origin; },
+      get protocol() { return currentUrl.protocol; },
+      get host() { return currentUrl.host; },
+      get hostname() { return currentUrl.hostname; },
+      get port() { return currentUrl.port; },
+      get pathname() { return currentUrl.pathname; },
+      get search() { return currentUrl.search; },
+      get hash() { return currentUrl.hash; },
+      assign(value) { currentUrl = new URL(value, currentUrl); },
+      replace(value) { currentUrl = new URL(value, currentUrl); },
+      reload() {},
+    };
+    const updateHistory = (_state, _title, value) => {
+      if (value !== undefined && value !== null) {
+        currentUrl = new URL(String(value), currentUrl);
+      }
+    };
+    const parent = {
+      postMessage(message) {
+        messages.push(message);
+      },
+    };
+    class FakeElement {
+      constructor() {
+        this.attributes = new Map();
+      }
+
+      setAttribute(name, value) {
+        this.attributes.set(name, String(value));
+      }
+
+      getAttribute(name) {
+        return this.attributes.get(name) || null;
+      }
+    }
+    const window = {
+      location,
+      parent,
+      Element: FakeElement,
+      navigation: {
+        addEventListener(type, listener) {
+          navigationListeners.set(type, listener);
+        },
+      },
+      history: {
+        state: null,
+        pushState: updateHistory,
+        replaceState: updateHistory,
+      },
+      addEventListener(type, listener) {
+        listeners.set(type, listener);
+      },
+      requestAnimationFrame(callback) {
+        callback();
+        return 1;
+      },
+      setTimeout,
+      clearTimeout,
+      fetch: async (input) => {
+        fetches.push(String(input));
+        return { ok: true };
+      },
+    };
+    const document = {
+      title: 'Target fixture',
+      documentElement: {
+        style: {},
+        dataset: {},
+        hasAttribute: () => false,
+      },
+      querySelector: () => null,
+      elementFromPoint: () => null,
+    };
+
+    runInNewContext(createPreviewBridgeScript({ proxyBasePath, targetOrigin }), {
+      window,
+      document,
+      console: { log() {}, info() {}, warn() {}, error() {}, debug() {} },
+      URL,
+      setTimeout,
+      clearTimeout,
+    });
+    runInNewContext(createPreviewLocationVirtualizerScript(proxyBasePath), {
+      window,
+      document,
+      console: { log() {}, info() {}, warn() {}, error() {}, debug() {} },
+      URL,
+      setTimeout,
+      clearTimeout,
+    });
+
+    expect(location.pathname).toBe('/');
+    expect(location.search).toBe('');
+    expect(window.__openchamberPreviewLocationVirtualized).toBe(true);
+    expect(messages.some((message) => (
+      message.type === 'ready' && message.url === `${targetOrigin}/`
+    ))).toBe(true);
+    expect(messages).toContainEqual(expect.objectContaining({ type: 'render-ready' }));
+
+    await window.fetch('/api/data?fixture=1');
+    expect(fetches).toEqual([`${proxyBasePath}/api/data?fixture=1`]);
+
+    const dynamicImage = new FakeElement();
+    dynamicImage.setAttribute('src', '/images/dynamic.webp');
+    dynamicImage.setAttribute('srcset', '/images/small.webp 1x, /images/large.webp 2x');
+    dynamicImage.setAttribute('style', 'background-image: url("/images/background.webp")');
+    expect(dynamicImage.getAttribute('src')).toBe(`${proxyBasePath}/images/dynamic.webp`);
+    expect(dynamicImage.getAttribute('srcset')).toBe(
+      `${proxyBasePath}/images/small.webp 1x, ${proxyBasePath}/images/large.webp 2x`,
+    );
+    expect(dynamicImage.getAttribute('style')).toBe(
+      `background-image: url("${proxyBasePath}/images/background.webp")`,
+    );
+
+    let navigationCancelled = false;
+    navigationListeners.get('navigate')?.({
+      destination: { url: 'https://auth.example.com/sign-in' },
+      cancelable: true,
+      preventDefault() { navigationCancelled = true; },
+      stopPropagation() {},
+    });
+    expect(navigationCancelled).toBe(true);
+    expect(messages).toContainEqual(expect.objectContaining({
+      type: 'navigate-preview',
+      navigation: 'external',
+      url: 'https://auth.example.com/sign-in',
+    }));
+
+    navigationCancelled = false;
+    navigationListeners.get('navigate')?.({
+      destination: { url: 'http://127.0.0.1:3101/supabase-proxy/auth/v1/authorize?provider=google' },
+      cancelable: true,
+      preventDefault() { navigationCancelled = true; },
+      stopPropagation() {},
+    });
+    expect(navigationCancelled).toBe(true);
+    expect(location.pathname).toBe(`${proxyBasePath}/supabase-proxy/auth/v1/authorize`);
+    expect(location.search).toBe('?provider=google');
+    expect(messages).toContainEqual(expect.objectContaining({
+      type: 'navigate-preview',
+      navigation: 'display',
+      url: `${targetOrigin}/supabase-proxy/auth/v1/authorize?provider=google`,
+    }));
+    expect(messages).toContainEqual(expect.objectContaining({ type: 'navigation-start' }));
+
+    const beforeSameDocumentNavigation = currentUrl.toString();
+    const navigationStartCount = messages.filter((message) => message.type === 'navigation-start').length;
+    navigationCancelled = false;
+    navigationListeners.get('navigate')?.({
+      destination: { url: `${targetOrigin}/account`, sameDocument: true },
+      cancelable: true,
+      preventDefault() { navigationCancelled = true; },
+      stopPropagation() {},
+    });
+    expect(navigationCancelled).toBe(false);
+    expect(currentUrl.toString()).toBe(beforeSameDocumentNavigation);
+    expect(messages.filter((message) => message.type === 'navigation-start')).toHaveLength(navigationStartCount);
+
+    let formCancelled = false;
+    listeners.get('submit')?.({
+      target: { action: 'https://accounts.example.com/continue' },
+      cancelable: true,
+      preventDefault() { formCancelled = true; },
+      stopPropagation() {},
+    });
+    expect(formCancelled).toBe(true);
+    expect(messages).toContainEqual(expect.objectContaining({
+      type: 'navigate-preview',
+      navigation: 'external',
+      url: 'https://accounts.example.com/continue',
+    }));
+
+    const localForm = { action: 'http://127.0.0.1:3101/session' };
+    listeners.get('submit')?.({ target: localForm });
+    expect(localForm.action).toBe(`${proxyBasePath}/session`);
   });
 
   it('escapes markup in injected configuration', () => {
@@ -374,6 +725,18 @@ describe('preview bridge lifecycle', () => {
 
     expect(script).not.toContain('3000/<script>');
     expect(script).toContain('3000/\\u003cscript>');
+  });
+
+  it('routes cross-origin navigation back through Browser when embedding is enabled', () => {
+    const script = createPreviewBridgeScript({
+      proxyBasePath: '/api/preview/proxy/abc123',
+      targetOrigin: 'https://www.google.com',
+      embedExternalNavigation: true,
+    });
+
+    expect(script).toContain('"embedExternalNavigation":true');
+    expect(script).toContain("embedExternalNavigation ? 'target' : 'external'");
+    expect(script).toContain('isRegisteredTarget');
   });
 });
 
@@ -486,15 +849,21 @@ describe('preview inline module script rewriting', () => {
   });
 });
 
-describe('proxy target normalization (SSRF guard)', () => {
-  it('allows ordinary external hosts when allowExternal is set', () => {
-    expect(normalizeProxyTargetUrl('https://example.com/docs/', { allowExternal: true }))
-      .toEqual({ ok: true, origin: 'https://example.com' });
-  });
-
-  it('rejects non-loopback hosts without allowExternal', () => {
-    expect(normalizeProxyTargetUrl('https://example.com/', {}).ok).toBe(false);
+describe('proxy target normalization', () => {
+  it('rejects every non-loopback host', () => {
     expect(normalizeProxyTargetUrl('https://example.com/').ok).toBe(false);
+    for (const url of [
+      'http://10.0.0.5/',
+      'http://172.16.9.9/',
+      'http://192.168.1.1/',
+      'http://169.254.169.254/latest/meta-data/',
+      'http://100.64.0.1/',
+      'http://service.local/',
+      'http://[fd00::1]/',
+      'http://[fe80::1]/',
+    ]) {
+      expect(normalizeProxyTargetUrl(url).ok, url).toBe(false);
+    }
   });
 
   it('accepts and normalizes loopback hosts on the default path', () => {
@@ -502,29 +871,6 @@ describe('proxy target normalization (SSRF guard)', () => {
       .toEqual({ ok: true, origin: 'http://127.0.0.1:3000' });
     expect(normalizeProxyTargetUrl('http://[::1]:3000/'))
       .toEqual({ ok: true, origin: 'http://127.0.0.1:3000' });
-  });
-
-  it('refuses private, loopback and link-local literals on the external path', () => {
-    for (const url of [
-      'http://127.0.0.1/',
-      'http://10.0.0.5/',
-      'http://172.16.9.9/',
-      'http://192.168.1.1/',
-      'http://169.254.169.254/latest/meta-data/',
-      'http://100.64.0.1/',
-      'http://localhost/',
-      'http://service.local/',
-      'http://[::1]/',
-      'http://[fd00::1]/',
-      'http://[fe80::1]/',
-      'http://2130706433/', // decimal form of 127.0.0.1, normalized by WHATWG URL
-    ]) {
-      expect(normalizeProxyTargetUrl(url, { allowExternal: true }).ok, url).toBe(false);
-    }
-  });
-
-  it('still blocks private hosts even via IPv4-mapped IPv6', () => {
-    expect(normalizeProxyTargetUrl('http://[::ffff:127.0.0.1]/', { allowExternal: true }).ok).toBe(false);
   });
 });
 
@@ -591,23 +937,26 @@ describe('attached proxy runtime', () => {
       headers: { cookie: `oc_preview_token=${target.token}` },
     };
     const proxyRes = {
+      bodyBuffer: Buffer.from('<html><head></head><body>Hi</body></html>'),
       headers: {
         'content-type': 'text/html',
         'content-security-policy': ["script-src 'self'; frame-ancestors 'none'", "img-src 'self'"],
         'content-security-policy-report-only': "script-src 'none'",
         'x-frame-options': 'DENY',
+        'set-cookie': ['theme=dark; Path=/; SameSite=Lax'],
+        etag: 'upstream-etag',
       },
     };
     const res = createResponse();
 
     const body = await proxyOptions().on.proxyRes(
-      Buffer.from('<html><head></head><body>Hi</body></html>'),
       proxyRes,
       req,
       res,
     );
 
     expect(proxyRes.headers['x-frame-options']).toBeUndefined();
+    expect(res.headers.has('x-frame-options')).toBe(false);
 
     const cspValues = proxyRes.headers['content-security-policy'];
     expect(Array.isArray(cspValues)).toBe(true);
@@ -616,6 +965,13 @@ describe('attached proxy runtime', () => {
     expect(cspValues[0]).not.toContain('frame-ancestors');
     expect(cspValues[1]).toBe("img-src 'self'");
     expect(proxyRes.headers['content-security-policy-report-only']).toBe(`script-src 'nonce-${nonce}'`);
+    expect(res.headers.get('content-security-policy')).toEqual(cspValues);
+    expect(res.headers.get('content-security-policy-report-only')).toBe(`script-src 'nonce-${nonce}'`);
+    expect(res.headers.get('set-cookie')).toEqual([
+      `theme=dark; Path=${target.proxyBasePath}; SameSite=Lax`,
+    ]);
+    expect(res.headers.get('cache-control')).toBe('no-store, no-cache, must-revalidate, proxy-revalidate');
+    expect(res.headers.has('etag')).toBe(false);
     expect(body).toContain(`<script id="openchamber-preview-bridge" nonce="${nonce}">`);
   });
 
@@ -628,11 +984,13 @@ describe('attached proxy runtime', () => {
       url: `${target.proxyBasePath}/`,
       headers: { cookie: `oc_preview_token=${target.token}` },
     };
-    const proxyRes = { headers: { 'content-type': 'text/html' } };
+    const proxyRes = {
+      bodyBuffer: Buffer.from('<html><head></head><body>Hi</body></html>'),
+      headers: { 'content-type': 'text/html' },
+    };
     const res = createResponse();
 
     const body = await proxyOptions().on.proxyRes(
-      Buffer.from('<html><head></head><body>Hi</body></html>'),
       proxyRes,
       req,
       res,
@@ -640,6 +998,40 @@ describe('attached proxy runtime', () => {
 
     expect(proxyRes.headers['content-security-policy']).toBeUndefined();
     expect(body).toMatch(/<script id="openchamber-preview-bridge" nonce="[^"]+">/);
+  });
+
+  it('streams binary and long-lived responses without buffering them', async () => {
+    const { proxyOptions, registerTarget } = createAttachedPreviewRuntime();
+    const target = await registerTarget('http://127.0.0.1:3000');
+    const req = {
+      originalUrl: `${target.proxyBasePath}/video.mp4`,
+      url: `${target.proxyBasePath}/video.mp4`,
+      headers: { cookie: `oc_preview_token=${target.token}` },
+    };
+    const res = createResponse();
+    let pipedTo = null;
+    const proxyRes = {
+      statusCode: 206,
+      statusMessage: 'Partial Content',
+      headers: {
+        'content-type': 'video/mp4',
+        'content-length': '4096',
+        'transfer-encoding': 'chunked',
+        'x-frame-options': 'DENY',
+      },
+      pipe(destination) {
+        pipedTo = destination;
+      },
+    };
+
+    await proxyOptions().on.proxyRes(proxyRes, req, res);
+
+    expect(pipedTo).toBe(res);
+    expect(res.statusCode).toBe(206);
+    expect(res.headers.get('content-type')).toBe('video/mp4');
+    expect(res.headers.get('content-length')).toBe('4096');
+    expect(res.headers.has('transfer-encoding')).toBe(false);
+    expect(res.headers.has('x-frame-options')).toBe(false);
   });
 
   it('binds proxy targets to the authenticated browser session', async () => {
@@ -667,6 +1059,215 @@ describe('attached proxy runtime', () => {
     }, otherResponse, () => {});
     expect(otherResponse.statusCode).toBe(403);
     expect(otherResponse.body.error).toContain('another session');
+  });
+
+  it('gates Browser target creation and continued proxy access without changing Preview', async () => {
+    let browserAllowed = false;
+    const harness = createAttachedPreviewRuntime({
+      canUseBrowser: () => browserAllowed,
+    });
+
+    const denied = await harness.registerTarget('http://127.0.0.1:3000', {
+      browser: true,
+      principal: { id: 'user-1', policy: { browser: false } },
+    });
+    expect(denied.id).toBeUndefined();
+    expect(harness.runtime.getSnapshot()).toEqual([]);
+
+    const preview = await harness.registerTarget('http://127.0.0.1:3000', {
+      principal: { id: 'user-1', policy: { browser: false } },
+    });
+    expect(preview.id).toBeTruthy();
+
+    browserAllowed = true;
+    const browser = await harness.registerTarget('http://127.0.0.1:3001', {
+      browser: true,
+      principal: { id: 'user-1', policy: { browser: true } },
+    });
+    expect(harness.runtime.getSnapshot().find((target) => target.id === browser.id))
+      .toMatchObject({ browserRestricted: true });
+
+    browserAllowed = false;
+    const route = harness.useRoutes.find((entry) => entry.path === '/api/preview/proxy');
+    const response = createResponse();
+    let nextCalled = false;
+    await route.handlers[0]({
+      originalUrl: `${browser.proxyBasePath}/`,
+      headers: { cookie: `oc_preview_token=${browser.token}` },
+      principal: { id: 'user-1', policy: { browser: false } },
+    }, response, () => { nextCalled = true; });
+    expect(response.statusCode).toBe(403);
+    expect(nextCalled).toBe(false);
+
+    const socket = { once() {}, destroy() {} };
+    harness.upgrade({
+      url: `${browser.proxyBasePath}/hmr`,
+      headers: { cookie: `oc_preview_token=${browser.token}` },
+      principal: { id: 'user-1', policy: { browser: false } },
+    }, socket, Buffer.alloc(0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.rejectedUpgrades).toContainEqual({
+      socket,
+      status: 403,
+      message: 'Browser access is disabled',
+    });
+  });
+
+  it('rejects external Browser targets without DNS or outbound proxy setup', async () => {
+    const dnsCalls = [];
+    const harness = createAttachedPreviewRuntime({
+      resolveHost: async (hostname) => {
+        dnsCalls.push(hostname);
+        return [
+          { address: '2001:4860:4860::8888', family: 6 },
+          { address: '142.250.191.100', family: 4 },
+        ];
+      },
+    });
+
+    const preview = await harness.registerTarget('https://www.google.com/');
+    expect(preview.statusCode).toBe(400);
+
+    const browser = await harness.registerTarget('https://www.google.com/search?q=devryan', {
+      browser: true,
+      principal: { id: 'user-1', policy: { browser: true } },
+    });
+    expect(browser.statusCode).toBe(400);
+    expect(browser.code).toBe('browser_external_target_requires_client');
+    expect(browser.error).toContain('opened on the client');
+    expect(dnsCalls).toEqual([]);
+    expect(harness.runtime.getSnapshot()).toEqual([]);
+  });
+
+  it('returns the client-navigation contract for private names and nonstandard external ports', async () => {
+    const privateDns = createAttachedPreviewRuntime({
+      resolveHost: async () => [
+        { address: '142.250.191.100', family: 4 },
+        { address: '169.254.169.254', family: 4 },
+      ],
+    });
+    const rebound = await privateDns.registerTarget('https://browser.example/', { browser: true });
+    expect(rebound.statusCode).toBe(400);
+    expect(rebound.code).toBe('browser_external_target_requires_client');
+
+    const unsafePort = await privateDns.registerTarget('https://browser.example:8443/', { browser: true });
+    expect(unsafePort.statusCode).toBe(400);
+    expect(unsafePort.code).toBe('browser_external_target_requires_client');
+  });
+
+  it('hands external Browser redirects to the client while Preview uses its external handoff', async () => {
+    const harness = createAttachedPreviewRuntime();
+    const browser = await harness.registerTarget('http://127.0.0.1:3000', { browser: true });
+    const preview = await harness.registerTarget('http://127.0.0.1:3001');
+    const renderRedirect = async (target) => {
+      const req = {
+        originalUrl: `${target.proxyBasePath}/start`,
+        url: `${target.proxyBasePath}/start`,
+        headers: {
+          cookie: `oc_preview_token=${target.token}`,
+          'sec-fetch-dest': 'iframe',
+        },
+      };
+      const proxyRes = {
+        bodyBuffer: Buffer.from('redirect'),
+        headers: {
+          location: 'https://accounts.google.com/',
+          'content-type': 'text/html',
+        },
+      };
+      const res = createResponse();
+      const body = String(await harness.proxyOptions().on.proxyRes(
+        proxyRes,
+        req,
+        res,
+      ));
+      return { body, res };
+    };
+
+    const browserRedirect = await renderRedirect(browser);
+    expect(browserRedirect.body).toContain('"navigation":"target"');
+    expect(browserRedirect.res.statusCode).toBe(200);
+    expect(browserRedirect.res.headers.has('location')).toBe(false);
+    expect(browserRedirect.res.headers.get('content-type')).toBe('text/html; charset=utf-8');
+    expect(browserRedirect.res.headers.get('cache-control')).toBe('no-store');
+
+    const previewRedirect = await renderRedirect(preview);
+    expect(previewRedirect.body).toContain('"navigation":"external"');
+    expect(previewRedirect.res.headers.has('location')).toBe(false);
+  });
+
+  it('passes cross-origin subresource redirects through instead of handing them off', async () => {
+    const harness = createAttachedPreviewRuntime();
+    const browser = await harness.registerTarget('http://127.0.0.1:3000', { browser: true });
+    const req = {
+      originalUrl: `${browser.proxyBasePath}/api/session`,
+      url: `${browser.proxyBasePath}/api/session`,
+      headers: {
+        cookie: `oc_preview_token=${browser.token}`,
+        'sec-fetch-dest': 'empty',
+        accept: 'application/json',
+      },
+    };
+    const proxyRes = {
+      statusCode: 302,
+      bodyBuffer: Buffer.from(''),
+      headers: {
+        location: 'https://accounts.google.com/signin',
+        'content-type': 'text/html',
+      },
+    };
+    const res = createResponse();
+    const body = String(await harness.proxyOptions().on.proxyRes(proxyRes, req, res));
+
+    expect(body).not.toContain('navigate-preview');
+    expect(res.statusCode).toBe(200);
+    expect(res.headers.get('location')).toBe('https://accounts.google.com/signin');
+    expect(proxyRes.headers.location).toBe('https://accounts.google.com/signin');
+  });
+
+  it('reuses a live target for the same owner and origin so proxy paths survive refresh', async () => {
+    const harness = createAttachedPreviewRuntime();
+    const first = await harness.registerTarget('http://127.0.0.1:3000', { browser: true });
+    const second = await harness.registerTarget('http://127.0.0.1:3000', { browser: true });
+
+    expect(second.proxyBasePath).toBe(first.proxyBasePath);
+    expect(second.token).toBe(first.token);
+    expect(second.expiresAt).toBeGreaterThanOrEqual(first.expiresAt);
+
+    const otherOrigin = await harness.registerTarget('http://127.0.0.1:3001', { browser: true });
+    expect(otherOrigin.proxyBasePath).not.toBe(first.proxyBasePath);
+
+    // Preview and Browser registrations stay independent even for one origin.
+    const previewTarget = await harness.registerTarget('http://127.0.0.1:3000');
+    expect(previewTarget.proxyBasePath).not.toBe(first.proxyBasePath);
+  });
+
+  it('keeps URL virtualization enabled for loopback Browser and Preview documents', async () => {
+    const harness = createAttachedPreviewRuntime();
+    const loopbackBrowser = await harness.registerTarget('http://127.0.0.1:8080/', { browser: true });
+    const preview = await harness.registerTarget('http://127.0.0.1:3000');
+    const render = async (target) => String(await harness.proxyOptions().on.proxyRes(
+      {
+        bodyBuffer: Buffer.from('<html><head></head><body>Hi</body></html>'),
+        headers: { 'content-type': 'text/html' },
+      },
+      {
+        originalUrl: `${target.proxyBasePath}/`,
+        url: `${target.proxyBasePath}/`,
+        headers: { cookie: `oc_preview_token=${target.token}` },
+      },
+      createResponse(),
+    ));
+
+    const loopbackBrowserHtml = await render(loopbackBrowser);
+    const previewHtml = await render(preview);
+    expect(loopbackBrowserHtml).toContain('id="openchamber-preview-bridge-location"');
+    expect(loopbackBrowserHtml).not.toContain('id="openchamber-preview-bridge-location" type="module"');
+    expect(loopbackBrowserHtml).toContain("window.history.replaceState(window.history.state,'',targetPath+current.search+current.hash)");
+    expect(loopbackBrowserHtml.indexOf('id="openchamber-preview-bridge-location"'))
+      .toBeLessThan(loopbackBrowserHtml.indexOf('window.__openchamberPreviewConfig='));
+    expect(previewHtml).toContain('id="openchamber-preview-bridge-location"');
+    expect(previewHtml).not.toContain('id="openchamber-preview-bridge-location" type="module"');
   });
 
   it('enforces the same session binding for HMR WebSocket upgrades', async () => {
@@ -713,7 +1314,12 @@ describe('attached proxy runtime', () => {
       previewInstancesRuntime: {
         async authorizeTarget(request) {
           calls.push(request);
-          return { ok: false, status: 403, error: 'This project preview port has not been approved' };
+          return {
+            ok: false,
+            status: 403,
+            code: 'project_preview_not_approved',
+            error: 'This project preview port has not been approved',
+          };
         },
       },
     });
@@ -723,6 +1329,7 @@ describe('attached proxy runtime', () => {
       principal: { id: 'user-1', appSessionId: 'app-1' },
     });
     expect(deniedTarget.id).toBeUndefined();
+    expect(deniedTarget.code).toBe('project_preview_not_approved');
     expect(calls).toHaveLength(1);
     expect(denied.runtime.getSnapshot()).toEqual([]);
 
@@ -808,6 +1415,10 @@ describe('attached proxy runtime', () => {
       headers: { cookie: `oc_preview_token=${target.token}` },
     }, response, () => {});
     expect(response.statusCode).toBe(404);
+    expect(response.body).toEqual({
+      error: 'Preview target expired',
+      code: 'preview_target_expired',
+    });
     expect(runtime.getSnapshot()).toEqual([]);
   });
 

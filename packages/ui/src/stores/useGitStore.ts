@@ -54,14 +54,15 @@ interface GitStore {
   setActiveDirectory: (directory: string | null) => void;
   getDirectoryState: (directory: string) => DirectoryGitState | null;
 
-  fetchStatus: (directory: string, git: GitAPI, options?: { silent?: boolean; mode?: 'light' }) => Promise<boolean>;
-  fetchBranches: (directory: string, git: GitAPI) => Promise<void>;
-  fetchLog: (directory: string, git: GitAPI, maxCount?: number) => Promise<void>;
+  fetchStatus: (directory: string, git: GitAPI, options?: { silent?: boolean; mode?: 'light'; force?: boolean }) => Promise<boolean>;
+  fetchBranches: (directory: string, git: GitAPI) => Promise<boolean>;
+  fetchLog: (directory: string, git: GitAPI, maxCount?: number) => Promise<boolean>;
   fetchIdentity: (directory: string, git: GitAPI) => Promise<void>;
   fetchAll: (directory: string, git: GitAPI, options?: { force?: boolean; silentIfCached?: boolean; includeIdentity?: boolean }) => Promise<void>;
 
   ensureStatus: (directory: string, git: GitAPI) => Promise<void>;
   ensureAll: (directory: string, git: GitAPI, options?: { includeIdentity?: boolean }) => Promise<void>;
+  pollStatusAndRefreshRepository: (directory: string, git: GitAPI) => Promise<boolean>;
 
   getDiff: (directory: string, filePath: string, options?: { staged?: boolean }) => { original: string; modified: string; fetchedAt: number; isBinary?: boolean } | null;
   setDiff: (directory: string, filePath: string, diff: { original: string; modified: string; isBinary?: boolean }, options?: { staged?: boolean }) => void;
@@ -84,7 +85,7 @@ interface GitFileDiffResponse {
 
 interface GitAPI {
   checkIsGitRepository: (directory: string) => Promise<boolean>;
-  getGitStatus: (directory: string, options?: { mode?: 'light' }) => Promise<GitStatus>;
+  getGitStatus: (directory: string, options?: { mode?: 'light'; force?: boolean }) => Promise<GitStatus>;
   getGitBranches: (directory: string) => Promise<GitBranch>;
   getGitLog: (directory: string, options?: { maxCount?: number }) => Promise<GitLogResponse>;
   getCurrentGitIdentity: (directory: string) => Promise<GitIdentitySummary | null>;
@@ -95,8 +96,22 @@ const inFlightDiffFetchesByDirectory = new Map<string, Set<string>>();
 const diffFetchGenerationByDirectory = new Map<string, number>();
 const inFlightStatusFetches = new Map<string, Promise<boolean>>();
 const inFlightEnsureAllByDirectory = new Map<string, Promise<void>>();
+const inFlightRepositoryPollsByDirectory = new Map<string, Promise<boolean>>();
+const pendingRepositoryRefreshDirectories = new Set<string>();
+const statusFetchGenerationByDirectory = new Map<string, number>();
+const logFetchGenerationByDirectory = new Map<string, number>();
 
 const getStatusFetchKey = (directory: string, mode: GitStatusFetchMode): string => `${mode}:${directory}`;
+const bumpRequestGeneration = (generations: Map<string, number>, directory: string): number => {
+  const next = (generations.get(directory) ?? 0) + 1;
+  generations.set(directory, next);
+  return next;
+};
+const isCurrentRequestGeneration = (
+  generations: Map<string, number>,
+  directory: string,
+  generation: number
+): boolean => generations.get(directory) === generation;
 const getDiffCacheKey = (filePath: string, options?: { staged?: boolean }): string =>
   options?.staged ? `staged:${filePath}` : `unstaged:${filePath}`;
 
@@ -316,12 +331,15 @@ export const useGitStore = create<GitStore>()(
       fetchStatus: async (directory, git, options = {}) => {
         const statusFetchMode: GitStatusFetchMode = options.mode ?? 'full';
         const statusFetchKey = getStatusFetchKey(directory, statusFetchMode);
-        const existing = inFlightStatusFetches.get(statusFetchKey)
-          ?? (statusFetchMode === 'light' ? inFlightStatusFetches.get(getStatusFetchKey(directory, 'full')) : undefined);
+        const existing = options.force
+          ? undefined
+          : inFlightStatusFetches.get(statusFetchKey)
+            ?? (statusFetchMode === 'light' ? inFlightStatusFetches.get(getStatusFetchKey(directory, 'full')) : undefined);
         if (existing) {
           return existing;
         }
 
+        const requestGeneration = bumpRequestGeneration(statusFetchGenerationByDirectory, directory);
         const fetchPromise = (async () => {
           const { silent = false } = options;
           const { directories } = get();
@@ -352,6 +370,9 @@ export const useGitStore = create<GitStore>()(
             }
 
             if (!isRepo) {
+              if (!isCurrentRequestGeneration(statusFetchGenerationByDirectory, directory, requestGeneration)) {
+                return false;
+              }
               const newDirectories = new Map(get().directories);
               const currentDirState = newDirectories.get(directory) ?? dirState;
               newDirectories.set(directory, {
@@ -366,7 +387,15 @@ export const useGitStore = create<GitStore>()(
               return false;
             }
 
-            const newStatus = await git.getGitStatus(directory, options.mode ? { mode: options.mode } : undefined);
+            const newStatus = await git.getGitStatus(
+              directory,
+              options.mode || options.force
+                ? { ...(options.mode ? { mode: options.mode } : {}), ...(options.force ? { force: true } : {}) }
+                : undefined
+            );
+            if (!isCurrentRequestGeneration(statusFetchGenerationByDirectory, directory, requestGeneration)) {
+              return false;
+            }
 
             if (hasStatusChanged(dirState.status, newStatus)) {
               statusChanged = true;
@@ -426,9 +455,14 @@ export const useGitStore = create<GitStore>()(
               set({ directories: newDirectories });
             }
           } catch (error) {
-            console.error('Failed to fetch git status:', error);
+            if (isCurrentRequestGeneration(statusFetchGenerationByDirectory, directory, requestGeneration)) {
+              console.error('Failed to fetch git status:', error);
+            }
           } finally {
-            if (!silent) {
+            if (
+              !silent
+              && isCurrentRequestGeneration(statusFetchGenerationByDirectory, directory, requestGeneration)
+            ) {
               const newDirectories = new Map(get().directories);
               const d = newDirectories.get(directory) ?? createEmptyDirectoryState();
               newDirectories.set(directory, { ...d, isLoadingStatus: false });
@@ -464,12 +498,14 @@ export const useGitStore = create<GitStore>()(
           const dirState = newDirectories.get(directory) ?? createEmptyDirectoryState();
           newDirectories.set(directory, { ...dirState, branches, isLoadingBranches: false, lastBranchesFetch: Date.now() });
           set({ directories: newDirectories });
+          return true;
         } catch (error) {
           console.error('Failed to fetch git branches:', error);
           const newDirectories = new Map(get().directories);
           const d = newDirectories.get(directory) ?? createEmptyDirectoryState();
           newDirectories.set(directory, { ...d, isLoadingBranches: false });
           set({ directories: newDirectories });
+          return false;
         }
       },
 
@@ -477,6 +513,7 @@ export const useGitStore = create<GitStore>()(
         const { directories } = get();
         const dirState = directories.get(directory);
         const effectiveMaxCount = maxCount ?? dirState?.logMaxCount ?? 25;
+        const requestGeneration = bumpRequestGeneration(logFetchGenerationByDirectory, directory);
 
         {
           const newDirectories = new Map(get().directories);
@@ -487,6 +524,9 @@ export const useGitStore = create<GitStore>()(
 
         try {
           const log = await git.getGitLog(directory, { maxCount: effectiveMaxCount });
+          if (!isCurrentRequestGeneration(logFetchGenerationByDirectory, directory, requestGeneration)) {
+            return false;
+          }
           const newDirectories = new Map(get().directories);
           const currentDirState = newDirectories.get(directory) ?? createEmptyDirectoryState();
           newDirectories.set(directory, {
@@ -497,12 +537,16 @@ export const useGitStore = create<GitStore>()(
             logMaxCount: effectiveMaxCount,
           });
           set({ directories: newDirectories });
+          return true;
         } catch (error) {
-          console.error('Failed to fetch git log:', error);
-          const newDirectories = new Map(get().directories);
-          const d = newDirectories.get(directory) ?? createEmptyDirectoryState();
-          newDirectories.set(directory, { ...d, isLoadingLog: false });
-          set({ directories: newDirectories });
+          if (isCurrentRequestGeneration(logFetchGenerationByDirectory, directory, requestGeneration)) {
+            console.error('Failed to fetch git log:', error);
+            const newDirectories = new Map(get().directories);
+            const d = newDirectories.get(directory) ?? createEmptyDirectoryState();
+            newDirectories.set(directory, { ...d, isLoadingLog: false });
+            set({ directories: newDirectories });
+          }
+          return false;
         }
       },
 
@@ -757,7 +801,7 @@ export const useGitStore = create<GitStore>()(
           const updatedState = get().directories.get(directory);
           if (!updatedState?.isGitRepo) return;
 
-          const fetches: Promise<void>[] = [];
+          const fetches: Promise<unknown>[] = [];
 
           if (!updatedState.branches || now - updatedState.lastBranchesFetch >= BRANCHES_STALE_THRESHOLD) {
             fetches.push(get().fetchBranches(directory, git));
@@ -776,6 +820,49 @@ export const useGitStore = create<GitStore>()(
         promise.finally(() => {
           if (inFlightEnsureAllByDirectory.get(ensureKey) === promise) {
             inFlightEnsureAllByDirectory.delete(ensureKey);
+          }
+        });
+
+        return promise;
+      },
+
+      pollStatusAndRefreshRepository: (directory, git) => {
+        const existing = inFlightRepositoryPollsByDirectory.get(directory);
+        if (existing) {
+          return existing;
+        }
+
+        const promise = (async () => {
+          const statusChanged = await get().fetchStatus(directory, git, {
+            mode: 'light',
+            silent: true,
+          });
+
+          if (statusChanged) {
+            pendingRepositoryRefreshDirectories.add(directory);
+          }
+
+          if (!pendingRepositoryRefreshDirectories.has(directory)) {
+            return false;
+          }
+
+          const [, branchesRefreshed, logRefreshed] = await Promise.all([
+            get().fetchStatus(directory, git, { force: true, silent: true }),
+            get().fetchBranches(directory, git),
+            get().fetchLog(directory, git),
+          ]);
+
+          if (branchesRefreshed && logRefreshed) {
+            pendingRepositoryRefreshDirectories.delete(directory);
+          }
+
+          return true;
+        })();
+
+        inFlightRepositoryPollsByDirectory.set(directory, promise);
+        promise.finally(() => {
+          if (inFlightRepositoryPollsByDirectory.get(directory) === promise) {
+            inFlightRepositoryPollsByDirectory.delete(directory);
           }
         });
 

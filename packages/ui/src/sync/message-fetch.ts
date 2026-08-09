@@ -23,6 +23,23 @@ export function normalizeMessageFetchLimit(limit: number | undefined, fallback =
   return Math.floor(limit)
 }
 
+export function resolveMessagePagePagination(input: {
+  requestedLimit: number
+  returnedCount: number
+  cursor: string | undefined
+}): { cursor: string | undefined; complete: boolean } {
+  const requestedLimit = normalizeMessageFetchLimit(input.requestedLimit)
+  const cursor = input.cursor || undefined
+  // OpenCode can return the oldest record as a `before` cursor even when the
+  // page is already exhausted, so only a full page makes that cursor usable.
+  const complete = !cursor || input.returnedCount < requestedLimit
+
+  return {
+    cursor: complete ? undefined : cursor,
+    complete,
+  }
+}
+
 function normalizeFetchedPart(part: Part, role?: Message["role"]): Part {
   if (part.type !== "text" && part.type !== "reasoning") {
     return part

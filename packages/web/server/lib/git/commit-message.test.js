@@ -2,11 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
+  COMMIT_GENERATION_CHAT_MAX_TOKENS,
+  COMMIT_GENERATION_RESPONSES_MAX_OUTPUT_TOKENS,
   buildCommitMessagePrompt,
   COMMIT_GENERATION_TIMEOUT_MS,
   generateCommitMessageDirect,
   normalizeGeneratedCommitSubject,
 } from './commit-message.js';
+import { ZenApiError } from '../text/summarization.js';
 
 const context = {
   branch: 'feature/source-generation',
@@ -62,6 +65,9 @@ describe('direct commit message generation', () => {
     expect(requestText).toHaveBeenCalledWith(expect.objectContaining({
       zenModel: 'gpt-5-nano',
       timeoutMs: COMMIT_GENERATION_TIMEOUT_MS,
+      chatMaxTokens: COMMIT_GENERATION_CHAT_MAX_TOKENS,
+      responsesMaxOutputTokens: COMMIT_GENERATION_RESPONSES_MAX_OUTPUT_TOKENS,
+      stop: ['\n'],
     }));
     expect(requestText.mock.calls.flat().join(' ')).not.toMatch(/\/session|prompt_async/);
   });
@@ -74,6 +80,46 @@ describe('direct commit message generation', () => {
     expect(requestText).toHaveBeenCalledWith(expect.objectContaining({
       zenModel: COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
       timeoutMs: COMMIT_GENERATION_TIMEOUT_MS,
+      chatReasoningEffort: 'none',
     }));
+  });
+
+  it('retries only explicit unavailable-model failures with a different cached fallback', async () => {
+    const requestText = vi.fn()
+      .mockRejectedValueOnce(new ZenApiError(404, 'model deepseek-v4-flash-free not found'))
+      .mockResolvedValueOnce('fix(git): use cached free model');
+    const onTiming = vi.fn();
+
+    const result = await generateCommitMessageDirect({
+      context,
+      zenModel: COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
+      fallbackZenModel: 'big-pickle',
+      requestText,
+      onTiming,
+    });
+
+    expect(result.subject).toBe('fix(git): use cached free model');
+    expect(requestText).toHaveBeenCalledTimes(2);
+    expect(requestText.mock.calls.map(([request]) => request.zenModel)).toEqual([
+      COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
+      'big-pickle',
+    ]);
+    expect(onTiming).toHaveBeenCalledWith(expect.objectContaining({ retried: true }));
+  });
+
+  it.each([
+    new ZenApiError(429, 'rate limit exceeded'),
+    new ZenApiError(401, 'authentication failed'),
+    new ZenApiError(500, 'server error'),
+    new Error('Zen generation timed out'),
+  ])('does not retry non-availability failures: %s', async (error) => {
+    const requestText = vi.fn().mockRejectedValue(error);
+
+    await expect(generateCommitMessageDirect({
+      context,
+      fallbackZenModel: 'big-pickle',
+      requestText,
+    })).rejects.toBe(error);
+    expect(requestText).toHaveBeenCalledOnce();
   });
 });

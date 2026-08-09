@@ -1,9 +1,18 @@
 import { isMacOS } from '@/lib/utils';
 import { isTauriShell } from '@/lib/desktop';
+import {
+  hasAuthCapability,
+  type AuthCapability,
+  type AuthPrincipal,
+} from '@/lib/authSession';
 
 export type ShortcutModifier = 'mod' | 'shift' | 'alt' | 'option' | 'ctrl';
 export type ShortcutKey = string;
 export type ShortcutCombo = string;
+export type ShortcutPolicyCapability = Exclude<
+  AuthCapability,
+  'settingsPages' | 'settingsPermissions' | 'featureOverrides'
+>;
 
 export const UNASSIGNED_SHORTCUT: ShortcutCombo = '__unassigned__';
 
@@ -13,6 +22,10 @@ export interface ShortcutAction {
   label: string;
   description?: string;
   customizable?: boolean;
+  policy?: {
+    allOf?: readonly ShortcutPolicyCapability[];
+    anyOf?: readonly ShortcutPolicyCapability[];
+  };
 }
 
 export interface ParsedShortcut {
@@ -110,6 +123,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Go to line (files editor)',
     description: 'Open go to line in the files editor',
     customizable: true,
+    policy: { allOf: ['files'] },
   },
   {
     id: 'open_command_palette',
@@ -144,6 +158,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Toggle terminal dock',
     description: 'Toggle the bottom terminal dock',
     customizable: true,
+    policy: { allOf: ['terminal'] },
   },
   {
     id: 'toggle_terminal_expanded',
@@ -151,12 +166,14 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Toggle terminal expanded',
     description: 'Toggle terminal expanded or collapsed',
     customizable: true,
+    policy: { allOf: ['terminal'] },
   },
   {
     id: 'toggle_files',
     defaultCombo: 'mod+shift+f',
     label: 'Toggle files',
     description: 'Toggle the files panel',
+    policy: { allOf: ['files'] },
   },
   {
     id: 'toggle_sidebar',
@@ -178,6 +195,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Toggle right sidebar',
     description: 'Toggle the right sidebar',
     customizable: true,
+    policy: { anyOf: ['files', 'manageGit'] },
   },
   {
     id: 'open_right_sidebar_git',
@@ -185,6 +203,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Open right sidebar Git tab',
     description: 'Open right sidebar and select Git',
     customizable: true,
+    policy: { allOf: ['manageGit'] },
   },
   {
     id: 'open_right_sidebar_files',
@@ -192,6 +211,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Open right sidebar Files tab',
     description: 'Open right sidebar and select Files',
     customizable: true,
+    policy: { allOf: ['files'] },
   },
   {
     id: 'cycle_right_sidebar_tab',
@@ -199,6 +219,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'Cycle right sidebar tab',
     description: 'Cycle through right sidebar tabs',
     customizable: true,
+    policy: { anyOf: ['files', 'manageGit'] },
   },
   {
     id: 'new_chat',
@@ -213,6 +234,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     label: 'New worktree draft',
     description: 'Create a new worktree and open a draft in it',
     customizable: true,
+    policy: { allOf: ['createWorktrees', 'createBranches'] },
   },
   {
     id: 'new_mini_chat',
@@ -243,12 +265,14 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     defaultCombo: 'mod+3',
     label: 'Open terminal panel',
     description: 'Switch to the terminal panel',
+    policy: { allOf: ['terminal'] },
   },
   {
     id: 'open_git_panel',
     defaultCombo: 'mod+4',
     label: 'Open git panel',
     description: 'Switch to the git panel',
+    policy: { allOf: ['manageGit'] },
   },
   {
     id: 'open_help',
@@ -477,6 +501,28 @@ export function getAllShortcutActions(): ReadonlyArray<ShortcutAction> {
 
 export function getCustomizableShortcutActions(): ReadonlyArray<ShortcutAction> {
   return SHORTCUT_ACTIONS.filter((action) => action.customizable === true);
+}
+
+export function isShortcutActionAvailable(
+  actionOrId: ShortcutAction | string,
+  principal: AuthPrincipal,
+): boolean {
+  const action = typeof actionOrId === 'string' ? getShortcutAction(actionOrId) : actionOrId;
+  if (!action) return false;
+
+  const allOf = action.policy?.allOf ?? [];
+  if (!allOf.every((capability) => hasAuthCapability(principal, capability))) {
+    return false;
+  }
+
+  const anyOf = action.policy?.anyOf ?? [];
+  return anyOf.length === 0 || anyOf.some((capability) => hasAuthCapability(principal, capability));
+}
+
+export function getAvailableCustomizableShortcutActions(
+  principal: AuthPrincipal,
+): ReadonlyArray<ShortcutAction> {
+  return getCustomizableShortcutActions().filter((action) => isShortcutActionAvailable(action, principal));
 }
 
 export function getEffectiveShortcutCombo(

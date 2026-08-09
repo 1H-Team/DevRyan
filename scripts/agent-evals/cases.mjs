@@ -16,6 +16,7 @@ import {
 import {
   gradeCaseOutcome,
   gradeManagedTaskOutcome,
+  gradeOracleReviewOutcome,
   gradeToolRequirements,
 } from './graders.mjs';
 
@@ -73,6 +74,56 @@ test('summarizes populated and empty numeric inputs', () => {
 });
 `;
 
+const oracleFocusedSource = `export function saveProfile(actor, current, expectedRevision, patch) {
+  if (!actor?.id) throw new Error('Authentication required');
+  return {
+    ...current,
+    ...patch,
+    revision: current.revision + 1,
+  };
+}
+`;
+
+const oracleDeepSource = `${oracleFocusedSource}
+const paymentAttempts = new Map();
+
+export async function chargeDeposit(booking, operationKey, gateway) {
+  const intent = await gateway.createPaymentIntent({
+    amount: booking.depositMinor,
+    idempotencyKey: booking.id,
+  });
+  if (paymentAttempts.has(operationKey)) return paymentAttempts.get(operationKey);
+  paymentAttempts.set(operationKey, intent);
+  return intent;
+}
+
+export function applyPaymentEvent(current, event) {
+  return {
+    ...current,
+    status: event.status,
+    updatedAt: event.createdAt,
+  };
+}
+`;
+
+const oracleFocusedContract = `export const profileSaveContract = Object.freeze({
+  authorization: 'Only the profile owner or an administrator may save.',
+  concurrency: 'Reject a save when expectedRevision differs from the stored revision.',
+});
+`;
+
+const oracleDeepContract = `export const reviewContract = Object.freeze({
+  authorization: 'Only the profile owner or an administrator may save.',
+  concurrency: 'Reject a save when expectedRevision differs from the stored revision.',
+  paymentAttempt: 'Reserve the operation before calling the external payment gateway.',
+  webhook: 'Terminal payment state must not regress under stale or out-of-order events.',
+});
+`;
+
+const ORACLE_REVIEW_CASE_IDS = new Set(['oracle-review-focused', 'oracle-review-deep']);
+
+const isOracleReviewCase = (caseId) => ORACLE_REVIEW_CASE_IDS.has(caseId);
+
 export const buildCaseDefinition = (caseId, runFiles) => {
   if (caseId === 'inspect') {
     return {
@@ -107,11 +158,35 @@ export const buildCaseDefinition = (caseId, runFiles) => {
       ].join(' '),
     };
   }
+  if (isOracleReviewCase(caseId)) {
+    const deep = caseId === 'oracle-review-deep';
+    return {
+      caseId,
+      prompt: [
+        `Review depth: ${deep ? 'deep' : 'focused'}.`,
+        `Changed scope: ${runFiles.sourceRelativePath} and ${runFiles.testRelativePath}; inspect no other files.`,
+        deep
+          ? 'Critical invariants: profile authorization, optimistic concurrency, reserve-before-gateway idempotency, and monotonic webhook settlement.'
+          : 'Critical invariants: profile authorization and optimistic concurrency.',
+        'Validation evidence: the fixture was prepared deterministically; do not run tests, builds, lint, or type-checking.',
+        'Exclusions: no edits, shell commands, delegation, external research, or broad repository audit.',
+        `Return: actionable findings only, at most five, with severity and exact ${runFiles.sourceRelativePath}:line evidence; include residual risk and end with <status>complete</status>.`,
+      ].join(' '),
+    };
+  }
   throw new TypeError(`Unknown evaluation case: ${caseId}`);
 };
 
 export const prepareCaseFixture = (caseId, runFiles) => {
   if (caseId === 'inspect') return { baselineSource: null, baselineTest: null };
+  if (isOracleReviewCase(caseId)) {
+    const deep = caseId === 'oracle-review-deep';
+    const baselineSource = deep ? oracleDeepSource : oracleFocusedSource;
+    const baselineTest = deep ? oracleDeepContract : oracleFocusedContract;
+    writeRunOwnedFile(runFiles.sourcePath, baselineSource, runFiles);
+    writeRunOwnedFile(runFiles.testPath, baselineTest, runFiles);
+    return { baselineSource, baselineTest };
+  }
   const baselineSource = caseId === 'repair-and-test' ? repairSource : managedSource;
   const baselineTest = caseId === 'repair-and-test'
     ? repairTest(path.basename(runFiles.sourcePath))
@@ -230,7 +305,7 @@ export const executeEvaluationCase = async (options = {}) => {
   };
   try {
     prepared = prepareCaseFixture(caseId, runFiles);
-    if (caseId !== 'inspect') {
+    if (caseId !== 'inspect' && !isOracleReviewCase(caseId)) {
       baselineTest = await testRunner({
         fixtureRoot,
         testRelativePath: runFiles.testRelativePath,
@@ -258,11 +333,13 @@ export const executeEvaluationCase = async (options = {}) => {
       sessionError = error;
     }
 
-    finalTest = await testRunner({
-      fixtureRoot,
-      ...(caseId === 'inspect' ? {} : { testRelativePath: runFiles.testRelativePath }),
-      timeoutMs,
-    });
+    if (!isOracleReviewCase(caseId)) {
+      finalTest = await testRunner({
+        fixtureRoot,
+        ...(caseId === 'inspect' ? {} : { testRelativePath: runFiles.testRelativePath }),
+        timeoutMs,
+      });
+    }
     const currentManifest = filterOwnedPaths(captureFixtureManifest(fixtureRoot), runFiles);
     const nonOwnedManifestMatches = compareFixtureManifests(startingManifest, currentManifest).matches;
     const ownedSourceChanged = readIfPresent(runFiles.sourcePath) !== prepared.baselineSource;
@@ -290,6 +367,13 @@ export const executeEvaluationCase = async (options = {}) => {
         rootSessionId: sessionResult?.rootSessionId,
         childSessionIds: sessionResult?.childSessionIds,
         snapshot: sessionResult?.managedSnapshot,
+      }));
+    }
+    if (isOracleReviewCase(caseId)) {
+      graders.push(...gradeOracleReviewOutcome({
+        caseId,
+        evidence: sessionResult?.oracleReviewEvidence,
+        durationMs: sessionResult?.durationMs,
       }));
     }
     result = {

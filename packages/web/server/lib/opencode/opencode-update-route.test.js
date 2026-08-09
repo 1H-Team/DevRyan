@@ -19,12 +19,12 @@ const createResponse = () => {
 
 describe('OpenCode update-check route', () => {
   it.each([
-    ['managed', '1.18.13'],
+    ['managed', '1.18.15'],
     ['external', '1.18.10'],
   ])('uses the active %s runtime version from the resolution snapshot', async (_mode, version) => {
     const checkForOpenCodeUpdates = vi.fn(async ({ currentVersion, supportedVersion }) => ({
       currentVersion,
-      latestVersion: '1.18.13',
+      latestVersion: '1.18.15',
       supportedVersion,
       updateAvailable: true,
       supportStatus: currentVersion === supportedVersion ? 'supported' : 'older',
@@ -33,7 +33,7 @@ describe('OpenCode update-check route', () => {
       readSettingsFromDiskMigrated: vi.fn(async () => ({})),
       getOpenCodeResolutionSnapshot: vi.fn(async () => ({
         detectedVersion: version,
-        targetVersion: '1.18.13',
+        targetVersion: '1.18.15',
       })),
       checkForOpenCodeUpdates,
     });
@@ -43,12 +43,12 @@ describe('OpenCode update-check route', () => {
 
     expect(checkForOpenCodeUpdates).toHaveBeenCalledWith({
       currentVersion: version,
-      supportedVersion: '1.18.13',
+      supportedVersion: '1.18.15',
     });
     expect(response.statusCode).toBe(200);
     expect(response.body).toMatchObject({
       currentVersion: version,
-      latestVersion: '1.18.13',
+      latestVersion: '1.18.15',
     });
   });
 
@@ -56,8 +56,8 @@ describe('OpenCode update-check route', () => {
     const handler = createOpenCodeUpdateCheckHandler({
       readSettingsFromDiskMigrated: vi.fn(async () => ({})),
       getOpenCodeResolutionSnapshot: vi.fn(async () => ({
-        detectedVersion: '1.18.13',
-        targetVersion: '1.18.13',
+        detectedVersion: '1.18.15',
+        targetVersion: '1.18.15',
       })),
       checkForOpenCodeUpdates: vi.fn(async () => {
         throw new Error('OpenCode release check failed with 429');

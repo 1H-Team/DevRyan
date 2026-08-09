@@ -233,6 +233,35 @@ describe('managed orchestration contract', () => {
     expect(toManagedTaskEvent(terminal('concurrent session limit temporarily reached')).properties.task.agentRetryAvailable).toBe(false);
   });
 
+  test('projects provider prompt rejection while preserving the single grouped agent retry', () => {
+    const initial = createManagedTaskRecord(validInput());
+    const rejected = {
+      ...initial,
+      childSessionId: 'ses_child',
+      status: 'failed',
+      startedAt: 1_100,
+      finishedAt: 1_200,
+      failureReason: 'Invalid prompt: your prompt was flagged as potentially violating our usage policy.',
+    };
+    const finalRejected = {
+      ...rejected,
+      taskId: 'dvr_task_02',
+      idempotencyKey: 'retry-02',
+      attempt: 2,
+      priorTaskId: initial.taskId,
+      executionKind: 'retry',
+    };
+
+    expect(toManagedTaskEvent(rejected).properties.task).toMatchObject({
+      failureKind: 'provider_prompt_rejected',
+      agentRetryAvailable: true,
+    });
+    expect(toManagedTaskEvent(finalRejected).properties.task).toMatchObject({
+      failureKind: 'provider_prompt_rejected',
+      agentRetryAvailable: false,
+    });
+  });
+
   test('projects compaction as a safe identity-only removal event', () => {
     const task = createManagedTaskRecord(validInput());
     const event = toManagedTaskRemovalEvent(task);

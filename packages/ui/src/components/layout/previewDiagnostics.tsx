@@ -55,7 +55,10 @@ type UsePreviewDiagnosticsOptions = {
   initialState?: PreviewDiagnosticsState;
   onStateChange?: (state: PreviewDiagnosticsState) => void;
   onDisplayNavigate?: (url: string, reason: 'ready' | 'display') => void;
+  onRenderReady?: () => void;
+  onNavigationStart?: () => void;
   onTargetNavigate?: (url: string) => void;
+  onExternalNavigate?: (url: string) => void;
   onAttachConsole?: (events: PreviewConsoleEvent[], pageUrl: string) => void;
   onAttachAnnotation?: (attachment: PreviewAnnotationAttachment) => void;
 };
@@ -69,7 +72,10 @@ export const usePreviewDiagnostics = ({
   initialState,
   onStateChange,
   onDisplayNavigate,
+  onRenderReady,
+  onNavigationStart,
   onTargetNavigate,
+  onExternalNavigate,
   onAttachConsole,
   onAttachAnnotation,
 }: UsePreviewDiagnosticsOptions) => {
@@ -185,6 +191,14 @@ export const usePreviewDiagnostics = ({
         if (typeof data.url === 'string' && data.url) onDisplayNavigate?.(data.url, 'ready');
         return;
       }
+      if (data.type === 'render-ready') {
+        onRenderReady?.();
+        return;
+      }
+      if (data.type === 'navigation-start') {
+        onNavigationStart?.();
+        return;
+      }
       if (data.type === 'console') {
         const level = data.level === 'error' || data.level === 'warn' || data.level === 'info' || data.level === 'debug'
           ? data.level
@@ -251,7 +265,8 @@ export const usePreviewDiagnostics = ({
       }
       if (data.type === 'navigate-preview' && typeof data.url === 'string' && data.url) {
         if (data.navigation === 'external') {
-          void openExternalUrl(data.url);
+          if (onExternalNavigate) onExternalNavigate(data.url);
+          else void openExternalUrl(data.url);
         } else if (data.navigation === 'target') {
           onTargetNavigate?.(data.url);
         } else {
@@ -262,7 +277,7 @@ export const usePreviewDiagnostics = ({
 
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
-  }, [colorScheme, enabled, iframeRef, inspectMode, onAttachAnnotation, onDisplayNavigate, onTargetNavigate, pageUrl, t]);
+  }, [colorScheme, enabled, iframeRef, inspectMode, onAttachAnnotation, onDisplayNavigate, onExternalNavigate, onNavigationStart, onRenderReady, onTargetNavigate, pageUrl, t]);
 
   const filteredConsoleEvents = React.useMemo(
     () => consoleEvents.filter((event) => getPreviewConsoleFilterMatch(event, consoleFilter)),

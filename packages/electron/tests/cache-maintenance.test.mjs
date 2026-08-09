@@ -44,6 +44,16 @@ test('Electron cache maintenance counts a shared session only once', async () =>
   assert.equal(reads, 1);
 });
 
+test('Electron cache maintenance includes every registered isolated browser profile', async () => {
+  const makeSession = (size) => ({ getCacheSize: async () => size });
+  const result = await getElectronRuntimeCacheInfo({
+    defaultSession: makeSession(100),
+    browserSession: makeSession(200),
+    browserSessions: [makeSession(300), makeSession(400)],
+  });
+  assert.deepEqual(result, { sizeBytes: 1_000 });
+});
+
 test('Electron cache maintenance rejects invalid cache sizes', async () => {
   await assert.rejects(
     getElectronRuntimeCacheInfo({

@@ -85,9 +85,14 @@ import { ensurePierreThemeRegistered } from '@/lib/shiki/appThemeRegistry';
 import { getDefaultTheme } from '@/lib/theme/themes';
 import { openDesktopFileInApp, openDesktopPath } from '@/lib/desktop';
 import { useOpenInAppsStore } from '@/stores/useOpenInAppsStore';
-import { eventMatchesShortcut, getEffectiveShortcutCombo } from '@/lib/shortcuts';
+import {
+  eventMatchesShortcut,
+  getEffectiveShortcutCombo,
+  isShortcutActionAvailable,
+} from '@/lib/shortcuts';
 import { useI18n } from '@/lib/i18n';
 import type { FileReadOptions } from '@/lib/api/types';
+import { getAuthPrincipal } from '@/lib/authSession';
 
 type FileNode = {
   name: string;
@@ -2329,6 +2334,9 @@ export const FilesView: React.FC = () => {
     const goToLineCombo = getEffectiveShortcutCombo('open_go_to_line', shortcutOverrides);
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (!isShortcutActionAvailable('open_go_to_line', getAuthPrincipal())) {
+        return;
+      }
       const target = event.target as Element | null;
       if (target?.closest('[role="dialog"]')) {
         return;

@@ -7,15 +7,35 @@ import { registerGitRoutes } from './routes.js';
 
 const makeApp = ({
   resolveZenModel = vi.fn(async (override) => override || 'gpt-5-nano'),
+  resolveCommitZenModel,
   generateCommitMessage = vi.fn(async () => ({
     subject: 'feat: add generated source file',
     highlights: [],
   })),
+  recordCommitTiming = vi.fn(),
+  loadGitLibraries = async () => ({
+    getStatus: vi.fn(async () => ({
+      current: 'main',
+      tracking: 'origin/main',
+      files: [{ path: 'new-file.ts', index: '?', working_dir: '?' }],
+      diffStats: { 'new-file.ts': { insertions: 1, deletions: 0 } },
+      mergeInProgress: null,
+      rebaseInProgress: null,
+    })),
+    getLog: vi.fn(async () => ({ all: [] })),
+    getDiff: vi.fn(async () => '+export const created = true'),
+  }),
 } = {}) => {
   const app = express();
   app.use(express.json());
-  registerGitRoutes(app, { resolveZenModel, generateCommitMessage });
-  return { app, generateCommitMessage, resolveZenModel };
+  registerGitRoutes(app, {
+    resolveZenModel,
+    resolveCommitZenModel,
+    generateCommitMessage,
+    recordCommitTiming,
+    loadGitLibraries,
+  });
+  return { app, generateCommitMessage, resolveZenModel, recordCommitTiming };
 };
 
 const requestBody = {
@@ -47,11 +67,11 @@ describe('POST /api/git/commit-message', () => {
       message: { subject: 'feat: add generated source file', highlights: [] },
     });
     expect(resolveZenModel).toHaveBeenCalledWith(COMMIT_GENERATION_DEFAULT_ZEN_MODEL);
-    expect(generateCommitMessage).toHaveBeenCalledWith({
+    expect(generateCommitMessage).toHaveBeenCalledWith(expect.objectContaining({
       context: requestBody.context,
       guidance: undefined,
       zenModel: COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
-    });
+    }));
   });
 
   it('preserves an explicit Zen model override', async () => {
@@ -97,5 +117,70 @@ describe('POST /api/git/commit-message', () => {
       .expect(500);
 
     expect(response.body.error).toMatch(/valid conventional commit/);
+  });
+
+  it('collects commit context in the host and returns the workflow result', async () => {
+    const resolveCommitZenModel = vi.fn(() => ({
+      model: COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
+      fallbackModel: 'another-free-model',
+      catalogState: 'stale',
+    }));
+    const { app, generateCommitMessage, recordCommitTiming } = makeApp({ resolveCommitZenModel });
+
+    const response = await request(app)
+      .post('/api/git/commit-message/draft?directory=/repo')
+      .send({
+        selectedFiles: ['new-file.ts', 'new-file.ts'],
+        stagedOnly: false,
+        guidance: 'Prefer a source scope',
+      })
+      .expect(200);
+
+    expect(response.body).toEqual({
+      status: 'complete',
+      commits: [{ subject: 'feat: add generated source file', highlights: [] }],
+    });
+    expect(resolveCommitZenModel).toHaveBeenCalledWith(COMMIT_GENERATION_DEFAULT_ZEN_MODEL);
+    expect(generateCommitMessage).toHaveBeenCalledWith(expect.objectContaining({
+      guidance: 'Prefer a source scope',
+      zenModel: COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
+      fallbackZenModel: 'another-free-model',
+      context: expect.objectContaining({
+        selectedFiles: [expect.objectContaining({ path: 'new-file.ts' })],
+      }),
+    }));
+    expect(response.headers['server-timing']).toMatch(/commit-context;dur=/);
+    expect(recordCommitTiming).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      outcome: 'complete',
+      selectedFileCount: 1,
+      catalogState: 'stale',
+    }));
+  });
+
+  it('returns a blocked workflow without calling the model during conflicts', async () => {
+    const generateCommitMessage = vi.fn();
+    const { app, recordCommitTiming } = makeApp({
+      generateCommitMessage,
+      loadGitLibraries: async () => ({
+        getStatus: vi.fn(async () => ({
+          current: 'main',
+          tracking: null,
+          files: [{ path: 'new-file.ts', index: 'U', working_dir: 'U' }],
+          mergeInProgress: { head: 'feature' },
+          rebaseInProgress: null,
+        })),
+        getLog: vi.fn(async () => ({ all: [] })),
+        getDiff: vi.fn(),
+      }),
+    });
+
+    const response = await request(app)
+      .post('/api/git/commit-message/draft?directory=/repo')
+      .send({ selectedFiles: ['new-file.ts'] })
+      .expect(200);
+
+    expect(response.body).toMatchObject({ status: 'blocked', commits: [] });
+    expect(generateCommitMessage).not.toHaveBeenCalled();
+    expect(recordCommitTiming).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ outcome: 'blocked' }));
   });
 });

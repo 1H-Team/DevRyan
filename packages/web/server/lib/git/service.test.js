@@ -7,6 +7,7 @@ import { createRecordStore } from '@openchamber/harness-runtime';
 
 import {
   applyHunk,
+  buildGitEnv,
   canonicalizeWorktreeState,
   commit,
   configureWorktreeBootstrapRuntime,
@@ -42,6 +43,14 @@ describe('isInsideOrSameDirectory', () => {
     expect(isInsideOrSameDirectory('/data/worktree', '/data/worktree-evil')).toBe(false);
     expect(isInsideOrSameDirectory('', '/data/worktree')).toBe(false);
     expect(isInsideOrSameDirectory('/data/worktree', '')).toBe(false);
+  });
+});
+
+describe('background Git environment', () => {
+  it('disables optional index locks only when requested', async () => {
+    await expect(buildGitEnv(null, { optionalLocks: false })).resolves.toMatchObject({
+      GIT_OPTIONAL_LOCKS: '0',
+    });
   });
 });
 

@@ -95,6 +95,7 @@ let deferredManagedBranchTarget: {
   resolve: (value: Record<string, unknown>) => void
   reject: (reason?: unknown) => void
 } | null = null
+let nextWorktreeBootstrapError: Error | null = null
 
 function createDeferredSend() {
   let resolve!: (value: unknown) => void
@@ -424,11 +425,19 @@ mock.module("./viewport-store", () => ({
   },
 }))
 
-mock.module("@/lib/worktrees/worktreeBootstrap", () => ({
-  waitForWorktreeBootstrap: mock((directory: string) => {
+const waitForWorktreeBootstrapMock = mock((directory: string) => {
     waitForWorktreeBootstrapCalls.push(directory)
+    if (nextWorktreeBootstrapError) {
+      const error = nextWorktreeBootstrapError
+      nextWorktreeBootstrapError = null
+      return Promise.reject(error)
+    }
     return Promise.resolve()
-  }),
+})
+
+mock.module("@/lib/worktrees/worktreeBootstrap", () => ({
+  waitForWorktreeBootstrap: waitForWorktreeBootstrapMock,
+  waitForWorktreeBootstrapForSend: waitForWorktreeBootstrapMock,
 }))
 
 mock.module("@/lib/userSendAnimation", () => ({
@@ -623,6 +632,9 @@ const setManagedDeveloper = () => setAuthPrincipal({
     settingsPages: [],
     files: true,
     terminal: true,
+    browser: true,
+    createWorktrees: false,
+    createBranches: false,
     manageProjects: false,
     manageUsers: false,
     manageGlobalSettings: false,
@@ -705,6 +717,7 @@ describe("session-ui-store send routing", () => {
     deferredActivateDirectoryResolve = null
     deferManagedBranchTarget = false
     deferredManagedBranchTarget = null
+    nextWorktreeBootstrapError = null
     setAuthPrincipal(null)
     const storage = getSafeStorage()
     storage.removeItem(CURSOR_DRAFT_PREWARM_STORAGE_KEY)
@@ -794,6 +807,59 @@ describe("session-ui-store send routing", () => {
     useSessionUIStore.getState().recordUserMessagePlanMode("session-a", "msg_1_user", true)
 
     expect(useSessionUIStore.getState().sessionPlanIndicator.has("session-a")).toBe(false)
+  })
+
+  test("persists actionable plan proposals and removes them when implementation starts", () => {
+    const storage = getSafeStorage()
+    useSessionUIStore.getState().recordUserMessagePlanMode("session-a", "msg_1_user", true)
+
+    useSessionUIStore.getState().markPlanProposed("session-a", "msg_2_assistant")
+
+    const proposedState = JSON.parse(storage.getItem(PLAN_MESSAGE_STATE_STORAGE_KEY) ?? "{}") as {
+      proposedPlanIndicatorsBySession?: Array<[string, string]>
+    }
+    expect(proposedState.proposedPlanIndicatorsBySession).toEqual([["session-a", "msg_2_assistant"]])
+
+    useSessionUIStore.getState().markPlanImplementing(
+      "session-a",
+      "msg_2_assistant",
+      "msg_3_implementation",
+    )
+
+    const implementingState = JSON.parse(storage.getItem(PLAN_MESSAGE_STATE_STORAGE_KEY) ?? "{}") as {
+      proposedPlanIndicatorsBySession?: Array<[string, string]>
+    }
+    expect(implementingState.proposedPlanIndicatorsBySession).toBe(undefined)
+  })
+
+  test("persists only the newest proposal revision and restores it after implementation rollback", () => {
+    const storage = getSafeStorage()
+    useSessionUIStore.getState().markPlanProposed("session-a", "msg_2_assistant")
+    useSessionUIStore.getState().markPlanProposed("session-a", "msg_4_assistant")
+
+    const revisedState = JSON.parse(storage.getItem(PLAN_MESSAGE_STATE_STORAGE_KEY) ?? "{}") as {
+      proposedPlanIndicatorsBySession?: Array<[string, string]>
+    }
+    expect(revisedState.proposedPlanIndicatorsBySession).toEqual([["session-a", "msg_4_assistant"]])
+
+    const implementationKey = "session-a:msg_4_assistant:plan:0"
+    useSessionUIStore.getState().markPlanImplementationRequested(implementationKey)
+    useSessionUIStore.getState().markPlanImplementing(
+      "session-a",
+      "msg_4_assistant",
+      "msg_5_implementation",
+    )
+    useSessionUIStore.getState().rollbackPlanImplementation(
+      "session-a",
+      "msg_4_assistant",
+      implementationKey,
+      "msg_5_implementation",
+    )
+
+    const rolledBackState = JSON.parse(storage.getItem(PLAN_MESSAGE_STATE_STORAGE_KEY) ?? "{}") as {
+      proposedPlanIndicatorsBySession?: Array<[string, string]>
+    }
+    expect(rolledBackState.proposedPlanIndicatorsBySession).toEqual([["session-a", "msg_4_assistant"]])
   })
 
   test("hides an older proposal while a newer plan-mode turn is pending", () => {
@@ -991,7 +1057,7 @@ describe("session-ui-store send routing", () => {
     expect(createSessionCalls).toHaveLength(0)
 
     deferredManagedBranchTarget?.resolve({
-      status: "success",
+      status: "pending",
       source: "worktree",
       branchName: "Dev",
       directory: "/worktrees/Dev",
@@ -999,20 +1065,100 @@ describe("session-ui-store send routing", () => {
     await sendPromise
 
     expect(createSessionCalls[0]?.directory).toBe("/worktrees/Dev")
+    expect(waitForWorktreeBootstrapCalls).toContain("/worktrees/Dev")
     expect(activatedConfigDirectories).toContain("/worktrees/Dev")
     expect(createSessionCalls.some((call) => call.directory === "/repo")).toBe(false)
   })
 
-  test("opening a fresh draft applies defaults without preserving the previous session model", async () => {
+  test("a failed managed worktree bootstrap leaves the draft intact and creates no empty session", async () => {
+    setManagedDeveloper()
+    useProjectsStore.setState({
+      projects: [{
+        id: "project-1",
+        path: "/repo",
+        branches: [{ name: "Dev", directory: "/repo", isDefault: true }],
+      }],
+      activeProjectId: "project-1",
+    })
+    deferManagedBranchTarget = true
+    mockCreatedSession = { id: "session-must-not-exist", directory: "/worktrees/Dev" }
+    nextWorktreeBootstrapError = new Error("Git could not finalize the worktree index")
+    useSessionUIStore.getState().openNewSessionDraft({ selectedProjectId: "project-1" })
+
+    const sendPromise = useSessionUIStore.getState().sendMessage(
+      "hello",
+      "provider-current",
+      "model-current",
+      "Orchestrator",
+    )
+    await Promise.resolve()
+    deferredManagedBranchTarget?.resolve({
+      status: "pending",
+      source: "worktree",
+      branchName: "Dev",
+      directory: "/worktrees/Dev",
+    })
+
+    let sendError = ""
+    try {
+      await sendPromise
+    } catch (error) {
+      sendError = error instanceof Error ? error.message : String(error)
+    }
+    expect(sendError).toBe("Git could not finalize the worktree index")
+    expect(waitForWorktreeBootstrapCalls).toEqual(["/worktrees/Dev"])
+    expect(createSessionCalls).toEqual([])
+    expect(useSessionUIStore.getState().currentSessionId).toBeNull()
+    expect(useSessionUIStore.getState().newSessionDraft.open).toBe(true)
+  })
+
+  test("opening a fresh draft shows the configured Orchestrator model and High variant before activation settles", async () => {
+    const activation = createDeferredSend()
+    mockConfigState = {
+      currentAgentName: "orchestrator",
+      currentProviderId: "openai",
+      currentModelId: "gpt-5.6-sol",
+      currentVariant: "medium",
+      settingsDefaultAgent: "orchestrator",
+      agents: [{
+        name: "orchestrator",
+        mode: "primary",
+        model: { providerID: "openai", modelID: "gpt-5.6-sol" },
+        variant: "high",
+      }],
+      providers: [{
+        id: "openai",
+        models: [{ id: "gpt-5.6-sol", variants: { medium: {}, high: {} } }],
+      }],
+      activateDirectory: mock((directory?: string | null) => {
+        activatedConfigDirectories.push(directory)
+        mockConfigState = { ...mockConfigState, currentVariant: "medium" }
+        return activation.promise.then(() => undefined)
+      }),
+      applyDefaultsToCurrent: mock((options?: { preserveCurrentModel?: boolean }) => {
+        configApplyDefaultsCalls.push(options ?? {})
+        mockConfigState = { ...mockConfigState, currentVariant: "high" }
+      }),
+    }
     useSessionUIStore.getState().setCurrentSession("session-a", "/repo/a")
 
     useSessionUIStore.getState().openNewSessionDraft({ directoryOverride: "/repo" })
-    await Promise.resolve()
-    await Promise.resolve()
 
+    expect(mockConfigState.currentVariant).toBe("high")
     expect(configApplyDefaultsCalls).toEqual([{
       preserveCurrentModel: false,
     }])
+
+    activation.resolve(undefined)
+    await activation.promise
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(mockConfigState.currentVariant).toBe("high")
+    expect(configApplyDefaultsCalls).toEqual([
+      { preserveCurrentModel: false },
+      { preserveCurrentModel: false },
+    ])
   })
 
   test("opening an explicitly configured draft preserves its selected model", async () => {
@@ -1028,9 +1174,10 @@ describe("session-ui-store send routing", () => {
     await Promise.resolve()
     await Promise.resolve()
 
-    expect(configApplyDefaultsCalls).toEqual([{
-      preserveCurrentModel: true,
-    }])
+    expect(configApplyDefaultsCalls).toEqual([
+      { preserveCurrentModel: true },
+      { preserveCurrentModel: true },
+    ])
   })
 
   test("late fresh-draft activation cannot overwrite a newer session", async () => {
@@ -1046,7 +1193,7 @@ describe("session-ui-store send routing", () => {
     await Promise.resolve()
 
     expect(useSessionUIStore.getState().currentSessionId).toBe("session-b")
-    expect(configApplyDefaultsCalls).toEqual([])
+    expect(configApplyDefaultsCalls).toEqual([{ preserveCurrentModel: false }])
   })
 
   test("opening a startup draft preserves reload-compatible config-only drafts", () => {
@@ -1280,12 +1427,8 @@ describe("session-ui-store send routing", () => {
 
   test("clears only the matching handed-off plan indicator and persists released ownership", () => {
     const storage = getSafeStorage()
-    useSessionUIStore.setState({
-      sessionPlanAvailable: new Map([["session-a", true]]),
-      sessionPlanIndicator: new Map([["session-a", { state: "implementing", sourceMessageId: "msg_2_assistant" }]]),
-      planModeUserMessages: new Set(["msg_1_user"]),
-      planModeUserMessagesBySession: new Map([["session-a", "msg_1_user"]]),
-    })
+    useSessionUIStore.getState().recordUserMessagePlanMode("session-a", "msg_1_user", true)
+    useSessionUIStore.getState().markPlanProposed("session-a", "msg_2_assistant")
 
     useSessionUIStore.getState().clearHandedOffPlanIndicator("session-a", "msg_2_assistant")
 
@@ -1294,6 +1437,7 @@ describe("session-ui-store send routing", () => {
     expect(state.planModeUserMessagesBySession.has("session-a")).toBe(false)
     expect(state.sessionPlanAvailable.get("session-a")).toBe(true)
     expect(storage.getItem(PLAN_MESSAGE_STATE_STORAGE_KEY)).toContain('"planModeUserMessagesBySession":[]')
+    expect(storage.getItem(PLAN_MESSAGE_STATE_STORAGE_KEY)).not.toContain("proposedPlanIndicatorsBySession")
   })
 
   test("does not clear a newer plan revision during a stale mobile handoff", () => {
@@ -1689,7 +1833,7 @@ describe("session-ui-store send routing", () => {
       ]),
       sessionPlanIndicator: new Map([
         ["session-a", { state: "proposed", sourceMessageId: "msg-plan-a" }],
-        ["session-b", { state: "implementing", sourceMessageId: "msg-plan-b" }],
+        ["session-b", { state: "proposed", sourceMessageId: "msg-plan-b" }],
       ]),
       sessionCompletionIndicator: new Map([
         ["session-a", { messageId: "msg-complete-a", completedAt: 10 }],
@@ -1747,9 +1891,21 @@ describe("session-ui-store send routing", () => {
       ]),
     })
     useSessionPlanFileStore.getState().beginSaving("session-a", "msg-plan-a")
-    useSessionPlanFileStore.getState().markSaved("session-a", "msg-plan-a", "/plans/a.md")
+    useSessionPlanFileStore.getState().markSaved("session-a", "msg-plan-a", "/plans/a.md", {
+      sessionId: "session-a",
+      sourceMessageId: "msg-plan-a",
+      directory: "/repo/session-a",
+      sessionCreated: 1,
+      sessionSlug: "Plan A",
+    })
     useSessionPlanFileStore.getState().beginSaving("session-b", "msg-plan-b")
-    useSessionPlanFileStore.getState().markSaved("session-b", "msg-plan-b", "/plans/b.md")
+    useSessionPlanFileStore.getState().markSaved("session-b", "msg-plan-b", "/plans/b.md", {
+      sessionId: "session-b",
+      sourceMessageId: "msg-plan-b",
+      directory: "/repo/session-b",
+      sessionCreated: 2,
+      sessionSlug: "Plan B",
+    })
     const storage = getSafeStorage()
     storage.setItem(PLAN_MESSAGE_STATE_STORAGE_KEY, JSON.stringify({
       planModeUserMessages: ["msg-plan-user-a", "msg-plan-user-b"],
@@ -1761,6 +1917,10 @@ describe("session-ui-store send routing", () => {
         "session-a:msg-plan-a:plan:0",
         "session-a-other:msg-near-prefix:plan:0",
         "session-b:msg-plan-b:plan:0",
+      ],
+      proposedPlanIndicatorsBySession: [
+        ["session-a", "msg-plan-a"],
+        ["session-b", "msg-plan-b"],
       ],
     }))
     storage.setItem(CURSOR_DRAFT_PREWARM_STORAGE_KEY, JSON.stringify([
@@ -1807,6 +1967,7 @@ describe("session-ui-store send routing", () => {
       planModeUserMessages?: string[]
       planModeUserMessagesBySession?: Array<[string, string]>
       implementedPlanRequests?: string[]
+      proposedPlanIndicatorsBySession?: Array<[string, string]>
     }
     expect(persistedPlanState).toEqual({
       planModeUserMessages: ["msg-plan-user-b"],
@@ -1815,6 +1976,7 @@ describe("session-ui-store send routing", () => {
         "session-a-other:msg-near-prefix:plan:0",
         "session-b:msg-plan-b:plan:0",
       ],
+      proposedPlanIndicatorsBySession: [["session-b", "msg-plan-b"]],
     })
     expect(JSON.parse(storage.getItem(CURSOR_DRAFT_PREWARM_STORAGE_KEY) ?? "[]")).toEqual([
       { draftId: "draft-b", sessionID: "session-b", directory: "/repo/session-b", createdAt: 2 },
@@ -2181,6 +2343,112 @@ describe("session-ui-store send routing", () => {
 
     deferredSendMessage?.resolve({ data: true })
     await sendPromise
+  })
+
+  test("concurrent sends claim one draft once and use its captured text", async () => {
+    mockCreatedSession = { id: "session-created", directory: "/repo" }
+    deferNextCreateSession = true
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      currentDraftId: "draft-send",
+      draftsById: {
+        "draft-send": {
+          id: "draft-send",
+          text: "the complete draft prompt",
+          createdAt: 1,
+          updatedAt: 1,
+          directoryOverride: "/repo",
+          parentID: null,
+        },
+      },
+      draftOrder: ["draft-send"],
+      newSessionDraft: { open: true, id: "draft-send", directoryOverride: "/repo", parentID: null },
+    })
+
+    const firstSend = useSessionUIStore.getState().sendMessage(
+      "the complete draft prompt",
+      "provider-a",
+      "model-a",
+      "builder",
+    )
+    await Promise.resolve()
+
+    useSessionUIStore.setState((state) => ({
+      draftsById: {
+        ...state.draftsById,
+        "draft-send": {
+          ...state.draftsById["draft-send"],
+          text: "the truncated draft",
+          updatedAt: 2,
+        },
+      },
+    }))
+    const duplicateSend = useSessionUIStore.getState().sendMessage(
+      "the truncated draft",
+      "provider-a",
+      "model-a",
+      "builder",
+    )
+
+    expect(createSessionCalls).toHaveLength(1)
+    deferredCreateSession?.resolve(mockCreatedSession)
+    await Promise.all([firstSend, duplicateSend])
+
+    expect(createSessionCalls).toHaveLength(1)
+    expect(optimisticCalls).toHaveLength(1)
+    expect(optimisticCalls[0]?.content).toBe("the complete draft prompt")
+    expect(sendMessageCalls).toHaveLength(1)
+    expect(savedSessionModels).toHaveLength(1)
+    expect(useSessionUIStore.getState().draftsById["draft-send"]).toBe(undefined)
+  })
+
+  test("aborting a claimed draft before creation releases it for one explicit retry", async () => {
+    mockCreatedSession = { id: "session-aborted", directory: "/repo" }
+    deferNextCreateSession = true
+    useSessionUIStore.setState({
+      currentSessionId: null,
+      currentDraftId: "draft-send",
+      draftsById: {
+        "draft-send": {
+          id: "draft-send",
+          text: "retry this draft",
+          createdAt: 1,
+          updatedAt: 1,
+          directoryOverride: "/repo",
+          parentID: null,
+        },
+      },
+      draftOrder: ["draft-send"],
+      newSessionDraft: { open: true, id: "draft-send", directoryOverride: "/repo", parentID: null },
+    })
+
+    const abortedSend = useSessionUIStore.getState().sendMessage(
+      "retry this draft",
+      "provider-a",
+      "model-a",
+    )
+    await Promise.resolve()
+    expect(useSessionUIStore.getState().abortPendingSend("draft:draft-send")).toBe(true)
+    deferredCreateSession?.resolve(mockCreatedSession)
+    let abortedError: unknown = null
+    try {
+      await abortedSend
+    } catch (error) {
+      abortedError = error
+    }
+    expect(abortedError).toBeInstanceOf(Error)
+
+    expect(useSessionUIStore.getState().draftsById["draft-send"]?.text).toBe("retry this draft")
+    expect(useSessionUIStore.getState().hasPendingSendAbort("draft:draft-send")).toBe(false)
+
+    mockCreatedSession = { id: "session-retry", directory: "/repo" }
+    await useSessionUIStore.getState().sendMessage(
+      "retry this draft",
+      "provider-a",
+      "model-a",
+    )
+    expect(createSessionCalls).toHaveLength(2)
+    expect(sendMessageCalls).toHaveLength(1)
   })
 
   test("aborting a promoted draft send cancels prompt acceptance and clears pending state", async () => {
@@ -3986,6 +4254,16 @@ describe("session-ui-store send routing", () => {
     expect(state.currentDraftId).toBe("draft-send")
     expect(state.draftsById["draft-send"]?.text).toBe("message from draft")
     expect(state.newSessionDraft.open).toBe(true)
+    expect(state.hasPendingSendAbort("draft:draft-send")).toBe(false)
+
+    mockCreatedSession = { id: "session-retry", directory: "/repo" }
+    await useSessionUIStore.getState().sendMessage(
+      "message from draft",
+      "provider-current",
+      "model-current",
+    )
+    expect(createSessionCalls).toHaveLength(2)
+    expect(sendMessageCalls).toHaveLength(1)
   })
 
   test("draft send validates provider and model before creating a session", async () => {

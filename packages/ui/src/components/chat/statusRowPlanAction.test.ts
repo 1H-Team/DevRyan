@@ -7,20 +7,57 @@ import {
   shouldAutoRevealPlanInMainTab,
 } from './statusRowPlanAction';
 
+const revisionIdentity = (sourceMessageId: string) => ({
+  sessionId: 'session-a',
+  sourceMessageId,
+  directory: '/repo',
+  sessionCreated: 123,
+  sessionSlug: 'Plan',
+});
+
 describe('getStatusRowPlanActionState', () => {
-  test('shows the composer action without tasks and enables it only after save', () => {
+  test('shows the composer action without tasks and enables it only after save or retry recovery', () => {
     expect(getStatusRowPlanActionState({
       showTodos: true,
       isPlanAvailable: true,
       isVSCode: false,
-      record: { sourceMessageId: 'msg-1', path: null, status: 'saving', error: null },
+      record: {
+        sourceMessageId: 'msg-1',
+        path: null,
+        revisionIdentity: null,
+        status: 'saving',
+        error: null,
+      },
     })).toEqual({ visible: true, enabled: false, disabledReason: 'Plan file is still saving.' });
 
     expect(getStatusRowPlanActionState({
       showTodos: true,
       isPlanAvailable: true,
       isVSCode: false,
-      record: { sourceMessageId: 'msg-1', path: '/plans/a.md', status: 'saved', error: null },
+      record: {
+        sourceMessageId: 'msg-1',
+        path: null,
+        revisionIdentity: null,
+        status: 'error',
+        error: 'Plan storage is unavailable',
+      },
+    })).toEqual({
+      visible: true,
+      enabled: false,
+      disabledReason: 'Plan file could not be saved. Retry from the plan card.',
+    });
+
+    expect(getStatusRowPlanActionState({
+      showTodos: true,
+      isPlanAvailable: true,
+      isVSCode: false,
+      record: {
+        sourceMessageId: 'msg-1',
+        path: '/plans/a.md',
+        revisionIdentity: revisionIdentity('msg-1'),
+        status: 'saved',
+        error: null,
+      },
     })).toEqual({ visible: true, enabled: true, disabledReason: null });
   });
 
@@ -44,19 +81,37 @@ describe('getStatusRowPlanActionState', () => {
       showTodos: true,
       isPlanAvailable: false,
       isVSCode: false,
-      record: { sourceMessageId: 'msg-1', path: '/plans/a.md', status: 'saved', error: null },
+      record: {
+        sourceMessageId: 'msg-1',
+        path: '/plans/a.md',
+        revisionIdentity: revisionIdentity('msg-1'),
+        status: 'saved',
+        error: null,
+      },
     })).toEqual({ visible: true, enabled: true, disabledReason: null });
 
     expect(hasPlanTaskTrackingContext({
       isPlanAvailable: false,
-      record: { sourceMessageId: 'msg-1', path: '/plans/a.md', status: 'saved', error: null },
+      record: {
+        sourceMessageId: 'msg-1',
+        path: '/plans/a.md',
+        revisionIdentity: revisionIdentity('msg-1'),
+        status: 'saved',
+        error: null,
+      },
     })).toBe(true);
   });
 
   test('does not infer plan task tracking from an unsaved record alone', () => {
     expect(hasPlanTaskTrackingContext({
       isPlanAvailable: false,
-      record: { sourceMessageId: 'msg-1', path: null, status: 'saving', error: null },
+      record: {
+        sourceMessageId: 'msg-1',
+        path: null,
+        revisionIdentity: null,
+        status: 'saving',
+        error: null,
+      },
     })).toBe(false);
   });
 
@@ -64,6 +119,7 @@ describe('getStatusRowPlanActionState', () => {
     const record = {
       sourceMessageId: 'msg-plan-2',
       path: '/plans/plan-2.md',
+      revisionIdentity: revisionIdentity('msg-plan-2'),
       status: 'saved' as const,
       error: null,
     };
@@ -105,6 +161,7 @@ describe('getStatusRowPlanActionState', () => {
       record: {
         sourceMessageId: 'msg-plan-2',
         path: '/plans/plan-2.md',
+        revisionIdentity: revisionIdentity('msg-plan-2'),
         status: 'saved',
         error: null,
         autoRevealed: true,
@@ -118,6 +175,7 @@ describe('getStatusRowPlanActionState', () => {
       record: {
         sourceMessageId: 'msg-plan-2',
         path: null,
+        revisionIdentity: null,
         status: 'saving',
         error: null,
       },

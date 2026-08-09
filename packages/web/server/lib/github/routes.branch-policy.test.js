@@ -84,7 +84,7 @@ describe('managed GitHub project policy', () => {
     expect(pulls.create).toHaveBeenCalledWith(expect.objectContaining({ head: 'developer', base: 'main' }));
   });
 
-  it('allows ungranted branches because branch grants are a UI visibility filter', async () => {
+  it('rejects a PR whose writable head branch is not assigned', async () => {
     const response = await request(createApp())
       .post('/api/github/pr/create')
       .send({
@@ -94,11 +94,24 @@ describe('managed GitHub project policy', () => {
         base: 'developer',
       });
 
-    expect(response.status).toBe(200);
-    expect(pulls.create).toHaveBeenCalledWith(expect.objectContaining({ head: 'main', base: 'developer' }));
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual(expect.objectContaining({ code: 'BRANCH_NOT_ASSIGNED' }));
+    expect(pulls.create).not.toHaveBeenCalled();
   });
 
-  it('allows PR operations from a contained real worktree', async () => {
+  it('rejects merging a PR into an unassigned base branch', async () => {
+    const response = await request(createApp())
+      .post('/api/github/pr/merge')
+      .send({ directory: `${assignment.worktreeContainerPath}/feature`, number: 42, method: 'squash' });
+
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual(expect.objectContaining({ code: 'BRANCH_NOT_ASSIGNED' }));
+    expect(pulls.merge).not.toHaveBeenCalled();
+  });
+
+  it('allows merging a PR into an assigned base branch from a contained worktree', async () => {
+    pulls.get.mockResolvedValueOnce({ data: { base: { ref: 'developer' }, node_id: 'PR_node', draft: false } });
+
     const response = await request(createApp())
       .post('/api/github/pr/merge')
       .send({ directory: `${assignment.worktreeContainerPath}/feature`, number: 42, method: 'squash' });

@@ -29,6 +29,7 @@ import { cn } from '@/lib/utils';
 import { useAgentGroupsStore, type AgentGroup } from '@/stores/useAgentGroupsStore';
 import { useAllSessionStatuses } from '@/sync/sync-context';
 import { useI18n } from '@/lib/i18n';
+import { useAuthPrincipal } from '@/lib/authSession';
 
 const formatRelativeTime = (timestamp: number): { unit: 'now' | 'minutes' | 'hours' | 'days'; count?: number } => {
   const now = Date.now();
@@ -49,9 +50,10 @@ interface AgentGroupItemProps {
   isSelected: boolean;
   isBusy: boolean;
   onSelect: () => void;
+  canRemoveWorktrees: boolean;
 }
 
-const AgentGroupItem: React.FC<AgentGroupItemProps> = ({ group, isSelected, isBusy, onSelect }) => {
+const AgentGroupItem: React.FC<AgentGroupItemProps> = ({ group, isSelected, isBusy, onSelect, canRemoveWorktrees }) => {
   const { t } = useI18n();
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
@@ -113,7 +115,7 @@ const AgentGroupItem: React.FC<AgentGroupItemProps> = ({ group, isSelected, isBu
             </div>
           </button>
 
-          <div className="flex items-center gap-1.5 self-stretch">
+          {canRemoveWorktrees ? <div className="flex items-center gap-1.5 self-stretch">
             <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <button
@@ -142,7 +144,7 @@ const AgentGroupItem: React.FC<AgentGroupItemProps> = ({ group, isSelected, isBu
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
+          </div> : null}
         </div>
       </div>
 
@@ -184,6 +186,8 @@ export const AgentManagerSidebar: React.FC<AgentManagerSidebarProps> = ({
   onNewAgent,
 }) => {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
+  const canRemoveWorktrees = principal.scope !== 'managed' || principal.role === 'admin';
   const [searchQuery, setSearchQuery] = React.useState('');
   const [showAll, setShowAll] = React.useState(false);
   const isLoading = useAgentGroupsStore((s) => s.isLoading);
@@ -229,7 +233,7 @@ export const AgentManagerSidebar: React.FC<AgentManagerSidebarProps> = ({
       </div>
 
       {/* New Agent Button */}
-      <div className="px-2.5 pb-2">
+      {onNewAgent ? <div className="px-2.5 pb-2">
         <Button
           variant="outline"
           className="w-full justify-start gap-2 h-8"
@@ -238,7 +242,7 @@ export const AgentManagerSidebar: React.FC<AgentManagerSidebarProps> = ({
           <RiAddLine className="h-4 w-4" />
           <span className="typography-ui-label">{t('agentManager.sidebar.actions.newAgentGroup')}</span>
         </Button>
-      </div>
+      </div> : null}
 
       {/* Agent Groups Section Header */}
       <div className="px-2.5 py-1.5 flex items-center gap-1">
@@ -265,6 +269,7 @@ export const AgentManagerSidebar: React.FC<AgentManagerSidebarProps> = ({
             isSelected={selectedGroupName === group.name}
             isBusy={busyGroups.has(group.name)}
             onSelect={() => onGroupSelect?.(group.name)}
+            canRemoveWorktrees={canRemoveWorktrees}
           />
         ))}
 

@@ -4,10 +4,10 @@
 Browser bootstrap layer for the shared UI: wires runtime API adapters, service-worker behavior, and web-specific startup for main app, mini-chat, and detachable-browser entrypoints.
 
 ## Design
-- **Adapter-first UI boot**: exposes `RuntimeAPIs` on `window.__OPENCHAMBER_RUNTIME_APIS__` before loading `@openchamber/ui/main`.
+- **Adapter-first UI boot**: exposes `RuntimeAPIs` on `window.__OPENCHAMBER_RUNTIME_APIS__` before loading `@openchamber/ui/main`, including the session-owned plan-revision adapter used instead of generic filesystem access.
 - **Environment-gated PWA behavior**: browser production registers the PWA service worker; desktop/Electron and development startups unregister stale registrations through `pwa-service-worker.ts`.
 - **Thin entrypoint strategy**: app logic lives in shared `@openchamber/ui`; this directory only provides web runtime glue.
-- **Browser pop-out entry**: `browser-main.tsx` initializes web runtime APIs before loading the shared `renderBrowserPopoutApp`; `vite.config.ts` emits it through the dedicated `browser.html` input.
+- **Browser pop-out entry**: `browser-main.tsx` initializes web runtime APIs before loading the shared `renderBrowserPopoutApp`; `vite.config.ts` emits it through the dedicated `browser.html` input. Manual Browser pop-outs restore a versioned multi-page workspace from an opaque same-origin workspace ID, while surface-ID entry remains available for Electron lease compatibility.
 
 ## Flow
 1. `main.tsx` constructs runtime APIs via `createWebAPIs()`.

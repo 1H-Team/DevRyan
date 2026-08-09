@@ -295,6 +295,7 @@ const requiresManualModelRecovery = (result) => {
     && isRecord(resultEnvelope)
     && task.childSessionId
     && task.agentRetryAvailable === false
+    && task.failureKind !== 'provider_prompt_rejected'
     && (task.status === 'failed' || task.status === 'interrupted')
     && (
       task.failureKind === 'provider_usage_limit'
@@ -967,12 +968,12 @@ export const DevRyanManagedOrchestrationPlugin = async ({
     'tool.execute.before': beforeToolExecute,
     tool: {
       devryan_task: tool({
-      description: 'Start or control a DevRyan-managed sub-agent. When managed delegation is already the decided next action, start it before any standalone todo read/write whose only purpose is to restate that delegation. DevRyan does not impose a managed concurrency cap: start every independent sub-agent needed by the task without batching around an artificial slot limit. DevRyan preserves partial results after failure or abort. DevRyan keeps each wait call attached while repeating bounded polling slices internally; wait returns only a terminal result, and status is the non-blocking way to inspect queued, starting, or running state. A resumable failure with no agent retry remaining leaves a durable pending result while the user selects a recovery model; the attached wait returns the recovered same-child result, or DevRyan wakes the idle parent if an external timeout detached that wait. This is distinct from provider-native task orchestration.',
+      description: 'Start or control a DevRyan-managed sub-agent. When managed delegation is already the decided next action, start it before any standalone todo read/write whose only purpose is to restate that delegation. DevRyan does not impose a managed concurrency cap: start every independent sub-agent needed by the task without batching around an artificial slot limit. DevRyan preserves partial results after failure or abort. DevRyan keeps each wait call attached while repeating bounded polling slices internally; wait returns only a terminal result, and status is the non-blocking way to inspect queued, starting, or running state. A resumable failure with no agent retry remaining leaves a durable pending result while the user selects a recovery model, except provider prompt rejection, which requires the one agent recovery to use a reframed prompt in a fresh child. This is distinct from provider-native task orchestration.',
       args: {
         action: tool.schema.enum(ACTIONS).describe('Action: start, status, wait, cancel, continue, retry, resume, or abandon. A resumable failure with no agent retry remaining is handled by the user-facing Model Recovery controls while the durable result remains pending; an attached wait resumes directly, while a detached wait is recovered by an idle-parent continuation. Wait stays attached until terminal while DevRyan polls internally; use status for a non-blocking live snapshot.'),
         task_id: tool.schema.string().optional().describe('Managed dvr_task_ ID. Required for every action except start.'),
         label: tool.schema.string().optional().describe('Short task label for start or retry.'),
-        prompt: tool.schema.string().optional().describe('Full delegated prompt for start, or an optional retry override.'),
+        prompt: tool.schema.string().optional().describe('Full delegated prompt for start, or a retry override. A provider_prompt_rejected retry requires a compact, semantically complete prompt that differs from the rejected prompt.'),
         provider_id: tool.schema.string().optional().describe('Compatibility fallback provider ID when no runtime agent catalog is available. Supply together with model_id; configured agent settings are authoritative.'),
         model_id: tool.schema.string().optional().describe('Compatibility fallback model ID when no runtime agent catalog is available. Supply together with provider_id; configured agent settings are authoritative.'),
         agent: tool.schema.string().optional().describe('Agent name for start or an optional retry/resume override.'),

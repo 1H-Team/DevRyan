@@ -1,8 +1,10 @@
-import { generateZenText } from '../text/summarization.js';
+import { generateZenText, isUnavailableZenModelError } from '../text/summarization.js';
 
 export const COMMIT_SUBJECT_MAX_LENGTH = 72;
 export const COMMIT_GENERATION_DEFAULT_ZEN_MODEL = 'deepseek-v4-flash-free';
 export const COMMIT_GENERATION_TIMEOUT_MS = 60_000;
+export const COMMIT_GENERATION_CHAT_MAX_TOKENS = 64;
+export const COMMIT_GENERATION_RESPONSES_MAX_OUTPUT_TOKENS = 128;
 export const ALLOWED_COMMIT_TYPES = [
   'feat',
   'fix',
@@ -90,18 +92,66 @@ Git context:
 ${JSON.stringify(context, null, 2)}`;
 }
 
-export async function generateCommitMessageDirect({ context, guidance, zenModel, requestText = generateZenText }) {
+export async function generateCommitMessageDirect({
+  context,
+  guidance,
+  zenModel,
+  fallbackZenModel,
+  onTiming,
+  requestText = generateZenText,
+}) {
   const prompt = buildCommitMessagePrompt(context, guidance);
   const model = typeof zenModel === 'string' && zenModel.trim()
     ? zenModel.trim()
     : COMMIT_GENERATION_DEFAULT_ZEN_MODEL;
-  const output = await requestText({
+  const request = (selectedModel) => requestText({
     prompt,
-    zenModel: model,
+    zenModel: selectedModel,
     timeoutMs: COMMIT_GENERATION_TIMEOUT_MS,
+    chatMaxTokens: COMMIT_GENERATION_CHAT_MAX_TOKENS,
+    ...(selectedModel === COMMIT_GENERATION_DEFAULT_ZEN_MODEL
+      ? { chatReasoningEffort: 'none' }
+      : {}),
+    responsesMaxOutputTokens: COMMIT_GENERATION_RESPONSES_MAX_OUTPUT_TOKENS,
+    stop: ['\n'],
   });
+  const providerStartedAt = Date.now();
+  let output;
+  let retried = false;
+  let providerCompleted = false;
+  try {
+    try {
+      output = await request(model);
+    } catch (error) {
+      const fallback = typeof fallbackZenModel === 'string' ? fallbackZenModel.trim() : '';
+      if (!fallback || fallback === model || !isUnavailableZenModelError(error)) throw error;
+      retried = true;
+      output = await request(fallback);
+    }
+    providerCompleted = true;
+  } finally {
+    if (!providerCompleted) {
+      onTiming?.({
+        providerMs: Date.now() - providerStartedAt,
+        parseMs: 0,
+        retried,
+      });
+    }
+  }
+  const providerMs = Date.now() - providerStartedAt;
+  const parseStartedAt = Date.now();
+  let subject;
+  try {
+    subject = normalizeGeneratedCommitSubject(output);
+  } finally {
+    onTiming?.({
+      providerMs,
+      parseMs: Date.now() - parseStartedAt,
+      retried,
+    });
+  }
   return {
-    subject: normalizeGeneratedCommitSubject(output),
+    subject,
     highlights: [],
   };
 }

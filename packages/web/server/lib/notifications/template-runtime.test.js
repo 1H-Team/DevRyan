@@ -85,6 +85,77 @@ describe('notification template runtime zen models', () => {
 
     await expect(runtime.resolveZenModel()).resolves.toBe('gpt-5-nano');
   });
+
+  it('resolves commit models immediately while deduplicating cold and stale catalog refreshes', async () => {
+    let now = 1_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const pendingResponses = [];
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((url) => new Promise((resolve) => {
+      pendingResponses.push({ url: String(url), resolve });
+    }));
+    const runtime = createRuntime();
+
+    expect(runtime.resolveZenModelNonBlocking('deepseek-v4-flash-free')).toEqual({
+      model: 'deepseek-v4-flash-free',
+      fallbackModel: null,
+      catalogState: 'empty',
+    });
+    expect(runtime.resolveZenModelNonBlocking('deepseek-v4-flash-free').catalogState).toBe('empty');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    for (const pending of pendingResponses.splice(0)) {
+      pending.resolve(pending.url.includes('models.dev')
+        ? {
+            ok: true,
+            json: async () => ({
+              opencode: {
+                models: {
+                  'gpt-5-nano': { cost: { input: 0, output: 0 } },
+                  'big-pickle': { cost: { input: 0, output: 0 } },
+                },
+              },
+            }),
+          }
+        : {
+            ok: true,
+            json: async () => ({ data: [
+              { id: 'gpt-5-nano', owned_by: 'opencode' },
+              { id: 'big-pickle', owned_by: 'opencode' },
+            ] }),
+          });
+    }
+    await runtime.fetchFreeZenModels();
+
+    now += (5 * 60 * 1_000) + 1;
+    const staleSelection = runtime.resolveZenModelNonBlocking('deepseek-v4-flash-free');
+    runtime.resolveZenModelNonBlocking('deepseek-v4-flash-free');
+
+    expect(staleSelection).toEqual({
+      model: 'gpt-5-nano',
+      fallbackModel: 'big-pickle',
+      catalogState: 'stale',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+
+    for (const pending of pendingResponses.splice(0)) {
+      pending.resolve(pending.url.includes('models.dev')
+        ? {
+            ok: true,
+            json: async () => ({ opencode: { models: {
+              'gpt-5-nano': { cost: { input: 0, output: 0 } },
+              'big-pickle': { cost: { input: 0, output: 0 } },
+            } } }),
+          }
+        : {
+            ok: true,
+            json: async () => ({ data: [
+              { id: 'gpt-5-nano', owned_by: 'opencode' },
+              { id: 'big-pickle', owned_by: 'opencode' },
+            ] }),
+          });
+    }
+    await runtime.fetchFreeZenModels();
+  });
 });
 
 describe('notification template runtime session variables', () => {

@@ -5,15 +5,15 @@ import * as gitHttp from './gitApiHttp';
 import { opencodeClient } from './opencode/client';
 import { renderMagicPrompt, type MagicPromptId } from './magicPrompts';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { createSessionRecord } from '@/sync/session-actions';
+import { consumeLastCreateSessionError, createSession, createSessionRecord } from '@/sync/session-actions';
 import { useContextStore } from '@/stores/contextStore';
 import { useConfigStore } from '@/stores/useConfigStore';
 import {
   buildCommitPlanContext,
   serializeCommitPlanContext,
-  COMMIT_DRAFT_CONTEXT_LIMITS,
 } from './git/commitPlanContext';
 import { GIT_GENERATION_SESSION_TITLE, unregisterGitGenerationSession } from './git/gitGenerationSessions';
+import { assertCanCreateBranches } from './authSession';
 
 export { isGitGenerationSession } from './git/gitGenerationSessions';
 
@@ -176,9 +176,9 @@ export async function checkIsGitRepository(directory: string): Promise<boolean> 
   return gitHttp.checkIsGitRepository(directory);
 }
 
-export async function getGitStatus(directory: string, options?: { mode?: 'light' }): Promise<import('./api/types').GitStatus> {
+export async function getGitStatus(directory: string, options?: { mode?: 'light'; force?: boolean }): Promise<import('./api/types').GitStatus> {
   const runtime = getRuntimeGit();
-  if (runtime) return runtime.getGitStatus(directory, options);
+  if (runtime) return runtime.getGitStatus(directory, options?.mode ? { mode: options.mode } : undefined);
   return gitHttp.getGitStatus(directory, options);
 }
 
@@ -439,35 +439,36 @@ export async function generateCommitMessageDraft(
   files: string[],
   options?: CommitGenerationOptions
 ): Promise<import('./api/types').GeneratedCommitWorkflowResult> {
-  const contextResult = await buildCommitPlanContext(directory, files, {
+  const startedAt = Date.now();
+  const request: import('./api/types').GenerateGitCommitMessageDraftRequest = {
+    selectedFiles: files,
     stagedOnly: options?.stagedOnly === true,
-    limits: COMMIT_DRAFT_CONTEXT_LIMITS,
-  });
-
-  if (contextResult.status === 'blocked') {
-    return {
-      status: 'blocked',
-      commits: [],
-      message: contextResult.message,
-    };
-  }
-
-  const request: import('./api/types').GenerateGitCommitMessageRequest = {
-    context: contextResult.context,
     ...(options?.commitMessageGuidance?.trim()
       ? { guidance: options.commitMessageGuidance.trim() }
       : {}),
     ...(options?.zenModel?.trim() ? { zenModel: options.zenModel.trim() } : {}),
   };
   const runtime = getRuntimeGit();
-  const message = runtime
-    ? await runtime.generateCommitMessage(directory, request)
-    : await gitHttp.generateCommitMessage(directory, request);
-
-  return {
-    status: 'complete',
-    commits: [message],
-  };
+  try {
+    const result = runtime
+      ? await runtime.generateCommitMessageDraft(directory, request)
+      : await gitHttp.generateCommitMessageDraft(directory, request);
+    console.info('[git-generation][browser] draft complete', {
+      elapsedMs: Date.now() - startedAt,
+      selectedFiles: files.length,
+      stagedOnly: options?.stagedOnly === true,
+      status: result.status,
+    });
+    return result;
+  } catch (error) {
+    console.error('[git-generation][browser] draft failed', {
+      elapsedMs: Date.now() - startedAt,
+      selectedFiles: files.length,
+      stagedOnly: options?.stagedOnly === true,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 }
 
 export async function generateCommitPlanPreview(
@@ -548,10 +549,7 @@ export async function generatePullRequestDescription(
   payload: { base: string; head: string; context?: string; zenModel?: string; providerId?: string; modelId?: string }
 ): Promise<import('./api/types').GeneratedPullRequestDescription> {
   const startedAt = Date.now();
-  const generationSession = resolveSessionGenerationContext();
-  if (!generationSession) {
-    throw new Error('Select existing session for generation');
-  }
+  const generationSession = await resolvePullRequestGenerationContext(directory);
 
   const commitLog = await getGitLog(directory, {
     from: payload.base,
@@ -730,13 +728,35 @@ const buildSessionGenerationContext = (
   };
 };
 
-const resolveSessionGenerationContext = (): SessionGenerationContext | null => {
+const resolvePullRequestGenerationContext = async (directory: string): Promise<SessionGenerationContext> => {
   const sessionId = resolveCurrentGenerationSessionId();
-  if (!sessionId) {
-    return null;
+  if (sessionId) {
+    return buildSessionGenerationContext(sessionId);
   }
 
-  return buildSessionGenerationContext(sessionId);
+  const agent = resolveGenerationAgent(null);
+  const selectedModel = resolveGenerationModel(null, agent);
+  if (!selectedModel?.providerId || !selectedModel?.modelId) {
+    throw new Error(NO_GENERATION_MODEL_MESSAGE);
+  }
+
+  const session = await createSession(undefined, directory, null);
+  if (!session?.id) {
+    const createError = consumeLastCreateSessionError();
+    if (createError instanceof Error) {
+      throw createError;
+    }
+    throw new Error('Unable to create a session for pull request generation');
+  }
+
+  return {
+    sessionId: session.id,
+    providerID: selectedModel.providerId,
+    modelID: selectedModel.modelId,
+    agent,
+    variant: resolveCurrentGenerationVariant(),
+    sessionCreatedForGeneration: true,
+  };
 };
 
 const resolveCommitGenerationContext = async (directory: string): Promise<SessionGenerationContext> => {
@@ -1344,6 +1364,7 @@ export async function createBranch(
   name: string,
   startPoint?: string
 ): Promise<{ success: boolean; branch: string }> {
+  assertCanCreateBranches();
   const runtime = getRuntimeGit();
   if (runtime) return runtime.createBranch(directory, name, startPoint);
   return gitHttp.createBranch(directory, name, startPoint);

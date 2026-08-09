@@ -9,6 +9,7 @@ const browserAgentStore = read('../../stores/useBrowserAgentStore.ts');
 const uiStore = read('../../stores/useUIStore.ts');
 const projectActions = read('./ProjectActionsButton.tsx');
 const appEffects = read('../../apps/AppEffects.tsx');
+const localPreviewInstances = read('./localPreviewInstances.ts');
 
 describe('session-scoped browser lease lifecycle', () => {
   test('mounts the invariant lease fleet directly from live lease IDs', () => {
@@ -58,9 +59,11 @@ describe('session-scoped browser lease lifecycle', () => {
     expect(contextPanel).toContain('closeContextPanelTab(directoryKey, staleTabID);');
   });
 
-  test('keeps manual browser guests on the ordinary active-or-retained policy', () => {
-    expect(contextPanel).toContain("tabs.filter((tab) => tab.mode === 'browser' && !tab.leaseId)");
-    expect(contextPanel).toContain('const isMounted = isActive || retainedBrowserTabIDs.has(tab.id);');
+  test('keeps manual browser pages on the dedicated active-or-retained workspace policy', () => {
+    expect(contextPanel).toContain("tabs.find((tab) => tab.mode === 'browser' && !tab.leaseId)");
+    expect(contextPanel).toContain('<ManualBrowserWorkspacePane');
+    expect(browserPane).toContain('const isMounted = isActive || retainedTabIds.has(tab.id);');
+    expect(browserPane).toContain('sleepDelayMs: BROWSER_PAGE_SLEEP_DELAY_MS');
     expect(contextPanel).not.toContain('agentDriving || retainedBrowserTabIDs');
     expect(uiStore).toContain("tab.mode === 'browser' && !tab.leaseId");
   });
@@ -99,6 +102,16 @@ describe('session-scoped browser lease lifecycle', () => {
     expect(appEffects).toContain('collectBrowserAgentWindowContexts');
     expect(appEffects).toContain('claimBrowserAgentWindowContexts(contexts)');
     expect(browserAgentStore).toContain("invokeDesktop<unknown>('desktop_browser_lease_claim_contexts'");
+  });
+
+  test('registers terminal-discovered project apps independently of Browser presentation', () => {
+    expect(appEffects).toContain('<ProjectPreviewGrantOwner />');
+    expect(localPreviewInstances).toContain('useTerminalStore.subscribe((state, previous) => {');
+    expect(localPreviewInstances).toContain('registerProjectPreviewInstance({');
+    expect(localPreviewInstances).toContain("fetchImpl('/api/preview/instances/register'");
+    expect(localPreviewInstances).not.toContain("hasAuthCapability(principal, 'browser')");
+    expect(localPreviewInstances).toContain('PROJECT_PREVIEW_REGISTRATION_REFRESH_MS');
+    expect(browserPane).not.toContain('registerProjectPreviewInstance({');
   });
 
   test('keeps Back non-destructive and the manual action after a separator', () => {

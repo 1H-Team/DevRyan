@@ -42,7 +42,7 @@ DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtim
 ## Where To Change Things
 
 - **Shared UI, views, stores, hooks, theme, chat, settings** → start in `packages/ui/codemap.md`, then the relevant `packages/ui/src/**/codemap.md`.
-- **Server routes, OpenCode integration, terminal/git/GitHub/quota/TTS/skills APIs** → start in `packages/web/codemap.md`, then `packages/web/server/codemap.md` and `packages/web/server/lib/codemap.md`.
+- **Server routes, OpenCode integration, terminal/git/GitHub/quota/TTS/skills/session-plan APIs** → start in `packages/web/codemap.md`, then `packages/web/server/codemap.md` and `packages/web/server/lib/codemap.md`.
 - **Cloudflare tunnel lifecycle, stable origin relay, public reachability, link exchange, and Remote Tunnel settings UI** → `packages/web/server/lib/tunnels/DOCUMENTATION.md`, `packages/web/server/lib/opencode/DOCUMENTATION.md`, and `packages/ui/src/components/sections/openchamber/TunnelSettings.tsx`.
 - **Shared-host identity, Supabase roles/policies, managed project and branch grants, session ownership, directory opacity, live revocation, or actor audit** → `packages/web/server/lib/multi-user/codemap.md` and `packages/web/server/lib/multi-user/DOCUMENTATION.md`; the administration UI starts in `packages/ui/src/components/sections/users/codemap.md`.
 - **Web browser bootstrap or web runtime API adapters** → `packages/web/src/codemap.md` and `packages/web/src/api/codemap.md`.
@@ -68,8 +68,8 @@ DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtim
 3. Shared UI initializes providers and stores, consumes runtime APIs, and renders session/chat/settings/tooling surfaces.
 4. On a Supabase-configured shared web host, the server resolves an opaque app session into one principal, confines non-admin paths to granted project roots and their shared OpenCode worktree containers, and filters HTTP/SSE/WS traffic by session ownership before feature handlers or OpenCode receive it.
 5. Live OpenCode events flow through server/extension bridges into UI sync stores; managed-host events are ownership-filtered and projected into the content-free actor audit feed.
-6. On managed Electron only, browser-using tool turns acquire a fenced server lease bound directly to a main-owned `WebContentsView`; that same live view moves inline, into a pop-out, or into the hidden paintable host without changing its CDP identity.
-7. In standalone web, Browser tabs keep public pages viewer-side while approved loopback project apps, relative resources, API requests, redirects, and WebSockets traverse a session-bound host proxy. Detachable surfaces exchange versioned state on the same DevRyan origin.
+6. In Electron, every Browser-capable authenticated account uses a main-owned `WebContentsView` over the workstation's network. Manual browsing is authorized against the renderer's DevRyan session and stored in a persistent partition isolated by DevRyan host plus principal; browser-using tool turns retain their separate fenced lease surfaces and CDP identity.
+7. In standalone web, Browser tabs route only approved loopback project apps through session-bound host proxy targets. Other HTTP(S) destinations open in the viewer's regular browser, so public, LAN, VPN, and intranet traffic never egresses through the DevRyan server. Detachable surfaces exchange versioned state on the same DevRyan origin.
 8. Packaging scripts build the shared UI/server outputs into Electron, legacy Tauri, VS Code, or standalone web deployments.
 
 ## Integration Notes

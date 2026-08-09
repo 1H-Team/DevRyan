@@ -30,12 +30,12 @@ const createRouteHarness = ({
   originAllowed = true,
   uiAuthController = null,
   requestScope = 'local',
+  browserAllowed = true,
 } = {}) => {
-  let handler;
+  const routes = new Map();
   const app = {
     post(path, ...handlers) {
-      expect(path).toBe('/api/preview/local-instances/status');
-      handler = handlers.at(-1);
+      routes.set(path, handlers.at(-1));
     },
   };
   runtime.attach(app, {
@@ -43,9 +43,10 @@ const createRouteHarness = ({
     uiAuthController,
     isRequestOriginAllowed: async () => originAllowed,
     classifyRequestScope: () => requestScope,
+    canUseBrowser: () => browserAllowed,
   });
 
-  const request = async (body) => {
+  const request = async (body, { browser = false, principal = undefined } = {}) => {
     const response = {
       statusCode: 200,
       body: null,
@@ -58,7 +59,10 @@ const createRouteHarness = ({
         return payload;
       },
     };
-    await handler({ body }, response);
+    const path = browser
+      ? '/api/browser/local-instances/status'
+      : '/api/preview/local-instances/status';
+    await routes.get(path)({ body, principal }, response);
     return response;
   };
 
@@ -171,6 +175,14 @@ describe('local instance status runtime', () => {
       'unreachable',
       'invalid',
     ]);
+  });
+
+  it('gates only the Browser alias on the effective Browser capability', async () => {
+    const runtime = createLocalInstanceStatusRuntime({ probeEndpoint: async () => true });
+    const denied = createRouteHarness({ runtime, browserAllowed: false });
+
+    expect((await denied.request({ urls: [] }, { browser: true })).statusCode).toBe(403);
+    expect((await denied.request({ urls: [] })).statusCode).toBe(200);
   });
 
   it('rejects disallowed origins, missing UI authentication, and malformed batches', async () => {

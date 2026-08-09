@@ -23,12 +23,24 @@ Role-aware shared-host user and access administration inside Settings.
   capability, and advanced-JSON drafts survive tab changes. Core contains
   Profile, Projects & Branches, and Access Links; Policy uses three independent
   collapsibles with explicit `Inherit (On|Off)` effective values.
-- `UserAnalytics.tsx` lazily loads administrator-only daily analytics for one
-  user/date/time zone, renders the variable-length activity ribbon and
-  event-derived work blocks, and browses prompt-only plus safe change and
-  interaction detail. `userAnalyticsPresentation.ts` formats immutable
-  send-time model identifiers for prompt rows, including legacy missing-data
-  fallbacks. Senior developers retain the sanitized audit list.
+- `RolePoliciesSection.tsx` exposes Browser alongside the other core role
+  capabilities. `UserDetail.tsx` derives the matching tri-state Browser
+  override from the shared capability list, so absent values inherit the role.
+- Core Capability Overrides also exposes `Create branches`. Developers inherit
+  Off, senior developers inherit On, and a sparse per-user override can change
+  the effective value without changing the role template.
+- `Create worktrees` independently controls user-triggered worktree flows.
+  Developers inherit Off, senior developers inherit On, and automatic
+  assigned-branch target preparation remains available regardless of this UI
+  capability.
+- `UserAnalytics.tsx` lazily loads administrator-only ranged analytics for one
+  user/time zone. Its full-range graph selects at most one day, while separate
+  day-scoped event requests drive the totals, work blocks, prompts, and safe
+  change/interaction detail. Prompts are grouped under initially collapsed
+  durable session IDs; pagination merges into the existing groups.
+  `userAnalyticsPresentation.ts` formats immutable send-time model identifiers,
+  including legacy missing-data fallbacks. Senior developers retain the
+  sanitized audit list.
 - `GitHubAccountsSection.tsx` sits directly below Users for administrators. It
   lists the token-free host account inventory, shows the exclusive profile
   owner, atomically reassigns credentials to visible humans or the signed-in
@@ -62,6 +74,8 @@ Role-aware shared-host user and access administration inside Settings.
 1. Load the current principal from the auth-session snapshot.
 2. Fetch only the administration datasets allowed by the effective User
    Management Read/Edit permission.
+   During remembered-administrator offline grace, skip every dataset request and
+   show the shared retrying degraded state until authoritative identity returns.
 3. Submit every mutation with the DevRyan CSRF header.
 4. Refresh the affected server state and surface generated passwords or
    targeted invite links transiently for out-of-band delivery.

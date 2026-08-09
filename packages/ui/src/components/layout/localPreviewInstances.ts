@@ -1,7 +1,9 @@
 import React from 'react';
 
+import { useAuthPrincipal } from '@/lib/authSession';
 import type { DirectoryTerminalState } from '@/stores/useTerminalStore';
 import { useTerminalStore } from '@/stores/useTerminalStore';
+import { isBrowserPanelRuntimeSupported } from './browserRuntime';
 import { isPreviewLoopbackHost, parsePreviewHttpUrl } from './previewLifecycle';
 
 export type LocalPreviewInstance = {
@@ -71,7 +73,7 @@ export const fetchProjectPreviewInstances = async (
   signal?: AbortSignal,
   fetchImpl: typeof fetch = fetch,
 ): Promise<LocalPreviewInstance[]> => {
-  const response = await fetchImpl(`/api/preview/instances?directory=${encodeURIComponent(directory)}`, {
+  const response = await fetchImpl(`/api/browser/instances?directory=${encodeURIComponent(directory)}`, {
     credentials: 'include',
     cache: 'no-store',
     signal,
@@ -97,6 +99,7 @@ export const fetchProjectPreviewInstances = async (
 };
 
 const LOCAL_INSTANCE_POLL_INTERVAL_MS = 3_000;
+const PROJECT_PREVIEW_REGISTRATION_REFRESH_MS = 60_000;
 const ACTION_LABEL_PREFIX = /^Action:\s*/i;
 
 const normalizeDirectory = (directory: string): string => {
@@ -175,12 +178,99 @@ export const useLocalPreviewInstances = (
   return React.useSyncExternalStore(useTerminalStore.subscribe, getSnapshot, getSnapshot);
 };
 
+export const collectProjectPreviewInstances = (
+  sessions: Map<string, DirectoryTerminalState>,
+  fallbackLabel = 'Local server',
+): Array<LocalPreviewInstance & { directory: string }> => {
+  const instances: Array<LocalPreviewInstance & { directory: string }> = [];
+  for (const [directory, directoryState] of sessions) {
+    for (const instance of projectLocalPreviewInstances(directoryState, fallbackLabel)) {
+      instances.push({ ...instance, directory });
+    }
+  }
+  return instances;
+};
+
+export const ProjectPreviewGrantOwner: React.FC = () => {
+  const principal = useAuthPrincipal();
+  const enabled = isBrowserPanelRuntimeSupported();
+
+  React.useEffect(() => {
+    if (!enabled) return;
+    let disposed = false;
+    let syncing = false;
+    let controller: AbortController | null = null;
+    const nextAttemptAt = new Map<string, number>();
+
+    const synchronize = async (force = false) => {
+      if (disposed || syncing) return;
+      syncing = true;
+      controller = new AbortController();
+      try {
+        const candidates = collectProjectPreviewInstances(useTerminalStore.getState().sessions);
+        const activeKeys = new Set(candidates.map((candidate) => (
+          `${candidate.directory}\u0000${candidate.terminalSessionId}\u0000${candidate.origin}`
+        )));
+        for (const key of nextAttemptAt.keys()) {
+          if (!activeKeys.has(key)) nextAttemptAt.delete(key);
+        }
+
+        await Promise.all(candidates.map(async (candidate) => {
+          const key = `${candidate.directory}\u0000${candidate.terminalSessionId}\u0000${candidate.origin}`;
+          const currentTime = Date.now();
+          if (!force && (nextAttemptAt.get(key) ?? 0) > currentTime) return;
+          let registered = false;
+          try {
+            registered = await registerProjectPreviewInstance({
+              directory: candidate.directory,
+              terminalSessionId: candidate.terminalSessionId,
+              url: candidate.url,
+              label: candidate.label,
+              signal: controller?.signal,
+            });
+          } catch (error) {
+            if (error instanceof DOMException && error.name === 'AbortError') return;
+          }
+          nextAttemptAt.set(
+            key,
+            currentTime + (registered ? PROJECT_PREVIEW_REGISTRATION_REFRESH_MS : LOCAL_INSTANCE_POLL_INTERVAL_MS),
+          );
+        }));
+      } finally {
+        syncing = false;
+        controller = null;
+      }
+    };
+
+    void synchronize(true);
+    const unsubscribe = useTerminalStore.subscribe((state, previous) => {
+      if (state.sessions !== previous.sessions) void synchronize();
+    });
+    const intervalID = window.setInterval(() => { void synchronize(); }, LOCAL_INSTANCE_POLL_INTERVAL_MS);
+    const handleConnected = (event: Event) => {
+      const detail = (event as CustomEvent<{ status?: unknown }>).detail;
+      if (detail?.status === 'connected') void synchronize(true);
+    };
+    window.addEventListener('openchamber:connection-status', handleConnected);
+
+    return () => {
+      disposed = true;
+      controller?.abort();
+      unsubscribe();
+      window.clearInterval(intervalID);
+      window.removeEventListener('openchamber:connection-status', handleConnected);
+    };
+  }, [enabled, principal.id]);
+
+  return null;
+};
+
 export const fetchReachableLocalInstanceOrigins = async (
   urls: string[],
   signal?: AbortSignal,
   fetchImpl: typeof fetch = fetch,
 ): Promise<Set<string>> => {
-  const response = await fetchImpl('/api/preview/local-instances/status', {
+  const response = await fetchImpl('/api/browser/local-instances/status', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
@@ -203,8 +293,7 @@ export const fetchReachableLocalInstanceOrigins = async (
   return reachable;
 };
 
-export const useReachableLocalPreviewInstances = (
-  candidates: LocalPreviewInstance[],
+export const useProjectPreviewInstances = (
   enabled: boolean,
   directory: string,
 ): LocalPreviewInstance[] => {
@@ -212,11 +301,6 @@ export const useReachableLocalPreviewInstances = (
     directory: '',
     instances: [],
   });
-  const candidateKey = React.useMemo(
-    () => candidates.map((candidate) => `${candidate.origin}\u0000${candidate.url}`).join('\u0001'),
-    [candidates],
-  );
-
   React.useEffect(() => {
     if (!enabled || !directory) {
       return;
@@ -229,14 +313,6 @@ export const useReachableLocalPreviewInstances = (
       if (controller) return;
       controller = new AbortController();
       try {
-        await Promise.all(candidates.map((candidate) => registerProjectPreviewInstance({
-          directory,
-          terminalSessionId: candidate.terminalSessionId,
-          url: candidate.url,
-          label: candidate.label,
-          signal: controller?.signal,
-        })));
-        if (!directory) return;
         const next = await fetchProjectPreviewInstances(directory, controller.signal);
         if (!disposed) {
           setConfirmed((previous) => (
@@ -261,7 +337,7 @@ export const useReachableLocalPreviewInstances = (
       controller?.abort();
       window.clearInterval(intervalID);
     };
-  }, [candidateKey, candidates, directory, enabled]);
+  }, [directory, enabled]);
 
   return enabled && confirmed.directory === directory ? confirmed.instances : [];
 };

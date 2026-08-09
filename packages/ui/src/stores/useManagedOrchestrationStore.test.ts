@@ -208,6 +208,37 @@ describe('managed orchestration store', () => {
     )).toBe(true);
   });
 
+  test('does not index exhausted provider prompt rejection for same-child recovery', () => {
+    const store = createManagedOrchestrationStore({ api: fakeApi() });
+    const failed = {
+      ...taskRecord(1, 'failed', {
+        childSessionId: 'ses_child_prompt_rejected',
+        failureReason: 'Invalid prompt: your prompt was flagged as potentially violating our usage policy.',
+        attempt: 2,
+        priorTaskId: 'dvr_task_prompt_rejected_initial',
+        executionKind: 'retry',
+      }),
+      dispatchGroupId: 'msg_parent',
+    };
+    const envelope = createManagedTaskResultEnvelope(failed, {
+      sequence: 1,
+      createdAt: 4_000,
+      resumable: true,
+    });
+    const projected = toManagedTaskEvent(failed, envelope).properties.task;
+
+    store.getState().ingestEvent(taskEvent(projected, envelope));
+
+    expect(projected.failureKind).toBe('provider_prompt_rejected');
+    expect(projected.agentRetryAvailable).toBe(false);
+    expect(managedOrchestrationSelectors.manualRecoveryTaskIdForChildSession('ses_child_prompt_rejected')(
+      store.getState(),
+    )).toBe(undefined);
+    expect(managedOrchestrationSelectors.hasManualRecoveryForRoot('ses_root')(
+      store.getState(),
+    )).toBe(false);
+  });
+
   test('keeps manual recovery indexed for every failed sibling child', () => {
     const store = createManagedOrchestrationStore({ api: fakeApi() });
     const tasks = [

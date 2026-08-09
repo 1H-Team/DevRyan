@@ -2,6 +2,7 @@ import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 import { formatMinutes } from './userAnalyticsPresentation';
+import { resolveMetricTrendHover } from './metricTrendState';
 
 export interface MetricTrendPoint {
   date: string;
@@ -62,10 +63,12 @@ const xAt = (index: number, count: number): number => (
   count <= 1 ? PAD_L + PLOT_W / 2 : PAD_L + (index / (count - 1)) * PLOT_W
 );
 
-export const MetricTrendChart: React.FC<{ series: MetricTrendPoint[] }> = ({ series }) => {
+export const MetricTrendChart: React.FC<{
+  series: MetricTrendPoint[];
+  selectedDate?: string | null;
+}> = ({ series, selectedDate = null }) => {
   const [enabled, setEnabled] = React.useState<Set<MetricKey>>(() => new Set(DEFAULT_ENABLED));
-  const [hoverIndex, setHoverIndex] = React.useState<number | null>(null);
-  const [hoverX, setHoverX] = React.useState(0);
+  const [hoveredDate, setHoveredDate] = React.useState<string | null>(null);
   const containerRef = React.useRef<HTMLDivElement | null>(null);
 
   const visibleMetrics = METRICS.filter((metric) => enabled.has(metric.key));
@@ -79,6 +82,13 @@ export const MetricTrendChart: React.FC<{ series: MetricTrendPoint[] }> = ({ ser
     const max = axis === 'right' ? rightMax : leftMax;
     return PAD_T + PLOT_H - (value / max) * PLOT_H;
   };
+
+  // The selected day is highlighted without changing the full-range trend line.
+  const selectedIndex = selectedDate
+    ? series.findIndex((point) => point.date === selectedDate)
+    : -1;
+  const hover = resolveMetricTrendHover(series, hoveredDate);
+  const bandHalf = Math.min((series.length > 1 ? PLOT_W / (series.length - 1) : PLOT_W) * 0.5, 22);
 
   const toggle = (key: MetricKey) => setEnabled((current) => {
     const next = new Set(current);
@@ -95,8 +105,7 @@ export const MetricTrendChart: React.FC<{ series: MetricTrendPoint[] }> = ({ ser
     const plotEnd = (VIEW_W - PAD_R) / VIEW_W;
     const t = Math.min(1, Math.max(0, (ratio - plotStart) / (plotEnd - plotStart)));
     const index = Math.round(t * (series.length - 1));
-    setHoverIndex(index);
-    setHoverX((xAt(index, series.length) / VIEW_W) * rect.width);
+    setHoveredDate(series[index]?.date ?? null);
   };
 
   const yTicks = [0, 0.25, 0.5, 0.75, 1];
@@ -142,9 +151,9 @@ export const MetricTrendChart: React.FC<{ series: MetricTrendPoint[] }> = ({ ser
             ref={containerRef}
             className="relative"
             onMouseMove={(event) => handleMove(event.clientX)}
-            onMouseLeave={() => setHoverIndex(null)}
+            onMouseLeave={() => setHoveredDate(null)}
             onTouchMove={(event) => handleMove(event.touches[0]?.clientX ?? 0)}
-            onTouchEnd={() => setHoverIndex(null)}
+            onTouchEnd={() => setHoveredDate(null)}
           >
           <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} className="h-auto w-full" role="img" aria-label={summary}>
             {/* Horizontal gridlines + left-axis (count) labels */}
@@ -167,11 +176,24 @@ export const MetricTrendChart: React.FC<{ series: MetricTrendPoint[] }> = ({ ser
               );
             })}
 
+            {/* Selected-day highlight bands (behind the metric lines) */}
+            {selectedIndex >= 0 ? (() => {
+              const cx = xAt(selectedIndex, series.length);
+              const x1 = Math.max(PAD_L, cx - bandHalf);
+              const x2 = Math.min(VIEW_W - PAD_R, cx + bandHalf);
+              return (
+                <g key={`sel-band-${series[selectedIndex].date}`}>
+                  <rect x={x1} y={PAD_T} width={x2 - x1} height={PLOT_H} fill="var(--primary-base)" opacity={0.1} />
+                  <line x1={cx} y1={PAD_T} x2={cx} y2={PAD_T + PLOT_H} stroke="var(--primary-base)" strokeOpacity={0.5} strokeWidth={1} strokeDasharray="3 3" />
+                </g>
+              );
+            })() : null}
+
             {/* Hover guide */}
-            {hoverIndex !== null ? (
+            {hover ? (
               <line
-                x1={xAt(hoverIndex, series.length)} y1={PAD_T}
-                x2={xAt(hoverIndex, series.length)} y2={PAD_T + PLOT_H}
+                x1={xAt(hover.index, series.length)} y1={PAD_T}
+                x2={xAt(hover.index, series.length)} y2={PAD_T + PLOT_H}
                 stroke="var(--foreground)" strokeOpacity={0.25} strokeWidth={1}
               />
             ) : null}
@@ -193,12 +215,26 @@ export const MetricTrendChart: React.FC<{ series: MetricTrendPoint[] }> = ({ ser
               );
             })}
 
+            {/* Persistent markers on selected days */}
+            {selectedIndex >= 0 ? visibleMetrics.map((metric) => (
+              <circle
+                key={`sel-dot-${metric.key}-${series[selectedIndex].date}`}
+                cx={xAt(selectedIndex, series.length)}
+                cy={yAt(series[selectedIndex][metric.key], metric.axis)}
+                r={3.5}
+                fill={metric.color}
+                stroke="var(--surface-elevated)"
+                strokeWidth={1.5}
+                vectorEffect="non-scaling-stroke"
+              />
+            )) : null}
+
             {/* Hover point markers */}
-            {hoverIndex !== null ? visibleMetrics.map((metric) => (
+            {hover ? visibleMetrics.map((metric) => (
               <circle
                 key={`dot-${metric.key}`}
-                cx={xAt(hoverIndex, series.length)}
-                cy={yAt(series[hoverIndex][metric.key], metric.axis)}
+                cx={xAt(hover.index, series.length)}
+                cy={yAt(hover.point[metric.key], metric.axis)}
                 r={3.5}
                 fill="var(--surface-elevated)"
                 stroke={metric.color}
@@ -207,17 +243,18 @@ export const MetricTrendChart: React.FC<{ series: MetricTrendPoint[] }> = ({ ser
               />
             )) : null}
 
-            {/* X-axis date labels (subset to avoid crowding) */}
+            {/* X-axis date labels (subset to avoid crowding; selected days always shown) */}
             {series.map((point, index) => {
               const stride = Math.max(1, Math.ceil(series.length / 6));
-              if (index % stride !== 0 && index !== series.length - 1) return null;
+              const isSelected = selectedDate === point.date;
+              if (!isSelected && index % stride !== 0 && index !== series.length - 1) return null;
               return (
                 <text
                   key={`x-${point.date}`}
                   x={xAt(index, series.length)}
                   y={VIEW_H - 10}
                   textAnchor="middle"
-                  className="fill-[var(--muted-foreground)] [font-size:10px]"
+                  className={cn('[font-size:10px]', isSelected ? 'fill-[var(--primary-base)] font-semibold' : 'fill-[var(--muted-foreground)]')}
                 >
                   {formatDayLabel(point.date)}
                 </text>
@@ -226,12 +263,17 @@ export const MetricTrendChart: React.FC<{ series: MetricTrendPoint[] }> = ({ ser
           </svg>
 
           {/* Tooltip */}
-          {hoverIndex !== null && visibleMetrics.length > 0 ? (
+          {hover && visibleMetrics.length > 0 ? (
             <div
               className="pointer-events-none absolute top-2 z-10 min-w-36 -translate-x-1/2 rounded-lg border border-border/70 bg-[var(--surface-elevated)] px-2.5 py-2 shadow-md"
-              style={{ left: `${Math.min(Math.max(hoverX, 74), (containerRef.current?.clientWidth ?? VIEW_W) - 74)}px` }}
+              style={{
+                left: `${Math.min(
+                  Math.max((xAt(hover.index, series.length) / VIEW_W) * (containerRef.current?.clientWidth ?? VIEW_W), 74),
+                  (containerRef.current?.clientWidth ?? VIEW_W) - 74,
+                )}px`,
+              }}
             >
-              <div className="typography-micro font-semibold text-foreground">{formatDayLong(series[hoverIndex].date)}</div>
+              <div className="typography-micro font-semibold text-foreground">{formatDayLong(hover.point.date)}</div>
               <div className="mt-1 space-y-0.5">
                 {visibleMetrics.map((metric) => (
                   <div key={metric.key} className="flex items-center justify-between gap-3 typography-micro text-muted-foreground">
@@ -239,7 +281,7 @@ export const MetricTrendChart: React.FC<{ series: MetricTrendPoint[] }> = ({ ser
                       <span className="h-2 w-2 rounded-full" style={{ backgroundColor: metric.color }} />
                       {metric.label}
                     </span>
-                    <span className="font-medium text-foreground">{metric.format(series[hoverIndex][metric.key])}</span>
+                    <span className="font-medium text-foreground">{metric.format(hover.point[metric.key])}</span>
                   </div>
                 ))}
               </div>

@@ -21,6 +21,7 @@ import { Switch } from '@/components/ui/switch';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { useI18n } from '@/lib/i18n';
 import { formatAgentDisplayName } from '@/lib/agentDisplay';
+import { isAgentPermissionsUiHidden, useAuthPrincipal } from '@/lib/authSession';
 import { parseModelIdentifier } from '@/lib/modelIdentifier';
 import { getModelVariantControlState, getModelVariantDisplayState, getOrderedThinkingVariants } from '@/lib/providers/variantControls';
 import { resolveAgentVariantForModel, resolveAgentVariantForSave, resolveAgentVariantSelection } from './agentVariantSelection';
@@ -288,6 +289,8 @@ export const AgentsPage: React.FC = () => {
   const [pendingRuleName, setPendingRuleName] = React.useState('');
   const [pendingRulePattern, setPendingRulePattern] = React.useState('*');
   const [isToolPermissionsOpen, setIsToolPermissionsOpen] = React.useState(false);
+  const authPrincipal = useAuthPrincipal();
+  const permissionsUiHidden = isAgentPermissionsUiHidden(authPrincipal);
   const [showPermissionEditor, setShowPermissionEditor] = React.useState(false);
   const [isSavingModelOverride, setIsSavingModelOverride] = React.useState(false);
 
@@ -1050,6 +1053,7 @@ export const AgentsPage: React.FC = () => {
         </div>
 
         {/* Tool Permissions */}
+        {!permissionsUiHidden && (
         <Collapsible open={isToolPermissionsOpen} onOpenChange={setIsToolPermissionsOpen} className="mb-2">
           <CollapsibleTrigger className="group flex w-full items-center justify-between gap-4 rounded-md px-1 py-1 text-left hover:bg-[var(--interactive-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]">
             <h3 className="typography-ui-header font-medium text-foreground">
@@ -1273,6 +1277,7 @@ export const AgentsPage: React.FC = () => {
             )}
           </CollapsibleContent>
         </Collapsible>
+        )}
 
       </div>
     </ScrollableOverlay>

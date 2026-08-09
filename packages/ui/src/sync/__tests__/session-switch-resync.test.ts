@@ -100,6 +100,21 @@ import {
   setActiveSession,
 } from "../sync-context"
 import { useSessionUIStore } from "../session-ui-store"
+import { appendNotification, useNotificationStore } from "../notification-store"
+import { getSafeStorage } from "@/stores/utils/safeStorage"
+
+const COMPLETION_NOTIFICATION_STORAGE_KEY = "openchamber:notification-completions:v1"
+
+function resetNotificationStore() {
+  useNotificationStore.setState({
+    list: [],
+    index: {
+      session: { unseenCount: {}, unseenHasError: {}, unseenHasCompletion: {} },
+      project: { unseenCount: {}, unseenHasError: {}, unseenHasCompletion: {} },
+    },
+  })
+  getSafeStorage().removeItem(COMPLETION_NOTIFICATION_STORAGE_KEY)
+}
 
 function buildQuestion(overrides: Partial<QuestionRequest> = {}): QuestionRequest {
   return {
@@ -309,6 +324,7 @@ describe("resyncDirectoryAfterReconnect", () => {
     sessionMessagesResponse = {}
     autoAcceptingSessions = new Set<string>()
     respondToPermissionCalls.length = 0
+    resetNotificationStore()
   })
 
   test("resyncs an explicitly targeted session even when reconnect heuristics have no candidates", async () => {
@@ -554,5 +570,227 @@ describe("resyncDirectoryAfterReconnect", () => {
     await resync
 
     expect(store.getState().session_status.ses_a).toEqual({ type: "idle" })
+  })
+
+  // Fixtures for gap-recovery lifecycle detection: locally the session was
+  // observed busy with an in-flight assistant message; the server reports the
+  // turn finished (idle status + completed assistant summary).
+  function buildGapCompletionFixture(sessionID: string, options?: { localStatus?: State["session_status"][string] | null }) {
+    const userMessageID = `msg_1_user_${sessionID}`
+    const assistantMessageID = `msg_2_assistant_${sessionID}`
+    const userMessage = {
+      id: userMessageID,
+      sessionID,
+      role: "user",
+      time: { created: 1 },
+    } as State["message"][string][number]
+    const inFlightAssistant = {
+      id: assistantMessageID,
+      sessionID,
+      role: "assistant",
+      time: { created: 2 },
+    } as State["message"][string][number]
+    const completedAssistant = {
+      ...inFlightAssistant,
+      time: { created: 2, completed: 3 },
+    } as State["message"][string][number]
+    const userPart = {
+      id: `prt_user_${sessionID}`,
+      sessionID,
+      messageID: userMessageID,
+      type: "text",
+      text: "Run the task",
+    } as State["part"][string][number]
+    const summaryPart = {
+      id: `prt_summary_${sessionID}`,
+      sessionID,
+      messageID: assistantMessageID,
+      type: "text",
+      text: "Done. All checks pass.",
+    } as State["part"][string][number]
+    const session = {
+      id: sessionID,
+      title: sessionID,
+      time: { created: 1, updated: 3 },
+      version: "1",
+    } as State["session"][number]
+    const localStatus = options?.localStatus === undefined ? { type: "busy" as const } : options.localStatus
+    const store = createDirectoryStore({
+      session: [session],
+      session_status: localStatus ? { [sessionID]: localStatus } : {},
+      message: { [sessionID]: [userMessage, inFlightAssistant] },
+      part: { [userMessageID]: [userPart], [assistantMessageID]: [] },
+    })
+    sessionStatusResponse = { [sessionID]: { type: "idle" } }
+    sessionGetResponse = { [sessionID]: session }
+    sessionMessagesResponse = {
+      [sessionID]: [
+        { info: userMessage, parts: [userPart] },
+        { info: completedAssistant, parts: [summaryPart] },
+      ],
+    }
+    const routingIndex = {
+      sessionDirectoryById: new Map([[sessionID, "/repo"]]),
+      messageSessionById: new Map([
+        [userMessageID, sessionID],
+        [assistantMessageID, sessionID],
+      ]),
+      sessionMessageIdsById: new Map([[sessionID, new Set([userMessageID, assistantMessageID])]]),
+    }
+    return { store, routingIndex, userMessageID, assistantMessageID }
+  }
+
+  test("marks a background session's missed completion as unread after gap recovery", async () => {
+    const sessionID = "ses_bg_done"
+    const { store, routingIndex, assistantMessageID } = buildGapCompletionFixture(sessionID)
+
+    const { resyncDirectoryAfterReconnect } = await import("../sync-context")
+    await resyncDirectoryAfterReconnect("/repo", store, routingIndex as never, {})
+
+    expect(store.getState().session_status[sessionID]).toEqual({ type: "idle" })
+    const notifications = useNotificationStore.getState()
+    expect(notifications.index.session.unseenHasCompletion[sessionID]).toBe(true)
+    expect(notifications.list).toHaveLength(1)
+    expect(notifications.list[0]?.messageId).toBe(assistantMessageID)
+  })
+
+  test("restores a background session's proposed-plan indicator after gap recovery", async () => {
+    const sessionID = "ses_bg_plan"
+    const { store, routingIndex, userMessageID, assistantMessageID } = buildGapCompletionFixture(sessionID)
+    const planText = [
+      "<!--plan-->",
+      "# Background Plan",
+      "",
+      "## Implementation",
+      "",
+      "1. Inspect the package metadata.",
+      "",
+      "## Verification",
+      "",
+      "1. Confirm no files changed.",
+    ].join("\n")
+    const planModePart = {
+      id: `prt_plan_mode_${sessionID}`,
+      sessionID,
+      messageID: userMessageID,
+      type: "text",
+      text: "User has requested to enter plan mode.",
+      synthetic: true,
+    } as State["part"][string][number]
+    const completedAssistant = {
+      ...sessionMessagesResponse[sessionID][1].info,
+      providerID: "cursor-acp",
+    } as State["message"][string][number]
+    sessionMessagesResponse = {
+      [sessionID]: [
+        { info: sessionMessagesResponse[sessionID][0].info, parts: [planModePart] },
+        {
+          info: completedAssistant,
+          parts: [{
+            id: `prt_plan_${sessionID}`,
+            sessionID,
+            messageID: assistantMessageID,
+            type: "text",
+            text: planText,
+          } as State["part"][string][number]],
+        },
+      ],
+    }
+    useSessionUIStore.getState().recordUserMessagePlanMode(sessionID, userMessageID, true)
+
+    try {
+      const { resyncDirectoryAfterReconnect } = await import("../sync-context")
+      await resyncDirectoryAfterReconnect("/repo", store, routingIndex as never, {})
+
+      expect(useSessionUIStore.getState().sessionPlanIndicator.get(sessionID)).toEqual({
+        state: "proposed",
+        sourceMessageId: assistantMessageID,
+      })
+      expect(useNotificationStore.getState().index.session.unseenHasCompletion[sessionID]).toBeFalsy()
+    } finally {
+      useSessionUIStore.setState((state) => {
+        const planModeUserMessages = new Set(state.planModeUserMessages)
+        planModeUserMessages.delete(userMessageID)
+        const planModeUserMessagesBySession = new Map(state.planModeUserMessagesBySession)
+        planModeUserMessagesBySession.delete(sessionID)
+        const sessionPlanIndicator = new Map(state.sessionPlanIndicator)
+        sessionPlanIndicator.delete(sessionID)
+        const sessionPlanAvailable = new Map(state.sessionPlanAvailable)
+        sessionPlanAvailable.delete(sessionID)
+        return {
+          planModeUserMessages,
+          planModeUserMessagesBySession,
+          sessionPlanIndicator,
+          sessionPlanAvailable,
+        }
+      })
+    }
+  })
+
+  test("suppresses the unread completion for a session viewed in a chat surface", async () => {
+    const sessionID = "ses_bg_viewed"
+    const { store, routingIndex } = buildGapCompletionFixture(sessionID)
+    // setExternallyViewedSession feeds the same isViewedInCurrentSession guard
+    // as the active-session check. Unlike setActiveSession it is not shadowed
+    // by session-ui-store.send.test.ts's leaked mock.module("./sync-context")
+    // stub in whole-folder runs, so the suppression state reliably reaches the
+    // module instance that runs detection.
+    const { resyncDirectoryAfterReconnect, setExternallyViewedSession } = await import("../sync-context")
+    setExternallyViewedSession("/repo", sessionID, true)
+
+    try {
+      await resyncDirectoryAfterReconnect("/repo", store, routingIndex as never, {})
+
+      const notifications = useNotificationStore.getState()
+      expect(notifications.index.session.unseenHasCompletion[sessionID]).toBeFalsy()
+      expect(notifications.list).toHaveLength(0)
+    } finally {
+      setExternallyViewedSession("/repo", sessionID, false)
+    }
+  })
+
+  test("does not duplicate a completion notification already recorded for the message", async () => {
+    const sessionID = "ses_bg_dup"
+    const { store, routingIndex, assistantMessageID } = buildGapCompletionFixture(sessionID)
+    appendNotification({
+      type: "turn-complete",
+      directory: "/repo",
+      session: sessionID,
+      messageId: assistantMessageID,
+      time: Date.now(),
+      viewed: true,
+    })
+
+    const { resyncDirectoryAfterReconnect } = await import("../sync-context")
+    await resyncDirectoryAfterReconnect("/repo", store, routingIndex as never, {})
+
+    const notifications = useNotificationStore.getState()
+    expect(notifications.list).toHaveLength(1)
+    expect(notifications.index.session.unseenHasCompletion[sessionID]).toBeFalsy()
+  })
+
+  test("does not resurface completions for sessions never observed busy by this client", async () => {
+    const sessionID = "ses_bg_stale"
+    const { store, routingIndex } = buildGapCompletionFixture(sessionID, { localStatus: null })
+
+    const { resyncDirectoryAfterReconnect } = await import("../sync-context")
+    await resyncDirectoryAfterReconnect("/repo", store, routingIndex as never, {})
+
+    expect(store.getState().session_status[sessionID]).toEqual({ type: "idle" })
+    const notifications = useNotificationStore.getState()
+    expect(notifications.list).toHaveLength(0)
+    expect(notifications.index.session.unseenHasCompletion[sessionID]).toBeFalsy()
+  })
+
+  test("defers lifecycle detection when the status snapshot fetch fails", async () => {
+    const sessionID = "ses_bg_statusfail"
+    const { store, routingIndex } = buildGapCompletionFixture(sessionID)
+    sessionStatusError = Object.assign(new Error("status endpoint missing"), { status: 404 })
+
+    const { resyncDirectoryAfterReconnect } = await import("../sync-context")
+    await resyncDirectoryAfterReconnect("/repo", store, routingIndex as never, {})
+
+    expect(store.getState().session_status[sessionID]).toEqual({ type: "busy" })
+    expect(useNotificationStore.getState().list).toHaveLength(0)
   })
 })

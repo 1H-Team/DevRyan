@@ -7,6 +7,8 @@ import { SEMANTIC_TYPOGRAPHY, getTypographyVariable, type SemanticTypographyKey 
 import type { ShortcutCombo } from '@/lib/shortcuts';
 import { DEFAULT_MONO_FONT, DEFAULT_UI_FONT, type MonoFontOption, type UiFontOption } from '@/lib/fontOptions';
 import { getStoredMobileKeyboardMode, type MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
+import { getAuthPrincipal, hasAuthCapability } from '@/lib/authSession';
+import { useManualBrowserTabsStore } from './useManualBrowserTabsStore';
 
 export type MainTab = 'chat' | 'plan' | 'git' | 'diff' | 'terminal';
 export type RightSidebarTab = 'git' | 'files';
@@ -726,6 +728,7 @@ interface UIStore {
   }) => void;
   toggleContextBrowser: (directory: string) => void;
   pruneBrowserLeaseTabs: (activeLeaseIds: readonly string[]) => void;
+  pruneAllBrowserTabs: () => void;
   setContextPreviewDisplayUrl: (directory: string, tabID: string, url: string) => void;
   setContextPanelTabTargetPath: (directory: string, tabID: string, targetPath: string) => void;
   setActiveContextPanelTab: (directory: string, tabID: string) => void;
@@ -1306,36 +1309,47 @@ export const useUIStore = create<UIStore>()(
         },
 
         openContextBrowser: (directory, url) => {
+          if (!hasAuthCapability(getAuthPrincipal(), 'browser')) {
+            return;
+          }
           const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
           if (!normalizedDirectory) {
             return;
           }
 
           const normalizedUrl = (url || '').trim();
-          let label: string | null = null;
           let targetPath: string | null = null;
           if (normalizedUrl && normalizedUrl !== 'about:blank') {
             try {
               const parsed = new URL(normalizedUrl);
               if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
                 targetPath = parsed.toString();
-                label = parsed.host || parsed.hostname || null;
               }
             } catch {
               // ignore invalid URL; open an empty browser tab instead
             }
           }
 
+          const legacyBrowserUrl = get().contextPanelByDirectory[normalizedDirectory]?.tabs
+            .find((tab) => tab.mode === 'browser' && !tab.leaseId)?.targetPath ?? null;
+          useManualBrowserTabsStore.getState().openWorkspace(
+            normalizedDirectory,
+            targetPath ?? legacyBrowserUrl,
+          );
+
           get().openContextPanelTab(normalizedDirectory, {
             mode: 'browser',
-            targetPath,
-            label,
+            targetPath: null,
+            label: 'Browser',
             leaseId: null,
             ownerSessionId: null,
           });
         },
 
         openContextBrowserLease: (directory, lease) => {
+          if (!hasAuthCapability(getAuthPrincipal(), 'browser')) {
+            return;
+          }
           const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
           const leaseId = normalizeContextTargetPath(lease?.leaseId);
           const rootSessionId = normalizeContextTargetPath(lease?.rootSessionId);
@@ -1367,6 +1381,9 @@ export const useUIStore = create<UIStore>()(
         },
 
         toggleContextBrowser: (directory) => {
+          if (!hasAuthCapability(getAuthPrincipal(), 'browser')) {
+            return;
+          }
           const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
           if (!normalizedDirectory) {
             return;
@@ -1398,6 +1415,26 @@ export const useUIStore = create<UIStore>()(
             let nextByDirectory: Record<string, ContextPanelDirectoryState> | null = null;
             for (const [directory, panel] of Object.entries(state.contextPanelByDirectory)) {
               const removedTabs = panel.tabs.filter((tab) => tab.leaseId && !active.has(tab.leaseId));
+              if (removedTabs.length === 0) continue;
+
+              let nextPanel = panel;
+              for (const tab of removedTabs) {
+                nextPanel = closeContextPanelTab(nextPanel, tab.id);
+              }
+              nextByDirectory ??= { ...state.contextPanelByDirectory };
+              nextByDirectory[directory] = nextPanel;
+            }
+
+            return nextByDirectory ? { contextPanelByDirectory: nextByDirectory } : state;
+          });
+        },
+
+        pruneAllBrowserTabs: () => {
+          useManualBrowserTabsStore.setState({ byDirectory: {} });
+          set((state) => {
+            let nextByDirectory: Record<string, ContextPanelDirectoryState> | null = null;
+            for (const [directory, panel] of Object.entries(state.contextPanelByDirectory)) {
+              const removedTabs = panel.tabs.filter((tab) => tab.mode === 'browser');
               if (removedTabs.length === 0) continue;
 
               let nextPanel = panel;
@@ -1557,6 +1594,12 @@ export const useUIStore = create<UIStore>()(
             return;
           }
 
+          const closingTab = get().contextPanelByDirectory[normalizedDirectory]?.tabs
+            .find((tab) => tab.id === normalizedTabID);
+          if (closingTab?.mode === 'browser' && !closingTab.leaseId) {
+            useManualBrowserTabsStore.getState().clearWorkspace(normalizedDirectory);
+          }
+
           set((state) => {
             const prev = state.contextPanelByDirectory[normalizedDirectory];
             const current = touchContextPanelState(prev);
@@ -1640,6 +1683,10 @@ export const useUIStore = create<UIStore>()(
         },
 
         toggleBottomTerminal: () => {
+          if (!hasAuthCapability(getAuthPrincipal(), 'terminal')) {
+            set((state) => state.isBottomTerminalOpen ? { isBottomTerminalOpen: false } : state);
+            return;
+          }
           set((state) => {
             const newOpen = !state.isBottomTerminalOpen;
 
@@ -1657,6 +1704,10 @@ export const useUIStore = create<UIStore>()(
         },
 
         setBottomTerminalOpen: (open) => {
+          if (open && !hasAuthCapability(getAuthPrincipal(), 'terminal')) {
+            set((state) => state.isBottomTerminalOpen ? { isBottomTerminalOpen: false } : state);
+            return;
+          }
           set((state) => {
             if (state.isBottomTerminalOpen === open) {
               if (!open) {
@@ -1690,6 +1741,9 @@ export const useUIStore = create<UIStore>()(
         },
 
         setBottomTerminalExpanded: (expanded) => {
+          if (expanded && !hasAuthCapability(getAuthPrincipal(), 'terminal')) {
+            return;
+          }
           set({ isBottomTerminalExpanded: expanded });
         },
 
@@ -1715,11 +1769,14 @@ export const useUIStore = create<UIStore>()(
         },
 
         setActiveMainTab: (tab) => {
+          const nextTab = tab === 'terminal' && !hasAuthCapability(getAuthPrincipal(), 'terminal')
+            ? 'chat'
+            : tab;
           const guard = get().mainTabGuard;
-          if (guard && !guard(tab)) {
+          if (guard && !guard(nextTab)) {
             return;
           }
-          set({ activeMainTab: tab });
+          set({ activeMainTab: nextTab });
         },
 
         setPendingDiffFile: (filePath, staged = false) => {

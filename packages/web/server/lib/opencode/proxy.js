@@ -482,16 +482,22 @@ export const registerOpenCodeProxy = (app, deps) => {
       return next();
     }
 
-    const deadline = Date.now() + Math.min(OPEN_CODE_READY_GRACE_MS, READINESS_HOLD_MAX_MS);
+    const holdStart = Date.now();
+    console.warn('[proxy] readiness hold engaged:', req.method, req.originalUrl);
+    const deadline = holdStart + Math.min(OPEN_CODE_READY_GRACE_MS, READINESS_HOLD_MAX_MS);
     while (Date.now() < deadline) {
       // Client gave up (closed/aborted) — stop holding.
       if (res.writableEnded || req.aborted) return;
       await sleep(READINESS_HOLD_POLL_MS);
       if (!isStillWaiting(getRuntime())) {
+        req.readinessHoldMs = Date.now() - holdStart;
+        console.warn(`[proxy] readiness hold released after ${req.readinessHoldMs}ms:`, req.method, req.originalUrl);
         return next();
       }
     }
 
+    req.readinessHoldMs = Date.now() - holdStart;
+    console.warn(`[proxy] readiness hold expired after ${req.readinessHoldMs}ms:`, req.method, req.originalUrl);
     if (!res.headersSent) {
       res.status(503).json({
         error: 'OpenCode is restarting',
@@ -657,6 +663,7 @@ export const registerOpenCodeProxy = (app, deps) => {
     router: () => resolveProxyTarget(),
     on: {
       proxyReq: (proxyReq, req) => {
+        req.proxyStartMs = Date.now();
         // Inject OpenCode auth headers
         const authHeaders = getOpenCodeAuthHeaders();
         if (authHeaders.Authorization) {

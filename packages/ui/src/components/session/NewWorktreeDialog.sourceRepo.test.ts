@@ -23,4 +23,15 @@ describe('NewWorktreeDialog fork repository routing', () => {
     expect(source).toContain('const initializedOpenCycleRef = React.useRef(false)');
     expect(source).toContain('if (initializedOpenCycleRef.current) return');
   });
+
+  test('removes new-branch mode when branch creation is disabled by policy', () => {
+    expect(source).toContain("canCreateBranches ? 'new-branch' : 'existing-branch'");
+    expect(source).toContain("if (newMode === 'new-branch' && !canCreateBranches) return");
+    expect(source).toContain("...(canCreateBranches ? [{ id: 'new-branch'");
+  });
+
+  test('keeps submission disabled when worktree creation is disabled by policy', () => {
+    expect(source).toContain("principal.policy.createWorktrees");
+    expect(source).toContain('const canCreate = canCreateWorktrees && isFormValid');
+  });
 });

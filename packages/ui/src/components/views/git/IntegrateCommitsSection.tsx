@@ -69,6 +69,9 @@ export const IntegrateCommitsSection: React.FC<{
   React.useEffect(() => {
     setTargetBranch(defaultTargetBranch);
   }, [defaultTargetBranch]);
+  const isTargetAllowed = React.useMemo(() => (
+    localBranches.some((branch) => branch === targetBranch)
+  ), [localBranches, targetBranch]);
 
   // Focus search input when branch dropdown opens
   React.useEffect(() => {
@@ -81,7 +84,12 @@ export const IntegrateCommitsSection: React.FC<{
   }, [branchDropdownOpen]);
 
   const isEligible = Boolean(
-    repoRoot && sourceBranch && targetBranch && targetBranch !== 'HEAD' && sourceBranch !== targetBranch
+    repoRoot
+    && sourceBranch
+    && targetBranch
+    && targetBranch !== 'HEAD'
+    && sourceBranch !== targetBranch
+    && isTargetAllowed
   );
 
   const [ui, setUi] = React.useState<IntegrateUiState>({ kind: 'idle' });
@@ -100,18 +108,22 @@ export const IntegrateCommitsSection: React.FC<{
     let cancelled = false;
     try {
       const parsed = JSON.parse(raw) as IntegrateInProgress;
-      if (!parsed?.tempWorktreePath || parsed.repoRoot !== repoRoot) {
+      if (
+        !parsed?.tempWorktreePath
+        || parsed.repoRoot !== repoRoot
+        || !localBranches.includes(parsed.targetBranch)
+      ) {
         getSafeStorage().removeItem(conflictStorageKey);
         return;
       }
       void (async () => {
-        const ok = await isCherryPickInProgress(parsed.tempWorktreePath).catch(() => false);
+        const ok = await isCherryPickInProgress(parsed).catch(() => false);
         if (cancelled) return;
         if (!ok) {
           getSafeStorage().removeItem(conflictStorageKey);
           return;
         }
-        const details = await getIntegrateConflictDetails(parsed.tempWorktreePath).catch(() => null);
+        const details = await getIntegrateConflictDetails(parsed).catch(() => null);
         if (cancelled) return;
         if (!details) {
           return;
@@ -124,7 +136,7 @@ export const IntegrateCommitsSection: React.FC<{
     return () => {
       cancelled = true;
     };
-  }, [conflictStorageKey, repoRoot]);
+  }, [conflictStorageKey, localBranches, repoRoot]);
 
   React.useEffect(() => {
     if (!isEligible) {
@@ -365,7 +377,7 @@ export const IntegrateCommitsSection: React.FC<{
           <div className="min-w-0">
             <div className="typography-ui-label text-foreground">{t('gitView.integrate.moveCommits')}</div>
               <div className="typography-micro text-muted-foreground truncate">
-                {sourceBranch} → {targetBranch}
+                {sourceBranch} → {targetBranch || t('gitView.branch.selectBranch')}
               </div>
             </div>
 
@@ -375,7 +387,9 @@ export const IntegrateCommitsSection: React.FC<{
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" className="gap-1.5">
                   {t('gitView.integrate.target')}
-                  <span className="max-w-[160px] truncate font-mono text-xs text-muted-foreground">{targetBranch}</span>
+                  <span className="max-w-[160px] truncate font-mono text-xs text-muted-foreground">
+                    {targetBranch || t('gitView.branch.selectBranch')}
+                  </span>
                   <RiArrowDownSLine className="size-4 opacity-60" />
                 </Button>
               </DropdownMenuTrigger>

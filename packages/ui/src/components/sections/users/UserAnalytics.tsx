@@ -1,6 +1,9 @@
 import * as React from 'react';
 import {
+  RiArrowDownSLine,
   RiBrainLine,
+  RiCalendarLine,
+  RiChatHistoryLine,
   RiFileList2Line,
   RiFileSearchLine,
   RiFlashlightLine,
@@ -28,9 +31,17 @@ import {
   formatMinutes,
   formatPromptAgentLabel,
   formatPromptModelLabel,
+  formatPromptRowSummary,
   formatPromptThinkingLabel,
+  pluralize,
 } from './userAnalyticsPresentation';
 import { MetricTrendChart } from './MetricTrendChart';
+import { DayScrubber } from './DayScrubber';
+import {
+  groupPromptEventsBySession,
+  nextSelectedAnalyticsDate,
+  resolveAnalyticsDetailRange,
+} from './userAnalyticsState';
 
 const TIME_ZONE_STORAGE_KEY = 'devryan.user-analytics.time-zone';
 const RANGE_MAX_DAYS = 92;
@@ -57,6 +68,17 @@ const localDate = (timeZone: string): string => {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
   }).formatToParts(new Date());
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+};
+
+// The calendar day (YYYY-MM-DD) an ISO instant falls on in the given zone — used to
+// bucket prompt/interaction timestamps into the same day keys as series[].date so the
+// day-tile selection can filter them client-side.
+const localDateOf = (iso: string, timeZone: string): string => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date(iso));
   const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${value.year}-${value.month}-${value.day}`;
 };
@@ -101,6 +123,10 @@ const formatSessionDate = (date: string): string => new Intl.DateTimeFormat(unde
   weekday: 'short', month: 'short', day: 'numeric',
 }).format(new Date(`${date}T12:00:00`));
 
+const formatSelectedDate = (date: string): string => new Intl.DateTimeFormat(undefined, {
+  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+}).format(new Date(`${date}T12:00:00`));
+
 const metadataString = (event: UserAnalyticsEvent, key: string): string => (
   typeof event.metadata?.[key] === 'string' ? event.metadata[key] as string : ''
 );
@@ -115,6 +141,15 @@ const actionLabel = (action: string): string => action
   .join(' · ');
 
 const changeDetails = (event: UserAnalyticsEvent): string => {
+  if (event.action === 'session.deleted') {
+    if (event.success) return 'Archived session permanently deleted · analytics retained indefinitely';
+    const upstreamDeleted = event.metadata?.upstreamDeleted === true;
+    const ownershipTombstoned = event.metadata?.ownershipTombstoned === true;
+    if (upstreamDeleted && !ownershipTombstoned) {
+      return 'Session content deleted, but ownership cleanup did not complete';
+    }
+    return 'Session deletion failed · analytics retained indefinitely';
+  }
   const changes = Array.isArray(event.metadata?.changes) ? event.metadata.changes as Array<Record<string, unknown>> : [];
   if (changes.length > 0) {
     return changes.map((change) => {
@@ -135,12 +170,20 @@ const changeDetails = (event: UserAnalyticsEvent): string => {
   return fields ? `Updated ${fields}` : 'No additional non-sensitive details';
 };
 
-const StatCard: React.FC<{ label: string; value: string | number; qualifier?: string }> = ({ label, value, qualifier }) => (
-  <div className="rounded-xl border border-border/60 bg-[var(--surface-elevated)] px-3 py-3">
-    <div className="typography-micro uppercase tracking-wide text-muted-foreground">{label}</div>
-    <div className="mt-1 typography-ui-header font-semibold text-foreground">{value}</div>
-    {qualifier ? <div className="typography-micro text-muted-foreground">{qualifier}</div> : null}
+// One figure in the overview strip. Primary metrics (active time, prompts) read
+// larger than the secondary counts so the strip has hierarchy instead of five
+// equal blocks; the "over N days" context lives once in the strip caption.
+const Kpi: React.FC<{ label: string; value: string | number; primary?: boolean }> = ({ label, value, primary }) => (
+  <div className="flex flex-col gap-0.5">
+    <span className="typography-micro uppercase tracking-wide text-muted-foreground">{label}</span>
+    <span className={cn('font-semibold tabular-nums text-foreground', primary ? 'typography-ui-header' : 'typography-ui-label')}>{value}</span>
   </div>
+);
+
+const FilterBadge: React.FC<{ label: string }> = ({ label }) => (
+  <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[color-mix(in_srgb,var(--primary-base)_35%,transparent)] bg-[color-mix(in_srgb,var(--primary-base)_10%,transparent)] px-2 py-0.5 typography-micro font-medium text-[var(--primary-base)]">
+    {label}
+  </span>
 );
 
 const MetaPill: React.FC<{ icon: React.ReactNode; tip: string; children: React.ReactNode }> = ({ icon, tip, children }) => (
@@ -170,69 +213,114 @@ const StatusPill: React.FC<{ success: boolean }> = ({ success }) => {
   );
 };
 
-const PromptList: React.FC<{
+const shortSessionId = (sessionId: string): string => (
+  sessionId.length <= 22 ? sessionId : `${sessionId.slice(0, 13)}…${sessionId.slice(-6)}`
+);
+
+const PromptRow: React.FC<{ event: UserAnalyticsEvent; timeZone: string }> = ({ event, timeZone }) => {
+  const provider = metadataString(event, 'providerId');
+  const model = metadataString(event, 'modelId');
+  const modelLabel = formatPromptModelLabel(provider, model);
+  const thinkingLabel = formatPromptThinkingLabel(metadataString(event, 'variant'), provider);
+  const agentLabel = formatPromptAgentLabel(metadataString(event, 'agent'));
+  const projectName = metadataString(event, 'projectName') || 'Unknown project';
+  const branchName = metadataString(event, 'branchName') || 'unknown branch';
+  const promptText = metadataString(event, 'promptText');
+  const promptSummary = formatPromptRowSummary(promptText);
+  const attachmentCount = metadataNumber(event, 'attachmentCount');
+  return (
+    <details className="group rounded-xl border border-border/60 bg-[var(--surface-elevated)] open:bg-[var(--surface-subtle)]/30">
+      <summary className="flex cursor-pointer list-none items-start justify-between gap-3 px-3 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]">
+        <div className="min-w-0 flex-1">
+          <div className="line-clamp-1 break-words typography-ui-label font-medium text-foreground">
+            {promptSummary.title}
+          </div>
+          {promptSummary.preview ? (
+            <p className="mt-0.5 line-clamp-2 break-words typography-meta text-muted-foreground">
+              {promptSummary.preview}
+            </p>
+          ) : null}
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <MetaPill icon={<RiRobot2Line className="h-3 w-3" />} tip="Agent">{agentLabel}</MetaPill>
+            <MetaPill icon={<RiBrainLine className="h-3 w-3" />} tip="Model">{modelLabel}</MetaPill>
+            <MetaPill icon={<RiFlashlightLine className="h-3 w-3" />} tip="Thinking level">{thinkingLabel}</MetaPill>
+            <MetaPill icon={<RiGitBranchLine className="h-3 w-3" />} tip="Repository / branch">{projectName} / {branchName}</MetaPill>
+            <MetaPill icon={<RiFileList2Line className="h-3 w-3" />} tip="Attachments (count only)">{pluralize(attachmentCount, 'attachment')}</MetaPill>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1 typography-micro text-muted-foreground">
+          <span className="inline-flex items-center gap-1"><RiTimeLine className="h-3 w-3" />{formatTime(event.created_at, timeZone)}</span>
+          <span className="group-open:hidden">Expand</span>
+          <span className="hidden group-open:inline">Collapse</span>
+        </div>
+      </summary>
+      <div className="border-t border-border/50 px-3 py-3">
+        <div className="whitespace-pre-wrap break-words font-sans typography-ui-label leading-relaxed text-foreground">{promptText || '(No text parts)'}</div>
+        {event.metadata?.promptTruncated === true ? (
+          <p className="mt-2 typography-micro text-[var(--status-warning)]">
+            Truncated at 16 KiB; original length {metadataNumber(event, 'promptOriginalLength').toLocaleString()} characters.
+          </p>
+        ) : null}
+      </div>
+    </details>
+  );
+};
+
+export const PromptList: React.FC<{
   events: UserAnalyticsEvent[];
   timeZone: string;
   nextCursor: string | null;
   loadingMore: boolean;
   onLoadMore: () => void;
-}> = ({ events, timeZone, nextCursor, loadingMore, onLoadMore }) => (
-  <div className="space-y-2">
-    {events.length === 0 ? (
+}> = ({ events, timeZone, nextCursor, loadingMore, onLoadMore }) => {
+  const groups = groupPromptEventsBySession(events);
+  return (
+    <div className="space-y-2">
+      {groups.length === 0 ? (
       <div className="rounded-xl border border-dashed border-border/70 px-4 py-8 text-center typography-meta text-muted-foreground">
         No prompts match this range and filter set.
       </div>
-    ) : events.map((event) => {
-      const provider = metadataString(event, 'providerId');
-      const model = metadataString(event, 'modelId');
-      const modelLabel = formatPromptModelLabel(provider, model);
-      const thinkingLabel = formatPromptThinkingLabel(metadataString(event, 'variant'), provider);
-      const agentLabel = formatPromptAgentLabel(metadataString(event, 'agent'));
-      const projectName = metadataString(event, 'projectName') || 'Unknown project';
-      const branchName = metadataString(event, 'branchName') || 'unknown branch';
-      const promptText = metadataString(event, 'promptText');
-      return (
-        <details key={event.id} className="group rounded-xl border border-border/60 bg-[var(--surface-elevated)] open:bg-[var(--surface-subtle)]/30">
-          <summary className="cursor-pointer list-none px-3 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="truncate typography-ui-label font-medium text-foreground">
-                  {promptText || '(Attachment-only prompt)'}
-                </div>
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                  <MetaPill icon={<RiTimeLine className="h-3 w-3" />} tip="Sent at">{formatTime(event.created_at, timeZone)}</MetaPill>
-                  <MetaPill icon={<RiRobot2Line className="h-3 w-3" />} tip="Agent">{agentLabel}</MetaPill>
-                  <MetaPill icon={<RiBrainLine className="h-3 w-3" />} tip="Model">{modelLabel}</MetaPill>
-                  <MetaPill icon={<RiFlashlightLine className="h-3 w-3" />} tip="Thinking level">{thinkingLabel}</MetaPill>
-                  <MetaPill icon={<RiGitBranchLine className="h-3 w-3" />} tip="Repository / branch">{projectName} / {branchName}</MetaPill>
+      ) : groups.map((group) => {
+        const newest = group.events[0];
+        const projectName = metadataString(newest, 'projectName') || 'Unknown project';
+        const branchName = metadataString(newest, 'branchName') || 'unknown branch';
+        return (
+          <details key={group.key} className="overflow-hidden rounded-xl border border-border/60 bg-[var(--surface-subtle)]/20 [&[open]_.session-chevron]:rotate-180">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-3 transition-colors hover:bg-[var(--surface-subtle)]/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/55 bg-[var(--surface-elevated)] text-muted-foreground">
+                  <RiChatHistoryLine className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <div className="truncate typography-ui-label font-semibold text-foreground" title={group.sessionId ?? undefined}>
+                    {group.sessionId ? `Session ${shortSessionId(group.sessionId)}` : 'Unattributed prompts'}
+                  </div>
+                  <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 typography-micro text-muted-foreground">
+                    <span className="truncate">{projectName} / {branchName}</span>
+                    <span aria-hidden>·</span>
+                    <span>{pluralize(group.events.length, 'prompt')} shown</span>
+                  </div>
                 </div>
               </div>
-              <span className="shrink-0 typography-micro text-muted-foreground group-open:hidden">Expand</span>
+              <div className="flex shrink-0 items-center gap-2 typography-micro text-muted-foreground">
+                <span className="hidden sm:inline">{formatSessionDate(localDateOf(newest.created_at, timeZone))} · {formatTime(newest.created_at, timeZone)}</span>
+                <RiArrowDownSLine className="session-chevron h-4 w-4 transition-transform" />
+              </div>
+            </summary>
+            <div className="space-y-2 border-t border-border/50 bg-[var(--surface-elevated)]/35 p-2">
+              {group.events.map((event) => <PromptRow key={event.id} event={event} timeZone={timeZone} />)}
             </div>
-          </summary>
-          <div className="border-t border-border/50 px-3 py-3">
-            <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words typography-code text-foreground">{promptText || '(No text parts)'}</pre>
-            {event.metadata?.promptTruncated === true ? (
-              <p className="mt-2 typography-micro text-[var(--status-warning)]">
-                Truncated at 16 KiB; original length {metadataNumber(event, 'promptOriginalLength').toLocaleString()} characters.
-              </p>
-            ) : null}
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <MetaPill icon={<RiBrainLine className="h-3 w-3" />} tip="Model">{modelLabel}</MetaPill>
-              <MetaPill icon={<RiFlashlightLine className="h-3 w-3" />} tip="Thinking level">{thinkingLabel}</MetaPill>
-              <MetaPill icon={<RiFileList2Line className="h-3 w-3" />} tip="Attachments (count only)">{metadataNumber(event, 'attachmentCount')} attachments</MetaPill>
-            </div>
-          </div>
-        </details>
-      );
-    })}
-    {nextCursor ? (
-      <Button variant="outline" size="sm" onClick={onLoadMore} disabled={loadingMore}>
-        {loadingMore ? <RiLoader4Line className="h-4 w-4 animate-spin" /> : null} Load 50 More
-      </Button>
-    ) : null}
-  </div>
-);
+          </details>
+        );
+      })}
+      {nextCursor ? (
+        <Button variant="outline" size="sm" onClick={onLoadMore} disabled={loadingMore}>
+          {loadingMore ? <RiLoader4Line className="h-4 w-4 animate-spin" /> : null} Load 50 More
+        </Button>
+      ) : null}
+    </div>
+  );
+};
 
 interface UserAnalyticsProps {
   user: UserRow;
@@ -249,27 +337,56 @@ export const UserAnalytics: React.FC<UserAnalyticsProps> = ({
 }) => {
   const [timeZone, setTimeZone] = React.useState(readTimeZone);
   const [range, setRange] = React.useState(() => presetRange(readTimeZone(), 14));
+  const [selectedDate, setSelectedDate] = React.useState<string | null>(null);
   const [rangeData, setRangeData] = React.useState<UserAnalyticsRange | null>(null);
   const [prompts, setPrompts] = React.useState<UserAnalyticsEvent[]>([]);
   const [interactions, setInteractions] = React.useState<UserAnalyticsEvent[]>([]);
   const [changes, setChanges] = React.useState<UserAnalyticsEvent[]>([]);
   const [nextCursor, setNextCursor] = React.useState<string | null>(null);
-  const [loading, setLoading] = React.useState(false);
+  const [rangeLoading, setRangeLoading] = React.useState(false);
+  const [detailLoading, setDetailLoading] = React.useState(false);
   const [loadingMore, setLoadingMore] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+  const [rangeError, setRangeError] = React.useState<string | null>(null);
+  const [detailError, setDetailError] = React.useState<string | null>(null);
+  const [loadedDetailScope, setLoadedDetailScope] = React.useState<string | null>(null);
   const [reloadNonce, setReloadNonce] = React.useState(0);
   const [filterDraft, setFilterDraft] = React.useState({ search: '', agent: '', model: '' });
   const [filters, setFilters] = React.useState(filterDraft);
+  const [showCustom, setShowCustom] = React.useState(false);
   const zones = React.useMemo(timeZones, []);
 
-  const baseQuery = React.useMemo(() => (
+  // A selected day belongs to one range/time-zone window. Clear it when that
+  // window moves so detail requests cannot retain an out-of-scope date.
+  React.useEffect(() => {
+    setSelectedDate(null);
+  }, [range.start, range.end, timeZone]);
+
+  const selectDay = (date: string) => setSelectedDate((current) => nextSelectedAnalyticsDate(current, date));
+  const clearDay = () => setSelectedDate(null);
+
+  const rangeQuery = React.useMemo(() => (
     new URLSearchParams({ start: range.start, end: range.end, timeZone })
   ), [range.start, range.end, timeZone]);
+  const detailQuery = React.useMemo(() => (
+    new URLSearchParams({ ...resolveAnalyticsDetailRange(range, selectedDate), timeZone })
+  ), [range, selectedDate, timeZone]);
+  const detailScopeKey = JSON.stringify({
+    userId: user.id,
+    query: detailQuery.toString(),
+    filters,
+  });
+  const detailScopeRef = React.useRef(detailScopeKey);
+  detailScopeRef.current = detailScopeKey;
 
   const activePreset = range.end === localDate(timeZone) ? spanDays(range.start, range.end) : 0;
+  // Presets and manual From/To are one control: a preset is "active" only when the
+  // window still matches it exactly; otherwise (or once the user opens Custom) the
+  // date pickers are revealed so the two mechanisms never compete side by side.
+  const presetActive = !showCustom && RANGE_PRESETS.includes(activePreset);
+  const customActive = !presetActive;
 
   const promptUrl = React.useCallback((cursor?: string | null) => {
-    const params = new URLSearchParams(baseQuery);
+    const params = new URLSearchParams(detailQuery);
     params.set('category', 'prompts');
     params.set('limit', '50');
     if (filters.search) params.set('search', filters.search);
@@ -277,39 +394,63 @@ export const UserAnalytics: React.FC<UserAnalyticsProps> = ({
     if (filters.model) params.set('model', filters.model);
     if (cursor) params.set('cursor', cursor);
     return `/api/admin/users/${encodeURIComponent(user.id)}/analytics/events?${params}`;
-  }, [baseQuery, filters, user.id]);
+  }, [detailQuery, filters, user.id]);
 
   React.useEffect(() => {
     if (!active || !canViewDetailed) return;
     const controller = new AbortController();
-    setLoading(true);
-    setError(null);
-    const rangeUrl = `/api/admin/users/${encodeURIComponent(user.id)}/analytics/range?${baseQuery}`;
+    setRangeLoading(true);
+    setRangeError(null);
+    const rangeUrl = `/api/admin/users/${encodeURIComponent(user.id)}/analytics/range?${rangeQuery}`;
+    void requestJson<UserAnalyticsRange>(rangeUrl, { signal: controller.signal })
+      .then(setRangeData)
+      .catch((caught) => {
+        if (controller.signal.aborted) return;
+        setRangeError(caught instanceof Error ? caught.message : 'Analytics range could not be loaded');
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRangeLoading(false);
+      });
+    return () => controller.abort();
+  }, [active, canViewDetailed, rangeQuery, reloadNonce, user.id]);
+
+  React.useEffect(() => {
+    if (!active || !canViewDetailed) return;
+    const controller = new AbortController();
+    const requestedScope = detailScopeKey;
+    setDetailLoading(true);
+    setLoadingMore(false);
+    setDetailError(null);
+    setPrompts([]);
+    setNextCursor(null);
+    setInteractions([]);
+    setChanges([]);
     const eventUrl = (category: 'interactions' | 'changes') => {
-      const params = new URLSearchParams(baseQuery);
+      const params = new URLSearchParams(detailQuery);
       params.set('category', category);
       params.set('limit', '100');
       return `/api/admin/users/${encodeURIComponent(user.id)}/analytics/events?${params}`;
     };
     void Promise.all([
-      requestJson<UserAnalyticsRange>(rangeUrl, { signal: controller.signal }),
       requestJson<UserAnalyticsEventsPage>(promptUrl(), { signal: controller.signal }),
       requestJson<UserAnalyticsEventsPage>(eventUrl('interactions'), { signal: controller.signal }),
       requestJson<UserAnalyticsEventsPage>(eventUrl('changes'), { signal: controller.signal }),
-    ]).then(([nextRange, promptPage, interactionPage, changePage]) => {
-      setRangeData(nextRange);
+    ]).then(([promptPage, interactionPage, changePage]) => {
+      if (detailScopeRef.current !== requestedScope) return;
       setPrompts(promptPage.events);
       setNextCursor(promptPage.nextCursor);
       setInteractions(interactionPage.events);
       setChanges(changePage.events);
+      setLoadedDetailScope(requestedScope);
     }).catch((caught) => {
       if (controller.signal.aborted) return;
-      setError(caught instanceof Error ? caught.message : 'Analytics could not be loaded');
+      setDetailError(caught instanceof Error ? caught.message : 'Analytics detail could not be loaded');
+      if (detailScopeRef.current === requestedScope) setLoadedDetailScope(requestedScope);
     }).finally(() => {
-      if (!controller.signal.aborted) setLoading(false);
+      if (!controller.signal.aborted) setDetailLoading(false);
     });
     return () => controller.abort();
-  }, [active, baseQuery, canViewDetailed, promptUrl, reloadNonce, user.id]);
+  }, [active, canViewDetailed, detailQuery, detailScopeKey, promptUrl, reloadNonce, user.id]);
 
   const updateTimeZone = (value: string) => {
     setTimeZone(value);
@@ -318,13 +459,17 @@ export const UserAnalytics: React.FC<UserAnalyticsProps> = ({
 
   const loadMore = async () => {
     if (!nextCursor || loadingMore) return;
+    const requestedScope = detailScopeKey;
     setLoadingMore(true);
     try {
       const page = await requestJson<UserAnalyticsEventsPage>(promptUrl(nextCursor));
+      if (detailScopeRef.current !== requestedScope) return;
       setPrompts((current) => [...current, ...page.events]);
       setNextCursor(page.nextCursor);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'More prompts could not be loaded');
+      if (detailScopeRef.current === requestedScope) {
+        setDetailError(caught instanceof Error ? caught.message : 'More prompts could not be loaded');
+      }
     } finally {
       setLoadingMore(false);
     }
@@ -344,43 +489,93 @@ export const UserAnalytics: React.FC<UserAnalyticsProps> = ({
 
   const interactionEvents = [...interactions, ...changes]
     .sort((left, right) => Date.parse(right.created_at) - Date.parse(left.created_at));
-  const rangeQualifier = rangeData ? `over ${rangeData.days} day${rangeData.days === 1 ? '' : 's'}` : undefined;
+
+  // The range graph stays intact while every detail feed uses the exact selected-day
+  // query. This avoids filtering only the first paginated range page client-side.
+  const dayFilterActive = selectedDate !== null;
+  const selectedDay = selectedDate
+    ? rangeData?.series.find((day) => day.date === selectedDate) ?? null
+    : null;
+  const displayTotals = dayFilterActive
+    ? selectedDay ?? { estimatedActiveMinutes: 0, prompts: 0, filesOpened: 0, copies: 0, settingsChanges: 0 }
+    : rangeData?.totals ?? { estimatedActiveMinutes: 0, prompts: 0, filesOpened: 0, copies: 0, settingsChanges: 0 };
+
+  const sessionCountByDate = new Map<string, number>();
+  rangeData?.activitySessions.forEach((session) => {
+    sessionCountByDate.set(session.date, (sessionCountByDate.get(session.date) ?? 0) + 1);
+  });
+  const visibleSessions = rangeData
+    ? (selectedDate ? rangeData.activitySessions.filter((session) => session.date === selectedDate) : rangeData.activitySessions)
+    : [];
+  const filterNote = selectedDate ? `Filtered to ${formatSelectedDate(selectedDate)}` : null;
+  const loading = rangeLoading || detailLoading;
+  const error = rangeError || detailError;
+  const detailPending = detailLoading || loadedDetailScope !== detailScopeKey;
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-[var(--surface-subtle)]/25 p-3 lg:flex-row lg:items-end lg:justify-between">
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="flex flex-col gap-1 typography-micro text-muted-foreground">
-            <span>From</span>
-            <Input type="date" value={range.start} max={range.end} onChange={(event) => setRange((current) => clampRange(event.target.value, current.end))} className="w-40" />
-          </label>
-          <label className="flex flex-col gap-1 typography-micro text-muted-foreground">
-            <span>To</span>
-            <Input type="date" value={range.end} min={range.start} onChange={(event) => setRange((current) => clampRange(current.start, event.target.value))} className="w-40" />
-          </label>
-          <div className="flex items-center gap-1">
-            {RANGE_PRESETS.map((days) => (
-              <Button
-                key={days}
-                variant={activePreset === days ? 'default' : 'outline'}
-                size="sm"
-                aria-label={`Last ${days} days`}
-                onClick={() => setRange(presetRange(timeZone, days))}
-              >
-                {`${days}d`}
-              </Button>
-            ))}
+      <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-[var(--surface-subtle)]/25 p-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div role="group" aria-label="Date Range" className="inline-flex items-center gap-0.5 rounded-[10px] border border-border/60 bg-[color-mix(in_srgb,var(--foreground)_2%,transparent)] p-0.5">
+            {RANGE_PRESETS.map((days) => {
+              const active = presetActive && activePreset === days;
+              return (
+                <button
+                  key={days}
+                  type="button"
+                  aria-pressed={active}
+                  aria-label={`Last ${days} days`}
+                  onClick={() => { setShowCustom(false); setRange(presetRange(timeZone, days)); }}
+                  className={cn(
+                    'rounded-lg px-3 py-1.5 typography-micro font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]',
+                    active
+                      ? 'bg-[var(--surface-elevated)] text-foreground shadow-sm'
+                      : 'bg-transparent text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {`${days}d`}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              aria-pressed={customActive}
+              onClick={() => setShowCustom(true)}
+              className={cn(
+                'rounded-lg px-3 py-1.5 typography-micro font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]',
+                customActive
+                  ? 'bg-[var(--surface-elevated)] text-foreground shadow-sm'
+                  : 'bg-transparent text-muted-foreground hover:text-foreground',
+              )}
+            >
+              Custom
+            </button>
           </div>
+          {customActive ? (
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="flex flex-col gap-1 typography-micro text-muted-foreground">
+                <span>From</span>
+                <div className="relative">
+                  <RiCalendarLine className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input type="date" value={range.start} max={range.end} onChange={(event) => setRange((current) => clampRange(event.target.value, current.end))} className="w-40 pl-8" />
+                </div>
+              </label>
+              <label className="flex flex-col gap-1 typography-micro text-muted-foreground">
+                <span>To</span>
+                <div className="relative">
+                  <RiCalendarLine className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input type="date" value={range.end} min={range.start} onChange={(event) => setRange((current) => clampRange(current.start, event.target.value))} className="w-40 pl-8" />
+                </div>
+              </label>
+            </div>
+          ) : null}
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-          <label className="flex flex-col gap-1 typography-micro text-muted-foreground">
-            <span>Time Zone</span>
-            <select aria-label="Analytics Time Zone" className={cn(selectClassName, 'w-full sm:w-64')} value={timeZone} onChange={(event) => updateTimeZone(event.target.value)}>
-              {!zones.includes(timeZone) ? <option value={timeZone}>{timeZone}</option> : null}
-              {zones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
-            </select>
-          </label>
-          <Button variant="outline" onClick={() => setReloadNonce((value) => value + 1)} disabled={loading}>
+        <div className="flex items-center gap-2">
+          <select aria-label="Analytics Time Zone" className={cn(selectClassName, 'w-44')} value={timeZone} onChange={(event) => updateTimeZone(event.target.value)}>
+            {!zones.includes(timeZone) ? <option value={timeZone}>{timeZone}</option> : null}
+            {zones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
+          </select>
+          <Button variant="outline" onClick={() => setReloadNonce((value) => value + 1)} disabled={loading} aria-label="Refresh Analytics">
             <RiRefreshLine className={cn('h-4 w-4', loading && 'animate-spin')} /> Refresh
           </Button>
         </div>
@@ -393,41 +588,81 @@ export const UserAnalytics: React.FC<UserAnalyticsProps> = ({
         </div>
       ) : null}
 
-      {loading && !rangeData ? (
+      {rangeLoading && !rangeData ? (
         <div className="flex min-h-64 items-center justify-center gap-2 typography-meta text-muted-foreground">
           <RiLoader4Line className="h-4 w-4 animate-spin" /> Loading analytics…
         </div>
       ) : rangeData ? (
         <>
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-            <StatCard label="Estimated active" value={formatMinutes(rangeData.totals.estimatedActiveMinutes)} qualifier={rangeQualifier} />
-            <StatCard label="Prompts sent" value={rangeData.totals.prompts} qualifier={rangeQualifier} />
-            <StatCard label="Files opened" value={rangeData.totals.filesOpened} qualifier={rangeQualifier} />
-            <StatCard label="Copies" value={rangeData.totals.copies} qualifier={rangeQualifier} />
-            <StatCard label="Settings changes" value={rangeData.totals.settingsChanges} qualifier={rangeQualifier} />
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <span className="typography-micro uppercase tracking-wide text-muted-foreground">
+                {selectedDate
+                  ? `Selected · ${formatSelectedDate(selectedDate)}`
+                  : `Range totals · over ${rangeData.days} ${rangeData.days === 1 ? 'day' : 'days'}`}
+              </span>
+              {selectedDate ? (
+                <button
+                  type="button"
+                  onClick={clearDay}
+                  className="shrink-0 rounded-md px-2 py-1 typography-micro font-medium text-[var(--primary-base)] transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]"
+                >
+                  Clear Selection
+                </button>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl border border-border/60 bg-[var(--surface-elevated)] px-4 py-3">
+              <Kpi label="Active time" value={formatMinutes(displayTotals.estimatedActiveMinutes)} primary />
+              <Kpi label="Prompts" value={displayTotals.prompts} primary />
+              <span className="hidden h-8 w-px self-center bg-border/60 sm:block" aria-hidden />
+              <Kpi label="Files opened" value={displayTotals.filesOpened} />
+              <Kpi label="Copies" value={displayTotals.copies} />
+              <Kpi label="Settings changes" value={displayTotals.settingsChanges} />
+            </div>
           </div>
 
-          <section className="space-y-2" aria-labelledby="activity-graph-heading">
-            <div className="flex items-baseline justify-between gap-3">
+          <section className="space-y-3" aria-labelledby="activity-graph-heading">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
               <div>
-                <h3 id="activity-graph-heading" className="typography-ui-header font-semibold text-foreground">Activity graph</h3>
-                <p className="typography-meta text-muted-foreground">Daily totals across the selected range. Toggle metrics on or off; hover for exact values.</p>
+                <h3 id="activity-graph-heading" className="typography-ui-header font-semibold text-foreground">Activity Graph</h3>
+                <p className="typography-meta text-muted-foreground">Daily totals across the range. Toggle metrics on or off; hover for exact values. Select a day on the rail below to focus every section.</p>
               </div>
-              <span className="shrink-0 typography-micro text-muted-foreground">{rangeData.days}-day range</span>
+              {selectedDate ? (
+                <button
+                  type="button"
+                  onClick={clearDay}
+                  className="shrink-0 rounded-md px-2 py-1 typography-micro font-medium text-[var(--primary-base)] transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]"
+                >
+                  {`${formatSessionDate(selectedDate)} · Clear`}
+                </button>
+              ) : (
+                <span className="shrink-0 typography-micro text-muted-foreground">{`${rangeData.days}-day range`}</span>
+              )}
             </div>
-            <MetricTrendChart series={rangeData.series} />
+            <MetricTrendChart series={rangeData.series} selectedDate={selectedDate} />
+            <DayScrubber
+              series={rangeData.series}
+              selectedDate={selectedDate}
+              onSelect={selectDay}
+              sessionCountByDate={sessionCountByDate}
+            />
           </section>
 
           <section className="space-y-3" aria-labelledby="activity-sessions-heading">
-            <div>
-              <h3 id="activity-sessions-heading" className="typography-ui-header font-semibold text-foreground">Activity sessions</h3>
-              <p className="typography-meta text-muted-foreground">Estimated work blocks split after gaps greater than 30 minutes, with a five-minute tail.</p>
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <div>
+                <h3 id="activity-sessions-heading" className="typography-ui-header font-semibold text-foreground">Activity Sessions</h3>
+                <p className="typography-meta text-muted-foreground">Individual work blocks, split after gaps greater than 30 minutes with a five-minute tail.</p>
+              </div>
+              {filterNote ? <FilterBadge label={filterNote} /> : null}
             </div>
-            {rangeData.activitySessions.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border/70 px-4 py-8 text-center typography-meta text-muted-foreground">No direct activity in this range.</div>
+            {visibleSessions.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border/70 px-4 py-8 text-center typography-meta text-muted-foreground">
+                {dayFilterActive ? 'No direct activity on the selected day.' : 'No direct activity in this range.'}
+              </div>
             ) : (
               <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                {rangeData.activitySessions.map((session) => (
+                {visibleSessions.map((session) => (
                   <div key={session.id + session.date} className="rounded-xl border border-border/60 bg-[var(--surface-elevated)] px-3 py-3">
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="typography-ui-label font-medium text-foreground">{formatTime(session.start, timeZone)}–{formatTime(session.end, timeZone)}</span>
@@ -435,7 +670,7 @@ export const UserAnalytics: React.FC<UserAnalyticsProps> = ({
                     </div>
                     <div className="mt-0.5 typography-micro text-muted-foreground">{formatSessionDate(session.date)}</div>
                     <p className="mt-1 typography-micro text-muted-foreground">
-                      {session.actionCount} actions · {session.counts.prompts} prompts · {session.counts.filesOpened} files · {session.counts.copies} copies
+                      {pluralize(session.actionCount, 'action')} · {pluralize(session.counts.prompts, 'prompt')} · {pluralize(session.counts.filesOpened, 'file')} · {pluralize(session.counts.copies, 'copy', 'copies')}
                     </p>
                   </div>
                 ))}
@@ -444,9 +679,12 @@ export const UserAnalytics: React.FC<UserAnalyticsProps> = ({
           </section>
 
           <section className="space-y-3" aria-labelledby="prompts-heading">
-            <div>
-              <h3 id="prompts-heading" className="typography-ui-header font-semibold text-foreground">Prompts</h3>
-              <p className="typography-meta text-muted-foreground">Human-submitted prompt text only. Agent output and attachment contents are never included.</p>
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <div>
+                <h3 id="prompts-heading" className="typography-ui-header font-semibold text-foreground">Prompts</h3>
+                <p className="typography-meta text-muted-foreground">Human-submitted prompt text only. Agent output and attachment contents are never included.</p>
+              </div>
+              {filterNote ? <FilterBadge label={filterNote} /> : null}
             </div>
             <form
               className="grid gap-2 rounded-xl border border-border/60 bg-[var(--surface-subtle)]/25 p-3 md:grid-cols-[minmax(0,1fr)_12rem_12rem_auto]"
@@ -457,27 +695,44 @@ export const UserAnalytics: React.FC<UserAnalyticsProps> = ({
               <Input aria-label="Filter by Model" placeholder="Provider or model" value={filterDraft.model} onChange={(event) => setFilterDraft((current) => ({ ...current, model: event.target.value }))} />
               <Button type="submit" variant="outline"><RiFileSearchLine className="h-4 w-4" /> Apply</Button>
             </form>
-            <PromptList events={prompts} timeZone={timeZone} nextCursor={nextCursor} loadingMore={loadingMore} onLoadMore={() => void loadMore()} />
+            {detailPending ? (
+              <div className="flex min-h-28 items-center justify-center gap-2 rounded-xl border border-border/60 typography-meta text-muted-foreground">
+                <RiLoader4Line className="h-4 w-4 animate-spin" /> Loading prompts…
+              </div>
+            ) : (
+              <PromptList events={prompts} timeZone={timeZone} nextCursor={nextCursor} loadingMore={loadingMore} onLoadMore={() => void loadMore()} />
+            )}
           </section>
 
           <section className="space-y-3" aria-labelledby="interactions-heading">
-            <div>
-              <h3 id="interactions-heading" className="typography-ui-header font-semibold text-foreground">Changes & interactions</h3>
-              <p className="typography-meta text-muted-foreground">File opens, copies, and safe field-level account or settings changes.</p>
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <div>
+                <h3 id="interactions-heading" className="typography-ui-header font-semibold text-foreground">Changes & Interactions</h3>
+                <p className="typography-meta text-muted-foreground">File opens, copies, and safe field-level account or settings changes.</p>
+              </div>
+              {filterNote ? <FilterBadge label={filterNote} /> : null}
             </div>
-            {interactionEvents.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border/70 px-4 py-8 text-center typography-meta text-muted-foreground">No changes or interactions in this range.</div>
+            {detailPending ? (
+              <div className="flex min-h-28 items-center justify-center gap-2 rounded-xl border border-border/60 typography-meta text-muted-foreground">
+                <RiLoader4Line className="h-4 w-4 animate-spin" /> Loading changes and interactions…
+              </div>
+            ) : interactionEvents.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border/70 px-4 py-8 text-center typography-meta text-muted-foreground">
+                {dayFilterActive ? 'No changes or interactions on the selected day.' : 'No changes or interactions in this range.'}
+              </div>
             ) : (
               <div className="overflow-hidden rounded-xl border border-border/60 bg-[var(--surface-elevated)]">
                 {interactionEvents.map((event, index) => (
-                  <div key={event.id} className={cn('grid gap-2 px-3 py-3.5 md:grid-cols-[12rem_minmax(0,1fr)_auto] md:items-start', index > 0 && 'border-t border-border/45')}>
+                  <div key={event.id} className={cn('grid gap-x-3 gap-y-1 px-3 py-3 transition-colors hover:bg-[var(--surface-subtle)]/40 md:grid-cols-[9.5rem_minmax(0,1fr)_auto] md:items-start', index > 0 && 'border-t border-border/45')}>
+                    <div className="flex items-center gap-1.5 typography-micro text-muted-foreground">
+                      <RiTimeLine className="h-3 w-3 shrink-0" />
+                      <span className="font-medium text-foreground">{formatSessionDate(localDateOf(event.created_at, timeZone))}</span>
+                      <span>{formatTime(event.created_at, timeZone)}</span>
+                    </div>
                     <div className="min-w-0">
                       <div className="truncate typography-ui-label font-medium text-foreground">{actionLabel(event.action)}</div>
-                      <div className="mt-0.5 flex items-center gap-1 typography-micro text-muted-foreground">
-                        <RiTimeLine className="h-3 w-3" />{formatTime(event.created_at, timeZone)}
-                      </div>
+                      <div className="mt-0.5 typography-meta text-muted-foreground">{changeDetails(event)}</div>
                     </div>
-                    <div className="min-w-0 typography-meta text-foreground">{changeDetails(event)}</div>
                     <div className="flex items-center gap-2 md:justify-end">
                       <span className="truncate typography-micro font-medium text-foreground">{event.actor?.displayName || event.actor_role || 'System'}</span>
                       <StatusPill success={event.success} />

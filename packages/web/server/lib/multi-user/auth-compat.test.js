@@ -6,6 +6,7 @@ import {
   buildAgentTestIdentities,
   createUserPolicyReader,
   isDefinitiveRefreshRejection,
+  isMissingBrowserPolicyCapabilityError,
   isMissingGithubAccountReassignmentFunctionError,
   isMissingSettingsPermissionOverridesError,
   isMissingUserProfileGithubAccountError,
@@ -93,6 +94,18 @@ describe('multi-user authentication compatibility', () => {
     expect(isMissingUserProfileGithubAccountError(missingColumn)).toBe(true);
     expect(isMissingUserProfileGithubAccountError(
       new SupabaseRequestError('permission denied for table user_profiles', { status: 400 }),
+    )).toBe(false);
+  });
+
+  it('recognizes only the missing Browser role capability column', () => {
+    const missingColumn = new SupabaseRequestError(
+      "Could not find the 'can_use_browser' column of 'role_policies' in the schema cache",
+      { status: 400 },
+    );
+
+    expect(isMissingBrowserPolicyCapabilityError(missingColumn)).toBe(true);
+    expect(isMissingBrowserPolicyCapabilityError(
+      new SupabaseRequestError('permission denied for table role_policies', { status: 400 }),
     )).toBe(false);
   });
 

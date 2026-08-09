@@ -54,17 +54,17 @@ export function QuestionOptionRow({
           )}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-1.5">
+          <span className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
             <span
               className={cn(
-                "typography-meta break-all",
+                "typography-meta break-words",
                 selected ? "text-foreground font-medium" : "text-foreground/80",
               )}
             >
               {label}
             </span>
             {recommended ? (
-              <span className="typography-micro text-primary/80">{recommendedLabel}</span>
+              <span className="typography-micro text-primary">{recommendedLabel}</span>
             ) : null}
           </span>
           {description ? (

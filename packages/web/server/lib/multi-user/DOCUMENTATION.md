@@ -17,7 +17,7 @@ behavior without weakening managed-host checks.
 
 - Local refs (`dev`, `refs/heads/dev`) and same-name remote refs are one logical grant.
 - `GET /api/admin/projects/:projectId/branches` retains `branches: string[]` and adds provenance-aware `branchOptions` records.
-- `POST /api/projects/:projectId/branch-target` accepts a granted logical branch and idempotency key. It reuses a linked worktree, uses the primary checkout only when it is already on that exact branch, or creates a durable worktree from the local/preferred remote ref. It never falls back to another branch.
+- `POST /api/projects/:projectId/branch-target` accepts a granted logical branch and idempotency key. It reuses a linked worktree only after reconciling its durable bootstrap receipt, automatically retries a failed existing-branch `populate_worktree` stage, uses the primary checkout only when it is already on that exact branch, or creates a durable worktree from the local/preferred remote ref. It never falls back to another branch.
 - Worktree creation requests from managed non-admin users are validated against their granted base branches in core request policy.
 
 ## Runtime metadata and personal schedules
@@ -56,23 +56,48 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   assignment and symlink-containment checks before forwarding the canonical
   header upstream.
 - Foreign sessions return 404 and list/status/event results are filtered.
+  DevRyan managed-task updates and removals resolve their identity from the
+  root session and are delivered only when that session belongs to the caller.
 - `GET /api/experimental/session` is a managed endpoint rather than a generic
   proxy. It preserves the OpenCode query contract, advances upstream cursors
   across hidden rows until the caller-visible limit is filled, and exposes only
   a cursor derived from the last visible session.
-- Developer file and terminal access is denied in core middleware.
+- Developer file and terminal access is denied in core middleware. The scoped
+  owned-session plan-revision API is a separate artifact contract and does not
+  grant access to `/api/fs/*`. For managed callers, it resolves storage from the
+  active ownership row's current project/branch assignment and always keys the
+  revision to the registered repository root, even when the session runs in a
+  worktree. A request directory may confirm the assigned project but never
+  selects the plan path.
+- Managed developers and senior developers never receive `.env` or `.env.*`
+  entries from filesystem, OpenCode file/search, Git status, conflict, or commit
+  file-list responses. Direct filesystem and Git access to those paths returns
+  `404` so the API does not confirm that a secret file exists. Administrators
+  and the single-user local runtime retain their existing behavior.
 - Settings-page reads and mutations are authorized independently through the
   canonical Read/Edit matrix. Administrator access remains fixed at full; an
   administrator may explicitly delegate a host-global settings page to another
   role or user without granting unrelated terminal, file, Git, or GitHub access.
-- Managed Git mutations operate on the real checked-out branch. Branch grants
-  are a client visibility filter only and do not authorize core Git access.
+- Managed Git mutations operate on the real checked-out branch. General branch
+  grants remain a visibility filter, while operations that directly write a
+  different branch (commit reintegration, worktree creation, and PR merge
+  targets) enforce the target grant in core request policy.
 - Revoking an app session, project, or branch aborts owned prompts, closes live
   transports and terminals, and archives ownership. It never moves, removes, or
   archives a shared real worktree.
 - A remembered loopback administrator may use a validated snapshot for at most
   24 hours during a Supabase outage; remote access fails closed and host/account
-  management returns `503` during that grace window.
+  management returns `503` with `code: "offline_grace_restricted"` and
+  `retryable: true` during that grace window. The UI suppresses management
+  requests, explains the degraded state, and retries authoritative session
+  validation until access can be restored without reauthentication.
+- An initial transient Supabase outage does not prevent the local web/Electron
+  runtime from listening. Startup preserves the private on-disk session
+  ownership index, reports `multiUserControlPlane.state = "degraded"` from the
+  health endpoint, and retries the authoritative ownership refresh with bounded
+  backoff. Managed identity requests still fail closed with
+  `identity_unavailable`; non-transient configuration and schema failures still
+  fail startup.
 - Missing, expired, revoked, or inactive sessions are removed from the local
   vault and principal cache, their cookie is expired, and session status returns
   `401`. Transient Supabase failures preserve local session state and return
@@ -81,9 +106,18 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
 - Existing UI-password-bound passkeys may be exchanged only on loopback for the
   initial active administrator's opaque app session. Remote registration and
   passkey login remain disabled; no passkey can select another user.
-- Assigned developers may list, inspect, validate, preview, create, retry, and
-  remove real worktrees, plus create and check out branches. Identity,
-  credential, and template administration remains administrator-only.
+- Assigned developers may list, inspect, validate, and preview real worktrees,
+  plus check out assigned branches. User-triggered creation and retry require
+  the `createWorktrees` capability, which defaults off for developers and on
+  for senior developers. Automatic assigned-branch target preparation remains
+  allowed so normal session routing can create or reuse its required checkout.
+  Creating a branch directly or through a new-branch worktree additionally
+  requires the separate `createBranches` capability. Their worktrees are
+  persistent reusable resources: worktree, local-branch, and remote-branch
+  deletion routes return `403`, and session cleanup archives conversations
+  without mutating Git. Managed administrators retain worktree removal as a
+  maintenance capability. Identity, credential, and template administration
+  remains administrator-only.
 - Detailed prompt, file-open, and copy analytics are administrator-only.
   Senior developers keep their existing non-sensitive activity view, with
   detailed analytics actions removed and remaining metadata stripped.
@@ -91,6 +125,20 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   GitHub account even when GitHub operations are disabled. This exact status
   read does not exercise the token; repository and account-management routes
   remain capability- and role-gated.
+- Browser access is a canonical role/per-user capability. It defaults on for
+  developers and senior developers, is fixed on for administrators, and gates
+  Browser target creation, project-instance discovery, local probing, inline
+  presentation, and pop-out continuity without disabling the separate Preview
+  surface.
+- Browser target creation, project-instance registration, and local-instance
+  probing are runtime operations rather than host-configuration mutations.
+  Their route handlers enforce Browser capability, project ownership, origin,
+  loopback, and CSRF checks; unknown Browser mutations remain administrator-only.
+- A registered project's live terminal preview is shared by project identity,
+  including when an unassigned host administrator started the terminal from
+  that project's canonical repository or OpenCode worktree container. The
+  grant remains terminal- and liveness-bound; it does not approve arbitrary
+  host ports and does not depend on the Host Settings capability.
 
 ## Main files
 
@@ -110,6 +158,8 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
 - `activity-projection.js`: content-free OpenCode tool/file event projection.
 - `analytics.js`: prompt extraction, interaction validation, safe settings
   deltas, cursor helpers, reviewer redaction, and daily activity aggregation.
+- `analytics-retention.js`: service-role retention locking, protected activity
+  purge dispatch, count normalization, and structured migration-required errors.
 
 ## Principal-owned state
 
@@ -120,6 +170,20 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   values are returned; Edit determines which changes and page-owned mutations
   are accepted. `settings_pages` remains a legacy Read projection while
   `settings_permissions` and `settings_permission_overrides` are authoritative.
+- `role_policies.can_use_browser` stores the role default. Sparse
+  `user_policies.capabilities.browser` values override it; an absent override
+  inherits the role. Missing role columns are projected as the enabled product
+  default on reads, while writes fail with the required migration identifier.
+- `createWorktrees` is a policy-template capability stored only when overridden
+  in `user_policies.capabilities`: developers inherit disabled, senior
+  developers inherit enabled, and administrators remain fixed enabled. It
+  gates user-triggered worktree creation and retries without blocking the
+  server-owned assigned-branch target resolver.
+- `createBranches` is a separate policy-template capability stored only when overridden
+  in `user_policies.capabilities`: developers inherit disabled, senior
+  developers inherit enabled, and administrators remain fixed enabled. It
+  gates direct branch creation, new-branch worktrees, and retries of durable
+  operations whose receipt was created in new-branch mode.
 - Settings Home is always readable. `behavior` resolves to the `agents` policy;
   Skills Catalog is independently controlled. Edit always requires Read.
 - The read-only `/api/config/providers` model catalog is a chat bootstrap
@@ -131,7 +195,10 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   clients may synthesize branch rows but must not replace the project UUID or
   maintain a second browser-owned metadata overlay. Project label, icon, and
   color metadata live on `managed_projects`, are mutable only through the admin
-  project endpoint, and are projected back through managed settings.
+  project endpoint, and are projected back through managed settings and public
+  assignment snapshots. Successful metadata and icon-image mutations publish a
+  project-ID-only invalidation to active administrators and users assigned to
+  that project; reconnecting clients reload the authoritative assignment snapshot.
 - Every branch visibility row stores the registered repository path. Runtime
   principals ignore legacy per-user workspace paths and derive the same shared
   OpenCode worktree container used by `/api/git/worktrees`.
@@ -145,12 +212,32 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   sessions remain unclaimed and hidden. Archive, unarchive, and delete retry
   this reconciliation when ownership is missing before returning the normal
   foreign-session `404`.
+- Managed root-session creation is provisional until durable ownership commits.
+  The provisional ID is hidden from session lists, status responses, and live
+  lifecycle events while the runtime retries the same idempotent Supabase
+  ownership upsert four times with a five-second per-attempt timeout. A commit
+  writes the local ownership index and audit record before publishing one
+  authoritative `session.created` event. Exhaustion rolls back the single
+  OpenCode session and returns `503 identity_unavailable` with
+  `retryable: false`; incomplete cleanup remains hidden and is retried in the
+  background.
 - Administrators and developers have identical lifecycle ownership rules: each
   can archive, unarchive, or hard-delete only their own sessions. Archive uses
-  OpenCode's reversible timestamp. Hard delete removes OpenCode content and
-  tombstones ownership, but does not clear the diagnostic journal or actor
-  audit; those records remain until their normal retention window or an
-  explicit diagnostics/audit purge.
+  OpenCode's reversible timestamp. Exact `DELETE /api/session/:sessionID`
+  requests are authorized by durable ownership plus the user's current
+  project/branch grant. Any SDK-supplied directory query, body field, or header
+  is removed before path translation and OpenCode forwarding, so an owned
+  archived session can be deleted after its legacy directory leaves the current
+  worktree grant. All other session routes retain directory translation and
+  scope checks; foreign sessions retain the indistinguishable `404` response.
+- Before deleting OpenCode content for a developer or senior developer, the
+  runtime monotonically locks that user's analytics retention. A missing
+  `20260807100000` migration fails with `503 schema_migration_required` before
+  upstream deletion. The lock is deliberately not rolled back on later
+  upstream or ownership-tombstone failure, protecting purge races and delayed
+  audit-outbox deliveries. A successful hard delete tombstones ownership as
+  before. Diagnostic-journal records remain under their existing bounded
+  retention; the indefinite guarantee applies to actor/target user analytics.
 - `user_profiles.github_account_id` is the authoritative, nullable GitHub
   association for a user, with a partial unique index making each stored
   account exclusive to one profile. Assignments mirror it only for
@@ -172,8 +259,12 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
 
 Apply `20260804100000_user_profile_github_account.sql`,
 `20260804110000_real_worktree_visibility_grants.sql`, and
-`20260804120000_github_account_reassignment.sql` before deploying the runtime
-change. The last migration installs the service-role-only atomic reassignment
+`20260804120000_github_account_reassignment.sql` before deploying the
+real-worktree runtime change. Apply
+`20260807100000_indefinite_user_analytics_retention.sql` before deploying
+ownership-scoped developer session deletion. It installs the monotonic profile
+lock, delete enforcement trigger, and service-role-only protected purge RPC.
+The GitHub migration installs the service-role-only atomic reassignment
 function. The real-worktree migration keeps `workspace_path` for rollback
 compatibility but repairs every grant to the registered repository path.
 
@@ -289,12 +380,21 @@ visible without storing session content.
 - `GET /api/admin/users/:userId/analytics/events` provides bounded prompt,
   interaction, or safe-change pages with opaque newest-first cursors and
   date/time-zone/agent/model/search filters. Both analytics GET routes require
-  an administrator and a visible human target profile.
+  an administrator and a visible human target profile. `session.deleted`
+  appears in the Changes & Interactions feed with its success or partial-failure
+  state, but it is not counted as a prompt, settings change, or separate
+  active-time block.
 - Settings/profile/policy/project/access audits carry allowlisted field deltas.
   Booleans, numbers, roles, names, branches, defaults, and permission or
   capability states may include before/after values. Secrets, tokens, paths,
   URLs, prompt/template fields, and arbitrary JSON expose only changed keys or
   collection counts. Invitation rows carry their target user correlation.
-- Retention and purge remain the existing `activity_logs` policy. Export reads
-  every retained page instead of truncating at 10,000 rows; non-admin exports
-  apply the same detailed-action removal and metadata stripping as the list.
+- Once a managed non-admin user attempts an owned hard delete, every
+  `activity_logs` row linked to that user through actor or target identity is
+  retained indefinitely. The database trigger also protects rows delivered
+  later by the durable audit outbox. `DELETE /api/admin/activity` calls the
+  service-role purge RPC, preserves the purge event and protected rows, and
+  returns `{ purged, deletedCount, protectedCount }`; administrators' own rows
+  and never-locked users remain purgeable. Export reads every retained page
+  instead of truncating at 10,000 rows; non-admin exports apply the same
+  detailed-action removal and metadata stripping as the list.

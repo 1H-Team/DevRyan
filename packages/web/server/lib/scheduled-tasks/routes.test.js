@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { registerScheduledTaskRoutes } from './routes.js';
+import { canReceiveProjectMetadataEvent, registerScheduledTaskRoutes } from './routes.js';
 
 const createRegistry = () => {
   const routes = new Map();
@@ -40,6 +40,13 @@ const dependencies = (tasks) => ({
 });
 
 describe('personal scheduled-task routes', () => {
+  it('scopes project metadata events to administrators and assigned projects', () => {
+    expect(canReceiveProjectMetadataEvent({ isAdmin: true, projectIds: new Set() }, 'project-1')).toBe(true);
+    expect(canReceiveProjectMetadataEvent({ isAdmin: false, projectIds: new Set(['project-1']) }, 'project-1')).toBe(true);
+    expect(canReceiveProjectMetadataEvent({ isAdmin: false, projectIds: new Set(['project-2']) }, 'project-1')).toBe(false);
+    expect(canReceiveProjectMetadataEvent({ isAdmin: false }, 'project-1')).toBe(false);
+  });
+
   it('lists only tasks owned by the managed developer', async () => {
     const { app, route } = createRegistry();
     const tasks = [

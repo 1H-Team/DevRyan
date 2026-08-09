@@ -69,6 +69,27 @@ describe("question card routing", () => {
     expect(results[1].reason).toBeInstanceOf(Error)
   })
 
+  test("starts every transport call before waiting for acknowledgement", async () => {
+    const first = request("que_1", 1)
+    const second = request("que_2", 1)
+    const groups = buildQuestionRequestAnswerGroups([
+      { request: first, withinRequestIndex: 0, answers: ["A1"] },
+      { request: second, withinRequestIndex: 0, answers: ["B1"] },
+    ])
+    const calls: string[] = []
+    const resolvers: Array<() => void> = []
+    const resultPromise = submitQuestionRequestAnswerGroups(groups, (_sessionID, requestID) => {
+      calls.push(requestID)
+      return new Promise<void>((resolve) => resolvers.push(resolve))
+    })
+
+    await Promise.resolve()
+    expect(calls).toEqual(["que_1", "que_2"])
+
+    resolvers.forEach((resolve) => resolve())
+    expect((await resultPromise).map((result) => result.status)).toEqual(["fulfilled", "fulfilled"])
+  })
+
   test("does not merge identical request ids from different sessions", () => {
     const first = requestForSession("ses_1", "que_shared")
     const second = requestForSession("ses_2", "que_shared")

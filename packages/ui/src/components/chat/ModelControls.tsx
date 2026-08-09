@@ -1111,6 +1111,14 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         addRecentEffort(providerId, modelId, concreteVariant);
 
         const effectiveAgentName = agentNameOverride ?? resolveLiveAgentName();
+        if (effectiveAgentName && options?.modelProvenance === 'explicit') {
+            useConfigStore.getState().saveAgentModelSelection(
+                effectiveAgentName,
+                providerId,
+                modelId,
+                concreteVariant,
+            );
+        }
         if (currentSessionId && effectiveAgentName) {
             saveAgentModelVariantForSession(currentSessionId, effectiveAgentName, providerId, modelId, concreteVariant);
         } else if (currentDraftId && newSessionDraftOpen && effectiveAgentName) {
@@ -1649,6 +1657,14 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     console.error('[ModelControls] Model not available for selection:', { providerId, modelId });
                 }
                 return;
+            }
+            if (effectiveAgentName) {
+                useConfigStore.getState().saveAgentModelSelection(
+                    effectiveAgentName,
+                    providerId,
+                    modelId,
+                    shouldApplyVariant ? resolvedVariant : undefined,
+                );
             }
             setAgentMenuOpen(false);
             if (isCompact) {

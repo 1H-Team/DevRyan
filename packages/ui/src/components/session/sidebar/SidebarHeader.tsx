@@ -7,7 +7,7 @@ import {
   RiTimerLine,
 } from '@remixicon/react';
 import { cn } from '@/lib/utils';
-import { SidebarLeftIcon } from '@/components/icons/ToolbarIcons';
+import { SidebarLeftCollapseIcon } from '@/components/icons/ToolbarIcons';
 import { useI18n } from '@/lib/i18n';
 
 type Props = {
@@ -139,7 +139,7 @@ export function SidebarHeader(props: Props): React.ReactNode {
                       className="inline-flex h-8 w-8 items-center justify-center rounded-md typography-ui-label font-medium text-foreground transition-colors hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:pointer-events-none disabled:opacity-50"
                       aria-label={t('sessions.sidebar.header.actions.closeSessions')}
                     >
-                      <SidebarLeftIcon className="h-[18px] w-[18px]" chevronDirection="right" />
+                      <SidebarLeftCollapseIcon className="h-[18px] w-[18px]" />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" sideOffset={4}><p>{t('sessions.sidebar.header.actions.closeSessions')}</p></TooltipContent>

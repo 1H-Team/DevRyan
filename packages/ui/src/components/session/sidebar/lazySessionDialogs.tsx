@@ -23,6 +23,9 @@ export const LazyFolderDeleteConfirmDialog = /* @__PURE__ */ lazyWithChunkRecove
 export const LazyBulkSessionDeleteConfirmDialog = /* @__PURE__ */ lazyWithChunkRecovery(() =>
   import('@/components/session/sidebar/ConfirmDialogs').then((module) => ({ default: module.BulkSessionDeleteConfirmDialog })),
 );
+export const LazyBranchSessionArchiveConfirmDialog = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/session/sidebar/ConfirmDialogs').then((module) => ({ default: module.BranchSessionArchiveConfirmDialog })),
+);
 
 export const DeferredSessionDialog: React.FC<React.PropsWithChildren<{ active: boolean }>> = ({ active, children }) => {
   const hasActivated = React.useRef(active);

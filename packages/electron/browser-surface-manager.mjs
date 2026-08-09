@@ -9,6 +9,7 @@ import { isBenignNavigationAbort } from './browser-navigation-error.mjs';
 const DEFAULT_WIDTH = 1180;
 const DEFAULT_HEIGHT = 760;
 const DEFAULT_TOOLBAR_HEIGHT = 38;
+const DEFAULT_BROWSER_WORKSPACE_CHROME_HEIGHT = 70;
 const MAX_SURFACE_ID_LENGTH = 220;
 
 const BROWSER_INSPECT_CANCEL_SCRIPT = `(() => {
@@ -249,6 +250,7 @@ export const createBrowserSurfaceManager = ({
   devToolsController,
   onLeaseMetadata,
   onLeaseSurfaceDestroyed,
+  getManualBrowserContext = () => null,
   shouldQuit = () => false,
   log = () => {},
 } = {}) => {
@@ -259,6 +261,7 @@ export const createBrowserSurfaceManager = ({
   const surfaces = new Map();
   const manualSurfaceByHomeAndTab = new Map();
   const leaseSurfaceByLeaseId = new Map();
+  const manualWorkspaces = new Map();
   let surfaceCounter = 0;
   let parkingWindow = null;
 
@@ -275,6 +278,8 @@ export const createBrowserSurfaceManager = ({
       surfaceId: surface.surfaceId,
       kind: surface.kind,
       ...(surface.leaseId ? { leaseId: surface.leaseId } : {}),
+      ...(surface.workspaceId ? { workspaceId: surface.workspaceId } : {}),
+      ...(surface.tabId ? { tabId: surface.tabId } : {}),
       placement: surface.placement,
       url: currentUrl,
       title: safeString(contents.getTitle?.(), 1024),
@@ -387,14 +392,25 @@ export const createBrowserSurfaceManager = ({
     };
   };
 
-  const createSurface = ({ kind, ownerWindow, tabId = '', leaseId = '', initialUrl = 'about:blank' }) => {
+  const createSurface = ({
+    kind,
+    ownerWindow,
+    tabId = '',
+    leaseId = '',
+    workspaceId = '',
+    initialUrl = 'about:blank',
+    browserContext = null,
+  }) => {
     if (!isAliveWindow(ownerWindow)) throw new Error('Browser window is not available');
+    if (kind === 'manual' && (!browserContext?.contextKey || !browserContext?.partition)) {
+      throw new Error('Authenticated Browser context is required');
+    }
     const surfaceId = kind === 'lease'
       ? `lease:${normalizeSurfaceId(leaseId)}`
       : `manual:${ownerWindow.id}:${++surfaceCounter}`;
     const view = new WebContentsView({
       webPreferences: {
-        partition: BROWSER_WEBVIEW_PARTITION,
+        partition: kind === 'manual' ? browserContext.partition : BROWSER_WEBVIEW_PARTITION,
         backgroundThrottling: false,
         contextIsolation: true,
         nodeIntegration: false,
@@ -406,6 +422,9 @@ export const createBrowserSurfaceManager = ({
       surfaceId,
       kind,
       tabId: safeString(tabId, 512),
+      workspaceId: kind === 'manual' ? normalizeSurfaceId(workspaceId) : '',
+      browserContextKey: kind === 'manual' ? browserContext.contextKey : '',
+      browserOrigin: kind === 'manual' ? browserContext.origin : '',
       manualKey: '',
       leaseId: kind === 'lease' ? normalizeSurfaceId(leaseId) : '',
       homeWindowId: ownerWindow.id,
@@ -444,18 +463,113 @@ export const createBrowserSurfaceManager = ({
     ) {
       throw new Error('Browser surface does not belong to the requesting window');
     }
+    if (surface.kind === 'manual' && getManualBrowserContext(requestWindow)?.contextKey !== surface.browserContextKey) {
+      throw new Error('Browser surface belongs to another authenticated context');
+    }
     return surface;
   };
 
-  const createManualSurface = (ownerWindow, { tabId, initialUrl } = {}) => {
+  const getOwnedWorkspace = (requestWindow, workspaceId) => {
+    const workspace = manualWorkspaces.get(normalizeSurfaceId(workspaceId));
+    if (!workspace) throw new Error('Unknown browser workspace');
+    const requestWindowId = requestWindow?.id;
+    if (
+      !Number.isInteger(requestWindowId)
+      || (workspace.homeWindowId !== requestWindowId && workspace.popoutWindow?.id !== requestWindowId)
+    ) {
+      throw new Error('Browser workspace does not belong to the requesting window');
+    }
+    if (getManualBrowserContext(requestWindow)?.contextKey !== workspace.browserContextKey) {
+      throw new Error('Browser workspace belongs to another authenticated context');
+    }
+    return workspace;
+  };
+
+  const workspaceSurfaces = (workspace) => Array.from(workspace.surfaceIds)
+    .map((surfaceId) => surfaces.get(surfaceId))
+    .filter(Boolean);
+
+  const attachActiveWorkspaceSurface = (workspace) => {
+    if (!isAliveWindow(workspace.popoutWindow)) return;
+    const active = surfaces.get(workspace.activeSurfaceId);
+    if (!active) return;
+    for (const surface of workspaceSurfaces(workspace)) {
+      surface.popoutWindow = workspace.popoutWindow;
+      surface.placement = 'popout';
+      if (surface === active) continue;
+      if (devToolsController?.isOpen?.(surface.view.webContents.id)) {
+        void devToolsController.setOpen?.({ guest: surface.view.webContents, ownerWindow: workspace.popoutWindow, open: false });
+      }
+      park(surface);
+      emitSnapshot(surface);
+    }
+    const contentBounds = workspace.popoutWindow.getContentBounds();
+    const devToolsHeight = devToolsController?.isOpen?.(active.view.webContents.id) ? 300 : 0;
+    stopParkingCapture(active);
+    attachView(active, workspace.popoutWindow, {
+      x: 0,
+      y: DEFAULT_BROWSER_WORKSPACE_CHROME_HEIGHT,
+      width: contentBounds.width,
+      height: Math.max(1, contentBounds.height - DEFAULT_BROWSER_WORKSPACE_CHROME_HEIGHT - devToolsHeight),
+    });
+    emitSnapshot(active);
+  };
+
+  const createManualSurface = (ownerWindow, { tabId, workspaceId, initialUrl } = {}) => {
+    const browserContext = getManualBrowserContext(ownerWindow);
+    if (!browserContext?.contextKey || !browserContext?.partition) {
+      throw new Error('Authenticated Browser context is required');
+    }
     const normalizedTabId = normalizeSurfaceId(tabId);
-    const key = `${ownerWindow.id}\u0000${normalizedTabId}`;
+    const normalizedWorkspaceId = normalizeSurfaceId(workspaceId || `legacy:${ownerWindow.id}:${normalizedTabId}`);
+    const existingWorkspace = manualWorkspaces.get(normalizedWorkspaceId);
+    if (existingWorkspace && (
+      existingWorkspace.homeWindowId !== ownerWindow.id
+      || existingWorkspace.browserContextKey !== browserContext.contextKey
+    )) {
+      throw new Error('Browser workspace does not belong to the requesting window');
+    }
+    const workspace = existingWorkspace || {
+      workspaceId: normalizedWorkspaceId,
+      homeWindowId: ownerWindow.id,
+      browserContextKey: browserContext.contextKey,
+      popoutWindow: null,
+      activeSurfaceId: '',
+      surfaceIds: new Set(),
+      closingPopout: false,
+    };
+    manualWorkspaces.set(normalizedWorkspaceId, workspace);
+    const key = `${ownerWindow.id}\u0000${normalizedWorkspaceId}\u0000${normalizedTabId}`;
     const existingId = manualSurfaceByHomeAndTab.get(key);
     const existing = existingId ? surfaces.get(existingId) : null;
     if (existing) return snapshot(existing);
-    const surface = createSurface({ kind: 'manual', ownerWindow, tabId: normalizedTabId, initialUrl });
+    const surface = createSurface({
+      kind: 'manual',
+      ownerWindow,
+      tabId: normalizedTabId,
+      workspaceId: normalizedWorkspaceId,
+      initialUrl,
+      browserContext,
+    });
     surface.manualKey = key;
     manualSurfaceByHomeAndTab.set(key, surface.surfaceId);
+    workspace.surfaceIds.add(surface.surfaceId);
+    workspace.activeSurfaceId ||= surface.surfaceId;
+    if (isAliveWindow(workspace.popoutWindow)) {
+      surface.popoutWindow = workspace.popoutWindow;
+      surface.placement = 'popout';
+      if (workspace.activeSurfaceId === surface.surfaceId) {
+        const contentBounds = workspace.popoutWindow.getContentBounds();
+        attachView(surface, workspace.popoutWindow, {
+          x: 0,
+          y: DEFAULT_BROWSER_WORKSPACE_CHROME_HEIGHT,
+          width: contentBounds.width,
+          height: Math.max(1, contentBounds.height - DEFAULT_BROWSER_WORKSPACE_CHROME_HEIGHT),
+        });
+      } else {
+        park(surface);
+      }
+    }
     return snapshot(surface);
   };
 
@@ -550,7 +664,10 @@ export const createBrowserSurfaceManager = ({
       surface.popoutWindow.focus?.();
       return snapshot(surface);
     }
-    const popup = await createPopoutWindow(surface.surfaceId);
+    const popup = await createPopoutWindow({
+      surfaceId: surface.surfaceId,
+      baseOrigin: surface.browserOrigin,
+    });
     if (!isAliveWindow(popup)) throw new Error('Unable to create browser pop-out');
     popup.__ocBrowserPopout = true;
     popup.__ocBrowserSurfaceId = surface.surfaceId;
@@ -626,6 +743,103 @@ export const createBrowserSurfaceManager = ({
     return { focused: true };
   };
 
+  const activateWorkspaceSurface = (requestWindow, { workspaceId, surfaceId, tabId } = {}) => {
+    const workspace = getOwnedWorkspace(requestWindow, workspaceId);
+    const normalizedSurfaceId = surfaceId
+      ? normalizeSurfaceId(surfaceId)
+      : workspaceSurfaces(workspace).find((surface) => surface.tabId === normalizeSurfaceId(tabId))?.surfaceId || '';
+    if (!workspace.surfaceIds.has(normalizedSurfaceId)) {
+      throw new Error('Browser surface is not part of this workspace');
+    }
+    workspace.activeSurfaceId = normalizedSurfaceId;
+    if (isAliveWindow(workspace.popoutWindow)) attachActiveWorkspaceSurface(workspace);
+    return snapshot(surfaces.get(normalizedSurfaceId));
+  };
+
+  const dockWorkspace = async (workspace) => {
+    const popup = workspace.popoutWindow;
+    workspace.popoutWindow = null;
+    const home = getWindowById(workspace.homeWindowId);
+    for (const surface of workspaceSurfaces(workspace)) {
+      surface.popoutWindow = null;
+      surface.placement = isAliveWindow(home) ? 'inline' : 'parked';
+      park(surface);
+      emitSnapshot(surface);
+    }
+    if (isAliveWindow(popup)) {
+      workspace.closingPopout = true;
+      popup.destroy();
+      workspace.closingPopout = false;
+    }
+    return {
+      workspaceId: workspace.workspaceId,
+      placement: isAliveWindow(home) ? 'inline' : 'parked',
+      activeSurfaceId: workspace.activeSurfaceId,
+    };
+  };
+
+  const popoutWorkspace = async (requestWindow, { workspaceId, activeSurfaceId } = {}) => {
+    const workspace = getOwnedWorkspace(requestWindow, workspaceId);
+    if (activeSurfaceId) {
+      const normalizedActiveId = normalizeSurfaceId(activeSurfaceId);
+      if (!workspace.surfaceIds.has(normalizedActiveId)) {
+        throw new Error('Browser surface is not part of this workspace');
+      }
+      workspace.activeSurfaceId = normalizedActiveId;
+    }
+    if (!workspace.activeSurfaceId || !surfaces.has(workspace.activeSurfaceId)) {
+      throw new Error('Browser workspace has no active surface');
+    }
+    if (isAliveWindow(workspace.popoutWindow)) {
+      workspace.popoutWindow.show?.();
+      workspace.popoutWindow.focus?.();
+      return { workspaceId: workspace.workspaceId, placement: 'popout', activeSurfaceId: workspace.activeSurfaceId };
+    }
+    const activeSurface = surfaces.get(workspace.activeSurfaceId);
+    const popup = await createPopoutWindow({
+      workspaceId: workspace.workspaceId,
+      baseOrigin: activeSurface?.browserOrigin || '',
+    });
+    if (!isAliveWindow(popup)) throw new Error('Unable to create browser workspace pop-out');
+    popup.__ocBrowserPopout = true;
+    popup.__ocBrowserWorkspaceId = workspace.workspaceId;
+    workspace.popoutWindow = popup;
+    attachActiveWorkspaceSurface(workspace);
+    popup.on('resize', () => {
+      if (workspace.popoutWindow !== popup) return;
+      attachActiveWorkspaceSurface(workspace);
+    });
+    popup.on('close', (event) => {
+      if (workspace.closingPopout || shouldQuit()) return;
+      event.preventDefault();
+      void dockWorkspace(workspace);
+    });
+    popup.on('closed', () => {
+      if (workspace.popoutWindow !== popup) return;
+      workspace.popoutWindow = null;
+      for (const surface of workspaceSurfaces(workspace)) {
+        surface.popoutWindow = null;
+        surface.placement = 'inline';
+        park(surface);
+        emitSnapshot(surface);
+      }
+    });
+    return { workspaceId: workspace.workspaceId, placement: 'popout', activeSurfaceId: workspace.activeSurfaceId };
+  };
+
+  const dockOwnedWorkspace = (requestWindow, { workspaceId } = {}) => (
+    dockWorkspace(getOwnedWorkspace(requestWindow, workspaceId))
+  );
+
+  const focusWorkspacePopout = (requestWindow, { workspaceId } = {}) => {
+    const workspace = getOwnedWorkspace(requestWindow, workspaceId);
+    if (!isAliveWindow(workspace.popoutWindow)) return { focused: false };
+    if (workspace.popoutWindow.isMinimized?.()) workspace.popoutWindow.restore?.();
+    workspace.popoutWindow.show?.();
+    workspace.popoutWindow.focus?.();
+    return { focused: true };
+  };
+
   const setDevTools = async (requestWindow, { surfaceId, open, bounds } = {}) => {
     const surface = getOwnedSurface(requestWindow, surfaceId);
     const ownerWindow = surface.placement === 'popout' ? surface.popoutWindow : getWindowById(surface.homeWindowId);
@@ -638,11 +852,14 @@ export const createBrowserSurfaceManager = ({
     });
     if (surface.placement === 'popout' && isAliveWindow(surface.popoutWindow)) {
       const contentBounds = surface.popoutWindow.getContentBounds();
+      const chromeHeight = surface.workspaceId
+        ? DEFAULT_BROWSER_WORKSPACE_CHROME_HEIGHT
+        : DEFAULT_TOOLBAR_HEIGHT;
       attachView(surface, surface.popoutWindow, {
         x: 0,
-        y: DEFAULT_TOOLBAR_HEIGHT,
+        y: chromeHeight,
         width: contentBounds.width,
-        height: Math.max(1, contentBounds.height - DEFAULT_TOOLBAR_HEIGHT - (result.open ? 300 : 0)),
+        height: Math.max(1, contentBounds.height - chromeHeight - (result.open ? 300 : 0)),
       });
       if (result.open) {
         devToolsController.rehost?.({
@@ -650,9 +867,9 @@ export const createBrowserSurfaceManager = ({
           ownerWindow: surface.popoutWindow,
           bounds: {
             x: 0,
-            y: Math.max(DEFAULT_TOOLBAR_HEIGHT, contentBounds.height - 300),
+            y: Math.max(chromeHeight, contentBounds.height - 300),
             width: contentBounds.width,
-            height: Math.min(300, Math.max(1, contentBounds.height - DEFAULT_TOOLBAR_HEIGHT)),
+            height: Math.min(300, Math.max(1, contentBounds.height - chromeHeight)),
           },
         });
       }
@@ -694,12 +911,28 @@ export const createBrowserSurfaceManager = ({
     if (surface.leaseId) leaseSurfaceByLeaseId.delete(surface.leaseId);
     if (surface.kind === 'manual') {
       manualSurfaceByHomeAndTab.delete(surface.manualKey);
+      const workspace = manualWorkspaces.get(surface.workspaceId);
+      if (workspace) {
+        workspace.surfaceIds.delete(surface.surfaceId);
+        if (workspace.activeSurfaceId === surface.surfaceId) {
+          workspace.activeSurfaceId = workspace.surfaceIds.values().next().value || '';
+        }
+        if (workspace.surfaceIds.size === 0) {
+          manualWorkspaces.delete(workspace.workspaceId);
+          if (isAliveWindow(workspace.popoutWindow)) {
+            workspace.closingPopout = true;
+            workspace.popoutWindow.destroy();
+          }
+        } else if (isAliveWindow(workspace.popoutWindow)) {
+          attachActiveWorkspaceSurface(workspace);
+        }
+      }
     }
     stopParkingCapture(surface);
     surface.cleanupContents?.();
     devToolsController?.destroyGuest?.(surface.view.webContents.id);
     detachView(surface);
-    if (isAliveWindow(surface.popoutWindow)) {
+    if (!surface.workspaceId && isAliveWindow(surface.popoutWindow)) {
       surface.closingPopout = true;
       surface.popoutWindow.destroy();
     }
@@ -746,6 +979,18 @@ export const createBrowserSurfaceManager = ({
     }
   };
 
+  const releaseManualForHomeWindow = (windowId, reason = 'browser_context_changed') => {
+    let released = 0;
+    for (const surface of [...surfaces.values()]) {
+      if (
+        surface.kind !== 'manual'
+        || (surface.homeWindowId !== windowId && surface.popoutWindow?.id !== windowId)
+      ) continue;
+      if (destroy(surface, reason)) released += 1;
+    }
+    return released;
+  };
+
   const showAgentInput = (leaseId, input) => {
     const surface = surfaceForLease(leaseId);
     if (!surface) return;
@@ -778,25 +1023,31 @@ export const createBrowserSurfaceManager = ({
 
   const closeAll = (reason = 'app_quit') => {
     for (const surface of [...surfaces.values()]) destroy(surface, reason);
+    manualWorkspaces.clear();
     if (isAliveWindow(parkingWindow)) parkingWindow.destroy();
     parkingWindow = null;
   };
 
   return {
     capture,
+    activateWorkspaceSurface,
     closeAll,
     command,
     createLeaseSurface,
     createManualSurface,
     dock: dockOwned,
+    dockWorkspace: dockOwnedWorkspace,
     focusPopout,
+    focusWorkspacePopout,
     getOwnedSurface,
     getSurfaceSnapshot: (requestWindow, { surfaceId } = {}) => snapshot(getOwnedSurface(requestWindow, surfaceId)),
     handleHomeWindowClosed,
     inspect,
     layout,
     popout,
+    popoutWorkspace,
     releaseLease,
+    releaseManualForHomeWindow,
     releaseOwned,
     setAgentCursorVisible,
     setAgentCursorSuppressed,

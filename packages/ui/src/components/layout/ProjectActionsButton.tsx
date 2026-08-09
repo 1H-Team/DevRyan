@@ -56,6 +56,7 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { getAllSyncSessions } from '@/sync/sync-refs';
 import { useSession } from '@/sync/sync-context';
 import { resolveRootSessionID } from '@/lib/sessionLineage';
+import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
 
 const BrowserLeaseMenuRow: React.FC<{
   leaseId: string;
@@ -112,6 +113,7 @@ interface ProjectActionsButtonProps {
   className?: string;
   compact?: boolean;
   allowMobile?: boolean;
+  browserOnly?: boolean;
   browserActionPortalTarget?: HTMLElement | null;
 }
 
@@ -233,9 +235,12 @@ export const ProjectActionsButton = ({
   className,
   compact = false,
   allowMobile = false,
+  browserOnly = false,
   browserActionPortalTarget,
 }: ProjectActionsButtonProps) => {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
+  const canUseBrowser = hasAuthCapability(principal, 'browser');
   const { terminal, runtime } = useRuntimeAPIs();
   const { isMobile } = useDeviceInfo();
   const isDesktopShellApp = React.useMemo(() => isDesktopShell(), []);
@@ -284,7 +289,7 @@ export const ProjectActionsButton = ({
   const rootLeaseIds = useBrowserAgentStore(rootLeaseIdsSelector);
   const rootLeaseCount = useBrowserAgentStore(rootLeaseCountSelector);
   const isLocalElectronBrowser = isElectronShell() && isDesktopLocalOriginActive();
-  const isManagedBrowserRuntime = isLocalElectronBrowser || isStandaloneWebRuntime();
+  const isManagedBrowserRuntime = canUseBrowser && (isLocalElectronBrowser || isStandaloneWebRuntime());
   const openProjectUrl = React.useCallback((targetDirectory: string, url: string) => {
     if (isManagedBrowserRuntime) {
       openContextBrowser(targetDirectory, url);
@@ -317,17 +322,19 @@ export const ProjectActionsButton = ({
   const loadRequestIdRef = React.useRef(0);
 
   React.useEffect(() => {
+    if (!canUseBrowser) return;
     ensureBrowserAgentListeners();
-  }, []);
+  }, [canUseBrowser]);
 
   React.useEffect(() => {
+    if (!canUseBrowser) return;
     const claimContext = () => {
       void claimBrowserAgentWindowContext(selectedRootSessionId, normalizedDirectory);
     };
     claimContext();
     window.addEventListener('focus', claimContext);
     return () => window.removeEventListener('focus', claimContext);
-  }, [normalizedDirectory, selectedRootSessionId]);
+  }, [canUseBrowser, normalizedDirectory, selectedRootSessionId]);
 
   React.useEffect(() => {
     setBrowserPresentationLeaseId(null);
@@ -876,7 +883,7 @@ export const ProjectActionsButton = ({
     setSettingsDialogOpen(true);
   }, [setSettingsDialogOpen, setSettingsPage, setSettingsProjectsSelectedId, stableProjectRef?.id]);
 
-  const canOpenBlankBrowser = Boolean(normalizedDirectory);
+  const canOpenBlankBrowser = canUseBrowser && Boolean(normalizedDirectory);
   const browserActionLabel = !canOpenBlankBrowser
     ? t('header.actions.browserNoProject')
     : rootLeaseCount > 0
@@ -934,7 +941,7 @@ export const ProjectActionsButton = ({
     </button>
   );
 
-  const browserControl = isLocalElectronBrowser ? (
+  const browserControl = !canUseBrowser ? null : isLocalElectronBrowser ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>{browserTrigger}</DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-80 max-h-[70vh] overflow-y-auto">
@@ -992,6 +999,10 @@ export const ProjectActionsButton = ({
     ? createPortal(browserControl, browserActionPortalTarget)
     : null;
   const browserAction = browserActionPortal ?? browserControl;
+
+  if (browserOnly) {
+    return browserAction;
+  }
 
   if (runtime.isVSCode || (!allowMobile && isMobile)) {
     return browserActionPortal;

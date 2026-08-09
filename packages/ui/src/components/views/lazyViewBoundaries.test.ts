@@ -111,7 +111,7 @@ describe('shared lazy view boundaries', () => {
     expect(mainLayout).toContain('<LazyManagedSettingsView onClose=');
     expect(mainLayout).toContain("principal.scope === 'managed' && principal.role !== 'admin'");
     expect(mainLayout).toContain('<LazyMultiRunWindow');
-    expect(mainLayout).toContain('<DeferredLazyView active={canManageProjects && isMultiRunLauncherOpen}>');
+    expect(mainLayout).toContain('<DeferredLazyView active={canLaunchMultiRun && isMultiRunLauncherOpen}>');
 
     expect(rightSidebarTabs).toContain("from '@/components/views/lazyViews'");
     expect(rightSidebarTabs).not.toContain("from '@/components/views/GitView'");

@@ -4,7 +4,9 @@ import {
   createWorktree,
   getBranches,
   getStatus,
+  getWorktreeBootstrapStatus,
   getWorktrees,
+  retryWorktreeBootstrapOperation,
 } from '../git/service.js';
 
 export const normalizeLogicalBranchName = (value) => String(value || '')
@@ -75,12 +77,45 @@ export function buildBranchOptions(inventory = {}) {
 
 const canonicalPath = (value) => path.resolve(String(value || ''));
 
+const READY_BOOTSTRAP_STATUSES = new Set(['ready', 'ready_with_warnings', 'not_applicable']);
+const PENDING_BOOTSTRAP_STATUSES = new Set(['queued', 'pending', 'running']);
+
+const linkedWorktreeResult = ({ branchName, directory, bootstrap }) => ({
+  status: PENDING_BOOTSTRAP_STATUSES.has(String(bootstrap?.status || '').toLowerCase())
+    ? 'pending'
+    : 'success',
+  source: 'worktree',
+  branchName,
+  directory,
+  operationId: bootstrap?.operationId || null,
+  bootstrap: bootstrap || null,
+});
+
+const failedBootstrapResult = ({ branchName, directory, bootstrap }) => ({
+  status: 'failure',
+  source: 'worktree',
+  branchName,
+  directory,
+  operationId: bootstrap?.operationId || null,
+  bootstrap,
+  message: bootstrap?.status === 'needs_attention'
+    ? 'Worktree setup needs attention before this branch can be used'
+    : `Worktree setup failed during ${String(bootstrap?.stage || 'setup').replaceAll('_', ' ')}`,
+});
+
 export async function ensureBranchTarget({
   repositoryPath,
   branchName,
   idempotencyKey,
   ownerId,
-  git = { createWorktree, getBranches, getStatus, getWorktrees },
+  git = {
+    createWorktree,
+    getBranches,
+    getStatus,
+    getWorktreeBootstrapStatus,
+    getWorktrees,
+    retryWorktreeBootstrapOperation,
+  },
 }) {
   const logicalBranchName = normalizeLogicalBranchName(branchName);
   if (!repositoryPath || !logicalBranchName || !idempotencyKey) {
@@ -102,12 +137,43 @@ export async function ensureBranchTarget({
     && normalizeLogicalBranchName(worktree.branch) === logicalBranchName
   ));
   if (linkedWorktree) {
-    return {
-      status: 'success',
-      source: 'worktree',
+    if (typeof git.getWorktreeBootstrapStatus !== 'function') {
+      return linkedWorktreeResult({
+        branchName: logicalBranchName,
+        directory: linkedWorktree.path,
+        bootstrap: { status: 'not_applicable' },
+      });
+    }
+
+    const bootstrap = await git.getWorktreeBootstrapStatus(linkedWorktree.path);
+    const bootstrapStatus = String(bootstrap?.status || '').toLowerCase();
+    if (READY_BOOTSTRAP_STATUSES.has(bootstrapStatus) || PENDING_BOOTSTRAP_STATUSES.has(bootstrapStatus)) {
+      return linkedWorktreeResult({
+        branchName: logicalBranchName,
+        directory: linkedWorktree.path,
+        bootstrap,
+      });
+    }
+
+    const canRetryPopulation = bootstrapStatus === 'failed'
+      && bootstrap?.stage === 'populate_worktree'
+      && bootstrap?.operationId
+      && bootstrap?.metadata?.mode !== 'new'
+      && typeof git.retryWorktreeBootstrapOperation === 'function';
+    if (canRetryPopulation) {
+      const retried = await git.retryWorktreeBootstrapOperation(bootstrap.operationId);
+      return linkedWorktreeResult({
+        branchName: logicalBranchName,
+        directory: linkedWorktree.path,
+        bootstrap: retried,
+      });
+    }
+
+    return failedBootstrapResult({
       branchName: logicalBranchName,
       directory: linkedWorktree.path,
-    };
+      bootstrap,
+    });
   }
 
   const rootStatus = await git.getStatus(repositoryPath, { mode: 'light' });

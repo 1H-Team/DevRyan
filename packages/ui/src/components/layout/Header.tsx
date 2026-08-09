@@ -16,8 +16,10 @@ import { RiArrowLeftSLine, RiBarChartLine, RiChat4Line, RiChatNewLine, RiCloseLi
 import { DiffIcon } from '@/components/icons/DiffIcon';
 import {
   PlanDocumentIcon,
-  SidebarLeftIcon,
-  SidebarRightIcon,
+  SidebarLeftCollapseIcon,
+  SidebarLeftExpandIcon,
+  SidebarRightCollapseIcon,
+  SidebarRightExpandIcon,
   TerminalPanelIcon,
 } from '@/components/icons/ToolbarIcons';
 import { useUIStore, type MainTab } from '@/stores/useUIStore';
@@ -105,6 +107,7 @@ export const Header: React.FC<HeaderProps> = ({
   const principal = useAuthPrincipal();
   const canUseFiles = hasAuthCapability(principal, 'files');
   const canUseTerminal = hasAuthCapability(principal, 'terminal');
+  const canUseBrowser = hasAuthCapability(principal, 'browser');
   const setSessionSwitcherOpen = useUIStore((state) => state.setSessionSwitcherOpen);
   const toggleSidebar = useUIStore((state) => state.toggleSidebar);
   const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
@@ -754,10 +757,6 @@ export const Header: React.FC<HeaderProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [tabs, setActiveMainTab]);
 
-  const SidebarLeftExpandIcon = (props: React.ComponentProps<typeof SidebarLeftIcon>) => (
-    <SidebarLeftIcon {...props} chevronDirection="right" />
-  );
-
   const renderTab = (tab: TabConfig) => {
     const isActive = activeMainTab === tab.id;
     const isDiffTab = tab.icon === 'diff';
@@ -878,10 +877,11 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         <div className="app-region-no-drag pointer-events-auto relative ml-auto flex shrink-0 items-center gap-1.5">
-          {canUseTerminal ? (
+          {canUseTerminal || canUseBrowser ? (
             <ProjectActionsButton
               projectRef={projectActionsContext?.projectRef ?? null}
               directory={actionDirectory}
+              browserOnly={!canUseTerminal}
               browserActionPortalTarget={browserActionPortalTarget}
             />
           ) : null}
@@ -905,7 +905,11 @@ export const Header: React.FC<HeaderProps> = ({
             )}
             aria-label={leftDrawerOpen ? t('header.actions.closeSessionsAria') : t('header.actions.openSessionsAria')}
           >
-            <SidebarLeftIcon className="h-5 w-5" chevronDirection={leftDrawerOpen ? 'left' : 'right'} />
+            {leftDrawerOpen ? (
+              <SidebarLeftCollapseIcon className="h-5 w-5" />
+            ) : (
+              <SidebarLeftExpandIcon className="h-5 w-5" />
+            )}
           </button>
         ) : isSessionSwitcherOpen ? (
           <button
@@ -997,12 +1001,13 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
-            {canUseTerminal && projectActionsContext && actionDirectory ? (
+            {(canUseTerminal || canUseBrowser) && projectActionsContext && actionDirectory ? (
               <ProjectActionsButton
                 projectRef={projectActionsContext.projectRef}
                 directory={actionDirectory}
                 compact
                 allowMobile
+                browserOnly={!canUseTerminal}
                 className="h-9"
               />
             ) : null}
@@ -1116,7 +1121,11 @@ export const Header: React.FC<HeaderProps> = ({
                     )}
                     aria-label={rightDrawerOpen ? 'Close Git Sidebar' : 'Open Git Sidebar'}
                   >
-                    <SidebarRightIcon className="h-5 w-5" chevronDirection={rightDrawerOpen ? 'right' : 'left'} />
+                    {rightDrawerOpen ? (
+                      <SidebarRightCollapseIcon className="h-5 w-5" />
+                    ) : (
+                      <SidebarRightExpandIcon className="h-5 w-5" />
+                    )}
                   </button>
                 </TooltipTrigger>
                 <TooltipContent>

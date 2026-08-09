@@ -322,14 +322,19 @@ export const projectManagedAssignments = (
       project.id === projectId || project.path === primary.publicDirectory
     ));
     const presentation: Partial<ProjectEntry> = existing ? {
-      ...(existing.icon !== undefined ? { icon: existing.icon } : {}),
-      ...(existing.iconImage !== undefined ? { iconImage: existing.iconImage } : {}),
-      ...(existing.iconBackground !== undefined ? { iconBackground: existing.iconBackground } : {}),
-      ...(existing.color !== undefined ? { color: existing.color } : {}),
       ...(existing.addedAt !== undefined ? { addedAt: existing.addedAt } : {}),
       ...(existing.lastOpenedAt !== undefined ? { lastOpenedAt: existing.lastOpenedAt } : {}),
       ...(existing.sidebarCollapsed !== undefined ? { sidebarCollapsed: existing.sidebarCollapsed } : {}),
     } : {};
+    const sharedPresentation: Partial<ProjectEntry> = {};
+    if (primary.icon !== undefined) sharedPresentation.icon = primary.icon ?? undefined;
+    else if (existing?.icon !== undefined) sharedPresentation.icon = existing.icon;
+    if (primary.iconImage !== undefined) sharedPresentation.iconImage = primary.iconImage;
+    else if (existing?.iconImage !== undefined) sharedPresentation.iconImage = existing.iconImage;
+    if (primary.iconBackground !== undefined) sharedPresentation.iconBackground = primary.iconBackground ?? undefined;
+    else if (existing?.iconBackground !== undefined) sharedPresentation.iconBackground = existing.iconBackground;
+    if (primary.color !== undefined) sharedPresentation.color = primary.color ?? undefined;
+    else if (existing?.color !== undefined) sharedPresentation.color = existing.color;
     const branches = assignments
       .filter((assignment) => assignment.branchName.trim().length > 0)
       .map((assignment) => ({
@@ -340,6 +345,7 @@ export const projectManagedAssignments = (
 
     return [{
       ...presentation,
+      ...sharedPresentation,
       id: projectId,
       path: primary.publicDirectory,
       label: primary.label.trim() || existing?.label || deriveProjectLabel(primary.publicDirectory),

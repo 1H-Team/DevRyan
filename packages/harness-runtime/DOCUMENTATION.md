@@ -24,7 +24,10 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
   explicit `local-admin` owner so shared-host retries cannot cross principals.
   A terminal receipt can be explicitly superseded when the same idempotency key
   is reused with a different request fingerprint; active queued/running work is
-  never superseded and still returns a conflict.
+  never superseded and still returns a conflict. Resolved worktree directories
+  are also single-flight keys: matching concurrent submissions share the one
+  authoritative receipt, conflicting setup or maintenance returns
+  `409 WORKTREE_DIRECTORY_BUSY`, and active setup prevents removal.
 - `session-id.js`: canonical four-way record attribution plus session-parent
   relations shared by storage and export selection.
 - `journal-trim.js`: bounded pre-sanitization policy that drops streaming

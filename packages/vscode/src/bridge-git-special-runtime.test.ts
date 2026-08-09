@@ -1,9 +1,14 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import * as gitService from './gitService';
 
 vi.mock('vscode', () => ({}));
-vi.mock('./gitService', () => ({}));
+vi.mock('./gitService', () => ({
+  getGitStatus: vi.fn(),
+  getGitLog: vi.fn(),
+  getGitDiff: vi.fn(),
+}));
 
 const originalFetch = globalThis.fetch;
 let handleSpecialGitBridgeMessage: typeof import('./bridge-git-special-runtime').handleSpecialGitBridgeMessage;
@@ -35,6 +40,7 @@ beforeAll(async () => {
 afterEach(() => {
   globalThis.fetch = originalFetch;
   vi.restoreAllMocks();
+  vi.resetAllMocks();
 });
 
 describe('VS Code direct commit message generation', () => {
@@ -73,6 +79,9 @@ describe('VS Code direct commit message generation', () => {
     const requestPayload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     expect(requestedUrl).toBe('https://opencode.ai/zen/v1/chat/completions');
     expect(requestPayload.model).toBe('deepseek-v4-flash-free');
+    expect(requestPayload.max_tokens).toBe(64);
+    expect(requestPayload.reasoning_effort).toBe('none');
+    expect(requestPayload.stop).toEqual(['\n']);
     expect(timeoutSpy).toHaveBeenCalledWith(60_000);
     expect(requestedUrl).not.toMatch(/session|prompt_async/);
   });
@@ -114,6 +123,89 @@ describe('VS Code direct commit message generation', () => {
     expect(fetchMock.mock.calls[0][0]).toBe('https://opencode.ai/zen/v1/chat/completions');
     const requestPayload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     expect(requestPayload.model).toBe('big-pickle');
+  });
+
+  it('collects the selected worktree context in the extension host with one diff per file', async () => {
+    vi.mocked(gitService.getGitStatus).mockResolvedValue({
+      current: 'main',
+      tracking: 'origin/main',
+      ahead: 0,
+      behind: 0,
+      isClean: false,
+      files: [
+        { path: 'src/app.ts', index: 'M', working_dir: ' ' },
+        { path: 'src/new.ts', index: '?', working_dir: '?' },
+      ],
+      mergeInProgress: null,
+      rebaseInProgress: null,
+    });
+    vi.mocked(gitService.getGitLog).mockResolvedValue({
+      all: [{
+        hash: 'abc123',
+        date: '2026-08-07T00:00:00.000Z',
+        message: 'fix: previous subject',
+        refs: '',
+        body: '',
+        author_name: 'Dev',
+        author_email: 'dev@example.test',
+        filesChanged: 1,
+        insertions: 1,
+        deletions: 0,
+      }],
+      latest: null,
+      total: 1,
+    });
+    vi.mocked(gitService.getGitDiff).mockImplementation(async (_directory, filePath) => ({
+      diff: filePath === 'src/new.ts' ? 'Binary files differ' : '+const fast = true',
+    }));
+    const execGit = vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 0 }));
+    const fetchMock = vi.fn(async (...args: [string | URL | Request, RequestInit?]) => {
+      void args;
+      return {
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({
+          choices: [{ message: { content: 'perf(git): speed commit message drafts' } }],
+        }),
+      } as Response;
+    });
+    globalThis.fetch = fetchMock;
+
+    const result = await handleSpecialGitBridgeMessage(
+      {
+        id: 'draft-1',
+        type: 'api:git/commit-message-draft',
+        payload: {
+          directory: '/repo',
+          selectedFiles: ['./src/app.ts', 'src/app.ts', 'src/new.ts'],
+          stagedOnly: true,
+          guidance: 'Prefer a git scope',
+        },
+      },
+      undefined,
+      { readSettings: () => ({}), execGit },
+    );
+
+    expect(result).toEqual({
+      id: 'draft-1',
+      type: 'api:git/commit-message-draft',
+      success: true,
+      data: {
+        status: 'complete',
+        commits: [{ subject: 'perf(git): speed commit message drafts', highlights: [] }],
+      },
+    });
+    expect(gitService.getGitStatus).toHaveBeenCalledWith('/repo');
+    expect(gitService.getGitLog).toHaveBeenCalledWith('/repo', { maxCount: 6 });
+    expect(gitService.getGitDiff).toHaveBeenCalledTimes(2);
+    expect(gitService.getGitDiff).toHaveBeenCalledWith('/repo', 'src/app.ts', true, 1);
+    expect(gitService.getGitDiff).toHaveBeenCalledWith('/repo', 'src/new.ts', true, 1);
+    expect(execGit).toHaveBeenCalledOnce();
+    expect(execGit).toHaveBeenCalledWith(['diff', '--cached', '--numstat'], '/repo');
+    const requestPayload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(requestPayload.messages[0].content).toContain('Prefer a git scope');
+    expect(requestPayload.messages[0].content).toContain('binary file (diff omitted)');
   });
 
   it('rejects malformed output and missing worktree context', async () => {

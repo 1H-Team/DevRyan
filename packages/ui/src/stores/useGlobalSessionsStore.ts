@@ -82,6 +82,7 @@ type GlobalSessionsState = {
     archivedSessions: Session[],
     status?: GlobalSessionsStatus,
     completeness?: GlobalSessionsSnapshotCompleteness,
+    requestLifecycleRevision?: number,
   ) => void;
   upsertSession: (session: Session) => void;
   restoreSessions: (sessions: Session[]) => void;
@@ -333,6 +334,7 @@ const reconcileLifecycleShadow = (
   activeSessions: Session[],
   archivedSessions: Session[],
   completeness: GlobalSessionsSnapshotCompleteness,
+  requestLifecycleRevision: number,
 ): LoadResult => {
   if (lifecycleShadow.size === 0) {
     return { activeSessions, archivedSessions };
@@ -345,6 +347,14 @@ const reconcileLifecycleShadow = (
   const desiredArchivedSessions: Session[] = [];
 
   for (const [sessionID, intent] of lifecycleShadow) {
+    if (
+      intent.version <= requestLifecycleRevision
+      && completeness.activeComplete
+      && completeness.archivedComplete
+    ) {
+      lifecycleShadow.delete(sessionID);
+      continue;
+    }
     const confirmed = intent.kind === 'delete'
       ? completeness.activeComplete
         && completeness.archivedComplete
@@ -387,6 +397,7 @@ const reconcileSnapshotShadows = (
   activeSessions: Session[],
   archivedSessions: Session[],
   completeness: GlobalSessionsSnapshotCompleteness,
+  requestLifecycleRevision: number,
 ): LoadResult => {
   const membershipReconciled = reconcileMembershipMutationShadow(
     activeSessions,
@@ -397,6 +408,7 @@ const reconcileSnapshotShadows = (
     membershipReconciled.activeSessions,
     membershipReconciled.archivedSessions,
     completeness,
+    requestLifecycleRevision,
   );
 };
 
@@ -561,11 +573,13 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
     archivedSessions,
     status = 'ready',
     completeness = COMPLETE_GLOBAL_SNAPSHOT,
+    requestLifecycleRevision = nextLifecycleVersion,
   ) => {
     const reconciled = reconcileSnapshotShadows(
       activeSessions,
       archivedSessions,
       completeness,
+      requestLifecycleRevision,
     );
     set((state) => applySnapshot(
       state,
@@ -584,6 +598,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
 
     inflightLoad = (async () => {
       const current = get();
+      const requestLifecycleRevision = nextLifecycleVersion;
 
       try {
         const sdk = opencodeClient.getSdkClient();
@@ -614,6 +629,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
             activeComplete: activeResult.status === 'fulfilled',
             archivedComplete: archivedResult.status === 'fulfilled',
           },
+          requestLifecycleRevision,
         );
         set((state) => applySnapshot(
           state,
@@ -630,6 +646,7 @@ export const useGlobalSessionsStore = create<GlobalSessionsState>((set, get) => 
           nextActiveSessions,
           nextArchivedSessions,
           { activeComplete: false, archivedComplete: false },
+          requestLifecycleRevision,
         );
         set((state) => applySnapshot(
           state,
@@ -893,6 +910,13 @@ export const applyGlobalSessionLifecycleEvent = (
   state.upsertSession(session);
   return true;
 };
+
+export const captureGlobalSessionLifecycleRevision = (): number => nextLifecycleVersion;
+
+export const isGlobalSessionDeletionPending = (sessionID: string): boolean => (
+  lifecycleShadow.get(sessionID)?.kind === 'delete'
+  || membershipMutationShadow.get(sessionID)?.kind === 'delete'
+);
 
 export const resetGlobalSessionLifecycleOverlayForTest = (): void => {
   lifecycleShadow.clear();

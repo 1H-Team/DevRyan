@@ -53,6 +53,8 @@ const ERROR_STATUS_BY_CODE = Object.freeze({
   ledger_capacity_exceeded: 507,
   manual_model_recovery_required: 409,
   managed_retry_limit_reached: 409,
+  provider_prompt_rejection_requires_fresh_retry: 409,
+  provider_prompt_rejection_requires_reframed_prompt: 409,
   managed_orchestration_owner_conflict: 409,
   managed_orchestration_ownership_lost: 409,
   managed_runtime_unavailable: 503,

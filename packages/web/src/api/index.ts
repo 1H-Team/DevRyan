@@ -10,12 +10,14 @@ import { createWebPushAPI } from './push';
 import { createWebGitHubAPI } from './github';
 import { createWebDiagnosticsAPI } from './diagnostics';
 import { createWebEvidenceAPI } from './evidence';
+import { createWebSessionPlansAPI } from './sessionPlans';
 
 export const createWebAPIs = (): RuntimeAPIs => ({
   runtime: { platform: 'web', isDesktop: false, isVSCode: false, label: 'web' },
   terminal: createWebTerminalAPI(),
   git: createWebGitAPI(),
   files: createWebFilesAPI(),
+  sessionPlans: createWebSessionPlansAPI(),
   settings: createWebSettingsAPI(),
   permissions: createWebPermissionsAPI(),
   notifications: createWebNotificationsAPI(),

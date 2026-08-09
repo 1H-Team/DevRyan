@@ -11,7 +11,7 @@ import { useI18n } from '@/lib/i18n';
 import { SessionRetentionSettings } from './SessionRetentionSettings';
 import { OpenCodeVersionSection } from './OpenCodeVersionSection';
 
-const GITHUB_URL = 'https://github.com/zoubenr/DevRyan';
+const GITHUB_URL = 'https://github.com/1H-Team/DevRyan';
 
 const MIN_CHECKING_DURATION = 800; // ms
 

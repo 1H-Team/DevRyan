@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { splitVisibleGitBranches } from './gitBranchVisibility';
+import { resolveIntegrateBranchChoices, splitVisibleGitBranches } from './gitBranchVisibility';
 
 const assignedProject = {
   id: 'project-1',
@@ -37,5 +37,34 @@ describe('splitVisibleGitBranches', () => {
       localBranches: ['Dev', 'main'],
       remoteBranches: ['origin/Dev', 'origin/main'],
     });
+  });
+});
+
+describe('resolveIntegrateBranchChoices', () => {
+  test('removes an unassigned default target and the current branch for managed developers', () => {
+    expect(resolveIntegrateBranchChoices({
+      localBranches: ['Dev'],
+      sourceBranch: 'Dev',
+      defaultTargetBranch: 'main',
+      restrictToGrantedBranches: true,
+    })).toEqual({ targetBranches: [], defaultTargetBranch: '' });
+  });
+
+  test('allows a managed scratch branch to move commits into its assigned base', () => {
+    expect(resolveIntegrateBranchChoices({
+      localBranches: ['Dev'],
+      sourceBranch: 'openchamber/task-1',
+      defaultTargetBranch: 'Dev',
+      restrictToGrantedBranches: true,
+    })).toEqual({ targetBranches: ['Dev'], defaultTargetBranch: 'Dev' });
+  });
+
+  test('preserves an unrestricted metadata target', () => {
+    expect(resolveIntegrateBranchChoices({
+      localBranches: ['feature'],
+      sourceBranch: 'feature',
+      defaultTargetBranch: 'main',
+      restrictToGrantedBranches: false,
+    })).toEqual({ targetBranches: ['main'], defaultTargetBranch: 'main' });
   });
 });

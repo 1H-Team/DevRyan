@@ -7,11 +7,14 @@ Git service layer for repository operations, direct commit-message generation, a
 - **Facade export**: `index.js` re-exports service, credential, and identity modules as a single API.
 - **Separation of concerns**:
   - `service.js`: operational git commands
+  - `integrate.js`: server-owned commit reintegration planning, temporary
+    worktree lifecycle, conflict continuation, and cleanup
   - `worktree-lock-recovery.js`: bounded, identity-safe worktree index-lock recovery
   - `credentials.js`: credential retrieval/storage flows
   - `identity-storage.js`: author identity persistence
   - `template-routes.js`: global commit template/hook status, install, uninstall, and content endpoints
   - `commit-message.js`: session-free direct Zen generation and conventional-subject validation
+  - `commit-message-context.js`: bounded authoritative context collection for the single-request draft route
 - **Route adapter**: `routes.js` maps HTTP requests to service operations.
 - **Durable worktree host**: `service.js` injects Git/setup/project effects into
   `@openchamber/harness-runtime`; durable state and retry policy do not live in
@@ -19,9 +22,9 @@ Git service layer for repository operations, direct commit-message generation, a
 
 ## Flow
 1. Route handlers resolve working directory and requested git operation.
-2. Service module executes command flow (often via simple-git/native git).
-3. Credential/identity helpers enrich command context and persist updates.
-4. Structured results/errors are returned to API consumers.
+2. The commit-message draft route collects status/history concurrently and selected diffs with bounded workers inside the host; other operations delegate directly to the service module.
+3. Service modules execute command flow (often via simple-git/native git), while credential/identity helpers enrich command context and persist updates.
+4. Structured results/errors are returned to API consumers; commit generation also records sanitized phase timings and emits `Server-Timing`.
 
 ## Integration
 - Called by server route registration and consumed by `src/api/git.ts`.

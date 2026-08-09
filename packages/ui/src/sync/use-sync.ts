@@ -26,7 +26,12 @@ import { getSessionMaterializationStatus, materializeSessionSnapshots } from "./
 import {
   registerSessionMaterializer,
 } from "./session-materializer"
-import { hasMessageRecordInfo, normalizeMessageFetchLimit, unwrapMessageRecordsResult } from "./message-fetch"
+import {
+  hasMessageRecordInfo,
+  normalizeMessageFetchLimit,
+  resolveMessagePagePagination,
+  unwrapMessageRecordsResult,
+} from "./message-fetch"
 import { unwrapSdkResult } from "./sdk-result"
 import { opencodeClient } from "@/lib/opencode/client"
 import {
@@ -372,8 +377,12 @@ export function useSync() {
         id: x.info.id,
         part: filterRenderableParts(x.parts ?? []),
       }))
-      const cursor = result.response?.headers?.get?.("x-next-cursor") ?? undefined
-      return { session, part, cursor, complete: !cursor }
+      const pagination = resolveMessagePagePagination({
+        requestedLimit: normalizedLimit,
+        returnedCount: result.data.length,
+        cursor: result.response?.headers?.get?.("x-next-cursor") ?? undefined,
+      })
+      return { session, part, ...pagination }
     },
     [directory, resolveDirectory, sdk],
   )

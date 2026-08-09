@@ -1,10 +1,13 @@
 import { create } from 'zustand';
 
+import type { SessionPlanRevisionIdentity } from '@/lib/api/types';
+
 export type SessionPlanFileStatus = 'saving' | 'saved' | 'error';
 
 export interface SessionPlanFileRecord {
   sourceMessageId: string;
   path: string | null;
+  revisionIdentity: SessionPlanRevisionIdentity | null;
   status: SessionPlanFileStatus;
   error: string | null;
   autoRevealed?: boolean;
@@ -13,7 +16,12 @@ export interface SessionPlanFileRecord {
 interface SessionPlanFileState {
   recordsBySession: Record<string, SessionPlanFileRecord | undefined>;
   beginSaving: (sessionId: string, sourceMessageId: string) => void;
-  markSaved: (sessionId: string, sourceMessageId: string, path: string) => void;
+  markSaved: (
+    sessionId: string,
+    sourceMessageId: string,
+    path: string,
+    revisionIdentity: SessionPlanRevisionIdentity,
+  ) => void;
   markError: (sessionId: string, sourceMessageId: string, error: string) => void;
   claimAutoReveal: (sessionId: string, sourceMessageId: string) => boolean;
   clearSession: (sessionId: string) => void;
@@ -35,28 +43,47 @@ export const useSessionPlanFileStore = create<SessionPlanFileState>((set) => ({
       return {
         recordsBySession: {
           ...state.recordsBySession,
-          [id]: { sourceMessageId: messageId, path: null, status: 'saving', error: null, autoRevealed: false },
+          [id]: {
+            sourceMessageId: messageId,
+            path: null,
+            revisionIdentity: null,
+            status: 'saving',
+            error: null,
+            autoRevealed: false,
+          },
         },
       };
     });
   },
 
-  markSaved: (sessionId, sourceMessageId, path) => {
+  markSaved: (sessionId, sourceMessageId, path, revisionIdentity) => {
     const id = clean(sessionId);
     const messageId = clean(sourceMessageId);
     const savedPath = clean(path);
-    if (!id || !messageId || !savedPath) return;
+    if (
+      !id
+      || !messageId
+      || !savedPath
+      || revisionIdentity.sessionId.trim() !== id
+      || revisionIdentity.sourceMessageId.trim() !== messageId
+    ) return;
 
     set((state) => {
       const current = state.recordsBySession[id];
       if (current?.sourceMessageId !== messageId) return state;
-      if (current.status === 'saved' && current.path === savedPath && current.error === null) return state;
+      if (
+        current.status === 'saved'
+        && current.path === savedPath
+        && current.revisionIdentity === revisionIdentity
+        && current.error === null
+      ) return state;
       return {
         recordsBySession: {
           ...state.recordsBySession,
           [id]: {
             sourceMessageId: messageId,
             path: savedPath,
+            revisionIdentity,
             status: 'saved',
             error: null,
             autoRevealed: current.autoRevealed === true,
@@ -82,6 +109,7 @@ export const useSessionPlanFileStore = create<SessionPlanFileState>((set) => ({
           [id]: {
             sourceMessageId: messageId,
             path: null,
+            revisionIdentity: null,
             status: 'error',
             error: errorText,
             autoRevealed: current.autoRevealed === true,

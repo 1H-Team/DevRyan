@@ -620,6 +620,7 @@ export const McpPage: React.FC = () => {
 
   const selectedServer = selectedMcpName ? getMcpByName(selectedMcpName) : null;
   const isNewServer = Boolean(mcpDraft && mcpDraft.name === selectedMcpName && !selectedServer);
+  const enabledLocked = selectedServer?.enabledLocked === true;
 
   // ── form state ──
   const [draftName, setDraftName] = React.useState('');
@@ -1553,13 +1554,17 @@ export const McpPage: React.FC = () => {
             )}
 
             <div
-              className="group flex cursor-pointer items-center gap-2 py-1.5"
+              className={enabledLocked
+                ? 'group flex cursor-not-allowed items-center gap-2 py-1.5 opacity-60'
+                : 'group flex cursor-pointer items-center gap-2 py-1.5'}
               role="button"
               tabIndex={0}
               aria-pressed={enabled}
-              onClick={() => setEnabled(!enabled)}
+              aria-disabled={enabledLocked}
+              title={enabledLocked ? t('mcpDropdown.managedByAdmin') : undefined}
+              onClick={() => { if (!enabledLocked) setEnabled(!enabled); }}
               onKeyDown={(event) => {
-                if (event.key === ' ' || event.key === 'Enter') {
+                if ((event.key === ' ' || event.key === 'Enter') && !enabledLocked) {
                   event.preventDefault();
                   setEnabled(!enabled);
                 }
@@ -1567,10 +1572,13 @@ export const McpPage: React.FC = () => {
             >
               <Checkbox
                 checked={enabled}
-                onChange={setEnabled}
+                onChange={(next) => { if (!enabledLocked) setEnabled(next); }}
                 ariaLabel={t('settings.mcp.page.server.enableAria')}
               />
-              <span className="typography-ui-label text-foreground">{t('settings.mcp.page.server.enable')}</span>
+              <span className="typography-ui-label text-foreground">
+                {t('settings.mcp.page.server.enable')}
+                {enabledLocked ? ` — ${t('mcpDropdown.managedByAdmin')}` : ''}
+              </span>
             </div>
 
             <div className="flex flex-col gap-2 py-1.5 sm:flex-row sm:items-center sm:gap-8">

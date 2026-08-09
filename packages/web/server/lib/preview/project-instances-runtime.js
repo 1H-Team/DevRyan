@@ -40,7 +40,7 @@ export const normalizeProjectPreviewUrl = (rawUrl) => {
     return { ok: false, error: 'Preview URLs cannot include credentials' };
   }
 
-  const normalized = normalizeProxyTargetUrl(parsed.toString(), { allowExternal: false });
+  const normalized = normalizeProxyTargetUrl(parsed.toString());
   if (!normalized.ok) return normalized;
 
   const displayUrl = new URL(`${parsed.pathname}${parsed.search}${parsed.hash}`, normalized.origin).toString();
@@ -58,12 +58,14 @@ export const createProjectPreviewInstancesRuntime = ({
   path,
   probeUrl,
   getTerminalRuntime,
+  resolveManagedProjectForDirectory,
   now = () => Date.now(),
   grantTtlMs = PROJECT_PREVIEW_GRANT_TTL_MS,
   sweepIntervalMs = PROJECT_PREVIEW_GRANT_SWEEP_MS,
 } = {}) => {
   const grants = new Map();
   let onGrantRemoved = null;
+  let grantRefreshPromise = null;
 
   const canonicalizeDirectory = async (rawDirectory) => {
     const input = normalizeDirectoryInput(rawDirectory);
@@ -77,13 +79,17 @@ export const createProjectPreviewInstancesRuntime = ({
     }
   };
 
-  const resolveProject = (principal, directory) => {
+  const resolveProject = async (principal, directory) => {
     if (principal?.scope === 'managed') {
       const assignment = assignmentForDirectory(path, principal, directory);
       if (assignment?.projectId) {
         return { key: `project:${assignment.projectId}`, projectId: assignment.projectId };
       }
       if (principal.role !== 'admin') return null;
+      const registeredProject = await resolveManagedProjectForDirectory?.(directory);
+      if (registeredProject?.id) {
+        return { key: `project:${registeredProject.id}`, projectId: registeredProject.id };
+      }
     }
     return { key: `directory:${directory}`, projectId: null };
   };
@@ -100,13 +106,6 @@ export const createProjectPreviewInstancesRuntime = ({
     return true;
   };
 
-  const removeExpired = () => {
-    const currentTime = now();
-    for (const [grantId, grant] of grants) {
-      if (grant.expiresAt <= currentTime) removeGrant(grantId, 'expired');
-    }
-  };
-
   const isReachable = async (url) => {
     try {
       const result = await probeUrl(url);
@@ -116,13 +115,43 @@ export const createProjectPreviewInstancesRuntime = ({
     }
   };
 
+  const refreshGrant = async (grant) => {
+    if (grants.get(grant.id) !== grant) return false;
+    const session = getTerminalRuntime?.()?.getSessionDescriptor?.(grant.terminalSessionId);
+    if (!session || session.ownerUserId !== grant.ownerUserId) {
+      removeGrant(grant.id, 'terminal-closed');
+      return false;
+    }
+    const terminalDirectory = await canonicalizeDirectory(session.cwd);
+    if (!terminalDirectory || terminalDirectory !== grant.directory) {
+      removeGrant(grant.id, 'terminal-mismatch');
+      return false;
+    }
+    if (!await isReachable(grant.url)) {
+      removeGrant(grant.id, 'liveness-failed');
+      return false;
+    }
+    if (grants.get(grant.id) !== grant) return false;
+    grant.expiresAt = now() + Math.max(15_000, Math.trunc(grantTtlMs));
+    return true;
+  };
+
+  const refreshAllGrants = () => {
+    if (grantRefreshPromise) return grantRefreshPromise;
+    grantRefreshPromise = Promise.all([...grants.values()].map(refreshGrant))
+      .finally(() => {
+        grantRefreshPromise = null;
+      });
+    return grantRefreshPromise;
+  };
+
   const register = async ({ principal, directory, terminalSessionId, url, label }) => {
     const canonicalDirectory = await canonicalizeDirectory(directory);
     if (!canonicalDirectory) {
       return { ok: false, status: 400, error: 'Invalid project directory' };
     }
 
-    const project = resolveProject(principal, canonicalDirectory);
+    const project = await resolveProject(principal, canonicalDirectory);
     if (!project) {
       return { ok: false, status: 403, error: 'Directory is outside your assigned workspace' };
     }
@@ -180,16 +209,8 @@ export const createProjectPreviewInstancesRuntime = ({
   };
 
   const liveGrantsForProject = async (projectKey) => {
-    removeExpired();
-    const candidates = [...grants.values()].filter((grant) => grant.projectKey === projectKey);
-    const checks = await Promise.all(candidates.map(async (grant) => ({
-      grant,
-      reachable: await isReachable(grant.url),
-    })));
-    for (const check of checks) {
-      if (!check.reachable) removeGrant(check.grant.id, 'liveness-failed');
-    }
-    return checks.filter((check) => check.reachable).map((check) => check.grant);
+    await refreshAllGrants();
+    return [...grants.values()].filter((grant) => grant.projectKey === projectKey);
   };
 
   const list = async ({ principal, directory }) => {
@@ -197,7 +218,7 @@ export const createProjectPreviewInstancesRuntime = ({
     if (!canonicalDirectory) {
       return { ok: false, status: 400, error: 'Invalid project directory' };
     }
-    const project = resolveProject(principal, canonicalDirectory);
+    const project = await resolveProject(principal, canonicalDirectory);
     if (!project) {
       return { ok: false, status: 403, error: 'Directory is outside your assigned workspace' };
     }
@@ -226,7 +247,7 @@ export const createProjectPreviewInstancesRuntime = ({
     if (!canonicalDirectory) {
       return { ok: false, status: 400, error: 'directory is required for remote preview access' };
     }
-    const project = resolveProject(principal, canonicalDirectory);
+    const project = await resolveProject(principal, canonicalDirectory);
     if (!project) {
       return { ok: false, status: 403, error: 'Directory is outside your assigned workspace' };
     }
@@ -238,7 +259,12 @@ export const createProjectPreviewInstancesRuntime = ({
     const live = await liveGrantsForProject(project.key);
     const grant = live.find((candidate) => candidate.origin === normalizedUrl.origin);
     if (!grant) {
-      return { ok: false, status: 403, error: 'This project preview port has not been approved' };
+      return {
+        ok: false,
+        status: 403,
+        code: 'project_preview_not_approved',
+        error: 'This project preview port has not been approved. Start the app from a live DevRyan terminal in this project and keep that terminal open.',
+      };
     }
     return {
       ok: true,
@@ -260,14 +286,26 @@ export const createProjectPreviewInstancesRuntime = ({
     }
   };
 
-  const attach = (app, { express, uiAuthController, isRequestOriginAllowed }) => {
-    const requireRequestAccess = async (req, res, { requireOrigin = false } = {}) => {
+  const attach = (app, {
+    express,
+    uiAuthController,
+    isRequestOriginAllowed,
+    canUseBrowser = () => true,
+  }) => {
+    const requireRequestAccess = async (req, res, {
+      requireOrigin = false,
+      requireBrowser = false,
+    } = {}) => {
       if (uiAuthController?.enabled) {
         const token = await uiAuthController.ensureSessionToken?.(req, res);
         if (!token) {
           res.status(401).json({ error: 'UI authentication required' });
           return false;
         }
+      }
+      if (requireBrowser && !canUseBrowser(req.principal)) {
+        res.status(403).json({ error: 'Browser access is disabled' });
+        return false;
       }
       if (requireOrigin && !await isRequestOriginAllowed(req)) {
         res.status(403).json({ error: 'Invalid origin' });
@@ -276,9 +314,9 @@ export const createProjectPreviewInstancesRuntime = ({
       return true;
     };
 
-    app.post('/api/preview/instances/register', express.json({ limit: '16kb' }), async (req, res) => {
+    const registerHandler = (requireBrowser) => async (req, res) => {
       try {
-        if (!await requireRequestAccess(req, res, { requireOrigin: true })) return;
+        if (!await requireRequestAccess(req, res, { requireOrigin: true, requireBrowser })) return;
         const csrf = typeof req.get === 'function'
           ? req.get('x-devryan-csrf')
           : req.headers?.['x-devryan-csrf'];
@@ -291,7 +329,7 @@ export const createProjectPreviewInstancesRuntime = ({
           url: req.body?.url,
           label: req.body?.label,
         });
-        if (!result.ok) return res.status(result.status).json({ error: result.error });
+        if (!result.ok) return res.status(result.status).json({ error: result.error, ...(result.code ? { code: result.code } : {}) });
         return res.json({
           instance: {
             id: result.grant.id,
@@ -306,22 +344,31 @@ export const createProjectPreviewInstancesRuntime = ({
         console.error('[preview-instances] Failed to register preview app:', error);
         return res.status(500).json({ error: 'Failed to register preview app' });
       }
-    });
+    };
 
-    app.get('/api/preview/instances', async (req, res) => {
+    const listHandler = (requireBrowser) => async (req, res) => {
       try {
-        if (!await requireRequestAccess(req, res)) return;
+        if (!await requireRequestAccess(req, res, { requireBrowser })) return;
         const result = await list({ principal: req.principal, directory: req.query?.directory });
-        if (!result.ok) return res.status(result.status).json({ error: result.error });
+        if (!result.ok) return res.status(result.status).json({ error: result.error, ...(result.code ? { code: result.code } : {}) });
         return res.json({ instances: result.instances });
       } catch (error) {
         console.error('[preview-instances] Failed to list preview apps:', error);
         return res.status(500).json({ error: 'Failed to list preview apps' });
       }
-    });
+    };
+
+    app.post('/api/preview/instances/register', express.json({ limit: '16kb' }), registerHandler(false));
+    app.get('/api/preview/instances', listHandler(false));
+    app.post('/api/browser/instances/register', express.json({ limit: '16kb' }), registerHandler(true));
+    app.get('/api/browser/instances', listHandler(true));
   };
 
-  const sweepTimer = setInterval(removeExpired, sweepIntervalMs);
+  const sweepTimer = setInterval(() => {
+    void refreshAllGrants().catch((error) => {
+      console.warn('[preview-instances] Failed to refresh preview grants:', error?.message || error);
+    });
+  }, sweepIntervalMs);
   sweepTimer.unref?.();
 
   const shutdown = () => {

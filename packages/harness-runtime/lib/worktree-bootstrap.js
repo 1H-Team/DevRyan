@@ -96,6 +96,7 @@ export const createWorktreeBootstrapRuntime = (options = {}) => {
   const operationByDirectory = new Map();
   const running = new Map();
   const stageRuns = new Map();
+  const directoryMaintenance = new Map();
   let initialized = false;
   let beginTail = Promise.resolve();
 
@@ -104,9 +105,26 @@ export const createWorktreeBootstrapRuntime = (options = {}) => {
     operationByIdempotency.set(receipt.idempotencyKey, receipt.operationId);
     const existingID = operationByDirectory.get(receipt.directory);
     const existing = existingID ? operations.get(existingID) : null;
-    if (!existing || existing.updatedAt <= receipt.updatedAt) {
+    if (!existing
+      || existing.createdAt < receipt.createdAt
+      || (existing.createdAt === receipt.createdAt && existing.updatedAt <= receipt.updatedAt)) {
       operationByDirectory.set(receipt.directory, receipt.operationId);
     }
+  };
+
+  const getActiveDirectoryReceipt = (directory) => {
+    let selected = null;
+    for (const receipt of operations.values()) {
+      if (receipt.directory !== directory || receipt.tombstone || TERMINAL_STATUSES.has(receipt.status)) {
+        continue;
+      }
+      if (!selected
+        || selected.createdAt < receipt.createdAt
+        || (selected.createdAt === receipt.createdAt && selected.updatedAt < receipt.updatedAt)) {
+        selected = receipt;
+      }
+    }
+    return selected;
   };
 
   const persist = async (receipt) => {
@@ -176,6 +194,34 @@ export const createWorktreeBootstrapRuntime = (options = {}) => {
       throw createError('Worktree directory is required', 'WORKTREE_DIRECTORY_REQUIRED', 400);
     }
     const directory = path.resolve(requestedDirectory);
+    if (directoryMaintenance.has(directory)) {
+      throw createError(
+        'Worktree directory is busy with a maintenance operation',
+        'WORKTREE_DIRECTORY_BUSY',
+        409,
+      );
+    }
+    const activeDirectoryReceipt = getActiveDirectoryReceipt(directory);
+    if (activeDirectoryReceipt) {
+      if (activeDirectoryReceipt.fingerprint === fingerprint) {
+        return { receipt: clone(activeDirectoryReceipt), replay: true };
+      }
+      throw createError(
+        'Worktree directory already has an active setup operation',
+        'WORKTREE_DIRECTORY_BUSY',
+        409,
+      );
+    }
+    const authoritativeOperationId = operationByDirectory.get(directory);
+    const authoritativeReceipt = authoritativeOperationId
+      ? operations.get(authoritativeOperationId)
+      : null;
+    if (authoritativeReceipt
+      && !authoritativeReceipt.tombstone
+      && authoritativeReceipt.status !== 'removed'
+      && authoritativeReceipt.fingerprint === fingerprint) {
+      return { receipt: clone(authoritativeReceipt), replay: true };
+    }
     const timestamp = now();
     const stages = Object.fromEntries(WORKTREE_BOOTSTRAP_STAGES.map((stage) => [
       stage,
@@ -420,6 +466,37 @@ export const createWorktreeBootstrapRuntime = (options = {}) => {
     return clone(receipt);
   };
 
+  const runDirectoryMaintenance = async (directory, effect) => {
+    const requestedDirectory = asString(directory);
+    if (!requestedDirectory || typeof effect !== 'function') {
+      throw new TypeError('worktree directory maintenance requires a directory and effect');
+    }
+    const normalized = path.resolve(requestedDirectory);
+
+    const token = {};
+    const reservation = beginTail.catch(() => undefined).then(async () => {
+      await initialize();
+      if (directoryMaintenance.has(normalized) || getActiveDirectoryReceipt(normalized)) {
+        throw createError(
+          'Worktree directory has an active setup or maintenance operation',
+          'WORKTREE_DIRECTORY_BUSY',
+          409,
+        );
+      }
+      directoryMaintenance.set(normalized, token);
+    });
+    beginTail = reservation.catch(() => undefined);
+    await reservation;
+
+    try {
+      return await effect();
+    } finally {
+      if (directoryMaintenance.get(normalized) === token) {
+        directoryMaintenance.delete(normalized);
+      }
+    }
+  };
+
   const getByDirectory = async (directory) => {
     await initialize();
     const normalized = path.resolve(asString(directory));
@@ -454,8 +531,17 @@ export const createWorktreeBootstrapRuntime = (options = {}) => {
 
   const listActive = async () => {
     await initialize();
-    return [...operations.values()]
-      .filter((receipt) => !TERMINAL_STATUSES.has(receipt.status))
+    const activeByDirectory = new Map();
+    for (const receipt of operations.values()) {
+      if (receipt.tombstone || TERMINAL_STATUSES.has(receipt.status)) continue;
+      const current = activeByDirectory.get(receipt.directory);
+      if (!current
+        || current.createdAt < receipt.createdAt
+        || (current.createdAt === receipt.createdAt && current.updatedAt < receipt.updatedAt)) {
+        activeByDirectory.set(receipt.directory, receipt);
+      }
+    }
+    return [...activeByDirectory.values()]
       .sort((left, right) => left.createdAt - right.createdAt)
       .map(clone);
   };
@@ -499,6 +585,7 @@ export const createWorktreeBootstrapRuntime = (options = {}) => {
     retry,
     fail,
     markRemoved,
+    runDirectoryMaintenance,
     getReceipt: async (operationId) => clone(await getReceipt(operationId)),
     getByIdempotency,
     getByDirectory,

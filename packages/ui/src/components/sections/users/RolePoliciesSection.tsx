@@ -46,6 +46,7 @@ const RolePolicyEditor: React.FC<{
           settingsPermissions: permissions,
           files: draft.can_use_files,
           terminal: draft.can_use_terminal,
+          browser: draft.can_use_browser,
           manageProjects: draft.can_manage_projects,
           manageUsers: draft.can_manage_users,
           manageGlobalSettings: draft.can_manage_global_settings,
@@ -64,7 +65,7 @@ const RolePolicyEditor: React.FC<{
   };
 
   const capabilityRows: Array<[keyof RolePolicyRow, string]> = [
-    ['can_use_files', 'Files'], ['can_use_terminal', 'Terminal'], ['can_manage_git', 'Git'],
+    ['can_use_files', 'Files'], ['can_use_terminal', 'Terminal'], ['can_use_browser', 'Browser'], ['can_manage_git', 'Git'],
     ['can_push', 'Push'], ['can_use_github', 'GitHub'], ['can_manage_projects', 'Manage Projects'],
     ['can_manage_users', 'Manage Users'], ['can_manage_global_settings', 'Host Settings'],
   ];
@@ -87,7 +88,7 @@ const RolePolicyEditor: React.FC<{
         <div>
           <div className="typography-ui-label font-medium text-foreground">Core capabilities</div>
           <p className="typography-micro text-muted-foreground">
-            These permissions apply outside Settings, including files, terminals, and repository operations.
+            These permissions apply outside Settings, including the browser, files, terminals, and repository operations.
           </p>
         </div>
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">

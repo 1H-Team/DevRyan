@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import type { DirectoryTerminalState, TerminalTab } from '@/stores/useTerminalStore';
 import {
+  collectProjectPreviewInstances,
   fetchReachableLocalInstanceOrigins,
   fetchProjectPreviewInstances,
   projectLocalPreviewInstances,
@@ -90,12 +91,32 @@ describe('local preview instance projection', () => {
       { label: 'Secure preview', port: '443', url: 'https://127.0.0.1/account' },
     ]);
   });
+
+  test('collects running previews across directories for the background grant owner', () => {
+    const sessions = new Map<string, DirectoryTerminalState>([
+      ['/project-a', createDirectoryState([createTab()])],
+      ['/project-b', createDirectoryState([createTab({
+        id: 'tab-b',
+        terminalSessionId: 'terminal-b',
+        previewUrl: 'http://localhost:5180/',
+      })])],
+    ]);
+
+    expect(collectProjectPreviewInstances(sessions).map((instance) => ({
+      directory: instance.directory,
+      terminalSessionId: instance.terminalSessionId,
+      origin: instance.origin,
+    }))).toEqual([
+      { directory: '/project-a', terminalSessionId: 'terminal-1', origin: 'http://127.0.0.1:3001' },
+      { directory: '/project-b', terminalSessionId: 'terminal-b', origin: 'http://127.0.0.1:5180' },
+    ]);
+  });
 });
 
 describe('local instance liveness client', () => {
   test('returns only origins confirmed reachable by the server', async () => {
     const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit) => {
-      expect(input).toBe('/api/preview/local-instances/status');
+      expect(input).toBe('/api/browser/local-instances/status');
       expect(init?.method).toBe('POST');
       expect(JSON.parse(String(init?.body))).toEqual({
         urls: ['http://127.0.0.1:3001/', 'http://127.0.0.1:5180/'],
@@ -157,7 +178,7 @@ describe('project preview grant client', () => {
 
   test('lists shared grants without requiring terminal identifiers', async () => {
     const fetchImpl = async (input: RequestInfo | URL) => {
-      expect(input).toBe('/api/preview/instances?directory=%2Fproject');
+      expect(input).toBe('/api/browser/instances?directory=%2Fproject');
       return Response.json({
         instances: [{
           id: 'grant-1',

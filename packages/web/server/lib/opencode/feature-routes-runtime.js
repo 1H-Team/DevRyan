@@ -4,6 +4,7 @@ import { registerGitHubRoutes } from '../github/routes.js';
 import { registerGitRoutes } from '../git/routes.js';
 import { registerMagicPromptRoutes } from '../magic-prompts/routes.js';
 import { registerSessionFoldersRoutes } from '../session-folders/routes.js';
+import { registerSessionPlanRoutes } from '../plans/routes.js';
 import { registerConfigEntityRoutes } from './config-entity-routes.js';
 import { registerSettingsUtilityRoutes } from './core-routes.js';
 import { registerProjectIconRoutes } from './project-icon-routes.js';
@@ -70,7 +71,11 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       writeSseEvent,
       emitSyntheticOpenCodeEvent,
       resolveZenModel,
+      resolveZenModelNonBlocking,
+      recordCommitTiming,
       resolveManagedProject,
+      ownsSession,
+      resolveOwnedSessionPlanContext,
     } = routeDependencies;
 
     const {
@@ -274,7 +279,11 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       isExternalOpenCode,
     });
     registerGitHubRoutes(app);
-    registerGitRoutes(app, { resolveZenModel });
+    registerGitRoutes(app, {
+      resolveZenModel,
+      resolveCommitZenModel: resolveZenModelNonBlocking,
+      recordCommitTiming,
+    });
     registerMagicPromptRoutes(app, {
       fsPromises,
       path,
@@ -284,6 +293,13 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       fsPromises,
       path,
       openchamberDataDir,
+    });
+    registerSessionPlanRoutes(app, {
+      dataDirectory: openchamberDataDir,
+      fsPromises,
+      path,
+      ownsSession,
+      resolveOwnedSessionPlanContext,
     });
     registerFsRoutes(app, {
       os,

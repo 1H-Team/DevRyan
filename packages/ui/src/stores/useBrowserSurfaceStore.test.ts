@@ -8,6 +8,8 @@ import {
 const snapshot = (overrides: Record<string, unknown> = {}) => ({
   surfaceId: 'manual:1:1',
   kind: 'manual',
+  workspaceId: 'browser-workspace:test',
+  tabId: 'browser-tab:test',
   placement: 'inline',
   url: 'https://example.com/',
   title: 'Example',

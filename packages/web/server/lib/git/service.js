@@ -253,6 +253,16 @@ const resolveManagedGitAssignment = (directory) => {
   return { principal, assignment };
 };
 
+const assertBranchCreationAllowed = () => {
+  const principal = getRequestPrincipal();
+  if (principal?.scope === 'managed' && principal.policy?.createBranches !== true) {
+    const error = new Error('Branch creation is disabled by policy');
+    error.statusCode = 403;
+    error.code = 'BRANCH_CREATION_DISABLED';
+    throw error;
+  }
+};
+
 const assertManagedMutationBranch = async (directory) => {
   const { principal, assignment } = resolveManagedGitAssignment(directory);
   if (!principal) return null;
@@ -304,9 +314,12 @@ const ensureGitAskPassHelper = async () => {
 
 export const buildGitEnv = async (
   directory = null,
-  { includeCredentials = false, githubAccountId = null } = {},
+  { includeCredentials = false, githubAccountId = null, optionalLocks = true } = {},
 ) => {
   const env = { ...process.env };
+  if (optionalLocks === false) {
+    env.GIT_OPTIONAL_LOCKS = '0';
+  }
   const { principal, assignment } = resolveManagedGitAssignment(directory);
   const selectedAccountId = principal
     ? principal.githubAccountId || null
@@ -694,7 +707,7 @@ export const isMissingDirectoryError = (error, directory) => {
     || /no such file or directory.*(?:working directory|cwd)/i.test(text);
 };
 
-const runGitCommand = async (cwd, args, options = {}) => {
+export const runGitCommand = async (cwd, args, options = {}) => {
   try {
     const { stdout, stderr } = await execFileAsync(getGitBinary(), args, {
       cwd,
@@ -719,7 +732,7 @@ const runGitCommand = async (cwd, args, options = {}) => {
   }
 };
 
-const runGitCommandOrThrow = async (cwd, args, fallbackMessage, options = {}) => {
+export const runGitCommandOrThrow = async (cwd, args, fallbackMessage, options = {}) => {
   const result = await runGitCommand(cwd, args, options);
   if (!result.success) {
     throw new Error(result.message || fallbackMessage || 'Git command failed');
@@ -1101,7 +1114,11 @@ export const configureWorktreeBootstrapRuntime = (options = {}) => {
       },
       populate_worktree: async (receipt) => {
         const head = await runGitCommand(receipt.directory, ['rev-parse', '--verify', 'HEAD']);
-        const status = await runGitCommand(receipt.directory, ['status', '--porcelain']);
+        const status = await runGitCommand(
+          receipt.directory,
+          ['status', '--porcelain'],
+          { optionalLocks: false },
+        );
         if (head.success && status.success) {
           const index = await runGitCommand(receipt.directory, ['ls-files', '--stage']);
           // `worktree add --no-checkout` creates a valid HEAD but leaves the
@@ -1452,7 +1469,11 @@ export async function getStatus(directory, options = {}) {
       );
     }
 
-    const git = await createGit(directoryPath);
+    // Status is collected in the background throughout the UI. Git normally
+    // refreshes and rewrites the index during status, which can collide with a
+    // simultaneous checkout/reset. Disable only those optional writes while
+    // preserving the status result itself.
+    const git = await createGit(directoryPath, { optionalLocks: false });
     // Use -uall to show all untracked files individually, not just directories
     const status = await git.status(['-uall']);
 
@@ -2326,6 +2347,16 @@ export async function push(directory, options = {}) {
       assignment.remoteUrl || 'origin',
       `refs/heads/${currentBranch}:refs/heads/${currentBranch}`,
     ]);
+    // Pushing to a URL does not update the remote-tracking ref; sync it so
+    // status/log reflect the push without requiring a fetch.
+    try {
+      const pushedSha = (await git.raw(['rev-parse', `refs/heads/${currentBranch}`])).trim();
+      if (pushedSha) {
+        await git.raw(['update-ref', `refs/remotes/origin/${currentBranch}`, pushedSha]);
+      }
+    } catch {
+      // Best effort: a failed tracking-ref update only delays UI freshness.
+    }
     return {
       success: true,
       pushed: [{ local: currentBranch, remote: currentBranch }],
@@ -2690,6 +2721,7 @@ async function filterActiveRemoteBranches(git, remoteBranches) {
 }
 
 export async function createBranch(directory, branchName, options = {}) {
+  assertBranchCreationAllowed();
   const git = await createGit(directory);
 
   try {
@@ -3077,6 +3109,7 @@ const buildWorktreeCreationMetadata = async ({
 
 export async function createWorktree(directory, input = {}) {
   const mode = input?.mode === 'existing' ? 'existing' : 'new';
+  if (mode === 'new') assertBranchCreationAllowed();
   const context = await resolveWorktreeProjectContext(directory);
   const bootstrapRuntime = await requireWorktreeBootstrapRuntime();
   await fsp.mkdir(context.worktreeRoot, { recursive: true });
@@ -3201,15 +3234,12 @@ export async function listActiveWorktreeBootstrapOperations() {
 
 export async function retryWorktreeBootstrapOperation(operationId) {
   const runtime = await requireWorktreeBootstrapRuntime();
+  const receipt = await runtime.getReceipt(operationId);
+  if (receipt.metadata?.mode === 'new') assertBranchCreationAllowed();
   return runtime.retry(operationId);
 }
 
-export async function removeWorktree(directory, input = {}) {
-  const targetDirectory = normalizeDirectoryPath(input?.directory);
-  if (!targetDirectory) {
-    throw new Error('Worktree directory is required');
-  }
-
+const removeWorktreeNow = async (directory, input, targetDirectory, bootstrapRuntime) => {
   const context = await resolveWorktreeProjectContext(directory);
   const deleteLocalBranch = input?.deleteLocalBranch === true;
 
@@ -3253,7 +3283,7 @@ export async function removeWorktree(directory, input = {}) {
       console.warn('Failed to sync OpenCode sandbox metadata (remove):', error instanceof Error ? error.message : String(error));
     }
 
-    await (await requireWorktreeBootstrapRuntime()).markRemoved(targetDirectory);
+    await bootstrapRuntime.markRemoved(targetDirectory);
 
     return true;
   }
@@ -3281,9 +3311,21 @@ export async function removeWorktree(directory, input = {}) {
     console.warn('Failed to sync OpenCode sandbox metadata (remove):', error instanceof Error ? error.message : String(error));
   }
 
-  await (await requireWorktreeBootstrapRuntime()).markRemoved(matchedEntry.worktree);
+  await bootstrapRuntime.markRemoved(matchedEntry.worktree);
 
   return true;
+};
+
+export async function removeWorktree(directory, input = {}) {
+  const targetDirectory = normalizeDirectoryPath(input?.directory);
+  if (!targetDirectory) {
+    throw new Error('Worktree directory is required');
+  }
+  const bootstrapRuntime = await requireWorktreeBootstrapRuntime();
+  return bootstrapRuntime.runDirectoryMaintenance(
+    targetDirectory,
+    () => removeWorktreeNow(directory, input, targetDirectory, bootstrapRuntime),
+  );
 }
 
 export async function deleteBranch(directory, branch, options = {}) {

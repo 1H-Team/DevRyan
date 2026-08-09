@@ -37,6 +37,16 @@ describe('plan presentation', () => {
     expect(planViewSource).toContain('<SimpleMarkdownRenderer content={content}');
     expect(planViewSource).toContain('<PreviewToggleButton');
     expect(planViewSource).toContain("setMdViewMode(mdViewMode === 'preview' ? 'edit' : 'preview')");
+    expect(planViewSource).toContain('runtimeApis.sessionPlans.readRevision(sessionPlanIdentity)');
+    expect(planViewSource).toContain('runtimeApis.sessionPlans.updateRevision({');
+  });
+
+  test('uses the saved canonical revision identity and exposes scoped read failures for retry', () => {
+    expect(planViewSource).toContain('sessionPlanFileRecord?.revisionIdentity ?? null');
+    expect(planViewSource).toContain('runtimeApis.sessionPlans.readRevision(sessionPlanIdentity)');
+    expect(planViewSource).toContain('setLoadError(canonicalReadError)');
+    expect(planViewSource).toContain("t('planView.error.loadFailed')");
+    expect(planViewSource).toContain('setLoadRetryNonce((nonce) => nonce + 1)');
   });
 
   test('hides the saved success label while retaining actionable save states', () => {

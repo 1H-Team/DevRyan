@@ -18,6 +18,7 @@ export const createNotificationTemplateRuntime = (deps) => {
   let validatedZenFallback = null;
   let cachedZenModels = null;
   let cachedZenModelsTimestamp = 0;
+  let zenModelsRefreshPromise = null;
 
   // Both caches are bounded LRUs (Map insertion order): sessions accumulate for
   // the whole server lifetime otherwise. forgetSessionCaches drops a session's
@@ -88,46 +89,84 @@ export const createNotificationTemplateRuntime = (deps) => {
       return cachedZenModels.models;
     }
 
-    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timeout = controller ? setTimeout(() => controller.abort(), 8000) : null;
-    try {
-      const [zenResponse, metadataResponse] = await Promise.all([
-        fetch('https://opencode.ai/zen/v1/models', {
-          signal: controller?.signal,
-          headers: { Accept: 'application/json' },
-        }),
-        fetch('https://models.dev/api.json', {
-          signal: controller?.signal,
-          headers: { Accept: 'application/json' },
-        }),
-      ]);
-      if (!zenResponse.ok) {
-        throw new Error(`zen/v1/models responded with status ${zenResponse.status}`);
-      }
-      if (!metadataResponse.ok) {
-        throw new Error(`models.dev responded with status ${metadataResponse.status}`);
-      }
-
-      const data = await zenResponse.json();
-      const metadata = await metadataResponse.json();
-      const metadataModels = metadata?.opencode?.models && typeof metadata.opencode.models === 'object'
-        ? metadata.opencode.models
-        : {};
-      const allModels = Array.isArray(data?.data) ? data.data : [];
-      const freeModels = allModels
-        .filter((model) => {
-          const id = typeof model?.id === 'string' ? model.id.trim() : '';
-          const cost = id ? metadataModels[id]?.cost : null;
-          return id && cost?.input === 0 && cost?.output === 0;
-        })
-        .map((model) => ({ id: model.id.trim(), owned_by: model.owned_by }));
-
-      cachedZenModels = { models: freeModels };
-      cachedZenModelsTimestamp = Date.now();
-      return freeModels;
-    } finally {
-      if (timeout) clearTimeout(timeout);
+    if (zenModelsRefreshPromise) {
+      return zenModelsRefreshPromise;
     }
+
+    zenModelsRefreshPromise = (async () => {
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      const timeout = controller ? setTimeout(() => controller.abort(), 8000) : null;
+      try {
+        const [zenResponse, metadataResponse] = await Promise.all([
+          fetch('https://opencode.ai/zen/v1/models', {
+            signal: controller?.signal,
+            headers: { Accept: 'application/json' },
+          }),
+          fetch('https://models.dev/api.json', {
+            signal: controller?.signal,
+            headers: { Accept: 'application/json' },
+          }),
+        ]);
+        if (!zenResponse.ok) {
+          throw new Error(`zen/v1/models responded with status ${zenResponse.status}`);
+        }
+        if (!metadataResponse.ok) {
+          throw new Error(`models.dev responded with status ${metadataResponse.status}`);
+        }
+
+        const data = await zenResponse.json();
+        const metadata = await metadataResponse.json();
+        const metadataModels = metadata?.opencode?.models && typeof metadata.opencode.models === 'object'
+          ? metadata.opencode.models
+          : {};
+        const allModels = Array.isArray(data?.data) ? data.data : [];
+        const freeModels = allModels
+          .filter((model) => {
+            const id = typeof model?.id === 'string' ? model.id.trim() : '';
+            const cost = id ? metadataModels[id]?.cost : null;
+            return id && cost?.input === 0 && cost?.output === 0;
+          })
+          .map((model) => ({ id: model.id.trim(), owned_by: model.owned_by }));
+
+        cachedZenModels = { models: freeModels };
+        cachedZenModelsTimestamp = Date.now();
+        return freeModels;
+      } finally {
+        if (timeout) clearTimeout(timeout);
+      }
+    })().finally(() => {
+      zenModelsRefreshPromise = null;
+    });
+    return zenModelsRefreshPromise;
+  };
+
+  const resolveZenModelNonBlocking = (override) => {
+    const candidate = typeof override === 'string' && override.trim()
+      ? override.trim()
+      : ZEN_DEFAULT_MODEL;
+    const cachedModels = Array.isArray(cachedZenModels?.models) ? cachedZenModels.models : [];
+    const modelIds = cachedModels.map((model) => model.id);
+    const cacheAge = Date.now() - cachedZenModelsTimestamp;
+    const catalogState = modelIds.length === 0
+      ? 'empty'
+      : cacheAge < ZEN_MODELS_CACHE_TTL
+        ? 'fresh'
+        : 'stale';
+    const model = modelIds.length === 0 || modelIds.includes(candidate)
+      ? candidate
+      : modelIds.includes(ZEN_DEFAULT_MODEL)
+        ? ZEN_DEFAULT_MODEL
+        : modelIds[0];
+    const fallbackModel = [
+      modelIds.includes(validatedZenFallback) ? validatedZenFallback : null,
+      ...modelIds,
+    ]
+      .find((modelId) => typeof modelId === 'string' && modelId && modelId !== model) || null;
+
+    if (catalogState !== 'fresh') {
+      void fetchFreeZenModels().catch(() => {});
+    }
+    return { model, fallbackModel, catalogState };
   };
 
   const resolveZenModel = async (override) => {
@@ -494,6 +533,7 @@ export const createNotificationTemplateRuntime = (deps) => {
     shouldApplyResolvedTemplateMessage,
     fetchFreeZenModels,
     resolveZenModel,
+    resolveZenModelNonBlocking,
     validateZenModelAtStartup,
     summarizeText,
     extractTextFromParts,

@@ -92,6 +92,7 @@
 - The resolver finds the most likely repo and PR for a local branch.
 - The route then enriches that result with checks, mergeability, and permission-related fields.
 - The client caches and shares the result between sidebar and Git view.
+- `GET /api/github/pulls/list` accepts `state=open|all`; `open` remains the default for existing pickers, while the Git view requests `all` for its repository-wide browser. Results include creation/update timestamps and are ordered by most recently updated across the resolved repository network.
 
 ## Consumers of PR data
 

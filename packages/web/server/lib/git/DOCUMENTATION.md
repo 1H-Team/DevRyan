@@ -3,7 +3,7 @@
 ## Purpose
 This module provides Git repository operations for the web server runtime, including repository management, branch/worktree operations, status/diff queries, commit handling, direct commit-message generation, conventional commit template setup, and merge/rebase workflows.
 
-Managed callers are additionally constrained by the multi-user layer: worktree creation must start from a logical assigned branch, while durable chat/schedule targets use the shared branch-target resolver to reuse or create the correct checkout without switching the repository root.
+Managed callers are additionally constrained by the multi-user layer: worktree creation and commit reintegration must target a logical assigned branch, while durable chat/schedule targets use the shared branch-target resolver to reuse or create the correct checkout without switching the repository root. User-triggered worktree creation and retries require `createWorktrees`; direct branch creation and new-branch worktrees additionally require `createBranches`. Automatic assigned-branch target preparation remains available.
 
 ## Entrypoints and structure
 - `packages/web/server/lib/git/`: Git module directory containing all Git-related functionality.
@@ -11,7 +11,9 @@ Managed callers are additionally constrained by the multi-user layer: worktree c
   - `routes.js`: Express route registration for `/api/git/*` endpoints.
   - `template-routes.js`: Conventional commit template and global `commit-msg` hook setup routes.
   - `service.js`: Core Git operations (repository, branch, worktree, commit, merge/rebase, status/diff, log).
+  - `integrate.js`: Server-owned commit reintegration, temporary worktree lifecycle, and conflict continuation.
   - `commit-message.js`: Session-free commit-subject prompt, normalization, validation, and direct Zen utility-model generation.
+  - `commit-message-context.js`: Bounded host-side status, history, and selected-file diff collection for commit-message drafts.
   - `credentials.js`: Git credentials management.
   - `identity-storage.js`: Git identity storage under `OPENCHAMBER_DATA_DIR` with mode-`0600` atomic writes.
 
@@ -29,6 +31,7 @@ The following functions are exported and used by the web server:
 
 ### Status and Diff Operations
 - `getStatus(directory)`: Get comprehensive Git status including current branch, tracking, ahead/behind, file changes, diff stats, merge/rebase state.
+- Background status reads set `GIT_OPTIONAL_LOCKS=0`, preventing Git's optional index refresh from racing worktree population or other index writers.
 - `getDiff(directory, { path, staged, contextLines })`: Get diff output for files or entire working tree.
 - `getRangeDiff(directory, { base, head, path, contextLines })`: Get diff between two refs.
 - `getRangeFiles(directory, { base, head })`: Get list of changed files between two refs.
@@ -53,6 +56,9 @@ The following functions are exported and used by the web server:
 - `createWorktree(directory, input)`: Create a new worktree through the shared
   durable receipt state machine. The caller may provide `idempotencyKey`; the
   response preserves the legacy fields and adds `operationId` plus `bootstrap`.
+  The resolved directory is a second single-flight key, so equivalent requests
+  join one operation and conflicting requests return
+  `409 WORKTREE_DIRECTORY_BUSY`.
 - `getWorktreeBootstrapStatus(directory)`: Resolve the latest receipt by
   directory. A receipt-less existing workspace directory (including a legacy
   Git worktree or non-Git project) returns `not_applicable`; a missing directory
@@ -61,7 +67,7 @@ The following functions are exported and used by the web server:
   `listActiveWorktreeBootstrapOperations()`, and
   `retryWorktreeBootstrapOperation(operationId)`: durable reconnect/retry
   operations mirrored by VS Code.
-- `removeWorktree(directory, input)`: Remove a worktree (optionally delete local branch).
+- `removeWorktree(directory, input)`: Remove a worktree (optionally delete local branch). Removal reserves the directory and fails with `409 WORKTREE_DIRECTORY_BUSY` while setup or another maintenance operation is active.
 - `isLinkedWorktree(directory)`: Check if directory is a linked worktree (not primary).
 
 ### Commit and Remote Operations
@@ -75,12 +81,23 @@ from the authoritative request principal. Managed directories may be the real
 repository root or any path inside that repository's shared OpenCode worktree
 container. Pull, push, and fetch use the worktree's actual checked-out branch,
 reject alternate remotes, and never fall back to host-current GitHub
-credentials. Branch grants are presentation metadata, so branch listings and
-merge/rebase sources are not filtered by them.
+credentials. Branch listings and ordinary merge/rebase sources remain
+presentation-filtered; cross-branch reintegration is separately target-grant
+authorized before Git runs.
+
+### Commit Reintegration
+
+- `POST /api/git/integrate/plan` computes the patch-unique ordered commits for a source/target pair.
+- `POST /api/git/integrate/start` recomputes the plan authoritatively and cherry-picks through a server-owned temporary worktree.
+- `POST /api/git/integrate/in-progress`, `/conflict-details`, `/continue`, and `/abort` resume only server-registered operations and re-check the target branch grant on every request.
+- Conflict registrations are count- and TTL-bounded; a server restart safely invalidates stale browser state.
 
 ### Commit Message Generation
-- `POST /api/git/commit-message`: Accept bounded, pre-collected worktree context plus optional wording guidance and return `{ message: { subject, highlights } }`.
-- Generation uses the commit-specific free Zen model `deepseek-v4-flash-free` through the direct `opencode.ai/zen` API, with a 60-second request deadline. Explicit API model overrides remain supported, and the web runtime validates the preferred model against the live free-model catalog before falling back to another available free model. It never creates, prompts, switches, or deletes an OpenCode session.
+- `POST /api/git/commit-message/draft`: Accept `{ selectedFiles, stagedOnly, guidance?, zenModel? }`, collect authoritative Git context in the host, and return the shared workflow result `{ status, commits, message? }`. Status and six recent subjects are loaded concurrently; up to 200 unique validated paths use six diff workers with one-context-line, 1,500-character per-file, and 16,000-character total budgets.
+- `POST /api/git/commit-message`: Compatibility route that accepts bounded, pre-collected worktree context plus optional wording guidance and returns `{ message: { subject, highlights } }`.
+- Generation uses the commit-specific free Zen model `deepseek-v4-flash-free` through the direct `opencode.ai/zen` API, with a 60-second request deadline. Commit requests use a cached catalog selection immediately and trigger one deduplicated background refresh when the catalog is cold or stale. A different cached free model is retried only for an explicit unavailable-model response. The flow never creates, prompts, switches, or deletes an OpenCode session.
+- Chat-completion requests are capped at 64 tokens with a newline stop; the primary DeepSeek model disables hidden reasoning so that budget reaches the subject. Compatible Responses requests are capped at 128 output tokens.
+- Both routes are read-only for managed mutation-lock purposes, while authentication, CSRF, workspace containment, and Git policy checks still apply. Sanitized phase timings are written to the diagnostic journal, and web responses expose context/model/provider/parsing durations through `Server-Timing`.
 - Route registration accepts an injected direct generator for deterministic contract tests; production defaults to `generateCommitMessageDirect`.
 - Subjects must match the repository Conventional Commit types, remain at or below 72 characters, and omit trailing punctuation. The route does not stage, commit, or otherwise mutate Git state.
 - `removeRemote(directory, options)`: Remove a configured remote (except `origin`).
@@ -161,10 +178,12 @@ by process exit becomes `needs_attention` and is rerun only after explicit
 Retry.
 
 The `populate_worktree` stage performs one bounded recovery when Git reports an
-`index.lock` collision. It resolves the worktree-specific lock through Git,
-waits briefly, and removes the lock only when its filesystem identity remains
-unchanged. A replacement lock is preserved and the original failure remains
-visible in the receipt. Before replaying population, the stage checks `HEAD`,
+`index.lock` collision or cannot finalize a new index file. It resolves the
+worktree-specific lock through Git, waits briefly, and removes the lock only
+when its filesystem identity remains unchanged. A replacement lock is
+preserved. When Git reports only the generic index-finalization failure and the
+lock is already gone, the stage still retries once because the competing writer
+may have just completed. Before replaying population, the stage checks `HEAD`,
 status, and the Git index: populated worktrees are preserved rather than reset
 destructively, while a fresh `--no-checkout` worktree with an empty index still
 receives its initial checkout. Web/Electron and VS Code use the same policy.

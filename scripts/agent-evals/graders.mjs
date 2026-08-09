@@ -1,11 +1,38 @@
 import { consumePrivateToolIntervals } from './tool-evidence.mjs';
 
 const TOOL_FAMILIES = Object.freeze({
-  read: new Set(['read', 'file_read']),
-  search: new Set(['grep', 'glob', 'search', 'find']),
-  test: new Set(['bash', 'shell', 'terminal', 'exec', 'exec_command']),
-  mutation: new Set(['edit', 'write', 'apply_patch', 'patch', 'multiedit']),
-  managed: new Set(['devryan_task']),
+  read: new Set(['read', 'file_read', 'oc_read', 'ctx_execute_file']),
+  search: new Set([
+    'grep', 'glob', 'search', 'find', 'oc_grep', 'oc_glob', 'ctx_search', 'ast_grep_search',
+  ]),
+  test: new Set(['bash', 'shell', 'terminal', 'exec', 'exec_command', 'oc_bash']),
+  mutation: new Set([
+    'edit', 'write', 'oc_edit', 'oc_write', 'apply_patch', 'patch', 'multiedit',
+    'ast_grep_replace', 'rm',
+  ]),
+  managed: new Set(['task', 'devryan_task', 'council_session']),
+  oracleInspection: new Set([
+    'read', 'oc_read', 'glob', 'oc_glob', 'grep', 'ls', 'oc_ls', 'stat', 'oc_stat',
+    'ast_grep_search', 'ctx_search', 'ctx_stats',
+  ]),
+});
+
+const ORACLE_REVIEW_CASES = Object.freeze({
+  'oracle-review-focused': {
+    maximumDurationMs: 15 * 60 * 1_000,
+    maximumToolCalls: 30,
+    signals: ['authorization_boundary', 'stale_write'],
+  },
+  'oracle-review-deep': {
+    maximumDurationMs: 30 * 60 * 1_000,
+    maximumToolCalls: 80,
+    signals: [
+      'authorization_boundary',
+      'idempotency_order',
+      'stale_write',
+      'webhook_monotonicity',
+    ],
+  },
 });
 
 const normalizeTool = (value) => (
@@ -112,6 +139,20 @@ export const gradeToolRequirements = (caseId, toolEvents = []) => {
         && hasFamily(events, 'test', { final: true }),
     );
   }
+  const oracleReview = ORACLE_REVIEW_CASES[caseId];
+  if (oracleReview) {
+    return result(
+      `${caseId}.tools`,
+      events.length > 0
+        && events.length <= oracleReview.maximumToolCalls
+        && events.every((event) => event?.sessionScope === 'root')
+        && events.every((event) => TOOL_FAMILIES.oracleInspection.has(normalizeTool(event?.tool)))
+        && hasFamily(events, 'read', { final: true })
+        && !hasFamily(events, 'test')
+        && !hasFamily(events, 'mutation')
+        && !hasFamily(events, 'managed'),
+    );
+  }
   return result('unknown.tools', false);
 };
 
@@ -138,7 +179,43 @@ export const gradeCaseOutcome = (input = {}) => {
         && finalTestPassed,
     );
   }
+  if (ORACLE_REVIEW_CASES[caseId]) {
+    return result(
+      `${caseId}.filesystem`,
+      manifestSafe
+        && input.ownedSourceChanged === false
+        && input.ownedTestChanged === false
+        && input.finalTest == null,
+    );
+  }
   return result('unknown.filesystem-test', false);
+};
+
+export const gradeOracleReviewOutcome = (input = {}) => {
+  const reviewCase = ORACLE_REVIEW_CASES[input.caseId];
+  if (!reviewCase) return [result('unknown.oracle-review', false)];
+  const evidence = input.evidence && typeof input.evidence === 'object' ? input.evidence : {};
+  const signals = Array.isArray(evidence.signals)
+    ? [...new Set(evidence.signals.filter((signal) => typeof signal === 'string'))].sort()
+    : [];
+  const expectedSignals = [...reviewCase.signals].sort();
+  return [
+    result(
+      `${input.caseId}.findings`,
+      signals.length === expectedSignals.length
+        && expectedSignals.every((signal, index) => signals[index] === signal),
+    ),
+    result(
+      `${input.caseId}.evidence`,
+      evidence.pathLineEvidence === true && evidence.terminalComplete === true,
+    ),
+    result(
+      `${input.caseId}.latency`,
+      Number.isFinite(input.durationMs)
+        && input.durationMs >= 0
+        && input.durationMs <= reviewCase.maximumDurationMs,
+    ),
+  ];
 };
 
 export const gradeManagedTaskOutcome = (input = {}) => {

@@ -15,6 +15,30 @@ describe('GitView revert actions', () => {
   });
 });
 
+describe('GitView branch rename access', () => {
+  test('withholds the rename callback from managed non-administrators', () => {
+    const code = source();
+
+    expect(code).toContain(
+      "const canRenameBranch = principal.scope !== 'managed' || principal.role === 'admin';",
+    );
+    expect(code).toContain(
+      'onRenameBranch={canRenameBranch ? handleRenameBranch : undefined}',
+    );
+  });
+});
+
+describe('GitView worktree bootstrap gating', () => {
+  test('does not collect repository status until bootstrap is authoritative', () => {
+    const code = source();
+
+    expect(code).toContain("const isWorktreeBootstrapReady = worktreeBootstrapStatus === 'ready'");
+    expect(code).toContain('if (!isWorktreeBootstrapReady) return;');
+    expect(code).toContain('if (!currentDirectory || !isWorktreeBootstrapReady) {');
+    expect(code).toContain("worktreeBootstrapStatus === null");
+  });
+});
+
 describe('GitView staged changes workflow', () => {
   test('does not render the repository state summary', () => {
     const code = source();
@@ -137,6 +161,29 @@ describe('GitView remote sync state refresh', () => {
     expect(code).toContain('const shouldRebasePull = (pullStatus?.ahead ?? 0) > 0;');
     expect(code).toContain('branch: trackedBranch || currentBranchName,');
     expect(code).toContain('rebase: shouldRebasePull || undefined,');
+  });
+
+  test('forces authoritative status and history reads after remote mutations', () => {
+    const code = source();
+
+    expect(code).toContain('const refreshAfterRemoteMutation = React.useCallback(async () => {');
+    expect(code).toContain('fetchStatus(currentDirectory, git, { force: true })');
+    expect(code).toContain('fetchBranches(currentDirectory, git)');
+    expect(code).toContain('fetchLog(currentDirectory, git, logMaxCountLocal)');
+  });
+
+  test('uses the authoritative refresh after standalone and commit-plus-push flows', () => {
+    const code = source();
+    const syncStart = code.indexOf('const handleSyncAction = async');
+    const syncEnd = code.indexOf('const handleGenerateCommitMessage', syncStart);
+    const commitStart = code.indexOf('const handleCommit = async');
+    const commitEnd = code.indexOf('const handleCreateBranch = async', commitStart);
+    const syncHandler = code.slice(syncStart, syncEnd);
+    const commitHandler = code.slice(commitStart, commitEnd);
+
+    expect(syncHandler).toContain("if (action === 'push' || action === 'sync')");
+    expect(syncHandler).toContain('await refreshAfterRemoteMutation();');
+    expect(commitHandler.match(/await refreshAfterRemoteMutation\(\);/g)).toHaveLength(2);
   });
 });
 

@@ -11,6 +11,8 @@ import {
   extractHumanPrompt,
   decodeAnalyticsCursor,
   encodeAnalyticsCursor,
+  isAnalyticsChangeAction,
+  isSettingsChangeAction,
   sanitizeActivityForReviewer,
   stableAuditEventId,
   validateAnalyticsRange,
@@ -159,6 +161,12 @@ describe('multi-user analytics', () => {
       { id: 2, action: 'user.updated', metadata: { changes: [{ field: 'role' }] } },
     ], { isAdmin: false });
     expect(visible).toEqual([{ id: 2, action: 'user.updated', metadata: {} }]);
+  });
+
+  it('shows session deletion in the change feed without counting it as a settings change', () => {
+    expect(isAnalyticsChangeAction('session.deleted')).toBe(true);
+    expect(isSettingsChangeAction('session.deleted')).toBe(false);
+    expect(isAnalyticsChangeAction('prompt.sent')).toBe(false);
   });
 
   it('paginates newest-first rows with an opaque timestamp and id cursor', () => {

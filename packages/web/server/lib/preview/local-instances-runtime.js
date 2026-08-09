@@ -70,7 +70,7 @@ export const createLocalInstanceStatusRuntime = ({
       return { url, origin: null, status: 'invalid' };
     }
 
-    const normalized = normalizeTargetUrl(url, { allowExternal: false });
+    const normalized = normalizeTargetUrl(url);
     if (!normalized?.ok || typeof normalized.origin !== 'string') {
       return { url, origin: null, status: 'invalid' };
     }
@@ -112,14 +112,19 @@ export const createLocalInstanceStatusRuntime = ({
     uiAuthController,
     isRequestOriginAllowed,
     classifyRequestScope = () => 'local',
+    canUseBrowser = () => true,
   }) => {
-    app.post('/api/preview/local-instances/status', express.json({ limit: '16kb' }), async (req, res) => {
+    const statusHandler = (requireBrowser) => async (req, res) => {
       try {
         if (uiAuthController?.enabled) {
           const sessionToken = await uiAuthController.ensureSessionToken?.(req, res);
           if (!sessionToken) {
             return res.status(401).json({ error: 'UI authentication required' });
           }
+        }
+
+        if (requireBrowser && !canUseBrowser(req.principal)) {
+          return res.status(403).json({ error: 'Browser access is disabled' });
         }
 
         if (classifyRequestScope(req) !== 'local') {
@@ -146,7 +151,10 @@ export const createLocalInstanceStatusRuntime = ({
         }
         return res.status(500).json({ error: 'Failed to check local instances' });
       }
-    });
+    };
+
+    app.post('/api/preview/local-instances/status', express.json({ limit: '16kb' }), statusHandler(false));
+    app.post('/api/browser/local-instances/status', express.json({ limit: '16kb' }), statusHandler(true));
   };
 
   return { attach, checkUrls };

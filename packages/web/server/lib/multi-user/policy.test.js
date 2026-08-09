@@ -7,9 +7,11 @@ import {
   buildEffectiveSettings,
   canEditSettingsPage,
   canReadSettingsPage,
+  canUseBrowser,
   normalizeRolePolicy,
   publicPrincipal,
   settingsPageForRequest,
+  validateFeatureOverridesPayload,
   validateSettingsChanges,
   validateSettingsPermissionsPayload,
 } from './policy.js';
@@ -39,23 +41,54 @@ const developerPrincipal = {
 };
 
 describe('multi-user policy', () => {
-  it('keeps the developer template to the six requested pages with Files and Terminal off', () => {
+  it('keeps the developer template to the six requested pages with Browser on and worktree/branch creation off by default', () => {
     expect(ROLE_POLICY_DEFAULTS.developer.settingsPages).toEqual([
       'home', 'appearance', 'chat', 'sessions', 'shortcuts', 'notifications',
     ]);
     expect(ROLE_POLICY_DEFAULTS.developer.files).toBe(false);
     expect(ROLE_POLICY_DEFAULTS.developer.terminal).toBe(false);
+    expect(ROLE_POLICY_DEFAULTS.developer.browser).toBe(true);
+    expect(ROLE_POLICY_DEFAULTS.developer.createWorktrees).toBe(false);
+    expect(ROLE_POLICY_DEFAULTS.developer.createBranches).toBe(false);
+    expect(ROLE_POLICY_DEFAULTS.senior_developer.browser).toBe(true);
+    expect(ROLE_POLICY_DEFAULTS.senior_developer.createWorktrees).toBe(true);
+    expect(ROLE_POLICY_DEFAULTS.senior_developer.createBranches).toBe(true);
+    expect(ROLE_POLICY_DEFAULTS.admin.createWorktrees).toBe(true);
+    expect(ROLE_POLICY_DEFAULTS.admin.createBranches).toBe(true);
   });
 
   it('allows user capability overrides without changing the role template', () => {
     const policy = normalizeRolePolicy('developer', null, {
       settings_pages: ['home', 'appearance'],
-      capabilities: { terminal: true },
+      capabilities: { terminal: true, browser: false, createWorktrees: true, createBranches: true },
     });
 
     expect(policy.settingsPages).toEqual(['home', 'appearance']);
     expect(policy.terminal).toBe(true);
+    expect(policy.browser).toBe(false);
+    expect(policy.createWorktrees).toBe(true);
+    expect(policy.createBranches).toBe(true);
     expect(ROLE_POLICY_DEFAULTS.developer.terminal).toBe(false);
+    expect(ROLE_POLICY_DEFAULTS.developer.browser).toBe(true);
+    expect(ROLE_POLICY_DEFAULTS.developer.createWorktrees).toBe(false);
+    expect(ROLE_POLICY_DEFAULTS.developer.createBranches).toBe(false);
+    expect(canUseBrowser({ role: 'developer', scope: 'managed', policy })).toBe(false);
+    expect(canUseBrowser(developerPrincipal)).toBe(true);
+  });
+
+  it('publishes a sparse per-user terminal override as part of the effective principal', () => {
+    const policy = normalizeRolePolicy('senior_developer', null, {
+      capabilities: { terminal: false },
+    });
+    const published = publicPrincipal({
+      ...developerPrincipal,
+      role: 'senior_developer',
+      policy,
+    });
+
+    expect(ROLE_POLICY_DEFAULTS.senior_developer.terminal).toBe(true);
+    expect(policy.terminal).toBe(false);
+    expect(published.policy.terminal).toBe(false);
   });
 
   it('merges sparse per-page overrides and keeps edit dependent on read', () => {
@@ -131,6 +164,7 @@ describe('multi-user policy', () => {
       settings_permissions: {},
       can_use_files: false,
       can_use_terminal: false,
+      can_use_browser: false,
       can_manage_projects: false,
       can_manage_users: false,
       can_manage_global_settings: false,
@@ -139,13 +173,14 @@ describe('multi-user policy', () => {
       can_use_github: false,
     }, {
       settings_permission_overrides: { users: { read: false, edit: false } },
-      capabilities: { terminal: false },
+      capabilities: { terminal: false, browser: false },
     });
 
     expect(policy.settingsPages).toEqual(['*']);
     expect(Object.values(policy.settingsPermissions).every(({ read, edit }) => read && edit)).toBe(true);
     expect(policy.files).toBe(true);
     expect(policy.terminal).toBe(true);
+    expect(policy.browser).toBe(true);
     expect(policy.manageUsers).toBe(true);
     expect(policy.manageGlobalSettings).toBe(true);
   });
@@ -181,8 +216,72 @@ describe('multi-user policy', () => {
       settings_permission_overrides: {},
       capabilities: {},
       settings_overrides: {},
+      feature_overrides: {},
     });
     expect(reset).not.toHaveProperty('session_folders');
+  });
+
+  it('normalizes feature overrides onto the effective policy', () => {
+    const policy = normalizeRolePolicy('developer', null, {
+      feature_overrides: {
+        agents: { hidePermissionsUi: true, unknownFlag: true },
+        mcp: { context7: 'on', playwright: 'off', broken: 'sometimes', '': 'on' },
+      },
+    });
+
+    expect(policy.featureOverrides).toEqual({
+      agents: { hidePermissionsUi: true },
+      mcp: { context7: 'on', playwright: 'off' },
+    });
+    expect(normalizeRolePolicy('admin', null, {
+      feature_overrides: { agents: { hidePermissionsUi: true } },
+    }).featureOverrides).toEqual({});
+  });
+
+  it('validates feature override payloads', () => {
+    expect(validateFeatureOverridesPayload(undefined)).toEqual({ valid: true, featureOverrides: {} });
+    expect(validateFeatureOverridesPayload({
+      agents: { hidePermissionsUi: true },
+      mcp: { context7: 'inherit', playwright: 'off' },
+    })).toEqual({
+      valid: true,
+      featureOverrides: { agents: { hidePermissionsUi: true }, mcp: { playwright: 'off' } },
+    });
+    expect(validateFeatureOverridesPayload({ unknown: {} }).valid).toBe(false);
+    expect(validateFeatureOverridesPayload({ agents: { other: true } }).valid).toBe(false);
+    expect(validateFeatureOverridesPayload({ mcp: { context7: 'maybe' } }).valid).toBe(false);
+  });
+
+  it('stamps feature overrides into effective multi-user settings', () => {
+    const principal = {
+      ...developerPrincipal,
+      policy: normalizeRolePolicy('developer', null, {
+        feature_overrides: { agents: { hidePermissionsUi: true }, mcp: { context7: 'off' } },
+      }),
+    };
+    const settings = buildEffectiveSettings({ principal, hostSettings: {}, userOverrides: {} });
+
+    expect(settings.multiUser.features).toEqual({
+      agents: { hidePermissionsUi: true },
+      mcp: { context7: 'off' },
+    });
+  });
+
+  it('accepts the per-user MCP enabled overlay as a sessions-independent mcp field', () => {
+    const principal = {
+      ...developerPrincipal,
+      policy: normalizeRolePolicy('developer', null, {
+        settings_permission_overrides: { mcp: { read: true, edit: true } },
+      }),
+    };
+    const mutation = validateSettingsChanges({
+      principal,
+      changes: { mcpServerEnabledOverrides: { context7: false } },
+      currentEffective: {},
+    });
+
+    expect(mutation.accepted).toEqual({ mcpServerEnabledOverrides: { context7: false } });
+    expect(mutation.rejected).toEqual([]);
   });
 
   it('returns only granted settings and real project paths', () => {
@@ -199,6 +298,8 @@ describe('multi-user policy', () => {
 
     expect(settings.themeId).toBe('developer-theme');
     expect(settings.notificationMode).toBe('all');
+    expect(settings.multiUser.capabilities.browser).toBe(true);
+    expect(settings.multiUser.capabilities.createWorktrees).toBe(false);
     expect(settings.openaiApiKey).toBeUndefined();
     expect(settings.tunnelToken).toBeUndefined();
     expect(settings.homeDirectory).toBeUndefined();

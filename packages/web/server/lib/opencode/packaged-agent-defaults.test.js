@@ -7,7 +7,11 @@ import yaml from 'yaml';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 16_634;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 19_428;
+const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
+  __dirname,
+  '../../default-config/user-profile/oh-my-opencode-slim.json',
+);
 
 const LOCAL_PATH_PATTERNS = [
   /(^|[\s"'`])\/Users\//,
@@ -99,6 +103,27 @@ describe('packaged agent defaults', () => {
     expect(content).toContain(
       'start it before any standalone todo read/write whose only purpose is to restate that delegation',
     );
+    expect(content).toContain('Oracle review gate:');
+    expect(content).toContain('Review depth: focused | deep');
+    expect(content).toContain('Do not ask Oracle to rerun tests, builds, lint, or type-checking');
+  });
+
+  it('makes Oracle focused and high-reasoning by default without weakening deep review', () => {
+    const { content, frontmatter } = readPackagedAgent('oracle');
+    const slimProfile = JSON.parse(fs.readFileSync(DEFAULT_SLIM_PROFILE_PATH, 'utf8'));
+
+    expect(frontmatter.variant).toBe('high');
+    expect(slimProfile.agents.oracle).toEqual({
+      model: 'openai/gpt-5.6-sol',
+      variant: 'high',
+    });
+    expect(content).toContain('Focused is the default.');
+    expect(content).toContain('Review depth: deep');
+    expect(content).toContain('30 completed tool calls');
+    expect(content).toContain('80 completed tool calls');
+    expect(content).toContain('Do not run tests, builds, linters, type-checks, or broad validation');
+    expect(content).toContain('at most five actionable findings');
+    expect(content).toContain('path:line');
   });
 
   it('puts correctness and reliability gates before efficiency and cost', () => {
@@ -212,6 +237,10 @@ describe('packaged agent defaults', () => {
       'never change its model automatically',
       'choose a model and thinking level in Model Recovery and click Try Again',
       'DevRyan will send one synthetic continuation after the recovered child settles',
+      'A collected `provider_prompt_rejected` failure is context-specific',
+      'compact, semantically complete task capsule',
+      'preserve the configured agent, model, and thinking level',
+      'do not retry again or enter Model Recovery solely for prompt rejection',
       '**Managed dispatch barrier.**',
       'Only after every result is dispositioned may you resume local work',
       'Allowed subagents: `explorer`, `librarian`, `oracle`, `designer`, `fixer`, `council`.',
@@ -239,7 +268,7 @@ describe('packaged agent defaults', () => {
     expect(body).not.toContain('use `recover_in_place`');
   });
 
-  it('records exact pre-task and tightened Orchestrator UTF-8 byte counts', () => {
+  it('records exact historical and current Orchestrator UTF-8 byte counts', () => {
     const { content } = readPackagedAgent('orchestrator');
     const afterBytes = Buffer.byteLength(content, 'utf8');
 
@@ -295,6 +324,8 @@ describe('packaged agent defaults', () => {
     expect(content).toContain('consume its partial output');
     expect(content).toContain('at most one managed recovery');
     expect(content).toContain('prefer `resume` only for a resumable timed-out or interrupted result');
+    expect(content).toContain('never use `resume`, `recover_in_place`, or `retry_in_place`');
+    expect(content).toContain('Number steps only when their order is a real dependency.');
     expect(content).toContain('Provider-native `task` is disabled for Orchestrator');
     expect(content).toContain('Provider-native `task` is unavailable to Orchestrator');
     expect(content).not.toContain('explicit current-user request');

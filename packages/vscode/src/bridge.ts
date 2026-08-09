@@ -68,7 +68,7 @@ export interface BridgeContext {
 
 const CLIENT_RELOAD_DELAY_MS = 800;
 
-const GITHUB_LATEST_RELEASE_API_URL = 'https://api.github.com/repos/zoubenr/DevRyan/releases/latest';
+const GITHUB_LATEST_RELEASE_API_URL = 'https://api.github.com/repos/1H-Team/DevRyan/releases/latest';
 const COMPATIBILITY_UPDATE_CHECK_URL = process.env.OPENCHAMBER_UPDATE_API_URL;
 const UPDATE_CHECK_URL = COMPATIBILITY_UPDATE_CHECK_URL || GITHUB_LATEST_RELEASE_API_URL;
 const GITHUB_BACKEND_DISABLED_ERROR = 'DevRyan VS Code backend GitHub integration is disabled. Use native VS Code GitHub integrations.';

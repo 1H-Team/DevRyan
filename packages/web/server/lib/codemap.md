@@ -1,7 +1,7 @@
 # packages/web/server/lib/
 
 ## Responsibility
-Service-layer modules for server features (OpenCode lifecycle, auth, shared-host identity/authorization, event streaming, terminal protocol, git/GitHub, durable harness diagnostics/evidence, notifications, tunnels, quotas, project scheduling, and file search).
+Service-layer modules for server features (OpenCode lifecycle, auth, shared-host identity/authorization, event streaming, terminal protocol, git/GitHub, durable harness diagnostics/evidence, notifications, tunnels, quotas, project scheduling, scoped session-plan storage, and file search).
 
 ## Design
 - **Domain segmentation** by directory (`opencode/`, `multi-user/`, `event-stream/`, `terminal/`, `git/`, `github/`, `skills-catalog/`, etc.).
@@ -9,7 +9,7 @@ Service-layer modules for server features (OpenCode lifecycle, auth, shared-host
 - **Dependency injection** through constructor-style functions (`create...Runtime`) to keep modules testable and shell-agnostic.
 - **Route registration pattern** for feature modules exposing `register*Routes(app, deps)`.
 - **Release authority**: `package-manager.js` reads the latest stable DevRyan
-  release from `zoubenr/DevRyan`; `OPENCHAMBER_UPDATE_API_URL` remains an
+  release from `1H-Team/DevRyan`; `OPENCHAMBER_UPDATE_API_URL` remains an
   explicit compatibility override rather than the default source.
 
 ## Flow

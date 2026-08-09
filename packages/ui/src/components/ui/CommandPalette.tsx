@@ -42,7 +42,11 @@ import {
 } from '@remixicon/react';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { createWorktreeSession } from '@/lib/worktreeSessionCreator';
-import { formatShortcutForDisplay, getEffectiveShortcutCombo } from '@/lib/shortcuts';
+import {
+  formatShortcutForDisplay,
+  getEffectiveShortcutCombo,
+  isShortcutActionAvailable,
+} from '@/lib/shortcuts';
 import { canUseElectronDesktopIPC, invokeDesktop, isDesktopShell, isVSCodeRuntime, isWebRuntime } from '@/lib/desktop';
 import { SETTINGS_PAGE_METADATA, type SettingsRuntimeContext } from '@/lib/settings/metadata';
 import { getSettingsNavIcon } from '@/lib/settings/navigation-icons';
@@ -82,8 +86,6 @@ export const CommandPalette: React.FC = () => {
   const authPrincipal = useAuthPrincipal();
   const canManageProjects = hasAuthCapability(authPrincipal, 'manageProjects');
   const canUseFiles = hasAuthCapability(authPrincipal, 'files');
-  const canUseGit = hasAuthCapability(authPrincipal, 'manageGit');
-  const canUseTerminal = hasAuthCapability(authPrincipal, 'terminal');
   const { t } = useI18n();
 
   const isCommandPaletteOpen = useUIStore((s) => s.isCommandPaletteOpen);
@@ -265,9 +267,8 @@ export const CommandPalette: React.FC = () => {
       });
     }
     return list.filter((item) => {
-      if ((item.id === 'new-worktree' || item.id === 'add-project') && !canManageProjects) return false;
-      if (item.id === 'toggle-terminal' && !canUseTerminal) return false;
-      if (item.id === 'toggle-right-sidebar' && !canUseFiles && !canUseGit) return false;
+      if (item.shortcutId && !isShortcutActionAvailable(item.shortcutId, authPrincipal)) return false;
+      if (item.id === 'add-project' && !canManageProjects) return false;
       return true;
     });
   }, [
@@ -285,10 +286,8 @@ export const CommandPalette: React.FC = () => {
     setSettingsDialogOpen,
     activeProject?.id,
     activeProject?.path,
+    authPrincipal,
     canManageProjects,
-    canUseFiles,
-    canUseGit,
-    canUseTerminal,
   ]);
 
   // ---------------------------------------------------------------------------

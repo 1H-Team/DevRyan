@@ -6,7 +6,7 @@ DevRyan provides UI runtimes (web/desktop/VS Code) for interacting with an OpenC
 
 ## Repository authority
 
-- Canonical repository: `zoubenr/DevRyan`.
+- Canonical repository: `1H-Team/DevRyan`.
 - Local workspace root: `/Users/zoubair/Repositories/DevRyan`.
 - DevRyan is a separate repository for agent work, not a fork. Treat this repository and its local files as the only source of truth unless the user explicitly says otherwise in the current task.
 - Do not read, browse, clone, diff, compare against, patch, or edit `openchamber/openchamber`, `btriapitsyn/openchamber`, `../openchamber`, or any other upstream OpenChamber checkout without explicit user permission in the current task.

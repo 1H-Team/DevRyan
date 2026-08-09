@@ -20,6 +20,7 @@ const createFixture = async () => {
 };
 
 const lockError = () => new Error("fatal: Unable to create 'index.lock': File exists.");
+const indexWriteError = () => new Error('fatal: Could not write new index file.');
 
 it('removes an unchanged stale lock and retries population once', async () => {
   const { directory, lockPath } = await createFixture();
@@ -71,4 +72,28 @@ it('surfaces non-lock errors without attempting recovery', async () => {
     wait: async () => {},
   })).rejects.toBe(expected);
   expect(runGitCommandOrThrow).toHaveBeenCalledTimes(1);
+});
+
+it('retries a transient index finalization failure even when Git removed the lock', async () => {
+  const { directory, lockPath } = await createFixture();
+  await rm(lockPath);
+  let resetCalls = 0;
+  const runGitCommandOrThrow = vi.fn(async (_cwd, args) => {
+    if (args[0] === 'rev-parse') return { stdout: `${lockPath}\n` };
+    resetCalls += 1;
+    if (resetCalls === 1) throw indexWriteError();
+    return { stdout: '' };
+  });
+
+  await populateWorktreeWithLockRecovery(directory, {
+    runGitCommandOrThrow,
+    wait: async () => {},
+  });
+
+  expect(resetCalls).toBe(2);
+  expect(runGitCommandOrThrow).toHaveBeenCalledWith(
+    directory,
+    ['rev-parse', '--git-path', 'index.lock'],
+    'Failed to resolve worktree index lock',
+  );
 });

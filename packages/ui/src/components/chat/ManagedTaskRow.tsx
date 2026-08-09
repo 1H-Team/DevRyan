@@ -54,7 +54,7 @@ const providerModelLabel = (
   };
 };
 
-const getProviderLimitPresentation = ({
+const getProviderFailurePresentation = ({
   task,
   recoverySourceTask,
   providers,
@@ -72,6 +72,16 @@ const getProviderLimitPresentation = ({
         provider: failedModel.provider,
         model: failedModel.model,
       }),
+      className: 'text-[var(--status-warning)]',
+      role: 'alert' as const,
+    };
+  }
+
+  if (task.failureKind === 'provider_prompt_rejected') {
+    return {
+      message: task.agentRetryAvailable
+        ? t('chat.managedTasks.promptRejected.reframe')
+        : t('chat.managedTasks.promptRejected.exhausted'),
       className: 'text-[var(--status-warning)]',
       role: 'alert' as const,
     };
@@ -119,10 +129,11 @@ export const ManagedTaskRowView = React.memo(({
   const presentedTask = childActive && (
     task.status === 'failed' || task.status === 'aborted' || task.status === 'interrupted'
   ) && task.failureKind !== 'provider_usage_limit'
+    && task.failureKind !== 'provider_prompt_rejected'
     ? { ...task, status: 'running' as const }
     : task;
   const status = getStatusPresentation(presentedTask, t);
-  const providerLimitPresentation = getProviderLimitPresentation({
+  const providerFailurePresentation = getProviderFailurePresentation({
     task,
     recoverySourceTask,
     providers,
@@ -142,6 +153,7 @@ export const ManagedTaskRowView = React.memo(({
     && resultEnvelope?.resumable
     && resultEnvelope.action === null
     && !task.agentRetryAvailable
+    && task.failureKind !== 'provider_prompt_rejected'
     && (task.status === 'failed' || task.status === 'interrupted'),
   );
 
@@ -153,9 +165,9 @@ export const ManagedTaskRowView = React.memo(({
             {formatManagedTaskDisplayName(task.label)}
           </h4>
           <p className={`truncate typography-meta ${status.className}`}>{status.label}</p>
-          {providerLimitPresentation ? (
-            <p role={providerLimitPresentation.role} className={`mt-1 typography-micro ${providerLimitPresentation.className}`}>
-              {providerLimitPresentation.message}
+          {providerFailurePresentation ? (
+            <p role={providerFailurePresentation.role} className={`mt-1 typography-micro ${providerFailurePresentation.className}`}>
+              {providerFailurePresentation.message}
             </p>
           ) : null}
         </div>

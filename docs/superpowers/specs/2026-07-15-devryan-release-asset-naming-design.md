@@ -26,7 +26,7 @@ The main release verifier is the guardrail for assets available before publicati
 
 - Run the release-asset verifier unit test.
 - Run repository quick validation for the changed scripts and metadata.
-- Inspect the canonical `zoubenr/DevRyan` release after renaming the existing assets.
+- Inspect the canonical `1H-Team/DevRyan` release after renaming the existing assets.
 - Confirm no user-owned working-tree changes are modified.
 
 ## Non-goals

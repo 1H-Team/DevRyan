@@ -30,9 +30,10 @@ import {
   getShortcutAction,
   getModifierLabel,
   formatShortcutForDisplay,
+  isShortcutActionAvailable,
 } from "@/lib/shortcuts";
 import { useI18n, type I18nKey } from "@/lib/i18n";
-import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
+import { useAuthPrincipal } from '@/lib/authSession';
 
 type ShortcutIcon = React.ComponentType<{ className?: string }>;
 
@@ -59,9 +60,6 @@ export const HelpDialog: React.FC = () => {
   const setHelpDialogOpen = useUIStore((state) => state.setHelpDialogOpen);
   const shortcutOverrides = useUIStore((state) => state.shortcutOverrides);
   const principal = useAuthPrincipal();
-  const canUseFiles = hasAuthCapability(principal, 'files');
-  const canUseTerminal = hasAuthCapability(principal, 'terminal');
-  const canManageProjects = hasAuthCapability(principal, 'manageProjects');
   const mod = getModifierLabel();
 
   const shortcuts: ShortcutSection[] = [
@@ -226,13 +224,11 @@ export const HelpDialog: React.FC = () => {
       ],
     },
   ];
-  const hiddenShortcutIds = new Set([
-    ...(!canUseFiles ? ['open_right_sidebar_files'] : []),
-    ...(!canUseTerminal ? ['toggle_terminal', 'toggle_terminal_expanded'] : []),
-    ...(!canManageProjects ? ['new_chat_worktree'] : []),
-  ]);
   const visibleShortcuts = shortcuts
-    .map((section) => ({ ...section, items: section.items.filter((item) => !item.id || !hiddenShortcutIds.has(item.id)) }))
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => !item.id || isShortcutActionAvailable(item.id, principal)),
+    }))
     .filter((section) => section.items.length > 0);
 
   return (

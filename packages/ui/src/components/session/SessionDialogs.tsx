@@ -27,6 +27,7 @@ import { useDeviceInfo } from '@/lib/device';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { useI18n } from '@/lib/i18n';
 import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
+import { useAuthPrincipal } from '@/lib/authSession';
 
 const renderToastDescription = (text?: string) =>
     text ? <span className="text-foreground/80 dark:text-foreground/70">{text}</span> : undefined;
@@ -52,6 +53,8 @@ type DeleteDialogState = {
 
 export const SessionDialogs: React.FC = () => {
     const { t } = useI18n();
+    const principal = useAuthPrincipal();
+    const canRemoveWorktrees = principal.scope !== 'managed' || principal.role === 'admin';
     const [isDirectoryDialogOpen, setIsDirectoryDialogOpen] = React.useState(false);
     const [hasShownInitialDirectoryPrompt, setHasShownInitialDirectoryPrompt] = React.useState(false);
     const [deleteDialog, setDeleteDialog] = React.useState<DeleteDialogState | null>(null);
@@ -341,6 +344,10 @@ export const SessionDialogs: React.FC = () => {
         worktree: WorktreeMetadata,
         deleteLocalBranch: boolean
     ): Promise<boolean> => {
+        if (!canRemoveWorktrees) {
+            toast.error(t('sessions.sidebar.sessionDialogs.worktree.adminOnly'));
+            return false;
+        }
         const shouldRemoveRemote = deleteDialogShouldRemoveRemote && canRemoveRemoteBranches;
         const projectRef = getProjectRefForWorktree(worktree);
         const normalizedWorktreePath = normalizeProjectDirectory(worktree.path);
@@ -377,7 +384,7 @@ export const SessionDialogs: React.FC = () => {
             });
             return false;
         }
-    }, [canRemoveRemoteBranches, currentDirectory, deleteDialogShouldRemoveRemote, getProjectRefForWorktree, newSessionDraft?.directoryOverride, newSessionDraft?.open, setDraftBootstrapPendingDirectory, setNewSessionDraftTarget, t]);
+    }, [canRemoveRemoteBranches, canRemoveWorktrees, currentDirectory, deleteDialogShouldRemoveRemote, getProjectRefForWorktree, newSessionDraft?.directoryOverride, newSessionDraft?.open, setDraftBootstrapPendingDirectory, setNewSessionDraftTarget, t]);
 
     const handleConfirmDelete = React.useCallback(async () => {
         if (!deleteDialog) {

@@ -19,6 +19,7 @@ import {
   type ProjectRef,
 } from '@/lib/worktrees/worktreeManager';
 import { createWorktreeWithDefaults } from '@/lib/worktrees/worktreeCreate';
+import { assertCanCreateBranches, assertCanCreateWorktrees } from '@/lib/authSession';
 import {
   createPendingDraftWorktreeRequest,
   rejectPendingDraftWorktreeRequest,
@@ -26,6 +27,31 @@ import {
 } from '@/lib/worktrees/pendingDraftWorktree';
 
 const normalizePath = (value: string): string => value.replace(/\\/g, '/').replace(/\/+$/, '') || value;
+
+const canStartManualWorktreeCreation = (): boolean => {
+  try {
+    assertCanCreateWorktrees();
+    return true;
+  } catch (error) {
+    toast.error('Worktree creation is disabled', {
+      description: error instanceof Error ? error.message : 'Worktree creation is disabled by policy',
+    });
+    return false;
+  }
+};
+
+const canStartNewBranchWorktreeCreation = (): boolean => {
+  if (!canStartManualWorktreeCreation()) return false;
+  try {
+    assertCanCreateBranches();
+    return true;
+  } catch (error) {
+    toast.error('Branch creation is disabled', {
+      description: error instanceof Error ? error.message : 'Branch creation is disabled by policy',
+    });
+    return false;
+  }
+};
 
 export const createWorktreeRequestSignature = (
   projectDirectory: string,
@@ -163,6 +189,7 @@ const createInstantWorktreeDraft = async (options?: {
   initialPrompt?: string;
   title?: string;
 }): Promise<string | null> => {
+  if (!canStartNewBranchWorktreeCreation()) return null;
   if (isCreatingWorktreeSession) {
     return null;
   }
@@ -314,6 +341,7 @@ export async function createWorktreeDraft(options?: { initialPrompt?: string; ti
 }
 
 export async function createWorktreeOnly(): Promise<string | null> {
+  if (!canStartNewBranchWorktreeCreation()) return null;
   if (isCreatingWorktreeSession) {
     return null;
   }
@@ -391,6 +419,7 @@ export async function createWorktreeSessionForBranch(
     createdFromBranch?: string;
   }
 ): Promise<{ id: string } | null> {
+  if (!canStartManualWorktreeCreation()) return null;
   if (isCreatingWorktreeSession) {
     return null;
   }
@@ -486,6 +515,7 @@ export async function createWorktreeSessionForNewBranch(
     createdFromBranch?: string;
   }
 ): Promise<{ id: string; branch: string } | null> {
+  if (!canStartNewBranchWorktreeCreation()) return null;
   if (isCreatingWorktreeSession) {
     return null;
   }

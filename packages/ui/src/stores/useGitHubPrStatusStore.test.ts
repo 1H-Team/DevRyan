@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import type { GitHubAPI, GitHubPullRequestStatus } from '@/lib/api/types';
 import {
   getGitHubPrStatusKey,
+  getPrPollingPlan,
+  PR_TERMINAL_DISCOVERY_INTERVAL_MS,
   PR_STATUS_REFRESH_CONCURRENCY,
   useGitHubPrStatusStore,
 } from './useGitHubPrStatusStore';
@@ -141,5 +143,27 @@ describe('useGitHubPrStatusStore refresh coordination', () => {
     expect(useGitHubPrStatusStore.getState().activeRequestCount).toBe(0);
     expect(useGitHubPrStatusStore.getState().totalRequestCount).toBe(1);
     expect(useGitHubPrStatusStore.getState().entries[key]?.error).toBe('request failed');
+  });
+});
+
+describe('getPrPollingPlan', () => {
+  test('re-discovers branch PRs after a terminal PR at a low frequency', () => {
+    const plan = getPrPollingPlan({
+      connected: true,
+      pr: {
+        number: 7023,
+        title: 'Dev',
+        url: 'https://github.test/pull/7023',
+        state: 'merged',
+        draft: false,
+        base: 'main',
+        head: 'Dev',
+      },
+    });
+
+    expect(plan).toEqual({
+      intervalMs: PR_TERMINAL_DISCOVERY_INTERVAL_MS,
+      onlyExistingPr: false,
+    });
   });
 });

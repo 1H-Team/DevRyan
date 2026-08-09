@@ -10,6 +10,7 @@ import { createVSCodeGitHubAPI } from './github';
 import { createVSCodeNotificationsAPI } from './notifications';
 import { createVSCodeDiagnosticsAPI } from './diagnostics';
 import { createVSCodeEvidenceAPI } from './evidence';
+import { createVSCodeSessionPlansAPI } from './sessionPlans';
 
 // Stub APIs return sensible defaults instead of throwing
 const createStubTerminalAPI = (): TerminalAPI => ({
@@ -21,18 +22,22 @@ const createStubTerminalAPI = (): TerminalAPI => ({
   keepAlive: async () => false,
 });
 
-export const createVSCodeAPIs = (): RuntimeAPIs => ({
-  runtime: { platform: 'vscode', isDesktop: false, isVSCode: true, label: 'VS Code Extension' },
-  terminal: createStubTerminalAPI(),
-  git: createVSCodeGitAPI(),
-  files: createVSCodeFilesAPI(),
-  settings: createVSCodeSettingsAPI(),
-  permissions: createVSCodePermissionsAPI(),
-  notifications: createVSCodeNotificationsAPI(),
-  diagnostics: createVSCodeDiagnosticsAPI(),
-  evidence: createVSCodeEvidenceAPI(),
-  github: createVSCodeGitHubAPI(),
-  tools: createVSCodeToolsAPI(),
-  editor: createVSCodeEditorAPI(),
-  vscode: createVSCodeActionsAPI(),
-});
+export const createVSCodeAPIs = (): RuntimeAPIs => {
+  const files = createVSCodeFilesAPI();
+  return {
+    runtime: { platform: 'vscode', isDesktop: false, isVSCode: true, label: 'VS Code Extension' },
+    terminal: createStubTerminalAPI(),
+    git: createVSCodeGitAPI(),
+    files,
+    sessionPlans: createVSCodeSessionPlansAPI(files),
+    settings: createVSCodeSettingsAPI(),
+    permissions: createVSCodePermissionsAPI(),
+    notifications: createVSCodeNotificationsAPI(),
+    diagnostics: createVSCodeDiagnosticsAPI(),
+    evidence: createVSCodeEvidenceAPI(),
+    github: createVSCodeGitHubAPI(),
+    tools: createVSCodeToolsAPI(),
+    editor: createVSCodeEditorAPI(),
+    vscode: createVSCodeActionsAPI(),
+  };
+};

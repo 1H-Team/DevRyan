@@ -185,6 +185,7 @@ export interface WorktreeBootstrapRuntime {
     status?: 'failed' | 'needs_attention',
   ): Promise<WorktreeBootstrapReceipt>;
   markRemoved(directory: string): Promise<WorktreeBootstrapReceipt | null>;
+  runDirectoryMaintenance<Result>(directory: string, effect: () => Promise<Result> | Result): Promise<Result>;
   getReceipt(operationId: string): Promise<WorktreeBootstrapReceipt>;
   getByIdempotency(idempotencyKey: string): Promise<WorktreeBootstrapReceipt | null>;
   getByDirectory(directory: string): Promise<WorktreeBootstrapReceipt>;

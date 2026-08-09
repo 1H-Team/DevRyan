@@ -58,6 +58,81 @@ describe('durable worktree bootstrap state machine', () => {
     });
   });
 
+  test('single-flights matching requests by resolved directory across idempotency keys', async () => {
+    const { runtime } = await makeRuntime();
+    const directory = '/tmp/worktree-directory-single-flight';
+    const first = await runtime.beginOperation({
+      idempotencyKey: 'directory-request-1',
+      fingerprint: 'same-directory-request',
+      directory,
+    });
+    const joined = await runtime.beginOperation({
+      idempotencyKey: 'directory-request-2',
+      fingerprint: 'same-directory-request',
+      directory: path.join('/tmp', '.', 'worktree-directory-single-flight'),
+    });
+
+    expect(joined.replay).toBe(true);
+    expect(joined.receipt.operationId).toBe(first.receipt.operationId);
+    expect(await runtime.listActive()).toHaveLength(1);
+    expect(await runtime.getByDirectory(directory)).toMatchObject({
+      operationId: first.receipt.operationId,
+    });
+  });
+
+  test('rejects conflicting setup and maintenance for a busy directory', async () => {
+    const { runtime } = await makeRuntime();
+    const directory = '/tmp/worktree-directory-busy';
+    await runtime.beginOperation({
+      idempotencyKey: 'directory-busy-1',
+      fingerprint: 'first',
+      directory,
+    });
+
+    await expect(runtime.beginOperation({
+      idempotencyKey: 'directory-busy-2',
+      fingerprint: 'conflicting',
+      directory,
+    })).rejects.toMatchObject({
+      code: 'WORKTREE_DIRECTORY_BUSY',
+      statusCode: 409,
+    });
+    await expect(runtime.runDirectoryMaintenance(directory, async () => undefined)).rejects.toMatchObject({
+      code: 'WORKTREE_DIRECTORY_BUSY',
+      statusCode: 409,
+    });
+  });
+
+  test('blocks setup while directory maintenance is active', async () => {
+    const { runtime } = await makeRuntime();
+    const directory = '/tmp/worktree-maintenance-busy';
+    let releaseMaintenance;
+    let markMaintenanceStarted;
+    const maintenanceReleased = new Promise((resolve) => {
+      releaseMaintenance = resolve;
+    });
+    const maintenanceStarted = new Promise((resolve) => {
+      markMaintenanceStarted = resolve;
+    });
+    const maintenance = runtime.runDirectoryMaintenance(directory, () => {
+      markMaintenanceStarted();
+      return maintenanceReleased;
+    });
+    await maintenanceStarted;
+
+    await expect(runtime.beginOperation({
+      idempotencyKey: 'maintenance-conflict',
+      fingerprint: 'setup',
+      directory,
+    })).rejects.toMatchObject({
+      code: 'WORKTREE_DIRECTORY_BUSY',
+      statusCode: 409,
+    });
+
+    releaseMaintenance();
+    await maintenance;
+  });
+
   test('supersedes a terminal receipt for a changed fingerprint only when requested', async () => {
     const { runtime } = await makeRuntime();
     const input = {

@@ -74,6 +74,51 @@ describe('managed project projection', () => {
     ]);
   });
 
+  test('uses shared assignment visuals over stale cached project metadata', () => {
+    const iconImage = { mime: 'image/png', updatedAt: 1234, source: 'custom' as const };
+    const result = projectManagedAssignments({
+      assignments: [
+        assignment({
+          projectId: 'project-one',
+          publicDirectory: '/projects/project-one/main',
+          isDefault: true,
+          icon: 'rocket',
+          color: 'primary',
+          iconBackground: '#123456',
+          iconImage,
+        }),
+        assignment({
+          projectId: 'project-one',
+          publicDirectory: '/projects/project-one/feature',
+          branchName: 'feature',
+          icon: 'rocket',
+          color: 'primary',
+          iconBackground: '#123456',
+          iconImage,
+        }),
+      ],
+    }, [{
+      id: 'project-one',
+      path: '/old/path',
+      label: 'Stale',
+      icon: 'code',
+      color: 'error',
+      iconBackground: '#ffffff',
+      iconImage: { mime: 'image/jpeg', updatedAt: 1, source: 'auto' },
+      sidebarCollapsed: true,
+      lastOpenedAt: 99,
+    }]);
+
+    expect(result.projects[0]?.id).toBe('project-one');
+    expect(result.projects[0]?.icon).toBe('rocket');
+    expect(result.projects[0]?.color).toBe('primary');
+    expect(result.projects[0]?.iconBackground).toBe('#123456');
+    expect(result.projects[0]?.iconImage).toEqual(iconImage);
+    expect(result.projects[0]?.sidebarCollapsed).toBe(true);
+    expect(result.projects[0]?.lastOpenedAt).toBe(99);
+    expect(result.projects[0]?.branches).toHaveLength(2);
+  });
+
   test('applies assignments before settings hydration can expose stale projects', () => {
     useProjectsStore.setState({
       projects: [{ id: 'host-project', path: '/Users/admin/private-project' }],
@@ -89,6 +134,9 @@ describe('managed project projection', () => {
         settingsPages: ['appearance'],
         files: true,
         terminal: false,
+        browser: true,
+        createWorktrees: false,
+        createBranches: false,
         manageProjects: false,
         manageUsers: false,
         manageGlobalSettings: false,

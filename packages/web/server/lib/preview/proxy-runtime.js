@@ -8,6 +8,13 @@ const isReservedPreviewCookieName = (name) => {
     || normalized.startsWith('openchamber_')
     || normalized.startsWith('__host-');
 };
+
+// `__Host-`/`__Secure-` cookies cannot be stored under the rewritten proxy
+// path, so they are carried across the viewer origin behind this marker and
+// restored byte-exactly (names are case-sensitive upstream) on the way back.
+const PRESERVED_COOKIE_MARKER = '__ocproxy-';
+const isPrefixedAuthCookieName = (name) => /^__(?:host|secure)-/i.test(String(name || ''));
+
 const PREVIEW_PASSTHROUGH_REQUEST_HEADERS = ['x-inertia', 'x-inertia-version'];
 const PREVIEW_PASSTHROUGH_RESPONSE_HEADERS = ['x-inertia', 'x-inertia-location'];
 
@@ -19,6 +26,15 @@ const LOOPBACK_HOSTS = new Set([
   '0.0.0.0',
 ]);
 
+// Compare origins without assuming the target is loopback. Loopback spellings
+// collapse to 127.0.0.1 the same way `normalizeProxyTargetUrl` stores them, so
+// a public target's own redirects stay recognized as same-origin.
+const canonicalPreviewOrigin = (rawUrl) => {
+  const url = new URL(rawUrl);
+  if (LOOPBACK_HOSTS.has(url.hostname)) url.hostname = '127.0.0.1';
+  return url.origin;
+};
+
 const normalizePreviewRequestHost = (value) => {
   const input = typeof value === 'string' ? value.trim().toLowerCase() : '';
   if (!input) return '';
@@ -27,6 +43,14 @@ const normalizePreviewRequestHost = (value) => {
     return closingBracket >= 0 ? input.slice(1, closingBracket) : input.slice(1);
   }
   return input.replace(/:\d+$/, '');
+};
+
+// Loopback counts as secure: browsers treat it as a trustworthy context and do
+// store Secure cookies there, so local dev servers keep their existing behavior.
+const isPreviewViewerSecure = (req) => {
+  if (req?.secure === true) return true;
+  if (req?.socket?.encrypted === true) return true;
+  return LOOPBACK_HOSTS.has(normalizePreviewRequestHost(req?.headers?.host));
 };
 
 const normalizePreviewRemoteAddress = (value) => {
@@ -95,6 +119,16 @@ export const applyPreviewPassthroughResponseHeaders = (proxyRes, res) => {
       res.setHeader(headerName, value);
     }
   }
+};
+
+const syncProxyResponseHeader = (headers, res, name) => {
+  if (!res || typeof res.setHeader !== 'function') return;
+  const value = readHeader(headers, name);
+  if (value === undefined) {
+    res.removeHeader?.(name);
+    return;
+  }
+  res.setHeader(name, value);
 };
 
 const previewResourceNoiseRuleSets = [
@@ -235,6 +269,7 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
   const previewConfig = window.__openchamberPreviewConfig || {};
   const proxyBasePath = typeof previewConfig.proxyBasePath === 'string' ? previewConfig.proxyBasePath : '';
   const targetOrigin = typeof previewConfig.targetOrigin === 'string' ? previewConfig.targetOrigin : '';
+  const embedExternalNavigation = previewConfig.embedExternalNavigation === true;
   let inspectMode = false;
   let lastHoverKey = '';
   let pendingHover = null;
@@ -283,11 +318,31 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
     try {
       const parsed = new URL(value, window.location.href);
       if (!proxyBasePath) return parsed.toString();
-      return proxyBasePath + (parsed.pathname || '/') + parsed.search + parsed.hash;
+      const proxyBase = proxyBasePath.endsWith('/') ? proxyBasePath.slice(0, -1) : proxyBasePath;
+      if (parsed.origin === window.location.origin
+        && (parsed.pathname === proxyBase || parsed.pathname.indexOf(proxyBase + '/') === 0)) {
+        return parsed.pathname + parsed.search + parsed.hash;
+      }
+      return proxyBase + (parsed.pathname || '/') + parsed.search + parsed.hash;
     } catch {
       return String(value || '');
     }
   };
+
+  const reloadPreviewDocument = () => {
+    post({ type: 'navigation-start', ts: Date.now() });
+    try {
+      const proxyUrl = toProxyUrl(window.location.href);
+      if (proxyUrl && typeof window.location.replace === 'function') {
+        window.location.replace(proxyUrl);
+        return;
+      }
+    } catch {}
+    try {
+      window.location.reload();
+    } catch {}
+  };
+  window.__openchamberPreviewReload = reloadPreviewDocument;
 
   const reportDisplayNavigation = () => {
     const url = toDisplayUrl(window.location.href);
@@ -512,7 +567,8 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
       }
       const host = parsed.hostname;
       const isLoopback = host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '::1' || host === '[::1]';
-      if (isLoopback || (parsed.origin === current.origin && parsed.pathname.startsWith('/'))) {
+      const isRegisteredTarget = normalizedOrigin(parsed.toString()) === normalizedOrigin(targetOrigin);
+      if (isLoopback || isRegisteredTarget || (parsed.origin === current.origin && parsed.pathname.startsWith('/'))) {
         return { action: 'proxy', url: parsed.toString() };
       }
       return { action: 'external', url: parsed.toString() };
@@ -520,6 +576,91 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
       return { action: 'allow', url: String(value || '') };
     }
   };
+
+  const handOffExternalNavigation = (value, event) => {
+    const navigation = classifyNavigation(value);
+    if (navigation.action !== 'external') return false;
+    if (!event || event.cancelable !== false) event?.preventDefault?.();
+    event?.stopPropagation?.();
+    post({
+      type: 'navigate-preview',
+      url: navigation.url,
+      navigation: embedExternalNavigation ? 'target' : 'external',
+      ts: Date.now(),
+    });
+    return true;
+  };
+
+  const staysOnRegisteredTarget = (value) => {
+    const navigationOrigin = normalizedOrigin(value);
+    return navigationOrigin === normalizedOrigin(targetOrigin)
+      || navigationOrigin === normalizedOrigin(window.location.origin);
+  };
+
+  const routeProxyNavigation = (value, event) => {
+    const navigation = classifyNavigation(value);
+    if (navigation.action !== 'proxy') return false;
+    if (!staysOnRegisteredTarget(navigation.url)) {
+      if (!event || event.cancelable !== false) event?.preventDefault?.();
+      event?.stopPropagation?.();
+      post({ type: 'navigate-preview', url: navigation.url, navigation: 'target', ts: Date.now() });
+      return true;
+    }
+    const proxyUrl = toProxyUrl(navigation.url);
+    if (!proxyUrl) return false;
+    if (!event || event.cancelable !== false) event?.preventDefault?.();
+    event?.stopPropagation?.();
+    const displayUrl = toDisplayUrl(navigation.url);
+    if (displayUrl) post({ type: 'navigate-preview', url: displayUrl, navigation: 'display', ts: Date.now() });
+    post({ type: 'navigation-start', ts: Date.now() });
+    try {
+      window.location.assign(proxyUrl);
+    } catch {
+      window.location.href = proxyUrl;
+    }
+    return true;
+  };
+
+  if (window.navigation && typeof window.navigation.addEventListener === 'function') {
+    window.navigation.addEventListener('navigate', (event) => {
+      const destination = event && event.destination;
+      if (!destination || typeof destination.url !== 'string') return;
+      // pushState/replaceState/traversal stay in the current document. The
+      // history patch above already reports their display URL; treating them
+      // as document navigations reloads SPAs on every router state update.
+      if (destination.sameDocument === true) return;
+      if (handOffExternalNavigation(destination.url, event)) return;
+      routeProxyNavigation(destination.url, event);
+    });
+  }
+
+  window.addEventListener('submit', (event) => {
+    const form = event.target;
+    if (!form || typeof form.action !== 'string') return;
+    const submitterAction = event.submitter && typeof event.submitter.formAction === 'string'
+      ? event.submitter.formAction
+      : '';
+    const destination = submitterAction || form.action;
+    if (handOffExternalNavigation(destination, event)) return;
+    const navigation = classifyNavigation(destination);
+    if (navigation.action !== 'proxy') return;
+    if (!staysOnRegisteredTarget(navigation.url)) {
+      if (!event || event.cancelable !== false) event?.preventDefault?.();
+      event?.stopPropagation?.();
+      post({ type: 'navigate-preview', url: navigation.url, navigation: 'target', ts: Date.now() });
+      return;
+    }
+    const proxyUrl = toProxyUrl(navigation.url);
+    if (!proxyUrl) return;
+    if (submitterAction) {
+      event.submitter.formAction = proxyUrl;
+    } else {
+      form.action = proxyUrl;
+    }
+    const displayUrl = toDisplayUrl(navigation.url);
+    if (displayUrl) post({ type: 'navigate-preview', url: displayUrl, navigation: 'display', ts: Date.now() });
+    post({ type: 'navigation-start', ts: Date.now() });
+  }, true);
 
   const isInternalDevToolRuntimeError = (filename) => {
     const path = upstreamPathForUrl(filename || '');
@@ -548,9 +689,8 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
     if (window.__openchamberWebSocketProxyPatched || typeof window.WebSocket !== 'function') return;
     window.__openchamberWebSocketProxyPatched = true;
     const NativeWebSocket = window.WebSocket;
-    const proxyMatch = window.location.pathname.match(/^(\/api\/preview\/proxy\/[a-f0-9]{16,64})(?:\/|$)/i);
-    if (!proxyMatch) return;
-    const proxyBase = proxyMatch[1];
+    const proxyBase = proxyBasePath.endsWith('/') ? proxyBasePath.slice(0, -1) : proxyBasePath;
+    if (!proxyBase) return;
     let registeredTarget = null;
     try {
       registeredTarget = new URL(targetOrigin);
@@ -561,9 +701,7 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
       if (reloadTimer) return;
       reloadTimer = window.setTimeout(() => {
         reloadTimer = 0;
-        try {
-          window.location.reload();
-        } catch {}
+        reloadPreviewDocument();
       }, 80);
     };
 
@@ -632,9 +770,8 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
   const installAppRequestProxyPatch = () => {
     if (window.__openchamberAppRequestProxyPatched) return;
     window.__openchamberAppRequestProxyPatched = true;
-    const proxyMatch = window.location.pathname.match(/^(\/api\/preview\/proxy\/[a-f0-9]{16,64})(?:\/|$)/i);
-    if (!proxyMatch) return;
-    const proxyBase = proxyMatch[1];
+    const proxyBase = proxyBasePath.endsWith('/') ? proxyBasePath.slice(0, -1) : proxyBasePath;
+    if (!proxyBase) return;
 
     let registeredTarget = null;
     try {
@@ -662,6 +799,7 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
     const proxiedUrl = (value) => {
       if (typeof value !== 'string' && !(value instanceof URL)) return value;
       try {
+        if (typeof value === 'string' && value.trim().startsWith('#')) return value;
         const parsed = new URL(String(value), window.location.href);
         if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return value;
         if (parsed.pathname.indexOf(proxyBase) === 0) return value;
@@ -708,6 +846,96 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
       Object.setPrototypeOf(OpenChamberPreviewEventSource, NativeEventSource);
       Object.defineProperty(OpenChamberPreviewEventSource, 'name', { value: 'EventSource' });
       window.EventSource = OpenChamberPreviewEventSource;
+    }
+
+    // SPA frameworks frequently create images, scripts, links, and style tags
+    // after the initial HTML response has been parsed. Once the visible URL is
+    // virtualized to the upstream route, their root-relative values would
+    // otherwise escape to DevRyan's own origin. Rewrite those values before
+    // the browser observes them, just as the response rewriter does for the
+    // initial document.
+    const proxiedSrcset = (value) => String(value || '').split(',').map((part) => {
+      const trimmed = part.trim();
+      if (!trimmed) return trimmed;
+      const segments = trimmed.split(/\s+/);
+      segments[0] = proxiedUrl(segments[0]);
+      return segments.join(' ');
+    }).join(', ');
+    const proxiedCss = (value) => String(value || '').replace(
+      /url\((['"]?)([^)'"\\s][^)'"]*)\1\)/gi,
+      (_match, quote, url) => 'url(' + (quote || '') + proxiedUrl(url.trim()) + (quote || '') + ')',
+    );
+    const rewriteAttributeValue = (name, value) => {
+      const attribute = String(name || '').toLowerCase();
+      if (attribute === 'srcset') return proxiedSrcset(value);
+      if (attribute === 'style') return proxiedCss(value);
+      if (attribute === 'src'
+        || attribute === 'href'
+        || attribute === 'action'
+        || attribute === 'poster'
+        || attribute === 'formaction'
+        || attribute === 'xlink:href') {
+        return proxiedUrl(value);
+      }
+      return value;
+    };
+
+    const elementPrototype = window.Element && window.Element.prototype;
+    if (elementPrototype && typeof elementPrototype.setAttribute === 'function') {
+      const nativeSetAttribute = elementPrototype.setAttribute;
+      elementPrototype.setAttribute = function(name, value) {
+        return nativeSetAttribute.call(this, name, rewriteAttributeValue(name, value));
+      };
+    }
+
+    const patchUrlProperty = (constructor, property, transformer = proxiedUrl) => {
+      const prototype = constructor && constructor.prototype;
+      if (!prototype) return;
+      const descriptor = Object.getOwnPropertyDescriptor(prototype, property);
+      if (!descriptor || typeof descriptor.set !== 'function' || typeof descriptor.get !== 'function') return;
+      try {
+        Object.defineProperty(prototype, property, Object.assign({}, descriptor, {
+          set(value) { descriptor.set.call(this, transformer(value)); },
+        }));
+      } catch {}
+    };
+    patchUrlProperty(window.HTMLImageElement, 'src');
+    patchUrlProperty(window.HTMLImageElement, 'srcset', proxiedSrcset);
+    patchUrlProperty(window.HTMLScriptElement, 'src');
+    patchUrlProperty(window.HTMLLinkElement, 'href');
+    patchUrlProperty(window.HTMLAnchorElement, 'href');
+    patchUrlProperty(window.HTMLFormElement, 'action');
+    patchUrlProperty(window.HTMLSourceElement, 'src');
+    patchUrlProperty(window.HTMLSourceElement, 'srcset', proxiedSrcset);
+    patchUrlProperty(window.HTMLVideoElement, 'poster');
+
+    const stylePrototype = window.CSSStyleDeclaration && window.CSSStyleDeclaration.prototype;
+    if (stylePrototype && typeof stylePrototype.setProperty === 'function') {
+      const nativeSetProperty = stylePrototype.setProperty;
+      stylePrototype.setProperty = function(property, value, priority) {
+        return nativeSetProperty.call(this, property, proxiedCss(value), priority);
+      };
+      const cssTextDescriptor = Object.getOwnPropertyDescriptor(stylePrototype, 'cssText');
+      if (cssTextDescriptor && typeof cssTextDescriptor.set === 'function' && typeof cssTextDescriptor.get === 'function') {
+        try {
+          Object.defineProperty(stylePrototype, 'cssText', Object.assign({}, cssTextDescriptor, {
+            set(value) { cssTextDescriptor.set.call(this, proxiedCss(value)); },
+          }));
+        } catch {}
+      }
+    }
+
+    const nodePrototype = window.Node && window.Node.prototype;
+    const textContentDescriptor = nodePrototype && Object.getOwnPropertyDescriptor(nodePrototype, 'textContent');
+    if (textContentDescriptor && typeof textContentDescriptor.set === 'function' && typeof textContentDescriptor.get === 'function') {
+      try {
+        Object.defineProperty(nodePrototype, 'textContent', Object.assign({}, textContentDescriptor, {
+          set(value) {
+            const isStyle = this && String(this.nodeName || '').toLowerCase() === 'style';
+            textContentDescriptor.set.call(this, isStyle ? proxiedCss(value) : value);
+          },
+        }));
+      } catch {}
     }
   };
 
@@ -895,17 +1123,9 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
     const anchor = event.target && typeof event.target.closest === 'function' ? event.target.closest('a[href]') : null;
     if (anchor && !inspectMode) {
       const navigation = classifyNavigation(anchor.href);
-      if (navigation.action === 'external') {
-        event.preventDefault();
-        event.stopPropagation();
-        post({ type: 'navigate-preview', url: navigation.url, navigation: navigation.action, ts: Date.now() });
-        return;
-      }
+      if (handOffExternalNavigation(anchor.href, event)) return;
       if (navigation.action === 'proxy') {
-        const navigationOrigin = normalizedOrigin(navigation.url);
-        const staysOnRegisteredTarget = navigationOrigin === normalizedOrigin(targetOrigin)
-          || navigationOrigin === normalizedOrigin(window.location.origin);
-        if (!staysOnRegisteredTarget) {
+        if (!staysOnRegisteredTarget(navigation.url)) {
           event.preventDefault();
           event.stopPropagation();
           post({ type: 'navigate-preview', url: navigation.url, navigation: 'target', ts: Date.now() });
@@ -929,14 +1149,41 @@ const PREVIEW_BRIDGE_SCRIPT = String.raw`(() => {
     }
   }, true);
 
+  const reportRenderReady = () => {
+    post({ type: 'render-ready', url: toDisplayUrl(window.location.href), ts: Date.now() });
+  };
+  if (document.readyState === 'loading' && typeof document.addEventListener === 'function') {
+    const onReadyStateChange = () => {
+      if (document.readyState === 'loading') return;
+      document.removeEventListener?.('readystatechange', onReadyStateChange);
+      reportRenderReady();
+    };
+    document.addEventListener('readystatechange', onReadyStateChange);
+  } else {
+    reportRenderReady();
+  }
+
   window.addEventListener('DOMContentLoaded', () => {
     post({ type: 'ready', url: toDisplayUrl(window.location.href), title: document.title || '' });
   });
   post({ type: 'ready', url: toDisplayUrl(window.location.href), title: document.title || '' });
 })();`;
 
-export const createPreviewBridgeScript = ({ proxyBasePath, targetOrigin }) => {
-  const config = JSON.stringify({ proxyBasePath, targetOrigin }).replace(/</g, '\\u003c');
+export const createPreviewLocationVirtualizerScript = (proxyBasePath) => {
+  const serializedProxyBasePath = JSON.stringify(proxyBasePath).replace(/</g, '\\u003c');
+  return `try{const proxyBase=${serializedProxyBasePath}.replace(/\\/$/,'');const current=new URL(window.location.href);if(current.origin===window.location.origin&&(current.pathname===proxyBase||current.pathname.indexOf(proxyBase+'/')===0)){const targetPath=current.pathname.slice(proxyBase.length)||'/';current.searchParams.delete('ocPreview');current.searchParams.delete('ocBrowser');window.history.replaceState(window.history.state,'',targetPath+current.search+current.hash);window.__openchamberPreviewLocationVirtualized=true;}}catch{}`;
+};
+
+export const createPreviewBridgeScript = ({
+  proxyBasePath,
+  targetOrigin,
+  embedExternalNavigation = false,
+}) => {
+  const config = JSON.stringify({
+    proxyBasePath,
+    targetOrigin,
+    embedExternalNavigation,
+  }).replace(/</g, '\\u003c');
   return `window.__openchamberPreviewConfig=${config};${PREVIEW_BRIDGE_SCRIPT}`;
 };
 
@@ -982,13 +1229,20 @@ const buildCookie = ({
 
 export const buildPreviewUpstreamCookieHeader = (cookieHeader) => {
   const cookies = parseCookieHeader(cookieHeader);
-  return [...cookies.entries()]
-    .filter(([name]) => !isReservedPreviewCookieName(name))
-    .map(([name, value]) => `${name}=${value}`)
-    .join('; ');
+  const upstream = [];
+  for (const [name, value] of cookies.entries()) {
+    if (String(name).toLowerCase().startsWith(PRESERVED_COOKIE_MARKER)) {
+      const restored = String(name).slice(PRESERVED_COOKIE_MARKER.length);
+      if (isPrefixedAuthCookieName(restored)) upstream.push(`${restored}=${value}`);
+      continue;
+    }
+    if (isReservedPreviewCookieName(name)) continue;
+    upstream.push(`${name}=${value}`);
+  }
+  return upstream.join('; ');
 };
 
-export const rewritePreviewSetCookieHeaders = (headers, proxyBasePath) => {
+export const rewritePreviewSetCookieHeaders = (headers, proxyBasePath, { viewerSecure = true } = {}) => {
   const raw = readHeader(headers, 'set-cookie');
   if (raw === undefined) return;
   const source = Array.isArray(raw) ? raw : [raw];
@@ -997,7 +1251,15 @@ export const rewritePreviewSetCookieHeaders = (headers, proxyBasePath) => {
     const first = parts[0] || '';
     const separator = first.indexOf('=');
     const name = separator > 0 ? first.slice(0, separator).trim() : '';
-    if (!name || isReservedPreviewCookieName(name)) return [];
+    if (!name) return [];
+    // An upstream cookie already wearing the marker is indistinguishable from
+    // one we wrapped, so it cannot be carried without corrupting the mapping.
+    if (name.toLowerCase().startsWith(PRESERVED_COOKIE_MARKER)) return [];
+    const prefixed = isPrefixedAuthCookieName(name);
+    if (!prefixed && isReservedPreviewCookieName(name)) return [];
+    const nameValue = prefixed
+      ? `${PRESERVED_COOKIE_MARKER}${first}`
+      : first;
 
     let upstreamPath = '/';
     const attributes = [];
@@ -1010,11 +1272,19 @@ export const rewritePreviewSetCookieHeaders = (headers, proxyBasePath) => {
         upstreamPath = candidate.startsWith('/') ? candidate : '/';
         continue;
       }
+      // On an insecure viewer origin the browser silently refuses a Secure
+      // cookie, which strands the upstream session. SameSite=None depends on
+      // Secure, and everything is same-origin once proxied, so Lax is safe.
+      if (!viewerSecure && attributeName === 'secure') continue;
+      if (!viewerSecure && attributeName === 'samesite' && rawValue.join('=').trim().toLowerCase() === 'none') {
+        attributes.push('SameSite=Lax');
+        continue;
+      }
       attributes.push(attribute);
     }
     const base = proxyBasePath.endsWith('/') ? proxyBasePath.slice(0, -1) : proxyBasePath;
     const scopedPath = upstreamPath === '/' ? base : `${base}${upstreamPath}`;
-    return [[first, `Path=${scopedPath}`, ...attributes].join('; ')];
+    return [[nameValue, `Path=${scopedPath}`, ...attributes].join('; ')];
   });
 
   for (const key of Object.keys(headers || {})) {
@@ -1023,46 +1293,7 @@ export const rewritePreviewSetCookieHeaders = (headers, proxyBasePath) => {
   if (rewritten.length > 0) headers['set-cookie'] = rewritten;
 };
 
-// Guard for a potential future `allowExternal` path: refuse to proxy private,
-// loopback and reserved addresses (incl. cloud-metadata 169.254.169.254).
-// Operates on the WHATWG-normalized hostname, so decimal/hex/octal IPv4 forms
-// are already canonical dotted-decimal here. NOTE: this blocks IP *literals*
-// only — a hostname that resolves to a private IP (DNS rebinding) is not
-// caught and would need resolve-time IP pinning. Loopback for local preview
-// goes through the non-external path (allowExternal=false), which is
-// unaffected. Nothing in this runtime passes allowExternal=true today, and the
-// flag must never be exposed through request payloads.
-const isBlockedExternalHost = (hostname) => {
-  if (!hostname) return true;
-  let host = hostname.toLowerCase();
-  if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1);
-
-  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true;
-
-  const v4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (v4) {
-    const a = Number(v4[1]);
-    const b = Number(v4[2]);
-    if (a === 0 || a === 127 || a === 10) return true;          // this-host / loopback / private
-    if (a === 169 && b === 254) return true;                    // link-local incl. cloud metadata
-    if (a === 172 && b >= 16 && b <= 31) return true;           // private
-    if (a === 192 && b === 168) return true;                    // private
-    if (a === 100 && b >= 64 && b <= 127) return true;          // carrier-grade NAT
-    return false;
-  }
-
-  if (host.includes(':')) {
-    if (host === '::1' || host === '::') return true;           // loopback / unspecified
-    if (host.startsWith('fe80')) return true;                   // link-local
-    if (host.startsWith('fc') || host.startsWith('fd')) return true; // unique local fc00::/7
-    if (host.includes('::ffff:')) return true;                       // IPv4-mapped (dotted or hex form)
-    return false;
-  }
-
-  return false;
-};
-
-export const normalizeProxyTargetUrl = (rawUrl, { allowExternal = false } = {}) => {
+export const normalizeProxyTargetUrl = (rawUrl) => {
   let url;
   try {
     url = new URL(rawUrl);
@@ -1075,12 +1306,8 @@ export const normalizeProxyTargetUrl = (rawUrl, { allowExternal = false } = {}) 
   }
 
   const hostname = url.hostname;
-  if (!allowExternal) {
-    if (!LOOPBACK_HOSTS.has(hostname)) {
-      return { ok: false, error: 'Only loopback hosts are supported' };
-    }
-  } else if (isBlockedExternalHost(hostname)) {
-    return { ok: false, error: 'Refusing to proxy private or reserved addresses' };
+  if (!LOOPBACK_HOSTS.has(hostname)) {
+    return { ok: false, error: 'Only loopback hosts are supported' };
   }
 
   const port = url.port ? Number.parseInt(url.port, 10) : (url.protocol === 'https:' ? 443 : 80);
@@ -1098,7 +1325,7 @@ export const normalizeProxyTargetUrl = (rawUrl, { allowExternal = false } = {}) 
   return { ok: true, origin: url.origin };
 };
 
-const normalizeLoopbackUrl = (rawUrl) => normalizeProxyTargetUrl(rawUrl, { allowExternal: false });
+const normalizeLoopbackUrl = (rawUrl) => normalizeProxyTargetUrl(rawUrl);
 
 export const rewritePreviewRedirectLocation = ({ location, targetOrigin, proxyBasePath, requestPath = '/' }) => {
   if (typeof location !== 'string' || !location.trim()) {
@@ -1113,8 +1340,19 @@ export const rewritePreviewRedirectLocation = ({ location, targetOrigin, proxyBa
     return { ok: false, error: 'Preview redirect returned an invalid URL' };
   }
 
-  const normalized = normalizeLoopbackUrl(resolved.toString());
-  if (!normalized.ok || normalized.origin !== targetOrigin) {
+  let sameOrigin = false;
+  try {
+    sameOrigin = canonicalPreviewOrigin(resolved.toString()) === canonicalPreviewOrigin(targetOrigin);
+  } catch {
+    sameOrigin = false;
+  }
+  if (!sameOrigin) {
+    if (
+      (resolved.protocol === 'http:' || resolved.protocol === 'https:')
+      && !LOOPBACK_HOSTS.has(resolved.hostname)
+    ) {
+      return { ok: true, externalUrl: resolved.toString() };
+    }
     return { ok: false, error: 'Preview redirect attempted to leave the approved origin' };
   }
 
@@ -1125,6 +1363,36 @@ export const rewritePreviewRedirectLocation = ({ location, targetOrigin, proxyBa
   };
 };
 
+// Only a document/iframe navigation may be answered with a handoff page. A
+// subresource (fetch/XHR/script/image) must receive the real redirect, or the
+// caller silently parses an HTML handoff as its API response.
+export const isPreviewNavigationRequest = (req) => {
+  const destination = String(readHeader(req?.headers, 'sec-fetch-dest') || '').toLowerCase();
+  if (destination) return destination === 'document' || destination === 'iframe';
+  const accept = String(readHeader(req?.headers, 'accept') || '').toLowerCase();
+  return accept.includes('text/html');
+};
+
+export const createPreviewViewerNavigationHandoffHtml = ({ url, bridgeNonce = '', navigation = 'external' }) => {
+  const normalized = new URL(url).toString();
+  const navigationMode = navigation === 'target' ? 'target' : 'external';
+  const payload = JSON.stringify({
+    source: 'openchamber-preview-bridge',
+    version: 1,
+    type: 'navigate-preview',
+    url: normalized,
+    navigation: navigationMode,
+    ts: Date.now(),
+  }).replace(/</g, '\\u003c');
+  const escapedHref = normalized
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  const nonceAttr = bridgeNonce ? ` nonce="${bridgeNonce}"` : '';
+  return `<!doctype html><html><head><meta charset="utf-8"><title>Continue in Browser</title></head><body><p>Continuing to the next page.</p><p><a href="${escapedHref}" target="_blank" rel="noopener noreferrer">Open page</a></p><script${nonceAttr}>window.parent.postMessage(${payload}, window.location.origin);</script></body></html>`;
+};
+
 export const rewritePreviewBody = ({ bodyText, proxyBasePath, targetOrigin, kind }) => {
   if (typeof bodyText !== 'string' || bodyText.length === 0) {
     return bodyText;
@@ -1132,14 +1400,14 @@ export const rewritePreviewBody = ({ bodyText, proxyBasePath, targetOrigin, kind
 
   const prefix = proxyBasePath.endsWith('/') ? proxyBasePath.slice(0, -1) : proxyBasePath;
   const target = targetOrigin ? new URL(targetOrigin) : null;
-  const isSameLoopbackTarget = (url) => {
+  const isSameTarget = (url) => {
     if (!target) return false;
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+    if (url.origin === target.origin) return true;
     const host = url.hostname;
-    if (host !== 'localhost' && host !== '127.0.0.1' && host !== '0.0.0.0' && host !== '::1' && host !== '[::1]') {
-      return false;
-    }
-    return url.port === target.port;
+    const targetHost = target.hostname;
+    const loopbackAlias = LOOPBACK_HOSTS.has(host) && LOOPBACK_HOSTS.has(targetHost);
+    return loopbackAlias && url.protocol === target.protocol && url.port === target.port;
   };
   const rewriteResourceUrl = (value) => {
     if (typeof value !== 'string' || value.length === 0) return value;
@@ -1149,7 +1417,7 @@ export const rewritePreviewBody = ({ bodyText, proxyBasePath, targetOrigin, kind
     }
     try {
       const parsed = new URL(value);
-      if (isSameLoopbackTarget(parsed)) {
+      if (isSameTarget(parsed)) {
         return `${prefix}${parsed.pathname}${parsed.search}${parsed.hash}`;
       }
     } catch {
@@ -1158,8 +1426,11 @@ export const rewritePreviewBody = ({ bodyText, proxyBasePath, targetOrigin, kind
     return value;
   };
   const rewriteHtml = (text) => text
-    .replace(/\b(src|href|action)=(['"])([^'"]*)\2/gi, (_match, attr, quote, value) => {
+    .replace(/\b(src|href|action|poster|formaction|xlink:href)=(['"])([^'"]*)\2/gi, (_match, attr, quote, value) => {
       return `${attr}=${quote}${rewriteResourceUrl(value)}${quote}`;
+    })
+    .replace(/\b(src|href|action|poster|formaction|xlink:href)=([^\s'"`=<>]+)/gi, (_match, attr, value) => {
+      return `${attr}=${rewriteResourceUrl(value)}`;
     })
     .replace(/\bsrcset=(['"])([^'"]*)\1/gi, (_match, quote, value) => {
       const rewritten = String(value).split(',').map((part) => {
@@ -1171,7 +1442,13 @@ export const rewritePreviewBody = ({ bodyText, proxyBasePath, targetOrigin, kind
         return segments.join(' ');
       }).join(', ');
       return `srcset=${quote}${rewritten}${quote}`;
-    });
+    })
+    .replace(/\bstyle="([^"]*)"/gi, (_match, value) => `style="${rewriteCss(value)}"`)
+    .replace(/\bstyle='([^']*)'/gi, (_match, value) => `style='${rewriteCss(value)}'`)
+    // Subresource integrity cannot survive here: bodies are rewritten and
+    // upstream compression is disabled, so every recorded hash mismatches and
+    // the browser blocks the asset.
+    .replace(/\s+integrity=(['"])[^'"]*\1/gi, '');
   const rewriteCss = (text) => text
     .replace(/url\((['"]?)([^)'"]*)\1\)/gi, (_match, quote, value) => {
       const q = quote || '';
@@ -1206,13 +1483,19 @@ export const rewritePreviewBody = ({ bodyText, proxyBasePath, targetOrigin, kind
       return `<script${attrs}>${rewrittenScriptBody}</script>`;
     },
   );
+  const rewriteInlineStyles = (text) => text.replace(
+    /<style\b([^>]*)>([\s\S]*?)<\/style>/gi,
+    (_match, attrs, styleBody) => `<style${attrs}>${rewriteCss(styleBody)}</style>`,
+  );
   // A meta-delivered CSP cannot be relaxed per-response the way the header can
   // (the bridge nonce is only added to headers), so drop it entirely.
   const stripPreviewCspMeta = (text) => text
     .replace(/<meta\b(?=[^>]*\bhttp-equiv\s*=\s*(['"])content-security-policy\1)[^>]*>/gi, '')
     .replace(/<meta\b(?=[^>]*\bhttp-equiv\s*=\s*content-security-policy\b)[^>]*>/gi, '');
 
-  if (kind === 'html') return stripPreviewCspMeta(rewriteInlineModuleScripts(rewriteHtml(bodyText)));
+  if (kind === 'html') {
+    return stripPreviewCspMeta(rewriteInlineModuleScripts(rewriteInlineStyles(rewriteHtml(bodyText))));
+  }
   if (kind === 'css') return rewriteCss(bodyText);
   if (kind === 'javascript') return rewriteJavaScript(bodyText);
   return bodyText;
@@ -1319,12 +1602,28 @@ export const createPreviewProxyRuntime = ({
     grantId = null,
     projectKey = null,
     registerRevocation = null,
+    browserRestricted = false,
   } = {}) => {
-    const id = crypto.randomBytes(16).toString('hex');
-    const token = crypto.randomBytes(16).toString('hex');
     const createdAt = now();
     const requestedTtl = Number.isFinite(ttlMs) ? Math.trunc(ttlMs) : DEFAULT_TARGET_TTL_MS;
-    const expiresAt = createdAt + Math.min(DEFAULT_TARGET_TTL_MS, Math.max(15_000, requestedTtl));
+    const boundedTtl = Math.min(DEFAULT_TARGET_TTL_MS, Math.max(15_000, requestedTtl));
+
+    // Re-registration (the client refreshes shortly before expiry) must keep the
+    // same id: the proxy path scopes every upstream cookie, so a new id would
+    // silently sign the embedded page out and remount the frame mid-session.
+    for (const entry of targets.values()) {
+      if (entry.expiresAt <= createdAt) continue;
+      if (entry.origin !== origin || entry.ownerKey !== ownerKey) continue;
+      if (entry.browserRestricted !== browserRestricted) continue;
+      if (entry.grantId !== grantId) continue;
+      entry.expiresAt = createdAt + boundedTtl;
+      if (projectKey !== null) entry.projectKey = projectKey;
+      return { id: entry.id, token: entry.token, expiresAt: entry.expiresAt };
+    }
+
+    const id = crypto.randomBytes(16).toString('hex');
+    const token = crypto.randomBytes(16).toString('hex');
+    const expiresAt = createdAt + boundedTtl;
     targets.set(id, {
       id,
       origin,
@@ -1333,6 +1632,7 @@ export const createPreviewProxyRuntime = ({
       ownerUserId,
       grantId,
       projectKey,
+      browserRestricted,
       createdAt,
       expiresAt,
     });
@@ -1343,6 +1643,8 @@ export const createPreviewProxyRuntime = ({
     return { id, token, expiresAt };
   };
 
+  const routerTargetForEntry = (entry) => entry.origin;
+
   const resolveTargetFromRequest = (req) => {
     const rawUrl = req?.originalUrl || req?.url || '';
     const parsed = new URL(rawUrl, 'http://localhost');
@@ -1351,13 +1653,13 @@ export const createPreviewProxyRuntime = ({
     const match = pathname.match(/^\/api\/preview\/proxy\/([a-f0-9]{16,64})(?:\/|$)/i);
     const id = match?.[1] || '';
     if (!id) {
-      return { ok: false, status: 404, error: 'Preview target not found' };
+      return { ok: false, status: 404, code: 'preview_target_not_found', error: 'Preview target not found' };
     }
 
     const entry = targets.get(id);
     if (!entry || entry.expiresAt <= now()) {
       removeTarget(id);
-      return { ok: false, status: 404, error: 'Preview target expired' };
+      return { ok: false, status: 404, code: 'preview_target_expired', error: 'Preview target expired' };
     }
 
     const cookies = parseCookieHeader(req.headers?.cookie);
@@ -1424,7 +1726,7 @@ export const createPreviewProxyRuntime = ({
   // headers are rewritten (not dropped): frame-ancestors is removed and the
   // per-response bridge nonce is allowed, keeping the dev server's own script
   // restrictions intact.
-  const stripFrameBustingHeaders = (headers, bridgeNonce) => {
+  const stripFrameBustingHeaders = (headers, bridgeNonce, res) => {
     if (!headers || typeof headers !== 'object') {
       return;
     }
@@ -1434,6 +1736,7 @@ export const createPreviewProxyRuntime = ({
       const lowerKey = key.toLowerCase();
       if (lowerKey === 'x-frame-options') {
         delete headers[key];
+        res?.removeHeader?.(key);
         continue;
       }
       if (lowerKey === 'content-security-policy' || lowerKey === 'content-security-policy-report-only') {
@@ -1444,8 +1747,11 @@ export const createPreviewProxyRuntime = ({
           .filter((value) => typeof value === 'string' && value.length > 0);
         if (rewritten.length === 0) {
           delete headers[key];
+          res?.removeHeader?.(key);
         } else {
-          headers[key] = Array.isArray(original) ? rewritten : rewritten[0];
+          const value = Array.isArray(original) ? rewritten : rewritten[0];
+          headers[key] = value;
+          res?.setHeader?.(key, value);
         }
       }
     }
@@ -1459,16 +1765,34 @@ export const createPreviewProxyRuntime = ({
     rejectWebSocketUpgrade,
     classifyRequestScope = () => 'local',
     previewInstancesRuntime = null,
+    canUseBrowser = () => true,
   }) => {
     ensureSweeper();
 
-    const injectPreviewBridge = (bodyText, { proxyBasePath, targetOrigin, bridgeNonce }) => {
+    const injectPreviewBridge = (bodyText, {
+      proxyBasePath,
+      targetOrigin,
+      bridgeNonce,
+      embedExternalNavigation = false,
+      virtualizeLocation = true,
+    }) => {
       if (typeof bodyText !== 'string' || bodyText.includes(PREVIEW_BRIDGE_SCRIPT_ID)) {
         return bodyText;
       }
 
       const nonceAttr = bridgeNonce ? ` nonce="${bridgeNonce}"` : '';
-      const script = `<script id="${PREVIEW_BRIDGE_SCRIPT_ID}"${nonceAttr}>${createPreviewBridgeScript({ proxyBasePath, targetOrigin })}</script>`;
+      // This must run synchronously before the bridge installs its Navigation
+      // API listener. A module script is deferred; its replaceState would then
+      // be intercepted by the bridge as a fresh proxy navigation and reload
+      // the iframe forever before the app modules can settle.
+      const locationVirtualizer = virtualizeLocation
+        ? `<script id="${PREVIEW_BRIDGE_SCRIPT_ID}-location"${nonceAttr}>${createPreviewLocationVirtualizerScript(proxyBasePath)}</script>`
+        : '';
+      const script = `${locationVirtualizer}<script id="${PREVIEW_BRIDGE_SCRIPT_ID}"${nonceAttr}>${createPreviewBridgeScript({
+        proxyBasePath,
+        targetOrigin,
+        embedExternalNavigation,
+      })}</script>`;
       if (/<head(?:\s[^>]*)?>/i.test(bodyText)) {
         return bodyText.replace(/<head(\s[^>]*)?>/i, (match) => `${match}${script}`);
       }
@@ -1494,10 +1818,14 @@ export const createPreviewProxyRuntime = ({
         .replace(
           /const socketHost = `\$\{[^;]+?;\nconst directSocketHost = [^;]+;/s,
           () => `const socketHost = \`\${importMetaUrl.hostname}\${importMetaUrl.port ? ':' + importMetaUrl.port : ''}${escapedBase}\`;\nconst directSocketHost = socketHost;`,
+        )
+        .replace(
+          /(?:window\.)?location\.reload\(\)/g,
+          () => 'window.__openchamberPreviewReload ? window.__openchamberPreviewReload() : window.location.reload()',
         );
     };
 
-    app.post('/api/preview/targets', express.json(), async (req, res) => {
+    const createTargetHandler = (browserRestricted) => async (req, res) => {
       try {
         if (uiAuthController?.enabled) {
           const sessionToken = await uiAuthController?.ensureSessionToken?.(req, res);
@@ -1511,6 +1839,10 @@ export const createPreviewProxyRuntime = ({
           }
         }
 
+        if (browserRestricted && !canUseBrowser(req.principal)) {
+          return res.status(403).json({ error: 'Browser access is disabled' });
+        }
+
         const rawUrl = typeof req.body?.url === 'string' ? req.body.url.trim() : '';
         if (!rawUrl) {
           return res.status(400).json({ error: 'url is required' });
@@ -1519,6 +1851,18 @@ export const createPreviewProxyRuntime = ({
         const ttlMs = typeof req.body?.ttlMs === 'number' ? req.body.ttlMs : DEFAULT_TARGET_TTL_MS;
         const normalized = normalizeLoopbackUrl(rawUrl);
         if (!normalized.ok) {
+          if (browserRestricted) {
+            try {
+              const candidate = new URL(rawUrl);
+              if (candidate.protocol === 'http:' || candidate.protocol === 'https:') {
+                return res.status(400).json({
+                  error: 'External Browser targets must be opened on the client',
+                  code: 'browser_external_target_requires_client',
+                });
+              }
+            } catch {
+            }
+          }
           return res.status(400).json({ error: normalized.error });
         }
 
@@ -1535,7 +1879,10 @@ export const createPreviewProxyRuntime = ({
             url: rawUrl,
           });
           if (!authorization.ok) {
-            return res.status(authorization.status).json({ error: authorization.error });
+            return res.status(authorization.status).json({
+              error: authorization.error,
+              ...(authorization.code ? { code: authorization.code } : {}),
+            });
           }
           grantId = authorization.grantId;
           projectKey = authorization.projectKey;
@@ -1546,6 +1893,7 @@ export const createPreviewProxyRuntime = ({
           ownerUserId: req.principal?.id || 'local-admin',
           grantId,
           projectKey,
+          browserRestricted,
           registerRevocation: typeof uiAuthController?.registerConnection === 'function'
             ? (close) => uiAuthController.registerConnection(req.principal, close)
             : null,
@@ -1569,14 +1917,15 @@ export const createPreviewProxyRuntime = ({
         console.error('[preview-proxy] Failed to create target:', error);
         return res.status(500).json({ error: 'Failed to create preview target' });
       }
-    });
+    };
 
-    const proxy = createProxyMiddleware({
+    app.post('/api/preview/targets', express.json(), createTargetHandler(false));
+    app.post('/api/browser/targets', express.json(), createTargetHandler(true));
+
+    const createProxy = () => createProxyMiddleware({
       target: 'http://127.0.0.1',
       changeOrigin: true,
-      // Targets are pinned to loopback; local HTTPS development commonly uses
-      // a self-signed certificate that the host proxy must still be able to
-      // reach.
+      // Loopback development may use self-signed certificates.
       secure: false,
       // WebSocket upgrades are wired manually below so authentication and
       // request-origin checks run before the proxy can touch the socket.
@@ -1600,7 +1949,7 @@ export const createPreviewProxyRuntime = ({
         if (!resolved.ok) {
           return 'http://127.0.0.1';
         }
-        return resolved.entry.origin;
+        return routerTargetForEntry(resolved.entry);
       },
       pathRewrite: (pathValue, req) => {
         const resolved = resolveTargetFromRequest(req);
@@ -1611,7 +1960,8 @@ export const createPreviewProxyRuntime = ({
         const parsed = new URL(req.originalUrl || req.url || '', 'http://localhost');
         // Never forward our auth cookie token to the dev server.
         const strippedPath = stripProxyPrefix(parsed.pathname, resolved.id);
-        return `${strippedPath}${stripInternalPreviewQuery(parsed.search)}`;
+        const pathAndSearch = `${strippedPath}${stripInternalPreviewQuery(parsed.search)}`;
+        return pathAndSearch;
       },
       on: {
         proxyReq: (proxyReq, req) => {
@@ -1634,7 +1984,8 @@ export const createPreviewProxyRuntime = ({
           proxyReq.removeHeader('authorization');
           proxyReq.removeHeader('x-openchamber-ui-session');
         },
-        proxyRes: responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
+        proxyRes: (() => {
+          const interceptResponse = responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
           applyPreviewPassthroughResponseHeaders(proxyRes, res);
           // Per-response nonce lets the injected bridge run under the dev
           // server's CSP without dropping its script restrictions wholesale.
@@ -1642,7 +1993,7 @@ export const createPreviewProxyRuntime = ({
           // Allow the dev server response to be framed inside OpenChamber even
           // if it normally sets X-Frame-Options or a CSP frame-ancestors rule.
           // The proxy is same-origin so embedding is otherwise safe.
-          stripFrameBustingHeaders(proxyRes.headers, bridgeNonce);
+          stripFrameBustingHeaders(proxyRes.headers, bridgeNonce, res);
 
           const resolved = resolveTargetFromRequest(req);
           if (!resolved.ok) {
@@ -1650,7 +2001,8 @@ export const createPreviewProxyRuntime = ({
           }
 
           const proxyBasePath = `/api/preview/proxy/${resolved.id}`;
-          rewritePreviewSetCookieHeaders(proxyRes.headers, proxyBasePath);
+          rewritePreviewSetCookieHeaders(proxyRes.headers, proxyBasePath, { viewerSecure: isPreviewViewerSecure(req) });
+          syncProxyResponseHeader(proxyRes.headers, res, 'set-cookie');
           const parsed = new URL(req.originalUrl || req.url || '', 'http://localhost');
           const upstreamPath = stripProxyPrefix(parsed.pathname, resolved.id);
           const locationHeader = readHeader(proxyRes.headers, 'location');
@@ -1667,14 +2019,42 @@ export const createPreviewProxyRuntime = ({
               delete proxyRes.headers.Location;
               delete proxyRes.headers['content-length'];
               proxyRes.headers['content-type'] = 'application/json; charset=utf-8';
+              res.removeHeader?.('location');
+              res.setHeader?.('content-type', 'application/json; charset=utf-8');
               return Buffer.from(JSON.stringify({ error: redirect.error }), 'utf8');
+            }
+            if (redirect.externalUrl && !isPreviewNavigationRequest(req)) {
+              // Subresource redirects keep their real status and absolute
+              // target so the browser follows (or CORS-fails) them exactly as
+              // it would without the proxy.
+              proxyRes.headers.location = redirect.externalUrl;
+              delete proxyRes.headers.Location;
+              res.setHeader?.('location', redirect.externalUrl);
+              return responseBuffer;
+            }
+            if (redirect.externalUrl) {
+              res.statusCode = 200;
+              delete proxyRes.headers.location;
+              delete proxyRes.headers.Location;
+              delete proxyRes.headers['content-length'];
+              proxyRes.headers['content-type'] = 'text/html; charset=utf-8';
+              proxyRes.headers['cache-control'] = 'no-store';
+              res.removeHeader?.('location');
+              res.setHeader?.('content-type', 'text/html; charset=utf-8');
+              res.setHeader?.('cache-control', 'no-store');
+              return Buffer.from(createPreviewViewerNavigationHandoffHtml({
+                url: redirect.externalUrl,
+                bridgeNonce,
+                navigation: resolved.entry.browserRestricted ? 'target' : 'external',
+              }), 'utf8');
             }
             proxyRes.headers.location = redirect.location;
             delete proxyRes.headers.Location;
+            res.setHeader?.('location', redirect.location);
           }
 
           const contentType = String(proxyRes.headers?.['content-type'] || '').toLowerCase();
-          const isHtml = contentType.includes('text/html');
+          const isHtml = contentType.includes('text/html') || contentType.includes('application/xhtml+xml');
           const isCss = contentType.includes('text/css');
           const isJavaScript = contentType.includes('javascript') || contentType.includes('ecmascript');
           if (!isHtml && !isCss && !isJavaScript) {
@@ -1686,6 +2066,11 @@ export const createPreviewProxyRuntime = ({
           proxyRes.headers.expires = '0';
           delete proxyRes.headers.etag;
           delete proxyRes.headers['last-modified'];
+          res.setHeader?.('cache-control', proxyRes.headers['cache-control']);
+          res.setHeader?.('pragma', proxyRes.headers.pragma);
+          res.setHeader?.('expires', proxyRes.headers.expires);
+          res.removeHeader?.('etag');
+          res.removeHeader?.('last-modified');
 
           if (isJavaScript && upstreamPath === '/@vite/client') {
             return rewritePreviewBody({
@@ -1703,9 +2088,62 @@ export const createPreviewProxyRuntime = ({
             kind: isHtml ? 'html' : isCss ? 'css' : 'javascript',
           });
           return isHtml
-            ? injectPreviewBridge(rewrittenBody, { proxyBasePath, targetOrigin: resolved.entry.origin, bridgeNonce })
+            ? injectPreviewBridge(rewrittenBody, {
+              proxyBasePath,
+              targetOrigin: resolved.entry.origin,
+              bridgeNonce,
+              embedExternalNavigation: resolved.entry.browserRestricted,
+              virtualizeLocation: true,
+            })
             : rewrittenBody;
-        }),
+          });
+
+          return (proxyRes, req, res) => {
+            const contentType = String(readHeader(proxyRes?.headers, 'content-type') || '').toLowerCase();
+            const hasRedirect = readHeader(proxyRes?.headers, 'location') !== undefined;
+            const destination = String(readHeader(req?.headers, 'sec-fetch-dest') || '').toLowerCase();
+            const isUntypedDocument = !contentType && (destination === 'document' || destination === 'iframe');
+            if (isUntypedDocument) proxyRes.headers['content-type'] = 'text/html; charset=utf-8';
+            const needsRewrite = hasRedirect
+              || isUntypedDocument
+              || contentType.includes('text/html')
+              || contentType.includes('application/xhtml+xml')
+              || contentType.includes('text/css')
+              || contentType.includes('javascript')
+              || contentType.includes('ecmascript');
+            if (needsRewrite) return interceptResponse(proxyRes, req, res);
+
+            const resolved = resolveTargetFromRequest(req);
+            if (!resolved.ok) {
+              res.statusCode = resolved.status;
+              res.setHeader?.('content-type', 'application/json; charset=utf-8');
+              res.end?.(JSON.stringify({ error: resolved.error }));
+              return;
+            }
+
+            const proxyBasePath = `/api/preview/proxy/${resolved.id}`;
+            rewritePreviewSetCookieHeaders(proxyRes.headers, proxyBasePath, { viewerSecure: isPreviewViewerSecure(req) });
+            const bridgeNonce = crypto.randomBytes(16).toString('base64');
+            stripFrameBustingHeaders(proxyRes.headers, bridgeNonce, res);
+            res.statusCode = proxyRes.statusCode || 200;
+            if (proxyRes.statusMessage) res.statusMessage = proxyRes.statusMessage;
+            const hopByHopHeaders = new Set([
+              'connection',
+              'keep-alive',
+              'proxy-authenticate',
+              'proxy-authorization',
+              'te',
+              'trailer',
+              'transfer-encoding',
+              'upgrade',
+            ]);
+            for (const [name, value] of Object.entries(proxyRes.headers || {})) {
+              if (value === undefined || hopByHopHeaders.has(name.toLowerCase())) continue;
+              res.setHeader?.(name, value);
+            }
+            proxyRes.pipe(res);
+          };
+        })(),
         error: (err, _req, res) => {
           const isDev = typeof process !== 'undefined'
             && process
@@ -1740,13 +2178,36 @@ export const createPreviewProxyRuntime = ({
       },
     });
 
-    app.use('/api/preview/proxy', (req, res, next) => {
+    const loopbackProxy = createProxy();
+
+    app.use('/api/preview/proxy', async (req, res, next) => {
       const resolved = resolveTargetFromRequest(req);
       if (!resolved.ok) {
-        return res.status(resolved.status).json({ error: resolved.error });
+        return res.status(resolved.status).json({
+          error: resolved.error,
+          ...(resolved.code ? { code: resolved.code } : {}),
+        });
+      }
+      if (resolved.entry.browserRestricted) {
+        if (typeof uiAuthController?.ensureSessionToken === 'function') {
+          const sessionToken = await uiAuthController.ensureSessionToken(req, res);
+          if (!sessionToken) return res.status(401).json({ error: 'UI authentication required' });
+        }
+        if (!canUseBrowser(req.principal)) {
+          return res.status(403).json({ error: 'Browser access is disabled' });
+        }
       }
       next();
-    }, proxy);
+    }, (req, res, next) => {
+      const resolved = resolveTargetFromRequest(req);
+      if (!resolved.ok) {
+        return res.status(resolved.status).json({
+          error: resolved.error,
+          ...(resolved.code ? { code: resolved.code } : {}),
+        });
+      }
+      return loopbackProxy(req, res, next);
+    });
 
     server.on('upgrade', (req, socket, head) => {
       const rawUrl = req?.url || '';
@@ -1775,6 +2236,10 @@ export const createPreviewProxyRuntime = ({
             rejectWebSocketUpgrade(socket, resolved.status, resolved.error);
             return;
           }
+          if (resolved.entry.browserRestricted && !canUseBrowser(req.principal)) {
+            rejectWebSocketUpgrade(socket, 403, 'Browser access is disabled');
+            return;
+          }
 
           const unregisterConnection = typeof uiAuthController?.registerConnection === 'function'
             ? uiAuthController.registerConnection(req.principal, () => socket.destroy())
@@ -1787,7 +2252,7 @@ export const createPreviewProxyRuntime = ({
           const parsed = new URL(rawUrl, 'http://localhost');
           const nextPath = stripProxyPrefix(parsed.pathname, resolved.id);
           req.url = `${nextPath}${stripInternalPreviewQuery(parsed.search)}`;
-          proxy.upgrade(req, socket, head);
+          loopbackProxy.upgrade(req, socket, head);
         } catch {
           rejectWebSocketUpgrade(socket, 500, 'Upgrade failed');
         }
@@ -1824,6 +2289,7 @@ export const createPreviewProxyRuntime = ({
       origin: target.origin,
       grantId: target.grantId,
       projectKey: target.projectKey,
+      browserRestricted: target.browserRestricted,
       createdAt: target.createdAt,
       expiresAt: target.expiresAt,
     })),

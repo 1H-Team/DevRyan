@@ -54,10 +54,15 @@ export const ActivitySection: React.FC<ActivitySectionProps> = ({ activity, audi
   const purgeActivity = async () => {
     setBusy(true);
     try {
-      await requestJson('/api/admin/activity', { method: 'DELETE', body: JSON.stringify({ confirm: true }) });
+      const result = await requestJson<{ purged: true; deletedCount: number; protectedCount: number }>(
+        '/api/admin/activity',
+        { method: 'DELETE', body: JSON.stringify({ confirm: true }) },
+      );
       await onChanged();
       setPurgeOpen(false);
-      toast.success('Activity log purged');
+      toast.success('Unprotected activity purged', {
+        description: `${result.deletedCount} removed · ${result.protectedCount} protected analytics records retained`,
+      });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to purge activity');
     } finally { setBusy(false); }
@@ -77,7 +82,7 @@ export const ActivitySection: React.FC<ActivitySectionProps> = ({ activity, audi
           {isAdmin && (
             <>
             <Button variant="outline" size="sm" onClick={() => setPurgeOpen(true)} disabled={busy}>
-              <RiDeleteBinLine className="h-4 w-4" /> Purge Activity
+              <RiDeleteBinLine className="h-4 w-4" /> Purge Unprotected Activity
             </Button>
             {auditStatus && (
               <span className={`typography-meta ${auditStatus.backlog > 0 ? 'text-[var(--status-warning)]' : 'text-muted-foreground'}`}>
@@ -92,9 +97,9 @@ export const ActivitySection: React.FC<ActivitySectionProps> = ({ activity, audi
       <ConfirmActionDialog
         open={purgeOpen}
         onOpenChange={setPurgeOpen}
-        title="Purge Activity Log"
-        description="Permanently purge the shared activity log? The purge event itself is retained."
-        confirmLabel="Purge Activity"
+        title="Purge Unprotected Activity"
+        description="Permanently purge ordinary activity? Developer analytics protected after session deletion, plus the purge event itself, will be retained."
+        confirmLabel="Purge Unprotected Activity"
         destructive
         busy={busy}
         onConfirm={() => void purgeActivity()}

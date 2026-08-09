@@ -18,6 +18,7 @@ import { updateDesktopSettings } from '@/lib/persistence';
 import { useFileSystemAccess } from '@/hooks/useFileSystemAccess';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { useI18n } from '@/lib/i18n';
+import { canEditSettingsPage, getAuthPrincipal } from '@/lib/authSession';
 
 interface DirectoryItem {
   name: string;
@@ -315,6 +316,21 @@ export const DirectoryTree: React.FC<DirectoryTreeProps> = ({
     const payload = {
       pinnedDirectories: Array.from(pinnedPaths),
     };
+
+    try {
+      const storage = getSafeStorage();
+      if (payload.pinnedDirectories.length > 0) {
+        storage.setItem('pinnedDirectories', JSON.stringify(payload.pinnedDirectories));
+      } else {
+        storage.removeItem('pinnedDirectories');
+      }
+    } catch {
+      // ignored
+    }
+
+    if (!canEditSettingsPage(getAuthPrincipal(), 'projects')) {
+      return;
+    }
 
     void updateDesktopSettings(payload);
   }, [pinnedPaths]);

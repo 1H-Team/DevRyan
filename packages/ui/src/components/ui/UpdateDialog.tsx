@@ -29,7 +29,7 @@ interface UpdateDialogProps {
   runtimeType?: 'desktop' | 'web' | 'vscode' | null;
 }
 
-const GITHUB_RELEASES_URL = 'https://github.com/zoubenr/DevRyan/releases';
+const GITHUB_RELEASES_URL = 'https://github.com/1H-Team/DevRyan/releases';
 
 type ChangelogSection = {
   version: string;

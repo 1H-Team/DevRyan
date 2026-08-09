@@ -60,11 +60,12 @@ describe('lazy session sidebar dialogs', () => {
       'SessionDeleteConfirmDialog',
       'FolderDeleteConfirmDialog',
       'BulkSessionDeleteConfirmDialog',
+      'BranchSessionArchiveConfirmDialog',
     ]) {
       expect(source).toContain(`export const Lazy${dialogName} = /* @__PURE__ */ lazyWithChunkRecovery`);
     }
 
-    expect((source.match(/import\('@\/components\/session\/sidebar\/ConfirmDialogs'\)/g)?.length ?? 0)).toBe(3);
+    expect((source.match(/import\('@\/components\/session\/sidebar\/ConfirmDialogs'\)/g)?.length ?? 0)).toBe(4);
   });
 
   test('mounts each dialog only for its authoritative open or value state', () => {
@@ -86,7 +87,7 @@ describe('lazy session sidebar dialogs', () => {
     for (const activeCondition of [
       'active={isSessionSearchOpen}',
       'active={Boolean(editingProject)}',
-      'active={newWorktreeDialogOpen}',
+      'active={canCreateWorktrees && newWorktreeDialogOpen}',
       'active={isScheduledTasksDialogOpen}',
       'active={Boolean(deleteSessionConfirm)}',
       'active={Boolean(deleteFolderConfirm)}',

@@ -1,4 +1,3 @@
-import type { FilesAPI, RuntimeAPIs } from '@/lib/api/types';
 import { createProjectIdFromPath } from '@/lib/projectId';
 
 export interface SessionPlanFileIdentity {
@@ -18,7 +17,7 @@ export interface SessionPlanFileStorage {
 export interface EnsureSessionPlanFileOptions {
   identity: SessionPlanFileIdentity;
   markdown: string;
-  storage?: SessionPlanFileStorage;
+  storage: SessionPlanFileStorage;
 }
 
 const pendingWrites = new Map<string, Promise<{ path: string; created: boolean }>>();
@@ -67,83 +66,10 @@ export const buildSessionPlanFilePath = (
   return joinPath(plansDirectory, `${sessionCreated}-${sessionSlug}-${sourceMessageId}.md`);
 };
 
-const getBaseUrl = (): string => {
-  const base = import.meta.env.VITE_OPENCODE_URL || '/api';
-  return base.endsWith('/') ? base.slice(0, -1) : base;
-};
-
-const getRuntimeFiles = (): FilesAPI | null => {
-  if (typeof window === 'undefined') return null;
-  const runtimeWindow = window as typeof window & { __OPENCHAMBER_RUNTIME_APIS__?: RuntimeAPIs };
-  return runtimeWindow.__OPENCHAMBER_RUNTIME_APIS__?.files ?? null;
-};
-
-const fetchJson = async <T>(url: string, init?: RequestInit): Promise<T> => {
-  const response = await fetch(url, init);
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null) as { error?: unknown } | null;
-    const message = typeof payload?.error === 'string' ? payload.error : response.statusText;
-    throw new Error(message || `Request failed (${response.status})`);
-  }
-  return response.json() as Promise<T>;
-};
-
-const runtimeStorage: SessionPlanFileStorage = {
-  async resolveHomeDirectory() {
-    const payload = await fetchJson<{ home?: unknown }>(`${getBaseUrl()}/fs/home`, { cache: 'no-store' });
-    return typeof payload.home === 'string' && payload.home.trim() ? normalizePath(payload.home) : null;
-  },
-
-  async statFile(path) {
-    const files = getRuntimeFiles();
-    if (files?.statFile) {
-      const result = await files.statFile(path, { optional: true, allowOutsideWorkspace: true });
-      return { exists: result.exists, isFile: result.isFile };
-    }
-
-    const query = new URLSearchParams({ path, optional: 'true', allowOutsideWorkspace: 'true' });
-    const result = await fetchJson<{ exists?: boolean; isFile?: boolean }>(
-      `${getBaseUrl()}/fs/stat?${query.toString()}`,
-      { cache: 'no-store' },
-    );
-    return { exists: result.exists === true, isFile: result.isFile === true };
-  },
-
-  async createDirectory(path) {
-    const files = getRuntimeFiles();
-    if (files?.createDirectory) {
-      const result = await files.createDirectory(path);
-      if (!result.success) throw new Error('Failed to create plan directory');
-      return;
-    }
-
-    await fetchJson(`${getBaseUrl()}/fs/mkdir`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path }),
-    });
-  },
-
-  async writeFile(path, content) {
-    const files = getRuntimeFiles();
-    if (files?.writeFile) {
-      const result = await files.writeFile(path, content);
-      if (!result.success) throw new Error('Failed to save plan file');
-      return;
-    }
-
-    await fetchJson(`${getBaseUrl()}/fs/write`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path, content }),
-    });
-  },
-};
-
 export const ensureSessionPlanFile = async ({
   identity,
   markdown,
-  storage = runtimeStorage,
+  storage,
 }: EnsureSessionPlanFileOptions): Promise<{ path: string; created: boolean }> => {
   if (!markdown.trim()) {
     throw new Error('Completed plan Markdown is required');

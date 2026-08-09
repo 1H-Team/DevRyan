@@ -11,7 +11,9 @@ import type {
   GitDeleteRemoteBranchPayload,
   GitRemoveRemotePayload,
   GenerateGitCommitMessageRequest,
+  GenerateGitCommitMessageDraftRequest,
   GeneratedCommitMessage,
+  GeneratedCommitWorkflowResult,
   GitWorktreeInfo,
   CreateGitWorktreePayload,
   GitWorktreeCreateResult,
@@ -31,6 +33,10 @@ import type {
   GitIdentitySummary,
   DiscoveredGitCredential,
   MergeConflictDetails,
+  GitIntegratePlan,
+  GitIntegrateState,
+  GitIntegrateConflictDetails,
+  GitIntegrateResult,
 } from './api/types';
 
 declare global {
@@ -74,10 +80,15 @@ const GIT_REPO_CHECK_CACHE_TTL_MS = 5000;
 
 const gitStatusCache = new Map<string, { value: GitStatus; expiresAt: number }>();
 const gitStatusInFlight = new Map<string, Promise<GitStatus>>();
+const gitStatusGeneration = new Map<string, number>();
 const gitRepoCache = new Map<string, { value: boolean; expiresAt: number }>();
 const gitRepoInFlight = new Map<string, Promise<boolean>>();
 
 const normalizeDirectoryKey = (directory: string): string => directory.trim();
+
+const bumpGitStatusGeneration = (key: string): void => {
+  gitStatusGeneration.set(key, (gitStatusGeneration.get(key) ?? 0) + 1);
+};
 
 const invalidateGitStatusCache = (directory: string): void => {
   const key = normalizeDirectoryKey(directory);
@@ -85,6 +96,8 @@ const invalidateGitStatusCache = (directory: string): void => {
   gitStatusCache.delete(`${key}::light`);
   gitStatusInFlight.delete(key);
   gitStatusInFlight.delete(`${key}::light`);
+  bumpGitStatusGeneration(key);
+  bumpGitStatusGeneration(`${key}::light`);
 };
 
 function buildUrl(
@@ -144,30 +157,37 @@ export async function checkIsGitRepository(directory: string): Promise<boolean> 
   }
 }
 
-export async function getGitStatus(directory: string, options?: { mode?: 'light' }): Promise<GitStatus> {
+export async function getGitStatus(directory: string, options?: { mode?: 'light'; force?: boolean }): Promise<GitStatus> {
   const mode = options?.mode;
   const key = mode === 'light' ? `${normalizeDirectoryKey(directory)}::light` : normalizeDirectoryKey(directory);
-  const now = Date.now();
-  const cached = gitStatusCache.get(key);
-  if (cached && cached.expiresAt > now) {
-    return cached.value;
+  if (options?.force) {
+    bumpGitStatusGeneration(key);
+  } else {
+    const now = Date.now();
+    const cached = gitStatusCache.get(key);
+    if (cached && cached.expiresAt > now) {
+      return cached.value;
+    }
+
+    const inFlight = gitStatusInFlight.get(key);
+    if (inFlight) {
+      return inFlight;
+    }
   }
 
-  const inFlight = gitStatusInFlight.get(key);
-  if (inFlight) {
-    return inFlight;
-  }
-
+  const generation = gitStatusGeneration.get(key) ?? 0;
   const task = (async () => {
     const response = await fetch(buildUrl(`${API_BASE}/status`, directory, mode ? { mode } : undefined));
     if (!response.ok) {
       throw new Error(`Failed to get git status: ${response.statusText}`);
     }
     const payload = await response.json() as GitStatus;
-    gitStatusCache.set(key, {
-      value: payload,
-      expiresAt: Date.now() + GIT_STATUS_CACHE_TTL_MS,
-    });
+    if ((gitStatusGeneration.get(key) ?? 0) === generation) {
+      gitStatusCache.set(key, {
+        value: payload,
+        expiresAt: Date.now() + GIT_STATUS_CACHE_TTL_MS,
+      });
+    }
     return payload;
   })();
 
@@ -435,6 +455,41 @@ export async function generateCommitMessage(
   return { subject, highlights };
 }
 
+export async function generateCommitMessageDraft(
+  directory: string,
+  request: GenerateGitCommitMessageDraftRequest,
+): Promise<GeneratedCommitWorkflowResult> {
+  if (!Array.isArray(request?.selectedFiles) || request.selectedFiles.length === 0) {
+    throw new Error('No files selected to generate commit message');
+  }
+
+  const response = await fetch(buildUrl(`${API_BASE}/commit-message/draft`, directory), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    console.error('[git-generation][browser] draft http error', {
+      status: response.status,
+      statusText: response.statusText,
+      error,
+    });
+    const traceSuffix = typeof error?.traceId === 'string' && error.traceId
+      ? ` (traceId: ${error.traceId})`
+      : '';
+    throw new Error(`${error.error || 'Failed to generate commit message'}${traceSuffix}`);
+  }
+
+  const result = await response.json();
+  if ((result?.status !== 'complete' && result?.status !== 'blocked') || !Array.isArray(result?.commits)) {
+    throw new Error('Malformed commit generation response');
+  }
+
+  return result as GeneratedCommitWorkflowResult;
+}
+
 export async function generatePullRequestDescription(
   directory: string,
   payload: { base: string; head: string; context?: string; zenModel?: string; providerId?: string; modelId?: string }
@@ -569,7 +624,13 @@ export async function retryGitWorktreeBootstrapOperation(
 ): Promise<import('./api/types').GitWorktreeBootstrapStatus> {
   const response = await fetch(
     `${API_BASE}/worktrees/operations/${encodeURIComponent(operationId)}/retry`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' } },
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-DevRyan-CSRF': '1',
+      },
+    },
   );
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: response.statusText }));
@@ -1032,6 +1093,50 @@ export async function continueMerge(directory: string): Promise<{ success: boole
     throw new Error(error.error || 'Failed to continue merge');
   }
   return response.json();
+}
+
+async function postIntegrate<T>(directory: string, action: string, body: unknown): Promise<T> {
+  const response = await fetch(buildUrl(`${API_BASE}/integrate/${action}`, directory), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(error.error || 'Git integration request failed');
+  }
+  return response.json() as Promise<T>;
+}
+
+export function computeIntegratePlan(
+  directory: string,
+  input: { sourceBranch: string; targetBranch: string },
+): Promise<GitIntegratePlan> {
+  return postIntegrate(directory, 'plan', input);
+}
+
+export function integrateCommits(directory: string, plan: GitIntegratePlan): Promise<GitIntegrateResult> {
+  return postIntegrate(directory, 'start', { plan });
+}
+
+export async function isIntegrateInProgress(directory: string, state: GitIntegrateState): Promise<boolean> {
+  const result = await postIntegrate<{ inProgress: boolean }>(directory, 'in-progress', { state });
+  return result.inProgress;
+}
+
+export function getIntegrateConflictDetails(
+  directory: string,
+  state: GitIntegrateState,
+): Promise<GitIntegrateConflictDetails> {
+  return postIntegrate(directory, 'conflict-details', { state });
+}
+
+export async function abortIntegrate(directory: string, state: GitIntegrateState): Promise<void> {
+  await postIntegrate(directory, 'abort', { state });
+}
+
+export function continueIntegrate(directory: string, state: GitIntegrateState): Promise<GitIntegrateResult> {
+  return postIntegrate(directory, 'continue', { state });
 }
 
 export async function stash(

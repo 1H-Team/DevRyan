@@ -5,7 +5,10 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { SidebarLeftIcon } from '@/components/icons/ToolbarIcons';
+import {
+  SidebarLeftCollapseIcon,
+  SidebarLeftExpandIcon,
+} from '@/components/icons/ToolbarIcons';
 import { useUIStore } from '@/stores/useUIStore';
 import { useTabletStandalonePwaRuntime } from '@/lib/device';
 import { cn } from '@/lib/utils';
@@ -18,10 +21,6 @@ import {
 } from '@/components/layout/desktopChromeInsets';
 import { DESKTOP_HEADER_ICON_BUTTON_CLASS } from '@/components/layout/headerIconButton';
 import { DesktopRightChromeActions } from '@/components/layout/DesktopRightChromeActions';
-
-const SidebarLeftExpandIcon = (props: React.ComponentProps<typeof SidebarLeftIcon>) => (
-  <SidebarLeftIcon {...props} chevronDirection="right" />
-);
 
 interface DesktopEdgeChromeProps {
   hideActions: boolean;
@@ -192,7 +191,7 @@ export const DesktopEdgeChrome: React.FC<DesktopEdgeChromeProps> = ({
                   : t('header.actions.openSessionsAria')}
               >
                 {isSidebarOpen ? (
-                  <SidebarLeftIcon className="h-[18px] w-[18px]" chevronDirection="left" />
+                  <SidebarLeftCollapseIcon className="h-[18px] w-[18px]" />
                 ) : (
                   <SidebarLeftExpandIcon className="h-[18px] w-[18px]" />
                 )}

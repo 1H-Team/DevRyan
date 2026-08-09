@@ -8,7 +8,7 @@ const packageJson = JSON.parse(
 );
 
 test("Electron update checks and publish metadata target the DevRyan repository", () => {
-  assert.match(mainSource, /const GITHUB_REPOSITORY_OWNER = 'zoubenr';/);
+  assert.match(mainSource, /const GITHUB_REPOSITORY_OWNER = '1H-Team';/);
   assert.match(mainSource, /const GITHUB_REPOSITORY_NAME = 'DevRyan';/);
   assert.match(
     mainSource,
@@ -18,7 +18,7 @@ test("Electron update checks and publish metadata target the DevRyan repository"
   assert.doesNotMatch(mainSource, /github\.com\/btriapitsyn\/openchamber/);
   assert.deepEqual(packageJson.build?.publish, {
     provider: "github",
-    owner: "zoubenr",
+    owner: "1H-Team",
     repo: "DevRyan",
   });
 });

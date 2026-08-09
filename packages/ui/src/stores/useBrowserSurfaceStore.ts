@@ -1,11 +1,13 @@
 import { create } from 'zustand';
 
-import { invokeDesktop, isDesktopLocalOriginActive, isElectronShell } from '@/lib/desktop';
+import { invokeDesktop, isElectronShell } from '@/lib/desktop';
 
 export type BrowserSurfaceSnapshot = {
   surfaceId: string;
   kind: 'manual' | 'lease';
   leaseId?: string;
+  workspaceId?: string;
+  tabId?: string;
   placement: 'inline' | 'popout' | 'parked';
   url: string;
   title: string;
@@ -43,10 +45,14 @@ export const sanitizeBrowserSurfaceSnapshot = (value: unknown): BrowserSurfaceSn
     : null;
   if (!surfaceId || !kind || !placement) return null;
   const leaseId = safeString(candidate.leaseId, MAX_ID_LENGTH);
+  const workspaceId = safeString(candidate.workspaceId, MAX_ID_LENGTH);
+  const tabId = safeString(candidate.tabId, MAX_ID_LENGTH);
   return {
     surfaceId,
     kind,
     ...(leaseId ? { leaseId } : {}),
+    ...(workspaceId ? { workspaceId } : {}),
+    ...(tabId ? { tabId } : {}),
     placement,
     url: safeString(candidate.url, MAX_URL_LENGTH) || 'about:blank',
     title: safeString(candidate.title, MAX_TITLE_LENGTH),
@@ -109,7 +115,6 @@ export const ensureBrowserSurfaceListeners = (): void => {
     listenersInstalled
     || typeof window === 'undefined'
     || !isElectronShell()
-    || !isDesktopLocalOriginActive()
   ) return;
   listenersInstalled = true;
   window.addEventListener('browser-surface-updated', (event: Event) => {
@@ -120,8 +125,9 @@ export const ensureBrowserSurfaceListeners = (): void => {
 export const createDesktopBrowserSurface = async (
   tabId: string,
   initialUrl: string,
+  workspaceId?: string,
 ): Promise<BrowserSurfaceSnapshot | null> => {
-  const result = await invokeDesktop<unknown>('desktop_browser_surface_create', { tabId, initialUrl });
+  const result = await invokeDesktop<unknown>('desktop_browser_surface_create', { tabId, initialUrl, workspaceId });
   return useBrowserSurfaceStore.getState().applySnapshot(result, tabId);
 };
 

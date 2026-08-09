@@ -102,6 +102,22 @@ const sessionCookie = (response) => {
   return String(value || '').split(';')[0];
 };
 
+const deferred = () => {
+  let resolve;
+  const promise = new Promise((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+};
+
+const waitForCondition = async (predicate) => {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  throw new Error('Timed out waiting for test condition');
+};
+
 const temporaryDirectories = [];
 const activeRuntimes = [];
 
@@ -122,11 +138,21 @@ const createHarness = async ({
   branchRows = [],
   ownershipRows = [],
   openCodeSessions = [],
+  activityRows = [],
   githubAccounts = [],
   userPolicies = [],
   githubUniqueViolationAccountId = null,
   missingGithubAccountColumn = false,
   missingGithubReassignmentFunction = false,
+  missingAnalyticsRetentionFunctions = false,
+  activityPurgeResult = { deletedCount: 0, protectedCount: 0 },
+  dependencyUnavailableAtStartup = false,
+  dependencyFailureStatusAtStartup = 0,
+  localOwnershipRows = [],
+  onManagedProjectMetadataChanged = vi.fn(),
+  onManagedSessionOwnershipCommitted = vi.fn(),
+  ownershipWriteFailures = 0,
+  ownershipWriteGate = null,
 } = {}) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-runtime-auth-'));
   temporaryDirectories.push(directory);
@@ -135,16 +161,33 @@ const createHarness = async ({
     publishableKey: 'sb_publishable_public',
     secretKey: 'sb_secret_private',
   }), { mode: 0o600 });
+  if (localOwnershipRows.length > 0) {
+    const ownershipDirectory = path.join(directory, 'multi-user');
+    await fs.mkdir(ownershipDirectory, { recursive: true, mode: 0o700 });
+    await fs.writeFile(
+      path.join(ownershipDirectory, 'session-ownership.json'),
+      JSON.stringify({ version: 1, rows: localOwnershipRows }),
+      { mode: 0o600 },
+    );
+  }
 
   const sessions = new Map();
   const auditEvents = [];
   let appSessionUnavailable = false;
   let refreshUnavailable = false;
   let ownershipArchiveUnavailable = false;
+  let openCodeDeleteUnavailable = false;
+  let dependencyUnavailable = dependencyUnavailableAtStartup;
+  let remainingOwnershipWriteFailures = ownershipWriteFailures;
+  let ownershipWriteAttemptCount = 0;
+  let openCodeSessionCreateCount = 0;
   let mintedEmail = '';
+  const analyticsRetentionLocks = new Map();
+  const openCodeDeleteRequests = [];
   const mutableProfiles = profiles.map((profile) => ({ ...profile }));
   const mutableOwnershipRows = ownershipRows.map((row) => ({ ...row }));
   const mutableOpenCodeSessions = openCodeSessions.map((session) => structuredClone(session));
+  const mutableActivityRows = activityRows.map((row) => structuredClone(row));
   const projectsById = new Map(projects.map((project) => [project.id, { ...project }]));
   const githubAccountsById = new Map(githubAccounts.map((account) => [account.accountId, structuredClone(account)]));
 
@@ -155,6 +198,21 @@ const createHarness = async ({
     const body = init.body ? JSON.parse(String(init.body)) : null;
 
     if (url.hostname === 'opencode.test') {
+      if (url.pathname === '/session') {
+        if (method === 'POST') {
+          openCodeSessionCreateCount += 1;
+          const session = {
+            id: `created-session-${openCodeSessionCreateCount}`,
+            title: body?.title || `New session - ${new Date().toISOString()}`,
+            directory: body?.directory || '',
+            ...(body?.parentID ? { parentID: body.parentID } : {}),
+            time: { created: Date.now(), updated: Date.now() },
+          };
+          mutableOpenCodeSessions.push(session);
+          return jsonResponse(session);
+        }
+        return jsonResponse(mutableOpenCodeSessions);
+      }
       if (url.pathname === '/experimental/session') {
         const archived = url.searchParams.get('archived') === 'true';
         const rawCursor = url.searchParams.get('cursor');
@@ -177,6 +235,8 @@ const createHarness = async ({
         const index = mutableOpenCodeSessions.findIndex((session) => session.id === sessionId);
         if (index < 0) return jsonResponse({ message: 'not found' }, 404);
         if (method === 'DELETE') {
+          openCodeDeleteRequests.push({ sessionId, url: url.toString() });
+          if (openCodeDeleteUnavailable) return jsonResponse({ message: 'delete unavailable' }, 503);
           mutableOpenCodeSessions.splice(index, 1);
           return jsonResponse(true);
         }
@@ -190,6 +250,15 @@ const createHarness = async ({
         return jsonResponse(mutableOpenCodeSessions[index]);
       }
       return jsonResponse({ message: 'not found' }, 404);
+    }
+
+    if (dependencyUnavailable) {
+      const error = new TypeError('fetch failed');
+      error.cause = Object.assign(new Error(`getaddrinfo ENOTFOUND ${url.hostname}`), { code: 'ENOTFOUND' });
+      throw error;
+    }
+    if (dependencyFailureStatusAtStartup > 0) {
+      return jsonResponse({ message: 'invalid control-plane configuration' }, dependencyFailureStatusAtStartup);
     }
 
     if (url.pathname === '/auth/v1/token') {
@@ -259,6 +328,32 @@ const createHarness = async ({
         assignedUser: publicUser(targetProfile),
       });
     }
+    if (url.pathname === '/rest/v1/rpc/devryan_lock_user_analytics_retention') {
+      if (missingAnalyticsRetentionFunctions) {
+        return jsonResponse({
+          code: 'PGRST202',
+          message: 'Could not find the function public.devryan_lock_user_analytics_retention in the schema cache',
+        }, 404);
+      }
+      const profile = profileById(body?.p_user_id);
+      const lockable = profile?.role === 'developer' || profile?.role === 'senior_developer';
+      if (lockable && !analyticsRetentionLocks.has(profile.id)) {
+        analyticsRetentionLocks.set(profile.id, new Date().toISOString());
+      }
+      return jsonResponse({
+        locked: lockable,
+        protectedAt: lockable ? analyticsRetentionLocks.get(profile.id) : null,
+      });
+    }
+    if (url.pathname === '/rest/v1/rpc/devryan_purge_unprotected_activity_logs') {
+      if (missingAnalyticsRetentionFunctions) {
+        return jsonResponse({
+          code: 'PGRST202',
+          message: 'Could not find the function public.devryan_purge_unprotected_activity_logs in the schema cache',
+        }, 404);
+      }
+      return jsonResponse(activityPurgeResult);
+    }
     if (!url.pathname.startsWith('/rest/v1/')) return jsonResponse({ message: 'not found' }, 404);
 
     const table = decodeURIComponent(url.pathname.slice('/rest/v1/'.length));
@@ -268,8 +363,24 @@ const createHarness = async ({
         !sessionFilter || row.session_id === sessionFilter.replace(/^eq\./, '')
       ));
       if (method === 'POST') {
+        ownershipWriteAttemptCount += 1;
+        if (ownershipWriteGate) await ownershipWriteGate.promise;
+        if (remainingOwnershipWriteFailures > 0) {
+          remainingOwnershipWriteFailures -= 1;
+          const error = new Error('Session ownership request timed out');
+          error.name = 'TimeoutError';
+          throw error;
+        }
         if (!mutableOwnershipRows.some((row) => row.session_id === body.session_id)) {
           mutableOwnershipRows.push({ ...body, archived_at: body.archived_at || null });
+        }
+        return jsonResponse([]);
+      }
+      if (method === 'DELETE') {
+        for (let index = mutableOwnershipRows.length - 1; index >= 0; index -= 1) {
+          if (!sessionFilter || mutableOwnershipRows[index].session_id === sessionFilter.replace(/^eq\./, '')) {
+            mutableOwnershipRows.splice(index, 1);
+          }
         }
         return jsonResponse([]);
       }
@@ -284,6 +395,11 @@ const createHarness = async ({
     }
     if (table === 'activity_logs') {
       if (body) auditEvents.push(body);
+      if (method === 'GET') {
+        const offset = Math.max(0, Number(url.searchParams.get('offset') || 0));
+        const limit = Math.max(1, Number(url.searchParams.get('limit') || 1_000));
+        return jsonResponse(mutableActivityRows.slice(offset, offset + limit));
+      }
       return jsonResponse([]);
     }
     if (table === 'user_profiles') {
@@ -380,6 +496,13 @@ const createHarness = async ({
     dataDirectory: directory,
     fetchImpl,
     logger: { warn: vi.fn(), error: vi.fn() },
+    onManagedProjectMetadataChanged,
+    onManagedSessionOwnershipCommitted,
+    sessionOwnershipRetryOptions: {
+      attempts: 4,
+      timeoutMs: 5,
+      delaysMs: [0, 0, 0],
+    },
     githubAuthStore: {
       getGitHubAuthById: (accountId) => githubAccountsById.get(accountId) || null,
       getAllGitHubAuthAccounts: () => [...githubAccountsById.values()].map((account) => ({
@@ -395,17 +518,26 @@ const createHarness = async ({
 
   return {
     auditEvents,
+    analyticsRetentionLocks,
     directory,
     fetchImpl,
     getMintedEmail: () => mintedEmail,
+    getOpenCodeSessionCreateCount: () => openCodeSessionCreateCount,
+    getOwnershipWriteAttemptCount: () => ownershipWriteAttemptCount,
     getProfile: (userId) => profileById(userId),
     getOwnership: (sessionId) => mutableOwnershipRows.find((row) => row.session_id === sessionId) || null,
+    getOpenCodeSession: (sessionId) => mutableOpenCodeSessions.find((session) => session.id === sessionId) || null,
     getGitHubAccount: (accountId) => githubAccountsById.get(accountId) || null,
     runtime,
+    onManagedProjectMetadataChanged,
+    onManagedSessionOwnershipCommitted,
+    openCodeDeleteRequests,
     projectsById,
     setAppSessionUnavailable(value) { appSessionUnavailable = value; },
     setOwnershipArchiveUnavailable(value) { ownershipArchiveUnavailable = value; },
+    setOpenCodeDeleteUnavailable(value) { openCodeDeleteUnavailable = value; },
     setRefreshUnavailable(value) { refreshUnavailable = value; },
+    setDependencyUnavailable(value) { dependencyUnavailable = value; },
   };
 };
 
@@ -431,6 +563,450 @@ const waitForAudit = async (harness, action, targetId = null) => {
 };
 
 describe('multi-user authentication runtime', () => {
+  it('filters managed-task events by root-session ownership', async () => {
+    const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-managed-task-events-'));
+    temporaryDirectories.push(repositoryPath);
+    const project = {
+      id: '33333333-3333-4333-8333-333333333333',
+      label: 'Managed Task Project',
+      repository_path: repositoryPath,
+      remote_url: null,
+      default_branch: 'main',
+      status: 'active',
+    };
+    const ownership = (sessionId, userId) => ({
+      session_id: sessionId,
+      user_id: userId,
+      project_id: project.id,
+      branch_name: 'main',
+      public_directory: '/projects/managed-task/main',
+      archived_at: null,
+    });
+    const harness = await createHarness({
+      projects: [project],
+      accessRows: [
+        { user_id: USER_IDS.developer, project_id: project.id, is_default: true, github_account_id: null },
+        { user_id: USER_IDS.admin, project_id: project.id, is_default: true, github_account_id: null },
+      ],
+      branchRows: [
+        { user_id: USER_IDS.developer, project_id: project.id, branch_name: 'main', workspace_path: repositoryPath, is_default: true },
+        { user_id: USER_IDS.admin, project_id: project.id, branch_name: 'main', workspace_path: repositoryPath, is_default: true },
+      ],
+      ownershipRows: [
+        ownership('developer-root', USER_IDS.developer),
+        ownership('foreign-root', USER_IDS.admin),
+      ],
+    });
+    const login = await passwordLogin(harness);
+    const principal = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
+    const filterGlobalEvent = (payload) => harness.runtime.filterEventForPrincipal(principal, {
+      payload,
+      directory: 'global',
+    });
+    const managedTaskEvent = (task) => ({
+      type: 'openchamber:managed-task',
+      properties: { owner: 'devryan', task },
+    });
+
+    const running = managedTaskEvent({
+      taskId: 'dvr_task_running',
+      rootSessionId: 'developer-root',
+      status: 'running',
+    });
+    const terminal = managedTaskEvent({
+      taskId: 'dvr_task_terminal',
+      rootSessionId: 'developer-root',
+      status: 'completed',
+      resultEnvelope: { taskId: 'dvr_task_terminal', status: 'completed' },
+    });
+    const acknowledged = managedTaskEvent({
+      taskId: 'dvr_task_acknowledged',
+      rootSessionId: 'developer-root',
+      status: 'completed',
+      acknowledgedAt: 1_000,
+    });
+
+    await expect(Promise.all([
+      filterGlobalEvent(running),
+      filterGlobalEvent(terminal),
+      filterGlobalEvent(acknowledged),
+    ])).resolves.toEqual([true, true, true]);
+
+    await expect(filterGlobalEvent({
+      type: 'openchamber:managed-task-removed',
+      properties: {
+        owner: 'devryan',
+        taskId: 'dvr_task_removed',
+        rootSessionId: 'developer-root',
+      },
+    })).resolves.toBe(true);
+    await expect(filterGlobalEvent({
+      type: 'openchamber:managed-task-removed',
+      properties: {
+        owner: 'devryan',
+        taskId: 'dvr_task_foreign_removed',
+        rootSessionId: 'foreign-root',
+      },
+    })).resolves.toBe(false);
+
+    const deniedSyntheticEvents = [
+      managedTaskEvent({ taskId: 'dvr_task_foreign', rootSessionId: 'foreign-root', status: 'running' }),
+      {
+        type: 'openchamber:managed-task',
+        sessionID: 'developer-root',
+        properties: {
+          owner: 'another-runtime',
+          task: { taskId: 'dvr_task_wrong_owner', rootSessionId: 'developer-root', status: 'running' },
+        },
+      },
+      {
+        type: 'openchamber:managed-task',
+        sessionID: 'developer-root',
+        properties: { owner: 'devryan', task: { taskId: 'dvr_task_missing_root', status: 'running' } },
+      },
+      {
+        type: 'openchamber:managed-task-removed',
+        sessionID: 'developer-root',
+        properties: { owner: 'devryan', taskId: 'dvr_task_missing_removed_root' },
+      },
+      { type: 'openchamber:synthetic-event', properties: { owner: 'devryan' } },
+    ];
+    for (const event of deniedSyntheticEvents) {
+      await expect(filterGlobalEvent(event)).resolves.toBe(false);
+    }
+    await expect(harness.runtime.filterEventForPrincipal(principal, {
+      payload: {
+        type: 'openchamber:managed-task',
+        properties: {
+          owner: 'another-runtime',
+          task: { taskId: 'dvr_task_assigned_directory', rootSessionId: 'developer-root', status: 'running' },
+        },
+      },
+      directory: repositoryPath,
+    })).resolves.toBe(false);
+
+    await expect(filterGlobalEvent({ type: 'openchamber:heartbeat' })).resolves.toBe(true);
+    await expect(filterGlobalEvent({ type: 'server.connected' })).resolves.toBe(true);
+    await expect(filterGlobalEvent({
+      type: 'session.status',
+      properties: { sessionID: 'developer-root' },
+    })).resolves.toBe(true);
+    await expect(filterGlobalEvent({
+      type: 'session.status',
+      properties: { sessionID: 'foreign-root' },
+    })).resolves.toBe(false);
+  });
+
+  it('keeps one root session provisional while retrying ownership against the same id', async () => {
+    const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-session-create-'));
+    temporaryDirectories.push(repositoryPath);
+    const project = {
+      id: '33333333-3333-4333-8333-333333333333',
+      label: 'Session Create Project',
+      repository_path: repositoryPath,
+      remote_url: null,
+      default_branch: 'main',
+      status: 'active',
+    };
+    const ownershipWriteGate = deferred();
+    const harness = await createHarness({
+      signedInRole: 'admin',
+      projects: [project],
+      accessRows: [{ user_id: USER_IDS.admin, project_id: project.id, is_default: true, github_account_id: null }],
+      branchRows: [{
+        user_id: USER_IDS.admin,
+        project_id: project.id,
+        branch_name: 'main',
+        workspace_path: repositoryPath,
+        is_default: true,
+      }],
+      ownershipWriteFailures: 3,
+      ownershipWriteGate,
+    });
+    const handlers = new Map();
+    const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
+      method,
+      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+    ]));
+    harness.runtime.registerRoutes(app, {
+      buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
+      getOpenCodeAuthHeaders: () => ({}),
+    });
+    const principal = {
+      scope: 'managed',
+      id: USER_IDS.admin,
+      role: 'admin',
+      assignments: [{
+        projectId: project.id,
+        branchName: 'main',
+        publicDirectory: '/projects/session-create/main',
+        repositoryPath,
+        isDefault: true,
+      }],
+    };
+    const response = makeResponse();
+    const createPromise = handlers.get('POST /api/session')({
+      ...makeRequest({
+        body: { directory: repositoryPath },
+        method: 'POST',
+        path: '/api/session',
+        csrf: true,
+      }),
+      originalUrl: '/api/session',
+      principal,
+    }, response, vi.fn());
+
+    await waitForCondition(() => (
+      harness.getOpenCodeSessionCreateCount() === 1
+      && harness.getOwnershipWriteAttemptCount() === 1
+    ));
+    const provisional = harness.getOpenCodeSession('created-session-1');
+    await expect(harness.runtime.filterEventForPrincipal(principal, {
+      payload: { type: 'session.created', properties: { info: provisional } },
+      directory: repositoryPath,
+    })).resolves.toBe(false);
+
+    const listResponse = makeResponse();
+    await handlers.get('GET /api/session')({
+      ...makeRequest({ path: '/api/session' }),
+      originalUrl: '/api/session',
+      principal,
+    }, listResponse, vi.fn());
+    expect(listResponse.payload).toEqual([]);
+
+    ownershipWriteGate.resolve();
+    await createPromise;
+
+    expect(response.statusCode).toBe(200);
+    expect(response.payload?.id).toBe('created-session-1');
+    expect(harness.getOpenCodeSessionCreateCount()).toBe(1);
+    expect(harness.getOwnershipWriteAttemptCount()).toBe(4);
+    expect(harness.getOwnership('created-session-1')).toEqual(expect.objectContaining({
+      user_id: USER_IDS.admin,
+      project_id: project.id,
+    }));
+    await expect(harness.runtime.ownsSession(principal, 'created-session-1')).resolves.toBe(true);
+    expect(harness.onManagedSessionOwnershipCommitted).toHaveBeenCalledTimes(1);
+    expect(harness.onManagedSessionOwnershipCommitted).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'created-session-1' }),
+    );
+  });
+
+  it('rolls back one hidden root session after ownership retries are exhausted', async () => {
+    const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-session-create-failure-'));
+    temporaryDirectories.push(repositoryPath);
+    const project = {
+      id: '33333333-3333-4333-8333-333333333333',
+      label: 'Session Create Failure Project',
+      repository_path: repositoryPath,
+      remote_url: null,
+      default_branch: 'main',
+      status: 'active',
+    };
+    const harness = await createHarness({
+      signedInRole: 'admin',
+      projects: [project],
+      accessRows: [{ user_id: USER_IDS.admin, project_id: project.id, is_default: true, github_account_id: null }],
+      branchRows: [{
+        user_id: USER_IDS.admin,
+        project_id: project.id,
+        branch_name: 'main',
+        workspace_path: repositoryPath,
+        is_default: true,
+      }],
+      ownershipWriteFailures: 4,
+    });
+    const handlers = new Map();
+    const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
+      method,
+      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+    ]));
+    harness.runtime.registerRoutes(app, {
+      buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
+      getOpenCodeAuthHeaders: () => ({}),
+    });
+    const principal = {
+      scope: 'managed',
+      id: USER_IDS.admin,
+      role: 'admin',
+      assignments: [{
+        projectId: project.id,
+        branchName: 'main',
+        publicDirectory: '/projects/session-create-failure/main',
+        repositoryPath,
+        isDefault: true,
+      }],
+    };
+    const response = makeResponse();
+
+    await handlers.get('POST /api/session')({
+      ...makeRequest({
+        body: { directory: repositoryPath },
+        method: 'POST',
+        path: '/api/session',
+        csrf: true,
+      }),
+      originalUrl: '/api/session',
+      principal,
+    }, response, vi.fn());
+
+    expect(response.statusCode).toBe(503);
+    expect(response.payload).toEqual({
+      error: 'Identity service unavailable',
+      code: 'identity_unavailable',
+      retryable: false,
+    });
+    expect(harness.getOpenCodeSessionCreateCount()).toBe(1);
+    expect(harness.getOwnershipWriteAttemptCount()).toBe(4);
+    expect(harness.getOpenCodeSession('created-session-1')).toBeNull();
+    expect(harness.getOwnership('created-session-1')).toBeNull();
+    expect(harness.onManagedSessionOwnershipCommitted).not.toHaveBeenCalled();
+    expect(harness.auditEvents).not.toContainEqual(expect.objectContaining({
+      action: 'session.created',
+      session_id: 'created-session-1',
+    }));
+  });
+
+  it('allows owned-plan routes for developers without opening generic filesystem access', async () => {
+    const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-plan-policy-'));
+    const outsidePath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-plan-policy-outside-'));
+    temporaryDirectories.push(repositoryPath, outsidePath);
+    const project = {
+      id: '33333333-3333-4333-8333-333333333333',
+      label: 'Plan Project',
+      repository_path: repositoryPath,
+      remote_url: null,
+      default_branch: 'main',
+      status: 'active',
+    };
+    const harness = await createHarness({
+      projects: [project],
+      accessRows: [{ user_id: USER_IDS.developer, project_id: project.id, is_default: true, github_account_id: null }],
+      branchRows: [{
+        user_id: USER_IDS.developer,
+        project_id: project.id,
+        branch_name: 'main',
+        workspace_path: repositoryPath,
+        is_default: true,
+      }],
+      ownershipRows: [
+        {
+          session_id: 'ses-owned',
+          user_id: USER_IDS.developer,
+          project_id: project.id,
+          branch_name: 'main',
+          public_directory: repositoryPath,
+          archived_at: null,
+        },
+        {
+          session_id: 'ses-foreign',
+          user_id: USER_IDS.admin,
+          project_id: project.id,
+          branch_name: 'main',
+          public_directory: repositoryPath,
+          archived_at: null,
+        },
+        {
+          session_id: 'ses-archived',
+          user_id: USER_IDS.developer,
+          project_id: project.id,
+          branch_name: 'main',
+          public_directory: repositoryPath,
+          archived_at: new Date().toISOString(),
+        },
+        {
+          session_id: 'ses-revoked',
+          user_id: USER_IDS.developer,
+          project_id: '44444444-4444-4444-8444-444444444444',
+          branch_name: 'main',
+          public_directory: repositoryPath,
+          archived_at: null,
+        },
+      ],
+    });
+    const login = await passwordLogin(harness);
+    const principal = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
+
+    await expect(harness.runtime.resolveOwnedSessionPlanContext(
+      principal,
+      'ses-owned',
+      repositoryPath,
+    )).resolves.toEqual({
+      directory: repositoryPath,
+      projectId: project.id,
+      branchName: 'main',
+    });
+    await expect(harness.runtime.resolveOwnedSessionPlanContext(
+      principal,
+      'ses-owned',
+      outsidePath,
+    )).resolves.toBeNull();
+    await expect(harness.runtime.resolveOwnedSessionPlanContext(principal, 'ses-foreign')).resolves.toBeNull();
+    await expect(harness.runtime.resolveOwnedSessionPlanContext(principal, 'ses-archived')).resolves.toBeNull();
+    await expect(harness.runtime.resolveOwnedSessionPlanContext(principal, 'ses-revoked')).resolves.toBeNull();
+
+    const allowedResponse = makeResponse();
+    const allowedNext = vi.fn(() => allowedResponse.json({ ok: true }));
+    await harness.runtime.authController.requireAuth(makeRequest({
+      cookie: login.cookie,
+      method: 'POST',
+      path: '/session/ses-owned/plan-revisions/msg-plan-1',
+      csrf: true,
+      body: {
+        directory: repositoryPath,
+        sessionCreated: 123,
+        sessionSlug: 'Plan',
+        markdown: '# Plan',
+      },
+    }), allowedResponse, allowedNext);
+    expect(allowedNext).toHaveBeenCalledOnce();
+    expect(allowedResponse.statusCode).toBe(200);
+
+    for (const method of ['GET', 'PUT']) {
+      const response = makeResponse();
+      const next = vi.fn(() => response.json({ ok: true }));
+      await harness.runtime.authController.requireAuth(makeRequest({
+        cookie: login.cookie,
+        method,
+        path: '/session/ses-owned/plan-revisions/msg-plan-1',
+        csrf: method === 'PUT',
+        body: method === 'PUT' ? {
+          directory: repositoryPath,
+          sessionCreated: 123,
+          sessionSlug: 'Plan',
+          markdown: '# Edited plan',
+        } : {},
+      }), response, next);
+      expect(next).toHaveBeenCalledOnce();
+      expect(response.statusCode).toBe(200);
+    }
+
+    const fsResponse = makeResponse();
+    await harness.runtime.authController.requireAuth(
+      makeRequest({ cookie: login.cookie, path: '/fs/home' }),
+      fsResponse,
+      vi.fn(),
+    );
+    expect(fsResponse.statusCode).toBe(403);
+    expect(fsResponse.payload.error).toBe('File access is disabled by policy');
+
+    const outsideResponse = makeResponse();
+    await harness.runtime.authController.requireAuth(makeRequest({
+      cookie: login.cookie,
+      method: 'POST',
+      path: '/session/ses-owned/plan-revisions/msg-plan-1',
+      csrf: true,
+      body: {
+        directory: outsidePath,
+        sessionCreated: 123,
+        sessionSlug: 'Plan',
+        markdown: '# Plan',
+      },
+    }), outsideResponse, vi.fn());
+    expect(outsideResponse.statusCode).toBe(403);
+    expect(outsideResponse.payload.error).toMatch(/outside your assigned workspace/i);
+  });
+
   it('allows assigned GitHub identity status while keeping operations policy-gated', async () => {
     const harness = await createHarness({
       profiles: [
@@ -463,6 +1039,39 @@ describe('multi-user authentication runtime', () => {
     );
     expect(deniedResponse.statusCode).toBe(403);
     expect(deniedResponse.payload.error).toBe('GitHub access is disabled by policy');
+  });
+
+  it('allows capability-gated Browser runtime mutations without opening host configuration', async () => {
+    const harness = await createHarness();
+    const login = await passwordLogin(harness);
+
+    for (const requestPath of [
+      '/browser/targets',
+      '/browser/instances/register',
+      '/browser/local-instances/status',
+    ]) {
+      const response = makeResponse();
+      const next = vi.fn(() => response.json({ allowed: true }));
+      await harness.runtime.authController.requireAuth(makeRequest({
+        cookie: login.cookie,
+        method: 'POST',
+        path: requestPath,
+        csrf: true,
+      }), response, next);
+
+      expect(response.statusCode, requestPath).toBe(200);
+      expect(next, requestPath).toHaveBeenCalledOnce();
+    }
+
+    const deniedResponse = makeResponse();
+    await harness.runtime.authController.requireAuth(makeRequest({
+      cookie: login.cookie,
+      method: 'POST',
+      path: '/browser/config',
+      csrf: true,
+    }), deniedResponse, vi.fn());
+    expect(deniedResponse.statusCode).toBe(403);
+    expect(deniedResponse.payload.error).toBe('Host configuration is restricted to administrators');
   });
 
   it('filters global session pages and permits only owner lifecycle mutations for both roles', async () => {
@@ -617,6 +1226,237 @@ describe('multi-user authentication runtime', () => {
       metadata: expect.objectContaining({ upstreamDeleted: true, ownershipTombstoned: false }),
     }));
     await expect(fs.readFile(journalMarker, 'utf8')).resolves.toBe('diagnostic evidence');
+  });
+
+  it('deletes owned legacy archived sessions by ownership without forwarding a directory scope', async () => {
+    const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-delete-current-'));
+    const legacyDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-delete-legacy-'));
+    temporaryDirectories.push(repositoryPath, legacyDirectory);
+    const project = {
+      id: '33333333-3333-4333-8333-333333333333',
+      label: 'Delete Project',
+      repository_path: repositoryPath,
+      remote_url: null,
+      default_branch: 'main',
+      status: 'active',
+    };
+    const ownership = (sessionId, userId) => ({
+      session_id: sessionId,
+      user_id: userId,
+      project_id: project.id,
+      branch_name: 'main',
+      public_directory: '/projects/delete/main',
+      archived_at: null,
+    });
+    const harness = await createHarness({
+      projects: [project],
+      accessRows: [{ user_id: USER_IDS.developer, project_id: project.id, is_default: true, github_account_id: null }],
+      branchRows: [{
+        user_id: USER_IDS.developer,
+        project_id: project.id,
+        branch_name: 'main',
+        workspace_path: repositoryPath,
+        is_default: true,
+      }],
+      ownershipRows: [
+        ownership('legacy-archived', USER_IDS.developer),
+        ownership('current-archived', USER_IDS.developer),
+        ownership('foreign-archived', USER_IDS.admin),
+      ],
+      openCodeSessions: [
+        { id: 'legacy-archived', directory: legacyDirectory, time: { updated: 300, archived: 310 } },
+        { id: 'current-archived', directory: repositoryPath, time: { updated: 200, archived: 210 } },
+        { id: 'foreign-archived', directory: legacyDirectory, time: { updated: 100, archived: 110 } },
+      ],
+    });
+    const { cookie } = await passwordLogin(harness);
+    const handlers = new Map();
+    const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
+      method,
+      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+    ]));
+    harness.runtime.registerRoutes(app, {
+      buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
+      getOpenCodeAuthHeaders: () => ({}),
+    });
+    const deleteHandler = handlers.get('DELETE /api/session/:sessionID');
+
+    const runDelete = async (sessionID, directory) => {
+      const request = makeRequest({ cookie, method: 'DELETE', path: `/session/${sessionID}`, csrf: true });
+      request.params = { sessionID };
+      request.url = `/session/${sessionID}?directory=${encodeURIComponent(directory)}`;
+      request.originalUrl = `/api/session/${sessionID}?directory=${encodeURIComponent(directory)}`;
+      request.headers['x-opencode-directory'] = directory;
+      request.body = { directory };
+      const response = makeResponse();
+      await harness.runtime.authController.requireAuth(request, response, () => deleteHandler(request, response, vi.fn()));
+      return { request, response };
+    };
+
+    const legacy = await runDelete('legacy-archived', legacyDirectory);
+    expect(legacy.response.statusCode).toBe(200);
+    expect(legacy.request.url).toBe('/session/legacy-archived');
+    expect(legacy.request.originalUrl).toBe('/api/session/legacy-archived');
+    expect(legacy.request.body).toEqual({});
+    expect(legacy.request.headers).not.toHaveProperty('x-opencode-directory');
+    expect(harness.openCodeDeleteRequests[0]).toEqual({
+      sessionId: 'legacy-archived',
+      url: 'http://opencode.test/session/legacy-archived',
+    });
+    expect(harness.analyticsRetentionLocks.has(USER_IDS.developer)).toBe(true);
+    expect(harness.getOwnership('legacy-archived')?.archived_at).toEqual(expect.any(String));
+
+    const current = await runDelete('current-archived', repositoryPath);
+    expect(current.response.statusCode).toBe(200);
+    expect(harness.openCodeDeleteRequests[1]?.url).toBe('http://opencode.test/session/current-archived');
+
+    const foreign = await runDelete('foreign-archived', legacyDirectory);
+    expect(foreign.response.statusCode).toBe(404);
+    expect(foreign.response.payload).toEqual({ error: 'Session not found' });
+    expect(harness.openCodeDeleteRequests).toHaveLength(2);
+
+    const otherRoute = makeRequest({ cookie, method: 'GET', path: '/session/legacy-archived/message' });
+    otherRoute.url = `/session/legacy-archived/message?directory=${encodeURIComponent(legacyDirectory)}`;
+    otherRoute.originalUrl = `/api/session/legacy-archived/message?directory=${encodeURIComponent(legacyDirectory)}`;
+    const denied = makeResponse();
+    await harness.runtime.authController.requireAuth(otherRoute, denied, vi.fn());
+    expect(denied.statusCode).toBe(403);
+    expect(denied.payload.error).toBe('Directory is outside your assigned workspace');
+  });
+
+  it('locks analytics before upstream deletion and fails closed when the migration is missing', async () => {
+    const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-delete-migration-'));
+    temporaryDirectories.push(repositoryPath);
+    const project = {
+      id: '33333333-3333-4333-8333-333333333333', label: 'Delete Project', repository_path: repositoryPath,
+      remote_url: null, default_branch: 'main', status: 'active',
+    };
+    const harness = await createHarness({
+      missingAnalyticsRetentionFunctions: true,
+      projects: [project],
+      accessRows: [{ user_id: USER_IDS.developer, project_id: project.id, is_default: true, github_account_id: null }],
+      branchRows: [{
+        user_id: USER_IDS.developer, project_id: project.id, branch_name: 'main', workspace_path: repositoryPath, is_default: true,
+      }],
+      ownershipRows: [{
+        session_id: 'migration-blocked', user_id: USER_IDS.developer, project_id: project.id,
+        branch_name: 'main', public_directory: '/projects/delete/main', archived_at: null,
+      }],
+      openCodeSessions: [{ id: 'migration-blocked', directory: repositoryPath, time: { updated: 100, archived: 110 } }],
+    });
+    const { cookie } = await passwordLogin(harness);
+    const handlers = new Map();
+    const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
+      method,
+      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+    ]));
+    harness.runtime.registerRoutes(app, {
+      buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
+      getOpenCodeAuthHeaders: () => ({}),
+    });
+    const request = makeRequest({ cookie, method: 'DELETE', path: '/session/migration-blocked', csrf: true });
+    request.params = { sessionID: 'migration-blocked' };
+    request.originalUrl = '/api/session/migration-blocked';
+    const response = makeResponse();
+    await harness.runtime.authController.requireAuth(
+      request,
+      response,
+      () => handlers.get('DELETE /api/session/:sessionID')(request, response, vi.fn()),
+    );
+
+    expect(response.statusCode).toBe(503);
+    expect(response.payload).toEqual({
+      error: 'Database migration required',
+      code: 'schema_migration_required',
+      requiredMigration: '20260807100000',
+    });
+    expect(harness.openCodeDeleteRequests).toHaveLength(0);
+    expect(harness.getOpenCodeSession('migration-blocked')).not.toBeNull();
+    expect(harness.getOwnership('migration-blocked')?.archived_at).toBeNull();
+    const audit = await waitForAudit(harness, 'session.deleted', 'migration-blocked');
+    expect(audit).toEqual(expect.objectContaining({
+      success: false,
+      metadata: expect.objectContaining({ analyticsRetentionLocked: false, upstreamDeleted: false }),
+    }));
+  });
+
+  it('keeps the developer retention lock when a later upstream delete fails', async () => {
+    const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-delete-upstream-'));
+    temporaryDirectories.push(repositoryPath);
+    const project = {
+      id: '33333333-3333-4333-8333-333333333333', label: 'Delete Project', repository_path: repositoryPath,
+      remote_url: null, default_branch: 'main', status: 'active',
+    };
+    const harness = await createHarness({
+      projects: [project],
+      accessRows: [{ user_id: USER_IDS.developer, project_id: project.id, is_default: true, github_account_id: null }],
+      branchRows: [{
+        user_id: USER_IDS.developer, project_id: project.id, branch_name: 'main', workspace_path: repositoryPath, is_default: true,
+      }],
+      ownershipRows: [{
+        session_id: 'upstream-failed', user_id: USER_IDS.developer, project_id: project.id,
+        branch_name: 'main', public_directory: '/projects/delete/main', archived_at: null,
+      }],
+      openCodeSessions: [{ id: 'upstream-failed', directory: repositoryPath, time: { updated: 100, archived: 110 } }],
+    });
+    harness.setOpenCodeDeleteUnavailable(true);
+    const handlers = new Map();
+    const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
+      method,
+      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+    ]));
+    harness.runtime.registerRoutes(app, {
+      buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
+      getOpenCodeAuthHeaders: () => ({}),
+    });
+    const response = makeResponse();
+    await handlers.get('DELETE /api/session/:sessionID')({
+      body: undefined,
+      method: 'DELETE',
+      originalUrl: '/api/session/upstream-failed',
+      params: { sessionID: 'upstream-failed' },
+      principal: {
+        scope: 'managed', id: USER_IDS.developer, role: 'developer',
+        assignments: [{ projectId: project.id, branchName: 'main', repositoryPath, isDefault: true }],
+      },
+    }, response, vi.fn());
+
+    expect(response.statusCode).toBe(503);
+    expect(harness.analyticsRetentionLocks.has(USER_IDS.developer)).toBe(true);
+    expect(harness.getOpenCodeSession('upstream-failed')).not.toBeNull();
+    expect(harness.getOwnership('upstream-failed')?.archived_at).toBeNull();
+    const audit = await waitForAudit(harness, 'session.deleted', 'upstream-failed');
+    expect(audit).toEqual(expect.objectContaining({
+      success: false,
+      metadata: expect.objectContaining({ analyticsRetentionLocked: true, upstreamDeleted: false }),
+    }));
+  });
+
+  it('purges only unprotected activity and reports deleted and preserved counts', async () => {
+    const harness = await createHarness({
+      signedInRole: 'admin',
+      activityPurgeResult: { deletedCount: 17, protectedCount: 23 },
+    });
+    const login = await passwordLogin(harness, { role: 'admin' });
+    const principal = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
+    const handlers = new Map();
+    const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
+      method,
+      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+    ]));
+    harness.runtime.registerRoutes(app);
+    const response = makeResponse();
+    await handlers.get('DELETE /api/admin/activity')({
+      body: { confirm: true },
+      principal,
+    }, response);
+    expect(response.payload).toEqual({ purged: true, deletedCount: 17, protectedCount: 23 });
+    const rpcCall = harness.fetchImpl.mock.calls.find(([input]) => (
+      String(input).includes('/rest/v1/rpc/devryan_purge_unprotected_activity_logs')
+    ));
+    expect(JSON.parse(String(rpcCall?.[1]?.body))).toEqual({
+      p_preserve_event_id: expect.any(String),
+    });
   });
 
   it('saves GitHub association with the profile without revoking app sessions', async () => {
@@ -988,7 +1828,7 @@ describe('multi-user authentication runtime', () => {
     });
   });
 
-  it('allows real-worktree Git routes for developers and clears cached principals after creation', async () => {
+  it('allows worktree reads while denying developer manual worktree and branch creation by default', async () => {
     const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-route-policy-'));
     temporaryDirectories.push(repositoryPath);
     const project = {
@@ -1020,10 +1860,7 @@ describe('multi-user authentication runtime', () => {
       ['GET', '/git/worktrees/operations/operation-1'],
       ['POST', '/git/worktrees/validate'],
       ['POST', '/git/worktrees/preview'],
-      ['POST', '/git/worktrees/operations/operation-1/retry'],
-      ['POST', '/git/branches'],
       ['POST', '/git/checkout'],
-      ['DELETE', '/git/worktrees'],
     ]) {
       const response = makeResponse();
       const next = vi.fn(() => response.json({ allowed: true }));
@@ -1037,16 +1874,95 @@ describe('multi-user authentication runtime', () => {
       expect(next, `${method} ${requestPath}`).toHaveBeenCalledOnce();
     }
 
-    harness.getProfile(USER_IDS.developer).display_name = 'Updated Developer';
-    const creationResponse = makeResponse();
+    const branchTargetResponse = makeResponse();
+    const branchTargetNext = vi.fn(() => branchTargetResponse.json({ allowed: true }));
+    await harness.runtime.authController.requireAuth(makeRequest({
+      cookie: login.cookie,
+      method: 'POST',
+      path: `/projects/${project.id}/branch-target`,
+      csrf: true,
+      body: { branchName: 'main' },
+    }), branchTargetResponse, branchTargetNext);
+    expect(branchTargetResponse.statusCode).toBe(200);
+    expect(branchTargetNext).toHaveBeenCalledOnce();
+
+    const deniedRetryResponse = makeResponse();
+    await harness.runtime.authController.requireAuth(makeRequest({
+      cookie: login.cookie,
+      method: 'POST',
+      path: '/git/worktrees/operations/operation-1/retry',
+      csrf: true,
+    }), deniedRetryResponse, vi.fn());
+    expect(deniedRetryResponse.statusCode).toBe(403);
+    expect(deniedRetryResponse.payload).toEqual({
+      error: 'Worktree creation is disabled by policy',
+      code: 'WORKTREE_CREATION_DISABLED',
+    });
+
+    for (const request of [
+      { path: '/git/branches', body: { name: 'feature' } },
+    ]) {
+      const deniedCreateResponse = makeResponse();
+      const deniedCreateNext = vi.fn();
+      await harness.runtime.authController.requireAuth(makeRequest({
+        cookie: login.cookie,
+        method: 'POST',
+        path: request.path,
+        csrf: true,
+        body: request.body,
+      }), deniedCreateResponse, deniedCreateNext);
+      expect(deniedCreateResponse.statusCode, request.path).toBe(403);
+      expect(deniedCreateResponse.payload.error, request.path).toBe('Branch creation is disabled by policy');
+      expect(deniedCreateNext, request.path).not.toHaveBeenCalled();
+    }
+
+    const existingWorktreeResponse = makeResponse();
+    const existingWorktreeNext = vi.fn(() => existingWorktreeResponse.json({ allowed: true }));
     await harness.runtime.authController.requireAuth(makeRequest({
       cookie: login.cookie,
       method: 'POST',
       path: '/git/worktrees',
       csrf: true,
-    }), creationResponse, () => creationResponse.json({ created: true }));
-    const refreshed = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
-    expect(refreshed.displayName).toBe('Updated Developer');
+      body: { mode: 'existing', existingBranch: 'main' },
+    }), existingWorktreeResponse, existingWorktreeNext);
+    expect(existingWorktreeResponse.statusCode).toBe(403);
+    expect(existingWorktreeResponse.payload).toEqual({
+      error: 'Worktree creation is disabled by policy',
+      code: 'WORKTREE_CREATION_DISABLED',
+    });
+    expect(existingWorktreeNext).not.toHaveBeenCalled();
+
+    const deniedRenameResponse = makeResponse();
+    const deniedRenameNext = vi.fn();
+    await harness.runtime.authController.requireAuth(makeRequest({
+      cookie: login.cookie,
+      method: 'PUT',
+      path: '/git/branches/rename',
+      csrf: true,
+      body: {
+        directory: repositoryPath,
+        oldName: 'main',
+        newName: 'renamed-main',
+      },
+    }), deniedRenameResponse, deniedRenameNext);
+    expect(deniedRenameResponse.statusCode).toBe(403);
+    expect(deniedRenameResponse.payload.error).toBe('Git operation is not allowed by policy');
+    expect(deniedRenameNext).not.toHaveBeenCalled();
+
+    for (const requestPath of ['/git/worktrees', '/git/branches', '/git/remote-branches']) {
+      const deniedDeleteResponse = makeResponse();
+      const deniedDeleteNext = vi.fn();
+      await harness.runtime.authController.requireAuth(makeRequest({
+        cookie: login.cookie,
+        method: 'DELETE',
+        path: requestPath,
+        csrf: true,
+        body: { directory: repositoryPath },
+      }), deniedDeleteResponse, deniedDeleteNext);
+      expect(deniedDeleteResponse.statusCode, requestPath).toBe(403);
+      expect(deniedDeleteResponse.payload.error, requestPath).toBe('Git operation is not allowed by policy');
+      expect(deniedDeleteNext, requestPath).not.toHaveBeenCalled();
+    }
 
     const deniedResponse = makeResponse();
     await harness.runtime.authController.requireAuth(makeRequest({
@@ -1054,6 +1970,181 @@ describe('multi-user authentication runtime', () => {
       path: '/git/identities',
     }), deniedResponse, vi.fn());
     expect(deniedResponse.statusCode).toBe(403);
+  });
+
+  it('allows an existing-branch worktree override without granting branch creation', async () => {
+    const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-worktree-override-'));
+    temporaryDirectories.push(repositoryPath);
+    const project = {
+      id: '34343434-3434-4434-8434-343434343434',
+      label: 'Worktree Override',
+      repository_path: repositoryPath,
+      remote_url: null,
+      default_branch: 'main',
+      status: 'active',
+    };
+    const harness = await createHarness({
+      signedInRole: 'developer',
+      projects: [project],
+      accessRows: [{ user_id: USER_IDS.developer, project_id: project.id, is_default: true, github_account_id: null }],
+      branchRows: [{
+        user_id: USER_IDS.developer,
+        project_id: project.id,
+        branch_name: 'main',
+        workspace_path: repositoryPath,
+        is_default: true,
+      }],
+      userPolicies: [{
+        user_id: USER_IDS.developer,
+        settings_pages: null,
+        settings_permission_overrides: {},
+        capabilities: { createWorktrees: true },
+        settings_overrides: {},
+        feature_overrides: {},
+      }],
+    });
+    const login = await passwordLogin(harness, { role: 'developer' });
+
+    const existingResponse = makeResponse();
+    const existingNext = vi.fn(() => existingResponse.json({ created: true }));
+    await harness.runtime.authController.requireAuth(makeRequest({
+      cookie: login.cookie,
+      method: 'POST',
+      path: '/git/worktrees',
+      csrf: true,
+      body: { mode: 'existing', existingBranch: 'main' },
+    }), existingResponse, existingNext);
+    expect(existingResponse.statusCode).toBe(200);
+    expect(existingNext).toHaveBeenCalledOnce();
+
+    const newBranchResponse = makeResponse();
+    await harness.runtime.authController.requireAuth(makeRequest({
+      cookie: login.cookie,
+      method: 'POST',
+      path: '/git/worktrees',
+      csrf: true,
+      body: { mode: 'new', branchName: 'feature', startRef: 'main' },
+    }), newBranchResponse, vi.fn());
+    expect(newBranchResponse.statusCode).toBe(403);
+    expect(newBranchResponse.payload.error).toBe('Branch creation is disabled by policy');
+  });
+
+  it('allows a developer branch creation when the per-user capability is enabled', async () => {
+    const harness = await createHarness({
+      signedInRole: 'developer',
+      userPolicies: [{
+        user_id: USER_IDS.developer,
+        settings_pages: null,
+        settings_permission_overrides: {},
+        capabilities: { createBranches: true },
+        settings_overrides: {},
+        feature_overrides: {},
+      }],
+    });
+    const login = await passwordLogin(harness, { role: 'developer' });
+    const response = makeResponse();
+    const next = vi.fn(() => response.json({ allowed: true }));
+
+    await harness.runtime.authController.requireAuth(makeRequest({
+      cookie: login.cookie,
+      method: 'POST',
+      path: '/git/branches',
+      csrf: true,
+      body: { name: 'feature' },
+    }), response, next);
+
+    expect(response.statusCode).toBe(200);
+    expect(next).toHaveBeenCalledOnce();
+  });
+
+  it('retains worktree maintenance deletion for managed administrators', async () => {
+    const harness = await createHarness({ signedInRole: 'admin' });
+    const login = await passwordLogin(harness, { role: 'admin' });
+    const response = makeResponse();
+    const next = vi.fn(() => response.json({ allowed: true }));
+    await harness.runtime.authController.requireAuth(makeRequest({
+      cookie: login.cookie,
+      method: 'DELETE',
+      path: '/git/worktrees',
+      csrf: true,
+    }), response, next);
+    expect(response.statusCode).toBe(200);
+    expect(next).toHaveBeenCalledOnce();
+  });
+
+  it('keeps commit-message generation outside the worktree mutation lock without weakening managed authorization', async () => {
+    const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-commit-message-lock-'));
+    temporaryDirectories.push(repositoryPath);
+    const project = {
+      id: '55555555-5555-4555-8555-555555555555',
+      label: 'Commit Message Lock',
+      repository_path: repositoryPath,
+      remote_url: null,
+      default_branch: 'main',
+      status: 'active',
+    };
+    const harness = await createHarness({
+      signedInRole: 'developer',
+      projects: [project],
+      accessRows: [{ user_id: USER_IDS.developer, project_id: project.id, is_default: true, github_account_id: null }],
+      branchRows: [{
+        user_id: USER_IDS.developer,
+        project_id: project.id,
+        branch_name: 'main',
+        workspace_path: repositoryPath,
+        is_default: true,
+      }],
+    });
+    const login = await passwordLogin(harness, { role: 'developer' });
+
+    const heldMutationResponse = makeResponse();
+    const heldMutationNext = vi.fn();
+    await harness.runtime.authController.requireAuth(makeRequest({
+      cookie: login.cookie,
+      method: 'POST',
+      path: '/git/commit',
+      csrf: true,
+      body: { directory: repositoryPath, message: 'test: hold mutation lock' },
+    }), heldMutationResponse, heldMutationNext);
+    expect(heldMutationNext).toHaveBeenCalledOnce();
+
+    const draftResponse = makeResponse();
+    const draftNext = vi.fn(() => draftResponse.json({ allowed: true }));
+    await harness.runtime.authController.requireAuth(makeRequest({
+      cookie: login.cookie,
+      method: 'POST',
+      path: '/git/commit-message/draft',
+      csrf: true,
+      body: { directory: repositoryPath, selectedFiles: ['src/app.ts'] },
+    }), draftResponse, draftNext);
+    expect(draftResponse.statusCode).toBe(200);
+    expect(draftNext).toHaveBeenCalledOnce();
+
+    const queuedMutationResponse = makeResponse();
+    const queuedMutationNext = vi.fn(() => queuedMutationResponse.json({ allowed: true }));
+    const queuedMutation = harness.runtime.authController.requireAuth(makeRequest({
+      cookie: login.cookie,
+      method: 'POST',
+      path: '/git/stage',
+      csrf: true,
+      body: { directory: repositoryPath, files: ['src/app.ts'] },
+    }), queuedMutationResponse, queuedMutationNext);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(queuedMutationNext).not.toHaveBeenCalled();
+
+    heldMutationResponse.json({ committed: true });
+    await queuedMutation;
+    expect(queuedMutationNext).toHaveBeenCalledOnce();
+
+    const missingCsrfResponse = makeResponse();
+    await harness.runtime.authController.requireAuth(makeRequest({
+      cookie: login.cookie,
+      method: 'POST',
+      path: '/git/commit-message/draft',
+      body: { directory: repositoryPath, selectedFiles: ['src/app.ts'] },
+    }), missingCsrfResponse, vi.fn());
+    expect(missingCsrfResponse.statusCode).toBe(403);
+    expect(missingCsrfResponse.payload.error).toBe('Missing CSRF request header');
   });
 
   it('normalizes SDK-encoded directory headers without weakening managed path authorization', async () => {
@@ -1188,6 +2279,8 @@ describe('multi-user authentication runtime', () => {
       principal,
     }, updateResponse);
     expect(updateResponse.statusCode).toBe(200);
+    expect(harness.onManagedProjectMetadataChanged).toHaveBeenCalledTimes(1);
+    expect(harness.onManagedProjectMetadataChanged).toHaveBeenLastCalledWith(project.id);
 
     const refreshedPrincipal = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
     const settingsResponse = makeResponse();
@@ -1201,6 +2294,14 @@ describe('multi-user authentication runtime', () => {
       iconBackground: '#ffffff',
       branches: [{ name: 'main', directory: project.repository_path, isDefault: true }],
     })]);
+
+    const managedProject = await harness.runtime.resolveManagedProject({ principal: refreshedPrincipal }, project.id);
+    await managedProject.persistIconImage({ mime: 'image/png', updatedAt: 1234, source: 'custom' });
+    expect(harness.onManagedProjectMetadataChanged).toHaveBeenCalledTimes(2);
+    expect(harness.onManagedProjectMetadataChanged).toHaveBeenLastCalledWith(project.id);
+    const clearedProject = await managedProject.persistIconImage(null);
+    expect(clearedProject.iconImage).toBeNull();
+    expect(harness.onManagedProjectMetadataChanged).toHaveBeenCalledTimes(3);
 
     const forbiddenResponse = makeResponse();
     await handlers.get('PUT /api/admin/projects/:projectId')({
@@ -1218,6 +2319,68 @@ describe('multi-user authentication runtime', () => {
       },
     }, forbiddenResponse);
     expect(forbiddenResponse.statusCode).toBe(403);
+    expect(harness.onManagedProjectMetadataChanged).toHaveBeenCalledTimes(3);
+  });
+
+  it('starts in a fail-closed degraded state and preserves the local ownership index during an outage', async () => {
+    const ownership = {
+      session_id: 'session-offline',
+      user_id: USER_IDS.developer,
+      project_id: 'project-offline',
+      branch_name: 'main',
+      public_directory: '/project',
+      created_at: new Date().toISOString(),
+      archived_at: null,
+    };
+    const harness = await createHarness({
+      dependencyUnavailableAtStartup: true,
+      localOwnershipRows: [ownership],
+      ownershipRows: [ownership],
+    });
+
+    expect(harness.runtime.getControlPlaneStatus()).toMatchObject({
+      state: 'degraded',
+      lastErrorCode: 'ENOTFOUND',
+      lastSuccessAt: null,
+    });
+    await expect(harness.runtime.resolveOwnedSessionPlanContext({
+      id: USER_IDS.developer,
+      scope: 'managed',
+      assignments: [{
+        projectId: ownership.project_id,
+        branchName: ownership.branch_name,
+        repositoryPath: '/tmp/project-offline',
+      }],
+    }, ownership.session_id)).resolves.toEqual({
+      directory: '/tmp/project-offline',
+      projectId: ownership.project_id,
+      branchName: ownership.branch_name,
+    });
+
+    const remoteStatus = makeResponse();
+    await harness.runtime.authController.handleSessionStatus(
+      makeRequest({ loopback: false }),
+      remoteStatus,
+    );
+    expect(remoteStatus.statusCode).toBe(503);
+    expect(remoteStatus.payload).toMatchObject({
+      authenticated: false,
+      code: 'identity_unavailable',
+    });
+
+    harness.setDependencyUnavailable(false);
+    await harness.runtime.retryControlPlaneSync();
+    expect(harness.runtime.getControlPlaneStatus()).toMatchObject({
+      state: 'ready',
+      lastErrorCode: null,
+    });
+  });
+
+  it('does not hide non-transient control-plane configuration failures at startup', async () => {
+    await expect(createHarness({ dependencyFailureStatusAtStartup: 401 })).rejects.toMatchObject({
+      name: 'SupabaseRequestError',
+      status: 401,
+    });
   });
 
   it('preserves a valid local session when token refresh has a transient outage', async () => {
@@ -1258,6 +2421,46 @@ describe('multi-user authentication runtime', () => {
       principal: { role: 'admin' },
     });
     expect(statusResponse.getHeader('set-cookie')).toBeUndefined();
+  });
+
+  it('returns a structured retryable error for management routes during offline grace and recovers', async () => {
+    let now = Date.now();
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const harness = await createHarness({ signedInRole: 'admin' });
+    const login = await passwordLogin(harness, { role: 'admin', trustDevice: true });
+    now += 6_000;
+    harness.setAppSessionUnavailable(true);
+
+    for (const request of [
+      makeRequest({ cookie: login.cookie, path: '/admin/users' }),
+      makeRequest({ cookie: login.cookie, method: 'POST', path: '/admin/users', csrf: true }),
+    ]) {
+      const response = makeResponse();
+      const next = vi.fn();
+      await harness.runtime.authController.requireAuth(request, response, next);
+
+      expect(next).not.toHaveBeenCalled();
+      expect(response.statusCode).toBe(503);
+      expect(response.payload).toEqual({
+        error: 'Account and host management are unavailable during offline grace',
+        code: 'offline_grace_restricted',
+        retryable: true,
+      });
+    }
+
+    harness.setAppSessionUnavailable(false);
+    now += 6_000;
+    const recoveredResponse = makeResponse();
+    const recoveredNext = vi.fn(() => recoveredResponse.json({ ok: true }));
+    await harness.runtime.authController.requireAuth(
+      makeRequest({ cookie: login.cookie, path: '/admin/users' }),
+      recoveredResponse,
+      recoveredNext,
+    );
+
+    expect(recoveredNext).toHaveBeenCalledOnce();
+    expect(recoveredResponse.statusCode).toBe(200);
+    expect(recoveredResponse.payload).toEqual({ ok: true });
   });
 
   it('clears local state deterministically when remote revocation fails', async () => {
@@ -1459,6 +2662,69 @@ describe('multi-user authentication runtime', () => {
     }, denied);
     expect(denied.statusCode).toBe(403);
     expect(denied.payload.error).toContain('Administrator');
+  });
+
+  it('keeps earlier prompts visible and includes session deletion in a human developer analytics feed', async () => {
+    const harness = await createHarness({
+      profiles: [
+        fixtureProfile('developer', { account_kind: 'human' }),
+        fixtureProfile('admin', { account_kind: 'human' }),
+      ],
+      activityRows: [
+        {
+          id: 1,
+          event_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          actor_user_id: USER_IDS.developer,
+          target_user_id: USER_IDS.developer,
+          action: 'prompt.sent',
+          success: true,
+          metadata: { promptText: 'Retained prompt' },
+          created_at: '2026-08-07T09:00:00.000Z',
+        },
+        {
+          id: 2,
+          event_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          actor_user_id: USER_IDS.developer,
+          target_user_id: null,
+          action: 'session.deleted',
+          success: false,
+          metadata: {
+            upstreamDeleted: true,
+            ownershipTombstoned: false,
+            analyticsRetentionLocked: true,
+          },
+          created_at: '2026-08-07T10:00:00.000Z',
+        },
+      ],
+    });
+    const handlers = new Map();
+    const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
+      method,
+      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+    ]));
+    harness.runtime.registerRoutes(app);
+    const admin = { scope: 'managed', id: USER_IDS.admin, role: 'admin' };
+    const query = { start: '2026-08-07', end: '2026-08-07', timeZone: 'UTC', limit: '50' };
+
+    const changes = makeResponse();
+    await handlers.get('GET /api/admin/users/:userId/analytics/events')({
+      principal: admin,
+      params: { userId: USER_IDS.developer },
+      query: { ...query, category: 'changes' },
+    }, changes);
+    expect(changes.payload.events).toEqual([
+      expect.objectContaining({ action: 'session.deleted', success: false }),
+    ]);
+
+    const prompts = makeResponse();
+    await handlers.get('GET /api/admin/users/:userId/analytics/events')({
+      principal: admin,
+      params: { userId: USER_IDS.developer },
+      query: { ...query, category: 'prompts' },
+    }, prompts);
+    expect(prompts.payload.events).toEqual([
+      expect.objectContaining({ action: 'prompt.sent', metadata: expect.objectContaining({ promptText: 'Retained prompt' }) }),
+    ]);
   });
 
   it('accepts bounded interaction batches without copied content or caller-selected identities', async () => {

@@ -87,4 +87,25 @@ describe('Supabase server client', () => {
     );
     expect(fetchImpl.mock.calls[0][1].headers.apikey).toBe('sb_secret_private');
   });
+
+  it('allows individual PostgREST calls to shorten the default request timeout', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse([]));
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    const client = createSupabaseServerClient({
+      url: 'https://project.supabase.co',
+      publishableKey: 'sb_publishable_public',
+      secretKey: 'sb_secret_private',
+      fetchImpl,
+    });
+
+    await client.rest('opencode_session_ownership', {
+      method: 'POST',
+      body: { session_id: 'session-a' },
+      timeoutMs: 5_000,
+    });
+    await client.rest('user_profiles');
+
+    expect(timeoutSpy).toHaveBeenNthCalledWith(1, 5_000);
+    expect(timeoutSpy).toHaveBeenNthCalledWith(2, 15_000);
+  });
 });

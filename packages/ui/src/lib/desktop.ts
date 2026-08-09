@@ -1,6 +1,9 @@
 import type { ProjectEntry } from '@/lib/api/types';
 import type { MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 import { getAuthPrincipal } from '@/lib/authSession';
+import type { AgentModelSelection } from '@/lib/agentModelSelection';
+
+export type { AgentModelSelection } from '@/lib/agentModelSelection';
 
 export type AssistantNotificationPayload = {
   title?: string;
@@ -126,6 +129,7 @@ export type DesktopSettings = {
   managedRemoteTunnelPresetTokens?: Record<string, string>;
   defaultModel?: string; // format: "provider/model"
   defaultVariant?: string;
+  agentModelSelections?: Record<string, AgentModelSelection>;
   defaultAgent?: string;
   defaultPlanMode?: boolean;
   defaultGitIdentityId?: string; // ''/undefined = unset, 'global' or profile id

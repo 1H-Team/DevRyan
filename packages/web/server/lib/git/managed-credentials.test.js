@@ -12,7 +12,7 @@ vi.mock('../github/auth.js', () => ({
 }));
 
 import { runWithRequestPrincipal } from '../multi-user/request-context.js';
-import { buildGitEnv, commit, getBranches, merge, pull, stageFile } from './service.js';
+import { buildGitEnv, commit, getBranches, merge, pull, push, stageFile } from './service.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -209,5 +209,34 @@ describe('managed Git credential isolation', () => {
         conflictFiles: ['README.md'],
         message: 'Resolve merge conflicts before continuing',
       });
+  });
+
+  it('updates the origin tracking ref after a managed push to the assignment remote URL', async () => {
+    const directory = await createManagedRepository();
+    const remoteDirectory = path.join(temporaryDirectories[0], 'remote.git');
+    await execFileAsync('git', ['init', '--bare', remoteDirectory]);
+    await git(directory, ['remote', 'add', 'origin', remoteDirectory]);
+    accounts.set('account-push', account('push-user', 404, 'push-token'));
+    const managedPrincipal = {
+      ...principal('user-first', directory, 'account-push'),
+      assignments: [{
+        projectId: 'project-1',
+        repositoryPath: directory,
+        publicDirectory: directory,
+        worktreeContainerPath: path.join(temporaryDirectories[0], 'worktrees'),
+        branchName: 'developer',
+        githubAccountId: 'account-push',
+        remoteUrl: remoteDirectory,
+      }],
+    };
+
+    await expect(runWithRequestPrincipal(managedPrincipal, () => push(directory)))
+      .resolves.toMatchObject({ success: true, ref: 'developer' });
+
+    const head = (await git(directory, ['rev-parse', 'refs/heads/developer'])).stdout.trim();
+    const trackingRef = (await git(directory, ['rev-parse', 'refs/remotes/origin/developer'])).stdout.trim();
+    expect(trackingRef).toBe(head);
+    const remoteHead = (await git(remoteDirectory, ['rev-parse', 'refs/heads/developer'])).stdout.trim();
+    expect(remoteHead).toBe(head);
   });
 });

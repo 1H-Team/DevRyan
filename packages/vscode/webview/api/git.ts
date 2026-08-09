@@ -16,7 +16,9 @@ import type {
   GitDeleteRemoteBranchPayload,
   GitRemoveRemotePayload,
   GenerateGitCommitMessageRequest,
+  GenerateGitCommitMessageDraftRequest,
   GeneratedCommitMessage,
+  GeneratedCommitWorkflowResult,
   GeneratedPullRequestDescription,
   GitWorktreeInfo,
   CreateGitWorktreePayload,
@@ -115,6 +117,16 @@ export const createVSCodeGitAPI = (): GitAPI => ({
     request: GenerateGitCommitMessageRequest,
   ): Promise<GeneratedCommitMessage> => {
     return sendBridgeMessage<GeneratedCommitMessage>('api:git/commit-message', {
+      directory,
+      ...request,
+    });
+  },
+
+  generateCommitMessageDraft: async (
+    directory: string,
+    request: GenerateGitCommitMessageDraftRequest,
+  ): Promise<GeneratedCommitWorkflowResult> => {
+    return sendBridgeMessage<GeneratedCommitWorkflowResult>('api:git/commit-message-draft', {
       directory,
       ...request,
     });

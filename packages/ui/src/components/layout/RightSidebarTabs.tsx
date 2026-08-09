@@ -21,6 +21,7 @@ type RightTab = 'git' | 'files';
 function useRightSidebarGitSync(directory: string | undefined, isSidebarOpen: boolean) {
   const { git } = useRuntimeAPIs();
   const ensureStatus = useGitStore((state) => state.ensureStatus);
+  const pollStatusAndRefreshRepository = useGitStore((state) => state.pollStatusAndRefreshRepository);
 
   React.useEffect(() => {
     if (!directory || !git || !isSidebarOpen) return;
@@ -30,11 +31,11 @@ function useRightSidebarGitSync(directory: string | undefined, isSidebarOpen: bo
     const POLL_INTERVAL = 10_000;
     const id = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
-      void ensureStatus(directory, git);
+      void pollStatusAndRefreshRepository(directory, git);
     }, POLL_INTERVAL);
 
     return () => clearInterval(id);
-  }, [directory, git, isSidebarOpen, ensureStatus]);
+  }, [directory, git, isSidebarOpen, ensureStatus, pollStatusAndRefreshRepository]);
 }
 
 export const RightSidebarTabs: React.FC = () => {

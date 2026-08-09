@@ -33,6 +33,7 @@ import { createWorktreeSessionForNewBranch } from '@/lib/worktreeSessionCreator'
 import { cn } from '@/lib/utils';
 import { renderMagicPrompt } from '@/lib/magicPrompts';
 import { useI18n } from '@/lib/i18n';
+import { useAuthPrincipal } from '@/lib/authSession';
 import { TodoSendDialog, type TodoSendExecution } from './TodoSendDialog';
 import { orderProjectTodos } from './projectTodoOrdering';
 
@@ -80,6 +81,11 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
   className,
 }) => {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
+  const canCreateBranchWorktree = canCreateWorktree
+    && (principal.scope !== 'managed' || (
+      principal.policy.createWorktrees && principal.policy.createBranches
+    ));
   const [isLoading, setIsLoading] = React.useState(false);
   const [notes, setNotes] = React.useState('');
   const [todos, setTodos] = React.useState<OpenChamberProjectTodoItem[]>([]);
@@ -315,13 +321,13 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
       if (!projectRef || sendingTodoId) {
         return;
       }
-      if (!canCreateWorktree) {
+      if (!canCreateBranchWorktree) {
         toast.error(t('rightSidebar.contextNotesTodo.toast.worktreeRequiresGitRepo'));
         return;
       }
       setPendingSendTarget({ kind: 'worktree', todoId, todoText });
     },
-    [canCreateWorktree, projectRef, sendingTodoId, t]
+    [canCreateBranchWorktree, projectRef, sendingTodoId, t]
   );
 
   const handleConfirmSend = React.useCallback(
@@ -348,7 +354,7 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
         let directoryHint: string | null = projectRef.path;
 
         if (pendingSendTarget.kind === 'worktree') {
-          if (!canCreateWorktree) {
+          if (!canCreateBranchWorktree) {
             toast.error(t('rightSidebar.contextNotesTodo.toast.worktreeRequiresGitRepo'));
             return;
           }
@@ -414,7 +420,7 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
         setSendingTodoId(null);
       }
     },
-    [canCreateWorktree, createSession, initializeNewOpenChamberSession, onActionComplete, pendingSendTarget, projectRef, routeToChat, sendMessage, setCurrentSession, t]
+    [canCreateBranchWorktree, createSession, initializeNewOpenChamberSession, onActionComplete, pendingSendTarget, projectRef, routeToChat, sendMessage, setCurrentSession, t]
   );
 
   const planFileInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -647,12 +653,11 @@ export const ProjectNotesTodoPanel: React.FC<ProjectNotesTodoPanelProps> = ({
                           <DropdownMenuItem onClick={() => handleSendToNewSession(todo.id, todo.text)}>
                             {t('rightSidebar.contextNotesTodo.todo.sendMenu.newSession')}
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => void handleSendToNewWorktreeSession(todo.id, todo.text)}
-                            disabled={!canCreateWorktree}
-                          >
-                            {t('rightSidebar.contextNotesTodo.todo.sendMenu.newWorktreeSession')}
-                          </DropdownMenuItem>
+                          {canCreateBranchWorktree ? (
+                            <DropdownMenuItem onClick={() => void handleSendToNewWorktreeSession(todo.id, todo.text)}>
+                              {t('rightSidebar.contextNotesTodo.todo.sendMenu.newWorktreeSession')}
+                            </DropdownMenuItem>
+                          ) : null}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>

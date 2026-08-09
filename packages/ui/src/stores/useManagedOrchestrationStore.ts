@@ -156,7 +156,12 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskEventRecord | n
     && isNullableTimestamp(value.finishedAt)
     && isNullableTimestamp(value.timeoutAt)
     && isNullableString(value.failureReason)
-    && (value.failureKind === undefined || value.failureKind === null || value.failureKind === 'provider_usage_limit')
+    && (
+      value.failureKind === undefined
+      || value.failureKind === null
+      || value.failureKind === 'provider_usage_limit'
+      || value.failureKind === 'provider_prompt_rejected'
+    )
     && typeof value.partial === 'boolean'
     && typeof value.recoverablePreview === 'string'
     && Array.isArray(value.canonicalRefs)
@@ -191,7 +196,7 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskEventRecord | n
     failureReason: value.failureReason === null
       ? null
       : truncateManagedText(value.failureReason, MAX_MANAGED_TASK_FAILURE_BYTES),
-    failureKind: value.failureKind === 'provider_usage_limit'
+    failureKind: value.failureKind === 'provider_usage_limit' || value.failureKind === 'provider_prompt_rejected'
       ? value.failureKind
       : classifyProviderRetryFailure(value.failureReason),
     partial: value.partial as boolean,
@@ -429,6 +434,7 @@ const isManualRecoveryTask = (
 ) => Boolean(
   task.childSessionId
   && !task.agentRetryAvailable
+  && task.failureKind !== 'provider_prompt_rejected'
   && (task.status === 'failed' || task.status === 'interrupted')
   && envelope?.resumable
   && envelope.action === null

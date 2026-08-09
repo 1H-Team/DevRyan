@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   ChildStoreManager,
   getActiveDirectoryStoreKeys,
+  getReconnectRecoveryDirectoryStoreKeys,
   shouldBootstrapDirectorySubscription,
 } from "./child-store"
 
@@ -19,6 +20,40 @@ describe("ChildStoreManager status subscriptions", () => {
 
     expect(getActiveDirectoryStoreKeys(directories, "/repo/active")).toEqual(["/REPO/ACTIVE/"])
     expect(getActiveDirectoryStoreKeys(directories, "")).toEqual([])
+  })
+
+  test("recovers initialized background directories only while they still project active work", () => {
+    const childStores = new ChildStoreManager()
+    const active = childStores.ensureChild("/REPO/ACTIVE/", { bootstrap: false })
+    const backgroundBusy = childStores.ensureChild("/repo/background-busy", { bootstrap: false })
+    const backgroundRetry = childStores.ensureChild("/repo/background-retry", { bootstrap: false })
+    const backgroundIdle = childStores.ensureChild("/repo/background-idle", { bootstrap: false })
+
+    active.setState({ session_status: { active: { type: "idle" } } })
+    backgroundBusy.setState({ session_status: { busy: { type: "busy" } } })
+    backgroundRetry.setState({
+      session_status: {
+        retry: { type: "retry", attempt: 1, message: "retrying", next: 1 },
+      },
+    })
+    backgroundIdle.setState({ session_status: { idle: { type: "idle" } } })
+
+    expect(getReconnectRecoveryDirectoryStoreKeys(
+      childStores.children.entries(),
+      "/repo/active",
+    )).toEqual([
+      "/REPO/ACTIVE/",
+      "/repo/background-busy",
+      "/repo/background-retry",
+    ])
+
+    expect(getReconnectRecoveryDirectoryStoreKeys(
+      childStores.children.entries(),
+      "",
+    )).toEqual([
+      "/repo/background-busy",
+      "/repo/background-retry",
+    ])
   })
 
   test("notifies provider recovery for session status changes but not unrelated state", () => {

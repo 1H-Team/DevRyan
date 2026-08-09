@@ -35,6 +35,27 @@ export const getActiveDirectoryStoreKeys = (
   shouldBootstrapDirectorySubscription(directory, activeDirectory)
 ))
 
+export const getReconnectRecoveryDirectoryStoreKeys = (
+  stores: Iterable<readonly [string, StoreApi<DirectoryStore>]>,
+  activeDirectory: string,
+): string[] => {
+  const directories: string[] = []
+
+  for (const [directory, store] of stores) {
+    if (shouldBootstrapDirectorySubscription(directory, activeDirectory)) {
+      directories.push(directory)
+      continue
+    }
+
+    const statuses = store.getState().session_status ?? {}
+    if (Object.values(statuses).some((status) => status?.type === "busy" || status?.type === "retry")) {
+      directories.push(directory)
+    }
+  }
+
+  return directories
+}
+
 function createDirectoryStore(directory: string): StoreApi<DirectoryStore> {
   // Restore cached metadata from localStorage
   const cached = readDirCache(directory)

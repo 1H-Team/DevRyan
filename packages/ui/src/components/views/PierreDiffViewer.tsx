@@ -71,6 +71,10 @@ const WEBKIT_SCROLL_FIX_CSS = `
     [data-separator] {
       height: 24px !important;
     }
+
+    [data-separator][data-expand-index] [data-separator-wrapper] {
+      cursor: pointer;
+    }
   }
   `;
 
@@ -364,6 +368,15 @@ export const PierreDiffViewer: React.FC<PierreDiffViewerProps> = ({
 
   const lightResolvedTheme = useMemo(() => getResolvedShikiTheme(lightTheme), [lightTheme]);
   const darkResolvedTheme = useMemo(() => getResolvedShikiTheme(darkTheme), [darkTheme]);
+  const diffRevisionKey = useMemo(() => (
+    `${fileName ?? ''}:${makeContentCacheKey(original)}:${makeContentCacheKey(modified)}`
+  ), [fileName, modified, original]);
+  const [expandedRevisionKey, setExpandedRevisionKey] = React.useState<string | null>(null);
+  const showFullFile = expandedRevisionKey === diffRevisionKey;
+
+  React.useLayoutEffect(() => {
+    setExpandedRevisionKey(null);
+  }, [fileName, modified, original]);
 
   // Fast-path: update base diff theme vars immediately.
   // Without this, already-mounted diffs can keep old bg/bars until async highlight completes.
@@ -459,7 +472,7 @@ export const PierreDiffViewer: React.FC<PierreDiffViewerProps> = ({
     // Perf: degrade tokenization/highlighting for large files (>500KB)
     maxLineDiffLength: isLargeContent ? 0 : 1000,
     maxLineLengthForHighlighting: isLargeContent ? 1 : 1000,
-    expansionLineCount: 20,
+    expandUnchanged: showFullFile,
     overflow: wrapLines ? ('wrap' as const) : ('scroll' as const),
     disableFileHeader: true,
     enableLineSelection: true,
@@ -467,7 +480,7 @@ export const PierreDiffViewer: React.FC<PierreDiffViewerProps> = ({
     onLineSelected: handleSelectionChange,
     unsafeCSS: WEBKIT_SCROLL_FIX_CSS,
     renderAnnotation,
-  }), [darkTheme.metadata.id, isDark, isLargeContent, lightTheme.metadata.id, renderSideBySide, wrapLines, handleSelectionChange, renderAnnotation]);
+  }), [darkTheme.metadata.id, isDark, isLargeContent, lightTheme.metadata.id, renderSideBySide, showFullFile, wrapLines, handleSelectionChange, renderAnnotation]);
 
 
   const lineAnnotations = useMemo(() => {
@@ -621,6 +634,14 @@ export const PierreDiffViewer: React.FC<PierreDiffViewerProps> = ({
         if (!(event instanceof MouseEvent) || event.button !== 0) return;
         if (!(event.target instanceof Element)) return;
 
+        const expandableSeparator = event.target.closest('[data-separator][data-expand-index]');
+        if (expandableSeparator) {
+          setExpandedRevisionKey(diffRevisionKey);
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
+
         const numberCell = event.target.closest('[data-column-number]');
         if (!(numberCell instanceof HTMLElement)) return;
 
@@ -654,7 +675,7 @@ export const PierreDiffViewer: React.FC<PierreDiffViewerProps> = ({
       }
       cleanup();
     };
-  }, [diffThemeKey, fileName, handleSelectionChange, resolveClickedSide]);
+  }, [diffRevisionKey, diffThemeKey, fileName, handleSelectionChange, resolveClickedSide]);
 
   // MutationObserver to trigger re-renders when annotation DOM nodes are added/removed
   useEffect(() => {

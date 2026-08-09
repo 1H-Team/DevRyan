@@ -2,6 +2,7 @@ import express from 'express';
 
 export const QUESTION_PARTIAL_HEADER = 'X-DevRyan-Question-Partial';
 const DEFAULT_UPSTREAM_TIMEOUT_MS = 1000;
+const DEFAULT_SLOW_REQUEST_THRESHOLD_MS = 1000;
 
 const jsonParser = express.json({ limit: '64kb' });
 
@@ -78,7 +79,30 @@ export const registerQuestionRoutes = (app, dependencies) => {
     fetchImpl = fetch,
     logger = console,
     upstreamTimeoutMs = DEFAULT_UPSTREAM_TIMEOUT_MS,
+    slowRequestThresholdMs = DEFAULT_SLOW_REQUEST_THRESHOLD_MS,
   } = dependencies;
+
+  // Latency attribution for question traffic. The same req/res objects flow
+  // through the Cursor fall-through, the readiness-hold gate, and the generic
+  // OpenCode proxy, so holdMs/proxyMs stamped along the way let a slow reply
+  // be blamed on the hold, the upstream, or (if this never fires while the
+  // client reports seconds) browser-side connection queueing.
+  app.use('/api/question', (req, res, next) => {
+    const start = Date.now();
+    res.on('close', () => {
+      const totalMs = Date.now() - start;
+      if (totalMs < slowRequestThresholdMs) return;
+      logger.warn?.('[questions] slow request', {
+        method: req.method,
+        url: req.originalUrl,
+        status: res.statusCode,
+        totalMs,
+        holdMs: req.readinessHoldMs ?? 0,
+        proxyMs: req.proxyStartMs ? Date.now() - req.proxyStartMs : null,
+      });
+    });
+    next();
+  });
 
   const listOpenCodeQuestions = async (directory) => {
     const upstreamAbortController = new AbortController();

@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLayout';
 import { SettingsSection } from '@/components/sections/shared/SettingsSection';
 import { GitHubSettings } from '@/components/sections/openchamber/GitHubSettings';
-import { useAuthPrincipal } from '@/lib/authSession';
+import { retryAuthSession, useAuthOfflineGrace, useAuthPrincipal } from '@/lib/authSession';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { useSettingsPagePermission } from '@/lib/settings/permission-state';
@@ -42,8 +42,10 @@ const LocalUserManagementPage: React.FC = () => (
 const ManagedUserManagementPage: React.FC = () => {
   const { canEdit } = useSettingsPagePermission();
   const principal = useAuthPrincipal();
+  const offlineGrace = useAuthOfflineGrace();
   const canManageGitHubAccounts = canEdit && principal?.role === 'admin';
-  const data = useAdminUsersData(canEdit, canManageGitHubAccounts);
+  const data = useAdminUsersData(canEdit, canManageGitHubAccounts, !offlineGrace);
+  const [retrying, setRetrying] = React.useState(false);
 
   const [selectedUserId, setSelectedUserId] = React.useState<string | null>(null);
   const [createOpen, setCreateOpen] = React.useState(false);
@@ -54,6 +56,39 @@ const ManagedUserManagementPage: React.FC = () => {
     () => (selectedUserId ? data.users.find((user) => user.id === selectedUserId) || null : null),
     [data.users, selectedUserId],
   );
+
+  if (offlineGrace) {
+    return (
+      <SettingsPageLayout className="max-w-4xl">
+        <div>
+          <h1 className="typography-ui-header font-semibold text-foreground">User Management</h1>
+          <p className="typography-ui text-muted-foreground">Manage roles, projects, branch grants, GitHub identity, and audit activity.</p>
+        </div>
+        <SettingsSection
+          title="Identity Service Temporarily Unavailable"
+          description="DevRyan is keeping your local administrator session active, but account and host management stay locked until the identity service can verify current access."
+        >
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="min-w-0 flex-1 typography-ui text-muted-foreground">
+              This page will recover automatically when the connection returns.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={retrying}
+              onClick={() => {
+                setRetrying(true);
+                void retryAuthSession().finally(() => setRetrying(false));
+              }}
+            >
+              <RiRefreshLine className={retrying ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
+              {retrying ? 'Checking…' : 'Retry Now'}
+            </Button>
+          </div>
+        </SettingsSection>
+      </SettingsPageLayout>
+    );
+  }
 
   if (data.loading) {
     return <div className="flex h-full items-center justify-center typography-ui text-muted-foreground">Loading user management…</div>;
@@ -96,7 +131,6 @@ const ManagedUserManagementPage: React.FC = () => {
           onUsersChanged={async () => { await Promise.all([data.reloadUsers(), data.reloadGithubAccounts(), data.reloadActivity()]); }}
           onInvitesChanged={async () => { await Promise.all([data.reloadInvites(), data.reloadActivity()]); }}
           onTemporaryPassword={setTemporaryPassword}
-          onInviteUrl={setInviteUrl}
         />
       </SettingsPageLayout>
     );

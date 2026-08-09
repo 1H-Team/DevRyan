@@ -43,7 +43,7 @@ import { markPendingUserSendAnimation } from "@/lib/userSendAnimation"
 import { flattenAssistantTextParts } from "@/lib/messages/messageText"
 import { EXECUTION_FORK_META_TEXT } from "@/lib/messages/executionMeta"
 import { isSyntheticPart } from "@/lib/messages/synthetic"
-import { waitForWorktreeBootstrap } from "@/lib/worktrees/worktreeBootstrap"
+import { waitForWorktreeBootstrapForSend } from "@/lib/worktrees/worktreeBootstrap"
 import {
   createPendingDraftWorktreeRequest,
   hasPendingDraftWorktreeRequest,
@@ -362,7 +362,7 @@ async function routeMessage(params: {
   }
   if (params.inputMode === "shell") {
     if (messageDirectory) {
-      await waitForWorktreeBootstrap(messageDirectory)
+      await waitForWorktreeBootstrapForSend(messageDirectory)
     }
     throwIfAborted(params.lifecycleCallbacks?.signal)
     assertTransportAllowed()
@@ -811,7 +811,8 @@ export type SessionUIState = {
   markPlanImplementationRequested: (planKey: string) => void
   markPlanImplementationHandedOff: (planKey: string) => void
   clearHandedOffPlanIndicator: (sessionId: string, sourceMessageId: string) => void
-  registerPendingSendAbort: (key: string, controller?: AbortController) => AbortController
+  retirePlanProposal: (sessionId: string, sourceMessageId: string) => void
+  claimPendingSendAbort: (key: string, controller?: AbortController) => AbortController | null
   promotePendingSendAbort: (fromKey: string, toKey: string) => AbortController | null
   abortPendingSend: (key: string) => boolean
   clearPendingSendAbort: (key: string, controller?: AbortController) => void
@@ -1262,6 +1263,7 @@ type PersistedPlanMessageState = {
   planModeUserMessagesBySession: Map<string, string>
   implementedPlanRequests: Set<string>
   externallyHandedOffPlanRequests: Set<string>
+  sessionPlanIndicator: Map<string, PlanIndicatorEntry>
 }
 
 const limitStringSet = (values: Set<string>, maxSize: number): Set<string> => {
@@ -1274,6 +1276,31 @@ const limitStringMap = (values: Map<string, string>, maxSize: number): Map<strin
   return new Map([...values].slice(values.size - maxSize))
 }
 
+const readPersistedProposedPlanIndicators = (value: unknown): Map<string, PlanIndicatorEntry> => {
+  const entries = (Array.isArray(value) ? value : [])
+    .filter((entry): entry is [string, string] => Array.isArray(entry)
+      && typeof entry[0] === "string"
+      && entry[0].length > 0
+      && typeof entry[1] === "string"
+      && entry[1].length > 0)
+    .map(([sessionId, sourceMessageId]): [string, PlanIndicatorEntry] => [
+      sessionId,
+      { state: "proposed", sourceMessageId },
+    ])
+  return new Map(entries.slice(-MAX_PERSISTED_PLAN_MESSAGE_IDS))
+}
+
+const collectPersistedProposedPlanIndicators = (
+  sessionPlanIndicator: Map<string, PlanIndicatorEntry>,
+): Map<string, string> => {
+  const entries: Array<[string, string]> = []
+  for (const [sessionId, entry] of sessionPlanIndicator) {
+    if (entry.state !== "proposed" || !entry.sourceMessageId) continue
+    entries.push([sessionId, entry.sourceMessageId])
+  }
+  return limitStringMap(new Map(entries), MAX_PERSISTED_PLAN_MESSAGE_IDS)
+}
+
 const readPersistedPlanMessageState = (): PersistedPlanMessageState => {
   try {
     const raw = safeStorage.getItem(PLAN_MESSAGE_STATE_STORAGE_KEY)
@@ -1283,6 +1310,7 @@ const readPersistedPlanMessageState = (): PersistedPlanMessageState => {
         planModeUserMessagesBySession: new Map(),
         implementedPlanRequests: new Set(),
         externallyHandedOffPlanRequests: new Set(),
+        sessionPlanIndicator: new Map(),
       }
     }
     const parsed = JSON.parse(raw) as {
@@ -1290,6 +1318,7 @@ const readPersistedPlanMessageState = (): PersistedPlanMessageState => {
       planModeUserMessagesBySession?: unknown
       implementedPlanRequests?: unknown
       externallyHandedOffPlanRequests?: unknown
+      proposedPlanIndicatorsBySession?: unknown
     }
     const planModeUserMessages = new Set(
       (Array.isArray(parsed.planModeUserMessages) ? parsed.planModeUserMessages : [])
@@ -1316,6 +1345,7 @@ const readPersistedPlanMessageState = (): PersistedPlanMessageState => {
       planModeUserMessagesBySession: limitStringMap(planModeUserMessagesBySession, MAX_PERSISTED_PLAN_MESSAGE_IDS),
       implementedPlanRequests: limitStringSet(implementedPlanRequests, MAX_PERSISTED_PLAN_MESSAGE_IDS),
       externallyHandedOffPlanRequests: limitStringSet(externallyHandedOffPlanRequests, MAX_PERSISTED_PLAN_MESSAGE_IDS),
+      sessionPlanIndicator: readPersistedProposedPlanIndicators(parsed.proposedPlanIndicatorsBySession),
     }
   } catch {
     return {
@@ -1323,6 +1353,7 @@ const readPersistedPlanMessageState = (): PersistedPlanMessageState => {
       planModeUserMessagesBySession: new Map(),
       implementedPlanRequests: new Set(),
       externallyHandedOffPlanRequests: new Set(),
+      sessionPlanIndicator: new Map(),
     }
   }
 }
@@ -1332,13 +1363,16 @@ const persistPlanMessageState = (
   implementedPlanRequests: Set<string>,
   externallyHandedOffPlanRequests: Set<string>,
   planModeUserMessagesBySession: Map<string, string>,
+  sessionPlanIndicator: Map<string, PlanIndicatorEntry>,
 ): void => {
   try {
+    const proposedPlanIndicatorsBySession = collectPersistedProposedPlanIndicators(sessionPlanIndicator)
     if (
       planModeUserMessages.size === 0
       && implementedPlanRequests.size === 0
       && externallyHandedOffPlanRequests.size === 0
       && planModeUserMessagesBySession.size === 0
+      && proposedPlanIndicatorsBySession.size === 0
     ) {
       safeStorage.removeItem(PLAN_MESSAGE_STATE_STORAGE_KEY)
       return
@@ -1348,6 +1382,7 @@ const persistPlanMessageState = (
       planModeUserMessagesBySession: Array<[string, string]>
       implementedPlanRequests: string[]
       externallyHandedOffPlanRequests?: string[]
+      proposedPlanIndicatorsBySession?: Array<[string, string]>
     } = {
       planModeUserMessages: [...limitStringSet(planModeUserMessages, MAX_PERSISTED_PLAN_MESSAGE_IDS)],
       planModeUserMessagesBySession: [...limitStringMap(planModeUserMessagesBySession, MAX_PERSISTED_PLAN_MESSAGE_IDS)],
@@ -1357,6 +1392,9 @@ const persistPlanMessageState = (
       persisted.externallyHandedOffPlanRequests = [
         ...limitStringSet(externallyHandedOffPlanRequests, MAX_PERSISTED_PLAN_MESSAGE_IDS),
       ]
+    }
+    if (proposedPlanIndicatorsBySession.size > 0) {
+      persisted.proposedPlanIndicatorsBySession = [...proposedPlanIndicatorsBySession]
     }
     safeStorage.setItem(PLAN_MESSAGE_STATE_STORAGE_KEY, JSON.stringify(persisted))
   } catch { /* ignored */ }
@@ -1540,15 +1578,22 @@ const restoreLiveConfigForSelectedDraft = (draftId: string, getState: () => Sess
     return
   }
 
+  // A managed account's draft may carry a model captured from resolution
+  // rather than a user's pick. Replaying it would mask the account's own
+  // defaults, so only explicit picks are restored for managed non-admins.
+  const restorePrincipal = getAuthPrincipal()
+  const draftModelAuthoritative = !(restorePrincipal.scope === "managed" && restorePrincipal.role !== "admin")
+    || hasExplicitDraftModelIntent(draftSendConfig)
+
   if (draftSelection.agent) {
     configState.setAgent(draftSelection.agent, {
-      preserveCurrentModel: true,
+      preserveCurrentModel: draftModelAuthoritative && Boolean(draftSelection.providerID && draftSelection.modelID),
       recordSessionSelection: false,
     })
     selectionState.saveDraftAgentSelection(draftId, draftSelection.agent)
   }
 
-  if (draftSelection.providerID && draftSelection.modelID) {
+  if (draftSelection.providerID && draftSelection.modelID && draftModelAuthoritative) {
     configState.setProviderModel(draftSelection.providerID, draftSelection.modelID, draftSelection.variant)
     selectionState.saveDraftModelSelection(draftId, draftSelection.providerID, draftSelection.modelID)
     if (draftSelection.agent) {
@@ -1567,6 +1612,17 @@ const restoreLiveConfigForSelectedDraft = (draftId: string, getState: () => Sess
       )
     }
   }
+}
+
+const applyDefaultsForCurrentDraft = (draftId: string, getState: () => SessionUIState): void => {
+  const state = getState()
+  if (state.currentSessionId || state.currentDraftId !== draftId) return
+
+  const draftSendConfig = state.draftsById[draftId]?.sendConfig
+    ?? (state.newSessionDraft.id === draftId ? state.newSessionDraft.sendConfig : undefined)
+  useConfigStore.getState().applyDefaultsToCurrent({
+    preserveCurrentModel: hasExplicitDraftModelIntent(draftSendConfig),
+  })
 }
 
 const applyCurrentSessionSideEffects = (
@@ -1721,20 +1777,21 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   isLoading: false,
   lastLoadedDirectory: null,
   sessionPlanAvailable: new Map(),
-  sessionPlanIndicator: new Map(),
   sessionCompletionIndicator: new Map(),
   starterAssistantMessages: new Map(),
   ...readPersistedPlanMessageState(),
   pendingChangesBarDismissed: new Map(),
 
-  registerPendingSendAbort: (key, controller = new AbortController()) => {
+  claimPendingSendAbort: (key, controller = new AbortController()) => {
     if (!key) return controller
+    if (get().abortControllers.has(key)) return null
     set((state) => {
+      if (state.abortControllers.has(key)) return state
       const abortControllers = new Map(state.abortControllers)
       abortControllers.set(key, controller)
       return { abortControllers }
     })
-    return controller
+    return get().abortControllers.get(key) === controller ? controller : null
   },
 
   promotePendingSendAbort: (fromKey, toKey) => {
@@ -1932,14 +1989,14 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       })
     }
 
-    void activateConfigForDirectory(directory).then(() => {
-      const state = get()
-      if (state.currentSessionId || state.currentDraftId !== draft.id) return
-      const currentDraftSendConfig = state.draftsById[draft.id]?.sendConfig ?? (state.currentDraftId === draft.id ? state.newSessionDraft.sendConfig : undefined)
-      const hasExplicitDraftModel = hasExplicitDraftModelIntent(currentDraftSendConfig)
-      useConfigStore.getState().applyDefaultsToCurrent({
-        preserveCurrentModel: hasExplicitDraftModel,
-      })
+    const activation = activateConfigForDirectory(directory)
+    // activateDirectory restores a cached directory snapshot synchronously before
+    // its first await. Apply the draft defaults in the same turn so the composer
+    // never paints a previous session's model or thinking level.
+    applyDefaultsForCurrentDraft(draft.id, get)
+    void activation.then(() => {
+      // Reapply after provider/agent refresh for cold or changed directories.
+      applyDefaultsForCurrentDraft(draft.id, get)
     })
   },
 
@@ -2414,7 +2471,10 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       const draftTargetFolderId = draft.targetFolderId
       const capturedDraftId = get().currentDraftId ?? draft.id ?? null
       const draftAbortKey = capturedDraftId ? `draft:${capturedDraftId}` : "draft"
-      const draftAbortController = get().registerPendingSendAbort(draftAbortKey)
+      const draftAbortController = get().claimPendingSendAbort(draftAbortKey)
+      if (!draftAbortController) return
+      let pendingAbortKey = draftAbortKey
+      try {
       if (draft.targetPreparationError) {
         get().clearPendingSendAbort(draftAbortKey, draftAbortController)
         throw new Error(draft.targetPreparationError)
@@ -2424,8 +2484,10 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       const resolvedPlanMode = typeof draftSendConfig?.planMode === "boolean"
         ? draftSendConfig.planMode
         : (planMode ?? draft.planMode ?? useSelectionStore.getState().getPlanModeSelection(null))
-      const submittedDraftText = capturedDraft?.text ?? content
+      const submittedDraftText = content
+      const submittedAttachments = attachments?.map((attachment) => ({ ...attachment }))
       let draftDirectoryOverride = resolveDirectoryForDraftSend(draft)
+      let draftBootstrapPendingDirectory = normalizePath(draft.bootstrapPendingDirectory ?? null)
       const draftProjectId = draft.selectedProjectId ?? null
       const selectionState = useSelectionStore.getState()
       const draftAgentSelection = capturedDraftId ? selectionState.getDraftAgentSelection(capturedDraftId) : null
@@ -2439,16 +2501,19 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       const draftAgentModelVariant = capturedDraftId && draftAgentForModel && draftVariantProviderID && draftVariantModelID
         ? selectionState.getDraftAgentModelVariantForSelection(capturedDraftId, draftAgentForModel, draftVariantProviderID, draftVariantModelID)
         : undefined
+      const configState = useConfigStore.getState()
 
       if (draft.pendingWorktreeRequestId) {
         draftDirectoryOverride = await waitForPendingDraftWorktreeRequest(draft.pendingWorktreeRequestId)
         throwIfAborted(draftAbortController.signal)
         get().resolvePendingDraftWorktreeTarget(draft.pendingWorktreeRequestId, draftDirectoryOverride)
+        draftBootstrapPendingDirectory = normalizePath(
+          get().newSessionDraft.bootstrapPendingDirectory ?? null,
+        )
         await activateConfigForDirectory(draftDirectoryOverride)
         throwIfAborted(draftAbortController.signal)
       }
 
-      const configState = useConfigStore.getState()
       const draftSelection = resolveDraftSendSelection({
         requestedAgent: draftAgentSelection ? undefined : trimmedAgent,
         currentAgent: configState.currentAgentName,
@@ -2477,6 +2542,16 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         throw new Error("Cannot send message: provider or model not selected")
       }
 
+      if (draftDirectoryOverride && draftBootstrapPendingDirectory) {
+        try {
+          await waitForWorktreeBootstrapForSend(draftDirectoryOverride)
+          throwIfAborted(draftAbortController.signal)
+        } catch (error) {
+          get().clearPendingSendAbort(draftAbortKey, draftAbortController)
+          throw error
+        }
+      }
+
       const created = await createSessionRecordAction(draft.title, draftDirectoryOverride, draft.parentID ?? null)
       if (!created?.id) {
         get().clearPendingSendAbort(draftAbortKey, draftAbortController)
@@ -2491,6 +2566,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         useSelectionStore.getState().markBuilderHandoffCleared(created.id)
       }
       const promotedAbortController = get().promotePendingSendAbort(draftAbortKey, created.id) ?? draftAbortController
+      pendingAbortKey = created.id
       if (promotedAbortController.signal.aborted) {
         await abortCurrentOperationAction(created.id)
         get().clearPendingSendAbort(created.id, promotedAbortController)
@@ -2559,7 +2635,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
       markPendingUserSendAnimation(created.id)
 
-      const files = attachments?.map((a) => ({
+      const files = submittedAttachments?.map((a) => ({
         type: "file" as const,
         mime: a.mimeType,
         url: a.dataUrl,
@@ -2569,7 +2645,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       try {
         await routeMessage({
           sessionId: created.id,
-          content,
+          content: submittedDraftText,
           providerID: effectiveProviderID,
           modelID: effectiveModelID,
           agent: effectiveDraftAgent,
@@ -2601,6 +2677,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         get().clearPendingSendAbort(created.id, promotedAbortController)
       }
       return
+      } finally {
+        get().clearPendingSendAbort(pendingAbortKey, draftAbortController)
+      }
     }
 
     // ---- Existing session, or defensive fallback when the UI has no active draft/session ----
@@ -3200,7 +3279,13 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       } else if (currentSessionMessageId === messageId) {
         nextBySession.delete(sessionId)
       }
-      persistPlanMessageState(next, state.implementedPlanRequests, state.externallyHandedOffPlanRequests, nextBySession)
+      persistPlanMessageState(
+        next,
+        state.implementedPlanRequests,
+        state.externallyHandedOffPlanRequests,
+        nextBySession,
+        state.sessionPlanIndicator,
+      )
       return { planModeUserMessages: next, planModeUserMessagesBySession: nextBySession }
     })
   },
@@ -3243,6 +3328,13 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       nextAvailable.set(sessionId, true)
       const nextCompletion = hasCompletion ? new Map(state.sessionCompletionIndicator) : state.sessionCompletionIndicator
       if (hasCompletion) nextCompletion.delete(sessionId)
+      persistPlanMessageState(
+        state.planModeUserMessages,
+        state.implementedPlanRequests,
+        state.externallyHandedOffPlanRequests,
+        state.planModeUserMessagesBySession,
+        nextIndicator,
+      )
       return {
         sessionPlanIndicator: nextIndicator,
         sessionPlanAvailable: nextAvailable,
@@ -3267,9 +3359,13 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       nextAvailable.set(sessionId, true)
       const nextCompletion = hasCompletion ? new Map(state.sessionCompletionIndicator) : state.sessionCompletionIndicator
       if (hasCompletion) nextCompletion.delete(sessionId)
-      if (removedPendingPlanMessage) {
-        persistPlanMessageState(state.planModeUserMessages, state.implementedPlanRequests, state.externallyHandedOffPlanRequests, nextBySession)
-      }
+      persistPlanMessageState(
+        state.planModeUserMessages,
+        state.implementedPlanRequests,
+        state.externallyHandedOffPlanRequests,
+        nextBySession,
+        nextIndicator,
+      )
       return {
         sessionPlanIndicator: nextIndicator,
         sessionPlanAvailable: nextAvailable,
@@ -3293,9 +3389,15 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       }
       const nextAvailable = new Map(state.sessionPlanAvailable)
       nextAvailable.set(sessionId, true)
-      if (removedPendingPlanMessage) {
-        persistPlanMessageState(state.planModeUserMessages, state.implementedPlanRequests, state.externallyHandedOffPlanRequests, nextBySession)
-      }
+      const persistedIndicator = new Map(state.sessionPlanIndicator)
+      persistedIndicator.delete(sessionId)
+      persistPlanMessageState(
+        state.planModeUserMessages,
+        state.implementedPlanRequests,
+        state.externallyHandedOffPlanRequests,
+        nextBySession,
+        persistedIndicator,
+      )
       return { sessionPlanAvailable: nextAvailable, planModeUserMessagesBySession: nextBySession }
     })
   },
@@ -3305,7 +3407,13 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       if (state.implementedPlanRequests.has(planKey)) return state
       const next = new Set(state.implementedPlanRequests)
       next.add(planKey)
-      persistPlanMessageState(state.planModeUserMessages, next, state.externallyHandedOffPlanRequests, state.planModeUserMessagesBySession)
+      persistPlanMessageState(
+        state.planModeUserMessages,
+        next,
+        state.externallyHandedOffPlanRequests,
+        state.planModeUserMessagesBySession,
+        state.sessionPlanIndicator,
+      )
       return { implementedPlanRequests: next }
     })
   },
@@ -3315,7 +3423,13 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       if (state.externallyHandedOffPlanRequests.has(planKey)) return state
       const next = new Set(state.externallyHandedOffPlanRequests)
       next.add(planKey)
-      persistPlanMessageState(state.planModeUserMessages, state.implementedPlanRequests, next, state.planModeUserMessagesBySession)
+      persistPlanMessageState(
+        state.planModeUserMessages,
+        state.implementedPlanRequests,
+        next,
+        state.planModeUserMessagesBySession,
+        state.sessionPlanIndicator,
+      )
       return { externallyHandedOffPlanRequests: next }
     })
   },
@@ -3337,6 +3451,13 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       const sessionPlanIndicator = new Map(state.sessionPlanIndicator)
       sessionPlanIndicator.delete(id)
       if (!pendingPlanMessageId) {
+        persistPlanMessageState(
+          state.planModeUserMessages,
+          state.implementedPlanRequests,
+          state.externallyHandedOffPlanRequests,
+          state.planModeUserMessagesBySession,
+          sessionPlanIndicator,
+        )
         return { sessionPlanIndicator }
       }
 
@@ -3347,6 +3468,34 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         state.implementedPlanRequests,
         state.externallyHandedOffPlanRequests,
         planModeUserMessagesBySession,
+        sessionPlanIndicator,
+      )
+      return { sessionPlanIndicator, planModeUserMessagesBySession }
+    })
+  },
+
+  retirePlanProposal: (sessionId, sourceMessageId) => {
+    const id = sessionId.trim()
+    const sourceId = sourceMessageId.trim()
+    if (!id || !sourceId) return
+
+    set((state) => {
+      const current = state.sessionPlanIndicator.get(id)
+      if (current?.state !== "proposed" || current.sourceMessageId !== sourceId) return state
+
+      const sessionPlanIndicator = new Map(state.sessionPlanIndicator)
+      sessionPlanIndicator.delete(id)
+      const pendingPlanMessageId = state.planModeUserMessagesBySession.get(id)
+      const planModeUserMessagesBySession = new Map(state.planModeUserMessagesBySession)
+      if (!pendingPlanMessageId || pendingPlanMessageId <= sourceId) {
+        planModeUserMessagesBySession.delete(id)
+      }
+      persistPlanMessageState(
+        state.planModeUserMessages,
+        state.implementedPlanRequests,
+        state.externallyHandedOffPlanRequests,
+        planModeUserMessagesBySession,
+        sessionPlanIndicator,
       )
       return { sessionPlanIndicator, planModeUserMessagesBySession }
     })
@@ -3428,6 +3577,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         || planModeUserMessagesBySession !== state.planModeUserMessagesBySession
         || implementedPlanRequests !== state.implementedPlanRequests
         || externallyHandedOffPlanRequests !== state.externallyHandedOffPlanRequests
+        || sessionPlanIndicator !== state.sessionPlanIndicator
       )
 
       if (planStateChanged) {
@@ -3436,6 +3586,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
           implementedPlanRequests,
           externallyHandedOffPlanRequests,
           planModeUserMessagesBySession,
+          sessionPlanIndicator,
         )
       }
 
@@ -3548,6 +3699,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         nextRequests,
         state.externallyHandedOffPlanRequests,
         state.planModeUserMessagesBySession,
+        nextIndicator,
       )
       return {
         implementedPlanRequests: nextRequests,

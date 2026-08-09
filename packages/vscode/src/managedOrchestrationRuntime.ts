@@ -83,6 +83,8 @@ const ERROR_STATUS_BY_CODE: Record<string, number> = {
   ledger_capacity_exceeded: 507,
   manual_model_recovery_required: 409,
   managed_retry_limit_reached: 409,
+  provider_prompt_rejection_requires_fresh_retry: 409,
+  provider_prompt_rejection_requires_reframed_prompt: 409,
   managed_runtime_unavailable: 503,
   missing_recovery_model: 400,
   missing_idempotency_key: 400,

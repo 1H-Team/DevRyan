@@ -17,4 +17,12 @@ describe('left sidebar project header icon', () => {
         expect(iconBlock).not.toContain("alwaysShowActions ? 'hidden'");
         expect(iconBlock).not.toContain('group-hover/project:hidden');
     });
+
+    test('hides project worktree controls when the capability is disabled', () => {
+        const sidebarSource = readFileSync(resolve(testDir, '../SessionSidebar.tsx'), 'utf8');
+
+        expect(sidebarSource).toContain("hasAuthCapability(principal, 'createWorktrees')");
+        expect(sidebarSource).toContain('hideWorktreeControls={hideDirectoryControls || !canCreateWorktrees}');
+        expect(sidebarSource).toContain('active={canCreateWorktrees && newWorktreeDialogOpen}');
+    });
 });

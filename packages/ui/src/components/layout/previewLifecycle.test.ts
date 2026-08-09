@@ -2,8 +2,10 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   buildPreviewFrameKey,
+  isBrowserHostRoutedUrl,
   parsePreviewHttpUrl,
   resolvePreviewReloadUrl,
+  shouldRestorePreviewProxyPath,
 } from './previewLifecycle';
 
 describe('preview lifecycle', () => {
@@ -32,5 +34,41 @@ describe('preview lifecycle', () => {
     expect(parsePreviewHttpUrl('file:///tmp/index.html')).toBeNull();
     expect(parsePreviewHttpUrl('not a URL')).toBeNull();
     expect(parsePreviewHttpUrl('http://0.0.0.0:4173/path')?.hostname).toBe('127.0.0.1');
+  });
+
+  test('routes only loopback project URLs through the DevRyan host', () => {
+    expect(isBrowserHostRoutedUrl('http://localhost:4173/app')).toBe(true);
+    expect(isBrowserHostRoutedUrl('https://127.0.0.1:8443/app')).toBe(true);
+    expect(isBrowserHostRoutedUrl('https://example.com/')).toBe(false);
+    expect(isBrowserHostRoutedUrl('http://192.168.1.20/')).toBe(false);
+    expect(isBrowserHostRoutedUrl('file:///tmp/app.html')).toBe(false);
+  });
+
+  test('keeps a bridge-virtualized target route inside the existing iframe document', () => {
+    expect(shouldRestorePreviewProxyPath({
+      frameOrigin: 'http://127.0.0.1:3101',
+      parentOrigin: 'http://127.0.0.1:3101',
+      framePathname: '/ar/',
+      proxyBasePath: '/api/preview/proxy/0123456789abcdef',
+      bridgeInstalled: true,
+    })).toBe(false);
+  });
+
+  test('restores an unbridged same-origin navigation that escaped the preview proxy', () => {
+    expect(shouldRestorePreviewProxyPath({
+      frameOrigin: 'http://127.0.0.1:3101',
+      parentOrigin: 'http://127.0.0.1:3101',
+      framePathname: '/ar/',
+      proxyBasePath: '/api/preview/proxy/0123456789abcdef',
+      bridgeInstalled: false,
+    })).toBe(true);
+
+    expect(shouldRestorePreviewProxyPath({
+      frameOrigin: 'http://127.0.0.1:3101',
+      parentOrigin: 'http://127.0.0.1:3101',
+      framePathname: '/api/preview/proxy/0123456789abcdef/ar/',
+      proxyBasePath: '/api/preview/proxy/0123456789abcdef',
+      bridgeInstalled: false,
+    })).toBe(false);
   });
 });

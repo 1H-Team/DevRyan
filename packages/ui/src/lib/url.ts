@@ -129,8 +129,7 @@ export const openExternalUrl = async (url: string): Promise<boolean> => {
   }
 
   try {
-    window.open(normalizedTarget, '_blank', 'noopener,noreferrer');
-    return true;
+    return Boolean(window.open(normalizedTarget, '_blank', 'noopener,noreferrer'));
   } catch {
     return false;
   }

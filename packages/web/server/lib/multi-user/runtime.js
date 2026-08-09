@@ -30,6 +30,7 @@ import {
   publicPrincipal,
   settingsPageForRequest,
   settingsPermissionsFromLegacyPages,
+  validateFeatureOverridesPayload,
   validateSettingsChanges,
   validateSettingsPermissionsPayload,
 } from './policy.js';
@@ -38,6 +39,7 @@ import { createSupabaseServerClient, SupabaseRequestError } from './supabase-cli
 import { createSessionVault } from './vault.js';
 import { createSessionOwnershipIndex } from './session-ownership-index.js';
 import { createAuditOutbox } from './audit-outbox.js';
+import { createAnalyticsRetentionService } from './analytics-retention.js';
 import {
   ANALYTICS_ACTIONS,
   ANALYTICS_EVENT_BATCH_LIMIT,
@@ -49,6 +51,7 @@ import {
   decodeAnalyticsCursor,
   encodeAnalyticsCursor,
   extractHumanPrompt,
+  isAnalyticsChangeAction,
   isSettingsChangeAction,
   sanitizeActivityForReviewer,
   validateAnalyticsDay,
@@ -64,14 +67,18 @@ import {
 } from './session-visibility.js';
 import {
   AUTH_ERROR_CODES,
+  BROWSER_POLICY_CAPABILITY_MIGRATION,
   authFailurePayload,
   buildAgentTestIdentities,
   createUserPolicyReader,
   GITHUB_ACCOUNT_REASSIGNMENT_MIGRATION,
   isDefinitiveRefreshRejection,
+  isMissingFeatureOverridesError,
+  isMissingBrowserPolicyCapabilityError,
   isMissingGithubAccountReassignmentFunctionError,
   isMissingUserProfileGithubAccountError,
   isSettingsPermissionSchemaError,
+  USER_POLICY_FEATURE_OVERRIDES_MIGRATION,
   selectAgentTestProfile,
   USER_PROFILE_GITHUB_ACCOUNT_MIGRATION,
 } from './auth-compat.js';
@@ -87,6 +94,11 @@ import {
   translateDirectoryHeaderValue,
   translateDirectoryValue,
 } from './path-translation.js';
+import {
+  createDotenvVisibilityMiddleware,
+  filterProtectedDotenvReferences,
+  shouldHideProtectedDotenv,
+} from './dotenv-visibility.js';
 
 const APP_SESSION_COOKIE = 'oc_app_session';
 const ACCESS_INVITE_COOKIE = 'oc_access_invite';
@@ -95,12 +107,17 @@ const REMEMBERED_ADMIN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const LOOPBACK_OFFLINE_GRACE_MS = 24 * 60 * 60 * 1000;
 const VAULT_VALIDATION_CHECKPOINT_MS = 5 * 60 * 1000;
 const PRINCIPAL_CACHE_MS = 5_000;
+const OFFLINE_GRACE_RESTRICTED = 'offline_grace_restricted';
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 const LOGIN_LOCK_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 8;
+const SESSION_OWNERSHIP_WRITE_ATTEMPTS = 4;
+const SESSION_OWNERSHIP_WRITE_TIMEOUT_MS = 5_000;
+const SESSION_OWNERSHIP_RETRY_DELAYS_MS = [250, 500, 1_000];
+const SESSION_OWNERSHIP_CLEANUP_ATTEMPTS = 6;
 const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const USER_CAPABILITY_KEYS = new Set([
-  'files', 'terminal', 'manageProjects', 'manageUsers', 'manageGlobalSettings',
+  'files', 'terminal', 'browser', 'createWorktrees', 'createBranches', 'manageProjects', 'manageUsers', 'manageGlobalSettings',
   'manageGit', 'push', 'github',
 ]);
 
@@ -208,7 +225,31 @@ const createVerifiedGitHubAccountId = (getGitHubAuthById) => (value) => {
 
 const jsonError = (res, status, error, extras = {}) => res.status(status).json({ error, ...extras });
 
+const runtimeErrorResponse = (res, error, fallbackStatus = null) => jsonError(
+  res,
+  error?.code
+    ? error?.statusCode || error?.status || fallbackStatus || 500
+    : fallbackStatus || error?.statusCode || error?.status || 500,
+  error?.message || 'Request failed',
+  error?.code ? {
+    code: error.code,
+    ...(error.requiredMigration ? { requiredMigration: error.requiredMigration } : {}),
+  } : {},
+);
+
 const settingsPermissionWriteError = (res, error) => {
+  if (isMissingFeatureOverridesError(error)) {
+    return jsonError(res, 503, 'Database migration required', {
+      code: AUTH_ERROR_CODES.schemaMigrationRequired,
+      requiredMigration: USER_POLICY_FEATURE_OVERRIDES_MIGRATION,
+    });
+  }
+  if (isMissingBrowserPolicyCapabilityError(error)) {
+    return jsonError(res, 503, 'Database migration required', {
+      code: AUTH_ERROR_CODES.schemaMigrationRequired,
+      requiredMigration: BROWSER_POLICY_CAPABILITY_MIGRATION,
+    });
+  }
   if (!isSettingsPermissionSchemaError(error)) {
     return jsonError(res, error?.statusCode || error?.status || 500, error?.message || 'Policy update failed');
   }
@@ -226,12 +267,28 @@ const extractSessionId = (payload) => {
     payload.sessionId,
     payload.properties?.sessionID,
     payload.properties?.sessionId,
+    payload.properties?.info?.id,
     payload.properties?.info?.sessionID,
     payload.properties?.info?.sessionId,
     payload.properties?.message?.sessionID,
     payload.properties?.part?.sessionID,
   ];
   return candidates.find((value) => typeof value === 'string' && value.trim())?.trim() || '';
+};
+
+const MANAGED_TASK_EVENT_TYPES = new Set([
+  'openchamber:managed-task',
+  'openchamber:managed-task-removed',
+]);
+
+const extractManagedTaskRootSessionId = (payload) => {
+  if (!payload || typeof payload !== 'object' || !MANAGED_TASK_EVENT_TYPES.has(payload.type)) return '';
+  const properties = payload.properties;
+  if (!properties || typeof properties !== 'object' || properties.owner !== 'devryan') return '';
+  const candidate = payload.type === 'openchamber:managed-task'
+    ? properties.task?.rootSessionId
+    : properties.rootSessionId;
+  return typeof candidate === 'string' ? candidate.trim() : '';
 };
 
 const restrictedGitRoute = (req) => {
@@ -247,7 +304,6 @@ const restrictedGitRoute = (req) => {
     '/checkout',
   ].includes(req.path)) return false;
   if (req.method === 'POST' && /^\/worktrees\/operations\/[^/]+\/retry$/.test(req.path)) return false;
-  if (req.method === 'DELETE' && req.path === '/worktrees') return false;
   return /^\/(?:identities|global-identity|discover-credentials|set-identity|branches|checkout|worktrees|remote-branches|remotes|stash|stashes|templates|canonicalize-worktree-state)(?:\/|$)/.test(req.path);
 };
 
@@ -255,6 +311,11 @@ const hostGlobalMutation = (req) => {
   if (!STATE_CHANGING_METHODS.has(req.method)) return false;
   if (req.path === '/config/settings') return false;
   if (/^\/projects\/[^/]+\/(?:branch-target|scheduled-tasks(?:\/[^/]+)?(?:\/run)?)$/.test(req.path)) return false;
+  if (req.method === 'POST' && [
+    '/browser/targets',
+    '/browser/instances/register',
+    '/browser/local-instances/status',
+  ].includes(req.path)) return false;
   return /^\/(?:config|auth|provider|mcp|openchamber\/tunnel|projects|diagnostics|evidence|desktop|browser)/.test(req.path);
 };
 
@@ -274,6 +335,30 @@ const getDefaultAssignment = (principal) => (
   || principal?.assignments?.[0]
   || null
 );
+
+const isOwnershipScopedSessionDelete = (requestPath, method) => (
+  method === 'DELETE' && /^\/session\/[^/]+\/?$/.test(requestPath)
+);
+
+const removeUrlQueryParameter = (value, key) => {
+  if (typeof value !== 'string' || !value.includes('?')) return value;
+  const parsed = new URL(value, 'http://127.0.0.1');
+  parsed.searchParams.delete(key);
+  return `${parsed.pathname}${parsed.search}`;
+};
+
+const stripSessionDeleteDirectoryScope = (req) => {
+  req.url = removeUrlQueryParameter(req.url, 'directory');
+  if (typeof req.originalUrl === 'string') {
+    req.originalUrl = removeUrlQueryParameter(req.originalUrl, 'directory');
+  }
+  if (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) {
+    delete req.body.directory;
+  }
+  if (req.headers && typeof req.headers === 'object') {
+    delete req.headers['x-opencode-directory'];
+  }
+};
 
 const rewriteUrlQuery = async (req, principal, { translatePathFields = true } = {}) => {
   const rawUrl = typeof req.url === 'string' ? req.url : '';
@@ -346,11 +431,46 @@ const localAdminPrincipal = Object.freeze({
   assignments: [],
 });
 
+const CONTROL_PLANE_RETRY_BASE_MS = 5_000;
+const CONTROL_PLANE_RETRY_MAX_MS = 60_000;
+const TRANSIENT_DEPENDENCY_ERROR_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'EAI_AGAIN',
+  'ENETDOWN',
+  'ENETUNREACH',
+  'ENOTFOUND',
+  'ETIMEDOUT',
+]);
+
+const summarizeDependencyError = (error) => {
+  const cause = error?.cause;
+  return {
+    message: error instanceof Error ? error.message : String(error || 'Unknown dependency error'),
+    code: typeof cause?.code === 'string'
+      ? cause.code
+      : (typeof error?.code === 'string' ? error.code : null),
+  };
+};
+
+const isTransientDependencyError = (error) => {
+  const { code } = summarizeDependencyError(error);
+  if (code && TRANSIENT_DEPENDENCY_ERROR_CODES.has(code)) return true;
+  if (error?.name === 'AbortError' || error?.name === 'TimeoutError') return true;
+  if (error instanceof TypeError && error.message === 'fetch failed') return true;
+  const status = Number(error?.status || 0);
+  return status === 429 || status >= 500;
+};
+
 export async function createMultiUserRuntime({
   dataDirectory,
   fetchImpl = fetch,
   logger = console,
   githubAuthStore = {},
+  readManagedTunnelConfig = null,
+  onManagedProjectMetadataChanged = null,
+  onManagedSessionOwnershipCommitted = null,
+  sessionOwnershipRetryOptions = {},
 } = {}) {
   const config = resolveMultiUserConfig({ dataDirectory });
 
@@ -403,6 +523,7 @@ export async function createMultiUserRuntime({
     return {
       enabled: false,
       config,
+      getControlPlaneStatus: () => ({ state: 'disabled', lastErrorCode: null, lastSuccessAt: null }),
       localAdminPrincipal,
       wrapLegacyAuthController,
       registerRoutes() {},
@@ -414,17 +535,115 @@ export async function createMultiUserRuntime({
   }
 
   const supabase = createSupabaseServerClient({ ...config, fetchImpl });
+  const notifyManagedProjectMetadataChanged = (projectId) => {
+    if (typeof onManagedProjectMetadataChanged !== 'function') return;
+    try {
+      Promise.resolve(onManagedProjectMetadataChanged(projectId)).catch((error) => {
+        logger.warn?.('[MultiUser] Failed to publish managed project metadata change:', error);
+      });
+    } catch (error) {
+      logger.warn?.('[MultiUser] Failed to publish managed project metadata change:', error);
+    }
+  };
+  const notifyManagedSessionOwnershipCommitted = (session) => {
+    if (typeof onManagedSessionOwnershipCommitted !== 'function') return;
+    try {
+      Promise.resolve(onManagedSessionOwnershipCommitted(session)).catch((error) => {
+        logger.warn?.('[MultiUser] Failed to publish committed session ownership:', error);
+      });
+    } catch (error) {
+      logger.warn?.('[MultiUser] Failed to publish committed session ownership:', error);
+    }
+  };
+  const sessionOwnershipWriteAttempts = Math.max(
+    1,
+    Number(sessionOwnershipRetryOptions.attempts) || SESSION_OWNERSHIP_WRITE_ATTEMPTS,
+  );
+  const sessionOwnershipWriteTimeoutMs = Math.max(
+    1,
+    Number(sessionOwnershipRetryOptions.timeoutMs) || SESSION_OWNERSHIP_WRITE_TIMEOUT_MS,
+  );
+  const sessionOwnershipRetryDelaysMs = Array.isArray(sessionOwnershipRetryOptions.delaysMs)
+    ? sessionOwnershipRetryOptions.delaysMs.map((value) => Math.max(0, Number(value) || 0))
+    : SESSION_OWNERSHIP_RETRY_DELAYS_MS;
+  const analyticsRetention = createAnalyticsRetentionService({ supabase });
   const readUserPolicy = createUserPolicyReader({ supabase, logger });
   const vault = await createSessionVault({ dataDirectory: config.dataDirectory });
   const ownershipIndex = await createSessionOwnershipIndex({ dataDirectory: config.dataDirectory });
-  const durableOwnershipRows = await supabase.rest('opencode_session_ownership');
-  await ownershipIndex.rebuild(durableOwnershipRows);
+  let controlPlaneRetryTimer = null;
+  let controlPlaneSyncPromise = null;
+  let controlPlaneRetryAttempt = 0;
+  let controlPlaneDisposed = false;
+  let controlPlaneStatus = {
+    state: 'starting',
+    lastErrorCode: null,
+    lastSuccessAt: null,
+  };
+
+  const scheduleControlPlaneSync = () => {
+    if (controlPlaneDisposed || controlPlaneRetryTimer) return;
+    const delayMs = Math.min(
+      CONTROL_PLANE_RETRY_BASE_MS * (2 ** controlPlaneRetryAttempt),
+      CONTROL_PLANE_RETRY_MAX_MS,
+    );
+    controlPlaneRetryAttempt += 1;
+    controlPlaneRetryTimer = setTimeout(() => {
+      controlPlaneRetryTimer = null;
+      void refreshOwnershipIndex().catch(() => {});
+    }, delayMs);
+    controlPlaneRetryTimer.unref?.();
+  };
+
+  const refreshOwnershipIndex = () => {
+    if (controlPlaneDisposed) return Promise.resolve(controlPlaneStatus);
+    if (controlPlaneSyncPromise) return controlPlaneSyncPromise;
+    const current = (async () => {
+      try {
+        const durableOwnershipRows = await supabase.rest('opencode_session_ownership');
+        await ownershipIndex.rebuild(durableOwnershipRows);
+        if (controlPlaneRetryTimer) {
+          clearTimeout(controlPlaneRetryTimer);
+          controlPlaneRetryTimer = null;
+        }
+        controlPlaneRetryAttempt = 0;
+        controlPlaneStatus = {
+          state: 'ready',
+          lastErrorCode: null,
+          lastSuccessAt: new Date().toISOString(),
+        };
+        return controlPlaneStatus;
+      } catch (error) {
+        if (!isTransientDependencyError(error)) throw error;
+        const summary = summarizeDependencyError(error);
+        controlPlaneStatus = {
+          ...controlPlaneStatus,
+          state: 'degraded',
+          lastErrorCode: summary.code,
+        };
+        logger.warn?.(
+          '[MultiUser] Ownership refresh unavailable; preserving the local ownership index:',
+          summary.code ? `${summary.message} (${summary.code})` : summary.message,
+        );
+        scheduleControlPlaneSync();
+        return controlPlaneStatus;
+      }
+    })();
+    controlPlaneSyncPromise = current;
+    void current.finally(() => {
+      if (controlPlaneSyncPromise === current) controlPlaneSyncPromise = null;
+    }).catch(() => {});
+    return current;
+  };
+
+  await refreshOwnershipIndex();
   const principalCache = new Map();
   const loginAttempts = new Map();
   const connectionsByUser = new Map();
   const connectionsBySession = new Map();
   const mutationTails = new Map();
   const projectedActivityKeys = new Map();
+  const provisionalSessionIds = new Set();
+  const provisionalCleanupTimers = new Set();
   let claimInProgress = false;
   let abortOwnedSessions = async () => {};
   let terminateOwnedTerminals = async () => {};
@@ -542,6 +761,9 @@ export async function createMultiUserRuntime({
     const requestPath = typeof req.path === 'string'
       ? req.path
       : new URL(req.url || '/', 'http://127.0.0.1').pathname.replace(/^\/api/, '') || '/';
+    if (req.method === 'POST' && /^\/git\/commit-message(?:\/draft)?$/.test(requestPath)) {
+      return () => {};
+    }
     if (!/^\/(?:git(?:\/|$)|github\/pr(?:\/|$)|fs\/(?:write|delete)(?:\/|$))/.test(requestPath)) return () => {};
     const parsed = new URL(req.url || '/', 'http://127.0.0.1');
     const directory = req.body?.directory
@@ -768,15 +990,68 @@ export async function createMultiUserRuntime({
     };
   };
 
-  const projectFromAssignment = (assignment, metadata = {}) => ({
-    id: assignment.projectId,
-    label: metadata.label ?? assignment.label,
-    path: assignment.repositoryPath,
-    icon: metadata.icon ?? assignment.icon ?? null,
-    color: metadata.color ?? assignment.color ?? null,
-    iconBackground: metadata.icon_background ?? assignment.iconBackground ?? null,
-    iconImage: metadata.icon_image ?? assignment.iconImage ?? null,
-  });
+  const projectFromAssignment = (assignment, metadata = {}) => {
+    const metadataValue = (key, fallback) => (
+      Object.prototype.hasOwnProperty.call(metadata, key) ? metadata[key] : fallback
+    );
+    return {
+      id: assignment.projectId,
+      label: metadataValue('label', assignment.label),
+      path: assignment.repositoryPath,
+      icon: metadataValue('icon', assignment.icon ?? null),
+      color: metadataValue('color', assignment.color ?? null),
+      iconBackground: metadataValue('icon_background', assignment.iconBackground ?? null),
+      iconImage: metadataValue('icon_image', assignment.iconImage ?? null),
+    };
+  };
+
+  const resolveManagedProjectForDirectory = async (directory) => {
+    if (typeof directory !== 'string' || !directory.trim() || !path.isAbsolute(directory)) return null;
+    let canonicalDirectory;
+    try {
+      canonicalDirectory = await fs.realpath(directory);
+      if (!(await fs.stat(canonicalDirectory)).isDirectory()) return null;
+    } catch {
+      return null;
+    }
+
+    const projects = await supabase.rest('managed_projects', {
+      query: { status: 'eq.active', select: 'id,repository_path' },
+    });
+    const matches = [];
+    for (const project of projects || []) {
+      if (!project?.id || typeof project.repository_path !== 'string') continue;
+      try {
+        const repositoryPath = await fs.realpath(project.repository_path);
+        if (isPathContained(repositoryPath, canonicalDirectory)) {
+          matches.push({ project, rootLength: repositoryPath.length });
+        }
+      } catch {
+        // Invalid registered roots cannot own a live terminal directory.
+      }
+    }
+    if (matches.length > 0) {
+      matches.sort((left, right) => right.rootLength - left.rootLength);
+      return matches[0].project;
+    }
+
+    for (const project of projects || []) {
+      if (!project?.id || typeof project.repository_path !== 'string') continue;
+      const openCodeProjectId = await ensureOpenCodeProjectId(project.repository_path).catch(() => null);
+      if (!openCodeProjectId) continue;
+      const worktreeContainer = path.join(getOpenCodeDataPath(), 'worktree', openCodeProjectId);
+      try {
+        const canonicalContainer = await fs.realpath(worktreeContainer);
+        if (isPathContained(canonicalContainer, canonicalDirectory)) {
+          matches.push({ project, rootLength: canonicalContainer.length });
+        }
+      } catch {
+        // Missing worktree containers cannot own a live terminal directory.
+      }
+    }
+    matches.sort((left, right) => right.rootLength - left.rootLength);
+    return matches[0]?.project || null;
+  };
 
   const resolveManagedProject = async (req, projectId) => {
     const principal = req?.principal;
@@ -803,6 +1078,7 @@ export async function createMultiUserRuntime({
           throw Object.assign(new Error('Managed project not found'), { statusCode: 404 });
         }
         principalCache.clear();
+        notifyManagedProjectMetadataChanged(projectId);
         return projectFromAssignment(assignment, updated);
       },
     };
@@ -1298,18 +1574,24 @@ export async function createMultiUserRuntime({
     if (STATE_CHANGING_METHODS.has(req.method) && requestPath.startsWith('/') && getHeader('x-devryan-csrf') !== '1') {
       throw Object.assign(new Error('Missing CSRF request header'), { statusCode: 403 });
     }
+    const ownershipScopedDelete = isOwnershipScopedSessionDelete(requestPath, req.method);
+    if (ownershipScopedDelete) stripSessionDeleteDirectoryScope(req);
     const offlineHostConfig = /^\/config\/(?:agents|commands|mcp|skills|plugins|opencode|models|providers)(?:\/|$)/.test(requestPath)
       || (requestPath.startsWith('/config/') && STATE_CHANGING_METHODS.has(req.method));
     if (principal.offlineGrace && (
       offlineHostConfig
       || /^\/(?:admin(?:\/|$)|github\/auth(?:\/|$)|auth(?:\/|$)|provider(?:\/|$)|mcp(?:\/|$)|projects(?:\/|$)|openchamber\/tunnel(?:\/|$)|diagnostics(?:\/|$))/.test(requestPath)
     )) {
-      throw Object.assign(new Error('Account and host management are unavailable during offline grace'), { statusCode: 503 });
+      throw Object.assign(new Error('Account and host management are unavailable during offline grace'), {
+        statusCode: 503,
+        code: OFFLINE_GRACE_RESTRICTED,
+        retryable: true,
+      });
     }
     if (requestPath.startsWith('/terminal') && !principal.policy.terminal) {
       throw Object.assign(new Error('Terminal access is disabled by policy'), { statusCode: 403 });
     }
-    if (/^\/(?:fs|find\/file|file)(?:\/|$)/.test(requestPath) && !principal.policy.files) {
+    if (/^\/(?:fs|find|file)(?:\/|$)/.test(requestPath) && !principal.policy.files) {
       throw Object.assign(new Error('File access is disabled by policy'), { statusCode: 403 });
     }
     if (/^\/fs\/(?:exec|clone)(?:\/|$)/.test(requestPath) && principal.role !== 'admin') {
@@ -1355,6 +1637,23 @@ export async function createMultiUserRuntime({
       if (gitReq.path === '/push' && !principal.policy.push) {
         throw Object.assign(new Error('Push is disabled by policy'), { statusCode: 403 });
       }
+      const manuallyCreatesWorktree = gitReq.method === 'POST' && (
+        gitReq.path === '/worktrees'
+        || /^\/worktrees\/operations\/[^/]+\/retry$/.test(gitReq.path)
+      );
+      if (manuallyCreatesWorktree && !principal.policy.createWorktrees) {
+        throw Object.assign(new Error('Worktree creation is disabled by policy'), {
+          statusCode: 403,
+          code: 'WORKTREE_CREATION_DISABLED',
+        });
+      }
+      const createsBranch = gitReq.method === 'POST' && (
+        gitReq.path === '/branches'
+        || (gitReq.path === '/worktrees' && req.body?.mode !== 'existing')
+      );
+      if (createsBranch && !principal.policy.createBranches) {
+        throw Object.assign(new Error('Branch creation is disabled by policy'), { statusCode: 403 });
+      }
       if (principal.role !== 'admin' && gitReq.method === 'POST' && gitReq.path === '/worktrees') {
         const requestedBase = String(req.body?.mode === 'existing' ? req.body?.existingBranch : req.body?.startRef || '').trim();
         const logicalBase = normalizeLogicalBranchName(requestedBase);
@@ -1375,7 +1674,7 @@ export async function createMultiUserRuntime({
       const translated = await translateDirectoryHeaderValue(principal, headerDirectory);
       if (!translated) throw Object.assign(new Error('Directory is outside your assigned workspace'), { statusCode: 403 });
       req.headers['x-opencode-directory'] = translated;
-    } else if (!req.url.includes('directory=') && !req.body?.directory) {
+    } else if (!ownershipScopedDelete && !req.url.includes('directory=') && !req.body?.directory) {
       const active = getDefaultAssignment(principal);
       if (active && /^\/(?:session|config\/providers|git|fs|event)(?:\/|$)/.test(requestPath)) {
         req.headers['x-opencode-directory'] = active.repositoryPath;
@@ -1427,7 +1726,10 @@ export async function createMultiUserRuntime({
           assignment: getRequestAssignment(principal, req),
         });
       } catch (error) {
-        if (error?.statusCode) return jsonError(res, error.statusCode, error.message);
+        if (error?.statusCode) return jsonError(res, error.statusCode, error.message, {
+          ...(error?.code ? { code: error.code } : {}),
+          ...(typeof error?.retryable === 'boolean' ? { retryable: error.retryable } : {}),
+        });
         const failure = authFailurePayload(error);
         return jsonError(res, failure.status, failure.error, {
           authenticated: false,
@@ -1873,6 +2175,13 @@ export async function createMultiUserRuntime({
       return runWithRequestPrincipal(principal, next);
     },
     async dispose() {
+      controlPlaneDisposed = true;
+      if (controlPlaneRetryTimer) {
+        clearTimeout(controlPlaneRetryTimer);
+        controlPlaneRetryTimer = null;
+      }
+      for (const timer of provisionalCleanupTimers) clearTimeout(timer);
+      provisionalCleanupTimers.clear();
       for (const userId of [...connectionsByUser.keys()]) revokeConnections({ userId });
       principalCache.clear();
       loginAttempts.clear();
@@ -1885,12 +2194,33 @@ export async function createMultiUserRuntime({
     return ownershipIndex.get(sessionId);
   };
 
-  const ownsSession = async (principal, sessionId) => {
-    if (principal?.scope !== 'managed') return true;
+  const resolveOwnedSessionPlanContext = async (principal, sessionId, requestedDirectory = '') => {
+    if (principal?.scope !== 'managed') return null;
     const owner = await sessionOwnership(sessionId);
-    return !owner?.archived_at && owner?.user_id === principal.id && (principal.assignments || []).some((assignment) => (
+    if (owner?.archived_at || owner?.user_id !== principal.id) return null;
+
+    const ownerAssignment = (principal.assignments || []).find((assignment) => (
       assignment.projectId === owner.project_id && assignment.branchName === owner.branch_name
     ));
+    if (!ownerAssignment) return null;
+
+    const requested = typeof requestedDirectory === 'string' ? requestedDirectory.trim() : '';
+    if (requested) {
+      const requestedAssignment = resolveAssignmentForValue(principal, requested);
+      if (!requestedAssignment || requestedAssignment.projectId !== owner.project_id) return null;
+    }
+
+    return {
+      directory: ownerAssignment.repositoryPath,
+      projectId: owner.project_id,
+      branchName: owner.branch_name,
+    };
+  };
+
+  const ownsSession = async (principal, sessionId) => {
+    if (principal?.scope !== 'managed') return true;
+    if (provisionalSessionIds.has(sessionId)) return false;
+    return Boolean(await resolveOwnedSessionPlanContext(principal, sessionId));
   };
 
   const canSessionTokenHashAccess = async (tokenHash, sessionId) => {
@@ -1975,6 +2305,33 @@ export async function createMultiUserRuntime({
     return { projectId: project.id, branchName, publicDirectory: repositoryPath };
   };
 
+  const writeDurableSessionOwnership = async (row) => {
+    let lastError = null;
+    for (let attempt = 0; attempt < sessionOwnershipWriteAttempts; attempt += 1) {
+      try {
+        await supabase.rest('opencode_session_ownership', {
+          method: 'POST',
+          body: row,
+          prefer: 'resolution=merge-duplicates,return=minimal',
+          timeoutMs: sessionOwnershipWriteTimeoutMs,
+        });
+        return;
+      } catch (error) {
+        lastError = error;
+        if (!isTransientDependencyError(error) || attempt === sessionOwnershipWriteAttempts - 1) {
+          throw error;
+        }
+        const delayMs = sessionOwnershipRetryDelaysMs[
+          Math.min(attempt, Math.max(0, sessionOwnershipRetryDelaysMs.length - 1))
+        ] ?? 0;
+        if (delayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+      }
+    }
+    throw lastError;
+  };
+
   const recordSessionOwnership = async (principal, session) => {
     const sessionId = typeof session?.id === 'string' ? session.id : '';
     if (!sessionId) throw new Error('OpenCode session response did not include an id');
@@ -1993,26 +2350,23 @@ export async function createMultiUserRuntime({
       branch_name: assignment.branchName,
       public_directory: assignment.publicDirectory,
     };
-    await ownershipIndex.set(row);
+    await writeDurableSessionOwnership(row);
     try {
-      await supabase.rest('opencode_session_ownership', {
-        method: 'POST', body: row, prefer: 'resolution=merge-duplicates,return=minimal',
-      });
-    } catch (error) {
-      await ownershipIndex.delete(sessionId).catch(() => {});
-      throw error;
-    }
-    try {
+      await ownershipIndex.set(row);
       await audit(principal, 'session.created', {
         targetType: 'session', targetId: sessionId, sessionId, projectId: assignment.projectId,
       });
     } catch (error) {
       await supabase.rest('opencode_session_ownership', {
-        method: 'DELETE', query: { session_id: `eq.${sessionId}` }, prefer: 'return=minimal',
+        method: 'DELETE',
+        query: { session_id: `eq.${sessionId}` },
+        prefer: 'return=minimal',
+        timeoutMs: sessionOwnershipWriteTimeoutMs,
       }).catch(() => {});
       await ownershipIndex.delete(sessionId).catch(() => {});
       throw error;
     }
+    return row;
   };
 
   const resolveScheduledTaskExecution = async ({ ownerUserId, projectId, branchName, taskId }) => {
@@ -2123,6 +2477,9 @@ export async function createMultiUserRuntime({
         return false;
       }
     }
+    const managedTaskRootSessionId = extractManagedTaskRootSessionId(payload);
+    if (managedTaskRootSessionId) return ownsSession(principal, managedTaskRootSessionId);
+    if (MANAGED_TASK_EVENT_TYPES.has(payload?.type)) return false;
     const sessionId = extractSessionId(payload);
     if (sessionId) return ownsSession(principal, sessionId);
     if (directory && directory !== 'global') return Boolean(resolveAssignmentForValue(principal, directory));
@@ -2154,6 +2511,9 @@ export async function createMultiUserRuntime({
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
   } = {}) => {
+    if (typeof app.use === 'function') {
+      app.use(createDotenvVisibilityMiddleware());
+    }
     const canReviewUsers = (principal) => canReadSettingsPage(principal, 'users');
     const canManageUsers = (principal) => canEditSettingsPage(principal, 'users');
     const requireAnalyticsAdmin = (principal) => principal?.scope === 'managed' && principal.role === 'admin';
@@ -2426,7 +2786,7 @@ export async function createMultiUserRuntime({
       };
 
       const repairSessionOwnership = async (session, candidates) => {
-        if (!session?.id || await sessionOwnership(session.id)) return false;
+        if (!session?.id || provisionalSessionIds.has(session.id) || await sessionOwnership(session.id)) return false;
         const resolvedDirectory = await canonicalDirectory(session.directory);
         if (!resolvedDirectory) return false;
         const candidate = selectUniqueOwnershipCandidate(candidates, resolvedDirectory);
@@ -2869,6 +3229,7 @@ export async function createMultiUserRuntime({
             settings_permission_overrides: {},
             capabilities: {},
             settings_overrides: {},
+            feature_overrides: {},
           },
           inheritedPolicy: normalizeRolePolicy(profile.role, rolePolicy, null),
           effective: normalizeRolePolicy(profile.role, rolePolicy, userPolicy),
@@ -2920,6 +3281,9 @@ export async function createMultiUserRuntime({
         if (Buffer.byteLength(JSON.stringify(settingsOverrides)) > 256 * 1024) {
           return jsonError(res, 413, 'User settings override is too large');
         }
+        const featureResult = validateFeatureOverridesPayload(req.body?.featureOverrides);
+        if (!featureResult.valid) return jsonError(res, 400, featureResult.error);
+        const featureOverrides = profile.role === 'admin' ? {} : featureResult.featureOverrides;
         const policy = await supabase.rest('user_policies', {
           method: 'POST',
           body: {
@@ -2928,6 +3292,7 @@ export async function createMultiUserRuntime({
             settings_permission_overrides: settingsPermissionOverrides,
             capabilities,
             settings_overrides: settingsOverrides,
+            feature_overrides: featureOverrides,
           },
           prefer: 'resolution=merge-duplicates,return=representation', maybeSingle: true,
         });
@@ -2937,14 +3302,17 @@ export async function createMultiUserRuntime({
           metadata: {
             settingsPermissionOverrides: Object.keys(settingsPermissionOverrides),
             capabilities: Object.keys(capabilities),
+            featureOverrides: Object.keys(featureOverrides),
             changes: buildSafeFieldDeltas({
               settingsPermissionOverrides: previousPolicy?.settings_permission_overrides || {},
               capabilities: previousPolicy?.capabilities || {},
               settingsOverrides: previousPolicy?.settings_overrides || {},
+              featureOverrides: previousPolicy?.feature_overrides || {},
             }, {
               settingsPermissionOverrides,
               capabilities,
               settingsOverrides,
+              featureOverrides,
             }),
             changedBy: req.principal.id === profile.id ? 'user' : 'administrator',
           },
@@ -2987,7 +3355,13 @@ export async function createMultiUserRuntime({
 
     app.get('/api/admin/roles', async (req, res) => {
       if (!canReviewUsers(req.principal)) return jsonError(res, 403, 'User review access required');
-      const roles = await supabase.rest('role_policies', { query: { order: 'role.asc' } }).catch(() => []);
+      const rows = await supabase.rest('role_policies', { query: { order: 'role.asc' } }).catch(() => []);
+      const roles = rows.map((row) => ({
+        ...row,
+        can_use_browser: typeof row.can_use_browser === 'boolean'
+          ? row.can_use_browser
+          : ROLE_POLICY_DEFAULTS[row.role]?.browser === true,
+      }));
       return res.json({ roles });
     });
 
@@ -3015,6 +3389,7 @@ export async function createMultiUserRuntime({
           settings_permissions: settingsPermissions,
           can_use_files: req.params.role === 'admin' || body.files === true,
           can_use_terminal: req.params.role === 'admin' || body.terminal === true,
+          can_use_browser: req.params.role === 'admin' || body.browser !== false,
           can_manage_projects: req.params.role === 'admin' || body.manageProjects === true,
           can_manage_users: req.params.role === 'admin' || body.manageUsers === true,
           can_manage_global_settings: req.params.role === 'admin' || body.manageGlobalSettings === true,
@@ -3096,6 +3471,7 @@ export async function createMultiUserRuntime({
         });
         if (!project) return jsonError(res, 404, 'Managed project not found');
         principalCache.clear();
+        notifyManagedProjectMetadataChanged(project.id);
         await audit(req.principal, 'project.updated', {
           targetType: 'project',
           targetId: project.id,
@@ -3328,6 +3704,16 @@ export async function createMultiUserRuntime({
       if (!validEmail(email)) return jsonError(res, 400, 'A valid existing user email is required');
       const token = crypto.randomBytes(32).toString('base64url');
       const expiresAt = new Date(Date.now() + Math.min(7, Math.max(1, Number(req.body?.expiresInDays || 2))) * 86_400_000);
+      const tunnelPresetId = typeof req.body?.tunnelPresetId === 'string' ? req.body.tunnelPresetId.trim() : '';
+      let inviteTunnel = null;
+      if (tunnelPresetId) {
+        const tunnelConfig = typeof readManagedTunnelConfig === 'function'
+          ? await readManagedTunnelConfig().catch(() => null)
+          : null;
+        const preset = tunnelConfig?.tunnels?.find((entry) => entry.id === tunnelPresetId) || null;
+        if (!preset?.hostname) return jsonError(res, 400, 'Unknown managed remote tunnel');
+        inviteTunnel = { id: preset.id, name: preset.name, hostname: preset.hostname };
+      }
       try {
         const profile = await supabase.rest('user_profiles', {
           query: { email: `eq.${escapeFilterValue(email)}`, limit: 1 }, maybeSingle: true,
@@ -3360,7 +3746,15 @@ export async function createMultiUserRuntime({
             changedBy: req.principal.id === profile.id ? 'user' : 'administrator',
           },
         });
-        return res.status(201).json({ invite: { ...invite, token, url: `/invite?t=${encodeURIComponent(token)}` } });
+        const relativeUrl = `/invite?t=${encodeURIComponent(token)}`;
+        return res.status(201).json({
+          invite: {
+            ...invite,
+            token,
+            url: inviteTunnel ? `https://${inviteTunnel.hostname}${relativeUrl}` : relativeUrl,
+            tunnel: inviteTunnel,
+          },
+        });
       } catch (error) { return jsonError(res, error?.status || 500, error.message); }
     });
 
@@ -3486,7 +3880,7 @@ export async function createMultiUserRuntime({
           if (category === 'interactions') {
             return row.action === ANALYTICS_ACTIONS.fileOpened || row.action === ANALYTICS_ACTIONS.clipboardCopied;
           }
-          if (category === 'changes') return isSettingsChangeAction(row.action);
+          if (category === 'changes') return isAnalyticsChangeAction(row.action);
           return !String(row.action || '').startsWith('tool.') && !String(row.action || '').startsWith('assistant.');
         });
         const agent = String(req.query?.agent || '').trim().toLowerCase();
@@ -3571,11 +3965,9 @@ export async function createMultiUserRuntime({
       if (req.body?.confirm !== true) return jsonError(res, 400, 'Audit purge confirmation is required');
       try {
         const purgeEventId = await audit(req.principal, 'activity.purged');
-        await supabase.rest('activity_logs', {
-          method: 'DELETE', query: { event_id: `neq.${purgeEventId}` }, prefer: 'return=minimal',
-        });
-        return res.json({ purged: true });
-      } catch (error) { return jsonError(res, error?.status || 500, error.message); }
+        const result = await analyticsRetention.purgeUnprotected({ preserveEventId: purgeEventId });
+        return res.json({ purged: true, ...result });
+      } catch (error) { return runtimeErrorResponse(res, error); }
     });
 
     if (typeof readSettingsFromDiskMigrated === 'function') {
@@ -3627,6 +4019,106 @@ export async function createMultiUserRuntime({
       });
     }
 
+    // Per-user MCP enablement. The host opencode.json stays admin-owned; managed
+    // non-admin users read an overlaid enabled state (policy force > their own
+    // override > global) and their toggles persist to settings_overrides only.
+    const mcpPolicyForceState = (principal, name) => {
+      const state = principal?.policy?.featureOverrides?.mcp?.[name];
+      return state === 'on' || state === 'off' ? state : null;
+    };
+
+    const applyMcpPolicyOverlay = (principal, entry) => {
+      if (!entry || typeof entry !== 'object' || typeof entry.name !== 'string') return entry;
+      const forced = mcpPolicyForceState(principal, entry.name);
+      const userOverride = principal?.settingsOverrides?.mcpServerEnabledOverrides?.[entry.name];
+      let enabled = entry.enabled !== false;
+      let enabledSource = 'global';
+      if (typeof userOverride === 'boolean') {
+        enabled = userOverride;
+        enabledSource = 'user';
+      }
+      if (forced) {
+        enabled = forced === 'on';
+        enabledSource = 'policy';
+      }
+      return {
+        ...entry,
+        enabled,
+        enabledSource,
+        enabledLocked: Boolean(forced) || !canEditSettingsPage(principal, 'mcp'),
+      };
+    };
+
+    app.get(['/api/config/mcp', '/api/config/mcp/:name'], (req, res, next) => {
+      if (req.principal?.scope !== 'managed' || req.principal.role === 'admin') return next();
+      const originalJson = res.json.bind(res);
+      res.json = (payload) => {
+        if (Array.isArray(payload)) {
+          return originalJson(payload.map((entry) => applyMcpPolicyOverlay(req.principal, entry)));
+        }
+        if (payload && typeof payload === 'object' && typeof payload.name === 'string') {
+          return originalJson(applyMcpPolicyOverlay(req.principal, payload));
+        }
+        return originalJson(payload);
+      };
+      return next();
+    });
+
+    app.patch('/api/config/mcp/:name', async (req, res, next) => {
+      if (req.principal?.scope !== 'managed' || req.principal.role === 'admin') return next();
+      const name = String(req.params.name || '').trim();
+      const updates = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+      if (Object.keys(updates).length !== 1 || typeof updates.enabled !== 'boolean') {
+        return jsonError(res, 403, 'MCP server configuration is managed by an administrator');
+      }
+      if (!canEditSettingsPage(req.principal, 'mcp')) {
+        return jsonError(res, 403, 'MCP settings edit access required');
+      }
+      if (mcpPolicyForceState(req.principal, name)) {
+        return jsonError(res, 403, `MCP server "${name}" is managed by an administrator`);
+      }
+      try {
+        const currentOverrides = req.principal.settingsOverrides?.mcpServerEnabledOverrides;
+        const mcpServerEnabledOverrides = {
+          ...(currentOverrides && typeof currentOverrides === 'object' && !Array.isArray(currentOverrides) ? currentOverrides : {}),
+          [name]: updates.enabled,
+        };
+        const settingsOverrides = { ...req.principal.settingsOverrides, mcpServerEnabledOverrides };
+        await supabase.rest('user_policies', {
+          method: 'POST',
+          body: { user_id: req.principal.id, settings_overrides: settingsOverrides },
+          prefer: 'resolution=merge-duplicates,return=minimal',
+        });
+        req.principal.settingsOverrides = settingsOverrides;
+        principalCache.clear();
+        await audit(req.principal, 'settings.updated', {
+          targetType: 'user',
+          targetId: req.principal.id,
+          metadata: {
+            fields: ['mcpServerEnabledOverrides'],
+            changes: buildSafeFieldDeltas(
+              { [name]: !updates.enabled },
+              { [name]: updates.enabled },
+            ),
+            changedBy: 'user',
+          },
+        });
+        return res.json({
+          success: true,
+          requiresReload: false,
+          perUser: true,
+          message: `MCP server "${name}" ${updates.enabled ? 'enabled' : 'disabled'} for your account.`,
+        });
+      } catch (error) { return jsonError(res, error?.statusCode || 500, error.message); }
+    });
+
+    const rejectManagedMcpMutation = (req, res, next) => {
+      if (req.principal?.scope !== 'managed' || req.principal.role === 'admin') return next();
+      return jsonError(res, 403, 'MCP server configuration is managed by an administrator');
+    };
+    app.post('/api/config/mcp/:name', rejectManagedMcpMutation);
+    app.delete('/api/config/mcp/:name', rejectManagedMcpMutation);
+
     app.post('/api/opencode/directory', async (req, res, next) => {
       if (req.principal?.scope !== 'managed') return next();
       const assignment = resolveAssignmentForValue(req.principal, req.body?.path);
@@ -3640,6 +4132,84 @@ export async function createMultiUserRuntime({
     });
 
     if (typeof buildOpenCodeUrl === 'function' && typeof getOpenCodeAuthHeaders === 'function') {
+      const registerFilteredFileRead = (pathname) => {
+        app.get(`/api${pathname}`, async (req, res, next) => {
+          if (!shouldHideProtectedDotenv(req.principal)) return next();
+          try {
+            const { response, payload } = await fetchUpstreamJson({
+              req,
+              buildOpenCodeUrl,
+              getOpenCodeAuthHeaders,
+              pathname,
+            });
+            if (!response.ok) {
+              return res.status(response.status).send(
+                typeof payload === 'string' ? payload : JSON.stringify(payload),
+              );
+            }
+            return res.json(filterProtectedDotenvReferences(payload));
+          } catch (error) {
+            return jsonError(res, 502, error.message);
+          }
+        });
+      };
+      ['/find', '/find/file', '/find/symbol', '/file', '/file/status'].forEach(registerFilteredFileRead);
+
+      const cleanupProvisionalSession = async ({ req, sessionId }) => {
+        const cleanupResults = await Promise.allSettled([
+          supabase.rest('opencode_session_ownership', {
+            method: 'DELETE',
+            query: { session_id: `eq.${sessionId}` },
+            prefer: 'return=minimal',
+            timeoutMs: sessionOwnershipWriteTimeoutMs,
+          }),
+          ownershipIndex.delete(sessionId),
+          fetchUpstreamJson({
+            req,
+            buildOpenCodeUrl,
+            getOpenCodeAuthHeaders,
+            pathname: `/session/${encodeURIComponent(sessionId)}`,
+            method: 'DELETE',
+            body: undefined,
+          }).then(({ response }) => {
+            if (!response.ok && response.status !== 404) {
+              throw new Error(`OpenCode session rollback failed (${response.status})`);
+            }
+          }),
+        ]);
+        const failures = cleanupResults
+          .filter((result) => result.status === 'rejected')
+          .map((result) => result.reason?.message || String(result.reason));
+        if (failures.length > 0) {
+          logger.error?.('[MultiUser] Provisional session cleanup incomplete:', {
+            sessionId,
+            failures,
+          });
+        }
+        return failures.length === 0;
+      };
+
+      const scheduleProvisionalSessionCleanup = ({ req, sessionId, attempt = 1 }) => {
+        if (controlPlaneDisposed) return;
+        const delayMs = Math.min(1_000 * (2 ** (attempt - 1)), 30_000);
+        const timer = setTimeout(() => {
+          provisionalCleanupTimers.delete(timer);
+          void cleanupProvisionalSession({ req, sessionId }).then((complete) => {
+            if (complete) {
+              provisionalSessionIds.delete(sessionId);
+              return;
+            }
+            if (attempt < SESSION_OWNERSHIP_CLEANUP_ATTEMPTS) {
+              scheduleProvisionalSessionCleanup({ req, sessionId, attempt: attempt + 1 });
+              return;
+            }
+            logger.error?.('[MultiUser] Provisional session remains hidden after cleanup retries:', sessionId);
+          });
+        }, delayMs);
+        timer.unref?.();
+        provisionalCleanupTimers.add(timer);
+      };
+
       app.get('/api/session', async (req, res, next) => {
         if (req.principal?.scope !== 'managed') return next();
         try {
@@ -3659,17 +4229,27 @@ export async function createMultiUserRuntime({
         try {
           const { response, payload } = await fetchUpstreamJson({ req, buildOpenCodeUrl, getOpenCodeAuthHeaders, pathname: '/session', method: 'POST' });
           if (!response.ok) return res.status(response.status).send(typeof payload === 'string' ? payload : JSON.stringify(payload));
+          const sessionId = typeof payload?.id === 'string' ? payload.id : '';
+          if (!sessionId) return jsonError(res, 502, 'OpenCode session response did not include an id');
+          provisionalSessionIds.add(sessionId);
           try {
             await recordSessionOwnership(req.principal, payload);
           } catch (error) {
-            if (typeof payload?.id === 'string') {
-              await fetchUpstreamJson({
-                req, buildOpenCodeUrl, getOpenCodeAuthHeaders,
-                pathname: `/session/${encodeURIComponent(payload.id)}`, method: 'DELETE', body: undefined,
-              }).catch(() => {});
+            const cleanupComplete = await cleanupProvisionalSession({ req, sessionId });
+            if (cleanupComplete) {
+              provisionalSessionIds.delete(sessionId);
+            } else {
+              scheduleProvisionalSessionCleanup({ req, sessionId });
             }
-            throw error;
+            const failure = authFailurePayload(error);
+            return jsonError(res, failure.status, failure.error, {
+              code: failure.code,
+              retryable: false,
+              ...(failure.requiredMigration ? { requiredMigration: failure.requiredMigration } : {}),
+            });
           }
+          provisionalSessionIds.delete(sessionId);
+          notifyManagedSessionOwnershipCommitted(payload);
           return res.status(response.status).json(payload);
         } catch (error) { return jsonError(res, 502, error.message); }
       });
@@ -3720,6 +4300,8 @@ export async function createMultiUserRuntime({
         if (req.principal?.scope !== 'managed') return next();
         let upstreamDeleted = false;
         let ownershipTombstoned = false;
+        const retentionRequired = req.principal.role !== 'admin';
+        let analyticsRetentionLocked = !retentionRequired;
         let auditRegistered = false;
         const registerDeleteAudit = () => {
           if (auditRegistered) return;
@@ -3732,8 +4314,13 @@ export async function createMultiUserRuntime({
               targetType: 'session',
               targetId: req.params.sessionID,
               sessionId: req.params.sessionID,
-              success: res.statusCode < 400 && upstreamDeleted && ownershipTombstoned,
-              metadata: { statusCode: res.statusCode, upstreamDeleted, ownershipTombstoned },
+              success: res.statusCode < 400 && upstreamDeleted && ownershipTombstoned && analyticsRetentionLocked,
+              metadata: {
+                statusCode: res.statusCode,
+                upstreamDeleted,
+                ownershipTombstoned,
+                analyticsRetentionLocked,
+              },
             }).catch((error) => logger.error?.('[MultiUser] Failed to persist session delete audit:', error));
           };
           res.once('finish', recordOutcome);
@@ -3743,6 +4330,10 @@ export async function createMultiUserRuntime({
           if (!await ensureOwnedSession(req.principal, req.params.sessionID)) return jsonError(res, 404, 'Session not found');
           registerDeleteAudit();
           const owner = await sessionOwnership(req.params.sessionID);
+          if (retentionRequired) {
+            await analyticsRetention.lockUser(req.principal.id);
+            analyticsRetentionLocked = true;
+          }
           const { response, payload } = await fetchUpstreamJson({
             req,
             buildOpenCodeUrl,
@@ -3761,7 +4352,7 @@ export async function createMultiUserRuntime({
           await ownershipIndex.set({ ...owner, archived_at: archivedAt });
           ownershipTombstoned = true;
           return res.status(response.status).json(payload);
-        } catch (error) { return jsonError(res, 502, error.message); }
+        } catch (error) { return runtimeErrorResponse(res, error, 502); }
       });
 
       app.use('/api/session/:sessionID', async (req, res, next) => {
@@ -3807,6 +4398,8 @@ export async function createMultiUserRuntime({
   return {
     enabled: true,
     config,
+    getControlPlaneStatus: () => ({ ...controlPlaneStatus }),
+    retryControlPlaneSync: refreshOwnershipIndex,
     authController,
     wrapLegacyAuthController,
     registerRoutes,
@@ -3818,9 +4411,11 @@ export async function createMultiUserRuntime({
     translateDirectoryValue,
     publicizeValue,
     ownsSession,
+    resolveOwnedSessionPlanContext,
     canSessionTokenHashAccess,
     audit,
     resolveManagedProject,
+    resolveManagedProjectForDirectory,
     resolveScheduledTaskExecution,
     recordScheduledTaskSessionOwnership,
     setTerminalOwnerTerminator(callback) {

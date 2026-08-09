@@ -18,6 +18,7 @@ focus, and New Worktree teardown behavior remain intact.
 ## Flow
 Session entities from stores become sidebar rows; user actions dispatch store/API updates.
 Archived rows, auto-folders, and cleanup share one deepest-directory ownership map built from registered projects and known worktrees.
+Worktree headers resolve their visible identity from the branch only. Their cleanup path archives sessions through `branchSessionCleanup.ts` and never calls a Git mutation API; PR discovery and presentation remain in the right-sidebar Git view.
 
 ## Integration
 Integrated with session hooks/stores and navigation/layout components.

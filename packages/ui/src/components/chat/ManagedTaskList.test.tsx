@@ -257,6 +257,70 @@ describe('managed task presentation', () => {
     expect(html).toContain('Try Again');
   });
 
+  test('presents provider prompt rejection without offering same-child Model Recovery', () => {
+    const failureReason = 'Invalid prompt: your prompt was flagged as potentially violating our usage policy.';
+    const firstTask = {
+      ...terminalTask('failed'),
+      dispatchGroupId: 'msg_parent',
+      failureReason,
+    };
+    const finalTask = {
+      ...firstTask,
+      taskId: 'dvr_task_prompt_rejected_retry',
+      idempotencyKey: 'prompt-rejected-retry',
+      childSessionId: 'ses_child_retry',
+      sequence: 2,
+      attempt: 2,
+      priorTaskId: firstTask.taskId,
+      executionKind: 'retry' as const,
+    };
+    const rows = [firstTask, finalTask].map((task, index) => {
+      const envelope = createManagedTaskResultEnvelope(task, {
+        sequence: index + 1,
+        createdAt: 3_000 + index,
+        resumable: true,
+      });
+      return {
+        envelope,
+        task: toManagedTaskEvent(task, envelope).properties.task,
+      };
+    });
+
+    const firstHtml = renderToStaticMarkup(
+      <I18nProvider>
+        <ManagedTaskRowView
+          task={rows[0].task}
+          resultEnvelope={rows[0].envelope}
+          childActive
+          onOpenChild={() => undefined}
+          onRetryInPlace={() => undefined}
+        />
+      </I18nProvider>,
+    );
+    const finalHtml = renderToStaticMarkup(
+      <I18nProvider>
+        <ManagedTaskRowView
+          task={rows[1].task}
+          resultEnvelope={rows[1].envelope}
+          onOpenChild={() => undefined}
+          onRetryInPlace={() => undefined}
+        />
+      </I18nProvider>,
+    );
+
+    expect(rows[0].task.failureKind).toBe('provider_prompt_rejected');
+    expect(rows[0].task.agentRetryAvailable).toBe(true);
+    expect(firstHtml).toContain('retry the subtask in a fresh context');
+    expect(firstHtml).toContain('Error');
+    expect(firstHtml).not.toContain('Choose a model to continue this subtask');
+    expect(firstHtml).not.toContain('Try Again');
+    expect(rows[1].task.failureKind).toBe('provider_prompt_rejected');
+    expect(rows[1].task.agentRetryAvailable).toBe(false);
+    expect(finalHtml).toContain('also rejected the clean-context retry');
+    expect(finalHtml).not.toContain('Choose a model to continue this subtask');
+    expect(finalHtml).not.toContain('Try Again');
+  });
+
   test('renders independent recovery cards for designer and fixer siblings', () => {
     const tasks = [
       {

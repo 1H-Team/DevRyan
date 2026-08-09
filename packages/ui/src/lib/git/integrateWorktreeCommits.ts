@@ -1,36 +1,25 @@
-import type { CommandExecResult } from '@/lib/api/types';
+import type {
+  CommandExecResult,
+  GitAPI,
+  GitIntegrateConflictDetails,
+  GitIntegratePlan,
+  GitIntegrateResult,
+  GitIntegrateState,
+  RuntimeAPIs,
+} from '@/lib/api/types';
 import { execCommand } from '@/lib/execCommands';
 
-export type IntegratePlan = {
-  repoRoot: string;
-  sourceBranch: string;
-  targetBranch: string;
-  commits: string[];
-};
+export type IntegratePlan = GitIntegratePlan;
+export type IntegrateConflictDetails = GitIntegrateConflictDetails;
+export type IntegrateInProgress = GitIntegrateState;
+export type IntegrateResult = GitIntegrateResult;
 
-export type IntegrateConflictDetails = {
-  statusPorcelain: string;
-  unmergedFiles: string[];
-  diff: string;
-  currentPatchMeta: string;
-  currentPatch: string;
+const getRuntimeGit = (): GitAPI | null => {
+  if (typeof window === 'undefined') return null;
+  const apis = (window as typeof window & { __OPENCHAMBER_RUNTIME_APIS__?: RuntimeAPIs })
+    .__OPENCHAMBER_RUNTIME_APIS__;
+  return apis?.git ?? null;
 };
-
-export type IntegrateInProgress = {
-  repoRoot: string;
-  tempWorktreePath: string;
-  sourceBranch: string;
-  targetBranch: string;
-  /** Worktrees on target branch that were clean pre-integration; safe to fast-sync after ref update. */
-  cleanTargetWorktrees: string[];
-  remainingCommits: string[];
-  currentCommit: string;
-};
-
-export type IntegrateResult =
-  | { kind: 'noop'; reason: string }
-  | { kind: 'success'; moved: number }
-  | { kind: 'conflict'; state: IntegrateInProgress; details: IntegrateConflictDetails };
 
 const shellQuote = (value: string): string => {
   const v = value.trim();
@@ -147,6 +136,13 @@ export async function computeIntegratePlan(args: {
   sourceBranch: string;
   targetBranch: string;
 }): Promise<IntegratePlan> {
+  const runtimeGit = getRuntimeGit();
+  if (runtimeGit?.computeIntegratePlan) {
+    return runtimeGit.computeIntegratePlan(args.repoRoot, {
+      sourceBranch: args.sourceBranch,
+      targetBranch: args.targetBranch,
+    });
+  }
   const repoRoot = args.repoRoot;
   const sourceBranch = args.sourceBranch.trim();
   const targetBranchRaw = args.targetBranch.trim();
@@ -235,16 +231,34 @@ async function collectConflictDetails(tmpDir: string): Promise<IntegrateConflict
   };
 }
 
-export async function getIntegrateConflictDetails(tmpDir: string): Promise<IntegrateConflictDetails> {
+export async function getIntegrateConflictDetails(
+  input: string | IntegrateInProgress,
+): Promise<IntegrateConflictDetails> {
+  const runtimeGit = getRuntimeGit();
+  if (runtimeGit?.getIntegrateConflictDetails) {
+    if (typeof input === 'string') throw new Error('Authorized integration state is required');
+    return runtimeGit.getIntegrateConflictDetails(input.repoRoot, input);
+  }
+  const tmpDir = typeof input === 'string' ? input : input.tempWorktreePath;
   return collectConflictDetails(tmpDir);
 }
 
-export async function isCherryPickInProgress(tmpDir: string): Promise<boolean> {
+export async function isCherryPickInProgress(input: string | IntegrateInProgress): Promise<boolean> {
+  const runtimeGit = getRuntimeGit();
+  if (runtimeGit?.isIntegrateInProgress) {
+    if (typeof input === 'string') throw new Error('Authorized integration state is required');
+    return runtimeGit.isIntegrateInProgress(input.repoRoot, input);
+  }
+  const tmpDir = typeof input === 'string' ? input : input.tempWorktreePath;
   const head = await execCommand('git rev-parse --verify --quiet CHERRY_PICK_HEAD', tmpDir);
   return isOk(head);
 }
 
 export async function integrateWorktreeCommits(plan: IntegratePlan): Promise<IntegrateResult> {
+  const runtimeGit = getRuntimeGit();
+  if (runtimeGit?.integrateCommits) {
+    return runtimeGit.integrateCommits(plan.repoRoot, plan);
+  }
   if (plan.commits.length === 0) {
     return { kind: 'noop', reason: 'No commits to move' };
   }
@@ -282,6 +296,7 @@ export async function integrateWorktreeCommits(plan: IntegratePlan): Promise<Int
         return {
           kind: 'conflict',
           state: {
+            operationId: `local-${Date.now()}`,
             repoRoot: plan.repoRoot,
             tempWorktreePath: tmpDir,
             sourceBranch: plan.sourceBranch,
@@ -308,11 +323,20 @@ export async function integrateWorktreeCommits(plan: IntegratePlan): Promise<Int
 }
 
 export async function abortIntegrate(state: IntegrateInProgress): Promise<void> {
+  const runtimeGit = getRuntimeGit();
+  if (runtimeGit?.abortIntegrate) {
+    await runtimeGit.abortIntegrate(state.repoRoot, state);
+    return;
+  }
   await execCommand('git cherry-pick --abort', state.tempWorktreePath).catch(() => undefined);
   await removeTempWorktree(state.repoRoot, state.tempWorktreePath);
 }
 
 export async function continueIntegrate(state: IntegrateInProgress): Promise<IntegrateResult> {
+  const runtimeGit = getRuntimeGit();
+  if (runtimeGit?.continueIntegrate) {
+    return runtimeGit.continueIntegrate(state.repoRoot, state);
+  }
   const cont = await execCommand('git cherry-pick --continue', state.tempWorktreePath);
   if (!isOk(cont)) {
     const unmerged = await execCommand('git diff --name-only --diff-filter=U', state.tempWorktreePath);
@@ -345,6 +369,7 @@ export async function continueIntegrate(state: IntegrateInProgress): Promise<Int
       return {
         kind: 'conflict',
         state: {
+          operationId: state.operationId,
           repoRoot: state.repoRoot,
           tempWorktreePath: tmpDir,
           sourceBranch: state.sourceBranch,

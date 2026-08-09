@@ -5,6 +5,7 @@ import { collectSanitizedTools } from './client.mjs';
 import {
   gradeCaseOutcome,
   gradeManagedTaskOutcome,
+  gradeOracleReviewOutcome,
   gradeToolRequirements,
   summarizeGraders,
 } from './graders.mjs';
@@ -79,6 +80,80 @@ describe('deterministic evaluation graders', () => {
 
     assert.equal(gradeToolRequirements('inspect', tools('read', 'bash')).passed, false);
     assert.equal(gradeToolRequirements('inspect', tools('read', 'grep', 'bash', 'edit')).passed, false);
+  });
+
+  test('bounds Oracle review tools and rejects validation, mutation, or delegation', () => {
+    const focused = [
+      { tool: 'read', status: 'completed', final: true, sessionScope: 'root' },
+      { tool: 'ctx_search', status: 'completed', final: true, sessionScope: 'root' },
+    ];
+    assert.equal(gradeToolRequirements('oracle-review-focused', focused).passed, true);
+    assert.equal(gradeToolRequirements('oracle-review-deep', focused).passed, true);
+
+    for (const prohibited of [
+      'bash', 'apply_patch', 'oc_write', 'ast_grep_replace', 'devryan_task', 'task', 'websearch',
+    ]) {
+      assert.equal(gradeToolRequirements('oracle-review-focused', [
+        ...focused,
+        { tool: prohibited, status: 'completed', final: true, sessionScope: 'root' },
+      ]).passed, false, prohibited);
+    }
+    assert.equal(gradeToolRequirements('oracle-review-focused', [
+      { tool: 'read', status: 'completed', final: true, sessionScope: 'child' },
+    ]).passed, false);
+    assert.equal(gradeToolRequirements('oracle-review-focused', Array.from({ length: 31 }, () => ({
+      tool: 'read', status: 'completed', final: true, sessionScope: 'root',
+    }))).passed, false);
+    assert.equal(gradeToolRequirements('oracle-review-deep', Array.from({ length: 80 }, () => ({
+      tool: 'oc_read', status: 'completed', final: true, sessionScope: 'root',
+    }))).passed, true);
+  });
+
+  test('grades Oracle finding recall, evidence, and latency independently', () => {
+    const focused = gradeOracleReviewOutcome({
+      caseId: 'oracle-review-focused',
+      evidence: {
+        signals: ['stale_write', 'authorization_boundary'],
+        pathLineEvidence: true,
+        terminalComplete: true,
+      },
+      durationMs: 15 * 60 * 1_000,
+    });
+    assert.deepEqual(focused, [
+      { id: 'oracle-review-focused.findings', passed: true },
+      { id: 'oracle-review-focused.evidence', passed: true },
+      { id: 'oracle-review-focused.latency', passed: true },
+    ]);
+
+    const deep = gradeOracleReviewOutcome({
+      caseId: 'oracle-review-deep',
+      evidence: {
+        signals: [
+          'authorization_boundary',
+          'idempotency_order',
+          'stale_write',
+          'webhook_monotonicity',
+        ],
+        pathLineEvidence: true,
+        terminalComplete: true,
+      },
+      durationMs: 30 * 60 * 1_000 + 1,
+    });
+    assert.equal(deep.find((grader) => grader.id.endsWith('.findings')).passed, true);
+    assert.equal(deep.find((grader) => grader.id.endsWith('.evidence')).passed, true);
+    assert.equal(deep.find((grader) => grader.id.endsWith('.latency')).passed, false);
+
+    const missing = gradeOracleReviewOutcome({
+      caseId: 'oracle-review-focused',
+      evidence: {
+        signals: ['authorization_boundary'],
+        pathLineEvidence: false,
+        terminalComplete: false,
+      },
+      durationMs: 1,
+    });
+    assert.equal(missing.find((grader) => grader.id.endsWith('.findings')).passed, false);
+    assert.equal(missing.find((grader) => grader.id.endsWith('.evidence')).passed, false);
   });
 
   test('requires a final mutation tool and test execution for repair-and-test', () => {
@@ -486,6 +561,21 @@ describe('deterministic evaluation graders', () => {
       ownedTestChanged: true,
       baselineTest: { exitCode: 1 },
       finalTest: { exitCode: 0 },
+    }).passed, false);
+
+    assert.equal(gradeCaseOutcome({
+      caseId: 'oracle-review-focused',
+      nonOwnedManifestMatches: true,
+      ownedSourceChanged: false,
+      ownedTestChanged: false,
+      finalTest: null,
+    }).passed, true);
+    assert.equal(gradeCaseOutcome({
+      caseId: 'oracle-review-deep',
+      nonOwnedManifestMatches: true,
+      ownedSourceChanged: true,
+      ownedTestChanged: false,
+      finalTest: null,
     }).passed, false);
   });
 

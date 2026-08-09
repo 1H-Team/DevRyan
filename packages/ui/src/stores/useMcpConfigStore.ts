@@ -78,7 +78,12 @@ export interface McpRemoteConfig {
 }
 
 export type McpServerConfig = (McpLocalConfig | McpRemoteConfig) & { name: string };
-export type McpServerWithScope = McpServerConfig & { scope?: McpScope | null };
+export type McpServerWithScope = McpServerConfig & {
+  scope?: McpScope | null;
+  /** Server-computed for managed users: the enabled switch cannot be changed. */
+  enabledLocked?: boolean;
+  enabledSource?: 'policy' | 'user' | 'global';
+};
 
 export interface McpDraft {
   name: string;

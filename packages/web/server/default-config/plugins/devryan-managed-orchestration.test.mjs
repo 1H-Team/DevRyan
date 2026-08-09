@@ -1214,6 +1214,52 @@ describe('DevRyan managed orchestration plugin', () => {
     }, context())).rejects.toThrow('Unsupported managed task action');
   });
 
+  it('returns exhausted provider prompt rejection for agent disposition without Model Recovery', async () => {
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      const result = request.method === 'wait'
+        ? {
+            task: {
+              taskId: 'dvr_task_prompt_rejected',
+              status: 'failed',
+              childSessionId: 'ses_fixer_retry',
+              mode: 'orchestrator',
+              attempt: 2,
+              agentRetryAvailable: false,
+              failureKind: 'provider_prompt_rejected',
+            },
+            resultEnvelope: {
+              taskId: 'dvr_task_prompt_rejected',
+              action: null,
+              resumable: true,
+            },
+          }
+        : { task: { taskId: 'dvr_task_prompt_rejected' }, resultEnvelope: { action: 'abandon' } };
+      return new Response(JSON.stringify({ ok: true, result }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+
+    const output = await plugin.tool.devryan_task.execute({
+      action: 'wait',
+      task_id: 'dvr_task_prompt_rejected',
+    }, context());
+    expect(JSON.parse(output).task).toMatchObject({
+      failureKind: 'provider_prompt_rejected',
+      agentRetryAvailable: false,
+    });
+
+    await plugin.tool.devryan_task.execute({
+      action: 'abandon',
+      task_id: 'dvr_task_prompt_rejected',
+    }, context());
+    expect(requests.map(({ method }) => method)).toEqual(['wait', 'acknowledge']);
+  });
+
   it('holds the parent wait after a grouped agent retry is exhausted', async () => {
     const requests = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {

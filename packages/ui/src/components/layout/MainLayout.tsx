@@ -56,6 +56,9 @@ export const MainLayout: React.FC = () => {
     const principal = useAuthPrincipal();
     const canUseTerminal = hasAuthCapability(principal, 'terminal');
     const canManageProjects = hasAuthCapability(principal, 'manageProjects');
+    const canCreateWorktrees = hasAuthCapability(principal, 'createWorktrees');
+    const canCreateBranches = hasAuthCapability(principal, 'createBranches');
+    const canLaunchMultiRun = canManageProjects && canCreateWorktrees && canCreateBranches;
     const canCheckForUpdates = canReadSettingsPage(principal, 'about');
     const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
     const isRightSidebarOpen = useUIStore((state) => state.isRightSidebarOpen);
@@ -101,10 +104,10 @@ export const MainLayout: React.FC = () => {
                 useUIStore.getState().setActiveMainTab('chat');
             }
         }
-        if (!canManageProjects) {
+        if (!canLaunchMultiRun) {
             setMultiRunLauncherOpen(false);
         }
-    }, [canManageProjects, canUseTerminal, setBottomTerminalOpen, setMultiRunLauncherOpen]);
+    }, [canLaunchMultiRun, canUseTerminal, setBottomTerminalOpen, setMultiRunLauncherOpen]);
 
     // Compute drawer width
     useEffect(() => {
@@ -569,7 +572,7 @@ export const MainLayout: React.FC = () => {
                                     <ErrorBoundary>{secondaryView}</ErrorBoundary>
                                 </div>
                             )}
-                            {canManageProjects && isMultiRunLauncherOpen && (
+                            {canLaunchMultiRun && isMultiRunLauncherOpen && (
                                 <div className="absolute inset-0 z-10 bg-background">
                                     <ErrorBoundary>
                                         <MultiRunLauncher
@@ -710,10 +713,10 @@ export const MainLayout: React.FC = () => {
                         </div>
 
                     </div>
-                    <DeferredLazyView active={canManageProjects && isMultiRunLauncherOpen}>
+                    <DeferredLazyView active={canLaunchMultiRun && isMultiRunLauncherOpen}>
                         <LazyViewBoundary>
-                            {canManageProjects ? <LazyMultiRunWindow
-                                open={canManageProjects && isMultiRunLauncherOpen}
+                            {canLaunchMultiRun ? <LazyMultiRunWindow
+                                open={canLaunchMultiRun && isMultiRunLauncherOpen}
                                 onOpenChange={setMultiRunLauncherOpen}
                                 initialPrompt={multiRunLauncherPrefillPrompt}
                             /> : null}

@@ -7,6 +7,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { cn } from '@/lib/utils';
 import {
   formatShortcutForDisplay,
+  getAvailableCustomizableShortcutActions,
   getCustomizableShortcutActions,
   getEffectiveShortcutCombo,
   isRiskyBrowserShortcut,
@@ -16,6 +17,7 @@ import {
   type ShortcutCombo,
 } from '@/lib/shortcuts';
 import { useI18n } from '@/lib/i18n';
+import { useAuthPrincipal } from '@/lib/authSession';
 
 const MODIFIER_KEYS = new Set(['shift', 'control', 'alt', 'meta']);
 
@@ -47,13 +49,18 @@ const keyboardEventToCombo = (event: React.KeyboardEvent<HTMLInputElement>): Sho
 
 export const KeyboardShortcutsSettings: React.FC = () => {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
   const tUnsafe = React.useCallback((key: string) => t(key as Parameters<typeof t>[0]), [t]);
   const shortcutOverrides = useUIStore((state) => state.shortcutOverrides);
   const setShortcutOverride = useUIStore((state) => state.setShortcutOverride);
   const clearShortcutOverride = useUIStore((state) => state.clearShortcutOverride);
   const resetAllShortcutOverrides = useUIStore((state) => state.resetAllShortcutOverrides);
 
-  const actions = React.useMemo(() => getCustomizableShortcutActions(), []);
+  const allActions = React.useMemo(() => getCustomizableShortcutActions(), []);
+  const actions = React.useMemo(
+    () => getAvailableCustomizableShortcutActions(principal),
+    [principal],
+  );
   const actionLabel = React.useCallback((id: string, fallbackLabel: string): string => {
     const key = `settings.openchamber.keyboardShortcuts.action.${id}.label`;
     const translated = tUnsafe(key);
@@ -72,7 +79,7 @@ export const KeyboardShortcutsSettings: React.FC = () => {
 
   const findConflict = React.useCallback((actionId: string, combo: ShortcutCombo): string | null => {
     const normalized = normalizeCombo(combo);
-    for (const action of actions) {
+    for (const action of allActions) {
       if (action.id === actionId) {
         continue;
       }
@@ -82,7 +89,7 @@ export const KeyboardShortcutsSettings: React.FC = () => {
       }
     }
     return null;
-  }, [actions, shortcutOverrides]);
+  }, [allActions, shortcutOverrides]);
 
   const saveCombo = React.useCallback((actionId: string, combo: ShortcutCombo) => {
     const normalized = normalizeCombo(combo);

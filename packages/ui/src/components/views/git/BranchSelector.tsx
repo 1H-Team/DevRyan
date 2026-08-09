@@ -37,7 +37,7 @@ interface BranchSelectorProps {
   remoteBranches: string[];
   branchInfo: Record<string, BranchInfo> | undefined;
   onCheckout: (branch: string) => void;
-  onCreate: (name: string, remote?: GitRemote) => Promise<void>;
+  onCreate?: (name: string, remote?: GitRemote) => Promise<void>;
   remotes?: GitRemote[];
   disabled?: boolean;
 }
@@ -108,11 +108,13 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
   };
 
   const handleShowCreate = () => {
+    if (!onCreate) return;
     setShowCreate(true);
     setTimeout(() => createInputRef.current?.focus(), 50);
   };
 
   const handleCreate = async () => {
+    if (!onCreate) return;
     if (!sanitizedNewBranch || isCreating) return;
     
     // If multiple remotes, show remote selection first
@@ -134,7 +136,7 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
   };
 
   const handleSelectRemote = async (remote: GitRemote) => {
-    if (!sanitizedNewBranch || isCreating) return;
+    if (!onCreate || !sanitizedNewBranch || isCreating) return;
     setIsCreating(true);
     try {
       await onCreate(sanitizedNewBranch, remote);
@@ -243,12 +245,12 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
                     ))}
                   </div>
                 </div>
-              ) : !showCreate ? (
+              ) : !showCreate && onCreate ? (
                 <CommandItem onSelect={handleShowCreate}>
                   <RiAddLine className="size-4" />
                   <span>{t('gitView.branch.create')}</span>
                 </CommandItem>
-              ) : (
+              ) : showCreate && onCreate ? (
                 <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg">
                   <input
                     ref={createInputRef}
@@ -289,7 +291,7 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
                     <RiCloseLine className="size-4" />
                   </button>
                 </div>
-              )}
+              ) : null}
             </CommandGroup>
 
             <CommandSeparator />

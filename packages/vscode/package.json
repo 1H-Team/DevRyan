@@ -2,12 +2,12 @@
   "name": "openchamber",
   "displayName": "DevRyan",
   "description": "AI coding assistant powered by OpenCode",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "publisher": "fedaykindev",
   "private": true,
   "repository": {
     "type": "git",
-    "url": "https://github.com/zoubenr/DevRyan.git"
+    "url": "https://github.com/1H-Team/DevRyan.git"
   },
   "qna": "https://discord.gg/ZYRSdnwwKA",
   "license": "MIT",
@@ -249,7 +249,7 @@
     "@openchamber/harness-runtime": "workspace:*",
     "@openchamber/orchestration-runtime": "workspace:*",
     "@openchamber/ui": "workspace:*",
-    "@opencode-ai/sdk": "^1.18.13",
+    "@opencode-ai/sdk": "^1.18.15",
     "adm-zip": "^0.5.16",
     "jsonc-parser": "^3.3.1",
     "react": "^19.1.1",

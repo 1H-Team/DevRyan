@@ -13,7 +13,7 @@ export type ManagedTaskTerminalStatus = Extract<ManagedTaskStatus, 'completed' |
 export type ManagedTaskMode = 'builder' | 'orchestrator';
 export type ManagedTaskExecutionKind = 'start' | 'retry' | 'resume' | 'recover_in_place' | 'retry_in_place';
 export type ManagedTaskResultAction = 'continue' | 'resume' | 'retry' | 'recover_in_place' | 'retry_in_place' | 'abandon';
-export type ManagedTaskFailureKind = 'provider_usage_limit' | null;
+export type ManagedTaskFailureKind = 'provider_usage_limit' | 'provider_prompt_rejected' | null;
 export type ProviderTransportFailureKind =
   | 'request_timeout'
   | 'response_header_timeout'
@@ -358,6 +358,7 @@ export const MAX_MANAGED_TASK_PROMPT_BYTES: number;
 export const MAX_MANAGED_TASK_PREVIEW_BYTES: number;
 export const MAX_MANAGED_TASK_FAILURE_BYTES: number;
 export const PROVIDER_USAGE_LIMIT_FAILURE_KIND: 'provider_usage_limit';
+export const PROVIDER_PROMPT_REJECTED_FAILURE_KIND: 'provider_prompt_rejected';
 export const PROVIDER_TRANSPORT_FAILURE_KINDS: readonly ProviderTransportFailureKind[];
 export const MANAGED_RETRY_IN_PLACE_PROMPT: string;
 export const MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT: string;
@@ -375,6 +376,7 @@ export function classifyProviderTransportFailure(
   detail: unknown,
 ): ProviderTransportFailureKind | null;
 export function isDefiniteProviderUsageLimit(value: unknown): boolean;
+export function isProviderPromptRejected(value: unknown): boolean;
 export function truncateManagedText(value: unknown, maxBytes: number): string;
 export function isTerminalManagedTaskStatus(status: unknown): status is ManagedTaskTerminalStatus;
 export function validateManagedTaskRecord(task: unknown): ManagedTaskRecord;

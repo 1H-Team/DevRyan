@@ -7,7 +7,16 @@ export type ScheduledTaskRanEvent = {
   sessionId?: string;
 };
 
-type OpenChamberEvent = ScheduledTaskRanEvent;
+export type ProjectMetadataChangedEvent = {
+  type: 'project-metadata-changed';
+  projectId: string;
+};
+
+export type OpenChamberStreamReadyEvent = {
+  type: 'stream-ready';
+};
+
+export type OpenChamberEvent = ScheduledTaskRanEvent | ProjectMetadataChangedEvent | OpenChamberStreamReadyEvent;
 type Listener = (event: OpenChamberEvent) => void;
 
 let eventSource: EventSource | null = null;
@@ -76,33 +85,40 @@ const parseEnvelope = (raw: string): { type: string; properties: unknown } | nul
   }
 };
 
-const dispatchFromEnvelope = (envelope: { type: string; properties: unknown }) => {
+export const parseOpenChamberEventEnvelope = (
+  envelope: { type: string; properties: unknown },
+): OpenChamberEvent | null => {
   if (envelope.type === 'openchamber:event-stream-ready') {
-    reconnectAttempt = 0;
-    return;
+    return { type: 'stream-ready' };
   }
 
   if (envelope.type === 'openchamber:heartbeat') {
-    return;
-  }
-
-  if (envelope.type !== 'openchamber:scheduled-task-ran') {
-    return;
+    return null;
   }
 
   const parsed = envelope.properties && typeof envelope.properties === 'object'
     ? envelope.properties as Record<string, unknown>
     : null;
+
+  if (envelope.type === 'openchamber:project-metadata-changed') {
+    const projectId = typeof parsed?.projectId === 'string' ? parsed.projectId.trim() : '';
+    return projectId ? { type: 'project-metadata-changed', projectId } : null;
+  }
+
+  if (envelope.type !== 'openchamber:scheduled-task-ran') {
+    return null;
+  }
+
   const projectId = typeof parsed?.projectId === 'string' ? parsed.projectId : '';
   const taskId = typeof parsed?.taskId === 'string' ? parsed.taskId : '';
   const ranAt = typeof parsed?.ranAt === 'number' ? parsed.ranAt : Date.now();
   const rawStatus = parsed?.status;
   const status = rawStatus === 'running' || rawStatus === 'error' ? rawStatus : 'success';
   if (!projectId || !taskId) {
-    return;
+    return null;
   }
 
-  const nextEvent: ScheduledTaskRanEvent = {
+  return {
     type: 'scheduled-task-ran',
     projectId,
     taskId,
@@ -110,6 +126,12 @@ const dispatchFromEnvelope = (envelope: { type: string; properties: unknown }) =
     status,
     ...(typeof parsed?.sessionId === 'string' && parsed.sessionId.length > 0 ? { sessionId: parsed.sessionId } : {}),
   };
+};
+
+const dispatchFromEnvelope = (envelope: { type: string; properties: unknown }) => {
+  const nextEvent = parseOpenChamberEventEnvelope(envelope);
+  if (!nextEvent) return;
+  if (nextEvent.type === 'stream-ready') reconnectAttempt = 0;
   for (const listener of listeners) {
     listener(nextEvent);
   }

@@ -116,6 +116,32 @@ describe('evaluation case fixtures', () => {
       options: { shell: false },
     });
   });
+
+  test('seeds bounded focused and deep Oracle review fixtures without executable tests', () => {
+    const fixtureRoot = makeFixture();
+    const starting = assertFixtureReady(fixtureRoot);
+    for (const caseId of ['oracle-review-focused', 'oracle-review-deep']) {
+      const runFiles = allocateRunFiles(fixtureRoot, caseId);
+      const prepared = prepareCaseFixture(caseId, runFiles);
+      const definition = buildCaseDefinition(caseId, runFiles);
+
+      assert.equal(readFileSync(runFiles.sourcePath, 'utf8'), prepared.baselineSource);
+      assert.equal(readFileSync(runFiles.testPath, 'utf8'), prepared.baselineTest);
+      assert.match(definition.prompt, new RegExp(`Review depth: ${caseId.endsWith('deep') ? 'deep' : 'focused'}`));
+      assert.match(definition.prompt, /Critical invariants:/);
+      assert.match(definition.prompt, /do not run tests, builds, lint, or type-checking/);
+      assert.match(definition.prompt, /at most five/);
+      assert.match(definition.prompt, new RegExp(runFiles.sourceRelativePath.replaceAll('.', '\\.')));
+      assert.match(prepared.baselineSource, /expectedRevision/);
+      if (caseId.endsWith('deep')) {
+        assert.match(prepared.baselineSource, /createPaymentIntent/);
+        assert.match(prepared.baselineSource, /applyPaymentEvent/);
+      } else {
+        assert.doesNotMatch(prepared.baselineSource, /createPaymentIntent/);
+      }
+      assert.equal(cleanupRunFiles({ fixtureRoot, runFiles, startingManifest: starting }).restored, true);
+    }
+  });
 });
 
 describe('case execution', () => {
@@ -157,6 +183,49 @@ describe('case execution', () => {
       result.graders.find((grader) => grader.id === 'inspect.filesystem-test').passed,
       false,
     );
+    assert.equal(result.cleanup.restored, true);
+  });
+
+  test('grades a focused Oracle review without running tests or retaining response text', async () => {
+    const fixtureRoot = makeFixture();
+    const starting = assertFixtureReady(fixtureRoot);
+    const runFiles = allocateRunFiles(fixtureRoot, 'oracle-focused-execution');
+    let testRuns = 0;
+    const result = await executeEvaluationCase({
+      caseId: 'oracle-review-focused',
+      repetition: 1,
+      fixtureRoot,
+      runFiles,
+      startingManifest: starting,
+      selection: { ...selection, agent: 'oracle', variant: 'high' },
+      timeoutMs: 5_000,
+      testRunner: async () => {
+        testRuns += 1;
+        throw new Error('Oracle review evaluation must not execute tests');
+      },
+      sessionRunner: async () => ({
+        rootSessionId: 'ses_oracle',
+        childSessionIds: [],
+        tools: [
+          { tool: 'read', status: 'completed', final: true, sessionScope: 'root' },
+          { tool: 'ctx_search', status: 'completed', final: true, sessionScope: 'root' },
+        ],
+        oracleReviewEvidence: {
+          signals: ['authorization_boundary', 'stale_write'],
+          pathLineEvidence: true,
+          terminalComplete: true,
+          privateResponse: 'SECRET RESPONSE MUST NOT SURVIVE',
+        },
+        terminalEvidence: { complete: true, proof: 'assistant' },
+        managedSnapshot: { tasks: [], resultEnvelopes: [] },
+        durationMs: 25,
+      }),
+    });
+
+    assert.equal(testRuns, 0);
+    assert.equal(result.status, 'passed');
+    assert.equal(result.graders.every((grader) => grader.passed), true);
+    assert.equal(JSON.stringify(result).includes('SECRET'), false);
     assert.equal(result.cleanup.restored, true);
   });
 

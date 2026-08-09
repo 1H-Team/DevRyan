@@ -29,6 +29,10 @@ import { opencodeClient } from "@/lib/opencode/client"
 import { useSessionUIStore } from "./session-ui-store"
 import {
   applySyncEventForTest,
+  captureDirectorySessionListRevision,
+  handleUserNotificationEvent,
+  reconcileDirectorySessionListSnapshot,
+  resetDirectorySessionLifecycleOverlaysForTest,
   restorePersistedSessionIndicatorsForDirectory,
   setActiveSession,
   setExternallyViewedSession,
@@ -54,6 +58,9 @@ import {
 } from "@/stores/useGlobalSessionsStore"
 import { resolveSidebarIndicator } from "@/components/session/sidebar/sessionIndicator"
 import * as sessionActions from "./session-actions"
+import { registerRuntimeAPIs } from "@/contexts/runtimeAPIRegistry"
+import type { RuntimeAPIs } from "@/lib/api/types"
+import { useStreamingStore } from "./streaming"
 
 const DIRECTORY = "/repo"
 const SESSION_ID = "ses_1"
@@ -220,7 +227,9 @@ const contextUsage = (totalTokens: number): SessionContextUsage => ({
 
 describe("sync plan lifecycle on message.part.delta", () => {
   beforeEach(() => {
+    registerRuntimeAPIs(null)
     resetGlobalSessionLifecycleOverlayForTest()
+    resetDirectorySessionLifecycleOverlaysForTest()
     useGlobalSessionsStore.setState({
       activeSessions: [],
       archivedSessions: [],
@@ -251,6 +260,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     useSessionWorktreeStore.setState({ attachments: new Map() })
     useSessionPlanFileStore.setState({ recordsBySession: {} })
     useSessionChangeAttributionStore.setState({ entries: new Map() })
+    useStreamingStore.setState({ streamingMessageIds: new Map(), messageStreamStates: new Map() })
     setActiveSession("", "")
     setExternallyViewedSession(DIRECTORY, SESSION_ID, false)
     useNotificationStore.setState({
@@ -461,6 +471,46 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     expect(isAbortGuardActive(SESSION_ID)).toBe(false)
     expect(store.getState().session_status[SESSION_ID]).toEqual(retryStatus)
+  })
+
+  test("canonical session idle retires stale streaming ownership without opening the chat", () => {
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(DIRECTORY)
+    const incompleteAssistant = {
+      id: ASSISTANT_MESSAGE_ID,
+      sessionID: SESSION_ID,
+      role: "assistant",
+      time: { created: 2 },
+    } as Message
+    store.setState({
+      ...INITIAL_STATE,
+      session: [{ id: SESSION_ID, title: "Background task", time: { created: 1, updated: 2 } } as Session],
+      session_status: { [SESSION_ID]: { type: "busy" } as SessionStatus },
+      message: { [SESSION_ID]: [userMessage(), incompleteAssistant] },
+      part: { [ASSISTANT_MESSAGE_ID]: [textPart("Finishing in the background")] },
+    })
+    useStreamingStore.setState({
+      streamingMessageIds: new Map([[SESSION_ID, ASSISTANT_MESSAGE_ID]]),
+      messageStreamStates: new Map([[
+        ASSISTANT_MESSAGE_ID,
+        { phase: "streaming", startedAt: 1, lastUpdateAt: 2 },
+      ]]),
+    })
+
+    applySyncEventForTest(DIRECTORY, {
+      type: "session.status",
+      properties: { sessionID: SESSION_ID, status: { type: "idle" } },
+    } as Event, childStores, routingIndexFor())
+
+    expect(useStreamingStore.getState().streamingMessageIds.get(SESSION_ID)).toBe(ASSISTANT_MESSAGE_ID)
+
+    applySyncEventForTest(DIRECTORY, {
+      type: "session.idle",
+      properties: { sessionID: SESSION_ID },
+    } as Event, childStores, routingIndexFor())
+
+    expect(useStreamingStore.getState().streamingMessageIds.get(SESSION_ID)).toBeNull()
+    expect(useStreamingStore.getState().messageStreamStates.get(ASSISTANT_MESSAGE_ID)?.phase).toBe("completed")
   })
 
   test("settles stale terminal attention for a resumed root and its loaded descendants", async () => {
@@ -1328,16 +1378,16 @@ describe("sync plan lifecycle on message.part.delta", () => {
   })
 
   test("saves a completed background plan before its PlanCard mounts", async () => {
-    const originalFetch = globalThis.fetch
     const originalProjects = useProjectsStore.getState().projects
     let writes = 0
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.includes('/fs/home')) return Response.json({ home: '/Users/example' })
-      if (url.includes('/fs/stat')) return Response.json({ exists: false, isFile: false })
-      if (url.includes('/fs/write')) writes += 1
-      return Response.json({ success: true })
-    }) as typeof fetch
+    registerRuntimeAPIs({
+      sessionPlans: {
+        ensureRevision: async () => {
+          writes += 1
+          return { path: '/plans/plan.md', created: true }
+        },
+      },
+    } as unknown as RuntimeAPIs)
     useProjectsStore.setState({
       projects: [{ id: 'repo', path: DIRECTORY, label: 'Repo' }],
     })
@@ -1378,7 +1428,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
       expect(record?.status).toBe('saved')
       expect(writes).toBe(1)
     } finally {
-      globalThis.fetch = originalFetch
+      registerRuntimeAPIs(null)
       useProjectsStore.setState({ projects: originalProjects })
     }
   })
@@ -1413,15 +1463,121 @@ describe("sync plan lifecycle on message.part.delta", () => {
     })
   })
 
+  test("force-refreshes and retires a stale persisted proposal during directory bootstrap", async () => {
+    const bootstrapDirectory = `${DIRECTORY}/stale-persisted-proposal`
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(bootstrapDirectory)
+    store.setState({
+      ...INITIAL_STATE,
+      session: [{ id: SESSION_ID, title: "Stale plan", time: { created: 1, updated: 3 } } as Session],
+      message: {
+        [SESSION_ID]: [userMessage(), assistantMessage()],
+      },
+      part: {
+        [USER_MESSAGE_ID]: [planModePart()],
+        [ASSISTANT_MESSAGE_ID]: [textPart("A cached answer that is already renderable.")],
+      },
+      session_status: {
+        [SESSION_ID]: { type: "idle" } as SessionStatus,
+      },
+    })
+    useSessionUIStore.setState({
+      planModeUserMessages: new Set([USER_MESSAGE_ID]),
+      planModeUserMessagesBySession: new Map([[SESSION_ID, USER_MESSAGE_ID]]),
+      sessionPlanIndicator: new Map([[
+        SESSION_ID,
+        { state: "proposed", sourceMessageId: ASSISTANT_MESSAGE_ID },
+      ]]),
+    })
+
+    let messageFetches = 0
+    const originalGetScopedSdkClient = opencodeClient.getScopedSdkClient
+    Object.defineProperty(opencodeClient, "getScopedSdkClient", {
+      configurable: true,
+      value: () => ({
+        session: {
+          messages: () => {
+            messageFetches += 1
+            return Promise.resolve({
+              data: [
+                { info: userMessage(), parts: [planModePart()] },
+                { info: assistantMessage(), parts: [textPart("The plan was superseded.")] },
+              ],
+            })
+          },
+        },
+      }),
+    })
+
+    try {
+      await restorePersistedSessionIndicatorsForDirectory(bootstrapDirectory, store)
+
+      expect(messageFetches).toBe(1)
+      expect(useSessionUIStore.getState().sessionPlanIndicator.has(SESSION_ID)).toBe(false)
+      expect(useSessionUIStore.getState().planModeUserMessagesBySession.has(SESSION_ID)).toBe(false)
+    } finally {
+      Object.defineProperty(opencodeClient, "getScopedSdkClient", {
+        configurable: true,
+        value: originalGetScopedSdkClient,
+      })
+    }
+  })
+
+  test("preserves a persisted proposal when authoritative bootstrap validation fails", async () => {
+    const bootstrapDirectory = `${DIRECTORY}/failed-proposal-validation`
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(bootstrapDirectory)
+    const proposal = { state: "proposed" as const, sourceMessageId: ASSISTANT_MESSAGE_ID }
+    store.setState({
+      ...INITIAL_STATE,
+      session: [{ id: SESSION_ID, title: "Unavailable plan", time: { created: 1, updated: 3 } } as Session],
+      message: {
+        [SESSION_ID]: [userMessage(), assistantMessage()],
+      },
+      part: {
+        [USER_MESSAGE_ID]: [planModePart()],
+        [ASSISTANT_MESSAGE_ID]: [textPart(structuredPlanBody)],
+      },
+      session_status: {
+        [SESSION_ID]: { type: "idle" } as SessionStatus,
+      },
+    })
+    useSessionUIStore.setState({
+      planModeUserMessages: new Set([USER_MESSAGE_ID]),
+      planModeUserMessagesBySession: new Map([[SESSION_ID, USER_MESSAGE_ID]]),
+      sessionPlanIndicator: new Map([[SESSION_ID, proposal]]),
+    })
+
+    const originalGetScopedSdkClient = opencodeClient.getScopedSdkClient
+    Object.defineProperty(opencodeClient, "getScopedSdkClient", {
+      configurable: true,
+      value: () => ({
+        session: {
+          messages: () => Promise.reject(new Error("validation unavailable")),
+        },
+      }),
+    })
+
+    try {
+      await restorePersistedSessionIndicatorsForDirectory(bootstrapDirectory, store)
+
+      expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toBe(proposal)
+      expect(useSessionUIStore.getState().planModeUserMessagesBySession.get(SESSION_ID)).toBe(USER_MESSAGE_ID)
+    } finally {
+      Object.defineProperty(opencodeClient, "getScopedSdkClient", {
+        configurable: true,
+        value: originalGetScopedSdkClient,
+      })
+    }
+  })
+
   test("restores the saved plan pointer without mounting the chat after a reload", async () => {
-    const originalFetch = globalThis.fetch
     const originalProjects = useProjectsStore.getState().projects
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.includes('/fs/home')) return Response.json({ home: '/Users/example' })
-      if (url.includes('/fs/stat')) return Response.json({ exists: true, isFile: true })
-      return Response.json({ success: true })
-    }) as typeof fetch
+    registerRuntimeAPIs({
+      sessionPlans: {
+        ensureRevision: async () => ({ path: '/plans/plan.md', created: false }),
+      },
+    } as unknown as RuntimeAPIs)
     useProjectsStore.setState({
       projects: [{ id: 'repo', path: DIRECTORY, label: 'Repo' }],
     })
@@ -1460,7 +1616,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
       expect(record?.sourceMessageId).toBe(ASSISTANT_MESSAGE_ID)
       expect(record?.status).toBe('saved')
     } finally {
-      globalThis.fetch = originalFetch
+      registerRuntimeAPIs(null)
       useProjectsStore.setState({ projects: originalProjects })
     }
   })
@@ -1595,6 +1751,447 @@ describe("sync plan lifecycle on message.part.delta", () => {
       className: "bg-status-warning",
       labelKey: "sessions.sidebar.session.status.planReady",
     })
+  })
+
+  test("ingests focused-window Plan Ready events before native notification gating", () => {
+    const nativeNotifications: Array<{ title?: string; body?: string; tag?: string }> = []
+
+    handleUserNotificationEvent({
+      type: "openchamber:notification",
+      properties: {
+        kind: "plan-ready",
+        sessionId: SESSION_ID,
+        sourceMessageId: ASSISTANT_MESSAGE_ID,
+        title: "Plan ready",
+        body: "A plan is ready for review",
+        tag: `plan-ready-${SESSION_ID}-${ASSISTANT_MESSAGE_ID}`,
+        requireHidden: true,
+      },
+    }, {
+      isFocused: () => true,
+      notify: (notification) => {
+        nativeNotifications.push(notification)
+      },
+    })
+
+    expect(nativeNotifications).toEqual([])
+    expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toEqual({
+      state: "proposed",
+      sourceMessageId: ASSISTANT_MESSAGE_ID,
+    })
+  })
+
+  test("authoritatively refreshes a pending background plan on idle without opening the session", async () => {
+    const backgroundDirectory = `${DIRECTORY}/background-plan`
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(backgroundDirectory)
+    const staleAssistantPart = textPart("Still preparing the plan.")
+    store.setState({
+      ...INITIAL_STATE,
+      session: [{ id: SESSION_ID, title: "Background plan", time: { created: 1, updated: 2 } } as Session],
+      message: {
+        [SESSION_ID]: [userMessage(), assistantMessage()],
+      },
+      part: {
+        [USER_MESSAGE_ID]: [planModePart()],
+        [ASSISTANT_MESSAGE_ID]: [staleAssistantPart],
+      },
+      session_status: {
+        [SESSION_ID]: { type: "busy" } as SessionStatus,
+      },
+    })
+    useSessionUIStore.getState().recordUserMessagePlanMode(SESSION_ID, USER_MESSAGE_ID, true)
+
+    let messageFetches = 0
+    const originalGetScopedSdkClient = opencodeClient.getScopedSdkClient
+    Object.defineProperty(opencodeClient, "getScopedSdkClient", {
+      configurable: true,
+      value: () => ({
+        session: {
+          messages: () => {
+            messageFetches += 1
+            return Promise.resolve({
+              data: [
+                { info: userMessage(), parts: [planModePart()] },
+                { info: assistantMessage(), parts: [textPart(structuredPlanBody)] },
+              ],
+            })
+          },
+        },
+      }),
+    })
+
+    try {
+      applySyncEventForTest(
+        backgroundDirectory,
+        sessionStatusEvent({ type: "idle" } as SessionStatus),
+        childStores,
+        {
+          sessionDirectoryById: new Map([[SESSION_ID, backgroundDirectory]]),
+          messageSessionById: new Map([
+            [USER_MESSAGE_ID, SESSION_ID],
+            [ASSISTANT_MESSAGE_ID, SESSION_ID],
+          ]),
+          sessionMessageIdsById: new Map([[SESSION_ID, new Set([USER_MESSAGE_ID, ASSISTANT_MESSAGE_ID])]]),
+        },
+      )
+      await flushAsync()
+      await flushAsync()
+
+      expect(messageFetches).toBe(1)
+      expect(useSessionUIStore.getState().currentSessionId).toBe(null)
+      expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toEqual({
+        state: "proposed",
+        sourceMessageId: ASSISTANT_MESSAGE_ID,
+      })
+    } finally {
+      Object.defineProperty(opencodeClient, "getScopedSdkClient", {
+        configurable: true,
+        value: originalGetScopedSdkClient,
+      })
+    }
+  })
+
+  test("materializes a stale ordinary background session on idle and clears green when opened", async () => {
+    const ordinaryDirectory = `${DIRECTORY}/ordinary-session`
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(ordinaryDirectory)
+    const staleAssistantMessage = {
+      ...assistantMessage(),
+      time: { created: 2 },
+    } as Message
+    store.setState({
+      ...INITIAL_STATE,
+      session: [{ id: SESSION_ID, title: "Ordinary session", time: { created: 1, updated: 2 } } as Session],
+      message: {
+        [SESSION_ID]: [userMessage(), staleAssistantMessage],
+      },
+      part: {
+        [USER_MESSAGE_ID]: [],
+        [ASSISTANT_MESSAGE_ID]: [textPart("Still finishing ordinary work.")],
+      },
+      session_status: {
+        [SESSION_ID]: { type: "busy" } as SessionStatus,
+      },
+    })
+
+    let messageFetches = 0
+    const originalGetScopedSdkClient = opencodeClient.getScopedSdkClient
+    Object.defineProperty(opencodeClient, "getScopedSdkClient", {
+      configurable: true,
+      value: () => ({
+        session: {
+          messages: () => {
+            messageFetches += 1
+            return Promise.resolve({
+              data: [
+                { info: userMessage(), parts: [] },
+                { info: assistantMessage(), parts: [textPart("Completed ordinary work.")] },
+              ],
+            })
+          },
+        },
+      }),
+    })
+
+    try {
+      applySyncEventForTest(
+        ordinaryDirectory,
+        sessionStatusEvent({ type: "idle" } as SessionStatus),
+        childStores,
+        {
+          sessionDirectoryById: new Map([[SESSION_ID, ordinaryDirectory]]),
+          messageSessionById: new Map([
+            [USER_MESSAGE_ID, SESSION_ID],
+            [ASSISTANT_MESSAGE_ID, SESSION_ID],
+          ]),
+          sessionMessageIdsById: new Map([[SESSION_ID, new Set([USER_MESSAGE_ID, ASSISTANT_MESSAGE_ID])]]),
+        },
+      )
+      await flushAsync()
+      await flushAsync()
+      await waitForCompletionIndicatorSettlement()
+
+      expect(messageFetches).toBe(1)
+      expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(true)
+      expect(useSessionUIStore.getState().sessionCompletionIndicator.get(SESSION_ID)).toEqual({
+        messageId: ASSISTANT_MESSAGE_ID,
+        completedAt: 3,
+      })
+      expect(resolveSidebarIndicator({
+        isRootSession: true,
+        isWorking: false,
+        isActive: false,
+        hasUnreadCompletion: true,
+        hasCompletedStatus: true,
+        hasErrorStatus: false,
+        pendingQuestionCount: 0,
+        planState: null,
+      })).toEqual({
+        className: "bg-status-success",
+        labelKey: "sessions.sidebar.session.status.completed",
+      })
+
+      useSessionUIStore.getState().setCurrentSession(SESSION_ID, ordinaryDirectory)
+
+      expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(false)
+      expect(useSessionUIStore.getState().sessionCompletionIndicator.has(SESSION_ID)).toBe(false)
+    } finally {
+      Object.defineProperty(opencodeClient, "getScopedSdkClient", {
+        configurable: true,
+        value: originalGetScopedSdkClient,
+      })
+    }
+  })
+
+  test("deduplicates background completion materialization across idle event variants", async () => {
+    const backgroundDirectory = `${DIRECTORY}/duplicate-idle`
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(backgroundDirectory)
+    const staleAssistantMessage = {
+      ...assistantMessage(),
+      time: { created: 2 },
+    } as Message
+    store.setState({
+      ...INITIAL_STATE,
+      session: [{ id: SESSION_ID, title: "Duplicate idle", time: { created: 1, updated: 2 } } as Session],
+      message: { [SESSION_ID]: [userMessage(), staleAssistantMessage] },
+      part: {
+        [USER_MESSAGE_ID]: [],
+        [ASSISTANT_MESSAGE_ID]: [textPart("Still finishing.")],
+      },
+      session_status: { [SESSION_ID]: { type: "busy" } as SessionStatus },
+    })
+
+    let messageFetches = 0
+    const originalGetScopedSdkClient = opencodeClient.getScopedSdkClient
+    Object.defineProperty(opencodeClient, "getScopedSdkClient", {
+      configurable: true,
+      value: () => ({
+        session: {
+          messages: () => {
+            messageFetches += 1
+            return Promise.resolve({
+              data: [
+                { info: userMessage(), parts: [] },
+                { info: assistantMessage(), parts: [textPart("Completed once.")] },
+              ],
+            })
+          },
+        },
+      }),
+    })
+    const routingIndex = {
+      sessionDirectoryById: new Map([[SESSION_ID, backgroundDirectory]]),
+      messageSessionById: new Map([
+        [USER_MESSAGE_ID, SESSION_ID],
+        [ASSISTANT_MESSAGE_ID, SESSION_ID],
+      ]),
+      sessionMessageIdsById: new Map([[SESSION_ID, new Set([USER_MESSAGE_ID, ASSISTANT_MESSAGE_ID])]]),
+    }
+
+    try {
+      applySyncEventForTest(
+        backgroundDirectory,
+        sessionStatusEvent({ type: "idle" } as SessionStatus),
+        childStores,
+        routingIndex,
+      )
+      applySyncEventForTest(backgroundDirectory, {
+        type: "session.idle",
+        properties: { sessionID: SESSION_ID },
+      } as Event, childStores, routingIndex)
+      await flushAsync()
+      await flushAsync()
+      await waitForCompletionIndicatorSettlement()
+
+      expect(messageFetches).toBe(1)
+      expect(useNotificationStore.getState().list).toHaveLength(1)
+      expect(useSessionUIStore.getState().sessionCompletionIndicator.get(SESSION_ID)).toEqual({
+        messageId: ASSISTANT_MESSAGE_ID,
+        completedAt: 3,
+      })
+    } finally {
+      Object.defineProperty(opencodeClient, "getScopedSdkClient", {
+        configurable: true,
+        value: originalGetScopedSdkClient,
+      })
+    }
+  })
+
+  test("materializes an implementing background plan on idle and shows plan completed", async () => {
+    const backgroundDirectory = `${DIRECTORY}/implementing-plan`
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(backgroundDirectory)
+    const staleImplementationAssistant = {
+      ...implementingAssistantMessage(),
+      time: { created: 5 },
+    } as Message
+    const implementationKey = `${SESSION_ID}:${ASSISTANT_MESSAGE_ID}:plan:0`
+    store.setState({
+      ...INITIAL_STATE,
+      session: [{ id: SESSION_ID, title: "Implementing plan", time: { created: 1, updated: 5 } } as Session],
+      message: {
+        [SESSION_ID]: [
+          userMessage(),
+          assistantMessage(),
+          implementingUserMessage(),
+          staleImplementationAssistant,
+        ],
+      },
+      part: {
+        [USER_MESSAGE_ID]: [planModePart()],
+        [ASSISTANT_MESSAGE_ID]: [textPart(`<!--plan-->\n${structuredPlanBody}`)],
+        [IMPLEMENT_USER_MESSAGE_ID]: [],
+        [IMPLEMENT_ASSISTANT_MESSAGE_ID]: [implementTextPart("Still implementing.")],
+      },
+      session_status: { [SESSION_ID]: { type: "busy" } as SessionStatus },
+    })
+    useSessionUIStore.getState().recordUserMessagePlanMode(SESSION_ID, USER_MESSAGE_ID, true)
+    useSessionUIStore.getState().markPlanProposed(SESSION_ID, ASSISTANT_MESSAGE_ID)
+    useSessionUIStore.getState().markPlanImplementationRequested(implementationKey)
+    useSessionUIStore.getState().markPlanImplementing(
+      SESSION_ID,
+      ASSISTANT_MESSAGE_ID,
+      IMPLEMENT_USER_MESSAGE_ID,
+    )
+
+    let messageFetches = 0
+    const originalGetScopedSdkClient = opencodeClient.getScopedSdkClient
+    Object.defineProperty(opencodeClient, "getScopedSdkClient", {
+      configurable: true,
+      value: () => ({
+        session: {
+          messages: () => {
+            messageFetches += 1
+            return Promise.resolve({
+              data: [
+                { info: userMessage(), parts: [planModePart()] },
+                { info: assistantMessage(), parts: [textPart(`<!--plan-->\n${structuredPlanBody}`)] },
+                { info: implementingUserMessage(), parts: [] },
+                { info: implementingAssistantMessage(), parts: [implementTextPart("Implemented the plan.")] },
+              ],
+            })
+          },
+        },
+      }),
+    })
+
+    try {
+      applySyncEventForTest(
+        backgroundDirectory,
+        sessionStatusEvent({ type: "idle" } as SessionStatus),
+        childStores,
+        {
+          sessionDirectoryById: new Map([[SESSION_ID, backgroundDirectory]]),
+          messageSessionById: new Map([
+            [USER_MESSAGE_ID, SESSION_ID],
+            [ASSISTANT_MESSAGE_ID, SESSION_ID],
+            [IMPLEMENT_USER_MESSAGE_ID, SESSION_ID],
+            [IMPLEMENT_ASSISTANT_MESSAGE_ID, SESSION_ID],
+          ]),
+          sessionMessageIdsById: new Map([[SESSION_ID, new Set([
+            USER_MESSAGE_ID,
+            ASSISTANT_MESSAGE_ID,
+            IMPLEMENT_USER_MESSAGE_ID,
+            IMPLEMENT_ASSISTANT_MESSAGE_ID,
+          ])]]),
+        },
+      )
+      await flushAsync()
+      await flushAsync()
+      await waitForCompletionIndicatorSettlement()
+
+      const sessionUI = useSessionUIStore.getState()
+      const planEntry = sessionUI.sessionPlanIndicator.get(SESSION_ID)
+      expect(messageFetches).toBe(1)
+      expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(true)
+      expect(planEntry).toEqual({
+        state: "completed",
+        sourceMessageId: ASSISTANT_MESSAGE_ID,
+        implementationMessageId: IMPLEMENT_USER_MESSAGE_ID,
+      })
+      expect(resolveSidebarIndicator({
+        isRootSession: true,
+        isWorking: false,
+        isActive: false,
+        hasUnreadCompletion: true,
+        hasCompletedStatus: false,
+        hasErrorStatus: false,
+        pendingQuestionCount: 0,
+        planState: planEntry?.state ?? null,
+      })).toEqual({
+        className: "bg-status-success",
+        labelKey: "sessions.sidebar.session.status.planCompleted",
+      })
+    } finally {
+      Object.defineProperty(opencodeClient, "getScopedSdkClient", {
+        configurable: true,
+        value: originalGetScopedSdkClient,
+      })
+    }
+  })
+
+  test("does not materialize or create unread completion for the viewed session on idle", async () => {
+    const viewedDirectory = `${DIRECTORY}/viewed-session`
+    const childStores = new ChildStoreManager()
+    const store = childStores.ensureChild(viewedDirectory)
+    const staleAssistantMessage = {
+      ...assistantMessage(),
+      time: { created: 2 },
+    } as Message
+    store.setState({
+      ...INITIAL_STATE,
+      session: [{ id: SESSION_ID, title: "Viewed session", time: { created: 1, updated: 2 } } as Session],
+      message: { [SESSION_ID]: [userMessage(), staleAssistantMessage] },
+      part: {
+        [USER_MESSAGE_ID]: [],
+        [ASSISTANT_MESSAGE_ID]: [textPart("Still finishing.")],
+      },
+      session_status: { [SESSION_ID]: { type: "busy" } as SessionStatus },
+    })
+    setActiveSession(viewedDirectory, SESSION_ID)
+
+    let messageFetches = 0
+    const originalGetScopedSdkClient = opencodeClient.getScopedSdkClient
+    Object.defineProperty(opencodeClient, "getScopedSdkClient", {
+      configurable: true,
+      value: (directory: string) => ({
+        session: {
+          messages: () => {
+            if (directory === viewedDirectory) messageFetches += 1
+            return Promise.resolve({ data: [] })
+          },
+        },
+      }),
+    })
+
+    try {
+      applySyncEventForTest(
+        viewedDirectory,
+        sessionStatusEvent({ type: "idle" } as SessionStatus),
+        childStores,
+        {
+          sessionDirectoryById: new Map([[SESSION_ID, viewedDirectory]]),
+          messageSessionById: new Map([
+            [USER_MESSAGE_ID, SESSION_ID],
+            [ASSISTANT_MESSAGE_ID, SESSION_ID],
+          ]),
+          sessionMessageIdsById: new Map([[SESSION_ID, new Set([USER_MESSAGE_ID, ASSISTANT_MESSAGE_ID])]]),
+        },
+      )
+      await flushAsync()
+      await waitForCompletionIndicatorSettlement()
+
+      expect(messageFetches).toBe(0)
+      expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(false)
+      expect(useSessionUIStore.getState().sessionCompletionIndicator.has(SESSION_ID)).toBe(false)
+    } finally {
+      Object.defineProperty(opencodeClient, "getScopedSdkClient", {
+        configurable: true,
+        value: originalGetScopedSdkClient,
+      })
+    }
   })
 
   test("does not mark proposed when the busy Cursor plan turn is not complete", async () => {
@@ -2869,6 +3466,105 @@ describe("sync plan lifecycle on message.part.delta", () => {
 
     expect(useNotificationStore.getState().list).toHaveLength(1)
     expect(useNotificationStore.getState().sessionUnseenCount(SESSION_ID)).toBe(1)
+  })
+
+  test("treats empty session snapshots as authoritative while replaying concurrent lifecycle events", () => {
+    const childStores = new ChildStoreManager()
+    const routingIndex = routingIndexFor()
+    const concurrentSession = {
+      id: "ses_concurrent",
+      title: "Created during refresh",
+      directory: DIRECTORY,
+      time: { created: 10, updated: 10 },
+    } as Session
+
+    const emptyRevision = captureDirectorySessionListRevision(DIRECTORY)
+    expect(reconcileDirectorySessionListSnapshot(DIRECTORY, [], emptyRevision)).toEqual([])
+
+    const createRevision = captureDirectorySessionListRevision(DIRECTORY)
+    applySyncEventForTest(DIRECTORY, {
+      type: "session.created",
+      properties: { info: concurrentSession },
+    } as Event, childStores, routingIndex, DIRECTORY)
+    expect(reconcileDirectorySessionListSnapshot(DIRECTORY, [], createRevision)).toEqual([concurrentSession])
+
+    const updateRevision = captureDirectorySessionListRevision(DIRECTORY)
+    const updatedSession = {
+      ...concurrentSession,
+      title: "Updated during refresh",
+      time: { created: 10, updated: 20 },
+    } as Session
+    applySyncEventForTest(DIRECTORY, {
+      type: "session.updated",
+      properties: { info: updatedSession },
+    } as Event, childStores, routingIndex, DIRECTORY)
+    expect(reconcileDirectorySessionListSnapshot(
+      DIRECTORY,
+      [concurrentSession],
+      updateRevision,
+    )).toEqual([updatedSession])
+
+    const deleteRevision = captureDirectorySessionListRevision(DIRECTORY)
+    applySyncEventForTest("/wrong-directory", {
+      type: "session.deleted",
+      properties: { sessionID: concurrentSession.id, info: concurrentSession },
+    } as Event, childStores, routingIndex, DIRECTORY)
+    expect(reconcileDirectorySessionListSnapshot(
+      DIRECTORY,
+      [concurrentSession],
+      deleteRevision,
+    )).toEqual([])
+  })
+
+  test("deletes a session from every initialized child store despite a wrong event directory", () => {
+    const secondDirectory = "/repo-worktree"
+    const deletedSession = {
+      id: "ses_duplicated_cache",
+      title: "Stale duplicate",
+      time: { created: 1, updated: 2 },
+    } as Session
+    const message = {
+      id: "msg_duplicated_cache",
+      sessionID: deletedSession.id,
+      role: "assistant",
+      time: { created: 2 },
+    } as Message
+    const part = {
+      id: "prt_duplicated_cache",
+      sessionID: deletedSession.id,
+      messageID: message.id,
+      type: "text",
+      text: "stale",
+    } as Part
+    const childStores = new ChildStoreManager()
+    for (const directory of [DIRECTORY, secondDirectory]) {
+      childStores.ensureChild(directory).setState({
+        ...INITIAL_STATE,
+        session: [deletedSession],
+        sessionTotal: 1,
+        message: { [deletedSession.id]: [message] },
+        part: { [message.id]: [part] },
+        session_status: { [deletedSession.id]: { type: "idle" } as SessionStatus },
+      })
+    }
+    useGlobalSessionsStore.setState({
+      activeSessions: [deletedSession],
+      sessionsByDirectory: new Map([[DIRECTORY, [deletedSession]]]),
+    })
+
+    applySyncEventForTest("/wrong-directory", {
+      type: "session.deleted",
+      properties: { sessionID: deletedSession.id, info: deletedSession },
+    } as Event, childStores, routingIndexFor(), DIRECTORY)
+
+    for (const directory of [DIRECTORY, secondDirectory]) {
+      const state = childStores.getChild(directory)?.getState()
+      expect(state?.session).toEqual([])
+      expect(state?.message[deletedSession.id]).toBe(undefined)
+      expect(state?.part[message.id]).toBe(undefined)
+      expect(state?.session_status[deletedSession.id]).toBe(undefined)
+    }
+    expect(useGlobalSessionsStore.getState().activeSessions).toEqual([])
   })
 
   test("mirrors inactive-directory session lifecycle without allocating a child store", () => {

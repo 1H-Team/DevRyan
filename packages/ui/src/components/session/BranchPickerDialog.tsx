@@ -29,6 +29,7 @@ import { getWorktreeSetupCommands } from '@/lib/openchamberConfig';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { useSessions } from '@/sync/sync-context';
 import { useI18n } from '@/lib/i18n';
+import { useAuthPrincipal } from '@/lib/authSession';
 
 export interface BranchPickerProject {
   id: string;
@@ -67,6 +68,9 @@ const normalizePath = (value: string | null | undefined): string => {
 
 export function BranchPickerDialog({ open, onOpenChange, project }: BranchPickerDialogProps) {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
+  const canDeleteGitResources = principal.scope !== 'managed' || principal.role === 'admin';
+  const canCreateWorktrees = principal.scope !== 'managed' || principal.policy.createWorktrees;
   const sessions = useSessions();
   const [searchQuery, setSearchQuery] = React.useState('');
   const [branches, setBranches] = React.useState<GitBranch | null>(null);
@@ -435,7 +439,7 @@ export function BranchPickerDialog({ open, onOpenChange, project }: BranchPicker
 
                     {!isEditing && !isConfirming ? (
                       <div className="flex items-center gap-1 flex-shrink-0">
-                        <Tooltip>
+                        {canCreateWorktrees ? <Tooltip>
                           <TooltipTrigger asChild>
                             <button
                               type="button"
@@ -454,7 +458,7 @@ export function BranchPickerDialog({ open, onOpenChange, project }: BranchPicker
                           <TooltipContent side="left">
                             {hasAttachedWorktree ? t('branchPickerDialog.tooltip.worktreeAlreadyExists') : t('branchPickerDialog.tooltip.createWorktree')}
                           </TooltipContent>
-                        </Tooltip>
+                        </Tooltip> : null}
 
                         <Tooltip>
                           <TooltipTrigger asChild>
@@ -473,7 +477,7 @@ export function BranchPickerDialog({ open, onOpenChange, project }: BranchPicker
                           </TooltipContent>
                         </Tooltip>
 
-                        <Tooltip>
+                        {canDeleteGitResources ? <Tooltip>
                           <TooltipTrigger asChild>
                             <button
                               type="button"
@@ -506,7 +510,7 @@ export function BranchPickerDialog({ open, onOpenChange, project }: BranchPicker
                                   ? t('branchPickerDialog.tooltip.deleteDisabledForRoot')
                                   : t('branchPickerDialog.tooltip.delete')}
                           </TooltipContent>
-                        </Tooltip>
+                        </Tooltip> : null}
                       </div>
                     ) : null}
 

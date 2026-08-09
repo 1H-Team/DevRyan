@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/web",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": false,
   "type": "module",
   "main": "./server/index.js",
@@ -28,7 +28,7 @@
     "@openchamber/harness-runtime": "workspace:*",
     "@openchamber/orchestration-runtime": "workspace:*",
     "@octokit/rest": "^22.0.1",
-    "@opencode-ai/sdk": "^1.18.13",
+    "@opencode-ai/sdk": "^1.18.15",
     "@simplewebauthn/server": "13.3.0",
     "adm-zip": "^0.5.16",
     "better-sqlite3": "^12.10.0",

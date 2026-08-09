@@ -9,6 +9,7 @@ const REQUIRED_RUNTIME_APIS = [
   'notifications',
   'permissions',
   'runtime',
+  'sessionPlans',
   'settings',
   'terminal',
   'tools',

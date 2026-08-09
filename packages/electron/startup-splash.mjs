@@ -11,6 +11,13 @@ const readStringSetting = (settings, key, fallback) => {
   return value || fallback;
 };
 
+const escapeHtml = (value) => String(value || '')
+  .replaceAll('&', '&amp;')
+  .replaceAll('<', '&lt;')
+  .replaceAll('>', '&gt;')
+  .replaceAll('"', '&quot;')
+  .replaceAll("'", '&#39;');
+
 export const resolveStartupSplashVariant = (settings = {}) => {
   if (settings.themeMode === 'light') return 'light';
   if (settings.themeMode === 'dark') return 'dark';
@@ -108,6 +115,59 @@ export const buildStartupSplashHtml = (settings = {}) => {
 ${renderLogoSvg('splash-logo-light', '#1e2a38')}
 ${renderLogoSvg('splash-logo-dark', '#fff')}
     </div>
+  </body>
+  </html>`;
+};
+
+export const buildStartupErrorHtml = (settings = {}, { message = '' } = {}) => {
+  const splashBgLight = readStringSetting(settings, 'splashBgLight', DEFAULT_SPLASH_BG_LIGHT);
+  const splashFgLight = readStringSetting(settings, 'splashFgLight', DEFAULT_SPLASH_FG_LIGHT);
+  const splashBgDark = readStringSetting(settings, 'splashBgDark', DEFAULT_SPLASH_BG_DARK);
+  const splashFgDark = readStringSetting(settings, 'splashFgDark', DEFAULT_SPLASH_FG_DARK);
+  const splashVariant = resolveStartupSplashVariant(settings);
+  const detail = escapeHtml(message || 'The local service could not be started.');
+
+  return `<!doctype html>
+  <html data-splash-variant="${splashVariant}">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root { color-scheme: light dark; --background: ${splashBgLight}; --foreground: ${splashFgLight}; }
+      html[data-splash-variant="dark"] { --background: ${splashBgDark}; --foreground: ${splashFgDark}; }
+      @media (prefers-color-scheme: dark) {
+        html[data-splash-variant="system"] { --background: ${splashBgDark}; --foreground: ${splashFgDark}; }
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: var(--background);
+        color: var(--foreground);
+        font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+      }
+      main { width: min(520px, calc(100vw - 64px)); text-align: center; }
+      h1 { margin: 0 0 12px; font-size: 24px; font-weight: 600; }
+      p { margin: 0 auto 24px; max-width: 460px; opacity: .72; line-height: 1.5; overflow-wrap: anywhere; }
+      a {
+        display: inline-block;
+        padding: 10px 18px;
+        border: 1px solid color-mix(in srgb, var(--foreground) 24%, transparent);
+        border-radius: 8px;
+        color: inherit;
+        text-decoration: none;
+        font-weight: 600;
+      }
+      a:hover { background: color-mix(in srgb, var(--foreground) 8%, transparent); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>DevRyan couldn’t start</h1>
+      <p>${detail}</p>
+      <a href="openchamber://retry-startup">Retry</a>
+    </main>
   </body>
   </html>`;
 };

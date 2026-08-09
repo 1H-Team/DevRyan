@@ -221,6 +221,7 @@ export const McpDropdownContent: React.FC<McpDropdownContentProps> = ({ active, 
             issueKind: issueKinds[serverName],
           });
           const isBusy = busyName === serverName;
+          const isLocked = serverConfig?.enabledLocked === true;
           const tooltip = statusTooltip(indicator, t);
 
           return (
@@ -252,7 +253,8 @@ export const McpDropdownContent: React.FC<McpDropdownContentProps> = ({ active, 
 
               <Switch
                 checked={isEnabled}
-                disabled={isBusy}
+                disabled={isBusy || isLocked}
+                title={isLocked ? t('mcpDropdown.managedByAdmin') : undefined}
                 className="data-[checked]:bg-status-info"
                 onCheckedChange={async (checked) => {
                   setBusyName(serverName);
@@ -385,6 +387,7 @@ export const McpDropdown: React.FC<McpDropdownProps> = ({ headerIconButtonClass 
           issueKind: issueKinds[serverName],
         });
         const isBusy = busyName === serverName;
+        const isLocked = serverConfig?.enabledLocked === true;
         const tooltip = statusTooltip(indicator, t);
 
         return (
@@ -428,7 +431,8 @@ export const McpDropdown: React.FC<McpDropdownProps> = ({ headerIconButtonClass 
 
             <Switch
               checked={isEnabled}
-              disabled={isBusy}
+              disabled={isBusy || isLocked}
+              title={isLocked ? t('mcpDropdown.managedByAdmin') : undefined}
               className="data-[checked]:bg-status-info"
               onCheckedChange={async (checked) => {
                 setBusyName(serverName);

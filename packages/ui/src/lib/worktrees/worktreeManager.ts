@@ -17,6 +17,7 @@ import type {
   GitWorktreeValidationResult,
 } from '@/lib/api/types';
 import { useSessionUIStore } from '@/sync/session-ui-store';
+import { assertCanCreateBranches } from '@/lib/authSession';
 
 type WorktreeListEntry = {
   path?: string;
@@ -243,6 +244,7 @@ export type CreateWorktreeArgs = {
 };
 
 export async function createWorktree(project: ProjectRef, args: CreateWorktreeArgs): Promise<WorktreeMetadata> {
+  if (args.mode !== 'existing') assertCanCreateBranches();
   const projectDirectory = normalizePath(project.path);
   const metadataProjectDirectory = await resolvePrimaryWorktreeDirectory(projectDirectory).catch(() => projectDirectory);
   const payload = toCreatePayload(args, projectDirectory);

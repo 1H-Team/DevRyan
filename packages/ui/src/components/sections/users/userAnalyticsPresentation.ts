@@ -6,6 +6,36 @@ export const formatPromptModelLabel = (providerId: string, modelId: string): str
   return modelId || 'Model unavailable';
 };
 
+export interface PromptRowSummary {
+  title: string;
+  preview: string | null;
+}
+
+// Collapsed rows use the first meaningful line as their title and reserve the
+// remaining meaningful lines for a preview. The expanded prompt keeps the
+// original text untouched, including its whitespace.
+export const formatPromptRowSummary = (promptText: string): PromptRowSummary => {
+  const lines = promptText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 0) {
+    return { title: '(Attachment-only prompt)', preview: null };
+  }
+
+  const [title, ...previewLines] = lines;
+  return {
+    title,
+    preview: previewLines.length > 0 ? previewLines.join(' ') : null,
+  };
+};
+
+// "1 prompt" / "2 prompts" — irregular plurals pass an explicit form ("copy", "copies").
+export const pluralize = (count: number, singular: string, plural = `${singular}s`): string => (
+  `${count} ${count === 1 ? singular : plural}`
+);
+
 export const formatMinutes = (minutes: number): string => {
   const rounded = Math.max(0, Math.round(minutes));
   if (rounded < 60) return `${rounded}m`;

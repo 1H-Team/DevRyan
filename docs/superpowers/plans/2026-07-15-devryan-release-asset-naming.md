@@ -122,7 +122,7 @@ Expected: no whitespace errors; GitHub upload paths use only staged DevRyan file
 **Files:**
 - Modify: `AGENTS.md`
 - Modify: `docs/superpowers/specs/2026-07-15-devryan-release-asset-naming-design.md`
-- Modify remotely: GitHub release `zoubenr/DevRyan@v1.0.10`
+- Modify remotely: GitHub release `1H-Team/DevRyan@v1.0.10`
 
 **Interfaces:**
 - Consumes: the canonical repository instructions and GitHub release asset IDs.
@@ -138,7 +138,7 @@ Clarify that the main release verifier requires the branded web tarball and reje
 
 - [ ] **Step 3: Rename existing v1.0.10 assets through the GitHub API**
 
-Resolve asset IDs from `gh api repos/zoubenr/DevRyan/releases/tags/v1.0.10`, then PATCH:
+Resolve asset IDs from `gh api repos/1H-Team/DevRyan/releases/tags/v1.0.10`, then PATCH:
 
 ```text
 openchamber-1.0.10.vsix     -> DevRyan-1.0.10.vsix
@@ -147,7 +147,7 @@ openchamber-web-1.0.10.tgz  -> DevRyan-web-1.0.10.tgz
 
 - [ ] **Step 4: Verify the canonical release**
 
-Run: `gh release view v1.0.10 --repo zoubenr/DevRyan --json assets --jq '.assets[].name'`
+Run: `gh release view v1.0.10 --repo 1H-Team/DevRyan --json assets --jq '.assets[].name'`
 
 Expected: no output begins with `openchamber-` or `OpenChamber_`; the two renamed assets use `DevRyan`.
 

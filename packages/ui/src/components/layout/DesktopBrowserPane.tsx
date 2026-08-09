@@ -2,6 +2,7 @@ import React from 'react';
 import {
   RiArrowLeftLine,
   RiArrowRightLine,
+  RiAddLine,
   RiCodeSSlashLine,
   RiCursorLine,
   RiExternalLinkLine,
@@ -16,6 +17,7 @@ import {
 
 import { useAppFontEffects } from '@/apps/useAppFontEffects';
 import { Button } from '@/components/ui/button';
+import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
 import { toast } from '@/components/ui';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { invokeDesktop, isElectronShell, isStandaloneWebRuntime } from '@/lib/desktop';
@@ -26,6 +28,7 @@ import {
   isPreviewElementMetadata,
 } from '@/lib/preview/screenshot-capture';
 import { openExternalUrl } from '@/lib/url';
+import { cn } from '@/lib/utils';
 import { useBrowserAgentStore, browserAgentLeaseSelectors } from '@/stores/useBrowserAgentStore';
 import {
   createDesktopBrowserSurface,
@@ -34,6 +37,12 @@ import {
   type BrowserSurfaceSnapshot,
 } from '@/stores/useBrowserSurfaceStore';
 import { useInlineCommentDraftStore } from '@/stores/useInlineCommentDraftStore';
+import {
+  browserTabLabelForUrl,
+  sanitizeManualBrowserWorkspace,
+  useManualBrowserTabsStore,
+  type ManualBrowserTab,
+} from '@/stores/useManualBrowserTabsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useInputStore } from '@/sync/input-store';
 import { useSessionUIStore } from '@/sync/session-ui-store';
@@ -44,15 +53,15 @@ import {
   sanitizeWebBrowserDisplayUrl,
 } from './browserUrl';
 import {
-  useLocalPreviewInstances,
-  useReachableLocalPreviewInstances,
+  useProjectPreviewInstances,
 } from './localPreviewInstances';
-import { isPreviewLoopbackHost, parsePreviewHttpUrl } from './previewLifecycle';
+import { isBrowserHostRoutedUrl, parsePreviewHttpUrl } from './previewLifecycle';
 import {
   usePreviewDiagnostics,
   type PreviewAnnotationAttachment,
 } from './previewDiagnostics';
 import { PreviewConsolePanel } from './PreviewConsolePanel';
+import { useGuestRetention } from './useGuestRetention';
 import {
   createEmptyPreviewDiagnosticsState,
   formatPreviewConsoleText,
@@ -68,6 +77,11 @@ export type DesktopBrowserPaneProps = {
   tabID: string;
   active: boolean;
   leaseId?: string;
+  workspaceId?: string;
+  popped?: boolean;
+  onPopoutOrDock?: () => void;
+  webInitialState?: WebBrowserSessionState;
+  onWebState?: (state: WebBrowserSessionState) => void;
 };
 
 type BrowserToolbarProps = {
@@ -81,7 +95,6 @@ type BrowserToolbarProps = {
   webDiagnosticsEnabled?: boolean;
   webDiagnosticsDisabledReason?: string;
   consoleOpen?: boolean;
-  consoleErrorCount?: number;
   inspecting?: boolean;
   nativeTitlebar?: boolean;
   onUrlInput: (value: string) => void;
@@ -98,6 +111,66 @@ type BrowserToolbarProps = {
 const BROWSER_TOOLBAR_BUTTON_CLASS = 'size-7 p-0 leading-none';
 const BROWSER_TOOLBAR_ICON_CLASS = 'size-3.5';
 
+type BrowserTabsBarProps = {
+  tabs: readonly ManualBrowserTab[];
+  activeTabId: string;
+  nativeTitlebar?: boolean;
+  onAdd: () => void;
+  onSelect: (tabId: string) => void;
+  onClose: (tabId: string) => void;
+  onReorder: (activeTabId: string, overTabId: string) => void;
+};
+
+export const BrowserTabsBar: React.FC<BrowserTabsBarProps> = ({
+  tabs,
+  activeTabId,
+  nativeTitlebar = false,
+  onAdd,
+  onSelect,
+  onClose,
+  onReorder,
+}) => {
+  const reserveMacTrafficLights = nativeTitlebar
+    && typeof navigator !== 'undefined'
+    && /Macintosh|Mac OS X/.test(navigator.userAgent || '');
+  const items = React.useMemo(() => tabs.map((tab) => ({
+    id: tab.id,
+    label: tab.label,
+    title: tab.url === 'about:blank' ? 'New tab' : tab.url,
+    closeLabel: `Close ${tab.label} tab`,
+  })), [tabs]);
+
+  return (
+    <div
+      data-browser-tabs-strip="true"
+      className={`flex h-8 shrink-0 items-stretch gap-1 border-b border-border/40 bg-[var(--surface-background)] pr-1 ${reserveMacTrafficLights ? 'pl-[78px]' : 'pl-1'}`}
+    >
+      <SortableTabsStrip
+        items={items}
+        activeId={activeTabId}
+        onSelect={onSelect}
+        onClose={onClose}
+        onReorder={onReorder}
+        layoutMode="scrollable"
+        variant="soft-pill"
+        ariaLabel="Browser tabs"
+        className="min-w-0 flex-1"
+      />
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="my-0.5 size-7 shrink-0 p-0"
+        aria-label="New Browser Tab"
+        title="New Browser Tab"
+        onClick={onAdd}
+      >
+        <RiAddLine className="size-3.5" />
+      </Button>
+    </div>
+  );
+};
+
 const BrowserToolbar: React.FC<BrowserToolbarProps> = ({
   snapshot,
   urlInput,
@@ -109,7 +182,6 @@ const BrowserToolbar: React.FC<BrowserToolbarProps> = ({
   webDiagnosticsEnabled = false,
   webDiagnosticsDisabledReason,
   consoleOpen = false,
-  consoleErrorCount = 0,
   inspecting = false,
   nativeTitlebar = false,
   onUrlInput,
@@ -204,14 +276,7 @@ const BrowserToolbar: React.FC<BrowserToolbarProps> = ({
           title={webDiagnosticsEnabled ? 'Console' : webDiagnosticsDisabledReason}
           onClick={onToggleConsole}
         >
-          <span className="relative inline-flex">
-            <RiTerminalBoxLine className={BROWSER_TOOLBAR_ICON_CLASS} />
-            {consoleErrorCount > 0 ? (
-              <span className="absolute -right-1.5 -top-1.5 min-w-3 rounded-full bg-status-error px-0.5 text-[8px] leading-3 text-white">
-                {Math.min(consoleErrorCount, 99)}
-              </span>
-            ) : null}
-          </span>
+          <RiTerminalBoxLine className={BROWSER_TOOLBAR_ICON_CLASS} />
         </Button>
       ) : null}
       {supportsInspect || showWebDiagnostics ? (
@@ -267,8 +332,7 @@ const EmptyBrowserState: React.FC<{
   onNavigate: (url: string) => void;
 }> = ({ directory, active, loading, onNavigate }) => {
   const { t } = useI18n();
-  const candidates = useLocalPreviewInstances(directory, t('contextPanel.browser.localInstanceFallback'));
-  const reachable = useReachableLocalPreviewInstances(candidates, active && !loading, directory);
+  const reachable = useProjectPreviewInstances(active && !loading, directory);
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-background p-6">
       {reachable.length > 0 ? (
@@ -304,9 +368,13 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
   tabID,
   active,
   leaseId,
+  workspaceId,
+  popped: poppedOverride,
+  onPopoutOrDock,
 }) => {
   const { t } = useI18n();
   const contentRef = React.useRef<HTMLDivElement | null>(null);
+  const initialUrlRef = React.useRef(normalizeBrowserUrl(initialUrl));
   const [manualSurfaceId, setManualSurfaceId] = React.useState('');
   const [urlInput, setUrlInput] = React.useState(formatBrowserAddress(normalizeBrowserUrl(initialUrl)));
   const [inspecting, setInspecting] = React.useState(false);
@@ -316,6 +384,7 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
   const surfaceId = leaseId ? (lease?.surfaceId ?? '') : manualSurfaceId;
   const snapshot = useBrowserSurfaceStore((state) => surfaceId ? state.byId.get(surfaceId) ?? null : null);
   const setContextPanelTabTargetPath = useUIStore((state) => state.setContextPanelTabTargetPath);
+  const updateManualBrowserTabUrl = useManualBrowserTabsStore((state) => state.updateTabUrl);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const currentDraftId = useSessionUIStore((state) => state.currentDraftId);
   const newSessionDraftOpen = useSessionUIStore((state) => Boolean(state.currentDraftId && state.newSessionDraft?.open));
@@ -323,13 +392,13 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
   const addAttachedFile = useInputStore((state) => state.addAttachedFile);
   const currentUrl = snapshot?.url ?? normalizeBrowserUrl(initialUrl);
   const isBlank = currentUrl === 'about:blank';
-  const popped = snapshot?.placement === 'popout';
+  const popped = poppedOverride ?? snapshot?.placement === 'popout';
 
   React.useEffect(() => {
     ensureBrowserSurfaceListeners();
     if (leaseId) return;
     let cancelled = false;
-    void createDesktopBrowserSurface(tabID, normalizeBrowserUrl(initialUrl))
+    void createDesktopBrowserSurface(tabID, initialUrlRef.current, workspaceId)
       .then((created) => {
         if (!cancelled && created) setManualSurfaceId(created.surfaceId);
       })
@@ -337,7 +406,7 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
         if (!cancelled) toast.error(t('contextPanel.browser.openFailed'));
       });
     return () => { cancelled = true; };
-  }, [initialUrl, leaseId, t, tabID]);
+  }, [leaseId, t, tabID, workspaceId]);
 
   React.useEffect(() => {
     if (!surfaceId) return;
@@ -348,10 +417,12 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
 
   React.useEffect(() => {
     setUrlInput(formatBrowserAddress(currentUrl));
-    if (!leaseId && currentUrl !== 'about:blank') {
+    if (workspaceId) {
+      updateManualBrowserTabUrl(directory, tabID, currentUrl);
+    } else if (!leaseId && currentUrl !== 'about:blank') {
       setContextPanelTabTargetPath(directory, tabID, currentUrl);
     }
-  }, [currentUrl, directory, leaseId, setContextPanelTabTargetPath, tabID]);
+  }, [currentUrl, directory, leaseId, setContextPanelTabTargetPath, tabID, updateManualBrowserTabUrl, workspaceId]);
 
   const syncLayout = React.useCallback(() => {
     if (!surfaceId || !contentRef.current) return;
@@ -517,12 +588,16 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
   }, [inspect, inspecting]);
 
   const togglePopout = React.useCallback(() => {
+    if (onPopoutOrDock) {
+      onPopoutOrDock();
+      return;
+    }
     if (!surfaceId) return;
     const commandName = popped ? 'desktop_browser_surface_dock' : 'desktop_browser_surface_popout';
     void invokeDesktop<unknown>(commandName, { surfaceId })
       .then((value) => useBrowserSurfaceStore.getState().applySnapshot(value, leaseId ? undefined : tabID))
       .catch(() => toast.error('Unable to change browser placement'));
-  }, [leaseId, popped, surfaceId, tabID]);
+  }, [leaseId, onPopoutOrDock, popped, surfaceId, tabID]);
 
   const toolbarSnapshot = snapshot ?? {
     loading: false,
@@ -587,7 +662,40 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
   );
 };
 
-type ProxyState = { base: string; loading: boolean; error: string };
+type ProxyState = { origin: string; base: string; loading: boolean; error: string; external: boolean };
+
+const RECOVERABLE_PREVIEW_TARGET_CODES = new Set([
+  'preview_target_expired',
+  'preview_target_not_found',
+]);
+
+// A site that keeps bouncing between origins (a sign-in handshake that never
+// settles) or a target that keeps failing to resolve would otherwise re-register
+// and remount the frame without end. Bound both, and say so instead of looping.
+const BROWSER_HANDOFF_LOOP_WINDOW_MS = 20_000;
+const BROWSER_HANDOFF_LOOP_LIMIT = 6;
+const BROWSER_TARGET_INVALIDATE_WINDOW_MS = 30_000;
+const BROWSER_TARGET_INVALIDATE_LIMIT = 4;
+const BROWSER_HANDOFF_LOOP_MESSAGE = 'This page kept redirecting inside the DevRyan browser. Press Reload to try again, or open it in your regular browser.';
+const BROWSER_TARGET_LOOP_MESSAGE = 'This page kept losing its DevRyan browser session. Press Reload to try again.';
+
+const recordLoopAttempt = (timestamps: number[], windowMs: number): number[] => {
+  const now = Date.now();
+  const recent = timestamps.filter((entry) => now - entry < windowMs);
+  recent.push(now);
+  return recent;
+};
+
+const isRecoverablePreviewTargetDocument = (iframe: HTMLIFrameElement): boolean => {
+  try {
+    const frameDocument = iframe.contentDocument;
+    if (!frameDocument?.contentType.toLowerCase().includes('application/json')) return false;
+    const payload = JSON.parse(frameDocument.body?.textContent || '') as { code?: unknown };
+    return typeof payload.code === 'string' && RECOVERABLE_PREVIEW_TARGET_CODES.has(payload.code);
+  } catch {
+    return false;
+  }
+};
 
 export type WebBrowserSessionState = {
   version: 1;
@@ -661,55 +769,73 @@ const useBrowserFrameSource = (
   onTarget: (origin: string, target: { proxyBasePath: string; expiresAt: number }) => void,
 ): ProxyState & { src: string; routed: boolean } => {
   const parsed = parsePreviewHttpUrl(url);
+  const hostRouted = isBrowserHostRoutedUrl(url);
   const target = parsed?.toString() ?? '';
-  const loopback = Boolean(parsed && isPreviewLoopbackHost(parsed.hostname));
   const origin = parsed?.origin ?? '';
   const [registrationNonce, bumpRegistration] = React.useReducer((value: number) => value + 1, 0);
-  const [state, setState] = React.useState<ProxyState>({ base: '', loading: loopback, error: '' });
+  const [state, setState] = React.useState<ProxyState>({ origin: '', base: '', loading: Boolean(target && hostRouted), error: '', external: Boolean(target && !hostRouted) });
   React.useEffect(() => {
-    if (!target || !loopback) {
-      setState({ base: '', loading: false, error: '' });
+    if (!target) {
+      setState({ origin: '', base: '', loading: false, error: '', external: false });
+      return;
+    }
+    if (!hostRouted) {
+      setState({ origin, base: '', loading: false, error: '', external: true });
       return;
     }
     const knownTarget = knownTargets[origin];
     if (knownTarget && knownTarget.expiresAt - Date.now() > 30_000) {
-      setState({ base: knownTarget.proxyBasePath, loading: false, error: '' });
+      setState({ origin, base: knownTarget.proxyBasePath, loading: false, error: '', external: false });
       const refreshIn = Math.max(1_000, knownTarget.expiresAt - Date.now() - 30_000);
       const timer = window.setTimeout(bumpRegistration, refreshIn);
       return () => window.clearTimeout(timer);
     }
     let cancelled = false;
-    setState({ base: '', loading: true, error: '' });
+    setState({ origin, base: '', loading: true, error: '', external: false });
     void (async () => {
-      let lastError = 'Failed to register project preview';
+      let lastError = 'Failed to register browser target';
       for (let attempt = 0; attempt < 12 && !cancelled; attempt += 1) {
-        const response = await fetch('/api/preview/targets', {
+        const response = await fetch('/api/browser/targets', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-DevRyan-CSRF': '1' },
           credentials: 'include',
           cache: 'no-store',
           body: JSON.stringify({ url: target, directory }),
         });
-        const body = await response.json().catch(() => ({})) as { proxyBasePath?: unknown; expiresAt?: unknown; error?: unknown };
+        const body = await response.json().catch(() => ({})) as {
+          proxyBasePath?: unknown;
+          expiresAt?: unknown;
+          error?: unknown;
+          code?: unknown;
+        };
         if (response.ok && typeof body.proxyBasePath === 'string' && typeof body.expiresAt === 'number') {
           onTarget(origin, { proxyBasePath: body.proxyBasePath, expiresAt: body.expiresAt });
-          if (!cancelled) setState({ base: body.proxyBasePath, loading: false, error: '' });
+          if (!cancelled) setState({ origin, base: body.proxyBasePath, loading: false, error: '', external: false });
           return;
         }
+        if (response.status === 401) {
+          lastError = 'Your DevRyan session has expired. Sign in again to use Browser.';
+          break;
+        }
         lastError = typeof body.error === 'string' ? body.error : `HTTP ${response.status}`;
-        if (response.status !== 403 || attempt === 11) break;
+        const approvalPending = response.status === 403
+          && (body.code === 'project_preview_not_approved'
+            || body.error === 'This project preview port has not been approved');
+        if (!approvalPending || attempt === 11) break;
         await new Promise<void>((resolve) => window.setTimeout(resolve, 300));
       }
       throw new Error(lastError);
     })().catch((error) => {
-      if (!cancelled) setState({ base: '', loading: false, error: error instanceof Error ? error.message : String(error) });
+      if (!cancelled) setState({ origin, base: '', loading: false, error: error instanceof Error ? error.message : String(error), external: false });
     });
     return () => { cancelled = true; };
-  }, [directory, knownTargets, loopback, onTarget, origin, registrationNonce, target]);
+  }, [directory, hostRouted, knownTargets, onTarget, origin, registrationNonce, target]);
 
   if (!target || url === 'about:blank') return { ...state, src: '', routed: false };
-  if (!loopback) return { ...state, src: target, routed: false };
-  if (!state.base || !parsed) return { ...state, src: '', routed: true };
+  // Never combine a newly entered URL with the previous origin's proxy id.
+  // The registration effect runs after render, so origin ownership must be
+  // explicit to avoid one transient request (and visible flash) to the wrong app.
+  if (state.origin !== origin || !state.base || !parsed) return { ...state, src: '', routed: true };
   return {
     ...state,
     src: `${state.base}${parsed.pathname || '/'}${parsed.search}${parsed.hash}`,
@@ -738,7 +864,6 @@ const WebBrowserSurface: React.FC<WebBrowserSurfaceProps> = ({
   onAttachAnnotation,
   onPopoutOrDock,
 }) => {
-  const { t } = useI18n();
   const { currentTheme } = useThemeSystem();
   const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
   const pendingNavigationRef = React.useRef<string | null>(null);
@@ -749,11 +874,48 @@ const WebBrowserSurface: React.FC<WebBrowserSurfaceProps> = ({
   const [proxyTargets, setProxyTargets] = React.useState(normalizedInitialState.current.proxyTargets);
   const [urlInput, setUrlInput] = React.useState(formatBrowserAddress(normalizedInitialState.current.displayUrl));
   const [reloadKey, setReloadKey] = React.useState(0);
-  const [navigationKey, bumpNavigationKey] = React.useReducer((value: number) => value + 1, 0);
   const [frameLoaded, setFrameLoaded] = React.useState(false);
+  const [renderedFrame, setRenderedFrame] = React.useState({ src: '', key: '' });
+  const [loopError, setLoopError] = React.useState('');
+  const [externalOpenBlocked, setExternalOpenBlocked] = React.useState(false);
+  const handoffNavigationsRef = React.useRef<number[]>([]);
+  const targetInvalidationsRef = React.useRef<number[]>([]);
   const currentUrl = history[historyIndex] ?? 'about:blank';
-  const previewCandidates = useLocalPreviewInstances(directory, t('contextPanel.browser.localInstanceFallback'));
-  useReachableLocalPreviewInstances(previewCandidates, active && currentUrl !== 'about:blank', directory);
+  const resetLoopGuards = React.useCallback(() => {
+    handoffNavigationsRef.current = [];
+    targetInvalidationsRef.current = [];
+    setLoopError('');
+  }, []);
+  const invalidateRenderedProxyTarget = React.useCallback(() => {
+    const attempts = recordLoopAttempt(targetInvalidationsRef.current, BROWSER_TARGET_INVALIDATE_WINDOW_MS);
+    targetInvalidationsRef.current = attempts;
+    if (attempts.length > BROWSER_TARGET_INVALIDATE_LIMIT) {
+      // Keeping the stale target is what stops the cycle: without a new
+      // proxy id the frame source is unchanged and nothing remounts.
+      setLoopError(BROWSER_TARGET_LOOP_MESSAGE);
+      return;
+    }
+    setProxyTargets((current) => {
+      const staleOrigin = Object.entries(current).find(([, target]) => (
+        renderedFrame.src === target.proxyBasePath
+        || renderedFrame.src.startsWith(`${target.proxyBasePath}/`)
+        || renderedFrame.src.startsWith(`${target.proxyBasePath}?`)
+      ))?.[0];
+      if (!staleOrigin) return current;
+      const next = { ...current };
+      delete next[staleOrigin];
+      return next;
+    });
+  }, [renderedFrame.src]);
+  const handleFrameLoad = React.useCallback(() => {
+    const iframe = iframeRef.current;
+    if (iframe && isRecoverablePreviewTargetDocument(iframe)) {
+      setFrameLoaded(false);
+      invalidateRenderedProxyTarget();
+      return;
+    }
+    setFrameLoaded(true);
+  }, [invalidateRenderedProxyTarget]);
   const rememberProxyTarget = React.useCallback((origin: string, target: { proxyBasePath: string; expiresAt: number }) => {
     setProxyTargets((current) => {
       const previous = current[origin];
@@ -768,7 +930,22 @@ const WebBrowserSurface: React.FC<WebBrowserSurfaceProps> = ({
     proxyTargets,
     rememberProxyTarget,
   );
-  const loading = frame.loading || (currentUrl !== 'about:blank' && !frameLoaded && !frame.error);
+  React.useLayoutEffect(() => {
+    if (!frame.src) return;
+    const key = `${frame.src}:${reloadKey}`;
+    if (renderedFrame.src === frame.src && renderedFrame.key === key) return;
+    setFrameLoaded(false);
+    setRenderedFrame({ src: frame.src, key });
+  }, [frame.src, reloadKey, renderedFrame.key, renderedFrame.src]);
+  const frameActive = Boolean(frame.src && renderedFrame.src === frame.src);
+  const loading = !loopError && (frame.loading || (currentUrl !== 'about:blank' && !frameLoaded && !frame.error));
+  const loadingLabel = (() => {
+    try {
+      return `Loading ${new URL(currentUrl).host}…`;
+    } catch {
+      return 'Loading page…';
+    }
+  })();
 
   const navigate = React.useCallback((value: string) => {
     const next = sanitizeWebBrowserDisplayUrl(value);
@@ -779,34 +956,65 @@ const WebBrowserSurface: React.FC<WebBrowserSurfaceProps> = ({
     setFrameLoaded(false);
     setUrlInput(formatBrowserAddress(next));
   }, [historyIndex]);
+  const openExternal = React.useCallback((value: string) => {
+    void openExternalUrl(value).then((opened) => setExternalOpenBlocked(!opened));
+  }, []);
+  const navigateFromUser = React.useCallback((value: string) => {
+    const next = sanitizeWebBrowserDisplayUrl(value);
+    navigate(next);
+    const parsed = parsePreviewHttpUrl(next);
+    if (parsed && !isBrowserHostRoutedUrl(next)) openExternal(next);
+  }, [navigate, openExternal]);
+  // Redirect handoffs are driven by the embedded page, so they are the one
+  // navigation source that can run unattended. Bound how often it may fire.
+  const handleHandoffNavigate = React.useCallback((value: string) => {
+    const attempts = recordLoopAttempt(handoffNavigationsRef.current, BROWSER_HANDOFF_LOOP_WINDOW_MS);
+    handoffNavigationsRef.current = attempts;
+    if (attempts.length > BROWSER_HANDOFF_LOOP_LIMIT) {
+      setLoopError(BROWSER_HANDOFF_LOOP_MESSAGE);
+      return;
+    }
+    const next = sanitizeWebBrowserDisplayUrl(value);
+    navigate(next);
+    const parsed = parsePreviewHttpUrl(next);
+    if (parsed && !isBrowserHostRoutedUrl(next)) openExternal(next);
+  }, [navigate, openExternal]);
+  const handleRenderReady = React.useCallback(() => setFrameLoaded(true), []);
+  const handleNavigationStart = React.useCallback(() => setFrameLoaded(false), []);
+  const handleDisplayNavigate = React.useCallback((value: string, reason: 'ready' | 'display') => {
+    const next = reconcileWebBrowserDisplayUrl(value, currentUrl);
+    if (next === 'about:blank') return;
+    if (next === currentUrl) {
+      if (reason === 'ready') pendingNavigationRef.current = null;
+      setUrlInput(formatBrowserAddress(next));
+      return;
+    }
+    if (reason === 'ready' && pendingNavigationRef.current) {
+      pendingNavigationRef.current = null;
+      setHistory((current) => current.map((entry, index) => (index === historyIndex ? next : entry)));
+    } else {
+      pendingNavigationRef.current = null;
+      setHistory((current) => [...current.slice(0, historyIndex + 1), next]);
+      setHistoryIndex(historyIndex + 1);
+    }
+    setUrlInput(formatBrowserAddress(next));
+  }, [currentUrl, historyIndex]);
 
   const diagnostics = usePreviewDiagnostics({
     iframeRef,
-    enabled: frame.routed,
-    frameKey: `${frameTargetUrl}:${reloadKey}:${navigationKey}`,
+    enabled: frame.routed && frameActive,
+    // Key off the mounted iframe, not the displayed URL: a same-document SPA
+    // navigation keeps the bridge alive and must not reset it, since only a
+    // freshly parsed document ever announces itself as ready again.
+    frameKey: renderedFrame.key,
     pageUrl: currentUrl,
     colorScheme: currentTheme.metadata.variant,
     initialState: normalizedInitialState.current.diagnostics,
-    onDisplayNavigate: (value, reason) => {
-      const next = reconcileWebBrowserDisplayUrl(value, currentUrl);
-      if (next === 'about:blank') return;
-      if (next === currentUrl) {
-        if (reason === 'ready') pendingNavigationRef.current = null;
-        setUrlInput(formatBrowserAddress(next));
-        return;
-      }
-      if (reason === 'ready' && pendingNavigationRef.current) {
-        pendingNavigationRef.current = null;
-        setHistory((current) => current.map((entry, index) => (index === historyIndex ? next : entry)));
-      } else {
-        pendingNavigationRef.current = null;
-        setHistory((current) => [...current.slice(0, historyIndex + 1), next]);
-        setHistoryIndex(historyIndex + 1);
-      }
-      bumpNavigationKey();
-      setUrlInput(formatBrowserAddress(next));
-    },
-    onTargetNavigate: navigate,
+    onRenderReady: handleRenderReady,
+    onNavigationStart: handleNavigationStart,
+    onDisplayNavigate: handleDisplayNavigate,
+    onTargetNavigate: handleHandoffNavigate,
+    onExternalNavigate: handleHandoffNavigate,
     onAttachConsole,
     onAttachAnnotation,
   });
@@ -837,7 +1045,7 @@ const WebBrowserSurface: React.FC<WebBrowserSurfaceProps> = ({
     proxyTargets,
   ]);
 
-  const diagnosticsEnabled = frame.routed && diagnostics.bridgeReady;
+  const diagnosticsEnabled = frame.routed && frameActive && diagnostics.bridgeReady;
   const diagnosticsDisabledReason = currentUrl === 'about:blank'
     ? 'Open a project app to use Console and Select Element.'
     : frame.routed
@@ -861,12 +1069,15 @@ const WebBrowserSurface: React.FC<WebBrowserSurfaceProps> = ({
         webDiagnosticsEnabled={diagnosticsEnabled}
         webDiagnosticsDisabledReason={diagnosticsDisabledReason}
         consoleOpen={diagnostics.consoleOpen}
-        consoleErrorCount={diagnostics.consoleErrorCount}
         inspecting={diagnostics.inspectMode}
         onUrlInput={setUrlInput}
-        onNavigate={navigate}
+        onNavigate={(value) => {
+          resetLoopGuards();
+          navigateFromUser(value);
+        }}
         onBack={() => {
           const next = Math.max(0, historyIndex - 1);
+          resetLoopGuards();
           pendingNavigationRef.current = history[next];
           setHistoryIndex(next);
           setFrameTargetUrl(history[next]);
@@ -875,6 +1086,7 @@ const WebBrowserSurface: React.FC<WebBrowserSurfaceProps> = ({
         }}
         onForward={() => {
           const next = Math.min(history.length - 1, historyIndex + 1);
+          resetLoopGuards();
           pendingNavigationRef.current = history[next];
           setHistoryIndex(next);
           setFrameTargetUrl(history[next]);
@@ -882,6 +1094,7 @@ const WebBrowserSurface: React.FC<WebBrowserSurfaceProps> = ({
           setUrlInput(formatBrowserAddress(history[next]));
         }}
         onReload={() => {
+          resetLoopGuards();
           pendingNavigationRef.current = currentUrl;
           setFrameTargetUrl(currentUrl);
           setFrameLoaded(false);
@@ -894,24 +1107,42 @@ const WebBrowserSurface: React.FC<WebBrowserSurfaceProps> = ({
       <div className="relative min-h-0 flex-1">
         {currentUrl === 'about:blank' ? (
           <EmptyBrowserState directory={directory} active={active} loading={loading} onNavigate={navigate} />
-        ) : frame.src ? (
+        ) : frame.external ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background p-6 text-center">
+            <RiExternalLinkLine className="h-10 w-10 text-muted-foreground/60" aria-hidden="true" />
+            <span className="typography-ui-header text-foreground">
+              {externalOpenBlocked ? 'Your browser blocked the new tab.' : 'This site opens in your regular browser.'}
+            </span>
+            <span className="max-w-lg break-all typography-micro text-muted-foreground">{currentUrl}</span>
+            <Button type="button" variant="secondary" onClick={() => openExternal(currentUrl)}>
+              {externalOpenBlocked ? 'Open in Browser' : 'Open Again'}
+            </Button>
+          </div>
+        ) : renderedFrame.src ? (
           <iframe
             ref={iframeRef}
-            key={`${frame.src}:${reloadKey}`}
-            src={frame.src}
+            key={renderedFrame.key}
+            src={renderedFrame.src}
             title="Browser"
             className="h-full w-full border-0 bg-background"
-            sandbox={frame.routed
-              ? 'allow-downloads allow-forms allow-modals allow-pointer-lock allow-popups allow-same-origin allow-scripts'
-              : 'allow-forms allow-modals allow-popups allow-scripts'}
+            sandbox="allow-downloads allow-forms allow-modals allow-pointer-lock allow-popups allow-same-origin allow-scripts"
             referrerPolicy="strict-origin-when-cross-origin"
-            onLoad={() => setFrameLoaded(true)}
+            onLoad={handleFrameLoad}
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center p-6 text-center typography-micro text-muted-foreground">
             {frame.error || 'Loading local page…'}
           </div>
         )}
+        {currentUrl !== 'about:blank' && (loading || frame.error || loopError) ? (
+          <div
+            className="absolute inset-0 z-10 flex items-center justify-center bg-background p-6 text-center typography-micro text-muted-foreground"
+            role="status"
+            aria-live="polite"
+          >
+            {frame.error || loopError || loadingLabel}
+          </div>
+        ) : null}
         {diagnostics.inspectMode && diagnostics.hoverTarget ? (
           <div
             className="pointer-events-none absolute rounded-sm border-2 border-[var(--interactive-focus-ring)] bg-[var(--interactive-focus-ring)]/35"
@@ -984,7 +1215,12 @@ const getAuthenticatedBrowserIdentity = (value: unknown): string | null => {
   if (!value || typeof value !== 'object') return null;
   const session = value as { authenticated?: unknown; principal?: unknown };
   if (session.authenticated !== true || !session.principal || typeof session.principal !== 'object') return null;
-  const principalId = (session.principal as { id?: unknown }).id;
+  const principal = session.principal as { id?: unknown; policy?: unknown };
+  const policy = principal.policy && typeof principal.policy === 'object'
+    ? principal.policy as { browser?: unknown }
+    : null;
+  if (policy?.browser !== true) return null;
+  const principalId = principal.id;
   return typeof principalId === 'string' && principalId ? `principal:${principalId}` : null;
 };
 
@@ -1065,12 +1301,6 @@ const WebBrowserPane: React.FC<DesktopBrowserPaneProps> = ({ initialUrl, directo
   const [placement, setPlacement] = React.useState<'inline' | 'popout'>('inline');
   const setContextPanelTabTargetPath = useUIStore((state) => state.setContextPanelTabTargetPath);
   const { attachConsole, attachAnnotation } = useBrowserChatAttachments();
-  const previewCandidates = useLocalPreviewInstances(directory, 'Local app');
-  // The pop-out intentionally has a narrow provider root and no terminal
-  // store hydration. Keep its source grants alive in the authenticated opener
-  // while the detached surface owns navigation and diagnostics state.
-  useReachableLocalPreviewInstances(previewCandidates, placement === 'popout', directory);
-
   const applyState = React.useCallback((state: WebBrowserSessionState) => {
     const next = normalizeWebBrowserSessionState(state, stateRef.current.displayUrl);
     stateRef.current = next;
@@ -1189,9 +1419,729 @@ const WebBrowserPane: React.FC<DesktopBrowserPaneProps> = ({ initialUrl, directo
   );
 };
 
+const WebBrowserWorkspacePage: React.FC<DesktopBrowserPaneProps> = ({
+  initialUrl,
+  directory,
+  active,
+  popped = false,
+  onPopoutOrDock,
+  webInitialState,
+  onWebState,
+}) => {
+  const initialStateRef = React.useRef(webInitialState ?? createWebBrowserSessionState(initialUrl));
+  const { attachConsole, attachAnnotation } = useBrowserChatAttachments();
+  return (
+    <WebBrowserSurface
+      initialState={initialStateRef.current}
+      directory={directory}
+      active={active}
+      popped={popped}
+      onState={onWebState}
+      onAttachConsole={attachConsole}
+      onAttachAnnotation={attachAnnotation}
+      onPopoutOrDock={onPopoutOrDock ?? (() => undefined)}
+    />
+  );
+};
+
+type BrowserWorkspaceRuntimeTab = ManualBrowserTab & {
+  webState?: WebBrowserSessionState;
+};
+
+type BrowserWorkspaceRuntimeState = {
+  version: 2;
+  transport: 'native' | 'host';
+  workspaceId: string;
+  directory: string;
+  activeTabId: string;
+  tabs: BrowserWorkspaceRuntimeTab[];
+};
+
+type BrowserWorkspaceMessage = {
+  source: 'devryan-browser-workspace';
+  version: 2;
+  workspaceId: string;
+  type: 'ready' | 'init' | 'state' | 'add-tab' | 'activate-tab' | 'close-tab' | 'reorder-tabs' | 'request-dock' | 'dock' | 'closed' | 'close' | 'attach-console' | 'attach-annotation' | 'ping' | 'pong';
+  state?: BrowserWorkspaceRuntimeState;
+  tabId?: string;
+  overTabId?: string;
+  events?: PreviewConsoleEvent[];
+  pageUrl?: string;
+  attachment?: PreviewAnnotationAttachment;
+};
+
+const createBrowserWorkspaceMessage = (
+  workspaceId: string,
+  message: Omit<BrowserWorkspaceMessage, 'source' | 'version' | 'workspaceId'>,
+): BrowserWorkspaceMessage => ({
+  source: 'devryan-browser-workspace',
+  version: 2,
+  workspaceId,
+  ...message,
+});
+
+const BROWSER_WORKSPACE_MESSAGE_TYPES = new Set<BrowserWorkspaceMessage['type']>([
+  'ready',
+  'init',
+  'state',
+  'add-tab',
+  'activate-tab',
+  'close-tab',
+  'reorder-tabs',
+  'request-dock',
+  'dock',
+  'closed',
+  'close',
+  'attach-console',
+  'attach-annotation',
+  'ping',
+  'pong',
+]);
+
+const isBrowserWorkspaceMessage = (value: unknown, workspaceId: string): value is BrowserWorkspaceMessage => {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<BrowserWorkspaceMessage>;
+  return candidate.source === 'devryan-browser-workspace'
+    && candidate.version === 2
+    && candidate.workspaceId === workspaceId
+    && BROWSER_WORKSPACE_MESSAGE_TYPES.has(candidate.type as BrowserWorkspaceMessage['type']);
+};
+
+const BROWSER_PAGE_SLEEP_DELAY_MS = 60_000;
+
+export const ManualBrowserWorkspacePane: React.FC<{
+  directory: string;
+  active: boolean;
+  legacyUrl?: string | null;
+}> = ({ directory, active, legacyUrl }) => {
+  const useNativeBrowser = isElectronShell();
+  const workspace = useManualBrowserTabsStore((state) => state.byDirectory[directory] ?? null);
+  const addTab = useManualBrowserTabsStore((state) => state.addTab);
+  const activateTab = useManualBrowserTabsStore((state) => state.activateTab);
+  const updateTabUrl = useManualBrowserTabsStore((state) => state.updateTabUrl);
+  const reorderTabs = useManualBrowserTabsStore((state) => state.reorderTabs);
+  const closeTab = useManualBrowserTabsStore((state) => state.closeTab);
+  const replaceWorkspace = useManualBrowserTabsStore((state) => state.replaceWorkspace);
+  const surfaceByTabId = useBrowserSurfaceStore((state) => state.surfaceIdByTabId);
+  const surfaces = useBrowserSurfaceStore((state) => state.byId);
+  const webStatesRef = React.useRef(new Map<string, WebBrowserSessionState>());
+  const workspaceIdRef = React.useRef('');
+  const popupRef = React.useRef<Window | null>(null);
+  const channelRef = React.useRef<BroadcastChannel | null>(null);
+  const fallbackHandlerRef = React.useRef<((event: MessageEvent) => void) | null>(null);
+  const [webPopped, setWebPopped] = React.useState(false);
+  const { attachConsole, attachAnnotation } = useBrowserChatAttachments();
+
+  React.useEffect(() => {
+    useManualBrowserTabsStore.getState().ensureWorkspace(directory, legacyUrl);
+  }, [directory, legacyUrl]);
+
+  React.useEffect(() => {
+    if (!workspace) return;
+    workspaceIdRef.current = workspace.workspaceId;
+    const liveIds = new Set(workspace.tabs.map((tab) => tab.id));
+    for (const tab of workspace.tabs) {
+      if (!webStatesRef.current.has(tab.id)) {
+        webStatesRef.current.set(tab.id, createWebBrowserSessionState(tab.url));
+      }
+    }
+    for (const tabId of webStatesRef.current.keys()) {
+      if (!liveIds.has(tabId)) webStatesRef.current.delete(tabId);
+    }
+  }, [workspace]);
+
+  const activeSurfaceId = workspace ? surfaceByTabId.get(workspace.activeTabId) ?? '' : '';
+  const activeSurface = activeSurfaceId ? surfaces.get(activeSurfaceId) ?? null : null;
+  const popped = useNativeBrowser ? activeSurface?.placement === 'popout' : webPopped;
+
+  const runtimeState = React.useCallback((): BrowserWorkspaceRuntimeState | null => {
+    const current = useManualBrowserTabsStore.getState().byDirectory[directory];
+    if (!current) return null;
+    return {
+      version: 2,
+      transport: useNativeBrowser ? 'native' : 'host',
+      workspaceId: current.workspaceId,
+      directory,
+      activeTabId: current.activeTabId,
+      tabs: current.tabs.map((tab) => ({
+        ...tab,
+        ...(!useNativeBrowser
+          ? { webState: webStatesRef.current.get(tab.id) ?? createWebBrowserSessionState(tab.url) }
+          : {}),
+      })),
+    };
+  }, [directory, useNativeBrowser]);
+
+  const sendToPopup = React.useCallback((message: Omit<BrowserWorkspaceMessage, 'source' | 'version' | 'workspaceId'>) => {
+    const workspaceId = workspaceIdRef.current;
+    if (!workspaceId) return;
+    const envelope = createBrowserWorkspaceMessage(workspaceId, message);
+    if (channelRef.current) {
+      channelRef.current.postMessage(envelope);
+      return;
+    }
+    const popup = popupRef.current;
+    if (popup && !popup.closed) popup.postMessage(envelope, window.location.origin);
+  }, []);
+
+  const closePopupChannel = React.useCallback(() => {
+    channelRef.current?.close();
+    channelRef.current = null;
+    if (fallbackHandlerRef.current) {
+      window.removeEventListener('message', fallbackHandlerRef.current);
+      fallbackHandlerRef.current = null;
+    }
+  }, []);
+
+  const applyDetachedState = React.useCallback((state: BrowserWorkspaceRuntimeState) => {
+    if (!workspace || state.workspaceId !== workspace.workspaceId || state.directory !== directory) return;
+    replaceWorkspace(directory, {
+      workspaceId: state.workspaceId,
+      activeTabId: state.activeTabId,
+      tabs: state.tabs,
+      touchedAt: Date.now(),
+    });
+    if (!useNativeBrowser) {
+      webStatesRef.current = new Map(state.tabs.map((tab) => [
+        tab.id,
+        normalizeWebBrowserSessionState(tab.webState, tab.url),
+      ]));
+    }
+  }, [directory, replaceWorkspace, useNativeBrowser, workspace]);
+
+  const dock = React.useCallback(() => {
+    if (!workspace) return;
+    if (useNativeBrowser) {
+      void invokeDesktop('desktop_browser_workspace_dock', { workspaceId: workspace.workspaceId }).catch(() => {
+        toast.error('Unable to dock Browser');
+      });
+    } else {
+      sendToPopup({ type: 'request-dock' });
+      setWebPopped(false);
+    }
+  }, [sendToPopup, useNativeBrowser, workspace]);
+
+  const handlePopupMessage = React.useCallback((message: BrowserWorkspaceMessage) => {
+    if (!workspace) return;
+    if (message.type === 'ready') {
+      const state = runtimeState();
+      if (state) sendToPopup({ type: 'init', state });
+    } else if (message.type === 'state' && message.state) {
+      applyDetachedState(message.state);
+    } else if (message.type === 'add-tab') {
+      addTab(directory);
+    } else if (message.type === 'activate-tab' && message.tabId) {
+      activateTab(directory, message.tabId);
+    } else if (message.type === 'close-tab' && message.tabId) {
+      closeTab(directory, message.tabId);
+    } else if (message.type === 'reorder-tabs' && message.tabId && message.overTabId) {
+      reorderTabs(directory, message.tabId, message.overTabId);
+    } else if (message.type === 'attach-console' && Array.isArray(message.events) && message.events.every(isPreviewConsoleEvent)) {
+      attachConsole(message.events, typeof message.pageUrl === 'string' ? message.pageUrl : 'about:blank');
+    } else if (message.type === 'attach-annotation' && message.attachment && isPreviewElementMetadata(message.attachment.target)) {
+      attachAnnotation(message.attachment);
+    } else if (message.type === 'ping') {
+      sendToPopup({ type: 'pong' });
+    } else if (message.type === 'dock' || message.type === 'closed') {
+      if (message.state) applyDetachedState(message.state);
+      popupRef.current = null;
+      closePopupChannel();
+      setWebPopped(false);
+    }
+  }, [activateTab, addTab, applyDetachedState, attachAnnotation, attachConsole, closePopupChannel, closeTab, directory, reorderTabs, runtimeState, sendToPopup, workspace]);
+
+  const preparePopupChannel = React.useCallback(() => {
+    if (!workspace) return;
+    closePopupChannel();
+    const channel = typeof BroadcastChannel === 'function'
+      ? new BroadcastChannel(`devryan-browser-workspace:${workspace.workspaceId}`)
+      : null;
+    channelRef.current = channel;
+    if (channel) {
+      channel.onmessage = (event: MessageEvent) => {
+        if (isBrowserWorkspaceMessage(event.data, workspace.workspaceId)) handlePopupMessage(event.data);
+      };
+    }
+    const fallbackHandler = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin || event.source !== popupRef.current) return;
+      if (isBrowserWorkspaceMessage(event.data, workspace.workspaceId)) handlePopupMessage(event.data);
+    };
+    fallbackHandlerRef.current = fallbackHandler;
+    window.addEventListener('message', fallbackHandler);
+  }, [closePopupChannel, handlePopupMessage, workspace]);
+
+  const popout = React.useCallback(() => {
+    if (!workspace) return;
+    preparePopupChannel();
+    if (useNativeBrowser) {
+      void invokeDesktop('desktop_browser_workspace_popout', {
+        workspaceId: workspace.workspaceId,
+        activeSurfaceId,
+      }).catch(() => toast.error('Unable to pop out Browser'));
+      return;
+    }
+    if (isElectronShell()) {
+      void invokeDesktop('desktop_browser_host_workspace_popout', {
+        workspaceId: workspace.workspaceId,
+      }).then(() => setWebPopped(true)).catch(() => {
+        closePopupChannel();
+        toast.error('Unable to pop out Browser');
+      });
+      return;
+    }
+    const popup = window.open(
+      `/browser.html?workspaceId=${encodeURIComponent(workspace.workspaceId)}`,
+      `devryan-browser-workspace-${workspace.workspaceId}`,
+      'popup,width=1180,height=760',
+    );
+    if (!popup) {
+      closePopupChannel();
+      toast.error('The browser pop-out was blocked. Allow pop-ups for this site and try again.');
+      return;
+    }
+    popupRef.current = popup;
+    setWebPopped(true);
+  }, [activeSurfaceId, closePopupChannel, preparePopupChannel, useNativeBrowser, workspace]);
+
+  React.useEffect(() => {
+    if (!workspace || !channelRef.current) return;
+    const state = runtimeState();
+    if (state) sendToPopup({ type: 'state', state });
+  }, [runtimeState, sendToPopup, workspace]);
+
+  React.useEffect(() => {
+    if (!useNativeBrowser || !workspace || !activeSurfaceId) return;
+    void invokeDesktop('desktop_browser_workspace_activate', {
+      workspaceId: workspace.workspaceId,
+      surfaceId: activeSurfaceId,
+    }).catch(() => {});
+  }, [activeSurfaceId, useNativeBrowser, workspace]);
+
+  React.useEffect(() => () => {
+    sendToPopup({ type: 'close' });
+    closePopupChannel();
+    const popup = popupRef.current;
+    if (popup && !popup.closed) popup.close();
+  }, [closePopupChannel, sendToPopup]);
+
+  const retainedTabIds = useGuestRetention({
+    keepIDs: workspace
+      ? (useNativeBrowser && popped ? workspace.tabs.map((tab) => tab.id) : [workspace.activeTabId])
+      : [],
+    sleepDelayMs: BROWSER_PAGE_SLEEP_DELAY_MS,
+  });
+
+  if (!workspace) return null;
+
+  const tabStrip = (
+    <BrowserTabsBar
+      tabs={workspace.tabs}
+      activeTabId={workspace.activeTabId}
+      onAdd={() => addTab(directory)}
+      onSelect={(tabId) => activateTab(directory, tabId)}
+      onClose={(tabId) => closeTab(directory, tabId)}
+      onReorder={(tabId, overTabId) => reorderTabs(directory, tabId, overTabId)}
+    />
+  );
+
+  return (
+    <div className="absolute inset-0 flex flex-col bg-background" data-manual-browser-workspace={workspace.workspaceId}>
+      {tabStrip}
+      <div className="relative min-h-0 flex-1">
+        {workspace.tabs.map((tab) => {
+          const isActive = active && tab.id === workspace.activeTabId;
+          const isMounted = isActive || retainedTabIds.has(tab.id);
+          if (!isMounted) return null;
+          return (
+            <div
+              key={tab.id}
+              className={cn('absolute inset-0', (!isActive || popped) && 'invisible pointer-events-none')}
+              aria-hidden={!isActive || popped}
+              data-browser-page-tab={tab.id}
+            >
+              <DesktopBrowserPane
+                initialUrl={tab.url}
+                directory={directory}
+                tabID={tab.id}
+                workspaceId={workspace.workspaceId}
+                active={isActive}
+                popped={popped}
+                onPopoutOrDock={popout}
+                webInitialState={webStatesRef.current.get(tab.id)}
+                onWebState={(state) => {
+                  webStatesRef.current.set(tab.id, state);
+                  updateTabUrl(directory, tab.id, state.displayUrl);
+                }}
+              />
+            </div>
+          );
+        })}
+        {popped ? (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background p-6 text-center">
+            <RiGlobalLine className="h-12 w-12 text-muted-foreground/50" />
+            <span className="typography-ui-header text-foreground">Browser is open in another window</span>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  if (useNativeBrowser) {
+                    void invokeDesktop('desktop_browser_workspace_focus_popout', { workspaceId: workspace.workspaceId });
+                  } else if (isElectronShell()) {
+                    void invokeDesktop('desktop_browser_host_workspace_focus_popout', { workspaceId: workspace.workspaceId });
+                  } else {
+                    popupRef.current?.focus();
+                  }
+                }}
+              >
+                Focus
+              </Button>
+              <Button type="button" variant="secondary" onClick={dock}>Dock</Button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+};
+
+const BrowserWorkspacePopout: React.FC<{ workspaceId: string }> = ({ workspaceId }) => {
+  const channelRef = React.useRef<BroadcastChannel | null>(null);
+  const openerRef = React.useRef(window.opener);
+  const stateRef = React.useRef<BrowserWorkspaceRuntimeState | null>(null);
+  const [state, setState] = React.useState<BrowserWorkspaceRuntimeState | null>(null);
+  const [connectionLost, setConnectionLost] = React.useState(false);
+  const [authVerified, setAuthVerified] = React.useState(false);
+  const authIdentityRef = React.useRef<string | null>(null);
+  const lastPongAtRef = React.useRef(Date.now());
+  const surfaces = useBrowserSurfaceStore((store) => store.byId);
+  const browserTransport = state?.transport;
+  const useNativeBrowser = isElectronShell() && browserTransport !== 'host';
+
+  const send = React.useCallback((message: Omit<BrowserWorkspaceMessage, 'source' | 'version' | 'workspaceId'>) => {
+    const envelope = createBrowserWorkspaceMessage(workspaceId, message);
+    if (channelRef.current) {
+      channelRef.current.postMessage(envelope);
+      return;
+    }
+    const opener = openerRef.current;
+    if (opener && !opener.closed) opener.postMessage(envelope, window.location.origin);
+  }, [workspaceId]);
+
+  const applyState = React.useCallback((next: BrowserWorkspaceRuntimeState) => {
+    if (next.workspaceId !== workspaceId || next.version !== 2 || !next.directory) return;
+    const metadata = sanitizeManualBrowserWorkspace({
+      workspaceId: next.workspaceId,
+      activeTabId: next.activeTabId,
+      tabs: next.tabs,
+      touchedAt: Date.now(),
+    });
+    if (!metadata) return;
+    const sourceById = new Map(next.tabs.map((tab) => [tab.id, tab]));
+    const normalized: BrowserWorkspaceRuntimeState = {
+      version: 2,
+      transport: next.transport === 'host' || !isElectronShell() ? 'host' : 'native',
+      workspaceId,
+      directory: next.directory,
+      activeTabId: metadata.activeTabId,
+      tabs: metadata.tabs.map((tab) => ({
+        ...tab,
+        ...(next.transport === 'host' || !isElectronShell()
+          ? { webState: normalizeWebBrowserSessionState(sourceById.get(tab.id)?.webState, tab.url) }
+          : {}),
+      })),
+    };
+    stateRef.current = normalized;
+    setState(normalized);
+  }, [workspaceId]);
+
+  React.useEffect(() => {
+    ensureBrowserSurfaceListeners();
+    const channel = typeof BroadcastChannel === 'function'
+      ? new BroadcastChannel(`devryan-browser-workspace:${workspaceId}`)
+      : null;
+    channelRef.current = channel;
+    let initialized = false;
+    const receive = (message: BrowserWorkspaceMessage) => {
+      if ((message.type === 'init' || message.type === 'state') && message.state) {
+        initialized = true;
+        lastPongAtRef.current = Date.now();
+        applyState(message.state);
+      } else if (message.type === 'pong') {
+        lastPongAtRef.current = Date.now();
+      } else if (message.type === 'request-dock' || message.type === 'close') {
+        send({ type: message.type === 'request-dock' ? 'dock' : 'closed', state: stateRef.current ?? undefined });
+        window.close();
+      }
+    };
+    if (channel) {
+      channel.onmessage = (event: MessageEvent) => {
+        if (isBrowserWorkspaceMessage(event.data, workspaceId)) receive(event.data);
+      };
+    }
+    const fallbackHandler = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin || event.source !== openerRef.current) return;
+      if (isBrowserWorkspaceMessage(event.data, workspaceId)) receive(event.data);
+    };
+    window.addEventListener('message', fallbackHandler);
+    const readyTimer = window.setInterval(() => {
+      if (!initialized) send({ type: 'ready' });
+    }, 250);
+    send({ type: 'ready' });
+    const onBeforeUnload = () => send({ type: 'closed', state: stateRef.current ?? undefined });
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      window.clearInterval(readyTimer);
+      window.removeEventListener('message', fallbackHandler);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      channel?.close();
+    };
+  }, [applyState, send, workspaceId]);
+
+  React.useEffect(() => {
+    if (!browserTransport) return;
+    if (isElectronShell() && browserTransport !== 'host') {
+      setAuthVerified(true);
+      return;
+    }
+    const verifyConnection = async () => {
+      const opener = openerRef.current;
+      if (!isElectronShell() && (!opener || opener.closed)) {
+        setConnectionLost(true);
+        return;
+      }
+      try {
+        const response = await fetch('/auth/session', { credentials: 'include', cache: 'no-store' });
+        if (!response.ok) {
+          setConnectionLost(true);
+          return;
+        }
+        const identity = getAuthenticatedBrowserIdentity(await response.json().catch(() => null));
+        if (!identity) {
+          setConnectionLost(true);
+          return;
+        }
+        if (authIdentityRef.current === null) {
+          authIdentityRef.current = identity;
+          setAuthVerified(true);
+        } else if (authIdentityRef.current !== identity) {
+          setConnectionLost(true);
+        }
+      } catch {
+        setConnectionLost(true);
+      }
+    };
+    void verifyConnection();
+    const timer = window.setInterval(() => void verifyConnection(), 15_000);
+    return () => window.clearInterval(timer);
+  }, [browserTransport]);
+
+  React.useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (browserTransport === 'host') {
+        if (Date.now() - lastPongAtRef.current > 12_000) {
+          setConnectionLost(true);
+          return;
+        }
+      } else if (!isElectronShell()) {
+        const opener = openerRef.current;
+        if (!opener || opener.closed || Date.now() - lastPongAtRef.current > 12_000) {
+          setConnectionLost(true);
+          return;
+        }
+      }
+      send({ type: 'ping' });
+    }, 3_000);
+    return () => window.clearInterval(timer);
+  }, [browserTransport, send]);
+
+  const updateWebState = React.useCallback((tabId: string, webState: WebBrowserSessionState) => {
+    setState((current) => {
+      if (!current) return current;
+      const tabs = current.tabs.map((tab) => tab.id === tabId
+        ? { ...tab, url: webState.displayUrl, label: browserTabLabelForUrl(webState.displayUrl), webState }
+        : tab);
+      const next = { ...current, tabs };
+      stateRef.current = next;
+      send({ type: 'state', state: next });
+      return next;
+    });
+  }, [send]);
+
+  const mutateWebTabs = React.useCallback((action: 'add' | 'activate' | 'close' | 'reorder', tabId?: string, overTabId?: string) => {
+    if (useNativeBrowser) {
+      if (action === 'add') send({ type: 'add-tab' });
+      if (action === 'activate' && tabId) send({ type: 'activate-tab', tabId });
+      if (action === 'close' && tabId) send({ type: 'close-tab', tabId });
+      if (action === 'reorder' && tabId && overTabId) send({ type: 'reorder-tabs', tabId, overTabId });
+      return;
+    }
+    setState((current) => {
+      if (!current) return current;
+      let next = current;
+      if (action === 'add') {
+        const id = `browser-tab:${randomSurfaceId()}`;
+        const webState = createWebBrowserSessionState('about:blank');
+        next = {
+          ...current,
+          activeTabId: id,
+          tabs: [...current.tabs, { id, url: 'about:blank', label: 'New tab', webState }],
+        };
+      } else if (action === 'activate' && tabId && current.tabs.some((tab) => tab.id === tabId)) {
+        next = { ...current, activeTabId: tabId };
+      } else if (action === 'close' && tabId) {
+        const index = current.tabs.findIndex((tab) => tab.id === tabId);
+        if (index !== -1 && current.tabs.length === 1) {
+          const id = `browser-tab:${randomSurfaceId()}`;
+          next = {
+            ...current,
+            activeTabId: id,
+            tabs: [{ id, url: 'about:blank', label: 'New tab', webState: createWebBrowserSessionState('about:blank') }],
+          };
+        } else if (index !== -1) {
+          const tabs = current.tabs.filter((tab) => tab.id !== tabId);
+          next = {
+            ...current,
+            tabs,
+            activeTabId: current.activeTabId === tabId
+              ? (tabs[Math.min(index, tabs.length - 1)]?.id ?? tabs[0]!.id)
+              : current.activeTabId,
+          };
+        }
+      } else if (action === 'reorder' && tabId && overTabId) {
+        const from = current.tabs.findIndex((tab) => tab.id === tabId);
+        const to = current.tabs.findIndex((tab) => tab.id === overTabId);
+        if (from !== -1 && to !== -1) {
+          const tabs = [...current.tabs];
+          const [moved] = tabs.splice(from, 1);
+          if (moved) tabs.splice(to, 0, moved);
+          next = { ...current, tabs };
+        }
+      }
+      stateRef.current = next;
+      send({ type: 'state', state: next });
+      return next;
+    });
+  }, [send, useNativeBrowser]);
+
+  const handleActiveWebState = React.useCallback((webState: WebBrowserSessionState) => {
+    const activeTabId = stateRef.current?.activeTabId;
+    if (activeTabId) updateWebState(activeTabId, webState);
+  }, [updateWebState]);
+
+  React.useEffect(() => {
+    if (!useNativeBrowser || !state?.activeTabId) return;
+    void invokeDesktop<unknown>('desktop_browser_workspace_activate', {
+      workspaceId,
+      tabId: state.activeTabId,
+    }).then((value) => {
+      useBrowserSurfaceStore.getState().applySnapshot(value, state.activeTabId);
+    }).catch(() => {});
+  }, [state?.activeTabId, useNativeBrowser, workspaceId]);
+
+  if (connectionLost) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-3 bg-background p-6 text-center text-foreground">
+        <span className="typography-ui-header">The DevRyan session or opener is no longer available.</span>
+        <Button type="button" variant="secondary" onClick={() => window.close()}>Close Browser</Button>
+      </div>
+    );
+  }
+  if (!authVerified || !state) {
+    return <div className="flex h-screen items-center justify-center bg-background text-muted-foreground">Connecting browser workspace…</div>;
+  }
+
+  const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId) ?? state.tabs[0];
+  if (!activeTab) return null;
+  const activeSurface = Array.from(surfaces.values()).find((surface) => (
+    surface.kind === 'manual'
+    && surface.workspaceId === workspaceId
+    && surface.tabId === activeTab.id
+  )) ?? null;
+
+  return (
+    <div className="flex h-screen flex-col bg-background">
+      <BrowserTabsBar
+        tabs={state.tabs}
+        activeTabId={activeTab.id}
+        nativeTitlebar={isElectronShell()}
+        onAdd={() => mutateWebTabs('add')}
+        onSelect={(tabId) => mutateWebTabs('activate', tabId)}
+        onClose={(tabId) => mutateWebTabs('close', tabId)}
+        onReorder={(tabId, overTabId) => mutateWebTabs('reorder', tabId, overTabId)}
+      />
+      <div className="relative min-h-0 flex-1">
+        {useNativeBrowser ? (
+          activeSurface ? (
+            <ElectronBrowserWorkspaceToolbar
+              surface={activeSurface}
+              onDock={() => {
+                send({ type: 'dock', state: stateRef.current ?? undefined });
+                void invokeDesktop('desktop_browser_workspace_dock', { workspaceId });
+              }}
+            />
+          ) : <div className="h-[38px] border-b border-border/40 bg-[var(--surface-background)]" />
+        ) : (
+          <WebBrowserSurface
+            key={activeTab.id}
+            initialState={normalizeWebBrowserSessionState(activeTab.webState, activeTab.url)}
+            directory={state.directory}
+            active
+            popped
+            onState={handleActiveWebState}
+            onAttachConsole={(events, pageUrl) => send({ type: 'attach-console', events, pageUrl })}
+            onAttachAnnotation={(attachment) => send({ type: 'attach-annotation', attachment })}
+            onPopoutOrDock={() => {
+              send({ type: 'dock', state: stateRef.current ?? undefined });
+              window.close();
+            }}
+          />
+        )}
+      </div>
+    </div>
+  );
+};
+
+const ElectronBrowserWorkspaceToolbar: React.FC<{
+  surface: BrowserSurfaceSnapshot;
+  onDock: () => void;
+}> = ({ surface, onDock }) => {
+  const [urlInput, setUrlInput] = React.useState(formatBrowserAddress(surface.url));
+  React.useEffect(() => setUrlInput(formatBrowserAddress(surface.url)), [surface.url]);
+  const command = (action: string, url?: string) => {
+    void invokeDesktop<unknown>('desktop_browser_surface_command', {
+      surfaceId: surface.surfaceId,
+      action,
+      ...(url ? { url: normalizeBrowserUrl(url) } : {}),
+    }).then((value) => useBrowserSurfaceStore.getState().applySnapshot(value)).catch(() => {});
+  };
+  return (
+    <BrowserToolbar
+      snapshot={surface}
+      urlInput={urlInput}
+      currentUrl={surface.url}
+      popped
+      supportsDevTools
+      onUrlInput={setUrlInput}
+      onNavigate={(url) => command('navigate', url)}
+      onBack={() => command('back')}
+      onForward={() => command('forward')}
+      onReload={() => command('reload')}
+      onToggleDevTools={() => void invokeDesktop('desktop_browser_devtools_set_open', {
+        surfaceId: surface.surfaceId,
+        open: !surface.devToolsOpen,
+        bounds: { x: 0, y: Math.max(70, window.innerHeight - 300), width: window.innerWidth, height: 300 },
+      })}
+      onPopoutOrDock={onDock}
+    />
+  );
+};
+
 export const BrowserPopoutApp: React.FC = () => {
   useAppFontEffects();
   const surfaceId = React.useMemo(() => new URLSearchParams(window.location.search).get('surfaceId') ?? '', []);
+  const workspaceId = React.useMemo(() => new URLSearchParams(window.location.search).get('workspaceId') ?? '', []);
+  if (workspaceId) return <BrowserWorkspacePopout workspaceId={workspaceId} />;
   if (!surfaceId) {
     return <div className="flex h-screen items-center justify-center bg-background text-foreground">Missing browser surface.</div>;
   }
@@ -1249,6 +2199,7 @@ const WebBrowserPopout: React.FC<{ surfaceId: string }> = ({ surfaceId }) => {
   const [initialState, setInitialState] = React.useState<WebBrowserSessionState | null>(null);
   const [directory, setDirectory] = React.useState('');
   const [connectionLost, setConnectionLost] = React.useState(false);
+  const [authVerified, setAuthVerified] = React.useState(false);
   const openerRef = React.useRef(window.opener);
   const authIdentityRef = React.useRef<string | null>(null);
   const lastOpenerPongAtRef = React.useRef(Date.now());
@@ -1332,6 +2283,7 @@ const WebBrowserPopout: React.FC<{ surfaceId: string }> = ({ surfaceId }) => {
         }
         if (authIdentityRef.current === null) {
           authIdentityRef.current = identity;
+          setAuthVerified(true);
         } else if (authIdentityRef.current !== identity) {
           setConnectionLost(true);
         }
@@ -1364,7 +2316,7 @@ const WebBrowserPopout: React.FC<{ surfaceId: string }> = ({ surfaceId }) => {
       </div>
     );
   }
-  if (initialState === null) {
+  if (!authVerified || initialState === null) {
     return <div className="flex h-screen items-center justify-center bg-background text-muted-foreground">Connecting browser surface…</div>;
   }
   return (
@@ -1389,6 +2341,7 @@ const WebBrowserPopout: React.FC<{ surfaceId: string }> = ({ surfaceId }) => {
 
 export const DesktopBrowserPane: React.FC<DesktopBrowserPaneProps> = (props) => {
   if (isElectronShell()) return <ElectronBrowserPane {...props} />;
+  if (isStandaloneWebRuntime() && props.workspaceId) return <WebBrowserWorkspacePage {...props} />;
   if (isStandaloneWebRuntime()) return <WebBrowserPane {...props} />;
   return null;
 };

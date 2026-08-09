@@ -5,6 +5,7 @@ const normalizeProviderRetryMessage = (value) => (
 );
 
 export const PROVIDER_USAGE_LIMIT_FAILURE_KIND = 'provider_usage_limit';
+export const PROVIDER_PROMPT_REJECTED_FAILURE_KIND = 'provider_prompt_rejected';
 export const PROVIDER_TRANSPORT_FAILURE_KINDS = Object.freeze([
   'request_timeout',
   'response_header_timeout',
@@ -72,6 +73,18 @@ export const classifyProviderTransportFailure = (name, detail) => {
 export const classifyProviderRetryFailure = (value) => {
   const message = normalizeProviderRetryMessage(value);
   if (!message) return null;
+  if (
+    message.includes('invalid prompt')
+    && message.includes('prompt')
+    && message.includes('flagged')
+    && (
+      message.includes('usage policy')
+      || message.includes('policy violation')
+      || message.includes('violating policy')
+    )
+  ) {
+    return PROVIDER_PROMPT_REJECTED_FAILURE_KIND;
+  }
   return message.includes('out of usage')
     || message.includes('usage limit')
     || message.includes('hit your limit')
@@ -88,4 +101,8 @@ export const classifyProviderRetryFailure = (value) => {
 
 export const isDefiniteProviderUsageLimit = (value) => {
   return classifyProviderRetryFailure(value) === PROVIDER_USAGE_LIMIT_FAILURE_KIND;
+};
+
+export const isProviderPromptRejected = (value) => {
+  return classifyProviderRetryFailure(value) === PROVIDER_PROMPT_REJECTED_FAILURE_KIND;
 };

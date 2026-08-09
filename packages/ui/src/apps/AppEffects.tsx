@@ -1,4 +1,5 @@
 import React from 'react';
+import { ProjectPreviewGrantOwner } from '@/components/layout/localPreviewInstances';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { usePwaManifestSync } from '@/hooks/usePwaManifestSync';
 import { useQueuedMessageAutoSend } from '@/hooks/useQueuedMessageAutoSend';
@@ -192,6 +193,7 @@ export function SyncAppEffects({ embeddedBackgroundWorkEnabled }: {
       <QuotaRefreshOwner enabled={embeddedBackgroundWorkEnabled} />
       <ManagedOrchestrationOwner />
       <BrowserLeaseClaimOwner />
+      <ProjectPreviewGrantOwner />
     </>
   );
 }

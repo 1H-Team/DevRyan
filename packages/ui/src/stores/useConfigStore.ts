@@ -14,8 +14,10 @@ import { useSelectionStore } from "@/sync/selection-store";
 import { hasExplicitDraftModelIntent } from "@/sync/send-config";
 import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry";
 import { updateDesktopSettings } from "@/lib/persistence";
+import { parseAgentModelSelections, type AgentModelSelection } from "@/lib/agentModelSelection";
 import { useDirectoryStore } from "@/stores/useDirectoryStore";
 import { getAuthPrincipal } from "@/lib/authSession";
+import { parseModelIdentifier } from "@/lib/modelIdentifier";
 import { toast } from "@/components/ui";
 import { streamDebugEnabled } from "@/stores/utils/streamDebug";
 import { DEFAULT_WASM_STT_MODEL } from "@/lib/voice/wasmSttService";
@@ -56,6 +58,7 @@ interface OpenChamberDefaults {
     zenModel?: string;
     messageStreamTransport?: 'auto' | 'ws' | 'sse';
     responseStyleInstructionLoaded?: boolean;
+    agentModelSelections?: Record<string, AgentModelSelection>;
 }
 
 const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
@@ -91,6 +94,7 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
                         zenModel: zenModel.length > 0 ? zenModel : undefined,
                         messageStreamTransport,
                         responseStyleInstructionLoaded: true,
+                        agentModelSelections: parseAgentModelSelections(data?.agentModelSelections),
                     };
                 }
             } catch {
@@ -132,6 +136,7 @@ const fetchOpenChamberDefaults = async (): Promise<OpenChamberDefaults> => {
             zenModel: zenModel.length > 0 ? zenModel : undefined,
             messageStreamTransport,
             responseStyleInstructionLoaded: true,
+            agentModelSelections: parseAgentModelSelections(data?.agentModelSelections),
         };
     } catch {
         cacheResponseStyleInstructionFromSettings(null);
@@ -157,6 +162,13 @@ const fetchConfigAgentsSnapshot = async (directory: string | null): Promise<Agen
     } catch {
         return [];
     }
+};
+
+// Managed non-admin accounts resolve their own model defaults ahead of the
+// host-global agent overrides; admin accounts keep agent-config resolution.
+const isManagedNonAdminUser = (): boolean => {
+    const principal = getAuthPrincipal();
+    return principal.scope === 'managed' && principal.role !== 'admin';
 };
 
 const normalizeProviderId = (value: string) => value?.toLowerCase?.() ?? '';
@@ -583,7 +595,7 @@ interface DirectoryScopedConfig {
     currentVariant?: string | undefined;
     currentAgentName: string | undefined;
     selectedProviderId: string;
-    agentModelSelections: { [agentName: string]: { providerId: string; modelId: string } };
+    agentModelSelections: Record<string, AgentModelSelection>;
     defaultProviders: { [key: string]: string };
 }
 
@@ -599,7 +611,7 @@ interface ConfigStore {
     currentVariant: string | undefined;
     currentAgentName: string | undefined;
     selectedProviderId: string;
-    agentModelSelections: { [agentName: string]: { providerId: string; modelId: string } };
+    agentModelSelections: Record<string, AgentModelSelection>;
     defaultProviders: { [key: string]: string };
     isConnected: boolean;
     hasEverConnected: boolean;
@@ -614,8 +626,9 @@ interface ConfigStore {
     agentsLoadError: string | undefined;
     responseStyleInstructionLoaded: boolean;
     modelsMetadata: Map<string, ModelMetadata>;
-    // Persisted OpenChamber defaults. Model/variant fields are retained only for
-    // compatibility with older settings files; new sessions resolve from agents.
+    // Persisted OpenChamber defaults. For managed non-admin users the model and
+    // variant fields carry the account's own default and outrank the host agent
+    // override for the default agent; admins resolve from agents.
     settingsDefaultModel: string | undefined; // format: "provider/model"
     settingsDefaultVariant: string | undefined;
     settingsDefaultAgent: string | undefined;
@@ -714,8 +727,8 @@ interface ConfigStore {
     setSettingsZenModel: (model: string | undefined) => void;
     setSettingsMessageStreamTransport: (transport: 'auto' | 'ws' | 'sse') => void;
     getResolvedGitGenerationModel: () => { providerId: string; modelId: string } | null;
-    saveAgentModelSelection: (agentName: string, providerId: string, modelId: string) => void;
-    getAgentModelSelection: (agentName: string) => { providerId: string; modelId: string } | null;
+    saveAgentModelSelection: (agentName: string, providerId: string, modelId: string, variant?: string) => void;
+    getAgentModelSelection: (agentName: string) => AgentModelSelection | null;
     probeConnection: (options?: { timeoutMs?: number }) => Promise<boolean>;
     checkConnection: () => Promise<boolean>;
     initializeApp: () => Promise<void>;
@@ -1416,12 +1429,28 @@ export const useConfigStore = create<ConfigStore>()(
                     });
                 },
 
-                saveAgentModelSelection: (agentName: string, providerId: string, modelId: string) => {
+                saveAgentModelSelection: (agentName: string, providerId: string, modelId: string, variant?: string) => {
+                    const normalizedVariant = normalizeOptionalString(variant);
+                    let changed = false;
                     set((state) => {
+                        const existing = state.agentModelSelections[agentName];
+                        if (
+                            existing?.providerId === providerId
+                            && existing.modelId === modelId
+                            && existing.variant === normalizedVariant
+                        ) {
+                            return state;
+                        }
+
+                        changed = true;
                         const directoryKey = state.activeDirectoryKey;
                         const nextSelections = {
                             ...state.agentModelSelections,
-                            [agentName]: { providerId, modelId },
+                            [agentName]: {
+                                providerId,
+                                modelId,
+                                ...(normalizedVariant ? { variant: normalizedVariant } : {}),
+                            },
                         };
 
                         const baseSnapshot = getDirectoryScopedConfigBase(state, directoryKey);
@@ -1439,6 +1468,14 @@ export const useConfigStore = create<ConfigStore>()(
                             },
                         };
                     });
+
+                    if (changed && isManagedNonAdminUser()) {
+                        // Persist per-agent picks into the user's settings_overrides so
+                        // they survive re-login on any device.
+                        updateDesktopSettings({ agentModelSelections: get().agentModelSelections }).catch(() => {
+                            // Best effort - local persistence still applies
+                        });
+                    }
                 },
 
                 getAgentModelSelection: (agentName: string) => {
@@ -1552,6 +1589,12 @@ export const useConfigStore = create<ConfigStore>()(
                                     nextState.agents = safeAgents;
                                     nextState.agentsLoadStatus = "ready";
                                     nextState.agentsLoadError = undefined;
+                                }
+
+                                if (openChamberDefaults.agentModelSelections && isManagedNonAdminUser()) {
+                                    // Server-persisted per-agent picks are the durable copy
+                                    // for managed users; the local cache follows them.
+                                    nextState.agentModelSelections = openChamberDefaults.agentModelSelections;
                                 }
 
                                 return nextState;
@@ -1687,6 +1730,8 @@ export const useConfigStore = create<ConfigStore>()(
                     } = get();
                     const agentOptions = options?.agents?.length ? options.agents : agents;
                     const currentSessionId = useSessionUIStore.getState().currentSessionId;
+                    const selectedAgent = agentOptions.find((candidate) => candidate.name === agentName);
+                    const configuredAgentModel = getConfiguredAgentModel(selectedAgent);
                     let resolvedModel: { providerId: string; modelId: string; variant?: string } | null = null;
 
                     if (agentName && options?.preserveCurrentModel !== true) {
@@ -1706,9 +1751,60 @@ export const useConfigStore = create<ConfigStore>()(
                             }
                         }
 
+                        // A managed user's own defaults outrank the host-global agent
+                        // override: an explicit per-agent pick first, then the account's
+                        // default model when selecting the default agent. Providers may
+                        // still be loading on startup, so only validate against a
+                        // non-empty catalog (the agent-config path below never validates).
+                        if (!resolvedModel && isManagedNonAdminUser()) {
+                            const modelAvailable = (providerId: string, modelId: string) => (
+                                providers.length === 0 || hasProviderModel(providers, providerId, modelId)
+                            );
+                            const savedSelection = get().agentModelSelections[agentName];
+                            if (savedSelection && modelAvailable(savedSelection.providerId, savedSelection.modelId)) {
+                                const state = get();
+                                const settingsDefaultModel = parseModelIdentifier(state.settingsDefaultModel);
+                                const savedMatchesSettingsDefault = settingsDefaultModel?.providerId === savedSelection.providerId
+                                    && settingsDefaultModel.modelId === savedSelection.modelId;
+                                const savedMatchesAgentDefault = configuredAgentModel?.providerId === savedSelection.providerId
+                                    && configuredAgentModel.modelId === savedSelection.modelId;
+                                const variantCandidate = savedSelection.variant
+                                    ?? (savedMatchesSettingsDefault ? state.settingsDefaultVariant : undefined)
+                                    ?? (savedMatchesAgentDefault ? configuredAgentModel.variant : undefined);
+                                const savedProvider = providers.find((provider) => provider.id === savedSelection.providerId);
+                                resolvedModel = {
+                                    providerId: savedSelection.providerId,
+                                    modelId: savedSelection.modelId,
+                                    variant: resolveProviderModelVariant(
+                                        savedProvider,
+                                        savedSelection.modelId,
+                                        variantCandidate,
+                                    ),
+                                };
+                            }
+                            if (!resolvedModel) {
+                                const state = get();
+                                const selectable = resolveSelectableAgentOptions(agentOptions ?? [], []);
+                                const defaultAgentName = resolveDefaultAgentName(state.settingsDefaultAgent, selectable);
+                                if (agentName === defaultAgentName) {
+                                    const defaultModel = parseModelIdentifier(state.settingsDefaultModel);
+                                    if (defaultModel && modelAvailable(defaultModel.providerId, defaultModel.modelId)) {
+                                        const defaultProvider = providers.find((provider) => provider.id === defaultModel.providerId);
+                                        resolvedModel = {
+                                            providerId: defaultModel.providerId,
+                                            modelId: defaultModel.modelId,
+                                            variant: resolveProviderModelVariant(
+                                                defaultProvider,
+                                                defaultModel.modelId,
+                                                state.settingsDefaultVariant,
+                                            ),
+                                        };
+                                    }
+                                }
+                            }
+                        }
+
                         if (!resolvedModel) {
-                            const agent = agentOptions.find((candidate) => candidate.name === agentName);
-                            const configuredAgentModel = getConfiguredAgentModel(agent);
                             if (configuredAgentModel) {
                                 const { providerId: providerID, modelId: modelID, variant: agentVariant } = configuredAgentModel;
                                 const agentProvider = providers.find((provider) => provider.id === providerID);
@@ -1727,6 +1823,53 @@ export const useConfigStore = create<ConfigStore>()(
                             const fallback = resolveAvailableProviderModel(providers, currentProviderId, currentModelId);
                             if (fallback) resolvedModel = fallback;
                         }
+
+                        // A fresh draft always sends the agent's configured variant when
+                        // the resolved model IS the agent's configured model — the draft
+                        // send path never reads managed per-agent selections or account
+                        // defaults. Keep the display on that send truth instead of a
+                        // persisted variant the send will ignore.
+                        if (!currentSessionId && resolvedModel && configuredAgentModel?.variant
+                            && resolvedModel.providerId === configuredAgentModel.providerId
+                            && resolvedModel.modelId === configuredAgentModel.modelId) {
+                            const agentProvider = providers.find((provider) => provider.id === configuredAgentModel.providerId);
+                            resolvedModel = {
+                                ...resolvedModel,
+                                variant: resolveProviderModelVariant(
+                                    agentProvider,
+                                    configuredAgentModel.modelId,
+                                    configuredAgentModel.variant,
+                                ),
+                            };
+                        }
+                    }
+
+                    // preserveCurrentModel keeps the draft's model, but an unset variant is
+                    // not a selection to preserve — resolve it the way the draft send will
+                    // (explicit draft variant first, then the agent's configured variant),
+                    // so the composer displays what will actually be sent.
+                    let preservedModelVariant: string | undefined;
+                    if (agentName && options?.preserveCurrentModel === true && !currentSessionId
+                        && !get().currentVariant && currentProviderId && currentModelId) {
+                        const sessionState = useSessionUIStore.getState();
+                        const draftId = sessionState.currentDraftId;
+                        const draftSendConfig = draftId
+                            ? (sessionState.draftsById[draftId]?.sendConfig ?? sessionState.newSessionDraft?.sendConfig)
+                            : undefined;
+                        const explicitDraftModel = hasExplicitDraftModelIntent(draftSendConfig)
+                            && draftSendConfig?.providerID === currentProviderId
+                            && draftSendConfig?.modelID === currentModelId;
+                        const candidate = explicitDraftModel
+                            ? draftSendConfig?.variant
+                            : (configuredAgentModel?.providerId === currentProviderId
+                                && configuredAgentModel.modelId === currentModelId
+                                ? configuredAgentModel.variant
+                                : undefined);
+                        preservedModelVariant = resolveProviderModelVariant(
+                            providers.find((provider) => provider.id === currentProviderId),
+                            currentModelId,
+                            candidate,
+                        );
                     }
 
                     set((state) => {
@@ -1739,7 +1882,9 @@ export const useConfigStore = create<ConfigStore>()(
                                 currentVariant: resolvedModel.variant,
                                 selectedProviderId: resolvedModel.providerId,
                             }
-                            : {};
+                            : preservedModelVariant !== undefined
+                                ? { currentVariant: preservedModelVariant }
+                                : {};
                         const nextSnapshot: DirectoryScopedConfig = {
                             ...baseSnapshot,
                             currentAgentName: agentName,

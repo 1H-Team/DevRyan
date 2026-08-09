@@ -278,6 +278,85 @@ describe('managed scheduler parent actions', () => {
     expect(settled.status).toBe('completed');
   });
 
+  test('retries provider prompt rejection once in a fresh child with a rewritten prompt', async () => {
+    const failureReason = 'The model provider could not complete this turn: Invalid prompt: your prompt was flagged as potentially violating our usage policy. Please try again with a different prompt.';
+    const { original, scheduler, starts } = await createTerminalHarness({
+      failureReason,
+      submitOverrides: {
+        dispatchGroupId: 'msg_parent',
+        variant: 'xhigh',
+      },
+    });
+
+    for (const action of ['resume', 'recover_in_place', 'retry_in_place']) {
+      await expect(scheduler.acknowledgeResult(original.taskId, {
+        action,
+        idempotencyKey: `prompt-rejection-${action}`,
+        providerId: 'openai',
+        modelId: 'gpt-5.6',
+        variant: 'high',
+      })).rejects.toMatchObject({ code: 'provider_prompt_rejection_requires_fresh_retry' });
+    }
+    await expect(scheduler.acknowledgeResult(original.taskId, {
+      action: 'retry',
+      idempotencyKey: 'prompt-rejection-missing-override',
+    })).rejects.toMatchObject({ code: 'provider_prompt_rejection_requires_reframed_prompt' });
+    await expect(scheduler.acknowledgeResult(original.taskId, {
+      action: 'retry',
+      idempotencyKey: 'prompt-rejection-same-override',
+      prompt: `  ${original.prompt}  `,
+    })).rejects.toMatchObject({ code: 'provider_prompt_rejection_requires_reframed_prompt' });
+
+    const rewrittenPrompt = [
+      'Outcome: Complete the original task.',
+      'Starting points: inspect the existing workspace changes first.',
+      'Requirements: preserve all correct partial work and finish the requested behavior.',
+      'Verification: run the focused tests.',
+      'Return: summarize changes and verification.',
+    ].join('\n');
+    const recovery = await scheduler.acknowledgeResult(original.taskId, {
+      action: 'retry',
+      idempotencyKey: 'prompt-rejection-clean-retry',
+      prompt: rewrittenPrompt,
+    });
+    const finalRejected = await scheduler.waitForTask(recovery.followUpTask.taskId);
+
+    expect(recovery.followUpTask).toMatchObject({
+      attempt: 2,
+      priorTaskId: original.taskId,
+      executionKind: 'retry',
+      providerId: original.providerId,
+      modelId: original.modelId,
+      variant: 'xhigh',
+      prompt: rewrittenPrompt,
+    });
+    expect(recovery.followUpTask.childSessionId).not.toBe(original.childSessionId);
+    expect(starts).toHaveLength(2);
+    expect(finalRejected).toMatchObject({ status: 'failed', failureReason, attempt: 2 });
+    expect(scheduler.listReadyProviderRecoveryContinuations()).toHaveLength(1);
+
+    await expect(scheduler.acknowledgeResult(finalRejected.taskId, {
+      action: 'retry',
+      idempotencyKey: 'prompt-rejection-third-attempt',
+      prompt: `${rewrittenPrompt}\nDo not repeat the prior prompt.`,
+    })).rejects.toMatchObject({ code: 'managed_retry_limit_reached' });
+    await expect(scheduler.acknowledgeResult(finalRejected.taskId, {
+      action: 'retry_in_place',
+      idempotencyKey: 'prompt-rejection-final-in-place',
+      providerId: 'openai',
+      modelId: 'gpt-5.6',
+      variant: 'high',
+    })).rejects.toMatchObject({ code: 'provider_prompt_rejection_requires_fresh_retry' });
+
+    const disposition = await scheduler.acknowledgeResult(finalRejected.taskId, {
+      action: 'abandon',
+      idempotencyKey: 'prompt-rejection-final-abandon',
+    });
+    expect(disposition.envelope.action).toBe('abandon');
+    expect(disposition.followUpTask).toBeNull();
+    expect(scheduler.listReadyProviderRecoveryContinuations()).toEqual([]);
+  });
+
   test('derives one durable parent continuation after delayed provider recovery', async () => {
     const { original, scheduler } = await createTerminalHarness({
       failureReason: 'Anthropic rate limit reached for Claude Opus',

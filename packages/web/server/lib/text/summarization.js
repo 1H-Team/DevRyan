@@ -71,7 +71,30 @@ export function isPlanControlTitle(text) {
   return PLAN_CONTROL_TITLE_PATTERN.test(text.replace(/\s+/g, ''));
 }
 
-export async function generateZenText({ prompt, zenModel, timeoutMs = SUMMARIZE_TIMEOUT_MS }) {
+export class ZenApiError extends Error {
+  constructor(status, detail) {
+    super(`Zen API returned ${status}${detail ? `: ${detail}` : ''}`);
+    this.name = 'ZenApiError';
+    this.status = status;
+    this.detail = detail || '';
+  }
+}
+
+export const isUnavailableZenModelError = (error) => {
+  if (!(error instanceof ZenApiError) || ![400, 404].includes(error.status)) return false;
+  const detail = String(error.detail || '').toLowerCase();
+  return /(?:model[^\n]*(?:not found|unavailable|unsupported|unknown|invalid)|(?:not found|unavailable|unsupported|unknown)[^\n]*model)/.test(detail);
+};
+
+export async function generateZenText({
+  prompt,
+  zenModel,
+  timeoutMs = SUMMARIZE_TIMEOUT_MS,
+  chatMaxTokens,
+  chatReasoningEffort,
+  responsesMaxOutputTokens,
+  stop,
+}) {
   const normalizedPrompt = typeof prompt === 'string' ? prompt.trim() : '';
   if (!normalizedPrompt) {
     throw new Error('Generation prompt is required');
@@ -92,11 +115,21 @@ export async function generateZenText({ prompt, zenModel, timeoutMs = SUMMARIZE_
             input: [{ role: 'user', content: normalizedPrompt }],
             stream: false,
             reasoning: { effort: 'low' },
+            ...(Number.isFinite(responsesMaxOutputTokens) && responsesMaxOutputTokens > 0
+              ? { max_output_tokens: Math.trunc(responsesMaxOutputTokens) }
+              : {}),
           }
         : {
             model,
             messages: [{ role: 'user', content: normalizedPrompt }],
             stream: false,
+            ...(Number.isFinite(chatMaxTokens) && chatMaxTokens > 0
+              ? { max_tokens: Math.trunc(chatMaxTokens) }
+              : {}),
+            ...(typeof chatReasoningEffort === 'string' && chatReasoningEffort.trim()
+              ? { reasoning_effort: chatReasoningEffort.trim() }
+              : {}),
+            ...(Array.isArray(stop) && stop.length > 0 ? { stop } : {}),
           }),
       signal: controller.signal,
     });
@@ -108,7 +141,7 @@ export async function generateZenText({ prompt, zenModel, timeoutMs = SUMMARIZE_
         : typeof errorBody?.error === 'string'
           ? errorBody.error
           : response.statusText;
-      throw new Error(`Zen API returned ${response.status}${detail ? `: ${detail}` : ''}`);
+      throw new ZenApiError(response.status, detail);
     }
 
     const data = await response.json();

@@ -10,7 +10,7 @@ const principal: AuthPrincipal = {
   role: 'developer',
   scope: 'managed',
   policy: {
-    settingsPages: [], files: true, terminal: true, manageProjects: false, manageUsers: false,
+    settingsPages: [], files: true, terminal: true, browser: true, createWorktrees: false, createBranches: false, manageProjects: false, manageUsers: false,
     manageGlobalSettings: false, manageGit: true, push: false, github: false,
   },
   assignments: [{

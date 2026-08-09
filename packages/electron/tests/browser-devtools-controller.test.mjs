@@ -249,11 +249,18 @@ describe('desktop browser DevTools IPC boundary', () => {
     expect(commandBlock).not.toContain('webContentsId');
   });
 
-  test('does not grant the DevTools command to remote-origin renderers', () => {
-    const remoteCommands = mainSource.slice(
-      mainSource.indexOf('const COMMANDS_SAFE_FOR_REMOTE = new Set(['),
+  test('revalidates remote-origin DevTools through the native Browser authorization gate', () => {
+    const nativeCommands = mainSource.slice(
+      mainSource.indexOf('const NATIVE_BROWSER_COMMANDS = new Set(['),
       mainSource.indexOf("ipcMain.handle('openchamber:invoke'"),
     );
-    expect(remoteCommands).not.toContain('desktop_browser_devtools_set_open');
+    const invokeHandler = mainSource.slice(
+      mainSource.indexOf("ipcMain.handle('openchamber:invoke'"),
+      mainSource.indexOf("ipcMain.handle('openchamber:dialog:open'"),
+    );
+    expect(nativeCommands).toContain('desktop_browser_devtools_set_open');
+    expect(nativeCommands).toContain('const SENSITIVE_NATIVE_BROWSER_COMMANDS');
+    expect(invokeHandler).toContain('await authorizeNativeBrowserWindow(browserWindow, { force });');
+    expect(invokeHandler.indexOf('await authorizeNativeBrowserWindow')).toBeLessThan(invokeHandler.indexOf('return handleInvoke'));
   });
 });

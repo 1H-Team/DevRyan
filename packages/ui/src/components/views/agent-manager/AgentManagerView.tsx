@@ -9,12 +9,17 @@ import { useMultiRunStore } from '@/stores/useMultiRunStore';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import type { CreateMultiRunParams } from '@/types/multirun';
+import { hasAuthCapability, useAuthPrincipal } from '@/lib/authSession';
 
 interface AgentManagerViewProps {
   className?: string;
 }
 
 export const AgentManagerView: React.FC<AgentManagerViewProps> = ({ className }) => {
+  const principal = useAuthPrincipal();
+  const canCreateWorktrees = hasAuthCapability(principal, 'createWorktrees');
+  const canCreateBranches = hasAuthCapability(principal, 'createBranches');
+  const canCreateAgentGroup = canCreateWorktrees && canCreateBranches;
   const isVSCodeRuntime = Boolean(
     (typeof window !== 'undefined'
       ? (window as unknown as { __OPENCHAMBER_RUNTIME_APIS__?: { runtime?: { isVSCode?: boolean } } })
@@ -120,17 +125,21 @@ export const AgentManagerView: React.FC<AgentManagerViewProps> = ({ className })
           groups={groups}
           selectedGroupName={selectedGroupName}
           onGroupSelect={handleGroupSelect}
-          onNewAgent={handleNewAgent}
+          onNewAgent={canCreateAgentGroup ? handleNewAgent : undefined}
         />
       </div>
       <div className="flex-1 min-w-0">
         {selectedGroup ? (
           <AgentGroupDetail group={selectedGroup} />
-        ) : (
+        ) : canCreateAgentGroup ? (
           <AgentManagerEmptyState
             onCreateGroup={handleCreateGroup}
             isCreating={isCreatingMultiRun}
           />
+        ) : (
+          <div className="flex h-full items-center justify-center p-8 text-center typography-ui-label text-muted-foreground">
+            Branch creation is disabled by policy. Existing agent groups remain available.
+          </div>
         )}
       </div>
     </div>

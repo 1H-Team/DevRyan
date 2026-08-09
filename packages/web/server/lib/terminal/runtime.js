@@ -13,6 +13,7 @@ import {
   pruneRebindTimestamps,
   readTerminalInputWsControlFrame,
 } from './index.js';
+import { loadProjectPublicEnvironment } from './project-environment.js';
 
 export function createTerminalRuntime({
   app,
@@ -182,6 +183,30 @@ export function createTerminalRuntime({
     delete next.BASH_ENV;
     delete next.ENV;
     return next;
+  };
+  const resolveTerminalEnv = async (cwd, principal) => {
+    const baseEnvironment = sanitizeTerminalEnv(
+      { ...process.env, PATH: buildAugmentedPath() },
+      principal,
+    );
+    if (principal?.scope !== 'managed') return baseEnvironment;
+    if (typeof multiUserRuntime?.resolveManagedProjectForDirectory !== 'function') return baseEnvironment;
+
+    const project = await multiUserRuntime.resolveManagedProjectForDirectory(cwd);
+    if (!project?.id) return baseEnvironment;
+
+    const assignment = principal.assignments?.find((entry) => entry.projectId === project.id);
+    if (principal.role !== 'admin' && !assignment) return baseEnvironment;
+
+    const repositoryPath = assignment?.repositoryPath || project.repository_path;
+    if (typeof repositoryPath !== 'string' || !repositoryPath.trim()) return baseEnvironment;
+
+    const projectEnvironment = await loadProjectPublicEnvironment({
+      repositoryPath,
+      fileSystem: fs,
+      pathApi: path,
+    });
+    return { ...baseEnvironment, ...projectEnvironment };
   };
   const terminalTransportCapabilities = {
     input: {
@@ -552,8 +577,7 @@ export function createTerminalRuntime({
       const sessionId = Math.random().toString(36).substring(2, 15) +
                         Math.random().toString(36).substring(2, 15);
 
-      const envPath = buildAugmentedPath();
-      const resolvedEnv = sanitizeTerminalEnv({ ...process.env, PATH: envPath }, req.principal);
+      const resolvedEnv = await resolveTerminalEnv(cwd, req.principal);
 
       const pty = await getPtyProvider();
       const { ptyProcess, shell } = spawnTerminalPtyWithFallback(pty, {
@@ -779,8 +803,7 @@ export function createTerminalRuntime({
       const newSessionId = Math.random().toString(36).substring(2, 15) +
                           Math.random().toString(36).substring(2, 15);
 
-      const envPath = buildAugmentedPath();
-      const resolvedEnv = sanitizeTerminalEnv({ ...process.env, PATH: envPath }, req.principal);
+      const resolvedEnv = await resolveTerminalEnv(cwd, req.principal);
 
       const pty = await getPtyProvider();
       const { ptyProcess, shell } = spawnTerminalPtyWithFallback(pty, {

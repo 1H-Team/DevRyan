@@ -4,6 +4,7 @@ import {
   RiCheckLine,
   RiCheckboxCircleLine,
   RiAiGenerate2,
+  RiArrowLeftLine,
   RiArrowDownSLine,
   RiArrowRightSLine,
   RiCloseLine,
@@ -17,6 +18,7 @@ import {
   RiInformationLine,
   RiLoader4Line,
   RiRefreshLine,
+  RiSearchLine,
 } from '@remixicon/react';
 import { toast } from '@/components/ui';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -50,21 +52,58 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
-import { getGitHubPrStatusKey, useGitHubPrStatusStore } from '@/stores/useGitHubPrStatusStore';
+import { getGitHubPrStatusKey, PR_TERMINAL_DISCOVERY_INTERVAL_MS, useGitHubPrStatusStore } from '@/stores/useGitHubPrStatusStore';
 import type {
   GitHubPullRequest,
   GitHubCheckRun,
   GitHubAPI,
   GitHubPullRequestContextResult,
+  GitHubPullRequestSummary,
   GitHubPullRequestStatus,
+  GitHubPullRequestsListResult,
   GitRemote,
 } from '@/lib/api/types';
 import { useI18n } from '@/lib/i18n';
 import { resolveGitHubSourceRepo } from '@/lib/github/sourceRepo';
 import { useAuthPrincipal } from '@/lib/authSession';
+import { PrBodyHydrationTracker, type PrBodyHydrationRequest } from './prBodyHydrationTracker';
+import {
+  createNextPullRequestDraft,
+  formatPullRequestStatus,
+  isCurrentPullRequestSelection,
+  nextPullRequestPanelView,
+  shouldClearNextPullRequestDraft,
+  shouldShowPullRequestChecks,
+  shouldShowPullRequestDetails,
+} from './pullRequestCycle';
+import type { PullRequestPanelView } from './pullRequestCycle';
 
 type MergeMethod = 'merge' | 'squash' | 'rebase';
 type DetectedUpstream = { owner: string; repo: string; url: string; defaultBranch?: string; defaultBranchSha?: string | null; remoteName?: string | null };
+
+const pullRequestIdentity = (pullRequest: GitHubPullRequestSummary): string => {
+  const repo = pullRequest.sourceRepo;
+  return `${repo?.owner ?? ''}/${repo?.repo ?? ''}#${pullRequest.number}`;
+};
+
+const sortPullRequestsByUpdated = (pullRequests: GitHubPullRequestSummary[]): GitHubPullRequestSummary[] => (
+  [...pullRequests].sort((left, right) => {
+    const leftUpdatedAt = Date.parse(left.updatedAt || left.createdAt || '') || 0;
+    const rightUpdatedAt = Date.parse(right.updatedAt || right.createdAt || '') || 0;
+    return rightUpdatedAt - leftUpdatedAt;
+  })
+);
+
+const mergePullRequestPages = (
+  current: GitHubPullRequestSummary[],
+  incoming: GitHubPullRequestSummary[],
+): GitHubPullRequestSummary[] => {
+  const merged = new Map(current.map((pullRequest) => [pullRequestIdentity(pullRequest), pullRequest]));
+  for (const pullRequest of incoming) {
+    merged.set(pullRequestIdentity(pullRequest), pullRequest);
+  }
+  return sortPullRequestsByUpdated(Array.from(merged.values()));
+};
 
 const statusColor = (state: string | undefined | null): string => {
   switch (state) {
@@ -160,6 +199,7 @@ type PullRequestDraftSnapshot = {
   additionalContext: string;
   targetBaseBranch?: string;
   selectedRemoteName?: string;
+  nextPrFromTerminalNumber?: number;
 };
 
 const getTrackingRemoteName = (trackingBranch: string | null | undefined): string => {
@@ -361,6 +401,9 @@ export const PullRequestSection: React.FC<{
   const [body, setBody] = React.useState(() => initialSnapshot?.body ?? '');
   const [draft, setDraft] = React.useState(() => initialSnapshot?.draft ?? false);
   const [additionalContext, setAdditionalContext] = React.useState(() => initialSnapshot?.additionalContext ?? '');
+  const [nextPrFromTerminalNumber, setNextPrFromTerminalNumber] = React.useState<number | null>(
+    () => initialSnapshot?.nextPrFromTerminalNumber ?? null,
+  );
   const [targetBaseBranch, setTargetBaseBranch] = React.useState(() => {
     const fromSnapshot = typeof initialSnapshot?.targetBaseBranch === 'string'
       ? normalizeBranchRef(initialSnapshot.targetBaseBranch)
@@ -378,7 +421,8 @@ export const PullRequestSection: React.FC<{
   const [isMerging, setIsMerging] = React.useState(false);
   const [isMarkingReady, setIsMarkingReady] = React.useState(false);
   const [isEditingPr, setIsEditingPr] = React.useState(false);
-  const [hydratingPrBodyKey, setHydratingPrBodyKey] = React.useState<string | null>(null);
+  const [hydratingPrBodyRequest, setHydratingPrBodyRequest] = React.useState<PrBodyHydrationRequest | null>(null);
+  const [bodyHydrationRetryVersion, setBodyHydrationRetryVersion] = React.useState(0);
   const [editTitle, setEditTitle] = React.useState('');
   const [editBody, setEditBody] = React.useState('');
 
@@ -499,12 +543,49 @@ export const PullRequestSection: React.FC<{
   const [commentsDialogOpen, setCommentsDialogOpen] = React.useState(false);
   const [commentsDetails, setCommentsDetails] = React.useState<GitHubPullRequestContextResult | null>(null);
   const [isLoadingCommentsDetails, setIsLoadingCommentsDetails] = React.useState(false);
+  const [dialogPullRequestNumber, setDialogPullRequestNumber] = React.useState<number | null>(null);
+  const [panelView, setPanelView] = React.useState<PullRequestPanelView>('current');
+  const [pullRequestListResult, setPullRequestListResult] = React.useState<GitHubPullRequestsListResult | null>(null);
+  const [pullRequests, setPullRequests] = React.useState<GitHubPullRequestSummary[]>([]);
+  const [pullRequestQuery, setPullRequestQuery] = React.useState('');
+  const [pullRequestListPage, setPullRequestListPage] = React.useState(1);
+  const [pullRequestListHasMore, setPullRequestListHasMore] = React.useState(false);
+  const [isLoadingPullRequestList, setIsLoadingPullRequestList] = React.useState(false);
+  const [isLoadingMorePullRequests, setIsLoadingMorePullRequests] = React.useState(false);
+  const [pullRequestListError, setPullRequestListError] = React.useState<string | null>(null);
+  const [selectedPullRequest, setSelectedPullRequest] = React.useState<GitHubPullRequestSummary | null>(null);
+  const [selectedPullRequestContext, setSelectedPullRequestContext] = React.useState<GitHubPullRequestContextResult | null>(null);
+  const [isLoadingSelectedPullRequest, setIsLoadingSelectedPullRequest] = React.useState(false);
+  const [selectedPullRequestError, setSelectedPullRequestError] = React.useState<string | null>(null);
+  const pullRequestListScrollRef = React.useRef<HTMLDivElement | null>(null);
+  const pullRequestListScrollTopRef = React.useRef(0);
 
   const attemptedBodyHydrationRef = React.useRef<Set<string>>(new Set());
+  const bodyHydrationTrackerRef = React.useRef(new PrBodyHydrationTracker());
   const lastSyncedPrNumberRef = React.useRef<number | null>(null);
   const didUserOverrideRemoteRef = React.useRef(false);
   const autoRemoteProbeDoneRef = React.useRef<Set<string>>(new Set());
   const pendingActionRefreshTimersRef = React.useRef<number[]>([]);
+
+  React.useEffect(() => {
+    setPanelView((current) => nextPullRequestPanelView(current, 'show-current'));
+    setPullRequestListResult(null);
+    setPullRequests([]);
+    setPullRequestQuery('');
+    setPullRequestListPage(1);
+    setPullRequestListHasMore(false);
+    setPullRequestListError(null);
+    setSelectedPullRequest(null);
+    setSelectedPullRequestContext(null);
+    setSelectedPullRequestError(null);
+    pullRequestListScrollTopRef.current = 0;
+  }, [directory]);
+
+  React.useLayoutEffect(() => {
+    if (panelView === 'list' && pullRequestListScrollRef.current) {
+      pullRequestListScrollRef.current.scrollTop = pullRequestListScrollTopRef.current;
+    }
+  }, [panelView]);
 
   // Auto-enable detected upstream when there's no explicit upstream remote
   React.useEffect(() => {
@@ -522,29 +603,135 @@ export const PullRequestSection: React.FC<{
 
   const pr = status?.pr ?? null;
   const sourceRepoKey = sourceRepo ? `${sourceRepo.owner}/${sourceRepo.repo}` : '';
-  const currentPrBodyHydrationKey = pr ? `${directory}#${sourceRepoKey}#${pr.number}` : null;
+  const currentPrNumber = pr?.number ?? null;
+  const currentPrBody = pr?.body ?? null;
+  const currentPrBodyHydrationKey = currentPrNumber !== null ? `${directory}#${sourceRepoKey}#${currentPrNumber}` : null;
   const isHydratingCurrentPrBody = Boolean(
-    currentPrBodyHydrationKey && hydratingPrBodyKey === currentPrBodyHydrationKey,
+    currentPrBodyHydrationKey && hydratingPrBodyRequest?.key === currentPrBodyHydrationKey,
   );
 
+  const loadPullRequestList = React.useCallback(async (nextPage: number, replace: boolean) => {
+    if (!github?.prsList) {
+      setPullRequestListError(t('gitView.pr.list.runtimeUnavailable'));
+      return;
+    }
+
+    if (replace) {
+      setIsLoadingPullRequestList(true);
+      setPullRequestListError(null);
+    } else {
+      setIsLoadingMorePullRequests(true);
+    }
+
+    try {
+      const next = await github.prsList(directory, { page: nextPage, state: 'all' });
+      setPullRequestListResult(next);
+      setPullRequests((current) => (
+        replace
+          ? sortPullRequestsByUpdated(next.prs ?? [])
+          : mergePullRequestPages(current, next.prs ?? [])
+      ));
+      setPullRequestListPage(next.page ?? nextPage);
+      setPullRequestListHasMore(Boolean(next.hasMore));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (replace) {
+        setPullRequestListError(message);
+      } else {
+        toast.error(t('gitView.pr.list.loadMoreFailed'), { description: message });
+      }
+    } finally {
+      if (replace) {
+        setIsLoadingPullRequestList(false);
+      } else {
+        setIsLoadingMorePullRequests(false);
+      }
+    }
+  }, [directory, github, t]);
+
+  const openPullRequestList = React.useCallback(() => {
+    setPanelView((current) => nextPullRequestPanelView(current, 'show-list'));
+    if (!pullRequestListResult && !isLoadingPullRequestList) {
+      void loadPullRequestList(1, true);
+    }
+  }, [isLoadingPullRequestList, loadPullRequestList, pullRequestListResult]);
+
+  const loadSelectedPullRequest = React.useCallback(async (pullRequest: GitHubPullRequestSummary) => {
+    if (!github?.prContext) {
+      setSelectedPullRequestError(t('gitView.pr.list.runtimeUnavailable'));
+      return;
+    }
+
+    setIsLoadingSelectedPullRequest(true);
+    setSelectedPullRequestError(null);
+    setSelectedPullRequestContext(null);
+    try {
+      const context = await github.prContext(directory, pullRequest.number, {
+        includeDiff: false,
+        includeCheckDetails: false,
+        sourceRepo: pullRequest.sourceRepo,
+      });
+      if (context.connected === false) {
+        setSelectedPullRequestError(t('gitView.pr.list.notConnected'));
+        return;
+      }
+      if (!context.pr) {
+        setSelectedPullRequestError(t('gitView.pr.list.notFound'));
+        return;
+      }
+      setSelectedPullRequestContext(context);
+    } catch (error) {
+      setSelectedPullRequestError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsLoadingSelectedPullRequest(false);
+    }
+  }, [directory, github, t]);
+
+  const selectPullRequest = React.useCallback((pullRequest: GitHubPullRequestSummary) => {
+    if (isCurrentPullRequestSelection(pr?.number ?? null, sourceRepo, pullRequest)) {
+      setPanelView((current) => nextPullRequestPanelView(current, 'show-current'));
+      return;
+    }
+
+    setSelectedPullRequest(pullRequest);
+    setPanelView((current) => nextPullRequestPanelView(current, 'show-selected'));
+    void loadSelectedPullRequest(pullRequest);
+  }, [loadSelectedPullRequest, pr?.number, sourceRepo]);
+
+  const filteredPullRequests = React.useMemo(() => {
+    const query = pullRequestQuery.trim().toLowerCase();
+    if (!query) {
+      return pullRequests;
+    }
+    const normalizedNumber = query.replace(/^#/, '');
+    return pullRequests.filter((pullRequest) => (
+      String(pullRequest.number) === normalizedNumber
+      || pullRequest.title.toLowerCase().includes(query)
+    ));
+  }, [pullRequestQuery, pullRequests]);
+
   React.useEffect(() => {
-    if (!github?.prContext || !pr) {
+    if (!github?.prContext || currentPrNumber === null || !currentPrBodyHydrationKey) {
       return;
     }
 
-    if (typeof pr.body === 'string' && pr.body.length > 0) {
+    if (typeof currentPrBody === 'string' && currentPrBody.trim().length > 0) {
       return;
     }
 
-    const hydrationKey = `${directory}#${sourceRepoKey}#${pr.number}`;
-    if (attemptedBodyHydrationRef.current.has(hydrationKey)) {
+    const hydrationKey = currentPrBodyHydrationKey;
+    const attemptedBodyHydrations = attemptedBodyHydrationRef.current;
+    const bodyHydrationTracker = bodyHydrationTrackerRef.current;
+    if (attemptedBodyHydrations.has(hydrationKey)) {
       return;
     }
-    attemptedBodyHydrationRef.current.add(hydrationKey);
-    setHydratingPrBodyKey(hydrationKey);
+    attemptedBodyHydrations.add(hydrationKey);
+    const request = bodyHydrationTracker.begin(hydrationKey);
+    setHydratingPrBodyRequest(request);
 
     let cancelled = false;
-    void github.prContext(directory, pr.number, {
+    let failed = false;
+    void github.prContext(directory, currentPrNumber, {
       includeDiff: false,
       includeCheckDetails: false,
       sourceRepo,
@@ -558,7 +745,7 @@ export const PullRequestSection: React.FC<{
           return;
         }
         updatePrStatus(prStatusKey, (prev) => {
-          if (!prev?.pr || prev.pr.number !== pr.number) {
+          if (!prev?.pr || prev.pr.number !== currentPrNumber) {
             return prev;
           }
           return {
@@ -570,18 +757,27 @@ export const PullRequestSection: React.FC<{
           };
         });
       })
-      .catch(() => {})
+      .catch(() => {
+        failed = true;
+        attemptedBodyHydrations.delete(hydrationKey);
+      })
       .finally(() => {
-        if (cancelled) {
-          return;
+        if (failed || cancelled) {
+          attemptedBodyHydrations.delete(hydrationKey);
         }
-        setHydratingPrBodyKey((prev) => (prev === hydrationKey ? null : prev));
+        if (bodyHydrationTracker.settle(request)) {
+          setHydratingPrBodyRequest((current) => (current?.id === request.id ? null : current));
+        }
       });
 
     return () => {
       cancelled = true;
+      attemptedBodyHydrations.delete(hydrationKey);
+      if (bodyHydrationTracker.cancel(request)) {
+        setHydratingPrBodyRequest((current) => (current?.id === request.id ? null : current));
+      }
     };
-  }, [directory, github, pr, prStatusKey, sourceRepo, sourceRepoKey, updatePrStatus]);
+  }, [bodyHydrationRetryVersion, currentPrBody, currentPrBodyHydrationKey, currentPrNumber, directory, github, prStatusKey, sourceRepo, sourceRepoKey, updatePrStatus]);
 
   React.useEffect(() => {
     if (!pr) {
@@ -607,21 +803,24 @@ export const PullRequestSection: React.FC<{
     lastSyncedPrNumberRef.current = pr.number;
   }, [isEditingPr, pr]);
 
-  const openChecksDialog = React.useCallback(async () => {
+  const openChecksDialogFor = React.useCallback(async (
+    targetPullRequest: GitHubPullRequest,
+    targetRepo: { owner: string; repo: string } | null,
+  ) => {
     if (!github?.prContext) {
       toast.error(t('gitView.pr.toast.githubApiUnavailable'));
       return;
     }
-    if (!pr) return;
 
     setChecksDialogOpen(true);
+    setDialogPullRequestNumber(targetPullRequest.number);
     setExpandedCheckStepKeys(new Set());
     setIsLoadingCheckDetails(true);
     try {
-      const ctx = await github.prContext(directory, pr.number, {
+      const ctx = await github.prContext(directory, targetPullRequest.number, {
         includeDiff: false,
         includeCheckDetails: true,
-        sourceRepo,
+        sourceRepo: targetRepo,
       });
       setCheckDetails(ctx);
     } catch (e) {
@@ -630,22 +829,30 @@ export const PullRequestSection: React.FC<{
     } finally {
       setIsLoadingCheckDetails(false);
     }
-  }, [directory, github, pr, sourceRepo, t]);
+  }, [directory, github, t]);
 
-  const openCommentsDialog = React.useCallback(async () => {
+  const openChecksDialog = React.useCallback(async () => {
+    if (!pr) return;
+    await openChecksDialogFor(pr, sourceRepo);
+  }, [openChecksDialogFor, pr, sourceRepo]);
+
+  const openCommentsDialogFor = React.useCallback(async (
+    targetPullRequest: GitHubPullRequest,
+    targetRepo: { owner: string; repo: string } | null,
+  ) => {
     if (!github?.prContext) {
       toast.error(t('gitView.pr.toast.githubApiUnavailable'));
       return;
     }
-    if (!pr) return;
 
     setCommentsDialogOpen(true);
+    setDialogPullRequestNumber(targetPullRequest.number);
     setIsLoadingCommentsDetails(true);
     try {
-      const ctx = await github.prContext(directory, pr.number, {
+      const ctx = await github.prContext(directory, targetPullRequest.number, {
         includeDiff: false,
         includeCheckDetails: false,
-        sourceRepo,
+        sourceRepo: targetRepo,
       });
       setCommentsDetails(ctx);
     } catch (e) {
@@ -654,7 +861,12 @@ export const PullRequestSection: React.FC<{
     } finally {
       setIsLoadingCommentsDetails(false);
     }
-  }, [directory, github, pr, sourceRepo, t]);
+  }, [directory, github, t]);
+
+  const openCommentsDialog = React.useCallback(async () => {
+    if (!pr) return;
+    await openCommentsDialogFor(pr, sourceRepo);
+  }, [openCommentsDialogFor, pr, sourceRepo]);
 
   const formatTimestamp = React.useCallback((value?: string) => {
     if (!value) return '';
@@ -1023,8 +1235,12 @@ export const PullRequestSection: React.FC<{
   }, [commentsDetails, dispatchSyntheticPrompt, pr, resolveChatDispatchTarget, setActiveMainTab]);
 
   const refresh = React.useCallback(async (options?: { force?: boolean; onlyExistingPr?: boolean; silent?: boolean; markInitialResolved?: boolean }) => {
+    if (options?.force && currentPrBodyHydrationKey && !currentPrBody?.trim()) {
+      attemptedBodyHydrationRef.current.delete(currentPrBodyHydrationKey);
+      setBodyHydrationRetryVersion((version) => version + 1);
+    }
     await refreshPrStatus(prStatusKey, options);
-  }, [prStatusKey, refreshPrStatus]);
+  }, [currentPrBody, currentPrBodyHydrationKey, prStatusKey, refreshPrStatus]);
 
   const scheduleActionRefresh = React.useCallback(() => {
     pendingActionRefreshTimersRef.current.forEach((timerId) => {
@@ -1122,6 +1338,8 @@ export const PullRequestSection: React.FC<{
     setTitle(snapshot?.title ?? branchToTitle(branch));
     setBody(snapshot?.body ?? '');
     setDraft(snapshot?.draft ?? false);
+    setAdditionalContext(snapshot?.additionalContext ?? '');
+    setNextPrFromTerminalNumber(snapshot?.nextPrFromTerminalNumber ?? null);
     setTargetBaseBranch(snapshot?.targetBaseBranch ? normalizeBranchRef(snapshot.targetBaseBranch) : normalizeBranchRef(baseBranch));
     const nextRemote = pickInitialPrRemote(remotes, {
       selectedRemoteName: snapshot?.selectedRemoteName,
@@ -1156,17 +1374,16 @@ export const PullRequestSection: React.FC<{
   React.useEffect(() => {
     const isTerminal = status?.pr?.state === 'closed' || status?.pr?.state === 'merged';
     const lastRefreshAt = statusEntry?.lastRefreshAt ?? 0;
-    const isStale = Date.now() - lastRefreshAt > 60_000;
-    const shouldRefresh = !isTerminal && isStale;
+    const staleAfter = isTerminal ? PR_TERMINAL_DISCOVERY_INTERVAL_MS : 60_000;
 
     const onFocus = () => {
-      if (shouldRefresh) {
+      if (Date.now() - lastRefreshAt > staleAfter) {
         void refresh({ force: true, silent: true });
       }
     };
     const onVisibility = () => {
       if (document.visibilityState === 'visible') {
-        if (shouldRefresh) {
+        if (Date.now() - lastRefreshAt > staleAfter) {
           void refresh({ force: true, silent: true });
         }
       }
@@ -1179,6 +1396,16 @@ export const PullRequestSection: React.FC<{
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [refresh, status?.pr?.state, statusEntry?.lastRefreshAt]);
+
+  React.useEffect(() => {
+    if (shouldClearNextPullRequestDraft(nextPrFromTerminalNumber, pr?.state)) {
+      setNextPrFromTerminalNumber(null);
+      setTitle(branchToTitle(branch));
+      setBody('');
+      setDraft(false);
+      setAdditionalContext('');
+    }
+  }, [branch, nextPrFromTerminalNumber, pr?.state]);
 
   React.useEffect(() => {
     if (githubAuthChecked && githubAuthStatus?.connected === false) {
@@ -1197,8 +1424,9 @@ export const PullRequestSection: React.FC<{
       additionalContext,
       targetBaseBranch,
       selectedRemoteName: selectedRemote?.name,
+      ...(nextPrFromTerminalNumber !== null ? { nextPrFromTerminalNumber } : {}),
     });
-  }, [snapshotKey, title, body, draft, additionalContext, targetBaseBranch, selectedRemote?.name, directory, branch]);
+  }, [snapshotKey, title, body, draft, additionalContext, targetBaseBranch, selectedRemote?.name, nextPrFromTerminalNumber, directory, branch]);
 
   React.useEffect(() => {
     const pendingActionRefreshTimers = pendingActionRefreshTimersRef.current;
@@ -1248,6 +1476,19 @@ export const PullRequestSection: React.FC<{
     }
   }, [additionalContext, branch, detectedUpstream?.defaultBranchSha, directory, isGenerating, onGeneratedDescription, targetBaseBranch, t, useDetectedUpstream]);
 
+  const startNextPr = React.useCallback(() => {
+    if (!pr || (pr.state !== 'closed' && pr.state !== 'merged')) {
+      return;
+    }
+    const nextDraft = createNextPullRequestDraft(branch, pr.number, branchToTitle);
+    setNextPrFromTerminalNumber(nextDraft.terminalPrNumber);
+    setTitle(nextDraft.title);
+    setBody(nextDraft.body);
+    setDraft(nextDraft.draft);
+    setAdditionalContext(nextDraft.additionalContext);
+    setIsEditingPr(false);
+  }, [branch, pr]);
+
   const createPr = React.useCallback(async () => {
     if (!github?.prCreate) {
       toast.error(t('gitView.pr.toast.githubApiUnavailable'));
@@ -1292,6 +1533,11 @@ export const PullRequestSection: React.FC<{
             }),
       });
       toast.success(t('gitView.pr.toast.prCreated'));
+      setNextPrFromTerminalNumber(null);
+      setTitle(branchToTitle(branch));
+      setBody('');
+      setDraft(false);
+      setAdditionalContext('');
       updatePrStatus(prStatusKey, (prev) => (prev ? { ...prev, pr } : prev));
       await refresh({ force: true });
       scheduleActionRefresh();
@@ -1392,9 +1638,18 @@ export const PullRequestSection: React.FC<{
     }
   }, [directory, editBody, editTitle, github, prStatusKey, refresh, scheduleActionRefresh, updatePrStatus, t]);
 
-  if (!canShow) {
+  if (!canShow && panelView === 'current') {
     return (
       <section className="border-0 bg-transparent rounded-none">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mt-2 h-7 w-fit gap-1 px-1 text-muted-foreground"
+          onClick={openPullRequestList}
+        >
+          <RiArrowLeftLine className="size-4" />
+          {t('gitView.pr.list.back')}
+        </Button>
         <div className="space-y-1 pt-3">
           <div className="typography-ui-header font-semibold text-foreground">{t('gitView.pullRequest.title')}</div>
           <div className="typography-micro text-muted-foreground">
@@ -1408,10 +1663,16 @@ export const PullRequestSection: React.FC<{
   const originRepoUrl = status?.repo?.url || null;
   const repoUrl = (useDetectedUpstream && detectedUpstream?.url) ? detectedUpstream.url : originRepoUrl;
   const checks = status?.checks ?? null;
+  const showChecks = shouldShowPullRequestChecks(checks);
   const canMerge = Boolean(status?.canMerge);
   const isConnected = Boolean(status?.connected);
   const shouldShowConnectionNotice = githubAuthChecked && status?.connected === false;
   const prVisualState = getPrVisualState(status);
+  const isTerminalPr = pr?.state === 'closed' || pr?.state === 'merged';
+  const showPullRequestDetails = shouldShowPullRequestDetails(pr?.state);
+  const isStartingNextPr = Boolean(
+    isTerminalPr && pr && nextPrFromTerminalNumber === pr.number,
+  );
   const prColorVar = prVisualState ? `var(--pr-${prVisualState})` : 'var(--status-info)';
   const PrStateIcon = prVisualState === 'draft'
     ? RiGitPrDraftLine
@@ -1422,17 +1683,50 @@ export const PullRequestSection: React.FC<{
         : RiGitPullRequestLine;
   const prStatusText = pr
     ? [
-        `${pr.state}${pr.draft ? ' (draft)' : ''}`,
+        `${formatPullRequestStatus(pr.state)}${pr.draft ? ` (${formatPullRequestStatus('draft')})` : ''}`,
         pr.mergeable === false ? t('gitView.pr.notMergeable') : null,
         pr.state === 'open' && typeof pr.mergeableState === 'string' && pr.mergeableState && pr.mergeableState !== 'unknown'
-          ? pr.mergeableState
+          ? formatPullRequestStatus(pr.mergeableState)
           : null,
       ].filter(Boolean).join(' · ')
     : '';
   const checksText = checks
-    ? checks.total > 0
-      ? `${checks.success}/${checks.total} ${t('gitView.pr.checks.label')}`
-      : `${checks.state} ${t('gitView.pr.checks.label')}`
+    ? `${checks.success}/${checks.total} ${t('gitView.pr.checks.label')}`
+    : '';
+  const displayedSelectedPullRequest = selectedPullRequestContext?.pr ?? selectedPullRequest;
+  const selectedChecks = selectedPullRequestContext?.checks ?? null;
+  const showSelectedChecks = shouldShowPullRequestChecks(selectedChecks);
+  const selectedRepo = selectedPullRequest?.sourceRepo
+    ? { owner: selectedPullRequest.sourceRepo.owner, repo: selectedPullRequest.sourceRepo.repo }
+    : selectedPullRequestContext?.repo
+      ? { owner: selectedPullRequestContext.repo.owner, repo: selectedPullRequestContext.repo.repo }
+      : null;
+  const selectedVisualState = displayedSelectedPullRequest
+    ? getPrVisualState({
+        connected: true,
+        pr: displayedSelectedPullRequest,
+        checks: selectedChecks,
+      })
+    : null;
+  const selectedColorVar = selectedVisualState ? `var(--pr-${selectedVisualState})` : 'var(--status-info)';
+  const SelectedPrStateIcon = selectedVisualState === 'draft'
+    ? RiGitPrDraftLine
+    : selectedVisualState === 'merged'
+      ? RiGitMergeLine
+      : selectedVisualState === 'closed'
+        ? RiGitClosePullRequestLine
+        : RiGitPullRequestLine;
+  const selectedStatusText = displayedSelectedPullRequest
+    ? [
+        `${formatPullRequestStatus(displayedSelectedPullRequest.state)}${displayedSelectedPullRequest.draft ? ` (${formatPullRequestStatus('draft')})` : ''}`,
+        displayedSelectedPullRequest.mergeable === false ? t('gitView.pr.notMergeable') : null,
+        displayedSelectedPullRequest.state === 'open'
+          && typeof displayedSelectedPullRequest.mergeableState === 'string'
+          && displayedSelectedPullRequest.mergeableState
+          && displayedSelectedPullRequest.mergeableState !== 'unknown'
+          ? formatPullRequestStatus(displayedSelectedPullRequest.mergeableState)
+          : null,
+      ].filter(Boolean).join(' · ')
     : '';
   const containerClassName = 'border-0 bg-transparent rounded-none';
   const headerClassName = 'px-0 py-3 border-b border-border/40 flex flex-col gap-1';
@@ -1440,6 +1734,251 @@ export const PullRequestSection: React.FC<{
 
   return (
     <section className={containerClassName}>
+      {panelView === 'list' ? (
+        <div className="flex flex-col gap-3 py-3">
+          <div className="flex items-center justify-between gap-2 border-b border-border/40 pb-3">
+            <div className="min-w-0">
+              <h3 className="typography-ui-header font-semibold text-foreground">{t('gitView.pr.list.title')}</h3>
+              <p className="typography-micro text-muted-foreground">{t('gitView.pr.list.description')}</p>
+            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 px-0"
+                  onClick={() => void loadPullRequestList(1, true)}
+                  disabled={isLoadingPullRequestList}
+                  aria-label={t('gitView.pr.list.refreshAria')}
+                >
+                  {isLoadingPullRequestList
+                    ? <RiLoader4Line className="size-4 animate-spin" />
+                    : <RiRefreshLine className="size-4" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent><p>{t('gitView.pr.list.refresh')}</p></TooltipContent>
+            </Tooltip>
+          </div>
+
+          <div className="relative">
+            <RiSearchLine className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={pullRequestQuery}
+              onChange={(event) => setPullRequestQuery(event.target.value)}
+              placeholder={t('gitView.pr.list.searchPlaceholder')}
+              className="h-8 pl-8"
+            />
+          </div>
+
+          <div
+            ref={pullRequestListScrollRef}
+            className="max-h-[calc(100vh-15rem)] min-h-0 space-y-1 overflow-y-auto overscroll-contain pr-1"
+            onScroll={(event) => {
+              pullRequestListScrollTopRef.current = event.currentTarget.scrollTop;
+            }}
+          >
+            {pullRequestListResult?.connected === false ? (
+              <div className="space-y-2 py-8 text-center">
+                <p className="typography-small text-muted-foreground">{t('gitView.pr.list.notConnected')}</p>
+                {canManageGitHubAccounts ? (
+                  <Button variant="outline" size="sm" onClick={openGitHubSettings}>
+                    {t('gitView.pr.actions.openSettings')}
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+
+            {pullRequestListError ? (
+              <div className="space-y-2 py-8 text-center">
+                <p className="typography-small break-words text-muted-foreground">{pullRequestListError}</p>
+                <Button variant="outline" size="sm" onClick={() => void loadPullRequestList(1, true)}>
+                  {t('gitView.pr.list.retry')}
+                </Button>
+              </div>
+            ) : null}
+
+            {isLoadingPullRequestList && pullRequests.length === 0 ? (
+              <div className="flex items-center justify-center gap-2 py-8 typography-small text-muted-foreground">
+                <RiLoader4Line className="size-4 animate-spin" />
+                {t('gitView.pr.list.loading')}
+              </div>
+            ) : null}
+
+            {!isLoadingPullRequestList
+              && !pullRequestListError
+              && pullRequestListResult?.connected !== false
+              && filteredPullRequests.length === 0 ? (
+                <div className="py-8 text-center typography-small text-muted-foreground">
+                  {pullRequestQuery.trim() ? t('gitView.pr.list.noMatches') : t('gitView.pr.list.empty')}
+                </div>
+              ) : null}
+
+            {filteredPullRequests.map((pullRequest) => {
+              const stateLabel = pullRequest.draft ? t('gitView.pr.list.draft') : formatPullRequestStatus(pullRequest.state);
+              const stateColor = pullRequest.state === 'merged'
+                ? 'var(--pr-merged)'
+                : pullRequest.state === 'closed'
+                  ? 'var(--pr-closed)'
+                  : pullRequest.draft
+                    ? 'var(--pr-draft)'
+                    : 'var(--pr-open)';
+              return (
+                <button
+                  type="button"
+                  key={pullRequestIdentity(pullRequest)}
+                  className="group flex w-full items-start gap-2 rounded-md px-2 py-2 text-left transition-colors hover:bg-interactive-hover/40"
+                  onClick={() => selectPullRequest(pullRequest)}
+                >
+                  <span className="mt-1 size-2 shrink-0 rounded-full" style={{ backgroundColor: stateColor }} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate typography-ui-label font-medium text-foreground">
+                      <span className="mr-1 text-muted-foreground">#{pullRequest.number}</span>
+                      {pullRequest.title}
+                    </span>
+                    <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 typography-meta text-muted-foreground">
+                      <span style={{ color: stateColor }}>{stateLabel}</span>
+                      <span className="truncate">{pullRequest.head} → {pullRequest.base}</span>
+                      {pullRequest.sourceRepo?.source === 'upstream' ? (
+                        <span className="truncate">{pullRequest.sourceRepo.owner}/{pullRequest.sourceRepo.repo}</span>
+                      ) : null}
+                    </span>
+                  </span>
+                  <RiArrowRightSLine className="mt-1 size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                </button>
+              );
+            })}
+
+            {pullRequestListHasMore && pullRequestListResult?.connected !== false ? (
+              <div className="flex justify-center py-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void loadPullRequestList(pullRequestListPage + 1, false)}
+                  disabled={isLoadingMorePullRequests}
+                >
+                  {isLoadingMorePullRequests ? <RiLoader4Line className="size-4 animate-spin" /> : null}
+                  {isLoadingMorePullRequests ? t('gitView.pr.list.loadingMore') : t('gitView.pr.list.loadMore')}
+                </Button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : panelView === 'selected' ? (
+        <div className="flex flex-col gap-3 py-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-fit gap-1 px-1 text-muted-foreground"
+            onClick={() => setPanelView((current) => nextPullRequestPanelView(current, 'show-list'))}
+          >
+            <RiArrowLeftLine className="size-4" />
+            {t('gitView.pr.list.back')}
+          </Button>
+
+          {isLoadingSelectedPullRequest ? (
+            <div className="flex items-center justify-center gap-2 py-8 typography-small text-muted-foreground">
+              <RiLoader4Line className="size-4 animate-spin" />
+              {t('gitView.pr.list.loadingDetails')}
+            </div>
+          ) : selectedPullRequestError ? (
+            <div className="space-y-2 py-8 text-center">
+              <p className="typography-small break-words text-muted-foreground">{selectedPullRequestError}</p>
+              {selectedPullRequest ? (
+                <Button variant="outline" size="sm" onClick={() => void loadSelectedPullRequest(selectedPullRequest)}>
+                  {t('gitView.pr.list.retry')}
+                </Button>
+              ) : null}
+            </div>
+          ) : displayedSelectedPullRequest ? (
+            <>
+              <div className="flex flex-col gap-1 border-b border-border/40 pb-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <SelectedPrStateIcon className="size-4 shrink-0" style={{ color: selectedColorVar }} />
+                    <h3 className="typography-ui-header font-semibold text-foreground">{t('gitView.pullRequest.title')}</h3>
+                    <span className="typography-meta text-muted-foreground">#{displayedSelectedPullRequest.number}</span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 px-0"
+                    onClick={() => void openExternal(displayedSelectedPullRequest.url)}
+                    aria-label={t('gitView.pr.actions.openOnGitHubAria')}
+                  >
+                    <RiExternalLinkLine className="size-4" />
+                  </Button>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 typography-micro text-muted-foreground">
+                  <span style={{ color: selectedColorVar }}>{selectedStatusText}</span>
+                  {showSelectedChecks && selectedChecks ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className={`h-2 w-2 rounded-full ${statusColor(selectedChecks.state)}`} />
+                      {selectedChecks.success}/{selectedChecks.total} {t('gitView.pr.checks.label')}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {showSelectedChecks && selectedChecks ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 w-7 px-0"
+                        onClick={() => void openChecksDialogFor(displayedSelectedPullRequest, selectedRepo)}
+                        aria-label={t('gitView.pr.actions.openChecksAria')}
+                      >
+                        <RiInformationLine className="size-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent><p>{t('gitView.pr.actions.openChecks')}</p></TooltipContent>
+                  </Tooltip>
+                ) : null}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 w-7 px-0"
+                      onClick={() => void openCommentsDialogFor(displayedSelectedPullRequest, selectedRepo)}
+                      aria-label={t('gitView.pr.actions.openCommentsAria')}
+                    >
+                      <RiChat4Line className="size-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent><p>{t('gitView.pr.actions.openComments')}</p></TooltipContent>
+                </Tooltip>
+              </div>
+
+              <div className="min-w-0">
+                <div className="typography-markdown text-xl font-semibold leading-snug text-foreground break-words">
+                  {displayedSelectedPullRequest.title}
+                </div>
+                {displayedSelectedPullRequest.body?.trim() ? (
+                  <SimpleMarkdownRenderer
+                    content={displayedSelectedPullRequest.body}
+                    className="mt-1 typography-markdown-body text-muted-foreground break-words"
+                  />
+                ) : (
+                  <div className="mt-1 typography-micro text-muted-foreground">{t('gitView.pr.noDescription')}</div>
+                )}
+              </div>
+            </>
+          ) : null}
+        </div>
+      ) : (
+        <>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-2 h-7 w-fit gap-1 px-1 text-muted-foreground"
+            onClick={openPullRequestList}
+          >
+            <RiArrowLeftLine className="size-4" />
+            {t('gitView.pr.list.back')}
+          </Button>
       <div className={headerClassName}>
         <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
@@ -1487,7 +2026,7 @@ export const PullRequestSection: React.FC<{
         {pr ? (
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 typography-micro text-muted-foreground">
             <span style={{ color: prColorVar }}>{prStatusText}</span>
-            {checks ? (
+            {showChecks && checks ? (
               <span className="inline-flex items-center gap-1.5">
                 <span className={`h-2 w-2 rounded-full ${statusColor(checks.state)}`} />
                 {checksText}
@@ -1536,54 +2075,56 @@ export const PullRequestSection: React.FC<{
                 <RiLoader4Line className="size-4 animate-spin" />
                 {t('gitView.pr.checkingStatus')}
               </div>
-            ) : pr ? (
+            ) : pr && !isStartingNextPr ? (
               <div className="flex flex-col gap-2">
                 <div className="flex flex-col gap-3">
-                  <div className="min-w-0">
-                    {isEditingPr ? (
-                      <div className="space-y-2">
-                        <Input
-                          value={editTitle}
-                          onChange={(e) => setEditTitle(e.target.value)}
-                          placeholder={t('gitView.pr.placeholder.title')}
-                          autoCorrect={hasTouchInput ? "on" : "off"}
-                          autoCapitalize={hasTouchInput ? "sentences" : "off"}
-                          spellCheck={hasTouchInput}
-                        />
-                        <Textarea
-                          value={editBody}
-                          onChange={(e) => setEditBody(e.target.value)}
-                          className="min-h-[120px] bg-background/80"
-                          placeholder={t('gitView.pr.placeholder.description')}
-                          autoCorrect={hasTouchInput ? "on" : "off"}
-                          autoCapitalize={hasTouchInput ? "sentences" : "off"}
-                          spellCheck={hasTouchInput}
-                        />
-                      </div>
-                    ) : (
-                      <>
-                        <div className="typography-markdown text-xl font-semibold text-foreground break-words leading-snug">{pr.title}</div>
-                        {pr.body?.trim() ? (
-                          <SimpleMarkdownRenderer
-                            content={pr.body}
-                            className="typography-markdown-body text-muted-foreground break-words mt-1"
+                  {showPullRequestDetails ? (
+                    <div className="min-w-0">
+                      {isEditingPr ? (
+                        <div className="space-y-2">
+                          <Input
+                            value={editTitle}
+                            onChange={(e) => setEditTitle(e.target.value)}
+                            placeholder={t('gitView.pr.placeholder.title')}
+                            autoCorrect={hasTouchInput ? "on" : "off"}
+                            autoCapitalize={hasTouchInput ? "sentences" : "off"}
+                            spellCheck={hasTouchInput}
                           />
-                        ) : (
-                          <div className="typography-micro text-muted-foreground whitespace-pre-wrap break-words mt-1">
-                            {isHydratingCurrentPrBody ? t('gitView.pr.loadingDescription') : t('gitView.pr.noDescription')}
-                          </div>
-                        )}
-                      </>
-                    )}
-                    {canMerge && pr.draft ? (
-                      <div className="typography-micro text-muted-foreground">
-                        {t('gitView.pr.draftMustBeReady')}
-                      </div>
-                    ) : null}
-                    {!canMerge ? (
-                      <div className="typography-micro text-muted-foreground">{t('gitView.pr.noMergePermission')}</div>
-                    ) : null}
-                  </div>
+                          <Textarea
+                            value={editBody}
+                            onChange={(e) => setEditBody(e.target.value)}
+                            className="min-h-[120px] bg-background/80"
+                            placeholder={t('gitView.pr.placeholder.description')}
+                            autoCorrect={hasTouchInput ? "on" : "off"}
+                            autoCapitalize={hasTouchInput ? "sentences" : "off"}
+                            spellCheck={hasTouchInput}
+                          />
+                        </div>
+                      ) : (
+                        <>
+                          <div className="typography-markdown text-xl font-semibold text-foreground break-words leading-snug">{pr.title}</div>
+                          {pr.body?.trim() ? (
+                            <SimpleMarkdownRenderer
+                              content={pr.body}
+                              className="typography-markdown-body text-muted-foreground break-words mt-1"
+                            />
+                          ) : (
+                            <div className="typography-micro text-muted-foreground whitespace-pre-wrap break-words mt-1">
+                              {isHydratingCurrentPrBody ? t('gitView.pr.loadingDescription') : t('gitView.pr.noDescription')}
+                            </div>
+                          )}
+                        </>
+                      )}
+                      {canMerge && pr.draft ? (
+                        <div className="typography-micro text-muted-foreground">
+                          {t('gitView.pr.draftMustBeReady')}
+                        </div>
+                      ) : null}
+                      {!canMerge ? (
+                        <div className="typography-micro text-muted-foreground">{t('gitView.pr.noMergePermission')}</div>
+                      ) : null}
+                    </div>
+                  ) : null}
 
                   <div className="order-first w-full flex flex-wrap items-center gap-2">
                     <div className="flex flex-wrap items-center gap-2">
@@ -1642,7 +2183,7 @@ export const PullRequestSection: React.FC<{
                         )
                       ) : null}
 
-                      {checks ? (
+                      {showChecks && checks ? (
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
@@ -1727,6 +2268,12 @@ export const PullRequestSection: React.FC<{
                     </div>
 
                     <div className="ml-auto flex items-center gap-2">
+                      {isTerminalPr ? (
+                        <Button size="sm" className="h-7" onClick={startNextPr}>
+                          <RiGitPullRequestLine className="size-4" />
+                          {t('gitView.pr.actions.startNextPr')}
+                        </Button>
+                      ) : null}
                       {canMerge ? (
                         <>
                           <Select
@@ -1765,20 +2312,32 @@ export const PullRequestSection: React.FC<{
               </div>
             ) : (
               <div className="flex flex-col gap-3">
-                <div className="flex items-center justify-between gap-2">
+                {isStartingNextPr ? (
+                  <div className="flex items-center">
+                    <Button variant="ghost" size="sm" onClick={() => setNextPrFromTerminalNumber(null)}>
+                      {t('gitView.pr.actions.cancelNextPr')}
+                    </Button>
+                  </div>
+                ) : null}
+
+                <div className="flex flex-col gap-2 @[440px]/git-view:flex-row @[440px]/git-view:items-center @[440px]/git-view:justify-between">
                   <div className="min-w-0">
-                    <div className="typography-ui-label text-foreground">{t('gitView.pr.createTitle')}</div>
+                    <div className="typography-ui-label text-foreground">
+                      {isStartingNextPr ? t('gitView.pr.createNextTitle') : t('gitView.pr.createTitle')}
+                    </div>
                     <div className="typography-micro text-muted-foreground truncate">
                       {branch} <span className="opacity-60">(local)</span> → {targetBaseBranch} <span className="opacity-60">({useDetectedUpstream && detectedUpstream ? 'upstream' : 'remote'})</span>
                     </div>
                   </div>
-                  {repoUrl ? (
-                    <Button variant="outline" size="sm" asChild>
-                      <a href={repoUrl} target="_blank" rel="noopener noreferrer">
-                        <RiExternalLinkLine className="size-4" />
-                        {t('gitView.pr.actions.repo')}
-                      </a>
-                    </Button>
+                  {!isStartingNextPr && repoUrl ? (
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      <Button variant="outline" size="sm" asChild>
+                        <a href={repoUrl} target="_blank" rel="noopener noreferrer">
+                          <RiExternalLinkLine className="size-4" />
+                          {t('gitView.pr.actions.repo')}
+                        </a>
+                      </Button>
+                    </div>
                   ) : null}
                 </div>
 
@@ -1955,6 +2514,8 @@ export const PullRequestSection: React.FC<{
               </div>
             )}
       </div>
+        </>
+      )}
 
       <Dialog open={checksDialogOpen} onOpenChange={setChecksDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[70vh] flex flex-col min-h-0">
@@ -1964,7 +2525,9 @@ export const PullRequestSection: React.FC<{
               {t('gitView.pr.checkDetails.title')}
             </DialogTitle>
             <DialogDescription>
-              {pr ? t('gitView.pr.numberLabel', { number: pr.number }) : t('gitView.pullRequest.title')}
+              {dialogPullRequestNumber !== null
+                ? t('gitView.pr.numberLabel', { number: dialogPullRequestNumber })
+                : t('gitView.pullRequest.title')}
             </DialogDescription>
           </DialogHeader>
 
@@ -2003,8 +2566,8 @@ export const PullRequestSection: React.FC<{
             <DialogTitle className="flex items-center gap-2">
               <RiGitPullRequestLine className="h-5 w-5" />
               {t('gitView.pr.comments.title')}
-              {pr ? (
-                <span className="typography-meta text-muted-foreground">{t('gitView.pr.numberLabel', { number: pr.number })}</span>
+              {dialogPullRequestNumber !== null ? (
+                <span className="typography-meta text-muted-foreground">{t('gitView.pr.numberLabel', { number: dialogPullRequestNumber })}</span>
               ) : null}
             </DialogTitle>
           </DialogHeader>

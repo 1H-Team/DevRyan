@@ -28,18 +28,6 @@ export const COMMIT_PLAN_CONTEXT_LIMITS: CommitContextLimits = {
   largeFileLineThreshold: 500,
 };
 
-// Sparkles ("draft") only produces one commit subject from the overall change,
-// so we don't need long per-file diffs or many recent commits. A tight budget
-// keeps both the diff round trips and the prompt itself small.
-export const COMMIT_DRAFT_CONTEXT_LIMITS: CommitContextLimits = {
-  recentCommitCount: 6,
-  diffConcurrency: 6,
-  maxDiffCharsPerFile: 1_500,
-  maxTotalDiffChars: 16_000,
-  diffContextLines: 1,
-  largeFileLineThreshold: 200,
-};
-
 export type CommitPlanFileContext = GitCommitMessageFileContext;
 export type CommitPlanContext = GitCommitMessageContext;
 

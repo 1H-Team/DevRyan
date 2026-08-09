@@ -52,7 +52,66 @@ export function buildUserPolicyResetRow(userId) {
     settings_permission_overrides: {},
     capabilities: {},
     settings_overrides: {},
+    feature_overrides: {},
   };
+}
+
+export const MCP_FEATURE_OVERRIDE_STATES = Object.freeze(['on', 'off']);
+
+export function normalizeFeatureOverrides(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const normalized = {};
+  const agents = value.agents;
+  if (agents && typeof agents === 'object' && !Array.isArray(agents) && agents.hidePermissionsUi === true) {
+    normalized.agents = { hidePermissionsUi: true };
+  }
+  const mcp = value.mcp;
+  if (mcp && typeof mcp === 'object' && !Array.isArray(mcp)) {
+    const servers = {};
+    for (const [rawName, state] of Object.entries(mcp)) {
+      const name = String(rawName || '').trim();
+      if (!name || !MCP_FEATURE_OVERRIDE_STATES.includes(state)) continue;
+      servers[name] = state;
+    }
+    if (Object.keys(servers).length > 0) normalized.mcp = servers;
+  }
+  return normalized;
+}
+
+export function validateFeatureOverridesPayload(value) {
+  if (value === undefined || value === null) return { valid: true, featureOverrides: {} };
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    return { valid: false, error: 'Feature overrides must be an object' };
+  }
+  for (const key of Object.keys(value)) {
+    if (!['agents', 'mcp'].includes(key)) {
+      return { valid: false, error: `Unknown feature override section: ${key}` };
+    }
+  }
+  const agents = value.agents;
+  if (agents !== undefined) {
+    if (!agents || typeof agents !== 'object' || Array.isArray(agents)) {
+      return { valid: false, error: 'Agent feature overrides must be an object' };
+    }
+    for (const key of Object.keys(agents)) {
+      if (key !== 'hidePermissionsUi' || typeof agents[key] !== 'boolean') {
+        return { valid: false, error: `Invalid agent feature override: ${key}` };
+      }
+    }
+  }
+  const mcp = value.mcp;
+  if (mcp !== undefined) {
+    if (!mcp || typeof mcp !== 'object' || Array.isArray(mcp)) {
+      return { valid: false, error: 'MCP feature overrides must be an object' };
+    }
+    for (const [name, state] of Object.entries(mcp)) {
+      if (!String(name || '').trim()) return { valid: false, error: 'MCP server name is required' };
+      if (state !== 'inherit' && !MCP_FEATURE_OVERRIDE_STATES.includes(state)) {
+        return { valid: false, error: `Invalid MCP override for ${name}: expected inherit, on, or off` };
+      }
+    }
+  }
+  return { valid: true, featureOverrides: normalizeFeatureOverrides(value) };
 }
 
 const ADMIN_SETTINGS_PERMISSIONS = createRoleSettingsPermissions({ readPages: ['*'], editPages: ['*'] });
@@ -62,7 +121,7 @@ const DEVELOPER_SETTINGS_PAGES = ['appearance', 'chat', 'sessions', 'shortcuts',
 export const ROLE_POLICY_DEFAULTS = Object.freeze({
   admin: Object.freeze({
     settingsPages: ['*'], settingsPermissions: ADMIN_SETTINGS_PERMISSIONS,
-    files: true, terminal: true, manageProjects: true,
+    files: true, terminal: true, browser: true, createWorktrees: true, createBranches: true, manageProjects: true,
     manageUsers: true, manageGlobalSettings: true, manageGit: true, push: true, github: true,
   }),
   senior_developer: Object.freeze({
@@ -71,7 +130,7 @@ export const ROLE_POLICY_DEFAULTS = Object.freeze({
       readPages: SENIOR_SETTINGS_PAGES,
       editPages: [...USER_EDITABLE_SETTINGS_PAGES],
     }),
-    files: false, terminal: true, manageProjects: false, manageUsers: false,
+    files: false, terminal: true, browser: true, createWorktrees: true, createBranches: true, manageProjects: false, manageUsers: false,
     manageGlobalSettings: false, manageGit: true, push: true, github: true,
   }),
   developer: Object.freeze({
@@ -80,7 +139,7 @@ export const ROLE_POLICY_DEFAULTS = Object.freeze({
       readPages: DEVELOPER_SETTINGS_PAGES,
       editPages: DEVELOPER_SETTINGS_PAGES,
     }),
-    files: false, terminal: false, manageProjects: false, manageUsers: false,
+    files: false, terminal: false, browser: true, createWorktrees: false, createBranches: false, manageProjects: false, manageUsers: false,
     manageGlobalSettings: false, manageGit: true, push: true, github: true,
   }),
 });
@@ -104,7 +163,7 @@ const SETTINGS_FIELDS_BY_PAGE = Object.freeze({
     'autoDeleteEnabled', 'autoDeleteAfterDays', 'sessionRetentionAction', 'defaultModel',
     'defaultVariant', 'defaultAgent', 'defaultPlanMode', 'autoCreateWorktree', 'zenModel',
     'messageStreamTransport', 'messageLimit', 'favoriteModels', 'favoriteModelsUpdatedAt',
-    'hiddenModels', 'hiddenModelsUpdatedAt',
+    'hiddenModels', 'hiddenModelsUpdatedAt', 'agentModelSelections',
   ],
   shortcuts: ['keyboardShortcuts', 'appShortcuts'],
   notifications: [
@@ -118,6 +177,7 @@ const SETTINGS_FIELDS_BY_PAGE = Object.freeze({
   ],
   'skills.installed': ['hiddenSkills'],
   'skills.catalog': ['skillCatalogs'],
+  mcp: ['mcpServerEnabledOverrides'],
   git: ['gitmojiEnabled', 'gitChangesViewMode', 'gitProviderId', 'gitModelId', 'defaultGitIdentityId', 'openInAppId'],
   projects: ['pinnedDirectories'],
   usage: [
@@ -142,7 +202,7 @@ const SETTINGS_FIELDS_BY_PAGE = Object.freeze({
 });
 
 const CAPABILITY_KEYS = Object.freeze([
-  'files', 'terminal', 'manageProjects', 'manageUsers', 'manageGlobalSettings',
+  'files', 'terminal', 'browser', 'createWorktrees', 'createBranches', 'manageProjects', 'manageUsers', 'manageGlobalSettings',
   'manageGit', 'push', 'github',
 ]);
 
@@ -229,12 +289,16 @@ export function normalizeRolePolicy(role, row = null, userPolicy = null) {
       ...base,
       settingsPages: ['*'],
       settingsPermissions: ADMIN_SETTINGS_PERMISSIONS,
+      featureOverrides: {},
     };
   }
   const fromRow = row ? {
     settingsPermissions: roleSettingsPermissions,
     files: row.can_use_files,
     terminal: row.can_use_terminal,
+    browser: typeof row.can_use_browser === 'boolean' ? row.can_use_browser : base.browser,
+    createWorktrees: base.createWorktrees,
+    createBranches: base.createBranches,
     manageProjects: row.can_manage_projects,
     manageUsers: row.can_manage_users,
     manageGlobalSettings: row.can_manage_global_settings,
@@ -260,6 +324,7 @@ export function normalizeRolePolicy(role, row = null, userPolicy = null) {
   for (const key of CAPABILITY_KEYS) {
     if (typeof overrides[key] === 'boolean') next[key] = overrides[key];
   }
+  next.featureOverrides = normalizeFeatureOverrides(userPolicy?.feature_overrides);
   return next;
 }
 
@@ -283,6 +348,12 @@ export function canEditSettingsPage(principal, rawSlug) {
 }
 
 export const canOpenSettingsPage = canReadSettingsPage;
+
+export function canUseBrowser(principal) {
+  return principal?.scope === 'local-admin'
+    || principal?.role === 'admin'
+    || principal?.policy?.browser === true;
+}
 
 const settingsFieldsForPermission = (principal, permission) => {
   if (principal?.scope === 'local-admin') return null;
@@ -386,6 +457,10 @@ export function buildEffectiveSettings({ principal, hostSettings, userOverrides 
     settingsPages: principal?.policy?.settingsPages || [],
     settingsPermissions: principal?.policy?.settingsPermissions || {},
     capabilities: Object.fromEntries(CAPABILITY_KEYS.map((key) => [key, principal?.policy?.[key] === true])),
+    features: {
+      agents: { hidePermissionsUi: principal?.policy?.featureOverrides?.agents?.hidePermissionsUi === true },
+      mcp: { ...(principal?.policy?.featureOverrides?.mcp || {}) },
+    },
   };
   return effective;
 }

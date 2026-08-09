@@ -2,6 +2,7 @@ import React from 'react';
 import type { Session } from '@opencode-ai/sdk/v2';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { useProjectsStore } from '@/stores/useProjectsStore';
+import { canPersistHostProjectSettings, getAuthPrincipal } from '@/lib/authSession';
 
 type SafeStorageLike = {
   getItem: (key: string) => string | null;
@@ -59,6 +60,9 @@ export const useSidebarPersistence = (args: Args) => {
     pendingCollapsedProjects.current = null;
     persistCollapsedProjectsTimer.current = null;
     if (!collapsed) {
+      return;
+    }
+    if (!canPersistHostProjectSettings(getAuthPrincipal())) {
       return;
     }
 

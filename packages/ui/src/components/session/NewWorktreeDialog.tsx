@@ -254,6 +254,9 @@ export function NewWorktreeDialog({
 }: NewWorktreeDialogProps) {
   const { t } = useI18n();
   const principal = useAuthPrincipal();
+  const canRemoveWorktrees = principal.scope !== 'managed' || principal.role === 'admin';
+  const canCreateWorktrees = principal.scope !== 'managed' || principal.policy.createWorktrees;
+  const canCreateBranches = principal.scope !== 'managed' || principal.policy.createBranches;
   const { github, git } = useRuntimeAPIs();
   const isMobile = useUIStore((state) => state.isMobile);
   const githubAuthStatus = useGitHubAuthStore((state) => state.status);
@@ -269,7 +272,9 @@ export function NewWorktreeDialog({
   }, [activeProject, projectDirectory]);
 
   // Mode state
-  const [mode, setMode] = React.useState<Mode>('new-branch');
+  const [mode, setMode] = React.useState<Mode>(() => (
+    canCreateBranches ? 'new-branch' : 'existing-branch'
+  ));
   
   // Separate state for each mode (persisted when switching tabs)
   const [newBranchState, setNewBranchState] = React.useState<NewBranchState>({
@@ -469,6 +474,7 @@ export function NewWorktreeDialog({
   const pendingResumeRef = React.useRef<(() => Promise<void>) | null>(null);
   const pendingIdempotencyKeyRef = React.useRef<string | null>(null);
   const pendingRequestSignatureRef = React.useRef<string | null>(null);
+  const createSubmissionInFlightRef = React.useRef(false);
   const [validationAbortController, setValidationAbortController] = React.useState<AbortController | null>(null);
 
   React.useEffect(() => {
@@ -783,7 +789,7 @@ export function NewWorktreeDialog({
     if (initializedOpenCycleRef.current) return;
     initializedOpenCycleRef.current = true;
 
-    setMode('new-branch');
+    setMode(canCreateBranches ? 'new-branch' : 'existing-branch');
     setExistingBranchState({
       selectedBranch: '',
       worktreeName: '',
@@ -813,7 +819,7 @@ export function NewWorktreeDialog({
       linkedPr: null,
       includePrDiff: false,
     });
-  }, [open, generateUniqueSlug]);
+  }, [canCreateBranches, open, generateUniqueSlug]);
 
   // Sync worktree name with branch name for new-branch mode
   React.useEffect(() => {
@@ -931,6 +937,9 @@ export function NewWorktreeDialog({
 
   // Handle worktree creation
   const handleCreate = async () => {
+    if (createSubmissionInFlightRef.current) {
+      return;
+    }
     if (!projectRef || !projectDirectory) {
       toast.error(t('session.newWorktree.error.noActiveProject'));
       return;
@@ -953,6 +962,8 @@ export function NewWorktreeDialog({
       toast.error(t('session.newWorktree.error.worktreeDirectoryRequired'));
       return;
     }
+
+    createSubmissionInFlightRef.current = true;
 
     if (validationAbortController) {
       validationAbortController.abort();
@@ -1112,12 +1123,14 @@ export function NewWorktreeDialog({
         pendingRequestSignatureRef.current = null;
       }
     } finally {
+      createSubmissionInFlightRef.current = false;
       setIsCreating(false);
     }
   };
 
   // Handle mode change
   const handleModeChange = (newMode: Mode) => {
+    if (newMode === 'new-branch' && !canCreateBranches) return;
     setMode(newMode);
     setValidation(prev => ({ ...prev, touched: false, branchError: null, worktreeError: null }));
   };
@@ -1173,7 +1186,7 @@ export function NewWorktreeDialog({
     ? !!existingBranchState.selectedBranch && !!existingBranchState.worktreeName && !validation.branchError && !validation.worktreeError
     : !!normalizeBranchName(newBranchState.branchName) && !!newBranchState.worktreeName && !validation.branchError && !validation.worktreeError;
 
-  const canCreate = isFormValid && !isCreating;
+  const canCreate = canCreateWorktrees && isFormValid && !isCreating && (mode !== 'new-branch' || canCreateBranches);
   const bootstrapFailed = bootstrapProgress?.status === 'failed'
     || bootstrapProgress?.status === 'needs_attention';
   const worktreeApi = git.worktree;
@@ -1278,14 +1291,14 @@ export function NewWorktreeDialog({
             >
               Retry Setup
             </Button>
-            <Button
+            {canRemoveWorktrees ? <Button
               variant="outline"
               size="sm"
               onClick={() => void handleRemoveFailedWorktree()}
               disabled={isCreating}
             >
               Remove
-            </Button>
+            </Button> : null}
           </>
         )}
         <Button
@@ -1323,7 +1336,7 @@ export function NewWorktreeDialog({
           <div className="w-full mb-4">
             <SortableTabsStrip
               items={[
-                { id: 'new-branch', label: t('session.newWorktree.mode.newBranch'), icon: <RiGitBranchLine className="h-3.5 w-3.5" /> },
+                ...(canCreateBranches ? [{ id: 'new-branch', label: t('session.newWorktree.mode.newBranch'), icon: <RiGitBranchLine className="h-3.5 w-3.5" /> }] : []),
                 { id: 'existing-branch', label: t('session.newWorktree.mode.existingBranch'), icon: <RiGitRepositoryLine className="h-3.5 w-3.5" /> },
               ]}
               activeId={mode}
@@ -1816,7 +1829,7 @@ export function NewWorktreeDialog({
                 <div className="w-[280px] shrink-0">
                   <SortableTabsStrip
                     items={[
-                      { id: 'new-branch', label: t('session.newWorktree.mode.newBranch'), icon: <RiGitBranchLine className="h-3.5 w-3.5" /> },
+                      ...(canCreateBranches ? [{ id: 'new-branch', label: t('session.newWorktree.mode.newBranch'), icon: <RiGitBranchLine className="h-3.5 w-3.5" /> }] : []),
                       { id: 'existing-branch', label: t('session.newWorktree.mode.existingBranch'), icon: <RiGitRepositoryLine className="h-3.5 w-3.5" /> },
                     ]}
                     activeId={mode}

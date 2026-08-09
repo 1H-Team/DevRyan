@@ -579,6 +579,69 @@ describe('VS Code managed orchestration owner', () => {
     await runtime.shutdown();
   });
 
+  it('enforces fresh rewritten-prompt recovery with web-runtime parity', async () => {
+    const failureReason = 'Invalid prompt: your prompt was flagged as potentially violating our usage policy.';
+    const runtime = createVsCodeManagedOrchestrationRuntime({
+      storageDirectory: '/unused',
+      persistence: createPersistence(),
+      executor: {
+        async start() { return { status: 'failed' as const, failureReason, resumable: true }; },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' as const }; },
+        async readRecoverableResult() { return {}; },
+      },
+      createTaskId: () => 'dvr_task_prompt_rejected',
+      createLeaseToken: () => 'dvr_lease_prompt_rejected',
+      now: () => 1_000,
+    });
+    const submitted = await runtime.handleRpc({
+      method: 'submit',
+      params: submitParams(1, {
+        childSessionId: 'ses_child_prompt_rejected',
+        dispatchGroupId: 'msg_parent',
+      }),
+    });
+    await runtime.flush();
+
+    const taskId = getTask(submitted).taskId;
+    const status = await runtime.handleRpc({
+      method: 'status',
+      params: { taskId, rootSessionId: 'ses_root' },
+    }) as { task: Record<string, unknown> };
+    expect(status.task).toMatchObject({
+      status: 'failed',
+      failureKind: 'provider_prompt_rejected',
+      agentRetryAvailable: true,
+    });
+    await expect(runtime.handleRpc({
+      method: 'acknowledge',
+      params: {
+        taskId,
+        rootSessionId: 'ses_root',
+        directory: '/workspace',
+        action: 'resume',
+        idempotencyKey: 'prompt-rejected-resume',
+      },
+    })).rejects.toMatchObject({
+      code: 'provider_prompt_rejection_requires_fresh_retry',
+      statusCode: 409,
+    });
+    await expect(runtime.handleRpc({
+      method: 'acknowledge',
+      params: {
+        taskId,
+        rootSessionId: 'ses_root',
+        directory: '/workspace',
+        action: 'retry',
+        idempotencyKey: 'prompt-rejected-retry-without-prompt',
+      },
+    })).rejects.toMatchObject({
+      code: 'provider_prompt_rejection_requires_reframed_prompt',
+      statusCode: 409,
+    });
+    await runtime.shutdown();
+  });
+
   it('enforces a 60-minute Oracle deadline for starts and follow-ups', async () => {
     const runtime = createVsCodeManagedOrchestrationRuntime({
       storageDirectory: '/unused',

@@ -11,6 +11,7 @@ import {
   EvaluationTimeoutError,
   abortSessionTree,
   buildOwnedTestEvidenceCommand,
+  collectOracleReviewEvidence,
   collectSanitizedTools,
   createEvaluationClient,
   fetchSessionTree,
@@ -47,6 +48,60 @@ const sendJson = (response, status, value) => {
 };
 
 describe('DevRyan loopback evaluation client', () => {
+  test('extracts only whitelisted Oracle finding signals from root assistant text', () => {
+    const evidence = collectOracleReviewEvidence([
+      {
+        sessionId: 'ses_root',
+        messages: [
+          {
+            info: { role: 'user' },
+            parts: [{
+              type: 'text',
+              text: 'authorization bypass stale revision idempotency reserve webhook regression SECRET_PROMPT',
+            }],
+          },
+          {
+            info: { role: 'assistant' },
+            parts: [{
+              type: 'text',
+              text: [
+                'High: Authorization check verifies only that the actor exists, so a user can bypass profile ownership.',
+                '`src/devryan-eval-review.ts:2` must require the owner or an administrator.',
+                'High: expectedRevision is ignored, allowing concurrent stale writes and lost updates.',
+                '<status>complete</status>',
+              ].join('\n'),
+            }],
+          },
+        ],
+      },
+      {
+        sessionId: 'ses_child',
+        messages: [{
+          info: { role: 'assistant' },
+          parts: [{
+            type: 'text',
+            text: 'Idempotency must reserve before the gateway; webhook events can regress terminal state.',
+          }],
+        }],
+      },
+    ], {
+      rootSessionId: 'ses_root',
+      runFiles: {
+        sourceRelativePath: 'src/devryan-eval-review.ts',
+        testRelativePath: 'src/devryan-eval-review.test.mjs',
+      },
+    });
+
+    assert.deepEqual(evidence, {
+      signals: ['authorization_boundary', 'stale_write'],
+      pathLineEvidence: true,
+      terminalComplete: true,
+    });
+    const serialized = JSON.stringify(evidence);
+    assert.equal(serialized.includes('SECRET'), false);
+    assert.equal(serialized.includes('devryan-eval-review'), false);
+  });
+
   test('builds a canonical owned-test wrapper that emits its marker under zsh', () => {
     const command = buildOwnedTestEvidenceCommand('src/devryan-eval-portable.test.mjs');
     assert.equal(
@@ -716,6 +771,12 @@ describe('DevRyan loopback evaluation client', () => {
       agent: 'orchestrator',
       variant: null,
     }, 'private prompt', undefined);
+    await client.promptSession('ses_oracle', '/tmp/fixture', {
+      providerId: 'openai',
+      modelId: 'gpt-5.6-sol',
+      agent: 'oracle',
+      variant: 'high',
+    }, 'private prompt', undefined);
 
     assert.deepEqual(bodies[0].tools, {
       'resend_*': false,
@@ -735,6 +796,15 @@ describe('DevRyan loopback evaluation client', () => {
       invalid: false,
       'mcp__*': false,
     });
+    assert.equal(bodies[4].tools['*'], false);
+    assert.equal(bodies[4].tools.read, true);
+    assert.equal(bodies[4].tools.oc_read, true);
+    assert.equal(bodies[4].tools.ast_grep_search, true);
+    assert.equal(bodies[4].tools.ctx_search, true);
+    assert.equal(bodies[4].tools.write, undefined);
+    assert.equal(bodies[4].tools.oc_write, undefined);
+    assert.equal(bodies[4].tools.shell, undefined);
+    assert.equal(bodies[4].tools.devryan_task, undefined);
   });
 
   test('fetches parent and recursive child messages once with cycle protection', async () => {

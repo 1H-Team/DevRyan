@@ -42,7 +42,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 
 - `bridge-git-special-runtime.ts`
   - Specialized Git flows (`commit-message`, `pr-description`, `conflict-details`) and generation helpers.
-  - Commit-message generation sends bounded worktree context directly to the commit-specific free Zen model `deepseek-v4-flash-free` with a 60-second request deadline and returns one validated Conventional Commit subject without creating an OpenCode session. Explicit model overrides remain supported; PR generation retains its separate existing flow.
+  - Commit-message drafts accept selected paths and staging mode, then collect status/history concurrently and selected diffs with six bounded workers in the extension host. Generation sends that bounded context directly to the commit-specific free Zen model `deepseek-v4-flash-free`, disables its hidden reasoning so the 64-token chat budget reaches the subject, uses a newline stop (128 response tokens for compatible overrides), keeps the 60-second deadline, records sanitized journal timings, and returns one validated Conventional Commit subject without creating an OpenCode session. The context-based bridge message remains supported; PR generation retains its separate existing flow.
 
 - `bridge-git-process-runtime.ts`
   - Git process execution and environment setup (`execGit`), including SSH agent socket resolution.
@@ -79,7 +79,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Passes Slim's active preset into managed OpenCode with `OH_MY_OPENCODE_SLIM_PRESET`, copies the active Slim config into the runtime overlay `OPENCODE_CONFIG_DIR`, and keeps background subagents enabled for Slim orchestration.
 
 - `opencodeVersionPolicy.ts`
-  - Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.13 and exposes the upstream install command in diagnostics while still using the user/system `opencode` binary.
+  - Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.15 and exposes the upstream install command in diagnostics while still using the user/system `opencode` binary.
 
 - `bridge-settings-runtime.ts`
   - Settings read/write and OpenCode skills discovery via API for bridge consumers.
@@ -87,7 +87,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 - `bridge-system-runtime.ts`
   - System/editor/provider/quota/notification/update-check message handlers.
   - Update checks use the latest stable release from the canonical
-    `zoubenr/DevRyan` GitHub repository by default. The compatibility
+    `1H-Team/DevRyan` GitHub repository by default. The compatibility
     `OPENCHAMBER_UPDATE_API_URL` override retains its legacy request contract.
   - Includes session activity snapshot bridge handler used by webview parity routes (`/api/session-activity`).
   - Includes Zen utility model parity handler used by shared notification settings (`/api/zen/models`).
@@ -109,7 +109,7 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 
 - `managedOrchestrationRuntime.ts`
   - Composes the one VS Code-owned `@openchamber/orchestration-runtime` scheduler.
-  - Immediately admits every eligible DevRyan-managed child without an artificial concurrency cap, enforces a minimum 30-minute ordinary deadline plus a 60-minute Oracle floor for starts and follow-ups, preserves the private Council three-minute deadline class, gives retry/resume/retry-in-place fresh agent-aware default deadlines, preserves timeout causes with bounded abort-request cancellation and same-child resumability after failed immediate recovery, scopes task access, clamps optional positive-safe-integer wait slices to 25 seconds, exposes abortable `wait_result_action` recovery synchronization, unbounded root `barrier`, and non-blocking `barrier_status` RPCs, performs inspection-first confirmed agent handoff, preserves deterministic admission/cancellation, requires explicit user-selected same-child `retry_in_place` for provider-limit recovery, returns the recovered lineage to the pending parent tool invocation, maps `manual_model_recovery_required` to HTTP 409, retains legacy `recover_in_place` ledger compatibility, and reports external-runtime unavailability.
+  - Immediately admits every eligible DevRyan-managed child without an artificial concurrency cap, enforces a minimum 30-minute ordinary deadline plus a 60-minute Oracle floor for starts and follow-ups, preserves the private Council three-minute deadline class, gives retry/resume/retry-in-place fresh agent-aware default deadlines, preserves timeout causes with bounded abort-request cancellation and same-child resumability after failed immediate recovery, scopes task access, clamps optional positive-safe-integer wait slices to 25 seconds, exposes abortable `wait_result_action` recovery synchronization, unbounded root `barrier`, and non-blocking `barrier_status` RPCs, performs inspection-first confirmed agent handoff, preserves deterministic admission/cancellation, requires explicit user-selected same-child `retry_in_place` for provider-limit recovery, requires provider prompt rejection recovery to use one rewritten-prompt fresh child, returns recovered lineage to the pending parent tool invocation, maps manual and prompt-rejection policy conflicts to HTTP 409, retains legacy `recover_in_place` ledger compatibility, and reports external-runtime unavailability.
   - Publishes safe task projections without private dispatch groups, identity-only compaction removals, and corrupt-ledger recovery warnings to open webviews.
 
 - `managedOrchestrationPersistence.ts`

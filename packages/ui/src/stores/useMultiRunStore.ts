@@ -11,6 +11,7 @@ import { checkIsGitRepository } from '@/lib/gitApi';
 // sessionStore removed — sync bootstrap handles session loading
 import { useDirectoryStore } from './useDirectoryStore';
 import { useProjectsStore } from './useProjectsStore';
+import { assertCanCreateBranches } from '@/lib/authSession';
 
 /**
  * Generate a git-safe slug from a string.
@@ -82,6 +83,12 @@ export const useMultiRunStore = create<MultiRunStore>()(
       error: null,
 
       createMultiRun: async (params: CreateMultiRunParams) => {
+        try {
+          assertCanCreateBranches();
+        } catch (error) {
+          set({ error: error instanceof Error ? error.message : 'Branch creation is disabled by policy' });
+          return null;
+        }
         const groupName = params.name.trim();
         const prompt = params.prompt.trim();
         const { models, agent, files, setupCommands } = params;

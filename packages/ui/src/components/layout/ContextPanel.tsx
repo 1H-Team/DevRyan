@@ -32,6 +32,7 @@ import {
   isPreviewLoopbackHost,
   parsePreviewHttpUrl,
   resolvePreviewReloadUrl,
+  shouldRestorePreviewProxyPath,
 } from './previewLifecycle';
 import {
   formatPreviewAnnotationMarkdown,
@@ -46,7 +47,7 @@ import {
   type PreviewConsoleEvent,
 } from './previewDiagnosticsState';
 import { resolveContextPlanSessionChange } from './contextPlanSessionLifecycle';
-import { DesktopBrowserPane } from './DesktopBrowserPane';
+import { DesktopBrowserPane, ManualBrowserWorkspacePane } from './DesktopBrowserPane';
 import { isBrowserPanelRuntimeSupported } from './browserRuntime';
 import { useGuestRetention } from './useGuestRetention';
 import {
@@ -55,7 +56,6 @@ import {
   setObservedBrowserAgentLease,
   useBrowserAgentStore,
 } from '@/stores/useBrowserAgentStore';
-import { useBrowserSurfaceStore } from '@/stores/useBrowserSurfaceStore';
 import { resolveRootSessionID } from '@/lib/sessionLineage';
 
 const CONTEXT_PANEL_MIN_WIDTH = 360;
@@ -210,7 +210,6 @@ const getTabIcon = (tab: { mode: 'diff' | 'file' | 'context' | 'plan' | 'chat' |
 // mounted until their authoritative lease disappears. Chat iframes are
 // same-process but each hosts a full app instance; the long grace mirrors
 // relaunch behavior for long-idle tabs without losing recently-typed drafts.
-const BROWSER_GUEST_SLEEP_DELAY_MS = 60_000;
 const CHAT_GUEST_SLEEP_DELAY_MS = 30 * 60_000;
 
 const BrowserTabIcon: React.FC<{ leaseId?: string | null }> = ({ leaseId }) => {
@@ -674,10 +673,16 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({
 
     try {
       const location = frameWindow.location;
-      if (location.origin !== window.location.origin) {
-        return;
-      }
-      if (location.pathname.startsWith(proxyState.proxyBasePath)) {
+      const bridgeInstalled = Boolean((frameWindow as Window & {
+        __openchamberPreviewBridgeInstalled?: boolean;
+      }).__openchamberPreviewBridgeInstalled);
+      if (!shouldRestorePreviewProxyPath({
+        frameOrigin: location.origin,
+        parentOrigin: window.location.origin,
+        framePathname: location.pathname,
+        proxyBasePath: proxyState.proxyBasePath,
+        bridgeInstalled,
+      })) {
         return;
       }
 
@@ -1323,27 +1328,10 @@ export const ContextPanel: React.FC = () => {
     () => tabs.filter((tab) => tab.mode === 'chat'),
     [tabs],
   );
-  const manualBrowserTabs = React.useMemo(
-    () => tabs.filter((tab) => tab.mode === 'browser' && !tab.leaseId),
+  const manualBrowserTab = React.useMemo(
+    () => tabs.find((tab) => tab.mode === 'browser' && !tab.leaseId) ?? null,
     [tabs],
   );
-  const poppedManualBrowserTabIDs = useBrowserSurfaceStore((state) => state.poppedManualTabIds);
-
-  // Manual browser guests retain the existing sleep policy. Lease guests are
-  // not part of this set: the invariant lease fleet mounts directly from the
-  // authoritative snapshot and unmounts only when a lease disappears.
-  const manualBrowserKeepIDs = React.useMemo(
-    () => {
-      const keep = new Set(poppedManualBrowserTabIDs);
-      if (isOpen && activeTab?.mode === 'browser' && !activeTab.leaseId) keep.add(activeTab.id);
-      return Array.from(keep);
-    },
-    [activeTab, isOpen, poppedManualBrowserTabIDs],
-  );
-  const retainedBrowserTabIDs = useGuestRetention({
-    keepIDs: manualBrowserKeepIDs,
-    sleepDelayMs: BROWSER_GUEST_SLEEP_DELAY_MS,
-  });
 
   const chatKeepIDs = React.useMemo(
     () => (activeChatTabID ? [activeChatTabID] : []),
@@ -1499,39 +1487,29 @@ export const ContextPanel: React.FC = () => {
               active={activeLeaseId === leaseId && observedLeaseId === leaseId}
             />
           ))}
-          {manualBrowserTabs.map((tab) => {
-            // Manual tabs remain ordinary user browser panes: only the active
-            // tab and its short grace-period guest stay mounted.
-            const isActive = isOpen && activeTab?.id === tab.id;
-            const isMounted = isActive || retainedBrowserTabIDs.has(tab.id);
-            if (!isMounted) {
-              return null;
-            }
-            return (
-              <div
-                key={tab.id}
-                className={cn(
-                  'absolute inset-0',
-                  !isActive && 'invisible pointer-events-none'
-                )}
-                aria-hidden={!isActive}
-              >
-                {isBrowserPanelRuntimeSupported() ? (
-                  <DesktopBrowserPane
-                    initialUrl={tab.targetPath ?? ''}
-                    directory={directoryKey ?? ''}
-                    tabID={tab.id}
-                    active={isActive}
-                  />
-                ) : (
-                  <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-                    <RiGlobalLine className="h-12 w-12 text-muted-foreground/50" />
-                    <div className="max-w-sm typography-micro text-muted-foreground">{t('contextPanel.browser.desktopOnly')}</div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+          {manualBrowserTab ? (
+            <div
+              className={cn(
+                'absolute inset-0',
+                !(isOpen && activeTab?.id === manualBrowserTab.id) && 'invisible pointer-events-none',
+              )}
+              aria-hidden={!(isOpen && activeTab?.id === manualBrowserTab.id)}
+            >
+              {isBrowserPanelRuntimeSupported() ? (
+                <ManualBrowserWorkspacePane
+                  key={directoryKey}
+                  directory={directoryKey ?? ''}
+                  active={isOpen && activeTab?.id === manualBrowserTab.id}
+                  legacyUrl={manualBrowserTab.targetPath}
+                />
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+                  <RiGlobalLine className="h-12 w-12 text-muted-foreground/50" />
+                  <div className="max-w-sm typography-micro text-muted-foreground">{t('contextPanel.browser.desktopOnly')}</div>
+                </div>
+              )}
+            </div>
+          ) : null}
           {isOpen ? chatTabs.map((tab) => {
             const sessionID = getSessionIDFromDedupeKey(tab.dedupeKey);
             if (!sessionID) {

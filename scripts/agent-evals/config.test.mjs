@@ -5,6 +5,7 @@ import path from 'node:path';
 import { describe, test } from 'node:test';
 
 import {
+  EVALUATION_CASE_IDS,
   loadEvaluationConfig,
   parseEvaluationArgs,
   validateEvaluationConfig,
@@ -135,6 +136,21 @@ describe('agent evaluation CLI configuration', () => {
     assert.equal(
       validateEvaluationConfig({ ...config, variant: null }, { repoRoot: workspace.root }).variant,
       null,
+    );
+    assert.deepEqual(EVALUATION_CASE_IDS, [
+      'inspect',
+      'repair-and-test',
+      'managed-change',
+      'oracle-review-focused',
+      'oracle-review-deep',
+    ]);
+    assert.deepEqual(
+      validateEvaluationConfig({
+        ...config,
+        agent: 'oracle',
+        caseIds: ['oracle-review-focused', 'oracle-review-deep'],
+      }, { repoRoot: workspace.root }).caseIds,
+      ['oracle-review-focused', 'oracle-review-deep'],
     );
   });
 

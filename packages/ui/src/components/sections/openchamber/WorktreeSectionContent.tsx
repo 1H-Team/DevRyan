@@ -15,6 +15,7 @@ import { sessionEvents } from '@/lib/sessionEvents';
 import type { WorktreeMetadata } from '@/types/worktree';
 import { formatPathForDisplay, cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
+import { useAuthPrincipal } from '@/lib/authSession';
 
 export interface WorktreeSectionContentProps {
   projectRef?: { id: string; path: string } | null;
@@ -26,6 +27,8 @@ const normalizeWorktreePath = (value: string): string => (
 
 export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ projectRef: projectRefProp = null }) => {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
+  const canRemoveWorktrees = principal.scope !== 'managed' || principal.role === 'admin';
   const { isMobile, isTablet } = useDeviceInfo();
   const alwaysShowActions = isMobile || isTablet;
   const activeProject = useProjectsStore((state) => state.getActiveProject());
@@ -388,7 +391,7 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
                     {formatPathForDisplay(worktree.path, homeDirectory)}
                   </p>
                 </div>
-                  <button
+                {canRemoveWorktrees ? <button
                     type="button"
                     onClick={() => handleDeleteWorktree(worktree)}
                     className={cn(
@@ -398,7 +401,7 @@ export const WorktreeSectionContent: React.FC<WorktreeSectionContentProps> = ({ 
                     aria-label={t('settings.openchamber.worktrees.list.deleteWorktreeAria', { name: worktree.branch || worktree.label || worktree.path })}
                 >
                   <RiDeleteBinLine className="h-4 w-4" />
-                </button>
+                </button> : null}
               </div>
             ))}
           </div>

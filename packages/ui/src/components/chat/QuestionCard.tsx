@@ -9,6 +9,7 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessions } from '@/sync/sync-context';
 import * as sessionActions from '@/sync/session-actions';
 import { useI18n } from '@/lib/i18n';
+import { toast } from '@/components/ui/toast';
 import {
   buildQuestionRequestAnswerGroups,
   submitQuestionRequestAnswerGroups,
@@ -24,13 +25,18 @@ import {
 import { getQuestionOptionPresentation } from './questionCardOptions';
 import { QuestionOptionRow } from './QuestionOptionRow';
 import {
-  applyQuestionSubmissionResults,
+  acknowledgeQuestionRequests,
+  claimQuestionSubmissions,
   createQuestionSubmissionLock,
+  createQuestionSubmissionShadow,
   filterPendingQuestionRequestAnswerGroups,
   filterPendingQuestionRequests,
   getQuestionEntryKey,
   getQuestionRequestKey,
+  getQuestionSubmissionStatus,
   reconcileAcknowledgedQuestionRequestKeys,
+  releaseQuestionSubmissions,
+  settleOptimisticQuestionSubmissionResults,
   submitQuestionRequestRejections,
 } from './questionCardSubmission';
 
@@ -87,7 +93,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
   );
 
   const [activeIndex, setActiveIndex] = React.useState(0);
-  const [isResponding, setIsResponding] = React.useState(false);
+  const [submissionPending, setSubmissionPending] = React.useState(false);
   const [selectedOptions, setSelectedOptions] = React.useState<Record<string, string[]>>({});
   const [customMode, setCustomMode] = React.useState<Record<string, boolean>>({});
   const [customText, setCustomText] = React.useState<Record<string, string>>({});
@@ -97,9 +103,19 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
   const [requestErrors, setRequestErrors] = React.useState<Record<string, string>>({});
   const initialSubmissionLock = React.useMemo(createQuestionSubmissionLock, []);
   const submissionLockRef = React.useRef(initialSubmissionLock);
+  const initialSubmissionShadow = React.useMemo(createQuestionSubmissionShadow, []);
+  const submissionShadowRef = React.useRef(initialSubmissionShadow);
   const previousSessionScopeRef = React.useRef(sessionScopeKey);
   const activeScopeRef = React.useRef(sessionScopeKey);
   activeScopeRef.current = sessionScopeKey;
+  const isMountedRef = React.useRef(true);
+
+  React.useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   const currentRequestKeys = React.useMemo(
     () => new Set(normalizedRequests.map(getQuestionRequestKey)),
@@ -112,8 +128,9 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
     if (previousSessionScopeRef.current !== sessionScopeKey) {
       previousSessionScopeRef.current = sessionScopeKey;
       submissionLockRef.current = createQuestionSubmissionLock();
+      submissionShadowRef.current = createQuestionSubmissionShadow();
       setActiveIndex(0);
-      setIsResponding(false);
+      setSubmissionPending(false);
       setSelectedOptions({});
       setCustomMode({});
       setCustomText({});
@@ -135,6 +152,10 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
     () => filterPendingQuestionRequests(normalizedRequests, acknowledgedRequestKeys),
     [acknowledgedRequestKeys, normalizedRequests],
   );
+  const submissionStatus = previousSessionScopeRef.current === sessionScopeKey
+    ? getQuestionSubmissionStatus(submissionShadowRef.current)
+    : null;
+  const isSubmitting = submissionPending && Boolean(submissionStatus);
 
   const isFromSubagent = React.useMemo(() => {
     if (!currentSessionId || !sessionID || sessionID === currentSessionId) return false;
@@ -244,20 +265,29 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
     setSelectedOptions((prev) => ({ ...prev, [entry.entryKey]: [] }));
   }, []);
 
-  const applyRelevantSubmissionResults = React.useCallback((
+  const settleRelevantSubmissionResults = React.useCallback((
     submissionScope: string,
     results: readonly QuestionRequestSubmitResult[],
     fallbackError: string,
   ) => {
-    if (activeScopeRef.current !== submissionScope) return;
+    if (!isMountedRef.current || activeScopeRef.current !== submissionScope) {
+      // The card is gone (unmount or scope change) — failures must not be silent.
+      for (const result of results) {
+        if (result.status !== 'rejected') continue;
+        toast.error(t('chat.questionCard.submitFailedToast'), {
+          description: result.reason instanceof Error ? result.reason.message : fallbackError,
+        });
+      }
+      return;
+    }
 
     const relevantResults = results.filter((result) => (
       currentRequestKeysRef.current.has(getQuestionRequestKey(result.request))
     ));
-    const outcome = applyQuestionSubmissionResults(new Set(), relevantResults, fallbackError);
+    const outcome = settleOptimisticQuestionSubmissionResults(new Set(), relevantResults, fallbackError);
 
     setAcknowledgedRequestKeys((previous) => {
-      const next = applyQuestionSubmissionResults(previous, relevantResults, fallbackError)
+      const next = settleOptimisticQuestionSubmissionResults(previous, relevantResults, fallbackError)
         .acknowledgedRequestKeys;
       if (next.size === previous.size && Array.from(next).every((key) => previous.has(key))) {
         return previous;
@@ -265,47 +295,72 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
       return next;
     });
     setRequestErrors(outcome.errorsByRequestKey);
-  }, []);
+  }, [t]);
 
   const handleConfirm = React.useCallback(async () => {
     const submissionLock = submissionLockRef.current;
     if (!requiredSatisfied || !submissionLock.tryAcquire()) return;
 
     const submissionScope = sessionScopeKey;
-    setIsResponding(true);
+    const answerGroups = filterPendingQuestionRequestAnswerGroups(
+      buildQuestionRequestAnswerGroups(
+        entries.map((entry): QuestionAnswerEntry => ({
+          request: entry.request,
+          withinRequestIndex: entry.withinRequestIndex,
+          answers: buildAnswerForEntry(entry.entryKey),
+        })),
+      ),
+      acknowledgedRequestKeys,
+    );
+    const submissionShadow = submissionShadowRef.current;
+    const claimed = claimQuestionSubmissions(
+      submissionShadow,
+      answerGroups.map((group) => ({
+        action: 'answer',
+        request: group.request,
+        answers: group.answers.map((answer) => [...answer]),
+      })),
+    );
+    if (!claimed) {
+      submissionLock.release();
+      return;
+    }
+
+    setSubmissionPending(true);
     setRequestErrors({});
+    // Optimistic: hide the submitted requests immediately — the POST settles in
+    // the background and failures restore the card (or toast if it is gone).
+    setAcknowledgedRequestKeys((previous) => (
+      acknowledgeQuestionRequests(previous, answerGroups.map((group) => group.request))
+    ));
 
     try {
-      const answerGroups = filterPendingQuestionRequestAnswerGroups(
-        buildQuestionRequestAnswerGroups(
-          entries.map((entry): QuestionAnswerEntry => ({
-            request: entry.request,
-            withinRequestIndex: entry.withinRequestIndex,
-            answers: buildAnswerForEntry(entry.entryKey),
-          })),
-        ),
-        acknowledgedRequestKeys,
-      );
       const results = await submitQuestionRequestAnswerGroups(answerGroups, respondToQuestion);
-      applyRelevantSubmissionResults(submissionScope, results, 'Failed to submit answer');
+      settleRelevantSubmissionResults(submissionScope, results, 'Failed to submit answer');
     } catch (error) {
-      if (activeScopeRef.current === submissionScope && pendingRequests[0]) {
-        setRequestErrors({
-          [getQuestionRequestKey(pendingRequests[0])]: error instanceof Error
-            ? error.message
-            : 'Failed to submit answer',
-        });
+      const message = error instanceof Error ? error.message : 'Failed to submit answer';
+      if (isMountedRef.current && activeScopeRef.current === submissionScope) {
+        const claimedKeys = new Set(answerGroups.map((group) => getQuestionRequestKey(group.request)));
+        setAcknowledgedRequestKeys((previous) => (
+          new Set(Array.from(previous).filter((key) => !claimedKeys.has(key)))
+        ));
+        if (answerGroups[0]) {
+          setRequestErrors({ [getQuestionRequestKey(answerGroups[0].request)]: message });
+        }
+      } else {
+        toast.error(t('chat.questionCard.submitFailedToast'), { description: message });
       }
     } finally {
+      releaseQuestionSubmissions(submissionShadow, answerGroups.map((group) => group.request));
       submissionLock.release();
-      if (activeScopeRef.current === submissionScope) setIsResponding(false);
+      if (activeScopeRef.current === submissionScope) setSubmissionPending(false);
     }
   }, [
     acknowledgedRequestKeys,
-    applyRelevantSubmissionResults,
+    settleRelevantSubmissionResults,
+    t,
     buildAnswerForEntry,
     entries,
-    pendingRequests,
     requiredSatisfied,
     respondToQuestion,
     sessionScopeKey,
@@ -332,30 +387,49 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
 
     const submissionScope = sessionScopeKey;
     const targetRequests = pendingRequests;
-    setIsResponding(true);
+    const submissionShadow = submissionShadowRef.current;
+    const claimed = claimQuestionSubmissions(
+      submissionShadow,
+      targetRequests.map((request) => ({ action: 'skip', request, answers: null })),
+    );
+    if (!claimed) {
+      submissionLock.release();
+      return;
+    }
+
+    setSubmissionPending(true);
     setRequestErrors({});
+    setAcknowledgedRequestKeys((previous) => (
+      acknowledgeQuestionRequests(previous, targetRequests)
+    ));
 
     try {
       const results = await submitQuestionRequestRejections(targetRequests, rejectQuestion);
-      applyRelevantSubmissionResults(submissionScope, results, 'Failed to skip question');
+      settleRelevantSubmissionResults(submissionScope, results, 'Failed to skip question');
     } catch (error) {
-      if (activeScopeRef.current === submissionScope && targetRequests[0]) {
-        setRequestErrors({
-          [getQuestionRequestKey(targetRequests[0])]: error instanceof Error
-            ? error.message
-            : 'Failed to skip question',
-        });
+      const message = error instanceof Error ? error.message : 'Failed to skip question';
+      if (isMountedRef.current && activeScopeRef.current === submissionScope) {
+        const claimedKeys = new Set(targetRequests.map((request) => getQuestionRequestKey(request)));
+        setAcknowledgedRequestKeys((previous) => (
+          new Set(Array.from(previous).filter((key) => !claimedKeys.has(key)))
+        ));
+        if (targetRequests[0]) {
+          setRequestErrors({ [getQuestionRequestKey(targetRequests[0])]: message });
+        }
+      } else {
+        toast.error(t('chat.questionCard.submitFailedToast'), { description: message });
       }
     } finally {
+      releaseQuestionSubmissions(submissionShadow, targetRequests);
       submissionLock.release();
-      if (activeScopeRef.current === submissionScope) setIsResponding(false);
+      if (activeScopeRef.current === submissionScope) setSubmissionPending(false);
     }
-  }, [applyRelevantSubmissionResults, pendingRequests, rejectQuestion, sessionScopeKey]);
+  }, [settleRelevantSubmissionResults, t, pendingRequests, rejectQuestion, sessionScopeKey]);
 
   if (totalCount === 0) return null;
 
   const footerError = Array.from(new Set(Object.values(requestErrors).filter(Boolean))).join(' ');
-  const primaryDisabled = isResponding || (isLastQuestion ? !requiredSatisfied : !activeAnswerComplete);
+  const primaryDisabled = isSubmitting || (isLastQuestion ? !requiredSatisfied : !activeAnswerComplete);
   const handlePrimaryAction = isLastQuestion ? handleConfirm : handleNext;
 
   const renderQuestionBody = (entry: QuestionEntry, opts: { withHeader: boolean }) => {
@@ -388,7 +462,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
                 description={option.description}
                 selected={isSelected}
                 multiple={Boolean(entry.question.multiple)}
-                disabled={isResponding}
+                disabled={isSubmitting}
                 recommended={recommended}
                 recommendedLabel={t('chat.questionCard.recommended')}
                 onSelect={() => handleToggleOption(entry, option.label)}
@@ -401,12 +475,12 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
             role={entry.question.multiple ? 'checkbox' : 'radio'}
             aria-checked={isCustomActive}
             onClick={() => handleSelectCustom(entry)}
-            disabled={isResponding}
+            disabled={isSubmitting}
             className={cn(
               'w-full px-1.5 py-1 text-left rounded transition-colors',
               'hover:bg-interactive-hover/30',
               isCustomActive ? 'bg-interactive-selection/20' : null,
-              isResponding ? 'opacity-60 cursor-not-allowed' : null,
+              isSubmitting ? 'opacity-60 cursor-not-allowed' : null,
             )}
           >
             <div className="flex items-center gap-2">
@@ -448,7 +522,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
                   setCustomText((prev) => ({ ...prev, [entry.entryKey]: el.value }));
                 }}
                 placeholder={t('chat.questionCard.yourAnswer')}
-                disabled={isResponding}
+                disabled={isSubmitting}
                 rows={2}
                 onKeyDown={handleKeyDown}
                 data-scrollable
@@ -500,7 +574,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
               <button
                 type="button"
                 onClick={handleBack}
-                disabled={isResponding}
+                disabled={isSubmitting}
                 className={cn(
                   'flex items-center gap-1 px-2 py-1 typography-meta font-medium rounded transition-colors',
                   'text-muted-foreground hover:text-foreground hover:bg-interactive-hover/20',
@@ -529,7 +603,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
             <button
               type="button"
               onClick={handleSkip}
-              disabled={isResponding}
+              disabled={isSubmitting}
               className={cn(
                 'flex items-center gap-1 px-2 py-1 typography-meta font-medium rounded transition-colors',
                 'bg-[rgb(var(--status-error)/0.1)] text-[var(--status-error)] hover:bg-[rgb(var(--status-error)/0.2)]',
@@ -540,11 +614,6 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
               {t('chat.questionCard.skip')}
             </button>
 
-            {isResponding ? (
-              <div className="ml-auto">
-                <div className="animate-spin h-3 w-3 border border-primary border-t-transparent rounded-full" />
-              </div>
-            ) : null}
           </div>
         </div>
       </div>

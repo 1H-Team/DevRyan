@@ -650,6 +650,31 @@ describe("createSessionRecord startup readiness", () => {
     expect(consumeLastCreateSessionError()).toBeNull()
   })
 
+  test("does not recreate a session after managed ownership retries are exhausted", async () => {
+    const store = createStore({}, [])
+    const childStores = createChildStores([["/test/project", store]])
+    sessionCreateHandler = () => Promise.resolve({
+      error: {
+        message: "Identity service unavailable",
+        code: "identity_unavailable",
+        retryable: false,
+      },
+      response: { status: 503 },
+    })
+
+    const { setActionRefs, createSessionRecord, consumeLastCreateSessionError } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const session = await withMutedConsoleError(() => createSessionRecord("Preserve draft", "/test/project", null))
+    const error = consumeLastCreateSessionError() as Error & { code?: string; retryable?: boolean }
+
+    expect(session).toBeNull()
+    expect(sessionCreateCalls).toHaveLength(1)
+    expect(error.message).toContain("Identity service unavailable")
+    expect(error.code).toBe("identity_unavailable")
+    expect(error.retryable).toBe(false)
+  })
+
   test("releases imperative SDK refs only for the owning provider", async () => {
     const ownerStore = createStore({}, [])
     const owner = createChildStores([["/test/project", ownerStore]])
@@ -3149,6 +3174,7 @@ describe("dismissPermission passes directory", () => {
 describe("respondToQuestion passes directory", () => {
   beforeEach(() => {
     replyCalls.length = 0
+    mockConfigStoreState = {}
   })
 
   test("passes directory to question.reply", async () => {
@@ -3163,11 +3189,34 @@ describe("respondToQuestion passes directory", () => {
     expect(replyCalls[0].params.requestID).toBe("q-1")
     expect(replyCalls[0].params.directory).toBe("/test/project")
   })
+
+  test("starts the reply without waiting for the event-stream connection grace", async () => {
+    let probeCalls = 0
+    mockConfigStoreState = {
+      isConnected: false,
+      hasEverConnected: true,
+      lastDisconnectReason: "ws_closed_before_ready",
+      probeConnection: () => {
+        probeCalls += 1
+        return Promise.resolve(false)
+      },
+    }
+    const childStores = createChildStores([])
+
+    const { setActionRefs, respondToQuestion } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await respondToQuestion("session-a", "q-fast", [["answer1"]])
+
+    expect(probeCalls).toBe(0)
+    expect(replyCalls.map((call) => call.method)).toEqual(["question.reply"])
+  })
 })
 
 describe("rejectQuestion passes directory", () => {
   beforeEach(() => {
     replyCalls.length = 0
+    mockConfigStoreState = {}
   })
 
   test("passes directory to question.reject", async () => {
@@ -3181,6 +3230,28 @@ describe("rejectQuestion passes directory", () => {
     expect(replyCalls.length).toBe(1)
     expect(replyCalls[0].params.requestID).toBe("q-2")
     expect(replyCalls[0].params.directory).toBe("/test/project")
+  })
+
+  test("starts Skip without waiting for the event-stream connection grace", async () => {
+    let probeCalls = 0
+    mockConfigStoreState = {
+      isConnected: false,
+      hasEverConnected: true,
+      lastDisconnectReason: "ws_closed_before_ready",
+      probeConnection: () => {
+        probeCalls += 1
+        return Promise.resolve(false)
+      },
+    }
+    const childStores = createChildStores([])
+
+    const { setActionRefs, rejectQuestion } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    await rejectQuestion("session-a", "q-fast-skip")
+
+    expect(probeCalls).toBe(0)
+    expect(replyCalls.map((call) => call.method)).toEqual(["question.reject"])
   })
 })
 

@@ -1,3 +1,5 @@
+import { setAuthOfflineGrace } from '@/lib/authSession';
+
 export type Role = 'admin' | 'senior_developer' | 'developer';
 export type UserStatus = 'active' | 'suspended' | 'archived';
 
@@ -44,6 +46,7 @@ export interface RolePolicyRow {
   settings_permissions?: SettingsPermissions;
   can_use_files: boolean;
   can_use_terminal: boolean;
+  can_use_browser: boolean;
   can_manage_projects: boolean;
   can_manage_users: boolean;
   can_manage_global_settings: boolean;
@@ -93,8 +96,14 @@ export interface AuditStatus {
   deliveryFailures: number;
 }
 
-export type CapabilityKey = 'files' | 'terminal' | 'manageProjects' | 'manageUsers' | 'manageGlobalSettings' | 'manageGit' | 'push' | 'github';
+export type CapabilityKey = 'files' | 'terminal' | 'browser' | 'createWorktrees' | 'createBranches' | 'manageProjects' | 'manageUsers' | 'manageGlobalSettings' | 'manageGit' | 'push' | 'github';
 export type CapabilityOverride = 'inherit' | 'on' | 'off';
+export type McpPolicyOverride = 'inherit' | 'on' | 'off';
+
+export interface UserFeatureOverrides {
+  agents?: { hidePermissionsUi?: boolean };
+  mcp?: Record<string, 'on' | 'off'>;
+}
 
 export interface UserPolicyPayload {
   userId: string;
@@ -105,6 +114,7 @@ export interface UserPolicyPayload {
     settings_permission_overrides?: SettingsPermissionOverrides;
     capabilities: Partial<Record<CapabilityKey, boolean>>;
     settings_overrides: Record<string, unknown>;
+    feature_overrides?: UserFeatureOverrides;
   };
   effective: {
     settingsPermissions: SettingsPermissions;
@@ -190,7 +200,7 @@ export interface UserAnalyticsEventsPage {
 }
 
 export const capabilityLabels: Array<[CapabilityKey, string]> = [
-  ['files', 'Files'], ['terminal', 'Terminal'], ['manageGit', 'Git'], ['push', 'Push'],
+  ['files', 'Files'], ['terminal', 'Terminal'], ['browser', 'Browser'], ['createWorktrees', 'Create worktrees'], ['createBranches', 'Create branches'], ['manageGit', 'Git'], ['push', 'Push'],
   ['github', 'GitHub'], ['manageProjects', 'Manage projects'], ['manageUsers', 'Manage users'],
   ['manageGlobalSettings', 'Host settings'],
 ];
@@ -207,6 +217,20 @@ export const describeInvite = (invite: InviteRow): { active: boolean; label: str
 
 export const selectClassName = 'h-9 w-full rounded-lg border border-border/60 bg-[var(--surface-elevated)] px-3 typography-ui-label text-foreground outline-none focus:ring-2 focus:ring-[var(--interactive-focus-ring)]';
 
+export class UserManagementRequestError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+  readonly retryable: boolean;
+
+  constructor(message: string, options: { status: number; code?: string; retryable?: boolean }) {
+    super(message);
+    this.name = 'UserManagementRequestError';
+    this.status = options.status;
+    this.code = options.code || null;
+    this.retryable = options.retryable === true;
+  }
+}
+
 export const requestJson = async <T,>(url: string, init?: RequestInit): Promise<T> => {
   const response = await fetch(url, {
     ...init,
@@ -216,8 +240,21 @@ export const requestJson = async <T,>(url: string, init?: RequestInit): Promise<
       ...init?.headers,
     },
   });
-  const payload = await response.json().catch(() => ({})) as T & { error?: string };
-  if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`);
+  const payload = await response.json().catch(() => ({})) as T & {
+    error?: string;
+    code?: string;
+    retryable?: boolean;
+  };
+  if (!response.ok) {
+    if (payload.code === 'offline_grace_restricted') {
+      setAuthOfflineGrace(true);
+    }
+    throw new UserManagementRequestError(payload.error || `Request failed (${response.status})`, {
+      status: response.status,
+      code: payload.code,
+      retryable: payload.retryable,
+    });
+  }
   return payload;
 };
 import type {

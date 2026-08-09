@@ -1,39 +1,32 @@
-import path from 'node:path';
 import {
   classifyGitHubApiError,
   githubRateLimitTracker,
 } from './rate-limit.js';
 import { getRequestPrincipal } from '../multi-user/request-context.js';
+import {
+  getManagedBranchAuthorization,
+  isManagedBranchAssigned,
+  requireManagedAssignedBranch,
+} from '../multi-user/branch-authorization.js';
 
 const PR_STATUS_CACHE_TTL_MS = 90_000;
 const PR_STATUS_CACHE_MAX_ENTRIES = 200;
 const prStatusCache = new Map();
 
 function getManagedAssignment(directory) {
-  const principal = getRequestPrincipal();
-  if (principal?.scope !== 'managed') return { principal: null, assignment: null };
-  const candidate = path.resolve(directory);
-  const assignment = principal.assignments?.find((entry) => {
-    return [entry.repositoryPath, entry.worktreeContainerPath]
-      .filter((value) => typeof value === 'string' && value.trim())
-      .some((value) => {
-        const root = path.resolve(value);
-        const relative = path.relative(root, candidate);
-        return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
-      });
-  }) || null;
-  return { principal, assignment };
+  const authorization = getManagedBranchAuthorization(directory);
+  return {
+    principal: authorization.managed ? authorization.principal : null,
+    assignment: authorization.assignments[0] || null,
+  };
 }
 
 function requireManagedBranch(directory, branch) {
-  const { principal, assignment } = getManagedAssignment(directory);
-  if (!principal) return null;
-  if (!assignment || typeof branch !== 'string' || !branch.trim()) {
-    const error = new Error('Pull request target is outside your assigned project');
-    error.statusCode = 403;
-    throw error;
-  }
-  return assignment;
+  return requireManagedAssignedBranch(
+    directory,
+    branch,
+    'Pull request branch is not assigned to this account',
+  );
 }
 
 async function requireManagedPullRequest(octokit, repo, number, directory) {
@@ -86,6 +79,16 @@ function setPrStatusCache(key, data, fetchedAt) {
 export function registerGitHubRoutes(app, dependencies = {}) {
   const loadGitHubLibraries = dependencies.loadGitHubLibraries ?? (() => import('./index.js'));
   const rateLimitTracker = dependencies.rateLimitTracker ?? githubRateLimitTracker;
+  const resolvePullListRepoFromDirectory = dependencies.resolveGitHubRepoFromDirectory
+    ?? (async (directory) => {
+      const { resolveGitHubRepoFromDirectory } = await import('./index.js');
+      return resolveGitHubRepoFromDirectory(directory);
+    });
+  const resolvePullListRepoNetwork = dependencies.resolveRepoNetwork
+    ?? (async (octokit, directory) => {
+      const { resolveRepoNetwork } = await import('./repo/fork-detection.js');
+      return resolveRepoNetwork(octokit, directory);
+    });
   let githubLibraries = null;
   const getGitHubLibraries = async () => {
     if (!githubLibraries) {
@@ -571,7 +574,8 @@ export function registerGitHubRoutes(app, dependencies = {}) {
             username,
           });
           const level = perm?.data?.permission;
-          canMerge = level === 'admin' || level === 'maintain' || level === 'write';
+          canMerge = (level === 'admin' || level === 'maintain' || level === 'write')
+            && isManagedBranchAssigned(directory, prData.base?.ref);
         }
       } catch (error) {
         if (classifyGitHubApiError(error) === 'rate_limit') {
@@ -833,7 +837,10 @@ export function registerGitHubRoutes(app, dependencies = {}) {
         });
       }
       
-      return res.status(error?.statusCode || 500).json({ error: error.message || 'Failed to create GitHub PR' });
+      return res.status(error?.statusCode || 500).json({
+        error: error.message || 'Failed to create GitHub PR',
+        ...(error?.code ? { code: error.code } : {}),
+      });
     }
   });
 
@@ -953,7 +960,10 @@ export function registerGitHubRoutes(app, dependencies = {}) {
       }
     } catch (error) {
       console.error('Failed to merge GitHub PR:', error);
-      return res.status(error?.statusCode || 500).json({ error: error.message || 'Failed to merge GitHub PR' });
+      return res.status(error?.statusCode || 500).json({
+        error: error.message || 'Failed to merge GitHub PR',
+        ...(error?.code ? { code: error.code } : {}),
+      });
     }
   });
 
@@ -1292,8 +1302,12 @@ export function registerGitHubRoutes(app, dependencies = {}) {
     try {
       const directory = typeof req.query?.directory === 'string' ? req.query.directory.trim() : '';
       const page = typeof req.query?.page === 'string' ? Number(req.query.page) : 1;
+      const requestedState = typeof req.query?.state === 'string' ? req.query.state.trim() : 'open';
       if (!directory) {
         return res.status(400).json({ error: 'directory is required' });
+      }
+      if (requestedState !== 'open' && requestedState !== 'all') {
+        return res.status(400).json({ error: 'state must be open or all' });
       }
 
       const { getOctokitOrNull } = await getGitHubLibraries();
@@ -1302,11 +1316,8 @@ export function registerGitHubRoutes(app, dependencies = {}) {
         return res.json({ connected: false });
       }
 
-      const { resolveGitHubRepoFromDirectory } = await import('./index.js');
-      const { resolveRepoNetwork } = await import('./repo/fork-detection.js');
-
-      const repoNetwork = await resolveRepoNetwork(octokit, directory);
-      const { repo } = await resolveGitHubRepoFromDirectory(directory);
+      const repoNetwork = await resolvePullListRepoNetwork(octokit, directory);
+      const { repo } = await resolvePullListRepoFromDirectory(directory);
       if (!repo) {
         return res.json({ connected: true, repo: null, prs: [] });
       }
@@ -1319,7 +1330,9 @@ export function registerGitHubRoutes(app, dependencies = {}) {
           const list = await octokit.rest.pulls.list({
             owner: repoRef.owner,
             repo: repoRef.repo,
-            state: 'open',
+            state: requestedState,
+            sort: 'updated',
+            direction: 'desc',
             per_page: 50,
             page: effectivePage,
           });
@@ -1348,6 +1361,8 @@ export function registerGitHubRoutes(app, dependencies = {}) {
               mergeable: pr.mergeable,
               mergeableState: pr.mergeable_state,
               author: pr.user ? { login: pr.user.login, id: pr.user.id, avatarUrl: pr.user.avatar_url } : null,
+              createdAt: pr.created_at,
+              updatedAt: pr.updated_at,
               headLabel: pr.head?.label,
               headRepo: headRepo && headRepo.owner && headRepo.repo && headRepo.url
                 ? headRepo
@@ -1363,7 +1378,13 @@ export function registerGitHubRoutes(app, dependencies = {}) {
       };
 
       const results = await Promise.all(reposToQuery.map(queryRepo));
-      const allPrs = results.flatMap((r) => r.prs);
+      const allPrs = results
+        .flatMap((r) => r.prs)
+        .sort((left, right) => {
+          const leftUpdatedAt = Date.parse(left.updatedAt || left.createdAt || '') || 0;
+          const rightUpdatedAt = Date.parse(right.updatedAt || right.createdAt || '') || 0;
+          return rightUpdatedAt - leftUpdatedAt;
+        });
       const anyHasMore = results.some((r) => r.hasMore);
 
       return res.json({ connected: true, repo, prs: allPrs, page: effectivePage, hasMore: anyHasMore });

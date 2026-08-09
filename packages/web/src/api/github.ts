@@ -198,10 +198,11 @@ export const createWebGitHubAPI = (): GitHubAPI => ({
     return body.branches ?? [];
   },
 
-  async prsList(directory: string, options?: { page?: number }): Promise<GitHubPullRequestsListResult> {
+  async prsList(directory: string, options?: { page?: number; state?: 'open' | 'all' }): Promise<GitHubPullRequestsListResult> {
     const page = options?.page ?? 1;
+    const state = options?.state ?? 'open';
     const response = await fetch(
-      `/api/github/pulls/list?directory=${encodeURIComponent(directory)}&page=${encodeURIComponent(String(page))}`,
+      `/api/github/pulls/list?directory=${encodeURIComponent(directory)}&page=${encodeURIComponent(String(page))}&state=${encodeURIComponent(state)}`,
       { method: 'GET', headers: { Accept: 'application/json' } }
     );
     const body = await jsonOrNull<GitHubPullRequestsListResult & { error?: string }>(response);

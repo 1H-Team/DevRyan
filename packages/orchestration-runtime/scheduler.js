@@ -21,7 +21,10 @@ import {
   DEFAULT_MANAGED_TERMINAL_MAX_RECORDS,
   compactManagedOrchestrationState,
 } from './persistence.js';
-import { isDefiniteProviderUsageLimit } from './provider-retry-policy.js';
+import {
+  isDefiniteProviderUsageLimit,
+  isProviderPromptRejected,
+} from './provider-retry-policy.js';
 
 const ACTIVE_STATUSES = new Set(['starting', 'running']);
 const TERMINAL_RESULT_STATUSES = new Set(['completed', 'failed', 'aborted', 'interrupted']);
@@ -31,6 +34,7 @@ const requiresManualModelRecovery = (task, resultEnvelope) => Boolean(
   && !isManagedTaskAgentRetryAvailable(task)
   && (task.status === 'failed' || task.status === 'interrupted')
   && resultEnvelope?.resumable
+  && !isProviderPromptRejected(task.failureReason)
   && (
     isDefiniteProviderUsageLimit(task.failureReason)
     || (task.mode === 'orchestrator' && task.dispatchGroupId !== null && task.attempt >= 2)
@@ -1496,6 +1500,28 @@ export const createManagedTaskScheduler = (options = {}) => {
         );
       }
 
+      const providerPromptRejected = isProviderPromptRejected(sourceTask.failureReason);
+      if (
+        providerPromptRejected
+        && (action === 'resume' || action === 'recover_in_place' || action === 'retry_in_place')
+      ) {
+        throw new ManagedOrchestrationError(
+          'provider_prompt_rejection_requires_fresh_retry',
+          'provider prompt rejection recovery requires a fresh child task with a reframed prompt',
+        );
+      }
+      if (providerPromptRejected && action === 'retry') {
+        const retryPrompt = typeof actionOptions.prompt === 'string'
+          ? actionOptions.prompt.trim()
+          : '';
+        if (!retryPrompt || retryPrompt === sourceTask.prompt.trim()) {
+          throw new ManagedOrchestrationError(
+            'provider_prompt_rejection_requires_reframed_prompt',
+            'provider prompt rejection retry requires a non-empty prompt that differs from the rejected prompt',
+          );
+        }
+      }
+
       if (action === 'retry_in_place' && (
         !sourceTask.childSessionId
         || !actionOptions.providerId?.trim()
@@ -1516,7 +1542,7 @@ export const createManagedTaskScheduler = (options = {}) => {
       ) {
         throw new ManagedOrchestrationError(
           'managed_retry_limit_reached',
-          'grouped Orchestrator tasks allow only one agent retry or resume; choose a model and retry in place',
+          'grouped Orchestrator tasks allow only one agent retry or resume',
         );
       }
 

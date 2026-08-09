@@ -154,7 +154,8 @@ export const useMenuActions = (
           break;
 
         case 'new-worktree-session':
-          if (!hasAuthCapability(getAuthPrincipal(), 'manageProjects')) break;
+          if (!hasAuthCapability(getAuthPrincipal(), 'createWorktrees')
+            || !hasAuthCapability(getAuthPrincipal(), 'createBranches')) break;
           setActiveMainTab('chat');
           setSessionSwitcherOpen(false);
           createWorktreeSession();

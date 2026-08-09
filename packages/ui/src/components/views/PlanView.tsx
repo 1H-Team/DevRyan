@@ -14,7 +14,7 @@ import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { generateSyntaxTheme } from '@/lib/theme/syntaxThemeGenerator';
 import { createFlexokiCodeMirrorTheme } from '@/lib/codemirror/flexokiTheme';
 import { languageByExtension } from '@/lib/codemirror/languageByExtension';
-import { RiCheckLine, RiClipboardLine, RiCloseLine } from '@remixicon/react';
+import { RiCheckLine, RiClipboardLine, RiCloseLine, RiRefreshLine } from '@remixicon/react';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessions } from '@/sync/sync-context';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
@@ -127,6 +127,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
   }, [session?.directory]);
   const sessionSlug = session?.slug ?? null;
   const sessionCreated = session?.time?.created ?? null;
+  const sessionPlanIdentity = sessionPlanFileRecord?.revisionIdentity ?? null;
 
   const [resolvedPath, setResolvedPath] = React.useState<string | null>(null);
   const displayPath = React.useMemo(() => {
@@ -137,6 +138,8 @@ export const PlanView: React.FC<PlanViewProps> = ({
   }, [resolvedPath, sessionDirectory, homeDirectory]);
   const [content, setContent] = React.useState<string>('');
   const [saveError, setSaveError] = React.useState<string | null>(null);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+  const [loadRetryNonce, setLoadRetryNonce] = React.useState(0);
   const planFileLabel = React.useMemo(() => {
     return displayPath ? displayPath.split('/').pop() || t('planView.file.defaultName') : t('planView.file.defaultName');
   }, [displayPath, t]);
@@ -274,6 +277,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
     if (!planModeEnabled && !targetPath && !sessionPlanPath) {
       setResolvedPath(null);
       setContent('');
+      setLoadError(null);
       setLoading(false);
       return;
     }
@@ -281,6 +285,10 @@ export const PlanView: React.FC<PlanViewProps> = ({
     let cancelled = false;
 
     const readText = async (path: string): Promise<string> => {
+      if (path === sessionPlanPath && sessionPlanIdentity) {
+        const result = await runtimeApis.sessionPlans.readRevision(sessionPlanIdentity);
+        return result.content;
+      }
       if (runtimeApis.files?.readFile) {
         const result = await runtimeApis.files.readFile(path);
         return result?.content ?? '';
@@ -306,6 +314,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
       setResolvedPath(null);
       setContent('');
       setSaveError(null);
+      setLoadError(null);
 
       setLoading(true);
 
@@ -325,14 +334,20 @@ export const PlanView: React.FC<PlanViewProps> = ({
 
         let resolved: string | null = null;
         let text: string | null = null;
+        let canonicalReadError: string | null = null;
 
         for (const candidate of candidates) {
           try {
             text = await readText(candidate);
             resolved = candidate;
             break;
-          } catch {
-            // ignore
+          } catch (error) {
+            if (candidate === sessionPlanPath && sessionPlanIdentity) {
+              canonicalReadError = error instanceof Error
+                ? error.message
+                : t('planView.error.loadFailed');
+              break;
+            }
           }
         }
 
@@ -341,15 +356,19 @@ export const PlanView: React.FC<PlanViewProps> = ({
         if (!resolved || text === null) {
           setResolvedPath(null);
           setContent('');
+          if (canonicalReadError) {
+            setLoadError(canonicalReadError);
+          }
           return;
         }
 
         setResolvedPath(resolved);
         setContent(text);
-      } catch {
+      } catch (error) {
         if (cancelled) return;
         setResolvedPath(null);
         setContent('');
+        setLoadError(error instanceof Error ? error.message : t('planView.error.loadFailed'));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -360,14 +379,20 @@ export const PlanView: React.FC<PlanViewProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [homeDirectory, planModeEnabled, runtimeApis.files, sessionCreated, sessionDirectory, sessionPlanPath, sessionSlug, targetPath]);
+  }, [homeDirectory, loadRetryNonce, planModeEnabled, runtimeApis.files, runtimeApis.sessionPlans, sessionCreated, sessionDirectory, sessionPlanIdentity, sessionPlanPath, sessionSlug, t, targetPath]);
 
   const savePlanContent = React.useCallback(async (): Promise<boolean> => {
     if (!resolvedPath) return false;
 
     try {
       setSaveError(null);
-      if (runtimeApis.files?.writeFile) {
+      if (resolvedPath === sessionPlanPath && sessionPlanIdentity) {
+        const result = await runtimeApis.sessionPlans.updateRevision({
+          ...sessionPlanIdentity,
+          markdown: content,
+        });
+        if (!result.saved) throw new Error(t('planView.error.writeFailed'));
+      } else if (runtimeApis.files?.writeFile) {
         const result = await runtimeApis.files.writeFile(resolvedPath, content);
         if (!result?.success) {
           throw new Error(t('planView.error.writeFailed'));
@@ -387,7 +412,7 @@ export const PlanView: React.FC<PlanViewProps> = ({
       setSaveError(error instanceof Error ? error.message : t('planView.error.saveFailed'));
       return false;
     }
-  }, [content, resolvedPath, runtimeApis.files, t]);
+  }, [content, resolvedPath, runtimeApis.files, runtimeApis.sessionPlans, sessionPlanIdentity, sessionPlanPath, t]);
 
   React.useEffect(() => {
     if (!resolvedPath) {
@@ -518,6 +543,29 @@ export const PlanView: React.FC<PlanViewProps> = ({
         <ScrollableOverlay outerClassName="h-full min-w-0" className="h-full min-w-0">
           {loading ? (
             <div className="p-3 typography-ui text-muted-foreground">{t('planView.state.loading')}</div>
+          ) : loadError ? (
+            <div className="flex h-full items-center justify-center p-6">
+              <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+                <div>
+                  <div className="typography-ui-label font-medium text-foreground">
+                    {t('planView.error.loadFailed')}
+                  </div>
+                  <div className="mt-1 typography-micro text-muted-foreground">
+                    {loadError}
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setLoadRetryNonce((nonce) => nonce + 1)}
+                >
+                  <RiRefreshLine className="size-3.5" aria-hidden="true" />
+                  {t('planView.actions.retryLoad')}
+                </Button>
+              </div>
+            </div>
           ) : (
             <div className="relative h-full">
               <div className="h-full">

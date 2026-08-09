@@ -27,9 +27,11 @@ const createApp = ({
   rejectQuestion = vi.fn(async () => false),
   emitEvent = vi.fn(),
   upstreamTimeoutMs,
+  slowRequestThresholdMs,
 } = {}) => {
   const app = express();
   app.use(express.json());
+  const logger = { warn: vi.fn(), error: vi.fn() };
 
   const cursorSdkRuntime = {
     listPendingQuestions: vi.fn(({ directory } = {}) => cursorQuestions.filter(
@@ -44,16 +46,23 @@ const createApp = ({
     buildOpenCodeUrl: (path) => `http://opencode.test${path}`,
     getOpenCodeAuthHeaders: () => ({ Authorization: 'Bearer upstream' }),
     fetchImpl,
-    logger: { warn: vi.fn(), error: vi.fn() },
+    logger,
     emitEvent,
     upstreamTimeoutMs,
+    slowRequestThresholdMs,
   });
 
-  app.post('/api/question/:requestID/reply', (req, res) => res.json({ upstream: 'reply' }));
+  app.post('/api/question/:requestID/reply', (req, res) => res.json({ upstream: 'reply', holdMs: req.readinessHoldMs ?? null }));
   app.post('/api/question/:requestID/reject', (req, res) => res.json({ upstream: 'reject' }));
 
-  return { app, cursorSdkRuntime, fetchImpl, replyToQuestion, rejectQuestion, emitEvent };
+  return { app, cursorSdkRuntime, fetchImpl, replyToQuestion, rejectQuestion, emitEvent, logger };
 };
+
+const flushCloseEvents = () => new Promise((resolve) => setImmediate(resolve));
+
+const slowRequestLogCalls = (logger) => logger.warn.mock.calls.filter(
+  ([message]) => message === '[questions] slow request',
+);
 
 describe('question routes', () => {
   it('merges OpenCode and directory-filtered Cursor questions and deduplicates by session/request identity', async () => {
@@ -225,6 +234,50 @@ describe('question routes', () => {
       .send({ answers: [['Throw']] })
       .expect(200);
 
-    expect(response.body).toEqual({ upstream: 'reply' });
+    expect(response.body).toEqual({ upstream: 'reply', holdMs: null });
+  });
+
+  it('logs latency attribution for slow question replies, both Cursor-handled and proxied', async () => {
+    const replyToQuestion = vi.fn(async () => true);
+    const { app, logger } = createApp({ replyToQuestion, slowRequestThresholdMs: 0 });
+
+    await request(app)
+      .post('/api/question/req_cursor/reply')
+      .send({ answers: [['A']] })
+      .expect(200);
+    await request(app)
+      .post('/api/question/req_open/reject')
+      .send({})
+      .expect(200);
+    await flushCloseEvents();
+
+    const calls = slowRequestLogCalls(logger);
+    expect(calls).toHaveLength(2);
+    expect(calls[0][1]).toMatchObject({
+      method: 'POST',
+      url: '/api/question/req_cursor/reply',
+      status: 200,
+      holdMs: 0,
+      proxyMs: null,
+    });
+    expect(calls[0][1].totalMs).toBeGreaterThanOrEqual(0);
+    expect(calls[1][1]).toMatchObject({
+      method: 'POST',
+      url: '/api/question/req_open/reject',
+      status: 200,
+    });
+  });
+
+  it('stays silent for replies faster than the slow-request threshold', async () => {
+    const replyToQuestion = vi.fn(async () => true);
+    const { app, logger } = createApp({ replyToQuestion });
+
+    await request(app)
+      .post('/api/question/req_cursor/reply')
+      .send({ answers: [['A']] })
+      .expect(200);
+    await flushCloseEvents();
+
+    expect(slowRequestLogCalls(logger)).toHaveLength(0);
   });
 });

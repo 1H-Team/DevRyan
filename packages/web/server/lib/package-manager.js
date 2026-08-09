@@ -11,7 +11,7 @@ const __dirname = path.dirname(__filename);
 const PACKAGE_NAME = '@openchamber/web';
 const PACKAGE_PATH_SEGMENTS = PACKAGE_NAME.split('/');
 const NPM_REGISTRY_URL = `https://registry.npmjs.org/${PACKAGE_NAME}`;
-const GITHUB_REPOSITORY_OWNER = 'zoubenr';
+const GITHUB_REPOSITORY_OWNER = '1H-Team';
 const GITHUB_REPOSITORY_NAME = 'DevRyan';
 const GITHUB_LATEST_RELEASE_API_URL =
   `https://api.github.com/repos/${GITHUB_REPOSITORY_OWNER}/${GITHUB_REPOSITORY_NAME}/releases/latest`;

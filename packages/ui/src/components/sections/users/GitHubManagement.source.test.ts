@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'bun:test';
 
 const userManagementSource = readFileSync(new URL('./UserManagementPage.tsx', import.meta.url), 'utf8');
+const userManagementDataSource = readFileSync(new URL('./useAdminUsersData.ts', import.meta.url), 'utf8');
 const createUserSource = readFileSync(new URL('./CreateUserDialog.tsx', import.meta.url), 'utf8');
 const userDetailSource = readFileSync(new URL('./UserDetail.tsx', import.meta.url), 'utf8');
 const githubAccountsSource = readFileSync(new URL('./GitHubAccountsSection.tsx', import.meta.url), 'utf8');
@@ -55,5 +56,13 @@ describe('managed GitHub settings source contract', () => {
     expect(githubAccountsSource).toContain('Save Assignment');
     expect(githubAccountsSource).toContain('already assigned @');
     expect(githubAccountsSource).toContain('The credential will stay connected to this host.');
+  });
+
+  test('blocks managed datasets and exposes explicit offline-grace recovery controls', () => {
+    expect(userManagementSource).toContain('useAuthOfflineGrace()');
+    expect(userManagementSource).toContain('useAdminUsersData(canEdit, canManageGitHubAccounts, !offlineGrace)');
+    expect(userManagementSource).toContain('Identity Service Temporarily Unavailable');
+    expect(userManagementSource).toContain('retryAuthSession()');
+    expect(userManagementDataSource).toContain('if (!enabled)');
   });
 });

@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { normalizeMessageFetchLimit, unwrapMessageRecordsResult } from "./message-fetch"
+import {
+  normalizeMessageFetchLimit,
+  resolveMessagePagePagination,
+  unwrapMessageRecordsResult,
+} from "./message-fetch"
 
 describe("message fetch hardening", () => {
   test("clamps message fetch limits to the default page size when metadata is poisoned", () => {
@@ -23,5 +27,45 @@ describe("message fetch hardening", () => {
     } catch (error) {
       expect((error as Error & { status?: number }).status).toBe(503)
     }
+  })
+
+  test("treats an empty initial page as complete even when it includes a cursor", () => {
+    expect(resolveMessagePagePagination({
+      requestedLimit: 200,
+      returnedCount: 0,
+      cursor: "msg-first",
+    })).toEqual({ cursor: undefined, complete: true })
+  })
+
+  test("treats a new one-turn page as complete even when it includes a cursor", () => {
+    expect(resolveMessagePagePagination({
+      requestedLimit: 200,
+      returnedCount: 2,
+      cursor: "msg-user",
+    })).toEqual({ cursor: undefined, complete: true })
+  })
+
+  test("ends pagination after any partial older page", () => {
+    expect(resolveMessagePagePagination({
+      requestedLimit: 200,
+      returnedCount: 17,
+      cursor: "msg-oldest",
+    })).toEqual({ cursor: undefined, complete: true })
+  })
+
+  test("keeps a cursor when a full page may have older messages", () => {
+    expect(resolveMessagePagePagination({
+      requestedLimit: 200,
+      returnedCount: 200,
+      cursor: "msg-oldest",
+    })).toEqual({ cursor: "msg-oldest", complete: false })
+  })
+
+  test("treats a page without a cursor as complete regardless of its size", () => {
+    expect(resolveMessagePagePagination({
+      requestedLimit: 200,
+      returnedCount: 200,
+      cursor: undefined,
+    })).toEqual({ cursor: undefined, complete: true })
   })
 })

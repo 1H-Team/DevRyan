@@ -99,6 +99,8 @@ export function GitHubIssuePickerDialog({
 }) {
   const { t } = useI18n();
   const principal = useAuthPrincipal();
+  const canCreateWorktrees = principal.scope !== 'managed' || principal.policy.createWorktrees;
+  const canCreateBranches = principal.scope !== 'managed' || principal.policy.createBranches;
   const { github } = useRuntimeAPIs();
   const githubAuthStatus = useGitHubAuthStore((state) => state.status);
   const githubAuthChecked = useGitHubAuthStore((state) => state.hasChecked);
@@ -116,6 +118,9 @@ export function GitHubIssuePickerDialog({
 
   const [query, setQuery] = React.useState('');
   const [createInWorktree, setCreateInWorktree] = React.useState(false);
+  React.useEffect(() => {
+    if (!canCreateWorktrees || !canCreateBranches) setCreateInWorktree(false);
+  }, [canCreateBranches, canCreateWorktrees]);
   const [result, setResult] = React.useState<GitHubIssuesListResult | null>(null);
   const [issues, setIssues] = React.useState<GitHubIssueSummary[]>([]);
   const [page, setPage] = React.useState(1);
@@ -636,7 +641,7 @@ export function GitHubIssuePickerDialog({
         <div className="mt-4 p-3 bg-muted/30 rounded-lg">
           <p className="typography-meta text-muted-foreground font-medium mb-2">{t('session.githubIssuePicker.actions.sectionTitle')}</p>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-2">
-            <div
+            {canCreateWorktrees && canCreateBranches ? <div
               className="flex items-center gap-2 cursor-pointer"
               role="button"
               tabIndex={0}
@@ -667,7 +672,7 @@ export function GitHubIssuePickerDialog({
               </button>
               <span className="typography-meta text-muted-foreground">{t('session.githubIssuePicker.actions.createInWorktree')}</span>
               <span className="typography-meta text-muted-foreground/70 hidden sm:inline">(issue-&lt;number&gt;-&lt;slug&gt;)</span>
-            </div>
+            </div> : null}
             <div className="hidden sm:block sm:flex-1" />
             <div className="flex items-center gap-2">
               {repoUrl ? (

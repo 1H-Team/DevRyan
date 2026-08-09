@@ -9,7 +9,11 @@ import { createWorktreeSession } from '@/lib/worktreeSessionCreator';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { canUseElectronDesktopIPC, invokeDesktop, isVSCodeRuntime } from '@/lib/desktop';
 import { showOpenCodeStatus } from '@/lib/openCodeStatus';
-import { eventMatchesShortcut, getEffectiveShortcutCombo } from '@/lib/shortcuts';
+import {
+  eventMatchesShortcut,
+  getEffectiveShortcutCombo,
+  isShortcutActionAvailable,
+} from '@/lib/shortcuts';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { applyDraftAwareModelChange, persistCycledThinkingVariant } from '@/components/chat/draftAwareAgentChange';
@@ -60,7 +64,11 @@ export const useKeyboardShortcuts = () => {
   }, [clearAbortPrompt]);
 
   React.useEffect(() => {
-    const combo = (actionId: string) => getEffectiveShortcutCombo(actionId, shortcutOverrides);
+    const combo = (actionId: string) => (
+      isShortcutActionAvailable(actionId, getAuthPrincipal())
+        ? getEffectiveShortcutCombo(actionId, shortcutOverrides)
+        : ''
+    );
     const isTerminalEventTarget = (target: EventTarget | null) => {
       if (!(target instanceof Element)) {
         return false;
@@ -130,7 +138,8 @@ export const useKeyboardShortcuts = () => {
       const canUseFiles = hasAuthCapability(principal, 'files');
       const canUseGit = hasAuthCapability(principal, 'manageGit');
       const canUseTerminal = hasAuthCapability(principal, 'terminal');
-      const canManageProjects = hasAuthCapability(principal, 'manageProjects');
+      const canCreateWorktrees = hasAuthCapability(principal, 'createWorktrees');
+      const canCreateBranches = hasAuthCapability(principal, 'createBranches');
       if (isTerminalEventTarget(e.target)) {
         return;
       }
@@ -179,12 +188,12 @@ export const useKeyboardShortcuts = () => {
         setActiveMainTab('chat');
         setSessionSwitcherOpen(false);
 
-        if (!isVSCodeRuntime() && matchedWorktreeShortcut && canManageProjects) {
+        if (!isVSCodeRuntime() && matchedWorktreeShortcut && canCreateWorktrees && canCreateBranches) {
           createWorktreeSession();
           return;
         }
 
-        if (matchedWorktreeShortcut && !canManageProjects) return;
+        if (matchedWorktreeShortcut && (!canCreateWorktrees || !canCreateBranches)) return;
 
         openNewSessionDraft();
         return;

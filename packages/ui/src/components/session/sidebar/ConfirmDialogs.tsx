@@ -165,6 +165,60 @@ export function BulkSessionDeleteConfirmDialog(props: {
   );
 }
 
+export type ArchiveBranchSessionsConfirmState = {
+  branchLabel: string;
+  projectDirectory: string;
+  sessions: Session[];
+} | null;
+
+export function BranchSessionArchiveConfirmDialog(props: {
+  value: ArchiveBranchSessionsConfirmState;
+  setValue: (next: ArchiveBranchSessionsConfirmState) => void;
+  pending: boolean;
+  onConfirm: () => Promise<void> | void;
+}): React.ReactNode {
+  const { t } = useI18n();
+  const { value, setValue, pending, onConfirm } = props;
+  const sessionCount = value?.sessions.length ?? 0;
+
+  return (
+    <Dialog open={Boolean(value)} onOpenChange={(open) => { if (!open && !pending) setValue(null); }}>
+      <DialogContent showCloseButton={false} className="max-w-sm gap-5">
+        <DialogHeader>
+          <DialogTitle>{t('sessions.sidebar.dialogs.archiveBranchSessions.title', {
+            branch: value?.branchLabel ?? '',
+          })}</DialogTitle>
+          <DialogDescription>
+            {sessionCount === 1
+              ? t('sessions.sidebar.dialogs.archiveBranchSessions.singleDescription')
+              : t('sessions.sidebar.dialogs.archiveBranchSessions.pluralDescription', { count: sessionCount })}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => setValue(null)}
+            className="inline-flex h-8 items-center justify-center rounded-md border border-border px-3 typography-ui-label text-foreground hover:bg-interactive-hover/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:opacity-50"
+          >
+            {t('sessions.sidebar.dialogs.cancel')}
+          </button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => void onConfirm()}
+            className="inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 typography-ui-label text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:opacity-50"
+          >
+            {pending
+              ? t('sessions.sidebar.dialogs.archiveBranchSessions.archiving')
+              : t('sessions.sidebar.dialogs.archiveBranchSessions.confirm')}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export type DeleteFolderConfirmState = {
   scopeKey: string;
   folderId: string;

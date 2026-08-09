@@ -32,7 +32,7 @@ interface GitHeaderProps {
   branchInfo: Record<string, { ahead?: number; behind?: number }> | undefined;
   remotes: GitRemote[];
   onCheckoutBranch: (branch: string) => void;
-  onCreateBranch: (name: string, remote?: GitRemote) => Promise<void>;
+  onCreateBranch?: (name: string, remote?: GitRemote) => Promise<void>;
   onRenameBranch?: (oldName: string, newName: string) => Promise<void>;
   activeIdentityProfile: GitIdentityProfile | null;
   availableIdentities: GitIdentityProfile[];

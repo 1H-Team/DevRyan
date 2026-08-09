@@ -59,7 +59,7 @@ describe('checkForUpdates', () => {
 
   it('uses the DevRyan GitHub release as the latest-version authority', async () => {
     fetchMock
-      .when('api.github.com/repos/zoubenr/DevRyan/releases/latest', {
+      .when('api.github.com/repos/1H-Team/DevRyan/releases/latest', {
         ok: true,
         json: async () => githubRelease(),
       })
@@ -89,7 +89,7 @@ describe('checkForUpdates', () => {
 
   it('keeps web updates unavailable until the matching compatibility package is published', async () => {
     fetchMock
-      .when('api.github.com/repos/zoubenr/DevRyan/releases/latest', {
+      .when('api.github.com/repos/1H-Team/DevRyan/releases/latest', {
         ok: true,
         json: async () => githubRelease(),
       })
@@ -107,7 +107,7 @@ describe('checkForUpdates', () => {
   it.each(['desktop-tauri', 'desktop-electron'])(
     'does not cross-check %s release availability against npm',
     async (appType) => {
-      fetchMock.when('api.github.com/repos/zoubenr/DevRyan/releases/latest', {
+      fetchMock.when('api.github.com/repos/1H-Team/DevRyan/releases/latest', {
         ok: true,
         json: async () => githubRelease(),
       });
@@ -124,7 +124,7 @@ describe('checkForUpdates', () => {
   );
 
   it('reports the current DevRyan release without consulting npm', async () => {
-    fetchMock.when('api.github.com/repos/zoubenr/DevRyan/releases/latest', {
+    fetchMock.when('api.github.com/repos/1H-Team/DevRyan/releases/latest', {
       ok: true,
       json: async () => githubRelease({ tag_name: 'v1.9.10' }),
     });
@@ -137,7 +137,7 @@ describe('checkForUpdates', () => {
   });
 
   it('does not fall back to a newer OpenChamber npm version when GitHub is older', async () => {
-    fetchMock.when('api.github.com/repos/zoubenr/DevRyan/releases/latest', {
+    fetchMock.when('api.github.com/repos/1H-Team/DevRyan/releases/latest', {
       ok: true,
       json: async () => githubRelease({ tag_name: 'v1.9.9' }),
     });
@@ -151,7 +151,7 @@ describe('checkForUpdates', () => {
 
   it('fails closed when the DevRyan GitHub release cannot be read', async () => {
     fetchMock.when(
-      'api.github.com/repos/zoubenr/DevRyan/releases/latest',
+      'api.github.com/repos/1H-Team/DevRyan/releases/latest',
       Promise.reject(new Error('Network error')),
     );
 
@@ -166,7 +166,7 @@ describe('checkForUpdates', () => {
   });
 
   it('fails closed for invalid GitHub release metadata', async () => {
-    fetchMock.when('api.github.com/repos/zoubenr/DevRyan/releases/latest', {
+    fetchMock.when('api.github.com/repos/1H-Team/DevRyan/releases/latest', {
       ok: true,
       json: async () => ({ tag_name: null }),
     });

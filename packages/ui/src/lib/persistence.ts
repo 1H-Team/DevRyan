@@ -20,6 +20,8 @@ import {
   THEME_CATALOG_VERSION,
 } from '@/lib/theme/catalogMigration';
 import { resolveNotificationTemplatesFromSettingsSnapshot } from '@/lib/notificationTemplateSync';
+import { parseAgentModelSelections } from '@/lib/agentModelSelection';
+import { canEditSettingsPage, getAuthPrincipal } from '@/lib/authSession';
 
 const persistToLocalStorage = (settings: DesktopSettings) => {
   if (typeof window === 'undefined') {
@@ -794,6 +796,9 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   if (typeof candidate.defaultModel === 'string' && candidate.defaultModel.length > 0) {
     result.defaultModel = candidate.defaultModel;
   }
+  if (candidate.agentModelSelections && typeof candidate.agentModelSelections === 'object' && !Array.isArray(candidate.agentModelSelections)) {
+    result.agentModelSelections = parseAgentModelSelections(candidate.agentModelSelections);
+  }
   if (typeof candidate.defaultVariant === 'string' && candidate.defaultVariant.length > 0) {
     result.defaultVariant = candidate.defaultVariant;
   }
@@ -1271,7 +1276,7 @@ export const syncDesktopSettings = async (): Promise<void> => {
       window.dispatchEvent(new CustomEvent<DesktopSettings>('openchamber:settings-synced', { detail: settings }));
     }
 
-    if (migration.changed) {
+    if (migration.changed && canEditSettingsPage(getAuthPrincipal(), 'appearance')) {
       void updateDesktopSettings({
         themeId: settings.themeId,
         lightThemeId: settings.lightThemeId,

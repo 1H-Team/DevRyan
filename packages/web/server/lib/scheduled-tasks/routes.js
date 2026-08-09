@@ -14,6 +14,11 @@ const normalizeBranchName = (value) => String(value || '').trim()
   .replace(/^refs\/remotes\/[^/]+\//, '')
   .replace(/^remotes\/[^/]+\//, '');
 
+export const canReceiveProjectMetadataEvent = (client, projectId) => (
+  client?.isAdmin === true
+  || (client?.projectIds instanceof Set && client.projectIds.has(projectId))
+);
+
 export const registerScheduledTaskRoutes = (app, dependencies) => {
   const {
     readSettingsFromDiskMigrated,
@@ -271,6 +276,7 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
       response: res,
       principalId: req.principal?.scope === 'managed' ? req.principal.id : null,
       isAdmin: isAdministrator(req.principal),
+      projectIds: new Set((req.principal?.assignments || []).map((entry) => entry.projectId).filter(Boolean)),
     };
     clients.add(client);
 

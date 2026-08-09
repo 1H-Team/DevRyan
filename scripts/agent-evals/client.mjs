@@ -192,7 +192,9 @@ export const createEvaluationClient = (options = {}) => {
       return session;
     },
     async promptSession(sessionId, directory, selection, prompt, signal) {
-      const tools = resolveProviderPromptTools(selection.providerId, selection.agent);
+      const tools = resolveProviderPromptTools(selection.providerId, selection.agent, {
+        readOnly: normalizeString(selection.agent).toLowerCase() === 'oracle',
+      });
       return await request(appendQuery(`/session/${encodeURIComponent(sessionId)}/prompt_async`, { directory }), {
         method: 'POST',
         body: {
@@ -779,6 +781,61 @@ export const collectSanitizedTools = (sessionTree, options = {}) => {
   return tools;
 };
 
+const ORACLE_REVIEW_SIGNAL_PATTERNS = Object.freeze({
+  authorization_boundary: [
+    /\b(?:authori[sz]ation|permission|owner|ownership|admin)\b/i,
+    /\b(?:actor|caller|user|profile)\b/i,
+    /\b(?:bypass|check|verify|unauthori[sz]ed|forbidden)\b/i,
+  ],
+  stale_write: [
+    /\b(?:revision|version|expectedrevision)\b/i,
+    /(?:\bstale\b|\bconcurren\w*|\bcompare\w*|\blost update\b|\bignored\b)/i,
+  ],
+  idempotency_order: [
+    /(?:\bidempoten\w*|\bduplicate\w*|\battempt\b|\boperation\b)/i,
+    /\b(?:reserve|persist|record|store)\w*\b/i,
+    /\b(?:before|after|external|gateway|stripe)\b/i,
+  ],
+  webhook_monotonicity: [
+    /\b(?:webhook|event)\b/i,
+    /\b(?:monotonic|regress|out[- ]of[- ]order|terminal|stale)\w*\b/i,
+  ],
+});
+
+const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+export const collectOracleReviewEvidence = (sessionTree, options = {}) => {
+  const rootSessionId = normalizeString(options.rootSessionId);
+  const assistantText = [];
+  for (const session of Array.isArray(sessionTree) ? sessionTree : []) {
+    if (session?.sessionId !== rootSessionId) continue;
+    for (const message of Array.isArray(session?.messages) ? session.messages : []) {
+      const role = normalizeString(message?.info?.role ?? message?.role).toLowerCase();
+      if (role !== 'assistant') continue;
+      for (const part of Array.isArray(message?.parts) ? message.parts : []) {
+        if (part?.type === 'text' && typeof part.text === 'string') assistantText.push(part.text);
+      }
+    }
+  }
+  const text = assistantText.join('\n');
+  const signals = Object.entries(ORACLE_REVIEW_SIGNAL_PATTERNS)
+    .filter(([, patterns]) => patterns.every((pattern) => pattern.test(text)))
+    .map(([signal]) => signal)
+    .sort();
+  const scopedPaths = [
+    options.runFiles?.sourceRelativePath,
+    options.runFiles?.testRelativePath,
+  ].filter((value) => typeof value === 'string' && value);
+  const pathLineEvidence = scopedPaths.some((relativePath) => (
+    new RegExp(`${escapeRegExp(relativePath)}(?::|\\D){1,8}\\d+`, 'i').test(text)
+  ));
+  return {
+    signals,
+    pathLineEvidence,
+    terminalComplete: /<status>complete<\/status>\s*$/i.test(text),
+  };
+};
+
 const sanitizeTurnTiming = (payload) => ({
   records: (Array.isArray(payload?.records) ? payload.records : []).map((record) => ({
     durationsMs: Object.fromEntries(
@@ -852,6 +909,10 @@ export const runSessionTurn = async (options = {}) => {
       tools: collectSanitizedTools(sessionTree, {
         rootSessionId,
         ownedTestRelativePath: options.runFiles?.testRelativePath,
+      }),
+      oracleReviewEvidence: collectOracleReviewEvidence(sessionTree, {
+        rootSessionId,
+        runFiles: options.runFiles,
       }),
       turnTiming: sanitizeTurnTiming(timingPayload),
       managedSnapshot: sanitizeManagedSnapshot(managedPayload),

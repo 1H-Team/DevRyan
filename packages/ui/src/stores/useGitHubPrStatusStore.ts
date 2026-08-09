@@ -10,6 +10,7 @@ const PR_BOOTSTRAP_RETRY_DELAYS_MS = [2_000, 5_000] as const;
 const PR_OPEN_BUSY_INTERVAL_MS = 60_000;
 const PR_OPEN_DEFAULT_INTERVAL_MS = 2 * 60_000;
 const PR_OPEN_STABLE_INTERVAL_MS = 5 * 60_000;
+export const PR_TERMINAL_DISCOVERY_INTERVAL_MS = 5 * 60_000;
 const PR_PERSIST_TTL_MS = 12 * 60 * 60_000;
 const PR_STATUS_STORAGE_KEY = 'openchamber.github-pr-status';
 export const PR_STATUS_REFRESH_CONCURRENCY = 4;
@@ -48,6 +49,25 @@ const isPendingChecks = (status: GitHubPullRequestStatus | null): boolean => {
     return false;
   }
   return checks.state === 'pending' || checks.pending > 0;
+};
+
+export const getPrPollingPlan = (status: GitHubPullRequestStatus | null): {
+  intervalMs: number;
+  onlyExistingPr: boolean;
+} => {
+  if (isTerminalPrState(status?.pr?.state)) {
+    return {
+      intervalMs: PR_TERMINAL_DISCOVERY_INTERVAL_MS,
+      onlyExistingPr: false,
+    };
+  }
+  if (isPendingChecks(status)) {
+    return { intervalMs: PR_OPEN_BUSY_INTERVAL_MS, onlyExistingPr: true };
+  }
+  if (status?.checks && status.checks.state !== 'pending') {
+    return { intervalMs: PR_OPEN_STABLE_INTERVAL_MS, onlyExistingPr: true };
+  }
+  return { intervalMs: PR_OPEN_DEFAULT_INTERVAL_MS, onlyExistingPr: true };
 };
 
 export const getGitHubPrStatusKey = (directory: string, branch: string, remoteName?: string | null): string => {
@@ -353,21 +373,18 @@ export const useGitHubPrStatusStore = create<GitHubPrStatusStore>()(
             return;
           }
 
-          if (isTerminalPrState(entry.status?.pr?.state)) {
-            return;
-          }
-
           const elapsed = Date.now() - entry.lastRefreshAt;
-          const nextInterval = isPendingChecks(entry.status)
-            ? PR_OPEN_BUSY_INTERVAL_MS
-            : (entry.status?.checks && entry.status.checks.state !== 'pending'
-                ? PR_OPEN_STABLE_INTERVAL_MS
-                : PR_OPEN_DEFAULT_INTERVAL_MS);
-          if (elapsed < nextInterval) {
+          const pollingPlan = getPrPollingPlan(entry.status);
+          if (elapsed < pollingPlan.intervalMs) {
             return;
           }
 
-          void get().refresh(key, { force: true, onlyExistingPr: true, silent: true, markInitialResolved: true });
+          void get().refresh(key, {
+            force: true,
+            onlyExistingPr: pollingPlan.onlyExistingPr,
+            silent: true,
+            markInitialResolved: true,
+          });
         }, PR_REVALIDATE_INTERVAL_MS);
 
         timers.set(key, timerId);

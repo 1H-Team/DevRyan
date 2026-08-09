@@ -14,6 +14,53 @@ export type QuestionSubmissionLock = {
   release: () => void
 }
 
+export type QuestionSubmissionAction = "answer" | "skip"
+
+export type QuestionSubmissionClaim = {
+  action: QuestionSubmissionAction
+  request: QuestionRequest
+  answers: string[][] | null
+}
+
+export type QuestionSubmissionShadow = Map<string, QuestionSubmissionClaim>
+
+export function createQuestionSubmissionShadow(): QuestionSubmissionShadow {
+  return new Map()
+}
+
+export function claimQuestionSubmissions(
+  shadow: QuestionSubmissionShadow,
+  claims: readonly QuestionSubmissionClaim[],
+): boolean {
+  if (claims.length === 0) return false
+
+  const requestKeys = claims.map((claim) => getQuestionRequestKey(claim.request))
+  if (new Set(requestKeys).size !== requestKeys.length) return false
+  if (requestKeys.some((requestKey) => shadow.has(requestKey))) return false
+
+  claims.forEach((claim, index) => {
+    shadow.set(requestKeys[index], claim)
+  })
+  return true
+}
+
+export function releaseQuestionSubmissions(
+  shadow: QuestionSubmissionShadow,
+  requests: readonly QuestionRequest[],
+): void {
+  for (const request of requests) {
+    shadow.delete(getQuestionRequestKey(request))
+  }
+}
+
+export function getQuestionSubmissionStatus(
+  shadow: QuestionSubmissionShadow,
+): { action: QuestionSubmissionAction; count: number } | null {
+  const first = shadow.values().next().value as QuestionSubmissionClaim | undefined
+  if (!first) return null
+  return { action: first.action, count: shadow.size }
+}
+
 export function createQuestionSubmissionLock(): QuestionSubmissionLock {
   let acquired = false
 
@@ -64,7 +111,18 @@ export async function submitQuestionRequestRejections(
   })
 }
 
-export function applyQuestionSubmissionResults(
+export function acknowledgeQuestionRequests(
+  previous: ReadonlySet<string>,
+  requests: readonly QuestionRequest[],
+): Set<string> {
+  const next = new Set(previous)
+  for (const request of requests) {
+    next.add(getQuestionRequestKey(request))
+  }
+  return next
+}
+
+export function settleOptimisticQuestionSubmissionResults(
   previousAcknowledgedRequestKeys: ReadonlySet<string>,
   results: readonly QuestionRequestSubmitResult[],
   fallbackError: string,
@@ -72,19 +130,18 @@ export function applyQuestionSubmissionResults(
   acknowledgedRequestKeys: Set<string>
   errorsByRequestKey: Record<string, string>
   anyFailed: boolean
+  failedResults: QuestionRequestSubmitResult[]
 } {
   const acknowledgedRequestKeys = new Set(previousAcknowledgedRequestKeys)
   const errorsByRequestKey: Record<string, string> = {}
-  let anyFailed = false
+  const failedResults: QuestionRequestSubmitResult[] = []
 
   for (const result of results) {
-    const requestKey = getQuestionRequestKey(result.request)
-    if (result.status === "fulfilled") {
-      acknowledgedRequestKeys.add(requestKey)
-      continue
-    }
+    if (result.status === "fulfilled") continue
 
-    anyFailed = true
+    const requestKey = getQuestionRequestKey(result.request)
+    acknowledgedRequestKeys.delete(requestKey)
+    failedResults.push(result)
     errorsByRequestKey[requestKey] = result.reason instanceof Error
       ? result.reason.message
       : fallbackError
@@ -93,7 +150,8 @@ export function applyQuestionSubmissionResults(
   return {
     acknowledgedRequestKeys,
     errorsByRequestKey,
-    anyFailed,
+    anyFailed: failedResults.length > 0,
+    failedResults,
   }
 }
 

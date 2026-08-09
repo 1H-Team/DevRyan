@@ -6,6 +6,8 @@ export const EVALUATION_CASE_IDS = Object.freeze([
   'inspect',
   'repair-and-test',
   'managed-change',
+  'oracle-review-focused',
+  'oracle-review-deep',
 ]);
 
 const REQUIRED_FIELDS = Object.freeze([

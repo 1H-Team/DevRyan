@@ -58,7 +58,15 @@ describe('session plan persistence coordinator', () => {
     expect(writeCount).toBe(1);
     releaseWrite();
     await Promise.all([first, second]);
-    expect(useSessionPlanFileStore.getState().recordsBySession['session-a']?.status).toBe('saved');
+    const record = useSessionPlanFileStore.getState().recordsBySession['session-a'];
+    expect(record?.status).toBe('saved');
+    expect(record?.revisionIdentity).toEqual({
+      sessionId: 'session-a',
+      sourceMessageId: identity.sourceMessageId,
+      directory: identity.projectPath,
+      sessionCreated: identity.sessionCreated,
+      sessionSlug: identity.sessionSlug,
+    });
   });
 
   test('reuses an existing file and skips subsequent saved-revision work', async () => {
@@ -145,5 +153,6 @@ describe('session plan persistence coordinator', () => {
     const record = useSessionPlanFileStore.getState().recordsBySession['session-a'];
     expect(record?.sourceMessageId).toBe('msg-plan-2');
     expect(record?.status).toBe('saved');
+    expect(record?.revisionIdentity?.sourceMessageId).toBe('msg-plan-2');
   });
 });

@@ -24,6 +24,7 @@ Server-owned scheduled task runtime and routes for OpenChamber-only automation.
   - Manual run endpoint
   - OpenChamber events SSE stream endpoint
   - Per-principal task/status/event filtering and assignment enforcement
+  - Assignment snapshot registration used to scope project-metadata invalidations
 
 ## Public exports (runtime.js)
 
@@ -47,3 +48,7 @@ Server-owned scheduled task runtime and routes for OpenChamber-only automation.
   - `GET /api/openchamber/events`
 
 Managed non-admin users can list, create, edit, delete, and run only their own tasks. Administrators can manage all personal and legacy ownerless tasks. All mutations require the standard CSRF header.
+
+The shared OpenChamber event stream also carries `openchamber:project-metadata-changed`
+with only a project ID. Administrators receive all such invalidations; managed
+non-admin clients receive them only for project IDs present in their assignment snapshot.

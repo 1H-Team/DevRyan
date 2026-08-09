@@ -325,7 +325,7 @@ export interface SessionStore {
     setDraftPreserveDirectoryOverride: (value: boolean) => void;
     closeNewSessionDraft: () => void;
     promoteDraftToSession: (options: { draftId?: string | null; sessionId: string; directoryHint?: string | null; submittedText?: string }) => void;
-    registerPendingSendAbort: (key: string, controller?: AbortController) => AbortController;
+    claimPendingSendAbort: (key: string, controller?: AbortController) => AbortController | null;
     promotePendingSendAbort: (fromKey: string, toKey: string) => AbortController | null;
     abortPendingSend: (key: string) => boolean;
     clearPendingSendAbort: (key: string, controller?: AbortController) => void;

@@ -284,6 +284,10 @@ export const isSettingsChangeAction = (action) => (
   && !DETAILED_ACTIONS.has(action)
 );
 
+export const isAnalyticsChangeAction = (action) => (
+  isSettingsChangeAction(action) || action === 'session.deleted'
+);
+
 export const validateAnalyticsDay = (date, timeZone) => {
   if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
   if (typeof timeZone !== 'string' || !IANAZone.isValidZone(timeZone)) return null;

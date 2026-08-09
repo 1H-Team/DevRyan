@@ -20,6 +20,7 @@ import { useGlobalSyncStore, type GlobalSyncStore } from "./global-sync-store"
 import {
   ChildStoreManager,
   getActiveDirectoryStoreKeys,
+  getReconnectRecoveryDirectoryStoreKeys,
   shouldBootstrapDirectorySubscription,
   type DirectoryStore,
 } from "./child-store"
@@ -33,7 +34,7 @@ import {
 } from "./live-aggregate"
 import { bootstrapGlobal, bootstrapDirectory } from "./bootstrap"
 import { retry } from "./retry"
-import { updateStreamingState, useStreamingStore } from "./streaming"
+import { settleStreamingSessions, updateStreamingState, useStreamingStore } from "./streaming"
 import { isSessionWorkingFromState } from "./session-working"
 import {
   clearActionRefs,
@@ -121,10 +122,12 @@ import {
 import { detectPlanCompletedCandidate } from "./plan-completion-detection"
 import { detectPlanImplementationRequestCandidate } from "./plan-implementation-detection"
 import { detectPlanProposedCandidate } from "./plan-proposed-detection"
+import { resolveEffectivePlanIndicatorState } from "./plan-indicator"
 import { persistSessionPlanRevision } from "@/lib/plans/sessionPlanPersistence"
 import { resolveProjectForSessionDirectory } from "@/lib/projectResolution"
 import { isStrictlyOlderSession } from "./session-recency"
 import {
+  hasSettledTerminalAssistantTurn,
   isSessionTurnSettledForCompletion,
   shouldSettlePlanProposalStatus,
   shouldSettleTerminalSessionStatus,
@@ -149,6 +152,7 @@ import {
   clearSessionMessagePaginationDirectory,
 } from "./message-pagination-store"
 import { removePersistedSessionInput } from "./session-draft-storage"
+import { dropSessionCaches } from "./session-cache"
 import {
   clearDirectoryMaterializations,
   clearDirectoryPrefixedEntries,
@@ -480,6 +484,7 @@ const pendingPartDeltas: PendingPartDeltaStore = new Map()
 type SessionLifecycleRestoration = {
   promise: Promise<void>
   detectsTurnCompletion: boolean
+  forcesRefresh: boolean
   cancelled: boolean
 }
 
@@ -781,12 +786,26 @@ async function materializeAndRestoreSessionLifecycle(
   sessionID: string,
   store: StoreApi<DirectoryStore>,
   detectTurnCompletion = false,
+  forceRefresh = false,
 ): Promise<void> {
   const key = `${directory}\u0000${sessionID}`
   const existing = lifecycleRestorationsBySession.get(key)
   if (existing) {
     await existing.promise
     if (existing.cancelled) return
+    if (forceRefresh && !existing.forcesRefresh) {
+      if (lifecycleRestorationsBySession.get(key) === existing) {
+        lifecycleRestorationsBySession.delete(key)
+      }
+      await materializeAndRestoreSessionLifecycle(
+        directory,
+        sessionID,
+        store,
+        detectTurnCompletion,
+        true,
+      )
+      return
+    }
     if (detectTurnCompletion && !existing.detectsTurnCompletion) {
       await detectAndMarkPlanLifecycle(
         sessionID,
@@ -803,11 +822,12 @@ async function materializeAndRestoreSessionLifecycle(
   const restoration: SessionLifecycleRestoration = {
     promise: Promise.resolve(),
     detectsTurnCompletion: detectTurnCompletion,
+    forcesRefresh: forceRefresh,
     cancelled: false,
   }
   const promise = Promise.resolve().then(async () => {
     if (lifecycleRestorationsBySession.get(key) !== restoration) return
-    if (!getSessionMaterializationStatus(store.getState(), sessionID).renderable) {
+    if (forceRefresh || !getSessionMaterializationStatus(store.getState(), sessionID).renderable) {
       await materializeSessionFromServer(
         directory,
         sessionID,
@@ -854,10 +874,12 @@ export async function restorePersistedSessionIndicatorsForDirectory(
     const sessionIDs = store.getState().session
       .map((session) => session.id)
       .filter((sessionID) => {
-        const hasPendingPlan = useSessionUIStore.getState().planModeUserMessagesBySession.has(sessionID)
+        const sessionUI = useSessionUIStore.getState()
+        const hasPendingPlan = sessionUI.planModeUserMessagesBySession.has(sessionID)
+        const hasPersistedProposal = sessionUI.sessionPlanIndicator.get(sessionID)?.state === "proposed"
         const hasUnreadCompletion = useNotificationStore.getState()
           .index.session.unseenHasCompletion[sessionID] ?? false
-        return hasPendingPlan || hasUnreadCompletion
+        return hasPendingPlan || hasPersistedProposal || hasUnreadCompletion
       })
       .sort()
 
@@ -868,18 +890,42 @@ export async function restorePersistedSessionIndicatorsForDirectory(
       if (indicatorRestorationsByDirectory.get(directory)?.token !== token) return
       const sessionUI = useSessionUIStore.getState()
       const hasPendingPlan = sessionUI.planModeUserMessagesBySession.has(sessionID)
+      const persistedProposal = sessionUI.sessionPlanIndicator.get(sessionID)?.state === "proposed"
+        ? sessionUI.sessionPlanIndicator.get(sessionID)
+        : undefined
       const hasUnreadCompletion = useNotificationStore.getState()
         .index.session.unseenHasCompletion[sessionID] ?? false
-      if (!hasPendingPlan && !hasUnreadCompletion) continue
-      if (sessionUI.sessionPlanIndicator.get(sessionID)?.state === "proposed" && !hasUnreadCompletion) continue
+      if (!hasPendingPlan && !persistedProposal && !hasUnreadCompletion) continue
       try {
         await materializeAndRestoreSessionLifecycle(
           directory,
           sessionID,
           store,
           hasUnreadCompletion,
+          Boolean(persistedProposal),
         )
         if (indicatorRestorationsByDirectory.get(directory)?.token !== token) return
+        if (persistedProposal?.sourceMessageId) {
+          const latestSessionUI = useSessionUIStore.getState()
+          const currentProposal = latestSessionUI.sessionPlanIndicator.get(sessionID)
+          const materialization = getSessionMaterializationStatus(store.getState(), sessionID)
+          if (
+            materialization.hasMessages
+            && currentProposal?.state === "proposed"
+            && currentProposal.sourceMessageId === persistedProposal.sourceMessageId
+          ) {
+            const candidate = detectPlanProposedCandidate({
+              sessionID,
+              state: store.getState(),
+              isRecordedPlanModeUserMessage: (messageId) => latestSessionUI.isUserMessagePlanMode(messageId),
+              implementedPlanRequests: latestSessionUI.implementedPlanRequests,
+              externallyHandedOffPlanRequests: latestSessionUI.externallyHandedOffPlanRequests,
+            })
+            if (!candidate || candidate.sourceMessageId !== persistedProposal.sourceMessageId) {
+              latestSessionUI.retirePlanProposal(sessionID, persistedProposal.sourceMessageId)
+            }
+          }
+        }
       } catch {
         // Restore other sessions independently; a transient failure for one
         // plan must not hide every later plan in the directory.
@@ -1573,6 +1619,72 @@ const normalizeEventDirectory = (rawDirectory: string): string => {
   return normalized.length > 1 ? normalized.replace(/\/+$/, "") : normalized
 }
 
+type DirectorySessionLifecycleChange =
+  | { revision: number; type: "upsert"; session: Session }
+  | { revision: number; type: "delete"; sessionID: string }
+
+type DirectorySessionLifecycleOverlay = {
+  revision: number
+  changes: DirectorySessionLifecycleChange[]
+}
+
+const DIRECTORY_SESSION_LIFECYCLE_CHANGE_LIMIT = 1_000
+const directorySessionLifecycleOverlays = new Map<string, DirectorySessionLifecycleOverlay>()
+
+export const captureDirectorySessionListRevision = (directory: string): number => (
+  directorySessionLifecycleOverlays.get(normalizeEventDirectory(directory))?.revision ?? 0
+)
+
+const recordDirectorySessionLifecycleChange = (
+  directory: string,
+  change:
+    | { type: "upsert"; session: Session }
+    | { type: "delete"; sessionID: string },
+): void => {
+  const normalizedDirectory = normalizeEventDirectory(directory)
+  if (!normalizedDirectory || normalizedDirectory === "global") return
+
+  const overlay = directorySessionLifecycleOverlays.get(normalizedDirectory) ?? {
+    revision: 0,
+    changes: [],
+  }
+  const revision = overlay.revision + 1
+  overlay.revision = revision
+  overlay.changes.push({ ...change, revision } as DirectorySessionLifecycleChange)
+  if (overlay.changes.length > DIRECTORY_SESSION_LIFECYCLE_CHANGE_LIMIT) {
+    overlay.changes.splice(0, overlay.changes.length - DIRECTORY_SESSION_LIFECYCLE_CHANGE_LIMIT)
+  }
+  directorySessionLifecycleOverlays.set(normalizedDirectory, overlay)
+}
+
+export const reconcileDirectorySessionListSnapshot = (
+  directory: string,
+  sessions: Session[],
+  requestRevision: number,
+): Session[] => {
+  const overlay = directorySessionLifecycleOverlays.get(normalizeEventDirectory(directory))
+  if (!overlay || overlay.revision <= requestRevision) return sessions
+
+  const sessionsById = new Map(sessions.map((session) => [session.id, session]))
+  for (const change of overlay.changes) {
+    if (change.revision <= requestRevision) continue
+    if (change.type === "delete") {
+      sessionsById.delete(change.sessionID)
+      continue
+    }
+
+    const current = sessionsById.get(change.session.id)
+    if (!current || !isStrictlyOlderSession(change.session, current)) {
+      sessionsById.set(change.session.id, change.session)
+    }
+  }
+  return Array.from(sessionsById.values()).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+}
+
+export const resetDirectorySessionLifecycleOverlaysForTest = (): void => {
+  directorySessionLifecycleOverlays.clear()
+}
+
 const getSessionIdFromPayload = (event: Event): string | null => {
   const properties = (event as { properties?: unknown }).properties
   if (!properties || typeof properties !== "object") {
@@ -1604,7 +1716,13 @@ const getSessionIdFromPayload = (event: Event): string | null => {
     || event.type === "session.deleted"
   ) {
     const sessionID = props.sessionID
-    return typeof sessionID === "string" && sessionID.length > 0 ? sessionID : null
+    if (typeof sessionID === "string" && sessionID.length > 0) return sessionID
+    if (event.type === "session.deleted") {
+      const info = props.info
+      const infoID = info && typeof info === "object" ? (info as { id?: unknown }).id : undefined
+      return typeof infoID === "string" && infoID.length > 0 ? infoID : null
+    }
+    return null
   }
 
   if (event.type === "message.part.updated") {
@@ -1838,6 +1956,115 @@ const childStoreHasSessionState = (
   return state.session.some((session) => session.id === sessionID)
     || Object.prototype.hasOwnProperty.call(state.message, sessionID)
     || Object.prototype.hasOwnProperty.call(state.session_status ?? {}, sessionID)
+}
+
+const stateContainsSessionData = (state: State, sessionID: string): boolean => (
+  state.session.some((session) => session.id === sessionID)
+  || Object.prototype.hasOwnProperty.call(state.message, sessionID)
+  || Object.prototype.hasOwnProperty.call(state.session_status, sessionID)
+  || Object.prototype.hasOwnProperty.call(state.session_diff, sessionID)
+  || Object.prototype.hasOwnProperty.call(state.todo, sessionID)
+  || Object.prototype.hasOwnProperty.call(state.permission, sessionID)
+  || Object.prototype.hasOwnProperty.call(state.question, sessionID)
+  || Object.values(state.part).some((parts) => parts.some((part) => (
+    (part as Part & { sessionID?: string }).sessionID === sessionID
+  )))
+)
+
+const resolveSessionRecordDirectory = (session: Session | undefined): string | null => {
+  if (!session) return null
+  const record = session as Session & {
+    directory?: string | null
+    project?: { worktree?: string | null } | null
+  }
+  const candidate = record.directory ?? record.project?.worktree ?? null
+  return candidate ? normalizeEventDirectory(candidate) : null
+}
+
+const removeDeletedSessionFromAllChildStores = (
+  sessionID: string,
+  payload: Event,
+  resolvedDirectory: string,
+  childStores: ChildStoreManager,
+  routingIndex: EventRoutingIndex,
+): void => {
+  const targetDirectories: string[] = []
+  for (const [directory, store] of childStores.children) {
+    if (stateContainsSessionData(store.getState(), sessionID)) {
+      targetDirectories.push(directory)
+    }
+  }
+  if (
+    resolvedDirectory
+    && resolvedDirectory !== "global"
+    && childStores.getChild(resolvedDirectory)
+    && !targetDirectories.includes(resolvedDirectory)
+  ) {
+    targetDirectories.push(resolvedDirectory)
+  }
+
+  const overlayDirectories = new Set(targetDirectories)
+  const deletedSession = (payload.properties as { info?: Session }).info
+  const sessionRecordDirectory = resolveSessionRecordDirectory(deletedSession)
+  if (sessionRecordDirectory) {
+    overlayDirectories.add(sessionRecordDirectory)
+  }
+  if (resolvedDirectory && resolvedDirectory !== "global") {
+    overlayDirectories.add(resolvedDirectory)
+  }
+  for (const directory of overlayDirectories) {
+    recordDirectorySessionLifecycleChange(directory, { type: "delete", sessionID })
+  }
+
+  for (const directory of targetDirectories) {
+    const store = childStores.getChild(directory)
+    if (!store) continue
+    const before = store.getState()
+    retireDeletedSessionSyncOwnership(directory, sessionID, before, routingIndex)
+    store.setState((current) => {
+      const removedSession = current.session.find((session) => session.id === sessionID)
+      const next: State = {
+        ...current,
+        session: current.session.filter((session) => session.id !== sessionID),
+        sessionTotal: removedSession && !removedSession.parentID
+          ? Math.max(0, current.sessionTotal - 1)
+          : current.sessionTotal,
+        session_status: { ...current.session_status },
+        session_diff: { ...current.session_diff },
+        todo: { ...current.todo },
+        permission: { ...current.permission },
+        question: { ...current.question },
+        message: { ...current.message },
+        part: { ...current.part },
+        session_user_activity: { ...current.session_user_activity },
+        revert_transaction: { ...current.revert_transaction },
+      }
+      dropSessionCaches(next, [sessionID])
+      delete next.session_user_activity[sessionID]
+      delete next.revert_transaction[sessionID]
+      return next
+    })
+    useTodosPersistStore.getState().setSessionTodos(sessionID, undefined)
+    clearSessionChangeAttribution(directory, sessionID)
+    childStores.mark(directory)
+  }
+
+  removeIndexedSession(routingIndex, sessionID)
+  dropPendingToastKeysForSession(sessionID)
+  removePersistedSessionInput(sessionID)
+  useContextStore.getState().clearSessionContext(sessionID)
+  void usePermissionStore.getState().clearSessionAutoAccept(sessionID)
+  useNotificationStore.getState().removeSession(sessionID)
+  const sessionUI = getSessionUIStoreIfInitialized()?.getState()
+  if (sessionUI?.currentSessionId === sessionID) {
+    sessionUI.setCurrentSession(null)
+  }
+  sessionUI?.retireDeletedSession(sessionID)
+  useProviderRecoveryStore.getState().clearRecovery(sessionID)
+  useProviderStallStore.getState().clearStall(sessionID)
+  useMessageQueueStore.getState().clearQueue(sessionID)
+  useSelectionStore.getState().clearSessionSelection(sessionID)
+  syncDebug.dispatch.eventApplied(payload.type, sessionID, undefined)
 }
 
 const childStoreHasMessagePartState = (
@@ -2313,16 +2540,32 @@ export async function resyncDirectoryAfterReconnect(
 
   ingestDirectoryStateIntoRoutingIndex(routingIndex, directory, store.getState())
 
+  const finalStatuses = store.getState().session_status ?? {}
+  const lifecycleRestoreIds = new Set<string>()
   if (
     options?.restoreSessionLifecycleFor
     && materializedSessionIds.has(options.restoreSessionLifecycleFor)
   ) {
-    await materializeAndRestoreSessionLifecycle(
-      directory,
-      options.restoreSessionLifecycleFor,
-      store,
-      true,
-    )
+    lifecycleRestoreIds.add(options.restoreSessionLifecycleFor)
+  }
+  // Background sessions whose busy→idle transition happened during a connection
+  // gap never received the session.idle event, so plan/turn lifecycle detection
+  // must run here. Gated on an observed busy/retry baseline: candidates added by
+  // the unfinished-message/parent heuristics have no recency evidence, and
+  // detection on them would resurface long-viewed completions as unread.
+  for (const sessionId of candidateSessionIds) {
+    if (lifecycleRestoreIds.has(sessionId)) continue
+    if (!materializedSessionIds.has(sessionId)) continue
+    const baselineType = statusBaselineBeforeRequest.get(sessionId)?.type
+    if (baselineType !== "busy" && baselineType !== "retry") continue
+    const finalType = finalStatuses[sessionId]?.type
+    if (finalType === "busy" || finalType === "retry") continue
+    lifecycleRestoreIds.add(sessionId)
+  }
+  if (lifecycleRestoreIds.size > 0) {
+    await Promise.all(Array.from(lifecycleRestoreIds).map((sessionId) =>
+      materializeAndRestoreSessionLifecycle(directory, sessionId, store, true),
+    ))
   }
 }
 
@@ -2339,12 +2582,25 @@ function handleEvent(
     const session = (payload.properties as { info?: Session }).info
     if (session) {
       applyGlobalSessionLifecycleEvent({ type: "upsert", session })
+      const lifecycleDirectory = resolveSessionRecordDirectory(session)
+        ?? (directory && directory !== "global" ? directory : null)
+      if (lifecycleDirectory) {
+        recordDirectorySessionLifecycleChange(lifecycleDirectory, { type: "upsert", session })
+      }
     }
   } else if (payload.type === "session.deleted") {
     const sessionID = getSessionIdFromPayload(payload)
     if (sessionID) {
       applyGlobalSessionLifecycleEvent({ type: "delete", sessionID })
+      removeDeletedSessionFromAllChildStores(
+        sessionID,
+        payload,
+        directory,
+        childStores,
+        routingIndex,
+      )
     }
+    return
   }
 
   // Global events
@@ -2531,28 +2787,6 @@ function handleEvent(
     }
   }
 
-  if (payload.type === "session.deleted") {
-    const info = (payload.properties as { info?: { id?: string } }).info
-    const sessionID = info?.id
-    if (sessionID) {
-      retireDeletedSessionSyncOwnership(resolvedDirectory, sessionID, store.getState(), routingIndex)
-      dropPendingToastKeysForSession(sessionID)
-      removePersistedSessionInput(sessionID)
-      useContextStore.getState().clearSessionContext(sessionID)
-      void usePermissionStore.getState().clearSessionAutoAccept(sessionID)
-      useNotificationStore.getState().removeSession(sessionID)
-      const sessionUI = getSessionUIStoreIfInitialized()?.getState()
-      if (sessionUI?.currentSessionId === sessionID) {
-        sessionUI.setCurrentSession(null)
-      }
-      sessionUI?.retireDeletedSession(sessionID)
-      useProviderRecoveryStore.getState().clearRecovery(sessionID)
-      useProviderStallStore.getState().clearStall(sessionID)
-      useMessageQueueStore.getState().clearQueue(sessionID)
-      useSelectionStore.getState().clearSessionSelection(sessionID)
-    }
-  }
-
   // Notification dispatch for terminal error events.
   // These are NOT handled by the event reducer — only the notification store.
   if (payload.type === "session.error") {
@@ -2603,7 +2837,6 @@ function handleEvent(
   switch (payload.type) {
     case "session.created":
     case "session.updated":
-    case "session.deleted":
       draft.session = [...current.session]
       draft.revert_transaction = { ...current.revert_transaction }
       draft.permission = { ...current.permission }
@@ -2712,9 +2945,7 @@ function handleEvent(
     const messageID = getMessageIdFromPayload(payload) ?? undefined
     const attributionSessionID = sessionID
       ?? (messageID ? resolveSessionIdForMessage(store.getState(), routingIndex, messageID) ?? undefined : undefined)
-    if (payload.type === "session.deleted" && sessionID) {
-      clearSessionChangeAttribution(resolvedDirectory, sessionID)
-    } else if (
+    if (
       attributionSessionID
       && (
         payload.type === "message.part.updated"
@@ -2785,12 +3016,35 @@ function handleEvent(
     const lifecycleSessionId = resolveLifecycleSessionIdFromPayload(latestState, routingIndex, payload)
     if (lifecycleSessionId) {
       if (
-        (payload.type === "session.idle" || isIdleSessionStatusEvent(payload))
-        && !getSessionMaterializationStatus(latestState, lifecycleSessionId).renderable
+        payload.type === "session.idle"
+        || hasSettledTerminalAssistantTurn({ sessionID: lifecycleSessionId, state: latestState })
       ) {
-        enqueueSessionMaterialization(resolvedDirectory, lifecycleSessionId, childStores, {
-          detectTurnCompletionAfterLoad: true,
-        })
+        settleStreamingSessions([lifecycleSessionId])
+      }
+      if (
+        payload.type === "session.idle" || isIdleSessionStatusEvent(payload)
+      ) {
+        const sessionUI = getSessionUIStoreIfInitialized()?.getState()
+        const pendingPlanModeMessageId = sessionUI?.planModeUserMessagesBySession.get(lifecycleSessionId)
+        const effectivePlanState = resolveEffectivePlanIndicatorState(
+          sessionUI?.sessionPlanIndicator.get(lifecycleSessionId),
+          pendingPlanModeMessageId,
+        )
+        const needsPlanReadyRefresh = Boolean(pendingPlanModeMessageId) && effectivePlanState !== "proposed"
+        const lifecycleSession = latestState.session.find((session) => session.id === lifecycleSessionId)
+        const isRootSession = !lifecycleSession
+          || !((lifecycleSession as Session & { parentID?: string | null }).parentID)
+        const needsBackgroundCompletionRefresh = isRootSession
+          && !isViewedInCurrentSession(resolvedDirectory, lifecycleSessionId)
+        if (
+          needsPlanReadyRefresh
+          || needsBackgroundCompletionRefresh
+          || !getSessionMaterializationStatus(latestState, lifecycleSessionId).renderable
+        ) {
+          enqueueSessionMaterialization(resolvedDirectory, lifecycleSessionId, childStores, {
+            detectTurnCompletionAfterLoad: true,
+          })
+        }
       }
       void detectAndMarkPlanLifecycle(
         lifecycleSessionId,
@@ -2848,6 +3102,56 @@ export function createForegroundRecoveryHandlers(
       triggerRecovery()
     },
   }
+}
+
+type UserNotificationHandlerOptions = {
+  isFocused?: () => boolean
+  notify?: (payload: { title?: string; body?: string; tag?: string }) => void | Promise<void>
+}
+
+export function handleUserNotificationEvent(
+  payload: unknown,
+  options: UserNotificationHandlerOptions = {},
+): void {
+  if (
+    !payload
+    || typeof payload !== "object"
+    || (payload as { type?: unknown }).type !== "openchamber:notification"
+  ) return
+  const properties = payload && typeof payload === "object"
+    && (payload as { properties?: unknown }).properties
+    && typeof (payload as { properties: unknown }).properties === "object"
+    ? (payload as { properties: Record<string, unknown> }).properties
+    : null
+  if (!properties) return
+
+  if (properties.kind === "plan-ready") {
+    const sessionId = typeof properties.sessionId === "string" ? properties.sessionId.trim() : ""
+    const sourceMessageId = typeof properties.sourceMessageId === "string"
+      ? properties.sourceMessageId.trim()
+      : ""
+    if (sessionId && sourceMessageId) {
+      getSessionUIStoreIfInitialized()?.getState().markPlanProposed(sessionId, sourceMessageId)
+    }
+  }
+
+  // These gates control native delivery only. Lifecycle state above must be
+  // ingested even while the user is focused in a different session.
+  if (properties.desktopStdoutActive === true) return
+  const requireHidden = properties.requireHidden === true
+  const isFocused = options.isFocused?.() ?? (typeof document !== "undefined"
+    && document.visibilityState === "visible"
+    && document.hasFocus())
+  if (requireHidden && isFocused) return
+
+  const title = typeof properties.title === "string" ? properties.title : undefined
+  const body = typeof properties.body === "string" ? properties.body : undefined
+  const tag = typeof properties.tag === "string" ? properties.tag : undefined
+  if (!title && !body) return
+  const notify = options.notify ?? ((notification) => (
+    getRegisteredRuntimeAPIs()?.notifications.notifyAgentCompletion(notification)
+  ))
+  void notify({ title, body, tag })
 }
 
 // ---------------------------------------------------------------------------
@@ -2946,6 +3250,7 @@ export function SyncProvider(props: {
             },
             loadSessions: (dir) => retry(async () => {
               if (!isOwned()) return
+              const requestLifecycleRevision = captureDirectorySessionListRevision(dir)
               store.setState({ sessionListStatus: "loading", sessionListError: undefined })
               const result = await props.sdk.session.list({
                 directory: dir,
@@ -2968,24 +3273,20 @@ export function SyncProvider(props: {
                 }
                 throw wrapped
               }
-              const sessions = (result.data ?? [])
+              const snapshotSessions = (result.data ?? [])
                 .filter((s) => !!s?.id)
                 .map((session) => stripUntrustedSessionDiffSummary(
                   stripSessionDiffSnapshots(session) as Session & { summary?: SessionSummaryDiffStats | null },
                 ) as Session)
                 .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-              // Race guard: if the list came back empty but event pipeline
-              // already populated the store, don't clobber. OpenCode can
-              // answer HTTP with empty sessions while WS delivers session
-              // events for the same data (disk warmup race on app launch).
-              const currentSessions = store.getState().session
-              if (sessions.length === 0 && currentSessions.length > 0) {
-                console.warn(
-                  `[bootstrap] session.list returned empty for ${dir}; preserving ${currentSessions.length} existing sessions`,
-                )
-                store.setState({ sessionListStatus: "ready", sessionListError: undefined })
-                return
-              }
+              // A successful snapshot is authoritative, including an empty
+              // list. Replay only lifecycle events that arrived after this
+              // request began so concurrent creates survive and deletes win.
+              const sessions = reconcileDirectorySessionListSnapshot(
+                dir,
+                snapshotSessions,
+                requestLifecycleRevision,
+              )
               store.setState({
                 session: sessions,
                 sessionTotal: sessions.length,
@@ -3008,6 +3309,7 @@ export function SyncProvider(props: {
       },
       onDispose: (directory, snapshot) => {
         bootingDirs.delete(directory)
+        directorySessionLifecycleOverlays.delete(normalizeEventDirectory(directory))
         clearDirectorySessionChangeAttributions(directory)
         releaseDirectoryOwnedSyncState(
           directory,
@@ -3233,15 +3535,18 @@ export function SyncProvider(props: {
         activeSessionRecoveriesInFlight.delete(key)
       })
     }
-    const triggerActiveDirectoryRecovery = () => {
-      for (const dir of getActiveDirectoryStoreKeys(childStores.children.keys(), activeDirectoryRef.current)) {
+    const triggerRelevantDirectoryRecovery = () => {
+      for (const dir of getReconnectRecoveryDirectoryStoreKeys(
+        childStores.children.entries(),
+        activeDirectoryRef.current,
+      )) {
         triggerReconnectMaterialization(dir)
       }
     }
     const {
       onVisibilityChange,
       onWindowFocus,
-    } = createForegroundRecoveryHandlers(triggerActiveDirectoryRecovery)
+    } = createForegroundRecoveryHandlers(triggerRelevantDirectoryRecovery)
     const activeRecoveryWatchdog = setInterval(triggerActiveSessionRecovery, ACTIVE_SESSION_RECOVERY_CHECK_MS)
     ;(activeRecoveryWatchdog as { unref?: () => void }).unref?.()
     if (typeof document !== "undefined") {
@@ -3264,28 +3569,11 @@ export function SyncProvider(props: {
         useManagedOrchestrationStore.getState().ingestEvent(payload)
       },
       onUserNotificationEvent: (payload) => {
-        const properties = payload && typeof payload === "object"
-          && (payload as { properties?: unknown }).properties
-          && typeof (payload as { properties: unknown }).properties === "object"
-          ? (payload as { properties: Record<string, unknown> }).properties
-          : null
-        if (!properties || properties.desktopStdoutActive === true) return
-
-        const requireHidden = properties.requireHidden === true
-        const isFocused = typeof document !== "undefined"
-          && document.visibilityState === "visible"
-          && document.hasFocus()
-        if (requireHidden && isFocused) return
-
-        const title = typeof properties.title === "string" ? properties.title : undefined
-        const body = typeof properties.body === "string" ? properties.body : undefined
-        const tag = typeof properties.tag === "string" ? properties.tag : undefined
-        if (!title && !body) return
-        void getRegisteredRuntimeAPIs()?.notifications.notifyAgentCompletion({ title, body, tag })
+        handleUserNotificationEvent(payload)
       },
       onReconnect: () => {
         applyEventPipelineConnectionEvent({ type: "reconnected" })
-        triggerActiveDirectoryRecovery()
+        triggerRelevantDirectoryRecovery()
         void useManagedOrchestrationStore.getState().loadSnapshot()
       },
       onDisconnect: (reason) => {
@@ -3297,14 +3585,15 @@ export function SyncProvider(props: {
         // stream actually connects; a switch alone does not prove reachability.
         applyEventPipelineConnectionEvent({ type: "transport-switched" })
         // If the active session missed the transition into a busy turn, force
-        // a targeted resync for the viewed directory.
-        triggerActiveDirectoryRecovery()
+        // a targeted resync for the viewed directory and any initialized
+        // background directory that still projects active work.
+        triggerRelevantDirectoryRecovery()
       },
       onReplayGap: () => {
         // Server's replay buffer rolled past our lastEventId, so cached state
-        // is potentially stale. Re-fetch the active directory; passive stores
-        // hydrate only when their directory becomes active.
-        triggerActiveDirectoryRecovery()
+        // is potentially stale. Re-fetch the active directory plus initialized
+        // background directories that still project active work.
+        triggerRelevantDirectoryRecovery()
         void useManagedOrchestrationStore.getState().loadSnapshot()
       },
     })

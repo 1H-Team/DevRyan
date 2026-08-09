@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { requestJson, roleLabel, type UserRow } from './types';
 import { copyTextToClipboard } from '@/lib/clipboard';
+import { TunnelPresetPickerDialog, type TunnelPresetSelection } from './TunnelPresetPickerDialog';
 
 interface UsersTableProps {
   users: UserRow[];
@@ -29,15 +30,22 @@ export const UsersTable: React.FC<UsersTableProps> = ({
   onInviteCreated,
 }) => {
   const [busy, setBusy] = React.useState(false);
+  const [inviteTarget, setInviteTarget] = React.useState<UserRow | null>(null);
 
-  const createInvite = async (user: UserRow) => {
+  const createInvite = async (user: UserRow, selection: TunnelPresetSelection) => {
     setBusy(true);
     try {
       const payload = await requestJson<{ invite: { url: string } }>('/api/admin/invites', {
-        method: 'POST', body: JSON.stringify({ email: user.email, expiresInDays: 2 }),
+        method: 'POST',
+        body: JSON.stringify({
+          email: user.email,
+          expiresInDays: 2,
+          ...(selection.tunnelPresetId ? { tunnelPresetId: selection.tunnelPresetId } : {}),
+        }),
       });
       const url = new URL(payload.invite.url, window.location.origin).toString();
       await copyTextToClipboard(url, { sourceSurface: 'settings', copyKind: 'text' });
+      setInviteTarget(null);
       await onInviteCreated(url);
       toast.success('Single-use invitation copied');
     } catch (error) {
@@ -94,7 +102,7 @@ export const UsersTable: React.FC<UsersTableProps> = ({
                   <Button
                     variant="outline"
                     size="xs"
-                    onClick={(event) => { event.stopPropagation(); void createInvite(user); }}
+                    onClick={(event) => { event.stopPropagation(); setInviteTarget(user); }}
                     disabled={busy || user.status === 'archived'}
                   >
                     <RiLink className="h-4 w-4" /> Invite
@@ -105,6 +113,12 @@ export const UsersTable: React.FC<UsersTableProps> = ({
           ))}
         </TableBody>
       </Table>
+      <TunnelPresetPickerDialog
+        open={inviteTarget !== null}
+        onOpenChange={(open) => { if (!open) setInviteTarget(null); }}
+        busy={busy}
+        onCreate={(selection) => { if (inviteTarget) void createInvite(inviteTarget, selection); }}
+      />
     </div>
   );
 };

@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- OpenCode: update the bundled SDK dependency and managed runtime target to 1.18.15 across web, UI, VS Code, and the workspace lockfile.
+
+## [1.1.2] - 2026-08-05
+
+- Shared hosting: allow capability-gated Browser runtime mutations for authenticated users while keeping host Browser configuration restricted to administrators.
+- Analytics: show the newest activity day first in the scrollable ribbon while preserving chronological chart ordering.
+- OpenCode: update the bundled SDK dependency and managed runtime target to 1.18.14 across web, UI, VS Code, and the workspace lockfile.
+- Release: bump DevRyan workspace, Electron, VS Code, web, and legacy desktop metadata to 1.1.2.
+
 ## [1.1.1] - 2026-08-05
 
 - OpenCode: update the bundled SDK dependency and managed runtime target to 1.18.13 across web, UI, VS Code, and the workspace lockfile.
@@ -23,7 +32,7 @@ All notable changes to this project will be documented in this file.
 - Agents: bundle DevRyan-managed Superpowers integration, tighten managed plugin policy, and preserve agent and skill behavior across packaged runtimes.
 - Reliability: classify transient provider transport failures for bounded recovery while keeping authentication, model, certificate, cancellation, and user-action failures explicit.
 - UI: add turn-evidence controls and transcript access, improve plugin and settings presentation, and surface updater repository diagnostics.
-- Release: point Electron updates at `zoubenr/DevRyan`, include the harness runtime in validation and packaging, and require DevRyan-branded public assets.
+- Release: point Electron updates at `1H-Team/DevRyan`, include the harness runtime in validation and packaging, and require DevRyan-branded public assets.
 
 ## [1.0.12] - 2026-07-26
 

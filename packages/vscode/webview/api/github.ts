@@ -53,8 +53,12 @@ export const createVSCodeGitHubAPI = (): GitHubAPI => ({
   issueComments: async (directory: string, number: number, options?: { sourceRepo?: { owner: string; repo: string } | null }) =>
     sendBridgeMessage<GitHubIssueCommentsResult>('api:github/issues:comments', { directory, number, sourceRepo: options?.sourceRepo ?? null }),
 
-  prsList: async (directory: string, options?: { page?: number }) =>
-    sendBridgeMessage<GitHubPullRequestsListResult>('api:github/pulls:list', { directory, page: options?.page ?? 1 }),
+  prsList: async (directory: string, options?: { page?: number; state?: 'open' | 'all' }) =>
+    sendBridgeMessage<GitHubPullRequestsListResult>('api:github/pulls:list', {
+      directory,
+      page: options?.page ?? 1,
+      state: options?.state ?? 'open',
+    }),
   prContext: async (directory: string, number: number, options?: { includeDiff?: boolean; includeCheckDetails?: boolean; sourceRepo?: { owner: string; repo: string } | null }) =>
     sendBridgeMessage<GitHubPullRequestContextResult>('api:github/pulls:context', {
       directory,

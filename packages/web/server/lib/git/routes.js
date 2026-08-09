@@ -3,6 +3,9 @@ import {
   COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
   generateCommitMessageDirect,
 } from './commit-message.js';
+import { collectCommitMessageContext } from './commit-message-context.js';
+import { requireManagedAssignedBranch } from '../multi-user/branch-authorization.js';
+import { getRequestPrincipal } from '../multi-user/request-context.js';
 
 const extractGitErrorText = (error) => {
   const message = typeof error?.message === 'string' ? error.message : '';
@@ -30,7 +33,9 @@ const sendGitError = (res, error, fallback) => res.status(error?.statusCode || 5
 
 export function registerGitRoutes(app, {
   resolveZenModel = async (override) => override || 'gpt-5-nano',
+  resolveCommitZenModel,
   generateCommitMessage = generateCommitMessageDirect,
+  recordCommitTiming = () => {},
   loadGitLibraries,
 } = {}) {
   registerCommitTemplateRoutes(app);
@@ -43,6 +48,108 @@ export function registerGitRoutes(app, {
         : await import('./index.js');
     }
     return gitLibraries;
+  };
+
+  const resolveIntegrationRequest = async (req, input) => {
+    const directory = typeof req.query?.directory === 'string' ? req.query.directory.trim() : '';
+    if (!directory) {
+      throw Object.assign(new Error('directory parameter is required'), { statusCode: 400 });
+    }
+    const targetBranch = typeof input?.targetBranch === 'string' ? input.targetBranch.trim() : '';
+    requireManagedAssignedBranch(
+      directory,
+      targetBranch,
+      'Commits can only be moved into an assigned branch',
+    );
+    const { getPrimaryWorktreeRoot } = await getGitLibraries();
+    const repoRoot = await getPrimaryWorktreeRoot(directory);
+    return { directory, repoRoot };
+  };
+
+  const resolveCommitModelSelection = async (requestedModel) => {
+    if (typeof resolveCommitZenModel === 'function') {
+      const selection = await resolveCommitZenModel(requestedModel);
+      if (selection && typeof selection === 'object') {
+        return {
+          model: typeof selection.model === 'string' && selection.model.trim()
+            ? selection.model.trim()
+            : requestedModel,
+          fallbackModel: typeof selection.fallbackModel === 'string' && selection.fallbackModel.trim()
+            ? selection.fallbackModel.trim()
+            : null,
+          catalogState: typeof selection.catalogState === 'string' ? selection.catalogState : 'unknown',
+        };
+      }
+    }
+    return {
+      model: await resolveZenModel(requestedModel),
+      fallbackModel: null,
+      catalogState: 'blocking',
+    };
+  };
+
+  const setCommitServerTiming = (res, timings) => {
+    const parts = [
+      ['commit-context', timings.contextMs],
+      ['commit-model', timings.modelMs],
+      ['commit-provider', timings.providerMs],
+      ['commit-parse', timings.parseMs],
+      ['commit-total', timings.totalMs],
+    ].filter(([, duration]) => Number.isFinite(duration));
+    res.setHeader('Server-Timing', parts.map(([name, duration]) => `${name};dur=${Math.max(0, duration)}`).join(', '));
+  };
+
+  const recordCommitGenerationTiming = (req, timings, details = {}) => {
+    try {
+      recordCommitTiming(req, {
+        event: 'git_commit_message_generation',
+        contextMs: timings.contextMs,
+        modelMs: timings.modelMs,
+        providerMs: timings.providerMs,
+        parseMs: timings.parseMs,
+        totalMs: timings.totalMs,
+        selectedFileCount: details.selectedFileCount,
+        stagedOnly: details.stagedOnly === true,
+        outcome: details.outcome,
+        model: details.model,
+        catalogState: details.catalogState,
+        retried: details.retried === true,
+      });
+    } catch {
+      // Diagnostics must never break commit-message generation.
+    }
+  };
+
+  const runCommitMessageGeneration = async ({ context, guidance, requestedModel, timings }) => {
+    const modelStartedAt = Date.now();
+    const selection = await resolveCommitModelSelection(requestedModel);
+    timings.modelMs = Date.now() - modelStartedAt;
+    timings.model = selection.model;
+    timings.catalogState = selection.catalogState;
+    let generatorTiming = null;
+    const providerStartedAt = Date.now();
+    let message;
+    try {
+      message = await generateCommitMessage({
+        context,
+        guidance,
+        zenModel: selection.model,
+        fallbackZenModel: selection.fallbackModel,
+        onTiming: (value) => {
+          generatorTiming = value;
+        },
+      });
+    } finally {
+      timings.providerMs = generatorTiming?.providerMs ?? Date.now() - providerStartedAt;
+      timings.parseMs = generatorTiming?.parseMs ?? 0;
+      timings.retried = generatorTiming?.retried === true;
+    }
+    return {
+      message,
+      model: selection.model,
+      catalogState: selection.catalogState,
+      retried: generatorTiming?.retried === true,
+    };
   };
 
   app.get('/api/git/identities', async (req, res) => {
@@ -655,6 +762,71 @@ export function registerGitRoutes(app, {
     }
   });
 
+  app.post('/api/git/integrate/plan', async (req, res) => {
+    try {
+      const { repoRoot } = await resolveIntegrationRequest(req, req.body);
+      const { computeIntegratePlan } = await getGitLibraries();
+      res.json(await computeIntegratePlan(repoRoot, req.body));
+    } catch (error) {
+      sendGitError(res, error, 'Failed to prepare commit integration');
+    }
+  });
+
+  app.post('/api/git/integrate/start', async (req, res) => {
+    try {
+      const plan = req.body?.plan;
+      const { repoRoot } = await resolveIntegrationRequest(req, plan);
+      const { integrateCommits } = await getGitLibraries();
+      res.json(await integrateCommits(repoRoot, plan));
+    } catch (error) {
+      sendGitError(res, error, 'Failed to move commits');
+    }
+  });
+
+  app.post('/api/git/integrate/in-progress', async (req, res) => {
+    try {
+      const state = req.body?.state;
+      const { repoRoot } = await resolveIntegrationRequest(req, state);
+      const { isIntegrateInProgress } = await getGitLibraries();
+      res.json({ inProgress: await isIntegrateInProgress(repoRoot, state) });
+    } catch (error) {
+      sendGitError(res, error, 'Failed to inspect commit integration');
+    }
+  });
+
+  app.post('/api/git/integrate/conflict-details', async (req, res) => {
+    try {
+      const state = req.body?.state;
+      const { repoRoot } = await resolveIntegrationRequest(req, state);
+      const { getIntegrateConflictDetails } = await getGitLibraries();
+      res.json(await getIntegrateConflictDetails(repoRoot, state));
+    } catch (error) {
+      sendGitError(res, error, 'Failed to inspect integration conflicts');
+    }
+  });
+
+  app.post('/api/git/integrate/abort', async (req, res) => {
+    try {
+      const state = req.body?.state;
+      const { repoRoot } = await resolveIntegrationRequest(req, state);
+      const { abortIntegrate } = await getGitLibraries();
+      res.json(await abortIntegrate(repoRoot, state));
+    } catch (error) {
+      sendGitError(res, error, 'Failed to abort commit integration');
+    }
+  });
+
+  app.post('/api/git/integrate/continue', async (req, res) => {
+    try {
+      const state = req.body?.state;
+      const { repoRoot } = await resolveIntegrationRequest(req, state);
+      const { continueIntegrate } = await getGitLibraries();
+      res.json(await continueIntegrate(repoRoot, state));
+    } catch (error) {
+      sendGitError(res, error, 'Failed to continue commit integration');
+    }
+  });
+
   app.get('/api/git/conflict-details', async (req, res) => {
     const { getConflictDetails } = await getGitLibraries();
     try {
@@ -698,6 +870,16 @@ export function registerGitRoutes(app, {
   });
 
   app.post('/api/git/commit-message', async (req, res) => {
+    const startedAt = Date.now();
+    const timings = { contextMs: 0, modelMs: 0, providerMs: 0, parseMs: 0, totalMs: 0 };
+    let timingDetails = {
+      selectedFileCount: 0,
+      stagedOnly: false,
+      outcome: 'failed',
+      model: null,
+      catalogState: 'unknown',
+      retried: false,
+    };
     try {
       const directory = typeof req.query.directory === 'string' ? req.query.directory.trim() : '';
       if (!directory) {
@@ -710,16 +892,111 @@ export function registerGitRoutes(app, {
       }
 
       const requestedModel = typeof requestedZenModel === 'string' ? requestedZenModel.trim() : '';
-      const zenModel = await resolveZenModel(requestedModel || COMMIT_GENERATION_DEFAULT_ZEN_MODEL);
-      const message = await generateCommitMessage({
+      const generated = await runCommitMessageGeneration({
         context,
         guidance: typeof guidance === 'string' ? guidance : undefined,
-        zenModel,
+        requestedModel: requestedModel || COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
+        timings,
       });
-      res.json({ message });
+      timings.totalMs = Date.now() - startedAt;
+      timingDetails = {
+        selectedFileCount: context.selectedFiles.length,
+        stagedOnly: context.stagedOnly === true,
+        outcome: 'complete',
+        model: generated.model,
+        catalogState: generated.catalogState,
+        retried: generated.retried,
+      };
+      setCommitServerTiming(res, timings);
+      recordCommitGenerationTiming(req, timings, timingDetails);
+      res.json({ message: generated.message });
     } catch (error) {
+      timings.totalMs = Date.now() - startedAt;
+      timingDetails = {
+        ...timingDetails,
+        model: timings.model || timingDetails.model,
+        catalogState: timings.catalogState || timingDetails.catalogState,
+        retried: timings.retried === true,
+      };
+      setCommitServerTiming(res, timings);
+      recordCommitGenerationTiming(req, timings, timingDetails);
       console.error('Failed to generate commit message:', error);
       res.status(500).json({ error: error.message || 'Failed to generate commit message' });
+    }
+  });
+
+  app.post('/api/git/commit-message/draft', async (req, res) => {
+    const startedAt = Date.now();
+    const timings = { contextMs: 0, modelMs: 0, providerMs: 0, parseMs: 0, totalMs: 0 };
+    let timingDetails = {
+      selectedFileCount: Array.isArray(req.body?.selectedFiles) ? req.body.selectedFiles.length : 0,
+      stagedOnly: req.body?.stagedOnly === true,
+      outcome: 'failed',
+      model: null,
+      catalogState: 'unknown',
+      retried: false,
+    };
+    try {
+      const directory = typeof req.query.directory === 'string' ? req.query.directory.trim() : '';
+      if (!directory) {
+        return res.status(400).json({ error: 'directory parameter is required' });
+      }
+      const {
+        selectedFiles,
+        stagedOnly = false,
+        guidance,
+        zenModel: requestedZenModel,
+      } = req.body || {};
+      const { getStatus, getLog, getDiff } = await getGitLibraries();
+      const contextStartedAt = Date.now();
+      const contextResult = await collectCommitMessageContext({
+        directory,
+        selectedFiles,
+        stagedOnly: stagedOnly === true,
+        getStatus,
+        getLog,
+        getDiff,
+      });
+      timings.contextMs = Date.now() - contextStartedAt;
+      if (contextResult.status === 'blocked') {
+        timings.totalMs = Date.now() - startedAt;
+        timingDetails = { ...timingDetails, outcome: 'blocked' };
+        setCommitServerTiming(res, timings);
+        recordCommitGenerationTiming(req, timings, timingDetails);
+        return res.json({ status: 'blocked', commits: [], message: contextResult.message });
+      }
+
+      const requestedModel = typeof requestedZenModel === 'string' ? requestedZenModel.trim() : '';
+      const generated = await runCommitMessageGeneration({
+        context: contextResult.context,
+        guidance: typeof guidance === 'string' ? guidance : undefined,
+        requestedModel: requestedModel || COMMIT_GENERATION_DEFAULT_ZEN_MODEL,
+        timings,
+      });
+      timings.totalMs = Date.now() - startedAt;
+      timingDetails = {
+        ...timingDetails,
+        selectedFileCount: contextResult.context.selectedFiles.length,
+        outcome: 'complete',
+        model: generated.model,
+        catalogState: generated.catalogState,
+        retried: generated.retried,
+      };
+      setCommitServerTiming(res, timings);
+      recordCommitGenerationTiming(req, timings, timingDetails);
+      return res.json({ status: 'complete', commits: [generated.message] });
+    } catch (error) {
+      timings.totalMs = Date.now() - startedAt;
+      timingDetails = {
+        ...timingDetails,
+        model: timings.model || timingDetails.model,
+        catalogState: timings.catalogState || timingDetails.catalogState,
+        retried: timings.retried === true,
+      };
+      setCommitServerTiming(res, timings);
+      recordCommitGenerationTiming(req, timings, timingDetails);
+      console.error('Failed to generate commit message draft:', error);
+      return sendGitError(res, error, 'Failed to generate commit message');
     }
   });
 
@@ -756,7 +1033,10 @@ export function registerGitRoutes(app, {
       res.json(result);
     } catch (error) {
       console.error('Failed to create branch:', error);
-      res.status(500).json({ error: error.message || 'Failed to create branch' });
+      res.status(error?.statusCode || 500).json({
+        error: error?.message || 'Failed to create branch',
+        ...(error?.code ? { code: error.code } : {}),
+      });
     }
   });
 
@@ -920,6 +1200,7 @@ export function registerGitRoutes(app, {
       console.error('Failed to create worktree:', error);
       res.status(error?.statusCode || 500).json({
         error: error.message || 'Failed to create worktree',
+        ...(error?.code ? { code: error.code } : {}),
         ...(error?.operationId ? { operationId: error.operationId } : {}),
         ...(error?.bootstrap ? { bootstrap: error.bootstrap } : {}),
       });
@@ -996,11 +1277,21 @@ export function registerGitRoutes(app, {
   });
 
   app.post('/api/git/worktrees/operations/:operationId/retry', async (req, res) => {
-    const { retryWorktreeBootstrapOperation } = await getGitLibraries();
+    const { getWorktreeBootstrapOperation, retryWorktreeBootstrapOperation } = await getGitLibraries();
     if (typeof retryWorktreeBootstrapOperation !== 'function') {
       return res.status(501).json({ error: 'Worktree operation retry is not available' });
     }
     try {
+      const principal = getRequestPrincipal();
+      if (principal?.scope === 'managed' && principal.policy?.createBranches !== true) {
+        const receipt = await getWorktreeBootstrapOperation(req.params.operationId);
+        if (receipt.metadata?.mode === 'new') {
+          return res.status(403).json({
+            error: 'Branch creation is disabled by policy',
+            code: 'BRANCH_CREATION_DISABLED',
+          });
+        }
+      }
       res.json(await retryWorktreeBootstrapOperation(req.params.operationId));
     } catch (error) {
       res.status(error?.statusCode || 500).json({
@@ -1033,7 +1324,10 @@ export function registerGitRoutes(app, {
       res.json({ success: Boolean(result) });
     } catch (error) {
       console.error('Failed to remove worktree:', error);
-      res.status(500).json({ error: error.message || 'Failed to remove worktree' });
+      res.status(error?.statusCode || 500).json({
+        error: error.message || 'Failed to remove worktree',
+        ...(error?.code ? { code: error.code } : {}),
+      });
     }
   });
 

@@ -12,6 +12,7 @@ import crypto from 'crypto';
 import yaml from 'yaml';
 import { createUiAuth } from './lib/ui-auth/ui-auth.js';
 import { createMultiUserRuntime } from './lib/multi-user/index.js';
+import { canUseBrowser } from './lib/multi-user/policy.js';
 import { createTunnelAuth } from './lib/opencode/tunnel-auth.js';
 import { createManagedTunnelConfigRuntime } from './lib/tunnels/managed-config.js';
 import { normalizeManagedRemoteTunnelToken } from './lib/tunnels/managed-token.js';
@@ -66,6 +67,7 @@ import { createSettingsNormalizationRuntime } from './lib/opencode/settings-norm
 import { createSettingsHelpers } from './lib/opencode/settings-helpers.js';
 import { createThemeRuntime } from './lib/opencode/theme-runtime.js';
 import { createFeatureRoutesRuntime } from './lib/opencode/feature-routes-runtime.js';
+import { canReceiveProjectMetadataEvent } from './lib/scheduled-tasks/routes.js';
 import { parseServeCliOptions } from './lib/opencode/cli-options.js';
 import {
   registerAuthAndAccessRoutes,
@@ -382,6 +384,7 @@ const resolveNotificationTemplate = (...args) => notificationTemplateRuntime.res
 const shouldApplyResolvedTemplateMessage = (...args) => notificationTemplateRuntime.shouldApplyResolvedTemplateMessage(...args);
 const fetchFreeZenModels = (...args) => notificationTemplateRuntime.fetchFreeZenModels(...args);
 const resolveZenModel = (...args) => notificationTemplateRuntime.resolveZenModel(...args);
+const resolveZenModelNonBlocking = (...args) => notificationTemplateRuntime.resolveZenModelNonBlocking(...args);
 const validateZenModelAtStartup = (...args) => notificationTemplateRuntime.validateZenModelAtStartup(...args);
 const summarizeText = (...args) => notificationTemplateRuntime.summarizeText(...args);
 const extractTextFromParts = (...args) => notificationTemplateRuntime.extractTextFromParts(...args);
@@ -564,6 +567,35 @@ const broadcastGlobalUiEvent = createGlobalUiEventBroadcaster({
   },
 });
 const broadcastUiNotification = (...args) => notificationEmitterRuntime.broadcastUiNotification(...args);
+
+const broadcastManagedProjectMetadataChanged = (projectId) => {
+  if (typeof projectId !== 'string' || !projectId.trim()) return;
+  for (const client of uiOpenChamberEventClients) {
+    if (!canReceiveProjectMetadataEvent(client, projectId)) {
+      continue;
+    }
+    try {
+      writeSseEvent(client.response, {
+        type: 'openchamber:project-metadata-changed',
+        properties: { projectId },
+      });
+    } catch {
+      uiOpenChamberEventClients.delete(client);
+    }
+  }
+};
+
+const broadcastManagedSessionOwnershipCommitted = (session) => {
+  if (!session?.id) return;
+  broadcastGlobalUiEvent({
+    type: 'session.created',
+    properties: { info: session },
+  }, {
+    directory: typeof session.directory === 'string' && session.directory.length > 0
+      ? session.directory
+      : 'global',
+  });
+};
 
 const sessionRuntime = createSessionRuntime({
   writeSseEvent,
@@ -1531,6 +1563,9 @@ async function main(options = {}) {
     dataDirectory: OPENCHAMBER_DATA_DIR,
     fetchImpl: fetch,
     logger: console,
+    readManagedTunnelConfig: readManagedRemoteTunnelConfigFromDisk,
+    onManagedProjectMetadataChanged: broadcastManagedProjectMetadataChanged,
+    onManagedSessionOwnershipCommitted: broadcastManagedSessionOwnershipCommitted,
   });
   if (multiUserRuntime.enabled) {
     console.log('Supabase multi-user identity and policy enforcement enabled');
@@ -1575,6 +1610,11 @@ async function main(options = {}) {
         bunBinaryResolved: resolvedBunBinary || null,
         desktopNotifyEnabled: ENV_DESKTOP_NOTIFY,
         planModeExperimentalEnabled: PLAN_MODE_EXPERIMENT_ENABLED,
+        multiUserControlPlane: multiUserRuntime.getControlPlaneStatus?.() ?? {
+          state: multiUserRuntime.enabled ? 'unknown' : 'disabled',
+          lastErrorCode: null,
+          lastSuccessAt: null,
+        },
       };
     },
     verboseRequestLogs: OPENCHAMBER_VERBOSE_REQUEST_LOGS,
@@ -1824,7 +1864,36 @@ async function main(options = {}) {
     writeSseEvent,
     emitSyntheticOpenCodeEvent,
     resolveZenModel,
+    resolveZenModelNonBlocking,
+    recordCommitTiming: (req, payload) => harnessRuntime.record({
+      type: 'timing',
+      actor: req?.principal?.id
+        ? {
+            id: req.principal.id,
+            role: req.principal.role || null,
+            scope: req.principal.scope || null,
+          }
+        : null,
+      mark: payload.event,
+      payload: {
+        durationMs: payload.totalMs,
+        stages: [
+          { phase: 'context', durationMs: payload.contextMs },
+          { phase: 'model', durationMs: payload.modelMs },
+          { phase: 'provider', durationMs: payload.providerMs },
+          { phase: 'parsing', durationMs: payload.parseMs },
+        ],
+        count: payload.selectedFileCount,
+        scope: payload.stagedOnly === true ? 'staged-only' : 'staged-and-unstaged',
+        outcome: payload.outcome,
+        model: payload.model,
+        state: payload.catalogState,
+        retry: payload.retried === true,
+      },
+    }),
     resolveManagedProject: multiUserRuntime.resolveManagedProject?.bind(multiUserRuntime),
+    ownsSession: multiUserRuntime.ownsSession?.bind(multiUserRuntime),
+    resolveOwnedSessionPlanContext: multiUserRuntime.resolveOwnedSessionPlanContext?.bind(multiUserRuntime),
   });
 
   const localInstanceStatusRuntime = createLocalInstanceStatusRuntime({ net, URL });
@@ -1833,6 +1902,7 @@ async function main(options = {}) {
     fs,
     path,
     getTerminalRuntime: () => terminalRuntime,
+    resolveManagedProjectForDirectory: multiUserRuntime.resolveManagedProjectForDirectory?.bind(multiUserRuntime),
     probeUrl: async (url) => {
       const [result] = await localInstanceStatusRuntime.checkUrls([url]);
       return result;
@@ -1851,6 +1921,7 @@ async function main(options = {}) {
     express,
     uiAuthController,
     isRequestOriginAllowed,
+    canUseBrowser,
   });
   previewProxyRuntime.attach(app, {
     server,
@@ -1860,6 +1931,7 @@ async function main(options = {}) {
     rejectWebSocketUpgrade,
     classifyRequestScope: (req) => tunnelAuthController.classifyRequestScope(req),
     previewInstancesRuntime: projectPreviewInstancesRuntime,
+    canUseBrowser,
   });
 
   localInstanceStatusRuntime.attach(app, {
@@ -1870,6 +1942,7 @@ async function main(options = {}) {
       req,
       tunnelAuthController.classifyRequestScope(req),
     ),
+    canUseBrowser,
   });
   server.once('close', () => {
     projectPreviewInstancesRuntime.shutdown();

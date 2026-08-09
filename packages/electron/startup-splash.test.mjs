@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildStartupSplashHtml } from './startup-splash.mjs';
+import { buildStartupErrorHtml, buildStartupSplashHtml } from './startup-splash.mjs';
 
 describe('Electron startup splash', () => {
   it('uses the white app icon when the saved startup theme is dark', () => {
@@ -17,5 +17,17 @@ describe('Electron startup splash', () => {
     expect(html).toContain('data-splash-variant="light"');
     expect(html).toContain('stroke="#1e2a38"');
     expect(html).toContain('width="169" height="169"');
+  });
+
+  it('renders a retryable startup error without allowing error text to become markup', () => {
+    const html = buildStartupErrorHtml(
+      { themeMode: 'dark' },
+      { message: 'fetch failed (ENOTFOUND) <script>unsafe()</script>' },
+    );
+
+    expect(html).toContain('data-splash-variant="dark"');
+    expect(html).toContain('openchamber://retry-startup');
+    expect(html).toContain('fetch failed (ENOTFOUND) &lt;script&gt;unsafe()&lt;/script&gt;');
+    expect(html).not.toContain('<script>unsafe()</script>');
   });
 });

@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as gitService from './gitService';
 import type { BridgeContext, BridgeResponse } from './bridge';
+import { getVsCodeHarnessRuntime } from './harness-runtime-access';
 
 type BridgeMessageInput = {
   id: string;
@@ -20,6 +21,15 @@ const BRIDGE_ZEN_DEFAULT_MODEL = 'gpt-5-nano';
 const BRIDGE_COMMIT_DEFAULT_ZEN_MODEL = 'deepseek-v4-flash-free';
 const BRIDGE_COMMIT_ZEN_TIMEOUT_MS = 60_000;
 const BRIDGE_COMMIT_SUBJECT_MAX_LENGTH = 72;
+const BRIDGE_COMMIT_MAX_SELECTED_FILES = 200;
+const BRIDGE_COMMIT_MAX_PATH_LENGTH = 1024;
+const BRIDGE_COMMIT_RECENT_COUNT = 6;
+const BRIDGE_COMMIT_DIFF_CONCURRENCY = 6;
+const BRIDGE_COMMIT_MAX_DIFF_CHARS_PER_FILE = 1_500;
+const BRIDGE_COMMIT_MAX_TOTAL_DIFF_CHARS = 16_000;
+const BRIDGE_COMMIT_DIFF_CONTEXT_LINES = 1;
+const BRIDGE_COMMIT_LARGE_FILE_LINE_THRESHOLD = 200;
+const BRIDGE_COMMIT_DIFF_TRUNCATION_MARKER = '\n... [diff truncated]';
 const BRIDGE_COMMIT_TYPES = [
   'feat',
   'fix',
@@ -42,6 +52,264 @@ const BRIDGE_GIT_MODEL_CATALOG_CACHE_TTL_MS = 30 * 1000;
 
 let bridgeGitModelCatalogCache: Set<string> | null = null;
 let bridgeGitModelCatalogCacheAt = 0;
+
+type BridgeCommitFileContext = {
+  path: string;
+  index: string;
+  workingDir: string;
+  diff?: string;
+  diffNote?: string;
+};
+
+type BridgeCommitContextResult =
+  | { status: 'ready'; context: Record<string, unknown> }
+  | { status: 'blocked'; message: string };
+
+const normalizeBridgeGitPath = (value: string): string => value
+  .replace(/\\/g, '/')
+  .replace(/^\.\/+/, '')
+  .trim();
+
+const validateBridgeCommitFiles = (selectedFiles: unknown): string[] => {
+  if (!Array.isArray(selectedFiles) || selectedFiles.length === 0) {
+    throw new Error('At least one selected file is required');
+  }
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+  for (const value of selectedFiles) {
+    if (typeof value !== 'string') throw new Error('Selected file paths must be strings');
+    const filePath = normalizeBridgeGitPath(value);
+    if (
+      !filePath
+      || filePath.length > BRIDGE_COMMIT_MAX_PATH_LENGTH
+      || filePath === '..'
+      || filePath.startsWith('../')
+      || filePath.startsWith('/')
+      || /^[a-z]:\//i.test(filePath)
+      || filePath.split('/').includes('..')
+      || filePath.includes('\0')
+    ) {
+      throw new Error('Selected file path is invalid');
+    }
+    if (!seen.has(filePath)) {
+      seen.add(filePath);
+      normalized.push(filePath);
+      if (normalized.length > BRIDGE_COMMIT_MAX_SELECTED_FILES) {
+        throw new Error(`At most ${BRIDGE_COMMIT_MAX_SELECTED_FILES} files can be used to generate a commit message`);
+      }
+    }
+  }
+  return normalized;
+};
+
+const parseBridgeNumstat = (text: string): Record<string, { insertions: number; deletions: number }> => {
+  const stats: Record<string, { insertions: number; deletions: number }> = {};
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const [insertionsText, deletionsText, ...pathParts] = line.split('\t');
+    const filePath = normalizeBridgeGitPath(pathParts.join('\t'));
+    if (!filePath) continue;
+    const insertions = Number.parseInt(insertionsText, 10);
+    const deletions = Number.parseInt(deletionsText, 10);
+    const previous = stats[filePath] || { insertions: 0, deletions: 0 };
+    stats[filePath] = {
+      insertions: previous.insertions + (Number.isFinite(insertions) ? insertions : 0),
+      deletions: previous.deletions + (Number.isFinite(deletions) ? deletions : 0),
+    };
+  }
+  return stats;
+};
+
+const truncateBridgeCommitDiff = (diff: string, maxChars: number): { text: string; truncated: boolean } => {
+  if (diff.length <= maxChars) return { text: diff, truncated: false };
+  if (maxChars <= BRIDGE_COMMIT_DIFF_TRUNCATION_MARKER.length) {
+    return { text: diff.slice(0, maxChars), truncated: true };
+  }
+  return {
+    text: `${diff.slice(0, maxChars - BRIDGE_COMMIT_DIFF_TRUNCATION_MARKER.length)}${BRIDGE_COMMIT_DIFF_TRUNCATION_MARKER}`,
+    truncated: true,
+  };
+};
+
+const mergeBridgeDiffStats = (
+  ...values: Array<Record<string, { insertions: number; deletions: number }>>
+): Record<string, { insertions: number; deletions: number }> => {
+  const merged: Record<string, { insertions: number; deletions: number }> = {};
+  for (const value of values) {
+    for (const [filePath, stats] of Object.entries(value)) {
+      const previous = merged[filePath] || { insertions: 0, deletions: 0 };
+      merged[filePath] = {
+        insertions: previous.insertions + stats.insertions,
+        deletions: previous.deletions + stats.deletions,
+      };
+    }
+  }
+  return merged;
+};
+
+const collectBridgeDiffStats = async (
+  directory: string,
+  stagedOnly: boolean,
+  execGit: SpecialGitDeps['execGit'],
+): Promise<Record<string, { insertions: number; deletions: number }>> => {
+  const staged = execGit(['diff', '--cached', '--numstat'], directory)
+    .then((result) => parseBridgeNumstat(result.stdout))
+    .catch(() => ({}));
+  if (stagedOnly) return staged;
+  const unstaged = execGit(['diff', '--numstat'], directory)
+    .then((result) => parseBridgeNumstat(result.stdout))
+    .catch(() => ({}));
+  return mergeBridgeDiffStats(await staged, await unstaged);
+};
+
+const collectBridgeCommitContext = async ({
+  directory,
+  selectedFiles,
+  stagedOnly,
+  execGit,
+}: {
+  directory: string;
+  selectedFiles: unknown;
+  stagedOnly: boolean;
+  execGit: SpecialGitDeps['execGit'];
+}): Promise<BridgeCommitContextResult> => {
+  const selectedPaths = validateBridgeCommitFiles(selectedFiles);
+  const allowlist = new Set(selectedPaths);
+  const [status, log, diffStats] = await Promise.all([
+    gitService.getGitStatus(directory),
+    gitService.getGitLog(directory, { maxCount: BRIDGE_COMMIT_RECENT_COUNT }),
+    collectBridgeDiffStats(directory, stagedOnly, execGit),
+  ]);
+  const statusFiles = Array.isArray(status.files) ? status.files : [];
+  const hasConflict = statusFiles.some((file) => (
+    String(file.index || '').toUpperCase().includes('U')
+    || String(file.working_dir || '').toUpperCase().includes('U')
+  ));
+  if (status.mergeInProgress || status.rebaseInProgress || hasConflict) {
+    return {
+      status: 'blocked',
+      message: 'Merge or rebase conflicts must be resolved before generating a commit message',
+    };
+  }
+
+  const files: BridgeCommitFileContext[] = statusFiles
+    .map((file) => ({
+      path: normalizeBridgeGitPath(file.path),
+      index: typeof file.index === 'string' ? file.index : '',
+      workingDir: typeof file.working_dir === 'string' ? file.working_dir : '',
+    }))
+    .filter((file) => allowlist.has(file.path));
+  const resolved = new Set(files.map((file) => file.path));
+  for (const filePath of selectedPaths) {
+    if (!resolved.has(filePath)) files.push({ path: filePath, index: '?', workingDir: '?' });
+  }
+  files.sort((left, right) => left.path.localeCompare(right.path));
+
+  const contexts = new Array<BridgeCommitFileContext>(files.length);
+  let nextIndex = 0;
+  let totalDiffChars = 0;
+  const takeNext = (): number | null => {
+    const current = nextIndex;
+    nextIndex += 1;
+    return current < files.length ? current : null;
+  };
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const index = takeNext();
+      if (index === null) return;
+      const file = files[index];
+      const base: BridgeCommitFileContext = { ...file };
+      const stats = diffStats[file.path];
+      const changedLines = stats ? stats.insertions + stats.deletions : 0;
+      if (changedLines > BRIDGE_COMMIT_LARGE_FILE_LINE_THRESHOLD) {
+        contexts[index] = { ...base, diffNote: `large change (${changedLines} lines; diff omitted)` };
+        continue;
+      }
+      if (totalDiffChars >= BRIDGE_COMMIT_MAX_TOTAL_DIFF_CHARS) {
+        contexts[index] = { ...base, diffNote: 'diff omitted (context budget reached)' };
+        continue;
+      }
+      try {
+        const response = await gitService.getGitDiff(
+          directory,
+          file.path,
+          stagedOnly,
+          BRIDGE_COMMIT_DIFF_CONTEXT_LINES,
+        );
+        const diff = typeof response?.diff === 'string' ? response.diff.trim() : '';
+        if (!diff) {
+          contexts[index] = { ...base, diffNote: 'no diff available for current scope' };
+          continue;
+        }
+        if (/binary files differ/i.test(diff)) {
+          contexts[index] = { ...base, diffNote: 'binary file (diff omitted)' };
+          continue;
+        }
+        const remaining = Math.max(0, BRIDGE_COMMIT_MAX_TOTAL_DIFF_CHARS - totalDiffChars);
+        if (remaining === 0) {
+          contexts[index] = { ...base, diffNote: 'diff omitted (context budget reached)' };
+          continue;
+        }
+        const maxChars = Math.min(BRIDGE_COMMIT_MAX_DIFF_CHARS_PER_FILE, remaining);
+        const { text: selectedDiff, truncated } = truncateBridgeCommitDiff(diff, maxChars);
+        totalDiffChars += selectedDiff.length;
+        contexts[index] = {
+          ...base,
+          diff: selectedDiff,
+          ...(truncated ? { diffNote: 'diff truncated' } : {}),
+        };
+      } catch (error) {
+        contexts[index] = {
+          ...base,
+          diffNote: error instanceof Error ? error.message : 'failed to load diff',
+        };
+      }
+    }
+  };
+  const workerCount = Math.min(BRIDGE_COMMIT_DIFF_CONCURRENCY, files.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+  const recentCommitSubjects = (Array.isArray(log.all) ? log.all : [])
+    .map((entry) => (typeof entry?.message === 'string' ? entry.message.trim() : ''))
+    .filter(Boolean)
+    .slice(0, BRIDGE_COMMIT_RECENT_COUNT);
+  return {
+    status: 'ready',
+    context: {
+      branch: typeof status.current === 'string' ? status.current : '',
+      tracking: typeof status.tracking === 'string' ? status.tracking : null,
+      scope: stagedOnly ? 'staged-only' : 'staged-and-unstaged',
+      stagedOnly,
+      selectedFiles: contexts,
+      recentCommitSubjects,
+    },
+  };
+};
+
+const recordBridgeCommitTiming = (payload: Record<string, unknown>): void => {
+  try {
+    getVsCodeHarnessRuntime()?.record({
+      type: 'timing',
+      mark: 'git_commit_message_generation',
+      payload: {
+        durationMs: payload.totalMs,
+        stages: [
+          { phase: 'context', durationMs: payload.contextMs },
+          { phase: 'model', durationMs: payload.modelMs },
+          { phase: 'provider', durationMs: payload.providerMs },
+          { phase: 'parsing', durationMs: payload.parseMs },
+        ],
+        count: payload.selectedFileCount,
+        scope: payload.stagedOnly === true ? 'staged-only' : 'staged-and-unstaged',
+        outcome: payload.outcome,
+        model: payload.model,
+        state: payload.catalogState,
+        retry: payload.retried === true,
+      },
+    });
+  } catch {
+    // Diagnostics must never break commit-message generation.
+  }
+};
 
 const sleep = (ms: number) => new Promise<void>((resolve) => {
   setTimeout(resolve, ms);
@@ -211,11 +479,15 @@ export const generateBridgeTextWithZen = async ({
           input: [{ role: 'user', content: prompt }],
           stream: false,
           reasoning: { effort: 'low' },
+          max_output_tokens: 128,
         }
       : {
           model,
           messages: [{ role: 'user', content: prompt }],
           stream: false,
+          max_tokens: 64,
+          ...(model === BRIDGE_COMMIT_DEFAULT_ZEN_MODEL ? { reasoning_effort: 'none' } : {}),
+          stop: ['\n'],
         }),
     signal: AbortSignal.timeout(BRIDGE_COMMIT_ZEN_TIMEOUT_MS),
   });
@@ -440,7 +712,119 @@ export async function handleSpecialGitBridgeMessage(
   const { id, type, payload } = message;
 
   switch (type) {
+    case 'api:git/commit-message-draft': {
+      const startedAt = Date.now();
+      const {
+        directory,
+        selectedFiles,
+        stagedOnly = false,
+        guidance,
+        zenModel: requestedZenModel,
+      } = (payload || {}) as {
+        directory?: string;
+        selectedFiles?: unknown;
+        stagedOnly?: boolean;
+        guidance?: string;
+        zenModel?: string;
+      };
+      if (!directory) {
+        return { id, type, success: false, error: 'Directory is required' };
+      }
+
+      let contextMs = 0;
+      let providerMs = 0;
+      let parseMs = 0;
+      const selectedFileCount = Array.isArray(selectedFiles) ? selectedFiles.length : 0;
+      try {
+        const contextStartedAt = Date.now();
+        const contextResult = await collectBridgeCommitContext({
+          directory,
+          selectedFiles,
+          stagedOnly: stagedOnly === true,
+          execGit: deps.execGit,
+        });
+        contextMs = Date.now() - contextStartedAt;
+        if (contextResult.status === 'blocked') {
+          recordBridgeCommitTiming({
+            contextMs,
+            modelMs: 0,
+            providerMs: 0,
+            parseMs: 0,
+            totalMs: Date.now() - startedAt,
+            selectedFileCount,
+            stagedOnly: stagedOnly === true,
+            outcome: 'blocked',
+            model: null,
+            catalogState: 'not_applicable',
+            retried: false,
+          });
+          return {
+            id,
+            type,
+            success: true,
+            data: { status: 'blocked', commits: [], message: contextResult.message },
+          };
+        }
+
+        const zenModel = typeof requestedZenModel === 'string' && requestedZenModel.trim()
+          ? requestedZenModel.trim()
+          : BRIDGE_COMMIT_DEFAULT_ZEN_MODEL;
+        const prompt = buildBridgeCommitMessagePrompt(contextResult.context, guidance);
+        const providerStartedAt = Date.now();
+        const raw = await generateBridgeTextWithZen({ prompt, zenModel });
+        providerMs = Date.now() - providerStartedAt;
+        const parseStartedAt = Date.now();
+        const subject = normalizeBridgeCommitSubject(raw);
+        parseMs = Date.now() - parseStartedAt;
+        recordBridgeCommitTiming({
+          contextMs,
+          modelMs: 0,
+          providerMs,
+          parseMs,
+          totalMs: Date.now() - startedAt,
+          selectedFileCount,
+          stagedOnly: stagedOnly === true,
+          outcome: 'complete',
+          model: zenModel,
+          catalogState: 'not_applicable',
+          retried: false,
+        });
+        return {
+          id,
+          type,
+          success: true,
+          data: {
+            status: 'complete',
+            commits: [{ subject, highlights: [] }],
+          },
+        };
+      } catch (error) {
+        recordBridgeCommitTiming({
+          contextMs,
+          modelMs: 0,
+          providerMs,
+          parseMs,
+          totalMs: Date.now() - startedAt,
+          selectedFileCount,
+          stagedOnly: stagedOnly === true,
+          outcome: 'failed',
+          model: typeof requestedZenModel === 'string' && requestedZenModel.trim()
+            ? requestedZenModel.trim()
+            : BRIDGE_COMMIT_DEFAULT_ZEN_MODEL,
+          catalogState: 'not_applicable',
+          retried: false,
+        });
+        return {
+          id,
+          type,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+
     case 'api:git/commit-message': {
+      const startedAt = Date.now();
       const { directory, context, guidance, zenModel: requestedZenModel } = (payload || {}) as {
         directory?: string;
         context?: Record<string, unknown>;
@@ -460,14 +844,47 @@ export async function handleSpecialGitBridgeMessage(
           ? requestedZenModel.trim()
           : BRIDGE_COMMIT_DEFAULT_ZEN_MODEL;
         const prompt = buildBridgeCommitMessagePrompt(context, guidance);
+        const providerStartedAt = Date.now();
         const raw = await generateBridgeTextWithZen({ prompt, zenModel });
+        const providerMs = Date.now() - providerStartedAt;
+        const parseStartedAt = Date.now();
+        const subject = normalizeBridgeCommitSubject(raw);
+        const parseMs = Date.now() - parseStartedAt;
+        recordBridgeCommitTiming({
+          contextMs: 0,
+          modelMs: 0,
+          providerMs,
+          parseMs,
+          totalMs: Date.now() - startedAt,
+          selectedFileCount: selectedFiles.length,
+          stagedOnly: context.stagedOnly === true,
+          outcome: 'complete',
+          model: zenModel,
+          catalogState: 'not_applicable',
+          retried: false,
+        });
         return {
           id,
           type,
           success: true,
-          data: { subject: normalizeBridgeCommitSubject(raw), highlights: [] },
+          data: { subject, highlights: [] },
         };
       } catch (error) {
+        recordBridgeCommitTiming({
+          contextMs: 0,
+          modelMs: 0,
+          providerMs: 0,
+          parseMs: 0,
+          totalMs: Date.now() - startedAt,
+          selectedFileCount: selectedFiles.length,
+          stagedOnly: context.stagedOnly === true,
+          outcome: 'failed',
+          model: typeof requestedZenModel === 'string' && requestedZenModel.trim()
+            ? requestedZenModel.trim()
+            : BRIDGE_COMMIT_DEFAULT_ZEN_MODEL,
+          catalogState: 'not_applicable',
+          retried: false,
+        });
         return {
           id,
           type,
