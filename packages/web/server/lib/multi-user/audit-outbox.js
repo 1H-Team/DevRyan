@@ -3,8 +3,12 @@ import path from 'node:path';
 
 import { createDiagnosticSanitizer, createRecordStore } from '@openchamber/harness-runtime';
 
+import { DIAGNOSTIC_IMPACTS, DIAGNOSTIC_SOURCES } from './error-diagnostics.js';
+
 const OUTBOX_VERSION = 1;
 const DEFAULT_FLUSH_INTERVAL_MS = 5_000;
+const CLIPBOARD_TEXT_LIMIT_BYTES = 64 * 1024;
+const CLIPBOARD_PREVIEW_CHARACTERS = 512;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SAFE_CORRELATION_ID_PATTERN = /^[A-Za-z0-9_.:/-]{1,512}$/;
 const UUID_PAYLOAD_FIELDS = ['actor_user_id', 'target_user_id', 'project_id'];
@@ -17,6 +21,10 @@ const CORRELATION_PAYLOAD_FIELDS = [
   'request_id',
 ];
 const ISO_TIMESTAMP_FIELDS = ['created_at'];
+const DIAGNOSTIC_PAYLOAD_FIELDS = Object.freeze({
+  diagnostic_impact: new Set(DIAGNOSTIC_IMPACTS),
+  diagnostic_source: new Set(DIAGNOSTIC_SOURCES),
+});
 
 const normalizeUuidPayloadFields = (payload) => {
   const normalized = { ...payload };
@@ -24,11 +32,41 @@ const normalizeUuidPayloadFields = (payload) => {
     const value = payload[field];
     normalized[field] = typeof value === 'string' && UUID_PATTERN.test(value) ? value : null;
   }
+  for (const [field, allowed] of Object.entries(DIAGNOSTIC_PAYLOAD_FIELDS)) {
+    if (field in payload) normalized[field] = allowed.has(payload[field]) ? payload[field] : null;
+  }
   return normalized;
+};
+
+const truncateUtf8 = (value, limitBytes) => {
+  const source = String(value || '');
+  if (Buffer.byteLength(source, 'utf8') <= limitBytes) return { text: source, truncated: false };
+  let low = 0;
+  let high = source.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    if (Buffer.byteLength(source.slice(0, middle), 'utf8') <= limitBytes) low = middle;
+    else high = middle - 1;
+  }
+  if (low > 0 && /[\uD800-\uDBFF]/.test(source[low - 1])) low -= 1;
+  return { text: source.slice(0, low), truncated: true };
 };
 
 const sanitizeAuditPayload = (payload, sanitizer) => {
   const sanitized = sanitizer.sanitizeExportValue(payload);
+
+  if (typeof payload.clipboard_text === 'string' && typeof sanitized.clipboard_text === 'string') {
+    const bounded = truncateUtf8(sanitized.clipboard_text, CLIPBOARD_TEXT_LIMIT_BYTES);
+    let preview = bounded.text.slice(0, CLIPBOARD_PREVIEW_CHARACTERS);
+    if (preview && /[\uD800-\uDBFF]/.test(preview.at(-1))) preview = preview.slice(0, -1);
+    sanitized.clipboard_text = bounded.text;
+    sanitized.clipboard_text_preview = preview;
+    sanitized.clipboard_text_original_length = Number.isInteger(payload.clipboard_text_original_length)
+      ? payload.clipboard_text_original_length
+      : payload.clipboard_text.length;
+    sanitized.clipboard_text_truncated = payload.clipboard_text_truncated === true || bounded.truncated;
+    sanitized.clipboard_text_redacted = sanitized.clipboard_text !== payload.clipboard_text;
+  }
 
   // Diagnostic high-entropy filtering is appropriate for free-form metadata,
   // but UUIDs and OpenCode/session correlation IDs are the audit schema's
@@ -50,14 +88,21 @@ const sanitizeAuditPayload = (payload, sanitizer) => {
       sanitized[field] = new Date(value).toISOString();
     }
   }
-
-  const requestedEventId = payload.metadata?.requestedEventId;
-  if (typeof requestedEventId === 'string' && UUID_PATTERN.test(requestedEventId)) {
-    const sanitizedMetadata = sanitized.metadata && typeof sanitized.metadata === 'object' && !Array.isArray(sanitized.metadata)
-      ? sanitized.metadata
-      : {};
-    sanitized.metadata = { ...sanitizedMetadata, requestedEventId };
+  for (const [field, allowed] of Object.entries(DIAGNOSTIC_PAYLOAD_FIELDS)) {
+    const value = payload[field];
+    if (allowed.has(value)) sanitized[field] = value;
   }
+
+  const sanitizedMetadata = sanitized.metadata && typeof sanitized.metadata === 'object' && !Array.isArray(sanitized.metadata)
+    ? sanitized.metadata
+    : {};
+  for (const field of ['requestedEventId', 'originalEventId']) {
+    const value = payload.metadata?.[field];
+    if (typeof value === 'string' && UUID_PATTERN.test(value)) {
+      sanitizedMetadata[field] = value;
+    }
+  }
+  sanitized.metadata = sanitizedMetadata;
 
   return sanitized;
 };
@@ -105,10 +150,16 @@ export async function createAuditOutbox({
   });
   await store.initialize();
 
-  let flushing = null;
   let stopped = false;
   let delivered = 0;
   let deliveryFailures = 0;
+  let operationTail = Promise.resolve();
+
+  const serialize = (operation) => {
+    const result = operationTail.then(operation, operation);
+    operationTail = result.catch(() => {});
+    return result;
+  };
 
   const deliver = async (key, record) => {
     try {
@@ -133,19 +184,15 @@ export async function createAuditOutbox({
     }
   };
 
-  const flush = async () => {
-    if (flushing) return flushing;
-    flushing = (async () => {
-      const records = await store.listRecords();
-      for (const { key, record } of records) await deliver(key, record);
-      return records.length;
-    })().finally(() => {
-      flushing = null;
-    });
-    return flushing;
+  const flushUnlocked = async () => {
+    const records = await store.listRecords();
+    for (const { key, record } of records) await deliver(key, record);
+    return records.length;
   };
 
-  const enqueue = async (eventId, payload) => {
+  const flush = () => serialize(flushUnlocked);
+
+  const enqueue = (eventId, payload) => serialize(async () => {
     const record = await store.writeRecord(eventId, {
       payload: sanitizeAuditPayload(payload, sanitizer),
       attempts: 0,
@@ -154,22 +201,38 @@ export async function createAuditOutbox({
       lastError: null,
     });
     await deliver(eventId, record);
-  };
+  });
 
   const enqueueDeferred = async (eventId, payload) => {
-    await store.writeRecord(eventId, {
+    await serialize(() => store.writeRecord(eventId, {
       payload: sanitizeAuditPayload(payload, sanitizer),
       attempts: 0,
       createdAt: new Date().toISOString(),
       lastAttemptAt: null,
       lastError: null,
-    });
+    }));
     setImmediate(() => {
       if (stopped) return;
       void flush().catch((error) => {
         logger.warn?.('[MultiUser] Deferred audit outbox flush failed:', error?.message || error);
       });
     }).unref?.();
+  };
+
+  const withFlushedDeliveryBarrier = (operation) => {
+    if (typeof operation !== 'function') {
+      throw new TypeError('audit outbox delivery barrier operation must be a function');
+    }
+    return serialize(async () => {
+      await flushUnlocked();
+      const pending = await store.listRecords();
+      if (pending.length > 0) {
+        const error = new Error('Audit outbox backlog could not be delivered before the protected operation');
+        error.code = 'DEVRYAN_AUDIT_OUTBOX_NOT_FLUSHED';
+        throw error;
+      }
+      return operation();
+    });
   };
 
   const timer = setInterval(() => {
@@ -186,6 +249,7 @@ export async function createAuditOutbox({
     enqueue,
     enqueueDeferred,
     flush,
+    withFlushedDeliveryBarrier,
     async getStatus() {
       const records = await store.listRecords();
       return {

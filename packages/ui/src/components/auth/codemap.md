@@ -15,8 +15,9 @@ schema failures, local session reset, and loopback agent verification.
 ## Flow
 
 `GET /auth/session` responses are classified as authenticated, locked,
-rate-limited, identity unavailable, schema migration required, or an unexpected
-server response. Only a rejected fetch is rendered as “Unable to reach server.”
+rate-limited, identity unavailable, managed-account setup required, schema
+migration required, or an unexpected server response. Only a rejected fetch is
+rendered as “Unable to reach server.”
 For managed users, the accepted gate remains subscribed to low-frequency project
 metadata invalidations and event-stream reconnects, coalesces them, and reloads the
 same principal's authoritative assignment snapshot without resetting directory state.

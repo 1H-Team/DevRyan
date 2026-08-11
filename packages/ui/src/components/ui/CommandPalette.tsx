@@ -295,8 +295,13 @@ export const CommandPalette: React.FC = () => {
   // ---------------------------------------------------------------------------
   const settingsRuntimeCtx = React.useMemo<SettingsRuntimeContext>(() => {
     const isDesktop = isDesktopShell();
-    return { isVSCode: isVSCodeRuntime(), isWeb: !isDesktop && isWebRuntime(), isDesktop };
-  }, []);
+    return {
+      isVSCode: isVSCodeRuntime(),
+      isWeb: !isDesktop && isWebRuntime(),
+      isDesktop,
+      isManaged: authPrincipal.scope === 'managed',
+    };
+  }, [authPrincipal.scope]);
 
   const settingsEntries = React.useMemo<CommandEntry[]>(() => {
     return SETTINGS_PAGE_METADATA

@@ -93,14 +93,20 @@ export const createServerStartupRuntime = (dependencies) => {
                 publicUrl,
                 mode,
               });
-              const settings = await readSettingsFromDiskMigrated();
-              const bootstrapTtlMs = settings?.tunnelBootstrapTtlMs === null
-                ? null
-                : normalizeTunnelBootstrapTtlMs(settings?.tunnelBootstrapTtlMs);
-              const bootstrapToken = tunnelAuthController.issueBootstrapToken({ ttlMs: bootstrapTtlMs });
-              const connectUrl = `${publicUrl.replace(/\/$/, '')}/tunnel/connect?t=${encodeURIComponent(bootstrapToken.token)}`;
+              let connectUrl = null;
+              if (mode !== TUNNEL_MODE_MANAGED_REMOTE) {
+                const settings = await readSettingsFromDiskMigrated();
+                const bootstrapTtlMs = settings?.tunnelBootstrapTtlMs === null
+                  ? null
+                  : normalizeTunnelBootstrapTtlMs(settings?.tunnelBootstrapTtlMs);
+                const bootstrapToken = tunnelAuthController.issueBootstrapToken({ ttlMs: bootstrapTtlMs });
+                connectUrl = `${publicUrl.replace(/\/$/, '')}/tunnel/connect?t=${encodeURIComponent(bootstrapToken.token)}`;
+              }
               if (onTunnelReady) {
                 onTunnelReady(publicUrl, connectUrl);
+              } else if (mode === TUNNEL_MODE_MANAGED_REMOTE) {
+                console.log(`\n🌐 Tunnel URL: ${publicUrl}`);
+                console.log('🔐 Sign in with your DevRyan account\n');
               } else {
                 console.log(`\n🌐 Tunnel URL: ${connectUrl}`);
                 console.log('🔑 One-time connect link (expires after first use)\n');

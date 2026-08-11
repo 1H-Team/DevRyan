@@ -69,6 +69,7 @@ export type ManagedOrchestrationStore = {
   tasksById: Readonly<Record<string, ManagedTaskEventRecord>>;
   taskIdsByRootId: Readonly<Record<string, readonly string[]>>;
   resultEnvelopesByTaskId: Readonly<Record<string, ManagedTaskResultEnvelope>>;
+  latestTaskIdByChildSessionId: Readonly<Record<string, string>>;
   manualRecoveryTaskIdByChildSessionId: Readonly<Record<string, string>>;
   available: boolean | null;
   bridgeReady: boolean;
@@ -92,6 +93,7 @@ const initialState = () => ({
   tasksById: {} as Readonly<Record<string, ManagedTaskEventRecord>>,
   taskIdsByRootId: {} as Readonly<Record<string, readonly string[]>>,
   resultEnvelopesByTaskId: {} as Readonly<Record<string, ManagedTaskResultEnvelope>>,
+  latestTaskIdByChildSessionId: {} as Readonly<Record<string, string>>,
   manualRecoveryTaskIdByChildSessionId: {} as Readonly<Record<string, string>>,
   available: null as boolean | null,
   bridgeReady: false,
@@ -440,6 +442,38 @@ const isManualRecoveryTask = (
   && envelope.action === null
 );
 
+const resolveLatestTaskIdForChildSession = (
+  tasksById: Readonly<Record<string, ManagedTaskEventRecord>>,
+  childSessionId: string,
+) => {
+  let latest: ManagedTaskEventRecord | null = null;
+  for (const task of Object.values(tasksById)) {
+    if (task.childSessionId !== childSessionId) continue;
+    if (
+      !latest
+      || task.sequence > latest.sequence
+      || (task.sequence === latest.sequence && task.taskId.localeCompare(latest.taskId) > 0)
+    ) latest = task;
+  }
+  return latest?.taskId;
+};
+
+const withLatestTaskIdsByChildSession = (
+  current: Readonly<Record<string, string>>,
+  tasksById: Readonly<Record<string, ManagedTaskEventRecord>>,
+  childSessionIds: Set<string>,
+) => {
+  let next: Record<string, string> | null = null;
+  for (const childSessionId of childSessionIds) {
+    const taskId = resolveLatestTaskIdForChildSession(tasksById, childSessionId);
+    if (current[childSessionId] === taskId) continue;
+    next ??= { ...current };
+    if (taskId) next[childSessionId] = taskId;
+    else delete next[childSessionId];
+  }
+  return next ?? current;
+};
+
 const resolveManualRecoveryTaskId = (
   tasksById: Readonly<Record<string, ManagedTaskEventRecord>>,
   resultEnvelopesByTaskId: Readonly<Record<string, ManagedTaskResultEnvelope>>,
@@ -557,6 +591,13 @@ export const createManagedOrchestrationStore = (options: {
             ? withRootIds(state.taskIdsByRootId, tasksById, affectedRoots)
             : state.taskIdsByRootId,
           resultEnvelopesByTaskId,
+          latestTaskIdByChildSessionId: affectedChildSessionIds.size > 0
+            ? withLatestTaskIdsByChildSession(
+              state.latestTaskIdByChildSessionId,
+              tasksById,
+              affectedChildSessionIds,
+            )
+            : state.latestTaskIdByChildSessionId,
           manualRecoveryTaskIdByChildSessionId: affectedChildSessionIds.size > 0
             ? withManualRecoveryTaskIds(
               state.manualRecoveryTaskIdByChildSessionId,
@@ -651,6 +692,13 @@ export const createManagedOrchestrationStore = (options: {
           tasksById,
           taskIdsByRootId: withRootIds(state.taskIdsByRootId, tasksById, new Set([rootSessionId])),
           resultEnvelopesByTaskId,
+          latestTaskIdByChildSessionId: affectedChildSessionIds.size > 0
+            ? withLatestTaskIdsByChildSession(
+              state.latestTaskIdByChildSessionId,
+              tasksById,
+              affectedChildSessionIds,
+            )
+            : state.latestTaskIdByChildSessionId,
           manualRecoveryTaskIdByChildSessionId: affectedChildSessionIds.size > 0
             ? withManualRecoveryTaskIds(
               state.manualRecoveryTaskIdByChildSessionId,
@@ -802,6 +850,13 @@ export const createManagedOrchestrationStore = (options: {
                   ? withRootIds(state.taskIdsByRootId, tasksById, affectedRoots)
                   : state.taskIdsByRootId,
                 resultEnvelopesByTaskId,
+                latestTaskIdByChildSessionId: affectedChildSessionIds.size > 0
+                  ? withLatestTaskIdsByChildSession(
+                    state.latestTaskIdByChildSessionId,
+                    tasksById,
+                    affectedChildSessionIds,
+                  )
+                  : state.latestTaskIdByChildSessionId,
                 manualRecoveryTaskIdByChildSessionId: affectedChildSessionIds.size > 0
                   ? withManualRecoveryTaskIds(
                     state.manualRecoveryTaskIdByChildSessionId,
@@ -1045,6 +1100,12 @@ export const managedOrchestrationSelectors = {
   resultEnvelope: (taskId: string) => (state: ManagedOrchestrationStore) => (
     state.resultEnvelopesByTaskId[taskId]
   ),
+  latestTaskForChildSession: (childSessionId: string) => (
+    state: ManagedOrchestrationStore
+  ) => {
+    const taskId = state.latestTaskIdByChildSessionId[childSessionId];
+    return taskId ? state.tasksById[taskId] : undefined;
+  },
   manualRecoveryTaskIdForChildSession: (childSessionId: string) => (
     state: ManagedOrchestrationStore
   ) => state.manualRecoveryTaskIdByChildSessionId[childSessionId],

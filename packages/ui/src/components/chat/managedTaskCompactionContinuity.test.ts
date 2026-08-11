@@ -125,6 +125,7 @@ const state = (
 ): ManagedOrchestrationStore => ({
   tasksById: Object.fromEntries(tasks.map((entry) => [entry.taskId, entry])),
   taskIdsByRootId: { [ROOT_SESSION_ID]: tasks.map((entry) => entry.taskId) },
+  latestTaskIdByChildSessionId: {},
   resultEnvelopesByTaskId: Object.fromEntries(envelopes.map((entry) => [entry.taskId, entry])),
   manualRecoveryTaskIdByChildSessionId: {},
   available: true,
@@ -151,7 +152,9 @@ describe('managed task compaction continuity', () => {
       fileURLToPath(new URL('./ManagedTaskCompactionContinuity.tsx', import.meta.url)),
       'utf8',
     );
-    const blockerIndex = chatContainerSource.indexOf('sessionQuestions.length > 0 || sessionPermissions.length > 0');
+    // Pending questions render inside the composer (ChatInput); permissions are
+    // the remaining in-viewport blockers ahead of the continuity card.
+    const blockerIndex = chatContainerSource.indexOf('sessionPermissions.length > 0 && (');
     const continuityIndex = chatContainerSource.indexOf('<ManagedTaskCompactionContinuity');
     const statusIndex = chatContainerSource.indexOf('<StatusRowContainer', continuityIndex);
 

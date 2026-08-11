@@ -20,6 +20,7 @@ describe('settings permission catalog', () => {
     ]);
     expect(grouped).toContain('skills.catalog');
     expect(grouped).toContain('remote-instances');
+    expect(grouped).toContain('bug-reports');
     expect(grouped).not.toContain('home');
   });
 
@@ -30,9 +31,10 @@ describe('settings permission catalog', () => {
     expect(permissions.users).toEqual({ read: true, edit: false });
     expect(permissions.providers).toEqual({ read: false, edit: false });
 
-    const personal = permissionsFromLegacyPages(['voice', 'usage']);
+    const personal = permissionsFromLegacyPages(['voice', 'usage', 'bug-reports']);
     expect(personal.voice).toEqual({ read: true, edit: true });
     expect(personal.usage).toEqual({ read: true, edit: true });
+    expect(personal['bug-reports']).toEqual({ read: true, edit: true });
   });
 
   test('merges sparse overrides and never enables edit without read', () => {

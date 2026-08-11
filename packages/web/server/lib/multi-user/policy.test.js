@@ -41,10 +41,12 @@ const developerPrincipal = {
 };
 
 describe('multi-user policy', () => {
-  it('keeps the developer template to the six requested pages with Browser on and worktree/branch creation off by default', () => {
+  it('keeps the developer template to the managed personal pages with Bug Reports enabled', () => {
     expect(ROLE_POLICY_DEFAULTS.developer.settingsPages).toEqual([
-      'home', 'appearance', 'chat', 'sessions', 'shortcuts', 'notifications',
+      'home', 'appearance', 'chat', 'sessions', 'shortcuts', 'notifications', 'bug-reports',
     ]);
+    expect(ROLE_POLICY_DEFAULTS.developer.settingsPermissions['bug-reports']).toEqual({ read: true, edit: true });
+    expect(ROLE_POLICY_DEFAULTS.senior_developer.settingsPermissions['bug-reports']).toEqual({ read: true, edit: true });
     expect(ROLE_POLICY_DEFAULTS.developer.files).toBe(false);
     expect(ROLE_POLICY_DEFAULTS.developer.terminal).toBe(false);
     expect(ROLE_POLICY_DEFAULTS.developer.browser).toBe(true);
@@ -119,6 +121,10 @@ describe('multi-user policy', () => {
   it('owns sensitive settings routes by their canonical page', () => {
     const ownedRoutes = [
       ['/admin/users', 'GET', 'users'],
+      ['/bug-reports', 'POST', 'bug-reports'],
+      ['/bug-reports/report-1', 'PATCH', 'bug-reports'],
+      ['/error-logs', 'GET', 'bug-reports'],
+      ['/error-logs/event-1', 'GET', 'bug-reports'],
       ['/behavior', 'GET', 'agents'],
       ['/config/agent-overrides', 'PUT', 'agents'],
       ['/config/commands/review', 'PATCH', 'commands'],
@@ -183,6 +189,18 @@ describe('multi-user policy', () => {
     expect(policy.browser).toBe(true);
     expect(policy.manageUsers).toBe(true);
     expect(policy.manageGlobalSettings).toBe(true);
+  });
+
+  it('fills newly introduced settings permissions from role defaults for older stored policies', () => {
+    const policy = normalizeRolePolicy('developer', {
+      settings_pages: ['home', 'appearance'],
+      settings_permissions: {
+        appearance: { read: true, edit: true },
+      },
+    });
+
+    expect(policy.settingsPermissions.appearance).toEqual({ read: true, edit: true });
+    expect(policy.settingsPermissions['bug-reports']).toEqual({ read: true, edit: true });
   });
 
   it('returns values for a read-only page while rejecting mutations from it', () => {

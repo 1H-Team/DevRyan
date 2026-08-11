@@ -3,6 +3,7 @@ import type { SidebarSection } from '@/constants/sidebar';
 export type SettingsPageSlug =
   | 'home'
   | 'users'
+  | 'bug-reports'
   | 'projects'
   | 'remote-instances'
   | 'providers'
@@ -39,6 +40,7 @@ export interface SettingsRuntimeContext {
   isVSCode: boolean;
   isWeb: boolean;
   isDesktop: boolean;
+  isManaged: boolean;
 }
 
 export interface SettingsPageMeta {
@@ -78,6 +80,15 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     kind: 'single',
     description: 'Manage users, roles, projects, branches, GitHub accounts, and audit activity.',
     keywords: ['users', 'roles', 'access', 'permissions', 'branches', 'github', 'accounts', 'oauth', 'audit'],
+  },
+  {
+    slug: 'bug-reports',
+    title: 'Bug Reports',
+    group: 'general',
+    kind: 'single',
+    description: 'Submit product issues and, for administrators, review reports and error logs.',
+    keywords: ['bug', 'bugs', 'report', 'issue', 'status', 'error', 'errors', 'logs', 'diagnostics', 'development'],
+    isAvailable: (ctx) => ctx.isManaged && !ctx.isVSCode,
   },
   {
     slug: 'projects',

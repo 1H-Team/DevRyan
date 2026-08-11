@@ -5,12 +5,16 @@ const source = readFileSync(new URL('./SessionRetentionSettings.tsx', import.met
 const messages = readFileSync(new URL('../../../lib/i18n/messages/en.settings.ts', import.meta.url), 'utf8');
 
 describe('diagnostic data cleanup source contract', () => {
-  test('uses one cleanup component and one clear-all action', () => {
+  test('offers bounded diagnostic clear ranges through one cleanup component', () => {
     expect(source).toContain('const DiagnosticDataCleanup');
     expect(source).toContain('<DiagnosticDataCleanup />');
     expect(source).not.toContain('DiagnosticJournalCleanup');
     expect(source).not.toContain('ApplicationCacheCleanup');
-    expect(source).toContain("settings.openchamber.about.diagnostics.clearAll");
+    expect(source).toContain("{ value: '24h'");
+    expect(source).toContain("{ value: '7d'");
+    expect(source).toContain("{ value: '14d'");
+    expect(source).toContain("{ value: 'all'");
+    expect(source).toContain('diagnostics.clear(clearRange)');
   });
 
   test('removes the separate application-cache message namespace', () => {

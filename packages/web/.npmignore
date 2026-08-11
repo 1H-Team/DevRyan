@@ -1,3 +1,5 @@
+server/default-config/agents/*.test.*
+server/default-config/agents/*.spec.*
 server/default-config/plugins/*.test.*
 server/default-config/plugins/*.spec.*
 server/default-config/user-profile/**/test-*.md

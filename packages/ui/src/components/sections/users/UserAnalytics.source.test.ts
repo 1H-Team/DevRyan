@@ -128,4 +128,14 @@ describe('user detail tabs and analytics source contract', () => {
     expect(activitySource).toContain('result.deletedCount');
     expect(activitySource).toContain('result.protectedCount');
   });
+
+  test('renders clipboard previews eagerly and loads full copied text only when expanded', () => {
+    expect(analyticsSource).toContain('summary.preview || \'(Empty copied text)\'');
+    expect(analyticsSource).toContain('if (toggleEvent.currentTarget.open) void loadFullText()');
+    expect(analyticsSource).toContain('/analytics/clipboard/${encodeURIComponent(event.event_id)}');
+    expect(analyticsSource).toContain('if (!summary?.available || detail || loading || !event.event_id) return');
+    expect(analyticsSource).toContain('max-h-80 overflow-auto whitespace-pre-wrap');
+    expect(analyticsSource).toContain('Sensitive-looking values were redacted before storage.');
+    expect(analyticsSource).toContain('Text was not captured');
+  });
 });

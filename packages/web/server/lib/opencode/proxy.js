@@ -76,6 +76,31 @@ export const createSseBoundaryTracker = () => {
   };
 };
 
+const hasForwardableRequestBody = (req) => {
+  const contentLength = Number(req.headers?.['content-length'] ?? 0);
+  return contentLength > 0 || Boolean(req.headers?.['transfer-encoding']);
+};
+
+export const replayParsedRequestBody = (proxyReq, req) => {
+  if (!hasForwardableRequestBody(req) || req.body === undefined) {
+    return;
+  }
+
+  const contentType = String(req.headers?.['content-type'] ?? '').toLowerCase();
+  if (!contentType.includes('application/json')) {
+    return;
+  }
+
+  // Prefer the raw bytes captured by express.json's verify hook: no middleware
+  // reassigns req.body, so they are still the exact client payload and reusing
+  // them skips a full re-serialization of possibly multi-MB prompt bodies.
+  const body = Buffer.isBuffer(req.body)
+    ? req.body
+    : (req.rawBody instanceof Buffer ? req.rawBody : Buffer.from(JSON.stringify(req.body)));
+  proxyReq.setHeader('content-length', String(body.byteLength));
+  proxyReq.write(body);
+};
+
 export const registerOpenCodeProxy = (app, deps) => {
   const {
     fs,
@@ -274,28 +299,6 @@ export const registerOpenCodeProxy = (app, deps) => {
     }
   };
 
-  const hasForwardableRequestBody = (req) => {
-    const contentLength = Number(req.headers?.['content-length'] ?? 0);
-    return contentLength > 0 || Boolean(req.headers?.['transfer-encoding']);
-  };
-
-  const replayParsedRequestBody = (proxyReq, req) => {
-    if (!hasForwardableRequestBody(req) || req.body === undefined) {
-      return;
-    }
-
-    const contentType = String(req.headers?.['content-type'] ?? '').toLowerCase();
-    if (!contentType.includes('application/json')) {
-      return;
-    }
-
-    const body = Buffer.isBuffer(req.body)
-      ? req.body
-      : Buffer.from(JSON.stringify(req.body));
-    proxyReq.setHeader('content-length', String(body.byteLength));
-    proxyReq.write(body);
-  };
-
   const formatMcpAction = (action) => (action === 'disconnect' ? 'disconnecting' : 'connecting');
 
   const normalizeString = (value) => (typeof value === 'string' && value.trim().length > 0 ? value.trim() : '');
@@ -441,6 +444,32 @@ export const registerOpenCodeProxy = (app, deps) => {
   // Ensure API prefix is detected before proxying
   app.use('/api', (_req, _res, next) => {
     ensureOpenCodeApiPrefix();
+    next();
+  });
+
+  // Latency attribution for the send path (same pattern as the [questions]
+  // slow-request logger): registered ahead of the readiness-hold gate so holdMs
+  // is captured even when a request 503s out of the hold.
+  const SEND_SLOW_REQUEST_THRESHOLD_MS = 1000;
+  app.use('/api/session', (req, res, next) => {
+    if (req.method !== 'POST') return next();
+    const isCreate = req.path === '/' || req.path === '';
+    const isPrompt = req.path.endsWith('/prompt_async');
+    if (!isCreate && !isPrompt) return next();
+    const tag = isCreate ? '[session]' : '[prompt]';
+    const start = Date.now();
+    res.on('close', () => {
+      const totalMs = Date.now() - start;
+      if (totalMs < SEND_SLOW_REQUEST_THRESHOLD_MS) return;
+      console.warn(`${tag} slow request`, {
+        method: req.method,
+        url: req.originalUrl,
+        status: res.statusCode,
+        totalMs,
+        holdMs: req.readinessHoldMs ?? 0,
+        proxyMs: req.proxyStartMs ? Date.now() - req.proxyStartMs : null,
+      });
+    });
     next();
   });
 
@@ -595,7 +624,7 @@ export const registerOpenCodeProxy = (app, deps) => {
   app.post('/api/mcp/:name/:action', forwardMcpActionRequest);
   app.use(
     '/api/session/:sessionID/prompt_async',
-    express.json({ limit: '50mb' }),
+    express.json({ limit: '50mb', verify: (req, _res, buf) => { req.rawBody = buf; } }),
     recordPromptAsyncTiming,
   );
 
@@ -689,7 +718,7 @@ export const registerOpenCodeProxy = (app, deps) => {
       error: (err, _req, res) => {
         console.error('[proxy] OpenCode proxy error:', err.message);
         if (res && !res.headersSent && typeof res.status === 'function') {
-          res.status(503).json({ error: 'OpenCode service unavailable' });
+          res.status(503).json({ error: 'OpenCode service unavailable', retryable: true });
         }
       },
     },

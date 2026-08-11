@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isManagedRemoteStatusDegraded } from './tunnelStatusPresentation';
+import {
+  isManagedAccountLoginAvailable,
+  isManagedRemoteStatusDegraded,
+} from './tunnelStatusPresentation';
 
 describe('managed remote tunnel status presentation', () => {
   const cases = [
@@ -39,5 +42,11 @@ describe('managed remote tunnel status presentation', () => {
       mode: 'quick',
       providerMetadata: { connectorState: 'degraded', publicReachabilityVerified: false },
     })).toBe(false);
+  });
+
+  test('allows Managed Remote startup only for managed-account principals', () => {
+    expect(isManagedAccountLoginAvailable('managed')).toBe(true);
+    expect(isManagedAccountLoginAvailable('local-admin')).toBe(false);
+    expect(isManagedAccountLoginAvailable(undefined)).toBe(false);
   });
 });

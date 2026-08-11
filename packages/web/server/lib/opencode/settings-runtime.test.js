@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { createProjectIdFromPath } from '../projects/project-id.js';
 import { createSettingsRuntime } from './settings-runtime.js';
 
-const createRuntime = (initialSettings) => {
+const createRuntime = (initialSettings, { projectIconStore } = {}) => {
   const settingsPath = '/tmp/openchamber/settings.json';
   const writtenFiles = new Map();
   let settings = { ...initialSettings };
@@ -70,12 +70,31 @@ const createRuntime = (initialSettings) => {
     normalizeManagedRemoteTunnelPresetTokens: (value) => value,
     syncManagedRemoteTunnelConfigWithPresets: vi.fn(async () => {}),
     upsertManagedRemoteTunnelToken: vi.fn(async () => {}),
+    projectIconStore,
   });
 
   return { runtime, fsPromises };
 };
 
 describe('settings runtime', () => {
+  it('restores manifest-backed project icon metadata while reading settings after an update', async () => {
+    const projectPath = '/tmp/project';
+    const project = { id: createProjectIdFromPath(projectPath), path: projectPath, iconImage: null };
+    const restoredIcon = { mime: 'image/png', updatedAt: 1234, source: 'custom' };
+    const projectIconStore = {
+      reconcileProjects: vi.fn(async (projects) => ({
+        projects: projects.map((entry) => ({ ...entry, iconImage: restoredIcon })),
+        changed: true,
+      })),
+    };
+    const { runtime } = createRuntime({ projects: [project], activeProjectId: project.id }, { projectIconStore });
+
+    const updated = await runtime.readSettingsFromDiskMigrated();
+
+    expect(projectIconStore.reconcileProjects).toHaveBeenCalledWith([project]);
+    expect(updated.projects[0].iconImage).toEqual(restoredIcon);
+  });
+
   it('migrates legacy Default IDs to dedicated DevRyan theme IDs once', async () => {
     const { runtime } = createRuntime({
       themeId: 'onedarkpro-light',

@@ -17,6 +17,7 @@ describe('full test-suite contract', () => {
     const files = discoverScriptTestFiles(repositoryRoot);
     assert.ok(files.includes('scripts/verify-release-assets.test.mjs'));
     assert.ok(files.includes('scripts/test-suite-contract.test.mjs'));
+    assert.ok(files.includes('.opencode/agents/design-routing.test.mjs'));
     assert.deepEqual(files, [...files].sort());
   });
 
@@ -65,6 +66,7 @@ describe('full test-suite contract', () => {
     ]);
     const allTests = discoverTestFiles(repositoryRoot, repositoryRoot, { ignoredDirectories });
     const fullGateRoots = [
+      '.opencode/agents/',
       '.opencode/plugins/',
       'scripts/',
       'packages/cursor-sdk-runtime/',
@@ -88,6 +90,7 @@ describe('full test-suite contract', () => {
         .map((file) => `packages/ui/${file}`),
     );
     for (const file of allTests) {
+      if (file.startsWith('.opencode/agents/')) assert.equal(scriptTests.has(file), true, `undiscovered: ${file}`);
       if (file.startsWith('.opencode/plugins/')) assert.equal(scriptTests.has(file), true, `undiscovered: ${file}`);
       if (file.startsWith('scripts/')) assert.equal(scriptTests.has(file), true, `undiscovered: ${file}`);
       if (file.startsWith('packages/electron/')) assert.equal(electronTests.has(file), true, `undiscovered: ${file}`);

@@ -1,5 +1,6 @@
 import type {
   DiagnosticsAPI,
+  DiagnosticsClearRange,
   DiagnosticsExportScope,
   DiagnosticsStatus,
 } from '@openchamber/ui/lib/api/types';
@@ -15,5 +16,8 @@ export const createVSCodeDiagnosticsAPI = (): DiagnosticsAPI => ({
     const result = await sendBridgeMessage<{ text: string }>('api:diagnostics/sanitize', { text });
     return result.text;
   },
-  clear: () => sendBridgeMessage<DiagnosticsStatus>('api:diagnostics/clear'),
+  clear: (range: DiagnosticsClearRange = 'all') => sendBridgeMessage<DiagnosticsStatus>(
+    'api:diagnostics/clear',
+    { range },
+  ),
 });

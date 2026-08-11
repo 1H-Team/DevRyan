@@ -23,6 +23,11 @@ interface ClipboardCopiedEvent extends InteractionBase {
   characterCount: number;
 }
 
+interface ClipboardSelection {
+  text: string;
+  characterCount: number;
+}
+
 type InteractionEvent = FileOpenedEvent | ClipboardCopiedEvent;
 
 export interface InteractionContext {
@@ -46,6 +51,9 @@ interface CollectorDependencies {
 
 const STORAGE_PREFIX = 'devryan.analytics.interactions.v1';
 const MAX_QUEUE_LENGTH = 100;
+const MAX_CLIPBOARD_TEXT_BYTES = 64 * 1024;
+const MAX_FLUSH_BODY_BYTES = 256 * 1024;
+const KEEPALIVE_BODY_BYTES = 48 * 1024;
 const FLUSH_DELAY_MS = 1_200;
 const MAX_RETRY_DELAY_MS = 30_000;
 const VALID_SURFACES = new Set<AnalyticsSurface>([
@@ -59,6 +67,25 @@ const fallbackUuid = (): string => {
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
   const hex = [...bytes].map((value) => value.toString(16).padStart(2, '0')).join('');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
+
+const textEncoder = new TextEncoder();
+const fatalTextDecoder = new TextDecoder('utf-8', { fatal: true });
+
+const utf8ByteLength = (value: string): number => textEncoder.encode(value).byteLength;
+
+const truncateUtf8 = (value: string, limitBytes = MAX_CLIPBOARD_TEXT_BYTES): string => {
+  const encoded = textEncoder.encode(value);
+  if (encoded.byteLength <= limitBytes) return value;
+  let end = limitBytes;
+  while (end > 0) {
+    try {
+      return fatalTextDecoder.decode(encoded.subarray(0, end));
+    } catch {
+      end -= 1;
+    }
+  }
+  return '';
 };
 
 const storageKey = (principal: AuthPrincipal): string => `${STORAGE_PREFIX}:${principal.id}`;
@@ -106,12 +133,19 @@ const elementContext = (target: EventTarget | null): InteractionContext => {
   };
 };
 
-const selectedCharacterCount = (documentRef: Document, target: EventTarget | null): number => {
+const selectedClipboardText = (documentRef: Document, target: EventTarget | null): ClipboardSelection => {
   const input = target as HTMLInputElement | HTMLTextAreaElement | null;
   if (input && typeof input.selectionStart === 'number' && typeof input.selectionEnd === 'number') {
-    return Math.max(0, input.selectionEnd - input.selectionStart);
+    const start = Math.max(0, input.selectionStart);
+    const end = Math.max(start, input.selectionEnd);
+    const source = typeof input.value === 'string' ? input.value : '';
+    return {
+      text: source.slice(start, Math.min(end, start + MAX_CLIPBOARD_TEXT_BYTES)),
+      characterCount: end - start,
+    };
   }
-  return documentRef.getSelection?.()?.toString().length || 0;
+  const text = documentRef.getSelection?.()?.toString() || '';
+  return { text, characterCount: text.length };
 };
 
 export const createInteractionAnalyticsCollector = (dependencies: CollectorDependencies = {}) => {
@@ -129,6 +163,7 @@ export const createInteractionAnalyticsCollector = (dependencies: CollectorDepen
   let flushing: Promise<void> | null = null;
   let initialized = false;
   let suppressNativeCopyUntil = 0;
+  const clipboardContent = new Map<string, string>();
 
   const managedContext = (context: InteractionContext = {}) => {
     const principal = getPrincipalImpl();
@@ -159,6 +194,13 @@ export const createInteractionAnalyticsCollector = (dependencies: CollectorDepen
     }
   };
 
+  const pruneClipboardContent = (events: InteractionEvent[]): void => {
+    const retainedIds = new Set(events.map((event) => event.id));
+    for (const id of clipboardContent.keys()) {
+      if (!retainedIds.has(id)) clipboardContent.delete(id);
+    }
+  };
+
   const scheduleFlush = (delay = FLUSH_DELAY_MS): void => {
     if (timer !== null) cancelTimeout(timer);
     timer = scheduleTimeout(() => {
@@ -167,10 +209,13 @@ export const createInteractionAnalyticsCollector = (dependencies: CollectorDepen
     }, delay);
   };
 
-  const enqueue = (event: InteractionEvent, principal: AuthPrincipal): void => {
+  const enqueue = (event: InteractionEvent, principal: AuthPrincipal, copiedText?: string): void => {
     const queue = readQueue(principal);
     queue.push(event);
-    writeQueue(principal, queue);
+    const retainedQueue = queue.slice(-MAX_QUEUE_LENGTH);
+    if (copiedText !== undefined) clipboardContent.set(event.id, truncateUtf8(copiedText));
+    pruneClipboardContent(retainedQueue);
+    writeQueue(principal, retainedQueue);
     scheduleFlush();
   };
 
@@ -192,7 +237,7 @@ export const createInteractionAnalyticsCollector = (dependencies: CollectorDepen
   const recordProgrammaticCopy = (text: string, context: InteractionContext = {}): void => {
     const managed = managedContext(context);
     if (!managed) return;
-    enqueue({
+    const event: ClipboardCopiedEvent = {
       id: randomUuid(),
       type: 'clipboard.copied',
       occurredAt: new Date(now()).toISOString(),
@@ -203,7 +248,8 @@ export const createInteractionAnalyticsCollector = (dependencies: CollectorDepen
       ...(projectRelativePath(context.path, managed.directory, managed.principal)
         ? { path: projectRelativePath(context.path, managed.directory, managed.principal) }
         : {}),
-    }, managed.principal);
+    };
+    enqueue(event, managed.principal, text);
   };
 
   const suppressNextNativeCopy = (): void => {
@@ -216,23 +262,41 @@ export const createInteractionAnalyticsCollector = (dependencies: CollectorDepen
       return;
     }
     if (!documentRef) return;
-    const characterCount = selectedCharacterCount(documentRef, event.target);
-    if (characterCount <= 0) return;
+    const selection = selectedClipboardText(documentRef, event.target);
+    if (selection.characterCount <= 0) return;
     const context = elementContext(event.target);
     const managed = managedContext(context);
     if (!managed) return;
-    enqueue({
+    const interaction: ClipboardCopiedEvent = {
       id: randomUuid(),
       type: 'clipboard.copied',
       occurredAt: new Date(now()).toISOString(),
       directory: managed.directory,
       sourceSurface: context.sourceSurface || 'unknown',
       copyKind: context.copyKind || 'text',
-      characterCount,
+      characterCount: selection.characterCount,
       ...(projectRelativePath(context.path, managed.directory, managed.principal)
         ? { path: projectRelativePath(context.path, managed.directory, managed.principal) }
         : {}),
-    }, managed.principal);
+    };
+    enqueue(interaction, managed.principal, selection.text);
+  };
+
+  const buildBatch = (queue: InteractionEvent[]): { events: Array<InteractionEvent & { copiedText?: string }>; body: string } => {
+    const events: Array<InteractionEvent & { copiedText?: string }> = [];
+    const serializedEvents: string[] = [];
+    let bodyBytes = utf8ByteLength('{"events":[]}');
+    for (const event of queue.slice(0, 50)) {
+      const copiedText = clipboardContent.get(event.id);
+      const candidate = copiedText === undefined ? event : { ...event, copiedText };
+      const serialized = JSON.stringify(candidate);
+      const nextBytes = bodyBytes + utf8ByteLength(serialized) + (events.length > 0 ? 1 : 0);
+      if (events.length > 0 && nextBytes > MAX_FLUSH_BODY_BYTES) break;
+      events.push(candidate);
+      serializedEvents.push(serialized);
+      bodyBytes = nextBytes;
+    }
+    return { events, body: `{"events":[${serializedEvents.join(',')}]}` };
   };
 
   const flush = async (): Promise<void> => {
@@ -241,7 +305,7 @@ export const createInteractionAnalyticsCollector = (dependencies: CollectorDepen
     if (!managed || !fetchImpl) return;
     const queue = readQueue(managed.principal);
     if (queue.length === 0) return;
-    const batch = queue.slice(0, 50);
+    const batch = buildBatch(queue);
     flushing = (async () => {
       try {
         const response = await fetchImpl('/api/analytics/events', {
@@ -252,12 +316,13 @@ export const createInteractionAnalyticsCollector = (dependencies: CollectorDepen
             Accept: 'application/json',
             'X-DevRyan-CSRF': '1',
           },
-          body: JSON.stringify({ events: batch }),
-          keepalive: true,
+          body: batch.body,
+          keepalive: utf8ByteLength(batch.body) <= KEEPALIVE_BODY_BYTES,
         });
         if (!response.ok) throw new Error(`Analytics request failed (${response.status})`);
         const payload = await response.json() as { results?: Array<{ id: string }> };
         const completedIds = new Set((payload.results || []).map((result) => result.id));
+        for (const id of completedIds) clipboardContent.delete(id);
         const currentQueue = readQueue(managed.principal);
         writeQueue(managed.principal, currentQueue.filter((event) => !completedIds.has(event.id)));
         retryDelay = 1_000;
@@ -291,6 +356,7 @@ export const createInteractionAnalyticsCollector = (dependencies: CollectorDepen
     documentRef.removeEventListener('visibilitychange', onVisibilityChange);
     if (timer !== null) cancelTimeout(timer);
     timer = null;
+    clipboardContent.clear();
   };
 
   return {

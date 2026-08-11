@@ -123,6 +123,9 @@ const LazyAboutSettings = /* @__PURE__ */ lazyWithChunkRecovery(() =>
 const LazyUserManagementPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
   import('@/components/sections/users/UserManagementPage').then((module) => ({ default: module.UserManagementPage })),
 );
+const LazyBugReportsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/bug-reports/BugReportsPage').then((module) => ({ default: module.BugReportsPage })),
+);
 
 const SettingsSectionBoundary: React.FC<React.PropsWithChildren> = ({ children }) => (
   <ErrorBoundary>
@@ -147,10 +150,10 @@ interface SettingsViewProps {
   forceMobile?: boolean;
 }
 
-function buildRuntimeContext(isDesktop: boolean): SettingsRuntimeContext {
+function buildRuntimeContext(isDesktop: boolean, isManaged: boolean): SettingsRuntimeContext {
   const isVSCode = isVSCodeRuntime();
   const isWeb = !isDesktop && isWebRuntime();
-  return { isVSCode, isWeb, isDesktop };
+  return { isVSCode, isWeb, isDesktop, isManaged };
 }
 
 function isPageAvailable(page: SettingsPageMeta, ctx: SettingsRuntimeContext): boolean {
@@ -236,7 +239,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
 
   // keep platform check available for future window chrome tweaks
 
-  const runtimeCtx = React.useMemo(() => buildRuntimeContext(isDesktopApp), [isDesktopApp]);
+  const runtimeCtx = React.useMemo(
+    () => buildRuntimeContext(isDesktopApp, principal.scope === 'managed'),
+    [isDesktopApp, principal.scope],
+  );
 
   const handleLogout = React.useCallback(async () => {
     const response = await fetch('/auth/logout', {
@@ -413,6 +419,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
     switch (slug) {
       case 'users':
         return 'User Management';
+      case 'bug-reports':
+        return t('settings.page.bugReports.title');
       case 'projects':
         return t('settings.page.projects.title');
       case 'remote-instances':
@@ -510,6 +518,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         return <SettingsHome onOpen={openPage} />;
       case 'users':
         return <LazyUserManagementPage />;
+      case 'bug-reports':
+        return <LazyBugReportsPage />;
       case 'projects':
         return <LazyProjectsPage />;
       case 'remote-instances':
@@ -697,8 +707,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
                     type="button"
                     className={cn(
                       'flex h-7 w-full items-center gap-2 rounded-md px-2 overflow-hidden whitespace-nowrap',
-                      'typography-ui-label font-medium text-sidebar-foreground/90',
-                      'hover:text-sidebar-foreground hover:bg-interactive-hover',
+                      'text-sm font-semibold text-sidebar-foreground/90',
+                      'transition-[color,background-color,box-shadow]',
+                      'hover:bg-destructive/10 hover:text-destructive hover:shadow-[0_0_12px_color-mix(in_srgb,var(--destructive)_35%,transparent)]',
                     )}
                     onClick={() => void handleLogout()}
                   >

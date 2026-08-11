@@ -5,7 +5,10 @@ export interface AgentTestIdentity {
   label: string;
 }
 
-export type SessionAuthErrorCode = 'identity_unavailable' | 'schema_migration_required';
+export type SessionAuthErrorCode =
+  | 'identity_unavailable'
+  | 'managed_account_auth_required'
+  | 'schema_migration_required';
 
 export interface SessionStatusShape {
   code?: SessionAuthErrorCode;
@@ -17,6 +20,7 @@ export type SessionStatusDecision =
   | { state: 'locked' }
   | { state: 'rate-limited'; retryAfter?: number }
   | { state: 'identity-unavailable' }
+  | { state: 'managed-account-required' }
   | { state: 'schema-migration-required' }
   | { state: 'server-error' };
 
@@ -28,6 +32,9 @@ export const classifySessionResponse = (
   if (ok) return { state: 'authenticated' };
   if (status === 401) return { state: 'locked' };
   if (status === 429) return { state: 'rate-limited', retryAfter: payload.retryAfter };
+  if (status === 503 && payload.code === 'managed_account_auth_required') {
+    return { state: 'managed-account-required' };
+  }
   if (status === 503 && payload.code === 'schema_migration_required') {
     return { state: 'schema-migration-required' };
   }

@@ -97,6 +97,30 @@ describe('multi-user analytics', () => {
     }, options).accepted).toBe(false);
   });
 
+  it('accepts copied text from settings and caps it at 64 KiB without splitting unicode', () => {
+    const source = '🙂'.repeat(20_000);
+    const result = validateInteractionEvent({
+      id: crypto.randomUUID(),
+      type: 'clipboard.copied',
+      occurredAt: new Date().toISOString(),
+      sourceSurface: 'settings',
+      copyKind: 'text',
+      characterCount: source.length,
+      copiedText: source,
+      directory: '/repo',
+    }, {
+      resolveAssignment: () => assignment,
+      containsPath: (root, candidate) => candidate.startsWith(`${root}/`),
+    });
+
+    expect(result.accepted).toBe(true);
+    expect(Buffer.byteLength(result.clipboard.text, 'utf8') <= 64 * 1024).toBe(true);
+    expect(result.clipboard.text.endsWith('🙂')).toBe(true);
+    expect(result.clipboard.originalLength).toBe(source.length);
+    expect(result.clipboard.truncated).toBe(true);
+    expect(JSON.stringify(result.metadata)).not.toContain('🙂');
+  });
+
   it('records only safe field values in detailed deltas', () => {
     const changes = buildSafeFieldDeltas(
       { role: 'developer', enabled: false, apiToken: 'before', projectPath: '/private', arbitrary: { prompt: 'old' }, branches: ['main'] },

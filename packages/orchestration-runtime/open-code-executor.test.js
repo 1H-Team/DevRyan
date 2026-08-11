@@ -2,11 +2,35 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   createManagedOpenCodeExecutor,
+  isManagedTransientTransportContinuationPrompt,
   MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT,
   MANAGED_READ_ONLY_PROMPT,
   MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT,
   MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT,
 } from './open-code-executor.js';
+
+describe('managed transport continuation prompt recognition', () => {
+  test('recognizes writable and read-only timeout/connection continuations exactly', () => {
+    for (const prompt of [
+      MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT,
+      MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT,
+    ]) {
+      expect(isManagedTransientTransportContinuationPrompt(prompt)).toBe(true);
+      expect(isManagedTransientTransportContinuationPrompt(
+        `${MANAGED_READ_ONLY_PROMPT}\n\n${prompt}`,
+      )).toBe(true);
+      expect(isManagedTransientTransportContinuationPrompt(`${prompt} extra`)).toBe(false);
+    }
+  });
+
+  test('does not classify manual or empty-output continuations as transport recovery', () => {
+    expect(isManagedTransientTransportContinuationPrompt(
+      MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT,
+    )).toBe(false);
+    expect(isManagedTransientTransportContinuationPrompt('Continue the task.')).toBe(false);
+    expect(isManagedTransientTransportContinuationPrompt(null)).toBe(false);
+  });
+});
 
 const task = (overrides = {}) => ({
   owner: 'devryan',

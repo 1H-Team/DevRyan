@@ -276,4 +276,41 @@ describe('session-partitioned diagnostic journal', () => {
     await journal.close();
     expect(await journal.readRecords()).toMatchObject([{ sessionID: 'ses_new' }]);
   });
+
+  test('range clear removes recent records while preserving older records and blobs', async () => {
+    const directory = await temporaryDirectory();
+    const journal = createJournal(directory, {
+      now: () => 400,
+      maxAgeMs: Number.MAX_SAFE_INTEGER,
+      blobThresholdBytes: 16,
+      trim: false,
+    });
+    journal.enqueue({
+      type: 'prompt',
+      at: 100,
+      sessionID: 'ses_old',
+      payload: { text: 'older diagnostic payload that uses a blob' },
+    });
+    journal.enqueue({
+      type: 'prompt',
+      at: 300,
+      sessionID: 'ses_recent',
+      payload: { text: 'recent diagnostic payload' },
+    });
+    await journal.flush();
+
+    const cleared = await journal.clear({ since: 200 });
+    expect(cleared).toMatchObject({ sessionCount: 1 });
+    const records = await journal.readRecords();
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ at: 100, sessionID: 'ses_old' });
+    expect(await journal.readBlob(records[0].payload.text.path)).toBe(
+      'older diagnostic payload that uses a blob',
+    );
+    expect(await fs.stat(path.join(directory, 'sessions/ses_recent')).catch(() => null)).toBeNull();
+
+    journal.enqueue({ type: 'log', at: 500, message: 'written after range clear' });
+    await journal.close();
+    expect(await journal.readRecords()).toHaveLength(2);
+  });
 });

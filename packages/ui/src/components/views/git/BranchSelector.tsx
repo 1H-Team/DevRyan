@@ -35,6 +35,7 @@ interface BranchSelectorProps {
   currentBranch: string | null | undefined;
   localBranches: string[];
   remoteBranches: string[];
+  worktreeBranches?: ReadonlySet<string>;
   branchInfo: Record<string, BranchInfo> | undefined;
   onCheckout: (branch: string) => void;
   onCreate?: (name: string, remote?: GitRemote) => Promise<void>;
@@ -59,6 +60,7 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
   currentBranch,
   localBranches,
   remoteBranches,
+  worktreeBranches,
   branchInfo,
   onCheckout,
   onCreate,
@@ -316,6 +318,14 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
                   {currentBranch === branch && (
                     <span className="typography-micro text-primary">{t('gitView.branch.currentBadge')}</span>
                   )}
+                  {worktreeBranches?.has(branch) && currentBranch !== branch ? (
+                    <span
+                      className="rounded bg-muted/50 px-1.5 py-0.5 typography-micro text-muted-foreground"
+                      aria-label={t('gitView.branch.worktreeBadge')}
+                    >
+                      {t('gitView.branch.worktreeBadge')}
+                    </span>
+                  ) : null}
                 </CommandItem>
               ))}
               {filteredLocal.length === 0 && (
@@ -333,7 +343,7 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
               {filteredRemote.map((branch) => (
                 <CommandItem
                   key={`remote-${branch}`}
-                  onSelect={() => handleCheckout(branch)}
+                  onSelect={() => handleCheckout(`remotes/${branch}`)}
                 >
                   <span className="typography-ui-label text-foreground">{branch}</span>
                 </CommandItem>

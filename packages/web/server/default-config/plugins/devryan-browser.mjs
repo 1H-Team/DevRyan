@@ -12,6 +12,21 @@ const MAX_ARGUMENT_BYTES = 8 * 1024;
 const CLEANUP_TIMEOUT_MS = 3_000;
 const MAX_CONNECTION_ENTRIES = 100;
 const TURN_MESSAGE_LOOKUP_LIMIT = 200;
+const RETRYABLE_TRANSPORT_STATUS_CODES = new Set([502, 503, 504]);
+const BROWSER_ERROR_CODES = Object.freeze({
+  inputInvalid: 'DEVRYAN_BROWSER_INPUT_INVALID',
+  configInvalid: 'DEVRYAN_BROWSER_CONFIG_INVALID',
+  configUnavailable: 'DEVRYAN_BROWSER_CONFIG_UNAVAILABLE',
+  turnLookupFailed: 'DEVRYAN_BROWSER_TURN_LOOKUP_FAILED',
+  leaseAcquireFailed: 'DEVRYAN_BROWSER_LEASE_ACQUIRE_FAILED',
+  leaseResponseInvalid: 'DEVRYAN_BROWSER_LEASE_RESPONSE_INVALID',
+  leaseTouchFailed: 'DEVRYAN_BROWSER_LEASE_TOUCH_FAILED',
+  leaseReleaseFailed: 'DEVRYAN_BROWSER_LEASE_RELEASE_FAILED',
+  connectionFailed: 'DEVRYAN_BROWSER_CONNECTION_FAILED',
+  commandFailed: 'DEVRYAN_BROWSER_COMMAND_FAILED',
+  commandTimeout: 'DEVRYAN_BROWSER_COMMAND_TIMEOUT',
+  commandAborted: 'DEVRYAN_BROWSER_COMMAND_ABORTED',
+});
 // agent-browser 0.33.2 parses this global option before the command and accepts
 // human-readable s/m/h values, normalizing them internally to milliseconds.
 const MANAGED_IDLE_TIMEOUT = '2m';
@@ -135,9 +150,18 @@ const FORBIDDEN_FLAGS = new Set([
   '--user-data-dir',
 ]);
 
-const requireText = (value, field) => {
+const browserError = (code, message, { cause = null, statusCode = null, retryable = false } = {}) => {
+  const error = new Error(`${code}: ${message}`);
+  error.code = code;
+  if (cause) error.cause = cause;
+  if (Number.isInteger(statusCode)) error.statusCode = statusCode;
+  error.retryable = retryable === true;
+  return error;
+};
+
+const requireText = (value, field, code = BROWSER_ERROR_CODES.inputInvalid) => {
   const normalized = typeof value === 'string' ? value.trim() : '';
-  if (!normalized) throw new Error(`${field} is required`);
+  if (!normalized) throw browserError(code, `${field} is required`);
   return normalized;
 };
 
@@ -151,7 +175,7 @@ const getManagedEnvironment = () => {
   try {
     parsed = new URL(discoveryUrl);
   } catch {
-    throw new Error('DevRyan agent browser discovery URL is invalid');
+    throw browserError(BROWSER_ERROR_CODES.configInvalid, 'DevRyan agent browser discovery URL is invalid');
   }
   if (
     parsed.protocol !== 'http:'
@@ -161,15 +185,21 @@ const getManagedEnvironment = () => {
     || parsed.search
     || parsed.hash
   ) {
-    throw new Error('DevRyan agent browser discovery must use the private IPv4 loopback endpoint');
+    throw browserError(
+      BROWSER_ERROR_CODES.configInvalid,
+      'DevRyan agent browser discovery must use the private IPv4 loopback endpoint',
+    );
   }
   if (!path.isAbsolute(binaryPath)) {
-    throw new Error('DevRyan agent browser binary path must be absolute');
+    throw browserError(BROWSER_ERROR_CODES.configInvalid, 'DevRyan agent browser binary path must be absolute');
   }
   const packageRoot = path.dirname(path.dirname(binaryPath));
   const nodeModulesRoot = path.dirname(packageRoot);
   if (path.basename(packageRoot) !== 'agent-browser' || path.basename(nodeModulesRoot) !== 'node_modules') {
-    throw new Error('DevRyan agent browser binary is outside the managed install layout');
+    throw browserError(
+      BROWSER_ERROR_CODES.configInvalid,
+      'DevRyan agent browser binary is outside the managed install layout',
+    );
   }
   const configPath = path.join(path.dirname(nodeModulesRoot), MANAGED_CONFIG_FILE);
   const installRoot = path.dirname(nodeModulesRoot);
@@ -179,7 +209,10 @@ const getManagedEnvironment = () => {
       throw new Error('invalid config');
     }
   } catch {
-    throw new Error('DevRyan managed agent browser config is unavailable');
+    throw browserError(
+      BROWSER_ERROR_CODES.configUnavailable,
+      'DevRyan managed agent browser config is unavailable',
+    );
   }
   return {
     leasesUrl: new URL('/api/desktop/browser-leases', parsed.origin).toString(),
@@ -192,14 +225,20 @@ const getManagedEnvironment = () => {
 
 const normalizeArguments = (value) => {
   if (value === undefined) return [];
-  if (!Array.isArray(value)) throw new Error('args must be an array of strings');
-  if (value.length > MAX_ARGUMENTS) throw new Error(`args cannot contain more than ${MAX_ARGUMENTS} entries`);
+  if (!Array.isArray(value)) throw browserError(BROWSER_ERROR_CODES.inputInvalid, 'args must be an array of strings');
+  if (value.length > MAX_ARGUMENTS) {
+    throw browserError(BROWSER_ERROR_CODES.inputInvalid, `args cannot contain more than ${MAX_ARGUMENTS} entries`);
+  }
   return value.map((argument, index) => {
-    if (typeof argument !== 'string') throw new Error(`args[${index}] must be a string`);
-    if (Buffer.byteLength(argument) > MAX_ARGUMENT_BYTES) {
-      throw new Error(`args[${index}] is too large`);
+    if (typeof argument !== 'string') {
+      throw browserError(BROWSER_ERROR_CODES.inputInvalid, `args[${index}] must be a string`);
     }
-    if (argument.includes('\0')) throw new Error(`args[${index}] contains an invalid null byte`);
+    if (Buffer.byteLength(argument) > MAX_ARGUMENT_BYTES) {
+      throw browserError(BROWSER_ERROR_CODES.inputInvalid, `args[${index}] is too large`);
+    }
+    if (argument.includes('\0')) {
+      throw browserError(BROWSER_ERROR_CODES.inputInvalid, `args[${index}] contains an invalid null byte`);
+    }
     return argument;
   });
 };
@@ -207,23 +246,35 @@ const normalizeArguments = (value) => {
 const validateInvocation = (commandInput, argsInput) => {
   const command = requireText(commandInput, 'command').toLowerCase();
   if (!/^[a-z][a-z0-9-]*$/.test(command)) {
-    throw new Error('command must be one agent-browser command name');
+    throw browserError(BROWSER_ERROR_CODES.inputInvalid, 'command must be one agent-browser command name');
   }
   if (FORBIDDEN_COMMANDS.has(command)) {
-    throw new Error(`The ${command} command is managed by DevRyan and cannot be invoked directly`);
+    throw browserError(
+      BROWSER_ERROR_CODES.inputInvalid,
+      `The ${command} command is managed by DevRyan and cannot be invoked directly`,
+    );
   }
   if (!ALLOWED_COMMANDS.has(command)) {
-    throw new Error(`The ${command} command is not available through DevRyan browser leases`);
+    throw browserError(
+      BROWSER_ERROR_CODES.inputInvalid,
+      `The ${command} command is not available through DevRyan browser leases`,
+    );
   }
   const args = normalizeArguments(argsInput);
   for (const argument of args) {
     const normalized = argument.toLowerCase();
     const flag = normalized.split('=', 1)[0];
     if (FORBIDDEN_FLAGS.has(flag) || flag === '-p') {
-      throw new Error(`The ${flag} option is managed by DevRyan and cannot be overridden`);
+      throw browserError(
+        BROWSER_ERROR_CODES.inputInvalid,
+        `The ${flag} option is managed by DevRyan and cannot be overridden`,
+      );
     }
     if (command === 'close' && (normalized === '--all' || normalized.startsWith('--all='))) {
-      throw new Error('close --all is not allowed; close releases only the current browser lease');
+      throw browserError(
+        BROWSER_ERROR_CODES.inputInvalid,
+        'close --all is not allowed; close releases only the current browser lease',
+      );
     }
   }
   return { command, args };
@@ -231,7 +282,9 @@ const validateInvocation = (commandInput, argsInput) => {
 
 const normalizeTimeout = (value) => {
   if (value === undefined) return DEFAULT_TIMEOUT_MS;
-  if (!Number.isFinite(value)) throw new Error('timeout_ms must be a finite number');
+  if (!Number.isFinite(value)) {
+    throw browserError(BROWSER_ERROR_CODES.inputInvalid, 'timeout_ms must be a finite number');
+  }
   return Math.max(1, Math.min(MAX_TIMEOUT_MS, Math.trunc(value)));
 };
 
@@ -260,9 +313,10 @@ const runBinary = ({
   spawnImpl,
   sensitiveValues,
   cwd,
+  errorCode = BROWSER_ERROR_CODES.commandFailed,
 }) => new Promise((resolve, reject) => {
   if (signal?.aborted) {
-    reject(new Error('Agent browser command was aborted'));
+    reject(browserError(BROWSER_ERROR_CODES.commandAborted, 'Agent browser command was aborted'));
     return;
   }
 
@@ -275,7 +329,7 @@ const runBinary = ({
       windowsHide: true,
     });
   } catch (error) {
-    reject(new Error('Agent browser command could not be started'));
+    reject(browserError(errorCode, 'Agent browser command could not be started', { cause: error }));
     return;
   }
 
@@ -313,7 +367,7 @@ const runBinary = ({
     settled = true;
     stopChild();
     cleanup({ keepEscalation: true });
-    reject(new Error(`Agent browser command timed out after ${timeoutMs} ms`));
+    reject(browserError(BROWSER_ERROR_CODES.commandTimeout, `Agent browser command timed out after ${timeoutMs} ms`));
   }, timeoutMs);
   timeout.unref?.();
   const onAbort = () => {
@@ -321,7 +375,7 @@ const runBinary = ({
     settled = true;
     stopChild();
     cleanup({ keepEscalation: true });
-    reject(new Error('Agent browser command was aborted'));
+    reject(browserError(BROWSER_ERROR_CODES.commandAborted, 'Agent browser command was aborted'));
   };
   signal?.addEventListener('abort', onAbort, { once: true });
   const cleanup = ({ keepEscalation = false } = {}) => {
@@ -337,7 +391,7 @@ const runBinary = ({
     }
     settled = true;
     cleanup();
-    reject(new Error('Agent browser command failed to execute'));
+    reject(browserError(errorCode, 'Agent browser command failed to execute'));
   });
   child.once('close', (code) => {
     if (settled) {
@@ -350,31 +404,65 @@ const runBinary = ({
     const safeOutput = sanitizeSensitiveText(combined, sensitiveValues);
     const suffix = truncated ? '\n[output truncated at 65536 bytes]' : '';
     if (code !== 0) {
-      reject(new Error(safeOutput ? `Agent browser command failed: ${safeOutput}${suffix}` : 'Agent browser command failed'));
+      reject(browserError(
+        errorCode,
+        safeOutput ? `Agent browser command failed: ${safeOutput}${suffix}` : 'Agent browser command failed',
+      ));
       return;
     }
     resolve(`${safeOutput}${suffix}`.trim() || 'Agent browser command completed.');
   });
 });
 
-const requestJson = async ({ environment, url, method, body, signal }) => {
-  const response = await fetch(url, {
-    method,
-    headers: {
-      authorization: `Bearer ${environment.token}`,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(body),
-    signal,
-  });
+const requestJson = async ({ environment, url, method, body, signal, errorCode }) => {
+  let response;
+  try {
+    response = await fetch(url, {
+      method,
+      headers: {
+        authorization: `Bearer ${environment.token}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (error) {
+    const aborted = signal?.aborted || error?.name === 'AbortError';
+    const message = aborted
+      ? 'Agent browser lease request was aborted'
+      : error instanceof Error && error.message
+        ? error.message
+        : 'Agent browser lease request failed';
+    throw browserError(
+      errorCode,
+      sanitizeSensitiveText(message, [environment.token, environment.binaryPath]),
+      { cause: error, retryable: !aborted },
+    );
+  }
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
     const message = typeof payload?.error?.message === 'string' && payload.error.message.trim()
       ? payload.error.message.trim()
       : `Agent browser lease request failed (${response.status})`;
-    throw new Error(sanitizeSensitiveText(message, [environment.token, environment.binaryPath]));
+    throw browserError(
+      errorCode,
+      sanitizeSensitiveText(message, [environment.token, environment.binaryPath]),
+      {
+        statusCode: response.status,
+        retryable: RETRYABLE_TRANSPORT_STATUS_CODES.has(response.status),
+      },
+    );
   }
   return payload;
+};
+
+const retryOnceOnTransportFailure = async (operation) => {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error?.retryable !== true) throw error;
+    return operation();
+  }
 };
 
 const buildScope = (context) => ({
@@ -390,25 +478,59 @@ const unwrapResponseData = (response) => (
     : response
 );
 
+const transportStatusCode = (value) => {
+  const candidate = value?.statusCode
+    ?? value?.status
+    ?? value?.data?.statusCode
+    ?? value?.data?.status
+    ?? value?.error?.statusCode
+    ?? value?.error?.status;
+  const status = Number(candidate);
+  return Number.isInteger(status) ? status : null;
+};
+
+const turnLookupError = (
+  error,
+  fallback = 'Cannot resolve the current browser turn',
+  { retryUnknownTransport = false } = {},
+) => {
+  if (error?.code === BROWSER_ERROR_CODES.turnLookupFailed) return error;
+  const statusCode = transportStatusCode(error);
+  const aborted = error?.name === 'AbortError';
+  const detail = error instanceof Error && error.message ? `${fallback}: ${error.message}` : fallback;
+  return browserError(BROWSER_ERROR_CODES.turnLookupFailed, detail, {
+    cause: error,
+    statusCode,
+    retryable: !aborted && (
+      RETRYABLE_TRANSPORT_STATUS_CODES.has(statusCode)
+      || (retryUnknownTransport && statusCode === null)
+    ),
+  });
+};
+
 const resolveTurnMessageID = async (scope, client) => {
   if (!client?.session || typeof client.session.messages !== 'function') return scope.messageID;
 
-  let response;
-  try {
-    response = await client.session.messages({
-      path: { id: scope.opencodeSessionID },
-      query: {
-        directory: scope.directory,
-        limit: TURN_MESSAGE_LOOKUP_LIMIT,
-      },
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Cannot resolve the current browser turn: ${message}`);
-  }
-  if (response?.error) throw new Error('Cannot resolve the current browser turn');
+  const response = await retryOnceOnTransportFailure(async () => {
+    let result;
+    try {
+      result = await client.session.messages({
+        path: { id: scope.opencodeSessionID },
+        query: {
+          directory: scope.directory,
+          limit: TURN_MESSAGE_LOOKUP_LIMIT,
+        },
+      });
+    } catch (error) {
+      throw turnLookupError(error, undefined, { retryUnknownTransport: true });
+    }
+    if (result?.error) throw turnLookupError(result.error);
+    return result;
+  });
   const records = unwrapResponseData(response);
-  if (!Array.isArray(records)) throw new Error('Cannot resolve the current browser turn');
+  if (!Array.isArray(records)) {
+    throw browserError(BROWSER_ERROR_CODES.turnLookupFailed, 'Cannot resolve the current browser turn');
+  }
 
   const current = records.find((record) => record?.info?.id === scope.messageID);
   if (current?.info?.role === 'user') return scope.messageID;
@@ -418,7 +540,7 @@ const resolveTurnMessageID = async (scope, client) => {
   const parent = parentID
     ? records.find((record) => record?.info?.role === 'user' && record.info.id === parentID)
     : null;
-  if (!parent) throw new Error('Cannot resolve the current browser turn');
+  if (!parent) throw browserError(BROWSER_ERROR_CODES.turnLookupFailed, 'Cannot resolve the current browser turn');
   return parentID;
 };
 
@@ -430,13 +552,14 @@ export const DevRyanBrowserPlugin = async (pluginContext = {}) => {
   const connections = new Map();
   const connectionAttempts = new Map();
 
-  const acquire = async (scope, signal) => requestJson({
+  const acquire = async (scope, signal) => retryOnceOnTransportFailure(() => requestJson({
     environment,
     url: environment.leasesUrl,
     method: 'POST',
     body: scope,
     signal,
-  });
+    errorCode: BROWSER_ERROR_CODES.leaseAcquireFailed,
+  }));
 
   const touch = async (leaseId, scope, signal) => requestJson({
     environment,
@@ -444,6 +567,7 @@ export const DevRyanBrowserPlugin = async (pluginContext = {}) => {
     method: 'POST',
     body: scope,
     signal,
+    errorCode: BROWSER_ERROR_CODES.leaseTouchFailed,
   });
 
   const release = async (leaseId, scope, signal) => requestJson({
@@ -452,6 +576,7 @@ export const DevRyanBrowserPlugin = async (pluginContext = {}) => {
     method: 'DELETE',
     body: scope,
     signal,
+    errorCode: BROWSER_ERROR_CODES.leaseReleaseFailed,
   });
 
   const withCleanupSignal = async (operation) => {
@@ -526,6 +651,7 @@ export const DevRyanBrowserPlugin = async (pluginContext = {}) => {
       spawnImpl,
       sensitiveValues,
       cwd: environment.installRoot,
+      errorCode: BROWSER_ERROR_CODES.connectionFailed,
     }).then(() => {
       rememberConnectedLease(reuseKey, leaseId);
     }).finally(() => {
@@ -559,8 +685,16 @@ export const DevRyanBrowserPlugin = async (pluginContext = {}) => {
           };
           const reuseKey = `${scope.opencodeSessionID}\u0000${scope.messageID}`;
           const lease = await acquire(scope, context?.abort);
-          const leaseId = requireText(lease?.leaseId, 'lease response leaseId');
-          const wsUrl = requireText(lease?.wsUrl, 'lease response endpoint');
+          const leaseId = requireText(
+            lease?.leaseId,
+            'lease response leaseId',
+            BROWSER_ERROR_CODES.leaseResponseInvalid,
+          );
+          const wsUrl = requireText(
+            lease?.wsUrl,
+            'lease response endpoint',
+            BROWSER_ERROR_CODES.leaseResponseInvalid,
+          );
           const sensitiveValues = [environment.token, environment.binaryPath, environment.configPath, wsUrl];
           const prefix = [
             '--namespace', 'devryan',
@@ -647,6 +781,7 @@ export default DevRyanBrowserPlugin;
 // surface callable (and inert when OpenCode invokes it) while attaching the
 // helpers Vitest needs as function properties.
 export const __test = Object.assign(() => ({}), {
+  BROWSER_ERROR_CODES,
   MANAGED_IDLE_TIMEOUT,
   MAX_CONNECTION_ENTRIES,
   getManagedEnvironment,

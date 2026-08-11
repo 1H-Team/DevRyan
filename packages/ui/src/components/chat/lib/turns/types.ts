@@ -1,9 +1,20 @@
 import type { Message, Part } from '@opencode-ai/sdk/v2';
+import type { ProviderTransportFailureKind } from '@openchamber/orchestration-runtime';
 import type { ResponseStyleLevel } from '@/lib/responseStyle';
+
+export type ManagedTransportRecoveryState = 'recovering' | 'recovered' | 'failed';
+
+export interface ManagedTransportRecoveryPresentation {
+    kind: ProviderTransportFailureKind;
+    state: ManagedTransportRecoveryState;
+}
 
 export interface ChatMessageEntry {
     info: Message;
     parts: Part[];
+    presentation?: {
+        managedTransportRecovery?: ManagedTransportRecoveryPresentation;
+    };
 }
 
 export type TurnActivityKind = 'tool' | 'reasoning' | 'justification';

@@ -274,7 +274,7 @@ export interface DiagnosticJournal {
   readBlob(relativePath: string): Promise<string>;
   listSessionManifests(): Promise<JournalSessionManifest[]>;
   getStatus(): Promise<DiagnosticsStatus>;
-  clear(): Promise<DiagnosticsStatus>;
+  clear(options?: { since?: number }): Promise<DiagnosticsStatus>;
 }
 
 export function createDiagnosticJournal(options: {

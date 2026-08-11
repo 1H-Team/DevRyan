@@ -17,6 +17,8 @@ describe('server startup runtime', () => {
   it('awaits cold OpenCode bootstrap before launching the startup tunnel', async () => {
     const order = [];
     let runtimeReady = false;
+    const issueBootstrapToken = vi.fn(() => ({ token: 'bootstrap-token' }));
+    const onTunnelReady = vi.fn();
     server = http.createServer((_req, res) => res.end('ok'));
     vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
@@ -28,7 +30,7 @@ describe('server startup runtime', () => {
       readSettingsFromDiskMigrated: vi.fn(async () => ({ tunnelBootstrapTtlMs: 60_000 })),
       tunnelAuthController: {
         setActiveTunnel: vi.fn(),
-        issueBootstrapToken: vi.fn(() => ({ token: 'bootstrap-token' })),
+        issueBootstrapToken,
       },
       bootstrapOpenCodeAtStartup: async () => {
         order.push('bootstrap-start');
@@ -64,8 +66,11 @@ describe('server startup runtime', () => {
         token: 'connector-token',
         originPort: 3000,
       },
+      onTunnelReady,
     });
 
     expect(order).toEqual(['bootstrap-start', 'bootstrap-ready', 'tunnel-start']);
+    expect(issueBootstrapToken).not.toHaveBeenCalled();
+    expect(onTunnelReady).toHaveBeenCalledWith('https://app.example.com', null);
   });
 });

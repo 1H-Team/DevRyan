@@ -29,6 +29,7 @@ interface GitHeaderProps {
   status: GitStatus | null;
   localBranches: string[];
   remoteBranches: string[];
+  worktreeBranches?: ReadonlySet<string>;
   branchInfo: Record<string, { ahead?: number; behind?: number }> | undefined;
   remotes: GitRemote[];
   onCheckoutBranch: (branch: string) => void;
@@ -184,6 +185,7 @@ export const GitHeader: React.FC<GitHeaderProps> = ({
   status,
   localBranches,
   remoteBranches,
+  worktreeBranches,
   branchInfo,
   remotes,
   onCheckoutBranch,
@@ -226,6 +228,7 @@ export const GitHeader: React.FC<GitHeaderProps> = ({
               currentBranch={status.current}
               localBranches={localBranches}
               remoteBranches={remoteBranches}
+              worktreeBranches={worktreeBranches}
               branchInfo={branchInfo}
               onCheckout={onCheckoutBranch}
               onCreate={onCreateBranch}

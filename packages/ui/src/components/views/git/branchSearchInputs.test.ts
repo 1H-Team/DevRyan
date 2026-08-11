@@ -18,4 +18,18 @@ describe("branch dropdown search inputs", () => {
     expect(newWorktreeDialog.match(/onKeyDown=\{stopDropdownTypeahead\}/g) ?? []).toHaveLength(2);
     expect(directoryTree.match(/onKeyDown=\{\(e\) => \{\n\s+e\.stopPropagation\(\);/g) ?? []).toHaveLength(2);
   });
+
+  test("labels local branches that are already attached to worktrees", () => {
+    const branchSelector = read("BranchSelector.tsx");
+
+    expect(branchSelector).toContain("worktreeBranches?.has(branch)");
+    expect(branchSelector).toContain("aria-label={t('gitView.branch.worktreeBadge')}");
+    expect(branchSelector).toContain("{t('gitView.branch.worktreeBadge')}");
+  });
+
+  test("keeps remote-only selections namespaced during worktree resolution", () => {
+    const branchSelector = read("BranchSelector.tsx");
+
+    expect(branchSelector).toContain("handleCheckout(`remotes/${branch}`)");
+  });
 });

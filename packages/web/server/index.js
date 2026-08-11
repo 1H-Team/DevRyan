@@ -78,6 +78,7 @@ import { registerOpenChamberRoutes } from './lib/opencode/openchamber-routes.js'
 import { createServerUtilsRuntime } from './lib/opencode/server-utils-runtime.js';
 import { createStaticRoutesRuntime } from './lib/opencode/static-routes-runtime.js';
 import { createSettingsRuntime } from './lib/opencode/settings-runtime.js';
+import { createProjectIconStore } from './lib/opencode/project-icon-store.js';
 import { createOpenCodeResolutionRuntime } from './lib/opencode/opencode-resolution-runtime.js';
 import { createOpenCodeUpdateRuntime } from './lib/opencode/opencode-update-runtime.js';
 import { createBootstrapRuntime } from './lib/opencode/bootstrap-runtime.js';
@@ -403,6 +404,12 @@ const PUSH_SUBSCRIPTIONS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'push-subsc
 const CLOUDFLARE_MANAGED_REMOTE_TUNNELS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'cloudflare-managed-remote-tunnels.json');
 const CLOUDFLARE_LEGACY_NAMED_TUNNELS_FILE_PATH = path.join(OPENCHAMBER_DATA_DIR, 'cloudflare-named-tunnels.json');
 const CLOUDFLARE_MANAGED_REMOTE_TUNNELS_VERSION = 2;
+const projectIconStore = createProjectIconStore({
+  fsPromises,
+  path,
+  crypto,
+  dataDirectory: OPENCHAMBER_DATA_DIR,
+});
 const harnessRuntime = createWebHarnessRuntime({
   dataDirectory: OPENCHAMBER_DATA_DIR,
   runtime: process.env.OPENCHAMBER_RUNTIME || 'web',
@@ -505,6 +512,7 @@ const settingsRuntime = createSettingsRuntime({
   normalizeManagedRemoteTunnelPresetTokens,
   syncManagedRemoteTunnelConfigWithPresets,
   upsertManagedRemoteTunnelToken,
+  projectIconStore,
 });
 
 const readSettingsFromDiskMigrated = (...args) => settingsRuntime.readSettingsFromDiskMigrated(...args);
@@ -1238,6 +1246,7 @@ const tunnelWiringRuntime = createTunnelWiringRuntime({
     runtimeManagedRemoteTunnelToken = value;
   },
   getRuntimeReady: () => Boolean(openCodePort && isOpenCodeReady && !isRestartingOpenCode),
+  getManagedAccountLoginAvailable: () => Boolean(uiAuthController?.multiUser),
 });
 const startupPipelineRuntime = createStartupPipelineRuntime({
   createTerminalRuntime,
@@ -1574,6 +1583,35 @@ async function main(options = {}) {
     multiUserRuntime.canSessionTokenHashAccess(tokenHash, sessionId)
   ));
 
+  browserLeaseRuntime = createBrowserLeaseRuntime({
+    getDiscoveryToken: typeof options.getBrowserCdpDiscoveryToken === 'function'
+      ? options.getBrowserCdpDiscoveryToken
+      : null,
+    createBrowserLease: typeof options.createBrowserLease === 'function'
+      ? options.createBrowserLease
+      : null,
+    touchBrowserLease: typeof options.touchBrowserLease === 'function'
+      ? options.touchBrowserLease
+      : null,
+    releaseBrowserLease: typeof options.releaseBrowserLease === 'function'
+      ? options.releaseBrowserLease
+      : null,
+    getBrowserLeaseAvailability: [
+      options.getBrowserLeaseAvailability,
+      options.getBrowserCdpBridgeStatus,
+    ].find((candidate) => typeof candidate === 'function') ?? null,
+    buildOpenCodeUrl,
+    getOpenCodeAuthHeaders,
+  });
+  const browserCdpDiscoveryRuntime = createBrowserCdpDiscoveryRuntime({
+    getBridgeStatus: typeof options.getBrowserCdpBridgeStatus === 'function'
+      ? options.getBrowserCdpBridgeStatus
+      : null,
+    getDiscoveryToken: typeof options.getBrowserCdpDiscoveryToken === 'function'
+      ? options.getBrowserCdpDiscoveryToken
+      : null,
+  });
+
   const uiPassword = typeof options.uiPassword === 'string' ? options.uiPassword : null;
   const bootstrapResult = bootstrapRuntime.setupBaseRoutes(app, {
     process,
@@ -1650,6 +1688,10 @@ async function main(options = {}) {
     getCachedZenModels,
     setAutoAcceptSession,
     multiUserRuntime,
+    registerPrivateCapabilityRoutes: (privateApp) => {
+      browserCdpDiscoveryRuntime.attach(privateApp);
+      browserLeaseRuntime.attach(privateApp);
+    },
   });
   uiAuthController = bootstrapResult.uiAuthController;
   multiUserRuntime.registerRoutes(app, {
@@ -1659,7 +1701,7 @@ async function main(options = {}) {
   });
   app.use(
     '/api/session/:sessionID/prompt_async',
-    express.json({ limit: '50mb' }),
+    express.json({ limit: '50mb', verify: (req, _res, buf) => { req.rawBody = buf; } }),
     harnessRuntime.promptAdmissionMiddleware(turnTimingRuntime),
   );
   app.use('/api/session/:sessionID', harnessRuntime.controlJournalMiddleware);
@@ -1689,27 +1731,6 @@ async function main(options = {}) {
   registerManagedOrchestrationRoutes(app, {
     runtime: managedOrchestrationRuntime,
     express,
-  });
-
-  browserLeaseRuntime = createBrowserLeaseRuntime({
-    getDiscoveryToken: typeof options.getBrowserCdpDiscoveryToken === 'function'
-      ? options.getBrowserCdpDiscoveryToken
-      : null,
-    createBrowserLease: typeof options.createBrowserLease === 'function'
-      ? options.createBrowserLease
-      : null,
-    touchBrowserLease: typeof options.touchBrowserLease === 'function'
-      ? options.touchBrowserLease
-      : null,
-    releaseBrowserLease: typeof options.releaseBrowserLease === 'function'
-      ? options.releaseBrowserLease
-      : null,
-    getBrowserLeaseAvailability: [
-      options.getBrowserLeaseAvailability,
-      options.getBrowserCdpBridgeStatus,
-    ].find((candidate) => typeof candidate === 'function') ?? null,
-    buildOpenCodeUrl,
-    getOpenCodeAuthHeaders,
   });
 
   const tunnelRuntimeContext = tunnelWiringRuntime.initialize(app, port, {
@@ -1828,6 +1849,7 @@ async function main(options = {}) {
     resolveGitBinaryForSpawn,
     createFsSearchRuntime: createFsSearchRuntimeFactory,
     openchamberDataDir: OPENCHAMBER_DATA_DIR,
+    projectIconStore,
     openchamberUserConfigRoot: OPENCHAMBER_USER_CONFIG_ROOT,
     normalizeDirectoryPath,
     resolveProjectDirectory,
@@ -1948,19 +1970,6 @@ async function main(options = {}) {
     projectPreviewInstancesRuntime.shutdown();
     previewProxyRuntime.shutdown();
   });
-
-  // Desktop-only lookup for the in-app browser CDP bridge. Both callbacks are
-  // supplied by the Electron host; in web/remote runtimes they are absent and
-  // the route 404s.
-  createBrowserCdpDiscoveryRuntime({
-    getBridgeStatus: typeof options.getBrowserCdpBridgeStatus === 'function'
-      ? options.getBrowserCdpBridgeStatus
-      : null,
-    getDiscoveryToken: typeof options.getBrowserCdpDiscoveryToken === 'function'
-      ? options.getBrowserCdpDiscoveryToken
-      : null,
-  }).attach(app);
-  browserLeaseRuntime.attach(app);
 
   const startupPipelineResult = await startupPipelineRuntime.run({
     app,

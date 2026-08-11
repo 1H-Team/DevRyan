@@ -873,11 +873,13 @@ export interface DiagnosticsExportResult {
   fileName: string;
 }
 
+export type DiagnosticsClearRange = '24h' | '7d' | '14d' | 'all';
+
 export interface DiagnosticsAPI {
   getStatus(): Promise<DiagnosticsStatus>;
   export(scope: DiagnosticsExportScope): Promise<DiagnosticsExportResult>;
   sanitizeText(text: string): Promise<string>;
-  clear(): Promise<DiagnosticsStatus>;
+  clear(range?: DiagnosticsClearRange): Promise<DiagnosticsStatus>;
 }
 
 export interface EvidenceProjectSetting {

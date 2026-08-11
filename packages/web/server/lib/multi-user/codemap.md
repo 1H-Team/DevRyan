@@ -29,8 +29,15 @@ ownership, directory opacity, and audit control plane.
 - `branch-authorization.js`: request-scoped project resolution and exact logical
   branch-write authorization shared by Git integration and GitHub PR actions.
 - `request-context.js`: AsyncLocalStorage context consumed by Git and GitHub.
+- `bug-reports.js`: managed report submission/review APIs, cursor pagination,
+  optimistic status updates, administrator-only sanitized error-log reads, and
+  snapshot clearing through the service-role diagnostic RPC.
 - `audit-outbox.js`, `activity-projection.js`: durable idempotent actor audit,
-  deferred telemetry delivery, and content-free OpenCode tool/file projection.
+  deferred telemetry delivery, an exclusive flush barrier for diagnostic
+  clearing, content-free OpenCode tool/file projection, and active-worktree-aware
+  failure projection for sessions, tools, and managed tasks.
+- `error-diagnostics.js`, `diagnostic-recovery.js`: shared impact/failure-class
+  policy and append-only recovery/unresolved correlation.
 - `analytics.js`: human-prompt extraction and truncation, strict interaction
   validation, privacy-safe field deltas, opaque event cursors, reviewer
   redaction, and DST-aware daily activity aggregation.
@@ -51,13 +58,18 @@ ownership, directory opacity, and audit control plane.
    global experimental session list fills managed pages across hidden upstream
    rows without exposing another user's session metadata.
 6. Admin mutations and direct user actions are appended to the durable actor
-   audit. Human prompts, explicit file opens, and copy metadata use the same
-   outbox; OpenCode tool/file projections never contribute to user analytics.
-7. Exact owned session deletion strips legacy directory scope, locks non-admin
+   audit. Human prompts, explicit file opens, bounded sanitized copied text,
+   and impact-classified runtime failures use the same outbox; recovery is
+   linked by separate deterministic activity events and OpenCode projections
+   never contribute to user analytics.
+7. Error Log clearing flushes the outbox under an exclusive delivery barrier,
+   captures a cutoff, and atomically deletes only matching failures and their
+   linked resolution evidence; newly queued events deliver after the barrier.
+8. Exact owned session deletion strips legacy directory scope, locks non-admin
    analytics retention, deletes upstream content, and tombstones ownership.
-8. Missing session ownership is repaired only when a canonical directory maps
+9. Missing session ownership is repaired only when a canonical directory maps
    to one active user; archived tombstones and ambiguous matches remain hidden.
-9. Revocation closes live connections and archives affected ownership records;
+10. Revocation closes live connections and archives affected ownership records;
    shared real worktrees are never moved or removed by visibility-grant changes.
 
 ## Integration
@@ -67,3 +79,5 @@ ownership, directory opacity, and audit control plane.
   `lib/event-stream/`, `lib/terminal/`, notifications, preview, TTS, and push.
 - Admin/senior views are rendered by
   `packages/ui/src/components/sections/users/UserManagementPage.tsx`.
+- Managed issue intake and exact-admin failure review are rendered by
+  `packages/ui/src/components/sections/bug-reports/BugReportsPage.tsx`.

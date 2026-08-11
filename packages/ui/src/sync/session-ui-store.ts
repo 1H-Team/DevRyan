@@ -746,7 +746,9 @@ async function queuePromptAfterPendingQuestions(params: {
 
   clearPendingQuestionsOptimistically(dismissals, params.directory)
 
-  for (const dismissal of dismissals) {
+  // Each reject is an independent HTTP round-trip; fire them concurrently so N
+  // pending questions cost one RTT instead of N before the prompt goes out.
+  await Promise.all(dismissals.map(async (dismissal) => {
     try {
       await rejectQuestionAction(dismissal.sessionId, dismissal.requestId)
     } catch (error) {
@@ -754,7 +756,7 @@ async function queuePromptAfterPendingQuestions(params: {
         throw error
       }
     }
-  }
+  }))
 
   return true
 }
@@ -2488,6 +2490,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       const submittedAttachments = attachments?.map((attachment) => ({ ...attachment }))
       let draftDirectoryOverride = resolveDirectoryForDraftSend(draft)
       let draftBootstrapPendingDirectory = normalizePath(draft.bootstrapPendingDirectory ?? null)
+      let draftBootstrapWaitPromise: Promise<unknown> | null = null
       const draftProjectId = draft.selectedProjectId ?? null
       const selectionState = useSelectionStore.getState()
       const draftAgentSelection = capturedDraftId ? selectionState.getDraftAgentSelection(capturedDraftId) : null
@@ -2510,6 +2513,15 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         draftBootstrapPendingDirectory = normalizePath(
           get().newSessionDraft.bootstrapPendingDirectory ?? null,
         )
+        // The worktree-bootstrap wait is independent of config activation, so
+        // start it now and await it at its usual gate below — serializing the
+        // two costs a full round-trip each on the send path. The inline catch
+        // only suppresses the unhandled-rejection warning; the awaited promise
+        // still rejects at the gate.
+        if (draftDirectoryOverride && draftBootstrapPendingDirectory) {
+          draftBootstrapWaitPromise = waitForWorktreeBootstrapForSend(draftDirectoryOverride)
+          draftBootstrapWaitPromise.catch(() => {})
+        }
         await activateConfigForDirectory(draftDirectoryOverride)
         throwIfAborted(draftAbortController.signal)
       }
@@ -2544,7 +2556,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
       if (draftDirectoryOverride && draftBootstrapPendingDirectory) {
         try {
-          await waitForWorktreeBootstrapForSend(draftDirectoryOverride)
+          await (draftBootstrapWaitPromise ?? waitForWorktreeBootstrapForSend(draftDirectoryOverride))
           throwIfAborted(draftAbortController.signal)
         } catch (error) {
           get().clearPendingSendAbort(draftAbortKey, draftAbortController)

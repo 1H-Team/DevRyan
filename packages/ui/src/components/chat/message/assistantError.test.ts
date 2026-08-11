@@ -13,6 +13,47 @@ describe("classifyAssistantError", () => {
     })
   })
 
+  test("renders compact informational copy for managed transport recovery states", () => {
+    const error = {
+      name: "UnknownError",
+      data: {
+        message: '{"type":"api_error","message":"Claude Code returned an error result: API Error: Connection closed mid-response."}',
+      },
+    }
+    const cases = [
+      [
+        "recovering",
+        "The model provider connection was interrupted. DevRyan is continuing this subtask from saved progress.",
+      ],
+      [
+        "recovered",
+        "Connection recovered. DevRyan continued this subtask from saved progress and completed it.",
+      ],
+      [
+        "failed",
+        "The model provider connection was interrupted. DevRyan attempted to continue this subtask from saved progress.",
+      ],
+    ] as const
+
+    for (const [state, text] of cases) {
+      expect(classifyAssistantError(error, {
+        managedTransportRecovery: { kind: "connection_failure", state },
+      })).toEqual({ text, variant: "info" })
+    }
+  })
+
+  test("does not let mismatched recovery metadata hide an unrecovered transport error", () => {
+    const classification = classifyAssistantError({
+      name: "UnknownError",
+      data: { message: "Streaming response failed" },
+    }, {
+      managedTransportRecovery: { kind: "request_timeout", state: "recovered" },
+    })
+
+    expect(classification?.variant).toBe("error")
+    expect(classification?.text).toContain("Streaming response failed")
+  })
+
   test("renders cause-specific timeout recovery copy", () => {
     const cases = [
       [

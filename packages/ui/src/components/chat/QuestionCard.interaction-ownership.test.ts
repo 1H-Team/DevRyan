@@ -10,14 +10,18 @@ const chatContainerSource = readFileSync(
   fileURLToPath(new URL("./ChatContainer.tsx", import.meta.url)),
   "utf8",
 )
+const chatInputSource = readFileSync(
+  fileURLToPath(new URL("./ChatInput.tsx", import.meta.url)),
+  "utf8",
+)
 const optionRowSource = readFileSync(
   fileURLToPath(new URL("./QuestionOptionRow.tsx", import.meta.url)),
   "utf8",
 )
-const customAnswerTextareaStart = source.indexOf("<textarea")
-const customAnswerTextarea = source.slice(
-  customAnswerTextareaStart,
-  source.indexOf("/>", customAnswerTextareaStart) + 2,
+const customPillStart = source.indexOf("t('chat.questionCard.customPlaceholder')")
+const customPillInput = source.slice(
+  source.lastIndexOf("<input", customPillStart),
+  source.indexOf("/>", customPillStart) + 2,
 )
 
 describe("QuestionCard option interaction ownership", () => {
@@ -37,12 +41,12 @@ describe("QuestionCard option interaction ownership", () => {
     expect(source).not.toContain("chat.questionCard.dismiss")
   })
 
-  test("keeps long custom answers vertically scrollable inside the chat", () => {
-    expect(customAnswerTextarea).toContain("<textarea")
-    expect(customAnswerTextarea).toContain("data-scrollable")
-    expect(customAnswerTextarea).toContain("overflow-y-auto")
-    expect(customAnswerTextarea).toContain("overflow-x-hidden")
-    expect(customAnswerTextarea).not.toContain("overflow-hidden")
+  test("wires the custom answer pill through existing custom-mode state", () => {
+    expect(customPillInput).toContain("<input")
+    expect(customPillInput).toContain("onKeyDown={handleKeyDown}")
+    expect(source).toContain("deriveCustomModeFromText")
+    // Focusing alone must not activate custom mode — only typed text does.
+    expect(customPillInput).not.toContain("onFocus")
   })
 
   test("collapses submitted requests optimistically instead of showing a blocking spinner", () => {
@@ -70,15 +74,23 @@ describe("QuestionCard option interaction ownership", () => {
     expect(source).toContain("chat.questionCard.submitFailedToast")
   })
 
-  test("preserves card ownership when a sibling request is acknowledged", () => {
-    expect(chatContainerSource).toContain("<QuestionCard")
+  test("renders inside the chat input composer, not the message viewport", () => {
+    expect(chatInputSource).toContain("<QuestionCard")
+    expect(chatInputSource).toContain("createScopedBlockingRequestsSelector")
+    expect(chatContainerSource).not.toContain("<QuestionCard")
     expect(chatContainerSource).not.toContain("key={sessionQuestions.map((q) => q.id).join('|')}")
+    // The composer is hidden, not unmounted, during the takeover so draft
+    // text, refs and drag-drop wiring survive a pending question.
+    expect(chatInputSource).toContain("hasPendingQuestions && 'hidden'")
   })
 
-  test("keeps narrow option labels readable and recommended text at full contrast", () => {
+  test("keeps narrow option labels readable with unnumbered badges and a muted recommended pill", () => {
     expect(optionRowSource).toContain("flex flex-wrap items-baseline")
-    expect(optionRowSource).toContain("typography-meta break-words")
-    expect(optionRowSource).toContain('className="typography-micro text-primary"')
+    // Constant weight — selection must not change label width (card height shifts).
+    expect(optionRowSource).toContain("typography-meta font-medium break-words")
+    // Badges are deliberately empty circles — no option numbers.
+    expect(optionRowSource).not.toContain("index")
+    expect(optionRowSource).toContain("rounded-full bg-muted/60")
     expect(optionRowSource).not.toContain("break-all")
     expect(optionRowSource).not.toContain("text-primary/80")
   })

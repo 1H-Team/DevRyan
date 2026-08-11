@@ -52,9 +52,13 @@ export const createBootstrapRuntime = (dependencies) => {
       getCachedZenModels,
       setAutoAcceptSession,
       multiUserRuntime,
+      registerPrivateCapabilityRoutes,
     } = options;
 
     registerCommonRequestMiddleware(app, { express, verboseRequestLogs });
+    if (typeof registerPrivateCapabilityRoutes === 'function') {
+      registerPrivateCapabilityRoutes(app);
+    }
 
     const legacyUiAuthController = createUiAuth({
       password: uiPassword,

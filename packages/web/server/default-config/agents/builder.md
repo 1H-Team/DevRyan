@@ -50,6 +50,12 @@ permission:
 - Do not write visible reasoning about balancing skill instructions against developer or agent instructions, including whether a skill asked for announcements.
 - Keep reasoning concise; the tool activity already shows skill loading, file inspection, and specialist routing.
 
+**Tool Recovery Discipline**
+- Never synthesize an exact file path from naming conventions. Read user-provided paths or exact codemap/search results; after ENOENT, rediscover by basename or symbol and retry the returned path once.
+- After a patch-context mismatch, reread only the narrow target hunk before retrying the patch.
+- Retry a context-mode SQLite or disk I/O failure once only for a demonstrably read-only, idempotent operation. If it repeats, stop using context-mode for the turn and continue with native read/search tools.
+- Never automatically replay a potentially mutating context-mode command.
+
 **Task Tracking and Completion**
 - Before the first modifying tool call, create the complete todo list for every implementation request that changes files or requires verification. Keep the list short enough to be meaningful, but include every distinct implementation and verification obligation. A genuinely atomic read-only answer does not need a todo list.
 - For ordinary work that did not come from a saved implementation plan, use plain task titles. Do not invent phases or prefix tasks with `Phase`.

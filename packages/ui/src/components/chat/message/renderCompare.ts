@@ -1,10 +1,13 @@
 import type { Message, Part } from '@opencode-ai/sdk/v2';
-import type { TurnActivityGroup, TurnActivityRecord, TurnDiffStats, TurnGroupingContext } from '../lib/turns/types';
+import type {
+  ChatMessageEntry,
+  TurnActivityGroup,
+  TurnActivityRecord,
+  TurnDiffStats,
+  TurnGroupingContext,
+} from '../lib/turns/types';
 
-type MessageRecord = {
-  info: Message;
-  parts: Part[];
-};
+type MessageRecord = Pick<ChatMessageEntry, 'info' | 'parts' | 'presentation'>;
 
 const readPartId = (part: Part | undefined): string | null => {
   if (!part) return null;
@@ -126,7 +129,12 @@ export const areRenderRelevantMessageInfoEqual = (left: Message, right: Message)
 };
 
 export const areRenderRelevantMessagesEqual = (left: MessageRecord, right: MessageRecord): boolean => {
-  return areRenderRelevantMessageInfoEqual(left.info, right.info) && areRenderRelevantPartsEqual(left.parts, right.parts);
+  const leftRecovery = left.presentation?.managedTransportRecovery;
+  const rightRecovery = right.presentation?.managedTransportRecovery;
+  return areRenderRelevantMessageInfoEqual(left.info, right.info)
+    && areRenderRelevantPartsEqual(left.parts, right.parts)
+    && leftRecovery?.kind === rightRecovery?.kind
+    && leftRecovery?.state === rightRecovery?.state;
 };
 
 export const areOptionalRenderRelevantMessagesEqual = (left?: MessageRecord, right?: MessageRecord): boolean => {

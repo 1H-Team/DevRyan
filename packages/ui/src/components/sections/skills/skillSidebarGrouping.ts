@@ -34,6 +34,25 @@ export const formatSkillFolderLabel = (folder: string): string => {
     .join(" ");
 };
 
+/** Filter skills for the sidebar search box. Every whitespace-separated term must
+ *  match somewhere in the skill's name, description, folder group or path. */
+export function filterSkillsForSidebar(skills: DiscoveredSkill[], query: string): DiscoveredSkill[] {
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return skills;
+
+  return skills.filter((skill) => {
+    const haystack = [skill.name, skill.description ?? "", skill.group ?? "", skill.path]
+      .join(" ")
+      .toLowerCase();
+    return terms.every((term) => haystack.includes(term));
+  });
+}
+
+/** Flat, name-sorted list used while the sidebar search box is active. */
+export function sortSkillsForSidebar(skills: DiscoveredSkill[]): DiscoveredSkill[] {
+  return [...skills].sort(sortSkills);
+}
+
 export function groupSkillsForSidebar(
   skills: DiscoveredSkill[],
   locationLabelText: (value: SkillLocationValue) => string,

@@ -69,14 +69,15 @@ export const createWebHarnessRuntime = (options = {}) => {
 
   const boundedPromptBody = (body) => {
     const serialized = JSON.stringify(body ?? null);
-    const encoded = Buffer.from(serialized, 'utf8');
-    const bytes = encoded.byteLength;
+    const bytes = Buffer.byteLength(serialized, 'utf8');
     if (bytes <= 64 * 1024) return body;
+    // Only pay for the Buffer copy + hash on oversized bodies.
+    const encoded = Buffer.from(serialized, 'utf8');
     return {
       body: encoded.subarray(0, 60 * 1024).toString('utf8'),
       truncated: true,
       size: bytes,
-      sha256: crypto.createHash('sha256').update(serialized).digest('hex'),
+      sha256: crypto.createHash('sha256').update(encoded).digest('hex'),
     };
   };
 

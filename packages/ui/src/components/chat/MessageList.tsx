@@ -13,6 +13,7 @@ import type { ChatMessageEntry, TurnRecord, TurnGroupingContext } from './lib/tu
 import { readSessionResponseStyleLevel, type ResponseStyleLevel } from '@/lib/responseStyle';
 import { useTurnRecords } from './hooks/useTurnRecords';
 import { applyRetryOverlay } from './lib/turns/applyRetryOverlay';
+import { projectManagedTransportRecovery } from './lib/turns/projectManagedTransportRecovery';
 import { useUIStore } from '@/stores/useUIStore';
 import { FadeInDisabledProvider } from './message/FadeInOnReveal';
 import { hasPendingUserSendAnimation, consumePendingUserSendAnimation } from '@/lib/userSendAnimation';
@@ -38,6 +39,10 @@ import {
     hasCompactionPart,
     isCompactionBoundaryMessage,
 } from './managedTaskCompactionProjection';
+import {
+    managedOrchestrationSelectors,
+    useManagedOrchestrationStore,
+} from '@/stores/useManagedOrchestrationStore';
 
 // Sessions below the threshold render fully (zero behavior change for the
 // common case); above it, history virtualizes so DOM + observers + highlighted
@@ -1193,6 +1198,10 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     const stableScrollToBottom = useStableEvent(() => {
         scrollToBottom?.();
     });
+    const latestManagedTask = useManagedOrchestrationStore(React.useMemo(
+        () => managedOrchestrationSelectors.latestTaskForChildSession(sessionKey),
+        [sessionKey],
+    ));
 
     React.useEffect(() => {
         setTurnUiStates(new Map());
@@ -1268,14 +1277,19 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         return document.querySelector<HTMLDivElement>('[data-scrollbar="chat"]');
     }, [scrollRef]);
 
+    const recoveryProjectedMessages = React.useMemo(() => streamPerfMeasure(
+        'ui.message_list.managed_transport_recovery_ms',
+        () => projectManagedTransportRecovery(baseDisplayMessages, latestManagedTask),
+    ), [baseDisplayMessages, latestManagedTask]);
+
     const displayMessages = React.useMemo(() => streamPerfMeasure('ui.message_list.retry_overlay_ms', () => {
-        return applyRetryOverlay(baseDisplayMessages, {
+        return applyRetryOverlay(recoveryProjectedMessages, {
             sessionId: retryOverlay?.sessionId ?? null,
             message: retryOverlay?.message ?? 'Quota limit reached. Retrying automatically.',
             confirmedAt: retryOverlay?.confirmedAt,
             fallbackTimestamp: retryOverlay?.fallbackTimestamp ?? 0,
         });
-    }), [baseDisplayMessages, retryOverlay]);
+    }), [recoveryProjectedMessages, retryOverlay]);
 
     const { projection, staticTurns, streamingTurn } = useTurnRecords(displayMessages, {
         recordedPlanModeMessageIds,

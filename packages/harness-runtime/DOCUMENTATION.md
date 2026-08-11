@@ -37,9 +37,10 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
   partitioned into `sessions/<sessionID>/` and an unattributed `runtime/`
   bucket. Each bucket has an atomic manifest, gzip-compressed closed chunks,
   one plain crash-safe active chunk, and gzip blob sidecars. The root generated
-  `README.md` and `index.json` make the format self-describing. Clear removes
-  all current and legacy journal data while preserving those discovery files
-  and accepting newly arriving records afterward.
+  `README.md` and `index.json` make the format self-describing. Clear can remove
+  a recent time range by rebuilding older retained records and their blob
+  sidecars, or remove all current and legacy journal data. Both modes preserve
+  the discovery files and accept newly arriving records afterward.
   Supported record schemas retain a sanitized `actor` identifier supplied by
   the host, allowing shared-host diagnostics to be attributed without exposing
   authentication material.

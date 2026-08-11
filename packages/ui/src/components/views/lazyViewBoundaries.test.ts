@@ -149,6 +149,7 @@ describe('shared lazy view boundaries', () => {
     expect(settingsView).toContain("import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery'");
     expect(settingsView).toContain('const LazyOpenChamberPage = /* @__PURE__ */ lazyWithChunkRecovery');
     expect(settingsView).toContain('const LazyUserManagementPage = /* @__PURE__ */ lazyWithChunkRecovery');
+    expect(settingsView).toContain('const LazyBugReportsPage = /* @__PURE__ */ lazyWithChunkRecovery');
     expect(settingsView).toContain('<SettingsSectionBoundary>{renderPageContent(settingsSlug)}</SettingsSectionBoundary>');
     expect(settingsView).not.toContain("import { OpenChamberPage } from '@/components/sections/openchamber/OpenChamberPage'");
     expect(settingsView).not.toContain("import { UserManagementPage } from '@/components/sections/users/UserManagementPage'");
@@ -165,7 +166,9 @@ describe('shared lazy view boundaries', () => {
     expect(managedSettingsView).toContain('<SettingsPagePermissionBoundary slug={activeSlug}>');
     expect(managedSettingsView).toContain('backButtonRef.current?.focus({ preventScroll: true })');
     expect(managedSettingsView).toContain('aria-modal="true"');
-    for (const page of ['appearance', 'chat', 'shortcuts', 'sessions', 'notifications', 'agents', 'providers', 'usage', 'mcp']) {
+    expect(managedSettingsView).toContain("group: 'Development'");
+    expect(managedSettingsView).toContain('const LazyBugReportsPage = /* @__PURE__ */ lazyWithChunkRecovery');
+    for (const page of ['appearance', 'chat', 'shortcuts', 'sessions', 'notifications', 'agents', 'providers', 'usage', 'mcp', 'bug-reports']) {
       expect(managedSettingsView).toContain(`slug: '${page}'`);
     }
   });

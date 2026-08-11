@@ -291,10 +291,29 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     res.status(403).json({ error: 'Missing CSRF request header' });
     return false;
   };
+  const requiresTunnelBootstrap = (req) => {
+    if (uiAuthController.multiUser) return false;
+    const requestScope = tunnelAuthController.classifyRequestScope(req);
+    if (requestScope !== 'tunnel' && requestScope !== 'unknown-public') return false;
+    return tunnelAuthController.getActiveTunnelMode() !== 'managed-remote';
+  };
+  const requiresManagedAccountAuth = (req) => {
+    if (uiAuthController.multiUser) return false;
+    const requestScope = tunnelAuthController.classifyRequestScope(req);
+    if (requestScope !== 'tunnel' && requestScope !== 'unknown-public') return false;
+    return tunnelAuthController.getActiveTunnelMode() === 'managed-remote';
+  };
+  const sendManagedAccountAuthRequired = (res, sessionStatus = false) => res.status(503).json({
+    ...(sessionStatus ? { authenticated: false, locked: true } : {}),
+    code: 'managed_account_auth_required',
+    error: 'Managed Remote requires Supabase-backed individual DevRyan accounts.',
+  });
 
   app.get('/auth/session', async (req, res) => {
-    const requestScope = tunnelAuthController.classifyRequestScope(req);
-    if (!uiAuthController.multiUser && (requestScope === 'tunnel' || requestScope === 'unknown-public')) {
+    if (requiresManagedAccountAuth(req)) {
+      return sendManagedAccountAuthRequired(res, true);
+    }
+    if (requiresTunnelBootstrap(req)) {
       const tunnelSession = tunnelAuthController.getTunnelSessionFromRequest(req);
       if (tunnelSession) {
         return res.json({ authenticated: true, scope: 'tunnel' });
@@ -312,8 +331,10 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
 
   app.post('/auth/session', (req, res) => {
     if (!requireMultiUserCsrf(req, res)) return;
-    const requestScope = tunnelAuthController.classifyRequestScope(req);
-    if (!uiAuthController.multiUser && (requestScope === 'tunnel' || requestScope === 'unknown-public')) {
+    if (requiresManagedAccountAuth(req)) {
+      return sendManagedAccountAuthRequired(res, true);
+    }
+    if (requiresTunnelBootstrap(req)) {
       return res.status(403).json({ error: 'Password login is disabled for tunnel scope', tunnelLocked: true });
     }
     return uiAuthController.handleSessionCreate(req, res);
@@ -321,6 +342,9 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
 
   app.post('/auth/agent-test-session', (req, res) => {
     if (!requireMultiUserCsrf(req, res)) return;
+    if (requiresManagedAccountAuth(req)) {
+      return sendManagedAccountAuthRequired(res, true);
+    }
     if (!uiAuthController.multiUser || typeof uiAuthController.handleAgentTestSession !== 'function') {
       return res.status(404).json({ error: 'Not found' });
     }
@@ -329,6 +353,9 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
 
   app.post('/auth/claim', (req, res) => {
     if (!requireMultiUserCsrf(req, res)) return;
+    if (requiresManagedAccountAuth(req)) {
+      return sendManagedAccountAuthRequired(res, true);
+    }
     if (!uiAuthController.multiUser || typeof uiAuthController.handleClaim !== 'function') {
       return res.status(404).json({ error: 'Not found' });
     }
@@ -337,6 +364,9 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
 
   app.post('/auth/invite', (req, res) => {
     if (!requireMultiUserCsrf(req, res)) return;
+    if (requiresManagedAccountAuth(req)) {
+      return sendManagedAccountAuthRequired(res, true);
+    }
     if (!uiAuthController.multiUser || typeof uiAuthController.handleInviteAccept !== 'function') {
       return res.status(404).json({ error: 'Not found' });
     }
@@ -360,8 +390,10 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
   });
 
   app.get('/auth/passkey/status', (req, res) => {
-    const requestScope = tunnelAuthController.classifyRequestScope(req);
-    if (!uiAuthController.multiUser && (requestScope === 'tunnel' || requestScope === 'unknown-public')) {
+    if (requiresManagedAccountAuth(req)) {
+      return sendManagedAccountAuthRequired(res);
+    }
+    if (requiresTunnelBootstrap(req)) {
       return res.json({ enabled: false, hasPasskeys: false, passkeyCount: 0, rpID: null, tunnelLocked: true });
     }
     return uiAuthController.handlePasskeyStatus(req, res);
@@ -369,8 +401,10 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
 
   app.post('/auth/passkey/authenticate/options', (req, res) => {
     if (!requireMultiUserCsrf(req, res)) return;
-    const requestScope = tunnelAuthController.classifyRequestScope(req);
-    if (!uiAuthController.multiUser && (requestScope === 'tunnel' || requestScope === 'unknown-public')) {
+    if (requiresManagedAccountAuth(req)) {
+      return sendManagedAccountAuthRequired(res);
+    }
+    if (requiresTunnelBootstrap(req)) {
       return res.status(403).json({ error: 'Passkey login is disabled for tunnel scope', tunnelLocked: true });
     }
     return uiAuthController.handlePasskeyAuthenticationOptions(req, res);
@@ -378,8 +412,10 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
 
   app.post('/auth/passkey/authenticate/verify', (req, res) => {
     if (!requireMultiUserCsrf(req, res)) return;
-    const requestScope = tunnelAuthController.classifyRequestScope(req);
-    if (!uiAuthController.multiUser && (requestScope === 'tunnel' || requestScope === 'unknown-public')) {
+    if (requiresManagedAccountAuth(req)) {
+      return sendManagedAccountAuthRequired(res);
+    }
+    if (requiresTunnelBootstrap(req)) {
       return res.status(403).json({ error: 'Passkey login is disabled for tunnel scope', tunnelLocked: true });
     }
     return uiAuthController.handlePasskeyAuthenticationVerify(req, res);
@@ -387,8 +423,10 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
 
   app.post('/auth/passkey/register/options', async (req, res, next) => {
     if (!requireMultiUserCsrf(req, res)) return;
-    const requestScope = tunnelAuthController.classifyRequestScope(req);
-    if (!uiAuthController.multiUser && (requestScope === 'tunnel' || requestScope === 'unknown-public')) {
+    if (requiresManagedAccountAuth(req)) {
+      return sendManagedAccountAuthRequired(res);
+    }
+    if (requiresTunnelBootstrap(req)) {
       return res.status(403).json({ error: 'Passkey setup is disabled for tunnel scope', tunnelLocked: true });
     }
     try {
@@ -402,8 +440,10 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
 
   app.post('/auth/passkey/register/verify', async (req, res, next) => {
     if (!requireMultiUserCsrf(req, res)) return;
-    const requestScope = tunnelAuthController.classifyRequestScope(req);
-    if (!uiAuthController.multiUser && (requestScope === 'tunnel' || requestScope === 'unknown-public')) {
+    if (requiresManagedAccountAuth(req)) {
+      return sendManagedAccountAuthRequired(res);
+    }
+    if (requiresTunnelBootstrap(req)) {
       return res.status(403).json({ error: 'Passkey setup is disabled for tunnel scope', tunnelLocked: true });
     }
     try {
@@ -416,8 +456,10 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
   });
 
   app.get('/api/passkeys', async (req, res, next) => {
-    const requestScope = tunnelAuthController.classifyRequestScope(req);
-    if (!uiAuthController.multiUser && (requestScope === 'tunnel' || requestScope === 'unknown-public')) {
+    if (requiresManagedAccountAuth(req)) {
+      return sendManagedAccountAuthRequired(res);
+    }
+    if (requiresTunnelBootstrap(req)) {
       return res.status(403).json({ error: 'Passkey management is disabled for tunnel scope', tunnelLocked: true });
     }
     try {
@@ -430,8 +472,10 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
   });
 
   app.delete('/api/passkeys/:id', async (req, res, next) => {
-    const requestScope = tunnelAuthController.classifyRequestScope(req);
-    if (!uiAuthController.multiUser && (requestScope === 'tunnel' || requestScope === 'unknown-public')) {
+    if (requiresManagedAccountAuth(req)) {
+      return sendManagedAccountAuthRequired(res);
+    }
+    if (requiresTunnelBootstrap(req)) {
       return res.status(403).json({ error: 'Passkey management is disabled for tunnel scope', tunnelLocked: true });
     }
     try {
@@ -444,8 +488,10 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
   });
 
   app.post('/api/auth/reset', async (req, res, next) => {
-    const requestScope = tunnelAuthController.classifyRequestScope(req);
-    if (!uiAuthController.multiUser && (requestScope === 'tunnel' || requestScope === 'unknown-public')) {
+    if (requiresManagedAccountAuth(req)) {
+      return sendManagedAccountAuthRequired(res);
+    }
+    if (requiresTunnelBootstrap(req)) {
       return res.status(403).json({ error: 'Global sign-out is disabled for tunnel scope', tunnelLocked: true });
     }
     try {
@@ -532,8 +578,10 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
 
   app.use('/api', async (req, res, next) => {
     try {
-      const requestScope = tunnelAuthController.classifyRequestScope(req);
-      if (!uiAuthController.multiUser && (requestScope === 'tunnel' || requestScope === 'unknown-public')) {
+      if (requiresManagedAccountAuth(req)) {
+        return sendManagedAccountAuthRequired(res);
+      }
+      if (requiresTunnelBootstrap(req)) {
         return tunnelAuthController.requireTunnelSession(req, res, next);
       }
       await uiAuthController.requireAuth(req, res, next);
@@ -606,6 +654,8 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
       req.path.startsWith('/api/config/plugins') ||
       req.path.startsWith('/api/admin') ||
       req.path.startsWith('/api/analytics') ||
+      req.path.startsWith('/api/bug-reports') ||
+      req.path.startsWith('/api/error-logs') ||
       req.path.startsWith('/api/auth') ||
       req.path.startsWith('/api/diagnostics') ||
       req.path.startsWith('/api/evidence') ||

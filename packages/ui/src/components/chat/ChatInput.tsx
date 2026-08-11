@@ -33,11 +33,16 @@ import { resolveCurrentDraftSendConfig, resolveCurrentSendConfig } from '@/sync/
 import type { AttachedFile } from '@/stores/types/sessionTypes';
 import * as sessionActions from '@/sync/session-actions';
 import {
+    useDirectorySync,
     useSession,
     useSessionMessagesResolved,
     useSessionRevertPending,
     useUserMessageHistory,
 } from '@/sync/sync-context';
+import type { PermissionRequest } from '@/types/permission';
+import type { QuestionRequest } from '@/types/question';
+import { createScopedBlockingRequestsSelector } from './lib/blockingRequests';
+import { QuestionCard } from './QuestionCard';
 import { useInlineCommentDraftStore, type InlineCommentDraft } from '@/stores/useInlineCommentDraftStore';
 import { appendInlineComments } from '@/lib/messages/inlineComments';
 import { renderMagicPrompt } from '@/lib/magicPrompts';
@@ -131,7 +136,11 @@ import {
     resolveComposerDraftTarget,
     type ComposerDraftTarget,
 } from './chatInputDraftPersistence';
-import { clearCommittedComposerText, clearSubmittedComposerAfterSend } from './chatInputSubmitCleanup';
+import {
+    clearCommittedComposerText,
+    clearSubmittedComposerAfterSend,
+    mergeSubmittedAttachmentsForRecovery,
+} from './chatInputSubmitCleanup';
 import { isAbortableSessionPhase, shouldInterruptBeforeSubmit } from './submitInterrupt';
 import {
     dispatchQueuedMessageForSession,
@@ -641,6 +650,7 @@ type PendingTextareaSelectionRestore = {
 const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollToBottom }) => {
     const { t } = useI18n();
     const principal = useAuthPrincipal();
+    const canCreateWorktrees = principal.scope !== 'managed' || principal.policy.createWorktrees;
     const { guardBuilderSend, requestAgentChange } = useAgentHandoffGuard();
     const draftStorage = React.useMemo(() => getSafeStorage(), []);
     const draftTextUpdateRef = React.useRef<(draftId: string, text: string) => void>(() => {});
@@ -805,9 +815,38 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const composerHighlightRef = React.useRef<HTMLDivElement | null>(null);
 
     const isDesktopExpanded = isExpandedInput && !isMobile;
-    const chatInputRadius = 'var(--radius-xl)';
-    const chatInputFocusGlowMix = currentTheme.metadata.variant === 'dark' ? '25%' : '22%';
-    const chatInputFocusGlowBlur = currentTheme.metadata.variant === 'dark' ? '3px' : '2px';
+    const chatInputRadius = '1rem';
+    const isDarkInput = currentTheme.metadata.variant === 'dark';
+    const chatInputFocusGlowMix = isDarkInput ? '25%' : '22%';
+    const chatInputFocusGlowBlur = isDarkInput ? '3px' : '2px';
+    const chatInputElevationShadow = isDarkInput
+        ? '0 2px 8px rgba(0,0,0,0.35), 0 8px 24px rgba(0,0,0,0.45)'
+        : '0 2px 8px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.10)';
+    const chatInputBackground = isDarkInput
+        ? currentTheme?.colors?.surface?.subtle
+        : (currentTheme?.colors?.surface?.background ?? '#ffffff');
+    // The project/branch chip tucks behind the card, so it needs a fill one
+    // step away from the card surface to read as a separate layer.
+    const chatInputTabBackground = isDarkInput
+        ? (currentTheme?.colors?.surface?.muted ?? '#222222')
+        : (currentTheme?.colors?.surface?.muted ?? '#f2f2f2');
+
+    // Pending questions take over the composer surface (same scoped selector as
+    // ChatContainer; cached results keep re-renders limited to actual changes).
+    const pendingQuestionsSelector = React.useMemo(
+        () => createScopedBlockingRequestsSelector<PermissionRequest, QuestionRequest>(currentSessionId ?? null),
+        [currentSessionId],
+    );
+    const pendingQuestions = useDirectorySync(pendingQuestionsSelector, currentSessionDirectory ?? undefined).questions;
+    const hasPendingQuestions = pendingQuestions.length > 0;
+    const hadPendingQuestionsRef = React.useRef(hasPendingQuestions);
+    React.useEffect(() => {
+        const hadPending = hadPendingQuestionsRef.current;
+        hadPendingQuestionsRef.current = hasPendingQuestions;
+        if (hadPending && !hasPendingQuestions && !isMobile) {
+            requestAnimationFrame(() => textareaRef.current?.focus({ preventScroll: true }));
+        }
+    }, [hasPendingQuestions, isMobile]);
 
     const sendableAttachedFiles = attachedFiles;
     const getContextUsage = useSessionUIStore((state) => state.getContextUsage);
@@ -1781,7 +1820,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         const clearSubmittedComposer = () => {
             clearSubmittedComposerAfterSend({
                 queuedOnly,
-                attachedFilesCount: attachedFiles.length,
                 textarea: textareaRef.current,
                 clearPendingInputText: () => setPendingInputText(null),
                 clearPendingDraftPersist,
@@ -1790,7 +1828,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 clearDraftTarget: () => clearDraftTargetImmediately(activeDraftTarget),
                 setHistoryIndex,
                 setDraftMessage,
-                clearAttachedFiles,
                 setExpandedInput,
             });
         };
@@ -1935,6 +1972,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             // restores inputSnapshot.message; soft network errors intentionally do not.
             if (!queuedOnly) {
                 clearCommittedComposerText({
+                    attachedFilesCount: attachedFiles.length,
                     textarea: textareaRef.current,
                     clearPendingInputText: () => setPendingInputText(null),
                     clearPendingDraftPersist,
@@ -1943,6 +1981,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                         messageRef.current = value;
                     },
                     setMessage,
+                    clearAttachedFiles,
                 });
             }
 
@@ -2027,18 +2066,26 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 }
             };
 
+            const restoreSubmittedAttachments = () => {
+                if (allAttachments.length === 0) {
+                    return;
+                }
+                const currentAttachments = useInputStore.getState().attachedFiles;
+                useInputStore.getState().setAttachedFiles(
+                    mergeSubmittedAttachmentsForRecovery(allAttachments, currentAttachments),
+                );
+            };
+
             if (normalized.includes('payload too large') || normalized.includes('413') || normalized.includes('entity too large')) {
                 restoreSubmittedDraftMessage();
                 toast.error(t('chat.chatInput.toast.attachmentsTooLarge'));
-                if (allAttachments.length > 0) {
-                    useInputStore.getState().setAttachedFiles(allAttachments);
-                }
+                restoreSubmittedAttachments();
                 return;
             }
 
             if (isSoftNetworkError) {
                 if (allAttachments.length > 0) {
-                    useInputStore.getState().setAttachedFiles(allAttachments);
+                    restoreSubmittedAttachments();
                     toast.error(t('chat.chatInput.toast.sendAttachmentsFailed'));
                 }
                 return;
@@ -2047,7 +2094,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             restoreSubmittedDraftMessage();
 
             if (allAttachments.length > 0) {
-                useInputStore.getState().setAttachedFiles(allAttachments);
+                restoreSubmittedAttachments();
             }
             toast.error(rawMessage || t('chat.chatInput.toast.messageSendFailed'));
         }
@@ -3517,12 +3564,31 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     }, [fetchBranches, fetchStatus, runtimeGit, selectedDraftProject, selectedDraftProjectBranches?.all, selectedDraftProjectPath, selectedDraftProjectStatus, showDraftTargetSelectors]);
 
     const selectedDraftProjectCurrentBranch = selectedDraftProjectBranches?.current?.trim() ?? '';
+    const selectedDraftProjectWorktrees = React.useMemo(() => {
+        if (!selectedDraftProject) {
+            return [];
+        }
+
+        const discoveredWorktrees = (() => {
+            if (!selectedDraftProjectPath) {
+                return [];
+            }
+            return availableWorktreesByProject.get(selectedDraftProjectPath)
+                ?? availableWorktreesByProject.get(selectedDraftProject.path)
+                ?? [];
+        })();
+
+        return principal.scope === 'managed' && principal.role !== 'admin'
+            ? filterWorktreesByGrantedBranches(discoveredWorktrees, selectedDraftProject)
+            : discoveredWorktrees;
+    }, [availableWorktreesByProject, principal.role, principal.scope, selectedDraftProject, selectedDraftProjectPath]);
     const draftLocalBranchOptions = React.useMemo(() => buildDraftLocalBranchOptions({
         allBranches: principal.scope === 'managed' && principal.role !== 'admin' && selectedDraftProject
             ? filterBranchNamesByGrantedBranches(selectedDraftProjectBranches?.all ?? [], selectedDraftProject)
             : selectedDraftProjectBranches?.all ?? [],
         currentBranch: selectedDraftProjectCurrentBranch,
-    }), [principal.role, principal.scope, selectedDraftProject, selectedDraftProjectBranches?.all, selectedDraftProjectCurrentBranch]);
+        worktreeBranches: selectedDraftProjectWorktrees.map((worktree) => worktree.branch),
+    }), [principal.role, principal.scope, selectedDraftProject, selectedDraftProjectBranches?.all, selectedDraftProjectCurrentBranch, selectedDraftProjectWorktrees]);
     const draftLocalOnlyBranchOptions = React.useMemo(
         () => draftLocalBranchOptions.filter((option) => !option.remoteOnly),
         [draftLocalBranchOptions],
@@ -3537,29 +3603,15 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             return [];
         }
 
-        const discoveredWorktrees = (() => {
-            if (!selectedDraftProjectPath) {
-                return [];
-            }
-            return availableWorktreesByProject.get(selectedDraftProjectPath)
-                ?? availableWorktreesByProject.get(selectedDraftProject.path)
-                ?? [];
-        })();
-
-        const isRestrictedManagedProject = principal.scope === 'managed' && principal.role !== 'admin';
-        const worktrees = isRestrictedManagedProject
-            ? filterWorktreesByGrantedBranches(discoveredWorktrees, selectedDraftProject)
-            : discoveredWorktrees;
-
         return buildSessionTargetOptions({
             projectRoot: normalizePath(selectedDraftProject.path) ?? '',
             rootBranch: selectedDraftProjectCurrentBranch,
-            worktrees,
+            worktrees: selectedDraftProjectWorktrees,
             pendingBootstrapDirectory: newSessionDraft?.bootstrapPendingDirectory ?? null,
-            includeRoot: !isRestrictedManagedProject
+            includeRoot: principal.scope !== 'managed' || principal.role === 'admin'
                 || isManagedBranchGranted(selectedDraftProject, selectedDraftProjectCurrentBranch),
         });
-    }, [availableWorktreesByProject, newSessionDraft?.bootstrapPendingDirectory, principal.role, principal.scope, selectedDraftProject, selectedDraftProjectCurrentBranch, selectedDraftProjectPath]);
+    }, [newSessionDraft?.bootstrapPendingDirectory, principal.role, principal.scope, selectedDraftProject, selectedDraftProjectCurrentBranch, selectedDraftProjectWorktrees]);
 
     const selectedDraftDirectory = React.useMemo(
         () => normalizePath(newSessionDraft?.bootstrapPendingDirectory ?? null)
@@ -3766,6 +3818,12 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
             if (result.type === 'blocked') {
                 toast.error(t('gitView.toast.cannotCheckout', { reason: result.reason }));
+                return;
+            }
+
+            if (result.type === 'worktree-target') {
+                setNewSessionDraftTarget({ projectId, directoryOverride: result.directory }, { force: true });
+                toast.success(t('gitView.toast.switchedToWorktree', { name: result.branch }));
                 return;
             }
 
@@ -4180,8 +4238,16 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                     showAssistantStatus={false}
                     showTodos
                 />
+                {showDraftTargetSelectors && newSessionDraft?.targetPreparationError ? (
+                    <div className="mb-1.5 px-2 typography-micro text-destructive" role="alert">
+                        {newSessionDraft.targetPreparationError}
+                    </div>
+                ) : null}
                 {showDraftTargetSelectors && selectedDraftProject ? (
-                    <div className="mb-1.5 flex min-w-0 items-center gap-1.5 px-0.5">
+                    <div
+                        className="relative -mb-3 ml-1.5 mr-8 flex min-w-0 items-center gap-1 rounded-t-xl px-2 pt-1 pb-3"
+                        style={{ backgroundColor: chatInputTabBackground }}
+                    >
                         <Select
                             value={selectedDraftProject.id}
                             onValueChange={handleDraftProjectChange}
@@ -4225,7 +4291,14 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                             <SelectLabel>{t('chat.chatInput.localBranches')}</SelectLabel>
                                             {draftLocalOnlyBranchOptions.map((option) => (
                                                 <SelectItem key={option.value} value={option.value} className="max-w-[24rem] truncate">
-                                                    {option.label}
+                                                    <span className="flex min-w-0 items-center gap-2">
+                                                        <span className="truncate">{option.label}</span>
+                                                        {option.inWorktree ? (
+                                                            <span className="shrink-0 rounded bg-muted/50 px-1.5 py-0.5 typography-micro text-muted-foreground">
+                                                                {t('gitView.branch.worktreeBadge')}
+                                                            </span>
+                                                        ) : null}
+                                                    </span>
                                                 </SelectItem>
                                             ))}
                                         </SelectGroup>
@@ -4247,14 +4320,16 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                     <SelectGroup>
                                         <div className="flex min-w-48 items-center justify-between px-2 py-1.5">
                                             <span className="text-muted-foreground typography-meta">{t('chat.chatInput.worktrees')}</span>
-                                            <button
-                                                type="button"
-                                                className="text-muted-foreground typography-meta hover:text-foreground cursor-pointer"
-                                                onPointerDown={(e) => { e.stopPropagation(); }}
-                                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); void createWorktreeDraft(); }}
-                                            >
-                                                {t('chat.chatInput.worktreeNew')}
-                                            </button>
+                                            {canCreateWorktrees ? (
+                                                <button
+                                                    type="button"
+                                                    className="text-muted-foreground typography-meta hover:text-foreground cursor-pointer"
+                                                    onPointerDown={(e) => { e.stopPropagation(); }}
+                                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); void createWorktreeDraft(); }}
+                                                >
+                                                    {t('chat.chatInput.worktreeNew')}
+                                                </button>
+                                            ) : null}
                                         </div>
                                         {worktreeBranchOptions.map((option) => (
                                             <SelectItem key={option.value} value={option.value} className="max-w-[24rem] truncate">
@@ -4272,24 +4347,21 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                         ) : null}
                     </div>
                 ) : null}
-                {showDraftTargetSelectors && newSessionDraft?.targetPreparationError ? (
-                    <div className="mb-1.5 px-2 typography-micro text-destructive" role="alert">
-                        {newSessionDraft.targetPreparationError}
-                    </div>
-                ) : null}
                 <div
                     className={cn(
                         "flex flex-col relative overflow-visible",
                         isDesktopExpanded && 'flex-1 min-h-0',
-                        "border border-border/80 focus-within:border-[var(--chat-input-focus-ring)] focus-within:shadow-[0_0_var(--chat-input-focus-glow-blur)_color-mix(in_srgb,var(--chat-input-focus-ring)_var(--chat-input-focus-glow-mix),transparent)]",
+                        "border border-border/60 shadow-[var(--chat-input-shadow)] focus-within:border-[var(--chat-input-focus-ring)] focus-within:shadow-[var(--chat-input-shadow-focus)]",
                         isDragging && "ring-2 ring-primary ring-offset-2"
                     )}
                     style={{
                         borderRadius: chatInputRadius,
-                        backgroundColor: currentTheme?.colors?.surface?.subtle,
+                        backgroundColor: chatInputBackground,
                         '--chat-input-focus-ring': '#5EEBD0',
                         '--chat-input-focus-glow-mix': chatInputFocusGlowMix,
                         '--chat-input-focus-glow-blur': chatInputFocusGlowBlur,
+                        '--chat-input-shadow': chatInputElevationShadow,
+                        '--chat-input-shadow-focus': `${chatInputElevationShadow}, 0 0 var(--chat-input-focus-glow-blur) color-mix(in srgb, var(--chat-input-focus-ring) var(--chat-input-focus-glow-mix), transparent)`,
                     } as React.CSSProperties & Record<string, string>}
                     ref={dropZoneRef}
                     onDropCapture={handleDropCapture}
@@ -4300,7 +4372,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                     onDragEnd={handleDragEnd}
                 >
                     {isDragging && (
-                        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/90 rounded-xl">
+                        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/90 rounded-2xl">
                             <div className="text-center">
                                 <div className="inline-flex justify-center">
                                     <button
@@ -4392,7 +4464,10 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                 : undefined}
                         />
                     )}
-                    <div className={cn("overflow-hidden", isDesktopExpanded && 'flex flex-1 min-h-0 flex-col')}>
+                    {hasPendingQuestions ? (
+                        <QuestionCard requests={pendingQuestions} />
+                    ) : null}
+                    <div className={cn("overflow-hidden", isDesktopExpanded && 'flex flex-1 min-h-0 flex-col', hasPendingQuestions && 'hidden')}>
                         <div className="flex items-center gap-1 px-3 pt-1 flex-wrap relative z-10">
                             <AttachedVSCodeFileChips />
                             <ActiveEditorFileSuggestion />
@@ -4465,7 +4540,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                 fillContainer={isDesktopExpanded}
                                 outerClassName={cn('ring-0 bg-transparent shadow-none hover:bg-transparent focus-within:ring-0', isDesktopExpanded && 'flex-1 min-h-0')}
                                 className={cn(
-                                    'min-h-[36px] resize-none border-0 px-3 rounded-b-none appearance-none hover:border-transparent bg-transparent relative z-10',
+                                    'min-h-[60px] resize-none border-0 px-3 rounded-b-none appearance-none hover:border-transparent bg-transparent relative z-10',
                                     isDesktopExpanded
                                         ? 'h-full min-h-0 py-4'
                                         : isMobile
@@ -4489,7 +4564,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                         className={cn(
                             'bg-transparent flex-shrink-0',
                             footerPaddingClass,
-                            isMobile ? 'flex items-center gap-x-1.5' : cn('flex items-center justify-between', footerGapClass)
+                            isMobile ? 'flex items-center gap-x-1.5' : cn('flex items-center justify-between', footerGapClass),
+                            hasPendingQuestions && 'hidden'
                         )}
                         style={{
                             borderBottomLeftRadius: chatInputRadius,

@@ -14,3 +14,11 @@ export function getQuestionOptionPresentation(label: string): QuestionOptionPres
     recommended,
   };
 }
+
+/**
+ * The custom-answer pill has no explicit "Other" toggle: typing text activates
+ * custom mode, clearing it falls back to any selected option.
+ */
+export function deriveCustomModeFromText(text: string): boolean {
+  return text.trim().length > 0;
+}

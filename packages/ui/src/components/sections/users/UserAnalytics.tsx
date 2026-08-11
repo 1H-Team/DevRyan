@@ -21,6 +21,7 @@ import {
   requestJson,
   selectClassName,
   type ActivityRow,
+  type ClipboardAnalyticsDetail,
   type UserAnalyticsEvent,
   type UserAnalyticsEventsPage,
   type UserAnalyticsRange,
@@ -168,6 +169,94 @@ const changeDetails = (event: UserAnalyticsEvent): string => {
   }
   const fields = Array.isArray(event.metadata?.fields) ? event.metadata.fields.join(', ') : '';
   return fields ? `Updated ${fields}` : 'No additional non-sensitive details';
+};
+
+export const ClipboardInteractionDetails: React.FC<{
+  event: UserAnalyticsEvent;
+  userId: string;
+}> = ({ event, userId }) => {
+  const summary = event.clipboard;
+  const [detail, setDetail] = React.useState<ClipboardAnalyticsDetail | null>(null);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const controllerRef = React.useRef<AbortController | null>(null);
+
+  React.useEffect(() => () => controllerRef.current?.abort(), []);
+
+  const loadFullText = React.useCallback(async () => {
+    if (!summary?.available || detail || loading || !event.event_id) return;
+    controllerRef.current?.abort();
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    setLoading(true);
+    setError(null);
+    try {
+      const payload = await requestJson<ClipboardAnalyticsDetail>(
+        `/api/admin/users/${encodeURIComponent(userId)}/analytics/clipboard/${encodeURIComponent(event.event_id)}`,
+        { signal: controller.signal },
+      );
+      if (!controller.signal.aborted) setDetail(payload);
+    } catch (caught) {
+      if (!controller.signal.aborted) {
+        setError(caught instanceof Error ? caught.message : 'Copied text could not be loaded');
+      }
+    } finally {
+      if (!controller.signal.aborted) setLoading(false);
+    }
+  }, [detail, event.event_id, loading, summary?.available, userId]);
+
+  if (!summary?.available) {
+    return (
+      <div className="mt-0.5 typography-meta text-muted-foreground">
+        {changeDetails(event)} · Text was not captured
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-0.5 min-w-0">
+      <div className="typography-meta text-muted-foreground">{changeDetails(event)}</div>
+      <div className="mt-1 line-clamp-3 whitespace-pre-wrap break-words rounded-md border border-border/45 bg-[var(--surface-subtle)]/45 px-2 py-1.5 font-mono typography-code text-foreground">
+        {summary.preview || '(Empty copied text)'}
+      </div>
+      <details
+        className="group/clipboard mt-1"
+        onToggle={(toggleEvent) => {
+          if (toggleEvent.currentTarget.open) void loadFullText();
+        }}
+      >
+        <summary className="w-fit cursor-pointer list-none rounded px-1 py-0.5 typography-micro font-medium text-[var(--primary-base)] hover:bg-interactive-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--interactive-focus-ring)]">
+          <span className="group-open/clipboard:hidden">Show full copied text</span>
+          <span className="hidden group-open/clipboard:inline">Hide full copied text</span>
+        </summary>
+        <div className="mt-1 rounded-md border border-border/55 bg-[var(--surface-subtle)]/35 p-2">
+          {loading ? (
+            <div className="flex items-center gap-1.5 typography-meta text-muted-foreground">
+              <RiLoader4Line className="h-3.5 w-3.5 animate-spin" /> Loading copied text…
+            </div>
+          ) : error ? (
+            <div role="alert" className="typography-meta text-[var(--status-error)]">{error}</div>
+          ) : detail?.available ? (
+            <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words font-mono typography-code text-foreground">
+              {detail.text || '(Empty copied text)'}
+            </pre>
+          ) : (
+            <div className="typography-meta text-muted-foreground">Text was not captured for this event.</div>
+          )}
+          {(detail || summary).truncated ? (
+            <p className="mt-2 typography-micro text-[var(--status-warning)]">
+              Retained text is capped at 64 KiB; the original copy contained {(detail || summary).originalLength.toLocaleString()} characters.
+            </p>
+          ) : null}
+          {(detail || summary).redacted ? (
+            <p className="mt-1 typography-micro text-[var(--status-warning)]">
+              Sensitive-looking values were redacted before storage.
+            </p>
+          ) : null}
+        </div>
+      </details>
+    </div>
+  );
 };
 
 // One figure in the overview strip. Primary metrics (active time, prompts) read
@@ -731,7 +820,11 @@ export const UserAnalytics: React.FC<UserAnalyticsProps> = ({
                     </div>
                     <div className="min-w-0">
                       <div className="truncate typography-ui-label font-medium text-foreground">{actionLabel(event.action)}</div>
-                      <div className="mt-0.5 typography-meta text-muted-foreground">{changeDetails(event)}</div>
+                      {event.action === 'clipboard.copied' ? (
+                        <ClipboardInteractionDetails event={event} userId={user.id} />
+                      ) : (
+                        <div className="mt-0.5 typography-meta text-muted-foreground">{changeDetails(event)}</div>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 md:justify-end">
                       <span className="truncate typography-micro font-medium text-foreground">{event.actor?.displayName || event.actor_role || 'System'}</span>

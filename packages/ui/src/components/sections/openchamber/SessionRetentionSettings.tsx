@@ -11,7 +11,8 @@ import { useI18n } from '@/lib/i18n';
 import { clearDesktopCache, getDesktopCacheInfo, isDesktopLocalOriginActive, isElectronShell } from '@/lib/desktop';
 import { formatBytes } from '@/lib/formatBytes';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
-import type { DiagnosticsStatus } from '@/lib/api/types';
+import type { DiagnosticsClearRange, DiagnosticsStatus } from '@/lib/api/types';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -28,6 +29,12 @@ const RETENTION_ACTION_OPTIONS = [
   { value: 'archive', labelKey: 'settings.openchamber.sessionRetention.action.archive' },
   { value: 'delete', labelKey: 'settings.openchamber.sessionRetention.action.delete' },
 ] as const;
+const DIAGNOSTIC_CLEAR_RANGE_OPTIONS = [
+  { value: '24h', labelKey: 'settings.openchamber.about.diagnostics.clearRange.24h' },
+  { value: '7d', labelKey: 'settings.openchamber.about.diagnostics.clearRange.7d' },
+  { value: '14d', labelKey: 'settings.openchamber.about.diagnostics.clearRange.14d' },
+  { value: 'all', labelKey: 'settings.openchamber.about.diagnostics.clearRange.all' },
+] as const satisfies ReadonlyArray<{ value: DiagnosticsClearRange; labelKey: string }>;
 
 type CacheSizeStatus = 'loading' | 'ready' | 'unavailable';
 
@@ -40,6 +47,7 @@ const DiagnosticDataCleanup: React.FC = () => {
   const [cacheSizeStatus, setCacheSizeStatus] = React.useState<CacheSizeStatus>('loading');
   const [exporting, setExporting] = React.useState(false);
   const [clearOpen, setClearOpen] = React.useState(false);
+  const [clearRange, setClearRange] = React.useState<DiagnosticsClearRange>('24h');
   const [clearing, setClearing] = React.useState(false);
 
   React.useEffect(() => {
@@ -96,13 +104,14 @@ const DiagnosticDataCleanup: React.FC = () => {
     }
   }, [diagnostics, exporting, t]);
 
-  const clearAllData = React.useCallback(async () => {
+  const clearDiagnosticData = React.useCallback(async () => {
     if (!diagnostics || clearing) return;
     setClearing(true);
     try {
-      await diagnostics.clear();
+      await diagnostics.clear(clearRange);
       let cacheClearFailed = false;
-      if (hasDesktopCache) {
+      const shouldClearDesktopCache = hasDesktopCache && clearRange === 'all';
+      if (shouldClearDesktopCache) {
         try {
           const clearedCache = await clearDesktopCache();
           if (!clearedCache) throw new Error('Application cache cleanup is unavailable');
@@ -114,7 +123,7 @@ const DiagnosticDataCleanup: React.FC = () => {
 
       const refreshedStatus = await diagnostics.getStatus();
       setStatus(refreshedStatus);
-      if (hasDesktopCache) {
+      if (shouldClearDesktopCache) {
         try {
           const cacheInfo = await getDesktopCacheInfo();
           if (!cacheInfo) throw new Error('Application cache size is unavailable');
@@ -139,7 +148,7 @@ const DiagnosticDataCleanup: React.FC = () => {
     } finally {
       setClearing(false);
     }
-  }, [clearing, diagnostics, hasDesktopCache, t]);
+  }, [clearRange, clearing, diagnostics, hasDesktopCache, t]);
 
   if (!diagnostics) return null;
 
@@ -186,7 +195,7 @@ const DiagnosticDataCleanup: React.FC = () => {
               className="!font-normal normal-case"
             >
               <RiDeleteBinLine className="mr-1 h-3.5 w-3.5" />
-              {t('settings.openchamber.about.diagnostics.clearAll')}
+              {t('settings.openchamber.about.diagnostics.clearLogs')}
             </Button>
           </div>
         </div>
@@ -205,24 +214,54 @@ const DiagnosticDataCleanup: React.FC = () => {
         )}
       </div>
 
-      <Dialog open={clearOpen} onOpenChange={setClearOpen}>
+      <Dialog open={clearOpen} onOpenChange={(open) => { if (!clearing) setClearOpen(open); }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{t('settings.openchamber.about.diagnostics.clearDialog.title')}</DialogTitle>
             <DialogDescription>
-              {t(hasDesktopCache
+              {t(hasDesktopCache && clearRange === 'all'
                 ? 'settings.openchamber.about.diagnostics.clearDialog.descriptionDesktop'
-                : 'settings.openchamber.about.diagnostics.clearDialog.description')}
+                : 'settings.openchamber.about.diagnostics.clearDialog.description', {
+                  range: t(DIAGNOSTIC_CLEAR_RANGE_OPTIONS.find((option) => option.value === clearRange)?.labelKey
+                    ?? 'settings.openchamber.about.diagnostics.clearRange.all'),
+                })}
             </DialogDescription>
           </DialogHeader>
+          <div className="space-y-1.5">
+            <p className="typography-ui-label text-foreground">
+              {t('settings.openchamber.about.diagnostics.clearDialog.rangeLabel')}
+            </p>
+            <Select<DiagnosticsClearRange>
+              value={clearRange}
+              onValueChange={setClearRange}
+              disabled={clearing}
+            >
+              <SelectTrigger
+                className="w-full"
+                aria-label={t('settings.openchamber.about.diagnostics.clearDialog.rangeAria')}
+              >
+                <SelectValue>
+                  {t(DIAGNOSTIC_CLEAR_RANGE_OPTIONS.find((option) => option.value === clearRange)?.labelKey
+                    ?? 'settings.openchamber.about.diagnostics.clearRange.all')}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {DIAGNOSTIC_CLEAR_RANGE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {t(option.labelKey)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setClearOpen(false)} disabled={clearing}>
               {t('settings.common.actions.cancel')}
             </Button>
-            <Button variant="destructive" onClick={() => { void clearAllData(); }} disabled={clearing}>
+            <Button variant="destructive" onClick={() => { void clearDiagnosticData(); }} disabled={clearing}>
               {clearing
                 ? t('settings.openchamber.about.diagnostics.clearing')
-                : t('settings.openchamber.about.diagnostics.clearAll')}
+                : t('settings.openchamber.about.diagnostics.clearLogs')}
             </Button>
           </DialogFooter>
         </DialogContent>

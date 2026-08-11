@@ -22,6 +22,25 @@ type WritableArchive = {
 };
 
 const DIAGNOSTICS_TEMP_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const DIAGNOSTICS_CLEAR_RANGE_MS = {
+  '24h': 24 * 60 * 60 * 1000,
+  '7d': 7 * 24 * 60 * 60 * 1000,
+  '14d': 14 * 24 * 60 * 60 * 1000,
+} as const;
+
+const normalizeClearOptions = (payload: unknown): { since?: number } => {
+  const rawRange = payload && typeof payload === 'object'
+    ? (payload as { range?: unknown }).range
+    : undefined;
+  const range = rawRange === undefined ? 'all' : rawRange;
+  if (range === 'all') return {};
+  if (typeof range !== 'string' || !(range in DIAGNOSTICS_CLEAR_RANGE_MS)) {
+    throw new Error('Diagnostic clear range must be 24h, 7d, 14d, or all');
+  }
+  return {
+    since: Date.now() - DIAGNOSTICS_CLEAR_RANGE_MS[range as keyof typeof DIAGNOSTICS_CLEAR_RANGE_MS],
+  };
+};
 
 const cleanupExpiredDiagnosticsTemps = async (destination: string): Promise<void> => {
   const directory = path.dirname(destination);
@@ -106,7 +125,16 @@ export async function handleDiagnosticsBridgeMessage(
 
   if (type === 'api:diagnostics/clear') {
     if (!runtime) return { id, type, success: false, error: 'Diagnostics runtime is unavailable' };
-    return { id, type, success: true, data: await runtime.journal.clear() };
+    try {
+      return { id, type, success: true, data: await runtime.journal.clear(normalizeClearOptions(payload)) };
+    } catch (error) {
+      return {
+        id,
+        type,
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to clear diagnostics',
+      };
+    }
   }
 
   if (type === 'api:diagnostics/sanitize') {

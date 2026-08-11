@@ -859,6 +859,23 @@ export const createDiagnosticJournal = (options = {}) => {
     return isNew ? gunzipSync(data).toString('utf8') : data.toString('utf8');
   };
 
+  const materializeBlobReferences = async (value) => {
+    if (Array.isArray(value)) {
+      const output = [];
+      for (const entry of value) output.push(await materializeBlobReferences(entry));
+      return output;
+    }
+    if (!value || typeof value !== 'object') return value;
+    if (value.type === 'blob' && typeof value.path === 'string') {
+      return readBlob(value.path);
+    }
+    const output = {};
+    for (const [key, nested] of Object.entries(value)) {
+      output[key] = await materializeBlobReferences(nested);
+    }
+    return output;
+  };
+
   const listSessionManifests = async () => {
     await flushInternal();
     return [...buckets.values()]
@@ -891,8 +908,117 @@ export const createDiagnosticJournal = (options = {}) => {
     await pruneNow();
   }
 
-  const clear = () => {
+  const removeOwnedJournalData = async () => {
+    await fsApi.rm(sessionsDirectory, { recursive: true, force: true });
+    await fsApi.rm(runtimeDirectory, { recursive: true, force: true });
+    const entries = await fsApi.readdir(directory, { withFileTypes: true }).catch(() => []);
+    await Promise.all(entries.map(async (entry) => {
+      const legacySegment = entry.isFile()
+        && (isLegacyClosedSegment(entry.name) || isLegacyOpenSegment(entry.name));
+      const legacyBlobs = entry.isDirectory() && /^\d+-\d+\.blobs$/.test(entry.name);
+      if (!legacySegment && !legacyBlobs) return;
+      await fsApi.rm(path.join(directory, entry.name), {
+        recursive: legacyBlobs,
+        force: true,
+      });
+    }));
+  };
+
+  const resetJournalState = () => {
+    buckets.clear();
+    appliedTrimStats.clear();
+    trimmer.reset();
+    queue.length = 0;
+    droppedPending = 0;
+    writtenRecords = 0;
+    gapRecords = 0;
+    lastError = null;
+  };
+
+  const recoverCurrentBuckets = async () => {
+    await fsApi.mkdir(sessionsDirectory, { recursive: true, mode: 0o700 });
+    const sessionEntries = await fsApi.readdir(sessionsDirectory, { withFileTypes: true }).catch(() => []);
+    for (const entry of sessionEntries) {
+      if (!entry.isDirectory()) continue;
+      const bucketPath = path.join(sessionsDirectory, entry.name);
+      const loaded = await readJson(fsApi, path.join(bucketPath, 'manifest.json'));
+      let sessionID = typeof loaded?.sessionID === 'string' ? loaded.sessionID : '';
+      if (!sessionID) {
+        try {
+          sessionID = decodeURIComponent(entry.name);
+        } catch {
+          sessionID = entry.name;
+        }
+      }
+      await recoverBucket(sessionID, bucketPath);
+    }
+    const runtimeEntries = await fsApi.readdir(runtimeDirectory).catch(() => null);
+    if (runtimeEntries) await recoverBucket('', runtimeDirectory);
+  };
+
+  const stageRecordsBefore = async (since) => {
+    const stagingDirectory = await fsApi.mkdtemp(path.join(
+      path.dirname(directory),
+      `.${path.basename(directory)}-clear-`,
+    ));
+    const stagedJournal = createDiagnosticJournal({
+      directory: stagingDirectory,
+      sanitizer,
+      runtime: options.runtime,
+      now,
+      fs: fsApi,
+      createReadStream: openReadStream,
+      maxQueue,
+      maxSegmentBytes,
+      maxBytes: Number.MAX_SAFE_INTEGER,
+      maxAgeMs: Number.MAX_SAFE_INTEGER,
+      blobThresholdBytes,
+      maxOpenWriters,
+      trim: false,
+      metadataDebounceMs: options.metadataDebounceMs,
+    });
+    let retainedRecords = 0;
+    let retainedGaps = 0;
+    const batchSize = Math.max(1, Math.min(250, Math.floor(maxQueue / 2)));
+    try {
+      for await (const record of iterateRecords()) {
+        if (Number.isFinite(record?.at) && record.at >= since) continue;
+        const materialized = await materializeBlobReferences(record);
+        if (!stagedJournal.enqueue(materialized)) {
+          throw new Error('Diagnostic journal staging queue overflowed');
+        }
+        retainedRecords += 1;
+        if (record?.type === 'gap') retainedGaps += 1;
+        if (retainedRecords % batchSize === 0) await stagedJournal.flush();
+      }
+      await stagedJournal.close();
+      return { stagingDirectory, retainedRecords, retainedGaps };
+    } catch (error) {
+      await stagedJournal.close().catch(() => undefined);
+      await fsApi.rm(stagingDirectory, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    }
+  };
+
+  const replaceWithStagedJournal = async (stagingDirectory) => {
+    const backupDirectory = `${directory}.clear-backup-${crypto.randomUUID()}`;
+    await fsApi.rename(directory, backupDirectory);
+    try {
+      await fsApi.rename(stagingDirectory, directory);
+    } catch (error) {
+      await fsApi.rename(backupDirectory, directory).catch(() => undefined);
+      throw error;
+    }
+    return backupDirectory;
+  };
+
+  const clear = (clearOptions = {}) => {
     if (clearPromise) return clearPromise;
+    const hasSince = clearOptions?.since !== undefined;
+    const since = hasSince ? Number(clearOptions.since) : null;
+    if (hasSince && (!Number.isFinite(since) || since < 0)) {
+      return Promise.reject(new TypeError('diagnostic clear since timestamp must be a non-negative number'));
+    }
     clearing = true;
     clearPromise = (async () => {
       await initialize();
@@ -913,28 +1039,24 @@ export const createDiagnosticJournal = (options = {}) => {
       metadataTimer = null;
       await metadataWritePromise;
       for (const bucket of buckets.values()) await closeHandle(bucket);
-      await fsApi.rm(sessionsDirectory, { recursive: true, force: true });
-      await fsApi.rm(runtimeDirectory, { recursive: true, force: true });
-      const entries = await fsApi.readdir(directory, { withFileTypes: true }).catch(() => []);
-      await Promise.all(entries.map(async (entry) => {
-        const legacySegment = entry.isFile()
-          && (isLegacyClosedSegment(entry.name) || isLegacyOpenSegment(entry.name));
-        const legacyBlobs = entry.isDirectory() && /^\d+-\d+\.blobs$/.test(entry.name);
-        if (!legacySegment && !legacyBlobs) return;
-        await fsApi.rm(path.join(directory, entry.name), {
-          recursive: legacyBlobs,
-          force: true,
+
+      if (since !== null) {
+        const staged = await stageRecordsBefore(since);
+        const backupDirectory = await replaceWithStagedJournal(staged.stagingDirectory);
+        resetJournalState();
+        writtenRecords = staged.retainedRecords;
+        gapRecords = staged.retainedGaps;
+        await recoverCurrentBuckets();
+        await flushMetadata();
+        await fsApi.rm(backupDirectory, { recursive: true, force: true }).catch((error) => {
+          lastError = error instanceof Error ? error.message : String(error);
         });
-      }));
+        return getStatus();
+      }
+
+      await removeOwnedJournalData();
       await fsApi.mkdir(sessionsDirectory, { recursive: true, mode: 0o700 });
-      buckets.clear();
-      appliedTrimStats.clear();
-      trimmer.reset();
-      queue.length = 0;
-      droppedPending = 0;
-      writtenRecords = 0;
-      gapRecords = 0;
-      lastError = null;
+      resetJournalState();
       await writeIfChanged(path.join(directory, 'README.md'), README_CONTENT);
       await writeIfChanged(
         path.join(directory, 'index.json'),

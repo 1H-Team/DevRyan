@@ -27,9 +27,11 @@ import { copyTextToClipboard } from '@/lib/clipboard';
 import { requestFileAccess } from '@/lib/desktop';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { useI18n } from '@/lib/i18n';
+import { useAuthPrincipal } from '@/lib/authSession';
 import { cn } from '@/lib/utils';
 import { openExternalUrl } from '@/lib/url';
 import {
+  isManagedAccountLoginAvailable,
   isManagedRemoteStatusDegraded,
   type ManagedRemoteConnectorState,
 } from './tunnelStatusPresentation';
@@ -341,6 +343,8 @@ const sanitizeTunnelDiagnostics = (message: string, code?: string, details?: Tun
 
 export const TunnelSettings: React.FC = () => {
   const { t } = useI18n();
+  const principal = useAuthPrincipal();
+  const managedAccountLoginAvailable = isManagedAccountLoginAvailable(principal.scope);
   const tUnsafe = React.useCallback((key: string) => t(key as Parameters<typeof t>[0]), [t]);
   const [state, setState] = React.useState<TunnelState>('checking');
   const [tunnelInfo, setTunnelInfo] = React.useState<TunnelInfo | null>(null);
@@ -863,6 +867,11 @@ export const TunnelSettings: React.FC = () => {
     setErrorDiagnostics(null);
     setManagedRemoteValidationError(null);
 
+    if (tunnelMode === 'managed-remote' && !managedAccountLoginAvailable) {
+      toast.error(t('settings.openchamber.tunnel.managedAccountRequired.description'));
+      return;
+    }
+
     if (tunnelMode === 'managed-local' && managedLocalConfigPath && !hasAllowedManagedLocalConfigExtension(managedLocalConfigPath)) {
       setErrorMessage(managedLocalConfigExtensionError);
       toast.error(managedLocalConfigExtensionError);
@@ -981,6 +990,7 @@ export const TunnelSettings: React.FC = () => {
     }
   }, [
     managedLocalConfigExtensionError,
+    managedAccountLoginAvailable,
     managedRemoteTunnelPresets,
     saveTunnelSettings,
     selectedPreset,
@@ -1234,15 +1244,37 @@ export const TunnelSettings: React.FC = () => {
         <p className="typography-meta mt-0 text-muted-foreground/60">
           {t('settings.openchamber.tunnel.note.serverSideEnforced')}
         </p>
-        <p className="typography-meta mt-0 text-muted-foreground/60">
-          {t('settings.openchamber.tunnel.note.connectLinksOneTime')}
-        </p>
-        <p className="typography-meta mt-0 text-muted-foreground/60">
-          {t('settings.openchamber.tunnel.note.multiUserConnectSignIn')}
-        </p>
+        {tunnelMode === 'managed-remote' ? (
+          <p className="typography-meta mt-0 text-muted-foreground/60">
+            {t('settings.openchamber.tunnel.note.managedRemoteDirectLogin')}
+          </p>
+        ) : (
+          <p className="typography-meta mt-0 text-muted-foreground/60">
+            {t('settings.openchamber.tunnel.note.connectLinksOneTime')}
+          </p>
+        )}
       </div>
 
-      {renderedSessionRecords.length > 0 && (
+      {tunnelMode === 'managed-remote' && !managedAccountLoginAvailable && (
+        <div
+          role="alert"
+          className="rounded-lg border border-[var(--status-warning-border)] bg-[var(--status-warning-background)] p-3"
+        >
+          <div className="flex items-start gap-2">
+            <RiErrorWarningLine className="mt-0.5 size-4 shrink-0 text-[var(--status-warning)]" />
+            <div className="space-y-1">
+              <p className="typography-ui-label text-foreground">
+                {t('settings.openchamber.tunnel.managedAccountRequired.title')}
+              </p>
+              <p className="typography-meta text-[var(--status-warning)]">
+                {t('settings.openchamber.tunnel.managedAccountRequired.description')}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTunnelMode !== 'managed-remote' && renderedSessionRecords.length > 0 && (
         <section className="space-y-2 px-2 pb-2 pt-0">
           <div className="rounded-lg border border-[var(--status-info-border)] bg-[var(--status-info-background)]/30 p-3">
             <div className="mb-2 flex items-center gap-2">
@@ -1371,47 +1403,49 @@ export const TunnelSettings: React.FC = () => {
             </div>
           </div>
 
-          <div className="mt-2 grid grid-cols-1 gap-2 py-1.5 md:grid-cols-[14rem_auto] md:gap-x-8 md:gap-y-2">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="typography-ui-label shrink-0 text-foreground">{t('settings.openchamber.tunnel.field.connectLinkTtl')}</span>
-              <Select
-                value={ttlOptionValue(BOOTSTRAP_TTL_OPTIONS, bootstrapTtlMs, '1800000')}
-                onValueChange={(value) => {
-                  void handleBootstrapTtlChange(value);
-                }}
-                disabled={isSavingTtl || isSavingMode || state === 'starting' || state === 'stopping'}
-              >
-                <SelectTrigger className="max-w-[11rem] min-w-0">
-                  <SelectValue className="truncate" />
-                </SelectTrigger>
-                <SelectContent>
-                  {BOOTSTRAP_TTL_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          {tunnelMode !== 'managed-remote' && (
+            <div className="mt-2 grid grid-cols-1 gap-2 py-1.5 md:grid-cols-[14rem_auto] md:gap-x-8 md:gap-y-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="typography-ui-label shrink-0 text-foreground">{t('settings.openchamber.tunnel.field.connectLinkTtl')}</span>
+                <Select
+                  value={ttlOptionValue(BOOTSTRAP_TTL_OPTIONS, bootstrapTtlMs, '1800000')}
+                  onValueChange={(value) => {
+                    void handleBootstrapTtlChange(value);
+                  }}
+                  disabled={isSavingTtl || isSavingMode || state === 'starting' || state === 'stopping'}
+                >
+                  <SelectTrigger className="max-w-[11rem] min-w-0">
+                    <SelectValue className="truncate" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {BOOTSTRAP_TTL_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="typography-ui-label shrink-0 text-foreground">{t('settings.openchamber.tunnel.field.tunnelSessionTtl')}</span>
-              <Select
-                value={ttlOptionValue(SESSION_TTL_OPTIONS, sessionTtlMs, '28800000')}
-                onValueChange={(value) => {
-                  void handleSessionTtlChange(value);
-                }}
-                disabled={isSavingTtl || isSavingMode || state === 'starting' || state === 'stopping'}
-              >
-                <SelectTrigger className="max-w-[11rem] min-w-0">
-                  <SelectValue className="truncate" />
-                </SelectTrigger>
-                <SelectContent>
-                  {SESSION_TTL_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="typography-ui-label shrink-0 text-foreground">{t('settings.openchamber.tunnel.field.tunnelSessionTtl')}</span>
+                <Select
+                  value={ttlOptionValue(SESSION_TTL_OPTIONS, sessionTtlMs, '28800000')}
+                  onValueChange={(value) => {
+                    void handleSessionTtlChange(value);
+                  }}
+                  disabled={isSavingTtl || isSavingMode || state === 'starting' || state === 'stopping'}
+                >
+                  <SelectTrigger className="max-w-[11rem] min-w-0">
+                    <SelectValue className="truncate" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SESSION_TTL_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-          </div>
+          )}
 
           {tunnelMode === 'quick' && (
             <div className="rounded-lg border border-[var(--status-warning)]/35 bg-[var(--status-warning)]/10 p-3">
@@ -1788,9 +1822,11 @@ export const TunnelSettings: React.FC = () => {
                       </>
                     )}
                     <p className="typography-meta text-[var(--status-info)]">
-                      {t('settings.openchamber.tunnel.note.startModeAndGenerateLink', {
-                        mode: tUnsafe(TUNNEL_MODE_OPTIONS.find((option) => option.value === tunnelMode)?.labelKey ?? 'settings.openchamber.tunnel.option.mode.quick.label'),
-                      })}
+                      {tunnelMode === 'managed-remote'
+                        ? t('settings.openchamber.tunnel.note.startManagedRemoteDirectLogin')
+                        : t('settings.openchamber.tunnel.note.startModeAndGenerateLink', {
+                          mode: tUnsafe(TUNNEL_MODE_OPTIONS.find((option) => option.value === tunnelMode)?.labelKey ?? 'settings.openchamber.tunnel.option.mode.quick.label'),
+                        })}
                     </p>
                   </div>
                 </div>
@@ -1843,6 +1879,7 @@ export const TunnelSettings: React.FC = () => {
                   !runtimeReady
                   || state === 'starting'
                   || isSavingMode
+                  || (tunnelMode === 'managed-remote' && !managedAccountLoginAvailable)
                   || (tunnelMode === 'managed-remote' && !selectedPreset)
                   || (tunnelMode === 'managed-local' && isManagedLocalConfigPathInvalid)
                 }
@@ -1914,7 +1951,11 @@ export const TunnelSettings: React.FC = () => {
             )}
 
             <div>
-              <p className="typography-meta mb-1 text-muted-foreground/70">{t('settings.openchamber.tunnel.field.publicUrlHint')}</p>
+              <p className="typography-meta mb-1 text-muted-foreground/70">
+                {activeTunnelMode === 'managed-remote'
+                  ? t('settings.openchamber.tunnel.field.publicUrlDirectHint')
+                  : t('settings.openchamber.tunnel.field.publicUrlHint')}
+              </p>
               <code className="typography-code block truncate rounded bg-muted/50 px-2 py-1 text-xs text-foreground">
                 {tunnelInfo.url}
               </code>
@@ -1983,13 +2024,21 @@ export const TunnelSettings: React.FC = () => {
               <Button size="sm"
                 variant="outline"
                 onClick={handleStart}
-                disabled={!runtimeReady || state === 'stopping' || isSavingMode || (tunnelMode === 'managed-local' && isManagedLocalConfigPathInvalid)}
+                disabled={
+                  !runtimeReady
+                  || state === 'stopping'
+                  || isSavingMode
+                  || (tunnelMode === 'managed-remote' && !managedAccountLoginAvailable)
+                  || (tunnelMode === 'managed-local' && isManagedLocalConfigPathInvalid)
+                }
                 className={primaryCtaClass}
               >
                 <RiRestartLine className="size-3.5" />
                 {isManagedRemoteDegraded
                   ? t('settings.openchamber.tunnel.actions.retryConnection')
-                  : t('settings.openchamber.tunnel.actions.newConnectLink')}
+                  : activeTunnelMode === 'managed-remote'
+                    ? t('settings.openchamber.tunnel.actions.restartTunnel')
+                    : t('settings.openchamber.tunnel.actions.newConnectLink')}
               </Button>
 
               <Button size="sm"
@@ -2058,7 +2107,14 @@ export const TunnelSettings: React.FC = () => {
               </div>
             </div>
           </div>
-          <Button size="sm" variant="ghost" onClick={handleStart}>{t('settings.openchamber.tunnel.actions.retry')}</Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={handleStart}
+            disabled={tunnelMode === 'managed-remote' && !managedAccountLoginAvailable}
+          >
+            {t('settings.openchamber.tunnel.actions.retry')}
+          </Button>
         </section>
       )}
     </div>

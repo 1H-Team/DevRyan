@@ -5,6 +5,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { devtools } from './utils/devtoolsGate';
 import type { Provider, Agent } from "@opencode-ai/sdk/v2";
 import { opencodeClient } from "@/lib/opencode/client";
+import { primeWorktreeBootstrap } from "@/lib/worktrees/worktreeBootstrap";
 import { scopeMatches, subscribeToConfigChanges } from "@/lib/configSync";
 import type { ModelMetadata } from "@/types";
 import { getSafeStorage } from "./utils/safeStorage";
@@ -1038,6 +1039,13 @@ export const useConfigStore = create<ConfigStore>()(
                 })(),
                 activateDirectory: async (directory) => {
                     const directoryKey = toDirectoryKey(directory);
+
+                    // Warm the worktree-bootstrap status cache off the send
+                    // path: the first send into a directory otherwise pays this
+                    // round-trip inline before the prompt can go out.
+                    if (typeof directory === "string" && directory.trim().length > 0) {
+                        void primeWorktreeBootstrap(directory).catch(() => {});
+                    }
 
                     set((state) => {
                         const snapshot = state.directoryScoped[directoryKey];

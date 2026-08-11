@@ -17,5 +17,5 @@ Contains all user-facing React components, organized by feature area (chat, sett
 
 ## Integration
 - Depends on `hooks/`, `lib/`, `sync/`, and `stores/` for behavior/state.
-- `sections/*` provides lazily loaded settings page modules. `views/SettingsView.tsx` owns the full local/administrator shell; `views/ManagedSettingsView.tsx` is the policy-filtered managed-user entrypoint so restricted sessions never evaluate administrator-only settings code.
+- `sections/*` provides lazily loaded settings page modules. `views/SettingsView.tsx` owns the full local/administrator shell; `views/ManagedSettingsView.tsx` is the policy-filtered managed-user entrypoint so restricted sessions never evaluate administrator-only settings code. `sections/bug-reports/` adds a managed-only page whose administrator panels are separately lazy and locally stateful.
 - `chat/*` is the primary consumer of live session/message stream data.

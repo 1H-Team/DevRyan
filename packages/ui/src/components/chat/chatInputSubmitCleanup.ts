@@ -1,17 +1,18 @@
 type ComposerTextarea = Pick<HTMLTextAreaElement, "value">
 
 export type ClearCommittedComposerTextOptions = {
+  attachedFilesCount: number
   textarea: ComposerTextarea | null
   clearPendingInputText: () => void
   clearPendingDraftPersist: () => void
   clearDraftTarget: () => void
   syncMessageRef: (value: string) => void
   setMessage: (value: string) => void
+  clearAttachedFiles: () => void
 }
 
 export type ClearSubmittedComposerOptions = {
   queuedOnly: boolean
-  attachedFilesCount: number
   textarea: ComposerTextarea | null
   clearPendingInputText: () => void
   clearPendingDraftPersist: () => void
@@ -20,8 +21,23 @@ export type ClearSubmittedComposerOptions = {
   clearDraftTarget: () => void
   setHistoryIndex: (value: number) => void
   setDraftMessage: (value: string) => void
-  clearAttachedFiles: () => void
   setExpandedInput: (value: boolean) => void
+}
+
+export const mergeSubmittedAttachmentsForRecovery = <T extends { id: string }>(
+  submitted: readonly T[],
+  current: readonly T[],
+): T[] => {
+  const merged: T[] = []
+  const seen = new Set<string>()
+
+  for (const attachment of [...submitted, ...current]) {
+    if (seen.has(attachment.id)) continue
+    seen.add(attachment.id)
+    merged.push(attachment)
+  }
+
+  return merged
 }
 
 export const clearCommittedComposerText = (options: ClearCommittedComposerTextOptions): void => {
@@ -35,6 +51,10 @@ export const clearCommittedComposerText = (options: ClearCommittedComposerTextOp
 
   if (options.textarea) {
     options.textarea.value = ""
+  }
+
+  if (options.attachedFilesCount > 0) {
+    options.clearAttachedFiles()
   }
 }
 
@@ -55,10 +75,6 @@ export const clearSubmittedComposerAfterSend = (options: ClearSubmittedComposerO
   options.clearDraftTarget()
   options.setHistoryIndex(-1)
   options.setDraftMessage("")
-
-  if (options.attachedFilesCount > 0) {
-    options.clearAttachedFiles()
-  }
 
   options.setExpandedInput(false)
 }

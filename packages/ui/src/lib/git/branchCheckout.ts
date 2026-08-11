@@ -1,4 +1,4 @@
-import type { GitAPI, GitStatus } from '@/lib/api/types';
+import type { GitAPI, GitStatus, GitWorktreeInfo } from '@/lib/api/types';
 import type { SessionWorktreeAttachment } from '@/stores/types/sessionTypes';
 import {
   getMutationBlockingReasons,
@@ -8,6 +8,7 @@ import {
 export type BranchCheckoutResult =
   | { type: 'already-current'; branch: string }
   | { type: 'blocked'; branch: string; reason: string }
+  | { type: 'worktree-target'; branch: string; directory: string }
   | { type: 'needs-stash'; branch: string; dirtyFiles?: number }
   | { type: 'checked-out'; branch: string; stashed: boolean; restored: boolean }
   | { type: 'restore-failed'; branch: string; error: unknown };
@@ -37,6 +38,38 @@ export type FinishBranchIntoMainOptions = {
 
 export function normalizeCheckoutBranchName(branch: string): string {
   return branch.trim().replace(/^remotes\//, '');
+}
+
+const normalizeLocalBranchName = (branch: string): string => branch
+  .trim()
+  .replace(/^refs\/heads\//, '')
+  .replace(/^heads\//, '');
+
+const normalizePath = (value: string): string => value
+  .replace(/\\/g, '/')
+  .replace(/\/+$/, '') || '/';
+
+const isRemoteBranchSelection = (branch: string): boolean => /^(?:refs\/)?remotes\//.test(branch.trim());
+
+export function findCheckedOutBranchWorktree(
+  worktrees: readonly GitWorktreeInfo[],
+  branch: string,
+  directory: string,
+): GitWorktreeInfo | null {
+  if (isRemoteBranchSelection(branch)) {
+    return null;
+  }
+
+  const targetBranch = normalizeLocalBranchName(branch);
+  const currentDirectory = normalizePath(directory);
+  if (!targetBranch) {
+    return null;
+  }
+
+  return worktrees.find((worktree) => (
+    normalizeLocalBranchName(worktree.branch) === targetBranch
+    && normalizePath(worktree.path) !== currentDirectory
+  )) ?? null;
 }
 
 export function formatMutationBlockingReason(reason: MutationBlockingReason): string {
@@ -72,6 +105,26 @@ export async function checkoutBranchWithOptionalStash({
 
   if (status?.current === normalized) {
     return { type: 'already-current', branch: normalized };
+  }
+
+  if (typeof git.listGitWorktrees === 'function') {
+    const worktrees = await git.listGitWorktrees(directory).catch(() => []);
+    const targetWorktree = findCheckedOutBranchWorktree(worktrees, branch, directory);
+    if (targetWorktree) {
+      const targetStatus = await git.getGitStatus(targetWorktree.path, { mode: 'light' }).catch(() => null);
+      if (!targetStatus || normalizeLocalBranchName(targetStatus.current || '') !== normalizeLocalBranchName(branch)) {
+        return {
+          type: 'blocked',
+          branch: normalized,
+          reason: `existing worktree for ${normalizeLocalBranchName(branch)} is unavailable`,
+        };
+      }
+      return {
+        type: 'worktree-target',
+        branch: normalizeLocalBranchName(branch),
+        directory: targetWorktree.path,
+      };
+    }
   }
 
   const blockingReasons = getMutationBlockingReasons(attachment, status ?? undefined);

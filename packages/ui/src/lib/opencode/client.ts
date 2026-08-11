@@ -1144,8 +1144,7 @@ class OpencodeService {
     const parts: Array<TextPartInput | FilePartInput | AgentPartInputLite> = [];
     const visibleAttachmentSummaryKeys = new Set<string>();
 
-    const appendAttachmentPart = async (file: FileInputLite) => {
-      const part = await this.toPromptAttachmentPart(file);
+    const appendAttachmentPart = (file: FileInputLite, part: TextPartInput | FilePartInput) => {
       if (part.type === 'text' && part.synthetic === true) {
         const summaryKey = this.getVisibleAttachmentSummaryKey(file);
         if (!visibleAttachmentSummaryKeys.has(summaryKey)) {
@@ -1179,16 +1178,29 @@ class OpencodeService {
       parts.push(textPart);
     }
 
+    // Attachment parts can each involve async work (reads, encoding), so build
+    // them all concurrently, then append synchronously in the original order.
+    const mainFileParts = params.files && params.files.length > 0
+      ? await Promise.all(params.files.map((file) => this.toPromptAttachmentPart(file)))
+      : [];
+    const additionalFileParts = params.additionalParts && params.additionalParts.length > 0
+      ? await Promise.all(params.additionalParts.map((additional) => (
+        additional.files && additional.files.length > 0
+          ? Promise.all(additional.files.map((file) => this.toPromptAttachmentPart(file)))
+          : Promise.resolve([] as Array<TextPartInput | FilePartInput>)
+      )))
+      : [];
+
     // Add file parts if provided (normalizing MIME types for compatibility)
     if (params.files && params.files.length > 0) {
-      for (const file of params.files) {
-        await appendAttachmentPart(file);
-      }
+      params.files.forEach((file, index) => {
+        appendAttachmentPart(file, mainFileParts[index]);
+      });
     }
 
     // Add additional parts (for batch/queued messages)
     if (params.additionalParts && params.additionalParts.length > 0) {
-      for (const additional of params.additionalParts) {
+      params.additionalParts.forEach((additional, additionalIndex) => {
         if (additional.text && additional.text.trim()) {
           parts.push({
             type: 'text',
@@ -1197,11 +1209,11 @@ class OpencodeService {
           });
         }
         if (additional.files && additional.files.length > 0) {
-          for (const file of additional.files) {
-            await appendAttachmentPart(file);
-          }
+          additional.files.forEach((file, fileIndex) => {
+            appendAttachmentPart(file, additionalFileParts[additionalIndex][fileIndex]);
+          });
         }
-      }
+      });
     }
 
     if (params.agentMentions && params.agentMentions.length > 0) {

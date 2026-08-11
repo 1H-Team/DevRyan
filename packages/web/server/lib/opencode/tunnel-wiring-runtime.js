@@ -34,6 +34,7 @@ export const createTunnelWiringRuntime = (dependencies) => {
     getRuntimeManagedRemoteTunnelToken,
     setRuntimeManagedRemoteTunnelToken,
     getRuntimeReady,
+    getManagedAccountLoginAvailable,
   } = dependencies;
 
   const initialize = (app, initialPort, runtimeOptions = {}) => {
@@ -87,6 +88,7 @@ export const createTunnelWiringRuntime = (dependencies) => {
       getActiveTunnelController,
       setActiveTunnelController,
       getRuntimeReady,
+      getManagedAccountLoginAvailable,
     });
 
     tunnelRoutesRuntime.registerRoutes(app);

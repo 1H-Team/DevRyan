@@ -172,6 +172,7 @@ Core model:
 - root-session task ID arrays with stable references
 - an exact `(rootSessionId, dispatchCallId)` leaf selector for provisional chat rows
 - terminal result envelopes keyed by task ID
+- one narrow latest-task index keyed by canonical child session for recovered transcript presentation
 - one narrow child-session-to-task index for unacknowledged manual recovery
 - per-task pending action and visible action-error leaves
 - one serialized snapshot load per scope, reconciled against events received
@@ -233,6 +234,13 @@ Ownership and safety rules:
     managed-child recovery attention appears on the parent row without
     subscribing to task or envelope containers. Task-specific recovery
     surfaces may consume the one-child selectors.
+11. `latestTaskIdByChildSessionId` tracks the highest-sequence retained task for
+    each canonical child session. The child transcript subscribes through the
+    exact `latestTaskForChildSession` selector so automatic transport recovery
+    copy follows authoritative running/completed/failed task state without a
+    broad task-container subscription. Event updates, snapshots, and compaction
+    recompute only affected child leaves and fall back to the previous retained
+    lineage when a newer compacted task is removed.
 
 The task ledger remains the durable result source, but a row whose terminal
 result is stale while its canonical child reports live `busy`/`retry` activity

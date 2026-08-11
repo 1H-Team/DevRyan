@@ -286,6 +286,47 @@ const getCheckedOutBranch = async (git) => {
   return branch;
 };
 
+const normalizeManagedBranchName = (value) => String(value || '')
+  .trim()
+  .replace(/^refs\/heads\//, '')
+  .replace(/^heads\//, '')
+  .replace(/^refs\/remotes\/[^/]+\//, '')
+  .replace(/^remotes\/[^/]+\//, '');
+
+const normalizeManagedFetchBranch = async (directory, value) => {
+  const branch = normalizeManagedBranchName(value);
+  if (!branch || branch.startsWith('-')) {
+    throw new Error('Invalid Git branch for fetch');
+  }
+  const valid = await runGitCommand(directory, ['check-ref-format', `refs/heads/${branch}`]);
+  if (!valid.success) {
+    throw new Error('Invalid Git branch for fetch');
+  }
+  return branch;
+};
+
+const managedAssignmentsShareProject = (left, right) => {
+  if (left?.projectId && right?.projectId) return left.projectId === right.projectId;
+  if (!left?.repositoryPath || !right?.repositoryPath) return false;
+  return path.resolve(left.repositoryPath) === path.resolve(right.repositoryPath);
+};
+
+const assertManagedFetchBranchAllowed = async ({ directory, principal, assignment, currentBranch, requestedBranch }) => {
+  const branch = requestedBranch
+    ? await normalizeManagedFetchBranch(directory, requestedBranch)
+    : currentBranch;
+  if (branch === currentBranch || principal.role === 'admin') return branch;
+
+  const granted = (principal.assignments || []).some((candidate) => (
+    managedAssignmentsShareProject(assignment, candidate)
+    && normalizeManagedBranchName(candidate.branchName) === branch
+  ));
+  if (!granted) {
+    throw new Error('Managed workspaces may only fetch the checked-out branch or another assigned branch');
+  }
+  return branch;
+};
+
 const ensureGitAskPassHelper = async () => {
   if (gitAskPassHelperPromise) return gitAskPassHelperPromise;
   gitAskPassHelperPromise = (async () => {
@@ -2525,13 +2566,17 @@ export async function fetch(directory, options = {}) {
     await assertManagedMutationBranch(directory, git);
     const currentBranch = await getCheckedOutBranch(git);
     if (options.remote && options.remote !== 'origin') throw new Error('Managed workspaces may only fetch from origin');
-    if (options.branch && cleanBranchName(options.branch) !== currentBranch) {
-      throw new Error('Managed workspaces may only fetch the checked-out branch');
-    }
+    const fetchBranch = await assertManagedFetchBranchAllowed({
+      directory,
+      principal,
+      assignment,
+      currentBranch,
+      requestedBranch: options.branch,
+    });
     await git.raw([
       'fetch',
       assignment.remoteUrl || 'origin',
-      `refs/heads/${currentBranch}:refs/remotes/origin/${currentBranch}`,
+      `refs/heads/${fetchBranch}:refs/remotes/origin/${fetchBranch}`,
     ]);
     return { success: true };
   }

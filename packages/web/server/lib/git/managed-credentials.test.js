@@ -12,7 +12,7 @@ vi.mock('../github/auth.js', () => ({
 }));
 
 import { runWithRequestPrincipal } from '../multi-user/request-context.js';
-import { buildGitEnv, commit, getBranches, merge, pull, push, stageFile } from './service.js';
+import { buildGitEnv, commit, fetch as fetchRemote, getBranches, merge, pull, push, rebase, stageFile } from './service.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -62,6 +62,23 @@ const createManagedRepository = async () => {
   await git(directory, ['checkout', '-b', 'developer']);
   return directory;
 };
+
+const addBareOrigin = async (directory) => {
+  const remoteDirectory = path.join(temporaryDirectories[0], `remote-${Date.now()}-${Math.random().toString(16).slice(2)}.git`);
+  await execFileAsync('git', ['init', '--bare', remoteDirectory]);
+  await git(directory, ['remote', 'add', 'origin', remoteDirectory]);
+  await git(directory, ['push', 'origin', '--all']);
+  return remoteDirectory;
+};
+
+const managedAssignment = (directory, branchName) => ({
+  projectId: 'project-1',
+  repositoryPath: directory,
+  publicDirectory: directory,
+  worktreeContainerPath: path.join(temporaryDirectories[0], 'worktrees'),
+  branchName,
+  githubAccountId: null,
+});
 
 describe('managed Git credential isolation', () => {
   it('builds concurrent operation environments with distinct tokens and authors', async () => {
@@ -143,6 +160,83 @@ describe('managed Git credential isolation', () => {
     await git(directory, ['checkout', 'main']);
     await expect(runWithRequestPrincipal(managedPrincipal, () => stageFile(directory, 'README.md')))
       .resolves.toBeUndefined();
+  });
+
+  it('fetches the checked-out branch and permits assigned Update-tab merge and rebase sources', async () => {
+    const directory = await createManagedRepository();
+    await git(directory, ['checkout', 'main']);
+    await fs.writeFile(path.join(directory, 'BASE.md'), 'base update\n');
+    await git(directory, ['add', 'BASE.md']);
+    await git(directory, ['commit', '-m', 'base update']);
+    await git(directory, ['checkout', 'developer']);
+    const remoteDirectory = await addBareOrigin(directory);
+    const managedPrincipal = {
+      ...principal('user-first', directory, null),
+      assignments: [
+        managedAssignment(directory, 'developer'),
+        managedAssignment(directory, 'refs/remotes/origin/main'),
+      ],
+    };
+
+    await git(directory, ['update-ref', '-d', 'refs/remotes/origin/developer']);
+    await expect(runWithRequestPrincipal(managedPrincipal, () => fetchRemote(directory)))
+      .resolves.toEqual({ success: true });
+    const developerHead = (await git(remoteDirectory, ['rev-parse', 'refs/heads/developer'])).stdout.trim();
+    const trackedDeveloper = (await git(directory, ['rev-parse', 'refs/remotes/origin/developer'])).stdout.trim();
+    expect(trackedDeveloper).toBe(developerHead);
+
+    await git(directory, ['update-ref', '-d', 'refs/remotes/origin/main']);
+    await expect(runWithRequestPrincipal(managedPrincipal, () => (
+      fetchRemote(directory, { remote: 'origin', branch: 'main' })
+    ))).resolves.toEqual({ success: true });
+    const mainHead = (await git(remoteDirectory, ['rev-parse', 'refs/heads/main'])).stdout.trim();
+    const trackedMain = (await git(directory, ['rev-parse', 'refs/remotes/origin/main'])).stdout.trim();
+    expect(trackedMain).toBe(mainHead);
+
+    await expect(runWithRequestPrincipal(managedPrincipal, () => merge(directory, { branch: 'origin/main' })))
+      .resolves.toMatchObject({ success: true });
+    await expect(runWithRequestPrincipal(managedPrincipal, () => rebase(directory, { onto: 'origin/main' })))
+      .resolves.toMatchObject({ success: true });
+  });
+
+  it('rejects unassigned, alternate-remote, and malformed managed fetch targets without changing refs', async () => {
+    const directory = await createManagedRepository();
+    await addBareOrigin(directory);
+    const managedPrincipal = {
+      ...principal('user-first', directory, null),
+      assignments: [managedAssignment(directory, 'developer')],
+    };
+    await git(directory, ['update-ref', '-d', 'refs/remotes/origin/unselected']);
+
+    await expect(runWithRequestPrincipal(managedPrincipal, () => (
+      fetchRemote(directory, { branch: 'unselected' })
+    ))).rejects.toThrow('Managed workspaces may only fetch the checked-out branch or another assigned branch');
+    await expect(git(directory, ['rev-parse', '--verify', 'refs/remotes/origin/unselected']))
+      .rejects.toBeDefined();
+    await expect(runWithRequestPrincipal(managedPrincipal, () => (
+      fetchRemote(directory, { remote: 'upstream', branch: 'developer' })
+    ))).rejects.toThrow('Managed workspaces may only fetch from origin');
+    await expect(runWithRequestPrincipal(managedPrincipal, () => (
+      fetchRemote(directory, { branch: 'developer:refs/heads/injected' })
+    ))).rejects.toThrow('Invalid Git branch for fetch');
+  });
+
+  it('allows managed administrators to fetch any valid origin branch', async () => {
+    const directory = await createManagedRepository();
+    const remoteDirectory = await addBareOrigin(directory);
+    const managedPrincipal = {
+      ...principal('admin-user', directory, null),
+      role: 'admin',
+      assignments: [managedAssignment(directory, 'developer')],
+    };
+    await git(directory, ['update-ref', '-d', 'refs/remotes/origin/main']);
+
+    await expect(runWithRequestPrincipal(managedPrincipal, () => (
+      fetchRemote(directory, { branch: 'main' })
+    ))).resolves.toEqual({ success: true });
+    const mainHead = (await git(remoteDirectory, ['rev-parse', 'refs/heads/main'])).stdout.trim();
+    const trackedMain = (await git(directory, ['rev-parse', 'refs/remotes/origin/main'])).stdout.trim();
+    expect(trackedMain).toBe(mainHead);
   });
 
   it('allows mutations inside the shared OpenCode worktree container', async () => {

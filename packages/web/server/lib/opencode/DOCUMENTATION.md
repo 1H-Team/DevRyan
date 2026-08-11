@@ -32,10 +32,11 @@ This module provides OpenCode server integration utilities for the web server ru
 - `packages/web/server/lib/opencode/bootstrap-runtime.js`: base app bootstrap runtime for status/auth/tts/notification/OpenChamber route wiring.
 - `packages/web/server/lib/opencode/network-runtime.js`: OpenCode URL construction, health-probe readiness checks, and API prefix runtime. URL construction reports a temporarily absent managed port with the stable `managed_runtime_unavailable` code and HTTP-style 503 status so managed-child observers can wait through port transitions.
 - `packages/web/server/lib/opencode/project-directory-runtime.js`: request-scoped and settings-backed project directory resolution/validation runtime.
+- `packages/web/server/lib/opencode/project-icon-store.js`: serialized, atomic storage for project icon images and their versioned manifest under `<OPENCHAMBER_DATA_DIR>/project-icons`. New uploads record project ID/path, MIME, source, timestamp, and filename so startup can restore settings metadata or migrate the file when deterministic project identity changes. Unmanifested legacy files are deliberately not adopted.
 - `packages/web/server/lib/opencode/config-entity-routes.js`: route registration for agent/command/MCP config orchestration and reload semantics.
 - `packages/web/server/lib/opencode/mcp.js`: MCP config CRUD, source layering, and explicit recovery. Active user MCP detection reads only official config files under `~/.config/opencode` (`config.json`, `opencode.json`, `opencode.jsonc`) so ambient home-folder `~/.opencode/opencode.json*` entries do not leak into DevRyan. Project MCP writes default to `<project>/.opencode/opencode.json` while root-level project `opencode.json` and `.jsonc` remain readable. Recovery remains available through the explicit recovery API and is not part of normal MCP listing.
 - `packages/web/server/lib/opencode/mcp-sources.js`: MCP source metadata for active and recoverable config locations using the same official user/project path precedence as `mcp.js`; home-folder `~/.opencode` files are intentionally excluded from active MCP sources.
-- `packages/web/server/lib/opencode/agents.js`: packaged/project/Slim agent discovery, config resolution, and model override routing. Packaged agents are read directly from `packages/web/server/default-config/agents`; project agents are read from `.opencode/agents`; raw Slim plugin mode can expose Slim-installed global `agents/*.md` prompt files plus active Slim preset/root model config as the agent catalog. DevRyan's packaged Oracle prompt is focused and read-only by default, uses the `high` reasoning variant for clean-user Slim defaults, and requires explicit `Review depth: deep` escalation; user model/variant overrides remain authoritative. DevRyan Slim wrapper mode keeps DevRyan packaged/project markdown authoritative for prompts, permissions, descriptions, and plan-mode behavior while applying Slim model/variant/modelRefs metadata plus safe `modelResolution` provenance and exposing non-colliding Slim-only custom agents. `modelResolution` records the active preset, whether the effective value came from the preset or a root override, and the preset model/variant that was overridden; `model` and `variant` remain the executable effective values. Non-Slim model/variant overrides are stored in DevRyan's sidecar under `openchamber.agentOverrides`; Slim runtime overrides are written into `oh-my-opencode-slim` config. `listManagedRuntimeAgentModelOverrides(workingDirectory, options?)` resolves the effective managed-runtime model map, layering wrapper-mode Slim preset/root values over sidecar overrides only for matching DevRyan packaged/project agents.
+- `packages/web/server/lib/opencode/agents.js`: packaged/project/Slim agent discovery, config resolution, and model override routing. Packaged agents are read directly from `packages/web/server/default-config/agents`; project agents are read from `.opencode/agents`; raw Slim plugin mode can expose Slim-installed global `agents/*.md` prompt files plus active Slim preset/root model config as the agent catalog. The packaged routing contract assigns subjective visual/UX changes to Designer end to end—planning, implementation, design-specific tests, and visible validation—while Fixer owns bounded non-design work, including functional frontend bugs with no visual judgment. Mixed scopes must be disjoint, and a failed Designer assignment is never silently reassigned to Fixer. DevRyan's packaged Oracle prompt is focused and read-only by default, uses the `high` reasoning variant for clean-user Slim defaults, and requires explicit `Review depth: deep` escalation; user model/variant overrides remain authoritative. DevRyan Slim wrapper mode keeps DevRyan packaged/project markdown authoritative for prompts, permissions, descriptions, and plan-mode behavior while applying Slim model/variant/modelRefs metadata plus safe `modelResolution` provenance and exposing non-colliding Slim-only custom agents. `modelResolution` records the active preset, whether the effective value came from the preset or a root override, and the preset model/variant that was overridden; `model` and `variant` remain the executable effective values. Non-Slim model/variant overrides are stored in DevRyan's sidecar under `openchamber.agentOverrides`; Slim runtime overrides are written into `oh-my-opencode-slim` config. `listManagedRuntimeAgentModelOverrides(workingDirectory, options?)` resolves the effective managed-runtime model map, layering wrapper-mode Slim preset/root values over sidecar overrides only for matching DevRyan packaged/project agents.
 - `packages/web/server/lib/opencode/slim-config.js`: OpenCode Slim (`oh-my-opencode-slim`) config adapter. Reads user/project Slim JSON/JSONC configs with active preset + root agent override merging, normalizes effective model values and preset provenance for Settings, and distinguishes `slimRuntimeEnabled` wrapper/raw plugin loading from `slimAgentCatalogEnabled` raw-Slim agent catalog mode. Restricted managed-user responses retain only the safe effective model, variant, model refs, councillors, and `modelResolution` fields.
 - `packages/web/server/lib/opencode/slim-install.js`: manual Settings/API installer for DevRyan-managed `oh-my-opencode-slim@2.0.5`. It inspects status, backs up touched `~/.config/opencode` files, merges plugin/provider/MCP config, replaces raw Slim entries with the DevRyan wrapper plugin, writes the pinned package dependency, installs bundled Slim skills when available, writes generated Slim defaults without wildcard MCP grants, runs `bun install --ignore-scripts`, and exposes `GET /api/config/slim/status`, `POST /api/config/slim/install`, and `POST /api/config/slim/repair`.
 - `packages/web/server/lib/opencode/user-profile-provisioning.js`: clean-user provisioning for locally managed OpenCode. It merges the sanitized `default-config/user-profile` declarations into `~/.config/opencode`, pins and installs the manifest-owned Antigravity, Open Cursor, Claude proxy, Context Mode, and Slim packages, preserves unrelated package fields and explicit user overrides, and validates exact installed versions plus entrypoints before startup. Known DevRyan-owned package/Git registrations migrate to local paths in `opencode.json`; exact DevRyan-owned legacy registrations are also removed from older active `config.json`/`opencode.jsonc` layers without rewriting unrelated entries or JSONC comments. The obsolete `cursor-acp` plugin registration is removed while its provider ID remains valid, and arbitrary user/project plugins remain untouched. It applies the ownership-aware Meridian prompt policy and synchronizes approved agents plus local adapters through `.openchamber/user-profile-manifest.json`; bundled skills are no longer provisioned. Superpowers remains an optional registered adapter: a missing user-installed bootstrap is reported as a non-fatal warning and the adapter loads inertly, while an installed bundle activates on the next OpenCode start. A one-time manifest-driven retirement removes untouched legacy skill files, silently adopts user-modified copies, and prunes only empty skill directories. Other user-modified managed files remain conflicts, and `bun install --ignore-scripts` runs only when dependencies changed or local validation requires repair. An unchanged valid profile performs no installation or network work. The packaged profile excludes MCP configuration, Slim `mcps` fields, auth material, generated state, lockfiles, and machine-specific paths. External OpenCode mode skips this mutation path.
@@ -63,7 +64,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - `packages/web/server/lib/opencode/feature-routes-runtime.js`: feature route composition runtime for dynamic import-backed config/skill/provider route registration.
 - `packages/web/server/lib/opencode/opencode-resolution-runtime.js`: OpenCode binary resolution snapshot runtime for settings routes and diagnostics.
 - `packages/web/server/lib/opencode/opencode-update-runtime.js`: Version normalization/comparison plus the bounded, success-cached canonical stable-release lookup used by About settings across web/Electron and VS Code.
-- `packages/web/server/lib/opencode/version-policy.js`: Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.15 and surfaces the upstream install command. On Unix, managed startup prefers the canonical `~/.opencode/bin/opencode` installer path over PATH shadows, while explicit settings/environment overrides remain authoritative.
+- `packages/web/server/lib/opencode/version-policy.js`: Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.16 and surfaces the upstream install command. On Unix, managed startup prefers the canonical `~/.opencode/bin/opencode` installer path over PATH shadows, while explicit settings/environment overrides remain authoritative.
 - `packages/web/server/lib/opencode/tunnel-wiring-runtime.js`: tunnel service/routes composition runtime and active-port wiring for main server startup.
 - `packages/web/server/lib/opencode/startup-pipeline-runtime.js`: server startup tail orchestration runtime for terminal/proxy/static/start-listen flow.
 - `packages/web/server/lib/opencode/server-utils-runtime.js`: shared server runtime utilities for OpenCode proxy wiring, OpenCode port/readiness helpers, and snapshot fetchers.
@@ -90,6 +91,8 @@ This module provides OpenCode server integration utilities for the web server ru
 ## Default-config ownership and safety
 
 Clean-user provisioning writes only the conflict-tracked baseline for managed runtimes. Runtime overlays are separate, project-scoped launch artifacts: they carry model, permission, and plugin registration state without rewriting profile files. Configured external OpenCode runtimes remain read-only, and a source-owned local plugin suppresses the same-named packaged registration to avoid duplicate hooks and tool schemas.
+
+Web/Electron and VS Code overlays both inventory the packaged runtime plugins. The `devryan-tool-input-guard.mjs` hook rejects a `grep.path` containing multiple absolute targets and syntax-invalid JavaScript passed to `ctx_execute` before either tool runs. Rejections use `DEVRYAN_TOOL_INPUT_INVALID`, are classified as low-impact input errors, and instruct the active agent to make one corrected retry; the hook never splits paths, executes validation source, or repairs code. Externally managed OpenCode servers remain responsible for their own tool execution policy.
 
 ## Public exports (auth.js)
 - `readAuthFile()`: Reads and parses `~/.local/share/opencode/auth.json`.
@@ -274,7 +277,7 @@ Clean-user provisioning writes only the conflict-tracked baseline for managed ru
 ## Public exports (bootstrap-runtime.js)
 - `createBootstrapRuntime(dependencies)`: creates runtime for base app route bootstrap and UI auth controller initialization.
 - Returned API:
-  - `setupBaseRoutes(app, options)`
+  - `setupBaseRoutes(app, options)`: registers common request parsing, then the optional `registerPrivateCapabilityRoutes(app)` hook, before installing the generic UI `/api` authentication middleware. The hook is reserved for independently authenticated loopback capability routes such as Electron browser discovery and leases.
 
 ## Public exports (network-runtime.js)
 - `createOpenCodeNetworkRuntime(dependencies)`: creates runtime for OpenCode network and URL concerns.
@@ -288,6 +291,7 @@ Clean-user provisioning writes only the conflict-tracked baseline for managed ru
 
 ## Public exports (settings-runtime.js)
 - `createSettingsRuntime(dependencies)`: creates settings lifecycle runtime for read/migrate/persist concerns.
+- Startup settings migration reconciles manifest-backed project icons after deterministic project-ID migration. Ordinary settings persistence does not acquire the icon-store lock, preserving one-way lock ordering for icon transactions that persist their settings projection.
 - Returned API:
   - `readSettingsFromDisk()`
   - `readSettingsFromDiskMigrated()`
@@ -363,10 +367,13 @@ Clean-user provisioning writes only the conflict-tracked baseline for managed ru
    - `GET /api/passkeys`
    - `DELETE /api/passkeys/:id`
    - `POST /api/auth/reset`
-   - `GET /tunnel/connect` for one-time managed-tunnel bootstrap exchange
+   - `GET /tunnel/connect` for quick/managed-local and previously issued one-time tunnel links; managed-remote uses normal account login at its stable hostname
    - `GET /invite` for multi-user invitations
    - `GET /connect` as a compatibility dispatcher for previously issued links
    - `app.use('/api', ...)` auth/tunnel guard
+   - Public Managed Remote auth and API access fails closed with
+     `managed_account_auth_required` unless the multi-user controller is active;
+     Quick and Managed Local retain their one-time tunnel-session gate.
 - `registerSettingsUtilityRoutes(app, dependencies)`: registers small settings utility endpoints:
   - `GET /api/config/themes`
   - `POST /api/config/reload`
@@ -462,6 +469,19 @@ Clean-user provisioning writes only the conflict-tracked baseline for managed ru
   Disk-backed projects remain the first lookup source. On managed hosts, an
   assigned project may fall back to Supabase metadata; reads remain assignment
   scoped and icon upload/delete/discovery are administrator-only.
+  Upload and discovery use the durable icon store transaction: image and
+  manifest state are installed before settings metadata and rolled back when
+  persistence fails. Delete removes the manifest before clearing metadata so
+  leftover files cannot be restored after restart.
+
+## Public exports (project-icon-store.js)
+- `createProjectIconStore(dependencies)`: creates the serialized durable icon store.
+- Returned API:
+  - `replaceIcon(input, persistMetadata)`: atomically installs bytes and manifest metadata around the supplied settings/managed-project persistence callback.
+  - `deleteIcon(input, persistMetadata)`: removes manifest ownership before clearing projected metadata, then best-effort cleans image files.
+  - `migrateProjectId(input)`: moves manifest-backed icons transactionally and preserves still-visible legacy files during a known deterministic-ID migration without adopting unrelated orphan files.
+  - `resolveIcon(project)`: resolves only manifest-backed icon storage; routes retain their compatibility fallback for legacy settings-backed files.
+  - `reconcileProjects(projects)`: restores manifest metadata and migrates manifest-backed files by stable project path when the project ID changes. Files without a manifest entry are ignored.
 
 ## Public exports (skill-routes.js)
 - `registerSkillRoutes(app, dependencies)`: registers skills-related routes:

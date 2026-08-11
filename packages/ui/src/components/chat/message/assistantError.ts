@@ -8,6 +8,7 @@ import {
   isLikelyCertificateVerificationFailure,
   stripWrappedJsonQuotes,
 } from "@/lib/messages/transientStreamError"
+import type { ManagedTransportRecoveryPresentation } from "../lib/turns/types"
 
 export type AssistantErrorInfo = {
   data?: { message?: unknown }
@@ -20,6 +21,19 @@ export type AssistantErrorClassification = {
   variant: "plain" | "info" | "error"
   abortKind?: "manual" | "steered" | "unexpected"
   retryable?: boolean
+}
+
+const getManagedRecoveryCopy = (
+  state: ManagedTransportRecoveryPresentation["state"],
+): string => {
+  switch (state) {
+    case "recovering":
+      return "The model provider connection was interrupted. DevRyan is continuing this subtask from saved progress."
+    case "recovered":
+      return "Connection recovered. DevRyan continued this subtask from saved progress and completed it."
+    case "failed":
+      return "The model provider connection was interrupted. DevRyan attempted to continue this subtask from saved progress."
+  }
 }
 
 const getTransportFailureCopy = (
@@ -63,6 +77,7 @@ export function classifyAssistantError(
     steeredAbortMessageId?: string | null
     messageId?: string | null
     isLatestMessage?: boolean
+    managedTransportRecovery?: ManagedTransportRecoveryPresentation
   } = {},
 ): AssistantErrorClassification | undefined {
   if (!errorInfo) {
@@ -135,6 +150,15 @@ export function classifyAssistantError(
 
   const transportFailureKind = classifyTransientProviderFailure(errorName, detail)
   if (transportFailureKind) {
+    if (
+      options.managedTransportRecovery
+      && options.managedTransportRecovery.kind === transportFailureKind
+    ) {
+      return {
+        text: getManagedRecoveryCopy(options.managedTransportRecovery.state),
+        variant: "info",
+      }
+    }
     return {
       text: `${getTransportFailureCopy(transportFailureKind)} Any completed work was preserved in this session.\n\`${detail}\``,
       variant: "error",

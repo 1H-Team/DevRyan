@@ -179,7 +179,7 @@ describe('SettingsView navigation', () => {
     expect(generalPages).toContain('about');
   });
 
-  test('places User Management first in development navigation', () => {
+  test('places Bug Reports directly below User Management in development navigation', () => {
     const generalPages = SETTINGS_NAV_SECTIONS
       .find((section) => section.labelKey === 'settings.view.nav.group.general')
       ?.pages ?? [];
@@ -189,6 +189,34 @@ describe('SettingsView navigation', () => {
 
     expect(generalPages).not.toContain('users');
     expect(developmentPages[0]).toBe('users');
+    expect(developmentPages[1]).toBe('bug-reports');
     expect(getSettingsPageMeta('users')?.title).toBe('User Management');
+    const bugReports = getSettingsPageMeta('bug-reports');
+    expect(bugReports?.title).toBe('Bug Reports');
+    expect(bugReports?.kind).toBe('single');
+    expect(
+      bugReports?.isAvailable?.({
+        isVSCode: false,
+        isWeb: true,
+        isDesktop: false,
+        isManaged: true,
+      }),
+    ).toBe(true);
+    expect(
+      bugReports?.isAvailable?.({
+        isVSCode: false,
+        isWeb: true,
+        isDesktop: false,
+        isManaged: false,
+      }),
+    ).toBe(false);
+    expect(
+      bugReports?.isAvailable?.({
+        isVSCode: true,
+        isWeb: false,
+        isDesktop: false,
+        isManaged: true,
+      }),
+    ).toBe(false);
   });
 });

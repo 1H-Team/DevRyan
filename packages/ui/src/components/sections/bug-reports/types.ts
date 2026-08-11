@@ -1,0 +1,118 @@
+export type BugReportStatus = 'submitted' | 'in_progress' | 'resolved';
+export type ErrorLogKind = 'session' | 'tool' | 'managed_task';
+export type ErrorLogClearRange = '24h' | '7d' | '14d' | 'all';
+export type DiagnosticImpact = 'low' | 'medium' | 'high' | 'critical';
+export type DiagnosticClassificationSource = 'observed' | 'inferred';
+export type DiagnosticOutcome = 'recovered' | 'unresolved' | 'unknown';
+export type DiagnosticFailureClass =
+  | 'filesystem_target'
+  | 'input'
+  | 'patch_context'
+  | 'tool_runtime'
+  | 'integration_runtime'
+  | 'session_runtime'
+  | 'managed_task'
+  | 'platform_security'
+  | 'platform_integrity'
+  | 'unknown';
+
+export interface BugReportReporter {
+  id: string | null;
+  displayName: string;
+  email: string;
+  role: 'admin' | 'senior_developer' | 'developer';
+}
+
+export interface BugReportSummary {
+  id: string;
+  title: string;
+  status: BugReportStatus;
+  reporter: BugReportReporter;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BugReportDetail extends BugReportSummary {
+  description: string;
+}
+
+export interface ErrorLogActor {
+  id: string;
+  displayName: string;
+  email: string;
+  role: 'admin' | 'senior_developer' | 'developer';
+}
+
+export interface ErrorLogProject {
+  id: string;
+  label: string;
+}
+
+export interface ErrorLogSummary {
+  eventId: string;
+  kind: ErrorLogKind;
+  action: 'session.error' | 'tool.failed' | 'managed_task.failed';
+  createdAt: string;
+  actor: ErrorLogActor | null;
+  project: ErrorLogProject | null;
+  sessionId: string | null;
+  impact: DiagnosticImpact;
+  classificationSource: DiagnosticClassificationSource;
+  failureClass: DiagnosticFailureClass;
+  outcome: DiagnosticOutcome;
+  summary: string;
+  errorName: string | null;
+  tool: string | null;
+  statusCode: number | null;
+}
+
+export interface ErrorLogDetail extends Omit<ErrorLogSummary, 'errorName' | 'tool' | 'statusCode'> {
+  context: Record<string, unknown>;
+}
+
+export interface CursorPage<TItem> {
+  items: TItem[];
+  nextCursor: string | null;
+}
+
+export class BugReportsRequestError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+  readonly retryable: boolean;
+
+  constructor(message: string, options: { status: number; code?: string | null; retryable?: boolean }) {
+    super(message);
+    this.name = 'BugReportsRequestError';
+    this.status = options.status;
+    this.code = options.code ?? null;
+    this.retryable = options.retryable === true;
+  }
+}
+
+export const bugReportStatusLabelKey = (status: BugReportStatus) => {
+  if (status === 'in_progress') return 'settings.bugReports.status.inProgress' as const;
+  if (status === 'resolved') return 'settings.bugReports.status.resolved' as const;
+  return 'settings.bugReports.status.submitted' as const;
+};
+
+export const errorLogKindLabelKey = (kind: ErrorLogKind) => {
+  if (kind === 'managed_task') return 'settings.bugReports.errors.kind.managedTask' as const;
+  if (kind === 'tool') return 'settings.bugReports.errors.kind.tool' as const;
+  return 'settings.bugReports.errors.kind.session' as const;
+};
+
+export const diagnosticImpactLabelKey = (impact: DiagnosticImpact) => {
+  if (impact === 'critical') return 'settings.bugReports.errors.impact.critical' as const;
+  if (impact === 'high') return 'settings.bugReports.errors.impact.high' as const;
+  if (impact === 'medium') return 'settings.bugReports.errors.impact.medium' as const;
+  return 'settings.bugReports.errors.impact.low' as const;
+};
+
+export const diagnosticOutcomeLabelKey = (outcome: DiagnosticOutcome) => {
+  if (outcome === 'recovered') return 'settings.bugReports.errors.outcome.recovered' as const;
+  if (outcome === 'unresolved') return 'settings.bugReports.errors.outcome.unresolved' as const;
+  return 'settings.bugReports.errors.outcome.unknown' as const;
+};
+
+export const selectClassName =
+  'h-9 rounded-lg border border-border/60 bg-[var(--surface-elevated)] px-3 typography-ui-label text-foreground outline-none transition focus:ring-2 focus:ring-[var(--interactive-focus-ring)] disabled:cursor-not-allowed disabled:opacity-50';

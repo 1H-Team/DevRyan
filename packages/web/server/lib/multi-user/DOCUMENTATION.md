@@ -7,11 +7,15 @@ for shared DevRyan hosts. It owns opaque application sessions, role and user
 policy evaluation, managed project/branch visibility assignments, path containment,
 session ownership, admin APIs, encrypted Supabase token storage, and actor audit
 records. Administrator-only per-user analytics are projections over those same
-audit rows; there is no parallel analytics database.
+audit rows. Administrator Error Logs also read the same sanitized audit rows;
+there is no parallel analytics or logging database. Manual Bug Reports use one
+separate service-only table because they have a durable status workflow.
 
 When the three Supabase values are absent, the runtime wraps the existing UI
 password controller with a single `local-admin` principal. This preserves local
-behavior without weakening managed-host checks.
+behavior without weakening managed-host checks. That compatibility principal is
+never eligible for Managed Remote, which requires separately attributable managed
+accounts before connector startup or public-host API access.
 
 ## Assigned branch targets
 
@@ -42,8 +46,11 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
 - Managed account passwords require at least four characters and have no
   letter, number, case, or symbol composition requirement.
 - Refresh/access tokens are AES-256-GCM encrypted in the host vault.
-- Every managed `/api` request resolves one principal and runs in an
-  AsyncLocalStorage request context.
+- Every managed browser-origin `/api` request resolves one principal and runs
+  in an AsyncLocalStorage request context. Electron's private browser discovery
+  and lease routes are the narrow exception: they register before UI auth and
+  independently require the real socket peer to be loopback plus the managed
+  OpenCode bearer; missing Electron callbacks still return `404`.
 - Mutations require `X-DevRyan-CSRF: 1`.
 - Every role receives real repository paths. Non-admin paths must be contained
   by a granted project's repository root or its shared OpenCode worktree
@@ -58,6 +65,10 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
 - Foreign sessions return 404 and list/status/event results are filtered.
   DevRyan managed-task updates and removals resolve their identity from the
   root session and are delivered only when that session belongs to the caller.
+- Managed chat visibility is keyed only by the durable ownership row's `user_id`.
+  Browser sessions, tunnel connections, local UI caches, and opaque app-session
+  IDs never become chat owners, so signing in again or restarting DevRyan restores
+  the same host-local OpenCode transcript for the same account.
 - `GET /api/experimental/session` is a managed endpoint rather than a generic
   proxy. It preserves the OpenCode query contract, advances upstream cursors
   across hidden rows until the caller-visible limit is filled, and exposes only
@@ -121,6 +132,9 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
 - Detailed prompt, file-open, and copy analytics are administrator-only.
   Senior developers keep their existing non-sensitive activity view, with
   detailed analytics actions removed and remaining metadata stripped.
+- Delegating Bug Reports page access never delegates review. Submission needs
+  that page's Edit permission, while report listing/status control and Error
+  Logs require the exact managed `admin` role on every server route.
 - A managed principal may read the public identity for their profile-assigned
   GitHub account even when GitHub operations are disabled. This exact status
   read does not exercise the token; repository and account-management routes
@@ -147,7 +161,8 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   and strict agent-test identity discovery/selection.
 - `supabase-client.js`: Auth Admin, password/refresh, and PostgREST transport.
 - `vault.js`: encrypted atomic token vault.
-- `audit-outbox.js`: sanitized atomic audit queue with idempotent Supabase delivery.
+- `audit-outbox.js`: sanitized atomic audit queue with idempotent Supabase
+  delivery and an exclusive flushed-delivery barrier for snapshot clearing.
 - `policy.js`: role defaults, per-page Read/Edit evaluation, capability merging,
   settings field ownership, and settings-route ownership.
 - `request-context.js`: authoritative request principal context for Git/GitHub.
@@ -155,7 +170,13 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
 - `session-visibility.js`: ownership-filtered global pagination and strict
   canonical assignment matching for reconciliation.
 - `session-folders.js`: bounded validation for per-principal server-backed folder state.
-- `activity-projection.js`: content-free OpenCode tool/file event projection.
+- `bug-reports.js`: report validation/idempotency, admin cursor APIs,
+  optimistic status updates, and sanitized Error Logs reads/snapshot clearing.
+- `activity-projection.js`: content-free OpenCode tool/file activity plus
+  bounded, deterministic session/tool/managed-task failure projection.
+- `error-diagnostics.js`, `diagnostic-recovery.js`: one impact/class contract
+  and bounded in-memory correlation that appends authoritative recovery or
+  unresolved evidence without mutating the original failure.
 - `analytics.js`: prompt extraction, interaction validation, safe settings
   deltas, cursor helpers, reviewer redaction, and daily activity aggregation.
 - `analytics-retention.js`: service-role retention locking, protected activity
@@ -185,7 +206,9 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   gates direct branch creation, new-branch worktrees, and retries of durable
   operations whose receipt was created in new-branch mode.
 - Settings Home is always readable. `behavior` resolves to the `agents` policy;
-  Skills Catalog is independently controlled. Edit always requires Read.
+  Skills Catalog is independently controlled. Bug Reports defaults to Read/Edit
+  for all managed roles and retains normal role/user override behavior. Edit
+  always requires Read.
 - The read-only `/api/config/providers` model catalog is a chat bootstrap
   dependency and remains available when the Providers settings page is hidden.
   Provider credentials, authentication routes, and catalog mutations remain
@@ -255,6 +278,72 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   targets. Assignment conflicts return deterministic conflict codes from both
   preflight and database races.
 
+## Managed bug reports and error logs
+
+- The canonical `bug-reports` settings permission defaults to Read/Edit for
+  every managed role and remains subject to normal role and sparse user
+  overrides. The page is not available to local-only or VS Code runtimes.
+- `POST /api/bug-reports` accepts exactly a client UUID, title (1–200
+  characters), and description (1–20,000 characters). Identity snapshots and
+  the initial `submitted` status come from the authenticated server principal.
+  Reusing the UUID with identical actor/content is idempotent; different
+  content returns `409`.
+- Exact managed administrators may list and inspect reports with bounded,
+  opaque newest-first cursors. `PATCH /api/bug-reports/:id` accepts only a
+  reversible workflow status and `expectedUpdatedAt`; a stale comparison
+  returns `409`. Transition audits contain only report identity and from/to
+  statuses, never report text.
+- `bug_reports` is a service-role-only table with forced RLS and no browser
+  policies. Reporter name/email/role snapshots are immutable report fields;
+  status and `updated_at` are the only administrator-managed values. Missing
+  schema returns `schema_migration_required` with
+  `20260809190612_bug_reports`.
+- Error Logs reuse `activity_logs` and the durable audit outbox. The hot event
+  path classifies relevant events before ownership or database work, ignores
+  streaming deltas and intentional aborts, and attributes failures through
+  durable session ownership even when the user no longer has a current project
+  assignment. Failed recoverable managed tasks are held out while a retry is
+  available; a recovered retry produces no failure row, while an abandoned or
+  exhausted failed/interrupted attempt produces `managed_task.failed`.
+- `session.error`, `tool.failed`, and `managed_task.failed` use deterministic
+  event UUIDs. Their metadata is limited to actor/project/session correlations,
+  provider/model/agent identity, tool/task/message IDs, safe error
+  classification, and sanitized UTF-8 failure text capped at 8 KiB. Prompts,
+  commands, tool output, arbitrary headers, response bodies, credentials, and
+  raw host paths are excluded before the outbox persists the row.
+- New failures carry immutable `diagnostic_impact` (`low`, `medium`, `high`, or
+  trusted-core-only `critical`) and `diagnostic_source=observed`. Legacy error
+  rows are backfilled by tool/lifecycle family with `diagnostic_source=inferred`.
+  Failure class stays in sanitized metadata. A later successful tool followed
+  by authoritative session idle appends `diagnostic.recovered`; terminal
+  session/task evidence appends `diagnostic.unresolved`, linked through the
+  original event UUID. Idle without successful continuation, process restart,
+  or missing retained evidence remains `unknown`; high/critical events cannot
+  be downgraded.
+- `session.created` / `session.updated` supplies the authoritative active
+  directory for projection. Runtime assignment and repository/worktree
+  containment checks must accept it before it is registered as a sanitizer
+  worktree root. This produces `<WORKTREE_…>/relative/path` failure text and
+  active-worktree-relative `paths` without redirecting or rewriting tool input.
+- `GET /api/error-logs`, `GET /api/error-logs/:eventId`, and
+  `DELETE /api/error-logs?range=24h|7d|14d|all` are exact-admin routes over
+  those three actions. Lists support `session`, `tool`, and `managed_task`
+  filters, optional impact filtering, and opaque cursors. Clearing first audits
+  the request, exclusively flushes the durable outbox, captures a request
+  cutoff, and calls the service-role-only `devryan_clear_error_logs` RPC. The
+  transaction removes matching user-visible failures plus linked
+  `diagnostic.recovered`/`diagnostic.unresolved` evidence, including rows owned
+  by retention-locked developers, while later events and every unrelated audit
+  action remain protected. The response reports `clearedCount` for visible
+  failures and `linkedResolutionCount` for evidence rows. An undeliverable
+  backlog or failed RPC releases the delivery barrier without deleting data;
+  an absent RPC returns `schema_migration_required` with
+  `20260810182541_clear_managed_error_diagnostics`. List and detail responses
+  expose impact, classification source, failure class, and recovery outcome.
+  Detail exposes only an allowlist
+  suitable for agent context; task-scoped diagnostic export continues to use
+  the existing diagnostics API when a session ID is present.
+
 ## Real-worktree migration rollout
 
 Apply `20260804100000_user_profile_github_account.sql`,
@@ -264,6 +353,18 @@ real-worktree runtime change. Apply
 `20260807100000_indefinite_user_analytics_retention.sql` before deploying
 ownership-scoped developer session deletion. It installs the monotonic profile
 lock, delete enforcement trigger, and service-role-only protected purge RPC.
+Apply `20260809190612_bug_reports.sql` before deploying the Bug Reports UI or
+server routes; the migration also adds the partial error-log listing index and
+updates stored role-policy defaults without materializing user overrides.
+Apply `20260810130000_managed_error_diagnostics.sql` after the clipboard
+analytics migration and before deploying diagnostic server/UI changes. It adds
+nullable constrained classification columns, backfills existing error rows as
+inferred without changing metadata, and adds the impact/action keyset index.
+Apply `20260810182541_clear_managed_error_diagnostics.sql` before deploying the
+snapshot-clear route. It installs the service-role-only, security-invoker RPC
+and narrows the retention trigger bypass to the five Error Log actions within
+that RPC's transaction-local scope; all other retention-locked analytics stay
+protected.
 The GitHub migration installs the service-role-only atomic reassignment
 function. The real-worktree migration keeps `workspace_path` for rollback
 compatibility but repairs every grant to the registered repository path.
@@ -311,6 +412,10 @@ grant changes never delete shared or legacy worktrees.
   genuine identity dependency outage, or `code: "schema_migration_required"`
   plus `requiredMigration` for an incompatible database schema. Loopback
   responses with a local cookie may also set `localResetAvailable: true`.
+- Public Managed Remote authentication and API requests return `503` with
+  `code: "managed_account_auth_required"` when the host has only local/shared
+  password authentication. Loopback administration remains available so the
+  preserved connector preset can be stopped or reconfigured.
 - Policy reads first request `settings_permission_overrides`. Only the exact
   PostgREST missing-column error retries the legacy projection, and one
   sanitized warning is emitted per runtime. Unrelated errors propagate.
@@ -327,7 +432,7 @@ grant changes never delete shared or legacy worktrees.
   connections before reporting remote status. Remote revocation is best effort;
   a dependency failure returns `localSessionCleared: true` and
   `remoteRevoked: false` so clients can complete local logout safely.
-- A valid `/tunnel/connect` exchange calls `prepareFreshTunnelLogin` before the
+- A valid legacy or link-gated `/tunnel/connect` exchange calls `prepareFreshTunnelLogin` before the
   one-time token is consumed. It requires confirmed `app_sessions` revocation,
   removes the matching encrypted vault entry, expires only the browser's app
   cookie, and closes only connections belonging to that app session. It does
@@ -340,9 +445,9 @@ grant changes never delete shared or legacy worktrees.
 
 The outbox is appended before auditable mutations and flushed idempotently to
 `activity_logs` with an explicit `event_id` conflict target. Validated UUIDs,
-OpenCode correlation IDs, and the UUID linking a completed mutation to its
-requested event survive sanitization; free-form high-entropy metadata remains
-redacted. Records may contain bounded prompt text supplied by the actor,
+OpenCode correlation IDs, and UUIDs linking requested or diagnostic-resolution
+events survive sanitization; free-form high-entropy metadata remains redacted.
+Records may contain bounded prompt or clipboard text supplied by the actor,
 tool name/state, logical branch, project-relative paths, Git SHA/PR metadata,
 and outcomes. They never contain passwords, tokens, raw host paths, agent-read
 file contents, assistant/tool output, or terminal I/O. Terminal audit is limited
@@ -366,8 +471,10 @@ visible without storing session content.
 - `POST /api/analytics/events` accepts at most 50 authenticated, CSRF-protected
   `file.opened` or `clipboard.copied` records. Identity comes only from the app
   session. File paths must be project-relative and contained by an assignment;
-  copy rows accept surface, kind, character count, and optional relative path,
-  never clipboard content. Per-item results make partial failure retryable.
+  copy rows accept surface, kind, character count, optional relative path, and
+  optional copied text. Text is sanitized, capped at 64 KiB, and stored in
+  dedicated unindexed columns rather than aggregation metadata. Per-item
+  results make partial failure retryable.
 - Analytics telemetry uses `audit-outbox.enqueueDeferred`: acknowledgement
   waits for the sanitized local record, not Supabase delivery. The supplied
   occurrence time becomes `activity_logs.created_at`, so an outage does not
@@ -384,6 +491,11 @@ visible without storing session content.
   appears in the Changes & Interactions feed with its success or partial-failure
   state, but it is not counted as a prompt, settings change, or separate
   active-time block.
+- Interaction pages enrich only their visible clipboard rows with a sanitized
+  512-character preview. `GET
+  /api/admin/users/:userId/analytics/clipboard/:eventId` retrieves the bounded
+  full text for one authorized row on demand. Range/daily aggregation, generic
+  activity lists, and activity export explicitly exclude clipboard columns.
 - Settings/profile/policy/project/access audits carry allowlisted field deltas.
   Booleans, numbers, roles, names, branches, defaults, and permission or
   capability states may include before/after values. Secrets, tokens, paths,
@@ -398,3 +510,8 @@ visible without storing session content.
   and never-locked users remain purgeable. Export reads every retained page
   instead of truncating at 10,000 rows; non-admin exports apply the same
   detailed-action removal and metadata stripping as the list.
+
+Apply `20260810120000_clipboard_analytics_text.sql` before
+`20260810130000_managed_error_diagnostics.sql`. Both migrations are additive;
+historical copy rows remain metadata-only because their text cannot be
+reconstructed, while diagnostic backfill preserves existing audit metadata.

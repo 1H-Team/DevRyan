@@ -13,7 +13,7 @@ const cssGeneratorSource = () => readFileSync(
 );
 
 const FIXED_ICON_COLORS = {
-  builder: { variable: '--agent-icon-builder-color', value: '#9AA1AD' },
+  builder: { variable: '--agent-icon-builder-color', value: '#969DA9' },
   council: { variable: '--agent-icon-council-color', value: '#92400E' },
   designer: { variable: '--agent-icon-designer-color', value: '#9333EA' },
   fixer: { variable: '--agent-icon-fixer-color', value: '#DC2626' },

@@ -29,7 +29,7 @@
     /* Fixed to the Default Light theme primary color (devryan-default-light.json). */
     --subagent-icon-color: #0072C3;
     /* Fixed built-in agent glyph colors; intentionally independent of theme tokens. */
-    --agent-icon-builder-color: #9AA1AD;
+    --agent-icon-builder-color: #969DA9;
     --agent-icon-council-color: #92400E;
     --agent-icon-designer-color: #9333EA;
     --agent-icon-fixer-color: #DC2626;

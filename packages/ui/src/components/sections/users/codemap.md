@@ -79,16 +79,19 @@ Role-aware shared-host user and access administration inside Settings.
 3. Submit every mutation with the DevRyan CSRF header.
 4. Refresh the affected server state and surface generated passwords or
    targeted invite links transiently for out-of-band delivery.
-5. Initialize one bounded session-storage interaction collector after the auth
-   gate mounts. Programmatic and native copies emit metadata only, and explicit
-   file navigation emits project-relative paths without blocking the action.
+5. Initialize one bounded interaction collector after the auth gate mounts.
+   Programmatic and native copies retain metadata in session storage while up
+   to 64 KiB of copied text stays in memory until its asynchronous flush;
+   explicit file navigation emits project-relative paths without blocking the
+   action.
 
 ## Integration
 
 - Routed by `components/views/SettingsView.tsx` through the `users` settings slug.
 - Consumes `/api/admin/*` contracts owned by
   `packages/web/server/lib/multi-user/runtime.js`.
-- `lib/interactionAnalytics.ts` owns low-frequency file-open/copy batching;
+- `lib/interactionAnalytics.ts` owns low-frequency file-open/copy batching and
+  byte-bounds copied-text requests without putting bodies in shared state;
   `lib/clipboard.ts` is the single programmatic copy boundary and suppresses
   duplicate native-copy observations for its `execCommand` fallback.
 - Shared primitives: `components/ui/table.tsx`, `components/ui/dialog.tsx`,

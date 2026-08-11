@@ -12,4 +12,7 @@ Settings UI reads defaults/current values, applies edits, then persists normaliz
 ## Integration
 Integrated with settings sections, stores, and API endpoints. The exhaustive
 metadata/navigation maps expose the cross-runtime `about` page, which hosts
-diagnostics health and export controls through `AboutSettings`.
+diagnostics health and export controls through `AboutSettings`. They also own
+the managed, non-VS-Code-only `bug-reports` page and its Development placement
+directly after User Management; the permission catalog defaults its Read/Edit
+cell on for every managed role while preserving normal sparse overrides.

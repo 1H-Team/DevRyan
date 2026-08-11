@@ -1,5 +1,5 @@
 import React from 'react';
-import { RiArrowLeftSLine, RiArrowRightSLine, RiCheckLine, RiCloseLine, RiEditLine, RiQuestionLine } from '@remixicon/react';
+import { RiArrowLeftSLine, RiArrowRightSLine, RiCheckLine, RiEditLine, RiQuestionLine } from '@remixicon/react';
 
 import { cn } from '@/lib/utils';
 import { isIMECompositionEvent } from '@/lib/ime';
@@ -22,7 +22,7 @@ import {
   getPreviousQuestionIndex,
   isQuestionAnswerComplete,
 } from './questionCardNavigation';
-import { getQuestionOptionPresentation } from './questionCardOptions';
+import { deriveCustomModeFromText, getQuestionOptionPresentation } from './questionCardOptions';
 import { QuestionOptionRow } from './QuestionOptionRow';
 import {
   acknowledgeQuestionRequests,
@@ -237,9 +237,14 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
     [customMode, customText, selectedOptions],
   );
 
+  const customInputRef = React.useRef<HTMLInputElement | null>(null);
+
   const handleToggleOption = React.useCallback(
     (entry: QuestionEntry, label: string) => {
       setCustomMode((prev) => ({ ...prev, [entry.entryKey]: false }));
+      // Picking an option clears the custom pill so the visible state always
+      // matches the answer that will be submitted.
+      setCustomText((prev) => (prev[entry.entryKey] ? { ...prev, [entry.entryKey]: '' } : prev));
       setSelectedOptions((prev) => {
         const current = prev[entry.entryKey] ?? [];
         if (entry.question.multiple) {
@@ -256,13 +261,22 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
         multiple: Boolean(entry.question.multiple),
       });
       if (nextIndex !== entry.flatIndex) setActiveIndex(nextIndex);
+
+      // Return focus to the answer pill so a follow-up Enter submits instead
+      // of re-activating the clicked option button (which would toggle
+      // multi-select answers off). Skipped on mobile: focusing the input
+      // would pop the on-screen keyboard.
+      if (!isMobile) {
+        requestAnimationFrame(() => customInputRef.current?.focus());
+      }
     },
-    [totalCount],
+    [isMobile, totalCount],
   );
 
-  const handleSelectCustom = React.useCallback((entry: QuestionEntry) => {
-    setCustomMode((prev) => ({ ...prev, [entry.entryKey]: true }));
-    setSelectedOptions((prev) => ({ ...prev, [entry.entryKey]: [] }));
+  const handleCustomTextChange = React.useCallback((entry: QuestionEntry, value: string) => {
+    setCustomText((prev) => ({ ...prev, [entry.entryKey]: value }));
+    const isCustom = deriveCustomModeFromText(value);
+    setCustomMode((prev) => (Boolean(prev[entry.entryKey]) === isCustom ? prev : { ...prev, [entry.entryKey]: isCustom }));
   }, []);
 
   const settleRelevantSubmissionResults = React.useCallback((
@@ -367,7 +381,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
   ]);
 
   const handleKeyDown = React.useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    (e: React.KeyboardEvent<HTMLTextAreaElement | HTMLInputElement>) => {
       if (isIMECompositionEvent(e)) return;
       if (e.key === 'Enter' && !e.shiftKey && (!isMobile || e.ctrlKey || e.metaKey)) {
         e.preventDefault();
@@ -434,15 +448,14 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
 
   const renderQuestionBody = (entry: QuestionEntry, opts: { withHeader: boolean }) => {
     const selected = selectedOptions[entry.entryKey] ?? [];
-    const isCustomActive = Boolean(customMode[entry.entryKey]);
     return (
       <div key={entry.entryKey}>
         {opts.withHeader && entry.question.header?.trim() ? (
-          <div className="typography-micro font-medium text-muted-foreground mb-1">
+          <div className="typography-micro font-medium text-muted-foreground mb-0.5">
             {entry.question.header}
           </div>
         ) : null}
-        <div className="typography-meta font-medium text-foreground mb-1.5">{entry.question.question}</div>
+        <div className="typography-ui-label font-medium text-foreground mb-2">{entry.question.question}</div>
         {entry.question.multiple ? (
           <div className="typography-micro text-muted-foreground mb-1.5">{t('chat.questionCard.selectMultiple')}</div>
         ) : null}
@@ -469,114 +482,69 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
               />
             );
           })}
-
-          <button
-            type="button"
-            role={entry.question.multiple ? 'checkbox' : 'radio'}
-            aria-checked={isCustomActive}
-            onClick={() => handleSelectCustom(entry)}
-            disabled={isSubmitting}
-            className={cn(
-              'w-full px-1.5 py-1 text-left rounded transition-colors',
-              'hover:bg-interactive-hover/30',
-              isCustomActive ? 'bg-interactive-selection/20' : null,
-              isSubmitting ? 'opacity-60 cursor-not-allowed' : null,
-            )}
-          >
-            <div className="flex items-center gap-2">
-              <RiEditLine
-                aria-hidden="true"
-                className={cn('h-3.5 w-3.5', isCustomActive ? 'text-primary' : 'text-muted-foreground/50')}
-              />
-              <span
-                className={cn(
-                  'typography-meta',
-                  isCustomActive ? 'text-foreground font-medium' : 'text-muted-foreground',
-                )}
-              >
-                {t('chat.questionCard.other')}
-              </span>
-            </div>
-          </button>
-
-          {isCustomActive ? (
-            <div className="pl-6 pr-1 pt-0.5">
-              <textarea
-                ref={(el) => {
-                  if (el) {
-                    el.style.height = 'auto';
-                    const lineHeight = 20;
-                    const minHeight = lineHeight * 2;
-                    const maxHeight = lineHeight * 4;
-                    el.style.height = `${Math.min(Math.max(el.scrollHeight, minHeight), maxHeight)}px`;
-                  }
-                }}
-                value={customText[entry.entryKey] ?? ''}
-                onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => {
-                  const el = event.target;
-                  el.style.height = 'auto';
-                  const lineHeight = 20;
-                  const minHeight = lineHeight * 2;
-                  const maxHeight = lineHeight * 4;
-                  el.style.height = `${Math.min(Math.max(el.scrollHeight, minHeight), maxHeight)}px`;
-                  setCustomText((prev) => ({ ...prev, [entry.entryKey]: el.value }));
-                }}
-                placeholder={t('chat.questionCard.yourAnswer')}
-                disabled={isSubmitting}
-                rows={2}
-                onKeyDown={handleKeyDown}
-                data-scrollable
-                className="w-full bg-transparent border border-border/30 focus:border-primary rounded px-2 py-1 outline-none typography-meta text-foreground placeholder:text-muted-foreground/50 transition-colors resize-none overflow-y-auto overflow-x-hidden"
-                autoFocus
-              />
-            </div>
-          ) : null}
         </div>
       </div>
     );
   };
 
   return (
-    <div className="group w-full pt-0 pb-2">
-      <div className="chat-column">
-        <div className="-mt-1 border border-border/30 rounded-xl bg-muted/10">
-          {/* Header */}
-          <div className="px-2 py-1.5 border-b border-border/20">
-            <div className="flex items-center gap-2">
-              <RiQuestionLine className="h-3.5 w-3.5 text-primary" />
-              <span className="typography-meta font-medium text-muted-foreground">{t('chat.questionCard.inputNeeded')}</span>
-              {isFromSubagent ? (
-                <span className="typography-micro text-muted-foreground px-1.5 py-0.5 rounded bg-foreground/5">
-                  {t('chat.questionCard.fromSubagent')}
-                </span>
-              ) : null}
-              {progressLabel ? (
-                <span className="ml-auto typography-micro font-medium text-foreground/70 px-1.5 py-0.5 rounded bg-muted/30 border border-border/20">
-                  {progressLabel}
-                </span>
-              ) : null}
-            </div>
-          </div>
+    <div className="flex flex-col px-3 pt-2.5 pb-2.5" role="group" aria-label={t('chat.questionCard.inputNeeded')}>
+      {/* Meta row */}
+      <div className="flex items-center gap-2 pb-1.5">
+        <RiQuestionLine className="h-3.5 w-3.5 text-primary" />
+        <span className="typography-micro font-medium text-muted-foreground">{t('chat.questionCard.inputNeeded')}</span>
+        {isFromSubagent ? (
+          <span className="typography-micro text-muted-foreground px-1.5 py-0.5 rounded bg-foreground/5">
+            {t('chat.questionCard.fromSubagent')}
+          </span>
+        ) : null}
+        {progressLabel ? (
+          <span className="ml-auto typography-micro font-medium text-foreground/70 px-1.5 py-0.5 rounded bg-muted/30 border border-border/20">
+            {progressLabel}
+          </span>
+        ) : null}
+      </div>
 
-          <div className="px-2 py-2">
-            {activeEntry ? renderQuestionBody(activeEntry, { withHeader: totalCount > 1 }) : null}
-          </div>
+      {activeEntry ? renderQuestionBody(activeEntry, { withHeader: totalCount > 1 }) : null}
 
-          {footerError ? (
-            <div className="px-2 pb-1 typography-micro text-[var(--status-error)]" role="alert">
-              {footerError}
-            </div>
-          ) : null}
+      {footerError ? (
+        <div className="pt-1 typography-micro text-[var(--status-error)]" role="alert">
+          {footerError}
+        </div>
+      ) : null}
 
-          {/* Footer actions */}
-          <div className="px-2 pb-1.5 pt-1 flex items-center gap-1.5 border-t border-border/20">
+      {/* Custom answer pill with the actions inside it */}
+      {activeEntry ? (
+        <div className="pt-2">
+          <div
+            className={cn(
+              'flex min-w-0 items-center gap-1.5 rounded-full border border-border/50 py-1 pl-3 pr-1.5 transition-colors',
+              'focus-within:border-primary/60',
+              isSubmitting ? 'opacity-60' : null,
+            )}
+          >
+            <RiEditLine aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+            <input
+              ref={customInputRef}
+              type="text"
+              value={customText[activeEntry.entryKey] ?? ''}
+              onChange={(event: React.ChangeEvent<HTMLInputElement>) => (
+                handleCustomTextChange(activeEntry, event.target.value)
+              )}
+              onKeyDown={handleKeyDown}
+              placeholder={t('chat.questionCard.customPlaceholder')}
+              disabled={isSubmitting}
+              autoFocus={!isMobile}
+              className="min-w-0 flex-1 border-0 bg-transparent outline-none typography-meta text-foreground placeholder:text-muted-foreground/60 disabled:cursor-not-allowed"
+            />
+
             {boundedActiveIndex > 0 ? (
               <button
                 type="button"
                 onClick={handleBack}
                 disabled={isSubmitting}
                 className={cn(
-                  'flex items-center gap-1 px-2 py-1 typography-meta font-medium rounded transition-colors',
+                  'flex shrink-0 items-center gap-1 px-2 py-0.5 typography-meta font-medium rounded-full transition-colors',
                   'text-muted-foreground hover:text-foreground hover:bg-interactive-hover/20',
                   'disabled:opacity-50 disabled:cursor-not-allowed',
                 )}
@@ -591,8 +559,8 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
               onClick={handlePrimaryAction}
               disabled={primaryDisabled}
               className={cn(
-                'flex items-center gap-1 px-2 py-1 typography-meta font-medium rounded transition-colors',
-                'bg-[rgb(var(--status-success)/0.1)] text-[var(--status-success)] hover:bg-[rgb(var(--status-success)/0.2)]',
+                'flex shrink-0 items-center gap-1 px-2 py-0.5 typography-meta font-medium rounded-full transition-colors',
+                'text-[var(--status-success)] hover:bg-[rgb(var(--status-success)/0.1)]',
                 'disabled:opacity-50 disabled:cursor-not-allowed',
               )}
             >
@@ -605,18 +573,16 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
               onClick={handleSkip}
               disabled={isSubmitting}
               className={cn(
-                'flex items-center gap-1 px-2 py-1 typography-meta font-medium rounded transition-colors',
-                'bg-[rgb(var(--status-error)/0.1)] text-[var(--status-error)] hover:bg-[rgb(var(--status-error)/0.2)]',
+                'flex shrink-0 items-center gap-1 px-2 py-0.5 typography-meta font-medium rounded-full transition-colors',
+                'text-muted-foreground hover:text-foreground hover:bg-interactive-hover/20',
                 'disabled:opacity-50 disabled:cursor-not-allowed',
               )}
             >
-              <RiCloseLine className="h-3 w-3" />
               {t('chat.questionCard.skip')}
             </button>
-
           </div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 };

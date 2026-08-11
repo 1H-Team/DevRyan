@@ -6,6 +6,7 @@ import {
   RiBookLine,
   RiBookOpenLine,
   RiBrainLine,
+  RiBugLine,
   RiChatAi3Line,
   RiChatHistoryLine,
   RiCloudLine,
@@ -32,6 +33,7 @@ type SettingsNavIcon = React.ComponentType<{ className?: string }>;
 export const SETTINGS_NAV_ICONS = {
   home: null,
   users: RiTeamLine,
+  'bug-reports': RiBugLine,
   projects: RiFoldersLine,
   'remote-instances': RiServerLine,
   appearance: RiPaletteLine,

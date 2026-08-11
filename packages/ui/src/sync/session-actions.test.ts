@@ -2732,6 +2732,63 @@ describe("revertToMessage scoped revert", () => {
     expect(store.getState().part[`${optimisticMessageId}_assistant`]).toBe(undefined)
   })
 
+  test("keeps optimistic image parts visible while message transport is pending", async () => {
+    const store = createStore({}, [makeSession("session-a")])
+    const childStores = createChildStores([["/test/project", store]])
+    const transport = createDeferred<void>()
+    let optimisticMessageId = ""
+
+    const { setActionRefs, setOptimisticRefs, optimisticSend } = await import("./session-actions")
+    const { applyOptimisticAdd, applyOptimisticRemove } = await import("./optimistic")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+    setOptimisticRefs(
+      (input) => store.setState((state) => {
+        const draft = { message: { ...state.message }, part: { ...state.part } }
+        applyOptimisticAdd(draft, input)
+        return draft
+      }),
+      (input) => store.setState((state) => {
+        const draft = { message: { ...state.message }, part: { ...state.part } }
+        applyOptimisticRemove(draft, input)
+        return draft
+      }),
+    )
+
+    const pendingSend = optimisticSend({
+      sessionId: "session-a",
+      content: "inspect these screenshots",
+      providerID: "provider",
+      modelID: "model",
+      directory: "/test/project",
+      files: [
+        { type: "file", mime: "image/png", url: "data:image/png;base64,AAAA", filename: "first.png" },
+        { type: "file", mime: "image/png", url: "data:image/png;base64,BBBB", filename: "second.png" },
+      ],
+      send: (messageID) => {
+        optimisticMessageId = messageID
+        return transport.promise
+      },
+    })
+
+    while (!optimisticMessageId) {
+      await Promise.resolve()
+    }
+
+    expect((store.getState().part[optimisticMessageId] ?? []).map((part) => ({
+      type: part.type,
+      text: "text" in part ? part.text : undefined,
+      mime: "mime" in part ? part.mime : undefined,
+      filename: "filename" in part ? part.filename : undefined,
+    }))).toEqual([
+      { type: "text", text: "inspect these screenshots", mime: undefined, filename: undefined },
+      { type: "file", text: undefined, mime: "image/png", filename: "first.png" },
+      { type: "file", text: undefined, mime: "image/png", filename: "second.png" },
+    ])
+
+    transport.resolve()
+    await pendingSend
+  })
+
   test("ignores stale reverted session snapshots while optimistic resend is in flight", async () => {
     const session = {
       ...makeSession("session-a"),

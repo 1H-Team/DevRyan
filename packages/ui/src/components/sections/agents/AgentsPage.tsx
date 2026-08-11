@@ -1044,7 +1044,8 @@ export const AgentsPage: React.FC = () => {
                   aria-readonly="true"
                   placeholder={t('settings.agents.page.field.systemPromptPlaceholder')}
                   rows={8}
-                  className="w-full font-mono typography-meta min-h-[120px] max-h-[60vh] bg-[var(--surface-muted)] resize-y cursor-default"
+                  outerClassName="bg-[var(--surface-muted)]"
+                  className="w-full font-mono typography-meta min-h-[120px] max-h-[60vh] bg-transparent resize-y cursor-default"
                 />
               </div>
             </div>

@@ -33,11 +33,11 @@ Each server process has an in-memory random instance ID exposed only in the
 `X-DevRyan-Instance-ID` response header on `/health` and `/api/health`. After cloudflared reports a
 connection, `public-reachability.js` probes the public hostname for at most 15 seconds and requires
 that exact header. A timeout, DNS failure, Cloudflare 502/1033-style response, or mismatched
-instance returns `managed_remote_public_unreachable` without a bootstrap/connect token.
+instance returns `managed_remote_public_unreachable` before the tunnel is reported ready.
 
 Controller reuse is identity-bound to provider, mode, normalized hostname, origin port, and an
-in-memory token digest. Reused controllers are publicly verified again before a new connect token
-is issued. During initial startup, a public verification failure accompanied by a cloudflared QUIC
+in-memory token digest. Reused controllers are publicly verified again before direct account access
+is reported ready. During initial startup, a public verification failure accompanied by a cloudflared QUIC
 failure triggers exactly one connector restart with `--protocol http2`; there is no retry loop.
 Provider metadata exposes only safe origin and lifecycle state: `cloudflareOriginUrl`,
 `activeOriginUrl`, `originRelayActive`, `publicReachabilityVerified`, `connectorState`,
@@ -46,7 +46,7 @@ Provider metadata exposes only safe origin and lifecycle state: `cloudflareOrigi
 `cloudflareConfigRequiresManualOriginMatch` remain compatibility aliases for one release.
 
 The status route performs a cached single-attempt public probe for managed-remote controllers.
-Failures mark the controller `degraded` without creating a bootstrap token. Unexpected connector
+Failures mark the controller `degraded`. Unexpected connector
 exit clears the service controller and active tunnel authentication artifacts; an explicit stop
 continues to wait for process exit before clearing either.
 
@@ -54,23 +54,27 @@ Tunnel start is also gated by authoritative OpenCode readiness. Manual starts re
 `503 runtime_not_ready` before connector launch or managed-token persistence. Cold startup awaits
 the OpenCode bootstrap before launching a configured connector. An already-connected Cloudflare
 connector remains visible during a later OpenCode restart, but `runtimeReady` and `connectReady`
-become false and clients must hide or disable new connection links until readiness returns.
-Start and status responses expose both booleans; `connectReady` additionally requires a usable
-one-time token and a non-degraded connector.
+become false and clients must show the stable hostname as unavailable until readiness returns.
+Start and status responses expose both booleans. For managed-remote mode, `connectReady` requires a
+ready runtime, a non-degraded connector, and Supabase-backed managed-account login; no browser
+bootstrap token is created. A connector left running from a legacy shared-password configuration
+remains visible with its saved token and preset intact, but reports `connectReady: false`.
 
 ## Link routing contract
 
-New one-time managed-tunnel links use `/tunnel/connect?t=...`; multi-user access invitations use
-`/invite?t=...`. `/connect` remains a one-release compatibility dispatcher. It recognizes the
-current tunnel token by its in-memory digest—including after use or expiry—before considering the
-invitation flow, so a tunnel token can never be reinterpreted as an invitation. On multi-user
-hosts, tunnel exchange does not create a Supabase principal or bypass normal `/api` authorization;
-the redirected app still requires the assigned user's normal sign-in. Token exchange runs an
-asynchronous pre-commit hook after token validation and before consumption. On multi-user hosts,
-that hook revokes only the browser's app session, vault entry, and matching live connections, so
-every new managed connection requires fresh sign-in without aborting owned agent sessions or
-terminal processes. Invalid links never invoke cleanup. Cleanup or runtime-readiness failure
-returns retryable `503` and leaves the one-time token unconsumed.
+Managed-remote tunnels use direct account login at their stable public hostname and return
+`policy: account-login`; startup is rejected with `managed_account_auth_required` unless Supabase
+multi-user auth is configured. The legacy shared UI password is deliberately ineligible because it
+cannot attribute remote developers to separate durable owners. Public `/auth/*` and `/api/*`
+requests use managed-account authentication, fail closed with the same deterministic code when a
+legacy connector is still running, and never issue a `/tunnel/connect` link.
+
+Quick and managed-local tunnels retain one-time links at `/tunnel/connect?t=...`; multi-user access
+invitations use `/invite?t=...`. `/connect` remains a compatibility dispatcher for previously
+issued links. It recognizes the current tunnel token by its in-memory digest—including after use
+or expiry—before considering the invitation flow, so a tunnel token can never be reinterpreted as
+an invitation. The exchange pre-commit cleanup and retry semantics remain unchanged for those
+legacy/link-gated modes.
 
 ## Shutdown contract
 

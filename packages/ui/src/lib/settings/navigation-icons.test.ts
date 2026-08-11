@@ -8,6 +8,7 @@ import {
   RiBookLine,
   RiBookOpenLine,
   RiBrainLine,
+  RiBugLine,
   RiChatAi3Line,
   RiChatHistoryLine,
   RiCloudLine,
@@ -23,6 +24,7 @@ import {
   RiRobot2Line,
   RiServerLine,
   RiSlashCommands2,
+  RiTeamLine,
 } from '@remixicon/react';
 import { McpIcon } from '@/components/icons/McpIcon';
 import { SETTINGS_PAGE_METADATA } from './metadata';
@@ -50,6 +52,8 @@ describe('settings navigation icons', () => {
 
     const expectedIcons = {
       home: null,
+      users: RiTeamLine,
+      'bug-reports': RiBugLine,
       projects: RiFoldersLine,
       'remote-instances': RiServerLine,
       appearance: RiPaletteLine,

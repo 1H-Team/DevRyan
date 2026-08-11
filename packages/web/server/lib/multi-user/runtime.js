@@ -1,6 +1,9 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
+
+import { createDiagnosticSanitizer } from '@openchamber/harness-runtime';
 
 import { resolveMultiUserConfig } from './config.js';
 import {
@@ -54,12 +57,18 @@ import {
   isAnalyticsChangeAction,
   isSettingsChangeAction,
   sanitizeActivityForReviewer,
+  stableAuditEventId,
   validateAnalyticsDay,
   validateAnalyticsRange,
   validateInteractionEvent,
 } from './analytics.js';
 import { emptySessionFolders, normalizeSessionFoldersPayload } from './session-folders.js';
-import { projectOpenCodeActivity } from './activity-projection.js';
+import {
+  isProjectableOpenCodeActivity,
+  projectOpenCodeActivity,
+} from './activity-projection.js';
+import { createDiagnosticRecoveryTracker } from './diagnostic-recovery.js';
+import { createBugReportsApi } from './bug-reports.js';
 import {
   listVisibleSessionPage,
   normalizeSessionPageLimit,
@@ -115,11 +124,32 @@ const SESSION_OWNERSHIP_WRITE_ATTEMPTS = 4;
 const SESSION_OWNERSHIP_WRITE_TIMEOUT_MS = 5_000;
 const SESSION_OWNERSHIP_RETRY_DELAYS_MS = [250, 500, 1_000];
 const SESSION_OWNERSHIP_CLEANUP_ATTEMPTS = 6;
+const ACTIVITY_LOG_SELECT = [
+  'id', 'event_id', 'actor_user_id', 'actor_role', 'action', 'target_type', 'target_id', 'target_user_id',
+  'project_id', 'session_id', 'request_id', 'success', 'diagnostic_impact', 'diagnostic_source', 'metadata', 'created_at',
+].join(',');
+const ANALYTICS_AGGREGATE_SELECT = 'id,actor_user_id,target_user_id,action,success,created_at';
+const CLIPBOARD_PREVIEW_SELECT = [
+  'event_id', 'clipboard_text_preview', 'clipboard_text_original_length',
+  'clipboard_text_truncated', 'clipboard_text_redacted',
+].join(',');
+const CLIPBOARD_DETAIL_SELECT = [
+  'event_id', 'clipboard_text', 'clipboard_text_preview', 'clipboard_text_original_length',
+  'clipboard_text_truncated', 'clipboard_text_redacted',
+].join(',');
 const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const USER_CAPABILITY_KEYS = new Set([
   'files', 'terminal', 'browser', 'createWorktrees', 'createBranches', 'manageProjects', 'manageUsers', 'manageGlobalSettings',
   'manageGit', 'push', 'github',
 ]);
+
+const knownDiagnosticSecretsFromEnvironment = () => Object.entries(process.env)
+  .filter(([key, value]) => (
+    /(?:secret|token|password|api[_-]?key|authorization)/i.test(key)
+    && typeof value === 'string'
+    && value.length >= 6
+  ))
+  .map(([, value]) => value);
 
 const sha256 = (value) => crypto.createHash('sha256').update(String(value || '')).digest('hex');
 const timingSafeTextEqual = (left, right) => {
@@ -642,6 +672,11 @@ export async function createMultiUserRuntime({
   const connectionsBySession = new Map();
   const mutationTails = new Map();
   const projectedActivityKeys = new Map();
+  const recentAssistantContextByMessage = new Map();
+  const recentAssistantContextBySession = new Map();
+  const sessionParentIds = new Map();
+  const sessionDirectories = new Map();
+  const diagnosticRecoveryTracker = createDiagnosticRecoveryTracker();
   const provisionalSessionIds = new Set();
   const provisionalCleanupTimers = new Set();
   let claimInProgress = false;
@@ -655,6 +690,11 @@ export async function createMultiUserRuntime({
     supabase,
     logger,
   });
+  const activityErrorSanitizerOptions = {
+    homeDir: os.homedir(),
+    dataDir: config.dataDirectory,
+    knownSecrets: knownDiagnosticSecretsFromEnvironment(),
+  };
 
   const registerConnection = (principal, close) => {
     if (principal?.scope !== 'managed' || typeof close !== 'function') return () => {};
@@ -797,7 +837,14 @@ export async function createMultiUserRuntime({
       session_id: details.sessionId || null,
       request_id: details.requestId || null,
       success: details.success !== false,
+      ...(details.diagnosticImpact ? { diagnostic_impact: details.diagnosticImpact } : {}),
+      ...(details.diagnosticSource ? { diagnostic_source: details.diagnosticSource } : {}),
       metadata: details.metadata && typeof details.metadata === 'object' ? details.metadata : {},
+      ...(details.clipboard ? {
+        clipboard_text: details.clipboard.text,
+        clipboard_text_original_length: details.clipboard.originalLength,
+        clipboard_text_truncated: details.clipboard.truncated === true,
+      } : {}),
       ...(details.occurredAt ? { created_at: details.occurredAt } : {}),
     };
     if (details.deferred) await auditOutbox.enqueueDeferred(eventId, record);
@@ -805,17 +852,151 @@ export async function createMultiUserRuntime({
     return eventId;
   };
 
+  const setBoundedProjectionContext = (cache, key, value, maximum = 5_000) => {
+    if (!key) return;
+    cache.delete(key);
+    cache.set(key, value);
+    if (cache.size <= maximum) return;
+    const oldest = cache.keys().next().value;
+    if (oldest) cache.delete(oldest);
+  };
+
+  const captureProjectionContext = (payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    if (payload.type === 'message.updated') {
+      const info = payload.properties?.info;
+      if (!info || info.role !== 'assistant') return;
+      const sessionId = typeof info.sessionID === 'string' ? info.sessionID.trim() : '';
+      const messageId = typeof info.id === 'string' ? info.id.trim() : '';
+      if (!sessionId || !messageId) return;
+      const context = {
+        messageId,
+        providerId: typeof info.providerID === 'string' ? info.providerID.trim().slice(0, 512) : null,
+        modelId: typeof info.modelID === 'string' ? info.modelID.trim().slice(0, 512) : null,
+        agent: typeof info.agent === 'string' ? info.agent.trim().slice(0, 512) : null,
+      };
+      setBoundedProjectionContext(recentAssistantContextByMessage, messageId, context);
+      setBoundedProjectionContext(recentAssistantContextBySession, sessionId, context);
+      return;
+    }
+    if (payload.type === 'session.created' || payload.type === 'session.updated') {
+      const info = payload.properties?.info;
+      const sessionId = typeof info?.id === 'string' ? info.id.trim() : '';
+      const parentId = typeof info?.parentID === 'string' ? info.parentID.trim() : '';
+      if (sessionId && parentId) setBoundedProjectionContext(sessionParentIds, sessionId, parentId);
+      const directory = typeof info?.directory === 'string' ? info.directory.trim() : '';
+      if (sessionId && directory) {
+        setBoundedProjectionContext(sessionDirectories, sessionId, directory);
+      }
+      return;
+    }
+    if (payload.type === 'session.deleted') {
+      const sessionId = typeof payload.properties?.info?.id === 'string'
+        ? payload.properties.info.id.trim()
+        : '';
+      if (sessionId) {
+        sessionParentIds.delete(sessionId);
+        sessionDirectories.delete(sessionId);
+        recentAssistantContextBySession.delete(sessionId);
+      }
+    }
+  };
+
+  const rootSessionIdFor = (sessionId) => {
+    let current = sessionId;
+    const seen = new Set();
+    for (let depth = 0; depth < 32; depth += 1) {
+      if (!current || seen.has(current)) break;
+      seen.add(current);
+      const parent = sessionParentIds.get(current);
+      if (!parent) break;
+      current = parent;
+    }
+    return current || sessionId;
+  };
+
+  const loadActivityPrincipal = async (userId) => {
+    const principal = await loadPrincipal(userId);
+    if (principal) return principal;
+    const profile = await supabase.rest('user_profiles', {
+      query: {
+        id: `eq.${escapeFilterValue(userId)}`,
+        select: 'id,email,display_name,role,status',
+        limit: 1,
+      },
+      maybeSingle: true,
+    });
+    if (!profile || !validRole(profile.role)) return null;
+    return {
+      id: profile.id,
+      email: profile.email,
+      displayName: profile.display_name,
+      role: profile.role,
+      status: profile.status,
+      scope: 'managed',
+      assignments: [],
+    };
+  };
+
   const recordOpenCodeActivity = async (payload) => {
-    const sessionId = extractSessionId(payload);
+    captureProjectionContext(payload);
+    const resolutions = diagnosticRecoveryTracker.observe(payload);
+    const projectable = isProjectableOpenCodeActivity(payload);
+    if (!projectable && resolutions.length === 0) return false;
+    const sessionId = extractManagedTaskRootSessionId(payload) || extractSessionId(payload);
     if (!sessionId) return false;
     const ownership = await ownershipIndex.get(sessionId);
     if (!ownership?.user_id || ownership.archived_at) return false;
-    const principal = await loadPrincipal(ownership.user_id);
+    const principal = await loadActivityPrincipal(ownership.user_id);
+    if (!principal) return false;
     const assignment = principal?.assignments?.find((entry) => (
       entry.projectId === ownership.project_id && entry.branchName === ownership.branch_name
     ));
-    const projected = projectOpenCodeActivity({ payload, ownership, assignment });
-    if (!projected || projectedActivityKeys.has(projected.dedupeKey)) return false;
+    const messageId = typeof payload.properties?.part?.messageID === 'string'
+      ? payload.properties.part.messageID.trim()
+      : '';
+    const message = recentAssistantContextByMessage.get(messageId)
+      || recentAssistantContextBySession.get(sessionId)
+      || null;
+    const reportedDirectory = sessionDirectories.get(sessionId) || '';
+    const activeDirectory = assignment
+      && path.isAbsolute(reportedDirectory)
+      && resolveAssignmentForValue({ assignments: [assignment] }, reportedDirectory) === assignment
+      ? reportedDirectory
+      : null;
+    const activityErrorSanitizer = createDiagnosticSanitizer(activityErrorSanitizerOptions);
+    activityErrorSanitizer.addWorktreeRoot(ownership.public_directory);
+    if (activeDirectory) activityErrorSanitizer.addWorktreeRoot(activeDirectory);
+    const auditResolutions = async (entries) => {
+      for (const resolution of entries) {
+        const action = `diagnostic.${resolution.outcome}`;
+        await audit(principal, action, {
+          eventId: stableAuditEventId(action, resolution.eventId),
+          targetType: 'activity_event',
+          targetId: resolution.eventId,
+          projectId: ownership.project_id,
+          sessionId,
+          success: resolution.outcome === 'recovered',
+          metadata: {
+            originalEventId: resolution.eventId,
+            outcome: resolution.outcome,
+          },
+        });
+      }
+    };
+    let wroteActivity = false;
+    if (resolutions.length > 0) {
+      await auditResolutions(resolutions);
+      wroteActivity = true;
+    }
+    const projected = projectable ? projectOpenCodeActivity({
+      payload,
+      ownership,
+      assignment,
+      context: { message, rootSessionId: rootSessionIdFor(sessionId), activeDirectory },
+      sanitizeFailureText: (value) => activityErrorSanitizer.sanitizeText(value),
+    }) : null;
+    if (!projected || projectedActivityKeys.has(projected.dedupeKey)) return wroteActivity;
     projectedActivityKeys.set(projected.dedupeKey, Date.now());
     if (projectedActivityKeys.size > 10_000) {
       const oldest = projectedActivityKeys.keys().next().value;
@@ -823,12 +1004,40 @@ export async function createMultiUserRuntime({
     }
     try {
       await audit(principal, projected.action, projected.details);
+      const diagnosticEventId = projected.details?.eventId;
+      if (diagnosticEventId && projected.action === 'tool.failed') {
+        diagnosticRecoveryTracker.trackFailure({ sessionId, eventId: diagnosticEventId });
+      } else if (
+        diagnosticEventId
+        && projected.action === 'session.error'
+        && projected.details?.diagnosticImpact === 'medium'
+      ) {
+        diagnosticRecoveryTracker.trackFailure({ sessionId, eventId: diagnosticEventId });
+      } else if (
+        diagnosticEventId
+        && (projected.details?.diagnosticImpact === 'high'
+          || projected.details?.diagnosticImpact === 'critical')
+      ) {
+        await auditResolutions([
+          ...diagnosticRecoveryTracker.markUnresolved(sessionId),
+          { sessionId, eventId: diagnosticEventId, outcome: 'unresolved' },
+        ]);
+      }
       return true;
     } catch (error) {
       projectedActivityKeys.delete(projected.dedupeKey);
       throw error;
     }
   };
+
+  const bugReportsApi = createBugReportsApi({
+    supabase,
+    audit,
+    dataDirectory: config.dataDirectory,
+    canEditBugReports: (principal) => canEditSettingsPage(principal, 'bug-reports'),
+    withAuditDeliveryBarrier: auditOutbox.withFlushedDeliveryBarrier,
+    logger,
+  });
 
   const registerMutationAudit = async (principal, req, res) => {
     if (principal?.scope !== 'managed' || !STATE_CHANGING_METHODS.has(req.method)) return;
@@ -1580,7 +1789,7 @@ export async function createMultiUserRuntime({
       || (requestPath.startsWith('/config/') && STATE_CHANGING_METHODS.has(req.method));
     if (principal.offlineGrace && (
       offlineHostConfig
-      || /^\/(?:admin(?:\/|$)|github\/auth(?:\/|$)|auth(?:\/|$)|provider(?:\/|$)|mcp(?:\/|$)|projects(?:\/|$)|openchamber\/tunnel(?:\/|$)|diagnostics(?:\/|$))/.test(requestPath)
+      || /^\/(?:admin(?:\/|$)|bug-reports(?:\/|$)|error-logs(?:\/|$)|github\/auth(?:\/|$)|auth(?:\/|$)|provider(?:\/|$)|mcp(?:\/|$)|projects(?:\/|$)|openchamber\/tunnel(?:\/|$)|diagnostics(?:\/|$))/.test(requestPath)
     )) {
       throw Object.assign(new Error('Account and host management are unavailable during offline grace'), {
         statusCode: 503,
@@ -2186,6 +2395,9 @@ export async function createMultiUserRuntime({
       principalCache.clear();
       loginAttempts.clear();
       projectedActivityKeys.clear();
+      recentAssistantContextByMessage.clear();
+      recentAssistantContextBySession.clear();
+      sessionParentIds.clear();
       await Promise.all([ownershipIndex.drain(), auditOutbox.drain()]);
     },
   };
@@ -2514,15 +2726,17 @@ export async function createMultiUserRuntime({
     if (typeof app.use === 'function') {
       app.use(createDotenvVisibilityMiddleware());
     }
+    bugReportsApi.registerRoutes(app);
     const canReviewUsers = (principal) => canReadSettingsPage(principal, 'users');
     const canManageUsers = (principal) => canEditSettingsPage(principal, 'users');
     const requireAnalyticsAdmin = (principal) => principal?.scope === 'managed' && principal.role === 'admin';
-    const loadActivityPages = async (query, { pageSize = 1_000 } = {}) => {
+    const loadActivityPages = async (query, { pageSize = 1_000, select = ACTIVITY_LOG_SELECT } = {}) => {
       const rows = [];
       let offset = 0;
       while (true) {
         const page = await supabase.rest('activity_logs', {
           query: { ...query, limit: pageSize, offset },
+          select,
         });
         rows.push(...(page || []));
         if (!page || page.length < pageSize) break;
@@ -2676,6 +2890,7 @@ export async function createMultiUserRuntime({
               projectName: result.assignment.label || null,
               branchName: result.assignment.branchName || null,
             },
+            clipboard: result.clipboard,
           });
           results.push({ id: result.id, accepted: true });
         } catch (error) {
@@ -3356,12 +3571,17 @@ export async function createMultiUserRuntime({
     app.get('/api/admin/roles', async (req, res) => {
       if (!canReviewUsers(req.principal)) return jsonError(res, 403, 'User review access required');
       const rows = await supabase.rest('role_policies', { query: { order: 'role.asc' } }).catch(() => []);
-      const roles = rows.map((row) => ({
-        ...row,
-        can_use_browser: typeof row.can_use_browser === 'boolean'
-          ? row.can_use_browser
-          : ROLE_POLICY_DEFAULTS[row.role]?.browser === true,
-      }));
+      const roles = rows.map((row) => {
+        const normalized = normalizeRolePolicy(row.role, row, null);
+        return {
+          ...row,
+          settings_pages: normalized.settingsPages,
+          settings_permissions: normalized.settingsPermissions,
+          can_use_browser: typeof row.can_use_browser === 'boolean'
+            ? row.can_use_browser
+            : ROLE_POLICY_DEFAULTS[row.role]?.browser === true,
+        };
+      });
       return res.json({ roles });
     });
 
@@ -3809,7 +4029,7 @@ export async function createMultiUserRuntime({
           created_at: `gte.${range.start.toUTC().toISO()}`,
           and: `(created_at.lt.${range.end.toUTC().toISO()})`,
           order: 'created_at.asc,id.asc',
-        });
+        }, { select: ANALYTICS_AGGREGATE_SELECT });
         return res.json({
           user: { id: target.id, displayName: target.display_name },
           ...aggregateDailyAnalytics({
@@ -3836,7 +4056,7 @@ export async function createMultiUserRuntime({
           created_at: `gte.${range.start.toUTC().toISO()}`,
           and: `(created_at.lt.${range.end.toUTC().toISO()})`,
           order: 'created_at.asc,id.asc',
-        });
+        }, { select: ANALYTICS_AGGREGATE_SELECT });
         return res.json({
           user: { id: target.id, displayName: target.display_name },
           ...aggregateRangeAnalytics({
@@ -3908,7 +4128,35 @@ export async function createMultiUserRuntime({
         });
         const remaining = rows.filter((row) => analyticsRowBeforeCursor(row, cursor));
         const page = remaining.slice(0, limit);
-        const events = await attachActivityActors(page);
+        const copyEventIds = page
+          .filter((row) => row.action === ANALYTICS_ACTIONS.clipboardCopied && validUuid(row.event_id))
+          .map((row) => row.event_id);
+        const clipboardRows = copyEventIds.length > 0
+          ? await supabase.rest('activity_logs', {
+            query: {
+              event_id: `in.(${copyEventIds.map(escapeFilterValue).join(',')})`,
+              action: `eq.${ANALYTICS_ACTIONS.clipboardCopied}`,
+            },
+            select: CLIPBOARD_PREVIEW_SELECT,
+          })
+          : [];
+        const clipboardByEventId = new Map((clipboardRows || []).map((row) => [row.event_id, row]));
+        const events = await attachActivityActors(page.map((row) => {
+          if (row.action !== ANALYTICS_ACTIONS.clipboardCopied) return row;
+          const clipboard = clipboardByEventId.get(row.event_id);
+          return {
+            ...row,
+            clipboard: {
+              available: typeof clipboard?.clipboard_text_preview === 'string',
+              preview: typeof clipboard?.clipboard_text_preview === 'string' ? clipboard.clipboard_text_preview : '',
+              originalLength: Number.isInteger(clipboard?.clipboard_text_original_length)
+                ? clipboard.clipboard_text_original_length
+                : Number(row.metadata?.characterCount || 0),
+              truncated: clipboard?.clipboard_text_truncated === true,
+              redacted: clipboard?.clipboard_text_redacted === true,
+            },
+          };
+        }));
         return res.json({
           events,
           nextCursor: remaining.length > limit ? encodeAnalyticsCursor(page.at(-1)) : null,
@@ -3918,10 +4166,43 @@ export async function createMultiUserRuntime({
       }
     });
 
+    app.get('/api/admin/users/:userId/analytics/clipboard/:eventId', async (req, res) => {
+      if (!requireAnalyticsAdmin(req.principal)) return jsonError(res, 403, 'Administrator access required');
+      if (!validUuid(req.params.eventId)) return jsonError(res, 404, 'Clipboard event not found');
+      try {
+        const target = await loadAnalyticsTarget(req.params.userId);
+        if (!target) return jsonError(res, 404, 'Clipboard event not found');
+        const row = await supabase.rest('activity_logs', {
+          query: {
+            event_id: `eq.${escapeFilterValue(req.params.eventId)}`,
+            action: `eq.${ANALYTICS_ACTIONS.clipboardCopied}`,
+            or: `(actor_user_id.eq.${escapeFilterValue(target.id)},target_user_id.eq.${escapeFilterValue(target.id)})`,
+            limit: 1,
+          },
+          select: CLIPBOARD_DETAIL_SELECT,
+          maybeSingle: true,
+        });
+        if (!row) return jsonError(res, 404, 'Clipboard event not found');
+        return res.json({
+          available: typeof row.clipboard_text === 'string',
+          text: typeof row.clipboard_text === 'string' ? row.clipboard_text : '',
+          preview: typeof row.clipboard_text_preview === 'string' ? row.clipboard_text_preview : '',
+          originalLength: Number.isInteger(row.clipboard_text_original_length) ? row.clipboard_text_original_length : 0,
+          truncated: row.clipboard_text_truncated === true,
+          redacted: row.clipboard_text_redacted === true,
+        });
+      } catch (error) {
+        return jsonError(res, error?.statusCode || error?.status || 500, error.message);
+      }
+    });
+
     app.get('/api/admin/activity', async (req, res) => {
       if (!canReviewUsers(req.principal)) return jsonError(res, 403, 'User review access required');
       const limit = Math.min(250, Math.max(1, Number(req.query?.limit || 100)));
-      const activity = await supabase.rest('activity_logs', { query: { order: 'created_at.desc', limit } }).catch(() => []);
+      const activity = await supabase.rest('activity_logs', {
+        query: { order: 'created_at.desc', limit },
+        select: ACTIVITY_LOG_SELECT,
+      }).catch(() => []);
       if (req.principal.role === 'admin') return res.json({ activity });
       const nonAdminUsers = await supabase.rest('user_profiles', {
         query: { role: 'neq.admin', select: 'id' },
@@ -4251,7 +4532,10 @@ export async function createMultiUserRuntime({
           provisionalSessionIds.delete(sessionId);
           notifyManagedSessionOwnershipCommitted(payload);
           return res.status(response.status).json(payload);
-        } catch (error) { return jsonError(res, 502, error.message); }
+        // Upstream-connection failures (OpenCode restarting or briefly down)
+        // are transient — the flag lets the client retry instead of surfacing
+        // the first failure. Ownership failures above stay retryable: false.
+        } catch (error) { return jsonError(res, 502, error.message, { retryable: true }); }
       });
 
       app.get('/api/session/status', async (req, res, next) => {

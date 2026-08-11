@@ -4,6 +4,7 @@ export type DraftLocalBranchOption = {
   value: string;
   label: string;
   remoteOnly: boolean;
+  inWorktree: boolean;
 };
 
 const logicalBranchName = (value: string): string => value
@@ -27,7 +28,11 @@ export function decodeDraftBranchOptionValue(value: string): string | null {
 export function buildDraftLocalBranchOptions(input: {
   allBranches: string[];
   currentBranch: string;
+  worktreeBranches?: Iterable<string>;
 }): DraftLocalBranchOption[] {
+  const worktreeBranches = new Set(
+    Array.from(input.worktreeBranches ?? [], logicalBranchName).filter(Boolean),
+  );
   const localBranches = new Set(input.allBranches
     .filter((branch) => branch && !/^(?:refs\/)?remotes\//.test(branch))
     .map(logicalBranchName)
@@ -48,13 +53,14 @@ export function buildDraftLocalBranchOptions(input: {
     value: encodeDraftBranchOptionValue(branch),
     label: branch,
     remoteOnly: false,
+    inWorktree: worktreeBranches.has(branch),
   }));
   const remoteOnly = [...remoteByName.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([name, refs]) => {
       const sorted = [...refs].sort((left, right) => left.localeCompare(right));
       const preferred = sorted.find((ref) => ref === `remotes/origin/${name}`) ?? sorted[0];
-      return { value: encodeDraftBranchOptionValue(preferred), label: name, remoteOnly: true };
+      return { value: encodeDraftBranchOptionValue(preferred), label: name, remoteOnly: true, inWorktree: false };
     });
   return [...locals, ...remoteOnly];
 }

@@ -79,8 +79,11 @@ The following functions are exported and used by the web server:
 Managed multi-user requests take their author identity and exact GitHub token
 from the authoritative request principal. Managed directories may be the real
 repository root or any path inside that repository's shared OpenCode worktree
-container. Pull, push, and fetch use the worktree's actual checked-out branch,
-reject alternate remotes, and never fall back to host-current GitHub
+container. Pull and push use the worktree's actual checked-out branch. Fetch
+uses that branch by default and may fetch another exact `origin` branch for an
+Update-tab merge/rebase when the branch is assigned to the same managed project;
+managed administrators may fetch any valid `origin` branch. Managed remote
+operations reject alternate remotes and never fall back to host-current GitHub
 credentials. Branch listings and ordinary merge/rebase sources remain
 presentation-filtered; cross-branch reintegration is separately target-grant
 authorized before Git runs.

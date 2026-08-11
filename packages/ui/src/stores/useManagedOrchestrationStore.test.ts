@@ -102,6 +102,58 @@ const fakeApi = (overrides: Partial<ManagedOrchestrationApi> = {}): ManagedOrche
 });
 
 describe('managed orchestration store', () => {
+  test('indexes the latest task lineage by exact child session and falls back after compaction', () => {
+    const store = createManagedOrchestrationStore({ api: fakeApi() });
+    const initial = projectedTask(1, 'running', { childSessionId: 'ses_child' });
+    const followUp = projectedTask(2, 'running', {
+      childSessionId: 'ses_child',
+      attempt: 2,
+      priorTaskId: initial.taskId,
+      executionKind: 'resume',
+    });
+
+    store.getState().ingestEvent(taskEvent(initial));
+    expect(managedOrchestrationSelectors.latestTaskForChildSession('ses_child')(
+      store.getState(),
+    )).toBe(store.getState().tasksById[initial.taskId]);
+
+    store.getState().ingestEvent(taskEvent(followUp));
+    expect(store.getState().latestTaskIdByChildSessionId.ses_child).toBe(followUp.taskId);
+    expect(managedOrchestrationSelectors.latestTaskForChildSession('ses_child')(
+      store.getState(),
+    )).toBe(store.getState().tasksById[followUp.taskId]);
+
+    store.getState().ingestEvent(removalEvent(followUp));
+    expect(managedOrchestrationSelectors.latestTaskForChildSession('ses_child')(
+      store.getState(),
+    )).toBe(store.getState().tasksById[initial.taskId]);
+
+    store.getState().ingestEvent(removalEvent(initial));
+    expect(managedOrchestrationSelectors.latestTaskForChildSession('ses_child')(
+      store.getState(),
+    )).toBe(undefined);
+    expect(store.getState().latestTaskIdByChildSessionId.ses_child).toBe(undefined);
+  });
+
+  test('builds the latest child-task index from an authoritative snapshot', async () => {
+    const first = projectedTask(1, 'running', { childSessionId: 'ses_child' });
+    const second = projectedTask(2, 'running', {
+      childSessionId: 'ses_child',
+      attempt: 2,
+      priorTaskId: first.taskId,
+      executionKind: 'resume',
+    });
+    const store = createManagedOrchestrationStore({
+      api: fakeApi({ getSnapshot: async () => emptySnapshot({ tasks: [first, second] }) }),
+    });
+
+    await store.getState().loadSnapshot();
+
+    expect(managedOrchestrationSelectors.latestTaskForChildSession('ses_child')(
+      store.getState(),
+    )).toBe(store.getState().tasksById[second.taskId]);
+  });
+
   test('indexes parallel same-label dispatches by exact root and call identity', () => {
     const store = createManagedOrchestrationStore({ api: fakeApi() });
     const first = projectedTask(1, 'running', {

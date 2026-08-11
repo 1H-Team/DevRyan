@@ -14,9 +14,9 @@ describe("chat input branch options", () => {
     })
 
     expect(options).toEqual([
-      { value: "branch:feature", label: "feature", remoteOnly: false },
-      { value: "branch:main", label: "main", remoteOnly: false },
-      { value: "branch:remotes/origin/main", label: "main", remoteOnly: true },
+      { value: "branch:feature", label: "feature", remoteOnly: false, inWorktree: false },
+      { value: "branch:main", label: "main", remoteOnly: false, inWorktree: false },
+      { value: "branch:remotes/origin/main", label: "main", remoteOnly: true, inWorktree: false },
     ])
   })
 
@@ -27,7 +27,7 @@ describe("chat input branch options", () => {
     })
 
     expect(options).toEqual([
-      { value: "branch:feature", label: "feature", remoteOnly: false },
+      { value: "branch:feature", label: "feature", remoteOnly: false, inWorktree: false },
     ])
   })
 
@@ -36,9 +36,21 @@ describe("chat input branch options", () => {
       allBranches: ["main", "remotes/upstream/dev", "remotes/origin/dev", "remotes/origin/main"],
       currentBranch: "main",
     })).toEqual([
-      { value: "branch:main", label: "main", remoteOnly: false },
-      { value: "branch:remotes/origin/dev", label: "dev", remoteOnly: true },
-      { value: "branch:remotes/origin/main", label: "main", remoteOnly: true },
+      { value: "branch:main", label: "main", remoteOnly: false, inWorktree: false },
+      { value: "branch:remotes/origin/dev", label: "dev", remoteOnly: true, inWorktree: false },
+      { value: "branch:remotes/origin/main", label: "main", remoteOnly: true, inWorktree: false },
+    ])
+  })
+
+  test("marks only exact local branches that already have worktrees", () => {
+    expect(buildDraftLocalBranchOptions({
+      allBranches: ["Dev", "dev", "remotes/origin/Dev"],
+      currentBranch: "main",
+      worktreeBranches: ["refs/heads/Dev"],
+    })).toEqual([
+      { value: "branch:dev", label: "dev", remoteOnly: false, inWorktree: false },
+      { value: "branch:Dev", label: "Dev", remoteOnly: false, inWorktree: true },
+      { value: "branch:remotes/origin/Dev", label: "Dev", remoteOnly: true, inWorktree: false },
     ])
   })
 

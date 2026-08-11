@@ -5,6 +5,24 @@ import {
   writeDiagnosticsZip,
 } from '@openchamber/harness-runtime';
 
+const CLEAR_RANGE_MS = Object.freeze({
+  '24h': 24 * 60 * 60 * 1000,
+  '7d': 7 * 24 * 60 * 60 * 1000,
+  '14d': 14 * 24 * 60 * 60 * 1000,
+});
+
+export const normalizeClearRange = (value, now = Date.now()) => {
+  const range = value === undefined ? 'all' : value;
+  if (range === 'all') return {};
+  const duration = typeof range === 'string' ? CLEAR_RANGE_MS[range] : undefined;
+  if (!duration) {
+    const error = new Error('Diagnostic clear range must be 24h, 7d, 14d, or all');
+    error.statusCode = 400;
+    throw error;
+  }
+  return { since: now - duration };
+};
+
 const normalizeScope = (body) => {
   if (body?.scope === 'task') {
     const sessionID = typeof body.sessionID === 'string' ? body.sessionID.trim() : '';
@@ -34,11 +52,12 @@ export const registerDiagnosticsRoutes = (app, options = {}) => {
     }
   });
 
-  app.delete('/api/diagnostics', async (_req, res) => {
+  app.delete('/api/diagnostics', async (req, res) => {
     try {
-      res.json(await runtime.journal.clear());
+      const clearOptions = normalizeClearRange(req.query?.range, (options.now ?? Date.now)());
+      res.json(await runtime.journal.clear(clearOptions));
     } catch (error) {
-      res.status(500).json({ error: error?.message || 'Failed to clear diagnostics' });
+      res.status(error?.statusCode || 500).json({ error: error?.message || 'Failed to clear diagnostics' });
     }
   });
 

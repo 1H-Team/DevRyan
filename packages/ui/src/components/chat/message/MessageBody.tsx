@@ -11,7 +11,7 @@ import { MessageFilesDisplay } from '../FileAttachment';
 import { TurnChangedFilesDropdown } from '../TurnChangedFilesDropdown';
 import type { ToolPart as ToolPartType } from '@opencode-ai/sdk/v2';
 import type { StreamPhase, ToolPopupContent, AgentMentionInfo } from './types';
-import type { TurnGroupingContext } from '../lib/turns/types';
+import type { ManagedTransportRecoveryState, TurnGroupingContext } from '../lib/turns/types';
 import { cn } from '@/lib/utils';
 import { collapseExactDuplicateAdjacentTextParts, collapseSupersededTodoWrites, isEmptyTextPart, extractTextContent } from './partUtils';
 import { FadeInOnReveal } from './FadeInOnReveal';
@@ -386,6 +386,7 @@ interface MessageBodyProps {
     onFork?: () => void;
     errorMessage?: string;
     errorVariant?: 'error' | 'info' | 'plain';
+    assistantTransportRecovery?: ManagedTransportRecoveryState;
     userActionsMode?: 'inline' | 'external-content' | 'external-actions';
     stickyUserHeaderEnabled?: boolean;
     isPlanModeSource?: boolean;
@@ -895,6 +896,7 @@ const AssistantMessageBody = React.memo(({
     turnGroupingContext,
     errorMessage,
     errorVariant = 'error',
+    assistantTransportRecovery,
     isPlanModeSource = false,
 }: Omit<MessageBodyProps, 'isUser'>) => {
     const { t } = useI18n();
@@ -1956,17 +1958,20 @@ const AssistantMessageBody = React.memo(({
                     {renderedParts}
                      {showErrorMessage && (
                          <FadeInOnReveal key="assistant-error">
-                             <div className={cn(
-                                 'group/assistant-text relative break-words max-w-full',
-                                 errorVariant === 'plain'
-                                     ? 'text-muted-foreground'
-                                     : cn(
-                                         'p-3 rounded-lg border',
-                                         errorVariant === 'info'
-                                             ? 'bg-[var(--status-info-background)] border-[var(--status-info-border)]'
-                                             : 'bg-[var(--status-error-background)] border-[var(--status-error-border)]',
-                                     ),
-                             )}>
+                             <div
+                                 data-assistant-transport-recovery={assistantTransportRecovery}
+                                 className={cn(
+                                     'group/assistant-text relative break-words max-w-full',
+                                     errorVariant === 'plain'
+                                         ? 'text-muted-foreground'
+                                         : cn(
+                                             'p-3 rounded-lg border',
+                                             errorVariant === 'info'
+                                                 ? 'bg-[var(--status-info-background)] border-[var(--status-info-border)]'
+                                                 : 'bg-[var(--status-error-background)] border-[var(--status-error-border)]',
+                                         ),
+                                 )}
+                             >
                                  <div className={cn(errorVariant !== 'plain' && 'flex items-start gap-2')}>
                                      {errorVariant !== 'plain' && (
                                          <ErrorIcon className={cn(

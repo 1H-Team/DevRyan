@@ -1,7 +1,7 @@
 # packages/web/server/lib/
 
 ## Responsibility
-Service-layer modules for server features (OpenCode lifecycle, auth, shared-host identity/authorization, event streaming, terminal protocol, git/GitHub, durable harness diagnostics/evidence, notifications, tunnels, quotas, project scheduling, scoped session-plan storage, and file search).
+Service-layer modules for server features (OpenCode lifecycle, auth, shared-host identity/authorization, managed bug/error review, event streaming, terminal protocol, git/GitHub, durable harness diagnostics/evidence, notifications, tunnels, quotas, project scheduling, scoped session-plan storage, and file search).
 
 ## Design
 - **Domain segmentation** by directory (`opencode/`, `multi-user/`, `event-stream/`, `terminal/`, `git/`, `github/`, `skills-catalog/`, etc.).

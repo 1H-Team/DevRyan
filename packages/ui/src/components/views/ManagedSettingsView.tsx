@@ -5,6 +5,7 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { canAccessSettingsPage, useAuthPrincipal } from '@/lib/authSession';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { useI18n } from '@/lib/i18n';
+import { isVSCodeRuntime } from '@/lib/desktop';
 import { SettingsPagePermissionBoundary } from '@/lib/settings/permission-context';
 import { cn } from '@/lib/utils';
 import { useUIStore } from '@/stores/useUIStore';
@@ -37,6 +38,9 @@ const LazyMcpSidebar = /* @__PURE__ */ lazyWithChunkRecovery(() =>
 const LazyMcpPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
   import('@/components/sections/mcp/McpPage').then((module) => ({ default: module.McpPage })),
 );
+const LazyBugReportsPage = /* @__PURE__ */ lazyWithChunkRecovery(() =>
+  import('@/components/sections/bug-reports/BugReportsPage').then((module) => ({ default: module.BugReportsPage })),
+);
 
 type ManagedSettingsPage =
   | 'home'
@@ -48,7 +52,8 @@ type ManagedSettingsPage =
   | 'agents'
   | 'providers'
   | 'usage'
-  | 'mcp';
+  | 'mcp'
+  | 'bug-reports';
 
 interface ManagedSettingsViewProps {
   onClose?: () => void;
@@ -58,7 +63,7 @@ interface ManagedPageDefinition {
   slug: ManagedSettingsPage;
   title: string;
   description: string;
-  group: 'Preferences' | 'Workspace';
+  group: 'Preferences' | 'Workspace' | 'Development';
 }
 
 const SectionBoundary: React.FC<React.PropsWithChildren> = ({ children }) => (
@@ -94,8 +99,14 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
       { slug: 'providers', title: t('settings.page.providers.title'), description: 'Review provider access and models.', group: 'Workspace' },
       { slug: 'usage', title: t('settings.page.usage.title'), description: 'Inspect provider usage and limits.', group: 'Workspace' },
       { slug: 'mcp', title: t('settings.page.mcp.title'), description: 'Review connected MCP services.', group: 'Workspace' },
+      {
+        slug: 'bug-reports',
+        title: t('settings.page.bugReports.title'),
+        description: t('settings.page.bugReports.description'),
+        group: 'Development',
+      },
     ];
-    return definitions.filter((page) => canAccessSettingsPage(principal, page.slug));
+    return definitions.filter((page) => canAccessSettingsPage(principal, page.slug) && (page.slug !== 'bug-reports' || !isVSCodeRuntime()));
   }, [principal, t]);
 
   const activePage = pages.find((page) => page.slug === settingsPage) ?? null;
@@ -182,6 +193,13 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
     if (activeSlug === 'usage') {
       return renderSplitPage(activeSlug, <LazyUsageSidebar />, <LazyUsagePage />);
     }
+    if (activeSlug === 'bug-reports') {
+      return (
+        <SettingsPagePermissionBoundary slug={activeSlug}>
+          <SectionBoundary><LazyBugReportsPage /></SectionBoundary>
+        </SettingsPagePermissionBoundary>
+      );
+    }
     return renderSplitPage('mcp', <LazyMcpSidebar />, <LazyMcpPage />);
   };
 
@@ -216,7 +234,7 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
           >
             {t('settings.view.home.title')}
           </button>
-          {(['Preferences', 'Workspace'] as const).map((group) => {
+          {(['Preferences', 'Workspace', 'Development'] as const).map((group) => {
             const groupPages = pages.filter((page) => page.group === group);
             if (groupPages.length === 0) return null;
             return (

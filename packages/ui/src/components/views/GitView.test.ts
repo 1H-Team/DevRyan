@@ -28,6 +28,39 @@ describe('GitView branch rename access', () => {
   });
 });
 
+describe('GitView existing-worktree branch switching', () => {
+  test('retargets an open draft and preserves its directory override', () => {
+    const code = source();
+
+    expect(code).toContain("result: Extract<BranchCheckoutResult, { type: 'worktree-target' }>");
+    expect(code).toContain('if (newSessionDraft?.open) {');
+    expect(code).toContain('setNewSessionDraftTarget({');
+    expect(code).toContain('directoryOverride: result.directory,');
+    expect(code).toContain('setDraftPreserveDirectoryOverride(true);');
+  });
+
+  test('opens a worktree-bound draft when a session is active and keeps the Git tab visible', () => {
+    const code = source();
+    const activationStart = code.indexOf('const activateWorktreeTarget');
+    const activationEnd = code.indexOf('const handleCheckoutBranch', activationStart);
+    const activation = code.slice(activationStart, activationEnd);
+
+    expect(activation).toContain('openNewSessionDraft({');
+    expect(activation).toContain('preserveDirectoryOverride: true,');
+    expect(activation).not.toContain('setActiveMainTab');
+    expect(activation).not.toContain('setCurrentSession');
+  });
+
+  test('annotates existing worktree branches and handles them before checkout success', () => {
+    const code = source();
+
+    expect(code).toContain('worktreeBranches={worktreeBranches}');
+    expect(code).toContain("if (result.type === 'worktree-target') {");
+    expect(code).toContain('await activateWorktreeTarget(result);');
+    expect(code).toContain("toast.success(t('gitView.toast.switchedToWorktree'");
+  });
+});
+
 describe('GitView worktree bootstrap gating', () => {
   test('does not collect repository status until bootstrap is authoritative', () => {
     const code = source();

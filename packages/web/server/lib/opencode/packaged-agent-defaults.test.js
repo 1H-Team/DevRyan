@@ -7,7 +7,7 @@ import yaml from 'yaml';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 19_428;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 23_290;
 const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
   __dirname,
   '../../default-config/user-profile/oh-my-opencode-slim.json',
@@ -94,7 +94,7 @@ describe('packaged agent defaults', () => {
 
     expect(lineCount).toBeLessThanOrEqual(260);
     expect(content).toContain('Simple requests: do the work yourself');
-    expect(content).toContain('Design-quality UI work: route to `designer`');
+    expect(content).toContain('Designer owns every design change end to end');
     expect(content).toContain('Context:');
     expect(content).toContain('Starting points:');
     expect(content).toContain('Return:');
@@ -106,6 +106,32 @@ describe('packaged agent defaults', () => {
     expect(content).toContain('Oracle review gate:');
     expect(content).toContain('Review depth: focused | deep');
     expect(content).toContain('Do not ask Oracle to rerun tests, builds, lint, or type-checking');
+  });
+
+  it('keeps Designer responsible for design planning through implementation', () => {
+    const orchestrator = readPackagedAgent('orchestrator');
+    const designer = readPackagedAgent('designer');
+    const fixer = readPackagedAgent('fixer');
+
+    expect(orchestrator.body).toContain('Designer owns every design change end to end');
+    expect(orchestrator.body).toContain('Never hand a Designer-produced plan or review to Fixer for implementation.');
+    expect(orchestrator.body).toContain('route that work back to Designer in normal mode');
+    expect(orchestrator.body).toContain('UI correctness bugs with no visual judgment route to `fixer`.');
+    expect(orchestrator.body).toContain('For mixed work, create disjoint scopes');
+    expect(orchestrator.body).toContain('If Designer remains unavailable after the existing managed recovery, report the blocker');
+    expect(orchestrator.body).toContain('Design-change planning in plan mode routes to a read-only Designer task.');
+    expect(orchestrator.body).toContain('Non-design implementation gate');
+    expect(orchestrator.body).not.toContain('Fixer-first implementation gate');
+
+    expect(designer.body).toContain('End-to-end design-change ownership');
+    expect(designer.body).toContain('then edit the code, add or update the design-specific tests, and validate the visible result');
+    expect(designer.body).toContain('If the assignment provides an approved design plan, implement it instead of returning another proposal.');
+    expect(designer.body).toContain('explicitly plan-only or review-only, remain read-only');
+
+    expect(fixer.body).toContain("Implement the Orchestrator's non-design task specification");
+    expect(fixer.body).toContain('frontend data/state/logic and component correctness');
+    expect(fixer.body).toContain('make no design edits and return `<status>blocked</status>`');
+    expect(fixer.body).toContain('work only on an explicitly disjoint non-design scope');
   });
 
   it('makes Oracle focused and high-reasoning by default without weakening deep review', () => {

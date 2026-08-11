@@ -43,7 +43,7 @@ const makeDocument = () => {
 };
 
 describe('interaction analytics collector', () => {
-  test('captures a programmatic execCommand copy exactly once and never stores its text', () => {
+  test('captures a programmatic execCommand copy exactly once and never persists its text', () => {
     const storage = makeStorage();
     const documentRef = makeDocument();
     const collector = createInteractionAnalyticsCollector({
@@ -84,8 +84,8 @@ describe('interaction analytics collector', () => {
     let fetchCount = 0;
     const fetchImpl = async (_input: RequestInfo | URL, init?: RequestInit) => {
       fetchCount += 1;
-      const body = JSON.parse(String(init?.body)) as { events: Array<{ id: string }> };
-      expect(JSON.stringify(body)).not.toContain('selected text');
+      const body = JSON.parse(String(init?.body)) as { events: Array<{ id: string; copiedText?: string }> };
+      expect(body.events[0].copiedText).toBe('selected text');
       return new Response(JSON.stringify({ results: body.events.map((event) => ({ id: event.id, accepted: true })) }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -111,6 +111,76 @@ describe('interaction analytics collector', () => {
     await collector.flush();
     expect(fetchCount).toBe(1);
     expect([...storage.values.values()]).toHaveLength(0);
+    collector.dispose();
+  });
+
+  test('caps copied text at 64 KiB, keeps it out of storage, and disables keepalive for a large batch', async () => {
+    const storage = makeStorage();
+    const documentRef = makeDocument();
+    const source = '🙂'.repeat(20_000);
+    let requestInit: RequestInit | undefined;
+    const fetchImpl = async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requestInit = init;
+      const body = JSON.parse(String(init?.body)) as { events: Array<{ id: string; copiedText?: string; characterCount: number }> };
+      const copiedText = body.events[0].copiedText || '';
+      expect(new TextEncoder().encode(copiedText).byteLength <= 64 * 1024).toBe(true);
+      expect(copiedText.endsWith('🙂')).toBe(true);
+      expect(body.events[0].characterCount).toBe(source.length);
+      return new Response(JSON.stringify({ results: [{ id: body.events[0].id, accepted: true }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+    const collector = createInteractionAnalyticsCollector({
+      document: documentRef as unknown as Document,
+      storage,
+      fetchImpl: fetchImpl as typeof fetch,
+      getPrincipal: () => principal,
+      getDirectory: () => '/repo',
+      randomUuid: () => 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      setTimeoutImpl: (() => 1) as unknown as typeof setTimeout,
+      clearTimeoutImpl: (() => undefined) as typeof clearTimeout,
+    });
+
+    collector.recordProgrammaticCopy(source, { sourceSurface: 'settings', copyKind: 'text' });
+    expect([...storage.values.values()].join('')).not.toContain('🙂');
+    await collector.flush();
+    expect(requestInit?.keepalive).toBe(false);
+    expect([...storage.values.values()]).toHaveLength(0);
+    collector.dispose();
+  });
+
+  test('captures the selected input substring once', async () => {
+    const storage = makeStorage();
+    const documentRef = makeDocument();
+    let copiedText = '';
+    const fetchImpl = async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { events: Array<{ id: string; copiedText?: string }> };
+      copiedText = body.events[0].copiedText || '';
+      return new Response(JSON.stringify({ results: [{ id: body.events[0].id, accepted: true }] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+    const collector = createInteractionAnalyticsCollector({
+      document: documentRef as unknown as Document,
+      storage,
+      fetchImpl: fetchImpl as typeof fetch,
+      getPrincipal: () => principal,
+      getDirectory: () => '/repo',
+      randomUuid: () => 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+      setTimeoutImpl: (() => 1) as unknown as typeof setTimeout,
+      clearTimeoutImpl: (() => undefined) as typeof clearTimeout,
+    });
+    collector.initialize();
+    documentRef.dispatch('copy', {
+      value: 'before selected after',
+      selectionStart: 7,
+      selectionEnd: 15,
+      closest: () => ({ dataset: { analyticsSurface: 'settings' } }),
+    } as unknown as EventTarget);
+    await collector.flush();
+    expect(copiedText).toBe('selected');
     collector.dispose();
   });
 });

@@ -3,6 +3,7 @@ import { describe, expect, mock, test } from "bun:test"
 import type { GitAPI } from "@/lib/api/types"
 import {
   checkoutBranchWithOptionalStash,
+  findCheckedOutBranchWorktree,
   finishCurrentBranchIntoMainWithOptionalStash,
   normalizeCheckoutBranchName,
 } from "./branchCheckout"
@@ -30,6 +31,76 @@ describe("branch checkout helper", () => {
   test("normalizes remote-prefixed branch names for checkout", () => {
     expect(normalizeCheckoutBranchName("remotes/origin/main")).toBe("origin/main")
     expect(normalizeCheckoutBranchName(" main ")).toBe("main")
+  })
+
+  test("finds an exact local branch checked out in another worktree", () => {
+    const worktrees = [
+      { head: "main-head", name: "repo", branch: "refs/heads/main", path: "/repo" },
+      { head: "dev-head", name: "Dev", branch: "refs/heads/Dev", path: "/worktrees/Dev" },
+    ]
+
+    expect(findCheckedOutBranchWorktree(worktrees, "Dev", "/repo/")).toEqual(worktrees[1])
+    expect(findCheckedOutBranchWorktree(worktrees, "dev", "/repo")).toBeNull()
+    expect(findCheckedOutBranchWorktree(worktrees, "remotes/origin/Dev", "/repo")).toBeNull()
+  })
+
+  test("reuses a live worktree before dirty-state or stash handling", async () => {
+    const { git, calls } = createGit()
+    git.listGitWorktrees = mock(async () => [
+      { head: "main-head", name: "repo", branch: "main", path: "/repo" },
+      { head: "dev-head", name: "Dev", branch: "Dev", path: "/worktrees/Dev" },
+    ])
+    git.getGitStatus = mock(async (directory: string) => ({
+      current: directory === "/worktrees/Dev" ? "Dev" : "main",
+      tracking: null,
+      ahead: 0,
+      behind: 0,
+      files: [],
+      isClean: true,
+    }))
+
+    const result = await checkoutBranchWithOptionalStash({
+      git,
+      directory: "/repo",
+      branch: "Dev",
+      status: {
+        current: "main",
+        tracking: null,
+        ahead: 0,
+        behind: 0,
+        files: [{ path: "src/app.ts", index: " ", working_dir: "M" }],
+        isClean: false,
+      },
+      stashConfirmed: true,
+      restoreAfter: true,
+    })
+
+    expect(result).toEqual({ type: "worktree-target", branch: "Dev", directory: "/worktrees/Dev" })
+    expect(calls).toEqual([])
+  })
+
+  test("blocks a registered worktree that is no longer a live checkout", async () => {
+    const { git, calls } = createGit()
+    git.listGitWorktrees = mock(async () => [
+      { head: "dev-head", name: "Dev", branch: "Dev", path: "/worktrees/Dev" },
+    ])
+    git.getGitStatus = mock(async () => {
+      throw new Error("missing directory")
+    })
+
+    const result = await checkoutBranchWithOptionalStash({
+      git,
+      directory: "/repo",
+      branch: "Dev",
+      status: { current: "main", tracking: null, ahead: 0, behind: 0, files: [], isClean: true },
+    })
+
+    expect(result).toEqual({
+      type: "blocked",
+      branch: "Dev",
+      reason: "existing worktree for Dev is unavailable",
+    })
+    expect(calls).toEqual([])
   })
 
   test("clean checkout calls checkout directly", async () => {

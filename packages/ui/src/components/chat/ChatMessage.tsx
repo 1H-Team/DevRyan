@@ -1,5 +1,5 @@
 import React from 'react';
-import type { Message, Part } from '@opencode-ai/sdk/v2';
+import type { Part } from '@opencode-ai/sdk/v2';
 import { useShallow } from 'zustand/react/shallow';
 
 import { defaultCodeDark, defaultCodeLight } from '@/lib/codeTheme';
@@ -27,7 +27,11 @@ import { extractTextContent, filterVisibleParts, normalizeParts } from './messag
 import { normalizeUserDisplayParts } from './message/normalizeUserDisplayParts';
 import { flattenAssistantTextParts } from '@/lib/messages/messageText';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
-import type { TurnGroupingContext } from './lib/turns/types';
+import type {
+    ChatMessageEntry,
+    ManagedTransportRecoveryPresentation,
+    TurnGroupingContext,
+} from './lib/turns/types';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { FadeInOnReveal } from './message/FadeInOnReveal';
 import { streamPerfCount, streamPerfObserve } from '@/stores/utils/streamDebug';
@@ -103,18 +107,9 @@ const getMessageInfoProp = (info: unknown, key: string): unknown => {
 };
 
 interface ChatMessageProps {
-    message: {
-        info: Message;
-        parts: Part[];
-    };
-    previousMessage?: {
-        info: Message;
-        parts: Part[];
-    };
-    nextMessage?: {
-        info: Message;
-        parts: Part[];
-    };
+    message: ChatMessageEntry;
+    previousMessage?: ChatMessageEntry;
+    nextMessage?: ChatMessageEntry;
     isLatestMessage: boolean;
     onContentChange?: (reason?: ContentChangeReason) => void;
     animationHandlers?: AnimationHandlers;
@@ -714,6 +709,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 
     // Summary body removed — flat rendering means text is always inline.
 
+    const managedTransportRecovery = message.presentation?.managedTransportRecovery;
     const assistantError = React.useMemo(() => {
         if (isUser) {
             return undefined;
@@ -727,9 +723,13 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             steeredAbortMessageId?: string;
             messageId?: string;
             isLatestMessage?: boolean;
+            managedTransportRecovery?: ManagedTransportRecoveryPresentation;
         } = {
             isLatestMessage,
         };
+        if (managedTransportRecovery) {
+            abortOptions.managedTransportRecovery = managedTransportRecovery;
+        }
         if (manualAbortMessageId) {
             abortOptions.manualAbortMessageId = manualAbortMessageId;
         }
@@ -740,7 +740,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             abortOptions.messageId = messageId;
         }
         return classifyAssistantError(errorInfo, abortOptions) ?? classifySteeredAbortFallback(abortOptions);
-    }, [isLatestMessage, isUser, manualAbortMessageId, message.info, steeredAbortMessageId]);
+    }, [isLatestMessage, isUser, managedTransportRecovery, manualAbortMessageId, message.info, steeredAbortMessageId]);
 
     React.useEffect(() => {
         if (assistantError?.abortKind !== 'unexpected' || !messageSessionId) {
@@ -1226,6 +1226,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                 turnGroupingContext={turnGroupingContext}
                                  errorMessage={assistantErrorText}
                                  errorVariant={assistantErrorVariant}
+                                 assistantTransportRecovery={managedTransportRecovery?.state}
                                  isPlanModeSource={effectiveIsPlanModeSource}
                              />
 
@@ -1247,16 +1248,16 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 
 export default React.memo(ChatMessage, (prev, next) => {
     return areRenderRelevantMessagesEqual(
-        { info: prev.message.info, parts: prev.message.parts },
-        { info: next.message.info, parts: next.message.parts }
+        prev.message,
+        next.message
     )
         && areOptionalRenderRelevantMessagesEqual(
-            prev.previousMessage ? { info: prev.previousMessage.info, parts: prev.previousMessage.parts } : undefined,
-            next.previousMessage ? { info: next.previousMessage.info, parts: next.previousMessage.parts } : undefined
+            prev.previousMessage,
+            next.previousMessage
         )
         && areOptionalRenderRelevantMessagesEqual(
-            prev.nextMessage ? { info: prev.nextMessage.info, parts: prev.nextMessage.parts } : undefined,
-            next.nextMessage ? { info: next.nextMessage.info, parts: next.nextMessage.parts } : undefined
+            prev.nextMessage,
+            next.nextMessage
         )
         && prev.isInActiveTurn === next.isInActiveTurn
         && prev.isLatestMessage === next.isLatestMessage

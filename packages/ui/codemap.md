@@ -13,8 +13,9 @@ Workspace package for the shared React UI runtime used by web, Electron, and VS 
 - **User-facing session visibility**: `src/lib/sessionVisibility.ts` centralizes exact internal-session classification for navigation surfaces, composing DevRyan-owned Git helper registration with external SmartFetch secondary-model helper titles while leaving authoritative sync state untouched.
 - **Managed interaction analytics**: `src/lib/interactionAnalytics.ts` is a
   bounded, session-scoped collector for explicit file navigation and copy
-  metadata. It stays outside Zustand hot paths; `src/lib/clipboard.ts` is the
-  shared programmatic-copy boundary and never sends clipboard text.
+  analytics. It stays outside Zustand hot paths and browser persistence keeps
+  metadata only; `src/lib/clipboard.ts` is the shared programmatic-copy
+  boundary, while copied text is capped in memory and flushed asynchronously.
 
 ## Flow
 1. Host runtime injects runtime APIs and loads UI entrypoint.

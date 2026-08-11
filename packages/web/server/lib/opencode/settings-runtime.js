@@ -69,6 +69,7 @@ export const createSettingsRuntime = (deps) => {
     normalizeManagedRemoteTunnelPresetTokens,
     syncManagedRemoteTunnelConfigWithPresets,
     upsertManagedRemoteTunnelToken,
+    projectIconStore,
   } = deps;
 
   let persistSettingsLock = Promise.resolve();
@@ -260,7 +261,7 @@ export const createSettingsRuntime = (deps) => {
     await fsPromises.rm(oldConfigPath, { force: true });
   };
 
-  const migrateSettingsToDeterministicProjectIds = async (current) => {
+  const migrateSettingsToDeterministicProjectIds = async (current, { migrateIcons = true } = {}) => {
     const settings = current && typeof current === 'object' ? current : {};
     const projects = sanitizeProjects(settings.projects) || [];
     if (projects.length === 0) {
@@ -278,7 +279,17 @@ export const createSettingsRuntime = (deps) => {
       if (nextId !== project.id) {
         changed = true;
         await migrateProjectScopedStorage({ oldId: project.id, newId: nextId, projectPath: project.path });
-        await migrateProjectIconFiles({ oldId: project.id, newId: nextId });
+        if (migrateIcons) {
+          if (projectIconStore) {
+            await projectIconStore.migrateProjectId({
+              oldId: project.id,
+              newId: nextId,
+              projectPath: project.path,
+            });
+          } else {
+            await migrateProjectIconFiles({ oldId: project.id, newId: nextId });
+          }
+        }
       }
       nextProjects.push({ ...project, id: nextId });
     }
@@ -750,10 +761,16 @@ export const createSettingsRuntime = (deps) => {
     const migration6 = await migrateSettingsFromLegacyNamedTunnelKeys(migration5.settings);
     const migration7 = normalizeSettingsPaths(migration6.settings);
     const migration8 = await migrateSettingsToDeterministicProjectIds(migration7.settings);
-    if (migration1.changed || migration2.changed || migration3.changed || migration4.changed || migration5.changed || migration6.changed || migration7.changed || migration8.changed) {
-      await writeSettingsToDisk(migration8.settings);
+    const migration9 = projectIconStore
+      ? await projectIconStore.reconcileProjects(migration8.settings.projects || [])
+      : { projects: migration8.settings.projects || [], changed: false };
+    const reconciledSettings = migration9.changed
+      ? { ...migration8.settings, projects: migration9.projects }
+      : migration8.settings;
+    if (migration1.changed || migration2.changed || migration3.changed || migration4.changed || migration5.changed || migration6.changed || migration7.changed || migration8.changed || migration9.changed) {
+      await writeSettingsToDisk(reconciledSettings);
     }
-    return migration8.settings;
+    return reconciledSettings;
   };
 
   const persistSettings = async (changes) => {
@@ -769,7 +786,13 @@ export const createSettingsRuntime = (deps) => {
         next = normalizedState.settings;
       }
 
-      const deterministicProjectIdMigration = await migrateSettingsToDeterministicProjectIds(next);
+      // Icon transactions hold the icon-store lock while persisting their
+      // settings projection. Never acquire that lock from inside the settings
+      // persistence lock; startup owns icon migration and reconciliation.
+      const deterministicProjectIdMigration = await migrateSettingsToDeterministicProjectIds(
+        next,
+        { migrateIcons: false }
+      );
       if (deterministicProjectIdMigration.changed) {
         next = deterministicProjectIdMigration.settings;
       }

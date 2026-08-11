@@ -365,6 +365,7 @@ export const MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT: string;
 export const MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT: string;
 export const MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT: string;
 export const MANAGED_READ_ONLY_PROMPT: string;
+export function isManagedTransientTransportContinuationPrompt(value: unknown): boolean;
 export const DEFAULT_MANAGED_TERMINAL_MAX_RECORDS: number;
 export const DEFAULT_MANAGED_TERMINAL_MAX_AGE_MS: number;
 export const DEFAULT_MANAGED_LEDGER_MAX_BYTES: number;

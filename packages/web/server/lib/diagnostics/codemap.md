@@ -2,8 +2,8 @@
 
 ## Responsibility
 
-Status, explicit clear, and streaming ZIP export routes for the always-on
-sanitized local diagnostic journal.
+Status, time-range or full clear, and streaming ZIP export routes for the
+always-on sanitized local diagnostic journal.
 
 ## Files
 

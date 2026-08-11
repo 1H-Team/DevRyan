@@ -185,13 +185,27 @@ export interface UserAnalyticsRange {
   activitySessions: UserAnalyticsRangeSession[];
 }
 
+export interface ClipboardAnalyticsSummary {
+  available: boolean;
+  preview: string;
+  originalLength: number;
+  truncated: boolean;
+  redacted: boolean;
+}
+
+export interface ClipboardAnalyticsDetail extends ClipboardAnalyticsSummary {
+  text: string;
+}
+
 export interface UserAnalyticsEvent extends ActivityRow {
+  event_id?: string;
   actor_user_id: string | null;
   target_user_id: string | null;
   project_id: string | null;
   session_id: string | null;
   metadata: Record<string, unknown>;
   actor: { id: string; displayName: string; role: Role } | null;
+  clipboard?: ClipboardAnalyticsSummary;
 }
 
 export interface UserAnalyticsEventsPage {

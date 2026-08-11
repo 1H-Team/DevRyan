@@ -4,6 +4,7 @@ export const registerProjectIconRoutes = (app, dependencies) => {
     path,
     crypto,
     openchamberDataDir,
+    projectIconStore,
     sanitizeProjects,
     readSettingsFromDiskMigrated,
     persistSettings,
@@ -219,8 +220,10 @@ export const registerProjectIconRoutes = (app, dependencies) => {
         return res.status(404).json({ error: 'Project not found' });
       }
 
-      const metadataMime = normalizeProjectIconMime(project.iconImage?.mime);
-      const preferredPath = metadataMime ? projectIconPathForMime(projectId, metadataMime) : null;
+      const manifestIcon = projectIconStore ? await projectIconStore.resolveIcon(project) : null;
+      const metadataMime = normalizeProjectIconMime(manifestIcon?.iconImage?.mime || project.iconImage?.mime);
+      const preferredPath = manifestIcon?.filePath
+        || (metadataMime ? projectIconPathForMime(projectId, metadataMime) : null);
       const candidates = preferredPath
         ? [preferredPath, ...projectIconPathCandidates(projectId).filter((candidate) => candidate !== preferredPath)]
         : projectIconPathCandidates(projectId);
@@ -296,17 +299,24 @@ export const registerProjectIconRoutes = (app, dependencies) => {
         return res.status(400).json({ error: 'Unsupported icon format' });
       }
 
-      await fsPromises.mkdir(projectIconsDirPath, { recursive: true });
-      await fsPromises.writeFile(iconPath, parsed.bytes);
-      await removeProjectIconFiles(projectId, iconPath);
-
       const updatedAt = Date.now();
-      const persisted = await persistProjectIconImage({
-        projects,
-        projectId,
-        iconImage: { mime: parsed.mime, updatedAt, source: 'custom' },
-        managed,
+      const persistMetadata = (iconImage) => persistProjectIconImage({
+        projects, projectId, iconImage, managed,
       });
+      const persisted = projectIconStore
+        ? await projectIconStore.replaceIcon({
+          project,
+          mime: parsed.mime,
+          source: 'custom',
+          updatedAt,
+          bytes: parsed.bytes,
+        }, persistMetadata)
+        : await (async () => {
+          await fsPromises.mkdir(projectIconsDirPath, { recursive: true });
+          await fsPromises.writeFile(iconPath, parsed.bytes);
+          await removeProjectIconFiles(projectId, iconPath);
+          return persistMetadata({ mime: parsed.mime, updatedAt, source: 'custom' });
+        })();
 
       return res.json({ project: persisted.project, ...(persisted.settings ? { settings: persisted.settings } : {}) });
     } catch (error) {
@@ -330,9 +340,15 @@ export const registerProjectIconRoutes = (app, dependencies) => {
         return res.status(403).json({ error: 'Project metadata can only be changed by an administrator' });
       }
 
-      await removeProjectIconFiles(projectId);
-
-      const persisted = await persistProjectIconImage({ projects, projectId, iconImage: null, managed });
+      const persistMetadata = (iconImage) => persistProjectIconImage({
+        projects, projectId, iconImage, managed,
+      });
+      const persisted = projectIconStore
+        ? await projectIconStore.deleteIcon({ project }, persistMetadata)
+        : await (async () => {
+          await removeProjectIconFiles(projectId);
+          return persistMetadata(null);
+        })();
 
       return res.json({ project: persisted.project, ...(persisted.settings ? { settings: persisted.settings } : {}) });
     } catch (error) {
@@ -400,17 +416,24 @@ export const registerProjectIconRoutes = (app, dependencies) => {
         return res.status(415).json({ error: 'Unsupported favicon format' });
       }
 
-      await fsPromises.mkdir(projectIconsDirPath, { recursive: true });
-      await fsPromises.writeFile(iconPath, bytes);
-      await removeProjectIconFiles(projectId, iconPath);
-
       const updatedAt = Date.now();
-      const persisted = await persistProjectIconImage({
-        projects,
-        projectId,
-        iconImage: { mime, updatedAt, source: 'auto' },
-        managed,
+      const persistMetadata = (iconImage) => persistProjectIconImage({
+        projects, projectId, iconImage, managed,
       });
+      const persisted = projectIconStore
+        ? await projectIconStore.replaceIcon({
+          project,
+          mime,
+          source: 'auto',
+          updatedAt,
+          bytes,
+        }, persistMetadata)
+        : await (async () => {
+          await fsPromises.mkdir(projectIconsDirPath, { recursive: true });
+          await fsPromises.writeFile(iconPath, bytes);
+          await removeProjectIconFiles(projectId, iconPath);
+          return persistMetadata({ mime, updatedAt, source: 'auto' });
+        })();
 
       return res.json({
         project: persisted.project,

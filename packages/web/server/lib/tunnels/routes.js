@@ -33,6 +33,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
     setRuntimeManagedRemoteTunnelToken,
     getActiveTunnelController,
     getRuntimeReady = () => true,
+    getManagedAccountLoginAvailable = () => false,
   } = dependencies;
 
   const resolveActiveNormalizedTunnelMode = () => {
@@ -88,6 +89,12 @@ export const createTunnelRoutesRuntime = (dependencies) => {
     }
 
     if (provider === TUNNEL_PROVIDER_CLOUDFLARE && mode === TUNNEL_MODE_MANAGED_REMOTE) {
+      if (!getManagedAccountLoginAvailable()) {
+        throw new TunnelServiceError(
+          'managed_account_auth_required',
+          'Managed Remote requires Supabase-backed individual DevRyan accounts.'
+        );
+      }
       if (!isValidManagedRemoteOriginPort(originPort)) {
         throw new TunnelServiceError(
           'validation_error',
@@ -390,7 +397,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
             bootstrapExpiresAt: null,
             runtimeReady,
             connectReady: false,
-            policy: 'tunnel-gated',
+            policy: normalizedMode === TUNNEL_MODE_MANAGED_REMOTE ? 'account-login' : 'tunnel-gated',
             activeTunnelMode: tunnelAuthController.getActiveTunnelMode() || null,
             activeSessions,
             localPort: getActivePort(),
@@ -419,10 +426,16 @@ export const createTunnelRoutesRuntime = (dependencies) => {
           });
         }
 
-        const bootstrapStatus = tunnelAuthController.getBootstrapStatus();
+        const usesDirectLogin = activeNormalizedMode === TUNNEL_MODE_MANAGED_REMOTE;
+        const bootstrapStatus = usesDirectLogin
+          ? { hasBootstrapToken: false, bootstrapExpiresAt: null }
+          : tunnelAuthController.getBootstrapStatus();
         const providerMetadata = tunnelService.getProviderMetadata();
         const connectorHealthy = providerMetadata?.connectorState !== 'degraded';
-        const connectReady = runtimeReady && connectorHealthy && bootstrapStatus.hasBootstrapToken;
+        const managedAccountLoginReady = !usesDirectLogin || getManagedAccountLoginAvailable();
+        const connectReady = runtimeReady
+          && connectorHealthy
+          && (usesDirectLogin ? managedAccountLoginReady : bootstrapStatus.hasBootstrapToken);
 
         return res.json({
           active: true,
@@ -439,7 +452,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
           bootstrapExpiresAt: bootstrapStatus.bootstrapExpiresAt,
           runtimeReady,
           connectReady,
-          policy: 'tunnel-gated',
+          policy: usesDirectLogin ? 'account-login' : 'tunnel-gated',
           activeTunnelMode: activeNormalizedMode,
           activeSessions: tunnelAuthController.listTunnelSessions(),
           localPort: getActivePort(),
@@ -583,7 +596,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
         );
         let revokedBootstrapCount = 0;
         let invalidatedSessionCount = 0;
-        if (replacedTunnel && previousTunnelId) {
+        if ((replacedTunnel || mode === TUNNEL_MODE_MANAGED_REMOTE) && previousTunnelId) {
           const revoked = tunnelAuthController.revokeTunnelArtifacts(previousTunnelId);
           revokedBootstrapCount = revoked.revokedBootstrapCount;
           invalidatedSessionCount = revoked.invalidatedSessionCount;
@@ -595,8 +608,13 @@ export const createTunnelRoutesRuntime = (dependencies) => {
           mode,
         });
 
-        const bootstrapToken = tunnelAuthController.issueBootstrapToken({ ttlMs: bootstrapTtlMs });
-        const connectUrl = `${publicUrl.replace(/\/$/, '')}/tunnel/connect?t=${encodeURIComponent(bootstrapToken.token)}`;
+        const usesDirectLogin = mode === TUNNEL_MODE_MANAGED_REMOTE;
+        const bootstrapToken = usesDirectLogin
+          ? null
+          : tunnelAuthController.issueBootstrapToken({ ttlMs: bootstrapTtlMs });
+        const connectUrl = bootstrapToken
+          ? `${publicUrl.replace(/\/$/, '')}/tunnel/connect?t=${encodeURIComponent(bootstrapToken.token)}`
+          : null;
         const managedRemoteTunnelConfig = await readManagedRemoteTunnelConfigFromDisk();
         const isCloudflareProvider = activeProvider === TUNNEL_PROVIDER_CLOUDFLARE;
 
@@ -610,7 +628,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
           managedRemoteTunnelHostname: isCloudflareProvider ? (hostname || null) : null,
           managedRemoteTunnelTokenPresetIds: isCloudflareProvider ? managedRemoteTunnelConfig.tunnels.map((entry) => entry.id) : [],
           connectUrl,
-          bootstrapExpiresAt: bootstrapToken.expiresAt,
+          bootstrapExpiresAt: bootstrapToken?.expiresAt ?? null,
           runtimeReady: true,
           connectReady: providerMetadata?.connectorState !== 'degraded',
           replacedTunnel,
@@ -623,7 +641,7 @@ export const createTunnelRoutesRuntime = (dependencies) => {
             : null,
           revokedBootstrapCount,
           invalidatedSessionCount,
-          policy: 'tunnel-gated',
+          policy: usesDirectLogin ? 'account-login' : 'tunnel-gated',
           activeTunnelMode: mode,
           activeSessions: tunnelAuthController.listTunnelSessions(),
           localPort: getActivePort(),
@@ -642,7 +660,10 @@ export const createTunnelRoutesRuntime = (dependencies) => {
             ? 400
             : (error.code === 'runtime_not_ready'
               ? 503
-            : (error.code === 'validation_error' || error.code === 'provider_unsupported' || error.code === 'mode_unsupported'
+            : (error.code === 'validation_error'
+              || error.code === 'managed_account_auth_required'
+              || error.code === 'provider_unsupported'
+              || error.code === 'mode_unsupported'
               ? 422
               : 500));
           return res.status(status).json({ ok: false, error: error.message, code: error.code, details: error.details ?? null });

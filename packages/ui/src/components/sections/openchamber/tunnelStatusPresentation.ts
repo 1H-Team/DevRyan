@@ -21,3 +21,7 @@ export const isManagedRemoteStatusDegraded = (status: ManagedRemoteStatusLike): 
 
   return status.providerMetadata?.publicReachabilityVerified === false;
 };
+
+export const isManagedAccountLoginAvailable = (scope: string | null | undefined): boolean => (
+  scope === 'managed'
+);

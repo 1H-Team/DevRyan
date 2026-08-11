@@ -2,8 +2,9 @@
 
 The diagnostics module exposes the always-on local harness journal without
 uploading it. `GET /api/diagnostics/status` reports bounded storage health,
-including `sessionCount`; `DELETE /api/diagnostics` clears every session/runtime
-bucket plus legacy segments while leaving chat history untouched;
+including `sessionCount`; `DELETE /api/diagnostics?range=24h|7d|14d|all`
+removes records in the selected recent window (or every session/runtime bucket
+plus legacy segments for `all`) while leaving chat history untouched;
 `POST /api/diagnostics/export` streams a branded task- or runtime-scoped ZIP;
 and `POST /api/diagnostics/sanitize` lets existing support text use the same
 redactor.
@@ -20,3 +21,9 @@ private sibling temporary file before fsync and rename. VS Code builds the same
 ZIP in the extension host and uses `showSaveDialog`. Browser web downloads the
 streamed response through the browser download surface. Native hosts remove
 abandoned diagnostics temporary files after 24 hours.
+
+The administrator Error Logs surface is a separate multi-user audit contract,
+not the local harness journal. Its `DELETE /api/error-logs` snapshot clear uses
+the durable audit outbox barrier and the
+`20260810182541_clear_managed_error_diagnostics` Supabase migration; clearing
+either store never implicitly clears the other.

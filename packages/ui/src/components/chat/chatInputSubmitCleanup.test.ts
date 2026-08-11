@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { clearCommittedComposerText, clearSubmittedComposerAfterSend } from "./chatInputSubmitCleanup"
+import {
+  clearCommittedComposerText,
+  clearSubmittedComposerAfterSend,
+  mergeSubmittedAttachmentsForRecovery,
+} from "./chatInputSubmitCleanup"
 
 const createTextarea = () => ({ value: "restored prompt" })
 
@@ -10,6 +14,7 @@ describe("chat input submit cleanup", () => {
     let messageRef = "restored prompt"
 
     clearCommittedComposerText({
+      attachedFilesCount: 1,
       textarea,
       clearPendingInputText: () => calls.push("clearPendingInputText"),
       clearPendingDraftPersist: () => calls.push("clearPendingDraftPersist"),
@@ -19,6 +24,7 @@ describe("chat input submit cleanup", () => {
         calls.push(`syncMessageRef:${value}`)
       },
       setMessage: (value) => calls.push(`setMessage:${value}`),
+      clearAttachedFiles: () => calls.push("clearAttachedFiles"),
     })
 
     expect(textarea.value).toBe("")
@@ -29,6 +35,7 @@ describe("chat input submit cleanup", () => {
       "clearDraftTarget",
       "syncMessageRef:",
       "setMessage:",
+      "clearAttachedFiles",
     ])
   })
 
@@ -38,7 +45,6 @@ describe("chat input submit cleanup", () => {
 
     clearSubmittedComposerAfterSend({
       queuedOnly: false,
-      attachedFilesCount: 1,
       textarea,
       clearPendingInputText: () => calls.push("clearPendingInputText"),
       clearPendingDraftPersist: () => calls.push("clearPendingDraftPersist"),
@@ -47,7 +53,6 @@ describe("chat input submit cleanup", () => {
       clearDraftTarget: () => calls.push("clearDraftTarget"),
       setHistoryIndex: (value) => calls.push(`setHistoryIndex:${value}`),
       setDraftMessage: (value) => calls.push(`setDraftMessage:${value}`),
-      clearAttachedFiles: () => calls.push("clearAttachedFiles"),
       setExpandedInput: (value) => calls.push(`setExpandedInput:${String(value)}`),
     })
 
@@ -60,7 +65,6 @@ describe("chat input submit cleanup", () => {
       "clearDraftTarget",
       "setHistoryIndex:-1",
       "setDraftMessage:",
-      "clearAttachedFiles",
       "setExpandedInput:false",
     ])
   })
@@ -71,7 +75,6 @@ describe("chat input submit cleanup", () => {
 
     clearSubmittedComposerAfterSend({
       queuedOnly: true,
-      attachedFilesCount: 1,
       textarea,
       clearPendingInputText: () => calls.push("clearPendingInputText"),
       clearPendingDraftPersist: () => calls.push("clearPendingDraftPersist"),
@@ -80,7 +83,6 @@ describe("chat input submit cleanup", () => {
       clearDraftTarget: () => calls.push("clearDraftTarget"),
       setHistoryIndex: (value) => calls.push(`setHistoryIndex:${value}`),
       setDraftMessage: (value) => calls.push(`setDraftMessage:${value}`),
-      clearAttachedFiles: () => calls.push("clearAttachedFiles"),
       setExpandedInput: (value) => calls.push(`setExpandedInput:${String(value)}`),
     })
 
@@ -93,7 +95,6 @@ describe("chat input submit cleanup", () => {
 
     clearSubmittedComposerAfterSend({
       queuedOnly: false,
-      attachedFilesCount: 0,
       textarea: null,
       clearPendingInputText: () => calls.push("clearPendingInputText"),
       clearPendingDraftPersist: () => calls.push("clearPendingDraftPersist"),
@@ -102,12 +103,48 @@ describe("chat input submit cleanup", () => {
       clearDraftTarget: () => calls.push("clearDraftTarget"),
       setHistoryIndex: (value) => calls.push(`setHistoryIndex:${value}`),
       setDraftMessage: (value) => calls.push(`setDraftMessage:${value}`),
-      clearAttachedFiles: () => calls.push("clearAttachedFiles"),
       setExpandedInput: (value) => calls.push(`setExpandedInput:${String(value)}`),
     })
 
     expect(calls.indexOf("clearPendingDraftPersist")).toBeLessThan(calls.indexOf("setMessage:"))
     expect(calls.indexOf("clearPendingDraftPersist")).toBeLessThan(calls.indexOf("clearDraftTarget"))
     expect(calls).not.toContain("clearAttachedFiles")
+  })
+
+  test("does not clear attachments during late successful cleanup", () => {
+    const calls: string[] = []
+
+    clearSubmittedComposerAfterSend({
+      queuedOnly: false,
+      textarea: null,
+      clearPendingInputText: () => calls.push("clearPendingInputText"),
+      clearPendingDraftPersist: () => calls.push("clearPendingDraftPersist"),
+      setMessage: (value) => calls.push(`setMessage:${value}`),
+      clearConfirmedMentions: () => calls.push("clearConfirmedMentions"),
+      clearDraftTarget: () => calls.push("clearDraftTarget"),
+      setHistoryIndex: (value) => calls.push(`setHistoryIndex:${value}`),
+      setDraftMessage: (value) => calls.push(`setDraftMessage:${value}`),
+      setExpandedInput: (value) => calls.push(`setExpandedInput:${String(value)}`),
+    })
+
+    expect(calls).not.toContain("clearAttachedFiles")
+  })
+
+  test("restores submitted attachments once and preserves newer attachments", () => {
+    const submitted = [
+      { id: "screenshot-a", filename: "a.png" },
+      { id: "screenshot-b", filename: "b.png" },
+      { id: "screenshot-a", filename: "duplicate-a.png" },
+    ]
+    const current = [
+      { id: "screenshot-b", filename: "existing-b.png" },
+      { id: "screenshot-c", filename: "new.png" },
+    ]
+
+    expect(mergeSubmittedAttachmentsForRecovery(submitted, current)).toEqual([
+      { id: "screenshot-a", filename: "a.png" },
+      { id: "screenshot-b", filename: "b.png" },
+      { id: "screenshot-c", filename: "new.png" },
+    ])
   })
 })

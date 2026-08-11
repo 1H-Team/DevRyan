@@ -202,6 +202,94 @@ describe('DevRyan agent browser plugin', () => {
     expect(client.session.messages).toHaveBeenCalledTimes(2);
   });
 
+  it('retries idempotent lease acquisition once on 503 and executes the browser command once', async () => {
+    let acquireCalls = 0;
+    vi.stubGlobal('fetch', vi.fn(async (url, init) => {
+      if (init.method === 'POST' && String(url).endsWith('/api/desktop/browser-leases')) {
+        acquireCalls += 1;
+        if (acquireCalls === 1) {
+          return new Response(JSON.stringify({ error: { message: 'temporary lease outage' } }), {
+            status: 503,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        return new Response(JSON.stringify({
+          leaseId: 'dvr_retry_lease',
+          wsUrl: 'ws://127.0.0.1:54321/devtools/page/retry',
+          created: true,
+        }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }));
+    const spawnImpl = vi.fn((binary, args) => makeChild({
+      stdout: args.includes('connect') ? 'connected\n' : 'done\n',
+    }));
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+
+    await expect(plugin.tool.devryan_browser.execute({ command: 'snapshot' }, context()))
+      .resolves.toBe('done');
+
+    expect(acquireCalls).toBe(2);
+    expect(spawnImpl.mock.calls.filter(([, args]) => args.includes('connect'))).toHaveLength(1);
+    expect(spawnImpl.mock.calls.filter(([, args]) => args.includes('snapshot'))).toHaveLength(1);
+  });
+
+  it('retries turn lookup once after a transport failure without replaying the browser command', async () => {
+    stubLeaseFetch();
+    const client = {
+      session: {
+        messages: vi.fn()
+          .mockRejectedValueOnce(new TypeError('fetch failed'))
+          .mockResolvedValueOnce({
+            data: [
+              { info: { id: 'msg_user_retry', role: 'user' } },
+              { info: { id: 'msg_assistant_retry', role: 'assistant', parentID: 'msg_user_retry' } },
+            ],
+          }),
+      },
+    };
+    const spawnImpl = vi.fn((binary, args) => makeChild({
+      stdout: args.includes('connect') ? 'connected\n' : 'done\n',
+    }));
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl, client });
+
+    await expect(plugin.tool.devryan_browser.execute(
+      { command: 'snapshot' },
+      context({ messageID: 'msg_assistant_retry' }),
+    )).resolves.toBe('done');
+
+    expect(client.session.messages).toHaveBeenCalledTimes(2);
+    expect(spawnImpl.mock.calls.filter(([, args]) => args.includes('snapshot'))).toHaveLength(1);
+  });
+
+  it('stops after the bounded lease retry and exposes a stable structured code', async () => {
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({
+      error: { message: 'still unavailable' },
+    }), { status: 504, headers: { 'content-type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchSpy);
+    const spawnImpl = vi.fn();
+    const plugin = await DevRyanBrowserPlugin({ spawnImpl });
+
+    let failure;
+    try {
+      await plugin.tool.devryan_browser.execute({ command: 'snapshot' }, context());
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(spawnImpl).not.toHaveBeenCalled();
+    expect(failure).toMatchObject({
+      code: __test.BROWSER_ERROR_CODES.leaseAcquireFailed,
+      statusCode: 504,
+      retryable: true,
+    });
+    expect(failure.message).toContain('DEVRYAN_BROWSER_LEASE_ACQUIRE_FAILED');
+  });
+
   it('rejects connection and daemon overrides before acquiring a lease', async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);

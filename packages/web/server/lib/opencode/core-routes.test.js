@@ -186,6 +186,8 @@ describe('common request middleware', () => {
     '/api/evidence/project',
     '/api/desktop/browser-leases',
     '/api/admin/users',
+    '/api/bug-reports',
+    '/api/error-logs',
   ])(
     'parses JSON request bodies for %s',
     async (route) => {
@@ -245,6 +247,114 @@ describe('managed tunnel and invitation links', () => {
 
     return { app, tunnelAuthController, handleConnect, prepareFreshTunnelLogin: uiAuthController.prepareFreshTunnelLogin };
   };
+
+  it('rejects shared-password auth and API access on a managed-remote hostname', async () => {
+    const app = express();
+    app.use(express.json());
+    const tunnelAuthController = createTunnelAuth();
+    tunnelAuthController.setActiveTunnel({
+      tunnelId: 'tunnel-1',
+      publicUrl: 'https://tunnel.example.com',
+      mode: 'managed-remote',
+    });
+    const handleSessionStatus = vi.fn((_req, res) => (
+      res.status(401).json({ authenticated: false, locked: true })
+    ));
+    const handleSessionCreate = vi.fn((_req, res) => res.json({ authenticated: true }));
+    const requireAuth = vi.fn((_req, _res, next) => next());
+    const uiAuthController = {
+      enabled: true,
+      multiUser: false,
+      handleSessionStatus,
+      handleSessionCreate,
+      requireAuth,
+    };
+
+    registerAuthAndAccessRoutes(app, {
+      tunnelAuthController,
+      uiAuthController,
+      readSettingsFromDiskMigrated: vi.fn(async () => ({ tunnelSessionTtlMs: 60_000 })),
+      normalizeTunnelSessionTtlMs: (value) => value,
+      getRuntimeReady: vi.fn(() => true),
+    });
+    app.get('/api/direct-login-check', (_req, res) => res.json({ ok: true }));
+
+    const status = await request(app)
+      .get('/auth/session')
+      .set('Host', 'tunnel.example.com');
+    const login = await request(app)
+      .post('/auth/session')
+      .set('Host', 'tunnel.example.com')
+      .send({ password: 'test-password' });
+    const api = await request(app)
+      .get('/api/direct-login-check')
+      .set('Host', 'tunnel.example.com');
+
+    expect(status.status).toBe(503);
+    expect(status.body).toMatchObject({
+      authenticated: false,
+      locked: true,
+      code: 'managed_account_auth_required',
+    });
+    expect(login.status).toBe(503);
+    expect(login.body.code).toBe('managed_account_auth_required');
+    expect(api.status).toBe(503);
+    expect(api.body.code).toBe('managed_account_auth_required');
+    expect(handleSessionStatus).not.toHaveBeenCalled();
+    expect(handleSessionCreate).not.toHaveBeenCalled();
+    expect(requireAuth).not.toHaveBeenCalled();
+  });
+
+  it('uses managed-account login directly on a managed-remote hostname', async () => {
+    const app = express();
+    app.use(express.json());
+    const tunnelAuthController = createTunnelAuth();
+    tunnelAuthController.setActiveTunnel({
+      tunnelId: 'tunnel-1',
+      publicUrl: 'https://tunnel.example.com',
+      mode: 'managed-remote',
+    });
+    const handleSessionStatus = vi.fn((_req, res) => (
+      res.status(401).json({ authenticated: false, locked: true, mode: 'multi-user' })
+    ));
+    const handleSessionCreate = vi.fn((_req, res) => res.json({ authenticated: true }));
+    const requireAuth = vi.fn((_req, _res, next) => next());
+    const uiAuthController = {
+      multiUser: true,
+      handleSessionStatus,
+      handleSessionCreate,
+      requireAuth,
+    };
+
+    registerAuthAndAccessRoutes(app, {
+      tunnelAuthController,
+      uiAuthController,
+      readSettingsFromDiskMigrated: vi.fn(async () => ({ tunnelSessionTtlMs: 60_000 })),
+      normalizeTunnelSessionTtlMs: (value) => value,
+      getRuntimeReady: vi.fn(() => true),
+    });
+    app.get('/api/direct-login-check', (_req, res) => res.json({ ok: true }));
+
+    const status = await request(app)
+      .get('/auth/session')
+      .set('Host', 'tunnel.example.com');
+    const login = await request(app)
+      .post('/auth/session')
+      .set('Host', 'tunnel.example.com')
+      .set('X-DevRyan-CSRF', '1')
+      .send({ email: 'developer@example.com', password: 'test-password' });
+    const api = await request(app)
+      .get('/api/direct-login-check')
+      .set('Host', 'tunnel.example.com');
+
+    expect(status.status).toBe(401);
+    expect(status.body).toMatchObject({ authenticated: false, locked: true, mode: 'multi-user' });
+    expect(login.status).toBe(200);
+    expect(api.body).toEqual({ ok: true });
+    expect(handleSessionStatus).toHaveBeenCalledTimes(1);
+    expect(handleSessionCreate).toHaveBeenCalledTimes(1);
+    expect(requireAuth).toHaveBeenCalledTimes(1);
+  });
 
   it('exchanges a canonical tunnel link in multi-user mode without invoking invitations', async () => {
     const { app, tunnelAuthController, handleConnect, prepareFreshTunnelLogin } = createAuthApp();

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createMultiUserRuntime } from './runtime.js';
 import { createSessionVault } from './vault.js';
+import { getOpenCodeDataPath } from '../git/service.js';
 
 const USER_IDS = {
   developer: '11111111-1111-4111-8111-111111111111',
@@ -229,6 +230,12 @@ const createHarness = async ({
         }
         return new Response(JSON.stringify(page), { status: 200, headers });
       }
+      if (url.pathname === '/session/status') {
+        return jsonResponse(Object.fromEntries(mutableOpenCodeSessions.map((session) => [
+          session.id,
+          session.status || { type: 'idle' },
+        ])));
+      }
       const sessionMatch = url.pathname.match(/^\/session\/([^/]+)$/);
       if (sessionMatch) {
         const sessionId = decodeURIComponent(sessionMatch[1]);
@@ -396,9 +403,27 @@ const createHarness = async ({
     if (table === 'activity_logs') {
       if (body) auditEvents.push(body);
       if (method === 'GET') {
+        let rows = [...mutableActivityRows];
+        const eventIdFilter = url.searchParams.get('event_id');
+        if (eventIdFilter?.startsWith('eq.')) {
+          rows = rows.filter((row) => row.event_id === eventIdFilter.slice(3));
+        } else if (eventIdFilter?.startsWith('in.(') && eventIdFilter.endsWith(')')) {
+          const eventIds = new Set(eventIdFilter.slice(4, -1).split(','));
+          rows = rows.filter((row) => eventIds.has(row.event_id));
+        }
+        const actionFilter = url.searchParams.get('action');
+        if (actionFilter?.startsWith('eq.')) rows = rows.filter((row) => row.action === actionFilter.slice(3));
+        const actorOrTarget = url.searchParams.get('or')?.match(/actor_user_id\.eq\.([^,)]+),target_user_id\.eq\.([^,)]+)/);
+        if (actorOrTarget) {
+          rows = rows.filter((row) => row.actor_user_id === actorOrTarget[1] || row.target_user_id === actorOrTarget[2]);
+        }
         const offset = Math.max(0, Number(url.searchParams.get('offset') || 0));
         const limit = Math.max(1, Number(url.searchParams.get('limit') || 1_000));
-        return jsonResponse(mutableActivityRows.slice(offset, offset + limit));
+        const select = url.searchParams.get('select');
+        const selectedRows = select
+          ? rows.map((row) => Object.fromEntries(select.split(',').map((field) => [field, row[field]])))
+          : rows;
+        return jsonResponse(selectedRows.slice(offset, offset + limit));
       }
       return jsonResponse([]);
     }
@@ -561,6 +586,242 @@ const waitForAudit = async (harness, action, targetId = null) => {
   }
   return null;
 };
+
+describe('multi-user failure projection runtime', () => {
+  it('attributes an unassigned owned-session failure and deduplicates reconnect replay', async () => {
+    const projectId = '33333333-3333-4333-8333-333333333333';
+    const harness = await createHarness({
+      accessRows: [],
+      branchRows: [],
+      ownershipRows: [{
+        session_id: 'ses_unassigned_error',
+        user_id: USER_IDS.developer,
+        project_id: projectId,
+        branch_name: 'developer',
+        public_directory: '/private/unassigned-worktree',
+        archived_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }],
+    });
+    await harness.runtime.recordOpenCodeActivity({
+      type: 'message.updated',
+      properties: {
+        info: {
+          id: 'msg_error',
+          sessionID: 'ses_unassigned_error',
+          role: 'assistant',
+          providerID: 'openai',
+          modelID: 'gpt-5',
+          agent: 'build',
+        },
+      },
+    });
+    const failure = {
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'tool_error',
+          messageID: 'msg_error',
+          sessionID: 'ses_unassigned_error',
+          type: 'tool',
+          tool: 'bash',
+          state: {
+            status: 'error',
+            input: { command: 'must not be retained' },
+            output: 'must not be retained',
+            error: 'Failed under /private/unassigned-worktree with Authorization: Bearer abcdefghijklmnopqrstuvwxyz',
+          },
+        },
+      },
+    };
+
+    expect(await harness.runtime.recordOpenCodeActivity(failure)).toBe(true);
+    expect(await harness.runtime.recordOpenCodeActivity(failure)).toBe(false);
+    const event = await waitForAudit(harness, 'tool.failed', 'tool_error');
+
+    expect(event).toMatchObject({
+      actor_user_id: USER_IDS.developer,
+      actor_role: 'developer',
+      action: 'tool.failed',
+      target_id: 'tool_error',
+      project_id: projectId,
+      session_id: 'ses_unassigned_error',
+      success: false,
+      metadata: {
+        kind: 'tool',
+        providerId: 'openai',
+        modelId: 'gpt-5',
+        agent: 'build',
+      },
+    });
+    expect(JSON.stringify(event)).not.toContain('must not be retained');
+    expect(JSON.stringify(event)).not.toContain('/private/unassigned-worktree');
+    expect(JSON.stringify(event)).not.toContain('abcdefghijklmnopqrstuvwxyz');
+    expect(harness.auditEvents.filter((candidate) => candidate.action === 'tool.failed')).toHaveLength(1);
+  });
+
+  it('uses the authoritative managed worktree for paths and appends recovery after continuation and idle', async () => {
+    const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-active-worktree-'));
+    temporaryDirectories.push(repositoryPath);
+    const projectId = '43333333-3333-4333-8333-333333333333';
+    const activeDirectory = path.join(getOpenCodeDataPath(), 'worktree', projectId, 'massine');
+    const missingTarget = path.join(
+      activeDirectory,
+      'src',
+      'components',
+      'SupportWidget',
+      'SupportWidget.test.tsx',
+    );
+    const harness = await createHarness({
+      projects: [{
+        id: projectId,
+        label: 'Managed project',
+        repository_path: repositoryPath,
+        remote_url: null,
+        default_branch: 'developer',
+        status: 'active',
+      }],
+      accessRows: [{
+        user_id: USER_IDS.developer,
+        project_id: projectId,
+        is_default: true,
+        github_account_id: null,
+      }],
+      branchRows: [{
+        user_id: USER_IDS.developer,
+        project_id: projectId,
+        branch_name: 'developer',
+        workspace_path: repositoryPath,
+        is_default: true,
+      }],
+      ownershipRows: [{
+        session_id: 'ses_active_worktree',
+        user_id: USER_IDS.developer,
+        project_id: projectId,
+        branch_name: 'developer',
+        public_directory: repositoryPath,
+        archived_at: null,
+      }],
+    });
+
+    await harness.runtime.recordOpenCodeActivity({
+      type: 'session.created',
+      properties: { info: { id: 'ses_active_worktree', directory: activeDirectory } },
+    });
+    const failure = {
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'tool_missing_target',
+          sessionID: 'ses_active_worktree',
+          type: 'tool',
+          tool: 'read',
+          state: {
+            status: 'error',
+            input: { path: missingTarget },
+            error: `ENOENT: no such file or directory, open '${missingTarget}'`,
+          },
+        },
+      },
+    };
+
+    expect(await harness.runtime.recordOpenCodeActivity(failure)).toBe(true);
+    const event = await waitForAudit(harness, 'tool.failed', 'tool_missing_target');
+    expect(event).toMatchObject({
+      diagnostic_impact: 'low',
+      diagnostic_source: 'observed',
+      metadata: {
+        failureClass: 'filesystem_target',
+        paths: ['src/components/SupportWidget/SupportWidget.test.tsx'],
+      },
+    });
+    expect(event.metadata.failureText).toMatch(/<WORKTREE_[A-Fa-f0-9]{12}>\//);
+    expect(event.metadata.failureText).not.toContain(os.homedir());
+
+    await harness.runtime.recordOpenCodeActivity({
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'tool_rediscovered',
+          sessionID: 'ses_active_worktree',
+          type: 'tool',
+          tool: 'read',
+          state: { status: 'completed', input: { path: 'src/components/SupportWidget/__tests__/SupportWidget.test.tsx' } },
+        },
+      },
+    });
+    expect(await harness.runtime.recordOpenCodeActivity({
+      type: 'session.status',
+      properties: { sessionID: 'ses_active_worktree', status: { type: 'idle' } },
+    })).toBe(true);
+    const recovered = await waitForAudit(harness, 'diagnostic.recovered', event.event_id);
+    expect(recovered).toMatchObject({
+      target_type: 'activity_event',
+      target_id: event.event_id,
+      session_id: 'ses_active_worktree',
+      metadata: { originalEventId: event.event_id, outcome: 'recovered' },
+    });
+    expect(harness.auditEvents.filter((candidate) => (
+      candidate.action === 'diagnostic.recovered' && candidate.target_id === event.event_id
+    ))).toHaveLength(1);
+  });
+
+  it('appends unresolved for a terminal session failure and never downgrades it on later idle', async () => {
+    const projectId = '53333333-3333-4333-8333-333333333333';
+    const harness = await createHarness({
+      ownershipRows: [{
+        session_id: 'ses_terminal_error',
+        user_id: USER_IDS.developer,
+        project_id: projectId,
+        branch_name: 'developer',
+        public_directory: '/private/terminal-worktree',
+        archived_at: null,
+      }],
+    });
+
+    expect(await harness.runtime.recordOpenCodeActivity({
+      type: 'session.error',
+      properties: {
+        sessionID: 'ses_terminal_error',
+        error: {
+          name: 'APIError',
+          data: { message: 'Terminal provider failure', isRetryable: false },
+        },
+      },
+    })).toBe(true);
+    const event = await waitForAudit(harness, 'session.error', 'ses_terminal_error');
+    expect(event).toMatchObject({
+      diagnostic_impact: 'high',
+      diagnostic_source: 'observed',
+      metadata: { failureClass: 'session_runtime', retryable: false },
+    });
+    expect(await waitForAudit(harness, 'diagnostic.unresolved', event.event_id)).toMatchObject({
+      target_id: event.event_id,
+      metadata: { outcome: 'unresolved' },
+    });
+
+    await harness.runtime.recordOpenCodeActivity({
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'tool_after_terminal',
+          sessionID: 'ses_terminal_error',
+          type: 'tool',
+          tool: 'read',
+          state: { status: 'completed' },
+        },
+      },
+    });
+    await harness.runtime.recordOpenCodeActivity({
+      type: 'session.status',
+      properties: { sessionID: 'ses_terminal_error', status: { type: 'idle' } },
+    });
+    expect(harness.auditEvents.some((candidate) => (
+      candidate.action === 'diagnostic.recovered' && candidate.target_id === event.event_id
+    ))).toBe(false);
+  });
+});
 
 describe('multi-user authentication runtime', () => {
   it('filters managed-task events by root-session ownership', async () => {
@@ -1145,6 +1406,8 @@ describe('multi-user authentication runtime', () => {
     const admin = { scope: 'managed', id: USER_IDS.admin, role: 'admin', assignments: [assignment(USER_IDS.admin, project.repository_path)] };
     const developer = { scope: 'managed', id: USER_IDS.developer, role: 'developer', assignments: [assignment(USER_IDS.developer, developerDirectory)] };
     const list = handlers.get('GET /api/experimental/session');
+    const status = handlers.get('GET /api/session/status');
+    const sessionGuard = handlers.get('USE /api/session/:sessionID');
 
     const adminList = makeResponse();
     await list({ principal: admin, query: { archived: 'false', limit: '1' } }, adminList, vi.fn());
@@ -1156,6 +1419,46 @@ describe('multi-user authentication runtime', () => {
     const developerList = makeResponse();
     await list({ principal: developer, query: { archived: 'false', limit: '10' } }, developerList, vi.fn());
     expect(developerList.payload.map(({ id }) => id)).toEqual(['developer-active']);
+
+    const firstLogin = await passwordLogin(harness);
+    const secondLogin = await passwordLogin(harness);
+    expect(secondLogin.cookie).not.toBe(firstLogin.cookie);
+    const restoredDeveloper = await harness.runtime.resolvePrincipal(makeRequest({ cookie: secondLogin.cookie }));
+    const restoredList = makeResponse();
+    await list({ principal: restoredDeveloper, query: { archived: 'false', limit: '10' } }, restoredList, vi.fn());
+    expect(restoredList.payload.map(({ id }) => id)).toEqual(['developer-active']);
+
+    const adminStatus = makeResponse();
+    await status({ principal: admin, query: {}, url: '/api/session/status' }, adminStatus, vi.fn());
+    expect(Object.keys(adminStatus.payload).sort()).toEqual(['admin-active', 'admin-archived', 'partial-delete']);
+    const developerStatus = makeResponse();
+    await status({ principal: restoredDeveloper, query: {}, url: '/api/session/status' }, developerStatus, vi.fn());
+    expect(Object.keys(developerStatus.payload)).toEqual(['developer-active']);
+
+    const readMessages = async (principal, sessionID) => {
+      const response = makeResponse();
+      const next = vi.fn(() => response.json([{ id: `message-${sessionID}`, text: `transcript-${sessionID}` }]));
+      await sessionGuard({ principal, params: { sessionID }, method: 'GET' }, response, next);
+      return { response, next };
+    };
+    const restoredMessages = await readMessages(restoredDeveloper, 'developer-active');
+    expect(restoredMessages.response.payload).toEqual([
+      { id: 'message-developer-active', text: 'transcript-developer-active' },
+    ]);
+    expect(restoredMessages.next).toHaveBeenCalledOnce();
+    const foreignMessages = await readMessages(admin, 'developer-active');
+    expect(foreignMessages.response.statusCode).toBe(404);
+    expect(foreignMessages.response.payload).toEqual({ error: 'Session not found' });
+    expect(foreignMessages.next).not.toHaveBeenCalled();
+
+    expect(await harness.runtime.filterEventForPrincipal(admin, {
+      payload: { type: 'session.updated', properties: { info: { id: 'developer-active' } } },
+      directory: 'global',
+    })).toBe(false);
+    expect(await harness.runtime.filterEventForPrincipal(restoredDeveloper, {
+      payload: { type: 'session.updated', properties: { info: { id: 'developer-active' } } },
+      directory: 'global',
+    })).toBe(true);
 
     const archivedList = makeResponse();
     await list({ principal: admin, query: { archived: 'true', limit: '10' } }, archivedList, vi.fn());
@@ -1184,6 +1487,7 @@ describe('multi-user authentication runtime', () => {
       status: 404,
       payload: { error: 'Session not found' },
     });
+    expect(harness.openCodeDeleteRequests).toEqual([]);
 
     const journalDirectory = path.join(harness.directory, 'harness', 'journal');
     await fs.mkdir(journalDirectory, { recursive: true });
@@ -1200,6 +1504,15 @@ describe('multi-user authentication runtime', () => {
     await waitForAudit(harness, 'session.deleted');
 
     expect(deleteResponse.statusCode).toBe(200);
+    expect(harness.openCodeDeleteRequests).toEqual([{
+      sessionId: 'admin-active',
+      url: 'http://opencode.test/session/admin-active',
+    }]);
+    expect(harness.getOpenCodeSession('developer-active')).not.toBeNull();
+    const developerMessagesAfterAdminDelete = await readMessages(restoredDeveloper, 'developer-active');
+    expect(developerMessagesAfterAdminDelete.response.payload).toEqual([
+      { id: 'message-developer-active', text: 'transcript-developer-active' },
+    ]);
     expect(harness.getOwnership('admin-active')?.archived_at).toEqual(expect.any(String));
     await expect(fs.readFile(journalMarker, 'utf8')).resolves.toBe('diagnostic evidence');
     expect(harness.auditEvents).toContainEqual(expect.objectContaining({
@@ -2727,7 +3040,98 @@ describe('multi-user authentication runtime', () => {
     ]);
   });
 
-  it('accepts bounded interaction batches without copied content or caller-selected identities', async () => {
+  it('adds bounded clipboard previews to the visible page and loads full text only for an authorized event', async () => {
+    const eventId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const harness = await createHarness({
+      profiles: [
+        fixtureProfile('developer', { account_kind: 'human' }),
+        fixtureProfile('admin', { account_kind: 'human' }),
+      ],
+      activityRows: [{
+        id: 3,
+        event_id: eventId,
+        actor_user_id: USER_IDS.developer,
+        actor_role: 'developer',
+        target_user_id: USER_IDS.developer,
+        action: 'clipboard.copied',
+        success: true,
+        metadata: { sourceSurface: 'settings', copyKind: 'text', characterCount: 17 },
+        clipboard_text: 'copied full value',
+        clipboard_text_preview: 'copied full value',
+        clipboard_text_original_length: 17,
+        clipboard_text_truncated: false,
+        clipboard_text_redacted: false,
+        created_at: '2026-08-07T11:00:00.000Z',
+      }],
+    });
+    const handlers = new Map();
+    const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
+      method,
+      (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+    ]));
+    harness.runtime.registerRoutes(app);
+    const admin = { scope: 'managed', id: USER_IDS.admin, role: 'admin' };
+
+    const eventsResponse = makeResponse();
+    await handlers.get('GET /api/admin/users/:userId/analytics/events')({
+      principal: admin,
+      params: { userId: USER_IDS.developer },
+      query: { start: '2026-08-07', end: '2026-08-07', timeZone: 'UTC', limit: '100', category: 'interactions' },
+    }, eventsResponse);
+    expect(eventsResponse.payload.events).toEqual([
+      expect.objectContaining({
+        event_id: eventId,
+        clipboard: {
+          available: true,
+          preview: 'copied full value',
+          originalLength: 17,
+          truncated: false,
+          redacted: false,
+        },
+      }),
+    ]);
+    expect(eventsResponse.payload.events[0]).not.toHaveProperty('clipboard_text');
+
+    const detailResponse = makeResponse();
+    await handlers.get('GET /api/admin/users/:userId/analytics/clipboard/:eventId')({
+      principal: admin,
+      params: { userId: USER_IDS.developer, eventId },
+    }, detailResponse);
+    expect(detailResponse.payload).toEqual({
+      available: true,
+      text: 'copied full value',
+      preview: 'copied full value',
+      originalLength: 17,
+      truncated: false,
+      redacted: false,
+    });
+
+    const activityResponse = makeResponse();
+    await handlers.get('GET /api/admin/activity')({ principal: admin, query: {} }, activityResponse);
+    expect(activityResponse.payload.activity[0]).not.toHaveProperty('clipboard_text');
+    expect(activityResponse.payload.activity[0]).not.toHaveProperty('clipboard_text_preview');
+
+    const exportResponse = makeResponse();
+    await handlers.get('GET /api/admin/activity/export')({ principal: admin }, exportResponse);
+    expect(exportResponse.payload.activity[0]).not.toHaveProperty('clipboard_text');
+    expect(exportResponse.payload.activity[0]).not.toHaveProperty('clipboard_text_preview');
+
+    const denied = makeResponse();
+    await handlers.get('GET /api/admin/users/:userId/analytics/clipboard/:eventId')({
+      principal: { scope: 'managed', id: USER_IDS.developer, role: 'developer' },
+      params: { userId: USER_IDS.developer, eventId },
+    }, denied);
+    expect(denied.statusCode).toBe(403);
+
+    const missing = makeResponse();
+    await handlers.get('GET /api/admin/users/:userId/analytics/clipboard/:eventId')({
+      principal: admin,
+      params: { userId: USER_IDS.developer, eventId: 'ffffffff-ffff-4fff-8fff-ffffffffffff' },
+    }, missing);
+    expect(missing.statusCode).toBe(404);
+  });
+
+  it('accepts bounded copied text while rejecting legacy content fields and caller-selected identities', async () => {
     const harness = await createHarness();
     const handlers = new Map();
     const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
@@ -2753,18 +3157,35 @@ describe('multi-user authentication runtime', () => {
           occurredAt: new Date().toISOString(), directory: '/repo', sourceSurface: 'editor',
           copyKind: 'text', characterCount: 12, text: 'must be rejected',
         },
+        {
+          id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', type: 'clipboard.copied',
+          occurredAt: new Date().toISOString(), directory: '/repo', sourceSurface: 'settings',
+          copyKind: 'text', characterCount: 19, copiedText: 'visible copied text',
+        },
       ] },
       principal,
     }, response, vi.fn());
     expect(response.payload.results).toEqual([
       { id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', accepted: true },
       { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', accepted: false, error: 'Event includes an unsupported field' },
+      { id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', accepted: true },
     ]);
     const opened = await waitForAudit(harness, 'file.opened');
     expect(opened).toMatchObject({
       actor_user_id: USER_IDS.developer,
       target_user_id: USER_IDS.developer,
       metadata: expect.objectContaining({ filePath: 'package.json', sourceSurface: 'files' }),
+    });
+    const copied = await waitForAudit(harness, 'clipboard.copied');
+    expect(copied).toMatchObject({
+      actor_user_id: USER_IDS.developer,
+      target_user_id: USER_IDS.developer,
+      clipboard_text: 'visible copied text',
+      clipboard_text_preview: 'visible copied text',
+      clipboard_text_original_length: 19,
+      clipboard_text_truncated: false,
+      clipboard_text_redacted: false,
+      metadata: expect.objectContaining({ sourceSurface: 'settings', characterCount: 19 }),
     });
     expect(JSON.stringify(harness.auditEvents)).not.toContain('must be rejected');
   });

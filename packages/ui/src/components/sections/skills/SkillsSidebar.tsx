@@ -18,18 +18,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { RiAddLine, RiDeleteBinLine, RiFileCopyLine, RiMore2Line, RiEditLine, RiBookOpenLine, RiEyeOffLine } from '@remixicon/react';
+import { RiAddLine, RiDeleteBinLine, RiFileCopyLine, RiMore2Line, RiEditLine, RiBookOpenLine, RiEyeOffLine, RiSearchLine, RiCloseLine } from '@remixicon/react';
 import { getSkillIdentity, useSkillsStore, type DiscoveredSkill } from '@/stores/useSkillsStore';
 import { useSkillsCatalogStore } from '@/stores/useSkillsCatalogStore';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
-import { SidebarGroup } from '@/components/sections/shared/SidebarGroup';
+import { SkillFolderGroup, SkillLocationGroup } from './SkillTreeGroup';
 import { useI18n } from '@/lib/i18n';
 import { useUIStore } from '@/stores/useUIStore';
-import type { SkillLocationValue } from './skillLocations';
-import { groupSkillsForSidebar } from './skillSidebarGrouping';
-import { getSkillRowBadgeKeys } from './skillBadges';
+import { locationValueFrom, type SkillLocationValue } from './skillLocations';
+import { filterSkillsForSidebar, groupSkillsForSidebar, sortSkillsForSidebar, formatSkillFolderLabel } from './skillSidebarGrouping';
 import { canEditSettingsPage, canReadSettingsPage, useAuthPrincipal } from '@/lib/authSession';
 
 interface SkillsSidebarProps {
@@ -231,14 +230,59 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
     setRenameDialogSkill(null);
   };
 
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const trimmedQuery = searchQuery.trim();
+  const isSearching = trimmedQuery.length > 0;
+
   const groupedSkills = useMemo(() => groupSkillsForSidebar(skills, locationLabelText), [skills, locationLabelText]);
+  const searchResults = useMemo(
+    () => (isSearching ? sortSkillsForSidebar(filterSkillsForSidebar(skills, trimmedQuery)) : []),
+    [isSearching, skills, trimmedQuery],
+  );
+
+  // Leaving search rebuilds the tree; bump a nonce so the folder holding the skill
+  // the user just picked from the results opens instead of hiding it again.
+  const [revealNonce, setRevealNonce] = React.useState(0);
+  const wasSearching = React.useRef(isSearching);
+  React.useEffect(() => {
+    if (wasSearching.current && !isSearching) {
+      setRevealNonce((nonce) => nonce + 1);
+    }
+    wasSearching.current = isSearching;
+  }, [isSearching]);
+
+  const isSkillSelected = React.useCallback(
+    (skill: DiscoveredSkill) => (selectedSkillIdentity
+      ? getSkillIdentity(skill) === selectedSkillIdentity
+      : selectedSkillName === skill.name),
+    [selectedSkillIdentity, selectedSkillName],
+  );
+
+  const renderSkillRow = (skill: DiscoveredSkill, options: { nested?: boolean; context?: string } = {}) => (
+    <SkillListItem
+      key={skill.path || skill.name}
+      skill={skill}
+      nested={options.nested}
+      context={options.context}
+      isSelected={isSkillSelected(skill)}
+      onSelect={() => {
+        setSelectedSkill(skill);
+        onItemSelect?.();
+      }}
+      onRename={() => handleOpenRenameDialog(skill)}
+      onHide={() => void handleHideSkill(skill)}
+      onDelete={() => handleDeleteSkill(skill)}
+      onDuplicate={() => handleDuplicateSkill(skill)}
+      isMenuOpen={openMenuSkill === getSkillIdentity(skill)}
+      onMenuOpenChange={(open) => setOpenMenuSkill(open ? getSkillIdentity(skill) : null)}
+    />
+  );
 
   return (
     <div className={cn('flex h-full flex-col', bgClass)}>
       <div className="border-b px-3 pt-4 pb-3">
-        <h2 className="text-base font-semibold text-foreground mb-3">{t('settings.skills.sidebar.title')}</h2>
         <div className="flex items-center justify-between gap-2">
-          <span className="typography-meta text-muted-foreground">{t('settings.skills.sidebar.total', { count: skills.length })}</span>
+          <h2 className="text-base font-semibold text-foreground truncate">{t('settings.skills.sidebar.title')}</h2>
           <div className="flex items-center gap-1">
             {canReadCatalog ? <Button
               type="button"
@@ -263,6 +307,42 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
             </Button>
           </div>
         </div>
+
+        {skills.length > 0 ? (
+          <div className="relative mt-3">
+            <RiSearchLine className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={t('settings.skills.sidebar.field.searchPlaceholder')}
+              className="h-7 pl-7 pr-7 [&::-webkit-search-cancel-button]:appearance-none"
+              onKeyDown={(e) => {
+                if (e.key === 'Escape' && searchQuery) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setSearchQuery('');
+                }
+              }}
+            />
+            {isSearching ? (
+              <button
+                type="button"
+                aria-label={t('settings.skills.sidebar.search.clearAria')}
+                onClick={() => setSearchQuery('')}
+                className="absolute right-1 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-interactive-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+              >
+                <RiCloseLine className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
+        <span className="typography-meta text-muted-foreground mt-2 block">
+          {isSearching
+            ? t('settings.skills.sidebar.search.matchCount', { count: searchResults.length, total: skills.length })
+            : t('settings.skills.sidebar.total', { count: skills.length })}
+        </span>
       </div>
 
       <ScrollableOverlay outerClassName="flex-1 min-h-0" className="space-y-1 px-3 py-2 overflow-x-hidden">
@@ -272,61 +352,46 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
             <p className="typography-ui-label font-medium">{t('settings.skills.sidebar.empty.title')}</p>
             <p className="typography-meta mt-1 opacity-75">{t('settings.skills.sidebar.empty.description')}</p>
           </div>
+        ) : isSearching ? (
+          searchResults.length === 0 ? (
+            <div className="py-12 px-4 text-center text-muted-foreground">
+              <RiSearchLine className="mx-auto mb-3 h-8 w-8 opacity-40" />
+              <p className="typography-ui-label font-medium">{t('settings.skills.sidebar.search.empty.title')}</p>
+              <p className="typography-meta mt-1 opacity-75">{t('settings.skills.sidebar.search.empty.description')}</p>
+            </div>
+          ) : (
+            <div className="space-y-0.5">
+              {searchResults.map((skill) => renderSkillRow(skill, {
+                context: [
+                  skill.group ? formatSkillFolderLabel(skill.group) : null,
+                  locationLabelText(locationValueFrom(skill.scope, skill.source)),
+                ].filter(Boolean).join(' · '),
+              }))}
+            </div>
+          )
         ) : (
           <>
             {groupedSkills.map(({ key: groupKey, label: groupLabel, directSkills, folderGroups, count }) => (
-              <SidebarGroup
+              <SkillLocationGroup
                 key={groupKey}
                 label={groupLabel}
                 count={count}
                 storageKey="skills"
               >
-                {directSkills.map((skill) => (
-                  <SkillListItem
-                    key={skill.path || skill.name}
-                    skill={skill}
-                    isSelected={selectedSkillIdentity ? getSkillIdentity(skill) === selectedSkillIdentity : selectedSkillName === skill.name}
-                    onSelect={() => {
-                      setSelectedSkill(skill);
-                      onItemSelect?.();
-
-                    }}
-                    onRename={() => handleOpenRenameDialog(skill)}
-                    onHide={() => void handleHideSkill(skill)}
-                    onDelete={() => handleDeleteSkill(skill)}
-                    onDuplicate={() => handleDuplicateSkill(skill)}
-                    isMenuOpen={openMenuSkill === getSkillIdentity(skill)}
-                    onMenuOpenChange={(open) => setOpenMenuSkill(open ? getSkillIdentity(skill) : null)}
-                  />
-                ))}
+                {directSkills.map((skill) => renderSkillRow(skill))}
                 {folderGroups.map((folderGroup) => (
-                  <SidebarGroup
+                  <SkillFolderGroup
                     key={`${groupKey}:${folderGroup.key}`}
                     label={folderGroup.label}
                     count={folderGroup.skills.length}
                     storageKey={`skills:${groupKey}:folders`}
+                    containsSelected={folderGroup.skills.some(isSkillSelected)}
+                    revealNonce={revealNonce}
                   >
-                    {folderGroup.skills.map((skill) => (
-                      <SkillListItem
-                        key={skill.path || skill.name}
-                        skill={skill}
-                        isSelected={selectedSkillIdentity ? getSkillIdentity(skill) === selectedSkillIdentity : selectedSkillName === skill.name}
-                        onSelect={() => {
-                          setSelectedSkill(skill);
-                          onItemSelect?.();
-
-                        }}
-                        onRename={() => handleOpenRenameDialog(skill)}
-                        onHide={() => void handleHideSkill(skill)}
-                        onDelete={() => handleDeleteSkill(skill)}
-                        onDuplicate={() => handleDuplicateSkill(skill)}
-                        isMenuOpen={openMenuSkill === getSkillIdentity(skill)}
-                        onMenuOpenChange={(open) => setOpenMenuSkill(open ? getSkillIdentity(skill) : null)}
-                      />
-                    ))}
-                  </SidebarGroup>
+                    {folderGroup.skills.map((skill) => renderSkillRow(skill, { nested: true }))}
+                  </SkillFolderGroup>
                 ))}
-              </SidebarGroup>
+              </SkillLocationGroup>
             ))}
           </>
         )}
@@ -405,6 +470,12 @@ export const SkillsSidebar: React.FC<SkillsSidebarProps> = ({ onItemSelect }) =>
 
 interface SkillListItemProps {
   skill: DiscoveredSkill;
+  /** Secondary line describing where the skill lives — only used in search results,
+   *  where the grouped headers that normally carry this are not rendered. */
+  context?: string;
+  /** Rows inside a folder already sit behind a guide rail, so they carry the
+   *  selection accent inline instead of on the container's left edge. */
+  nested?: boolean;
   isSelected: boolean;
   onSelect: () => void;
   onHide: () => void;
@@ -417,6 +488,8 @@ interface SkillListItemProps {
 
 const SkillListItem: React.FC<SkillListItemProps> = ({
   skill,
+  context,
+  nested,
   isSelected,
   onSelect,
   onHide,
@@ -428,34 +501,42 @@ const SkillListItem: React.FC<SkillListItemProps> = ({
 }) => {
   const { t } = useI18n();
   const isMobile = isMobileDeviceViaCSS();
-  const badgeKeys = getSkillRowBadgeKeys(skill);
   return (
     <div
       className={cn(
-        'group relative flex items-center rounded-md px-1.5 py-1 transition-all duration-200 select-none',
-        isSelected ? 'bg-interactive-selection' : 'hover:bg-interactive-hover'
+        'group relative flex items-center rounded-md py-1 pl-2 pr-1.5 transition-colors duration-150 select-none',
+        // Selected rows get an accent rail so the active skill stays findable inside
+        // long trees. Inside a folder it lands on the folder's guide line, lighting
+        // up the branch that leads to the selection instead of drawing a second bar.
+        'before:absolute before:top-1/2 before:h-4 before:w-0.5 before:-translate-y-1/2 before:rounded-full before:bg-primary before:transition-opacity',
+        nested ? 'before:-left-[9px]' : 'before:left-0',
+        isSelected
+          ? 'bg-interactive-selection before:opacity-100'
+          : 'hover:bg-interactive-hover before:opacity-0'
       )}
       onContextMenu={!isMobile ? (e) => {
         e.preventDefault();
         onMenuOpenChange(true);
       } : undefined}
     >
-      <div className="flex min-w-0 flex-1 items-center">
+      <div className="flex min-w-0 flex-1 items-center gap-1">
         <button
           onClick={onSelect}
-          className="flex min-w-0 flex-1 flex-col gap-0 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+          title={skill.description || skill.name}
+          className="flex min-w-0 flex-1 flex-col gap-0 rounded-sm py-0.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
           tabIndex={0}
         >
-          <div className="flex items-center gap-1.5">
-            <span className="typography-ui-label font-normal truncate text-foreground">
-              {skill.name}
-            </span>
-            {badgeKeys.map((badgeKey) => (
-              <span key={badgeKey} className="typography-micro text-muted-foreground bg-muted px-1 rounded flex-shrink-0 leading-none pb-px border border-border/50">
-                {t(badgeKey)}
-              </span>
-            ))}
-          </div>
+          <span
+            className={cn(
+              'typography-ui-label truncate',
+              isSelected ? 'font-medium text-foreground' : 'font-normal text-foreground/90'
+            )}
+          >
+            {skill.name}
+          </span>
+          {context ? (
+            <span className="typography-micro truncate text-muted-foreground">{context}</span>
+          ) : null}
         </button>
 
         <DropdownMenu open={isMenuOpen} onOpenChange={onMenuOpenChange}>

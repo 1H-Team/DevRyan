@@ -953,6 +953,28 @@ describe("session-ui-store send routing", () => {
     expect(activeSessionCalls).toEqual([{ directory: "", sessionId: "" }])
   })
 
+  test("retargeting an open draft to a worktree preserves its text and send configuration", () => {
+    useSessionUIStore.getState().openNewSessionDraft({
+      selectedProjectId: "project-1",
+      directoryOverride: "/repo",
+      initialPrompt: "keep this draft",
+      sendConfig: { providerID: "provider-a", modelID: "model-a" },
+    })
+
+    useSessionUIStore.getState().setNewSessionDraftTarget({
+      projectId: "project-1",
+      directoryOverride: "/worktrees/Dev",
+    }, { force: true })
+    useSessionUIStore.getState().setDraftPreserveDirectoryOverride(true)
+
+    const state = useSessionUIStore.getState()
+    const currentDraft = state.currentDraftId ? state.draftsById[state.currentDraftId] : null
+    expect(state.newSessionDraft.directoryOverride).toBe("/worktrees/Dev")
+    expect(state.newSessionDraft.preserveDirectoryOverride).toBe(true)
+    expect(currentDraft?.text).toBe("keep this draft")
+    expect(currentDraft?.sendConfig).toEqual({ providerID: "provider-a", modelID: "model-a" })
+  })
+
   test("a managed root draft stays fail-closed until its assigned Dev worktree resolves", async () => {
     setManagedDeveloper()
     useProjectsStore.setState({

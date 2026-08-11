@@ -149,7 +149,12 @@ const ErrorScreen: React.FC<ErrorScreenProps> = ({
   const { t } = useI18n();
   const isRateLimit = errorType === 'rate-limit';
   const minutes = retryAfter ? Math.ceil(retryAfter / 60) : 1;
-  const content = errorType === 'identity'
+  const content = errorType === 'managed-account'
+    ? {
+        title: t('sessionAuth.error.managedAccountTitle'),
+        description: t('sessionAuth.error.managedAccountDescription'),
+      }
+    : errorType === 'identity'
     ? {
         title: t('sessionAuth.error.identityTitle'),
         description: t('sessionAuth.error.identityDescription'),
@@ -216,13 +221,14 @@ type GateState =
   | 'network-error'
   | 'server-error'
   | 'identity-unavailable'
+  | 'managed-account-required'
   | 'schema-migration-required'
   | 'rate-limited';
 
 interface ErrorScreenProps {
   onRetry: () => void;
   onResetLocal?: () => void;
-  errorType?: 'network' | 'server' | 'identity' | 'schema' | 'rate-limit';
+  errorType?: 'network' | 'server' | 'identity' | 'managed-account' | 'schema' | 'rate-limit';
   retryAfter?: number;
   isResetting?: boolean;
 }
@@ -842,6 +848,10 @@ export const SessionAuthGate: React.FC<SessionAuthGateProps> = ({ children }) =>
 
   if (state === 'server-error') {
     return <ErrorScreen onRetry={() => void checkStatus()} errorType="server" />;
+  }
+
+  if (state === 'managed-account-required') {
+    return <ErrorScreen onRetry={() => void checkStatus()} errorType="managed-account" />;
   }
 
   if (state === 'identity-unavailable' || state === 'schema-migration-required') {

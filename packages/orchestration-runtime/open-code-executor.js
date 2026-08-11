@@ -231,6 +231,12 @@ const matchesManagedUserPrompt = (value, prompt) => {
     || normalized === `${MANAGED_READ_ONLY_PROMPT}\n\n${prompt}`;
 };
 
+export const isManagedTransientTransportContinuationPrompt = (value) => (
+  MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPTS.some((prompt) => (
+    matchesManagedUserPrompt(value, prompt)
+  ))
+);
+
 const countExactUserPrompts = (records, prompt) => (
   Array.isArray(records)
     ? records.reduce((count, record) => {

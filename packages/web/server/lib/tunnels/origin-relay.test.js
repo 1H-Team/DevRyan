@@ -32,6 +32,15 @@ const exchange = (port, payload) => new Promise((resolve, reject) => {
   socket.once('connect', () => socket.write(payload));
 });
 
+const requestUntilClose = (port, payload) => new Promise((resolve, reject) => {
+  const socket = net.createConnection({ host: '127.0.0.1', port });
+  const chunks = [];
+  socket.once('error', reject);
+  socket.on('data', (chunk) => chunks.push(chunk));
+  socket.once('end', () => resolve(Buffer.concat(chunks)));
+  socket.once('connect', () => socket.end(payload));
+});
+
 describe('managed remote origin relay', () => {
   it('binds only to IPv4 loopback', async () => {
     const server = new EventEmitter();
@@ -73,6 +82,54 @@ describe('managed remote origin relay', () => {
 
     await expect(exchange(relayPort, payload)).resolves.toEqual(payload);
 
+    await relay.stop();
+    await close(target);
+  });
+
+  it('preserves native-versus-managed SSE message, tool, reasoning, directory, and terminal ordering', async () => {
+    const events = [
+      { type: 'message.updated', info: { id: 'msg_1', role: 'assistant', directory: '/managed/worktree' } },
+      { type: 'message.part.updated', part: { id: 'reason_1', type: 'reasoning', text: 'Checking exact paths.' } },
+      { type: 'message.part.updated', part: { id: 'tool_missing', type: 'tool', tool: 'read', status: 'error' } },
+      { type: 'message.part.updated', part: { id: 'tool_context', type: 'tool', tool: 'ctx_execute', status: 'error' } },
+      { type: 'message.part.updated', part: { id: 'tool_browser', type: 'tool', tool: 'devryan_browser', status: 'completed' } },
+      { type: 'session.error', error: { name: 'SyntheticTerminalError', retryable: false } },
+      { type: 'session.status', status: { type: 'idle' } },
+    ];
+    const body = Buffer.from(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(''));
+    const response = Buffer.concat([
+      Buffer.from([
+        'HTTP/1.1 200 OK',
+        'Content-Type: text/event-stream',
+        `Content-Length: ${body.byteLength}`,
+        'Connection: close',
+        '',
+        '',
+      ].join('\r\n')),
+      body,
+    ]);
+    const target = net.createServer({ allowHalfOpen: true }, (socket) => {
+      socket.once('data', () => {
+        for (const chunk of [response.subarray(0, 37), response.subarray(37, 113), response.subarray(113)]) {
+          socket.write(chunk);
+        }
+        socket.end();
+      });
+    });
+    const targetPort = await listen(target);
+    const relayPortServer = net.createServer();
+    const relayPort = await listen(relayPortServer);
+    await close(relayPortServer);
+    const relay = await startLoopbackOriginRelay({ originPort: relayPort, targetPort });
+    const request = Buffer.from('GET /api/event HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n');
+
+    const [nativeResponse, managedResponse] = await Promise.all([
+      requestUntilClose(targetPort, request),
+      requestUntilClose(relayPort, request),
+    ]);
+
+    expect(managedResponse).toEqual(nativeResponse);
+    expect(nativeResponse.subarray(nativeResponse.indexOf('\r\n\r\n') + 4)).toEqual(body);
     await relay.stop();
     await close(target);
   });

@@ -66,4 +66,52 @@ describe("QuestionOptionRow", () => {
     expect(html).toContain('aria-checked="true"')
     expect(html).toContain('aria-hidden="true"')
   })
+
+  test("badge is an empty circle when unselected and a check when selected", () => {
+    const unselected = renderToStaticMarkup(
+      <QuestionOptionRow
+        label="Third"
+        description=""
+        selected={false}
+        multiple={false}
+        disabled={false}
+        recommended={false}
+        recommendedLabel="Recommended"
+        onSelect={() => undefined}
+      />,
+    )
+    expect(unselected).not.toContain("<svg")
+
+    const selected = renderToStaticMarkup(
+      <QuestionOptionRow
+        label="Second"
+        description=""
+        selected
+        multiple
+        disabled={false}
+        recommended={false}
+        recommendedLabel="Recommended"
+        onSelect={() => undefined}
+      />,
+    )
+    expect(selected).toContain("<svg")
+  })
+
+  test("renders the recommended tag as a muted pill", () => {
+    const html = renderToStaticMarkup(
+      <QuestionOptionRow
+        label="Best option"
+        description="Why it is best."
+        selected={false}
+        multiple={false}
+        disabled={false}
+        recommended
+        recommendedLabel="Recommended"
+        onSelect={() => undefined}
+      />,
+    )
+
+    expect(html).toContain("Recommended")
+    expect(html).toContain("rounded-full bg-muted/60")
+  })
 })

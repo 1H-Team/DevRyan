@@ -17,6 +17,9 @@ export function discoverScriptTestFiles(root = repositoryRoot) {
     ...discoverTestFiles(path.join(root, '.opencode', 'plugins'), root, {
       pattern: /(?:^|[./-])test\.[cm]?js$/,
     }),
+    ...discoverTestFiles(path.join(root, '.opencode', 'agents'), root, {
+      pattern: /(?:^|[./-])test\.[cm]?js$/,
+    }),
   ].sort();
 }
 

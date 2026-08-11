@@ -4,7 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-- OpenCode: update the bundled SDK dependency and managed runtime target to 1.18.15 across web, UI, VS Code, and the workspace lockfile.
+## [1.1.3] - 2026-08-11
+
+- Bug reports: add managed-user submissions, administrator review and status controls, sanitized error-log views, service-only Supabase storage, and database policy coverage.
+- Shared hosting: project content-free session, tool, and managed-task failures into the administrator activity feed with bounded context and diagnostic sanitization.
+- Analytics: retain bounded, sanitized copied text for administrator-only user analytics with preview and on-demand detail views.
+- Diagnostics: harden journal export and sanitization behavior across web, Electron, and VS Code runtimes; classify managed runtime failures by impact and failure class; correlate recovery outcomes; and retain administrator clear controls.
+- Managed Remote: use direct Supabase-backed account login instead of tunnel bootstrap tokens, and expose clearer readiness and account-configuration states.
+- Sessions: preserve exact JSON request bodies through the OpenCode proxy, mark transient session creation and prompt transport failures as retryable, restore submitted attachments safely after failures, and present pending questions directly in the composer.
+- Settings: add Bug Reports navigation and permissions, refine managed settings access, improve authentication recovery and tunnel status presentation, and add searchable hierarchical Skills navigation.
+- Agents: refine packaged designer, fixer, and orchestrator guidance, including deterministic design-task routing and tool-recovery coverage.
+- OpenCode: update the bundled SDK dependency and managed runtime target through 1.18.16 across web, UI, VS Code, and the workspace lockfile.
+- Release: bump DevRyan workspace, Electron, VS Code, web, and legacy desktop metadata to 1.1.3.
 
 ## [1.1.2] - 2026-08-05
 

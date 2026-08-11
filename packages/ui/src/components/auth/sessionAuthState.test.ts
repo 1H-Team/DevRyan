@@ -18,6 +18,9 @@ describe('session authentication state', () => {
     expect(classifySessionResponse(503, false, { code: 'identity_unavailable' })).toEqual({
       state: 'identity-unavailable',
     });
+    expect(classifySessionResponse(503, false, { code: 'managed_account_auth_required' })).toEqual({
+      state: 'managed-account-required',
+    });
     expect(classifySessionResponse(503, false, { code: 'schema_migration_required' })).toEqual({
       state: 'schema-migration-required',
     });

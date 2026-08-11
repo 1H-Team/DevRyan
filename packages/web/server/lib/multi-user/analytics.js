@@ -10,6 +10,7 @@ export const ANALYTICS_ACTIONS = Object.freeze({
 });
 
 export const PROMPT_TEXT_LIMIT_BYTES = 16 * 1024;
+export const CLIPBOARD_TEXT_LIMIT_BYTES = 64 * 1024;
 export const ANALYTICS_EVENT_BATCH_LIMIT = 50;
 export const ANALYTICS_PAGE_LIMIT = 50;
 
@@ -41,7 +42,7 @@ const SAFE_BOOLEAN_OBJECT_FIELDS = new Set([
 const INTERACTION_KEYS = Object.freeze({
   [ANALYTICS_ACTIONS.fileOpened]: new Set(['id', 'type', 'occurredAt', 'directory', 'sourceSurface', 'path']),
   [ANALYTICS_ACTIONS.clipboardCopied]: new Set([
-    'id', 'type', 'occurredAt', 'directory', 'sourceSurface', 'path', 'copyKind', 'characterCount',
+    'id', 'type', 'occurredAt', 'directory', 'sourceSurface', 'path', 'copyKind', 'characterCount', 'copiedText',
   ]),
 });
 
@@ -174,7 +175,17 @@ export const validateInteractionEvent = (event, {
     if (!Number.isInteger(event.characterCount) || event.characterCount < 0 || event.characterCount > 10_000_000) {
       return invalidInteraction(id, 'Character count must be a bounded integer');
     }
+    if (event.copiedText !== undefined && typeof event.copiedText !== 'string') {
+      return invalidInteraction(id, 'Copied text must be a string');
+    }
+    if (typeof event.copiedText === 'string' && event.copiedText.length > event.characterCount) {
+      return invalidInteraction(id, 'Copied text cannot exceed the reported character count');
+    }
   }
+
+  const copiedText = event.type === ANALYTICS_ACTIONS.clipboardCopied && typeof event.copiedText === 'string'
+    ? truncateUtf8(event.copiedText, CLIPBOARD_TEXT_LIMIT_BYTES)
+    : null;
 
   return {
     id,
@@ -183,6 +194,13 @@ export const validateInteractionEvent = (event, {
     action: event.type,
     occurredAt: new Date(occurred).toISOString(),
     assignment,
+    ...(copiedText ? {
+      clipboard: {
+        text: copiedText.text,
+        originalLength: event.characterCount,
+        truncated: copiedText.truncated || copiedText.originalLength < event.characterCount,
+      },
+    } : {}),
     metadata: {
       clientEventId: id,
       sourceSurface: event.sourceSurface,

@@ -9,7 +9,6 @@ import ChatEmptyState from './ChatEmptyState';
 import MessageList, { type MessageListHandle } from './MessageList';
 import { useChatSelectionCopySanitizer } from './lib/useChatSelectionCopySanitizer';
 import { PermissionCard } from './PermissionCard';
-import { QuestionCard } from './QuestionCard';
 import { StatusRowContainer } from './StatusRowContainer';
 import ScrollToBottomButton from './components/ScrollToBottomButton';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
@@ -166,7 +165,6 @@ type ChatViewportProps = {
     getAnimationHandlers: (messageId: string) => AnimationHandlers;
     handleLoadOlder: () => void;
     scrollToBottom: () => void;
-    sessionQuestions: QuestionRequest[];
     sessionPermissions: PermissionRequest[];
     isProgrammaticFollowActive: boolean;
 };
@@ -190,7 +188,6 @@ const ChatViewport = React.memo(({
     getAnimationHandlers,
     handleLoadOlder,
     scrollToBottom,
-    sessionQuestions,
     sessionPermissions,
     isProgrammaticFollowActive,
 }: ChatViewportProps) => {
@@ -245,17 +242,8 @@ const ChatViewport = React.memo(({
                             scrollToBottom={scrollToBottom}
                             scrollRef={scrollRef}
                         />
-                        {(sessionQuestions.length > 0 || sessionPermissions.length > 0) && (
+                        {sessionPermissions.length > 0 && (
                             <div>
-                                {sessionQuestions.length > 0 ? (
-                                    // Merge all pending QuestionRequests for this session into one
-                                    // card so users see related clarifying questions together.
-                                    // Reply routing still splits answers back to each underlying
-                                    // request id inside QuestionCard.
-                                    <QuestionCard
-                                        requests={sessionQuestions}
-                                    />
-                                ) : null}
                                 {sessionPermissions.map((permission) => (
                                     <PermissionCard key={permission.id} permission={permission} />
                                 ))}
@@ -303,7 +291,6 @@ const ChatViewport = React.memo(({
         && prev.getAnimationHandlers === next.getAnimationHandlers
         && prev.handleLoadOlder === next.handleLoadOlder
         && prev.scrollToBottom === next.scrollToBottom
-        && prev.sessionQuestions === next.sessionQuestions
         && prev.sessionPermissions === next.sessionPermissions
         && prev.isProgrammaticFollowActive === next.isProgrammaticFollowActive;
 });
@@ -941,7 +928,6 @@ export const ChatContainer: React.FC<ChatContainerProps> = ({ autoOpenDraft = tr
                 getAnimationHandlers={getAnimationHandlers}
                 handleLoadOlder={handleLoadOlder}
                 scrollToBottom={resumeToLatestInstant}
-                sessionQuestions={sessionQuestions}
                 sessionPermissions={sessionPermissions}
                 isProgrammaticFollowActive={isFollowingProgrammatically}
             />

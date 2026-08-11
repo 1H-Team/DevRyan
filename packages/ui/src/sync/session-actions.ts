@@ -38,7 +38,8 @@ import {
 } from "./revert-transactions"
 import { hasMessageRecordInfo, unwrapMessageRecordsResult } from "./message-fetch"
 import { isSessionWorkingFromState } from "./session-working"
-import { retry } from "./retry"
+import { retry, isTransientError } from "./retry"
+import { getSdkErrorMessage } from "@/lib/opencode/sdk-error"
 import { useManagedOrchestrationStore } from "@/stores/useManagedOrchestrationStore"
 import { createClientMessageId } from "./client-message-id"
 import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
@@ -1179,16 +1180,12 @@ function stringifyErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
     return error.message
   }
-  if (error && typeof error === "object" && "message" in error) {
-    const message = (error as { message?: unknown }).message
-    if (typeof message === "string" && message.length > 0) {
-      return message
-    }
-  }
-  return String(error)
+  // Server error bodies are shaped `{ error: "…" }` — getSdkErrorMessage reads
+  // nested `.error`/`.message` and never renders "[object Object]".
+  return getSdkErrorMessage(error)
 }
 
-function createSessionCreateError(error: unknown, status?: number): Error {
+export function createSessionCreateError(error: unknown, status?: number): Error {
   const message = stringifyErrorMessage(error)
   const formatted = new Error(status ? `session.create failed (${status}): ${message}` : `session.create failed: ${message}`)
   if (status !== undefined) {
@@ -1208,18 +1205,23 @@ function createSessionCreateError(error: unknown, status?: number): Error {
   return formatted
 }
 
-function isTransientSessionCreateError(error: unknown): boolean {
+export function isTransientSessionCreateError(error: unknown): boolean {
   if (error && typeof error === "object") {
     const details = error as { code?: unknown; retryable?: unknown; restarting?: unknown }
+    // Must stay first: the formatted message contains "503", which the generic
+    // transient matcher below would otherwise treat as retryable.
     if (details.retryable === false || details.code === "identity_unavailable") {
       return false
     }
-    if (details.restarting === true) {
+    if (details.restarting === true || details.retryable === true) {
       return true
     }
   }
   const message = stringifyErrorMessage(error).toLowerCase()
-  return message.includes("opencode is restarting")
+  if (message.includes("opencode is restarting")) {
+    return true
+  }
+  return isTransientError(error)
 }
 
 async function createSessionViaSdk(payload: SessionCreatePayload): Promise<Session> {

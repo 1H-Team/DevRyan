@@ -1,5 +1,6 @@
 import type {
   DiagnosticsAPI,
+  DiagnosticsClearRange,
   DiagnosticsExportResult,
   DiagnosticsExportScope,
 } from '@openchamber/ui/lib/api/types';
@@ -59,6 +60,7 @@ export const createWebDiagnosticsAPI = (): DiagnosticsAPI => ({
       headers: {
         Accept: 'application/zip',
         'Content-Type': 'application/json',
+        'X-DevRyan-CSRF': '1',
       },
       body: JSON.stringify(scope),
     });
@@ -83,8 +85,8 @@ export const createWebDiagnosticsAPI = (): DiagnosticsAPI => ({
     return typeof payload.text === 'string' ? payload.text : '';
   },
 
-  async clear() {
-    const response = await fetch('/api/diagnostics', {
+  async clear(range: DiagnosticsClearRange = 'all') {
+    const response = await fetch(`/api/diagnostics?range=${encodeURIComponent(range)}`, {
       method: 'DELETE',
       headers: { Accept: 'application/json' },
     });

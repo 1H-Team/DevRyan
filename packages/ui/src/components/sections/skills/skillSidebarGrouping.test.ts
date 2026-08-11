@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { DiscoveredSkill } from "@/stores/useSkillsStore";
-import { groupSkillsForSidebar } from "./skillSidebarGrouping";
+import { filterSkillsForSidebar, groupSkillsForSidebar, sortSkillsForSidebar } from "./skillSidebarGrouping";
 
 const skill = (
   name: string,
@@ -86,5 +86,36 @@ describe("groupSkillsForSidebar", () => {
         skillNames: ["alpha"],
       },
     ]);
+  });
+});
+
+describe("filterSkillsForSidebar", () => {
+  const skills: DiscoveredSkill[] = [
+    { ...skill("cloudflare-workers", "/user/skills/cloudflare/cloudflare-workers/SKILL.md", { group: "cloudflare" }), description: "Deploy edge functions" },
+    { ...skill("supabase", "/user/skills/supabase/supabase/SKILL.md", { group: "supabase" }), description: "Postgres backend" },
+    skill("agent-browser", "/user/skills/agent-browser/SKILL.md"),
+  ];
+
+  test("returns every skill for a blank query", () => {
+    expect(filterSkillsForSidebar(skills, "   ")).toEqual(skills);
+  });
+
+  test("matches on name, description and folder group, case-insensitively", () => {
+    expect(filterSkillsForSidebar(skills, "WORKERS").map((s) => s.name)).toEqual(["cloudflare-workers"]);
+    expect(filterSkillsForSidebar(skills, "postgres").map((s) => s.name)).toEqual(["supabase"]);
+    expect(filterSkillsForSidebar(skills, "cloudflare").map((s) => s.name)).toEqual(["cloudflare-workers"]);
+  });
+
+  test("requires every whitespace-separated term to match", () => {
+    expect(filterSkillsForSidebar(skills, "cloudflare edge").map((s) => s.name)).toEqual(["cloudflare-workers"]);
+    expect(filterSkillsForSidebar(skills, "cloudflare postgres")).toEqual([]);
+  });
+});
+
+describe("sortSkillsForSidebar", () => {
+  test("sorts by name without mutating the input", () => {
+    const input = [skill("zeta", "/z/SKILL.md"), skill("alpha", "/a/SKILL.md")];
+    expect(sortSkillsForSidebar(input).map((s) => s.name)).toEqual(["alpha", "zeta"]);
+    expect(input.map((s) => s.name)).toEqual(["zeta", "alpha"]);
   });
 });

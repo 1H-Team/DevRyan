@@ -54,6 +54,7 @@ import { useSessionWorktreeStore } from '@/sync/session-worktree-store';
 import { getSessionWorktreeRepairActions, getMutationBlockingReasons } from '@/sync/session-worktree-contract';
 import {
   checkoutBranchWithOptionalStash,
+  type BranchCheckoutResult,
   finishCurrentBranchIntoMainWithOptionalStash,
   formatMutationBlockingReason,
 } from '@/lib/git/branchCheckout';
@@ -220,11 +221,15 @@ export const GitView: React.FC = () => {
   const [isWaitingForGitRefreshAfterBootstrap, setIsWaitingForGitRefreshAfterBootstrap] = React.useState(false);
   const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
   const newSessionDraft = useSessionUIStore((s) => s.newSessionDraft);
+  const openNewSessionDraft = useSessionUIStore((s) => s.openNewSessionDraft);
+  const setNewSessionDraftTarget = useSessionUIStore((s) => s.setNewSessionDraftTarget);
+  const setDraftPreserveDirectoryOverride = useSessionUIStore((s) => s.setDraftPreserveDirectoryOverride);
   const setDraftBootstrapPendingDirectory = useSessionUIStore((s) => s.setDraftBootstrapPendingDirectory);
   const worktreeMap = useSessionUIStore((s) => s.worktreeMetadata);
   const availableWorktrees = useSessionUIStore((s) => s.availableWorktrees);
   const availableWorktreesByProject = useSessionUIStore((s) => s.availableWorktreesByProject);
   const projects = useProjectsStore((s) => s.projects);
+  const setActiveProjectIdOnly = useProjectsStore((s) => s.setActiveProjectIdOnly);
   const normalizedCurrentDirectory = normalizePath(currentDirectory);
   const currentProject = React.useMemo(
     () => resolveProjectForSessionDirectory(projects, availableWorktreesByProject, currentDirectory ?? null),
@@ -295,6 +300,19 @@ export const GitView: React.FC = () => {
     canUseHostGitIdentity,
   );
   const branches = useGitBranches(currentDirectory ?? null);
+  const worktreeBranches = React.useMemo(() => {
+    if (!currentProject) {
+      return new Set<string>();
+    }
+    const projectPath = normalizePath(currentProject.path);
+    const worktrees = availableWorktreesByProject.get(projectPath)
+      ?? availableWorktreesByProject.get(currentProject.path)
+      ?? [];
+    return new Set(worktrees
+      .filter((worktree) => normalizePath(worktree.path) !== normalizedCurrentDirectory)
+      .map((worktree) => worktree.branch.trim().replace(/^refs\/heads\//, ''))
+      .filter(Boolean));
+  }, [availableWorktreesByProject, currentProject, normalizedCurrentDirectory]);
   const log = useGitLog(currentDirectory ?? null);
   const currentIdentity = useGitIdentity(currentDirectory ?? null);
   const isLoading = useGitLoadingStatus(currentDirectory ?? null);
@@ -1342,6 +1360,35 @@ export const GitView: React.FC = () => {
     }
   };
 
+  const activateWorktreeTarget = React.useCallback(async (
+    result: Extract<BranchCheckoutResult, { type: 'worktree-target' }>,
+  ) => {
+    if (!currentProject) {
+      toast.error(t('gitView.toast.cannotCheckout', { reason: 'project is unavailable' }));
+      return;
+    }
+
+    setActiveProjectIdOnly(currentProject.id);
+    if (newSessionDraft?.open) {
+      setNewSessionDraftTarget({
+        projectId: currentProject.id,
+        directoryOverride: result.directory,
+      }, { force: true });
+      setDraftPreserveDirectoryOverride(true);
+    } else {
+      openNewSessionDraft({
+        selectedProjectId: currentProject.id,
+        directoryOverride: result.directory,
+        preserveDirectoryOverride: true,
+      });
+    }
+
+    toast.success(t('gitView.toast.switchedToWorktree', { name: result.branch }));
+    await fetchAll(result.directory, git, { includeIdentity: canUseHostGitIdentity }).catch((error) => {
+      console.debug('Git view worktree target refresh failed:', error);
+    });
+  }, [canUseHostGitIdentity, currentProject, fetchAll, git, newSessionDraft?.open, openNewSessionDraft, setActiveProjectIdOnly, setDraftPreserveDirectoryOverride, setNewSessionDraftTarget, t]);
+
   const handleCheckoutBranch = async (branch: string) => {
     if (!currentDirectory) return;
 
@@ -1360,6 +1407,11 @@ export const GitView: React.FC = () => {
 
       if (result.type === 'blocked') {
         toast.error(t('gitView.toast.cannotCheckout', { reason: result.reason }));
+        return;
+      }
+
+      if (result.type === 'worktree-target') {
+        await activateWorktreeTarget(result);
         return;
       }
 
@@ -2252,6 +2304,8 @@ export const GitView: React.FC = () => {
           toast.error(message);
         } else if (result.type === 'blocked') {
           toast.error(t('gitView.toast.cannotCheckout', { reason: result.reason }));
+        } else if (result.type === 'worktree-target') {
+          await activateWorktreeTarget(result);
         }
 
         await refreshStatusAndBranches();
@@ -2327,7 +2381,7 @@ export const GitView: React.FC = () => {
         throw err;
       }
     },
-    [currentDirectory, git, status, stashDialogOperation, stashDialogBranch, worktreeAttachment, refreshStatusAndBranches, refreshLog, t]
+    [activateWorktreeTarget, currentDirectory, git, status, stashDialogOperation, stashDialogBranch, worktreeAttachment, refreshStatusAndBranches, refreshLog, t]
   );
 
   const handleFinishCurrentBranchIntoMain = React.useCallback(
@@ -2512,6 +2566,7 @@ export const GitView: React.FC = () => {
             status={status}
             localBranches={localBranches}
             remoteBranches={remoteBranches}
+            worktreeBranches={worktreeBranches}
             branchInfo={branches?.branches}
             remotes={effectiveRemotes}
             onCheckoutBranch={handleCheckoutBranch}

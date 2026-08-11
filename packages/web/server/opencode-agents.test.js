@@ -459,7 +459,7 @@ describe('Packaged OpenChamber agents', () => {
     expect(builder?.prompt).toContain('do not write assistant text to announce skill use');
     expect(builder?.prompt).toContain('Do not write visible reasoning about balancing skill instructions against developer or agent instructions');
     expect(builder?.prompt).not.toContain('Subagent prompt templates');
-    expect(builder?.prompt).not.toContain('Fixer-first implementation gate');
+    expect(builder?.prompt).not.toContain('Non-design implementation gate');
     expect(builder.frontmatter.permission).toMatchObject({
       task: {
         '*': 'deny',
@@ -609,7 +609,7 @@ describe('Packaged OpenChamber agents', () => {
     }
   });
 
-  it('preserves packaged Orchestrator/Fixer routing and question/status guardrails', () => {
+  it('preserves packaged Orchestrator/Designer/Fixer routing and question/status guardrails', () => {
     const agents = listPackagedAgents();
     const orchestrator = agents.find((agent) => agent.name === 'orchestrator');
     const builder = agents.find((agent) => agent.name === 'builder');
@@ -621,10 +621,16 @@ describe('Packaged OpenChamber agents', () => {
     const plan = agents.find((agent) => agent.name === 'plan');
     const council = agents.find((agent) => agent.name === 'council');
 
-    expect(orchestrator?.prompt).toContain('Fixer-first implementation gate');
+    expect(orchestrator?.prompt).toContain('Non-design implementation gate');
     expect(orchestrator?.prompt).toContain('default to @fixer');
-    expect(orchestrator?.prompt).toContain('bounded implementation');
-    expect(orchestrator?.prompt).toContain('Writing or updating tests');
+    expect(orchestrator?.prompt).toContain('bounded non-design implementation');
+    expect(orchestrator?.prompt).toContain('Designer owns every design change end to end');
+    expect(orchestrator?.prompt).toContain('Never hand a Designer-produced plan or review to Fixer for implementation.');
+    expect(orchestrator?.prompt).toContain('Design-change planning in plan mode routes to a read-only Designer task.');
+    expect(designer?.prompt).toContain('End-to-end design-change ownership');
+    expect(designer?.prompt).toContain('Do not stop at a plan, mock recommendation, or review findings.');
+    expect(fixer?.prompt).toContain('frontend data/state/logic and component correctness');
+    expect(fixer?.prompt).toContain('make no design edits and return `<status>blocked</status>`');
     expect(orchestrator?.prompt).toContain('Subagent prompt templates');
     expect(orchestrator?.prompt).toContain('structured question tool');
     expect(orchestrator?.prompt).toContain('Skill announcements are tool activity only');

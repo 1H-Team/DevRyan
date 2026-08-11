@@ -114,4 +114,27 @@ describe('web harness prompt admission', () => {
     expect(prompt.payload.body.size).toBeGreaterThan(64 * 1024);
     await runtime.drain();
   });
+
+  it('records small prompt bodies verbatim without truncation metadata', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'devryan-web-harness-'));
+    temporaryDirectories.push(directory);
+    const runtime = createWebHarnessRuntime({ dataDirectory: directory, runtime: 'test' });
+    await runtime.initialize();
+    const middleware = runtime.promptAdmissionMiddleware();
+    const body = { parts: [{ type: 'text', text: 'small prompt' }] };
+    middleware({
+      method: 'POST',
+      principal: { id: 'user-small', role: 'developer', scope: 'managed' },
+      params: { sessionID: 'ses_small' },
+      query: { directory: '/repo' },
+      headers: {},
+      body,
+    }, createResponse(), vi.fn());
+    await runtime.journal.flush();
+
+    const prompt = (await runtime.journal.readRecords()).find((record) => record.type === 'prompt');
+    expect(prompt.payload.body).toEqual(body);
+    expect(prompt.payload.body.truncated).toBeUndefined();
+    await runtime.drain();
+  });
 });

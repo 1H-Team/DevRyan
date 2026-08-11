@@ -108,4 +108,30 @@ describe('areRenderRelevantMessagesEqual', () => {
 
     expect(areRenderRelevantPartsEqual([running], [completed])).toBe(false);
   });
+
+  test('treats managed transport recovery presentation changes as render-relevant', () => {
+    const info = {
+      id: 'assistant-1',
+      sessionID: 'session-1',
+      role: 'assistant',
+      time: { created: 1, completed: 2 },
+    } as Message;
+
+    expect(areRenderRelevantMessagesEqual(
+      {
+        info,
+        parts: [],
+        presentation: {
+          managedTransportRecovery: { kind: 'connection_failure', state: 'recovering' },
+        },
+      },
+      {
+        info,
+        parts: [],
+        presentation: {
+          managedTransportRecovery: { kind: 'connection_failure', state: 'recovered' },
+        },
+      },
+    )).toBe(false);
+  });
 });

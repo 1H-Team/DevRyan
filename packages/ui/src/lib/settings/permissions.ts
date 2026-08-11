@@ -41,6 +41,7 @@ export const SETTINGS_PERMISSION_SECTIONS = [
     label: 'Development',
     pages: [
       ['users', 'User Management'],
+      ['bug-reports', 'Bug Reports'],
       ['git', 'Git'],
       ['projects', 'Projects'],
       ['commands', 'Commands'],
@@ -84,7 +85,7 @@ export const fullSettingsPermissions = (): SettingsPermissions => createSettings
 }));
 
 const PERSONAL_EDIT_PAGES = new Set<SettingsPermissionSlug>([
-  'appearance', 'notifications', 'shortcuts', 'voice', 'chat', 'sessions', 'usage',
+  'appearance', 'notifications', 'shortcuts', 'voice', 'chat', 'sessions', 'usage', 'bug-reports',
 ]);
 
 export const permissionsFromLegacyPages = (pages: readonly string[]): SettingsPermissions => {

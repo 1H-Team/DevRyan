@@ -30,6 +30,6 @@ export const SETTINGS_NAV_SECTIONS = [
   },
   {
     labelKey: 'settings.view.nav.group.development',
-    pages: ['users', 'git', 'projects', 'commands'],
+    pages: ['users', 'bug-reports', 'git', 'projects', 'commands'],
   },
 ] satisfies readonly SettingsNavSection[];

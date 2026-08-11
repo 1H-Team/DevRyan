@@ -3086,16 +3086,28 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       if (!localOrigin) {
         throw new Error('Local diagnostics server is unavailable');
       }
-      const response = await fetch(`${localOrigin.replace(/\/+$/, '')}/api/diagnostics/export`, {
-        method: 'POST',
-        headers: {
-          Accept: 'application/zip',
-          'Content-Type': 'application/json',
+      const rendererSession = browserWindow?.webContents?.session;
+      if (!rendererSession?.fetch) {
+        throw new Error('Authenticated diagnostics session is unavailable');
+      }
+      const response = await rendererSession.fetch(
+        `${localOrigin.replace(/\/+$/, '')}/api/diagnostics/export`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            Accept: 'application/zip',
+            'Content-Type': 'application/json',
+            'X-DevRyan-CSRF': '1',
+          },
+          body: JSON.stringify(scope),
         },
-        body: JSON.stringify(scope),
-      });
+      );
       if (!response.ok || !response.body) {
-        const message = await response.text().catch(() => '');
+        const payload = await response.clone().json().catch(() => null);
+        const message = typeof payload?.error === 'string'
+          ? payload.error
+          : await response.text().catch(() => '');
         throw new Error(message || `Diagnostics export failed (${response.status})`);
       }
 

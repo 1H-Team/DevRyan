@@ -4,12 +4,12 @@ export const SETTINGS_PERMISSION_SLUGS = Object.freeze([
   'appearance', 'notifications', 'shortcuts', 'voice', 'about',
   'chat', 'sessions', 'agents', 'skills.installed', 'skills.catalog', 'plugins', 'magic-prompts',
   'providers', 'usage', 'mcp', 'remote-instances', 'tunnel',
-  'users', 'git', 'projects', 'commands',
+  'users', 'bug-reports', 'git', 'projects', 'commands',
 ]);
 
 const SETTINGS_PERMISSION_SLUG_SET = new Set(SETTINGS_PERMISSION_SLUGS);
 const USER_EDITABLE_SETTINGS_PAGES = new Set([
-  'appearance', 'notifications', 'shortcuts', 'voice', 'chat', 'sessions', 'usage',
+  'appearance', 'notifications', 'shortcuts', 'voice', 'chat', 'sessions', 'usage', 'bug-reports',
 ]);
 
 const normalizeSettingsPermissionSlug = (value) => {
@@ -115,8 +115,8 @@ export function validateFeatureOverridesPayload(value) {
 }
 
 const ADMIN_SETTINGS_PERMISSIONS = createRoleSettingsPermissions({ readPages: ['*'], editPages: ['*'] });
-const SENIOR_SETTINGS_PAGES = ['appearance', 'chat', 'sessions', 'shortcuts', 'notifications', 'users'];
-const DEVELOPER_SETTINGS_PAGES = ['appearance', 'chat', 'sessions', 'shortcuts', 'notifications'];
+const SENIOR_SETTINGS_PAGES = ['appearance', 'chat', 'sessions', 'shortcuts', 'notifications', 'users', 'bug-reports'];
+const DEVELOPER_SETTINGS_PAGES = ['appearance', 'chat', 'sessions', 'shortcuts', 'notifications', 'bug-reports'];
 
 export const ROLE_POLICY_DEFAULTS = Object.freeze({
   admin: Object.freeze({
@@ -371,6 +371,7 @@ const settingsFieldsForPermission = (principal, permission) => {
 
 export function settingsPageForRequest(requestPath, method = 'GET') {
   const path = String(requestPath || '');
+  if (/^\/(?:bug-reports|error-logs)(?:\/|$)/.test(path)) return 'bug-reports';
   if (/^\/admin(?:\/|$)/.test(path)) return 'users';
   // Chat composition needs effective agent-model metadata even when the
   // Agents settings page itself is hidden. Mutations and nested config routes
