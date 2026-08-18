@@ -87,6 +87,14 @@ const getProviderFailurePresentation = ({
     };
   }
 
+  if (task.failureKind === 'deadline_exceeded') {
+    return {
+      message: t('chat.modelRecovery.timeoutDetail'),
+      className: 'text-[var(--status-warning)]',
+      role: 'alert' as const,
+    };
+  }
+
   const recoveredSameChild = recoverySourceTask?.failureKind === 'provider_usage_limit'
     && (task.executionKind === 'retry_in_place' || task.executionKind === 'recover_in_place')
     && task.status === 'completed';
@@ -126,9 +134,22 @@ export const ManagedTaskRowView = React.memo(({
   onRetryInPlace,
 }: ManagedTaskRowViewProps) => {
   const { t } = useI18n();
+  const manualRecoveryRequired = Boolean(
+    resultEnvelope?.resumable
+    && resultEnvelope.action === null
+    && !task.agentRetryAvailable
+    && task.failureKind !== 'provider_prompt_rejected'
+    && (
+      task.failureKind === 'provider_usage_limit'
+      || (task.mode === 'orchestrator' && task.dispatchGrouped && task.attempt >= 2)
+    )
+    && (task.status === 'failed' || task.status === 'interrupted'),
+  );
+  const showRecovery = Boolean(onRetryInPlace && manualRecoveryRequired);
   const presentedTask = childActive && (
     task.status === 'failed' || task.status === 'aborted' || task.status === 'interrupted'
-  ) && task.failureKind !== 'provider_usage_limit'
+  ) && !manualRecoveryRequired
+    && task.failureKind !== 'provider_usage_limit'
     && task.failureKind !== 'provider_prompt_rejected'
     ? { ...task, status: 'running' as const }
     : task;
@@ -147,16 +168,6 @@ export const ManagedTaskRowView = React.memo(({
   React.useEffect(() => {
     setSelection({ providerId: task.providerId, modelId: task.modelId, variant: task.variant });
   }, [task.taskId, task.providerId, task.modelId, task.variant]);
-  const showRecovery = Boolean(
-    onRetryInPlace
-    && (!childActive || task.failureKind === 'provider_usage_limit')
-    && resultEnvelope?.resumable
-    && resultEnvelope.action === null
-    && !task.agentRetryAvailable
-    && task.failureKind !== 'provider_prompt_rejected'
-    && (task.status === 'failed' || task.status === 'interrupted'),
-  );
-
   return (
     <article data-managed-task-id={task.taskId}>
       <div className="flex min-w-0 flex-col items-start gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3">
@@ -165,7 +176,7 @@ export const ManagedTaskRowView = React.memo(({
             {formatManagedTaskDisplayName(task.label)}
           </h4>
           <p className={`truncate typography-meta ${status.className}`}>{status.label}</p>
-          {providerFailurePresentation ? (
+          {providerFailurePresentation && !(showRecovery && task.failureKind === 'deadline_exceeded') ? (
             <p role={providerFailurePresentation.role} className={`mt-1 typography-micro ${providerFailurePresentation.className}`}>
               {providerFailurePresentation.message}
             </p>
@@ -187,7 +198,12 @@ export const ManagedTaskRowView = React.memo(({
       {showRecovery ? (
         <ModelRecoveryCard
           embedded
-          title={t('chat.modelRecovery.subagentPrompt')}
+          title={t(task.failureKind === 'deadline_exceeded'
+            ? 'chat.modelRecovery.timeoutSubagentPrompt'
+            : 'chat.modelRecovery.subagentPrompt')}
+          detail={task.failureKind === 'deadline_exceeded'
+            ? t('chat.modelRecovery.timeoutDetail')
+            : null}
           originalModelLabel={providerModelLabel(task, providers).combined}
           providers={providers}
           selection={selection}

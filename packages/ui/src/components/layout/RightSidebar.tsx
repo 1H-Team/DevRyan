@@ -196,6 +196,7 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({ isOpen, children, cl
       ) : null}
       {isOpen && (
         <div
+          data-panel-resize-handle="right-sidebar"
           className={cn(
             'group absolute left-0 top-0 z-20 flex h-full w-3 cursor-col-resize items-stretch justify-start',
           )}

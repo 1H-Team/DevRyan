@@ -5,6 +5,8 @@
  * This client provides methods to fetch skills list and download skill packages.
  */
 
+import { downloadArchive } from '@openchamber/shared-runtime';
+
 const CLAWDHUB_API_BASE = 'https://clawdhub.com/api/v1';
 const CLAWDHUB_PAGE_LIMIT = 25;
 
@@ -118,7 +120,7 @@ export async function fetchClawdHubSkillVersion(slug, version = 'latest') {
  * Download a skill package as a ZIP buffer
  * @param {string} slug - Skill slug/identifier
  * @param {string} version - Specific version string
- * @returns {Promise<ArrayBuffer>} - ZIP file contents
+ * @returns {Promise<Buffer>} - ZIP file contents
  */
 export async function downloadClawdHubSkill(slug, version) {
   const versionParam = typeof version === 'string' && version !== 'latest'
@@ -126,18 +128,14 @@ export async function downloadClawdHubSkill(slug, version) {
     : '&tag=latest';
   const url = `${CLAWDHUB_API_BASE}/download?slug=${encodeURIComponent(slug)}${versionParam}`;
 
-  const response = await rateLimitedFetch(url, {
+  return downloadArchive(url, {
+    fetchImpl: rateLimitedFetch,
+    timeoutMs: 60_000,
     headers: {
       Accept: 'application/zip',
+      'User-Agent': 'OpenChamber/1.0',
     },
   });
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error(`ClawdHub download error (${response.status}): ${text || response.statusText}`);
-  }
-
-  return response.arrayBuffer();
 }
 
 /**

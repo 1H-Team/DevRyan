@@ -1,6 +1,8 @@
+import nodeFs from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { EventEmitter } from 'node:events';
 
 import { createManagedTaskRecord } from '@openchamber/orchestration-runtime';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -12,6 +14,7 @@ const temporaryDirectories = [];
 const createOwnedLedger = async (options) => {
   const ledger = createAtomicManagedOrchestrationLedger({
     heartbeatIntervalMs: 0,
+    process: new EventEmitter(),
     ...options,
   });
   await ledger.acquireOwnership();
@@ -179,10 +182,12 @@ describe('atomic managed orchestration ledger', () => {
     const first = createAtomicManagedOrchestrationLedger({
       dataDirectory,
       heartbeatIntervalMs: 0,
+      process: new EventEmitter(),
     });
     const second = createAtomicManagedOrchestrationLedger({
       dataDirectory,
       heartbeatIntervalMs: 0,
+      process: new EventEmitter(),
     });
 
     await first.acquireOwnership();
@@ -198,12 +203,72 @@ describe('atomic managed orchestration ledger', () => {
     await second.releaseOwnership();
   });
 
+  it('recovers a lock whose process is dead even when the heartbeat is still fresh', async () => {
+    const dataDirectory = await createTemporaryDirectory();
+    const first = createAtomicManagedOrchestrationLedger({
+      dataDirectory,
+      heartbeatIntervalMs: 0,
+      pid: 12_345,
+      process: new EventEmitter(),
+    });
+    await first.acquireOwnership();
+
+    let randomSequence = 0;
+    const second = createAtomicManagedOrchestrationLedger({
+      dataDirectory,
+      heartbeatIntervalMs: 0,
+      ownerStaleMs: 45_000,
+      now: () => 2_000,
+      pid: 67_890,
+      isProcessAlive: async (pid) => pid !== 12_345,
+      randomId: () => `0123456789abcdef${String(randomSequence += 1).padStart(16, '0')}`,
+      process: new EventEmitter(),
+    });
+
+    await expect(second.acquireOwnership()).resolves.toBeUndefined();
+    expect(second.getDiagnostics().ownership.state).toBe('owned');
+    await expect(first.save(snapshot())).rejects.toMatchObject({
+      code: 'managed_orchestration_ownership_lost',
+    });
+    await second.releaseOwnership();
+  });
+
+  it('refuses to steal a lock whose process is still alive even when the heartbeat is stale', async () => {
+    const dataDirectory = await createTemporaryDirectory();
+    const first = createAtomicManagedOrchestrationLedger({
+      dataDirectory,
+      heartbeatIntervalMs: 0,
+      pid: 12_345,
+      process: new EventEmitter(),
+    });
+    await first.acquireOwnership();
+    const ownerPath = path.join(path.dirname(first.filePath), 'owner.lock');
+    await fs.utimes(ownerPath, new Date(1_000), new Date(1_000));
+
+    const second = createAtomicManagedOrchestrationLedger({
+      dataDirectory,
+      heartbeatIntervalMs: 0,
+      ownerStaleMs: 1_000,
+      now: () => 10_000,
+      pid: 67_890,
+      isProcessAlive: async () => true,
+      process: new EventEmitter(),
+    });
+
+    await expect(second.acquireOwnership()).rejects.toMatchObject({
+      code: 'managed_orchestration_owner_conflict',
+      statusCode: 409,
+    });
+    await first.releaseOwnership();
+  });
+
   it('recovers only a stale lock whose process is confirmed dead', async () => {
     const dataDirectory = await createTemporaryDirectory();
     const first = createAtomicManagedOrchestrationLedger({
       dataDirectory,
       heartbeatIntervalMs: 0,
       pid: 12_345,
+      process: new EventEmitter(),
     });
     await first.acquireOwnership();
     const ownerPath = path.join(path.dirname(first.filePath), 'owner.lock');
@@ -218,6 +283,7 @@ describe('atomic managed orchestration ledger', () => {
       pid: 67_890,
       isProcessAlive: async (pid) => pid !== 12_345,
       randomId: () => `0123456789abcdef${String(randomSequence += 1).padStart(16, '0')}`,
+      process: new EventEmitter(),
     });
 
     await expect(second.acquireOwnership()).resolves.toBeUndefined();
@@ -246,5 +312,72 @@ describe('atomic managed orchestration ledger', () => {
     await expect(ledger.save(snapshot())).rejects.toMatchObject({
       code: 'managed_orchestration_ownership_lost',
     });
+  });
+
+  it('releases the owner lock without waiting for an in-flight save', async () => {
+    const dataDirectory = await createTemporaryDirectory();
+    let releaseSave;
+    const gate = new Promise((resolve) => {
+      releaseSave = resolve;
+    });
+    let pendingSaveStarted = false;
+    const fsApi = new Proxy(fs, {
+      get(target, property) {
+        if (property === 'rename') {
+          return async (from, to) => {
+            if (String(to).endsWith(`${path.sep}ledger.json`)) {
+              pendingSaveStarted = true;
+              await gate;
+            }
+            return fs.rename(from, to);
+          };
+        }
+        const value = Reflect.get(target, property, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    const ledger = await createOwnedLedger({ dataDirectory, fs: fsApi });
+    const pending = ledger.save(snapshot());
+    const startedAt = Date.now();
+    while (!pendingSaveStarted) {
+      if (Date.now() - startedAt > 2_000) {
+        throw new Error('in-flight save did not start');
+      }
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+
+    const released = ledger.releaseOwnership();
+    const ownerPath = path.join(path.dirname(ledger.filePath), 'owner.lock');
+    try {
+      const lockGoneAt = Date.now();
+      while (nodeFs.existsSync(ownerPath)) {
+        if (Date.now() - lockGoneAt > 2_000) {
+          throw new Error('owner lock was not released during an in-flight save');
+        }
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+    } finally {
+      releaseSave();
+    }
+    await expect(released).resolves.toBe(true);
+    await pending.catch(() => undefined);
+  });
+
+  it('unlinks the owner lock on process exit while this runtime still holds the token', async () => {
+    const { EventEmitter } = await import('node:events');
+    const fakeProcess = new EventEmitter();
+    const dataDirectory = await createTemporaryDirectory();
+    const ledger = createAtomicManagedOrchestrationLedger({
+      dataDirectory,
+      heartbeatIntervalMs: 0,
+      process: fakeProcess,
+    });
+    await ledger.acquireOwnership();
+    const ownerPath = path.join(path.dirname(ledger.filePath), 'owner.lock');
+    await expect(fs.readFile(ownerPath, 'utf8')).resolves.toContain('"pid"');
+
+    fakeProcess.emit('exit');
+
+    await expect(fs.stat(ownerPath)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });

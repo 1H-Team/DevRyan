@@ -767,6 +767,61 @@ describe('tool activity grouping', () => {
         expect(getToolActivityGroupSummaryCount('edit', groups[0]?.items ?? [], (item) => item.part)).toBe(2);
     });
 
+    test('renders one passive browser activity for a 15-command narrated turn in sorted and live modes', () => {
+        type BrowserTurnItem = {
+            messageId: string;
+            kind: 'tool' | 'reasoning';
+            tool?: string;
+            part?: ToolPart;
+        };
+        const makeItems = (finalStatus: 'running' | 'completed'): BrowserTurnItem[] => (
+            Array.from({ length: 15 }, (_, index) => {
+                const status = index === 14 ? finalStatus : 'completed';
+                const browserPart = toolPart('devryan_browser', { status }, `browser-${index + 1}`);
+                return [
+                    {
+                        messageId: `message-${Math.floor(index / 5) + 1}`,
+                        kind: 'tool' as const,
+                        tool: 'devryan_browser',
+                        part: browserPart,
+                    },
+                    {
+                        messageId: `message-${Math.floor(index / 5) + 1}`,
+                        kind: 'reasoning' as const,
+                    },
+                ];
+            }).flat()
+        );
+        const options = {
+            getToolName: (item: BrowserTurnItem) => item.tool ?? '',
+            getToolPart: (item: BrowserTurnItem) => item.part,
+            getMessageId: (item: BrowserTurnItem) => item.messageId,
+            isReasoningOrJustification: (item: BrowserTurnItem) => item.kind === 'reasoning',
+        };
+
+        for (const status of ['running', 'completed'] as const) {
+            const items = makeItems(status);
+            const sortedRows = collectToolActivityRows(items, options);
+            const sortedBrowserRows = sortedRows.filter((row) => (
+                row.type === 'group' && row.groupInfo.kind === 'browser'
+            ));
+            expect(sortedBrowserRows).toHaveLength(1);
+            if (sortedBrowserRows[0]?.type === 'group') {
+                expect(sortedBrowserRows[0].items).toHaveLength(15);
+                expect(getToolActivityGroupSummaryCount('browser', sortedBrowserRows[0].items, options.getToolPart)).toBe(1);
+            }
+
+            const liveGroups = collectCrossMessageFileActivityGroups(items, options)
+                .filter((group) => group.groupInfo.kind === 'browser');
+            expect(liveGroups).toHaveLength(1);
+            expect(liveGroups[0]?.items).toHaveLength(15);
+        }
+
+        expect(getToolActivityGroupInfo('devryan_browser')?.kind).toBe('browser');
+        expect(getToolActivityGroupLabelKey('browser', 1)).toBe('chat.toolGroup.usingDevRyanBrowser');
+        expect(dict['chat.toolGroup.usingDevRyanBrowser']).toBe('Using DevRyan Browser');
+    });
+
     test('does not bridge a single-message file burst or unrelated tool groups', () => {
         const sameMessageWrites = [
             { messageId: 'message-1', tool: 'oc_write', part: toolPart('oc_write', { input: { path: 'db/a.sql' }, metadata: { exists: false } }, 'create-1') },

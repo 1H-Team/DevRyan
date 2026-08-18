@@ -67,6 +67,73 @@ type ContextStore = ContextState & ContextActions;
 
 const EDIT_PERMISSION_SEQUENCE: EditPermissionMode[] = ['ask', 'allow', 'full'];
 const GLOBAL_EDIT_MODE_SESSION_ID = '__global__';
+const CONTEXT_STORE_VERSION = 2;
+
+export const migratePersistedContextUsage = (value: unknown): ContextUsage | null => {
+    if (!value || typeof value !== "object") return null;
+    const legacy = value as Partial<ContextUsage> & {
+        totalTokens?: unknown;
+        relatedSubagentTotalTokens?: unknown;
+        relatedSubagentSessions?: Array<Partial<NonNullable<ContextUsage["relatedSubagentSessions"]>[number]> & { totalTokens?: unknown }>;
+    };
+    const breakdown = legacy.tokenBreakdown;
+    const detailedActive = breakdown
+        ? Math.max(0, breakdown.input) + Math.max(0, breakdown.cacheRead) + Math.max(0, breakdown.cacheWrite)
+        : 0;
+    const legacyTotal = typeof legacy.totalTokens === "number" && Number.isFinite(legacy.totalTokens)
+        ? Math.max(0, legacy.totalTokens)
+        : 0;
+    const activeInputTokens = typeof legacy.activeInputTokens === "number" && Number.isFinite(legacy.activeInputTokens)
+        ? Math.max(0, legacy.activeInputTokens)
+        : detailedActive > 0 ? detailedActive : legacyTotal;
+    const percentage = typeof legacy.capacityLimit === "number" && legacy.capacityLimit > 0
+        ? (activeInputTokens / legacy.capacityLimit) * 100
+        : legacy.percentage ?? null;
+    const legacyRelatedSessions = legacy.relatedSubagentSessions as Array<{
+        activeInputTokens?: unknown;
+        totalTokens?: unknown;
+    }> | undefined;
+    const relatedSubagentSessions = legacyRelatedSessions?.map((session) => {
+        const normalized = { ...session };
+        delete normalized.totalTokens;
+        return {
+            ...normalized,
+            activeInputTokens: typeof session.activeInputTokens === "number"
+                ? session.activeInputTokens
+                : typeof session.totalTokens === "number" ? session.totalTokens : 0,
+        };
+    }) as ContextUsage["relatedSubagentSessions"];
+    const normalizedLegacy = { ...legacy };
+    delete normalizedLegacy.totalTokens;
+    delete normalizedLegacy.relatedSubagentTotalTokens;
+
+    return {
+        ...(normalizedLegacy as ContextUsage),
+        activeInputTokens,
+        percentage,
+        lastOutputTokens: typeof legacy.lastOutputTokens === "number"
+            ? legacy.lastOutputTokens
+            : breakdown?.output ?? 0,
+        source: legacy.source === "meridian" ? "meridian" : "message-fallback",
+        updatedAt: typeof legacy.updatedAt === "number" ? legacy.updatedAt : 0,
+        tokenBreakdown: breakdown
+            ? { ...breakdown, total: activeInputTokens }
+            : {
+                input: activeInputTokens,
+                output: 0,
+                reasoning: 0,
+                cacheRead: 0,
+                cacheWrite: 0,
+                total: activeInputTokens,
+            },
+        ...(relatedSubagentSessions ? { relatedSubagentSessions } : {}),
+        relatedSubagentActiveInputTokens: typeof legacy.relatedSubagentActiveInputTokens === "number"
+            ? legacy.relatedSubagentActiveInputTokens
+            : typeof legacy.relatedSubagentTotalTokens === "number"
+                ? legacy.relatedSubagentTotalTokens
+                : relatedSubagentSessions?.reduce((sum, session) => sum + session.activeInputTokens, 0),
+    };
+};
 
 type DeferredContextWork = {
     cancelled: boolean;
@@ -362,7 +429,7 @@ export const useContextStore = create<ContextStore>()(
                     const state = get();
                     const existingUsage = state.sessionContextUsage.get(sessionId);
 
-                    if (!existingUsage || existingUsage.totalTokens === 0) {
+                    if (!existingUsage || existingUsage.activeInputTokens === 0) {
                         get().updateSessionContextUsage(sessionId, capacity, messages);
                     }
                 },
@@ -482,7 +549,18 @@ export const useContextStore = create<ContextStore>()(
             }),
             {
                 name: "context-store",
+                version: CONTEXT_STORE_VERSION,
                 storage: createJSONStorage(() => getSafeStorage()),
+                migrate: (persistedState: any) => {
+                    if (!persistedState?.sessionContextUsage) return persistedState;
+                    return {
+                        ...persistedState,
+                        sessionContextUsage: persistedState.sessionContextUsage.map(([sessionId, usage]: [string, unknown]) => [
+                            sessionId,
+                            migratePersistedContextUsage(usage),
+                        ]).filter((entry: [string, ContextUsage | null]) => entry[1] !== null),
+                    };
+                },
                 partialize: (state) => ({
                     sessionModelSelections: Array.from(state.sessionModelSelections.entries()),
                     sessionAgentSelections: Array.from(state.sessionAgentSelections.entries()),
@@ -530,7 +608,11 @@ export const useContextStore = create<ContextStore>()(
                         sessionAgentModelSelections: agentModelSelections,
                         sessionAgentModelVariantSelections: agentModelVariantSelections,
                         currentAgentContext: new Map(persistedState?.currentAgentContext || []),
-                        sessionContextUsage: new Map(persistedState?.sessionContextUsage || []),
+                        sessionContextUsage: new Map(
+                            (persistedState?.sessionContextUsage || [])
+                                .map(([sessionId, usage]: [string, unknown]) => [sessionId, migratePersistedContextUsage(usage)])
+                                .filter((entry: [string, ContextUsage | null]) => entry[1] !== null),
+                        ),
                         sessionAgentEditModes: agentEditModes,
                         hasHydrated: true,
                     };

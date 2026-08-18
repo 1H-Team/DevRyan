@@ -9,17 +9,14 @@ import { generateSyntaxTheme } from '@/lib/theme/syntaxThemeGenerator';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessions, useSessionMessageRecords } from '@/sync/sync-context';
+import { useProviderBackedContextUsage } from '@/hooks/useProviderBackedContextUsage';
+import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { useI18n } from '@/lib/i18n';
 import { resolveDisplaySessionTitle } from '@/lib/sessionTitles';
-import type { ContextUsageSource } from '@/stores/types/sessionTypes';
-import { getContextUsageFromMessages } from '@/stores/utils/contextUsageUtils';
-import { calculateContextUsage } from '@/stores/utils/contextUtils';
-import {
-  resolveModelContextCapacity,
-  type ResolvedModelContextCapacity,
-} from '@/stores/utils/modelContextCapacity';
-import { computeCacheHitRate, extractTokenBreakdownFromMessage, type ExtractedTokenBreakdown } from '@/stores/utils/tokenUtils';
+import { getProviderContextUsageFromMessages } from '@/stores/utils/contextUsageUtils';
+import { UNAVAILABLE_MODEL_CONTEXT_CAPACITY } from '@/stores/utils/modelContextCapacity';
+import { extractTokenBreakdownFromMessage, type ExtractedTokenBreakdown } from '@/stores/utils/tokenUtils';
 import { useUIStore } from '@/stores/useUIStore';
 import {
   derivePartsLabel,
@@ -59,7 +56,6 @@ const EMPTY_BREAKDOWN: TokenBreakdown = {
   cacheRead: 0,
   cacheWrite: 0,
   total: 0,
-  sourceAccuracy: 'unavailable',
 };
 
 const toNonNegativeNumber = (value: unknown): number => {
@@ -94,62 +90,17 @@ const formatDateTime = (timestamp: number | null): string => {
   });
 };
 
-const SOURCE_COLOR: Record<ContextUsageSource, string> = {
-  system: 'var(--surface-muted-foreground)',
-  rules: 'var(--status-success)',
-  skills: 'var(--status-warning)',
-  mcp: 'var(--status-info)',
-  subagents: 'var(--interactive-selection)',
-  tools: 'var(--primary-base)',
-  attachments: 'var(--status-info-border)',
-  conversation: 'var(--surface-muted-foreground)',
-  other: 'var(--surface-subtle)',
-};
-
-const SOURCE_ORDER: ContextUsageSource[] = [
-  'system',
-  'rules',
-  'skills',
-  'mcp',
-  'subagents',
-  'tools',
-  'attachments',
-  'conversation',
-  'other',
-];
-
-const sourceOrder = (source: ContextUsageSource): number => {
-  const index = SOURCE_ORDER.indexOf(source);
-  return index === -1 ? SOURCE_ORDER.length : index;
-};
-
-const getSourceLabel = (source: ContextUsageSource, t: ReturnType<typeof useI18n>['t']): string => {
-  switch (source) {
-    case 'system': return t('contextUsage.window.systemPrompt');
-    case 'rules': return t('contextUsage.window.rules');
-    case 'skills': return t('contextUsage.window.skills');
-    case 'mcp': return t('contextUsage.window.mcp');
-    case 'subagents': return t('contextUsage.window.subagents');
-    case 'tools': return t('contextUsage.window.tools');
-    case 'attachments': return t('contextUsage.window.attachments');
-    case 'conversation': return t('contextUsage.window.conversation');
-    case 'other': return t('contextUsage.window.other');
-  }
-};
-
 const resolveProviderAndModel = (
   providers: ProviderLike[],
   providerID: string,
   modelID: string,
-  variant?: string,
-): { providerName: string; modelName: string; capacity: ResolvedModelContextCapacity } => {
+): { providerName: string; modelName: string } => {
   const provider = providers.find((entry) => entry.id === providerID);
   const model = provider?.models?.find((entry) => entry.id === modelID);
 
   return {
     providerName: provider?.name || providerID || '-',
     modelName: model?.name || modelID || '-',
-    capacity: resolveModelContextCapacity(model, variant),
   };
 };
 
@@ -162,10 +113,21 @@ export const ContextPanelContent: React.FC = () => {
   const [copiedRawMessageId, setCopiedRawMessageId] = React.useState<string | null>(null);
   const copyResetTimeoutRef = React.useRef<number | null>(null);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
-  const getContextUsage = useSessionUIStore((state) => state.getContextUsage);
-  const sessions = useSessions();
-  const sessionMessages = useSessionMessageRecords(currentSessionId ?? '');
+  const contextUsageDirectory = useEffectiveDirectory() ?? null;
+  const getContextUsageForSession = useSessionUIStore((state) => state.getContextUsageForSession);
+  const sessions = useSessions(contextUsageDirectory ?? undefined);
+  const sessionMessages = useSessionMessageRecords(currentSessionId ?? '', contextUsageDirectory ?? undefined);
   const providers = useConfigStore((state) => state.providers);
+  const fallbackContextUsage = React.useMemo(
+    () => getContextUsageForSession(currentSessionId, contextUsageDirectory)
+      ?? getProviderContextUsageFromMessages(sessionMessages, providers as ProviderLike[]),
+    [contextUsageDirectory, currentSessionId, getContextUsageForSession, providers, sessionMessages],
+  );
+  const contextUsage = useProviderBackedContextUsage({
+    sessionID: currentSessionId,
+    directory: contextUsageDirectory,
+    fallback: fallbackContextUsage,
+  });
 
   React.useEffect(() => {
     if (copyResetTimeoutRef.current !== null) {
@@ -216,8 +178,6 @@ export const ContextPanelContent: React.FC = () => {
       }
     }
 
-    const tokenBreakdown = contextMessage ? extractTokenBreakdownFromMessage(contextMessage) : EMPTY_BREAKDOWN;
-
     const totalAssistantCost = assistantMessages.reduce((sum, message) => {
       const cost = toNonNegativeNumber((message.info as { cost?: unknown }).cost);
       return sum + cost;
@@ -228,25 +188,18 @@ export const ContextPanelContent: React.FC = () => {
       providers as ProviderLike[],
       latestAssistantInfo?.providerID || '',
       latestAssistantInfo?.modelID || '',
-      latestAssistantInfo?.variant,
     );
 
-    const capacity = providerModel.capacity;
-    const sourceUsage = getContextUsage(capacity)
-      ?? getContextUsageFromMessages(sessionMessages, capacity);
-    const usagePercent = sourceUsage?.percentage
-      ?? calculateContextUsage(tokenBreakdown.total, capacity).percentage;
-    const sourceSegments = [...(sourceUsage?.sources ?? [])]
-      .filter((source) => source.tokens > 0)
-      .sort((a, b) => sourceOrder(a.source) - sourceOrder(b.source))
-      .map((source) => ({
-        key: `${source.source}:${source.label ?? ''}`,
-        label: source.label ?? getSourceLabel(source.source, t),
-        value: source.tokens,
-        color: SOURCE_COLOR[source.source],
-      }));
-    const sourceTotal = sourceUsage?.sourceTotalTokens ?? sourceSegments.reduce((sum, source) => sum + source.value, 0);
-    const usageTokenBreakdown = sourceUsage?.tokenBreakdown ?? tokenBreakdown;
+    const capacity = contextUsage
+      ? {
+          capacityLimit: contextUsage.capacityLimit,
+          capacityBasis: contextUsage.capacityBasis,
+          inputLimit: contextUsage.inputLimit,
+          contextLimit: contextUsage.contextLimit,
+          outputLimit: contextUsage.outputLimit,
+        }
+      : UNAVAILABLE_MODEL_CONTEXT_CAPACITY;
+    const usageTokenBreakdown = contextUsage?.tokenBreakdown ?? EMPTY_BREAKDOWN;
     const detailedTokenStats: ContextStatRow[] = [
       { key: 'input', label: t('contextSidebar.tokens.input'), value: usageTokenBreakdown.input },
       { key: 'output', label: t('contextSidebar.tokens.output'), value: usageTokenBreakdown.output },
@@ -256,10 +209,10 @@ export const ContextPanelContent: React.FC = () => {
     ].filter((row) => row.value > 0);
     const tokenStats = detailedTokenStats.length > 0
       ? detailedTokenStats
-      : [{ key: 'measuredTotal', label: t('contextUsage.window.measuredTotal'), value: tokenBreakdown.total }];
-    const relatedSubagentSessions = (sourceUsage?.relatedSubagentSessions ?? []).filter((session) => session.totalTokens > 0);
-    const relatedSubagentTotalTokens = sourceUsage?.relatedSubagentTotalTokens
-      ?? relatedSubagentSessions.reduce((sum, session) => sum + session.totalTokens, 0);
+      : [{ key: 'measuredTotal', label: t('contextUsage.window.measuredTotal'), value: usageTokenBreakdown.total }];
+    const relatedSubagentSessions = (contextUsage?.relatedSubagentSessions ?? []).filter((session) => session.activeInputTokens > 0);
+    const relatedSubagentActiveInputTokens = contextUsage?.relatedSubagentActiveInputTokens
+      ?? relatedSubagentSessions.reduce((sum, session) => sum + session.activeInputTokens, 0);
 
     const firstMessageTs = sessionMessages[0]?.info?.time?.created;
     const lastMessageTs = sessionMessages.length > 0
@@ -277,19 +230,19 @@ export const ContextPanelContent: React.FC = () => {
       createdAt: (currentSession?.time?.created ?? firstMessageTs ?? null) as number | null,
       lastActivityAt: (lastMessageTs ?? currentSession?.time?.created ?? null) as number | null,
       providerModel,
-      tokenBreakdown,
-      cacheHitRate: computeCacheHitRate(tokenBreakdown.input, tokenBreakdown.cacheRead, tokenBreakdown.cacheWrite),
-      usagePercent,
+      tokenBreakdown: usageTokenBreakdown,
+      usagePercent: contextUsage?.percentage ?? null,
+      processedInputTokens: contextUsage?.processedInputTokens ?? null,
       totalAssistantCost,
       capacity,
-      sourceAccuracy: sourceUsage?.sourceAccuracy ?? 'unavailable',
-      sourceSegments,
-      sourceTotal,
+      freeSpaceTokens: capacity.capacityLimit !== null
+        ? Math.max(0, capacity.capacityLimit - usageTokenBreakdown.total)
+        : null,
       tokenStats,
       relatedSubagentSessions,
-      relatedSubagentTotalTokens,
+      relatedSubagentActiveInputTokens,
     };
-  }, [currentSessionId, getContextUsage, providers, sessionMessages, sessions, t]);
+  }, [contextUsage, currentSessionId, providers, sessionMessages, sessions, t]);
 
   if (!currentSessionId) {
     return (
@@ -299,7 +252,6 @@ export const ContextPanelContent: React.FC = () => {
     );
   }
 
-  const hasSourceSegments = viewModel.sourceAccuracy !== 'unavailable' && viewModel.sourceSegments.length > 0;
   const hasSubagentRows = viewModel.relatedSubagentSessions.length > 0;
 
   return (
@@ -347,6 +299,12 @@ export const ContextPanelContent: React.FC = () => {
               ? t('contextSidebar.context.percentUsed', { percent: viewModel.usagePercent.toFixed(1) })
               : t('contextUsage.unavailable.title')}
           </div>
+          {viewModel.processedInputTokens !== null ? (
+            <div className="mt-2 flex items-center justify-between gap-4 typography-micro text-muted-foreground/70">
+              <span>{t('contextUsage.window.processedInput')}</span>
+              <span className="tabular-nums">{formatNumber(viewModel.processedInputTokens)}</span>
+            </div>
+          ) : null}
           {viewModel.capacity.capacityLimit !== null ? (
             <div className="mt-2 space-y-1 typography-micro text-muted-foreground/70">
               <div className="flex items-center justify-between gap-4">
@@ -357,6 +315,12 @@ export const ContextPanelContent: React.FC = () => {
                 </span>
                 <span className="tabular-nums">{formatNumber(viewModel.capacity.capacityLimit)}</span>
               </div>
+              {viewModel.freeSpaceTokens !== null ? (
+                <div className="flex items-center justify-between gap-4">
+                  <span>{t('contextUsage.window.freeSpace')}</span>
+                  <span className="tabular-nums">{formatNumber(viewModel.freeSpaceTokens)}</span>
+                </div>
+              ) : null}
               {viewModel.capacity.contextLimit !== null ? (
                 <div className="flex items-center justify-between gap-4">
                   <span>{t('contextUsage.mobile.contextLimit')}</span>
@@ -401,75 +365,23 @@ export const ContextPanelContent: React.FC = () => {
         {/* ── Last turn tokens ── */}
         <div className="mb-5 rounded-lg bg-[var(--surface-elevated)]/70 px-4 py-3.5">
           <div className="typography-micro text-muted-foreground">{t('contextSidebar.section.lastAssistantMessage')}</div>
-          <div className="mt-1 typography-micro text-muted-foreground/70">{t('contextUsage.window.tokenStatsHelp')}</div>
-          <div className="mt-2.5 grid grid-cols-3 gap-x-4 gap-y-2.5">
-            {([
-              { label: t('contextSidebar.tokens.input'), value: viewModel.tokenBreakdown.input },
-              { label: t('contextSidebar.tokens.output'), value: viewModel.tokenBreakdown.output },
-              { label: t('contextSidebar.tokens.reasoning'), value: viewModel.tokenBreakdown.reasoning },
-              { label: t('contextSidebar.tokens.cacheRead'), value: viewModel.tokenBreakdown.cacheRead },
-              { label: t('contextSidebar.tokens.cacheWrite'), value: viewModel.tokenBreakdown.cacheWrite },
-              { label: t('contextSidebar.tokens.cacheHit'), value: 0, display: viewModel.cacheHitRate === null ? '—' : `${viewModel.cacheHitRate.toFixed(1)}%` },
-            ] as Array<{ label: string; value: number; display?: string }>).map((item) => (
-              <div key={item.label}>
-                <div className="typography-micro text-muted-foreground/70" title={item.label === t('contextSidebar.tokens.input') ? t('contextUsage.window.tokenStatsHelp') : undefined}>{item.label}</div>
-                <div className="mt-0.5 typography-ui-label tabular-nums text-foreground">{item.display ?? formatNumber(item.value)}</div>
+          <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2.5">
+            {viewModel.tokenStats.map((item) => (
+              <div key={item.key}>
+                <div className="typography-micro text-muted-foreground/70">{item.label}</div>
+                <div className="mt-0.5 typography-ui-label tabular-nums text-foreground">{formatNumber(item.value)}</div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* ── Context breakdown ── */}
+        {/* ── Related subagent context ── */}
         <div className="mb-6">
-          {hasSourceSegments ? (
-            <>
-              <div className="flex h-1 w-full overflow-hidden rounded-full bg-[var(--surface-subtle)]">
-                {viewModel.sourceSegments.map((segment) => {
-                  if (segment.value <= 0 || viewModel.sourceTotal <= 0) return null;
-                  return (
-                    <div
-                      key={segment.key}
-                      style={{
-                        width: `${(segment.value / viewModel.sourceTotal) * 100}%`,
-                        backgroundColor: segment.color,
-                      }}
-                    />
-                  );
-                })}
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-                {viewModel.sourceSegments.map((segment) => {
-                  const pct = viewModel.sourceTotal > 0 ? (segment.value / viewModel.sourceTotal) * 100 : 0;
-                  return (
-                    <div key={segment.key} className="inline-flex items-center gap-1.5">
-                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: segment.color }} />
-                      <span className="typography-micro text-muted-foreground/70">
-                        {segment.label} <span className="tabular-nums">{pct.toFixed(0)}%</span>
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          ) : (
-            <div className="rounded-lg bg-[var(--surface-elevated)]/70 px-4 py-3.5">
-              <div className="typography-micro text-muted-foreground">{t('contextUsage.window.tokenStats')}</div>
-              <div className="mt-1 typography-micro text-muted-foreground/70">{t('contextUsage.window.tokenStatsHelp')}</div>
-              <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2.5">
-                {viewModel.tokenStats.map((item) => (
-                  <div key={item.key}>
-                    <div className="typography-micro text-muted-foreground/70" title={item.key === 'input' ? t('contextUsage.window.tokenStatsHelp') : undefined}>{item.label}</div>
-                    <div className="mt-0.5 typography-ui-label tabular-nums text-foreground">{formatNumber(item.value)}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
           {hasSubagentRows ? (
-            <div className="mt-5 rounded-lg bg-[var(--surface-elevated)]/70 px-4 py-3.5">
+            <div className="rounded-lg bg-[var(--surface-elevated)]/70 px-4 py-3.5">
               <div className="flex items-baseline justify-between gap-4">
                 <div className="typography-micro text-muted-foreground">{t('contextUsage.window.subagentSessions')}</div>
-                <div className="typography-micro tabular-nums text-muted-foreground/70">~{formatCompactTokens(viewModel.relatedSubagentTotalTokens)}</div>
+                <div className="typography-micro tabular-nums text-muted-foreground/70">~{formatCompactTokens(viewModel.relatedSubagentActiveInputTokens)}</div>
               </div>
               <div className="mt-2.5 space-y-2">
                 {viewModel.relatedSubagentSessions.map((session) => (
@@ -482,8 +394,8 @@ export const ContextPanelContent: React.FC = () => {
                     </span>
                     <span className="shrink-0 tabular-nums text-muted-foreground">
                       {session.capacityLimit !== null
-                        ? `${formatCompactTokens(session.totalTokens)} / ${formatCompactTokens(session.capacityLimit)}`
-                        : formatCompactTokens(session.totalTokens)}
+                        ? `${formatCompactTokens(session.activeInputTokens)} / ${formatCompactTokens(session.capacityLimit)}`
+                        : formatCompactTokens(session.activeInputTokens)}
                     </span>
                   </div>
                 ))}

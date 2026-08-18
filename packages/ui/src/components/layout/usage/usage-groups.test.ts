@@ -75,7 +75,7 @@ describe('usage dropdown group helpers', () => {
     expect(getVisibleUsageEntries(withResetCredits).map(([label]) => label)).toEqual(['5h']);
   });
 
-  test('orders Anthropic short-term usage before general and model-specific weekly limits', () => {
+  test('orders Claude short-term usage before general and model-specific weekly limits', () => {
     const anthropic = group('claude', [
       ['7d', windowStub],
       ['unknown', windowStub],

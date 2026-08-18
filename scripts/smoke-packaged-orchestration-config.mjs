@@ -18,6 +18,7 @@ import {
 } from '../packages/web/server/lib/opencode/slim-config.js';
 import {
   DEVRYAN_MANAGED_PLUGINS,
+  DEVRYAN_MANAGED_PLUGIN_IDS,
   DEVRYAN_MANAGED_PROFILE_PLUGIN_FILES,
   DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS,
 } from '../packages/web/server/lib/opencode/managed-plugins.js';
@@ -48,6 +49,7 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
   requireFile(path.join(resolvedConfigRoot, 'plugins', 'devryan-managed-orchestration.mjs'), 'required orchestration runtime plugin');
   requireFile(path.join(resolvedConfigRoot, 'plugins', DEVRYAN_SLIM_WRAPPER_PLUGIN_FILE), 'default Slim wrapper plugin');
   requireFile(path.join(resolvedConfigRoot, 'plugins', 'openai-tool-schema-sanitizer.mjs'), 'default OpenAI tool schema sanitizer plugin');
+  requireFile(path.join(resolvedConfigRoot, 'plugins', 'devryan-document-reader.mjs'), 'default document reader plugin');
   requireFile(path.join(profileRoot, 'opencode.json'), 'user profile config');
   requireFile(path.join(profileRoot, 'package.json'), 'user profile dependency declaration');
   requireFile(path.join(profileRoot, 'oh-my-opencode-slim.json'), 'user profile Slim configuration');
@@ -75,6 +77,16 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
   if (profilePackage.dependencies['opencode-with-claude'] !== '1.6.18') {
     throw new Error(`Missing default Claude dependency: ${ANTHROPIC_OAUTH_PLUGIN_SPEC}`);
   }
+  for (const [packageName, version] of Object.entries({
+    '@opencode-ai/plugin': '1.17.11',
+    'adm-zip': '0.6.0',
+    'mammoth': '1.12.1',
+    'unpdf': '1.8.0',
+  })) {
+    if (profilePackage.dependencies[packageName] !== version) {
+      throw new Error(`Missing default document dependency: ${packageName}@${version}`);
+    }
+  }
 
   const [assets, runtimePlugins] = await Promise.all([
     listDefaultConfigAssets(resolvedConfigRoot),
@@ -93,23 +105,31 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
       configRoot: resolvedConfigRoot,
       profileRoot,
       configDirectory,
+      // The smoke installer creates entrypoint placeholders; the source-hash hotfix has its own fixture tests.
+      applyContextModeHotfix: () => ({ ok: true, changed: false }),
       runCommand: async (_command, _args, { cwd }) => {
         const dependencies = readJson(path.join(cwd, 'package.json')).dependencies || {};
         for (const dependency of Object.keys(dependencies)) {
           fs.mkdirSync(path.join(cwd, 'node_modules', ...dependency.split('/')), { recursive: true });
         }
         for (const plugin of DEVRYAN_MANAGED_PLUGINS) {
-          if (!plugin.packageName || !plugin.version || !plugin.entrypoint || !dependencies[plugin.packageName]) {
-            continue;
+          const pluginDependencies = [
+            ...(plugin.packageName && plugin.version && plugin.entrypoint
+              ? [{ packageName: plugin.packageName, version: plugin.version, entrypoint: plugin.entrypoint }]
+              : []),
+            ...plugin.runtimeDependencies,
+          ];
+          for (const dependency of pluginDependencies) {
+            if (!dependencies[dependency.packageName]) continue;
+            const packageRoot = path.join(cwd, 'node_modules', ...dependency.packageName.split('/'));
+            const entrypointPath = path.join(packageRoot, ...dependency.entrypoint.split('/'));
+            fs.mkdirSync(path.dirname(entrypointPath), { recursive: true });
+            fs.writeFileSync(path.join(packageRoot, 'package.json'), `${JSON.stringify({
+              name: dependency.packageName,
+              version: dependency.version,
+            })}\n`);
+            fs.writeFileSync(entrypointPath, '');
           }
-          const packageRoot = path.join(cwd, 'node_modules', ...plugin.packageName.split('/'));
-          const entrypointPath = path.join(packageRoot, ...plugin.entrypoint.split('/'));
-          fs.mkdirSync(path.dirname(entrypointPath), { recursive: true });
-          fs.writeFileSync(path.join(packageRoot, 'package.json'), `${JSON.stringify({
-            name: plugin.packageName,
-            version: plugin.version,
-          })}\n`);
-          fs.writeFileSync(entrypointPath, '');
         }
         return { ok: true, exitCode: 0, stdout: '', stderr: '' };
       },
@@ -118,6 +138,15 @@ export const smokePackagedOrchestrationConfig = async ({ configRoot }) => {
     if (!provisioned.ok) throw new Error(provisioned.error || 'Clean-user provisioning failed');
     requireFile(path.join(configDirectory, 'node_modules', SLIM_PLUGIN_PACKAGE_NAME), 'installed default Slim dependency');
     requireFile(path.join(configDirectory, 'node_modules', 'opencode-with-claude'), 'installed default Claude dependency');
+    const documentReader = DEVRYAN_MANAGED_PLUGINS.find((plugin) => (
+      plugin.id === DEVRYAN_MANAGED_PLUGIN_IDS.DOCUMENT_READER
+    ));
+    for (const dependency of documentReader.runtimeDependencies) {
+      requireFile(
+        path.join(configDirectory, 'node_modules', ...dependency.packageName.split('/'), dependency.entrypoint),
+        `installed document dependency ${dependency.packageName}`,
+      );
+    }
 
     const expectedManagedFiles = managedProfileFiles(assets);
     const manifest = readJson(path.join(configDirectory, '.openchamber', 'user-profile-manifest.json'));

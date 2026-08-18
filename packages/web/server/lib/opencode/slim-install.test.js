@@ -152,13 +152,14 @@ describe('Slim setup runtime', () => {
   it('exposes status, install, and repair routes with refresh metadata', async () => {
     const app = express();
     app.use(express.json());
-    const refreshOpenCodeAfterConfigChange = vi.fn(async () => ({
-      reloadScheduled: true,
-      message: 'reload scheduled',
+    const markConfigChange = vi.fn(async () => ({
+      requiresApply: true,
+      applyRevision: 1,
+      requiresReload: false,
     }));
     registerSlimSetupRoutes(app, {
       slimSetupRuntime: createRuntime(),
-      refreshOpenCodeAfterConfigChange,
+      markConfigChange,
     });
 
     const missing = await request(app).get('/api/config/slim/status');
@@ -172,9 +173,10 @@ describe('Slim setup runtime', () => {
     expect(installed.body.wrapperStatus.configured).toBe(true);
     expect(repaired.status).toBe(200);
     expect(repaired.body.repair).toBe(true);
-    expect(refreshOpenCodeAfterConfigChange).toHaveBeenCalledWith(
+    expect(markConfigChange).toHaveBeenCalledWith(
       'Slim runtime install',
       expect.objectContaining({ restart: true }),
+      true,
     );
   });
 });

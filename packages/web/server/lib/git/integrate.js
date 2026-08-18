@@ -6,10 +6,29 @@ import path from 'node:path';
 import { runGitCommand, runGitCommandOrThrow } from './service.js';
 import { getRequestPrincipal } from '../multi-user/request-context.js';
 
-const INTEGRATE_TMP_PREFIX = 'devryan-integrate-';
+export const INTEGRATE_TMP_PREFIX = 'devryan-integrate-';
 const INTEGRATE_OPERATION_TTL_MS = 24 * 60 * 60 * 1000;
 const INTEGRATE_OPERATION_LIMIT = 100;
 const activeIntegrations = new Map();
+
+const integrateTempPrefixPath = () => path.join(os.tmpdir(), INTEGRATE_TMP_PREFIX);
+
+export const isIntegrateTempPath = (value) => {
+  const input = typeof value === 'string' ? value.trim() : '';
+  if (!input) return false;
+  const resolved = path.resolve(input);
+  const prefix = integrateTempPrefixPath();
+  if (resolved.startsWith(prefix)) return true;
+  const base = path.basename(resolved);
+  if (!base.startsWith(INTEGRATE_TMP_PREFIX)) return false;
+  const tmpDir = path.resolve(os.tmpdir());
+  if (resolved === tmpDir || resolved.startsWith(`${tmpDir}${path.sep}`)) return true;
+  if (tmpDir.startsWith(`${path.sep}var${path.sep}`)) {
+    const privateTmp = `${path.sep}private${tmpDir}`;
+    if (resolved === privateTmp || resolved.startsWith(`${privateTmp}${path.sep}`)) return true;
+  }
+  return false;
+};
 
 const currentOwnerId = () => {
   const principal = getRequestPrincipal();
@@ -152,8 +171,7 @@ const assertIntegrationState = (repoRoot, state) => {
   const tempWorktreePath = typeof remembered?.tempWorktreePath === 'string'
     ? remembered.tempWorktreePath.trim()
     : '';
-  const prefix = path.join(os.tmpdir(), INTEGRATE_TMP_PREFIX);
-  if (!remembered || !tempWorktreePath || !path.resolve(tempWorktreePath).startsWith(prefix)) {
+  if (!remembered || !tempWorktreePath || !isIntegrateTempPath(tempWorktreePath)) {
     throw Object.assign(new Error('Invalid integration state'), { statusCode: 400 });
   }
   if (entry.ownerId !== currentOwnerId()) {

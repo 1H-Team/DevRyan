@@ -9,6 +9,9 @@ the narrow creation-time routing hint before raw server directory metadata so
 filesystem aliases cannot create a second passive child store. Middle-click row
 behavior is resolved by `sessionRowAuxAction.ts`: active rows archive, genuine
 archived rows permanently delete, and archived structural ancestors remain inert.
+Managed child rows resolve their icon agent from the scheduler's exact child-task
+leaf before falling back to provider session metadata, keeping task-card and
+sidebar role colors consistent without subscribing the sidebar to child messages.
 `lazySessionDialogs.tsx`
 owns recovery-aware declarations for sidebar search, project/worktree/task management,
 and confirmation dialogs. `SessionSidebar` defers their first mount until the authoritative

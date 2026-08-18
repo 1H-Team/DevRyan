@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
+import { getProviderDisplayName } from '@/lib/providers/display';
 import { cn } from '@/lib/utils';
 import { isIMECompositionEvent } from '@/lib/ime';
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -206,7 +207,9 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
     return favoriteModelsList.filter(({ model, providerID }) => {
       const provider = providers.find(p => p.id === providerID);
       const displayProviderId = getDisplayProviderId(providerID, model);
-      const providerName = displayProviderId === 'antigravity' ? 'Antigravity' : (provider?.name || providerID);
+      const providerName = displayProviderId === 'antigravity'
+        ? 'Antigravity'
+        : getProviderDisplayName({ id: providerID, name: provider?.name });
       const modelName = getTruncatedModelDisplayName(model);
       return filterByQuery(modelName, providerName);
     });
@@ -222,7 +225,11 @@ export const ModelMultiSelect: React.FC<ModelMultiSelectProps> = ({
           const modelName = getTruncatedModelDisplayName(model);
           return filterByQuery(modelName, provider.name || provider.id || '');
         });
-        return { ...provider, models: filteredModels };
+        return {
+          ...provider,
+          name: getProviderDisplayName(provider),
+          models: filteredModels,
+        };
       })
       .filter((provider) => provider.models.length > 0);
     return sortProviderTreeForPicker(splitAntigravityProviderForDisplay(filtered));

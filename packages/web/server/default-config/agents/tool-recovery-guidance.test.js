@@ -40,15 +40,27 @@ describe('bundled agent tool recovery guidance', () => {
 
   it.each(['builder', 'fixer', 'orchestrator'])('bounds context-mode recovery for %s', (agent) => {
     const prompt = readAgent(agent);
-    expect(prompt).toContain('Retry a context-mode SQLite or disk I/O failure once only');
-    expect(prompt).toContain('continue with native read/search tools');
+    expect(prompt).toContain('do not retry any `ctx_*` tool for the rest of the turn');
+    expect(prompt).not.toContain('Retry a context-mode SQLite or disk I/O failure once only');
+    expect(prompt).toMatch(/continue with native read\/search tools/i);
     expect(prompt).toContain('Never automatically replay a potentially mutating context-mode command');
+    expect(prompt).toContain('keep each `ctx_execute` call bounded to one test command or group');
+    expect(prompt).toContain('report between calls');
+    expect(prompt).toContain('Never wrap an entire test matrix in one synchronous `spawnSync` or `execSync` loop');
   });
 
-  it('gives Orchestrator a safe fallback after repeated context-mode storage failures', () => {
+  it.each(['builder', 'fixer', 'orchestrator'])('requires repository-sanctioned bounded shell work for %s', (agent) => {
+    const prompt = readAgent(agent);
+    expect(prompt).toContain("read and follow the repository's documented command, skill, or script");
+    expect(prompt).toContain('Never replace a sanctioned migration workflow with an ad hoc database container or one-off harness');
+    expect(prompt).toContain('every shell invocation to one bounded command or group');
+    expect(prompt).toContain('four-minute default deadline');
+    expect(prompt).toContain('up to sixty minutes');
+  });
+
+  it('gives Orchestrator a safe fallback after a context-mode storage failure', () => {
     const orchestrator = readAgent('orchestrator');
-    expect(orchestrator).toContain('only when every command in the failed call is demonstrably read-only and idempotent');
-    expect(orchestrator).toContain('treat database-is-locked failures as the same class');
+    expect(orchestrator).toContain('SQLite, disk I/O, or database-is-locked failure');
     expect(orchestrator).toContain('native read/search tools or appropriately scoped specialist discovery');
     expect(orchestrator).toContain('Report a blocker only when neither safe fallback can satisfy the task');
   });

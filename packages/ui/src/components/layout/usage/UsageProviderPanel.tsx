@@ -2,7 +2,7 @@ import React from 'react';
 import { RiArrowDownSLine, RiArrowRightSLine, RiRefreshLine } from '@remixicon/react';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { cn } from '@/lib/utils';
-import { buildQuotaTrendKey, buildQuotaWindowDisplayState, formatWindowLabel, type UsageTrendHistory } from '@/lib/quota';
+import { buildQuotaTrendKey, buildQuotaWindowDisplayState, formatProviderWindowLabel, hasUsageProgress, type UsageTrendHistory } from '@/lib/quota';
 import { UsageProgressBar } from '@/components/sections/usage/UsageProgressBar';
 import { PaceIndicator } from '@/components/sections/usage/PaceIndicator';
 import {
@@ -54,31 +54,39 @@ const UsageMetricRow = React.memo(function UsageMetricRow({
     quotaTrendHistory,
     buildQuotaTrendKey(providerId, scope, scopeId, label),
   );
+  const showProgress = hasUsageProgress(window);
 
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex min-w-0 items-center justify-between gap-3">
-        <div className="min-w-0 flex items-center gap-2">
-          <span className={cn('truncate', mutedTitle ? 'typography-micro text-muted-foreground' : 'typography-ui-label text-foreground')}>
-            {displayLabel}
-          </span>
-          {window.resetAfterFormatted ?? window.resetAtFormatted ? (
-            <span className="truncate typography-micro text-muted-foreground">
-              {window.resetAfterFormatted ?? window.resetAtFormatted}
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className={cn('truncate', mutedTitle ? 'typography-micro text-muted-foreground' : 'typography-ui-label text-foreground')}>
+              {displayLabel}
             </span>
+            {window.resetAfterFormatted ?? window.resetAtFormatted ? (
+              <span className="truncate typography-micro text-muted-foreground">
+                {window.resetAfterFormatted ?? window.resetAtFormatted}
+              </span>
+            ) : null}
+          </div>
+          {window.description ? (
+            <div className="mt-0.5 typography-micro text-muted-foreground">{window.description}</div>
           ) : null}
         </div>
         <span className="typography-ui-label tabular-nums text-foreground">
           {displayState.metricLabel === '-' ? '' : displayState.metricLabel}
         </span>
       </div>
-      <UsageProgressBar
-        percent={displayState.displayPercent}
-        tonePercent={window.usedPercent}
-        className="h-1.5"
-        expectedMarkerPercent={displayState.expectedMarkerPercent}
-      />
-      {displayState.paceInfo ? <PaceIndicator paceInfo={displayState.paceInfo} compact displayMode="usage" /> : null}
+      {showProgress ? (
+        <UsageProgressBar
+          percent={displayState.displayPercent}
+          tonePercent={window.usedPercent}
+          className="h-1.5"
+          expectedMarkerPercent={displayState.expectedMarkerPercent}
+        />
+      ) : null}
+      {showProgress && displayState.paceInfo ? <PaceIndicator paceInfo={displayState.paceInfo} compact displayMode="usage" /> : null}
     </div>
   );
 });
@@ -103,6 +111,7 @@ export const UsageProviderPanel = React.memo(function UsageProviderPanel({
     || Boolean(group?.resetCredits)
     || Boolean(group?.modelRows?.length)
     || Boolean(group?.modelFamilies?.length)
+    || Boolean(group?.warnings?.length)
   );
 
   return (
@@ -147,6 +156,16 @@ export const UsageProviderPanel = React.memo(function UsageProviderPanel({
               {group.error}
             </div>
           ) : null}
+          {group.warnings && group.warnings.length > 0 ? (
+            <div className="rounded-md border border-[var(--status-warning-border)] bg-[var(--status-warning-background)] px-2.5 py-2 text-[var(--status-warning)]">
+              <div className="typography-micro font-medium">{t('settings.usage.page.state.providerWarningTitle')}</div>
+              <div className="mt-1 space-y-0.5 typography-micro text-[var(--status-warning)]/80">
+                {group.warnings.map((warning, index) => (
+                  <div key={`${group.providerId}-warning-${index}`}>{warning}</div>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {entries.map(([label, window]) => (
             <UsageMetricRow
               key={`${group.providerId}-${label}`}
@@ -155,7 +174,7 @@ export const UsageProviderPanel = React.memo(function UsageProviderPanel({
               scopeId={null}
               label={label}
               window={window}
-              displayLabel={formatWindowLabel(label)}
+              displayLabel={formatProviderWindowLabel(group.providerId, label)}
               quotaTrendHistory={quotaTrendHistory}
             />
           ))}

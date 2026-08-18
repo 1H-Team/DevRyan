@@ -12,10 +12,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { SortableTabsStrip, type SortableTabsStripItem } from '@/components/ui/sortable-tabs-strip';
 
-import { RiArrowLeftSLine, RiBarChartLine, RiChat4Line, RiChatNewLine, RiCloseLine, RiCommandLine, RiPlayListAddLine, RiServerLine, type RemixiconComponentType } from '@remixicon/react';
+import { RiArrowLeftSLine, RiBarChartLine, RiChat4Line, RiChatNewLine, RiCloseLine, RiCommandLine, RiDraftLine, RiPlayListAddLine, RiServerLine, type RemixiconComponentType } from '@remixicon/react';
 import { DiffIcon } from '@/components/icons/DiffIcon';
 import {
-  PlanDocumentIcon,
   SidebarLeftCollapseIcon,
   SidebarLeftExpandIcon,
   SidebarRightCollapseIcon,
@@ -111,6 +110,7 @@ export const Header: React.FC<HeaderProps> = ({
   const setSessionSwitcherOpen = useUIStore((state) => state.setSessionSwitcherOpen);
   const toggleSidebar = useUIStore((state) => state.toggleSidebar);
   const isSidebarOpen = useUIStore((state) => state.isSidebarOpen);
+  const isRightSidebarOpen = useUIStore((state) => state.isRightSidebarOpen);
   const activeMainTab = useUIStore((state) => state.activeMainTab);
   const setActiveMainTab = useUIStore((state) => state.setActiveMainTab);
   const shortcutOverrides = useUIStore((state) => state.shortcutOverrides);
@@ -240,6 +240,7 @@ export const Header: React.FC<HeaderProps> = ({
           ?? quotaProviderRefreshState[provider.id]?.lastSuccessAt
           ?? null,
         resetCredits: result?.usage?.resetCredits,
+        warnings: result?.warnings,
         error: quotaProviderRefreshState[provider.id]?.refreshError
           ?? ((result && !result.ok && result.configured) ? result.error : undefined),
       };
@@ -342,6 +343,7 @@ export const Header: React.FC<HeaderProps> = ({
         group.resetCredits ||
         (group.modelRows && group.modelRows.length > 0) ||
         (group.modelFamilies && group.modelFamilies.length > 0) ||
+        (group.warnings && group.warnings.length > 0) ||
         group.error
       ) {
         groups.push(group);
@@ -597,6 +599,7 @@ export const Header: React.FC<HeaderProps> = ({
     return 'pl-3';
   }, [isDesktopApp, isSidebarOpen, isTabletStandalonePwa]);
   const showsDesktopRightChrome = !isMobile && !isVSCode;
+  const reservesDesktopRightChromeSpace = showsDesktopRightChrome && !isRightSidebarOpen;
 
   const desktopHeaderRowInsetStyle = React.useMemo<React.CSSProperties | undefined>(() => {
     if (!isDesktopApp || isSidebarOpen) {
@@ -628,13 +631,13 @@ export const Header: React.FC<HeaderProps> = ({
       paddingLeft: isTabletStandalonePwa && !isSidebarOpen
         ? 'max(calc(0.75rem + var(--oc-wco-left-inset, 0px)), 5.5rem)'
         : 'calc(0.75rem + var(--oc-wco-left-inset, 0px))',
-      paddingRight: showsDesktopRightChrome
+      paddingRight: reservesDesktopRightChromeSpace
         ? 'calc(11rem + var(--oc-wco-right-inset, 0px))'
         : 'calc(0.75rem + var(--oc-wco-right-inset, 0px))',
       minHeight: 'max(3rem, var(--oc-wco-titlebar-height, 0px))',
       height: 'max(3rem, var(--oc-wco-titlebar-height, 0px))',
     };
-  }, [isDesktopApp, isSidebarOpen, isTabletStandalonePwa, isVSCode, showsDesktopRightChrome]);
+  }, [isDesktopApp, isSidebarOpen, isTabletStandalonePwa, isVSCode, reservesDesktopRightChromeSpace]);
 
   const updateHeaderHeight = React.useCallback(() => {
     if (typeof document === 'undefined') {
@@ -709,7 +712,7 @@ export const Header: React.FC<HeaderProps> = ({
       ];
 
       if (showPlanTab) {
-        base.push({ id: 'plan', label: t('layout.mainTab.plan'), icon: PlanDocumentIcon });
+        base.push({ id: 'plan', label: t('layout.mainTab.plan'), icon: RiDraftLine });
       }
 
       base.push({ id: 'diff', label: t('layout.mainTab.diff'), icon: 'diff' });
@@ -810,8 +813,8 @@ export const Header: React.FC<HeaderProps> = ({
     <div
       onMouseDown={handleDragStart}
       className={cn(
-        'app-region-drag relative flex h-12 w-full select-none items-center',
-        showsDesktopRightChrome ? 'pr-[calc(11rem+var(--oc-wco-right-inset,0px))]' : 'pr-3',
+        'app-region-drag relative flex h-12 w-full select-none items-center transition-[padding-right] duration-300 ease-in-out motion-reduce:transition-none',
+        reservesDesktopRightChromeSpace ? 'pr-[calc(11rem+var(--oc-wco-right-inset,0px))]' : 'pr-3',
         desktopPaddingClass,
         macosHeaderSizeClass
       )}
@@ -876,7 +879,7 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        <div className="app-region-no-drag pointer-events-auto relative ml-auto flex shrink-0 items-center gap-1.5">
+        <div className="app-region-no-drag pointer-events-auto relative ml-auto mr-3 flex shrink-0 items-center gap-1.5">
           {canUseTerminal || canUseBrowser ? (
             <ProjectActionsButton
               projectRef={projectActionsContext?.projectRef ?? null}
@@ -1008,7 +1011,7 @@ export const Header: React.FC<HeaderProps> = ({
                 compact
                 allowMobile
                 browserOnly={!canUseTerminal}
-                className="h-9"
+                className="mr-2 h-9"
               />
             ) : null}
 

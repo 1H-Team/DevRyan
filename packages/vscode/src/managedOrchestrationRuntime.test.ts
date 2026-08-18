@@ -106,6 +106,140 @@ afterEach(async () => {
 });
 
 describe('VS Code managed orchestration owner', () => {
+  it('blocks only work-launching RPC actions during context-mode recovery', async () => {
+    const task = queuedTask(1);
+    const submit = vi.fn();
+    const acknowledgeResult = vi.fn(async () => ({
+      envelope: { taskId: task.taskId, action: 'continue' },
+      followUpTask: null,
+    }));
+    const scheduler = {
+      initialize: vi.fn(async () => undefined),
+      submit,
+      getTask: vi.fn(() => task),
+      getResultEnvelope: vi.fn(() => null),
+      acknowledgeResult,
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    } as unknown as ManagedTaskScheduler;
+    const runtime = createVsCodeManagedOrchestrationRuntime({
+      storageDirectory: '/unused',
+      scheduler,
+      persistence: createPersistence(),
+      executor: {
+        async start() { throw new Error('must not start'); },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' as const }; },
+        async readRecoverableResult() { return {}; },
+      },
+      getWorkAdmissionBlock: () => ({
+        code: 'CONTEXT_MODE_RECOVERY_PENDING',
+        error: 'Context-mode recovery is pending',
+      }),
+    });
+
+    await expect(runtime.handleRpc({ method: 'submit', params: submitParams(1) }))
+      .rejects.toMatchObject({ code: 'CONTEXT_MODE_RECOVERY_PENDING', statusCode: 503 });
+    expect(submit).not.toHaveBeenCalled();
+    await expect(runtime.handleRpc({
+      method: 'status',
+      params: { taskId: task.taskId, rootSessionId: task.rootSessionId, directory: task.directory },
+    })).resolves.toMatchObject({ task: { taskId: task.taskId } });
+    await expect(runtime.handleRpc({
+      method: 'acknowledge',
+      params: {
+        taskId: task.taskId,
+        rootSessionId: task.rootSessionId,
+        directory: task.directory,
+        action: 'continue',
+        idempotencyKey: 'continue-during-recovery',
+      },
+    })).resolves.toMatchObject({ resultEnvelope: { taskId: task.taskId } });
+    await expect(runtime.handleRpc({
+      method: 'acknowledge',
+      params: {
+        taskId: task.taskId,
+        rootSessionId: task.rootSessionId,
+        directory: task.directory,
+        action: 'retry',
+        idempotencyKey: 'retry-during-recovery',
+      },
+    })).rejects.toMatchObject({ code: 'CONTEXT_MODE_RECOVERY_PENDING', statusCode: 503 });
+    expect(acknowledgeResult).toHaveBeenCalledOnce();
+    await runtime.shutdown();
+  });
+
+  it('rejects read-only Designer before scheduler admission', async () => {
+    const submit = vi.fn();
+    const publishEvent = vi.fn();
+    const scheduler = {
+      initialize: vi.fn(async () => undefined),
+      submit,
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    } as unknown as ManagedTaskScheduler;
+    const runtime = createVsCodeManagedOrchestrationRuntime({
+      storageDirectory: '/unused',
+      scheduler,
+      persistence: createPersistence(),
+      publishEvent,
+      executor: {
+        async start() { throw new Error('must not start'); },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' as const }; },
+        async readRecoverableResult() { return {}; },
+      },
+    });
+
+    await expect(runtime.handleRpc({
+      method: 'submit',
+      params: submitParams(1, { readOnly: true, agent: 'designer' }),
+    })).rejects.toMatchObject({
+      code: 'MANAGED_READ_ONLY_AGENT_UNSUPPORTED',
+      statusCode: 409,
+    });
+    expect(submit).not.toHaveBeenCalled();
+    expect(publishEvent).not.toHaveBeenCalled();
+    await runtime.shutdown();
+  });
+
+  it('rejects incompatible read-only providers before scheduler admission', async () => {
+    const submit = vi.fn();
+    const publishEvent = vi.fn();
+    const scheduler = {
+      initialize: vi.fn(async () => undefined),
+      submit,
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    } as unknown as ManagedTaskScheduler;
+    const runtime = createVsCodeManagedOrchestrationRuntime({
+      storageDirectory: '/unused',
+      scheduler,
+      persistence: createPersistence(),
+      publishEvent,
+      executor: {
+        async start() { throw new Error('must not start'); },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' as const }; },
+        async readRecoverableResult() { return {}; },
+      },
+    });
+
+    await expect(runtime.handleRpc({
+      method: 'submit',
+      params: submitParams(1, { readOnly: true, providerId: 'cursor-acp' }),
+    })).rejects.toMatchObject({
+      code: 'MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED',
+      statusCode: 409,
+    });
+    expect(submit).not.toHaveBeenCalled();
+    expect(publishEvent).not.toHaveBeenCalled();
+    await runtime.shutdown();
+  });
+
   it('matches the web provider-recovery continuation bridge contract', async () => {
     const continuations = [{
       sourceTaskId: 'dvr_task_limited',
@@ -642,7 +776,7 @@ describe('VS Code managed orchestration owner', () => {
     await runtime.shutdown();
   });
 
-  it('enforces a 60-minute Oracle deadline for starts and follow-ups', async () => {
+  it.each(['fixer', 'oracle'])('enforces a 60-minute %s deadline for starts and follow-ups', async (agent) => {
     const runtime = createVsCodeManagedOrchestrationRuntime({
       storageDirectory: '/unused',
       persistence: createPersistence(),
@@ -657,17 +791,17 @@ describe('VS Code managed orchestration owner', () => {
       },
       createTaskId: (() => {
         let index = 0;
-        return () => `dvr_task_oracle_deadline_${++index}`;
+        return () => `dvr_task_specialist_deadline_${++index}`;
       })(),
       createLeaseToken: (() => {
         let index = 0;
-        return () => `dvr_lease_oracle_deadline_${++index}`;
+        return () => `dvr_lease_specialist_deadline_${++index}`;
       })(),
       now: () => 10_000,
     });
     const submitted = await runtime.handleRpc({
       method: 'submit',
-      params: submitParams(1, { agent: 'oracle', timeoutAt: 1_810_000 }),
+      params: submitParams(1, { agent, timeoutAt: 1_810_000 }),
     });
     expect(getTask(submitted).timeoutAt).toBe(3_610_000);
     await runtime.flush();
@@ -679,7 +813,7 @@ describe('VS Code managed orchestration owner', () => {
         rootSessionId: 'ses_root',
         directory: '/workspace',
         action: 'retry',
-        idempotencyKey: 'retry-oracle-deadline',
+        idempotencyKey: `retry-${agent}-deadline`,
       },
     });
     expect(getFollowUpTask(retried).timeoutAt).toBe(3_610_000);
@@ -743,7 +877,7 @@ describe('VS Code managed orchestration owner', () => {
     await runtime.shutdown();
   });
 
-  it('gives retry, resume, and retry-in-place follow-ups a fresh default deadline', async () => {
+  it('floors follow-up deadlines, inherits longer source windows, and accepts explicit extensions', async () => {
     const runtime = createVsCodeManagedOrchestrationRuntime({
       storageDirectory: '/unused',
       persistence: createPersistence(),
@@ -800,6 +934,39 @@ describe('VS Code managed orchestration owner', () => {
       }) as { followUpTask: unknown };
       expect(getTask(result.followUpTask).timeoutAt).toBe(1_810_000);
     }
+
+    const longSource = await runtime.handleRpc({
+      method: 'submit',
+      params: submitParams(4, {
+        childSessionId: 'ses_child_long_window',
+        timeoutAt: 10_000 + 2 * 60 * 60 * 1_000,
+      }),
+    });
+    await runtime.flush();
+    const extended = await runtime.handleRpc({
+      method: 'acknowledge',
+      params: {
+        taskId: getTask(longSource).taskId,
+        rootSessionId: 'ses_root',
+        directory: '/workspace',
+        action: 'resume',
+        idempotencyKey: 'ack-long-window',
+        timeoutSeconds: 4 * 60 * 60,
+      },
+    }) as { followUpTask: unknown };
+    expect(getTask(extended.followUpTask).timeoutAt).toBe(10_000 + 4 * 60 * 60 * 1_000);
+
+    await expect(runtime.handleRpc({
+      method: 'acknowledge',
+      params: {
+        taskId: getTask(longSource).taskId,
+        rootSessionId: 'ses_root',
+        directory: '/workspace',
+        action: 'resume',
+        idempotencyKey: 'ack-invalid-window',
+        timeoutSeconds: 0,
+      },
+    })).rejects.toThrow('timeoutSeconds must be a positive safe integer');
 
     await runtime.shutdown();
   });

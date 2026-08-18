@@ -15,6 +15,12 @@
       "port": 3101
     },
     {
+      "name": "web-hmr",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["./scripts/dev-web-hmr.mjs"],
+      "port": 5180
+    },
+    {
       "name": "devryan-live",
       "runtimeExecutable": "sleep",
       "runtimeArgs": ["86400"],

@@ -18,6 +18,7 @@ describe('useManualBrowserTabsStore', () => {
     expect(workspace?.tabs).toHaveLength(1);
     expect(workspace?.tabs[0]?.url).toBe('https://example.com/docs');
     expect(workspace?.tabs[0]?.label).toBe('example.com');
+    expect(workspace?.tabs[0]?.viewportMode).toBe('responsive');
     expect(useManualBrowserTabsStore.getState().ensureWorkspace(DIRECTORY, 'https://ignored.example/'))
       .toBe(workspace);
   });
@@ -36,12 +37,41 @@ describe('useManualBrowserTabsStore', () => {
     const firstId = first.tabs[0]!.id;
     const secondId = useManualBrowserTabsStore.getState().addTab(DIRECTORY)!;
     useManualBrowserTabsStore.getState().updateTabUrl(DIRECTORY, secondId, 'localhost:3000/path');
+    useManualBrowserTabsStore.getState().updateTabViewportMode(DIRECTORY, secondId, 'mobile');
     useManualBrowserTabsStore.getState().activateTab(DIRECTORY, firstId);
     useManualBrowserTabsStore.getState().reorderTabs(DIRECTORY, secondId, firstId);
     const workspace = useManualBrowserTabsStore.getState().byDirectory[DIRECTORY]!;
     expect(workspace.activeTabId).toBe(firstId);
     expect(workspace.tabs.map((tab) => tab.id)).toEqual([secondId, firstId]);
     expect(workspace.tabs[0]?.url).toBe('http://localhost:3000/path');
+    expect(workspace.tabs[0]?.viewportMode).toBe('mobile');
+  });
+
+  test('persists safe favicons and clears them when navigation changes host', () => {
+    const workspace = useManualBrowserTabsStore.getState().ensureWorkspace(DIRECTORY, 'https://example.com/')!;
+    const tabId = workspace.tabs[0]!.id;
+    useManualBrowserTabsStore.getState().updateTabFavicon(DIRECTORY, tabId, 'https://example.com/favicon.ico');
+    expect(useManualBrowserTabsStore.getState().byDirectory[DIRECTORY]?.tabs[0]?.faviconUrl)
+      .toBe('https://example.com/favicon.ico');
+
+    useManualBrowserTabsStore.getState().updateTabUrl(DIRECTORY, tabId, 'https://example.com/docs');
+    expect(useManualBrowserTabsStore.getState().byDirectory[DIRECTORY]?.tabs[0]?.faviconUrl)
+      .toBe('https://example.com/favicon.ico');
+
+    useManualBrowserTabsStore.getState().updateTabUrl(DIRECTORY, tabId, 'https://other.example/');
+    expect(useManualBrowserTabsStore.getState().byDirectory[DIRECTORY]?.tabs[0]?.faviconUrl).toBe(undefined);
+  });
+
+  test('uses native page titles for Chrome-style tab labels', () => {
+    const workspace = useManualBrowserTabsStore.getState().ensureWorkspace(DIRECTORY, 'https://example.com/docs')!;
+    const tabId = workspace.tabs[0]!.id;
+    useManualBrowserTabsStore.getState().updateTabTitle(DIRECTORY, tabId, 'Example Documentation');
+    expect(useManualBrowserTabsStore.getState().byDirectory[DIRECTORY]?.tabs[0]?.label)
+      .toBe('Example Documentation');
+
+    useManualBrowserTabsStore.getState().updateTabTitle(DIRECTORY, tabId, '');
+    expect(useManualBrowserTabsStore.getState().byDirectory[DIRECTORY]?.tabs[0]?.label)
+      .toBe('example.com');
   });
 
   test('closing the active tab selects its adjacent tab', () => {
@@ -56,15 +86,11 @@ describe('useManualBrowserTabsStore', () => {
     expect(next.activeTabId).toBe(thirdId);
   });
 
-  test('closing the final tab replaces it with one blank tab', () => {
+  test('closing the final tab clears the directory workspace', () => {
     const workspace = useManualBrowserTabsStore.getState().ensureWorkspace(DIRECTORY, 'https://example.com/')!;
     const firstId = workspace.tabs[0]!.id;
     useManualBrowserTabsStore.getState().closeTab(DIRECTORY, firstId);
-    const next = useManualBrowserTabsStore.getState().byDirectory[DIRECTORY]!;
-    expect(next.tabs).toHaveLength(1);
-    expect(next.tabs[0]?.id).not.toBe(firstId);
-    expect(next.tabs[0]?.url).toBe('about:blank');
-    expect(next.tabs[0]?.label).toBe('New tab');
+    expect(useManualBrowserTabsStore.getState().byDirectory[DIRECTORY]).toBe(undefined);
   });
 
   test('keeps workspaces isolated by directory and supports explicit clearing', () => {
@@ -82,15 +108,15 @@ describe('useManualBrowserTabsStore', () => {
         activeTabId: 'missing',
         touchedAt: 12,
         tabs: [
-          { id: 'tab-a', url: 'javascript:alert(1)', label: '' },
+          { id: 'tab-a', url: 'javascript:alert(1)', label: '', viewportMode: 'tablet' },
           { id: 'tab-a', url: 'https://duplicate.example/' },
-          { id: 'tab-b', url: 'https://example.com/docs', label: 'Docs' },
+          { id: 'tab-b', url: 'https://example.com/docs', label: 'Docs', viewportMode: 'desktop', faviconUrl: 'https://example.com/favicon.ico' },
         ],
       },
     });
     expect(sanitized[DIRECTORY]?.tabs).toEqual([
-      { id: 'tab-a', url: 'about:blank', label: 'New tab' },
-      { id: 'tab-b', url: 'https://example.com/docs', label: 'Docs' },
+      { id: 'tab-a', url: 'about:blank', label: 'New tab', viewportMode: 'responsive' },
+      { id: 'tab-b', url: 'https://example.com/docs', label: 'Docs', viewportMode: 'desktop', faviconUrl: 'https://example.com/favicon.ico' },
     ]);
     expect(sanitized[DIRECTORY]?.activeTabId).toBe('tab-a');
     expect(sanitizeManualBrowserWorkspace({ workspaceId: 'empty', tabs: [] })).toBeNull();

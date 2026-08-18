@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   createNextPullRequestDraft,
+  DEFAULT_PULL_REQUEST_PANEL_VIEW,
   formatPullRequestStatus,
   isCurrentPullRequestSelection,
   nextPullRequestPanelView,
@@ -10,6 +11,10 @@ import {
 } from './pullRequestCycle';
 
 describe('reusable PR branch lifecycle', () => {
+  test('opens the PR tab on the full pull request list', () => {
+    expect(DEFAULT_PULL_REQUEST_PANEL_VIEW).toBe('list');
+  });
+
   test('starts a clean next-cycle draft without mutating the branch', () => {
     expect(createNextPullRequestDraft('Dev', 7023, (branch) => branch)).toEqual({
       title: 'Dev',

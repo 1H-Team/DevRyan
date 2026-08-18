@@ -147,7 +147,7 @@ export const ROLE_POLICY_DEFAULTS = Object.freeze({
 const SETTINGS_FIELDS_BY_PAGE = Object.freeze({
   appearance: [
     'themeId', 'themeCatalogVersion', 'useSystemTheme', 'themeVariant', 'lightThemeId', 'darkThemeId',
-    'splashBgLight', 'splashFgLight', 'splashBgDark', 'splashFgDark', 'fontSize',
+    'splashBgLight', 'splashFgLight', 'splashBgDark', 'splashFgDark', 'fontSize', 'chatWidth',
     'terminalFontSize', 'uiFont', 'monoFont', 'padding', 'cornerRadius', 'inputBarOffset',
     'pwaAppName', 'pwaOrientation', 'mobileKeyboardMode', 'typographySizes',
     'timeFormatPreference', 'weekStartPreference',
@@ -157,7 +157,7 @@ const SETTINGS_FIELDS_BY_PAGE = Object.freeze({
     'showToolFileIcons', 'showExpandedBashTools', 'showExpandedEditTools', 'chatRenderMode',
     'activityRenderMode', 'mermaidRenderingMode', 'showSplitAssistantMessageActions',
     'diffLayoutPreference', 'diffViewMode', 'userMessageRenderingMode', 'collapsibleUserMessages',
-    'stickyUserHeader', 'wideChatLayoutEnabled', 'defaultFileViewerPreview',
+    'stickyUserHeader', 'defaultFileViewerPreview',
   ],
   sessions: [
     'autoDeleteEnabled', 'autoDeleteAfterDays', 'sessionRetentionAction', 'defaultModel',

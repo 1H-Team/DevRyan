@@ -8,6 +8,7 @@ export const createHarnessPaths = ({ rootDir }) => {
   const harnessDir = path.join(path.resolve(rootDir), 'harness');
   return {
     harnessDir,
+    commandDeadlineDir: path.join(harnessDir, 'command-deadlines'),
     worktreeOpsDir: path.join(harnessDir, 'worktree-ops'),
     journalDir: path.join(harnessDir, 'journal'),
     evidenceDir: path.join(harnessDir, 'evidence'),

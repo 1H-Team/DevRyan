@@ -46,6 +46,7 @@ import {
   saveCursorSdkAuth,
 } from '@openchamber/cursor-sdk-runtime';
 import { runClaudeCodeAuthStatus } from './claudeAuthStatus';
+import type { ConfigApplyMutationResponse } from '@openchamber/shared-runtime';
 
 type BridgeMessageInput = {
   id: string;
@@ -58,7 +59,11 @@ type SystemRuntimeDeps = {
   fetchModelsMetadata: () => Promise<unknown>;
   updateCheckUrl: string;
   updateCheckUsesCompatibilityContract: boolean;
-  clientReloadDelayMs: number;
+  markConfigChange: (
+    reason: string,
+    metadata?: unknown,
+    changed?: boolean,
+  ) => Promise<ConfigApplyMutationResponse & { runtimeApplied: false; runtimeMessage: string }>;
 };
 
 type NotificationBridgePayload = {
@@ -855,9 +860,11 @@ export async function handleSystemBridgeMessage(
           return { id, type, success: false, error: 'Invalid scope' };
         }
 
-        if (removed) {
-          await ctx?.manager?.restart();
-        }
+        const applyResult = await deps.markConfigChange(
+          'provider disconnect',
+          { providerId, scope: normalizedScope },
+          removed,
+        );
         return {
           id,
           type,
@@ -865,11 +872,10 @@ export async function handleSystemBridgeMessage(
           data: {
             success: true,
             removed,
-            requiresReload: removed,
+            ...applyResult,
             message: removed
-              ? `Provider ${providerId} disconnected successfully. Reloading interface…`
+              ? `Provider ${providerId} disconnected successfully. Changes are pending.`
               : `Provider ${providerId} was not configured.`,
-            reloadDelayMs: removed ? deps.clientReloadDelayMs : undefined,
           },
         };
       } catch (error) {
@@ -981,9 +987,11 @@ export async function handleSystemBridgeMessage(
         }
 
         const result = ensureAnthropicOAuthProviderConfig({ workingDirectory });
-        if (result.changed) {
-          await ctx?.manager?.restart();
-        }
+        const applyResult = await deps.markConfigChange(
+          'anthropic oauth provider configuration',
+          { providerId: 'anthropic' },
+          result.changed,
+        );
         return {
           id,
           type,
@@ -993,8 +1001,7 @@ export async function handleSystemBridgeMessage(
             configured: true,
             changed: result.changed,
             path: result.path,
-            requiresReload: result.changed,
-            reloadDelayMs: result.changed ? deps.clientReloadDelayMs : undefined,
+            ...applyResult,
             auth: authCheck.auth,
           },
         };

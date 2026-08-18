@@ -20,6 +20,22 @@ const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 const POLL_INTERVAL_MS = 250;
 const cache = new Map<string, CacheEntry>();
 
+const STAGE_LABELS: Record<GitWorktreeBootstrapStatus['stage'], string> = {
+  prepare_remote: 'Preparing remote',
+  create_worktree: 'Creating worktree',
+  sync_project_metadata: 'Syncing project metadata',
+  populate_worktree: 'Populating worktree',
+  run_post_checkout_hook: 'Running post-checkout hook',
+  configure_upstream: 'Configuring upstream',
+  run_project_setup: 'Running project setup',
+  run_requested_setup: 'Running requested setup',
+  complete: 'Completing setup',
+};
+
+export const getWorktreeBootstrapStageLabel = (
+  stage: GitWorktreeBootstrapStatus['stage'],
+): string => STAGE_LABELS[stage];
+
 const normalizePath = (value: string): string => value.replace(/\\/g, '/').replace(/\/+$/, '') || value;
 const getKey = (directory: string): string => normalizePath(directory);
 const pause = (delayMs: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -117,7 +133,7 @@ export const summarizeWorktreeBootstrapError = (value: string | null | undefined
 };
 
 const failureMessage = (status: GitWorktreeBootstrapStatus): string => {
-  const stage = status.stage ? ` during ${status.stage.replaceAll('_', ' ')}` : '';
+  const stage = status.stage ? ` during ${getWorktreeBootstrapStageLabel(status.stage).toLowerCase()}` : '';
   const detail = summarizeWorktreeBootstrapError(status.error);
   if (status.status === 'needs_attention') {
     return detail || `Worktree setup needs attention${stage}`;

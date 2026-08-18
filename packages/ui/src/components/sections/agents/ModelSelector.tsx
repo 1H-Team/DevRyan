@@ -25,6 +25,7 @@ import {
 import { filterVisibleProviderModelsForPicker } from '@/lib/providers/modelVisibility';
 import { shouldHidePairedFastModel } from '@/lib/providers/variantControls';
 import { sortProviderTreeForPicker } from '@/lib/providers/sorting';
+import { getProviderDisplayName } from '@/lib/providers/display';
 import { getProviderModelUnavailableMessage, isProviderModelAvailable } from '@/lib/providers/modelAvailability';
 import type { ModelMetadata } from '@/types';
 import { useI18n } from '@/lib/i18n';
@@ -111,7 +112,10 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                 modelID,
             ),
         );
-        return sortProviderTreeForPicker(filtered);
+        return sortProviderTreeForPicker(filtered.map((provider) => ({
+            ...provider,
+            name: getProviderDisplayName(provider),
+        })));
     }, [providers, allowedProviderSet, hiddenModels]);
 
     const closeMobilePanel = () => setIsMobilePanelOpen(false);
@@ -279,7 +283,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
             return false;
         }
         const provider = providers.find(p => p.id === providerID);
-        const providerName = provider?.name || providerID;
+        const providerName = getProviderDisplayName({ id: providerID, name: provider?.name });
         const modelName = getTruncatedModelDisplayName(model);
         return filterByQuery(modelName, providerName);
     });

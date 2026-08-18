@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 
 import { invokeDesktop, isElectronShell } from '@/lib/desktop';
+import {
+  sanitizeBrowserViewportMode,
+  type BrowserViewportMode,
+} from '@/components/layout/browserViewport';
+import { sanitizeBrowserFaviconUrl } from '@/components/layout/browserFavicon';
+
+export { sanitizeBrowserFaviconUrl } from '@/components/layout/browserFavicon';
 
 export type BrowserSurfaceSnapshot = {
   surfaceId: string;
@@ -11,10 +18,12 @@ export type BrowserSurfaceSnapshot = {
   placement: 'inline' | 'popout' | 'parked';
   url: string;
   title: string;
+  faviconUrl?: string;
   loading: boolean;
   canGoBack: boolean;
   canGoForward: boolean;
   devToolsOpen: boolean;
+  viewportMode: BrowserViewportMode;
 };
 
 type BrowserSurfaceState = {
@@ -47,6 +56,7 @@ export const sanitizeBrowserSurfaceSnapshot = (value: unknown): BrowserSurfaceSn
   const leaseId = safeString(candidate.leaseId, MAX_ID_LENGTH);
   const workspaceId = safeString(candidate.workspaceId, MAX_ID_LENGTH);
   const tabId = safeString(candidate.tabId, MAX_ID_LENGTH);
+  const faviconUrl = sanitizeBrowserFaviconUrl(candidate.faviconUrl);
   return {
     surfaceId,
     kind,
@@ -56,10 +66,12 @@ export const sanitizeBrowserSurfaceSnapshot = (value: unknown): BrowserSurfaceSn
     placement,
     url: safeString(candidate.url, MAX_URL_LENGTH) || 'about:blank',
     title: safeString(candidate.title, MAX_TITLE_LENGTH),
+    ...(faviconUrl ? { faviconUrl } : {}),
     loading: candidate.loading === true,
     canGoBack: candidate.canGoBack === true,
     canGoForward: candidate.canGoForward === true,
     devToolsOpen: candidate.devToolsOpen === true,
+    viewportMode: sanitizeBrowserViewportMode(candidate.viewportMode),
   };
 };
 
@@ -126,8 +138,14 @@ export const createDesktopBrowserSurface = async (
   tabId: string,
   initialUrl: string,
   workspaceId?: string,
+  viewportMode: BrowserViewportMode = 'responsive',
 ): Promise<BrowserSurfaceSnapshot | null> => {
-  const result = await invokeDesktop<unknown>('desktop_browser_surface_create', { tabId, initialUrl, workspaceId });
+  const result = await invokeDesktop<unknown>('desktop_browser_surface_create', {
+    tabId,
+    initialUrl,
+    workspaceId,
+    viewportMode,
+  });
   return useBrowserSurfaceStore.getState().applySnapshot(result, tabId);
 };
 

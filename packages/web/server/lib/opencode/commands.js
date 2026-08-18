@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { isDeepStrictEqual } from 'node:util';
 import {
   CONFIG_FILE,
   OPENCODE_CONFIG_DIR,
@@ -221,6 +222,7 @@ function updateCommand(commandName, updates, workingDirectory) {
 
   let mdModified = false;
   let jsonModified = false;
+  let promptFileModified = false;
   const creatingNewMd = isBuiltinOverride;
 
   for (const [field, value] of Object.entries(updates)) {
@@ -228,7 +230,7 @@ function updateCommand(commandName, updates, workingDirectory) {
       const normalizedValue = typeof value === 'string' ? value : (value == null ? '' : String(value));
 
       if (mdExists || creatingNewMd) {
-        if (mdData) {
+        if (mdData && mdData.body !== normalizedValue) {
           mdData.body = normalizedValue;
           mdModified = true;
         }
@@ -238,20 +240,30 @@ function updateCommand(commandName, updates, workingDirectory) {
         if (!templateFilePath) {
           throw new Error(`Invalid template file reference for command ${commandName}`);
         }
-        writePromptFile(templateFilePath, normalizedValue);
+        const currentTemplate = fs.existsSync(templateFilePath)
+          ? fs.readFileSync(templateFilePath, 'utf8')
+          : null;
+        if (currentTemplate !== normalizedValue) {
+          writePromptFile(templateFilePath, normalizedValue);
+          promptFileModified = true;
+        }
         continue;
       } else if (isPromptFileReference(normalizedValue)) {
+        if (!isDeepStrictEqual(jsonSection?.template, normalizedValue)) {
+          if (!config.command) config.command = {};
+          if (!config.command[commandName]) config.command[commandName] = {};
+          config.command[commandName].template = normalizedValue;
+          jsonModified = true;
+        }
+        continue;
+      }
+
+      if (!isDeepStrictEqual(jsonSection?.template, normalizedValue)) {
         if (!config.command) config.command = {};
         if (!config.command[commandName]) config.command[commandName] = {};
         config.command[commandName].template = normalizedValue;
         jsonModified = true;
-        continue;
       }
-
-      if (!config.command) config.command = {};
-      if (!config.command[commandName]) config.command[commandName] = {};
-      config.command[commandName].template = normalizedValue;
-      jsonModified = true;
       continue;
     }
 
@@ -259,24 +271,30 @@ function updateCommand(commandName, updates, workingDirectory) {
     const inJson = jsonSection?.[field] !== undefined;
 
     if (inJson) {
-      if (!config.command) config.command = {};
-      if (!config.command[commandName]) config.command[commandName] = {};
-      config.command[commandName][field] = value;
-      jsonModified = true;
+      if (!isDeepStrictEqual(jsonSection?.[field], value)) {
+        if (!config.command) config.command = {};
+        if (!config.command[commandName]) config.command[commandName] = {};
+        config.command[commandName][field] = value;
+        jsonModified = true;
+      }
     } else if (inMd || creatingNewMd) {
-      if (mdData) {
+      if (mdData && !isDeepStrictEqual(mdData.frontmatter[field], value)) {
         mdData.frontmatter[field] = value;
         mdModified = true;
       }
     } else {
       if ((mdExists || creatingNewMd) && mdData) {
-        mdData.frontmatter[field] = value;
-        mdModified = true;
+        if (!isDeepStrictEqual(mdData.frontmatter[field], value)) {
+          mdData.frontmatter[field] = value;
+          mdModified = true;
+        }
       } else {
-        if (!config.command) config.command = {};
-        if (!config.command[commandName]) config.command[commandName] = {};
-        config.command[commandName][field] = value;
-        jsonModified = true;
+        if (!isDeepStrictEqual(jsonSection?.[field], value)) {
+          if (!config.command) config.command = {};
+          if (!config.command[commandName]) config.command[commandName] = {};
+          config.command[commandName][field] = value;
+          jsonModified = true;
+        }
       }
     }
   }
@@ -290,6 +308,7 @@ function updateCommand(commandName, updates, workingDirectory) {
   }
 
   console.log(`Updated command: ${commandName} (scope: ${targetScope}, md: ${mdModified}, json: ${jsonModified})`);
+  return mdModified || jsonModified || promptFileModified;
 }
 
 function deleteCommand(commandName, workingDirectory) {

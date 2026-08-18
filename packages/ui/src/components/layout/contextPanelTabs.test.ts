@@ -34,8 +34,14 @@ describe('removed files main tab', () => {
   });
 
   test('migrates a stale persisted value so it cannot render a blank view', () => {
-    expect(uiStore).toContain('version: 12,');
+    expect(uiStore).toContain('version: 17,');
     expect(uiStore).toContain("if (state.activeMainTab === 'files') {");
+  });
+
+  test('keeps Browser out of the shared context-panel tab model', () => {
+    expect(uiStore).toContain("export type ContextPanelMode = 'diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview';");
+    expect(contextPanel).not.toContain("mode === 'browser'");
+    expect(contextPanel).not.toContain('<ManualBrowserWorkspacePane');
   });
 
   test('has no route or reset-effect entry left', () => {

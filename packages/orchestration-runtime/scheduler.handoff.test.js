@@ -33,7 +33,13 @@ const handoffScope = {
   toMode: 'builder',
 };
 
-const createHarness = async ({ abortGate = null, abortResponses = [], abortTimeoutMs, persistence } = {}) => {
+const createHarness = async ({
+  abortGate = null,
+  abortResponses = [],
+  abortTimeoutMs,
+  attachChildSessions = false,
+  persistence,
+} = {}) => {
   let taskCounter = 0;
   let leaseCounter = 0;
   const aborts = [];
@@ -44,6 +50,9 @@ const createHarness = async ({ abortGate = null, abortResponses = [], abortTimeo
       async start(task, control) {
         const result = deferred();
         runs.push({ control, result, task });
+        if (attachChildSessions && !task.childSessionId) {
+          await control.setChildSessionId(`ses_child_${task.taskId}`);
+        }
         await control.markAccepted();
         return await result.promise;
       },
@@ -124,6 +133,44 @@ describe('managed scheduler orchestrator-to-builder handoff', () => {
     expect(scheduler.getTask(second.taskId).status).toBe('aborted');
     expect(scheduler.getResultEnvelope(first.taskId).action).toBe('abandon');
     expect(scheduler.getResultEnvelope(second.taskId).action).toBe('abandon');
+    expect((await scheduler.inspectDispatchBarrier('ses_root')).state).toBe('clear');
+  });
+
+  test('abandons a parked manual-recovery result only through confirmed handoff', async () => {
+    const { runs, scheduler } = await createHarness({ attachChildSessions: true });
+    const original = await scheduler.submit(input(1));
+    runs[0].result.resolve({
+      status: 'failed',
+      failureReason: 'initial provider failure',
+      resumable: true,
+    });
+    await scheduler.waitForTask(original.taskId);
+
+    const retry = await scheduler.acknowledgeResult(original.taskId, {
+      action: 'retry',
+      idempotencyKey: 'handoff-manual-recovery-retry',
+    });
+    runs[1].result.resolve({
+      status: 'failed',
+      failureReason: 'retry provider failure',
+      resumable: true,
+    });
+    const parked = await scheduler.waitForTask(retry.followUpTask.taskId);
+
+    await expect(scheduler.acknowledgeResult(parked.taskId, {
+      action: 'abandon',
+      idempotencyKey: 'ordinary-manual-recovery-abandon',
+    })).rejects.toMatchObject({ code: 'manual_model_recovery_required' });
+
+    await expect(scheduler.confirmAgentHandoff({
+      ...handoffScope,
+      idempotencyKey: 'switch-manual-recovery',
+    })).resolves.toEqual({
+      state: 'clear',
+      taskIds: [parked.taskId],
+      failures: [],
+    });
+    expect(scheduler.getResultEnvelope(parked.taskId).action).toBe('abandon');
     expect((await scheduler.inspectDispatchBarrier('ses_root')).state).toBe('clear');
   });
 

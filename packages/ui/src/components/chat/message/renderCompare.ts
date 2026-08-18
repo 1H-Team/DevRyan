@@ -131,10 +131,13 @@ export const areRenderRelevantMessageInfoEqual = (left: Message, right: Message)
 export const areRenderRelevantMessagesEqual = (left: MessageRecord, right: MessageRecord): boolean => {
   const leftRecovery = left.presentation?.managedTransportRecovery;
   const rightRecovery = right.presentation?.managedTransportRecovery;
+  const leftAbortRecovery = left.presentation?.managedAbortRecovery;
+  const rightAbortRecovery = right.presentation?.managedAbortRecovery;
   return areRenderRelevantMessageInfoEqual(left.info, right.info)
     && areRenderRelevantPartsEqual(left.parts, right.parts)
     && leftRecovery?.kind === rightRecovery?.kind
-    && leftRecovery?.state === rightRecovery?.state;
+    && leftRecovery?.state === rightRecovery?.state
+    && leftAbortRecovery?.state === rightAbortRecovery?.state;
 };
 
 export const areOptionalRenderRelevantMessagesEqual = (left?: MessageRecord, right?: MessageRecord): boolean => {

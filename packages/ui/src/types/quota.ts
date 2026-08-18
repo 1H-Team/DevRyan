@@ -1,8 +1,10 @@
 export type QuotaProviderId =
   | 'openai'
   | 'codex'
+  | 'xai'
   | 'opencode-go'
   | 'cursor-acp'
+  | 'deepseek'
   | 'claude'
   | 'github-copilot'
   | 'github-copilot-addon'
@@ -65,6 +67,7 @@ export interface ProviderResult {
   configured: boolean;
   error?: string;
   errorCode?: string;
+  warnings?: string[];
   usage: ProviderUsage | null;
   fetchedAt: number;
   usageUpdatedAt?: number;

@@ -15,6 +15,7 @@ const FIXED_AGENT_ICON_COLORS: Readonly<Record<string, { readonly var: string }>
   build: { var: '--agent-icon-builder-color' },
   builder: { var: '--agent-icon-builder-color' },
   council: { var: '--agent-icon-council-color' },
+  orchestrator: { var: '--agent-icon-orchestrator-color' },
   designer: { var: '--agent-icon-designer-color' },
   fixer: { var: '--agent-icon-fixer-color' },
   explorer: { var: '--agent-icon-explorer-color' },

@@ -76,13 +76,13 @@ function createSkillsTask({
   discoverSkills,
   readSkillFile,
   getHiddenSkills,
-  filterVisibleSkills,
+  resolveApprovedSkills,
 }) {
   return async () => {
     const discovered = discoverSkills(directory) || [];
     const hiddenSkills = typeof getHiddenSkills === 'function' ? await getHiddenSkills() : [];
-    const visible = typeof filterVisibleSkills === 'function'
-      ? filterVisibleSkills(discovered, hiddenSkills)
+    const visible = typeof resolveApprovedSkills === 'function'
+      ? resolveApprovedSkills({ discoveredSkills: discovered, hiddenSkills })
       : discovered;
     const prioritized = prioritizeSkills(visible).slice(0, MAX_SKILL_READS);
     let bytesRead = 0;
@@ -301,7 +301,7 @@ function createAgentRuntimeWarmup(dependencies = {}) {
             discoverSkills,
             readSkillFile,
             getHiddenSkills: dependencies.getHiddenSkills,
-            filterVisibleSkills: dependencies.filterVisibleSkills,
+            resolveApprovedSkills: dependencies.resolveApprovedSkills,
           }),
         },
       ];

@@ -345,22 +345,36 @@ export type TurnTimingMarkInput = {
     metadata?: Record<string, unknown>;
 };
 
-const sanitizeRendererTimingMetadata = (metadata: Record<string, unknown> | undefined): Record<string, unknown> | undefined => {
+const sanitizeRendererTimingMetadata = (
+    mark: string,
+    metadata: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined => {
     if (!metadata || typeof metadata !== 'object') {
         return undefined;
     }
 
     const sanitized: Record<string, unknown> = {};
-    for (const key of ['runtime', 'transport', 'visibilityState', 'source']) {
+    const stringKeys = mark === 'renderer_long_running_tool_confirmed'
+        ? ['source', 'tool']
+        : ['runtime', 'transport', 'visibilityState', 'source', 'tool'];
+    for (const key of stringKeys) {
         const value = metadata[key];
         if (typeof value === 'string' && value.trim().length > 0) {
             sanitized[key] = value.trim();
         }
     }
 
-    const stalledForMs = metadata.stalledForMs;
-    if (typeof stalledForMs === 'number' && Number.isFinite(stalledForMs) && stalledForMs >= 0) {
-        sanitized.stalledForMs = Math.trunc(stalledForMs);
+    if (mark !== 'renderer_long_running_tool_confirmed') {
+        const stalledForMs = metadata.stalledForMs;
+        if (typeof stalledForMs === 'number' && Number.isFinite(stalledForMs) && stalledForMs >= 0) {
+            sanitized.stalledForMs = Math.trunc(stalledForMs);
+        }
+    }
+    if (mark === 'renderer_long_running_tool_confirmed') {
+        const elapsedMs = metadata.elapsedMs;
+        if (typeof elapsedMs === 'number' && Number.isFinite(elapsedMs) && elapsedMs >= 0) {
+            sanitized.elapsedMs = Math.trunc(elapsedMs);
+        }
     }
 
     return Object.keys(sanitized).length > 0 ? sanitized : undefined;
@@ -368,7 +382,8 @@ const sanitizeRendererTimingMetadata = (metadata: Record<string, unknown> | unde
 
 export const postTurnTimingMark = (input: TurnTimingMarkInput): void => {
     const recordsOperationalIncident = input.mark === 'renderer_tool_input_stall_confirmed'
-        || input.mark === 'renderer_provider_inference_stall_confirmed';
+        || input.mark === 'renderer_provider_inference_stall_confirmed'
+        || input.mark === 'renderer_long_running_tool_confirmed';
     if ((!recordsOperationalIncident && !streamDebugEnabled()) || typeof fetch !== 'function') {
         return;
     }
@@ -412,7 +427,7 @@ export const postTurnTimingMark = (input: TurnTimingMarkInput): void => {
 export const postRendererTurnTimingMark = (input: TurnTimingMarkInput): void => {
     postTurnTimingMark({
         ...input,
-        metadata: sanitizeRendererTimingMetadata(input.metadata),
+        metadata: sanitizeRendererTimingMetadata(input.mark, input.metadata),
     });
 };
 

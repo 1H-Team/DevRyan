@@ -13,10 +13,10 @@ exact administrators, reviewing reports and sanitized runtime error logs.
   identity and failure-safe draft handling.
 - `BugReportReviewPanel.tsx`: newest-first report list, status filter/cursor,
   detail navigation, and optimistic-concurrency status control.
-- `ErrorLogsPanel.tsx`: kind/impact-filtered sanitized diagnostics with tiered
-  impact treatment, inferred/recovery status, range-based clear controls,
-  agent-context copy, and task-scoped diagnostics export when a session ID
-  exists.
+- `ErrorLogsPanel.tsx`: disposition/kind/impact-filtered sanitized diagnostics
+  with Actionable as the default, Expected and All alternatives, tiered impact
+  treatment, inferred/recovery status, range-based clear controls, agent-context
+  copy, and task-scoped diagnostics export when a session ID exists.
 - `api.ts`, `types.ts`: browser HTTP client and local response contracts.
 
 ## Flow
@@ -28,8 +28,10 @@ exact administrators, reviewing reports and sanitized runtime error logs.
 3. Each admin panel fetches only after activation and owns its own component
    state; no shared Zustand store carries reports or diagnostics.
 4. Accessible list buttons open in-page details and Back returns to the
-   preserved kind/impact filter state. All impacts is the default; clearing is
-   an explicit destructive administrator action scoped to diagnostic rows.
+   preserved disposition/kind/impact filter state. Actionable and All Impacts
+   are the defaults; clearing is an explicit destructive administrator action
+   scoped to diagnostic rows. Direct UUID details remain visible regardless of
+   the current disposition filter.
 
 ## Integration
 

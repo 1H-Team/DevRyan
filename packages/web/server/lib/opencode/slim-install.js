@@ -472,7 +472,7 @@ export const createSlimSetupRuntime = (dependencies = {}) => {
 
 export const registerSlimSetupRoutes = (app, dependencies = {}) => {
   const runtime = dependencies.slimSetupRuntime || createSlimSetupRuntime(dependencies);
-  const refreshOpenCodeAfterConfigChange = dependencies.refreshOpenCodeAfterConfigChange;
+  const markConfigChange = dependencies.markConfigChange;
 
   app.get('/api/config/slim/status', async (_req, res) => {
     try {
@@ -488,11 +488,11 @@ export const registerSlimSetupRoutes = (app, dependencies = {}) => {
       const result = await runtime[action]({
         resetSlimConfig: req.body?.resetSlimConfig === true,
       });
-      let reload = null;
-      if (result.ok && typeof refreshOpenCodeAfterConfigChange === 'function') {
-        reload = await refreshOpenCodeAfterConfigChange(reason, { restart: true });
+      let apply = null;
+      if (typeof markConfigChange === 'function') {
+        apply = await markConfigChange(reason, { restart: true }, result.ok);
       }
-      res.json({ ...result, reload });
+      res.json({ ...result, ...(apply || {}) });
     } catch (error) {
       console.error(`[API:POST /api/config/slim/${action}] Failed:`, error);
       res.status(500).json({ error: `Failed to ${action} Slim runtime` });

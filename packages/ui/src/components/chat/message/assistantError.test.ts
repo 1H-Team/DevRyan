@@ -173,7 +173,47 @@ describe("classifyAssistantError", () => {
       messageId: "msg-next-assistant",
       isLatestMessage: true,
     })).toEqual({
-      text: "The turn stopped before completion. Reconnecting session state…",
+      text: "The turn stopped before completion.",
+      variant: "info",
+      abortKind: "unexpected",
+    })
+  })
+
+  test("uses authoritative managed recovery state for an unexpected abort", () => {
+    const cases = [
+      [
+        "continuing",
+        "The turn stopped before completion. DevRyan is continuing this subtask from saved progress.",
+      ],
+      [
+        "recovered",
+        "The turn stopped before completion. DevRyan continued this subtask from saved progress and completed it.",
+      ],
+      [
+        "manual_recovery",
+        "This subtask stopped before completion. Choose a model and thinking level in the parent session’s Model Recovery card, then click Try Again.",
+      ],
+      ["stopped", "The turn stopped before completion."],
+    ] as const
+
+    for (const [state, text] of cases) {
+      expect(classifyAssistantError({ message: "aborted" }, {
+        isLatestMessage: true,
+        managedAbortRecovery: { state },
+      })).toEqual({
+        text,
+        variant: "info",
+        abortKind: "unexpected",
+      })
+    }
+  })
+
+  test("names a timeout as one rather than implying the model failed", () => {
+    expect(classifyAssistantError({ message: "aborted" }, {
+      isLatestMessage: true,
+      managedAbortRecovery: { state: "manual_recovery", failureKind: "deadline_exceeded" },
+    })).toEqual({
+      text: "This subtask ran out of time before completing. Choose a model and thinking level in the parent session’s Model Recovery card, then click Try Again to continue it.",
       variant: "info",
       abortKind: "unexpected",
     })

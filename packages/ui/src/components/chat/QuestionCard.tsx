@@ -440,7 +440,22 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ requests, question }
     }
   }, [settleRelevantSubmissionResults, t, pendingRequests, rejectQuestion, sessionScopeKey]);
 
-  if (totalCount === 0) return null;
+  if (totalCount === 0) {
+    if (normalizedRequests.length === 0 || acknowledgedRequestKeys.size === 0) {
+      return null;
+    }
+
+    return (
+      <div
+        className="flex min-h-[54px] items-center gap-2 px-3 py-2 text-muted-foreground"
+        role="status"
+        aria-live="polite"
+      >
+        <RiQuestionLine aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-primary" />
+        <span className="typography-meta">{t('chat.questionCard.sendingResponse')}</span>
+      </div>
+    );
+  }
 
   const footerError = Array.from(new Set(Object.values(requestErrors).filter(Boolean))).join(' ');
   const primaryDisabled = isSubmitting || (isLastQuestion ? !requiredSatisfied : !activeAnswerComplete);

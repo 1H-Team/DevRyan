@@ -29,6 +29,7 @@ type AppearanceSlice = {
   autoDeleteAfterDays: number;
   sessionRetentionAction: 'archive' | 'delete';
   fontSize: number;
+  chatWidth: number;
   terminalFontSize: number;
   uiFont: UiFontOption;
   monoFont: MonoFontOption;
@@ -69,6 +70,7 @@ export const startAppearanceAutoSave = (): void => {
     autoDeleteAfterDays: useUIStore.getState().autoDeleteAfterDays,
     sessionRetentionAction: useUIStore.getState().sessionRetentionAction,
     fontSize: useUIStore.getState().fontSize,
+    chatWidth: useUIStore.getState().chatWidth,
     terminalFontSize: useUIStore.getState().terminalFontSize,
     uiFont: useUIStore.getState().uiFont,
     monoFont: useUIStore.getState().monoFont,
@@ -121,6 +123,7 @@ export const startAppearanceAutoSave = (): void => {
       autoDeleteAfterDays: state.autoDeleteAfterDays,
       sessionRetentionAction: state.sessionRetentionAction,
       fontSize: state.fontSize,
+      chatWidth: state.chatWidth,
       terminalFontSize: state.terminalFontSize,
       uiFont: state.uiFont,
       monoFont: state.monoFont,
@@ -188,6 +191,9 @@ export const startAppearanceAutoSave = (): void => {
     }
     if (current.fontSize !== previous.fontSize) {
       diff.fontSize = current.fontSize;
+    }
+    if (current.chatWidth !== previous.chatWidth) {
+      diff.chatWidth = current.chatWidth;
     }
     if (current.terminalFontSize !== previous.terminalFontSize) {
       diff.terminalFontSize = current.terminalFontSize;

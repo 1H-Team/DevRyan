@@ -29,7 +29,7 @@ export const reduceStableSessionContextUsage = (
     input: StableSessionContextUsageInput,
 ): StableSessionContextUsageState => {
     const key = createUsageKey(input.directory, input.sessionId);
-    const usage = input.usage?.totalTokens && input.usage.totalTokens > 0 ? input.usage : null;
+    const usage = input.usage?.activeInputTokens && input.usage.activeInputTokens > 0 ? input.usage : null;
 
     if (!previous || previous.key !== key) {
         return { key, usage: key ? usage : null };

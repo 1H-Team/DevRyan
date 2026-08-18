@@ -3,6 +3,14 @@ import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
 import {
+  fetchCodexQuotaAdapter,
+  fetchDeepSeekQuotaAdapter,
+  fetchKimiQuotaAdapter,
+  fetchXaiQuotaAdapter,
+  fetchZaiQuotaAdapter,
+  refreshXaiOAuthToken,
+} from '@openchamber/shared-runtime';
+import {
   type CursorDashboardCredential,
   type CursorOAuthCredential,
   type ManagedQuotaCredential,
@@ -11,6 +19,7 @@ import {
   readManagedQuotaCredential,
   writeManagedQuotaCredential,
 } from './quotaCredentials';
+import { writeAuthFile as writeOpenCodeAuthFile } from './opencodeAuth';
 
 type AuthEntry = Record<string, unknown> | string;
 type AuthFile = Record<string, AuthEntry>;
@@ -63,7 +72,17 @@ type QuotaFetch = (
 
 type FetchQuotaOptions = {
   readAuth?: () => AuthFile;
+  writeAuth?: (auth: AuthFile) => unknown;
   fetchImpl?: QuotaFetch;
+  now?: () => number;
+  refreshXaiAccessToken?: (credential: {
+    accessToken: string;
+    refreshToken: string;
+  }) => Promise<{
+    accessToken: string;
+    refreshToken?: string | null;
+    expiresAt?: number | null;
+  } | null>;
   env?: NodeJS.ProcessEnv;
   readManagedCredential?: (providerId: string) => ManagedQuotaCredential | null;
   writeManagedCredential?: (providerId: string, credential: ManagedQuotaCredential) => unknown;
@@ -82,33 +101,7 @@ const ANTHROPIC_AUTH_ALIASES = [
   'anthropic-oauth',
   'opencode-with-claude',
 ];
-
-type OpenAiUsagePayload = {
-  rate_limit?: {
-    primary_window?: {
-      used_percent?: number;
-      limit_window_seconds?: number;
-      reset_at?: number;
-    };
-    secondary_window?: {
-      used_percent?: number;
-      limit_window_seconds?: number;
-      reset_at?: number;
-    };
-  };
-  credits?: {
-    balance?: number | string;
-    unlimited?: boolean;
-  };
-  rate_limit_reset_credits?: {
-    available_count?: number | string;
-    total_earned_count?: number | string;
-  };
-  rateLimitResetCredits?: {
-    availableCount?: number | string;
-    totalEarnedCount?: number | string;
-  };
-};
+const XAI_AUTH_ALIASES = ['xai', 'grok', 'xai-oauth'];
 
 type GoogleModelsPayload = {
   models?: Record<string, {
@@ -125,20 +118,6 @@ type GoogleQuotaBucketsPayload = {
     remainingFraction?: number;
     resetTime?: string;
   }>;
-};
-
-type ZaiLimit = {
-  type?: string;
-  number?: number;
-  unit?: number;
-  nextResetTime?: number;
-  percentage?: number;
-};
-
-type ZaiPayload = {
-  data?: {
-    limits?: ZaiLimit[];
-  };
 };
 
 type ZhipuaiTokensLimit = {
@@ -181,6 +160,7 @@ export type ProviderResult = {
   usageUpdatedAt?: number;
   error?: string;
   errorCode?: string;
+  warnings?: string[];
 };
 
 const OPENCODE_CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode');
@@ -194,13 +174,7 @@ const CURSOR_OAUTH_USAGE_URL = `${CURSOR_OAUTH_BASE_URL}/aiserver.v1.DashboardSe
 const CURSOR_OAUTH_REFRESH_URL = `${CURSOR_OAUTH_BASE_URL}/oauth/token`;
 const CURSOR_OAUTH_CLIENT_ID = 'KbZUR41cY7W6zRSdpSUJ7I7mLYBKOCmB';
 const CURSOR_REFRESH_BUFFER_MS = 5 * 60 * 1000;
-const CURSOR_AUTO_COMPOSER_DESCRIPTION = 'Additional usage beyond limits consumes API quota or on-demand spend.';
-const CURSOR_API_DESCRIPTION = 'Additional usage beyond limits consumes on-demand spend.';
 const COPILOT_AI_CREDITS_DESCRIPTION = 'AI Credits are consumed from token usage, including input, output, and cached tokens.';
-const CODEX_USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage';
-const CODEX_RESET_CREDITS_URL = 'https://chatgpt.com/backend-api/wham/rate-limit-reset-credits';
-
-
 const ANTIGRAVITY_ACCOUNTS_PATHS = [
   path.join(OPENCODE_CONFIG_DIR, 'antigravity-accounts.json'),
   path.join(OPENCODE_DATA_DIR, 'antigravity-accounts.json'),
@@ -458,6 +432,7 @@ const buildResult = (data: {
   usage?: ProviderUsage | null;
   error?: string;
   errorCode?: string;
+  warnings?: string[];
   usageUpdatedAt?: number;
 }): ProviderResult => ({
   providerId: data.providerId,
@@ -467,6 +442,7 @@ const buildResult = (data: {
   usage: data.usage ?? null,
   ...(data.error ? { error: data.error } : {}),
   ...(data.errorCode ? { errorCode: data.errorCode } : {}),
+  ...(Array.isArray(data.warnings) && data.warnings.length > 0 ? { warnings: data.warnings } : {}),
   ...(typeof data.usageUpdatedAt === 'number' && Number.isFinite(data.usageUpdatedAt)
     ? { usageUpdatedAt: data.usageUpdatedAt }
     : {}),
@@ -476,22 +452,6 @@ const buildResult = (data: {
 const formatMoney = (value: number | null) => {
   if (value === null || !Number.isFinite(value)) return null;
   return value.toFixed(2);
-};
-
-const durationToLabel = (duration?: number, unit?: string) => {
-  if (!duration || !unit) return 'limit';
-  if (unit === 'TIME_UNIT_MINUTE') return `${duration}m`;
-  if (unit === 'TIME_UNIT_HOUR') return `${duration}h`;
-  if (unit === 'TIME_UNIT_DAY') return `${duration}d`;
-  return 'limit';
-};
-
-const durationToSeconds = (duration?: number, unit?: string) => {
-  if (!duration || !unit) return null;
-  if (unit === 'TIME_UNIT_MINUTE') return duration * 60;
-  if (unit === 'TIME_UNIT_HOUR') return duration * 3600;
-  if (unit === 'TIME_UNIT_DAY') return duration * 86400;
-  return null;
 };
 
 export const listConfiguredQuotaProviders = ({
@@ -522,13 +482,18 @@ export const listConfiguredQuotaProviders = ({
     configured.add('codex');
   }
 
-  const openCodeGo = resolveOpenCodeGoCredentials({ readAuth: () => auth });
-  if (openCodeGo.apiConfigured || openCodeGo.usageConfigured) {
-    configured.add('opencode-go');
+  const xaiAuth = normalizeAuthEntry(getAuthEntry(auth, XAI_AUTH_ALIASES));
+  if (xaiAuth && ((xaiAuth as Record<string, unknown>).access || (xaiAuth as Record<string, unknown>).token)) {
+    configured.add('xai');
   }
 
   if (resolveCursorQuotaCredential({ readAuth: () => auth }).credential) {
     configured.add('cursor-acp');
+  }
+
+  const deepseekAuth = normalizeAuthEntry(getAuthEntry(auth, ['deepseek']));
+  if (deepseekAuth && ((deepseekAuth as Record<string, unknown>).key || (deepseekAuth as Record<string, unknown>).token)) {
+    configured.add('deepseek');
   }
 
   if (resolveGeminiCliAuth(auth)) {
@@ -553,16 +518,6 @@ export const listConfiguredQuotaProviders = ({
     configured.add('kimi-for-coding');
   }
 
-  const minimaxAuth = normalizeAuthEntry(getAuthEntry(auth, ['minimax-coding-plan']));
-  if (minimaxAuth && ((minimaxAuth as Record<string, unknown>).key || (minimaxAuth as Record<string, unknown>).token)) {
-    configured.add('minimax-coding-plan');
-  }
-
-  const minimaxCnAuth = normalizeAuthEntry(getAuthEntry(auth, ['minimax-cn-coding-plan']));
-  if (minimaxCnAuth && ((minimaxCnAuth as Record<string, unknown>).key || (minimaxCnAuth as Record<string, unknown>).token)) {
-    configured.add('minimax-cn-coding-plan');
-  }
-
   const openrouterAuth = normalizeAuthEntry(getAuthEntry(auth, ['openrouter']));
   if (openrouterAuth && ((openrouterAuth as Record<string, unknown>).key || (openrouterAuth as Record<string, unknown>).token)) {
     configured.add('openrouter');
@@ -579,182 +534,95 @@ export const listConfiguredQuotaProviders = ({
     configured.add('github-copilot-addon');
   }
 
+  const minimaxAuth = normalizeAuthEntry(getAuthEntry(auth, ['minimax-coding-plan']));
+  if (minimaxAuth && ((minimaxAuth as Record<string, unknown>).key || (minimaxAuth as Record<string, unknown>).token)) {
+    configured.add('minimax-coding-plan');
+  }
+
+  const minimaxCnAuth = normalizeAuthEntry(getAuthEntry(auth, ['minimax-cn-coding-plan']));
+  if (minimaxCnAuth && ((minimaxCnAuth as Record<string, unknown>).key || (minimaxCnAuth as Record<string, unknown>).token)) {
+    configured.add('minimax-cn-coding-plan');
+  }
+
   if (resolveOllamaCloudCredential().credential) {
     configured.add('ollama-cloud');
+  }
+
+  const openCodeGo = resolveOpenCodeGoCredentials({ readAuth: () => auth });
+  if (openCodeGo.apiConfigured || openCodeGo.usageConfigured) {
+    configured.add('opencode-go');
   }
 
   return Array.from(configured);
 };
 
-const buildCodexHeaders = (accessToken: string, accountId?: string, extraHeaders: Record<string, string> = {}) => ({
-  Authorization: `Bearer ${accessToken}`,
-  'Content-Type': 'application/json',
-  ...(accountId ? { 'ChatGPT-Account-Id': accountId } : {}),
-  ...extraHeaders,
-});
-
-const normalizeResetCredit = (value: unknown, index: number): UsageResetCredit | null => {
-  const credit = asObject(value);
-  if (!credit) return null;
-
-  const grantedAt = toTimestamp(credit.granted_at ?? credit.grantedAt);
-  const expiresAt = toTimestamp(credit.expires_at ?? credit.expiresAt);
-  return {
-    id: asNonEmptyString(credit.id) ?? `reset-credit-${index}`,
-    status: asNonEmptyString(credit.status) ?? 'available',
-    resetType: asNonEmptyString(credit.reset_type ?? credit.resetType),
-    grantedAt,
-    grantedAtFormatted: grantedAt ? formatResetTime(grantedAt) : null,
-    expiresAt,
-    expiresAtFormatted: expiresAt ? formatResetTime(expiresAt) : null,
-  };
-};
-
-const normalizeResetCreditsPayload = (payload: unknown, source: UsageResetCredits['source']): UsageResetCredits | null => {
-  const data = asObject(payload);
-  if (!data) return null;
-
-  const credits = Array.isArray(data.credits)
-    ? data.credits.map(normalizeResetCredit).filter((credit): credit is UsageResetCredit => Boolean(credit))
-    : [];
-  const availableCount = toNumber(data.available_count ?? data.availableCount);
-  const totalEarnedCount = toNumber(data.total_earned_count ?? data.totalEarnedCount);
-
-  if (availableCount === null && totalEarnedCount === null && credits.length === 0) {
-    return null;
-  }
-
-  return {
-    availableCount,
-    totalEarnedCount,
-    credits,
-    source,
-  };
-};
-
-const fetchDedicatedResetCredits = async (
-  fetchImpl: QuotaFetch,
-  accessToken: string,
-  accountId?: string,
-): Promise<UsageResetCredits | null> => {
-  try {
-    const response = await fetchImpl(CODEX_RESET_CREDITS_URL, {
-      method: 'GET',
-      headers: buildCodexHeaders(accessToken, accountId, {
-        'OpenAI-Beta': 'codex-1',
-        originator: 'Codex Desktop',
-      }),
-    });
-    if (!response.ok) return null;
-    return normalizeResetCreditsPayload(await response.json(), 'dedicated');
-  } catch {
-    return null;
-  }
-};
-
-const getFallbackResetCredits = (payload: OpenAiUsagePayload): UsageResetCredits | null => {
-  const fallback = payload.rate_limit_reset_credits ?? payload.rateLimitResetCredits;
-  return normalizeResetCreditsPayload(fallback, 'usage');
-};
-
 export const fetchCodexQuota = async (options: FetchQuotaOptions = {}): Promise<ProviderResult> => {
   const auth = options.readAuth?.() ?? readAuthFile();
-  const fetchImpl = options.fetchImpl ?? fetch;
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['openai', 'codex', 'chatgpt'])) as Record<string, unknown> | null;
+  return fetchCodexQuotaAdapter({
+    credential: {
+      accessToken: (entry?.access as string | undefined) ?? (entry?.token as string | undefined) ?? '',
+      accountId: (entry?.accountId as string | undefined) ?? (entry?.account_id as string | undefined),
+    },
+    fetchImpl: options.fetchImpl ?? fetch,
+    now: options.now ?? Date.now,
+  });
+};
+
+const resolveXaiAuthEntry = (auth: AuthFile) => {
+  const authKey = XAI_AUTH_ALIASES.find((alias) => auth[alias]) ?? null;
+  return {
+    authKey,
+    entry: normalizeAuthEntry(authKey ? auth[authKey] : null) as Record<string, unknown> | null,
+  };
+};
+
+export const fetchXaiQuota = async (options: FetchQuotaOptions = {}): Promise<ProviderResult> => {
+  const auth = options.readAuth?.() ?? readAuthFile();
+  const { authKey, entry } = resolveXaiAuthEntry(auth);
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const now = options.now ?? Date.now;
   const accessToken = (entry?.access as string | undefined) ?? (entry?.token as string | undefined);
-  const accountId = entry?.accountId as string | undefined;
+  const refreshToken = (entry?.refresh as string | undefined) ?? (entry?.refresh_token as string | undefined);
 
-  if (!accessToken) {
-    return buildResult({
-      providerId: 'codex',
-      providerName: 'ChatGPT',
-      ok: false,
-      configured: false,
-      error: 'Not configured',
-    });
-  }
-
-  try {
-    const response = await fetchImpl(CODEX_USAGE_URL, {
-      method: 'GET',
-      headers: buildCodexHeaders(accessToken, accountId),
-    });
-
-    if (!response.ok) {
-      return buildResult({
-        providerId: 'codex',
-        providerName: 'ChatGPT',
-        ok: false,
-        configured: true,
-        error: `API error: ${response.status}`,
-      });
+  const refreshAccessToken = options.refreshXaiAccessToken ?? (refreshToken && authKey
+    ? async () => {
+      const refreshed = await refreshXaiOAuthToken({ refreshToken, fetchImpl, now });
+      if (!entry || typeof auth[authKey] !== 'object') {
+        throw new Error('xAI OAuth credentials cannot be updated.');
+      }
+      auth[authKey] = {
+        ...entry,
+        access: refreshed.accessToken,
+        refresh: refreshed.refreshToken,
+        ...(refreshed.expiresAt !== null ? { expires: refreshed.expiresAt } : {}),
+      };
+      (options.writeAuth ?? writeOpenCodeAuthFile)(auth);
+      return refreshed;
     }
+    : undefined);
 
-    const payload = await response.json() as OpenAiUsagePayload;
-    const primary = payload?.rate_limit?.primary_window ?? null;
-    const secondary = payload?.rate_limit?.secondary_window ?? null;
-    const credits = payload?.credits ?? null;
-    const resetCredits = await fetchDedicatedResetCredits(fetchImpl, accessToken, accountId)
-      ?? getFallbackResetCredits(payload);
+  return fetchXaiQuotaAdapter({
+    credential: {
+      accessToken: accessToken ?? '',
+      refreshToken,
+    },
+    fetchImpl,
+    refreshAccessToken,
+    now,
+  });
+};
 
-    const windows: Record<string, UsageWindow> = {};
-    if (primary) {
-      const windowSeconds = toNumber(primary.limit_window_seconds);
-      const label = windowSeconds !== null && windowSeconds > 0
-        ? resolveWindowLabel(windowSeconds)
-        : '5h';
-      windows[label] = toUsageWindow({
-        usedPercent: toNumber(primary.used_percent),
-        windowSeconds,
-        resetAt: toTimestamp(primary.reset_at),
-      });
-    }
-    if (secondary) {
-      const windowSeconds = toNumber(secondary.limit_window_seconds);
-      const label = windowSeconds !== null && windowSeconds > 0
-        ? resolveWindowLabel(windowSeconds)
-        : 'weekly';
-      windows[label] = toUsageWindow({
-        usedPercent: toNumber(secondary.used_percent),
-        windowSeconds,
-        resetAt: toTimestamp(secondary.reset_at),
-      });
-    }
-    if (credits && !resetCredits) {
-      const balance = toNumber(credits.balance);
-      const unlimited = Boolean(credits.unlimited);
-      const valueLabel = unlimited
-        ? 'Unlimited'
-        : balance !== null
-          ? `$${formatMoney(balance)} remaining`
-          : null;
-      windows.credits = toUsageWindow({
-        usedPercent: null,
-        windowSeconds: null,
-        resetAt: null,
-        valueLabel,
-      });
-    }
-
-    return buildResult({
-      providerId: 'codex',
-      providerName: 'ChatGPT',
-      ok: true,
-      configured: true,
-      usage: {
-        windows,
-        ...(resetCredits ? { resetCredits } : {}),
-      },
-    });
-  } catch (error) {
-    return buildResult({
-      providerId: 'codex',
-      providerName: 'ChatGPT',
-      ok: false,
-      configured: true,
-      error: error instanceof Error ? error.message : 'Request failed',
-    });
-  }
+export const fetchDeepSeekQuota = async (options: FetchQuotaOptions = {}): Promise<ProviderResult> => {
+  const auth = options.readAuth?.() ?? readAuthFile();
+  const entry = normalizeAuthEntry(getAuthEntry(auth, ['deepseek'])) as Record<string, unknown> | null;
+  return fetchDeepSeekQuotaAdapter({
+    credential: {
+      apiKey: (entry?.key as string | undefined) ?? (entry?.token as string | undefined) ?? '',
+    },
+    fetchImpl: options.fetchImpl ?? fetch,
+    now: options.now ?? Date.now,
+  });
 };
 
 export const resolveOpenCodeGoCredentials = (options: FetchQuotaOptions = {}) => {
@@ -1107,13 +975,11 @@ const buildCursorUsage = (payload: unknown): ProviderUsage => {
     usedPercent: autoPercent,
     windowSeconds,
     resetAt: billingCycleEnd,
-    description: CURSOR_AUTO_COMPOSER_DESCRIPTION,
   });
   windows.api = toUsageWindow({
     usedPercent: apiPercent,
     windowSeconds,
     resetAt: billingCycleEnd,
-    description: CURSOR_API_DESCRIPTION,
   });
 
   return {
@@ -1621,6 +1487,7 @@ const CLAUDE_USAGE_OUTPUT_LIMIT = 64 * 1024;
 const CLAUDE_STATUS_PATH = path.join(os.homedir(), '.cache', 'openchamber', 'claude-code-status.json');
 const CLAUDE_FIVE_HOUR_SECONDS = 5 * 60 * 60;
 const CLAUDE_SEVEN_DAY_SECONDS = 7 * 24 * 60 * 60;
+const CLAUDE_PROVIDER_NAME = 'Claude';
 
 export const resolveSafeClaudeQuotaUrl = (baseUrl: string | null | undefined): string | null => {
   if (!baseUrl) return null;
@@ -1853,7 +1720,7 @@ export const fetchClaudeQuota = async (options: FetchQuotaOptions = {}): Promise
   if (options.isExternalRuntime) {
     return buildResult({
       providerId: 'claude',
-      providerName: 'Anthropic',
+      providerName: CLAUDE_PROVIDER_NAME,
       ok: false,
       configured: false,
       error: 'Not configured',
@@ -1900,7 +1767,7 @@ export const fetchClaudeQuota = async (options: FetchQuotaOptions = {}): Promise
         if (windows['5h'] || windows['7d']) {
           return buildResult({
             providerId: 'claude',
-            providerName: 'Anthropic',
+            providerName: CLAUDE_PROVIDER_NAME,
             ok: true,
             configured: true,
             usage: { windows },
@@ -1917,7 +1784,7 @@ export const fetchClaudeQuota = async (options: FetchQuotaOptions = {}): Promise
   if (!options.claudeProxyConfigured) {
     return buildResult({
       providerId: 'claude',
-      providerName: 'Anthropic',
+      providerName: CLAUDE_PROVIDER_NAME,
       ok: false,
       configured: Boolean(accessToken),
       error: oauthError ?? 'Not configured',
@@ -1945,7 +1812,7 @@ export const fetchClaudeQuota = async (options: FetchQuotaOptions = {}): Promise
             if (transformed.ok) {
               return buildResult({
                 providerId: 'claude',
-                providerName: 'Anthropic',
+                providerName: CLAUDE_PROVIDER_NAME,
                 ok: true,
                 configured: true,
                 usage: transformed.usage,
@@ -1983,7 +1850,7 @@ export const fetchClaudeQuota = async (options: FetchQuotaOptions = {}): Promise
   if (cliResult.ok) {
     return buildResult({
       providerId: 'claude',
-      providerName: 'Anthropic',
+      providerName: CLAUDE_PROVIDER_NAME,
       ok: true,
       configured: true,
       usage: cliResult.usage,
@@ -1993,7 +1860,7 @@ export const fetchClaudeQuota = async (options: FetchQuotaOptions = {}): Promise
   const degraded = readDegradedClaudeStatus();
   return buildResult({
     providerId: 'claude',
-    providerName: 'Anthropic',
+    providerName: CLAUDE_PROVIDER_NAME,
     ok: false,
     configured: true,
     usage: degraded.usage,
@@ -2186,91 +2053,16 @@ export const fetchCopilotAddonQuota = async (options: FetchQuotaOptions = {}): P
   }
 };
 
-export const fetchKimiQuota = async (): Promise<ProviderResult> => {
-  const auth = readAuthFile();
+export const fetchKimiQuota = async (options: FetchQuotaOptions = {}): Promise<ProviderResult> => {
+  const auth = options.readAuth?.() ?? readAuthFile();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['kimi-for-coding', 'kimi'])) as Record<string, unknown> | null;
-  const apiKey = (entry?.key as string | undefined) ?? (entry?.token as string | undefined);
-
-  if (!apiKey) {
-    return buildResult({
-      providerId: 'kimi-for-coding',
-      providerName: 'Kimi for Coding',
-      ok: false,
-      configured: false,
-      error: 'Not configured',
-    });
-  }
-
-  try {
-    const response = await fetch('https://api.kimi.com/coding/v1/usages', {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      return buildResult({
-        providerId: 'kimi-for-coding',
-        providerName: 'Kimi for Coding',
-        ok: false,
-        configured: true,
-        error: `API error: ${response.status}`,
-      });
-    }
-
-    const payload = await response.json() as Record<string, unknown>;
-    const windows: Record<string, UsageWindow> = {};
-    const usage = payload.usage as Record<string, unknown> | undefined;
-    if (usage) {
-      const limit = toNumber(usage.limit);
-      const remaining = toNumber(usage.remaining);
-      const usedPercent = limit && remaining !== null
-        ? Math.max(0, Math.min(100, 100 - (remaining / limit) * 100))
-        : null;
-      windows.weekly = toUsageWindow({
-        usedPercent,
-        windowSeconds: null,
-        resetAt: toTimestamp(usage.resetTime),
-      });
-    }
-
-    const limits = Array.isArray(payload.limits) ? payload.limits : [];
-    for (const limit of limits) {
-      const window = (limit as Record<string, unknown>)?.window as Record<string, unknown> | undefined;
-      const detail = (limit as Record<string, unknown>)?.detail as Record<string, unknown> | undefined;
-      const rawLabel = durationToLabel(window?.duration as number | undefined, window?.timeUnit as string | undefined);
-      const windowSeconds = durationToSeconds(window?.duration as number | undefined, window?.timeUnit as string | undefined);
-      const label = windowSeconds === 5 * 60 * 60 ? `Rate Limit (${rawLabel})` : rawLabel;
-      const total = toNumber(detail?.limit);
-      const remaining = toNumber(detail?.remaining);
-      const usedPercent = total && remaining !== null
-        ? Math.max(0, Math.min(100, 100 - (remaining / total) * 100))
-        : null;
-      windows[label] = toUsageWindow({
-        usedPercent,
-        windowSeconds,
-        resetAt: toTimestamp(detail?.resetTime),
-      });
-    }
-
-    return buildResult({
-      providerId: 'kimi-for-coding',
-      providerName: 'Kimi for Coding',
-      ok: true,
-      configured: true,
-      usage: { windows },
-    });
-  } catch (error) {
-    return buildResult({
-      providerId: 'kimi-for-coding',
-      providerName: 'Kimi for Coding',
-      ok: false,
-      configured: true,
-      error: error instanceof Error ? error.message : 'Request failed',
-    });
-  }
+  return fetchKimiQuotaAdapter({
+    credential: {
+      apiKey: (entry?.key as string | undefined) ?? (entry?.token as string | undefined) ?? '',
+    },
+    fetchImpl: options.fetchImpl ?? fetch,
+    now: options.now ?? Date.now,
+  });
 };
 
 const fetchMiniMaxQuota = async (data: {
@@ -2609,85 +2401,16 @@ const resolveWindowSeconds = (limit: Record<string, unknown> | undefined) => {
   return unitSeconds * limit.number;
 };
 
-const resolveWindowLabel = (windowSeconds: number | null) => {
-  if (!windowSeconds) return 'tokens';
-  if (windowSeconds % 86400 === 0) {
-    const days = windowSeconds / 86400;
-    return days === 7 ? 'weekly' : `${days}d`;
-  }
-  if (windowSeconds % 3600 === 0) {
-    return `${windowSeconds / 3600}h`;
-  }
-  return `${windowSeconds}s`;
-};
-
-export const fetchZaiQuota = async (): Promise<ProviderResult> => {
-  const auth = readAuthFile();
+export const fetchZaiQuota = async (options: FetchQuotaOptions = {}): Promise<ProviderResult> => {
+  const auth = options.readAuth?.() ?? readAuthFile();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['zai-coding-plan', 'zai', 'z.ai'])) as Record<string, unknown> | null;
-  const apiKey = (entry?.key as string | undefined) ?? (entry?.token as string | undefined);
-
-  if (!apiKey) {
-    return buildResult({
-      providerId: 'zai-coding-plan',
-      providerName: 'z.ai',
-      ok: false,
-      configured: false,
-      error: 'Not configured',
-    });
-  }
-
-  try {
-    const response = await fetch('https://api.z.ai/api/monitor/usage/quota/limit', {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      return buildResult({
-        providerId: 'zai-coding-plan',
-        providerName: 'z.ai',
-        ok: false,
-        configured: true,
-        error: `API error: ${response.status}`,
-      });
-    }
-
-    const payload = await response.json() as ZaiPayload;
-    const limits = Array.isArray(payload?.data?.limits) ? payload.data.limits : [];
-    const tokensLimit = limits.find((limit: Record<string, unknown>) => limit?.type === 'TOKENS_LIMIT');
-    const windowSeconds = resolveWindowSeconds(tokensLimit as Record<string, unknown> | undefined);
-    const windowLabel = resolveWindowLabel(windowSeconds);
-    const resetAt = tokensLimit?.nextResetTime ? normalizeTimestamp(tokensLimit.nextResetTime) : null;
-    const usedPercent = typeof tokensLimit?.percentage === 'number' ? tokensLimit.percentage : null;
-
-    const windows: Record<string, UsageWindow> = {};
-    if (tokensLimit) {
-      windows[windowLabel] = toUsageWindow({
-        usedPercent,
-        windowSeconds,
-        resetAt,
-      });
-    }
-
-    return buildResult({
-      providerId: 'zai-coding-plan',
-      providerName: 'z.ai',
-      ok: true,
-      configured: true,
-      usage: { windows },
-    });
-  } catch (error) {
-    return buildResult({
-      providerId: 'zai-coding-plan',
-      providerName: 'z.ai',
-      ok: false,
-      configured: true,
-      error: error instanceof Error ? error.message : 'Request failed',
-    });
-  }
+  return fetchZaiQuotaAdapter({
+    credential: {
+      apiKey: (entry?.key as string | undefined) ?? (entry?.token as string | undefined) ?? '',
+    },
+    fetchImpl: options.fetchImpl ?? fetch,
+    now: options.now ?? Date.now,
+  });
 };
 
 export const fetchZhipuaiCodingPlanQuota = async (): Promise<ProviderResult> => {
@@ -2888,11 +2611,17 @@ export const fetchQuotaForProvider = async (providerId: string, options: FetchQu
       return fetchClaudeQuota(options);
     case 'codex':
       return fetchCodexQuota(options);
+    case 'xai':
+    case 'grok':
+    case 'xai-oauth':
+      return fetchXaiQuota(options);
     case 'opencode-go':
       return fetchOpenCodeGoQuota(options);
     case 'cursor-acp':
     case 'cursor':
       return fetchCursorAcpQuota(options);
+    case 'deepseek':
+      return fetchDeepSeekQuota(options);
     case 'github-copilot':
       return fetchCopilotQuota(options);
     case 'github-copilot-addon':
@@ -2902,7 +2631,7 @@ export const fetchQuotaForProvider = async (providerId: string, options: FetchQu
     case 'antigravity':
       return fetchAntigravityQuota();
     case 'kimi-for-coding':
-      return fetchKimiQuota();
+      return fetchKimiQuota(options);
     case 'nano-gpt':
       return fetchNanoGptQuota();
     case 'minimax-coding-plan':
@@ -2914,7 +2643,7 @@ export const fetchQuotaForProvider = async (providerId: string, options: FetchQu
     case 'openrouter':
       return fetchOpenRouterQuota();
     case 'zai-coding-plan':
-      return fetchZaiQuota();
+      return fetchZaiQuota(options);
     case 'zhipuai-coding-plan':
       return fetchZhipuaiCodingPlanQuota();
     default:

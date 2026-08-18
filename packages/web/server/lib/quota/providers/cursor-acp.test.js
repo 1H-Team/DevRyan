@@ -84,9 +84,9 @@ describe('Cursor ACP quota provider', () => {
     expect(result.usage.windows['auto-composer'].usedPercent).toBe(82);
     expect(result.usage.windows['auto-composer'].resetAt).toBe(Date.parse('2026-05-02T14:11:55.000Z'));
     expect(result.usage.windows['auto-composer'].windowSeconds).toBe(30 * 24 * 60 * 60);
-    expect(result.usage.windows['auto-composer'].description).toBe('Additional usage beyond limits consumes API quota or on-demand spend.');
+    expect(result.usage.windows['auto-composer'].description).toBeUndefined();
     expect(result.usage.windows.api.usedPercent).toBe(100);
-    expect(result.usage.windows.api.description).toBe('Additional usage beyond limits consumes on-demand spend.');
+    expect(result.usage.windows.api.description).toBeUndefined();
   });
 
   it('maps Cursor current-period dashboard response buckets to quota windows', async () => {

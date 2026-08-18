@@ -1,5 +1,6 @@
 import { sendMessageStreamWsEvent, sendMessageStreamWsFrame } from './protocol.js';
 import { createUpstreamSseReader } from './upstream-reader.js';
+import { deriveDirectoryCompatibilityEvents } from './compatibility-events.js';
 
 function shouldTriggerUpstreamHealthCheck(upstream) {
   if (!upstream) {
@@ -19,7 +20,6 @@ export function acceptDirectoryMessageStreamWsConnection({
   requestedDirectory,
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
-  processForwardedEventPayload,
   wsClients,
   triggerHealthCheck,
   heartbeatIntervalMs,
@@ -86,9 +86,7 @@ export function acceptDirectoryMessageStreamWsConnection({
         eventId: typeof envelope?.eventId === 'string' && envelope.eventId.length > 0 ? envelope.eventId : undefined,
       });
 
-      const syntheticPayloads = [];
-      processForwardedEventPayload(payload, (syntheticPayload) => syntheticPayloads.push(syntheticPayload));
-      for (const syntheticPayload of syntheticPayloads) {
+      for (const syntheticPayload of deriveDirectoryCompatibilityEvents(payload)) {
         if (eventFilter && !await eventFilter(principal, { payload: syntheticPayload, directory: 'global' })) continue;
         sendMessageStreamWsEvent(socket, syntheticPayload, { directory: 'global' });
       }

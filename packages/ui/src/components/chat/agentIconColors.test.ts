@@ -19,8 +19,9 @@ describe('agent glyph color wiring', () => {
     expect(modelControls.match(/getAgentIconColor\(uiAgentName\)\.var/g)).toHaveLength(2);
     expect(modelControls).toContain('getAgentIconColor(agent.name)');
     expect(modelControls).toContain('style={{ color: `var(${agentIconColor.var})` }}');
+    expect(modelControls).toContain('className="h-3.5 w-3.5 flex-shrink-0"');
 
-    expect(modelControls).toContain("getAgentColor(agent.name).class");
+    expect(modelControls).not.toContain("getAgentColor(agent.name).class");
     expect(modelControls).toContain('const agentColor = getAgentColor(agent.name);');
   });
 

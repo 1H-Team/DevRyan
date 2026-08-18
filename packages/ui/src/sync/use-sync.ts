@@ -28,7 +28,8 @@ import {
 } from "./session-materializer"
 import {
   hasMessageRecordInfo,
-  normalizeMessageFetchLimit,
+  normalizeSessionMessagePageLimit,
+  resolveRetainedMessageLimit,
   resolveMessagePagePagination,
   unwrapMessageRecordsResult,
 } from "./message-fetch"
@@ -329,7 +330,10 @@ export function useSync() {
         if (msg?.id) delete part[msg.id]
       }
       setMetaFor(sessionID, {
-        limit: normalizeMessageFetchLimit(kept.length, MESSAGE_PAGE_SIZE),
+        limit: resolveRetainedMessageLimit({
+          requestedLimit: meta.limit,
+          materializedCount: kept.length,
+        }),
         cursor: undefined,
         complete: false,
         initialized: true,
@@ -361,7 +365,7 @@ export function useSync() {
     async (sessionID: string, limit: number, before?: string, directoryOverride?: string | null) => {
       const targetDirectory = resolveDirectory(directoryOverride)
       const targetSdk = targetDirectory === directory ? sdk : opencodeClient.getScopedSdkClient(targetDirectory)
-      const normalizedLimit = normalizeMessageFetchLimit(limit, MESSAGE_PAGE_SIZE)
+      const normalizedLimit = normalizeSessionMessagePageLimit(limit)
       const result = await retry(async () => {
         const response = await targetSdk.session.messages({ sessionID, limit: normalizedLimit, before })
         return {
@@ -402,7 +406,7 @@ export function useSync() {
           const prefetchRevision = captureSessionPrefetchRevision(targetDirectory, sessionID)
 
           try {
-            const limit = normalizeMessageFetchLimit(m.limit, MESSAGE_PAGE_SIZE)
+            const limit = normalizeSessionMessagePageLimit(m.limit)
             const page = await fetchMessages(sessionID, limit, options?.before, targetDirectory)
             if (
               childStores.getChild(targetDirectory) !== targetStore
@@ -450,7 +454,10 @@ export function useSync() {
             })
             reconcileSessionChangeAttribution(targetDirectory, sessionID, targetStore.getState())
             setMetaFor(sessionID, {
-              limit: normalizeMessageFetchLimit(materialized.messages.length, limit),
+              limit: resolveRetainedMessageLimit({
+                requestedLimit: limit,
+                materializedCount: materialized.messages.length,
+              }),
               cursor: merged.cursor,
               complete: merged.complete,
               loading: false,
@@ -459,7 +466,10 @@ export function useSync() {
             setSessionPrefetch({
               directory: targetDirectory,
               sessionID,
-              limit: normalizeMessageFetchLimit(materialized.messages.length, limit),
+              limit: resolveRetainedMessageLimit({
+                requestedLimit: limit,
+                materializedCount: materialized.messages.length,
+              }),
               cursor: merged.cursor,
               complete: merged.complete,
               revision: prefetchRevision,

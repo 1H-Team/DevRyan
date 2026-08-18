@@ -6,10 +6,12 @@ export interface QuotaProviderMeta {
 }
 
 export const QUOTA_PROVIDERS: QuotaProviderMeta[] = [
-  { id: 'claude', name: 'Anthropic' },
+  { id: 'claude', name: 'Claude' },
   { id: 'codex', name: 'ChatGPT' },
+  { id: 'xai', name: 'xAI' },
   { id: 'opencode-go', name: 'OpenCode Go' },
   { id: 'cursor-acp', name: 'Cursor' },
+  { id: 'deepseek', name: 'DeepSeek' },
   { id: 'github-copilot', name: 'GitHub Copilot' },
   { id: 'google', name: 'Google' },
   { id: 'antigravity', name: 'Antigravity' },

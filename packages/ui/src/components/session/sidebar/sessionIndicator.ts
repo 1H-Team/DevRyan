@@ -94,10 +94,8 @@ const SESSION_COMPLETED_INDICATOR: SessionIndicator = {
 export function resolveSidebarWorkingStatus({
   isWorking,
   pendingQuestionCount,
-  planState,
 }: ResolveSidebarWorkingStatusOptions): boolean {
   if (pendingQuestionCount > 0) return false;
-  if (planState === 'proposed') return false;
   return isWorking;
 }
 
@@ -137,6 +135,10 @@ export function resolveSidebarIndicator({
     return QUESTION_REQUIRED_INDICATOR;
   }
 
+  // Authoritative activity always owns the leading status slot. Plan and
+  // completion attention are only meaningful after the run reaches idle.
+  if (isWorking) return null;
+
   // A proposed plan is an explicit plan-card lifecycle state. It must stay
   // yellow even if stale unread error/completion notifications remain until
   // the user opens the session and read-state cleanup runs.
@@ -148,7 +150,7 @@ export function resolveSidebarIndicator({
     return ERROR_INDICATOR;
   }
 
-  if (isWorking || isActive || !hasUnreadCompletion) return null;
+  if (isActive || !hasUnreadCompletion) return null;
 
   if (planState === 'completed') {
     return PLAN_COMPLETED_INDICATOR;

@@ -1,5 +1,11 @@
 import {
   createManagedTaskScheduler,
+  MANAGED_READ_ONLY_AGENT_UNSUPPORTED,
+  MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE,
+  MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED,
+  MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE,
+  supportsManagedReadOnlyAgent,
+  supportsManagedReadOnlyProvider,
   toManagedTaskEvent,
 } from '@openchamber/orchestration-runtime';
 
@@ -8,15 +14,17 @@ import { createWebManagedOpenCodeExecutor } from './open-code-executor.js';
 import { createManagedOrchestrationPrivateHost } from './private-host.js';
 
 const DEFAULT_TASK_TIMEOUT_MS = 30 * 60 * 1_000;
+const FIXER_TASK_TIMEOUT_MS = 60 * 60 * 1_000;
 const ORACLE_TASK_TIMEOUT_MS = 60 * 60 * 1_000;
 const COUNCIL_TASK_TIMEOUT_MS = 3 * 60 * 1_000;
 const MAX_WAIT_TIMEOUT_MS = 25_000;
 
-const resolveMinimumTaskTimeoutMs = (agent) => (
-  typeof agent === 'string' && agent.trim().toLowerCase() === 'oracle'
-    ? ORACLE_TASK_TIMEOUT_MS
-    : DEFAULT_TASK_TIMEOUT_MS
-);
+const resolveMinimumTaskTimeoutMs = (agent) => {
+  const normalizedAgent = typeof agent === 'string' ? agent.trim().toLowerCase() : '';
+  if (normalizedAgent === 'fixer') return FIXER_TASK_TIMEOUT_MS;
+  if (normalizedAgent === 'oracle') return ORACLE_TASK_TIMEOUT_MS;
+  return DEFAULT_TASK_TIMEOUT_MS;
+};
 
 const resolveSubmitTimeoutAt = (params, now) => {
   const submittedAt = now();
@@ -25,6 +33,14 @@ const resolveSubmitTimeoutAt = (params, now) => {
   return Number.isFinite(params.timeoutAt)
     ? Math.max(params.timeoutAt, minimumTimeoutAt)
     : minimumTimeoutAt;
+};
+
+const resolveRequestedTimeoutAt = (params, now) => {
+  if (params.timeoutSeconds === undefined) return params.timeoutAt;
+  if (!Number.isSafeInteger(params.timeoutSeconds) || params.timeoutSeconds < 1) {
+    throw new TypeError('timeoutSeconds must be a positive safe integer');
+  }
+  return now() + params.timeoutSeconds * 1_000;
 };
 
 const resolveWaitTimeoutMs = (params) => {
@@ -53,6 +69,9 @@ const ERROR_STATUS_BY_CODE = Object.freeze({
   ledger_capacity_exceeded: 507,
   manual_model_recovery_required: 409,
   managed_retry_limit_reached: 409,
+  MANAGED_READ_ONLY_AGENT_UNSUPPORTED: 409,
+  MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED: 409,
+  CONTEXT_MODE_RECOVERY_PENDING: 503,
   provider_prompt_rejection_requires_fresh_retry: 409,
   provider_prompt_rejection_requires_reframed_prompt: 409,
   managed_orchestration_owner_conflict: 409,
@@ -147,6 +166,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   const logger = options.logger ?? console;
   const now = options.now ?? Date.now;
   const isManagedOpenCode = options.isManagedOpenCode ?? (() => true);
+  const getWorkAdmissionBlock = options.getWorkAdmissionBlock ?? (() => null);
   const publishEvent = options.publishEvent ?? (() => undefined);
   const persistence = options.persistence ?? createAtomicManagedOrchestrationLedger({
     dataDirectory: options.dataDirectory,
@@ -177,6 +197,16 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
   let ownershipAcquired = false;
   let recoveryWarningPublished = false;
   let shutdownPromise = null;
+
+  const assertWorkAdmission = () => {
+    const block = getWorkAdmissionBlock();
+    if (!block) return;
+    throw createRuntimeError(
+      block.code || 'CONTEXT_MODE_RECOVERY_PENDING',
+      block.error || 'Context-mode recovery is pending',
+      503,
+    );
+  };
 
   const assertAvailable = () => {
     if (!isManagedOpenCode()) {
@@ -293,7 +323,25 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     await ensureInitialized();
     switch (method) {
       case 'submit': {
+        assertWorkAdmission();
         const timeoutAt = resolveSubmitTimeoutAt(params, now);
+        const readOnly = resolveReadOnly(params);
+        const agent = typeof params.agent === 'string' ? params.agent.trim() : '';
+        const providerId = typeof params.providerId === 'string' ? params.providerId.trim() : '';
+        if (readOnly && agent && !supportsManagedReadOnlyAgent(agent)) {
+          throw createRuntimeError(
+            MANAGED_READ_ONLY_AGENT_UNSUPPORTED,
+            MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE,
+            409,
+          );
+        }
+        if (readOnly && providerId && !supportsManagedReadOnlyProvider(providerId)) {
+          throw createRuntimeError(
+            MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED,
+            MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE,
+            409,
+          );
+        }
         const task = await scheduler.submit({
           idempotencyKey: params.idempotencyKey,
           rootSessionId: params.rootSessionId,
@@ -303,7 +351,7 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
           childSessionId: params.childSessionId ?? null,
           directory: params.directory,
           mode: params.mode,
-          readOnly: resolveReadOnly(params),
+          readOnly,
           providerId: params.providerId,
           modelId: params.modelId,
           agent: params.agent,
@@ -406,8 +454,11 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
       }
       case 'acknowledge': {
         const task = getScopedTask(params);
+        if (['retry', 'resume', 'retry_in_place', 'recover_in_place'].includes(params.action)) {
+          assertWorkAdmission();
+        }
         const timeoutAt = resolveSubmitTimeoutAt({
-          timeoutAt: params.timeoutAt,
+          timeoutAt: resolveRequestedTimeoutAt(params, now),
           agent: params.agent || task.agent,
         }, now);
         const result = await scheduler.acknowledgeResult(task.taskId, {
@@ -433,8 +484,18 @@ export const createWebManagedOrchestrationRuntime = (options = {}) => {
     }
   };
 
+  // Auxiliary handlers ride the same loopback bridge (plugins already hold its
+  // URL + token) without touching scheduler init or managed-mode availability.
+  const auxiliaryRpcHandlers = options.auxiliaryRpcHandlers ?? {};
+
   const handleRpc = async (request, context) => {
     try {
+      const auxiliary = typeof request?.method === 'string'
+        ? auxiliaryRpcHandlers[request.method]
+        : undefined;
+      if (typeof auxiliary === 'function') {
+        return await auxiliary(request.params ?? {}, context);
+      }
       return await handleRpcInternal(request, context);
     } catch (error) {
       throw normalizeRuntimeError(error);

@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import type { ConfigApplyMutationResponse } from '@openchamber/shared-runtime';
 
 export const MAX_GLOBAL_AGENTS_MD_BYTES = 1024 * 1024;
 
@@ -15,7 +16,13 @@ export type GlobalAgentsMdReadResult = {
 
 export type GlobalAgentsMdSaveResult = GlobalAgentsMdReadResult & {
   success: true;
-  runtimeApplied: boolean;
+  runtimeApplied: false;
+  runtimeMessage?: string;
+  requiresApply?: ConfigApplyMutationResponse['requiresApply'];
+  applyRevision?: ConfigApplyMutationResponse['applyRevision'];
+  applyScopes?: ConfigApplyMutationResponse['applyScopes'];
+  applyStatus?: ConfigApplyMutationResponse['applyStatus'];
+  requiresReload?: false;
   warning?: string;
 };
 
@@ -26,7 +33,7 @@ export type GlobalAgentsMdRuntime = {
 
 type GlobalAgentsMdRuntimeOptions = {
   agentsMdPath: string;
-  refreshRuntime: () => Promise<unknown>;
+  refreshRuntime: (input?: { changed?: boolean }) => Promise<unknown>;
   isEditable: () => boolean;
   unavailableReason?: string;
 };
@@ -89,11 +96,21 @@ export const createGlobalAgentsMdRuntime = ({
       );
     }
 
-    if (normalizedContent) {
-      await fs.mkdir(path.dirname(agentsMdPath), { recursive: true });
-      await fs.writeFile(agentsMdPath, normalizedContent, 'utf8');
-    } else {
-      await fs.rm(agentsMdPath, { force: true });
+    let previousContent = '';
+    try {
+      previousContent = await fs.readFile(agentsMdPath, 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
+    }
+    const changed = previousContent !== normalizedContent;
+
+    if (changed) {
+      if (normalizedContent) {
+        await fs.mkdir(path.dirname(agentsMdPath), { recursive: true });
+        await fs.writeFile(agentsMdPath, normalizedContent, 'utf8');
+      } else {
+        await fs.rm(agentsMdPath, { force: true });
+      }
     }
 
     const result: GlobalAgentsMdSaveResult = {
@@ -101,17 +118,17 @@ export const createGlobalAgentsMdRuntime = ({
       content: normalizedContent,
       exists: Boolean(normalizedContent),
       editable: true,
-      runtimeApplied: true,
+      runtimeApplied: false,
     };
 
     try {
-      await refreshRuntime();
-      return result;
+      const applyResult = await refreshRuntime({ changed });
+      return { ...result, ...(applyResult && typeof applyResult === 'object' ? applyResult : {}) };
     } catch (error) {
       return {
         ...result,
         runtimeApplied: false,
-        warning: `Global AGENTS.md was saved, but OpenCode could not reload it automatically: ${formatErrorMessage(error)}`,
+        warning: `Global AGENTS.md was saved, but the apply request could not be recorded: ${formatErrorMessage(error)}`,
       };
     }
   };

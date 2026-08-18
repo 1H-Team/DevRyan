@@ -3,59 +3,37 @@ import type { Message } from "@opencode-ai/sdk/v2"
 import {
   attachRelatedSubagentContextUsage,
   getContextUsageFromMessages,
+  getProviderContextUsageFromMessages,
   getSubagentContextUsageForSession,
   isSameSessionContextUsage,
+  type ContextUsageProviderLike,
 } from "./contextUsageUtils"
 import { resolveModelContextCapacity } from "./modelContextCapacity"
 
 const makeMessage = (message: Record<string, unknown>): Message => message as unknown as Message
-const capacity = (context: number, output?: number) => resolveModelContextCapacity({
-  limit: { context, ...(output ? { output } : {}) },
-})
+const capacity = (context: number) => resolveModelContextCapacity({ limit: { context } })
+
+const providers: ContextUsageProviderLike[] = [
+  { id: "provider-a", models: [{ id: "small", limit: { context: 1_000 } }] },
+  {
+    id: "provider-b",
+    models: [{
+      id: "large",
+      limit: { context: 10_000 },
+      variants: { high: { limit: { context: 20_000 } } },
+    }],
+  },
+]
 
 describe("getContextUsageFromMessages", () => {
-  test("extracts flat assistant token totals", () => {
-    const usage = getContextUsageFromMessages([
-      makeMessage({ id: "user-1", role: "user" }),
-      makeMessage({
-        id: "assistant-1",
-        role: "assistant",
-        tokens: {
-          input: 1000,
-          output: 200,
-          reasoning: 50,
-          cache: { read: 10, write: 5 },
-        },
-      }),
-    ], capacity(10_000, 1000))
-
-    expect(usage?.totalTokens).toBe(1265)
-    expect(usage?.capacityLimit).toBe(10_000)
-    expect(usage?.capacityBasis).toBe("context")
-    expect(usage?.contextLimit).toBe(10_000)
-    expect(usage?.outputLimit).toBe(1000)
-    expect(usage?.percentage).toBe(12.65)
-    expect(usage?.hasTokenBreakdown).toBe(true)
-    expect(usage?.tokenBreakdown).toEqual({
-      input: 1000,
-      output: 200,
-      reasoning: 50,
-      cacheRead: 10,
-      cacheWrite: 5,
-      total: 1265,
-    })
-    expect(usage?.sourceAccuracy).toBe("unavailable")
-    expect(usage?.sources).toBe(undefined)
-  })
-
-  test("uses provider total when it differs from component token fields", () => {
+  test("uses active input components instead of the provider cumulative total", () => {
     const usage = getContextUsageFromMessages([
       makeMessage({
         id: "assistant-1",
         role: "assistant",
         tokens: {
-          total: 1500,
-          input: 1000,
+          total: 1_500,
+          input: 1_000,
           output: 200,
           reasoning: 50,
           cache: { read: 10, write: 5 },
@@ -63,307 +41,217 @@ describe("getContextUsageFromMessages", () => {
       }),
     ], capacity(10_000))
 
-    expect(usage?.totalTokens).toBe(1500)
+    expect(usage?.activeInputTokens).toBe(1_015)
+    expect(usage?.lastOutputTokens).toBe(200)
     expect(usage?.tokenBreakdown).toEqual({
-      input: 1000,
+      input: 1_000,
       output: 200,
       reasoning: 50,
       cacheRead: 10,
       cacheWrite: 5,
-      total: 1500,
+      total: 1_015,
     })
   })
 
-  test("treats input tokens as provider-reported context rather than literal user prompt tokens", () => {
-    const usage = getContextUsageFromMessages([
-      makeMessage({ id: "user-1", role: "user", text: "Test prompt" }),
-      makeMessage({
-        id: "assistant-1",
-        role: "assistant",
-        tokens: {
-          input: 29_000,
-          output: 12,
-          reasoning: 0,
-          cache: { read: 0, write: 0 },
-        },
-      }),
-    ], capacity(200_000))
-
-    expect(usage?.totalTokens).toBe(29_012)
-    expect(usage?.tokenBreakdown.input).toBe(29_000)
-    expect(usage?.sourceAccuracy).toBe("unavailable")
-    expect(usage?.sources).toBe(undefined)
-  })
-
-  test("extracts step-finish part token totals when message tokens are unavailable", () => {
-    const assistant = makeMessage({ id: "assistant-1", role: "assistant" })
-    const usage = getContextUsageFromMessages([
-      {
-        info: assistant,
-        parts: [
-          {
-            id: "part-1",
-            type: "step-finish",
-            tokens: {
-              total: 900,
-              input: 700,
-              output: 125,
-              reasoning: 75,
-              cache: { read: 0, write: 0 },
-            },
-          } as never,
-        ],
-      },
-    ], capacity(10_000))
-
-    expect(usage?.totalTokens).toBe(900)
-    expect(usage?.tokenBreakdown).toEqual({
-      input: 700,
-      output: 125,
-      reasoning: 75,
-      cacheRead: 0,
-      cacheWrite: 0,
-      total: 900,
-    })
-  })
-
-  test("keeps numeric-only totals usable without pretending source stats exist", () => {
-    const usage = getContextUsageFromMessages([
-      makeMessage({
-        id: "assistant-1",
-        role: "assistant",
-        tokens: 512,
-      }),
-    ], capacity(2048))
-
-    expect(usage?.totalTokens).toBe(512)
-    expect(usage?.hasTokenBreakdown).toBe(false)
-    expect(usage?.tokenBreakdown).toEqual({
-      input: 0,
-      output: 0,
-      reasoning: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-      total: 512,
-    })
-    expect(usage?.sourceAccuracy).toBe("unavailable")
-    expect(usage?.sources).toBe(undefined)
-  })
-
-  test("extracts reported source breakdowns", () => {
+  test("counts cache read and cache creation exactly once when no total is reported", () => {
     const usage = getContextUsageFromMessages([
       makeMessage({
         id: "assistant-1",
         role: "assistant",
         tokens: {
-          input: 1000,
-          output: 100,
-          reasoning: 0,
-          cache: { read: 0, write: 0 },
-          sources: [
-            { source: "system", tokens: 200 },
-            { source: "tools", tokens: 100 },
-            { source: "conversation", tokens: 700 },
-          ],
+          input: 1_000,
+          output: 200,
+          reasoning: 50,
+          cache: { read: 300, write: 25 },
         },
       }),
     ], capacity(10_000))
 
-    expect(usage?.totalTokens).toBe(1100)
-    expect(usage?.sourceAccuracy).toBe("reported")
-    expect(usage?.sourceTotalTokens).toBe(1000)
-    expect(usage?.sources).toEqual([
-      { source: "system", tokens: 200 },
-      { source: "tools", tokens: 100 },
-      { source: "conversation", tokens: 700 },
-    ])
+    expect(usage?.activeInputTokens).toBe(1_325)
+    expect(usage?.percentage).toBe(13.25)
   })
 
-  test("ignores invalid source tokens and normalizes source aliases", () => {
-    const usage = getContextUsageFromMessages([
+  test("uses token data from a step-finish part when message tokens are absent", () => {
+    const usage = getContextUsageFromMessages([{
+      info: makeMessage({ id: "assistant-1", role: "assistant" }),
+      parts: [{
+        id: "part-1",
+        type: "step-finish",
+        tokens: { total: 900, input: 700, output: 125, reasoning: 75 },
+      } as never],
+    }], capacity(10_000))
+
+    expect(usage?.activeInputTokens).toBe(700)
+    expect(usage?.lastMessageId).toBe("assistant-1")
+  })
+})
+
+describe("getProviderContextUsageFromMessages", () => {
+  test("resolves capacity from the same newest token-bearing assistant message", () => {
+    const usage = getProviderContextUsageFromMessages([
       makeMessage({
-        id: "assistant-1",
+        id: "assistant-small",
         role: "assistant",
-        tokens: {
-          input: 100,
-          output: 0,
-          reasoning: 0,
-          cache: { read: 0, write: 0 },
-          sources: [
-            { source: "chat", tokens: 40 },
-            { source: "tool", tokens: 10 },
-            { source: "rules", tokens: -5 },
-            { source: "unknown-provider-section", label: "Provider Section", tokens: 15 },
-          ],
-        },
+        providerID: "provider-a",
+        modelID: "small",
+        tokens: { total: 500 },
       }),
-    ], capacity(1000))
-
-    expect(usage?.sourceAccuracy).toBe("reported")
-    expect(usage?.sourceTotalTokens).toBe(65)
-    expect(usage?.sources).toEqual([
-      { source: "conversation", tokens: 40 },
-      { source: "tools", tokens: 10 },
-      { source: "other", label: "Provider Section", tokens: 15 },
-    ])
-  })
-
-  test("clamps reported source totals to the known token total", () => {
-    const usage = getContextUsageFromMessages([
       makeMessage({
-        id: "assistant-1",
+        id: "assistant-large",
         role: "assistant",
-        tokens: {
-          input: 100,
-          output: 0,
-          reasoning: 0,
-          cache: { read: 0, write: 0 },
-          sources: [
-            { source: "system", tokens: 100 },
-            { source: "conversation", tokens: 300 },
-          ],
-        },
+        providerID: "provider-b",
+        modelID: "large",
+        variant: "high",
+        tokens: { total: 2_000 },
       }),
-    ], capacity(1000))
+    ], providers)
 
-    expect(usage?.sourceTotalTokens).toBe(100)
-    expect(usage?.sources).toEqual([
-      { source: "system", tokens: 25 },
-      { source: "conversation", tokens: 75 },
-    ])
+    expect(usage?.lastMessageId).toBe("assistant-large")
+    expect(usage?.capacityLimit).toBe(20_000)
+    expect(usage?.percentage).toBe(10)
   })
 
-  test("returns null when no assistant message has token metadata", () => {
-    const usage = getContextUsageFromMessages([
-      makeMessage({ id: "user-1", role: "user" }),
-      makeMessage({ id: "assistant-1", role: "assistant" }),
-    ], capacity(1000))
+  test("keeps measured tokens but makes capacity unavailable without message provenance", () => {
+    const usage = getProviderContextUsageFromMessages([
+      makeMessage({ id: "assistant-1", role: "assistant", tokens: { total: 500 } }),
+    ], providers)
 
-    expect(usage).toBeNull()
+    expect(usage?.activeInputTokens).toBe(500)
+    expect(usage?.capacityLimit).toBeNull()
+    expect(usage?.capacityBasis).toBe("unavailable")
+    expect(usage?.percentage).toBeNull()
   })
 
-  test("returns the same usage for raw messages and message records", () => {
-    const rawMessage = makeMessage({
-      id: "assistant-1",
-      role: "assistant",
-      tokens: {
-        input: 75,
-        output: 25,
-        reasoning: 0,
-        cache: { read: 0, write: 0 },
-        sources: [{ source: "conversation", tokens: 75 }],
-      },
-    })
+  test("skips newer zero-token assistant shells and preserves the completed measurement model", () => {
+    const usage = getProviderContextUsageFromMessages([
+      makeMessage({
+        id: "assistant-complete",
+        role: "assistant",
+        providerID: "provider-a",
+        modelID: "small",
+        tokens: { total: 500 },
+      }),
+      makeMessage({
+        id: "assistant-shell",
+        role: "assistant",
+        providerID: "provider-b",
+        modelID: "large",
+        tokens: { total: 0 },
+      }),
+    ], providers)
 
-    const rawUsage = getContextUsageFromMessages([rawMessage], capacity(1000))
-    const recordUsage = getContextUsageFromMessages([{ info: rawMessage, parts: [] }], capacity(1000))
-
-    expect(isSameSessionContextUsage(rawUsage, recordUsage)).toBe(true)
+    expect(usage?.lastMessageId).toBe("assistant-complete")
+    expect(usage?.capacityLimit).toBe(1_000)
+    expect(usage?.percentage).toBe(50)
   })
+})
 
-  test("collects nested child sessions with token data only", () => {
+describe("subagent context usage", () => {
+  test("resolves every subagent against its own producing model", () => {
     const messages = new Map<string, Message[]>([
-      ["child-1", [makeMessage({ id: "assistant-child-1", role: "assistant", tokens: { input: 200, output: 25 } })]],
-      ["child-2", [makeMessage({ id: "assistant-child-2", role: "assistant" })]],
-      ["nested-1", [makeMessage({ id: "assistant-nested-1", role: "assistant", tokens: 75 })]],
+      ["child-small", [makeMessage({
+        id: "assistant-small",
+        role: "assistant",
+        providerID: "provider-a",
+        modelID: "small",
+        tokens: { total: 500 },
+      })]],
+      ["child-large", [makeMessage({
+        id: "assistant-large",
+        role: "assistant",
+        providerID: "provider-b",
+        modelID: "large",
+        tokens: { input: 1_000, cache: { read: 500, write: 0 } },
+      })]],
     ])
 
     const related = getSubagentContextUsageForSession(
-      "parent-1",
+      "root",
       [
-        { id: "parent-1" },
-        { id: "child-1", parentID: "parent-1", title: "Review agent" },
-        { id: "child-2", parentID: "parent-1", title: "No stats yet" },
-        { id: "nested-1", parentID: "child-1", title: "Nested agent" },
+        { id: "root" },
+        { id: "child-small", parentID: "root", title: "Small" },
+        { id: "child-large", parentID: "child-small", title: "Large" },
+        { id: "unloaded", parentID: "root", title: "Unloaded" },
       ],
       (sessionId) => messages.get(sessionId) ?? [],
-      () => capacity(1000),
+      providers,
     )
 
-    expect(related.totalTokens).toBe(300)
-    expect(related.sessions).toEqual([
-      {
-        sessionId: "child-1",
-        title: "Review agent",
-        totalTokens: 225,
-        capacityLimit: 1000,
-        capacityBasis: "context",
-        inputLimit: null,
-        contextLimit: 1000,
-        outputLimit: null,
-        percentage: 22.5,
-        lastMessageId: "assistant-child-1",
-      },
-      {
-        sessionId: "nested-1",
-        title: "Nested agent",
-        totalTokens: 75,
-        capacityLimit: 1000,
-        capacityBasis: "context",
-        inputLimit: null,
-        contextLimit: 1000,
-        outputLimit: null,
-        percentage: 7.5,
-        lastMessageId: "assistant-nested-1",
-      },
+    expect(related.activeInputTokens).toBe(2_000)
+    expect(related.sessions.map((session) => ({
+      id: session.sessionId,
+      capacity: session.capacityLimit,
+      percentage: session.percentage,
+      parent: session.parentSessionId,
+      depth: session.depth,
+      hasData: session.hasData,
+    }))).toEqual([
+      { id: "child-small", capacity: 1_000, percentage: 50, parent: "root", depth: 0, hasData: true },
+      { id: "unloaded", capacity: null, percentage: null, parent: "root", depth: 0, hasData: false },
+      { id: "child-large", capacity: 10_000, percentage: 15, parent: "child-small", depth: 1, hasData: true },
     ])
   })
 
-  test("attaches related subagent usage without changing parent context totals", () => {
-    const usage = getContextUsageFromMessages([
-      makeMessage({ id: "assistant-parent", role: "assistant", tokens: { input: 100, output: 25 } }),
-    ], capacity(1000))
+  test("attaches related usage without changing the parent measurement", () => {
+    const parent = getContextUsageFromMessages([
+      makeMessage({ id: "assistant-parent", role: "assistant", tokens: { total: 250 } }),
+    ], capacity(1_000))
+    if (!parent) throw new Error("expected parent usage")
 
-    expect(usage !== null).toBe(true)
-    if (!usage) throw new Error("expected parent context usage")
-    const parentPercentage = usage.percentage
-    const withRelated = attachRelatedSubagentContextUsage(usage, {
-      totalTokens: 300,
+    const attached = attachRelatedSubagentContextUsage(parent, {
+      activeInputTokens: 500,
       sessions: [{
-        sessionId: "child-1",
-        totalTokens: 300,
-        capacityLimit: 1000,
+        sessionId: "child",
+        activeInputTokens: 500,
+        capacityLimit: 1_000,
         capacityBasis: "context",
         inputLimit: null,
-        contextLimit: 1000,
+        contextLimit: 1_000,
         outputLimit: null,
-        percentage: 30,
+        percentage: 50,
       }],
     })
 
-    expect(withRelated.totalTokens).toBe(125)
-    expect(withRelated.percentage).toBe(parentPercentage)
-    expect(withRelated.relatedSubagentTotalTokens).toBe(300)
-    expect(withRelated.relatedSubagentSessions).toHaveLength(1)
+    expect(attached.activeInputTokens).toBe(250)
+    expect(attached.percentage).toBe(25)
+    expect(attached.relatedSubagentActiveInputTokens).toBe(500)
+    expect(isSameSessionContextUsage(parent, attached)).toBe(false)
+    expect(isSameSessionContextUsage(attached, { ...attached })).toBe(true)
   })
 
-  test("keeps measured usage available when capacity is unknown", () => {
+  test("keeps current context separate from cumulative processed input", () => {
+    const messages = Array.from({ length: 39 }, (_, index) => makeMessage({
+      id: `assistant-${index}`,
+      role: "assistant",
+      tokens: { input: index === 0 ? 99_590 : 99_568 },
+    }))
+    messages.push(makeMessage({
+      id: "assistant-final",
+      role: "assistant",
+      tokens: {
+        input: 2,
+        output: 1_464,
+        cache: { read: 125_220, write: 1_818 },
+      },
+    }))
+
+    const usage = getContextUsageFromMessages(messages, capacity(200_000))
+    expect(usage?.activeInputTokens).toBe(127_040)
+    expect(usage?.lastOutputTokens).toBe(1_464)
+    expect(usage?.processedInputTokens).toBe(4_010_214)
+  })
+
+  test("never selects token data before the latest compaction boundary", () => {
     const usage = getContextUsageFromMessages([
-      makeMessage({ id: "assistant-unknown", role: "assistant", tokens: 512 }),
-    ], resolveModelContextCapacity(undefined))
+      { info: makeMessage({ id: "assistant-old", role: "assistant", tokens: { input: 190_000 } }), parts: [] },
+      {
+        info: makeMessage({ id: "user-compact", role: "user" }),
+        parts: [{ id: "part-compact", type: "compaction" } as never],
+      },
+      { info: makeMessage({ id: "assistant-new", role: "assistant", tokens: { input: 24_000 } }), parts: [] },
+    ], capacity(200_000))
 
-    expect(usage?.totalTokens).toBe(512)
-    expect(usage?.percentage).toBeNull()
-    expect(usage?.capacityLimit).toBeNull()
-    expect(usage?.capacityBasis).toBe("unavailable")
-    expect(usage?.inputLimit).toBeNull()
-    expect(usage?.contextLimit).toBeNull()
-    expect(usage?.outputLimit).toBeNull()
-  })
-
-  test("does not clamp percentages above one hundred percent", () => {
-    const usage = getContextUsageFromMessages([
-      makeMessage({ id: "assistant-over", role: "assistant", tokens: 1250 }),
-    ], capacity(1000))
-
-    expect(usage?.percentage).toBe(125)
-  })
-
-  test("treats capacity metadata changes as distinct usage projections", () => {
-    const messages = [makeMessage({ id: "assistant-capacity", role: "assistant", tokens: 500 })]
-    const known = getContextUsageFromMessages(messages, capacity(1000))
-    const unavailable = getContextUsageFromMessages(messages, resolveModelContextCapacity(undefined))
-
-    expect(isSameSessionContextUsage(known, unavailable)).toBe(false)
+    expect(usage?.activeInputTokens).toBe(24_000)
+    expect(usage?.lastMessageId).toBe("assistant-new")
   })
 })

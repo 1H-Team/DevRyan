@@ -207,9 +207,9 @@ export function ControlledVariantPicker({
           type="button"
           disabled={disabled}
           aria-label={t('chat.modelControls.thinking')}
-          className="model-controls__variant-trigger flex h-8 min-w-0 shrink-0 items-center border-0 bg-transparent p-0 text-left text-[10px] font-medium leading-none text-muted-foreground hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-50"
+          className="model-controls__variant-trigger flex h-8 min-w-0 shrink-0 items-center border-0 bg-transparent p-0 text-left text-[10px] font-medium leading-[14px] text-muted-foreground hover:opacity-70 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <span className="max-w-[90px] truncate">
+          <span className="max-w-[90px] truncate leading-[14px] -my-[2px] py-[2px]">
             {formatEffortLabel(activeVariant, { providerId: value.providerId })}
           </span>
         </button>

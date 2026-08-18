@@ -5,6 +5,7 @@ export type DevRyanManagedPluginId =
   | 'context-mode'
   | 'oh-my-opencode-slim'
   | 'superpowers'
+  | 'devryan-skill-context'
   | 'openai-tool-schema-sanitizer';
 
 export type DevRyanManagedPluginDelivery = 'installed-local' | 'bundled-file' | 'curated-skills';

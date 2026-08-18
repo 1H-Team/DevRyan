@@ -1,4 +1,8 @@
-import { DevRyanToolInputGuardPlugin } from './devryan-tool-input-guard.mjs';
+import {
+  DEFAULT_SHELL_TIMEOUT_MS,
+  MAX_SHELL_TIMEOUT_MS,
+  DevRyanToolInputGuardPlugin,
+} from './devryan-tool-input-guard.mjs';
 
 const { afterEach, describe, expect, test } = process.env.VITEST
   ? await import('vitest')
@@ -31,6 +35,23 @@ describe('DevRyan tool input guard plugin', () => {
     await expect(beforeTool('grep', {
       path: '"/tmp/project one/src" "/tmp/project two/src"',
     })).rejects.toMatchObject({ code: 'DEVRYAN_TOOL_INPUT_INVALID' });
+  });
+
+  test.each([
+    undefined,
+    {},
+    { path: null },
+    { path: '' },
+    { path: '   ' },
+  ])('rejects read input without a non-empty string path: %j', async (args) => {
+    await expect(beforeTool('read', args)).rejects.toMatchObject({
+      code: 'DEVRYAN_TOOL_INPUT_INVALID',
+      message: expect.stringContaining('read.path must be a non-empty string'),
+    });
+  });
+
+  test('allows a valid read path', async () => {
+    await expect(beforeTool('read', { path: '/tmp/project/file.ts' })).resolves.toBeUndefined();
   });
 
   test('allows valid JavaScript without executing it', async () => {
@@ -68,7 +89,31 @@ describe('DevRyan tool input guard plugin', () => {
     });
   });
 
+  test.each(['bash', 'shell'])('adds the default deadline to %s', async (tool) => {
+    const args = { command: 'pwd' };
+    await expect(beforeTool(tool, args)).resolves.toBeUndefined();
+    expect(args).toMatchObject({ timeout: DEFAULT_SHELL_TIMEOUT_MS });
+  });
+
+  test('preserves a valid explicit shell deadline', async () => {
+    const args = { command: 'bun test', timeout: 900_000 };
+    await expect(beforeTool('bash', args)).resolves.toBeUndefined();
+    expect(args).toMatchObject({ timeout: 900_000 });
+  });
+
+  test.each([999, MAX_SHELL_TIMEOUT_MS + 1, 2_000.5, '240000', null])(
+    'rejects an invalid shell deadline: %j',
+    async (timeout) => {
+      await expect(beforeTool('bash', { command: 'pwd', timeout })).rejects.toMatchObject({
+        code: 'DEVRYAN_TOOL_INPUT_INVALID',
+        message: expect.stringContaining('shell timeout must be an integer'),
+      });
+    },
+  );
+
   test('does not affect unrelated tools', async () => {
-    await expect(beforeTool('read', { path: '/tmp/project/file.ts' })).resolves.toBeUndefined();
+    const args = { command: 'pwd' };
+    await expect(beforeTool('custom_tool', args)).resolves.toBeUndefined();
+    expect(args).not.toHaveProperty('timeout');
   });
 });

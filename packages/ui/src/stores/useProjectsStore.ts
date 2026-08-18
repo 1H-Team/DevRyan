@@ -115,6 +115,18 @@ const normalizeProjectPath = (value: string): string => {
   return normalized.length > 1 ? normalized.replace(/\/+$/, '') : normalized;
 };
 
+const INTEGRATE_TMP_PREFIX = 'devryan-integrate-';
+
+export const isIntegrateTempProjectPath = (value: string): boolean => {
+  const normalized = normalizeProjectPath(value);
+  if (!normalized) {
+    return false;
+  }
+  const segments = normalized.split('/').filter(Boolean);
+  const base = segments[segments.length - 1] || '';
+  return base.startsWith(INTEGRATE_TMP_PREFIX);
+};
+
 const deriveProjectLabel = (path: string): string => {
   const normalized = normalizeProjectPath(path);
   if (!normalized || normalized === '/') {
@@ -228,6 +240,7 @@ const sanitizeProjects = (value: unknown): ProjectEntry[] => {
 
     const normalizedPath = normalizeProjectPath(rawPath);
     if (!normalizedPath) continue;
+    if (isIntegrateTempProjectPath(normalizedPath)) continue;
 
     const providedId = typeof candidate.id === 'string' ? candidate.id.trim() : '';
     const id = providedId || createProjectIdFromPath(normalizedPath);
@@ -606,6 +619,9 @@ export const useProjectsStore = create<ProjectsStore>()(
       }
 
       const normalizedPath = validation.normalizedPath;
+      if (isIntegrateTempProjectPath(normalizedPath)) {
+        return null;
+      }
       const existing = get().projects.find((project) => project.path === normalizedPath);
       if (existing) {
         get().setActiveProject(existing.id);

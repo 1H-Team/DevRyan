@@ -171,6 +171,7 @@ describe('managed orchestration contract', () => {
     expect(event.properties.owner).toBe('devryan');
     expect(event.properties.task.taskId).toBe(task.taskId);
     expect(event.properties.task.dispatchCallId).toBe('call_dispatch_01');
+    expect(event.properties.task.dispatchGrouped).toBe(true);
     expect(event.properties.task.label).toBe(task.label);
     expect(event.properties.task).not.toHaveProperty('prompt');
     expect(event.properties.task).not.toHaveProperty('idempotencyKey');
@@ -179,6 +180,29 @@ describe('managed orchestration contract', () => {
     expect(event.properties.task.agentRetryAvailable).toBe(true);
     expect(event.properties.directory).toBe('/workspace');
     expect(JSON.parse(JSON.stringify(event))).toEqual(event);
+  });
+
+  test('projects deadline failures without exposing the private dispatch group', () => {
+    const task = {
+      ...createManagedTaskRecord(validInput()),
+      childSessionId: 'ses_child_timeout',
+      status: 'failed',
+      startedAt: 1_100,
+      finishedAt: 2_000,
+      failureReason: 'Managed task timed out at 2000',
+      partial: true,
+    };
+    const projected = toManagedTaskEvent(task).properties.task;
+
+    expect(projected).toMatchObject({
+      dispatchGrouped: true,
+      failureKind: 'deadline_exceeded',
+      agentRetryAvailable: true,
+    });
+    expect(projected).not.toHaveProperty('dispatchGroupId');
+    expect(toManagedTaskEvent(createManagedTaskRecord(validInput({
+      dispatchGroupId: null,
+    }))).properties.task.dispatchGrouped).toBe(false);
   });
 
   test('projects agent retry availability only for the first grouped Orchestrator attempt', () => {

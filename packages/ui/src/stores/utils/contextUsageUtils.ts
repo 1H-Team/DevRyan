@@ -5,7 +5,11 @@ import type {
     SessionContextUsage,
 } from "@/stores/types/sessionTypes";
 import { calculateContextUsage } from "./contextUtils";
-import type { ResolvedModelContextCapacity } from "./modelContextCapacity";
+import {
+    resolveModelContextCapacity,
+    UNAVAILABLE_MODEL_CONTEXT_CAPACITY,
+    type ResolvedModelContextCapacity,
+} from "./modelContextCapacity";
 import { extractTokenBreakdownFromMessage, type ExtractedTokenBreakdown } from "./tokenUtils";
 
 export type ContextUsageMessage = Message | { info: Message; parts: Part[] };
@@ -18,7 +22,25 @@ export type ContextUsageSessionLike = {
 
 export type SubagentContextUsageResult = {
     sessions: ContextUsageRelatedSession[];
-    totalTokens: number;
+    activeInputTokens: number;
+};
+
+export type ContextUsageRequestState = {
+    providerID: string | null;
+    lastMessageId: string | null;
+    activeInputTokens: number;
+    compactionBoundaryId: string | null;
+};
+
+export type ContextUsageProviderModelLike = {
+    id?: string;
+    limit?: { input?: number; context?: number; output?: number };
+    variants?: Record<string, { limit?: { input?: number; context?: number; output?: number } }>;
+};
+
+export type ContextUsageProviderLike = {
+    id?: string;
+    models?: ContextUsageProviderModelLike[];
 };
 
 const getMessageInfo = (message: ContextUsageMessage): Message => {
@@ -32,6 +54,72 @@ const isAssistantMessage = (message: ContextUsageMessage): boolean => {
 const getMessageId = (message: ContextUsageMessage): string | undefined => {
     const id = getMessageInfo(message).id;
     return typeof id === "string" ? id : undefined;
+};
+
+const getMessageParts = (message: ContextUsageMessage): Part[] => (
+    "info" in message && Array.isArray(message.parts) ? message.parts : []
+);
+
+const getCompactionBoundary = (
+    messages: ContextUsageMessage[],
+): { index: number; id: string | null } => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+        const message = messages[index];
+        const isBoundary = getMessageParts(message).some((part) => {
+            if (part.type === "compaction") return true;
+            if (part.type !== "text") return false;
+            const text = (part as Part & { text?: unknown; content?: unknown }).text;
+            const content = (part as Part & { content?: unknown }).content;
+            const value = typeof text === "string" ? text : typeof content === "string" ? content : "";
+            return value.trim() === "/compact";
+        });
+        if (!isBoundary) continue;
+        return { index, id: getMessageId(message) ?? null };
+    }
+    return { index: -1, id: null };
+};
+
+const activeInputTokens = (breakdown: ExtractedTokenBreakdown): number => {
+    const detailed = breakdown.input + breakdown.cacheRead + breakdown.cacheWrite;
+    return detailed > 0 ? detailed : breakdown.total;
+};
+
+const getProcessedInputTokens = (messages: ContextUsageMessage[]): number => messages.reduce((sum, message) => {
+    if (!isAssistantMessage(message)) return sum;
+    return sum + activeInputTokens(extractTokenBreakdownFromMessage(message));
+}, 0);
+
+const getLatestTokenBearingAssistantMessage = (
+    messages: ContextUsageMessage[],
+): { message: ContextUsageMessage; breakdown: ExtractedTokenBreakdown } | null => {
+    const boundary = getCompactionBoundary(messages).index;
+    for (let index = messages.length - 1; index > boundary; index -= 1) {
+        const message = messages[index];
+        if (!isAssistantMessage(message)) continue;
+        const breakdown = extractTokenBreakdownFromMessage(message);
+        if (activeInputTokens(breakdown) <= 0) continue;
+        return { message, breakdown };
+    }
+    return null;
+};
+
+const resolveMessageContextCapacity = (
+    message: ContextUsageMessage,
+    providers: ContextUsageProviderLike[],
+): ResolvedModelContextCapacity => {
+    const info = getMessageInfo(message) as Message & {
+        providerID?: unknown;
+        modelID?: unknown;
+        variant?: unknown;
+    };
+    if (typeof info.providerID !== "string" || typeof info.modelID !== "string") {
+        return UNAVAILABLE_MODEL_CONTEXT_CAPACITY;
+    }
+    const provider = providers.find((entry) => entry.id === info.providerID);
+    const model = provider?.models?.find((entry) => entry.id === info.modelID);
+    if (!model) return UNAVAILABLE_MODEL_CONTEXT_CAPACITY;
+    const variant = typeof info.variant === "string" ? info.variant : undefined;
+    return resolveModelContextCapacity(model, variant);
 };
 
 const buildTokenBreakdown = (breakdown: ExtractedTokenBreakdown): ContextUsageTokenBreakdown => ({
@@ -55,12 +143,22 @@ export const buildContextUsageFromTokenBreakdown = (
     breakdown: ExtractedTokenBreakdown,
     capacity: ResolvedModelContextCapacity,
     lastMessageId?: string,
+    processedInputTokens?: number,
+    updatedAt: number = Date.now(),
+    providerID?: string,
 ): SessionContextUsage => {
-    const usage = calculateContextUsage(breakdown.total, capacity);
+    const activeTokens = activeInputTokens(breakdown);
+    const usage = calculateContextUsage(activeTokens, capacity);
     const tokenBreakdown = buildTokenBreakdown(breakdown);
+    tokenBreakdown.total = activeTokens;
 
     return {
-        totalTokens: breakdown.total,
+        ...(providerID ? { providerID } : {}),
+        activeInputTokens: activeTokens,
+        lastOutputTokens: breakdown.output,
+        ...(processedInputTokens === undefined ? {} : { processedInputTokens }),
+        source: "message-fallback",
+        updatedAt,
         percentage: usage.percentage,
         capacityLimit: usage.capacityLimit,
         capacityBasis: usage.capacityBasis,
@@ -70,9 +168,6 @@ export const buildContextUsageFromTokenBreakdown = (
         lastMessageId,
         tokenBreakdown,
         hasTokenBreakdown: hasDetailedTokenBreakdown(tokenBreakdown),
-        sources: breakdown.sources,
-        sourceTotalTokens: breakdown.sourceTotalTokens,
-        sourceAccuracy: breakdown.sourceAccuracy,
     };
 };
 
@@ -80,29 +175,118 @@ export const getContextUsageFromMessages = (
     messages: ContextUsageMessage[],
     capacity: ResolvedModelContextCapacity,
 ): SessionContextUsage | null => {
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-        const message = messages[index];
-        if (!isAssistantMessage(message)) continue;
-        const breakdown = extractTokenBreakdownFromMessage(message);
-        if (breakdown.total <= 0) continue;
-        return buildContextUsageFromTokenBreakdown(
-            breakdown,
-            capacity,
-            getMessageId(message),
-        );
-    }
+    const latest = getLatestTokenBearingAssistantMessage(messages);
+    if (!latest) return null;
+    const info = getMessageInfo(latest.message) as Message & {
+        providerID?: unknown;
+        time?: { completed?: number; created?: number };
+    };
+    return buildContextUsageFromTokenBreakdown(
+        latest.breakdown,
+        capacity,
+        getMessageId(latest.message),
+        getProcessedInputTokens(messages),
+        info.time?.completed ?? info.time?.created ?? Date.now(),
+        typeof info.providerID === "string" ? info.providerID : undefined,
+    );
+};
 
-    return null;
+export const getProviderContextUsageFromMessages = (
+    messages: ContextUsageMessage[],
+    providers: ContextUsageProviderLike[],
+): SessionContextUsage | null => {
+    const latest = getLatestTokenBearingAssistantMessage(messages);
+    if (!latest) return null;
+    const info = getMessageInfo(latest.message) as Message & {
+        providerID?: unknown;
+        time?: { completed?: number; created?: number };
+    };
+    return buildContextUsageFromTokenBreakdown(
+        latest.breakdown,
+        resolveMessageContextCapacity(latest.message, providers),
+        getMessageId(latest.message),
+        getProcessedInputTokens(messages),
+        info.time?.completed ?? info.time?.created ?? Date.now(),
+        typeof info.providerID === "string" ? info.providerID : undefined,
+    );
+};
+
+export const getContextUsageRequestState = (
+    messages: ContextUsageMessage[],
+): ContextUsageRequestState => {
+    const latest = getLatestTokenBearingAssistantMessage(messages);
+    const info = latest ? getMessageInfo(latest.message) as Message & { providerID?: unknown } : null;
+    return {
+        providerID: typeof info?.providerID === "string" ? info.providerID : null,
+        lastMessageId: latest ? getMessageId(latest.message) ?? null : null,
+        activeInputTokens: latest ? activeInputTokens(latest.breakdown) : 0,
+        compactionBoundaryId: getCompactionBoundary(messages).id,
+    };
+};
+
+export const buildContextUsageFromProviderSnapshot = (
+    snapshot: {
+        inputTokens: number;
+        cacheReadTokens: number;
+        cacheWriteTokens: number;
+        activeInputTokens: number;
+        lastOutputTokens: number;
+        fetchedAt: number;
+    },
+    fallback: SessionContextUsage | null,
+): SessionContextUsage => {
+    const capacity: ResolvedModelContextCapacity = fallback
+        ? {
+            capacityLimit: fallback.capacityLimit,
+            capacityBasis: fallback.capacityBasis,
+            inputLimit: fallback.inputLimit,
+            contextLimit: fallback.contextLimit,
+            outputLimit: fallback.outputLimit,
+        }
+        : UNAVAILABLE_MODEL_CONTEXT_CAPACITY;
+    const usage = calculateContextUsage(snapshot.activeInputTokens, capacity);
+    return {
+        ...(fallback?.providerID ? { providerID: fallback.providerID } : {}),
+        activeInputTokens: snapshot.activeInputTokens,
+        lastOutputTokens: snapshot.lastOutputTokens,
+        ...(fallback?.processedInputTokens === undefined
+            ? {}
+            : { processedInputTokens: fallback.processedInputTokens }),
+        source: "meridian",
+        updatedAt: snapshot.fetchedAt,
+        percentage: usage.percentage,
+        capacityLimit: usage.capacityLimit,
+        capacityBasis: usage.capacityBasis,
+        inputLimit: usage.inputLimit,
+        contextLimit: usage.contextLimit,
+        outputLimit: usage.outputLimit,
+        ...(fallback?.lastMessageId ? { lastMessageId: fallback.lastMessageId } : {}),
+        tokenBreakdown: {
+            input: snapshot.inputTokens,
+            output: snapshot.lastOutputTokens,
+            reasoning: fallback?.tokenBreakdown.reasoning ?? 0,
+            cacheRead: snapshot.cacheReadTokens,
+            cacheWrite: snapshot.cacheWriteTokens,
+            total: snapshot.activeInputTokens,
+        },
+        hasTokenBreakdown: true,
+        ...(fallback?.relatedSubagentSessions
+            ? { relatedSubagentSessions: fallback.relatedSubagentSessions }
+            : {}),
+        ...(fallback?.relatedSubagentActiveInputTokens === undefined
+            ? {}
+            : { relatedSubagentActiveInputTokens: fallback.relatedSubagentActiveInputTokens }),
+    };
 };
 
 export const getSubagentContextUsageForSession = (
     rootSessionId: string,
     sessions: ContextUsageSessionLike[],
     getMessages: (sessionId: string, session: ContextUsageSessionLike) => ContextUsageMessage[],
-    getCapacity: (session: ContextUsageSessionLike, messages: ContextUsageMessage[]) => ResolvedModelContextCapacity,
+    providers: ContextUsageProviderLike[],
 ): SubagentContextUsageResult => {
     if (!rootSessionId || sessions.length === 0) {
-        return { sessions: [], totalTokens: 0 };
+        return { sessions: [], activeInputTokens: 0 };
     }
 
     const childrenByParent = new Map<string, ContextUsageSessionLike[]>();
@@ -115,40 +299,65 @@ export const getSubagentContextUsageForSession = (
 
     const relatedSessions: ContextUsageRelatedSession[] = [];
     const visited = new Set<string>([rootSessionId]);
-    const queue = [...(childrenByParent.get(rootSessionId) ?? [])];
+    const queue: Array<{ session: ContextUsageSessionLike; parentSessionId: string; depth: number }> = (
+        childrenByParent.get(rootSessionId) ?? []
+    ).map((session) => ({ session, parentSessionId: rootSessionId, depth: 0 }));
 
     for (let index = 0; index < queue.length; index += 1) {
-        const session = queue[index];
+        const { session, parentSessionId, depth } = queue[index];
         const sessionId = session.id;
         if (!sessionId || visited.has(sessionId)) continue;
         visited.add(sessionId);
 
         const childMessages = getMessages(sessionId, session);
-        if (childMessages.length > 0) {
-            const capacity = getCapacity(session, childMessages);
-            const usage = getContextUsageFromMessages(childMessages, capacity);
-            if (usage && usage.totalTokens > 0) {
-                relatedSessions.push({
-                    sessionId,
-                    ...(session.title?.trim() ? { title: session.title.trim() } : {}),
-                    totalTokens: usage.totalTokens,
-                    capacityLimit: usage.capacityLimit,
-                    capacityBasis: usage.capacityBasis,
-                    inputLimit: usage.inputLimit,
-                    contextLimit: usage.contextLimit,
-                    outputLimit: usage.outputLimit,
-                    percentage: usage.percentage,
-                    ...(usage.lastMessageId ? { lastMessageId: usage.lastMessageId } : {}),
-                });
-            }
+        const usage = childMessages.length > 0
+            ? getProviderContextUsageFromMessages(childMessages, providers)
+            : null;
+
+        if (usage && usage.activeInputTokens > 0) {
+            relatedSessions.push({
+                sessionId,
+                ...(session.title?.trim() ? { title: session.title.trim() } : {}),
+                activeInputTokens: usage.activeInputTokens,
+                ...(usage.processedInputTokens === undefined ? {} : { processedInputTokens: usage.processedInputTokens }),
+                capacityLimit: usage.capacityLimit,
+                capacityBasis: usage.capacityBasis,
+                inputLimit: usage.inputLimit,
+                contextLimit: usage.contextLimit,
+                outputLimit: usage.outputLimit,
+                percentage: usage.percentage,
+                ...(usage.lastMessageId ? { lastMessageId: usage.lastMessageId } : {}),
+                parentSessionId,
+                depth,
+                hasData: true,
+                tokenBreakdown: usage.tokenBreakdown,
+            });
+        } else {
+            // The child's messages are not loaded (or carry no token data) —
+            // keep the row so the panel can show it and fetch on expand.
+            relatedSessions.push({
+                sessionId,
+                ...(session.title?.trim() ? { title: session.title.trim() } : {}),
+                activeInputTokens: 0,
+                capacityLimit: null,
+                capacityBasis: "unavailable",
+                inputLimit: null,
+                contextLimit: null,
+                outputLimit: null,
+                percentage: null,
+                parentSessionId,
+                depth,
+                hasData: false,
+            });
         }
 
-        queue.push(...(childrenByParent.get(sessionId) ?? []));
+        queue.push(...(childrenByParent.get(sessionId) ?? [])
+            .map((child) => ({ session: child, parentSessionId: sessionId, depth: depth + 1 })));
     }
 
     return {
         sessions: relatedSessions,
-        totalTokens: relatedSessions.reduce((sum, session) => sum + session.totalTokens, 0),
+        activeInputTokens: relatedSessions.reduce((sum, session) => sum + session.activeInputTokens, 0),
     };
 };
 
@@ -156,14 +365,16 @@ export const attachRelatedSubagentContextUsage = (
     usage: SessionContextUsage,
     related: SubagentContextUsageResult,
 ): SessionContextUsage => {
-    if (related.sessions.length === 0 || related.totalTokens <= 0) {
+    // Rows without loaded data (hasData: false) are kept so the panel can show
+    // them and fetch on expand — only an entirely empty tree is dropped.
+    if (related.sessions.length === 0) {
         return usage;
     }
 
     return {
         ...usage,
         relatedSubagentSessions: related.sessions,
-        relatedSubagentTotalTokens: related.totalTokens,
+        relatedSubagentActiveInputTokens: related.activeInputTokens,
     };
 };
 
@@ -173,12 +384,15 @@ export const isSameSessionContextUsage = (
 ): boolean => {
     if (a === b) return true;
     if (!a || !b) return false;
-    const aSources = a.sources ?? [];
-    const bSources = b.sources ?? [];
     const aSubagents = a.relatedSubagentSessions ?? [];
     const bSubagents = b.relatedSubagentSessions ?? [];
 
-    return a.totalTokens === b.totalTokens
+    return a.activeInputTokens === b.activeInputTokens
+        && (a.providerID ?? "") === (b.providerID ?? "")
+        && a.lastOutputTokens === b.lastOutputTokens
+        && (a.processedInputTokens ?? 0) === (b.processedInputTokens ?? 0)
+        && a.source === b.source
+        && a.updatedAt === b.updatedAt
         && a.percentage === b.percentage
         && a.capacityLimit === b.capacityLimit
         && a.capacityBasis === b.capacityBasis
@@ -186,8 +400,6 @@ export const isSameSessionContextUsage = (
         && a.contextLimit === b.contextLimit
         && a.outputLimit === b.outputLimit
         && (a.lastMessageId ?? "") === (b.lastMessageId ?? "")
-        && (a.sourceTotalTokens ?? 0) === (b.sourceTotalTokens ?? 0)
-        && a.sourceAccuracy === b.sourceAccuracy
         && a.hasTokenBreakdown === b.hasTokenBreakdown
         && a.tokenBreakdown.input === b.tokenBreakdown.input
         && a.tokenBreakdown.output === b.tokenBreakdown.output
@@ -195,28 +407,25 @@ export const isSameSessionContextUsage = (
         && a.tokenBreakdown.cacheRead === b.tokenBreakdown.cacheRead
         && a.tokenBreakdown.cacheWrite === b.tokenBreakdown.cacheWrite
         && a.tokenBreakdown.total === b.tokenBreakdown.total
-        && (a.relatedSubagentTotalTokens ?? 0) === (b.relatedSubagentTotalTokens ?? 0)
-        && aSources.length === bSources.length
-        && aSources.every((source, index) => {
-            const other = bSources[index];
-            return other
-                && source.source === other.source
-                && source.tokens === other.tokens
-                && (source.label ?? "") === (other.label ?? "");
-        })
+        && (a.relatedSubagentActiveInputTokens ?? 0) === (b.relatedSubagentActiveInputTokens ?? 0)
         && aSubagents.length === bSubagents.length
         && aSubagents.every((session, index) => {
             const other = bSubagents[index];
             return other
                 && session.sessionId === other.sessionId
                 && (session.title ?? "") === (other.title ?? "")
-                && session.totalTokens === other.totalTokens
+                && session.activeInputTokens === other.activeInputTokens
+                && (session.processedInputTokens ?? 0) === (other.processedInputTokens ?? 0)
                 && session.capacityLimit === other.capacityLimit
                 && session.capacityBasis === other.capacityBasis
                 && session.inputLimit === other.inputLimit
                 && session.contextLimit === other.contextLimit
                 && session.outputLimit === other.outputLimit
                 && session.percentage === other.percentage
-                && (session.lastMessageId ?? "") === (other.lastMessageId ?? "");
+                && (session.lastMessageId ?? "") === (other.lastMessageId ?? "")
+                && (session.parentSessionId ?? "") === (other.parentSessionId ?? "")
+                && (session.depth ?? 0) === (other.depth ?? 0)
+                && (session.hasData ?? true) === (other.hasData ?? true)
+                && (session.tokenBreakdown?.total ?? 0) === (other.tokenBreakdown?.total ?? 0);
         });
 };

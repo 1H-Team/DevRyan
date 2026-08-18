@@ -1,5 +1,6 @@
 import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 import type { OpenCodeManager } from './opencode';
+import { getVsCodeHarnessRuntime } from './harness-runtime-access';
 
 // Session activity tracking (mirrors web server and desktop Tauri behavior)
 type ActivityPhase = 'idle' | 'busy' | 'cooldown';
@@ -219,6 +220,11 @@ export const startGlobalEventWatcher = async (
             if (activity) {
               setSessionActivityPhase(activity.sessionId, activity.phase);
             }
+            manager.observeContextModeToolFailure(payload);
+            void getVsCodeHarnessRuntime()?.observeCommandDeadlineEvent(
+              payload,
+              manager.getWorkingDirectory(),
+            );
           },
         });
 

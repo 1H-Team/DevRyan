@@ -139,15 +139,16 @@ const getPromptMessageID = (body: unknown): string | undefined => {
 
 const unavailableHarnessResponse = (
   deps: ProxyRuntimeDeps,
+  block?: { code: string; error: string; retryAfterSeconds: number } | null,
 ): ApiProxyResponsePayload => ({
   status: 503,
   headers: {
     'content-type': 'application/json',
-    'retry-after': '1',
+    'retry-after': String(block?.retryAfterSeconds ?? 1),
   },
   bodyBase64: deps.base64EncodeUtf8(JSON.stringify({
-    error: 'DevRyan harness is initializing or shutting down',
-    code: 'HARNESS_NOT_ACCEPTING_PROMPTS',
+    error: block?.error ?? 'DevRyan harness is initializing or shutting down',
+    code: block?.code ?? 'HARNESS_NOT_ACCEPTING_PROMPTS',
   })),
 });
 
@@ -160,9 +161,8 @@ const admitPrompt = (
   if (!details) return null;
   const runtime = getVsCodeHarnessRuntime();
   if (!runtime) return unavailableHarnessResponse(deps);
-  if (!runtime.isReady() || !runtime.isAcceptingPrompts()) {
-    return unavailableHarnessResponse(deps);
-  }
+  const admissionBlock = runtime.getPromptAdmissionBlock();
+  if (admissionBlock) return unavailableHarnessResponse(deps, admissionBlock);
   runtime.recordPrompt({
     ...details,
     messageID: getPromptMessageID(body),

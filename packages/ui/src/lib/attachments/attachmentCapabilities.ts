@@ -1,4 +1,5 @@
 import { useConfigStore } from "@/stores/useConfigStore"
+import { useConfigApplyStore } from "@/stores/useConfigApplyStore"
 import type { ModelMetadata } from "@/types"
 
 export type AttachmentCapabilityModelMetadata = Pick<ModelMetadata, "attachment" | "modalities"> & {
@@ -20,6 +21,8 @@ export type AttachmentValidationResult = {
   status: PdfInputSupport
   hasPdf: boolean
 }
+
+export type AttachmentRuntimeMode = "managed" | "external"
 
 const normalizeMime = (value: unknown): string =>
   typeof value === "string" ? value.split(";")[0].trim().toLowerCase() : ""
@@ -65,10 +68,15 @@ export const getPdfAttachmentValidation = (params: {
   providerID: string
   modelID: string
   files?: Array<AttachmentCapabilityFile | undefined | null>
+  runtimeMode?: AttachmentRuntimeMode
 }): AttachmentValidationResult => {
   const hasPdf = hasPdfAttachment(params.files)
   if (!hasPdf) {
     return { hasPdf: false, status: "supported" }
+  }
+  const runtimeMode = params.runtimeMode ?? useConfigApplyStore.getState().status?.runtimeMode
+  if (runtimeMode === "managed") {
+    return { hasPdf: true, status: "supported" }
   }
   return {
     hasPdf: true,

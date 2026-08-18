@@ -561,6 +561,20 @@ function lintRuntimeToolCount({ findings, toolManifest }) {
   }));
 }
 
+function lintSkillPolicyEnforcement({ findings, runtimeMode }) {
+  if (runtimeMode !== 'external') {
+    return;
+  }
+  findings.push(createFinding({
+    ruleId: 'external-skill-policy-unenforced',
+    severity: 'warning',
+    summary: 'External OpenCode runtime is read-only, so DevRyan cannot guarantee skill permission enforcement',
+    artifact: { type: 'runtime', name: 'external-opencode' },
+    suggestedNextAction: 'Apply equivalent deny-by-default skill permissions in the external runtime before relying on catalog isolation',
+    stopCondition: 'Stop claiming the external runtime skill catalog is restricted until its owner applies the policy',
+  }));
+}
+
 function lintAgentHarness(options = {}) {
   const agents = asArray(options.agents);
   const skills = asArray(options.skills);
@@ -587,6 +601,7 @@ function lintAgentHarness(options = {}) {
   });
   lintToolManifestAvailability({ findings, toolManifest: options.toolManifest });
   lintRuntimeToolCount({ findings, toolManifest: options.toolManifest });
+  lintSkillPolicyEnforcement({ findings, runtimeMode: options.runtimeMode });
 
   return findings;
 }
@@ -674,6 +689,7 @@ function buildPreflightResult({
   packagedAgents,
   slimRuntime,
   readSkillBody,
+  runtimeMode,
 }) {
   const findings = lintAgentHarness({
     agents,
@@ -684,6 +700,7 @@ function buildPreflightResult({
     toolManifest,
     slimRuntime,
     promptTools: context.promptTools,
+    runtimeMode,
   });
   const promptAudit = auditPackagedPromptContext({ agents: packagedAgents });
   const contextBudget = buildHarnessContextBudget({
@@ -693,6 +710,7 @@ function buildPreflightResult({
     hiddenSkills,
     readSkillBody,
     context,
+    anthropicUsage: context.anthropicUsage,
   });
   const harness = findings.length > 0
     ? createHarnessWarning({
@@ -722,6 +740,7 @@ function buildPreflightResult({
     toolManifest,
     latestWarmup,
     slimRuntime,
+    runtimeMode,
     promptAudit,
     contextBudget: resolvedContextBudget,
     promptTools: context.promptTools || null,
@@ -781,6 +800,9 @@ function createHarnessPreflight(dependencies = {}) {
               },
         packagedAgents: read('getPackagedAgents', resolvedContext),
         slimRuntime: typeof dependencies.getSlimRuntime === 'function' ? dependencies.getSlimRuntime(resolvedContext) : null,
+        runtimeMode: typeof dependencies.getRuntimeMode === 'function'
+          ? dependencies.getRuntimeMode(resolvedContext)
+          : 'managed',
       };
 
       const pending = Object.entries(values).filter(([, value]) => maybePromise(value));

@@ -17,6 +17,7 @@ const snapshot = (overrides: Record<string, unknown> = {}) => ({
   canGoBack: false,
   canGoForward: true,
   devToolsOpen: false,
+  viewportMode: 'responsive',
   ...overrides,
 });
 
@@ -34,6 +35,14 @@ describe('browser surface store', () => {
     expect(sanitizeBrowserSurfaceSnapshot(snapshot({ placement: 'elsewhere' }))).toBeNull();
     expect(sanitizeBrowserSurfaceSnapshot(snapshot({ kind: 'unknown' }))).toBeNull();
     expect(sanitizeBrowserSurfaceSnapshot({ token: 'secret' })).toBeNull();
+    expect(sanitizeBrowserSurfaceSnapshot(snapshot({ viewportMode: 'mobile' }))?.viewportMode).toBe('mobile');
+    expect(sanitizeBrowserSurfaceSnapshot(snapshot({ viewportMode: 'unknown' }))?.viewportMode).toBe('responsive');
+    expect(sanitizeBrowserSurfaceSnapshot(snapshot({ faviconUrl: 'https://example.com/favicon.ico' }))?.faviconUrl)
+      .toBe('https://example.com/favicon.ico');
+    expect(sanitizeBrowserSurfaceSnapshot(snapshot({ faviconUrl: 'javascript:alert(1)' }))?.faviconUrl)
+      .toBe(undefined);
+    expect(sanitizeBrowserSurfaceSnapshot(snapshot({ faviconUrl: 'data:image/png;base64,AAAA' }))?.faviconUrl)
+      .toBe('data:image/png;base64,AAAA');
   });
 
   test('keeps a popped manual tab retained and clears it on dock or release', () => {

@@ -8,7 +8,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import AdmZip from 'adm-zip';
+import { installSkillArchive, isArchiveRejectionError } from '@openchamber/shared-runtime';
 
 import { downloadClawdHubSkill, fetchClawdHubSkillInfo } from './api.js';
 
@@ -29,18 +29,6 @@ function validateSkillName(skillName) {
   if (typeof skillName !== 'string') return false;
   if (skillName.length < 1 || skillName.length > 64) return false;
   return SKILL_NAME_PATTERN.test(skillName);
-}
-
-async function safeRm(dir) {
-  try {
-    await fs.promises.rm(dir, { recursive: true, force: true });
-  } catch {
-    // ignore
-  }
-}
-
-async function ensureDir(dirPath) {
-  await fs.promises.mkdir(dirPath, { recursive: true });
 }
 
 function getTargetSkillDir({ scope, targetSource, workingDirectory, userSkillDir, skillName }) {
@@ -155,7 +143,7 @@ export async function installSkillsFromClawdHub({
 
   for (const plan of skillPlans) {
     if (!plan.installable) {
-      skipped.push({ skillName: plan.slug, reason: 'Invalid skill name' });
+      skipped.push({ skillName: plan.slug, reason: 'Invalid skill name', code: 'invalidSkillName' });
       continue;
     }
 
@@ -174,7 +162,7 @@ export async function installSkillsFromClawdHub({
         }
 
         if (resolvedVersion === 'latest') {
-          skipped.push({ skillName: plan.slug, reason: 'Unable to resolve latest version' });
+          skipped.push({ skillName: plan.slug, reason: 'Unable to resolve latest version', code: 'versionUnavailable' });
           continue;
         }
       }
@@ -191,45 +179,28 @@ export async function installSkillsFromClawdHub({
       }
 
       if (exists && decision === 'skip') {
-        skipped.push({ skillName: plan.slug, reason: 'Already installed (skipped)' });
+        skipped.push({ skillName: plan.slug, reason: 'Already installed (skipped)', code: 'alreadyInstalled' });
         continue;
       }
 
-      if (exists && decision === 'overwrite') {
-        await safeRm(targetDir);
-      }
-
-      // Download the skill ZIP
+      // Download and validate before the existing installation is touched.
       const zipBuffer = await downloadClawdHubSkill(plan.slug, resolvedVersion);
+      await installSkillArchive({
+        archiveBuffer: zipBuffer,
+        targetDir,
+        replace: exists && decision === 'overwrite',
+      });
 
-      // Extract to a temp directory first for validation
-      const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), `clawdhub-${plan.slug}-`));
-      
-      try {
-        const zip = new AdmZip(Buffer.from(zipBuffer));
-        zip.extractAllTo(tempDir, true);
-
-        // Verify SKILL.md exists
-        const skillMdPath = path.join(tempDir, 'SKILL.md');
-        if (!fs.existsSync(skillMdPath)) {
-          skipped.push({ skillName: plan.slug, reason: 'SKILL.md not found in downloaded package' });
-          continue;
-        }
-
-        // Move to target directory
-        await ensureDir(path.dirname(targetDir));
-        await fs.promises.rename(tempDir, targetDir);
-
-        installed.push({ skillName: plan.slug, scope, source: targetSource === 'agents' ? 'agents' : 'opencode' });
-      } catch (extractError) {
-        await safeRm(tempDir);
-        throw extractError;
-      }
+      installed.push({ skillName: plan.slug, scope, source: targetSource === 'agents' ? 'agents' : 'opencode' });
     } catch (error) {
-      console.error(`Failed to install ClawdHub skill "${plan.slug}":`, error);
       skipped.push({
         skillName: plan.slug,
-        reason: error instanceof Error ? error.message : 'Failed to download or extract skill',
+        reason: isArchiveRejectionError(error)
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : 'Failed to download or extract skill',
+        code: isArchiveRejectionError(error) ? error.code : 'installFailed',
       });
     }
   }

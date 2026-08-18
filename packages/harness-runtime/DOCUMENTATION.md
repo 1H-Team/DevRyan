@@ -4,7 +4,8 @@
 DevRyan harness operations. It contains atomic private-file persistence,
 versioned record stores, turn lifecycle correlation, durable worktree bootstrap
 receipts, sanitized diagnostic journaling/export preparation, and optional Git
-turn-evidence primitives.
+turn-evidence primitives. It also owns the host-neutral persisted command-
+deadline controller used by web/Electron and VS Code.
 
 Host packages inject storage roots and platform effects. The shared UI never
 imports this package; it consumes HTTP or VS Code bridge contracts.
@@ -19,15 +20,40 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
 ## Runtime ownership
 
 - `lifecycle.js`: synchronous canonical OpenCode-event correlation.
+- `prompt-admission.js`: synchronous named-hold controller shared by web/Electron
+  and VS Code. A hold returns the exact HTTP-shaped block for new prompts and
+  managed-work launches while allowing active work, cancellation, result
+  acknowledgement, and shutdown to drain. Reference-counted releases prevent
+  one recovery owner from reopening admission held by another.
 - `worktree-bootstrap.js`: durable idempotent receipt state machine.
-  Version 2 receipts include an `ownerId`; version 1 records migrate to the
-  explicit `local-admin` owner so shared-host retries cannot cross principals.
+  Version 3 receipts add the explicit `run_post_checkout_hook` stage; version 1
+  records first migrate to the `local-admin` owner and version 1/2 terminal or
+  already-advanced receipts skip the newly introduced hook so migration never
+  replays user code. New receipts run the stage immediately after population.
   A terminal receipt can be explicitly superseded when the same idempotency key
   is reused with a different request fingerprint; active queued/running work is
   never superseded and still returns a conflict. Resolved worktree directories
   are also single-flight keys: matching concurrent submissions share the one
   authoritative receipt, conflicting setup or maintenance returns
   `409 WORKTREE_DIRECTORY_BUSY`, and active setup prevents removal.
+- `command-deadline.js`: exact shell-call deadline ownership. It fingerprints
+  the session, assistant message, part, call, and tool; persists no command
+  text; preserves the first absolute deadline across repeated updates; and
+  immediately reconciles overdue records after restart or system sleep. Thirty
+  seconds after the declared deadline it fetches the exact message, issues at
+  most one session abort, and waits up to ten seconds for authoritative
+  settlement. A managed runtime restart is allowed only when that session is
+  the sole active operation. Concurrent and external runtimes remain untouched
+  and surface an unresolved incident. Commands are never replayed.
+- `git-post-checkout-hook.js`: bounded cross-host post-checkout runner. It
+  resolves the effective `core.hooksPath` (including a global path that shadows
+  repository-local hooks), skips absent hooks, and requires Git 2.36+ only when
+  a hook is present. Existing hooks run once as
+  `git hook run --ignore-missing post-checkout -- <zero> <HEAD> 1` in the new
+  worktree. Timeout/nonzero failures are hard setup failures with byte-capped,
+  terminal-control-stripped, path-sanitized receipt excerpts. The stage is not
+  replay-safe: interrupted execution becomes `needs_attention` and reruns only
+  after explicit Retry.
 - `session-id.js`: canonical four-way record attribution plus session-parent
   relations shared by storage and export selection.
 - `journal-trim.js`: bounded pre-sanitization policy that drops streaming
@@ -41,9 +67,15 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
   a recent time range by rebuilding older retained records and their blob
   sidecars, or remove all current and legacy journal data. Both modes preserve
   the discovery files and accept newly arriving records afterward.
+  Web/Electron hosts record raw OpenCode events only from the canonical global
+  watcher; event transport bridges never call the journal, preventing duplicate
+  records when multiple UI stream clients are attached.
   Supported record schemas retain a sanitized `actor` identifier supplied by
   the host, allowing shared-host diagnostics to be attributed without exposing
-  authentication material.
+  authentication material. Provider-reported assistant token snapshots retain
+  only the numeric `total`, `input`, `output`, `reasoning`, `cache.read`, and
+  `cache.write` fields so context-usage counts remain auditable without widening
+  the general nested-field allowlist.
 - `export.js`: task/runtime export selection and second-pass redaction. Bundle
   version 2 streams one plain NDJSON entry per session plus `runtime.ndjson`,
   an included-manifest index, and decompressed plain-text blobs.
@@ -66,6 +98,8 @@ file-fsync/rename/parent-fsync sequence. Invalid JSON records are moved to a
   retain only filename/MIME/size/SHA-256 metadata.
 - Worktree terminal receipts retain 90 days or 2,000 operations; active
   receipts are never pruned.
+- Shell commands default to 240,000 ms and may declare 1,000 through 3,600,000
+  ms. Deadline reconciliation begins after a 30,000 ms grace period.
 - Evidence retains seven days or 200 turns per primary repository and removes
   its hidden refs when records are pruned, sessions are deleted, or the user
   clears a project. A clean unchanged worktree reuses the before tree for the
@@ -82,3 +116,17 @@ From the repository root, run `bun scripts/journal.mjs list`, then
 `bun scripts/journal.mjs show <sessionID>`. The zero-dependency CLI reads gzip,
 active plain chunks, runtime records, and legacy segments. It also supports
 type/event/time/grep/tail filters plus `gaps`, `blob`, and `path` commands.
+
+An administrator Error Log event UUID locates a durable sanitized summary; it
+is not expected to appear in this journal. Resolve the UUID through the Error
+Log detail API first and capture its `sessionId`, timestamp, action/kind, and
+available `callId`, `toolId`, `messageId`, or `taskId`. Use the session and
+strongest identifier to retrieve execution evidence, normally
+`bun scripts/journal.mjs show <sessionID> --grep <callId>`. Fall back to another
+identifier or a bounded `--since`/`--until` window and run
+`bun scripts/journal.mjs gaps` before drawing conclusions. Error Logs provide
+durable administrative indexing and classification; the local journal provides
+prompts, tool output, lifecycle ordering, recovery behavior, and detailed
+failure evidence. If the relevant host journal is unavailable, expired, or has
+a qualifying gap, report the limitation instead of reconstructing missing
+detail.

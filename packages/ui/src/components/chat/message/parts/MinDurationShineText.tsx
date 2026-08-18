@@ -1,8 +1,6 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
 
-const MAX_BUSY_DURATION_MS = 5 * 60 * 1000; // 5 minutes cap
-
 interface MinDurationShineTextProps {
     active: boolean;
     minDurationMs?: number;
@@ -38,13 +36,6 @@ export const MinDurationShineText: React.FC<MinDurationShineTextProps> = ({
                 busyStartRef.current = Date.now();
             }
 
-            const elapsed = Date.now() - busyStartRef.current;
-            if (elapsed >= MAX_BUSY_DURATION_MS) {
-                setIsBusy(false);
-                busyStartRef.current = null;
-                return;
-            }
-
             setIsBusy(true);
             return;
         }
@@ -56,12 +47,6 @@ export const MinDurationShineText: React.FC<MinDurationShineTextProps> = ({
 
         const startedAt = busyStartRef.current ?? Date.now();
         const elapsed = Date.now() - startedAt;
-
-        if (elapsed >= MAX_BUSY_DURATION_MS) {
-            setIsBusy(false);
-            busyStartRef.current = null;
-            return;
-        }
 
         const remaining = Math.max(0, minDurationMs - elapsed);
 

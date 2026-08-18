@@ -26,6 +26,7 @@ test('smokes clean-user provisioning and runtime overlays from an artifact confi
   assert.ok(result.managedFiles.includes('agents/orchestrator.md'));
   assert.ok(result.runtimePlugins.includes('plugins/devryan-managed-orchestration.mjs'));
   assert.ok(result.runtimePlugins.includes('plugins/openai-tool-schema-sanitizer.mjs'));
+  assert.ok(result.runtimePlugins.includes('plugins/devryan-document-reader.mjs'));
 });
 
 test('rejects packaged user profile skills', async () => {
@@ -54,6 +55,13 @@ for (const [name, mutate, message] of [
     await fs.writeFile(packagePath, `${JSON.stringify(profilePackage, null, 2)}\n`);
   }, /Missing default Claude dependency/],
   ['Slim wrapper', (root) => fs.rm(path.join(root, 'plugins', 'devryan-oh-my-opencode-slim.mjs')), /Missing default Slim wrapper plugin/],
+  ['document reader plugin', (root) => fs.rm(path.join(root, 'plugins', 'devryan-document-reader.mjs')), /Missing default document reader plugin/],
+  ['document dependency', async (root) => {
+    const packagePath = path.join(root, 'user-profile', 'package.json');
+    const profilePackage = JSON.parse(await fs.readFile(packagePath, 'utf8'));
+    delete profilePackage.dependencies.unpdf;
+    await fs.writeFile(packagePath, `${JSON.stringify(profilePackage, null, 2)}\n`);
+  }, /Missing default document dependency/],
   ['sanitizer plugin', (root) => fs.rm(path.join(root, 'plugins', 'openai-tool-schema-sanitizer.mjs')), /Missing default OpenAI tool schema sanitizer plugin/],
 ]) {
   test(`reports an explicit missing ${name} failure without modifying repository defaults`, async () => {

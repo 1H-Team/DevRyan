@@ -12,7 +12,6 @@ import {
   RiArrowLeftSLine,
   RiListUnordered,
   RiLogoutBoxRLine,
-  RiRestartLine,
 } from '@remixicon/react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
@@ -21,7 +20,7 @@ import { useDeviceInfo } from '@/lib/device';
 import { isDesktopShell, isVSCodeRuntime, isWebRuntime } from '@/lib/desktop';
 import { useI18n } from '@/lib/i18n';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
-import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
+import { ConfigApplyControls } from '@/components/views/config-apply/ConfigApplyControls';
 import {
   SETTINGS_PAGE_METADATA,
   getSettingsPageMeta,
@@ -678,27 +677,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
         {/* Footer */}
         <div className="overflow-hidden transition-opacity duration-150 opacity-100">
           <div className="border-t border-border bg-sidebar px-2 py-1 space-y-0.5">
-            {!runtimeCtx.isVSCode && principal.role === 'admin' && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    className={cn(
-                      'flex h-7 w-full items-center gap-2 rounded-md px-2 overflow-hidden whitespace-nowrap',
-                      'text-sm font-semibold text-sidebar-foreground/90',
-                      'hover:text-sidebar-foreground hover:bg-interactive-hover',
-                    )}
-                    onClick={() => void reloadOpenCodeConfiguration({ message: 'Restarting OpenCode…', mode: 'projects', scopes: ['all'] })}
-                  >
-                    <RiRestartLine className="h-4 w-4 shrink-0" />
-                    <span>{t('settings.view.actions.reloadOpenCode')}</span>
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {t('settings.view.actions.reloadOpenCodeTooltip')}
-                </TooltipContent>
-              </Tooltip>
-            )}
+            <ConfigApplyControls variant="sidebar" />
 
             {!runtimeCtx.isVSCode && principal.scope === 'managed' ? (
               <Tooltip>
@@ -840,6 +819,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onClose, forceMobile
       ) : (
         null
       )}
+
+      {isMobile ? <ConfigApplyControls variant="mobile" /> : null}
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
         {isMobile ? (

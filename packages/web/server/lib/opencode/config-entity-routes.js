@@ -4,6 +4,7 @@ import {
   createHarnessWarning,
   withHarnessResult,
 } from './harness-result.js';
+import { isDeepStrictEqual } from 'node:util';
 import { canReadSettingsPage } from '../multi-user/policy.js';
 
 const sanitizeModel = (model) => {
@@ -63,8 +64,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
   const {
     resolveProjectDirectory,
     resolveOptionalProjectDirectory,
-    refreshOpenCodeAfterConfigChange,
-    clientReloadDelayMs,
+    markConfigChange,
     getAgentSources,
     getAgentConfig,
     listAgentModelOverrides,
@@ -190,31 +190,29 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     const authResetFields = authResetWarningFields(mutationResult);
 
     try {
-      const refreshResult = await refreshOpenCodeAfterConfigChange(`mcp ${action}`);
-      const requiresReload = refreshResult?.requiresReload !== false;
+      const applyResult = await markConfigChange(
+        `mcp ${action}`,
+        {},
+        mutationResult?.changed !== false,
+      );
       return res.json(withHarnessResult({
         success: true,
-        requiresReload,
-        runtimeApplied: refreshResult?.runtimeApplied !== false,
-        restartDeferred: refreshResult?.restartDeferred === true,
-        message: refreshResult?.runtimeMessage || `MCP server "${name}" ${action}d. Reloading interface…`,
-        ...(requiresReload ? { reloadDelayMs: clientReloadDelayMs } : {}),
+        ...applyResult,
+        message: applyResult.runtimeMessage || `MCP server "${name}" ${action}d. Changes are pending.`,
         ...authResetFields,
       }, createHarnessSuccess({
         summary: `MCP server "${name}" ${action} completed`,
-        nextActions: requiresReload
-          ? ['Wait for OpenCode reload before testing the MCP server']
-          : ['Let active agents finish before testing the MCP server'],
+        nextActions: ['Apply the pending configuration before testing the MCP server'],
         artifacts: [name],
       })));
     } catch (error) {
       console.error(`[API:MCP ${action}] Reload failed after config write:`, error);
-      const reloadWarning = formatErrorMessage(error, 'OpenCode reload failed after the MCP configuration changed');
+      const reloadWarning = formatErrorMessage(error, 'The configuration change could not be queued for apply');
       return res.json(withHarnessResult({
         success: true,
         requiresReload: false,
         reloadFailed: true,
-        message: `MCP server "${name}" ${action}d, but OpenCode reload failed.`,
+        message: `MCP server "${name}" ${action}d, but the apply request could not be recorded.`,
         ...authResetWarningFields(mutationResult, reloadWarning),
       }, createHarnessWarning({
         summary: `MCP server "${name}" ${action} completed with reload warning`,
@@ -231,24 +229,14 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
   };
 
   const completeAgentOverrideMutation = async (res, reason, agentName, payload, shouldRefresh = true) => {
-    if (!shouldRefresh) {
-      return res.json({
-        ...payload,
-        requiresReload: false,
-      });
-    }
-
     try {
-      const refreshResult = await refreshOpenCodeAfterConfigChange(reason, {
+      const applyResult = await markConfigChange(reason, {
         agentName,
         ...getAgentRuntimeExpectation(payload?.agent),
-      });
+      }, shouldRefresh);
       return res.json({
         ...payload,
-        requiresReload: refreshResult?.requiresReload !== false,
-        runtimeApplied: refreshResult?.runtimeApplied !== false,
-        ...(refreshResult?.runtimeMessage ? { runtimeMessage: refreshResult.runtimeMessage } : {}),
-        reloadDelayMs: clientReloadDelayMs,
+        ...applyResult,
       });
     } catch (error) {
       console.error(`[API:Agent override] Reload failed after ${reason}:`, error);
@@ -257,7 +245,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
         requiresReload: false,
         runtimeApplied: false,
         reloadFailed: true,
-        warning: formatErrorMessage(error, 'OpenCode reload failed after the agent model override changed'),
+        warning: formatErrorMessage(error, 'The agent change could not be queued for apply'),
       });
     }
   };
@@ -313,6 +301,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
         return res.status(400).json({ error });
       }
 
+      const previousAgent = getAgentConfig(agentName, directory);
       const override = writeAgentModelOverride(agentName, req.body || {}, directory);
       const agent = getAgentConfig(agentName, directory);
       return completeAgentOverrideMutation(
@@ -320,6 +309,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
         `agent ${agentName} model override`,
         agentName,
         { success: true, override, agent },
+        !isDeepStrictEqual(previousAgent?.config, agent?.config),
       );
     } catch (error) {
       console.error('Failed to write agent model override:', error);
@@ -392,9 +382,10 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
 
       const result = recoverMcpConfigs(directory);
       if (result.migrated.length === 0) {
+        const applyResult = await markConfigChange('mcp recovery', {}, false);
         return res.json(withHarnessResult({
           ...result,
-          requiresReload: false,
+          ...applyResult,
         }, createHarnessSuccess({
           summary: 'MCP recovery completed with no migrations',
           nextActions: [],
@@ -402,11 +393,10 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       }
 
       try {
-        await refreshOpenCodeAfterConfigChange('mcp recovery');
+        const applyResult = await markConfigChange('mcp recovery');
         return res.json(withHarnessResult({
           ...result,
-          requiresReload: true,
-          reloadDelayMs: clientReloadDelayMs,
+          ...applyResult,
         }, createHarnessSuccess({
           summary: 'MCP recovery completed',
           nextActions: ['Wait for OpenCode reload before using recovered MCP servers'],
@@ -639,15 +629,14 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       console.log('[Server] Scope:', scope, 'Working directory:', directory);
 
       createCommand(commandName, config, directory, scope);
-      await refreshOpenCodeAfterConfigChange('command creation', {
+      const applyResult = await markConfigChange('command creation', {
         commandName
       });
 
       res.json({
         success: true,
-        requiresReload: true,
-        message: `Command ${commandName} created successfully. Reloading interface…`,
-        reloadDelayMs: clientReloadDelayMs,
+        ...applyResult,
+        message: `Command ${commandName} created successfully. Changes are pending.`,
       });
     } catch (error) {
       console.error('Failed to create command:', error);
@@ -668,16 +657,15 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       console.log('[Server] Updates:', JSON.stringify(updates, null, 2));
       console.log('[Server] Working directory:', directory);
 
-      updateCommand(commandName, updates, directory);
-      await refreshOpenCodeAfterConfigChange('command update');
+      const changed = updateCommand(commandName, updates, directory);
+      const applyResult = await markConfigChange('command update', {}, changed);
 
       console.log(`[Server] Command ${commandName} updated successfully`);
 
       res.json({
         success: true,
-        requiresReload: true,
-        message: `Command ${commandName} updated successfully. Reloading interface…`,
-        reloadDelayMs: clientReloadDelayMs,
+        ...applyResult,
+        message: `Command ${commandName} updated successfully. Changes are pending.`,
       });
     } catch (error) {
       console.error('[Server] Failed to update command:', error);
@@ -695,13 +683,12 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       }
 
       deleteCommand(commandName, directory);
-      await refreshOpenCodeAfterConfigChange('command deletion');
+      const applyResult = await markConfigChange('command deletion');
 
       res.json({
         success: true,
-        requiresReload: true,
-        message: `Command ${commandName} deleted successfully. Reloading interface…`,
-        reloadDelayMs: clientReloadDelayMs,
+        ...applyResult,
+        message: `Command ${commandName} deleted successfully. Changes are pending.`,
       });
     } catch (error) {
       console.error('Failed to delete command:', error);

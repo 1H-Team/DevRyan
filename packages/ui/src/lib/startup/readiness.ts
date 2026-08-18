@@ -37,6 +37,7 @@ export interface StartupReadinessSummary {
 export interface StartupRecoveryHealth {
   openCodeRunning?: unknown
   isOpenCodeReady?: unknown
+  lastOpenCodeError?: unknown
 }
 
 export interface StartupBootstrapReadiness {
@@ -135,7 +136,11 @@ export const shouldShowStartupReadinessScreen = (
 
 export const shouldRestartOpenCodeForStartupRecovery = (
   health: StartupRecoveryHealth | null,
-): boolean => health?.openCodeRunning === false || health?.isOpenCodeReady === false
+): boolean => {
+  if (!health) return false
+  if (health.openCodeRunning === false || health.isOpenCodeReady === false) return true
+  return typeof health.lastOpenCodeError === "string" && health.lastOpenCodeError.trim().length > 0
+}
 
 export const recoverStartupInitialization = async (
   dependencies: StartupRecoveryDependencies,

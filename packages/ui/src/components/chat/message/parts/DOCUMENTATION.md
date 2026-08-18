@@ -25,6 +25,16 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Controls expandable header title/description/diff stats/timer and expanded output body.
   - If you want to change expandable tool layout, edit here.
 
+- `terminalTranscript.ts`
+  - Incrementally renders Bash output as terminal state instead of raw escape text.
+  - Handles carriage-return rewrites, backspace/tabs, supported CSI cursor and erase commands, SGR suppression, bounded OSC/control sequences, and parser state split across streaming chunks.
+  - Retains at most a 1 MiB raw tail and a 256 KiB / 5,000-line rendered tail, adding a visible truncation marker when earlier output is dropped.
+
+- `ToolScrollableSection.tsx`
+  - Follows streaming Bash output only while the viewport is within 24 px of the bottom.
+  - Wheel/touch/keyboard upward intent immediately releases the pin; `useLayoutEffect` performs follow adjustments before paint and native scroll anchoring is disabled.
+  - `toolScrollFollow.ts` owns the pure bottom-threshold calculation used by the component and its tests.
+
 - `toolExpandedFallback.ts`
   - Selects the first meaningful expandable representation without losing secondary failure state.
   - Precedence is structured diff/diagnostics, formatted input, provider output, provider failure, then an explicit no-details state.
@@ -48,9 +58,14 @@ Use this doc when you ask an agent to change tool/header/description behavior.
 
 - `ReasoningPart.tsx`
   - Renders reasoning Markdown directly in the message timeline while streaming and after completion.
-  - Empty active reasoning retains the accessible, reduced-motion-aware `Thinking…` status until text arrives.
+  - Empty reasoning renders nothing; the bottom status row owns the accessible `Thinking` state until text arrives.
+  - Reasoning text stays static and readable while streaming; shimmer is reserved for transient bottom-status copy rather than semantic model output.
   - At the OpenAI-only render boundary, projects the provider summary to the rationale level captured in the turn's first user message and adds terminal punctuation to standalone plain or fully bold summary sentences. Headings, lists, code, links, multiline blocks, persisted parts, and non-OpenAI reasoning remain untouched.
   - The global reasoning visibility setting remains the sole display gate.
+- `ReasoningGroup.tsx` + `reasoningGrouping.ts`
+  - Consecutive reasoning parts collapse to their latest non-empty line in Live and Sorted modes while earlier lines stay mounted for expansion and DOM-based copy/export.
+  - New part IDs fade/slide into place; text growth within one part does not restart the transition.
+  - Groups remain collapsed after completion unless the user explicitly expands them.
 - `reasoningSummaryDisplay.ts`
   - Owns the pure OpenAI summary projection and punctuation rules used by `ReasoningPart.tsx`.
 
@@ -63,10 +78,11 @@ Use this doc when you ask an agent to change tool/header/description behavior.
 
 - `read` and most search/fetch tools are treated as **static tools** and passive lookup activity rolls up across reasoning text into one dropdown per kind until a hard tool boundary such as shell/question/task.
 - `bash/edit/write/question/task` are **expandable tools** and render via `ToolPart`.
+- Bash rows show the bounded terminal transcript and a shared elapsed duration (`0.1s`, `m s`, or `h m s`). Active duration ticks are isolated to their narrow leaves; completed durations use stable start/end timestamps and invalid timing renders `Unavailable`.
 - Output-only `write/create/file_write` aliases remain expandable even when no structured diff is available.
 - Terminal tool failures remain visible alongside retained partial output. A genuinely empty terminal payload renders an explicit provider-no-details message instead of an empty expansion.
 - `perplexity` is currently treated as static and grouped into search/web-search style rows (through static grouping + short description extraction).
-- Reasoning remains inline across streaming/completion and respects the global reasoning visibility setting. Rationale Display affects only the presentation depth of OpenAI's provider-generated summary; it never exposes hidden chain-of-thought or mutates persisted message data.
+- Reasoning remains inline across streaming/completion and respects the global reasoning visibility setting. Consecutive reasoning lines share one collapsed timeline row in both render modes. Rationale Display affects only the presentation depth of OpenAI's provider-generated summary; it never exposes hidden chain-of-thought or mutates persisted message data.
 - Provider-authored intermediate narration remains visible independently of the reasoning setting and uses normal assistant presentation in the compact activity hierarchy in both Live and Sorted modes. Tool adjacency and message finish reason never make visible assistant `text` look like reasoning.
 
 ## "I want to change description for Perplexity" (example recipe)
@@ -101,6 +117,6 @@ Why: in current pipeline Perplexity is static/grouped, so `StaticToolRow` is the
 
 - Text: `AssistantTextPart.tsx`, `UserTextPart.tsx`
 - Tools: `ToolPart.tsx`, `ProgressiveGroup.tsx`, `toolPresentation.tsx`, `toolRenderUtils.ts`, `ToolRevealOnMount.tsx`
-- Reasoning/justification: `ReasoningPart.tsx`, `JustificationBlock.tsx`
-- Status/placeholders: `WorkingPlaceholder.tsx`, `SessionActiveSpinner.tsx`, `MigratingPart.tsx`, `BusyDots.tsx`
+- Reasoning/justification: `ReasoningPart.tsx`, `ReasoningGroup.tsx`, `reasoningGrouping.ts`, `JustificationBlock.tsx`
+- Status/placeholders: `WorkingPlaceholder.tsx`, `SessionActiveSpinner.tsx`, `MigratingPart.tsx`
 - Utility renderers: `VirtualizedCodeBlock.tsx`, `MinDurationShineText.tsx`

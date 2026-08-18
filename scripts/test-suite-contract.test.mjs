@@ -73,6 +73,7 @@ describe('full test-suite contract', () => {
       'packages/electron/',
       'packages/harness-runtime/',
       'packages/orchestration-runtime/',
+      'packages/shared-runtime/',
       'packages/ui/',
       'packages/vscode/',
       'packages/web/',

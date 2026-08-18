@@ -185,6 +185,8 @@ describe('common request middleware', () => {
     '/api/diagnostics/export',
     '/api/evidence/project',
     '/api/desktop/browser-leases',
+    '/api/config/apply',
+    '/api/config/apply/acknowledge-external',
     '/api/admin/users',
     '/api/bug-reports',
     '/api/error-logs',
@@ -212,6 +214,18 @@ describe('common request middleware', () => {
     const response = await request(app)
       .post('/api/desktop/browser-leases')
       .send({ directory: `/${'x'.repeat(17 * 1024)}` });
+
+    expect(response.status).toBe(413);
+  });
+
+  it('caps configuration apply request bodies at 16 KiB', async () => {
+    const app = express();
+    registerCommonRequestMiddleware(app, { express });
+    app.post('/api/config/apply', (req, res) => res.json(req.body));
+
+    const response = await request(app)
+      .post('/api/config/apply')
+      .send({ mode: 'when-idle', padding: 'x'.repeat(17 * 1024) });
 
     expect(response.status).toBe(413);
   });

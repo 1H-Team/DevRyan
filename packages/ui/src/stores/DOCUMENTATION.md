@@ -65,6 +65,15 @@ normal concrete fallback; explicit persisted variants remain authoritative.
 
 These stores coordinate visible app state, navigation, selected tabs, dialogs, and lightweight feature flags.
 
+`useConfigApplyStore.ts` is the renderer projection of the host-owned revisioned
+configuration-apply coordinator. Every successful config mutation merges its
+validated apply envelope. The always-mounted web/Electron and VS Code shells poll only
+transient pending/waiting/applying states, including after Settings closes, and stop
+once the host reaches a stable state. The store sends the exact expected revision for wait/force/external
+acknowledgement, retains failures for explicit retry, and refreshes only applied
+agent/provider/command/skill/MCP/behavior/runtime catalogs. It never infers
+restart need from a toast, route name, or historical session state.
+
 ### Session / project coordination stores
 
 Examples:
@@ -129,6 +138,15 @@ queued user work.
 usage separately from the high-frequency sync stores. Its session-keyed state
 includes model, agent, per-agent model/variant, current-agent, context-usage,
 and edit-mode maps.
+
+Persisted context usage is version 2. Legacy `totalTokens` entries migrate to
+`activeInputTokens` from input/cache components when available; otherwise the
+old measured value is retained as a marked message fallback until live data
+arrives. `useProviderContextUsageStore.ts` separately owns low-frequency,
+non-persisted Meridian snapshots so provider refreshes do not widen the render
+fanout of the session or context stores. It coalesces requests per session,
+caps retained entries, and removes the old snapshot synchronously at a native
+compaction boundary.
 
 `utils/modelContextCapacity.ts` normally treats a positive provider input limit
 as the usable capacity. When an internal compaction input threshold exceeds the
@@ -212,13 +230,19 @@ Ownership and safety rules:
    and root index immediately. Active snapshot requests record removals locally
    so a stale response cannot resurrect an evicted projection.
 10. `manualRecoveryTaskIdByChildSessionId` contains only failed/interrupted,
-    resumable, unacknowledged tasks whose `agentRetryAvailable` flag is false.
+    resumable, unacknowledged tasks whose `agentRetryAvailable` flag is false
+    and whose safe policy projection is either a definite provider limit or a
+    grouped Orchestrator attempt at/after attempt 2. The private group ID never
+    enters the store; only the immutable `dispatchGrouped` boolean does.
     Definite usage/quota exhaustion, including exhausted provider session
     and rate-limit allowances, is projected with
     `failureKind: provider_usage_limit` and closes the flag on the first
     terminal attempt. Manual recovery is therefore indexed immediately, even
     while the child still reports provider `retry` during cleanup. Accepting a
     user `retry_in_place` removes the index; another failed attempt restores it.
+    Scheduler hard deadlines use the stable
+    `failureKind: deadline_exceeded` projection; their final grouped attempt
+    remains actionable even while the killed child is still tearing down.
     Transient non-provider-limit failures retain the single agent recovery.
     `failureKind: provider_prompt_rejected` also retains that first recovery,
     but it is never indexed for same-child Model Recovery: scheduler policy
@@ -236,9 +260,10 @@ Ownership and safety rules:
     surfaces may consume the one-child selectors.
 11. `latestTaskIdByChildSessionId` tracks the highest-sequence retained task for
     each canonical child session. The child transcript subscribes through the
-    exact `latestTaskForChildSession` selector so automatic transport recovery
-    copy follows authoritative running/completed/failed task state without a
-    broad task-container subscription. Event updates, snapshots, and compaction
+    exact `latestTaskForChildSession` selector and the existing narrow manual
+    recovery selector so automatic transport/resume and aborted-turn copy follows
+    authoritative continuing/completed/action-required/stopped task state without
+    a broad task-container subscription. Event updates, snapshots, and compaction
     recompute only affected child leaves and fall back to the previous retained
     lineage when a newer compacted task is removed.
 

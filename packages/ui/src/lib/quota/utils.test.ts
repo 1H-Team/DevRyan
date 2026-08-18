@@ -7,7 +7,9 @@ import {
   calculateUsagePrediction,
   clampPercent,
   formatPercent,
+  formatProviderWindowLabel,
   formatWindowLabel,
+  hasUsageProgress,
   recordProviderUsageTrends,
   resolveUsageTone,
   type UsageTrendHistory,
@@ -64,8 +66,22 @@ describe('quota usage utils', () => {
     expect(formatWindowLabel('auto-composer')).toBe('First-party models');
   });
 
-  test('formats Anthropic Fable quota label', () => {
+  test('keeps the generic seven-day Fable quota label', () => {
     expect(formatWindowLabel('7d-fable')).toBe('7-Day Fable');
+  });
+
+  test('formats Claude subscription windows with product-facing rate-limit labels', () => {
+    expect(formatProviderWindowLabel('claude', '5h')).toBe('5-Hour Limit');
+    expect(formatProviderWindowLabel('claude', '7d')).toBe('Weekly Limit');
+    expect(formatProviderWindowLabel('claude', '7d-fable')).toBe('Weekly Fable Limit');
+    expect(formatProviderWindowLabel('claude', '7d-sonnet')).toBe('Weekly Sonnet Limit');
+    expect(formatProviderWindowLabel('codex', '5h')).toBe('5-Hour');
+  });
+
+  test('formats ChatGPT extra usage and recognizes value-only rows', () => {
+    expect(formatWindowLabel('extra-usage')).toBe('Extra usage');
+    expect(hasUsageProgress(makeWindow({ usedPercent: null, valueLabel: 'USD 12.50' }))).toBe(false);
+    expect(hasUsageProgress(makeWindow({ usedPercent: 0 }))).toBe(true);
   });
 
   test('prediction falls back to full-window pace without enough trend samples', () => {
@@ -155,6 +171,17 @@ describe('quota usage utils', () => {
     const history = recordProviderUsageTrends({}, makeProviderResult(makeWindow({ usedPercent: Infinity }), 10_000));
 
     expect(history[key]).toBe(undefined);
+  });
+
+  test('trend recording leaves value-only balance rows out of history', () => {
+    const result = {
+      ...makeProviderResult(makeWindow({ usedPercent: null, valueLabel: 'USD 12.50' }), 10_000),
+      providerId: 'deepseek' as const,
+      providerName: 'DeepSeek',
+    };
+
+    expect(recordProviderUsageTrends({}, result)).toEqual({});
+    expect(buildQuotaTrendKey('xai', 'window', null, 'weekly')).toBe('xai|window||weekly');
   });
 
   test('trend recording uses provider measurement time and skips identical cached measurements', () => {

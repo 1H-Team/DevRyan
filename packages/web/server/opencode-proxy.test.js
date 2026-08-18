@@ -67,6 +67,7 @@ const createProxyApp = (upstreamPort, options = {}) => {
     turnTimingRuntime: options.turnTimingRuntime,
     openCodeSnapshotRoot: options.openCodeSnapshotRoot,
     scopedRevertTimeoutMs: options.scopedRevertTimeoutMs,
+    ensureOAuthLoopbackPortAvailable: options.ensureOAuthLoopbackPortAvailable,
   });
   return app;
 };
@@ -590,6 +591,109 @@ describe('OpenCode proxy SSE forwarding', () => {
     expect(loggedSlowRequests[0].url).toBe('/api/question/que_held/reply');
     expect(loggedSlowRequests[0].holdMs).toBeGreaterThan(0);
     expect(loggedSlowRequests[0].totalMs).toBeGreaterThanOrEqual(loggedSlowRequests[0].holdMs);
+  });
+});
+
+describe('OpenAI OAuth loopback preflight', () => {
+  let upstreamServer;
+  let proxyServer;
+
+  afterEach(async () => {
+    await closeServer(proxyServer);
+    await closeServer(upstreamServer);
+    proxyServer = undefined;
+    upstreamServer = undefined;
+  });
+
+  const startAuthorizeUpstream = async () => {
+    const upstream = express();
+    const authorized = [];
+    upstream.post('/provider/:providerID/oauth/authorize', (req, res) => {
+      authorized.push(req.params.providerID);
+      res.json({ url: 'https://auth.example/authorize', method: 'auto' });
+    });
+    upstreamServer = await listen(upstream);
+    return authorized;
+  };
+
+  it('blocks the OpenAI flow with an actionable 503 when the loopback port is held', async () => {
+    const authorized = await startAuthorizeUpstream();
+    proxyServer = await listen(createProxyApp(upstreamServer.address().port, {
+      ensureOAuthLoopbackPortAvailable: async () => ({
+        ok: false,
+        reaped: [],
+        message: 'OpenAI browser sign-in needs local port 1455, but another process is already listening on it: PID 4242 (rogue).',
+      }),
+    }));
+
+    const response = await fetch(`http://127.0.0.1:${proxyServer.address().port}/api/provider/openai/oauth/authorize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method: 0 }),
+    });
+    const payload = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(payload.code).toBe('oauth_loopback_port_busy');
+    // The UI reads `error` for its message, so the human-readable text must live there.
+    expect(payload.error).toContain('1455');
+    expect(payload.retryable).toBe(true);
+    expect(authorized).toEqual([]);
+  });
+
+  it('proxies through when the preflight passes', async () => {
+    const authorized = await startAuthorizeUpstream();
+    proxyServer = await listen(createProxyApp(upstreamServer.address().port, {
+      ensureOAuthLoopbackPortAvailable: async () => ({ ok: true, reaped: [] }),
+    }));
+
+    const response = await fetch(`http://127.0.0.1:${proxyServer.address().port}/api/provider/openai/oauth/authorize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method: 0 }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ url: 'https://auth.example/authorize', method: 'auto' });
+    expect(authorized).toEqual(['openai']);
+  });
+
+  it('never preflights other providers', async () => {
+    const authorized = await startAuthorizeUpstream();
+    let preflightCalls = 0;
+    proxyServer = await listen(createProxyApp(upstreamServer.address().port, {
+      ensureOAuthLoopbackPortAvailable: async () => {
+        preflightCalls += 1;
+        return { ok: false, reaped: [], message: 'should not be consulted' };
+      },
+    }));
+
+    const response = await fetch(`http://127.0.0.1:${proxyServer.address().port}/api/provider/anthropic/oauth/authorize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method: 0 }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(preflightCalls).toBe(0);
+    expect(authorized).toEqual(['anthropic']);
+  });
+
+  // A preflight that cannot run must never block a sign-in that might have worked.
+  it('falls through when the preflight itself throws', async () => {
+    const authorized = await startAuthorizeUpstream();
+    proxyServer = await listen(createProxyApp(upstreamServer.address().port, {
+      ensureOAuthLoopbackPortAvailable: async () => { throw new Error('lsof exploded'); },
+    }));
+
+    const response = await fetch(`http://127.0.0.1:${proxyServer.address().port}/api/provider/openai/oauth/authorize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method: 0 }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(authorized).toEqual(['openai']);
   });
 });
 

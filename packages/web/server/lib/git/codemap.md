@@ -8,8 +8,11 @@ Git service layer for repository operations, direct commit-message generation, a
 - **Separation of concerns**:
   - `service.js`: operational git commands
   - `integrate.js`: server-owned commit reintegration planning, temporary
-    worktree lifecycle, conflict continuation, and cleanup
+    worktree lifecycle, conflict continuation, cleanup, and the
+    `isIntegrateTempPath` predicate used to keep those worktrees out of the
+    managed-project registry
   - `worktree-lock-recovery.js`: bounded, identity-safe worktree index-lock recovery
+  - `@openchamber/harness-runtime/lib/git-post-checkout-hook.js`: shared effective-path resolution and bounded post-checkout hook runner
   - `credentials.js`: credential retrieval/storage flows
   - `identity-storage.js`: author identity persistence
   - `template-routes.js`: global commit template/hook status, install, uninstall, and content endpoints

@@ -9,11 +9,18 @@ describe('main-owned browser surface contract', () => {
     const start = managerSource.indexOf('const snapshot = (surface) =>');
     const end = managerSource.indexOf('\n\n  const emitSnapshot', start);
     const block = managerSource.slice(start, end);
-    for (const field of ['surfaceId', 'kind', 'leaseId', 'workspaceId', 'tabId', 'placement', 'url', 'title', 'loading', 'canGoBack', 'canGoForward', 'devToolsOpen']) {
+    for (const field of ['surfaceId', 'kind', 'leaseId', 'workspaceId', 'tabId', 'placement', 'viewportMode', 'url', 'title', 'faviconUrl', 'loading', 'canGoBack', 'canGoForward', 'devToolsOpen']) {
       expect(block).toContain(field);
     }
     expect(block).not.toContain('token');
     expect(block).not.toContain('wsUrl');
+  });
+
+  test('publishes and cleans up page favicon metadata', () => {
+    expect(managerSource).toContain("contents.on('page-favicon-updated', onFaviconUpdated)");
+    expect(managerSource).toContain("contents.off?.('page-favicon-updated', onFaviconUpdated)");
+    expect(managerSource).toContain("contents.on('did-navigate', onDidNavigate)");
+    expect(managerSource).toContain("surface.faviconUrl = '';");
   });
 
   test('validates ownership, bounds, and allowed navigation schemes in main', () => {
@@ -23,6 +30,17 @@ describe('main-owned browser surface contract', () => {
     expect(managerSource).toContain("parsed.protocol === 'http:' || parsed.protocol === 'https:'");
     expect(managerSource).toContain("if (!raw || raw === 'about:blank') return 'about:blank'");
     expect(managerSource).toContain("throw new Error('Browser surface URL must be about:blank or HTTP(S)')");
+  });
+
+  test('applies an ownership-validated viewport mode without reloading', () => {
+    const start = managerSource.indexOf('const setViewportMode =');
+    const end = managerSource.indexOf('\n\n  const dock = async', start);
+    const block = managerSource.slice(start, end);
+    expect(block).toContain('getOwnedSurface(requestWindow, surfaceId)');
+    expect(block).toContain('applyViewportMode(surface, surface.lastBounds)');
+    expect(block).not.toContain('loadURL');
+    expect(mainSource).toContain("case 'desktop_browser_surface_set_viewport_mode':");
+    expect(mainSource).toContain("'desktop_browser_surface_set_viewport_mode',");
   });
 
   test('accepts benign aborted loads while preserving genuine navigation failures', () => {

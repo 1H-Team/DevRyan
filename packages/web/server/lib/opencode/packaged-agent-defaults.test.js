@@ -7,7 +7,7 @@ import yaml from 'yaml';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AGENTS_DIR = path.resolve(__dirname, '../../default-config/agents');
 const PRE_TASK_ORCHESTRATOR_PROMPT_UTF8_BYTES = 15_902;
-const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 23_290;
+const EXPECTED_ORCHESTRATOR_PROMPT_UTF8_BYTES = 30_258;
 const DEFAULT_SLIM_PROFILE_PATH = path.resolve(
   __dirname,
   '../../default-config/user-profile/oh-my-opencode-slim.json',
@@ -74,8 +74,8 @@ describe('packaged agent defaults', () => {
 
     expect(content).toContain('<Completion Contract>');
     expect(content).toContain('finish every completed work turn');
-    expect(content).toContain('<summary>');
-    expect(content).toContain('<verification>');
+    expect(content).toContain('Use natural Markdown headings such as `Summary` and `Verification`');
+    expect(content).toContain('do not use tool-shaped XML report wrappers');
   });
 
   it('council reconciles plan-mode prompts with its required council report', () => {
@@ -94,43 +94,71 @@ describe('packaged agent defaults', () => {
 
     expect(lineCount).toBeLessThanOrEqual(260);
     expect(content).toContain('Simple requests: do the work yourself');
-    expect(content).toContain('Designer owns every design change end to end');
+    expect(content).toContain('Designer owns the approved design implementation end to end');
     expect(content).toContain('Context:');
     expect(content).toContain('Starting points:');
     expect(content).toContain('Return:');
-    expect(content).toContain('<status>complete</status>');
+    expect(content).toContain('**Status:** complete');
     expect(content).toContain('No-mutation plans must keep snapshots and logs outside the target workspace');
     expect(content).toContain(
       'start it before any standalone todo read/write whose only purpose is to restate that delegation',
     );
-    expect(content).toContain('Oracle review gate:');
+    expect(content).toContain('Oracle review gate and timing:');
     expect(content).toContain('Review depth: focused | deep');
     expect(content).toContain('Do not ask Oracle to rerun tests, builds, lint, or type-checking');
   });
 
-  it('keeps Designer responsible for design planning through implementation', () => {
+  it('uses Oracle only as a once-per-phase late checkpoint and closes final delegation', () => {
+    const { body } = readPackagedAgent('orchestrator');
+    const planDraftGate = 'During planning, dispatch only after Orchestrator has completed a grounded, decision-complete draft';
+    const implementationGate = 'During implementation or another task, dispatch only after all delegated implementation work is terminal and dispositioned and initial deterministic validation is complete';
+    const planCloseout = 'after a usable plan review, dispatch no more specialists before presenting the plan.';
+    const finalCloseout = 'after a usable final implementation/task review, dispatch no more specialists of any kind.';
+
+    expect(countOccurrences(body, 'Oracle is optional and may be used at most once in each phase.')).toBe(1);
+    expect(body).toContain(planDraftGate);
+    expect(body).toContain(implementationGate);
+    expect(body).toContain(planCloseout);
+    expect(body).toContain('Normal delegation becomes available again only when a later implementation phase begins; that phase may use its own one final Oracle checkpoint.');
+    expect(body).toContain(finalCloseout);
+    expect(body).toContain('Orchestrator applies Oracle findings directly');
+    expect(body).toContain('This closeout rule overrides normal Designer, Fixer, Explorer, Librarian, Council, and parallel-routing rules.');
+    expect(body).toContain('A retry or resume inside the same failed managed Oracle dispatch group is recovery of that same logical checkpoint, not another review');
+    expect(body).toContain('choose focused or deep before the sole dispatch.');
+    expect(body).toContain('Never dispatch a second Oracle to deepen, follow up, or re-review a usable result.');
+    expect(body).toContain('Review target: final plan draft');
+    expect(body).toContain('Draft plan: <complete decision-ready draft or a compact complete rendering of it>');
+    expect(body).toContain('Review target: final implementation/task result');
+    expect(body).not.toContain('when a focused review returns a precise escalation target');
+    expect(body.indexOf(planDraftGate)).toBeLessThan(body.indexOf(planCloseout));
+    expect(body.indexOf(implementationGate)).toBeLessThan(body.indexOf(finalCloseout));
+  });
+
+  it('keeps design planning with Orchestrator and implementation with Designer', () => {
     const orchestrator = readPackagedAgent('orchestrator');
     const designer = readPackagedAgent('designer');
     const fixer = readPackagedAgent('fixer');
 
-    expect(orchestrator.body).toContain('Designer owns every design change end to end');
-    expect(orchestrator.body).toContain('Never hand a Designer-produced plan or review to Fixer for implementation.');
+    expect(orchestrator.body).toContain('Orchestrator owns the grounded design approach and decision-complete implementation brief.');
+    expect(orchestrator.body).toContain('Designer owns the approved design implementation end to end');
     expect(orchestrator.body).toContain('route that work back to Designer in normal mode');
     expect(orchestrator.body).toContain('UI correctness bugs with no visual judgment route to `fixer`.');
     expect(orchestrator.body).toContain('For mixed work, create disjoint scopes');
     expect(orchestrator.body).toContain('If Designer remains unavailable after the existing managed recovery, report the blocker');
-    expect(orchestrator.body).toContain('Design-change planning in plan mode routes to a read-only Designer task.');
+    expect(orchestrator.body).toContain('Orchestrator owns design-change planning in plan mode.');
+    expect(orchestrator.body).toContain('never dispatch Designer from a plan-mode turn');
+    expect(orchestrator.body).toContain('Never delegate planning-only or standalone review work to Designer.');
     expect(orchestrator.body).toContain('Non-design implementation gate');
     expect(orchestrator.body).not.toContain('Fixer-first implementation gate');
 
-    expect(designer.body).toContain('End-to-end design-change ownership');
+    expect(designer.body).toContain('End-to-end implementation of an approved design plan or decision-complete brief');
     expect(designer.body).toContain('then edit the code, add or update the design-specific tests, and validate the visible result');
-    expect(designer.body).toContain('If the assignment provides an approved design plan, implement it instead of returning another proposal.');
-    expect(designer.body).toContain('explicitly plan-only or review-only, remain read-only');
+    expect(designer.body).toContain('Do not author design plans, propose alternate directions, or take standalone review assignments.');
+    expect(designer.body).toContain('If the assignment is plan-only, review-only, or lacks an implementation brief');
 
     expect(fixer.body).toContain("Implement the Orchestrator's non-design task specification");
     expect(fixer.body).toContain('frontend data/state/logic and component correctness');
-    expect(fixer.body).toContain('make no design edits and return `<status>blocked</status>`');
+    expect(fixer.body).toContain('make no design edits and return a final `**Status:** blocked` line');
     expect(fixer.body).toContain('work only on an explicitly disjoint non-design scope');
   });
 
@@ -236,23 +264,7 @@ describe('packaged agent defaults', () => {
         task: 'deny',
         council_session: 'deny',
         devryan_task: 'allow',
-        skill: {
-          'agent-browser': 'allow',
-          'browser-testing-with-devtools': 'allow',
-          'code-simplification': 'allow',
-          'debugging-and-error-recovery': 'allow',
-          'deprecation-and-migration': 'allow',
-          'frontend-design': 'allow',
-          'dashboard-design': 'allow',
-          'component-patterns': 'allow',
-          accessibility: 'allow',
-          'frontend-ui-engineering': 'allow',
-          'planning-and-task-breakdown': 'allow',
-          'dispatching-parallel-agents': 'allow',
-          supabase: 'allow',
-          'supabase-postgres-best-practices': 'allow',
-          'using-agent-skills': 'allow',
-        },
+        skill: 'allow',
       },
       modelRefs: ['openai/gpt-5.5'],
     });
@@ -262,7 +274,9 @@ describe('packaged agent defaults', () => {
       'at most one managed recovery',
       'never change its model automatically',
       'choose a model and thinking level in Model Recovery and click Try Again',
-      'DevRyan will send one synthetic continuation after the recovered child settles',
+      'DevRyan sends one synthetic continuation to the idle parent',
+      'Any collected result with `manualRecoveryRequired: true`',
+      'sends one transcript-marked same-child continuation when the child is already terminal',
       'A collected `provider_prompt_rejected` failure is context-specific',
       'compact, semantically complete task capsule',
       'preserve the configured agent, model, and thinking level',
@@ -284,7 +298,7 @@ describe('packaged agent defaults', () => {
       '<Plan Mode>',
       'When the user asks only for a plan, do not edit files.',
       'Once the plan is finished, stop after presenting it.',
-      'Ask every delegated subagent to end with exactly one terminal status marker: `<status>complete</status>` or `<status>blocked</status>`.',
+      'Ask every delegated subagent to end with exactly one terminal status marker: `**Status:** complete` or `**Status:** blocked`.',
       'Use only real runtime tools.',
       'Provider-native `task` is unavailable to Orchestrator.',
       'Never use `general-purpose`.',
@@ -292,6 +306,18 @@ describe('packaged agent defaults', () => {
       expect(body, contract).toContain(contract);
     }
     expect(body).not.toContain('use `recover_in_place`');
+  });
+
+  it('uses catalog-driven skill permissions without hardcoded skill names', () => {
+    const skillCapable = ['builder', 'designer', 'explorer', 'fixer', 'oracle', 'orchestrator', 'plan'];
+    const skillDenied = ['council', 'librarian'];
+
+    for (const name of skillCapable) {
+      expect(readPackagedAgent(name).frontmatter.permission.skill).toBe('allow');
+    }
+    for (const name of skillDenied) {
+      expect(readPackagedAgent(name).frontmatter.permission.skill).toBe('deny');
+    }
   });
 
   it('records exact historical and current Orchestrator UTF-8 byte counts', () => {
@@ -326,7 +352,7 @@ describe('packaged agent defaults', () => {
 
     expect(content).toContain('Start all independent managed tasks first');
     expect(content).toContain('wait for every dispatched task');
-    expect(content).toContain('Disposition every collected non-provider-limit result');
+    expect(content).toContain('Disposition every collected result that does not require manual recovery');
     expect(content).toContain(
       'Each `wait` stays attached while DevRyan repeats bounded polling slices internally',
     );
@@ -335,13 +361,13 @@ describe('packaged agent defaults', () => {
     expect(content).toContain('successful result requires `continue` after `wait`');
   });
 
-  it('requires managed deadlines to match delegated scope', () => {
+  it('keeps managed deadlines as exceptional recovery boundaries', () => {
     const content = readPackagedAgent('orchestrator').content;
 
-    expect(content).toContain('Size `timeout_seconds` to the delegated work');
-    expect(content).toContain('1,800 seconds for read-only discovery and small bounded fixes');
-    expect(content).toContain('3,600 seconds for multi-file implementation plus tests');
-    expect(content).toContain('7,200 seconds when the same child also owns builds');
+    expect(content).toContain('A deadline is a recovery safety boundary');
+    expect(content).toContain('Omit `timeout_seconds` for ordinary bounded work');
+    expect(content).toContain('only for a closed, inherently indivisible operation');
+    expect(content).toContain('Never lengthen a deadline merely because an implementation spans multiple files or tests');
   });
 
   it('never presents provider-native delegation as an Orchestrator path', () => {
@@ -416,7 +442,7 @@ describe('packaged agent defaults', () => {
 
     expect(content).toContain('Context-only mission');
     expect(content).toContain('relevant context locations');
-    expect(content).toContain('<migration_candidates>');
+    expect(content).toContain('## Migration Candidates');
     expect(content).toContain('Do not create or modify files');
     expect(content).toContain('Do not produce plans');
     expect(content).not.toContain('likely edit points');
@@ -451,9 +477,20 @@ describe('packaged agent defaults', () => {
       const lineCount = content.trimEnd().split('\n').length;
 
       expect(lineCount, `${agentName}.md line count`).toBeLessThanOrEqual(95);
-      expect(content).toContain('On unrecoverable provider/tool errors, return `<status>blocked</status>` with a concise reason.');
+      expect(content).toContain('On unrecoverable provider/tool errors, return a final `**Status:** blocked` line with a concise reason.');
       expect(content).toContain('Avoid repeated progress-only messages such as "continuing" or "implementing" without a terminal status marker.');
       expect(content).toContain('Do not use `git status`, `git diff`, `git diff --stat`, or `git diff --check` to determine whether you made edits.');
+    }
+  });
+
+  it('uses provider-neutral Markdown instead of tool-shaped XML for specialist results', () => {
+    const unsafeOutputTag = /<\/?(?:results|files|answer|migration_candidates|confidence|next_searches|summary|changes|verification|sources|status)>/i;
+
+    for (const agentName of ['council', 'designer', 'explorer', 'fixer', 'librarian', 'oracle']) {
+      const content = fs.readFileSync(path.join(AGENTS_DIR, `${agentName}.md`), 'utf8');
+
+      expect(content, `${agentName}.md Markdown status`).toContain('**Status:**');
+      expect(content, `${agentName}.md unsafe output tag`).not.toMatch(unsafeOutputTag);
     }
   });
 

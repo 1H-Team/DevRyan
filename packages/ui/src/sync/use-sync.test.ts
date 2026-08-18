@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import {
   normalizeMessageFetchLimit,
+  normalizeSessionMessagePageLimit,
+  resolveRetainedMessageLimit,
   resolveMessagePagePagination,
   unwrapMessageRecordsResult,
 } from "./message-fetch"
@@ -11,6 +13,30 @@ describe("message fetch hardening", () => {
     expect(normalizeMessageFetchLimit(-10)).toBe(200)
     expect(normalizeMessageFetchLimit(Number.NaN)).toBe(200)
     expect(normalizeMessageFetchLimit(30)).toBe(30)
+  })
+
+  test("never requests less than a full session message page", () => {
+    expect(normalizeSessionMessagePageLimit(2)).toBe(200)
+    expect(normalizeSessionMessagePageLimit(200)).toBe(200)
+    expect(normalizeSessionMessagePageLimit(400)).toBe(400)
+  })
+
+  test("retains the page-size floor after materializing a short session", () => {
+    expect(resolveRetainedMessageLimit({
+      requestedLimit: 200,
+      materializedCount: 2,
+    })).toBe(200)
+  })
+
+  test("repairs a previously shrunken limit and preserves intentionally expanded history", () => {
+    expect(resolveRetainedMessageLimit({
+      requestedLimit: 2,
+      materializedCount: 2,
+    })).toBe(200)
+    expect(resolveRetainedMessageLimit({
+      requestedLimit: 200,
+      materializedCount: 400,
+    })).toBe(400)
   })
 
   test("throws retryable errors for SDK message response errors", () => {

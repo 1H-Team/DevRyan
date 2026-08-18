@@ -15,8 +15,7 @@ const createApp = ({
   getOpenCodePortOverride,
   deleteSkillOverride,
   persistSettingsOverride,
-  refreshOpenCodeAfterConfigChangeOverride,
-  isExternalOpenCodeOverride,
+  markConfigChangeOverride,
 }) => {
   const app = express();
   app.use(express.json());
@@ -29,7 +28,14 @@ const createApp = ({
     };
     return settingsRef.current;
   }));
-  const refreshOpenCodeAfterConfigChange = vi.fn(refreshOpenCodeAfterConfigChangeOverride || (async () => {}));
+  const markConfigChange = vi.fn(markConfigChangeOverride || (async () => ({
+    requiresApply: true,
+    applyRevision: 1,
+    applyScopes: ['skills'],
+    applyStatus: { state: 'pending', runtimeMode: 'managed' },
+    requiresReload: false,
+    runtimeApplied: false,
+  })));
 
   registerSkillRoutes(app, {
     fs,
@@ -42,8 +48,7 @@ const createApp = ({
     sanitizeSkillCatalogs: (value) => (Array.isArray(value) ? value : undefined),
     sanitizeHiddenSkills: (value) => (Array.isArray(value) ? value : []),
     isUnsafeSkillRelativePath: () => false,
-    refreshOpenCodeAfterConfigChange,
-    isExternalOpenCode: isExternalOpenCodeOverride || (() => false),
+    markConfigChange,
     clientReloadDelayMs: 0,
     buildOpenCodeUrl: () => 'http://127.0.0.1:4096/skill',
     getOpenCodeAuthHeaders: () => ({}),
@@ -98,7 +103,7 @@ const createApp = ({
     getProfile: () => null,
   });
 
-  return { app, persistSettings, refreshOpenCodeAfterConfigChange, skillPath };
+  return { app, persistSettings, markConfigChange, skillPath };
 };
 
 describe('skill routes', () => {
@@ -267,7 +272,7 @@ describe('skill routes', () => {
       sanitizeSkillCatalogs: (value) => (Array.isArray(value) ? value : undefined),
       sanitizeHiddenSkills: (value) => (Array.isArray(value) ? value : []),
       isUnsafeSkillRelativePath: () => false,
-      refreshOpenCodeAfterConfigChange: vi.fn(async () => {}),
+      markConfigChange: vi.fn(async () => ({ requiresReload: false, requiresApply: true })),
       clientReloadDelayMs: 0,
       buildOpenCodeUrl: () => 'http://127.0.0.1:4096/skill',
       getOpenCodeAuthHeaders: () => ({}),
@@ -316,7 +321,8 @@ describe('skill routes', () => {
       .expect((res) => {
         expect(res.body.ok).toBe(true);
         expect(res.body.installed).toHaveLength(1);
-        expect(res.body.requiresReload).toBe(true);
+        expect(res.body.requiresReload).toBe(false);
+        expect(res.body.requiresApply).toBe(true);
         expect(res.body.harness).toEqual(expect.objectContaining({
           status: 'success',
           summary: 'Skills install completed',
@@ -398,7 +404,7 @@ describe('skill routes', () => {
       sanitizeSkillCatalogs: (value) => (Array.isArray(value) ? value : undefined),
       sanitizeHiddenSkills: (value) => (Array.isArray(value) ? value : []),
       isUnsafeSkillRelativePath: () => false,
-      refreshOpenCodeAfterConfigChange: vi.fn(async () => {}),
+      markConfigChange: vi.fn(async () => ({ requiresReload: false, requiresApply: true })),
       clientReloadDelayMs: 0,
       buildOpenCodeUrl: () => 'http://127.0.0.1:4096/skill',
       getOpenCodeAuthHeaders: () => ({}),
@@ -553,7 +559,7 @@ describe('skill routes', () => {
     fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: lint-helper\ndescription: Helps lint code\n---\n', 'utf8');
 
     const settingsRef = { current: { hiddenSkills: [] } };
-    const { app, persistSettings, refreshOpenCodeAfterConfigChange, skillPath } = createApp({ skillDir, settingsRef });
+    const { app, persistSettings, markConfigChange, skillPath } = createApp({ skillDir, settingsRef });
     const canonicalSkillPath = fs.realpathSync(skillPath);
 
     const initial = await request(app).get('/api/config/skills').query({ directory: tempRoot });
@@ -590,7 +596,7 @@ describe('skill routes', () => {
     expect(restored.status).toBe(200);
     expect(restored.body.success).toBe(true);
     expect(settingsRef.current.hiddenSkills).toEqual([]);
-    expect(refreshOpenCodeAfterConfigChange).toHaveBeenCalled();
+    expect(markConfigChange).toHaveBeenCalled();
 
     const visibleAfterRestore = await request(app).get('/api/config/skills').query({ directory: tempRoot });
     expect(visibleAfterRestore.status).toBe(200);
@@ -640,27 +646,19 @@ describe('skill routes', () => {
     });
     expect(removed.body).toMatchObject({
       requiresReload: false,
-      runtimeRefreshPending: true,
+      requiresApply: true,
       runtimeApplied: false,
     });
   });
 
-  it('returns permanent deletion before the managed runtime refresh settles', async () => {
+  it('queues permanent deletion for the managed runtime without restarting it', async () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
     const skillDir = path.join(tempRoot, 'lint-helper');
     const skillPath = path.join(skillDir, 'SKILL.md');
     fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(skillPath, '---\nname: lint-helper\n---\n', 'utf8');
-    let settleRefresh;
-    const refreshPromise = new Promise((resolve) => {
-      settleRefresh = resolve;
-    });
     const settingsRef = { current: { hiddenSkills: [] } };
-    const { app, refreshOpenCodeAfterConfigChange } = createApp({
-      skillDir,
-      settingsRef,
-      refreshOpenCodeAfterConfigChangeOverride: () => refreshPromise,
-    });
+    const { app, markConfigChange } = createApp({ skillDir, settingsRef });
 
     const removed = await request(app)
       .delete('/api/config/skills/lint-helper')
@@ -668,21 +666,27 @@ describe('skill routes', () => {
 
     expect(removed.status).toBe(200);
     expect(fs.existsSync(skillDir)).toBe(false);
-    expect(refreshOpenCodeAfterConfigChange).toHaveBeenCalledWith('skill delete');
-    settleRefresh();
+    expect(markConfigChange).toHaveBeenCalledWith('skill delete');
   });
 
-  it('skips automatic refresh for external runtimes and warns after a committed deletion', async () => {
+  it('marks external runtimes as requiring a manual restart after deletion', async () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
     const skillDir = path.join(tempRoot, 'lint-helper');
     const skillPath = path.join(skillDir, 'SKILL.md');
     fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(skillPath, '---\nname: lint-helper\n---\n', 'utf8');
     const settingsRef = { current: { hiddenSkills: [] } };
-    const { app, refreshOpenCodeAfterConfigChange } = createApp({
+    const { app, markConfigChange } = createApp({
       skillDir,
       settingsRef,
-      isExternalOpenCodeOverride: () => true,
+      markConfigChangeOverride: async () => ({
+        requiresApply: true,
+        applyRevision: 1,
+        applyScopes: ['skills'],
+        applyStatus: { state: 'external_restart_required', runtimeMode: 'external' },
+        requiresReload: false,
+        runtimeApplied: false,
+      }),
     });
 
     const removed = await request(app)
@@ -692,14 +696,14 @@ describe('skill routes', () => {
     expect(removed.body).toMatchObject({
       success: true,
       requiresReload: false,
-      runtimeRefreshPending: false,
+      requiresApply: true,
       runtimeApplied: false,
     });
     expect(removed.body.warning).toContain('external OpenCode runtime');
-    expect(refreshOpenCodeAfterConfigChange).not.toHaveBeenCalled();
+    expect(markConfigChange).toHaveBeenCalledWith('skill delete');
   });
 
-  it('contains a managed runtime refresh failure after deletion succeeds', async () => {
+  it('reports a marker failure after the deletion has already committed', async () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
     const skillDir = path.join(tempRoot, 'lint-helper');
     const skillPath = path.join(skillDir, 'SKILL.md');
@@ -710,8 +714,8 @@ describe('skill routes', () => {
     const { app } = createApp({
       skillDir,
       settingsRef,
-      refreshOpenCodeAfterConfigChangeOverride: async () => {
-        throw new Error('restart failed');
+      markConfigChangeOverride: async () => {
+        throw new Error('marker failed');
       },
     });
 
@@ -719,13 +723,12 @@ describe('skill routes', () => {
       .delete('/api/config/skills/lint-helper')
       .query({ directory: tempRoot, path: skillPath });
 
-    expect(removed.status).toBe(200);
-    await vi.waitFor(() => {
-      expect(consoleError).toHaveBeenCalledWith(
-        '[API:Skill delete] OpenCode refresh failed after deletion:',
-        expect.objectContaining({ message: 'restart failed' }),
-      );
-    });
+    expect(removed.status).toBe(500);
+    expect(fs.existsSync(skillDir)).toBe(false);
+    expect(consoleError).toHaveBeenCalledWith(
+      'Failed to remove skill:',
+      expect.objectContaining({ message: 'marker failed' }),
+    );
     consoleError.mockRestore();
   });
 
@@ -843,19 +846,28 @@ describe('skill routes', () => {
     expect(persistSettings).toHaveBeenCalledTimes(1);
   });
 
-  it('drops claude-sourced skills returned by the OpenCode runtime from the merged list', async () => {
+  it('drops upstream-only and unsupported skills returned by the OpenCode runtime', async () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-skill-routes-'));
     const skillDir = path.join(tempRoot, 'lint-helper');
     fs.mkdirSync(skillDir, { recursive: true });
 
     const opencodeLocation = path.join(tempRoot, 'home', '.config', 'opencode', 'skills', 'lint-helper', 'SKILL.md');
     const claudeLocation = path.join(tempRoot, 'home', '.claude', 'skills', 'secret-skill', 'SKILL.md');
+    const cursorLocation = path.join(tempRoot, '.cursor', 'skills', 'cursor-skill', 'SKILL.md');
+    const codexLocation = path.join(tempRoot, '.codex', 'skills', 'codex-skill', 'SKILL.md');
+    const runtimeOnlyLocation = path.join(tempRoot, 'runtime', 'skills', 'runtime-only', 'SKILL.md');
 
     const settingsRef = { current: { hiddenSkills: [] } };
     const { app } = createApp({
       skillDir,
       settingsRef,
-      discoverSkillsOverride: () => [],
+      discoverSkillsOverride: () => [{
+        name: 'lint-helper',
+        path: opencodeLocation,
+        scope: 'user',
+        source: 'opencode',
+        description: 'Local helper',
+      }],
       getOpenCodePortOverride: 4096,
     });
 
@@ -865,6 +877,9 @@ describe('skill routes', () => {
       json: async () => [
         { name: 'lint-helper', location: opencodeLocation, description: 'OpenCode helper' },
         { name: 'secret-skill', location: claudeLocation, description: 'Claude helper' },
+        { name: 'cursor-skill', location: cursorLocation, description: 'Cursor helper' },
+        { name: 'codex-skill', location: codexLocation, description: 'Codex helper' },
+        { name: 'runtime-only', location: runtimeOnlyLocation, description: 'Runtime-only helper' },
       ],
     }));
 
@@ -873,8 +888,7 @@ describe('skill routes', () => {
 
       expect(response.status).toBe(200);
       expect(response.body.skills.map((skill) => skill.name)).toEqual(['lint-helper']);
-      expect(response.body.skills.every((skill) => skill.source !== 'claude')).toBe(true);
-      expect(response.body.skills.some((skill) => skill.path.includes(`${path.sep}.claude${path.sep}`))).toBe(false);
+      expect(response.body.skills[0].description).toBe('OpenCode helper');
     } finally {
       globalThis.fetch = originalFetch;
       fs.rmSync(tempRoot, { recursive: true, force: true });

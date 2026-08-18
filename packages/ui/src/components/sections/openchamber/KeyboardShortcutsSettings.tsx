@@ -7,8 +7,8 @@ import { useUIStore } from '@/stores/useUIStore';
 import { cn } from '@/lib/utils';
 import {
   formatShortcutForDisplay,
+  findShortcutConflict,
   getAvailableCustomizableShortcutActions,
-  getCustomizableShortcutActions,
   getEffectiveShortcutCombo,
   isRiskyBrowserShortcut,
   keyToShortcutToken,
@@ -56,7 +56,6 @@ export const KeyboardShortcutsSettings: React.FC = () => {
   const clearShortcutOverride = useUIStore((state) => state.clearShortcutOverride);
   const resetAllShortcutOverrides = useUIStore((state) => state.resetAllShortcutOverrides);
 
-  const allActions = React.useMemo(() => getCustomizableShortcutActions(), []);
   const actions = React.useMemo(
     () => getAvailableCustomizableShortcutActions(principal),
     [principal],
@@ -78,18 +77,8 @@ export const KeyboardShortcutsSettings: React.FC = () => {
   } | null>(null);
 
   const findConflict = React.useCallback((actionId: string, combo: ShortcutCombo): string | null => {
-    const normalized = normalizeCombo(combo);
-    for (const action of allActions) {
-      if (action.id === actionId) {
-        continue;
-      }
-      const existing = getEffectiveShortcutCombo(action.id, shortcutOverrides);
-      if (normalizeCombo(existing) === normalized) {
-        return action.id;
-      }
-    }
-    return null;
-  }, [allActions, shortcutOverrides]);
+    return findShortcutConflict(actionId, combo, shortcutOverrides);
+  }, [shortcutOverrides]);
 
   const saveCombo = React.useCallback((actionId: string, combo: ShortcutCombo) => {
     const normalized = normalizeCombo(combo);

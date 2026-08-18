@@ -37,7 +37,9 @@ const DEFAULT_PACKAGED_AGENT_DIR = path.join(DEFAULT_CONFIG_DIR, 'agents');
 const DEFAULT_PACKAGED_PLUGIN_DIR = path.join(DEFAULT_CONFIG_DIR, 'plugins');
 const DEFAULT_RUNTIME_AGENT_OVERLAY_ROOT = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'runtime-agent-overlays');
 const DEFAULT_RUNTIME_AGENT_OVERLAY_MANIFEST_PATH = path.join(OPENCODE_CONFIG_DIR, '.openchamber', 'runtime-agent-overlays.json');
-const DEFAULT_REMOTE_MCP_TIMEOUT_MS = 5_000;
+// Must cover OAuth discovery + DCR + token refresh: an abort mid-refresh burns
+// the rotated refresh token and de-authenticates the MCP (invalid_grant loop).
+const DEFAULT_REMOTE_MCP_TIMEOUT_MS = 60_000;
 const DEFAULT_OPENAI_HEADER_TIMEOUT_MS = 120_000;
 const DEFAULT_OPENAI_CHUNK_TIMEOUT_MS = 300_000;
 const DEFAULT_OPENAI_REQUEST_TIMEOUT_MS = 15 * 60_000;
@@ -226,6 +228,8 @@ const buildRemoteMcpTimeoutOverlay = (workingDirectory, options = {}) => {
     if (config.scope === 'project') {
       continue;
     }
+    // An explicit user timeout always wins, even below the default — values
+    // short enough to abort an OAuth token refresh risk de-authenticating the MCP.
     if (typeof config.timeout === 'number' && Number.isFinite(config.timeout) && config.timeout > 0) {
       continue;
     }
@@ -720,17 +724,9 @@ const normalizeOverrides = (options, workingDirectory) => (
     : listManagedRuntimeAgentModelOverrides(workingDirectory, options)
 );
 
-const hasSkillPermission = (frontmatter) => {
-  const skillPermission = isPlainObject(frontmatter?.permission) ? frontmatter.permission.skill : undefined;
-  return skillPermission === 'allow' || isPlainObject(skillPermission);
-};
-
 const shouldApplySkillPolicy = (agent, options = {}) => (
   Boolean(options.skillPolicy)
-  && (
-    agent?.scope === 'packaged'
-    || (agent?.scope === 'project' && hasSkillPermission(agent.frontmatter))
-  )
+  && (agent?.scope === 'packaged' || agent?.scope === 'project')
 );
 
 const applyRuntimeOverrideFrontmatter = (agent, override, options = {}) => {

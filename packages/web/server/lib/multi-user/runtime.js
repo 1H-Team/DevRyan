@@ -10,8 +10,10 @@ import {
   ensureOpenCodeProjectId,
   getBranches,
   getOpenCodeDataPath,
+  getPrimaryWorktreeRoot,
   getRemoteUrl,
 } from '../git/service.js';
+import { isIntegrateTempPath } from '../git/integrate.js';
 import {
   buildBranchOptions,
   ensureBranchTarget,
@@ -126,7 +128,8 @@ const SESSION_OWNERSHIP_RETRY_DELAYS_MS = [250, 500, 1_000];
 const SESSION_OWNERSHIP_CLEANUP_ATTEMPTS = 6;
 const ACTIVITY_LOG_SELECT = [
   'id', 'event_id', 'actor_user_id', 'actor_role', 'action', 'target_type', 'target_id', 'target_user_id',
-  'project_id', 'session_id', 'request_id', 'success', 'diagnostic_impact', 'diagnostic_source', 'metadata', 'created_at',
+  'project_id', 'session_id', 'request_id', 'success', 'diagnostic_impact', 'diagnostic_source',
+  'diagnostic_disposition', 'metadata', 'created_at',
 ].join(',');
 const ANALYTICS_AGGREGATE_SELECT = 'id,actor_user_id,target_user_id,action,success,created_at';
 const CLIPBOARD_PREVIEW_SELECT = [
@@ -839,6 +842,9 @@ export async function createMultiUserRuntime({
       success: details.success !== false,
       ...(details.diagnosticImpact ? { diagnostic_impact: details.diagnosticImpact } : {}),
       ...(details.diagnosticSource ? { diagnostic_source: details.diagnosticSource } : {}),
+      ...(details.diagnosticDisposition
+        ? { diagnostic_disposition: details.diagnosticDisposition }
+        : {}),
       metadata: details.metadata && typeof details.metadata === 'object' ? details.metadata : {},
       ...(details.clipboard ? {
         clipboard_text: details.clipboard.text,
@@ -2454,6 +2460,8 @@ export async function createMultiUserRuntime({
   // Admins may open sessions in directories with no existing grant; mirror the
   // legacy-backfill shape (find-or-create project, repo-root workspace) so
   // ownership/audit/revocation invariants still hold for those sessions.
+  // Git-integrate temp worktrees are never registered; ownership binds to the
+  // already-registered parent repository when one exists.
   const ensureAdminProjectAccess = async (principal, directory) => {
     if (principal?.role !== 'admin') return null;
     const input = typeof directory === 'string' ? directory.trim() : '';
@@ -2465,25 +2473,38 @@ export async function createMultiUserRuntime({
     } catch {
       return null;
     }
-    let project = await supabase.rest('managed_projects', {
+    const ephemeralIntegrate = isIntegrateTempPath(input) || isIntegrateTempPath(repositoryPath);
+    if (ephemeralIntegrate) {
+      const parentRoot = await getPrimaryWorktreeRoot(repositoryPath).catch(() => null);
+      if (!parentRoot) return null;
+      try {
+        repositoryPath = await fs.realpath(parentRoot);
+      } catch {
+        repositoryPath = path.resolve(parentRoot);
+      }
+      if (isIntegrateTempPath(repositoryPath)) return null;
+    }
+    const existing = await supabase.rest('managed_projects', {
       query: { repository_path: `eq.${repositoryPath}`, limit: 1 }, maybeSingle: true,
     });
-    const branchResult = await getBranches(repositoryPath).catch(() => ({ current: null }));
-    const branchName = branchResult.current || project?.default_branch || 'main';
+    let project = existing?.status === 'active' ? existing : null;
     if (!project) {
+      if (ephemeralIntegrate || existing?.status === 'archived') return null;
       project = await supabase.rest('managed_projects', {
         method: 'POST',
         body: {
           label: path.basename(repositoryPath),
           repository_path: repositoryPath,
           remote_url: normalizeGitHubRemoteUrl(await getRemoteUrl(repositoryPath, 'origin').catch(() => '')),
-          default_branch: branchName,
+          default_branch: (await getBranches(repositoryPath).catch(() => ({ current: null }))).current || 'main',
           created_by: principal.id,
         },
         prefer: 'return=representation', maybeSingle: true,
       });
     }
     if (!project) return null;
+    const branchResult = await getBranches(repositoryPath).catch(() => ({ current: null }));
+    const branchName = branchResult.current || project?.default_branch || 'main';
     const existingDefault = await supabase.rest('user_project_access', {
       query: { user_id: `eq.${principal.id}`, is_default: 'eq.true', select: 'project_id', limit: 1 },
       maybeSingle: true,
@@ -2607,6 +2628,15 @@ export async function createMultiUserRuntime({
     return { principal, assignment, directory: target.directory, branchName: logicalBranch };
   };
 
+  const listScheduledTaskProjectIDs = async () => {
+    const projects = await supabase.rest('managed_projects', {
+      query: { status: 'eq.active', select: 'id' },
+    });
+    return Array.from(new Set((projects || [])
+      .map((project) => typeof project?.id === 'string' ? project.id.trim() : '')
+      .filter(Boolean)));
+  };
+
   const recordScheduledTaskSessionOwnership = async ({ ownerUserId, projectId, branchName, sessionId }) => {
     const principal = await loadPrincipal(ownerUserId);
     if (!principal) throw new Error('Scheduled task owner is suspended or unavailable');
@@ -2722,6 +2752,7 @@ export async function createMultiUserRuntime({
     readSettingsFromDiskMigrated,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
+    getConfigApplyMutationResponse = () => ({ requiresReload: false }),
   } = {}) => {
     if (typeof app.use === 'function') {
       app.use(createDotenvVisibilityMiddleware());
@@ -3633,7 +3664,9 @@ export async function createMultiUserRuntime({
 
     app.get('/api/admin/projects', async (req, res) => {
       if (!canReviewUsers(req.principal)) return jsonError(res, 403, 'User review access required');
-      const projects = await supabase.rest('managed_projects', { query: { order: 'created_at.asc' } }).catch(() => []);
+      const projects = await supabase.rest('managed_projects', {
+        query: { status: 'eq.active', order: 'created_at.asc' },
+      }).catch(() => []);
       return res.json({ projects });
     });
 
@@ -3643,23 +3676,101 @@ export async function createMultiUserRuntime({
         const repositoryPath = path.resolve(String(req.body?.repositoryPath || ''));
         const stats = await fs.stat(repositoryPath);
         if (!stats.isDirectory()) return jsonError(res, 400, 'Repository path must be a directory');
+        if (isIntegrateTempPath(repositoryPath)) {
+          return jsonError(res, 400, 'Git integration temp directories cannot be registered as managed projects');
+        }
         const discoveredRemote = typeof req.body?.remoteUrl === 'string' && req.body.remoteUrl.trim()
           ? req.body.remoteUrl.trim()
           : await getRemoteUrl(repositoryPath, 'origin');
+        const row = {
+          label: normalizeDisplayName(req.body?.label, path.basename(repositoryPath)),
+          repository_path: repositoryPath,
+          remote_url: normalizeGitHubRemoteUrl(discoveredRemote),
+          default_branch: String(req.body?.defaultBranch || '').trim(),
+          created_by: req.principal.id,
+        };
+        const existing = await supabase.rest('managed_projects', {
+          query: { repository_path: `eq.${repositoryPath}`, limit: 1 },
+          maybeSingle: true,
+        });
+        if (existing?.status === 'active') {
+          return jsonError(res, 409, 'A managed project is already registered at this path');
+        }
+        if (existing?.status === 'archived') {
+          const project = await supabase.rest('managed_projects', {
+            method: 'PATCH',
+            query: { id: `eq.${escapeFilterValue(existing.id)}` },
+            body: { ...row, status: 'active' },
+            prefer: 'return=representation',
+            maybeSingle: true,
+          });
+          principalCache.clear();
+          notifyManagedProjectMetadataChanged(project.id);
+          await audit(req.principal, 'project.restored', {
+            targetType: 'project', targetId: project.id, projectId: project.id,
+          });
+          return res.status(201).json({ project, restored: true });
+        }
         const project = await supabase.rest('managed_projects', {
           method: 'POST',
-          body: {
-            label: normalizeDisplayName(req.body?.label, path.basename(repositoryPath)),
-            repository_path: repositoryPath,
-            remote_url: normalizeGitHubRemoteUrl(discoveredRemote),
-            default_branch: String(req.body?.defaultBranch || '').trim(),
-            created_by: req.principal.id,
-          },
+          body: row,
           prefer: 'return=representation', maybeSingle: true,
         });
         await audit(req.principal, 'project.created', { targetType: 'project', targetId: project.id, projectId: project.id });
         return res.status(201).json({ project });
       } catch (error) { return jsonError(res, error?.status || 500, error.message); }
+    });
+
+    app.delete('/api/admin/projects/:projectId', async (req, res) => {
+      if (!canManageUsers(req.principal)) return jsonError(res, 403, 'User management edit access required');
+      let releaseMutation = () => {};
+      try {
+        const project = await supabase.rest('managed_projects', {
+          query: {
+            id: `eq.${escapeFilterValue(req.params.projectId)}`,
+            status: 'eq.active',
+            limit: 1,
+          },
+          maybeSingle: true,
+        });
+        if (!project) return jsonError(res, 404, 'Managed project not found');
+        releaseMutation = await acquireMutationKey(`repository:${project.id}`);
+        const accessRows = await supabase.rest('user_project_access', {
+          query: { project_id: `eq.${escapeFilterValue(project.id)}` },
+        });
+        const affectedUserIds = [...new Set((accessRows || []).map((row) => row.user_id).filter(Boolean))];
+        for (const userId of affectedUserIds) {
+          await archiveAndDeleteProjectAccess({ userId, project });
+          await Promise.all([abortOwnedSessions(userId), terminateOwnedTerminals(userId)]);
+        }
+        const archived = await supabase.rest('managed_projects', {
+          method: 'PATCH',
+          query: { id: `eq.${escapeFilterValue(project.id)}`, status: 'eq.active' },
+          body: { status: 'archived' },
+          prefer: 'return=representation',
+          maybeSingle: true,
+        });
+        if (!archived) return jsonError(res, 404, 'Managed project not found');
+        principalCache.clear();
+        notifyManagedProjectMetadataChanged(project.id);
+        await audit(req.principal, 'project.unregistered', {
+          targetType: 'project',
+          targetId: project.id,
+          projectId: project.id,
+          metadata: { userCount: affectedUserIds.length },
+        });
+        revokeConnectionsAfterResponse(res, affectedUserIds.map((userId) => ({ userId })));
+        return res.json({
+          removed: true,
+          archived: true,
+          projectId: project.id,
+          userCount: affectedUserIds.length,
+        });
+      } catch (error) {
+        return jsonError(res, error?.statusCode || error?.status || 500, error.message);
+      } finally {
+        releaseMutation();
+      }
     });
 
     app.put('/api/admin/projects/:projectId', async (req, res) => {
@@ -4386,7 +4497,7 @@ export async function createMultiUserRuntime({
         });
         return res.json({
           success: true,
-          requiresReload: false,
+          ...getConfigApplyMutationResponse(req.principal),
           perUser: true,
           message: `MCP server "${name}" ${updates.enabled ? 'enabled' : 'disabled'} for your account.`,
         });
@@ -4700,6 +4811,7 @@ export async function createMultiUserRuntime({
     audit,
     resolveManagedProject,
     resolveManagedProjectForDirectory,
+    listScheduledTaskProjectIDs,
     resolveScheduledTaskExecution,
     recordScheduledTaskSessionOwnership,
     setTerminalOwnerTerminator(callback) {

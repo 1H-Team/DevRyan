@@ -751,6 +751,20 @@ export const createSettingsRuntime = (deps) => {
     return { settings: changed ? next : settings, changed };
   };
 
+  const migrateSettingsFromLegacyWideChatLayout = async (current) => {
+    const settings = current && typeof current === 'object' ? current : {};
+    if (!Object.prototype.hasOwnProperty.call(settings, 'wideChatLayoutEnabled')) {
+      return { settings, changed: false };
+    }
+
+    const next = { ...settings };
+    if (typeof next.chatWidth !== 'number' && next.wideChatLayoutEnabled === true) {
+      next.chatWidth = 1024;
+    }
+    delete next.wideChatLayoutEnabled;
+    return { settings: next, changed: true };
+  };
+
   const readSettingsFromDiskMigrated = async () => {
     const current = await readSettingsFromDisk();
     const migration1 = await migrateSettingsFromLegacyLastDirectory(current);
@@ -759,15 +773,16 @@ export const createSettingsRuntime = (deps) => {
     const migration4 = await migrateSettingsFromLegacyCollapsedProjects(migration3.settings);
     const migration5 = await migrateSettingsNotificationDefaults(migration4.settings);
     const migration6 = await migrateSettingsFromLegacyNamedTunnelKeys(migration5.settings);
-    const migration7 = normalizeSettingsPaths(migration6.settings);
-    const migration8 = await migrateSettingsToDeterministicProjectIds(migration7.settings);
-    const migration9 = projectIconStore
-      ? await projectIconStore.reconcileProjects(migration8.settings.projects || [])
-      : { projects: migration8.settings.projects || [], changed: false };
-    const reconciledSettings = migration9.changed
-      ? { ...migration8.settings, projects: migration9.projects }
-      : migration8.settings;
-    if (migration1.changed || migration2.changed || migration3.changed || migration4.changed || migration5.changed || migration6.changed || migration7.changed || migration8.changed || migration9.changed) {
+    const migration7 = await migrateSettingsFromLegacyWideChatLayout(migration6.settings);
+    const migration8 = normalizeSettingsPaths(migration7.settings);
+    const migration9 = await migrateSettingsToDeterministicProjectIds(migration8.settings);
+    const migration10 = projectIconStore
+      ? await projectIconStore.reconcileProjects(migration9.settings.projects || [])
+      : { projects: migration9.settings.projects || [], changed: false };
+    const reconciledSettings = migration10.changed
+      ? { ...migration9.settings, projects: migration10.projects }
+      : migration9.settings;
+    if (migration1.changed || migration2.changed || migration3.changed || migration4.changed || migration5.changed || migration6.changed || migration7.changed || migration8.changed || migration9.changed || migration10.changed) {
       await writeSettingsToDisk(reconciledSettings);
     }
     return reconciledSettings;

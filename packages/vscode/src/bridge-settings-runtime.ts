@@ -160,11 +160,17 @@ const readSharedSettingsFromDisk = (): Record<string, unknown> => {
   }
 };
 
-const writeSharedSettingsToDisk = async (changes: Record<string, unknown>): Promise<void> => {
+const writeSharedSettingsToDisk = async (
+  changes: Record<string, unknown>,
+  keysToClear: ReadonlySet<string> = new Set(),
+): Promise<void> => {
   try {
     await fs.promises.mkdir(path.dirname(OPENCHAMBER_SHARED_SETTINGS_PATH), { recursive: true });
     const current = readSharedSettingsFromDisk();
     const next: Record<string, unknown> = { ...current, ...changes };
+    for (const key of keysToClear) {
+      delete next[key];
+    }
     // Atomic write: tmp file + rename. Readers never see a partial/truncated
     // JSON that would fail to parse and silently get coerced to {}.
     const tmp = `${OPENCHAMBER_SHARED_SETTINGS_PATH}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -251,7 +257,22 @@ const readPersistedSettings = (ctx?: BridgeContext): Record<string, unknown> => 
     }
   }
 
-  return { ...fromGlobalState, ...fromDisk };
+  const merged = { ...fromGlobalState, ...fromDisk };
+  if (Object.prototype.hasOwnProperty.call(merged, 'wideChatLayoutEnabled')) {
+    const migrated = { ...merged };
+    if (typeof migrated.chatWidth !== 'number' && migrated.wideChatLayoutEnabled === true) {
+      migrated.chatWidth = 1024;
+    }
+    delete migrated.wideChatLayoutEnabled;
+    void writeSharedSettingsToDisk(
+      typeof migrated.chatWidth === 'number' ? { chatWidth: migrated.chatWidth } : {},
+      new Set(['wideChatLayoutEnabled']),
+    );
+    void ctx?.context?.globalState.update(SETTINGS_KEY, migrated);
+    return migrated;
+  }
+
+  return merged;
 };
 
 export const readSettings = (ctx?: BridgeContext): Record<string, unknown> => {
@@ -301,6 +322,13 @@ export const persistSettings = async (changes: Record<string, unknown>, ctx?: Br
     delete restChanges.usageRefreshIntervalMs;
   }
 
+  if (typeof restChanges.chatWidth === 'number' && Number.isFinite(restChanges.chatWidth)) {
+    const clamped = Math.max(640, Math.min(1408, restChanges.chatWidth));
+    restChanges.chatWidth = 640 + Math.round((clamped - 640) / 16) * 16;
+  } else {
+    delete restChanges.chatWidth;
+  }
+
   if (typeof restChanges.opencodeBinary === 'string') {
     restChanges.opencodeBinary = restChanges.opencodeBinary.trim();
   }
@@ -308,6 +336,9 @@ export const persistSettings = async (changes: Record<string, unknown>, ctx?: Br
   // Persistable state = current persisted (no derived fields) + sanitized changes.
   const persistedCurrent = readPersistedSettings(ctx);
   const persistable: Record<string, unknown> = { ...persistedCurrent, ...restChanges };
+  if (Object.prototype.hasOwnProperty.call(restChanges, 'chatWidth')) {
+    keysToClear.add('wideChatLayoutEnabled');
+  }
   for (const key of keysToClear) {
     delete persistable[key];
   }
@@ -315,7 +346,7 @@ export const persistSettings = async (changes: Record<string, unknown>, ctx?: Br
   // Write to the shared file (canonical, cross-client). Also mirror into
   // globalState so older builds can still read recent values if a user
   // downgrades the extension.
-  await writeSharedSettingsToDisk(persistable);
+  await writeSharedSettingsToDisk(persistable, keysToClear);
   await ctx?.context?.globalState.update(SETTINGS_KEY, persistable);
 
   // Return the same shape as readSettings (with derived fields re-applied).

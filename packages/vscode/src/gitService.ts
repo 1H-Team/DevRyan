@@ -12,6 +12,7 @@ import { spawn, execFile } from 'child_process';
 import { promisify } from 'util';
 import crypto from 'node:crypto';
 import {
+  createPostCheckoutHookRunner,
   createWorktreeBootstrapRuntime,
   type RecordStore,
   type WorktreeBootstrapReceipt,
@@ -1379,6 +1380,10 @@ export const configureWorktreeBootstrapRuntime = (options: {
   store: RecordStore<WorktreeBootstrapReceipt>;
   onTransition?: (receipt: WorktreeBootstrapReceipt) => void;
 }): WorktreeBootstrapRuntime => {
+  const postCheckoutHookRunner = createPostCheckoutHookRunner({
+    getGitBinary: () => gitApi?.git.path || 'git',
+    getEnv: () => buildGitEnv(),
+  });
   worktreeBootstrapRuntime = createWorktreeBootstrapRuntime({
     store: options.store,
     onTransition: options.onTransition,
@@ -1432,6 +1437,7 @@ export const configureWorktreeBootstrapRuntime = (options: {
       populate_worktree: async (receipt) => {
         await populateWorktreeWithLockRecovery(receipt.directory, { runGitCommandOrThrow });
       },
+      run_post_checkout_hook: async (receipt) => postCheckoutHookRunner.run(receipt.directory),
       configure_upstream: async (receipt) => {
         if (!receipt.metadata.setUpstream) return;
         await applyUpstreamConfiguration({

@@ -1,13 +1,14 @@
 import { toNumber, toTimestamp, toUsageWindow } from '../utils/index.js';
 
 export const CLAUDE_MERIDIAN_UNAVAILABLE_CODE = 'claude_meridian_unavailable';
+export const CLAUDE_MERIDIAN_CONTEXT_UNAVAILABLE_CODE = 'claude_meridian_context_unavailable';
 export const MAX_CLAUDE_QUOTA_RESPONSE_BYTES = 64 * 1024;
 
 const REQUEST_TIMEOUT_MS = 5000;
 const FIVE_HOUR_WINDOW_SECONDS = 5 * 60 * 60;
 const SEVEN_DAY_WINDOW_SECONDS = 7 * 24 * 60 * 60;
 
-export const resolveSafeClaudeQuotaUrl = (baseUrl) => {
+export const resolveSafeClaudeMeridianUrl = (baseUrl, pathname) => {
   try {
     const parsed = new URL(baseUrl);
     if (
@@ -19,10 +20,229 @@ export const resolveSafeClaudeQuotaUrl = (baseUrl) => {
     ) {
       return null;
     }
-    return new URL('/v1/usage/quota', parsed.origin).toString();
+    return new URL(pathname, parsed.origin).toString();
   } catch {
     return null;
   }
+};
+
+export const resolveSafeClaudeQuotaUrl = (baseUrl) => (
+  resolveSafeClaudeMeridianUrl(baseUrl, '/v1/usage/quota')
+);
+
+const toTokenCount = (value) => {
+  const parsed = toNumber(value);
+  return parsed !== null && parsed >= 0 ? Math.trunc(parsed) : null;
+};
+
+export const transformMeridianClaudeContextUsage = (payload, sessionID) => {
+  const usage = payload?.context_usage;
+  if (!usage || typeof usage !== 'object') {
+    return {
+      ok: false,
+      code: CLAUDE_MERIDIAN_CONTEXT_UNAVAILABLE_CODE,
+      error: 'Claude context proxy returned a malformed response.',
+    };
+  }
+
+  const inputTokens = toTokenCount(usage.input_tokens);
+  const outputTokens = toTokenCount(usage.output_tokens);
+  const cacheReadTokens = toTokenCount(usage.cache_read_input_tokens);
+  const cacheWriteTokens = toTokenCount(usage.cache_creation_input_tokens);
+  if ([inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens].some((value) => value === null)) {
+    return {
+      ok: false,
+      code: CLAUDE_MERIDIAN_CONTEXT_UNAVAILABLE_CODE,
+      error: 'Claude context proxy returned invalid token counts.',
+    };
+  }
+
+  return {
+    ok: true,
+    usage: {
+      sessionID,
+      status: 'available',
+      source: 'meridian',
+      inputTokens,
+      cacheReadTokens,
+      cacheWriteTokens,
+      activeInputTokens: inputTokens + cacheReadTokens + cacheWriteTokens,
+      lastOutputTokens: outputTokens,
+      fetchedAt: Date.now(),
+    },
+  };
+};
+
+const fetchBoundedJson = async ({
+  url,
+  fetchImpl,
+  timeoutMs,
+  unavailableCode,
+  label,
+}) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetchImpl(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        code: unavailableCode,
+        error: `${label} returned HTTP ${response.status}.`,
+      };
+    }
+
+    const declaredLength = Number.parseInt(response.headers?.get?.('content-length') ?? '0', 10);
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_CLAUDE_QUOTA_RESPONSE_BYTES) {
+      return {
+        ok: false,
+        code: unavailableCode,
+        error: `${label} response exceeded the safe response limit.`,
+      };
+    }
+    const raw = await response.text();
+    if (Buffer.byteLength(raw, 'utf8') > MAX_CLAUDE_QUOTA_RESPONSE_BYTES) {
+      return {
+        ok: false,
+        code: unavailableCode,
+        error: `${label} response exceeded the safe response limit.`,
+      };
+    }
+    try {
+      return { ok: true, payload: JSON.parse(raw) };
+    } catch {
+      return {
+        ok: false,
+        code: unavailableCode,
+        error: `${label} returned malformed JSON.`,
+      };
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      code: unavailableCode,
+      error: error?.name === 'AbortError'
+        ? `Timed out while reading the ${label}.`
+        : error instanceof Error
+          ? error.message
+          : `Failed to read the ${label}.`,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
+export const createMeridianClaudeContextUsageClient = ({
+  fetchImpl = globalThis.fetch,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+} = {}) => {
+  const claudeSessionIds = new Map();
+  const pendingBySession = new Map();
+
+  const resolveClaudeSessionID = async (baseUrl, sessionID, refreshSession) => {
+    if (!refreshSession && claudeSessionIds.has(sessionID)) {
+      return claudeSessionIds.get(sessionID);
+    }
+    const recoverUrl = resolveSafeClaudeMeridianUrl(
+      baseUrl,
+      `/v1/sessions/${encodeURIComponent(sessionID)}/recover`,
+    );
+    if (!recoverUrl) return null;
+    const result = await fetchBoundedJson({
+      url: recoverUrl,
+      fetchImpl,
+      timeoutMs,
+      unavailableCode: CLAUDE_MERIDIAN_CONTEXT_UNAVAILABLE_CODE,
+      label: 'Claude session proxy',
+    });
+    const claudeSessionID = result.ok && typeof result.payload?.claudeSessionId === 'string'
+      ? result.payload.claudeSessionId.trim()
+      : '';
+    if (!claudeSessionID) return null;
+    claudeSessionIds.set(sessionID, claudeSessionID);
+    return claudeSessionID;
+  };
+
+  const execute = async ({ baseUrl, sessionID, refreshSession }) => {
+    if (!resolveSafeClaudeQuotaUrl(baseUrl)) {
+      return {
+        ok: false,
+        code: CLAUDE_MERIDIAN_CONTEXT_UNAVAILABLE_CODE,
+        error: 'Claude context proxy URL is not a safe loopback HTTP address.',
+      };
+    }
+
+    let resolvedFresh = refreshSession;
+    let claudeSessionID = await resolveClaudeSessionID(baseUrl, sessionID, refreshSession);
+    if (!claudeSessionID) {
+      return {
+        ok: false,
+        code: CLAUDE_MERIDIAN_CONTEXT_UNAVAILABLE_CODE,
+        error: 'Claude session mapping is unavailable.',
+      };
+    }
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const usageUrl = resolveSafeClaudeMeridianUrl(
+        baseUrl,
+        `/v1/sessions/${encodeURIComponent(claudeSessionID)}/context-usage`,
+      );
+      if (!usageUrl) break;
+      const result = await fetchBoundedJson({
+        url: usageUrl,
+        fetchImpl,
+        timeoutMs,
+        unavailableCode: CLAUDE_MERIDIAN_CONTEXT_UNAVAILABLE_CODE,
+        label: 'Claude context proxy',
+      });
+      if (result.ok) return transformMeridianClaudeContextUsage(result.payload, sessionID);
+      if (result.status !== 404 || resolvedFresh) return result;
+      claudeSessionIds.delete(sessionID);
+      claudeSessionID = await resolveClaudeSessionID(baseUrl, sessionID, true);
+      resolvedFresh = true;
+      if (!claudeSessionID) return result;
+    }
+
+    return {
+      ok: false,
+      code: CLAUDE_MERIDIAN_CONTEXT_UNAVAILABLE_CODE,
+      error: 'Claude context proxy is unavailable.',
+    };
+  };
+
+  return {
+    fetchContextUsage(options) {
+      const sessionID = typeof options?.sessionID === 'string' ? options.sessionID.trim() : '';
+      if (!sessionID) {
+        return Promise.resolve({
+          ok: false,
+          code: CLAUDE_MERIDIAN_CONTEXT_UNAVAILABLE_CODE,
+          error: 'Claude session ID is required.',
+        });
+      }
+      const refreshSession = options?.refreshSession === true;
+      const existing = pendingBySession.get(sessionID);
+      if (existing && (!refreshSession || existing.refreshSession)) return existing.promise;
+      const run = () => execute({
+        baseUrl: options?.baseUrl,
+        sessionID,
+        refreshSession,
+      });
+      const promise = (existing ? existing.promise.then(run, run) : run()).finally(() => {
+        if (pendingBySession.get(sessionID)?.promise === promise) pendingBySession.delete(sessionID);
+      });
+      pendingBySession.set(sessionID, { promise, refreshSession });
+      return promise;
+    },
+    clearSession(sessionID) {
+      claudeSessionIds.delete(sessionID);
+    },
+  };
 };
 
 const mapBucketLabel = (type) => {
@@ -83,58 +303,12 @@ export const fetchMeridianClaudeQuota = async ({
     };
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetchImpl(quotaUrl, {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      return {
-        ok: false,
-        code: CLAUDE_MERIDIAN_UNAVAILABLE_CODE,
-        error: `Claude quota proxy returned HTTP ${response.status}.`,
-      };
-    }
-
-    const declaredLength = Number.parseInt(response.headers?.get?.('content-length') ?? '0', 10);
-    if (Number.isFinite(declaredLength) && declaredLength > MAX_CLAUDE_QUOTA_RESPONSE_BYTES) {
-      return {
-        ok: false,
-        code: CLAUDE_MERIDIAN_UNAVAILABLE_CODE,
-        error: 'Claude quota proxy response exceeded the safe response limit.',
-      };
-    }
-    const raw = await response.text();
-    if (Buffer.byteLength(raw, 'utf8') > MAX_CLAUDE_QUOTA_RESPONSE_BYTES) {
-      return {
-        ok: false,
-        code: CLAUDE_MERIDIAN_UNAVAILABLE_CODE,
-        error: 'Claude quota proxy response exceeded the safe response limit.',
-      };
-    }
-    try {
-      return transformMeridianClaudeQuota(JSON.parse(raw));
-    } catch {
-      return {
-        ok: false,
-        code: CLAUDE_MERIDIAN_UNAVAILABLE_CODE,
-        error: 'Claude quota proxy returned malformed JSON.',
-      };
-    }
-  } catch (error) {
-    return {
-      ok: false,
-      code: CLAUDE_MERIDIAN_UNAVAILABLE_CODE,
-      error: error?.name === 'AbortError'
-        ? 'Timed out while reading the Claude quota proxy.'
-        : error instanceof Error
-          ? error.message
-          : 'Failed to read the Claude quota proxy.',
-    };
-  } finally {
-    clearTimeout(timer);
-  }
+  const result = await fetchBoundedJson({
+    url: quotaUrl,
+    fetchImpl,
+    timeoutMs,
+    unavailableCode: CLAUDE_MERIDIAN_UNAVAILABLE_CODE,
+    label: 'Claude quota proxy',
+  });
+  return result.ok ? transformMeridianClaudeQuota(result.payload) : result;
 };

@@ -31,6 +31,7 @@
     /* Fixed built-in agent glyph colors; intentionally independent of theme tokens. */
     --agent-icon-builder-color: #969DA9;
     --agent-icon-council-color: #92400E;
+    --agent-icon-orchestrator-color: #0072C3;
     --agent-icon-designer-color: #9333EA;
     --agent-icon-fixer-color: #DC2626;
     --agent-icon-explorer-color: #16A34A;
@@ -74,6 +75,7 @@
 
   .dark {
     /* Default Dark Theme - using OKLCH color space */
+    --agent-icon-orchestrator-color: #FFFFFF;
     --background: oklch(0.16 0.01 30); /* #151313 */
     --foreground: oklch(0.85 0.02 90); /* #cdccc3 */
     --card: oklch(0.19 0.01 40); /* #1C1B1A */

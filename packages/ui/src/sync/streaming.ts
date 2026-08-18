@@ -8,10 +8,7 @@
 
 import { create } from "zustand"
 import type { Message, SessionStatus } from "@opencode-ai/sdk/v2/client"
-import { isAbortGuardActive } from "./abort-retry-guard"
 import {
-  hasTerminalAssistantFinish,
-  hasToolCallAssistantFinish,
   isLiveAssistantMessage,
   isTerminalAssistantMessage,
 } from "./session-working"
@@ -116,11 +113,12 @@ export function updateStreamingState(state: State) {
   const nextStreamStates = new Map(currentStreamStates)
   let changed = false
 
-  // Fast path: only scan sessions that are actually busy.
+  // Fast path: only scan sessions that are authoritatively active.
   // Idle sessions are handled by checking against currentStreamingIds below.
   const busySessionIds = new Set<string>()
   for (const [sessionID, status] of Object.entries(state.session_status ?? {})) {
-    if ((status as SessionStatus).type === "busy") {
+    const statusType = (status as SessionStatus).type
+    if (statusType === "busy" || statusType === "retry") {
       busySessionIds.add(sessionID)
     }
   }
@@ -135,18 +133,7 @@ export function updateStreamingState(state: State) {
     const streamingCandidate = selectStreamingAssistantMessage(messages, state)
     const streamingCandidateParts = streamingCandidate ? state.part[streamingCandidate.id] : undefined
 
-    if (status && status.type !== "busy") {
-      const currentStreamingId = currentStreamingIds.get(sessionID)
-      if (
-        currentStreamingId
-        && !isAbortGuardActive(sessionID)
-        && streamingCandidate?.id === currentStreamingId
-        && isLiveAssistantMessage(streamingCandidate, streamingCandidateParts)
-      ) {
-        busySessionIds.add(sessionID)
-      }
-      continue
-    }
+    if (status) continue
 
     if (isLiveAssistantMessage(streamingCandidate ?? undefined, streamingCandidateParts)) {
       busySessionIds.add(sessionID)
@@ -174,15 +161,7 @@ export function updateStreamingState(state: State) {
     // shell has no parts yet, keep following the nearest assistant in the same
     // turn that has renderable context.
     const streamingMsg = selectStreamingAssistantMessage(messages, state)
-    const streamingMsgParts = streamingMsg ? state.part[streamingMsg.id] : undefined
-    const sessionStatus = state.session_status[sessionID]
-    const busyToolCallGap = sessionStatus?.type === "busy" && hasToolCallAssistantFinish(streamingMsg ?? undefined)
-
-    if (
-      !streamingMsg
-      || hasTerminalAssistantFinish(streamingMsg)
-      || (!busyToolCallGap && !isLiveAssistantMessage(streamingMsg, streamingMsgParts))
-    ) {
+    if (!streamingMsg) {
       const prevId = currentStreamingIds.get(sessionID)
       if (prevId) {
         completeStreamingMessage(sessionID, prevId)

@@ -2,7 +2,7 @@
 
 ## Project Responsibility
 
-DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtimes for interacting with an OpenCode server. The shared React UI lives in `packages/ui`; `packages/web` owns the Express server, browser bootstrap, CLI, and the optional Supabase-backed shared-host control plane; `packages/cursor-sdk-runtime` owns shared Cursor SDK execution/auth helpers; `packages/harness-runtime` owns durable harness operations, diagnostics, lifecycle, and evidence primitives; `packages/electron` is the primary desktop shell; `packages/desktop` is the legacy Tauri shell; `packages/vscode` hosts the same experience inside VS Code.
+DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtimes for interacting with an OpenCode server. The shared React UI lives in `packages/ui`; `packages/web` owns the Express server, browser bootstrap, CLI, and the optional Supabase-backed shared-host control plane; `packages/shared-runtime` owns dependency-light configuration-apply, quota-normalization, and safe-archive rules shared by web/Electron and VS Code; `packages/cursor-sdk-runtime` owns shared Cursor SDK execution/auth helpers; `packages/harness-runtime` owns durable harness operations, diagnostics, lifecycle, and evidence primitives; `packages/electron` is the primary desktop shell; `packages/desktop` is the legacy Tauri shell; `packages/vscode` hosts the same experience inside VS Code.
 
 ## System Entry Points
 
@@ -10,6 +10,7 @@ DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtim
 - `packages/web/server/index.js`: Express/OpenCode server bootstrap and runtime composition root.
 - `packages/web/bin/cli.js`: `openchamber` CLI entrypoint for serving, auth, tunnels, and operator workflows.
 - `packages/web/src/main.tsx`: standalone web bootstrap that injects runtime APIs before loading shared UI.
+- `packages/shared-runtime/index.js`: cross-host safe-archive, configuration-apply coordinator, and quota-adapter exports.
 - `packages/cursor-sdk-runtime/index.js`: shared Cursor SDK model execution, virtual provider discovery, split SDK/usage credential helpers, and the public pending-question contract.
 - `packages/cursor-sdk-runtime/cursor-question-runtime.js`: authenticated loopback MCP question bridge for primary Cursor Builder/Orchestrator runs.
 - `packages/ui/src/main.tsx`: shared React UI mount and provider initialization.
@@ -30,6 +31,7 @@ DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtim
 | `packages/` | Workspace package boundary for runtime packages and shared UI/server layers. | [packages/codemap.md](packages/codemap.md) |
 | `packages/ui/` | Shared React UI runtime, feature components, Zustand stores, and event-sync pipeline used by all shells. | [packages/ui/codemap.md](packages/ui/codemap.md) |
 | `packages/web/` | Browser app, Express/OpenCode server runtime, and `openchamber` CLI. | [packages/web/codemap.md](packages/web/codemap.md) |
+| `packages/shared-runtime/` | Dependency-light safe-archive, configuration-apply, and provider-quota contracts shared by web/Electron and VS Code. | [packages/shared-runtime/codemap.md](packages/shared-runtime/codemap.md) |
 | `packages/cursor-sdk-runtime/` | Shared Cursor SDK execution runtime used by web/Electron and VS Code; quota credentials remain deliberately separate in each surface's quota module. | [packages/cursor-sdk-runtime/codemap.md](packages/cursor-sdk-runtime/codemap.md) |
 | `packages/orchestration-runtime/` | Dependency-free DevRyan-managed task contract, dispatch-barrier, and scheduler policy shared by web/Electron and VS Code owners. | [packages/orchestration-runtime/codemap.md](packages/orchestration-runtime/codemap.md) |
 | `packages/harness-runtime/` | Durable harness operations, diagnostic journal, lifecycle correlation, and optional turn evidence shared by host runtimes. | [packages/harness-runtime/codemap.md](packages/harness-runtime/codemap.md) |
@@ -43,6 +45,7 @@ DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtim
 
 - **Shared UI, views, stores, hooks, theme, chat, settings** → start in `packages/ui/codemap.md`, then the relevant `packages/ui/src/**/codemap.md`.
 - **Server routes, OpenCode integration, terminal/git/GitHub/quota/TTS/skills/session-plan APIs** → start in `packages/web/codemap.md`, then `packages/web/server/codemap.md` and `packages/web/server/lib/codemap.md`.
+- **Cross-host ZIP installation safety, batched configuration apply state, or provider quota normalization** → `packages/shared-runtime/codemap.md` and `packages/shared-runtime/DOCUMENTATION.md`; host adapters remain in web and VS Code.
 - **Cloudflare tunnel lifecycle, stable origin relay, public reachability, link exchange, and Remote Tunnel settings UI** → `packages/web/server/lib/tunnels/DOCUMENTATION.md`, `packages/web/server/lib/opencode/DOCUMENTATION.md`, and `packages/ui/src/components/sections/openchamber/TunnelSettings.tsx`.
 - **Shared-host identity, Supabase roles/policies, managed project and branch grants, session ownership, directory opacity, live revocation, or actor audit** → `packages/web/server/lib/multi-user/codemap.md` and `packages/web/server/lib/multi-user/DOCUMENTATION.md`; the administration UI starts in `packages/ui/src/components/sections/users/codemap.md`.
 - **Managed bug intake or administrator diagnostic review** → `packages/ui/src/components/sections/bug-reports/codemap.md` for the page and `packages/web/server/lib/multi-user/{bug-reports.js,activity-projection.js,error-diagnostics.js,diagnostic-recovery.js}` plus the module documentation for storage, access, impact, recovery, and sanitization.
@@ -50,7 +53,7 @@ DevRyan is a Bun/Node monorepo that provides web, desktop, and VS Code UI runtim
 - **CLI commands, prompts, output modes, tunnel/auth operator flows** → `packages/web/bin/codemap.md`.
 - **Electron desktop behavior, IPC, menus, dialogs, notifications, updater, deep links** → `packages/electron/codemap.md`.
 - **Detachable manual/agent browser surfaces, session-scoped leases, managed browser CLI/skill, or private browser tool** → `packages/electron/codemap.md`, `packages/ui/src/components/layout/codemap.md`, `packages/ui/src/stores/codemap.md`, `packages/web/src/codemap.md`, `packages/web/server/lib/browser-cdp/codemap.md`, `packages/web/server/lib/agent-browser/codemap.md`, and `packages/web/server/default-config/codemap.md`.
-- **Standalone-web Browser tabs, project-preview grants, loopback host routing, console/element inspection, or detachable web pop-outs** → `packages/ui/src/components/layout/codemap.md`, `packages/ui/src/apps/codemap.md`, `packages/web/src/codemap.md`, and `packages/web/server/lib/preview/codemap.md`.
+- **Browser tabs, viewport presets/resizing, project-preview grants, loopback host routing, console/element inspection, or detachable web pop-outs** → `packages/ui/src/components/layout/codemap.md`, `packages/electron/codemap.md`, `packages/ui/src/apps/codemap.md`, `packages/web/src/codemap.md`, and `packages/web/server/lib/preview/codemap.md`.
 - **Legacy Tauri compatibility only** → `packages/desktop/codemap.md`; do not add new desktop features there unless explicitly required for released Tauri users.
 - **VS Code extension host or webview bridge behavior** → `packages/vscode/codemap.md`, `packages/vscode/src/codemap.md`, and `packages/vscode/webview/codemap.md`.
 - **DevRyan-managed task identity, admission, dispatch barriers, cancellation, recovery, or persistence policy** → `packages/orchestration-runtime/codemap.md` and `packages/orchestration-runtime/DOCUMENTATION.md`.

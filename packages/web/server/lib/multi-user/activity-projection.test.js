@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 
 import { createDiagnosticSanitizer } from '@openchamber/harness-runtime';
 
+import { CONTEXT_MODE_WEDGE_FAILURE_TEXT } from '../opencode/context-mode-recovery.js';
 import {
   ERROR_CONTEXT_TEXT_LIMIT_BYTES,
+  ERROR_STACK_TEXT_LIMIT_BYTES,
   isProjectableOpenCodeActivity,
   projectOpenCodeActivity,
 } from './activity-projection.js';
@@ -121,6 +123,19 @@ describe('OpenCode activity projection', () => {
     expect(isProjectableOpenCodeActivity({ type: 'message.part.delta', properties: {} })).toBe(false);
     expect(
       isProjectableOpenCodeActivity({
+        type: 'message.part.updated',
+        properties: {
+          part: {
+            id: 'part-aborted',
+            type: 'tool',
+            tool: 'apply_patch',
+            state: { status: 'error', error: 'Tool execution aborted' },
+          },
+        },
+      }),
+    ).toBe(false);
+    expect(
+      isProjectableOpenCodeActivity({
         type: 'session.error',
         properties: { sessionID: 'session-1', error: { name: 'MessageAbortedError' } },
       }),
@@ -139,6 +154,79 @@ describe('OpenCode activity projection', () => {
     ).toBe(true);
   });
 
+  it('does not project exact tool-abort boilerplate but preserves unrelated tool errors', () => {
+    const payloadFor = (error) => ({
+      type: 'message.part.updated',
+      properties: {
+        part: {
+          id: 'part-failure',
+          type: 'tool',
+          tool: 'apply_patch',
+          sessionID: 'session-1',
+          state: { status: 'error', error },
+        },
+      },
+    });
+
+    expect(projectOpenCodeActivity({ ownership, payload: payloadFor({ message: 'Tool execution aborted.' }) }))
+      .toBeNull();
+    expect(projectOpenCodeActivity({ ownership, payload: payloadFor('Patch command crashed') }))
+      .toMatchObject({ action: 'tool.failed' });
+  });
+
+  it('records normalized transport failure kind for session errors', () => {
+    const projected = projectOpenCodeActivity({
+      ownership,
+      context: { rootSessionId: 'session-1' },
+      payload: {
+        type: 'session.error',
+        properties: {
+          sessionID: 'session-1',
+          error: { name: 'UnknownError', data: { message: 'The operation timed out.' } },
+        },
+      },
+    });
+
+    expect(projected).toMatchObject({
+      action: 'session.error',
+      details: {
+        diagnosticImpact: 'medium',
+        diagnosticDisposition: 'actionable',
+        metadata: { failureKind: 'request_timeout' },
+      },
+    });
+  });
+
+  it('projects a retry-capable child 504 idle timeout as expected stream interruption', () => {
+    const projected = projectOpenCodeActivity({
+      ownership,
+      context: { rootSessionId: 'session-root' },
+      payload: {
+        type: 'session.error',
+        properties: {
+          sessionID: 'session-1',
+          error: {
+            name: 'UnknownError',
+            data: { message: 'Streaming response failed: [504] Upstream idle timeout exceeded' },
+          },
+        },
+      },
+    });
+
+    expect(projected).toMatchObject({
+      action: 'session.error',
+      details: {
+        diagnosticImpact: 'low',
+        diagnosticDisposition: 'expected',
+        metadata: {
+          rootSessionId: 'session-root',
+          childSessionId: 'session-1',
+          failureKind: 'stream_idle_timeout',
+        },
+      },
+    });
+  });
+
   it('projects failed tools without output and with a deterministic sanitized event id', () => {
     const payload = {
       type: 'message.part.updated',
@@ -154,7 +242,10 @@ describe('OpenCode activity projection', () => {
             status: 'error',
             input: { command: 'do not retain this command' },
             output: 'do not retain this output',
-            error: 'Failed at /private/secret with token super-secret',
+            error: {
+              code: 'DEVRYAN_TOOL_INPUT_INVALID',
+              message: 'Failed at /private/secret with token super-secret',
+            },
           },
         },
       },
@@ -178,6 +269,8 @@ describe('OpenCode activity projection', () => {
       details: {
         eventId: expect.stringMatching(/^[0-9a-f-]{36}$/),
         success: false,
+        diagnosticImpact: 'low',
+        diagnosticDisposition: 'expected',
         metadata: {
           kind: 'tool',
           tool: 'bash',
@@ -189,6 +282,8 @@ describe('OpenCode activity projection', () => {
           providerId: 'openai',
           modelId: 'gpt-5',
           agent: 'build',
+          errorCode: 'DEVRYAN_TOOL_INPUT_INVALID',
+          failureClass: 'input',
           failureText: 'Failed at <WORKTREE> with token [REDACTED]',
         },
       },
@@ -196,6 +291,90 @@ describe('OpenCode activity projection', () => {
     expect(projected.dedupeKey).toBe(projected.details.eventId);
     expect(replayed.details.eventId).toBe(projected.details.eventId);
     expect(JSON.stringify(projected)).not.toContain('do not retain');
+  });
+
+  it('projects targeted ripgrep failures as expected with only sanitized paths retained', () => {
+    const projected = projectOpenCodeActivity({
+      ownership,
+      assignment: {
+        publicDirectory: '/workspace',
+        repositoryPath: '/workspace',
+      },
+      context: { rootSessionId: 'session-1', activeDirectory: '/workspace' },
+      payload: {
+        type: 'message.part.updated',
+        properties: {
+          part: {
+            id: 'part-ripgrep',
+            type: 'tool',
+            tool: 'grep',
+            sessionID: 'session-1',
+            state: {
+              status: 'error',
+              input: { path: '/workspace/scripts/missing.test.ts', pattern: 'do not retain this pattern' },
+              error: 'ripgrep execution failed',
+            },
+          },
+        },
+      },
+    });
+
+    expect(projected).toMatchObject({
+      details: {
+        diagnosticImpact: 'low',
+        diagnosticDisposition: 'expected',
+        metadata: {
+          failureClass: 'filesystem_target',
+          paths: ['scripts/missing.test.ts'],
+        },
+      },
+    });
+    expect(JSON.stringify(projected)).not.toContain('do not retain this pattern');
+  });
+
+  it('projects nested Context Mode command exits as low impact with correlation intact', () => {
+    const projected = projectOpenCodeActivity({
+      ownership,
+      context: {
+        rootSessionId: 'session-1',
+        message: { messageId: 'message-command-exit', providerId: 'openai', modelId: 'gpt-5', agent: 'builder' },
+      },
+      payload: {
+        type: 'message.part.updated',
+        properties: {
+          part: {
+            id: 'part-command-exit',
+            messageID: 'message-command-exit',
+            callID: 'call-command-exit',
+            type: 'tool',
+            tool: 'ctx_execute',
+            sessionID: 'session-1',
+            state: {
+              status: 'error',
+              input: { code: 'do not retain this command' },
+              error: 'Exit code: 1\n\nstdout:\nTests 2 failed | 58 passed',
+            },
+          },
+        },
+      },
+    });
+
+    expect(projected).toMatchObject({
+      action: 'tool.failed',
+      details: {
+        diagnosticImpact: 'low',
+        diagnosticSource: 'observed',
+        metadata: {
+          tool: 'ctx_execute',
+          toolId: 'part-command-exit',
+          callId: 'call-command-exit',
+          messageId: 'message-command-exit',
+          failureClass: 'command_exit',
+          failureText: 'Exit code: 1\n\nstdout:\nTests 2 failed | 58 passed',
+        },
+      },
+    });
+    expect(JSON.stringify(projected)).not.toContain('do not retain this command');
   });
 
   it('sanitizes and relativizes missing targets against the authoritative active worktree', () => {
@@ -295,6 +474,56 @@ describe('OpenCode activity projection', () => {
     expect(JSON.stringify(projected)).not.toContain('do not retain');
   });
 
+  it('captures sanitized stacks for session and tool failures and bounds them to 16 KiB', () => {
+    const sessionProjection = projectOpenCodeActivity({
+      ownership,
+      context: { rootSessionId: 'session-1' },
+      sanitizeFailureText: (value) => value.replace('secret-token', '[REDACTED]'),
+      payload: {
+        type: 'session.error',
+        properties: {
+          sessionID: 'session-1',
+          error: {
+            name: 'APIError',
+            message: 'Provider rejected the request',
+            stack: `APIError: Provider rejected the request\n    at call (file.js:1:1) secret-token\n${'    at frame (file.js:1:1)\n'.repeat(2_000)}`,
+          },
+        },
+      },
+    });
+
+    expect(sessionProjection.details.metadata.stack).toContain('[REDACTED]');
+    expect(sessionProjection.details.metadata.stack).not.toContain('secret-token');
+    expect(Buffer.byteLength(sessionProjection.details.metadata.stack, 'utf8')).toBeLessThanOrEqual(
+      ERROR_STACK_TEXT_LIMIT_BYTES,
+    );
+
+    const toolProjection = projectOpenCodeActivity({
+      ownership,
+      context: { rootSessionId: 'session-1' },
+      payload: {
+        type: 'message.part.updated',
+        properties: {
+          part: {
+            id: 'part-stack',
+            type: 'tool',
+            tool: 'bash',
+            sessionID: 'session-1',
+            state: {
+              status: 'error',
+              error: { message: 'Command failed', stack: 'Error: Command failed\n    at run (bash.js:2:2)' },
+            },
+          },
+        },
+      },
+    });
+
+    expect(toolProjection.details.metadata).toMatchObject({
+      failureText: 'Command failed',
+      stack: 'Error: Command failed\n    at run (bash.js:2:2)',
+    });
+  });
+
   it('excludes recoverable managed failures until abandoned and excludes successful retries', () => {
     const task = {
       owner: 'devryan',
@@ -387,5 +616,43 @@ describe('OpenCode activity projection', () => {
       },
     });
     expect(replayed.details.eventId).toBe(projected.details.eventId);
+  });
+
+  it('rewrites context-mode disk I/O failures to stable wedge copy', () => {
+    const projected = projectOpenCodeActivity({
+      ownership,
+      payload: {
+        type: 'message.part.updated',
+        properties: {
+          part: {
+            id: 'part-ctx-ioerr',
+            type: 'tool',
+            tool: 'ctx_batch_execute',
+            sessionID: 'session-1',
+            state: {
+              status: 'error',
+              error: 'Batch execution error: disk I/O error',
+            },
+          },
+        },
+      },
+    });
+
+    expect(projected).toMatchObject({
+      action: 'tool.failed',
+      details: {
+        diagnosticImpact: 'medium',
+        diagnosticSource: 'observed',
+        metadata: {
+          tool: 'ctx_batch_execute',
+          failureClass: 'tool_runtime',
+          failureText: CONTEXT_MODE_WEDGE_FAILURE_TEXT,
+        },
+      },
+    });
+    expect(projected.details.metadata.failureText).toMatch(/SQLITE_IOERR/);
+    expect(Buffer.byteLength(projected.details.metadata.failureText, 'utf8')).toBeLessThanOrEqual(
+      ERROR_CONTEXT_TEXT_LIMIT_BYTES,
+    );
   });
 });

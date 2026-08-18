@@ -35,7 +35,6 @@ import * as sessionActions from '@/sync/session-actions';
 import {
     useDirectorySync,
     useSession,
-    useSessionMessagesResolved,
     useSessionRevertPending,
     useUserMessageHistory,
 } from '@/sync/sync-context';
@@ -47,7 +46,7 @@ import { useInlineCommentDraftStore, type InlineCommentDraft } from '@/stores/us
 import { appendInlineComments } from '@/lib/messages/inlineComments';
 import { renderMagicPrompt } from '@/lib/magicPrompts';
 import { AttachedFilesList, AttachedVSCodeFileChips, ActiveEditorFileSuggestion } from './FileAttachment';
-import { QueuedMessageChips } from './QueuedMessageChips';
+import { QueuedMessageTab } from './QueuedMessageTab';
 import { FileMentionAutocomplete, type FileMentionHandle } from './FileMentionAutocomplete';
 import { CommandAutocomplete, type CommandAutocompleteHandle, type CommandInfo } from './CommandAutocomplete';
 import { SkillAutocomplete, type SkillAutocompleteHandle } from './SkillAutocomplete';
@@ -64,7 +63,7 @@ import { isProviderModelAvailable } from '@/lib/providers/modelAvailability';
 // useMessageStore removed — messages now come from sync system
 import { isTauriShell, isVSCodeRuntime } from '@/lib/desktop';
 import { isIMECompositionEvent } from '@/lib/ime';
-import { StopIcon } from '@/components/icons/StopIcon';
+import { StopIconFilled } from '@/components/icons/StopIconFilled';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getCycledPrimaryAgentName, type MobileControlsPanel } from './mobileControlsUtils';
 import { applyDraftAwareAgentChange } from './draftAwareAgentChange';
@@ -115,13 +114,11 @@ import {
     wrapResponseStyleReminder,
 } from '@/lib/responseStyle';
 import { getSyncMessages } from '@/sync/sync-refs';
-import { ContextUsageDisplay } from '@/components/ui/ContextUsageDisplay';
-import { ContextUsageWindow } from './ContextUsageWindow';
+import { ComposerContextUsageControl } from './ComposerContextUsageControl';
 import { resolveSelectableAgentOptions } from './modelControlAgentOptions';
 import { getPdfAttachmentValidation, type AttachmentValidationResult } from '@/lib/attachments/attachmentCapabilities';
 import { listenDesktopNativeDragDrop } from '@/lib/desktopNative';
-import { useStableSessionContextUsage } from '@/hooks/useStableSessionContextUsage';
-import { useSelectedModelContextCapacity } from '@/hooks/useSelectedModelContextCapacity';
+import { shouldShowComposerContextUsage } from '@/lib/contextUsagePresentation';
 import { getEditableComposerTargetKey } from './chatInputFocusTarget';
 import {
     DeferredChatDialog,
@@ -149,8 +146,8 @@ import {
 } from './queuedSend';
 import { preserveComposerFocus, runQueueActionOnce } from './mobileQueueAction';
 import { useAgentHandoffGuard } from './agentHandoffGuardContext';
+import { resolveComposerTextareaSize } from './composerTextareaSizing';
 
-const MAX_VISIBLE_TEXTAREA_LINES = 8;
 const EMPTY_QUEUE: QueuedMessage[] = [];
 const FILE_MENTION_TOKEN = /^@[^\s]+$/;
 const CHAT_DRAFT_PERSIST_DEBOUNCE_MS = 500;
@@ -489,11 +486,11 @@ type ComposerActionButtonsProps = {
     isMobile: boolean;
     isVSCode: boolean;
     footerIconButtonClass: string;
-    sendIconSizeClass: string;
-    stopIconSizeClass: string;
+    actionIconSizeClass: string;
     canSend: boolean;
     canAbort: boolean;
     canQueue: boolean;
+    isStopping: boolean;
     currentSessionId: string | null;
     newSessionDraftOpen: boolean;
     onPrimaryAction: () => void;
@@ -506,11 +503,11 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
         isMobile,
         isVSCode,
         footerIconButtonClass,
-        sendIconSizeClass,
-        stopIconSizeClass,
+        actionIconSizeClass,
         canSend,
         canAbort,
         canQueue,
+        isStopping,
         currentSessionId,
         newSessionDraftOpen,
         onPrimaryAction,
@@ -519,13 +516,17 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
     } = props;
     const { t } = useI18n();
     const actionButtonSizeClass = isMobile ? 'h-8 w-8' : (isVSCode ? 'h-5 w-5' : 'h-7 w-7');
-    const actionButtonClass = cn(
-        footerIconButtonClass,
-        actionButtonSizeClass,
-        'rounded-full bg-[var(--surface-foreground)] text-[var(--surface-background)]',
+    const actionButtonPaletteClass = cn(
+        'bg-[var(--surface-foreground)] text-[var(--surface-background)] shadow-none',
         'hover:bg-[color-mix(in_srgb,var(--surface-foreground)_88%,var(--surface-background))] hover:text-[var(--surface-background)]',
         'active:bg-[color-mix(in_srgb,var(--surface-foreground)_78%,var(--surface-background))]',
         'disabled:opacity-30 disabled:hover:bg-[var(--surface-foreground)] disabled:hover:text-[var(--surface-background)]'
+    );
+    const actionButtonClass = cn(
+        footerIconButtonClass,
+        actionButtonSizeClass,
+        'rounded-full',
+        actionButtonPaletteClass
     );
 
     const sendButton = (
@@ -546,7 +547,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
             )}
             aria-label={t('chat.chatInput.actions.sendMessageAria')}
         >
-            <RiArrowUpLine className={cn(sendIconSizeClass)} />
+            <RiArrowUpLine className={cn(actionIconSizeClass)} />
         </button>
     );
 
@@ -574,10 +575,12 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
             <button
                 type="button"
                 onClick={onAbort}
-                className={actionButtonClass}
+                disabled={isStopping}
+                aria-busy={isStopping}
+                className={cn(actionButtonClass, isStopping && 'opacity-60 animate-pulse')}
                 aria-label={t('chat.chatInput.actions.stopGeneratingAria')}
             >
-                <StopIcon className={cn(stopIconSizeClass, 'block text-[var(--surface-background)]')} />
+                <StopIconFilled className={cn(actionIconSizeClass, 'block')} />
             </button>
         </div>
     );
@@ -585,11 +588,11 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
     prev.isMobile === next.isMobile
     && prev.isVSCode === next.isVSCode
     && prev.footerIconButtonClass === next.footerIconButtonClass
-    && prev.sendIconSizeClass === next.sendIconSizeClass
-    && prev.stopIconSizeClass === next.stopIconSizeClass
+    && prev.actionIconSizeClass === next.actionIconSizeClass
     && prev.canSend === next.canSend
     && prev.canAbort === next.canAbort
     && prev.canQueue === next.canQueue
+    && prev.isStopping === next.isStopping
     && prev.currentSessionId === next.currentSessionId
     && prev.newSessionDraftOpen === next.newSessionDraftOpen
     && prev.onPrimaryAction === next.onPrimaryAction
@@ -743,10 +746,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     );
     const currentSession = useSession(currentSessionId, currentSessionDirectory ?? undefined);
     const currentSessionIsSubtask = Boolean((currentSession as { parentID?: string | null } | undefined)?.parentID);
-    const currentSessionMessagesResolved = useSessionMessagesResolved(
-        currentSessionId ?? '',
-        currentSessionDirectory ?? undefined,
-    );
     const currentDirectory = useDirectoryStore((s) => s.currentDirectory);
     const newSessionDraft = useSessionUIStore((s) => s.newSessionDraft);
     const newSessionDraftOpen = Boolean(currentDraftId && newSessionDraft?.open);
@@ -778,10 +777,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const pendingInputText = useInputStore((s) => s.pendingInputText);
     const consumePendingSyntheticParts = useInputStore((s) => s.consumePendingSyntheticParts);
     const acknowledgeSessionAbort = useSessionUIStore((s) => s.acknowledgeSessionAbort);
-    const abortCurrentOperation = React.useCallback(
-        (sessionIdOverride?: string) => sessionActions.abortCurrentOperation(sessionIdOverride ?? currentSessionId ?? ''),
-        [currentSessionId],
-    );
     const currentManagementSessionId = currentSessionId;
     const projects = useProjectsStore((state) => state.projects);
     const activeProjectId = useProjectsStore((state) => state.activeProjectId);
@@ -820,8 +815,8 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const chatInputFocusGlowMix = isDarkInput ? '25%' : '22%';
     const chatInputFocusGlowBlur = isDarkInput ? '3px' : '2px';
     const chatInputElevationShadow = isDarkInput
-        ? '0 2px 8px rgba(0,0,0,0.35), 0 8px 24px rgba(0,0,0,0.45)'
-        : '0 2px 8px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.10)';
+        ? '0 2px 6px rgba(0,0,0,0.25), 0 6px 18px rgba(0,0,0,0.30)'
+        : '0 1px 4px rgba(0,0,0,0.04), 0 5px 14px rgba(0,0,0,0.07)';
     const chatInputBackground = isDarkInput
         ? currentTheme?.colors?.surface?.subtle
         : (currentTheme?.colors?.surface?.background ?? '#ffffff');
@@ -829,7 +824,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     // step away from the card surface to read as a separate layer.
     const chatInputTabBackground = isDarkInput
         ? (currentTheme?.colors?.surface?.muted ?? '#222222')
-        : (currentTheme?.colors?.surface?.muted ?? '#f2f2f2');
+        : `color-mix(in srgb, ${currentTheme?.colors?.surface?.muted ?? '#f2f2f2'} 45%, ${currentTheme?.colors?.surface?.background ?? '#ffffff'})`;
 
     // Pending questions take over the composer surface (same scoped selector as
     // ChatContainer; cached results keep re-renders limited to actual changes).
@@ -840,38 +835,9 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
     const pendingQuestions = useDirectorySync(pendingQuestionsSelector, currentSessionDirectory ?? undefined).questions;
     const hasPendingQuestions = pendingQuestions.length > 0;
     const hadPendingQuestionsRef = React.useRef(hasPendingQuestions);
-    React.useEffect(() => {
-        const hadPending = hadPendingQuestionsRef.current;
-        hadPendingQuestionsRef.current = hasPendingQuestions;
-        if (hadPending && !hasPendingQuestions && !isMobile) {
-            requestAnimationFrame(() => textareaRef.current?.focus({ preventScroll: true }));
-        }
-    }, [hasPendingQuestions, isMobile]);
 
     const sendableAttachedFiles = attachedFiles;
-    const getContextUsage = useSessionUIStore((state) => state.getContextUsage);
-    const selectedCapacity = useSelectedModelContextCapacity();
-    const contextUsage = getContextUsage(selectedCapacity);
-    const isContextUsageResolvedForSession = !currentSessionId || currentSessionMessagesResolved;
-    const stableContextUsage = useStableSessionContextUsage({
-        directory: currentDirectory,
-        sessionId: currentSessionId,
-        usage: contextUsage,
-        resolved: isContextUsageResolvedForSession,
-    });
-
-    const showContextUsageButton = !isMobile && !isVSCode && !!stableContextUsage && stableContextUsage.totalTokens > 0;
-    const [contextWindowOpen, setContextWindowOpen] = React.useState(false);
-
-    React.useEffect(() => {
-        if (!showContextUsageButton) {
-            setContextWindowOpen(false);
-        }
-    }, [showContextUsageButton]);
-
-    const handleOpenContextWindow = React.useCallback(() => {
-        setContextWindowOpen((prev) => !prev);
-    }, []);
+    const showContextUsageButton = shouldShowComposerContextUsage({ isMobile, isVSCode });
 
     const knownAgentNames = React.useMemo(
         () => new Set(agents.map((agent) => agent.name.toLowerCase())),
@@ -1413,6 +1379,25 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         pendingSendAbortKey ? state.abortControllers.has(pendingSendAbortKey) : false,
     );
     const canAbort = isAbortableSessionPhase(sessionPhase) || hasPendingSendAbort;
+    const isStopping = useSessionUIStore((state) =>
+        currentSessionId ? state.stoppingSessions.has(currentSessionId) : false,
+    );
+
+    // Clear the optimistic stopping flag once the session settles, or after a
+    // safety window (longer than the abort watchdog) so a wedged flag can't
+    // leave the stop button disabled forever.
+    React.useEffect(() => {
+        if (!isStopping || !currentSessionId) return;
+        const sessionId = currentSessionId;
+        if (!isAbortableSessionPhase(sessionPhase)) {
+            useSessionUIStore.getState().clearSessionStopping(sessionId);
+            return;
+        }
+        const timer = setTimeout(() => {
+            useSessionUIStore.getState().clearSessionStopping(sessionId);
+        }, 10_000);
+        return () => clearTimeout(timer);
+    }, [isStopping, sessionPhase, currentSessionId]);
     const canQueueDuringActiveTurn = isMobile && inputMode === 'normal' && hasContent && Boolean(currentSessionId)
         && !currentSessionIsSubtask && isAbortableSessionPhase(sessionPhase);
 
@@ -2121,14 +2106,11 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         }
     }, [inputMode, getCurrentInputSnapshot, currentSessionId, currentSessionIsSubtask, sessionPhase, queueModeEnabled, handleQueueMessage]);
 
-    const handleContextCompact = React.useCallback(() => {
-        if (!currentSessionId) return;
-
-        setContextWindowOpen(false);
+    const handleContextCompact = React.useCallback((sessionId: string) => {
         // Reuse the same local /compact behavior without routing through the composer,
         // so existing drafts/attachments are not accidentally submitted or cleared.
-        void runCompactCommand(currentSessionId);
-    }, [currentSessionId, runCompactCommand]);
+        void runCompactCommand(sessionId);
+    }, [runCompactCommand]);
 
     const handlePlanModeToggle = React.useCallback(() => {
         const nextPlanMode = !isPlanModeSelected;
@@ -2467,9 +2449,15 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             useSessionUIStore.getState().abortPendingSend(abortKey);
         }
         if (currentSessionId) {
-            void abortCurrentOperation(currentSessionId);
+            const sessionId = currentSessionId;
+            useSessionUIStore.getState().markSessionStopping(sessionId);
+            void sessionActions.abortCurrentOperationConfirmed(sessionId).then((confirmed) => {
+                if (!confirmed) {
+                    useSessionUIStore.getState().clearSessionStopping(sessionId);
+                }
+            });
         }
-    }, [abortCurrentOperation, clearAbortPrompt, currentDraftId, currentSessionId, newSessionDraftOpen, startAbortIndicator]);
+    }, [clearAbortPrompt, currentDraftId, currentSessionId, newSessionDraftOpen, startAbortIndicator]);
 
     const handleCycleAgent = React.useCallback(() => {
         const nextAgentName = getCycledPrimaryAgentName(selectableAgentOptions, effectiveCurrentAgentName);
@@ -2560,15 +2548,13 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         const lineHeight = computedStyle ? parseFloat(computedStyle.lineHeight) : NaN;
         const paddingTop = computedStyle ? parseFloat(computedStyle.paddingTop) : NaN;
         const paddingBottom = computedStyle ? parseFloat(computedStyle.paddingBottom) : NaN;
-        const fallbackLineHeight = 22;
-        const fallbackPadding = 16;
-        const paddingTotal = Number.isNaN(paddingTop) || Number.isNaN(paddingBottom)
-            ? fallbackPadding
-            : paddingTop + paddingBottom;
-        const targetLineHeight = Number.isNaN(lineHeight) ? fallbackLineHeight : lineHeight;
-        const maxHeight = targetLineHeight * MAX_VISIBLE_TEXTAREA_LINES + paddingTotal;
-        const scrollHeight = textarea.scrollHeight || textarea.offsetHeight;
-        const nextHeight = Math.min(scrollHeight, maxHeight);
+        const { height: nextHeight, maxHeight } = resolveComposerTextareaSize({
+            scrollHeight: textarea.scrollHeight,
+            offsetHeight: textarea.offsetHeight,
+            lineHeight,
+            paddingTop,
+            paddingBottom,
+        });
 
         textarea.style.height = `${nextHeight}px`;
         textarea.style.maxHeight = `${maxHeight}px`;
@@ -2583,6 +2569,61 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
             return { height: nextHeight, maxHeight };
         });
     }, [isDesktopExpanded]);
+
+    React.useLayoutEffect(() => {
+        const hadPending = hadPendingQuestionsRef.current;
+        hadPendingQuestionsRef.current = hasPendingQuestions;
+        if (!hadPending || hasPendingQuestions) {
+            return;
+        }
+
+        // The composer stayed mounted but was display:none while the Question
+        // Card owned this surface. Restore its intrinsic height before paint so
+        // the handoff cannot expose a one-frame collapsed textarea.
+        adjustTextareaHeight({ allowShrink: true });
+        if (isMobile) {
+            return;
+        }
+
+        const frame = requestAnimationFrame(() => textareaRef.current?.focus({ preventScroll: true }));
+        return () => cancelAnimationFrame(frame);
+    }, [adjustTextareaHeight, hasPendingQuestions, isMobile]);
+
+    React.useLayoutEffect(() => {
+        const composer = dropZoneRef.current;
+        if (!composer || hasPendingQuestions || isDesktopExpanded || typeof ResizeObserver === 'undefined') {
+            return;
+        }
+
+        let lastWidth = composer.getBoundingClientRect().width;
+        let resizeFrame: number | null = null;
+        const observer = new ResizeObserver((entries) => {
+            const nextWidth = entries[0]?.contentRect.width ?? composer.getBoundingClientRect().width;
+            if (!Number.isFinite(nextWidth) || nextWidth <= 0 || Math.abs(nextWidth - lastWidth) < 0.5) {
+                return;
+            }
+
+            lastWidth = nextWidth;
+            if (resizeFrame !== null) {
+                return;
+            }
+
+            resizeFrame = requestAnimationFrame(() => {
+                resizeFrame = null;
+                // Width changes can reduce wrapping as well as increase it, so
+                // unlike the typing hot path this measurement must allow shrink.
+                adjustTextareaHeight({ allowShrink: true });
+            });
+        });
+
+        observer.observe(composer);
+        return () => {
+            observer.disconnect();
+            if (resizeFrame !== null) {
+                cancelAnimationFrame(resizeFrame);
+            }
+        };
+    }, [adjustTextareaHeight, hasPendingQuestions, isDesktopExpanded]);
 
     React.useLayoutEffect(() => {
         const pendingRestore = pendingTextareaSelectionRestoreRef.current;
@@ -3992,8 +4033,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
 
     const footerPaddingClass = isMobile ? 'px-1.5 py-0.5' : (isVSCode ? 'px-1.5 py-0.5' : 'px-2.5 pt-0 pb-0.5');
     const buttonSizeClass = isMobile ? 'h-8 w-8' : (isVSCode ? 'h-5 w-5' : 'h-6 w-6');
-    const sendIconSizeClass = isMobile ? 'h-4 w-4' : (isVSCode ? 'h-3.5 w-3.5' : 'h-4 w-4');
-    const stopIconSizeClass = isMobile ? 'h-5 w-5' : (isVSCode ? 'h-3.5 w-3.5' : 'h-4 w-4');
+    const actionIconSizeClass = isMobile ? 'h-4 w-4' : (isVSCode ? 'h-3.5 w-3.5' : 'h-4 w-4');
     const iconSizeClass = isMobile ? 'h-[18px] w-[18px]' : (isVSCode ? 'h-4 w-4' : 'h-[18px] w-[18px]');
 
     const iconButtonBaseClass = 'flex cursor-pointer items-center justify-center text-foreground transition-none outline-none focus:outline-none flex-shrink-0 disabled:cursor-not-allowed';
@@ -4066,10 +4106,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
         >
             <div className={cn('chat-input-column relative overflow-visible', isDesktopExpanded && 'flex flex-1 min-h-0 flex-col')}>
                 <AttachedFilesList />
-                <QueuedMessageChips
-                    onEditMessage={handleQueuedMessageEdit}
-                    onSendMessage={handleQueuedMessageSend}
-                />
                 {hasDrafts && (
                     <div className="flex flex-wrap items-center gap-2 pb-2">
                         {reviewCount > 0 ? (
@@ -4233,10 +4269,17 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                         </div>
                     </div>
                 )}
+                <QueuedMessageTab
+                    tabBackground={chatInputTabBackground}
+                    onEditMessage={handleQueuedMessageEdit}
+                    onSendMessage={handleQueuedMessageSend}
+                />
                 <MemoStatusRow
                     showAbortStatus={showAbortStatus}
                     showAssistantStatus={false}
                     showTodos
+                    tabBackground={chatInputTabBackground}
+                    suppressTab={hasQueuedMessages}
                 />
                 {showDraftTargetSelectors && newSessionDraft?.targetPreparationError ? (
                     <div className="mb-1.5 px-2 typography-micro text-destructive" role="alert">
@@ -4245,7 +4288,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                 ) : null}
                 {showDraftTargetSelectors && selectedDraftProject ? (
                     <div
-                        className="relative -mb-3 ml-1.5 mr-8 flex min-w-0 items-center gap-1 rounded-t-xl px-2 pt-1 pb-3"
+                        className="relative -mb-3 mx-6 flex min-w-0 items-center gap-1 rounded-t-xl px-2 pt-1 pb-3"
                         style={{ backgroundColor: chatInputTabBackground }}
                     >
                         <Select
@@ -4392,14 +4435,6 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                         </div>
                     )}
 
-                    {contextWindowOpen && stableContextUsage ? (
-                        <ContextUsageWindow
-                            usage={stableContextUsage}
-                            onClose={() => setContextWindowOpen(false)}
-                            onCompact={currentSessionId ? handleContextCompact : undefined}
-                        />
-                    ) : null}
-
                     {showCommandAutocomplete && (
                         <CommandAutocomplete
                             ref={commandRef}
@@ -4540,7 +4575,7 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                 fillContainer={isDesktopExpanded}
                                 outerClassName={cn('ring-0 bg-transparent shadow-none hover:bg-transparent focus-within:ring-0', isDesktopExpanded && 'flex-1 min-h-0')}
                                 className={cn(
-                                    'min-h-[60px] resize-none border-0 px-3 rounded-b-none appearance-none hover:border-transparent bg-transparent relative z-10',
+                                    'min-h-[54px] resize-none border-0 px-3 rounded-b-none appearance-none hover:border-transparent bg-transparent relative z-10',
                                     isDesktopExpanded
                                         ? 'h-full min-h-0 py-4'
                                         : isMobile
@@ -4608,11 +4643,11 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                                 isMobile={isMobile}
                                                 isVSCode={isVSCode}
                                                 footerIconButtonClass={footerIconButtonClass}
-                                                sendIconSizeClass={sendIconSizeClass}
-                                                stopIconSizeClass={stopIconSizeClass}
+                                                actionIconSizeClass={actionIconSizeClass}
                                                 canSend={canSend}
                                                 canAbort={canAbort}
                                                 canQueue={canQueueDuringActiveTurn}
+                                                isStopping={isStopping}
                                                 currentSessionId={currentSessionId}
                                                 newSessionDraftOpen={newSessionDraftOpen}
                                                 onPrimaryAction={handlePrimaryAction}
@@ -4648,17 +4683,13 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                         handlePermissionAutoAcceptToggle={handlePermissionAutoAcceptToggle}
                                         withTooltip
                                     />
-                                    {showContextUsageButton && stableContextUsage ? (
-                                        <ContextUsageDisplay
-                                            usage={stableContextUsage}
-                                            size="compact"
-                                            hideIcon
-                                            hideValue
-                                            showPercentIcon
-                                            onClick={handleOpenContextWindow}
-                                            pressed={contextWindowOpen}
-                                            className={cn(footerIconButtonClass, 'rounded-md gap-0 p-0')}
-                                            percentIconClassName={cn(iconSizeClass, 'text-[var(--status-info)]')}
+                                    {showContextUsageButton ? (
+                                        <ComposerContextUsageControl
+                                            sessionId={currentSessionId}
+                                            fallbackDirectory={currentDirectory}
+                                            footerIconButtonClass={footerIconButtonClass}
+                                            iconSizeClass={iconSizeClass}
+                                            onCompact={handleContextCompact}
                                         />
                                     ) : null}
                                 </div>
@@ -4669,11 +4700,11 @@ const ChatInputComponent: React.FC<ChatInputProps> = ({ onOpenSettings, scrollTo
                                         isMobile={isMobile}
                                         isVSCode={isVSCode}
                                         footerIconButtonClass={footerIconButtonClass}
-                                        sendIconSizeClass={sendIconSizeClass}
-                                        stopIconSizeClass={stopIconSizeClass}
+                                        actionIconSizeClass={actionIconSizeClass}
                                         canSend={canSend}
                                         canAbort={canAbort}
                                         canQueue={canQueueDuringActiveTurn}
+                                        isStopping={isStopping}
                                         currentSessionId={currentSessionId}
                                         newSessionDraftOpen={newSessionDraftOpen}
                                         onPrimaryAction={handlePrimaryAction}

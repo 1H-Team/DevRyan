@@ -3,9 +3,11 @@ import * as React from 'react';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogClose,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -52,6 +54,7 @@ import {
   markWorktreeBootstrapPending,
   setWorktreeBootstrapState,
   subscribeWorktreeBootstrap,
+  getWorktreeBootstrapStageLabel,
   waitForWorktreeBootstrap,
 } from '@/lib/worktrees/worktreeBootstrap';
 import { withWorktreeUpstreamDefaults } from '@/lib/worktrees/worktreeCreate';
@@ -470,6 +473,7 @@ export function NewWorktreeDialog({
   const [isCreating, setIsCreating] = React.useState(false);
   const [bootstrapDirectory, setBootstrapDirectory] = React.useState<string | null>(null);
   const [bootstrapProgress, setBootstrapProgress] = React.useState<GitWorktreeBootstrapStatus | null>(null);
+  const [hookRetryConfirmOpen, setHookRetryConfirmOpen] = React.useState(false);
   const pendingFinalizeRef = React.useRef<(() => Promise<void>) | null>(null);
   const pendingResumeRef = React.useRef<(() => Promise<void>) | null>(null);
   const pendingIdempotencyKeyRef = React.useRef<string | null>(null);
@@ -1213,6 +1217,14 @@ export function NewWorktreeDialog({
     }
   };
 
+  const requestBootstrapRetry = () => {
+    if (bootstrapProgress?.stage === 'run_post_checkout_hook') {
+      setHookRetryConfirmOpen(true);
+      return;
+    }
+    void handleRetryBootstrap();
+  };
+
   const handleRemoveFailedWorktree = async () => {
     if (!projectDirectory || !bootstrapDirectory || !worktreeApi?.remove) return;
     setIsCreating(true);
@@ -1263,7 +1275,7 @@ export function NewWorktreeDialog({
               <RiLoader4Line className="h-3.5 w-3.5 animate-spin" />
             )}
             <span>
-              {bootstrapProgress.stage.replaceAll('_', ' ')}
+              {getWorktreeBootstrapStageLabel(bootstrapProgress.stage)}
               {' · '}
               {bootstrapProgress.status.replaceAll('_', ' ')}
             </span>
@@ -1286,7 +1298,7 @@ export function NewWorktreeDialog({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => void handleRetryBootstrap()}
+              onClick={requestBootstrapRetry}
               disabled={isCreating}
             >
               Retry Setup
@@ -2265,6 +2277,32 @@ export function NewWorktreeDialog({
         onOpenChange={setGithubDialogOpen}
         onSelect={handleGitHubSelect}
       />
+
+      <Dialog open={hookRetryConfirmOpen} onOpenChange={setHookRetryConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Run the post-checkout hook again?</DialogTitle>
+            <DialogDescription>
+              The previous hook run failed or was interrupted. Git hooks can change files, start services, or perform other external side effects, so retrying may repeat work that already happened.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+            <Button
+              variant="destructive"
+              disabled={isCreating}
+              onClick={() => {
+                setHookRetryConfirmOpen(false);
+                void handleRetryBootstrap();
+              }}
+            >
+              Retry Hook
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

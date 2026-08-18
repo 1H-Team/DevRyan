@@ -15,12 +15,14 @@
  * @property {string|null} resetAtFormatted - Human-readable reset time
  * @property {string|null} resetAfterFormatted - Human-readable time until reset
  * @property {string|null} valueLabel - Optional label for display (e.g., "$10.00 remaining")
+ * @property {string|null} description - Optional explanatory text for value-only or provider-specific rows
  */
 
 /**
  * @typedef {Object} ProviderUsage
  * @property {Object.<string, UsageWindow>} windows - Usage windows by key (e.g., '5h', '7d', 'daily')
  * @property {Object.<string, Object>} [models] - Model-specific usage (provider-specific)
+ * @property {Object} [resetCredits] - Optional reset-credit details reported by the provider
  */
 
 /**
@@ -31,6 +33,7 @@
  * @property {boolean} configured - Whether the provider is configured
  * @property {ProviderUsage|null} usage - Usage data if successful
  * @property {string|null} [error] - Error message if not successful
+ * @property {string[]} [warnings] - Non-fatal parsing or availability warnings associated with usable data
  * @property {number} fetchedAt - Unix timestamp when the result was fetched
  * @property {number} [usageUpdatedAt] - Unix timestamp when the displayed usage was measured
  */

@@ -19,18 +19,14 @@ describe('provider prompt tool policy', () => {
     expect(resolveProviderPromptTools('cursor-acp')).toBeUndefined();
   });
 
-  test('keeps Orchestrator root prompts on the managed harness surface', () => {
+  test('keeps managed delegation root-owned without hiding plugins or MCP tools', () => {
     expect(resolveProviderPromptTools('openai', 'orchestrator')).toEqual({
       task: false,
       invalid: false,
-      'mcp__*': false,
-      'resend_*': false,
     });
     expect(resolveProviderPromptTools('cursor-acp', ' Orchestrator ')).toEqual({
       task: false,
       invalid: false,
-      'mcp__*': false,
-      'resend_*': false,
     });
   });
 
@@ -40,7 +36,6 @@ describe('provider prompt tool policy', () => {
       'mcp__resend__*': false,
       task: false,
       invalid: false,
-      'mcp__*': false,
     });
   });
 

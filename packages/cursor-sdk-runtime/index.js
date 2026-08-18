@@ -126,10 +126,38 @@ const escapeXmlAttribute = (value) => trimString(value)
   .replaceAll('<', '&lt;')
   .replaceAll('>', '&gt;');
 
+let lastIdTimestamp = 0;
+let idCounter = 0;
+const ID_RANDOM_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+const ID_RANDOM_LENGTH = 14;
+
+const createRandomIdSuffix = () => {
+  const bytes = new Uint8Array(ID_RANDOM_LENGTH);
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  return Array.from(bytes, (byte) => ID_RANDOM_CHARS[byte % ID_RANDOM_CHARS.length]).join('');
+};
+
 const createId = (prefix) => {
-  const time = Date.now().toString(16);
-  const random = Math.random().toString(16).slice(2, 10);
-  return `${prefix}_${time}${random}`;
+  const timestamp = Date.now();
+  if (timestamp !== lastIdTimestamp) {
+    lastIdTimestamp = timestamp;
+    idCounter = 0;
+  }
+  idCounter += 1;
+
+  const sortable = BigInt(timestamp) * 0x1000n + BigInt(idCounter);
+  const bytes = new Uint8Array(6);
+  for (let index = 0; index < bytes.length; index += 1) {
+    bytes[index] = Number((sortable >> BigInt(40 - 8 * index)) & 0xffn);
+  }
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${prefix}_${hex}${createRandomIdSuffix()}`;
 };
 
 const createAssistantMessageId = (userMessageID) => `${userMessageID}_assistant`;
@@ -1722,16 +1750,16 @@ export function createCursorSdkRuntime(options = {}) {
 
   const persistQueues = new Map();
 
-  const enqueuePersist = (sessionID, record) => {
+  const enqueuePersist = (sessionID, record, options = {}) => {
     const previous = persistQueues.get(sessionID) || Promise.resolve();
-    const next = previous
+    const writePromise = previous
       .catch(() => {})
-      .then(() => appendOrReplaceRecord(sessionID, record))
-      .catch((error) => {
-        logger.error?.('[CursorSDK] persist failed:', error);
-      });
-    persistQueues.set(sessionID, next);
-    return next;
+      .then(() => appendOrReplaceRecord(sessionID, record));
+    const handledPromise = writePromise.catch((error) => {
+      logger.error?.('[CursorSDK] persist failed:', error);
+    });
+    persistQueues.set(sessionID, handledPromise);
+    return options.propagateError === true ? writePromise : handledPromise;
   };
 
   const appendOrReplaceRecord = async (sessionID, record) => {
@@ -3693,12 +3721,23 @@ export function createCursorSdkRuntime(options = {}) {
     const emitRecordDelta = async (record, options = {}) => {
       const forcePartUpdated = options.forcePartUpdated === true;
       const awaitPersist = options.awaitPersist === true;
+      const persistBeforeEmit = options.persistBeforeEmit === true;
+      const messageInfoAfterParts = options.messageInfoAfterParts === true;
+      const propagatePersistError = options.propagatePersistError === true;
 
-      const previousInfo = emittedMessageInfo.get(record.info.id);
-      if (!previousInfo || !areRuntimeValuesEqual(previousInfo, record.info)) {
-        emittedMessageInfo.set(record.info.id, record.info);
-        emit({ type: 'message.updated', properties: { info: record.info } }, directory);
+      if (persistBeforeEmit) {
+        await enqueuePersist(sessionID, record, { propagateError: propagatePersistError });
       }
+
+      const emitMessageInfo = () => {
+        const previousInfo = emittedMessageInfo.get(record.info.id);
+        if (!previousInfo || !areRuntimeValuesEqual(previousInfo, record.info)) {
+          emittedMessageInfo.set(record.info.id, record.info);
+          emit({ type: 'message.updated', properties: { info: record.info } }, directory);
+        }
+      };
+
+      if (!messageInfoAfterParts) emitMessageInfo();
 
       const currentPartIds = new Set();
       for (const part of record.parts || []) {
@@ -3736,9 +3775,13 @@ export function createCursorSdkRuntime(options = {}) {
         }, directory);
       }
 
-      const persistPromise = enqueuePersist(sessionID, record);
-      if (awaitPersist) {
-        await persistPromise;
+      if (messageInfoAfterParts) emitMessageInfo();
+
+      if (!persistBeforeEmit) {
+        const persistPromise = enqueuePersist(sessionID, record, { propagateError: propagatePersistError });
+        if (awaitPersist) {
+          await persistPromise;
+        }
       }
     };
 
@@ -4096,15 +4139,86 @@ export function createCursorSdkRuntime(options = {}) {
           completed,
         },
       };
-      await emitRecordDelta(assistantRecord, { forcePartUpdated: true, awaitPersist: true });
+      try {
+        await emitRecordDelta(assistantRecord, {
+          forcePartUpdated: true,
+          awaitPersist: true,
+          persistBeforeEmit: true,
+          messageInfoAfterParts: true,
+          propagatePersistError: true,
+        });
+      } catch (error) {
+        const persistenceMessage = error instanceof Error
+          ? error.message
+          : 'Cursor SDK could not persist the completed response.';
+        lastError = persistenceMessage;
+        emit({
+          type: 'session.error',
+          properties: {
+            sessionID,
+            error: {
+              name: 'CursorPersistenceError',
+              message: 'Cursor SDK could not persist the completed response.',
+            },
+          },
+        }, directory);
+        sessionStatuses.set(sessionID, { type: 'idle' });
+        emit({ type: 'session.status', properties: { sessionID, status: { type: 'idle' } } }, directory);
+        return false;
+      }
+      if (finish === 'error') {
+        emit({
+          type: 'session.error',
+          properties: {
+            sessionID,
+            error: {
+              name: 'CursorProviderError',
+              message: failureReason || 'Cursor SDK run failed.',
+            },
+          },
+        }, directory);
+      }
       sessionStatuses.set(sessionID, { type: 'idle' });
       emit({ type: 'session.status', properties: { sessionID, status: { type: 'idle' } } }, directory);
+      return true;
     };
 
-    await emitRecordDelta(userRecord, { awaitPersist: true });
-    await emitRecordDelta(assistantRecord, { awaitPersist: true });
     sessionStatuses.set(sessionID, { type: 'busy' });
     emit({ type: 'session.status', properties: { sessionID, status: { type: 'busy' } } }, directory);
+    try {
+      await emitRecordDelta(userRecord, {
+        awaitPersist: true,
+        persistBeforeEmit: true,
+        propagatePersistError: true,
+      });
+      await emitRecordDelta(assistantRecord, {
+        awaitPersist: true,
+        persistBeforeEmit: true,
+        propagatePersistError: true,
+      });
+    } catch (error) {
+      const persistenceMessage = error instanceof Error
+        ? error.message
+        : 'Cursor SDK could not persist the accepted prompt.';
+      lastError = persistenceMessage;
+      emit({
+        type: 'session.error',
+        properties: {
+          sessionID,
+          error: {
+            name: 'CursorPersistenceError',
+            message: 'Cursor SDK could not persist the accepted prompt.',
+          },
+        },
+      }, directory);
+      sessionStatuses.set(sessionID, { type: 'idle' });
+      emit({ type: 'session.status', properties: { sessionID, status: { type: 'idle' } } }, directory);
+      return {
+        handled: true,
+        status: 204,
+        body: null,
+      };
+    }
 
     if (unsupportedMessage) {
       applyFinalAssistantText(unsupportedMessage);

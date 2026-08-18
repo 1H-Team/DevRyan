@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { AuthAssignment, AuthPrincipal } from '@/lib/authSession';
-import { projectManagedAssignments, useProjectsStore } from './useProjectsStore';
+import { isIntegrateTempProjectPath, projectManagedAssignments, useProjectsStore } from './useProjectsStore';
 
 const assignment = (
   overrides: Partial<AuthAssignment> & Pick<AuthAssignment, 'projectId' | 'publicDirectory'>,
@@ -157,5 +157,19 @@ describe('managed project projection', () => {
     expect(useProjectsStore.getState().projects.map((project) => project.path)).toEqual([
       '/projects/assigned-project/main',
     ]);
+  });
+});
+
+describe('git-integrate temp project paths', () => {
+  test('detects leftover integrate worktree directories', () => {
+    expect(isIntegrateTempProjectPath('/var/folders/xx/T/devryan-integrate-T86Wwm')).toBe(true);
+    expect(isIntegrateTempProjectPath('/private/var/folders/xx/T/devryan-integrate-abc123')).toBe(true);
+    expect(isIntegrateTempProjectPath('/Users/zoubair/Repositories/DevRyan')).toBe(false);
+  });
+
+  test('refuses to add integrate temp directories to the local project list', () => {
+    const before = useProjectsStore.getState().projects;
+    expect(useProjectsStore.getState().addProject('/tmp/devryan-integrate-T86Wwm')).toBeNull();
+    expect(useProjectsStore.getState().projects).toBe(before);
   });
 });

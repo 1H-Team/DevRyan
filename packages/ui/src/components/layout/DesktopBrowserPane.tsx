@@ -2,9 +2,10 @@ import React from 'react';
 import {
   RiArrowLeftLine,
   RiArrowRightLine,
-  RiAddLine,
   RiCodeSSlashLine,
+  RiComputerLine,
   RiCursorLine,
+  RiDeviceLine,
   RiExternalLinkLine,
   RiGlobalLine,
   RiPictureInPicture2Line,
@@ -12,12 +13,19 @@ import {
   RiPlayLine,
   RiRefreshLine,
   RiServerLine,
+  RiSmartphoneLine,
   RiTerminalBoxLine,
 } from '@remixicon/react';
 
 import { useAppFontEffects } from '@/apps/useAppFontEffects';
 import { Button } from '@/components/ui/button';
-import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { toast } from '@/components/ui';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { invokeDesktop, isElectronShell, isStandaloneWebRuntime } from '@/lib/desktop';
@@ -43,7 +51,7 @@ import {
   useManualBrowserTabsStore,
   type ManualBrowserTab,
 } from '@/stores/useManualBrowserTabsStore';
-import { useUIStore } from '@/stores/useUIStore';
+import { useUIStore, type BrowserLeaseTab } from '@/stores/useUIStore';
 import { useInputStore } from '@/sync/input-store';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import {
@@ -52,6 +60,13 @@ import {
   reconcileWebBrowserDisplayUrl,
   sanitizeWebBrowserDisplayUrl,
 } from './browserUrl';
+import { closeManualBrowserStripTab } from './browserPanelClose';
+import {
+  CONTEXT_PANEL_RESIZE_GUTTER_PX,
+  resolveBrowserViewportLayout,
+  sanitizeBrowserViewportMode,
+  type BrowserViewportMode,
+} from './browserViewport';
 import {
   useProjectPreviewInstances,
 } from './localPreviewInstances';
@@ -61,7 +76,9 @@ import {
   type PreviewAnnotationAttachment,
 } from './previewDiagnostics';
 import { PreviewConsolePanel } from './PreviewConsolePanel';
+import { BrowserTabStrip, type BrowserTabStripItem } from './BrowserTabStrip';
 import { useGuestRetention } from './useGuestRetention';
+import { useNativeSurfaceRectSync, type NativeSurfaceRect } from './useNativeSurfaceRectSync';
 import {
   createEmptyPreviewDiagnosticsState,
   formatPreviewConsoleText,
@@ -82,12 +99,14 @@ export type DesktopBrowserPaneProps = {
   onPopoutOrDock?: () => void;
   webInitialState?: WebBrowserSessionState;
   onWebState?: (state: WebBrowserSessionState) => void;
+  viewportMode?: BrowserViewportMode;
+  onViewportModeChange?: (mode: BrowserViewportMode) => void;
 };
 
 type BrowserToolbarProps = {
   snapshot: Pick<BrowserSurfaceSnapshot, 'loading' | 'canGoBack' | 'canGoForward' | 'devToolsOpen'>;
   urlInput: string;
-  currentUrl: string;
+  viewportMode: BrowserViewportMode;
   popped: boolean;
   supportsDevTools?: boolean;
   supportsInspect?: boolean;
@@ -106,15 +125,31 @@ type BrowserToolbarProps = {
   onInspect?: () => void;
   onToggleConsole?: () => void;
   onPopoutOrDock: () => void;
+  onViewportModeChange: (mode: BrowserViewportMode) => void;
 };
 
 const BROWSER_TOOLBAR_BUTTON_CLASS = 'size-7 p-0 leading-none';
 const BROWSER_TOOLBAR_ICON_CLASS = 'size-3.5';
 
+const BROWSER_VIEWPORT_OPTIONS: readonly {
+  value: BrowserViewportMode;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}[] = [
+  { value: 'responsive', label: 'Responsive', icon: RiDeviceLine },
+  { value: 'desktop', label: 'Desktop', icon: RiComputerLine },
+  { value: 'mobile', label: 'Mobile', icon: RiSmartphoneLine },
+];
+
 type BrowserTabsBarProps = {
   tabs: readonly ManualBrowserTab[];
   activeTabId: string;
   nativeTitlebar?: boolean;
+  leaseTabs?: readonly BrowserLeaseTab[];
+  activeLeaseId?: string | null;
+  onSelectLease?: (leaseId: string) => void;
+  onCloseLease?: (leaseId: string) => void;
+  trailingActions?: React.ReactNode;
   onAdd: () => void;
   onSelect: (tabId: string) => void;
   onClose: (tabId: string) => void;
@@ -125,6 +160,11 @@ export const BrowserTabsBar: React.FC<BrowserTabsBarProps> = ({
   tabs,
   activeTabId,
   nativeTitlebar = false,
+  leaseTabs = [],
+  activeLeaseId = null,
+  onSelectLease,
+  onCloseLease,
+  trailingActions,
   onAdd,
   onSelect,
   onClose,
@@ -133,40 +173,64 @@ export const BrowserTabsBar: React.FC<BrowserTabsBarProps> = ({
   const reserveMacTrafficLights = nativeTitlebar
     && typeof navigator !== 'undefined'
     && /Macintosh|Mac OS X/.test(navigator.userAgent || '');
-  const items = React.useMemo(() => tabs.map((tab) => ({
-    id: tab.id,
-    label: tab.label,
-    title: tab.url === 'about:blank' ? 'New tab' : tab.url,
-    closeLabel: `Close ${tab.label} tab`,
-  })), [tabs]);
+  const activeManualSurfaceId = useBrowserSurfaceStore((state) => state.surfaceIdByTabId.get(activeTabId) ?? '');
+  const activeManualLoading = useBrowserSurfaceStore((state) => (
+    activeManualSurfaceId ? state.byId.get(activeManualSurfaceId)?.loading === true : false
+  ));
+  const activeLeaseSelector = React.useMemo(
+    () => browserAgentLeaseSelectors.lease(activeLeaseId ?? ''),
+    [activeLeaseId],
+  );
+  const activeLease = useBrowserAgentStore(activeLeaseSelector);
+  const activeLeaseSurface = useBrowserSurfaceStore((state) => (
+    activeLease?.surfaceId ? state.byId.get(activeLease.surfaceId) ?? null : null
+  ));
+  const items = React.useMemo<BrowserTabStripItem[]>(() => [
+    ...tabs.map((tab) => ({
+      id: tab.id,
+      label: tab.label,
+      title: tab.url === 'about:blank' ? 'New tab' : tab.url,
+      faviconUrl: tab.faviconUrl,
+      loading: tab.id === activeTabId && !activeLeaseId ? activeManualLoading : false,
+      sortable: true,
+    })),
+    ...leaseTabs.map((tab) => ({
+      id: tab.id,
+      label: tab.leaseId === activeLeaseId && activeLease?.title ? activeLease.title : tab.label,
+      title: tab.url === 'about:blank' ? tab.label : tab.url,
+      faviconUrl: tab.leaseId === activeLeaseId ? activeLeaseSurface?.faviconUrl : undefined,
+      loading: tab.leaseId === activeLeaseId && activeLeaseSurface?.loading === true,
+      leaseDot: true,
+      sortable: false,
+    })),
+  ], [activeLease?.title, activeLeaseId, activeLeaseSurface?.faviconUrl, activeLeaseSurface?.loading, activeManualLoading, activeTabId, leaseTabs, tabs]);
+  const activeStripId = activeLeaseId
+    ? leaseTabs.find((tab) => tab.leaseId === activeLeaseId)?.id ?? activeTabId
+    : activeTabId;
+  const leaseByTabId = React.useMemo(() => new Map(leaseTabs.map((tab) => [tab.id, tab.leaseId])), [leaseTabs]);
 
   return (
     <div
       data-browser-tabs-strip="true"
-      className={`flex h-8 shrink-0 items-stretch gap-1 border-b border-border/40 bg-[var(--surface-background)] pr-1 ${reserveMacTrafficLights ? 'pl-[78px]' : 'pl-1'}`}
+      className={`flex h-8 shrink-0 items-stretch bg-[var(--surface-elevated)] ${reserveMacTrafficLights ? 'pl-[78px]' : ''}`}
     >
-      <SortableTabsStrip
+      <BrowserTabStrip
         items={items}
-        activeId={activeTabId}
-        onSelect={onSelect}
-        onClose={onClose}
+        activeId={activeStripId}
+        onSelect={(tabId) => {
+          const leaseId = leaseByTabId.get(tabId);
+          if (leaseId) onSelectLease?.(leaseId);
+          else onSelect(tabId);
+        }}
+        onClose={(tabId) => {
+          const leaseId = leaseByTabId.get(tabId);
+          if (leaseId) onCloseLease?.(leaseId);
+          else onClose(tabId);
+        }}
         onReorder={onReorder}
-        layoutMode="scrollable"
-        variant="soft-pill"
-        ariaLabel="Browser tabs"
-        className="min-w-0 flex-1"
+        onAdd={onAdd}
+        trailingActions={trailingActions}
       />
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="my-0.5 size-7 shrink-0 p-0"
-        aria-label="New Browser Tab"
-        title="New Browser Tab"
-        onClick={onAdd}
-      >
-        <RiAddLine className="size-3.5" />
-      </Button>
     </div>
   );
 };
@@ -174,7 +238,7 @@ export const BrowserTabsBar: React.FC<BrowserTabsBarProps> = ({
 const BrowserToolbar: React.FC<BrowserToolbarProps> = ({
   snapshot,
   urlInput,
-  currentUrl,
+  viewportMode,
   popped,
   supportsDevTools = false,
   supportsInspect = false,
@@ -193,11 +257,15 @@ const BrowserToolbar: React.FC<BrowserToolbarProps> = ({
   onInspect,
   onToggleConsole,
   onPopoutOrDock,
+  onViewportModeChange,
 }) => {
   const { t } = useI18n();
   const reserveMacTrafficLights = nativeTitlebar
     && typeof navigator !== 'undefined'
     && /Macintosh|Mac OS X/.test(navigator.userAgent || '');
+  const selectedViewport = BROWSER_VIEWPORT_OPTIONS.find((option) => option.value === viewportMode)
+    ?? BROWSER_VIEWPORT_OPTIONS[0];
+  const ViewportIcon = selectedViewport.icon;
   return (
     <div className={`flex h-[38px] shrink-0 items-center gap-1 border-b border-border/40 bg-[var(--surface-background)] pr-2 ${reserveMacTrafficLights ? 'pl-[78px]' : 'pl-2'}`}>
       <Button
@@ -309,18 +377,36 @@ const BrowserToolbar: React.FC<BrowserToolbarProps> = ({
           ? <RiPictureInPictureExitLine className={BROWSER_TOOLBAR_ICON_CLASS} />
           : <RiPictureInPicture2Line className={BROWSER_TOOLBAR_ICON_CLASS} />}
       </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className={BROWSER_TOOLBAR_BUTTON_CLASS}
-        disabled={!currentUrl || currentUrl === 'about:blank'}
-        aria-label={t('contextPanel.preview.actions.openExternal')}
-        title="Open in Regular Browser"
-        onClick={() => void openExternalUrl(currentUrl)}
-      >
-        <RiExternalLinkLine className={BROWSER_TOOLBAR_ICON_CLASS} />
-      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className={BROWSER_TOOLBAR_BUTTON_CLASS}
+            aria-label={`Viewport: ${selectedViewport.label}`}
+            title={`Viewport: ${selectedViewport.label}`}
+          >
+            <ViewportIcon className={BROWSER_TOOLBAR_ICON_CLASS} />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-40">
+          <DropdownMenuRadioGroup
+            value={viewportMode}
+            onValueChange={(value) => onViewportModeChange(sanitizeBrowserViewportMode(value))}
+          >
+            {BROWSER_VIEWPORT_OPTIONS.map((option) => {
+              const OptionIcon = option.icon;
+              return (
+                <DropdownMenuRadioItem key={option.value} value={option.value}>
+                  <OptionIcon className="size-4 text-muted-foreground" />
+                  {option.label}
+                </DropdownMenuRadioItem>
+              );
+            })}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 };
@@ -371,10 +457,13 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
   workspaceId,
   popped: poppedOverride,
   onPopoutOrDock,
+  viewportMode: initialViewportMode = 'responsive',
+  onViewportModeChange,
 }) => {
   const { t } = useI18n();
   const contentRef = React.useRef<HTMLDivElement | null>(null);
   const initialUrlRef = React.useRef(normalizeBrowserUrl(initialUrl));
+  const initialViewportModeRef = React.useRef(initialViewportMode);
   const [manualSurfaceId, setManualSurfaceId] = React.useState('');
   const [urlInput, setUrlInput] = React.useState(formatBrowserAddress(normalizeBrowserUrl(initialUrl)));
   const [inspecting, setInspecting] = React.useState(false);
@@ -385,12 +474,15 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
   const snapshot = useBrowserSurfaceStore((state) => surfaceId ? state.byId.get(surfaceId) ?? null : null);
   const setContextPanelTabTargetPath = useUIStore((state) => state.setContextPanelTabTargetPath);
   const updateManualBrowserTabUrl = useManualBrowserTabsStore((state) => state.updateTabUrl);
+  const updateManualBrowserTabTitle = useManualBrowserTabsStore((state) => state.updateTabTitle);
+  const updateManualBrowserTabFavicon = useManualBrowserTabsStore((state) => state.updateTabFavicon);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const currentDraftId = useSessionUIStore((state) => state.currentDraftId);
   const newSessionDraftOpen = useSessionUIStore((state) => Boolean(state.currentDraftId && state.newSessionDraft?.open));
   const addInlineCommentDraft = useInlineCommentDraftStore((state) => state.addDraft);
   const addAttachedFile = useInputStore((state) => state.addAttachedFile);
   const currentUrl = snapshot?.url ?? normalizeBrowserUrl(initialUrl);
+  const viewportMode = snapshot?.viewportMode ?? initialViewportMode;
   const isBlank = currentUrl === 'about:blank';
   const popped = poppedOverride ?? snapshot?.placement === 'popout';
 
@@ -398,7 +490,7 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
     ensureBrowserSurfaceListeners();
     if (leaseId) return;
     let cancelled = false;
-    void createDesktopBrowserSurface(tabID, initialUrlRef.current, workspaceId)
+    void createDesktopBrowserSurface(tabID, initialUrlRef.current, workspaceId, initialViewportModeRef.current)
       .then((created) => {
         if (!cancelled && created) setManualSurfaceId(created.surfaceId);
       })
@@ -424,9 +516,25 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
     }
   }, [currentUrl, directory, leaseId, setContextPanelTabTargetPath, tabID, updateManualBrowserTabUrl, workspaceId]);
 
-  const syncLayout = React.useCallback(() => {
-    if (!surfaceId || !contentRef.current) return;
-    const rect = contentRef.current.getBoundingClientRect();
+  React.useEffect(() => {
+    if (snapshot) onViewportModeChange?.(snapshot.viewportMode);
+  }, [onViewportModeChange, snapshot]);
+
+  React.useEffect(() => {
+    if (!workspaceId || !snapshot) return;
+    updateManualBrowserTabTitle(directory, tabID, snapshot.title);
+  }, [directory, snapshot, tabID, updateManualBrowserTabTitle, workspaceId]);
+
+  React.useEffect(() => {
+    if (!workspaceId || !snapshot) return;
+    updateManualBrowserTabFavicon(directory, tabID, snapshot.faviconUrl ?? null);
+  }, [directory, snapshot, tabID, updateManualBrowserTabFavicon, workspaceId]);
+
+  const syncLayout = React.useCallback((rect: NativeSurfaceRect) => {
+    if (!surfaceId) return;
+    const gutter = popped ? 0 : CONTEXT_PANEL_RESIZE_GUTTER_PX;
+    const left = rect.x + gutter;
+    const width = Math.max(1, rect.width - gutter);
     const visible = active && !popped && !isBlank && rect.width > 0 && rect.height > 0;
     const height = snapshot?.devToolsOpen
       ? Math.max(MIN_BROWSER_HEIGHT, rect.height - devToolsHeight)
@@ -435,9 +543,9 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
       surfaceId,
       visible,
       bounds: {
-        x: Math.round(rect.left),
-        y: Math.round(rect.top),
-        width: Math.max(1, Math.round(rect.width)),
+        x: Math.round(left),
+        y: rect.y,
+        width: Math.max(1, Math.round(width)),
         height: Math.max(1, Math.round(height)),
       },
     }).catch(() => {});
@@ -447,28 +555,20 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
         surfaceId,
         open: true,
         bounds: {
-          x: Math.round(rect.left),
+          x: Math.round(left),
           y: Math.round(rect.bottom - dockHeight),
-          width: Math.max(1, Math.round(rect.width)),
+          width: Math.max(1, Math.round(width)),
           height: Math.max(1, Math.round(dockHeight)),
         },
       }).catch(() => {});
     }
   }, [active, devToolsHeight, isBlank, popped, snapshot?.devToolsOpen, surfaceId]);
 
-  React.useLayoutEffect(() => {
-    syncLayout();
-    const content = contentRef.current;
-    if (!content) return;
-    const observer = new ResizeObserver(syncLayout);
-    observer.observe(content);
-    window.addEventListener('resize', syncLayout);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', syncLayout);
-      if (surfaceId) void invokeDesktop('desktop_browser_surface_layout', { surfaceId, visible: false }).catch(() => {});
-    };
-  }, [surfaceId, syncLayout]);
+  useNativeSurfaceRectSync(contentRef, syncLayout);
+
+  React.useLayoutEffect(() => () => {
+    if (surfaceId) void invokeDesktop('desktop_browser_surface_layout', { surfaceId, visible: false }).catch(() => {});
+  }, [surfaceId]);
 
   React.useEffect(() => () => {
     if (!surfaceId || leaseId) return;
@@ -493,14 +593,15 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
   const toggleDevTools = React.useCallback(() => {
     if (!surfaceId || !contentRef.current) return;
     const rect = contentRef.current.getBoundingClientRect();
+    const gutter = popped ? 0 : CONTEXT_PANEL_RESIZE_GUTTER_PX;
     const height = Math.min(devToolsHeight, Math.max(180, rect.height - MIN_BROWSER_HEIGHT));
     void invokeDesktop<unknown>('desktop_browser_devtools_set_open', {
       surfaceId,
       open: !snapshot?.devToolsOpen,
       bounds: {
-        x: Math.round(rect.left),
+        x: Math.round(rect.left + gutter),
         y: Math.round(rect.bottom - height),
-        width: Math.max(1, Math.round(rect.width)),
+        width: Math.max(1, Math.round(rect.width - gutter)),
         height: Math.max(1, Math.round(height)),
       },
     }).then((value) => {
@@ -508,7 +609,7 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
         useBrowserSurfaceStore.getState().applySnapshot({ ...snapshot, devToolsOpen: (value as { open?: boolean }).open === true });
       }
     }).catch(() => toast.error(t('contextPanel.browser.devtoolsUnavailable')));
-  }, [devToolsHeight, snapshot, surfaceId, t]);
+  }, [devToolsHeight, popped, snapshot, surfaceId, t]);
 
   const inspect = React.useCallback(() => {
     if (!surfaceId) return;
@@ -599,6 +700,17 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
       .catch(() => toast.error('Unable to change browser placement'));
   }, [leaseId, onPopoutOrDock, popped, surfaceId, tabID]);
 
+  const changeViewportMode = React.useCallback((mode: BrowserViewportMode) => {
+    if (!surfaceId) return;
+    void invokeDesktop<unknown>('desktop_browser_surface_set_viewport_mode', {
+      surfaceId,
+      viewportMode: mode,
+    }).then((value) => {
+      useBrowserSurfaceStore.getState().applySnapshot(value, leaseId ? undefined : tabID);
+      onViewportModeChange?.(mode);
+    }).catch(() => toast.error('Unable to change browser viewport'));
+  }, [leaseId, onViewportModeChange, surfaceId, tabID]);
+
   const toolbarSnapshot = snapshot ?? {
     loading: false,
     canGoBack: false,
@@ -611,7 +723,7 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
       <BrowserToolbar
         snapshot={toolbarSnapshot}
         urlInput={urlInput}
-        currentUrl={currentUrl}
+        viewportMode={viewportMode}
         popped={popped}
         supportsDevTools
         supportsInspect
@@ -624,6 +736,7 @@ const ElectronBrowserPane: React.FC<DesktopBrowserPaneProps> = ({
         onToggleDevTools={toggleDevTools}
         onInspect={inspect}
         onPopoutOrDock={togglePopout}
+        onViewportModeChange={changeViewportMode}
       />
       <div ref={contentRef} className="relative min-h-0 flex-1 bg-background">
         {popped ? (
@@ -699,6 +812,7 @@ const isRecoverablePreviewTargetDocument = (iframe: HTMLIFrameElement): boolean 
 
 export type WebBrowserSessionState = {
   version: 1;
+  viewportMode: BrowserViewportMode;
   displayUrl: string;
   history: string[];
   historyIndex: number;
@@ -706,10 +820,14 @@ export type WebBrowserSessionState = {
   proxyTargets: Record<string, { proxyBasePath: string; expiresAt: number }>;
 };
 
-const createWebBrowserSessionState = (initialUrl: string): WebBrowserSessionState => {
+const createWebBrowserSessionState = (
+  initialUrl: string,
+  viewportMode: BrowserViewportMode = 'responsive',
+): WebBrowserSessionState => {
   const displayUrl = sanitizeWebBrowserDisplayUrl(initialUrl);
   return {
     version: 1,
+    viewportMode,
     displayUrl,
     history: [displayUrl],
     historyIndex: 0,
@@ -718,8 +836,12 @@ const createWebBrowserSessionState = (initialUrl: string): WebBrowserSessionStat
   };
 };
 
-const normalizeWebBrowserSessionState = (value: unknown, fallbackUrl = 'about:blank'): WebBrowserSessionState => {
-  if (!value || typeof value !== 'object') return createWebBrowserSessionState(fallbackUrl);
+const normalizeWebBrowserSessionState = (
+  value: unknown,
+  fallbackUrl = 'about:blank',
+  fallbackViewportMode: BrowserViewportMode = 'responsive',
+): WebBrowserSessionState => {
+  if (!value || typeof value !== 'object') return createWebBrowserSessionState(fallbackUrl, fallbackViewportMode);
   const candidate = value as Partial<WebBrowserSessionState>;
   const history = Array.isArray(candidate.history)
     ? candidate.history
@@ -727,7 +849,7 @@ const normalizeWebBrowserSessionState = (value: unknown, fallbackUrl = 'about:bl
       .slice(-100)
       .map(sanitizeWebBrowserDisplayUrl)
     : [];
-  if (history.length === 0) return createWebBrowserSessionState(fallbackUrl);
+  if (history.length === 0) return createWebBrowserSessionState(fallbackUrl, fallbackViewportMode);
   const historyIndex = Math.min(
     history.length - 1,
     Math.max(0, Number.isFinite(candidate.historyIndex) ? Math.trunc(candidate.historyIndex as number) : history.length - 1),
@@ -753,6 +875,9 @@ const normalizeWebBrowserSessionState = (value: unknown, fallbackUrl = 'about:bl
     : {};
   return {
     version: 1,
+    viewportMode: candidate.viewportMode === undefined
+      ? fallbackViewportMode
+      : sanitizeBrowserViewportMode(candidate.viewportMode),
     displayUrl: history[historyIndex],
     history,
     historyIndex,
@@ -854,6 +979,27 @@ type WebBrowserSurfaceProps = {
   onPopoutOrDock: () => void;
 };
 
+const useBrowserCanvasSize = (ref: React.RefObject<HTMLDivElement | null>) => {
+  const [size, setSize] = React.useState({ width: 1, height: 1 });
+  React.useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const update = () => {
+      const rect = element.getBoundingClientRect();
+      setSize((current) => {
+        const width = Math.max(1, rect.width);
+        const height = Math.max(1, rect.height);
+        return current.width === width && current.height === height ? current : { width, height };
+      });
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref]);
+  return size;
+};
+
 const WebBrowserSurface: React.FC<WebBrowserSurfaceProps> = ({
   initialState,
   directory,
@@ -866,12 +1012,14 @@ const WebBrowserSurface: React.FC<WebBrowserSurfaceProps> = ({
 }) => {
   const { currentTheme } = useThemeSystem();
   const iframeRef = React.useRef<HTMLIFrameElement | null>(null);
+  const canvasRef = React.useRef<HTMLDivElement | null>(null);
   const pendingNavigationRef = React.useRef<string | null>(null);
   const normalizedInitialState = React.useRef(normalizeWebBrowserSessionState(initialState));
   const [history, setHistory] = React.useState(normalizedInitialState.current.history);
   const [historyIndex, setHistoryIndex] = React.useState(normalizedInitialState.current.historyIndex);
   const [frameTargetUrl, setFrameTargetUrl] = React.useState(normalizedInitialState.current.displayUrl);
   const [proxyTargets, setProxyTargets] = React.useState(normalizedInitialState.current.proxyTargets);
+  const [viewportMode, setViewportMode] = React.useState(normalizedInitialState.current.viewportMode);
   const [urlInput, setUrlInput] = React.useState(formatBrowserAddress(normalizedInitialState.current.displayUrl));
   const [reloadKey, setReloadKey] = React.useState(0);
   const [frameLoaded, setFrameLoaded] = React.useState(false);
@@ -881,6 +1029,8 @@ const WebBrowserSurface: React.FC<WebBrowserSurfaceProps> = ({
   const handoffNavigationsRef = React.useRef<number[]>([]);
   const targetInvalidationsRef = React.useRef<number[]>([]);
   const currentUrl = history[historyIndex] ?? 'about:blank';
+  const canvasSize = useBrowserCanvasSize(canvasRef);
+  const viewportLayout = resolveBrowserViewportLayout(canvasSize.width, canvasSize.height, viewportMode);
   const resetLoopGuards = React.useCallback(() => {
     handoffNavigationsRef.current = [];
     targetInvalidationsRef.current = [];
@@ -1022,6 +1172,7 @@ const WebBrowserSurface: React.FC<WebBrowserSurfaceProps> = ({
   React.useEffect(() => {
     onState?.({
       version: 1,
+      viewportMode,
       displayUrl: currentUrl,
       history,
       historyIndex,
@@ -1043,6 +1194,7 @@ const WebBrowserSurface: React.FC<WebBrowserSurfaceProps> = ({
     historyIndex,
     onState,
     proxyTargets,
+    viewportMode,
   ]);
 
   const diagnosticsEnabled = frame.routed && frameActive && diagnostics.bridgeReady;
@@ -1063,7 +1215,7 @@ const WebBrowserSurface: React.FC<WebBrowserSurfaceProps> = ({
       <BrowserToolbar
         snapshot={toolbarSnapshot}
         urlInput={urlInput}
-        currentUrl={currentUrl}
+        viewportMode={viewportMode}
         popped={popped}
         showWebDiagnostics
         webDiagnosticsEnabled={diagnosticsEnabled}
@@ -1103,8 +1255,9 @@ const WebBrowserSurface: React.FC<WebBrowserSurfaceProps> = ({
         onToggleConsole={() => diagnostics.setConsoleOpen((value) => !value)}
         onInspect={() => diagnostics.setInspectMode((value) => !value)}
         onPopoutOrDock={onPopoutOrDock}
+        onViewportModeChange={setViewportMode}
       />
-      <div className="relative min-h-0 flex-1">
+      <div ref={canvasRef} className="relative min-h-0 flex-1 overflow-hidden bg-[var(--surface-elevated)]">
         {currentUrl === 'about:blank' ? (
           <EmptyBrowserState directory={directory} active={active} loading={loading} onNavigate={navigate} />
         ) : frame.external ? (
@@ -1118,46 +1271,61 @@ const WebBrowserSurface: React.FC<WebBrowserSurfaceProps> = ({
               {externalOpenBlocked ? 'Open in Browser' : 'Open Again'}
             </Button>
           </div>
-        ) : renderedFrame.src ? (
-          <iframe
-            ref={iframeRef}
-            key={renderedFrame.key}
-            src={renderedFrame.src}
-            title="Browser"
-            className="h-full w-full border-0 bg-background"
-            sandbox="allow-downloads allow-forms allow-modals allow-pointer-lock allow-popups allow-same-origin allow-scripts"
-            referrerPolicy="strict-origin-when-cross-origin"
-            onLoad={handleFrameLoad}
-          />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center p-6 text-center typography-micro text-muted-foreground">
-            {frame.error || 'Loading local page…'}
-          </div>
-        )}
-        {currentUrl !== 'about:blank' && (loading || frame.error || loopError) ? (
           <div
-            className="absolute inset-0 z-10 flex items-center justify-center bg-background p-6 text-center typography-micro text-muted-foreground"
-            role="status"
-            aria-live="polite"
-          >
-            {frame.error || loopError || loadingLabel}
-          </div>
-        ) : null}
-        {diagnostics.inspectMode && diagnostics.hoverTarget ? (
-          <div
-            className="pointer-events-none absolute rounded-sm border-2 border-[var(--interactive-focus-ring)] bg-[var(--interactive-focus-ring)]/35"
+            className="absolute overflow-hidden bg-background shadow-sm"
+            data-browser-viewport={viewportMode}
             style={{
-              left: diagnostics.hoverTarget.bounds.x,
-              top: diagnostics.hoverTarget.bounds.y,
-              width: diagnostics.hoverTarget.bounds.width,
-              height: diagnostics.hoverTarget.bounds.height,
+              left: viewportLayout.offsetX,
+              top: viewportLayout.offsetY,
+              width: viewportLayout.cssWidth,
+              height: viewportLayout.cssHeight,
+              transform: `scale(${viewportLayout.scale})`,
+              transformOrigin: 'top left',
             }}
           >
-            <div className="absolute -top-6 left-0 max-w-64 truncate rounded bg-[var(--surface-elevated)] px-2 py-0.5 typography-micro text-foreground shadow">
-              {diagnostics.hoverTarget.tag}{diagnostics.hoverTarget.text ? ` · ${diagnostics.hoverTarget.text}` : ''}
-            </div>
+            {renderedFrame.src ? (
+              <iframe
+                ref={iframeRef}
+                key={renderedFrame.key}
+                src={renderedFrame.src}
+                title="Browser"
+                className="h-full w-full border-0 bg-background"
+                sandbox="allow-downloads allow-forms allow-modals allow-pointer-lock allow-popups allow-same-origin allow-scripts"
+                referrerPolicy="strict-origin-when-cross-origin"
+                onLoad={handleFrameLoad}
+              />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center p-6 text-center typography-micro text-muted-foreground">
+                {frame.error || 'Loading local page…'}
+              </div>
+            )}
+            {currentUrl !== 'about:blank' && (loading || frame.error || loopError) ? (
+              <div
+                className="absolute inset-0 z-10 flex items-center justify-center bg-background p-6 text-center typography-micro text-muted-foreground"
+                role="status"
+                aria-live="polite"
+              >
+                {frame.error || loopError || loadingLabel}
+              </div>
+            ) : null}
+            {diagnostics.inspectMode && diagnostics.hoverTarget ? (
+              <div
+                className="pointer-events-none absolute rounded-sm border-2 border-[var(--interactive-focus-ring)] bg-[var(--interactive-focus-ring)]/35"
+                style={{
+                  left: diagnostics.hoverTarget.bounds.x,
+                  top: diagnostics.hoverTarget.bounds.y,
+                  width: diagnostics.hoverTarget.bounds.width,
+                  height: diagnostics.hoverTarget.bounds.height,
+                }}
+              >
+                <div className="absolute -top-6 left-0 max-w-64 truncate rounded bg-[var(--surface-elevated)] px-2 py-0.5 typography-micro text-foreground shadow">
+                  {diagnostics.hoverTarget.tag}{diagnostics.hoverTarget.text ? ` · ${diagnostics.hoverTarget.text}` : ''}
+                </div>
+              </div>
+            ) : null}
           </div>
-        ) : null}
+        )}
         {diagnostics.consoleOpen ? <PreviewConsolePanel {...diagnostics} /> : null}
       </div>
     </div>
@@ -1513,14 +1681,15 @@ export const ManualBrowserWorkspacePane: React.FC<{
   directory: string;
   active: boolean;
   legacyUrl?: string | null;
-}> = ({ directory, active, legacyUrl }) => {
+  showTabStrip?: boolean;
+}> = ({ directory, active, showTabStrip = true }) => {
   const useNativeBrowser = isElectronShell();
   const workspace = useManualBrowserTabsStore((state) => state.byDirectory[directory] ?? null);
   const addTab = useManualBrowserTabsStore((state) => state.addTab);
   const activateTab = useManualBrowserTabsStore((state) => state.activateTab);
   const updateTabUrl = useManualBrowserTabsStore((state) => state.updateTabUrl);
+  const updateTabViewportMode = useManualBrowserTabsStore((state) => state.updateTabViewportMode);
   const reorderTabs = useManualBrowserTabsStore((state) => state.reorderTabs);
-  const closeTab = useManualBrowserTabsStore((state) => state.closeTab);
   const replaceWorkspace = useManualBrowserTabsStore((state) => state.replaceWorkspace);
   const surfaceByTabId = useBrowserSurfaceStore((state) => state.surfaceIdByTabId);
   const surfaces = useBrowserSurfaceStore((state) => state.byId);
@@ -1533,16 +1702,12 @@ export const ManualBrowserWorkspacePane: React.FC<{
   const { attachConsole, attachAnnotation } = useBrowserChatAttachments();
 
   React.useEffect(() => {
-    useManualBrowserTabsStore.getState().ensureWorkspace(directory, legacyUrl);
-  }, [directory, legacyUrl]);
-
-  React.useEffect(() => {
     if (!workspace) return;
     workspaceIdRef.current = workspace.workspaceId;
     const liveIds = new Set(workspace.tabs.map((tab) => tab.id));
     for (const tab of workspace.tabs) {
       if (!webStatesRef.current.has(tab.id)) {
-        webStatesRef.current.set(tab.id, createWebBrowserSessionState(tab.url));
+        webStatesRef.current.set(tab.id, createWebBrowserSessionState(tab.url, tab.viewportMode));
       }
     }
     for (const tabId of webStatesRef.current.keys()) {
@@ -1566,7 +1731,7 @@ export const ManualBrowserWorkspacePane: React.FC<{
       tabs: current.tabs.map((tab) => ({
         ...tab,
         ...(!useNativeBrowser
-          ? { webState: webStatesRef.current.get(tab.id) ?? createWebBrowserSessionState(tab.url) }
+          ? { webState: webStatesRef.current.get(tab.id) ?? createWebBrowserSessionState(tab.url, tab.viewportMode) }
           : {}),
       })),
     };
@@ -1604,7 +1769,7 @@ export const ManualBrowserWorkspacePane: React.FC<{
     if (!useNativeBrowser) {
       webStatesRef.current = new Map(state.tabs.map((tab) => [
         tab.id,
-        normalizeWebBrowserSessionState(tab.webState, tab.url),
+        normalizeWebBrowserSessionState(tab.webState, tab.url, tab.viewportMode),
       ]));
     }
   }, [directory, replaceWorkspace, useNativeBrowser, workspace]);
@@ -1633,7 +1798,7 @@ export const ManualBrowserWorkspacePane: React.FC<{
     } else if (message.type === 'activate-tab' && message.tabId) {
       activateTab(directory, message.tabId);
     } else if (message.type === 'close-tab' && message.tabId) {
-      closeTab(directory, message.tabId);
+      closeManualBrowserStripTab(directory, message.tabId);
     } else if (message.type === 'reorder-tabs' && message.tabId && message.overTabId) {
       reorderTabs(directory, message.tabId, message.overTabId);
     } else if (message.type === 'attach-console' && Array.isArray(message.events) && message.events.every(isPreviewConsoleEvent)) {
@@ -1648,7 +1813,7 @@ export const ManualBrowserWorkspacePane: React.FC<{
       closePopupChannel();
       setWebPopped(false);
     }
-  }, [activateTab, addTab, applyDetachedState, attachAnnotation, attachConsole, closePopupChannel, closeTab, directory, reorderTabs, runtimeState, sendToPopup, workspace]);
+  }, [activateTab, addTab, applyDetachedState, attachAnnotation, attachConsole, closePopupChannel, directory, reorderTabs, runtimeState, sendToPopup, workspace]);
 
   const preparePopupChannel = React.useCallback(() => {
     if (!workspace) return;
@@ -1724,6 +1889,18 @@ export const ManualBrowserWorkspacePane: React.FC<{
     if (popup && !popup.closed) popup.close();
   }, [closePopupChannel, sendToPopup]);
 
+  React.useEffect(() => {
+    if (workspace) return;
+    const popup = popupRef.current;
+    const hasOpenPopup = Boolean(popup && !popup.closed) || webPopped;
+    if (!hasOpenPopup) return;
+    sendToPopup({ type: 'close' });
+    closePopupChannel();
+    if (popup && !popup.closed) popup.close();
+    popupRef.current = null;
+    setWebPopped(false);
+  }, [closePopupChannel, sendToPopup, webPopped, workspace]);
+
   const retainedTabIds = useGuestRetention({
     keepIDs: workspace
       ? (useNativeBrowser && popped ? workspace.tabs.map((tab) => tab.id) : [workspace.activeTabId])
@@ -1739,14 +1916,14 @@ export const ManualBrowserWorkspacePane: React.FC<{
       activeTabId={workspace.activeTabId}
       onAdd={() => addTab(directory)}
       onSelect={(tabId) => activateTab(directory, tabId)}
-      onClose={(tabId) => closeTab(directory, tabId)}
+      onClose={(tabId) => closeManualBrowserStripTab(directory, tabId)}
       onReorder={(tabId, overTabId) => reorderTabs(directory, tabId, overTabId)}
     />
   );
 
   return (
     <div className="absolute inset-0 flex flex-col bg-background" data-manual-browser-workspace={workspace.workspaceId}>
-      {tabStrip}
+      {showTabStrip ? tabStrip : null}
       <div className="relative min-h-0 flex-1">
         {workspace.tabs.map((tab) => {
           const isActive = active && tab.id === workspace.activeTabId;
@@ -1766,11 +1943,14 @@ export const ManualBrowserWorkspacePane: React.FC<{
                 workspaceId={workspace.workspaceId}
                 active={isActive}
                 popped={popped}
+                viewportMode={tab.viewportMode}
+                onViewportModeChange={(mode) => updateTabViewportMode(directory, tab.id, mode)}
                 onPopoutOrDock={popout}
                 webInitialState={webStatesRef.current.get(tab.id)}
                 onWebState={(state) => {
                   webStatesRef.current.set(tab.id, state);
                   updateTabUrl(directory, tab.id, state.displayUrl);
+                  updateTabViewportMode(directory, tab.id, state.viewportMode);
                 }}
               />
             </div>
@@ -1847,7 +2027,7 @@ const BrowserWorkspacePopout: React.FC<{ workspaceId: string }> = ({ workspaceId
       tabs: metadata.tabs.map((tab) => ({
         ...tab,
         ...(next.transport === 'host' || !isElectronShell()
-          ? { webState: normalizeWebBrowserSessionState(sourceById.get(tab.id)?.webState, tab.url) }
+          ? { webState: normalizeWebBrowserSessionState(sourceById.get(tab.id)?.webState, tab.url, tab.viewportMode) }
           : {}),
       })),
     };
@@ -1959,7 +2139,13 @@ const BrowserWorkspacePopout: React.FC<{ workspaceId: string }> = ({ workspaceId
     setState((current) => {
       if (!current) return current;
       const tabs = current.tabs.map((tab) => tab.id === tabId
-        ? { ...tab, url: webState.displayUrl, label: browserTabLabelForUrl(webState.displayUrl), webState }
+        ? {
+          ...tab,
+          url: webState.displayUrl,
+          label: browserTabLabelForUrl(webState.displayUrl),
+          viewportMode: webState.viewportMode,
+          webState,
+        }
         : tab);
       const next = { ...current, tabs };
       stateRef.current = next;
@@ -1985,20 +2171,24 @@ const BrowserWorkspacePopout: React.FC<{ workspaceId: string }> = ({ workspaceId
         next = {
           ...current,
           activeTabId: id,
-          tabs: [...current.tabs, { id, url: 'about:blank', label: 'New tab', webState }],
+          tabs: [...current.tabs, {
+            id,
+            url: 'about:blank',
+            label: 'New tab',
+            viewportMode: 'responsive',
+            webState,
+          }],
         };
       } else if (action === 'activate' && tabId && current.tabs.some((tab) => tab.id === tabId)) {
         next = { ...current, activeTabId: tabId };
       } else if (action === 'close' && tabId) {
         const index = current.tabs.findIndex((tab) => tab.id === tabId);
         if (index !== -1 && current.tabs.length === 1) {
-          const id = `browser-tab:${randomSurfaceId()}`;
-          next = {
-            ...current,
-            activeTabId: id,
-            tabs: [{ id, url: 'about:blank', label: 'New tab', webState: createWebBrowserSessionState('about:blank') }],
-          };
-        } else if (index !== -1) {
+          send({ type: 'close-tab', tabId });
+          window.close();
+          return current;
+        }
+        if (index !== -1) {
           const tabs = current.tabs.filter((tab) => tab.id !== tabId);
           next = {
             ...current,
@@ -2119,7 +2309,7 @@ const ElectronBrowserWorkspaceToolbar: React.FC<{
     <BrowserToolbar
       snapshot={surface}
       urlInput={urlInput}
-      currentUrl={surface.url}
+      viewportMode={surface.viewportMode}
       popped
       supportsDevTools
       onUrlInput={setUrlInput}
@@ -2133,6 +2323,12 @@ const ElectronBrowserWorkspaceToolbar: React.FC<{
         bounds: { x: 0, y: Math.max(70, window.innerHeight - 300), width: window.innerWidth, height: 300 },
       })}
       onPopoutOrDock={onDock}
+      onViewportModeChange={(viewportMode) => {
+        void invokeDesktop<unknown>('desktop_browser_surface_set_viewport_mode', {
+          surfaceId: surface.surfaceId,
+          viewportMode,
+        }).then((value) => useBrowserSurfaceStore.getState().applySnapshot(value)).catch(() => {});
+      }}
     />
   );
 };
@@ -2173,7 +2369,7 @@ const ElectronBrowserPopout: React.FC<{ surfaceId: string }> = ({ surfaceId }) =
       <BrowserToolbar
         snapshot={snapshot}
         urlInput={urlInput}
-        currentUrl={snapshot.url}
+        viewportMode={snapshot.viewportMode}
         popped
         nativeTitlebar
         supportsDevTools
@@ -2188,6 +2384,12 @@ const ElectronBrowserPopout: React.FC<{ surfaceId: string }> = ({ surfaceId }) =
           bounds: { x: 0, y: Math.max(38, window.innerHeight - 300), width: window.innerWidth, height: 300 },
         })}
         onPopoutOrDock={() => void invokeDesktop('desktop_browser_surface_dock', { surfaceId })}
+        onViewportModeChange={(viewportMode) => {
+          void invokeDesktop<unknown>('desktop_browser_surface_set_viewport_mode', {
+            surfaceId,
+            viewportMode,
+          }).then((value) => useBrowserSurfaceStore.getState().applySnapshot(value)).catch(() => {});
+        }}
       />
     </div>
   );

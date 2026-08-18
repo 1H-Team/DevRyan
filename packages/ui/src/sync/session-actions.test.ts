@@ -44,6 +44,7 @@ let mockCurrentSessionId: string | null = null
 let mockSessionAbortFlags: Map<string, { timestamp: number; acknowledged: boolean; reason?: "manual" | "steered"; id?: string }> = new Map()
 let mockAbortControllers: Map<string, AbortController> = new Map()
 const clearSessionTurnCompletionCalls: string[] = []
+const clearSessionStoppingCalls: string[] = []
 let mockSessionCompletionIndicator: Map<string, { messageId: string; completedAt: number }> = new Map()
 let mockPendingCompletionIndicatorSessions: Set<string> = new Set()
 const sessionDirectories: Record<string, string | null> = {
@@ -220,6 +221,9 @@ const sessionActionsSessionUIStore = {
       clearSessionTurnCompletionCalls.push(sessionId)
       mockSessionCompletionIndicator.delete(sessionId)
       mockPendingCompletionIndicatorSessions.delete(sessionId)
+    },
+    clearSessionStopping: (sessionId: string) => {
+      clearSessionStoppingCalls.push(sessionId)
     },
   }),
   setState: (
@@ -2673,11 +2677,12 @@ describe("revertToMessage scoped revert", () => {
   })
 
   test("adds and rolls back a deterministic Cursor assistant placeholder with the optimistic user message", async () => {
-    const before = { id: "msg_1", sessionID: "session-a", role: "user", time: { created: 1 } } as unknown as Message
+    const beforeMessageId = "msg_00000000100100000000000000"
+    const before = { id: beforeMessageId, sessionID: "session-a", role: "user", time: { created: 1 } } as unknown as Message
     const store = createStore({}, [makeSession("session-a")])
     store.setState({
       message: { "session-a": [before] },
-      part: { "msg_1": [] },
+      part: { [beforeMessageId]: [] },
     })
     const childStores = createChildStores([["/test/project", store]])
     let optimisticMessageId = ""
@@ -2722,12 +2727,19 @@ describe("revertToMessage scoped revert", () => {
 
     expect(thrown instanceof Error ? thrown.message : "").toBe("send failed")
     expect(messagesDuringSend.map((message) => message.id)).toEqual([
-      "msg_1",
+      beforeMessageId,
       optimisticMessageId,
       `${optimisticMessageId}_assistant`,
     ])
     expect(messagesDuringSend.at(-1)?.role).toBe("assistant")
+    expect(messagesDuringSend.every((message) => (
+      !("completed" in ((message.time ?? {}) as Record<string, unknown>))
+    ))).toBe(true)
     expect(partsDuringSend[`${optimisticMessageId}_assistant`]).toEqual([])
+    expect(registeredSessionDirectories.some((entry) => (
+      entry.sessionId === "session-a" && entry.directory === "/test/project"
+    ))).toBe(true)
+    expect(sessionDirectories["session-a"]).toBe("/test/project")
     expect(store.getState().message["session-a"]).toEqual([before])
     expect(store.getState().part[`${optimisticMessageId}_assistant`]).toBe(undefined)
   })
@@ -2794,7 +2806,8 @@ describe("revertToMessage scoped revert", () => {
       ...makeSession("session-a"),
       revert: { messageID: "msg_2" },
     } as Session
-    const before = { id: "msg_1", sessionID: "session-a", role: "user", time: { created: 1 } } as unknown as Message
+    const beforeMessageId = "msg_00000000100100000000000000"
+    const before = { id: beforeMessageId, sessionID: "session-a", role: "user", time: { created: 1 } } as unknown as Message
     const previousTransaction = {
       messageID: "msg_2",
       hiddenMessageIDs: new Set(["msg_2", "msg_3"]),
@@ -2806,7 +2819,7 @@ describe("revertToMessage scoped revert", () => {
     const store = createStore({}, [session])
     store.setState({
       message: { "session-a": [before] },
-      part: { "msg_1": [] },
+      part: { [beforeMessageId]: [] },
       revert_transaction: { "session-a": previousTransaction },
     })
     const childStores = createChildStores([["/test/project", store]])
@@ -2865,7 +2878,7 @@ describe("revertToMessage scoped revert", () => {
     expect((store.getState().session[0] as Session & { revert?: unknown })?.revert).toBe(undefined)
     expect(store.getState().revert_transaction["session-a"]).toBe(undefined)
     expect(store.getState().message["session-a"]?.map((message) => message.id)).toEqual([
-      "msg_1",
+      beforeMessageId,
       optimisticMessageId,
     ])
   })
@@ -3839,5 +3852,76 @@ describe("revertToMessage recovery behavior", () => {
     expect(sessionAbortCalls).toEqual([{ sessionID: "session-a", directory: "/test/project" }])
     expect(store.getState().session_status["session-a"]).toEqual({ type: "idle" })
     expect(sessionMessageCalls).toEqual([{ sessionID: "session-a", directory: "/test/project", limit: 200 }])
+  })
+})
+
+describe("abortCurrentOperationConfirmed stop reliability", () => {
+  beforeEach(() => {
+    resetAbortGuardState()
+    sessionAbortCalls.length = 0
+    clearSessionStoppingCalls.length = 0
+    clearSessionTurnCompletionCalls.length = 0
+    mockSessionAbortFlags = new Map()
+    mockAbortControllers = new Map()
+    sessionDirectories["session-a"] = "/test/project"
+    sessionAbortHandler = () => Promise.resolve({ data: true })
+    useManagedOrchestrationStore.setState({ taskIdsByRootId: {}, tasksById: {} })
+  })
+
+  test("issues the abort request without waiting for managed subtask cancellation", async () => {
+    const cancelDeferred = createDeferred<void>()
+    const cancelCalls: string[] = []
+    useManagedOrchestrationStore.setState({
+      taskIdsByRootId: { "session-a": ["task-1"] },
+      tasksById: { "task-1": { taskId: "task-1", status: "running" } as never },
+      cancelTask: ((taskId: string) => {
+        cancelCalls.push(taskId)
+        return cancelDeferred.promise
+      }) as never,
+    })
+
+    const store = createStore({}, [makeSession("session-a")])
+    const childStores = createChildStores([["/test/project", store]])
+    const { abortCurrentOperationConfirmed, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    // The subtask cancellation never resolves inside this test — the abort
+    // must still reach the server and confirm.
+    const result = await abortCurrentOperationConfirmed("session-a")
+
+    expect(result).toBe(true)
+    expect(cancelCalls).toEqual(["task-1"])
+    expect(sessionAbortCalls).toEqual([{ sessionID: "session-a", directory: "/test/project" }])
+    cancelDeferred.resolve()
+  })
+
+  test("returns false when the abort request hangs past the watchdog", async () => {
+    sessionAbortHandler = () => new Promise(() => {})
+    const store = createStore({}, [makeSession("session-a")])
+    const childStores = createChildStores([["/test/project", store]])
+    const { abortCurrentOperationConfirmed, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const result = await withMutedConsoleError(() =>
+      abortCurrentOperationConfirmed("session-a", undefined, 20),
+    )
+
+    expect(result).toBe(false)
+    expect(clearSessionStoppingCalls).toContain("session-a")
+    expect(isAbortGuardActive("session-a", Date.now())).toBe(false)
+  })
+
+  test("clears the optimistic stopping flag and abort guard when the abort fails", async () => {
+    sessionAbortHandler = () => Promise.reject(new Error("abort failed"))
+    const store = createStore({}, [makeSession("session-a")])
+    const childStores = createChildStores([["/test/project", store]])
+    const { abortCurrentOperationConfirmed, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
+
+    const result = await withMutedConsoleError(() => abortCurrentOperationConfirmed("session-a"))
+
+    expect(result).toBe(false)
+    expect(clearSessionStoppingCalls).toContain("session-a")
+    expect(isAbortGuardActive("session-a", Date.now())).toBe(false)
   })
 })

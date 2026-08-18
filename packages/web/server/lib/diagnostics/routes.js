@@ -46,7 +46,12 @@ export const registerDiagnosticsRoutes = (app, options = {}) => {
 
   app.get('/api/diagnostics/status', async (_req, res) => {
     try {
-      res.json(await runtime.getStatus());
+      const status = await runtime.getStatus();
+      res.json({
+        ...status,
+        contextModeRecovery: options.getContextModeRecoveryStatus?.() ?? null,
+        commandDeadlineRecovery: options.getCommandDeadlineRecoveryStatus?.() ?? null,
+      });
     } catch (error) {
       res.status(500).json({ error: error?.message || 'Failed to read diagnostic status' });
     }

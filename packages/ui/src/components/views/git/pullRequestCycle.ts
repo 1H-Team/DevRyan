@@ -3,6 +3,8 @@ import type { GitHubChecksSummary, GitHubPullRequestSummary } from '@/lib/api/ty
 export type PullRequestPanelView = 'current' | 'list' | 'selected';
 export type PullRequestPanelEvent = 'show-current' | 'show-list' | 'show-selected';
 
+export const DEFAULT_PULL_REQUEST_PANEL_VIEW: PullRequestPanelView = 'list';
+
 export type NextPullRequestDraft = {
   title: string;
   body: string;

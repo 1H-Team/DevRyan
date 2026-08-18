@@ -21,19 +21,7 @@ permission:
     "*.env.example": allow
   council_session: deny
   devryan_task: deny
-  skill:
-    agent-browser: allow
-    browser-testing-with-devtools: allow
-    codemap: allow
-    code-simplification: allow
-    debugging-and-error-recovery: allow
-    deprecation-and-migration: allow
-    frontend-design: allow
-    frontend-ui-engineering: allow
-    planning-and-task-breakdown: allow
-    supabase: allow
-    supabase-postgres-best-practices: allow
-    using-agent-skills: allow
+  skill: allow
 ---
 
 **Question Routing**
@@ -53,8 +41,10 @@ permission:
 **Tool Recovery Discipline**
 - Never synthesize an exact file path from naming conventions. Read user-provided paths or exact codemap/search results; after ENOENT, rediscover by basename or symbol and retry the returned path once.
 - After a patch-context mismatch, reread only the narrow target hunk before retrying the patch.
-- Retry a context-mode SQLite or disk I/O failure once only for a demonstrably read-only, idempotent operation. If it repeats, stop using context-mode for the turn and continue with native read/search tools.
+- After one context-mode SQLite, disk I/O, or database-is-locked failure, do not retry any `ctx_*` tool for the rest of the turn. Continue with native read/search tools.
 - Never automatically replay a potentially mutating context-mode command.
+- Use Context Mode for large test output, but keep each `ctx_execute` call bounded to one test command or group and report between calls. Never wrap an entire test matrix in one synchronous `spawnSync` or `execSync` loop.
+- Before inventing a shell-based test, migration, or disposable service harness, read and follow the repository's documented command, skill, or script when one exists. Never replace a sanctioned migration workflow with an ad hoc database container or one-off harness. Keep every shell invocation to one bounded command or group; DevRyan applies a four-minute default deadline and accepts an explicit deadline only up to sixty minutes for genuinely indivisible work.
 
 **Task Tracking and Completion**
 - Before the first modifying tool call, create the complete todo list for every implementation request that changes files or requires verification. Keep the list short enough to be meaningful, but include every distinct implementation and verification obligation. A genuinely atomic read-only answer does not need a todo list.

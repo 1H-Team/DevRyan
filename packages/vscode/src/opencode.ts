@@ -11,6 +11,11 @@ import { resolveSlimRuntimeConfigDirectory, resolveSlimRuntimePreset, syncRuntim
 import { resolveWorkingDirectoryChange } from './workingDirectoryChange';
 import { provisionManagedUserProfile } from './userProfileProvisioning';
 import {
+  createContextModeRecovery,
+  type ContextModeRecoveryStatus,
+} from './contextModeRecovery';
+import {
+  buildContextModeStorageEnv,
   reapOrphanedManagedOpenCodeProcesses,
   registerManagedOpenCodeProcess,
   unregisterManagedOpenCodeProcess,
@@ -58,6 +63,9 @@ export interface OpenCodeManager {
   getApiUrl(): string | null;
   getOpenCodeAuthHeaders(): Record<string, string>;
   getWorkingDirectory(): string;
+  getActiveSessionCount(): number;
+  observeContextModeToolFailure(payload: unknown): boolean;
+  getContextModeRecoveryStatus(): ContextModeRecoveryStatus;
   isCliAvailable(): boolean;
   getDebugInfo(): OpenCodeDebugInfo;
   onStatusChange(callback: (status: ConnectionStatus, error?: string) => void): vscode.Disposable;
@@ -66,6 +74,11 @@ export interface OpenCodeManager {
 type OpenCodeManagerOptions = {
   provisionUserProfile?: typeof provisionManagedUserProfile;
   getActiveSessionCount?: () => number;
+  acquireContextModeAdmissionHold?: (
+    name: string,
+    block: { code: string; error: string; retryAfterSeconds: number },
+  ) => (() => unknown);
+  recordContextModeRecoveryIncident?: (status: ContextModeRecoveryStatus) => unknown;
   getHiddenSkills?: () => unknown[];
   getManagedOrchestrationEnvironment?: () => Promise<Partial<Record<
     'DEVRYAN_ORCHESTRATION_URL' | 'DEVRYAN_ORCHESTRATION_TOKEN',
@@ -110,6 +123,7 @@ export function buildManagedOpenCodeEnvOverrides({
     }
   }
   return {
+    ...buildContextModeStorageEnv(),
     OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: process.env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS || 'true',
     OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: '1',
     ...(slimPreset ? { OH_MY_OPENCODE_SLIM_PRESET: slimPreset } : {}),
@@ -892,26 +906,6 @@ export function createOpenCodeManager(
   let cliPath: string | null = null;
 
   let pendingOperation: Promise<void> | null = null;
-  let deferredRestartPending = false;
-  let deferredRestartTimer: NodeJS.Timeout | null = null;
-
-  const scheduleDeferredRestartCheck = (): void => {
-    if (deferredRestartTimer || !deferredRestartPending) return;
-    deferredRestartTimer = setTimeout(() => {
-      deferredRestartTimer = null;
-      if (!deferredRestartPending) return;
-      if ((options.getActiveSessionCount?.() ?? 0) > 0 || pendingOperation) {
-        scheduleDeferredRestartCheck();
-        return;
-      }
-      deferredRestartPending = false;
-      void restart({ force: true }).catch((error) => {
-        console.error('[VSCode:OpenCode] Deferred configuration restart failed:', error);
-      });
-    }, 1000);
-    deferredRestartTimer.unref?.();
-  };
-
   const config = vscode.workspace.getConfiguration('openchamber');
   const configuredApiUrl = config.get<string>('apiUrl') || '';
   const useConfiguredUrl = configuredApiUrl && configuredApiUrl.trim().length > 0;
@@ -1193,11 +1187,6 @@ export function createOpenCodeManager(
   }
 
   async function stop(): Promise<void> {
-    deferredRestartPending = false;
-    if (deferredRestartTimer) {
-      clearTimeout(deferredRestartTimer);
-      deferredRestartTimer = null;
-    }
     if (pendingOperation) {
       await pendingOperation;
     }
@@ -1214,17 +1203,7 @@ export function createOpenCodeManager(
   }
 
   async function restart(restartOptions: { force?: boolean } = {}): Promise<void> {
-    if (!restartOptions.force && (options.getActiveSessionCount?.() ?? 0) > 0) {
-      deferredRestartPending = true;
-      scheduleDeferredRestartCheck();
-      console.log('[VSCode:OpenCode] Configuration restart deferred until active agents finish');
-      return;
-    }
-    deferredRestartPending = false;
-    if (deferredRestartTimer) {
-      clearTimeout(deferredRestartTimer);
-      deferredRestartTimer = null;
-    }
+    void restartOptions;
     if (pendingOperation) {
       await pendingOperation;
     }
@@ -1276,6 +1255,37 @@ export function createOpenCodeManager(
     return { success: true, path: change.path };
   }
 
+  const contextModeRecovery = createContextModeRecovery({
+    restartOpenCode: () => restart(),
+    getActiveSessionCount: async () => {
+      const localCount = options.getActiveSessionCount?.() ?? 0;
+      const apiUrl = getApiUrl();
+      if (!apiUrl) throw new Error('OpenCode is unavailable for authoritative session status');
+      const target = new URL(`${apiUrl.replace(/\/+$/, '')}/session/status`);
+      target.searchParams.set('directory', workingDirectory);
+      const response = await fetch(target, {
+        headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (!response.ok) {
+        throw new Error(`OpenCode session status responded with ${response.status}`);
+      }
+      const statuses = await response.json() as unknown;
+      if (!statuses || typeof statuses !== 'object' || Array.isArray(statuses)) {
+        throw new Error('OpenCode session status returned an invalid payload');
+      }
+      const authoritativeCount = Object.values(statuses).filter((entry) => (
+        entry && typeof entry === 'object'
+        && typeof (entry as { type?: unknown }).type === 'string'
+        && (entry as { type: string }).type !== 'idle'
+      )).length;
+      return Math.max(localCount, authoritativeCount);
+    },
+    isExternalOpenCode: () => Boolean(useConfiguredUrl && configuredApiUrl),
+    acquireAdmissionHold: options.acquireContextModeAdmissionHold,
+    recordIncident: options.recordContextModeRecoveryIncident,
+  });
+
   return {
     start,
     stop,
@@ -1285,6 +1295,9 @@ export function createOpenCodeManager(
     getApiUrl,
     getOpenCodeAuthHeaders,
     getWorkingDirectory: () => workingDirectory,
+    getActiveSessionCount: () => options.getActiveSessionCount?.() ?? 0,
+    observeContextModeToolFailure: contextModeRecovery.observeContextModeToolFailure,
+    getContextModeRecoveryStatus: contextModeRecovery.getStatus,
     isCliAvailable: () => !cliMissing,
     getDebugInfo: () => {
       const secureConnection = Boolean(getOpenCodeAuthHeaders().Authorization);

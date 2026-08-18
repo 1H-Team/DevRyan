@@ -26,6 +26,7 @@ import type { ToolPopupContent } from '../types';
 import { ensurePierreThemeRegistered } from '@/lib/shiki/appThemeRegistry';
 import { getDefaultTheme } from '@/lib/theme/themes';
 import { getFirstChangedModifiedLineFromPatch } from '@/lib/diff/firstChangedLine';
+import { formatElapsedDuration } from '@/lib/duration';
 
 import {
     formatEditOutput,
@@ -42,6 +43,7 @@ import { getToolIcon } from './toolPresentation';
 import { isToolHeaderInteractive } from './toolHeaderInteractions';
 import { getToolDescriptionFallback, normalizeToolName } from './toolRenderUtils';
 import { useDurationTickerNow } from './useDurationTicker';
+import { createTerminalTranscriptParser } from './terminalTranscript';
 import { buildTaskInvocationKey } from '../../lib/taskSessionLinking';
 import { useTaskSessionAssignment, useTaskSessionLinkContext } from '../../lib/taskSessionLinkContext';
 import { resolveTaskSessionIdFromChildren } from './resolveFallbackTaskSessionId';
@@ -155,7 +157,6 @@ const getMultiFileDescription = (
     );
 };
 
-const MAX_DURATION_MS = 5 * 60 * 1000; // 5 minutes cap
 const EMPTY_TASK_CHILD_SESSIONS: Session[] = [];
 const TASK_TOOL_POLL_FAST_MS = 1200;
 const TASK_TOOL_POLL_IDLE_MS = 3200;
@@ -174,18 +175,10 @@ const GIT_REFRESH_MUTATING_TOOLS = new Set([
     'task',
 ]);
 
-const formatDuration = (start: number, end?: number, now: number = Date.now()) => {
-    const duration = Math.min(Math.max(0, (end ?? now) - start), MAX_DURATION_MS);
-    const seconds = duration / 1000;
-
-    const displaySeconds = seconds < 0.05 && end !== undefined ? 0.1 : seconds;
-    return `${displaySeconds.toFixed(1)}s`;
-};
-
 const LiveDuration: React.FC<{ start: number; end?: number; active: boolean }> = ({ start, end, active }) => {
     const now = useDurationTickerNow(active, 250);
 
-    return <>{formatDuration(start, end, now)}</>;
+    return <>{formatElapsedDuration(start, end, now).label}</>;
 };
 
 const parseWriteLineCount = (input?: Record<string, unknown>): number | null => {
@@ -691,7 +684,31 @@ const ToolScrollableTextOutput: React.FC<{
 }> = ({ output, part, metadata, input, syntaxTheme }) => {
     const renderedOutput = getToolOutputText(output, part, metadata);
     const outputLanguage = getToolOutputLanguage(output, part, metadata, input);
-    const jsonResult = React.useMemo(() => tryParseJsonOutput(renderedOutput), [renderedOutput]);
+    const transcriptParserRef = React.useRef<{
+        toolPartId: string;
+        parser: ReturnType<typeof createTerminalTranscriptParser>;
+    } | null>(null);
+    if (!transcriptParserRef.current || transcriptParserRef.current.toolPartId !== part.id) {
+        transcriptParserRef.current = {
+            toolPartId: part.id,
+            parser: createTerminalTranscriptParser(),
+        };
+    }
+    const bashTranscript = part.tool === 'bash'
+        ? transcriptParserRef.current.parser.update(renderedOutput).text
+        : null;
+    const jsonResult = React.useMemo(
+        () => part.tool === 'bash' ? { isJson: false as const, data: null } : tryParseJsonOutput(renderedOutput),
+        [part.tool, renderedOutput],
+    );
+
+    if (part.tool === 'bash') {
+        return (
+            <pre className="m-0 whitespace-pre-wrap break-words typography-code text-muted-foreground/90">
+                {bashTranscript}
+            </pre>
+        );
+    }
 
     if (jsonResult.isJson) {
         return (
@@ -706,7 +723,7 @@ const ToolScrollableTextOutput: React.FC<{
     }
 
     return (
-        <div className={part.tool === 'bash' ? 'typography-code text-muted-foreground/90' : undefined}>
+        <div>
             <SyntaxHighlighter
                 style={syntaxTheme}
                 language={outputLanguage}
@@ -1048,13 +1065,22 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
 
     const renderScrollableBlock = (
         content: React.ReactNode,
-        options?: { maxHeightClass?: string; className?: string; disableHorizontal?: boolean; outerClassName?: string }
+        options?: {
+            maxHeightClass?: string;
+            className?: string;
+            disableHorizontal?: boolean;
+            outerClassName?: string;
+            followOutput?: boolean;
+            contentVersion?: string | number;
+        }
     ) => (
         <ToolScrollableSection
             maxHeightClass={options?.maxHeightClass}
             className={options?.className}
             disableHorizontal={options?.disableHorizontal}
             outerClassName={options?.outerClassName}
+            followOutput={options?.followOutput}
+            contentVersion={options?.contentVersion}
         >
             {content}
         </ToolScrollableSection>
@@ -1243,6 +1269,8 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
                 {
                     className: part.tool === 'bash' ? 'p-1 rounded-none' : 'p-1',
                     maxHeightClass: part.tool === 'bash' ? 'max-h-[46vh]' : undefined,
+                    followOutput: part.tool === 'bash' && !lifecycle.isFinalized,
+                    contentVersion: part.tool === 'bash' ? outputString : undefined,
                 }
             );
         }

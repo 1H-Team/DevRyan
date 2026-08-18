@@ -345,11 +345,11 @@ describe('multi-user policy', () => {
   it('rejects changes to fields outside granted settings pages', () => {
     const result = validateSettingsChanges({
       principal: developerPrincipal,
-      changes: { themeId: 'new-theme', tunnelToken: 'forbidden' },
+      changes: { themeId: 'new-theme', chatWidth: 1024, tunnelToken: 'forbidden' },
       currentEffective: { themeId: 'old-theme' },
     });
 
-    expect(result.accepted).toEqual({ themeId: 'new-theme' });
+    expect(result.accepted).toEqual({ themeId: 'new-theme', chatWidth: 1024 });
     expect(result.rejected).toEqual(['tunnelToken']);
   });
 

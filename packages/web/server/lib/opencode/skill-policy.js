@@ -38,8 +38,21 @@ const getHiddenSkillPathSet = (hiddenSkills = []) => new Set(
 
 const isPackageCacheSkillPath = (skillPath) => {
   const normalized = normalizeSkillPath(skillPath).replace(/\\/g, '/');
-  return /\/(\.cache\/opencode|Library\/Caches\/opencode)\/packages\//.test(normalized);
+  return /\/(\.cache\/opencode|Library\/Caches\/opencode)\/(packages|skills)\//.test(normalized)
+    || /\/plugins?\/cache\//.test(normalized);
 };
+
+const isUnsupportedSkillRootPath = (skillPath) => {
+  const normalized = normalizeSkillPath(skillPath).replace(/\\/g, '/');
+  return /\/(\.cursor|\.codex|\.claude)(\/|$)/.test(normalized);
+};
+
+const isApprovedSkillSource = (source) => (
+  source === undefined
+  || source === null
+  || source === 'opencode'
+  || source === 'agents'
+);
 
 const filterVisibleSkills = (skills = [], hiddenSkills = []) => {
   const hiddenPaths = getHiddenSkillPathSet(hiddenSkills);
@@ -52,7 +65,11 @@ const filterVisibleSkills = (skills = [], hiddenSkills = []) => {
       changed = true;
       continue;
     }
-    if (isPackageCacheSkillPath(skill?.path)) {
+    if (
+      !isApprovedSkillSource(skill?.source)
+      || isPackageCacheSkillPath(skill?.path)
+      || isUnsupportedSkillRootPath(skill?.path)
+    ) {
       changed = true;
       continue;
     }
@@ -72,6 +89,37 @@ const filterVisibleSkills = (skills = [], hiddenSkills = []) => {
   }
 
   return changed ? visibleSkills : skills;
+};
+
+const resolveApprovedSkills = ({
+  discoveredSkills = [],
+  runtimeSkills = [],
+  hiddenSkills = [],
+} = {}) => {
+  const runtimeByPath = new Map();
+  for (const skill of runtimeSkills) {
+    const skillPath = normalizeSkillPath(skill?.path);
+    if (skillPath) {
+      runtimeByPath.set(skillPath, skill);
+    }
+  }
+
+  const enrichedSkills = discoveredSkills.map((skill) => {
+    const skillPath = normalizeSkillPath(skill?.path);
+    const runtimeSkill = skillPath ? runtimeByPath.get(skillPath) : null;
+    if (!runtimeSkill) {
+      return skill;
+    }
+    return {
+      ...runtimeSkill,
+      ...skill,
+      description: typeof runtimeSkill.description === 'string' && runtimeSkill.description.trim()
+        ? runtimeSkill.description
+        : skill.description,
+    };
+  });
+
+  return filterVisibleSkills(enrichedSkills, hiddenSkills);
 };
 
 const buildVisibleSkillPolicy = (input = {}) => {
@@ -152,23 +200,31 @@ const buildVisibleSkillPolicy = (input = {}) => {
 
 const isAllow = (value) => value === 'allow';
 
-const getAllowedSkillNames = (skillPermission, visibleSkillNames) => {
-  const visibleNames = new Set(visibleSkillNames);
-  if (skillPermission === 'allow') {
-    return [...visibleSkillNames].sort((a, b) => a.localeCompare(b));
+const hasExplicitSkillGrant = (skillPermission) => (
+  skillPermission === 'allow'
+  || skillPermission === true
+  || (
+    isPlainObject(skillPermission)
+    && Object.entries(skillPermission).some(([name, value]) => name !== '*' && isAllow(value))
+  )
+);
+
+const isSkillUseExplicitlyDenied = (permission) => {
+  const skillPermission = permission.skill;
+  if (skillPermission === 'deny' || skillPermission === false) {
+    return true;
   }
-  if (!isPlainObject(skillPermission)) {
+  if (isPlainObject(skillPermission)) {
+    return skillPermission['*'] === 'deny' && !hasExplicitSkillGrant(skillPermission);
+  }
+  return skillPermission === undefined && permission['*'] === 'deny';
+};
+
+const getAllowedSkillNames = (permission, visibleSkillNames) => {
+  if (isSkillUseExplicitlyDenied(permission)) {
     return [];
   }
-
-  if (skillPermission['*'] !== 'deny') {
-    return [...visibleSkillNames].sort((a, b) => a.localeCompare(b));
-  }
-
-  return Object.entries(skillPermission)
-    .filter(([name, value]) => name !== '*' && visibleNames.has(name) && isAllow(value))
-    .map(([name]) => name)
-    .sort((a, b) => a.localeCompare(b));
+  return [...visibleSkillNames].sort((a, b) => a.localeCompare(b));
 };
 
 const normalizeExternalDirectoryPattern = (pattern) => {
@@ -298,7 +354,7 @@ const sanitizeAgentSkillPolicy = (frontmatter, policy = null) => {
     : {};
   const skillNames = Array.isArray(policy.skillNames) ? policy.skillNames : [];
   const skillDirectoriesByName = isPlainObject(policy.skillDirectoriesByName) ? policy.skillDirectoriesByName : {};
-  const allowedSkillNames = getAllowedSkillNames(permission.skill, skillNames);
+  const allowedSkillNames = getAllowedSkillNames(permission, skillNames);
   const allowedDirectories = normalizeRuntimeExternalDirectories(policy.runtimeExternalDirectories);
   const seenAllowedDirectories = new Set();
   for (const dir of allowedDirectories) {
@@ -338,5 +394,6 @@ export {
   filterVisibleSkills,
   isRetiredDevRyanSkillName,
   normalizeSkillPath,
+  resolveApprovedSkills,
   sanitizeAgentSkillPolicy,
 };

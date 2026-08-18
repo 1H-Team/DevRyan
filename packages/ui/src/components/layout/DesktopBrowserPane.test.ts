@@ -11,6 +11,8 @@ const browserRuntimeSource = readFileSync(new URL('./browserRuntime.ts', import.
 const diagnosticsSource = readFileSync(new URL('./previewDiagnostics.tsx', import.meta.url), 'utf8');
 const diagnosticsStateSource = readFileSync(new URL('./previewDiagnosticsState.ts', import.meta.url), 'utf8');
 const contextPanelSource = readFileSync(new URL('./ContextPanel.tsx', import.meta.url), 'utf8');
+const browserPanelSource = readFileSync(new URL('./BrowserPanel.tsx', import.meta.url), 'utf8');
+const browserTabStripSource = readFileSync(new URL('./BrowserTabStrip.tsx', import.meta.url), 'utf8');
 
 describe('shared browser surface shell', () => {
   test('gates the browser on a normalized directory rather than a project record', () => {
@@ -31,10 +33,13 @@ describe('shared browser surface shell', () => {
     expect(source).toContain('useBrowserSurfaceStore((state) => surfaceId');
   });
 
-  test('renders navigation, pop-out, inspect, DevTools, and regular-browser actions', () => {
+  test('renders navigation, pop-out, inspect, DevTools, and viewport actions', () => {
     expect(source).toContain('onFocus={(event) => event.currentTarget.select()}');
     expect(source).toContain("aria-label={popped ? 'Dock Browser' : 'Pop Out Browser'}");
-    expect(source).toContain("title=\"Open in Regular Browser\"");
+    expect(source).toContain("{ value: 'responsive', label: 'Responsive'");
+    expect(source).toContain("{ value: 'desktop', label: 'Desktop'");
+    expect(source).toContain("{ value: 'mobile', label: 'Mobile'");
+    expect(source).not.toContain('title="Open in Regular Browser"');
     expect(source).toContain("'desktop_browser_surface_inspect'");
     expect(source).toContain("'desktop_browser_devtools_set_open'");
   });
@@ -68,14 +73,19 @@ describe('shared browser surface shell', () => {
     expect(source).toContain('<RiServerLine');
   });
 
-  test('renders a dedicated manual-browser tab strip that cannot receive context tabs or leases', () => {
+  test('renders one dedicated Browser strip outside the shared context panel', () => {
     expect(source).toContain('data-browser-tabs-strip="true"');
     expect(source).toContain('tabs={workspace.tabs}');
-    expect(source).toContain('aria-label="New Browser Tab"');
+    expect(browserTabStripSource).toContain('aria-label="New Browser Tab"');
     expect(source).toContain('onReorder={(tabId, overTabId) => reorderTabs(directory, tabId, overTabId)}');
-    expect(contextPanelSource).toContain('const manualBrowserTab = React.useMemo(');
-    expect(contextPanelSource).toContain('<ManualBrowserWorkspacePane');
-    expect(contextPanelSource).not.toContain('manualBrowserTabs.map');
+    expect(source).toContain('onClose={(tabId) => closeManualBrowserStripTab(directory, tabId)}');
+    expect(browserPanelSource).toContain('<ManualBrowserWorkspacePane');
+    expect(browserPanelSource).toContain('leaseTabs={leaseTabs}');
+    expect(browserPanelSource).toContain('closeManualBrowserStripTab(directoryKey, tabId)');
+    expect(contextPanelSource).not.toContain('<ManualBrowserWorkspacePane');
+    expect(contextPanelSource).not.toContain('BrowserLeasePane');
+    expect(source).toContain('updateManualBrowserTabTitle(directory, tabID, snapshot.title);');
+    expect(source).toContain('updateManualBrowserTabFavicon(directory, tabID, snapshot.faviconUrl ?? null);');
   });
 
   test('keeps native page components mounted behind the detached-workspace placeholder', () => {
@@ -83,6 +93,12 @@ describe('shared browser surface shell', () => {
     expect(source).toContain('popped={popped}');
     expect(source).toContain("<div className=\"absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-background p-6 text-center\">");
     expect(source).not.toContain('if (popped) {\n    return (');
+  });
+  test('dismisses the detached web workspace when the last tab is closed', () => {
+    expect(source).toContain("if (index !== -1 && current.tabs.length === 1)");
+    expect(source).toContain("send({ type: 'close-tab', tabId });");
+    expect(source).toContain('window.close();');
+    expect(source).toContain('return current;');
   });
 });
 
@@ -93,6 +109,8 @@ describe('Electron browser surface', () => {
     expect(source).toContain("const surfaceId = leaseId ? (lease?.surfaceId ?? '') : manualSurfaceId;");
     expect(source).not.toContain('<webview');
     expect(source).not.toContain('webContentsId');
+    expect(source).toContain('CONTEXT_PANEL_RESIZE_GUTTER_PX');
+    expect(browserPanelSource).toContain('data-panel-resize-handle="browser-panel"');
   });
 
   test('retains annotation capture and resizable native DevTools by surface id', () => {
@@ -122,7 +140,7 @@ describe('standalone web browser surface', () => {
     expect(desktopRuntimeSource).toContain('export const isStandaloneWebRuntime');
     expect(browserRuntimeSource).toContain('isElectronShell() || isStandaloneWebRuntime()');
     expect(source).toContain('if (isStandaloneWebRuntime()) return <WebBrowserPane {...props} />;');
-    expect(projectActionsSource).toContain('openContextBrowser(targetDirectory, url);');
+    expect(projectActionsSource).toContain('openBrowserPanel(targetDirectory, url);');
   });
 
   test('has a dedicated Vite entry and a sandboxed iframe with Browser proxy registration', () => {
@@ -131,6 +149,8 @@ describe('standalone web browser surface', () => {
     expect(source).toContain('body: JSON.stringify({ url: target, directory })');
     expect(source).toContain('sandbox="allow-downloads allow-forms allow-modals allow-pointer-lock allow-popups allow-same-origin allow-scripts"');
     expect(source).not.toContain("'allow-forms allow-modals allow-popups allow-scripts'");
+    expect(source).toContain('data-browser-viewport={viewportMode}');
+    expect(source).toContain('transform: `scale(${viewportLayout.scale})`');
   });
 
   test('opens non-loopback pages on the viewer while keeping project apps host-routed', () => {

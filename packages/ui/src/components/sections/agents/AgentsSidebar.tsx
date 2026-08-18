@@ -35,8 +35,8 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
   const isPrimaryAgent = (agent: Agent) => agent.mode === 'primary' || agent.mode === 'all';
   const primaryAgentOrder = new Map([
     ['builder', 0],
-    ['orchestrator', 1],
-    ['council', 2],
+    ['council', 1],
+    ['orchestrator', 2],
   ]);
   const comparePrimaryAgents = (a: Agent, b: Agent) => {
     const aRank = primaryAgentOrder.get(a.name.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;

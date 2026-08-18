@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-08-18
+
+- Harness: enforce four-minute shell defaults with a one-hour ceiling, persist privacy-bounded exact-call deadlines, and reconcile overdue commands safely across web, Electron, and VS Code without replaying them.
+- Orchestration: resolve managed-dispatch assistant and parent messages directly by ID so Oracle and Fixer launches remain reliable in long turns while preserving fail-closed policy checks.
+- Bug reports: classify confirmed browser-target, web-fetch 404, and discovery-buffer outcomes as expected, with a forensic-preserving Supabase backfill.
+
+- OpenCode: update the bundled SDK dependency and managed runtime target to 1.18.18 across web, UI, VS Code, and the workspace lockfile.
+- UI: remove the Work status control and its live-operations context panel.
+- Orchestration: add bounded same-child recovery for terminal provider transport failures, preserve resumable timed-out work, and expose explicit recovery actions consistently across web, Electron, and VS Code.
+- Configuration: add a shared, revisioned apply coordinator for agents, providers, commands, skills, MCP, behavior, and runtime settings, with authoritative idle checks, retryable failures, administrator-authorized force apply, and web/VS Code parity.
+- Quota: unify z.ai, Kimi, Codex, xAI, and DeepSeek adapters across web and VS Code; add xAI OAuth refresh and DeepSeek balance reporting; and improve value-only usage presentation.
+- Worktrees: run effective Git `post-checkout` hooks during new worktree bootstrap with bounded output, durable receipts, explicit retry behavior, and cross-runtime Git support.
+- Skills: harden ClawdHub archive installation with bounded streaming, metadata preflight, staged extraction, transactional replacement, stable rejection codes, and shared web/VS Code enforcement.
+- Chat: add selection-to-composer Markdown handling, stabilize tool-output scrolling and terminal transcript rendering, and improve duration/status timing without broad render fanout.
+- UI: add a focused Work panel and status control, refine settings and provider navigation, and preserve configuration-apply state through managed runtime transitions.
+- Runtime: introduce `@openchamber/shared-runtime`, update `adm-zip` to 0.6.0, and keep web, Electron, and VS Code contracts aligned.
+- Release: bump DevRyan workspace, Electron, VS Code, web, shared runtime, and legacy desktop metadata to 1.1.4.
+
 ## [1.1.3] - 2026-08-11
 
 - Bug reports: add managed-user submissions, administrator review and status controls, sanitized error-log views, service-only Supabase storage, and database policy coverage.

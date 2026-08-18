@@ -45,6 +45,7 @@ export const formatWindowLabel = (label: string): string => {
   if (label === 'daily') return 'Daily';
   if (label === 'monthly') return 'Monthly Limit';
   if (label === 'credits') return 'Credits';
+  if (label === 'extra-usage') return 'Extra usage';
   if (label === 'ai-credits') return 'AI Credits';
   if (label === 'session') return 'Session';
   if (label === 'premium') return 'Premium Interactions';
@@ -56,6 +57,28 @@ export const formatWindowLabel = (label: string): string => {
   if (label === 'api') return 'API';
   return label;
 };
+
+export const formatProviderWindowLabel = (providerId: string, label: string): string => {
+  if (providerId !== 'claude') {
+    return formatWindowLabel(label);
+  }
+  if (label === '5h') return '5-Hour Limit';
+  if (label === '7d') return 'Weekly Limit';
+  if (label.startsWith('7d-')) {
+    const modelLabel = label
+      .slice('7d-'.length)
+      .split('-')
+      .filter(Boolean)
+      .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+      .join(' ');
+    return modelLabel ? `Weekly ${modelLabel} Limit` : 'Weekly Limit';
+  }
+  return formatWindowLabel(label);
+};
+
+export const hasUsageProgress = (window: UsageWindow): boolean => (
+  typeof window.usedPercent === 'number' && Number.isFinite(window.usedPercent)
+);
 
 /**
  * Pace status indicating whether usage is on track, slightly fast, or too fast

@@ -6,21 +6,6 @@
 
 ![DevRyan Chat](docs/references/chat_example.png)
 
-<details>
-<summary>More screenshots</summary>
-
-![Tool Output](docs/references/tool_output_example.png)
-![Settings](docs/references/settings_example.png)
-![Diff View](docs/references/diff_example.png)
-![VS Code Extension](packages/vscode/extension.jpg)
-
-<p>
-<img src="docs/references/pwa_chat_example.png" width="45%" alt="PWA Chat">
-<img src="docs/references/pwa_diff_example.png" width="45%" alt="PWA Diff">
-</p>
-
-</details>
-
 ## Development
 
 Run the full local stack with:

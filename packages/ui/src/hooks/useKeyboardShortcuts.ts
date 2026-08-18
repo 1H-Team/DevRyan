@@ -19,6 +19,8 @@ import { useProjectsStore } from '@/stores/useProjectsStore';
 import { applyDraftAwareModelChange, persistCycledThinkingVariant } from '@/components/chat/draftAwareAgentChange';
 import { buildFavoriteModelsList, getNextFavoriteModelRef } from '@/hooks/useModelLists';
 import { getAuthPrincipal, hasAuthCapability } from '@/lib/authSession';
+import { useInputStore } from '@/sync/input-store';
+import { sendSelectionToComposer } from '@/components/chat/lib/sendSelectionToComposer';
 
 export const useKeyboardShortcuts = () => {
   const openNewSessionDraft = useSessionUIStore((s) => s.openNewSessionDraft);
@@ -225,6 +227,18 @@ export const useKeyboardShortcuts = () => {
         const { isSettingsDialogOpen } = useUIStore.getState();
         setSettingsDialogOpen(!isSettingsDialogOpen);
         return;
+      }
+
+      if (eventMatchesShortcut(e, combo('send_selection_to_input'))) {
+        const handled = sendSelectionToComposer({
+          activeMainTab: useUIStore.getState().activeMainTab,
+          eventTarget: e.target,
+          append: (text) => useInputStore.getState().setPendingInputText(text, 'append'),
+        });
+        if (handled) {
+          e.preventDefault();
+          return;
+        }
       }
 
       if (eventMatchesShortcut(e, combo('toggle_sidebar'))) {

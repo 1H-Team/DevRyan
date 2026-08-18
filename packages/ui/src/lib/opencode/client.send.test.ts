@@ -300,7 +300,6 @@ describe("opencode client sends", () => {
       "mcp__resend__*": false,
       task: false,
       invalid: false,
-      "mcp__*": false,
     })
   })
 

@@ -244,4 +244,46 @@ describe("stream responsiveness diagnostics", () => {
       },
     }])
   })
+
+  test("records a sanitized long-running tool incident when stream debug is disabled", () => {
+    const calls: Array<{ url: string; body: unknown }> = []
+    globalThis.fetch = ((url, init) => {
+      calls.push({
+        url: String(url),
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+      })
+      return Promise.resolve(Response.json({ ok: true }))
+    }) as typeof fetch
+
+    postRendererTurnTimingMark({
+      sessionId: "ses_1",
+      assistantMessageId: "msg_assistant",
+      mark: "renderer_long_running_tool_confirmed",
+      directory: "/project",
+      metadata: {
+        source: "active-session-watchdog",
+        tool: "ctx_execute",
+        elapsedMs: 300_123.9,
+        stalledForMs: 300_000,
+        runtime: "renderer-secret",
+        code: "secret code",
+        output: "secret output",
+      },
+    })
+
+    expect(calls).toEqual([{
+      url: "/api/diagnostics/turn-timing/mark",
+      body: {
+        sessionId: "ses_1",
+        assistantMessageId: "msg_assistant",
+        mark: "renderer_long_running_tool_confirmed",
+        directory: "/project",
+        metadata: {
+          source: "active-session-watchdog",
+          tool: "ctx_execute",
+          elapsedMs: 300_123,
+        },
+      },
+    }])
+  })
 })

@@ -2,6 +2,7 @@ import React from 'react';
 import { RiArrowLeftSLine, RiLogoutBoxRLine } from '@remixicon/react';
 
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
+import { ConfigApplyControls } from '@/components/views/config-apply/ConfigApplyControls';
 import { canAccessSettingsPage, useAuthPrincipal } from '@/lib/authSession';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { useI18n } from '@/lib/i18n';
@@ -258,7 +259,8 @@ export const ManagedSettingsView: React.FC<ManagedSettingsViewProps> = ({ onClos
             );
           })}
         </nav>
-        <div className="border-t border-border p-2">
+        <div className="space-y-2 border-t border-border p-2">
+          <ConfigApplyControls variant="sidebar" />
           <button
             type="button"
             onClick={() => void handleLogout()}

@@ -2,6 +2,7 @@ import { getExecutionProviderId, getModelDisplayName } from '@/lib/providers/ant
 import { sortProviderTreeForPicker } from '@/lib/providers/sorting';
 import { filterVisibleProviderModelsForPicker } from '@/lib/providers/modelVisibility';
 import { shouldHidePairedFastModel } from '@/lib/providers/variantControls';
+import { getProviderDisplayName } from '@/lib/providers/display';
 
 type ModelLike = Record<string, unknown> & { id?: string; name?: string };
 
@@ -32,7 +33,7 @@ export function getControlledModelOptions(
   return visible.flatMap((provider) => (
     (Array.isArray(provider.models) ? provider.models : []).map((model) => ({
       providerId: getExecutionProviderId(provider.id, model),
-      providerName: provider.name || provider.id,
+      providerName: getProviderDisplayName(provider),
       modelId: String(model.id ?? ''),
       modelName: getModelDisplayName(model),
       model,

@@ -14,7 +14,6 @@ import {
   reduceGlobalEvent,
   applyGlobalProject,
   applyDirectoryEvent,
-  shouldSettleTerminalAssistantMessageStatus,
 } from "./event-reducer"
 import { useGlobalSyncStore, type GlobalSyncStore } from "./global-sync-store"
 import {
@@ -52,10 +51,13 @@ import {
   filterUnchangedSessionStatusCandidates,
   getActiveSessionRecoveryActivityAt,
   getActiveSessionRecoveryCooldownMs,
+  getLongRunningToolFingerprint,
   getProviderStallFingerprint,
   getReconnectCandidateSessionIds,
+  haveSameLongRunningToolFingerprint,
   haveSameProviderStallFingerprint,
   mergeRecoveredSessionStatuses,
+  shouldConfirmLongRunningTool,
   shouldRecoverStaleActiveSession,
   unwrapSdkResult,
 } from "./reconnect-recovery"
@@ -84,6 +86,7 @@ import { useMessageQueueStore } from "@/stores/messageQueueStore"
 import { useContextStore } from "@/stores/contextStore"
 import { useProviderRecoveryStore } from "@/stores/useProviderRecoveryStore"
 import { useProviderStallStore } from "@/stores/useProviderStallStore"
+import { useLongRunningToolStore } from "@/stores/useLongRunningToolStore"
 import {
   clearDirectorySessionChangeAttributions,
   clearSessionChangeAttribution,
@@ -127,10 +130,7 @@ import { persistSessionPlanRevision } from "@/lib/plans/sessionPlanPersistence"
 import { resolveProjectForSessionDirectory } from "@/lib/projectResolution"
 import { isStrictlyOlderSession } from "./session-recency"
 import {
-  hasSettledTerminalAssistantTurn,
   isSessionTurnSettledForCompletion,
-  shouldSettlePlanProposalStatus,
-  shouldSettleTerminalSessionStatus,
 } from "./plan-idle-settlement"
 import { detectTurnCompletedCandidate } from "./turn-completion-detection"
 import {
@@ -167,6 +167,14 @@ import {
 } from "@/lib/sessionDiffStats"
 import { requestSignature } from "./request-signature"
 import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry"
+import {
+  clearAllProviderContextUsageForSession,
+  getProviderContextUsageStoreKey,
+  invalidateProviderContextUsageForCompaction,
+  refreshProviderContextUsage,
+  useProviderContextUsageStore,
+} from "@/stores/useProviderContextUsageStore"
+import { extractTokenBreakdownFromMessage } from "@/stores/utils/tokenUtils"
 
 const EMPTY_SESSION_STATUS_MAP: Record<string, SessionStatus> = {}
 const EMPTY_MESSAGES: Message[] = []
@@ -268,7 +276,11 @@ const isTerminalAssistantInfo = (info: Message | undefined): info is Message => 
   if (!info || info.role !== "assistant") return false
   const finish = (info as { finish?: unknown }).finish
   const completed = (info.time as { completed?: unknown } | undefined)?.completed
-  return typeof completed === "number" || (typeof finish === "string" && finish.length > 0)
+  return (
+    typeof completed === "number"
+    && Number.isFinite(completed)
+    && completed > 0
+  ) || (typeof finish === "string" && finish.length > 0)
 }
 
 const markRendererReducedEvent = (
@@ -674,8 +686,7 @@ function isIdleOrTerminalSessionStatus(status: SessionStatus | undefined): boole
 }
 
 function shouldDetectPlanLifecycleAfterPartDelta(state: State, sessionID: string): boolean {
-  if (isIdleOrTerminalSessionStatus(state.session_status?.[sessionID])) return true
-  return shouldSettleTerminalSessionStatus({ sessionID, state })
+  return isIdleOrTerminalSessionStatus(state.session_status?.[sessionID])
 }
 
 function bufferPendingPartDelta(directory: string, payload: Event) {
@@ -1092,6 +1103,35 @@ function markOutputEventObserved(directory: string, sessionId: string | null | u
   useProviderStallStore.getState().clearStall(sessionId)
 }
 
+function reconcileLongRunningTool(
+  directory: string,
+  sessionID: string | null | undefined,
+  state: State,
+  activityPart: Part | undefined,
+  timestamp = Date.now(),
+) {
+  if (!directory || !sessionID || directory === "global") return
+  const fingerprint = getLongRunningToolFingerprint({ state, sessionID })
+  const longRunningStore = useLongRunningToolStore.getState()
+  if (!fingerprint) {
+    longRunningStore.clearTool(sessionID)
+    return
+  }
+
+  const previous = longRunningStore.recordsBySessionId[sessionID]
+  const sameCall = haveSameLongRunningToolFingerprint(previous, fingerprint)
+  const activityObserved = activityPart?.type === "tool"
+    && activityPart.id === fingerprint.partID
+    && activityPart.callID === fingerprint.callID
+    && activityPart.tool === fingerprint.tool
+  longRunningStore.observeTool({
+    ...fingerprint,
+    directory,
+    observedAt: sameCall ? previous.observedAt : timestamp,
+    lastActivityAt: activityObserved || !sameCall ? timestamp : previous.lastActivityAt,
+  }, activityObserved)
+}
+
 function pruneExternallyViewedSessions(now = Date.now()) {
   for (const [key, expiresAt] of externallyViewedSessions.entries()) {
     if (expiresAt <= now) {
@@ -1173,6 +1213,7 @@ const retireDeletedSessionSyncOwnership = (
   lastRecoveryAtBySessionKey.delete(trackingKey)
   recoveryFailureCountBySessionKey.delete(trackingKey)
   useProviderStallStore.getState().clearStall(sessionID)
+  useLongRunningToolStore.getState().clearTool(sessionID)
   clearAbortGuard(sessionID)
   clearCommittedRevertResendsForSessions([sessionID])
 
@@ -1209,6 +1250,7 @@ const releaseDirectoryOwnedSyncState = (
   clearDirectoryPrefixedEntries(lastRecoveryAtBySessionKey, directory)
   clearDirectoryPrefixedEntries(recoveryFailureCountBySessionKey, directory)
   useProviderStallStore.getState().clearDirectory(directory)
+  useLongRunningToolStore.getState().clearDirectory(directory)
 
   const releasedSessionIDs = releaseDirectoryRoutingIndex(routingIndex, directory, snapshot)
   for (const sessionID of [
@@ -1280,21 +1322,7 @@ async function detectAndMarkPlanLifecycle(
   const { useSessionUIStore } = await import("./session-ui-store")
   if (!isCurrent()) return
   let sessionUI = useSessionUIStore.getState()
-  let state = store.getState()
-
-  if (shouldSettleTerminalSessionStatus({ sessionID, state })) {
-    store.setState((current) => {
-      const statusType = current.session_status[sessionID]?.type
-      if (statusType !== "busy" && statusType !== "retry") return current
-      return {
-        session_status: {
-          ...current.session_status,
-          [sessionID]: { type: "idle" as const },
-        },
-      }
-    })
-    state = store.getState()
-  }
+  const state = store.getState()
 
   let planEntry = sessionUI.sessionPlanIndicator.get(sessionID)
 
@@ -1409,26 +1437,6 @@ async function detectAndMarkPlanLifecycle(
   if (!candidate) return
 
   sessionUI.markPlanProposed(sessionID, candidate.sourceMessageId)
-  store.setState((current) => {
-    const latestSessionUI = useSessionUIStore.getState()
-    if (!shouldSettlePlanProposalStatus({
-      sessionID,
-      state: current,
-      sourceMessageId: candidate.sourceMessageId,
-      planEntry: latestSessionUI.sessionPlanIndicator.get(sessionID),
-      implementedPlanRequests: latestSessionUI.implementedPlanRequests,
-      externallyHandedOffPlanRequests: latestSessionUI.externallyHandedOffPlanRequests,
-    })) {
-      return current
-    }
-
-    return {
-      session_status: {
-        ...current.session_status,
-        [sessionID]: { type: "idle" as const },
-      },
-    }
-  })
 
   // Saving is owned by the lifecycle rather than the rendered PlanCard so a
   // completed background chat has its authoritative file ready before opening.
@@ -1467,6 +1475,7 @@ export function setActiveSession(directory: string, sessionId: string) {
   _activeSession = sessionId
   if (previousSession && (previousSession !== sessionId || previousDirectory !== directory)) {
     useProviderStallStore.getState().clearStall(previousSession)
+    useLongRunningToolStore.getState().clearTool(previousSession)
   }
   const nextKey = directory && sessionId ? statusTrackingKey(directory, sessionId) : ""
   if (nextKey && nextKey !== _activeSessionTrackingKey) {
@@ -1702,6 +1711,7 @@ const getSessionIdFromPayload = (event: Event): string | null => {
     return typeof sessionID === "string" && sessionID.length > 0 ? sessionID : null
   }
 
+  const eventType = String(event.type)
   if (
     event.type === "message.removed"
     || event.type === "session.status"
@@ -1714,6 +1724,7 @@ const getSessionIdFromPayload = (event: Event): string | null => {
     || event.type === "question.replied"
     || event.type === "question.rejected"
     || event.type === "session.deleted"
+    || eventType === "session.compacted"
   ) {
     const sessionID = props.sessionID
     if (typeof sessionID === "string" && sessionID.length > 0) return sessionID
@@ -2062,6 +2073,7 @@ const removeDeletedSessionFromAllChildStores = (
   sessionUI?.retireDeletedSession(sessionID)
   useProviderRecoveryStore.getState().clearRecovery(sessionID)
   useProviderStallStore.getState().clearStall(sessionID)
+  useLongRunningToolStore.getState().clearTool(sessionID)
   useMessageQueueStore.getState().clearQueue(sessionID)
   useSelectionStore.getState().clearSessionSelection(sessionID)
   syncDebug.dispatch.eventApplied(payload.type, sessionID, undefined)
@@ -2087,14 +2099,14 @@ const resolveDirectoryFromRoutingIndex = (
 
   const sessionID = getSessionIdFromPayload(payload)
   if (sessionID) {
-    if (normalizedDirectory && normalizedDirectory !== "global" && childStoreHasSessionState(childStores, normalizedDirectory, sessionID)) {
-      setIndexedSessionDirectory(routingIndex, sessionID, normalizedDirectory)
-      return normalizedDirectory
-    }
-
     const indexedDirectory = routingIndex.sessionDirectoryById.get(sessionID)
     if (indexedDirectory && childStores.getChild(indexedDirectory)) {
       return indexedDirectory
+    }
+
+    if (normalizedDirectory && normalizedDirectory !== "global" && childStoreHasSessionState(childStores, normalizedDirectory, sessionID)) {
+      setIndexedSessionDirectory(routingIndex, sessionID, normalizedDirectory)
+      return normalizedDirectory
     }
 
     // Routing index miss — scan child stores for this session.
@@ -2107,16 +2119,16 @@ const resolveDirectoryFromRoutingIndex = (
 
   const messageID = getMessageIdFromPayload(payload)
   if (messageID) {
-    if (normalizedDirectory && normalizedDirectory !== "global" && childStoreHasMessagePartState(childStores, normalizedDirectory, messageID)) {
-      return normalizedDirectory
-    }
-
     const sessionFromMessage = routingIndex.messageSessionById.get(messageID)
     if (sessionFromMessage) {
       const indexedDirectory = routingIndex.sessionDirectoryById.get(sessionFromMessage)
       if (indexedDirectory && childStores.getChild(indexedDirectory)) {
         return indexedDirectory
       }
+    }
+
+    if (normalizedDirectory && normalizedDirectory !== "global" && childStoreHasMessagePartState(childStores, normalizedDirectory, messageID)) {
+      return normalizedDirectory
     }
 
     // Scan child stores for a store that has parts for this message
@@ -2591,6 +2603,7 @@ function handleEvent(
   } else if (payload.type === "session.deleted") {
     const sessionID = getSessionIdFromPayload(payload)
     if (sessionID) {
+      clearAllProviderContextUsageForSession(sessionID)
       applyGlobalSessionLifecycleEvent({ type: "delete", sessionID })
       removeDeletedSessionFromAllChildStores(
         sessionID,
@@ -2682,6 +2695,35 @@ function handleEvent(
 
   childStores.mark(resolvedDirectory)
 
+  if (String(payload.type) === "session.compacted") {
+    const sessionID = getSessionIdFromPayload(payload)
+    if (sessionID) {
+      invalidateProviderContextUsageForCompaction(sessionID, resolvedDirectory)
+    }
+  }
+
+  if (payload.type === "message.updated") {
+    const info = (payload.properties as { info?: Message }).info as (Message & {
+      providerID?: unknown
+      time?: { completed?: unknown }
+    }) | undefined
+    if (
+      info?.role === "assistant"
+      && info.providerID === "anthropic"
+      && typeof info.time?.completed === "number"
+    ) {
+      const tokens = extractTokenBreakdownFromMessage(info)
+      const activeInputTokens = tokens.input + tokens.cacheRead + tokens.cacheWrite
+      const storeKey = getProviderContextUsageStoreKey(info.sessionID, resolvedDirectory)
+      const compactionRevision = useProviderContextUsageStore.getState().compactionRevisions.get(storeKey) ?? 0
+      void refreshProviderContextUsage({
+        sessionID: info.sessionID,
+        directory: resolvedDirectory,
+        requestKey: JSON.stringify([info.id, activeInputTokens, info.time.completed, compactionRevision]),
+      })
+    }
+  }
+
   if (payload.type === "session.status") {
     const sessionID = getSessionIdFromPayload(payload)
     if (sessionID) {
@@ -2702,17 +2744,22 @@ function handleEvent(
       const statusType = nextStatus?.type
       if (statusType !== "busy") {
         useProviderStallStore.getState().clearStall(sessionID)
+        useLongRunningToolStore.getState().clearTool(sessionID)
       }
     }
   }
 
   if (payload.type === "session.idle" || payload.type === "session.error") {
     const sessionID = getSessionIdFromPayload(payload)
-    if (sessionID) useProviderStallStore.getState().clearStall(sessionID)
+    if (sessionID) {
+      useProviderStallStore.getState().clearStall(sessionID)
+      useLongRunningToolStore.getState().clearTool(sessionID)
+    }
   }
 
   if (payload.type === "permission.asked") {
     const permission = payload.properties as PermissionRequest
+    useLongRunningToolStore.getState().clearTool(permission.sessionID)
     const permissionStore = usePermissionStore.getState()
     if (permissionStore.isSessionAutoAccepting(permission.sessionID)) {
       updateRoutingIndexFromEvent(routingIndex, resolvedDirectory, payload)
@@ -2749,6 +2796,7 @@ function handleEvent(
 
   if (payload.type === "question.asked") {
     const question = payload.properties as QuestionRequest
+    useLongRunningToolStore.getState().clearTool(question.sessionID)
     const sessionID = question.sessionID
     const rootSessionID = resolveRootSessionId(store.getState().session, sessionID) ?? sessionID
     const toastKey = getQuestionToastKey(sessionID, question.id)
@@ -2824,7 +2872,8 @@ function handleEvent(
   // type will mutate. This preserves reference identity for untouched slices
   // so Zustand selectors skip re-renders for unrelated subscribers.
   const current = store.getState()
-  markOutputEventObserved(resolvedDirectory, getOutputSessionIdFromPayload(current, routingIndex, payload))
+  const outputSessionID = getOutputSessionIdFromPayload(current, routingIndex, payload)
+  markOutputEventObserved(resolvedDirectory, outputSessionID)
   markFirstAssistantStreamForDebug(current, payload)
   const draft: State = { ...current }
   const sessionUpdateInfo = payload.type === "session.updated"
@@ -2857,9 +2906,6 @@ function handleEvent(
       break
     case "message.updated":
       draft.message = { ...current.message }
-      if (shouldSettleTerminalAssistantMessageStatus(current, (payload.properties as { info?: Message }).info)) {
-        draft.session_status = { ...(current.session_status ?? {}) }
-      }
       break
     case "message.removed":
       draft.message = { ...current.message }
@@ -3005,9 +3051,22 @@ function handleEvent(
 
   replayPendingPartDeltasForEvent(resolvedDirectory, payload, store)
 
+  if (outputSessionID) {
+    const incomingPart = payload.type === "message.part.updated"
+      ? (payload.properties as { part?: Part }).part
+      : undefined
+    reconcileLongRunningTool(
+      resolvedDirectory,
+      outputSessionID,
+      store.getState(),
+      incomingPart,
+    )
+  }
+
   if (
     payload.type === "session.idle"
     || isIdleSessionStatusEvent(payload)
+    || payload.type === "session.error"
     || payload.type === "session.updated"
     || payload.type === "message.updated"
     || payload.type === "message.part.updated"
@@ -3017,7 +3076,8 @@ function handleEvent(
     if (lifecycleSessionId) {
       if (
         payload.type === "session.idle"
-        || hasSettledTerminalAssistantTurn({ sessionID: lifecycleSessionId, state: latestState })
+        || isIdleSessionStatusEvent(payload)
+        || payload.type === "session.error"
       ) {
         settleStreamingSessions([lifecycleSessionId])
       }
@@ -3422,6 +3482,10 @@ export function SyncProvider(props: {
       })
       const failureCount = recoveryFailureCountBySessionKey.get(key) ?? 0
       const fingerprintBeforeResync = getProviderStallFingerprint({ state, sessionID })
+      const longRunningFingerprintBeforeResync = getLongRunningToolFingerprint({
+        state,
+        sessionID,
+      })
 
       if (!shouldRecoverStaleActiveSession({
         status,
@@ -3452,6 +3516,10 @@ export function SyncProvider(props: {
         recoveryFailureCountBySessionKey.delete(key)
 
         const fingerprintAfterResync = getProviderStallFingerprint({
+          state: currentState,
+          sessionID,
+        })
+        const longRunningFingerprintAfterResync = getLongRunningToolFingerprint({
           state: currentState,
           sessionID,
         })
@@ -3520,6 +3588,49 @@ export function SyncProvider(props: {
         }
         if (!fingerprintAfterResync) {
           useProviderStallStore.getState().clearStall(sessionID)
+        }
+
+        if (longRunningFingerprintAfterResync) {
+          const longRunningStore = useLongRunningToolStore.getState()
+          const previousRecord = longRunningStore.recordsBySessionId[sessionID]
+          const sameObservedCall = haveSameLongRunningToolFingerprint(
+            previousRecord,
+            longRunningFingerprintAfterResync,
+          )
+          const observation = {
+            ...longRunningFingerprintAfterResync,
+            directory,
+            observedAt: sameObservedCall ? previousRecord.observedAt : activityAt,
+            lastActivityAt: sameObservedCall ? previousRecord.lastActivityAt : activityAt,
+          }
+          longRunningStore.observeTool(observation, false)
+          const toolNow = Date.now()
+          const toolSilentForMs = toolNow - observation.lastActivityAt
+          const elapsedMs = toolNow - observation.observedAt
+
+          if (
+            shouldConfirmLongRunningTool({
+              managedChildActive,
+              silentForMs: toolSilentForMs,
+              before: longRunningFingerprintBeforeResync,
+              after: longRunningFingerprintAfterResync,
+            })
+            && longRunningStore.confirmTool(observation, toolNow)
+          ) {
+            postRendererTurnTimingMark({
+              sessionId: sessionID,
+              assistantMessageId: longRunningFingerprintAfterResync.assistantMessageID,
+              mark: "renderer_long_running_tool_confirmed",
+              directory,
+              metadata: {
+                source: "active-session-watchdog",
+                elapsedMs,
+                tool: longRunningFingerprintAfterResync.tool,
+              },
+            })
+          }
+        } else {
+          useLongRunningToolStore.getState().clearTool(sessionID)
         }
       }).catch(() => {
         const currentState = store.getState()

@@ -13,6 +13,7 @@ API contracts.
 - Host storage layout: `lib/paths.js`
 - Turn correlation: `lib/lifecycle.js`
 - Worktree receipts: `lib/worktree-bootstrap.js`
+- Worktree post-checkout execution: `lib/git-post-checkout-hook.js`
 - Session attribution: `lib/session-id.js`
 - Hot-event trim/coalescing policy: `lib/journal-trim.js`
 - Sanitization/session-partitioned journal/export: `lib/sanitizer.js`, `lib/journal.js`, `lib/export.js`

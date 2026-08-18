@@ -8,9 +8,9 @@ ownership, directory opacity, and audit control plane.
 ## Main files
 
 - `runtime.js`: composition root, auth/session lifecycle, HTTP/SSE/WS policy,
-  administration routes (including the token-free GitHub account inventory and
-  atomic owner reassignment), exclusive profile/account assignments, ownership,
-  and live revocation.
+  administration routes (including the token-free GitHub account inventory,
+  atomic owner reassignment, and managed-project register/unregister), exclusive
+  profile/account assignments, ownership, and live revocation.
 - `auth-compat.js`: canonical-to-legacy user-policy read compatibility,
   structured identity/schema errors, and loopback agent-test fixture selection.
 - `user-profile-visibility.js`: authoritative account-kind constants and the
@@ -30,14 +30,17 @@ ownership, directory opacity, and audit control plane.
   branch-write authorization shared by Git integration and GitHub PR actions.
 - `request-context.js`: AsyncLocalStorage context consumed by Git and GitHub.
 - `bug-reports.js`: managed report submission/review APIs, cursor pagination,
-  optimistic status updates, administrator-only sanitized error-log reads, and
+  optimistic status updates, administrator-only sanitized error-log reads with
+  actionable-by-default disposition filtering, unfiltered UUID details, and
   snapshot clearing through the service-role diagnostic RPC.
 - `audit-outbox.js`, `activity-projection.js`: durable idempotent actor audit,
   deferred telemetry delivery, an exclusive flush barrier for diagnostic
   clearing, content-free OpenCode tool/file projection, and active-worktree-aware
-  failure projection for sessions, tools, and managed tasks.
-- `error-diagnostics.js`, `diagnostic-recovery.js`: shared impact/failure-class
-  policy and append-only recovery/unresolved correlation.
+  failure projection for sessions, tools, and managed tasks. Context-mode disk
+  I/O failures are rewritten to a stable wedged-handle message.
+- `error-diagnostics.js`, `diagnostic-recovery.js`: shared immutable
+  impact/failure-class/disposition policy, expected-outcome classification, and
+  append-only recovery/unresolved correlation.
 - `analytics.js`: human-prompt extraction and truncation, strict interaction
   validation, privacy-safe field deltas, opaque event cursors, reviewer
   redaction, and DST-aware daily activity aggregation.

@@ -53,7 +53,7 @@ Role-aware shared-host user and access administration inside Settings.
   Management destination used by managed account assignment.
 - `SettingsPermissionMatrix.tsx` renders the shared category-grouped Read/Edit
   ledger: binary role cells and tri-state inherited/On/Off user cells.
-- `ProjectsSection.tsx` (register-project dialog), `RolePoliciesSection.tsx`,
+- `ProjectsSection.tsx` (register/unregister-project dialog), `RolePoliciesSection.tsx`,
   `AccessLinksSection.tsx` (`AccessLinksList` reused by detail),
   `ActivitySection.tsx` (`ActivityList` reused by detail), and
   `ConfirmActionDialog.tsx` (replaces `window.confirm`) complete the overview.

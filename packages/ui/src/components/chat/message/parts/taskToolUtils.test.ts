@@ -100,6 +100,22 @@ describe('task tool metadata helpers', () => {
         ].join('\n'));
     });
 
+    test('leaves provider-neutral specialist markdown unchanged', () => {
+        const output = [
+            '## Files',
+            '- /repo/src/App.tsx:42 - App shell entrypoint',
+            '',
+            '## Answer',
+            'The likely edit point is the shared chat message renderer.',
+            '',
+            '**Confidence:** high',
+            '',
+            '**Status:** complete',
+        ].join('\n');
+
+        expect(formatSpecialistTaskOutputForMarkdown(output)).toBe(output);
+    });
+
     test('formats specialist output after task metadata stripping', () => {
         const output = [
             '<summary>Completed focused changes.</summary>',

@@ -14,6 +14,8 @@ This module contains the OpenChamber message-stream WebSocket protocol and runti
 - `packages/web/server/lib/event-stream/protocol.test.js`: unit tests for protocol helpers.
 - `packages/web/server/lib/event-stream/upstream-reader.test.js`: unit tests for upstream SSE reader behavior.
 - `packages/web/server/lib/event-stream/runtime.test.js`: unit tests for runtime-side broadcaster behavior.
+- `packages/web/server/lib/event-stream/canonical-ingestion.js`: watcher-owned raw-event side-effect composer, including optional context-mode recovery and shell-command deadline observers.
+- `packages/web/server/lib/event-stream/canonical-ingestion.test.js`: unit tests for canonical side-effect dispatch.
 
 ## Public exports
 
@@ -58,4 +60,5 @@ This module contains the OpenChamber message-stream WebSocket protocol and runti
 - Run `bun test packages/web/server/lib/event-stream/protocol.test.js`
 - Run `bun test packages/web/server/lib/event-stream/upstream-reader.test.js`
 - Run `bun test packages/web/server/lib/event-stream/runtime.test.js`
+- Run `bun test packages/web/server/lib/event-stream/canonical-ingestion.test.js`
 - Run repo validation before finalizing: `bun run type-check`, `bun run lint`, `bun run build`

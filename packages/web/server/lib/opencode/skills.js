@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { isDeepStrictEqual } from 'node:util';
 import {
   SKILL_DIR,
   OPENCODE_CONFIG_DIR,
@@ -10,7 +11,6 @@ import {
   parseMdFile,
   writeMdFile,
   readConfigLayers,
-  readConfig,
   walkSkillMdFiles,
   addSkillFromMdFile,
   resolveSkillSearchDirectories,
@@ -71,14 +71,6 @@ function isExistingFile(filePath) {
   }
 }
 
-function getClaudeSkillDir(workingDirectory, skillName) {
-  return path.join(workingDirectory, '.claude', 'skills', skillName);
-}
-
-function getClaudeSkillPath(workingDirectory, skillName) {
-  return path.join(getClaudeSkillDir(workingDirectory, skillName), 'SKILL.md');
-}
-
 function getUserAgentsSkillDir(skillName) {
   return path.join(os.homedir(), '.agents', 'skills', skillName);
 }
@@ -107,10 +99,6 @@ function getSkillScope(skillName, workingDirectory) {
       return { scope: SKILL_SCOPE.PROJECT, path: projectPath, source: 'opencode' };
     }
     
-    const claudePath = getClaudeSkillPath(workingDirectory, skillName);
-    if (fs.existsSync(claudePath)) {
-      return { scope: SKILL_SCOPE.PROJECT, path: claudePath, source: 'claude' };
-    }
   }
   
   const userPath = getUserSkillPath(skillName);
@@ -185,45 +173,6 @@ function discoverSkills(workingDirectory) {
     }
   }
 
-  let configuredPaths = [];
-  try {
-    const config = readConfig(workingDirectory);
-    configuredPaths = Array.isArray(config?.skills?.paths) ? config.skills.paths : [];
-  } catch {
-    configuredPaths = [];
-  }
-  for (const skillPath of configuredPaths) {
-    if (typeof skillPath !== 'string' || !skillPath.trim()) continue;
-    const expanded = skillPath.startsWith('~/')
-      ? path.join(os.homedir(), skillPath.slice(2))
-      : skillPath;
-    const resolved = path.isAbsolute(expanded)
-      ? path.resolve(expanded)
-      : path.resolve(workingDirectory || process.cwd(), expanded);
-    for (const skillMdPath of walkSkillMdFiles(resolved)) {
-      addSkillFromMdFile(skills, skillMdPath, SKILL_SCOPE.PROJECT, 'opencode');
-    }
-  }
-
-  const cacheCandidates = [];
-  if (process.env.XDG_CACHE_HOME) {
-    cacheCandidates.push(path.join(process.env.XDG_CACHE_HOME, 'opencode', 'skills'));
-  }
-  cacheCandidates.push(path.join(os.homedir(), '.cache', 'opencode', 'skills'));
-  cacheCandidates.push(path.join(os.homedir(), 'Library', 'Caches', 'opencode', 'skills'));
-
-  for (const cacheRoot of cacheCandidates) {
-    if (!fs.existsSync(cacheRoot)) continue;
-    const entries = fs.readdirSync(cacheRoot, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const skillRoot = path.join(cacheRoot, entry.name);
-      for (const skillMdPath of walkSkillMdFiles(skillRoot)) {
-        addSkillFromMdFile(skills, skillMdPath, SKILL_SCOPE.USER, 'opencode');
-      }
-    }
-  }
-
   return Array.from(skills.values()).filter((skill) => !isRetiredDevRyanSkillName(skill?.name));
 }
 
@@ -231,10 +180,6 @@ function getSkillSources(skillName, workingDirectory, discoveredSkill = null) {
   const projectPath = workingDirectory ? getProjectSkillPath(workingDirectory, skillName) : null;
   const projectExists = projectPath && fs.existsSync(projectPath);
   const projectDir = projectExists ? path.dirname(projectPath) : null;
-  
-  const claudePath = workingDirectory ? getClaudeSkillPath(workingDirectory, skillName) : null;
-  const claudeExists = claudePath && fs.existsSync(claudePath);
-  const claudeDir = claudeExists ? path.dirname(claudePath) : null;
   
   const userPath = getUserSkillPath(skillName);
   const userExists = fs.existsSync(userPath);
@@ -262,11 +207,6 @@ function getSkillSources(skillName, workingDirectory, discoveredSkill = null) {
     mdScope = SKILL_SCOPE.PROJECT;
     mdSource = 'opencode';
     mdDir = projectDir;
-  } else if (claudeExists) {
-    mdPath = claudePath;
-    mdScope = SKILL_SCOPE.PROJECT;
-    mdSource = 'claude';
-    mdDir = claudeDir;
   } else if (userExists) {
     mdPath = userPath;
     mdScope = SKILL_SCOPE.USER;
@@ -292,9 +232,9 @@ function getSkillSources(skillName, workingDirectory, discoveredSkill = null) {
       dir: projectDir
     },
     claudeMd: {
-      exists: claudeExists,
-      path: claudePath,
-      dir: claudeDir
+      exists: false,
+      path: null,
+      dir: null
     },
     userMd: {
       exists: userExists,
@@ -408,6 +348,7 @@ function updateSkill(skillName, updates, workingDirectory, discoveredSkill = nul
   const mdData = parseMdFile(mdPath);
 
   let mdModified = false;
+  let supportingFilesModified = false;
 
   for (const [field, value] of Object.entries(updates)) {
     if (field === 'scope') {
@@ -416,8 +357,10 @@ function updateSkill(skillName, updates, workingDirectory, discoveredSkill = nul
     
     if (field === 'instructions') {
       const normalizedValue = typeof value === 'string' ? value : (value == null ? '' : String(value));
-      mdData.body = normalizedValue;
-      mdModified = true;
+      if (mdData.body !== normalizedValue) {
+        mdData.body = normalizedValue;
+        mdModified = true;
+      }
       continue;
     }
 
@@ -425,17 +368,26 @@ function updateSkill(skillName, updates, workingDirectory, discoveredSkill = nul
       if (Array.isArray(value)) {
         for (const file of value) {
           if (file.delete && file.path) {
-            deleteSkillSupportingFile(mdDir, file.path);
+            if (readSkillSupportingFile(mdDir, file.path) !== null) {
+              deleteSkillSupportingFile(mdDir, file.path);
+              supportingFilesModified = true;
+            }
           } else if (file.path && file.content !== undefined) {
-            writeSkillSupportingFile(mdDir, file.path, file.content);
+            const currentContent = readSkillSupportingFile(mdDir, file.path);
+            if (currentContent !== file.content) {
+              writeSkillSupportingFile(mdDir, file.path, file.content);
+              supportingFilesModified = true;
+            }
           }
         }
       }
       continue;
     }
 
-    mdData.frontmatter[field] = value;
-    mdModified = true;
+    if (!isDeepStrictEqual(mdData.frontmatter[field], value)) {
+      mdData.frontmatter[field] = value;
+      mdModified = true;
+    }
   }
 
   if (mdModified) {
@@ -443,6 +395,7 @@ function updateSkill(skillName, updates, workingDirectory, discoveredSkill = nul
   }
 
   console.log(`Updated skill: ${skillName} (path: ${mdPath})`);
+  return mdModified || supportingFilesModified;
 }
 
 function deleteSkill(skillName, workingDirectory, discoveredSkill = null) {

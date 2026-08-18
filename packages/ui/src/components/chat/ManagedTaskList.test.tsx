@@ -257,6 +257,54 @@ describe('managed task presentation', () => {
     expect(html).toContain('Try Again');
   });
 
+  test('shows timeout-specific recovery while the killed child is still tearing down', () => {
+    const task = {
+      ...terminalTask('failed'),
+      dispatchGroupId: 'msg_parent',
+      failureReason: 'Managed task timed out at 2000',
+      attempt: 2,
+      priorTaskId: 'dvr_task_timeout_initial',
+      executionKind: 'resume' as const,
+    };
+    const envelope = createManagedTaskResultEnvelope(task, {
+      sequence: 1,
+      createdAt: 2_000,
+      resumable: true,
+    });
+    const projected = toManagedTaskEvent(task, envelope).properties.task;
+
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <ManagedTaskRowView
+          task={projected}
+          resultEnvelope={envelope}
+          childActive
+          providers={[{
+            id: 'github-copilot',
+            name: 'GitHub Copilot',
+            models: [{
+              id: 'gpt-4.1',
+              name: 'GPT 4.1',
+              variants: { low: {}, high: {} },
+            }],
+          }]}
+          onOpenChild={() => undefined}
+          onRetryInPlace={() => undefined}
+        />
+      </I18nProvider>,
+    );
+
+    expect(projected.failureKind).toBe('deadline_exceeded');
+    expect(projected.dispatchGrouped).toBe(true);
+    expect(html).toContain('Error');
+    expect(html).not.toContain('Running');
+    expect(html).toContain('This subtask ran out of time. Choose a model to continue it:');
+    expect(html.match(/at least the original time window/g)).toHaveLength(1);
+    expect(html).toContain('model-controls__model-trigger');
+    expect(html).toContain('model-controls__variant-trigger');
+    expect(html).toContain('Try Again');
+  });
+
   test('presents provider prompt rejection without offering same-child Model Recovery', () => {
     const failureReason = 'Invalid prompt: your prompt was flagged as potentially violating our usage policy.';
     const firstTask = {

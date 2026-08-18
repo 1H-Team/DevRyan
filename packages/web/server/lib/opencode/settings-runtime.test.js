@@ -141,6 +141,15 @@ describe('settings runtime', () => {
     expect(updated.darkThemeId).toBe('devryan-default-dark');
   });
 
+  it('migrates the legacy wide chat layout setting to a numeric width', async () => {
+    const { runtime } = createRuntime({ wideChatLayoutEnabled: true });
+
+    const updated = await runtime.readSettingsFromDiskMigrated();
+
+    expect(updated.chatWidth).toBe(1024);
+    expect(updated).not.toHaveProperty('wideChatLayoutEnabled');
+  });
+
   it('migrates legacy lastDirectory without statting the protected path', async () => {
     const projectPath = '/Users/test/Documents/LegacyProject';
     const projectId = createProjectIdFromPath(projectPath);

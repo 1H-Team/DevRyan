@@ -2,9 +2,11 @@ import type {
   BugReportDetail,
   BugReportStatus,
   CursorPage,
+  ErrorLogActorOption,
   ErrorLogClearRange,
   ErrorLogDetail,
   ErrorLogKind,
+  DiagnosticDisposition,
   DiagnosticImpact,
   ErrorLogSummary,
   BugReportSummary,
@@ -90,18 +92,35 @@ export const updateBugReportStatus = async (
 
 export const listErrorLogs = async ({
   kind,
+  disposition = 'actionable',
   impact,
+  search,
+  from,
+  to,
+  actor,
+  limit = 50,
   cursor,
   signal,
 }: {
   kind: ErrorLogKind | 'all';
+  disposition?: DiagnosticDisposition | 'all';
   impact: DiagnosticImpact | 'all';
+  search?: string;
+  from?: string | null;
+  to?: string | null;
+  actor?: string | 'all';
+  limit?: number;
   cursor?: string | null;
   signal?: AbortSignal;
 }): Promise<CursorPage<ErrorLogSummary>> => {
-  const query = new URLSearchParams({ limit: '50' });
+  const query = new URLSearchParams({ limit: String(limit) });
   if (kind !== 'all') query.set('kind', kind);
+  query.set('disposition', disposition);
   if (impact !== 'all') query.set('impact', impact);
+  if (search?.trim()) query.set('q', search.trim());
+  if (from) query.set('from', from);
+  if (to) query.set('to', to);
+  if (actor && actor !== 'all') query.set('actor', actor);
   if (cursor) query.set('cursor', cursor);
   const payload = await requestJson<{ logs: ErrorLogSummary[]; nextCursor: string | null }>(
     `/api/error-logs?${query}`,
@@ -115,6 +134,16 @@ export const getErrorLog = async (eventId: string, signal?: AbortSignal): Promis
     signal,
   });
   return payload.log;
+};
+
+export const listErrorLogActors = async (signal?: AbortSignal): Promise<ErrorLogActorOption[]> => {
+  const payload = await requestJson<{ users: { id: string; display_name: string; email: string }[] }>(
+    '/api/admin/users',
+    { signal },
+  );
+  return (payload.users || [])
+    .map((user) => ({ id: user.id, displayName: user.display_name || user.email }))
+    .sort((left, right) => left.displayName.localeCompare(right.displayName));
 };
 
 export const clearErrorLogs = async (range: ErrorLogClearRange): Promise<number> => {

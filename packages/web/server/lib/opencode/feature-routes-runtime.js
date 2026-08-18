@@ -13,6 +13,7 @@ import { registerSkillRoutes } from './skill-routes.js';
 import { registerOpenCodeRoutes } from './routes.js';
 import { createPluginReadModel, registerReadonlyPluginRoutes } from './plugins-readonly.js';
 import { createSlimSetupRuntime, registerSlimSetupRoutes } from './slim-install.js';
+import { registerConfigApplyRoutes } from './config-apply-runtime.js';
 
 export const createFeatureRoutesRuntime = (dependencies) => {
   const {
@@ -45,7 +46,11 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       resolveOptionalProjectDirectory,
       validateDirectoryPath,
       readCustomThemesFromDisk,
-      refreshOpenCodeAfterConfigChange,
+      markConfigChange,
+      configApplyCoordinator,
+      canForceConfigRestart,
+      abortActiveSessionsForConfigRestart,
+      auditForceConfigRestart,
       getOpenCodeResolutionSnapshot,
       checkForOpenCodeUpdates,
       formatSettingsResponse,
@@ -87,8 +92,14 @@ export const createFeatureRoutesRuntime = (dependencies) => {
 
     registerSettingsUtilityRoutes(app, {
       readCustomThemesFromDisk,
-      refreshOpenCodeAfterConfigChange,
-      clientReloadDelayMs,
+    });
+
+    registerConfigApplyRoutes(app, {
+      coordinator: configApplyCoordinator,
+      markConfigChange,
+      canForceRestart: canForceConfigRestart,
+      abortActiveSessions: abortActiveSessionsForConfigRestart,
+      auditForceRestart: auditForceConfigRestart,
     });
 
     registerOpenCodeRoutes(app, {
@@ -106,7 +117,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getProviderSources,
       removeProviderConfig,
       ensureAnthropicOAuthProviderConfig,
-      refreshOpenCodeAfterConfigChange,
+      markConfigChange,
       buildAugmentedPath,
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
@@ -158,7 +169,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
         spawn,
         env: process.env,
       }),
-      refreshOpenCodeAfterConfigChange,
+      markConfigChange,
     });
 
     const {
@@ -184,7 +195,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     registerConfigEntityRoutes(app, {
       resolveProjectDirectory,
       resolveOptionalProjectDirectory,
-      refreshOpenCodeAfterConfigChange,
+      markConfigChange,
       clientReloadDelayMs,
       getAgentSources,
       getAgentConfig,
@@ -243,7 +254,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       sanitizeSkillCatalogs,
       sanitizeHiddenSkills,
       isUnsafeSkillRelativePath,
-      refreshOpenCodeAfterConfigChange,
+      markConfigChange,
       isExternalOpenCode,
       clientReloadDelayMs,
       buildOpenCodeUrl,
@@ -279,6 +290,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
       isExternalOpenCode,
+      ownsSession,
     });
     registerGitHubRoutes(app);
     registerGitRoutes(app, {

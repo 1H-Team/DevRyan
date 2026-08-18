@@ -34,18 +34,26 @@ describe('user profile provisioning', () => {
         fs.mkdirSync(path.join(options.cwd, 'node_modules', ...name.split('/')), { recursive: true });
       }
       for (const plugin of DEVRYAN_MANAGED_PLUGINS) {
-        if (!plugin.packageName || !plugin.version || !plugin.entrypoint) continue;
-        const packageRoot = path.join(options.cwd, 'node_modules', ...plugin.packageName.split('/'));
-        writeJson(path.join(packageRoot, 'package.json'), {
-          name: plugin.packageName,
-          version: plugin.version,
-        });
-        const entrypointPath = path.join(packageRoot, ...plugin.entrypoint.split('/'));
-        fs.mkdirSync(path.dirname(entrypointPath), { recursive: true });
-        fs.writeFileSync(entrypointPath, 'export default async () => ({});\n', 'utf8');
+        const dependencies = [
+          ...(plugin.packageName && plugin.version && plugin.entrypoint
+            ? [{ packageName: plugin.packageName, version: plugin.version, entrypoint: plugin.entrypoint }]
+            : []),
+          ...plugin.runtimeDependencies,
+        ];
+        for (const dependency of dependencies) {
+          const packageRoot = path.join(options.cwd, 'node_modules', ...dependency.packageName.split('/'));
+          writeJson(path.join(packageRoot, 'package.json'), {
+            name: dependency.packageName,
+            version: dependency.version,
+          });
+          const entrypointPath = path.join(packageRoot, ...dependency.entrypoint.split('/'));
+          fs.mkdirSync(path.dirname(entrypointPath), { recursive: true });
+          fs.writeFileSync(entrypointPath, 'export default async () => ({});\n', 'utf8');
+        }
       }
       return { ok: true, exitCode: 0, stdout: '', stderr: '' };
     },
+    applyContextModeHotfix: () => ({ ok: true, changed: false }),
     ...overrides,
   });
 
@@ -75,6 +83,8 @@ describe('user profile provisioning', () => {
       './node_modules/context-mode/build/adapters/opencode/plugin.js',
       './plugins/devryan-oh-my-opencode-slim.mjs',
       './plugins/devryan-superpowers.mjs',
+      './plugins/devryan-skill-context.mjs',
+      './plugins/devryan-document-reader.mjs',
     ]);
     expect(config).not.toHaveProperty('mcp');
     expect(packageJson.dependencies).toMatchObject({
@@ -83,14 +93,19 @@ describe('user profile provisioning', () => {
       '@rama_nigg/open-cursor': '2.5.4',
       '@rynfar/meridian': '1.57.0',
       'context-mode': '1.0.169',
+      'adm-zip': '0.6.0',
+      'mammoth': '1.12.1',
       'oh-my-opencode-slim': '2.0.5',
       'opencode-antigravity-auth': '1.6.0',
       'opencode-with-claude': '1.6.18',
+      'unpdf': '1.8.0',
     });
     expect(JSON.stringify(slim)).not.toContain('"mcps"');
     expect(fs.existsSync(path.join(configDir, 'agents', 'orchestrator.md'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-oh-my-opencode-slim.mjs'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-superpowers.mjs'))).toBe(true);
+    expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-skill-context.mjs'))).toBe(true);
+    expect(fs.existsSync(path.join(configDir, 'plugins', 'devryan-document-reader.mjs'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'node_modules', 'oh-my-opencode-slim'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'node_modules', 'opencode-with-claude'))).toBe(true);
     expect(fs.existsSync(path.join(configDir, 'node_modules', 'context-mode'))).toBe(true);
@@ -206,6 +221,8 @@ describe('user profile provisioning', () => {
       './node_modules/context-mode/build/adapters/opencode/plugin.js',
       './plugins/devryan-superpowers.mjs',
       './plugins/devryan-oh-my-opencode-slim.mjs',
+      './plugins/devryan-skill-context.mjs',
+      './plugins/devryan-document-reader.mjs',
     ]);
     expect(commands).toHaveLength(1);
   });
@@ -462,6 +479,45 @@ describe('user profile provisioning', () => {
     expect(result.ok).toBe(false);
     expect(result.install).toMatchObject({ ok: false, exitCode: 1 });
     expect(result.error).toContain('network unavailable');
+  });
+
+  it('forces one pinned reinstall when the context-mode hotfix hash is incompatible', async () => {
+    let hotfixAttempts = 0;
+    const result = await createRuntime({
+      applyContextModeHotfix: () => {
+        hotfixAttempts += 1;
+        return hotfixAttempts === 1
+          ? { ok: false, changed: false, error: 'unexpected source hash' }
+          : { ok: true, changed: true };
+      },
+    }).provision();
+
+    expect(result).toMatchObject({
+      ok: true,
+      contextModeHotfix: { ok: true, changed: true },
+      contextModeHotfixReinstall: { ok: true, exitCode: 0 },
+    });
+    expect(commands.map(({ args }) => args)).toEqual([
+      ['install', '--ignore-scripts'],
+      ['install', '--force', '--ignore-scripts'],
+    ]);
+  });
+
+  it('fails with a stable code after one incompatible context-mode reinstall', async () => {
+    const result = await createRuntime({
+      applyContextModeHotfix: () => ({
+        ok: false,
+        changed: false,
+        error: 'unexpected source hash',
+      }),
+    }).provision();
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('CONTEXT_MODE_HOTFIX_INCOMPATIBLE: unexpected source hash');
+    expect(commands.map(({ args }) => args)).toEqual([
+      ['install', '--ignore-scripts'],
+      ['install', '--force', '--ignore-scripts'],
+    ]);
   });
 
   it('fails explicit validation when installation succeeds without materializing managed entrypoints', async () => {

@@ -8,6 +8,7 @@ permission:
     "*": ask
   plan_enter: deny
   devryan_task: deny
+  skill: allow
   read:
     "*.env": ask
     "*.env.*": ask

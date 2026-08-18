@@ -29,12 +29,11 @@ export const buildUsageProviderTabs = (groups: RateLimitGroup[]) => (
     ))
 );
 
-export const getVisibleUsageEntries = (group: RateLimitGroup) => {
-  const entries = group.providerId === 'codex' && group.resetCredits
-    ? group.entries.filter(([label]) => label !== 'credits')
-    : group.entries;
-
-  if (group.providerId !== 'claude') {
+export const sortUsageEntries = (
+  providerId: string,
+  entries: RateLimitGroup['entries'],
+): RateLimitGroup['entries'] => {
+  if (providerId !== 'claude') {
     return entries;
   }
 
@@ -48,6 +47,14 @@ export const getVisibleUsageEntries = (group: RateLimitGroup) => {
   return [...entries].sort(
     ([leftLabel], [rightLabel]) => anthropicWindowRank(leftLabel) - anthropicWindowRank(rightLabel),
   );
+};
+
+export const getVisibleUsageEntries = (group: RateLimitGroup) => {
+  const entries = group.providerId === 'codex' && group.resetCredits
+    ? group.entries.filter(([label]) => label !== 'credits')
+    : group.entries;
+
+  return sortUsageEntries(group.providerId, entries);
 };
 
 const creditStatusRank = (status: string): number => {

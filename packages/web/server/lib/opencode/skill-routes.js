@@ -2,6 +2,7 @@ import {
   filterVisibleSkills,
   isRetiredDevRyanSkillName,
   normalizeSkillPath,
+  resolveApprovedSkills,
 } from './skill-policy.js';
 import { isAllowedSkillSource } from './shared.js';
 import {
@@ -23,9 +24,7 @@ export const registerSkillRoutes = (app, dependencies) => {
     sanitizeSkillCatalogs,
     sanitizeHiddenSkills,
     isUnsafeSkillRelativePath,
-    refreshOpenCodeAfterConfigChange,
-    isExternalOpenCode = () => false,
-    clientReloadDelayMs,
+    markConfigChange,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     getOpenCodePort,
@@ -69,6 +68,18 @@ export const registerSkillRoutes = (app, dependencies) => {
   const formatErrorMessage = (error, fallback) => (
     error instanceof Error && error.message ? error.message : fallback
   );
+  const getArchiveRejectionRecovery = (skipped) => {
+    const rejection = skipped.find((entry) => (
+      typeof entry?.code === 'string' && entry.code.startsWith('ARCHIVE_')
+    ));
+    if (!rejection) return null;
+    return {
+      rootCauseHint: `A downloaded skill archive failed safety validation (${rejection.code}).`,
+      safeRetry: 'Retry only after confirming the package source is trusted and the published archive is valid.',
+      stopCondition: 'Stop if the same archive safety code is returned again.',
+      retryable: rejection.code === 'ARCHIVE_DOWNLOAD_TIMEOUT',
+    };
+  };
   const sendSkillHarnessError = (res, payload, {
     statusCode = 400,
     summary,
@@ -304,60 +315,13 @@ export const registerSkillRoutes = (app, dependencies) => {
     }
   };
 
-  const mergeDiscoveredSkills = (localSkills = [], openCodeSkills = []) => {
-    const merged = [];
-    const indexByPath = new Map();
-    const indexByName = new Map();
-
-    const remember = (skill, index) => {
-      const skillPath = normalizeSkillPath(skill?.path);
-      if (skillPath) {
-        indexByPath.set(skillPath, index);
-      }
-      if (skill?.name) {
-        indexByName.set(skill.name, index);
-      }
-    };
-
-    const addOrMerge = (skill, preferIncoming) => {
-      if (!skill?.name && !skill?.path) {
-        return;
-      }
-
-      const skillPath = normalizeSkillPath(skill?.path);
-      let existingIndex = skillPath ? indexByPath.get(skillPath) : undefined;
-      if (typeof existingIndex !== 'number' && !skillPath && skill?.name) {
-        existingIndex = indexByName.get(skill.name);
-      }
-      if (typeof existingIndex === 'number') {
-        // OpenCode can provide fresher runtime metadata, but local discovery can
-        // provide paths/scope when OpenCode is unavailable or incomplete.
-        merged[existingIndex] = preferIncoming
-          ? { ...merged[existingIndex], ...skill }
-          : { ...skill, ...merged[existingIndex] };
-        remember(merged[existingIndex], existingIndex);
-        return;
-      }
-
-      const nextIndex = merged.length;
-      merged.push(skill);
-      remember(skill, nextIndex);
-    };
-
-    for (const skill of localSkills || []) {
-      addOrMerge(skill, false);
-    }
-    for (const skill of openCodeSkills || []) {
-      addOrMerge(skill, true);
-    }
-
-    return merged;
-  };
-
   const resolveDiscoveredSkills = async (directory) => {
     const localSkills = discoverSkills(directory) || [];
     const openCodeSkills = await fetchOpenCodeDiscoveredSkills(directory);
-    return mergeDiscoveredSkills(localSkills, Array.isArray(openCodeSkills) ? openCodeSkills : []);
+    return resolveApprovedSkills({
+      discoveredSkills: localSkills,
+      runtimeSkills: Array.isArray(openCodeSkills) ? openCodeSkills : [],
+    });
   };
 
   const listGitIdentitiesForResponse = () => {
@@ -755,23 +719,22 @@ export const registerSkillRoutes = (app, dependencies) => {
 
         const installed = result.installed || [];
         const skipped = result.skipped || [];
-        const requiresReload = installed.length > 0;
+        const changed = installed.length > 0;
+        const applyResult = await markConfigChange('skills install', {}, changed);
 
-        if (requiresReload) {
-          await refreshOpenCodeAfterConfigChange('skills install');
-        }
-
+        const archiveRecovery = getArchiveRejectionRecovery(skipped);
+        const createInstallHarness = skipped.length > 0 ? createHarnessWarning : createHarnessSuccess;
         return sendHarness(res, {
           ok: true,
           installed,
           skipped,
-          requiresReload,
-          message: requiresReload ? 'Skills installed successfully. Reloading interface…' : 'No skills were installed',
-          reloadDelayMs: requiresReload ? clientReloadDelayMs : undefined,
-        }, createHarnessSuccess({
+          ...applyResult,
+          message: changed ? 'Skills installed successfully. Changes are pending.' : 'No skills were installed',
+        }, createInstallHarness({
           summary: 'Skills install completed',
-          nextActions: requiresReload ? ['Wait for OpenCode reload before using installed skills'] : [],
+          nextActions: changed ? ['Apply the pending configuration before using installed skills'] : [],
           artifacts: installed.map((item) => item.skillName).filter(Boolean),
+          ...(archiveRecovery ? { recovery: archiveRecovery } : {}),
         }));
       }
 
@@ -826,22 +789,18 @@ export const registerSkillRoutes = (app, dependencies) => {
 
       const installed = result.installed || [];
       const skipped = result.skipped || [];
-      const requiresReload = installed.length > 0;
-
-      if (requiresReload) {
-        await refreshOpenCodeAfterConfigChange('skills install');
-      }
+      const changed = installed.length > 0;
+      const applyResult = await markConfigChange('skills install', {}, changed);
 
       sendHarness(res, {
         ok: true,
         installed,
         skipped,
-        requiresReload,
-        message: requiresReload ? 'Skills installed successfully. Reloading interface…' : 'No skills were installed',
-        reloadDelayMs: requiresReload ? clientReloadDelayMs : undefined,
+        ...applyResult,
+        message: changed ? 'Skills installed successfully. Changes are pending.' : 'No skills were installed',
       }, (skipped.length > 0 && installed.length === 0 ? createHarnessWarning : createHarnessSuccess)({
         summary: 'Skills install completed',
-        nextActions: requiresReload ? ['Wait for OpenCode reload before using installed skills'] : [],
+        nextActions: changed ? ['Apply the pending configuration before using installed skills'] : [],
         artifacts: installed.map((item) => item.skillName).filter(Boolean),
         recovery: skipped.length > 0 ? {
           rootCauseHint: 'Some requested skills were skipped by conflict or selection policy',
@@ -886,14 +845,13 @@ export const registerSkillRoutes = (app, dependencies) => {
       }
 
       const updated = await persistSettings({ hiddenSkills: nextHiddenSkills });
-      await refreshOpenCodeAfterConfigChange('skill restore');
+      const applyResult = await markConfigChange('skill restore');
 
       res.json({
         success: true,
         hiddenSkills: getHiddenSkillsFromSettings(updated),
-        requiresReload: true,
-        message: 'Skill restored successfully. Reloading interface…',
-        reloadDelayMs: clientReloadDelayMs,
+        ...applyResult,
+        message: 'Skill restored successfully. Changes are pending.',
       });
     } catch (error) {
       console.error('Failed to restore hidden skill:', error);
@@ -990,13 +948,12 @@ export const registerSkillRoutes = (app, dependencies) => {
       console.log('[Server] Scope:', scope, 'Working directory:', directory);
 
       createSkill(skillName, { ...config, source: skillSource }, directory, scope || 'project');
-      await refreshOpenCodeAfterConfigChange('skill creation');
+      const applyResult = await markConfigChange('skill creation');
 
       res.json({
         success: true,
-        requiresReload: true,
-        message: `Skill ${skillName} created successfully. Reloading interface…`,
-        reloadDelayMs: clientReloadDelayMs,
+        ...applyResult,
+        message: `Skill ${skillName} created successfully. Changes are pending.`,
       });
     } catch (error) {
       console.error('Failed to create skill:', error);
@@ -1032,14 +989,13 @@ export const registerSkillRoutes = (app, dependencies) => {
         return res.status(404).json({ error: 'Skill not found' });
       }
 
-      updateSkill(skillName, updates, directory, discoveredSkill);
-      await refreshOpenCodeAfterConfigChange('skill update');
+      const changed = updateSkill(skillName, updates, directory, discoveredSkill);
+      const applyResult = await markConfigChange('skill update', {}, changed);
 
       res.json({
         success: true,
-        requiresReload: true,
-        message: `Skill ${skillName} updated successfully. Reloading interface…`,
-        reloadDelayMs: clientReloadDelayMs,
+        ...applyResult,
+        message: `Skill ${skillName} updated successfully. Changes are pending.`,
       });
     } catch (error) {
       console.error('[Server] Failed to update skill:', error);
@@ -1161,7 +1117,8 @@ export const registerSkillRoutes = (app, dependencies) => {
       const settings = await readSettingsFromDisk();
       const hiddenSkills = getHiddenSkillsFromSettings(settings);
       const skillPath = normalizeSkillPath(sources.md.path);
-      if (!hiddenSkills.some((skill) => normalizeSkillPath(skill?.path) === skillPath)) {
+      const changed = !hiddenSkills.some((skill) => normalizeSkillPath(skill?.path) === skillPath);
+      if (changed) {
         await persistSettings({
           hiddenSkills: [
             ...hiddenSkills,
@@ -1174,13 +1131,12 @@ export const registerSkillRoutes = (app, dependencies) => {
           ],
         });
       }
-      await refreshOpenCodeAfterConfigChange('skill hide');
+      const applyResult = await markConfigChange('skill hide', {}, changed);
 
       res.json({
         success: true,
-        requiresReload: true,
-        message: `Skill ${skillName} hidden successfully. Reloading interface…`,
-        reloadDelayMs: clientReloadDelayMs,
+        ...applyResult,
+        message: `Skill ${skillName} hidden successfully. Changes are pending.`,
       });
     } catch (error) {
       console.error('Failed to hide skill:', error);
@@ -1237,14 +1193,8 @@ export const registerSkillRoutes = (app, dependencies) => {
         }
       }
 
-      const externalRuntime = isExternalOpenCode();
-      if (!externalRuntime) {
-        void Promise.resolve()
-          .then(() => refreshOpenCodeAfterConfigChange('skill delete'))
-          .catch((refreshError) => {
-            console.error('[API:Skill delete] OpenCode refresh failed after deletion:', refreshError);
-          });
-      } else {
+      const applyResult = await markConfigChange('skill delete');
+      if (applyResult.applyStatus.runtimeMode === 'external') {
         warning = warning
           ? `${warning} Restart the external OpenCode runtime before relying on the updated skill list.`
           : 'Restart the external OpenCode runtime before relying on the updated skill list.';
@@ -1252,9 +1202,7 @@ export const registerSkillRoutes = (app, dependencies) => {
 
       res.json({
         success: true,
-        requiresReload: false,
-        runtimeRefreshPending: !externalRuntime,
-        runtimeApplied: false,
+        ...applyResult,
         message: `Skill ${skillName} permanently deleted.`,
         ...(warning ? { warning } : {}),
       });

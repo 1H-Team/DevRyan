@@ -69,6 +69,7 @@ import { useAuthPrincipal } from '@/lib/authSession';
 import { PrBodyHydrationTracker, type PrBodyHydrationRequest } from './prBodyHydrationTracker';
 import {
   createNextPullRequestDraft,
+  DEFAULT_PULL_REQUEST_PANEL_VIEW,
   formatPullRequestStatus,
   isCurrentPullRequestSelection,
   nextPullRequestPanelView,
@@ -544,7 +545,7 @@ export const PullRequestSection: React.FC<{
   const [commentsDetails, setCommentsDetails] = React.useState<GitHubPullRequestContextResult | null>(null);
   const [isLoadingCommentsDetails, setIsLoadingCommentsDetails] = React.useState(false);
   const [dialogPullRequestNumber, setDialogPullRequestNumber] = React.useState<number | null>(null);
-  const [panelView, setPanelView] = React.useState<PullRequestPanelView>('current');
+  const [panelView, setPanelView] = React.useState<PullRequestPanelView>(DEFAULT_PULL_REQUEST_PANEL_VIEW);
   const [pullRequestListResult, setPullRequestListResult] = React.useState<GitHubPullRequestsListResult | null>(null);
   const [pullRequests, setPullRequests] = React.useState<GitHubPullRequestSummary[]>([]);
   const [pullRequestQuery, setPullRequestQuery] = React.useState('');
@@ -568,7 +569,7 @@ export const PullRequestSection: React.FC<{
   const pendingActionRefreshTimersRef = React.useRef<number[]>([]);
 
   React.useEffect(() => {
-    setPanelView((current) => nextPullRequestPanelView(current, 'show-current'));
+    setPanelView(DEFAULT_PULL_REQUEST_PANEL_VIEW);
     setPullRequestListResult(null);
     setPullRequests([]);
     setPullRequestQuery('');
@@ -655,6 +656,13 @@ export const PullRequestSection: React.FC<{
       void loadPullRequestList(1, true);
     }
   }, [isLoadingPullRequestList, loadPullRequestList, pullRequestListResult]);
+
+  React.useEffect(() => {
+    if (panelView !== 'list' || pullRequestListResult || isLoadingPullRequestList || pullRequestListError) {
+      return;
+    }
+    void loadPullRequestList(1, true);
+  }, [isLoadingPullRequestList, loadPullRequestList, panelView, pullRequestListError, pullRequestListResult]);
 
   const loadSelectedPullRequest = React.useCallback(async (pullRequest: GitHubPullRequestSummary) => {
     if (!github?.prContext) {

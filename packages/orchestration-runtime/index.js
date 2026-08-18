@@ -1,6 +1,7 @@
 export * from './contract.js';
 export * from './open-code-executor.js';
 export * from './persistence.js';
+export * from './provider-capabilities.js';
 export * from './provider-prompt-tools.js';
 export * from './provider-retry-policy.js';
 export * from './result-envelope.js';

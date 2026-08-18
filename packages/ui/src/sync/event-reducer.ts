@@ -22,7 +22,7 @@ import { dropSessionCaches } from "./session-cache"
 import { stripSessionDiffSnapshots } from "./sanitize"
 import { syncDebug } from "./debug"
 import { appendNonOverlappingDelta, appendStreamingTextDelta, normalizeAssistantPartText } from "./part-delta"
-import { hasToolCallAssistantFinish, isTerminalAssistantMessage } from "./session-working"
+import { isTerminalAssistantMessage } from "./session-working"
 import {
   updateSessionUserActivityFromMessage,
   updateSessionUserActivityFromMessages,
@@ -35,7 +35,6 @@ import {
 } from "./revert-transactions"
 import { clearAbortGuard, filterSessionStatusThroughAbortGuard } from "./abort-retry-guard"
 import { isFinalToolStatus } from "../lib/toolStatus"
-import { hasSettledTerminalAssistantTurn } from "./plan-idle-settlement"
 import { areSessionRecordsEqual, isStrictlyOlderSession } from "./session-recency"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
@@ -150,76 +149,6 @@ export function isTerminalCursorAssistantMessage(info: Message | undefined): boo
   return isTerminalAssistantMessage(info)
 }
 
-const isBlockingRequestPending = (state: State, sessionID: string): boolean => {
-  return (state.permission[sessionID]?.length ?? 0) > 0
-    || (state.question[sessionID]?.length ?? 0) > 0
-}
-
-const getMessageCreatedAt = (message: Message | undefined): number | undefined => {
-  const created = (message as { time?: { created?: unknown } } | undefined)?.time?.created
-  return typeof created === "number" ? created : undefined
-}
-
-const compareMessageOrder = (left: Message, right: Message): number => {
-  const leftCreated = getMessageCreatedAt(left)
-  const rightCreated = getMessageCreatedAt(right)
-  if (typeof leftCreated === "number" && typeof rightCreated === "number" && leftCreated !== rightCreated) {
-    return leftCreated - rightCreated
-  }
-  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0
-}
-
-const isTrailingConversationalMessage = (state: State, info: Message): boolean => {
-  const messages = state.message[info.sessionID] ?? []
-  let latest: Message | undefined
-
-  for (const message of messages) {
-    if (message.role !== "user" && message.role !== "assistant") {
-      continue
-    }
-    if (!latest || compareMessageOrder(message, latest) > 0) {
-      latest = message
-    }
-  }
-
-  if (!latest) {
-    return true
-  }
-  if (latest.id === info.id) {
-    return true
-  }
-  return compareMessageOrder(latest, info) <= 0
-}
-
-export function shouldSettleTerminalAssistantMessageStatus(state: State, info: Message | undefined): info is Message {
-  if (!info || !isTerminalAssistantMessage(info)) {
-    return false
-  }
-  // `finish: "tool-calls"` is an intermediate assistant handoff, not the end
-  // of the agent turn. Keep busy status intact so live indicators do not flicker
-  // off between tool calls while OpenCode is still working.
-  if (hasToolCallAssistantFinish(info)) {
-    return false
-  }
-  if (isBlockingRequestPending(state, info.sessionID)) {
-    return false
-  }
-  return isTrailingConversationalMessage(state, info)
-}
-
-function settleTerminalAssistantStatus(draft: State, info: Message): boolean {
-  if (!shouldSettleTerminalAssistantMessageStatus(draft, info)) {
-    return false
-  }
-  const status = { type: "idle" } as const
-  if (areSessionStatusesEqual(draft.session_status[info.sessionID], status)) {
-    return false
-  }
-
-  draft.session_status[info.sessionID] = status
-  return true
-}
-
 function areFileDiffsEquivalent(left: FileDiff[] | undefined, right: FileDiff[]): boolean {
   if (left === right) return true
   if (!left || left.length !== right.length) return false
@@ -253,6 +182,20 @@ function areMessageDiffSummariesEquivalent(left: Message, right: Message): boole
 function getMessageParentID(message: Message): string | undefined {
   if (!("parentID" in message)) return undefined
   return typeof message.parentID === "string" ? message.parentID : undefined
+}
+
+// Token payloads change without finish/completed changing (e.g. the server
+// attaches a context-source breakdown to an already-completed message), so
+// the unchanged-skip must compare them or the update is silently dropped.
+function areMessageTokensEquivalent(left: Message, right: Message): boolean {
+  const leftTokens = (left as { tokens?: unknown }).tokens
+  const rightTokens = (right as { tokens?: unknown }).tokens
+  if (leftTokens === rightTokens) return true
+  try {
+    return JSON.stringify(leftTokens) === JSON.stringify(rightTokens)
+  } catch {
+    return false
+  }
 }
 
 // Memoize normalization by (messages, session) reference pair. The reducer
@@ -646,13 +589,7 @@ export function applyDirectoryEvent(
       // coerces those to idle for a bounded window and schedules bounded
       // re-aborts so the loop is cancelled when its next attempt fires.
       const filteredStatus = filterSessionStatusThroughAbortGuard(props.sessionID, props.status)
-      const filteredStatusType = filteredStatus.type
-      const status = (filteredStatusType === "busy" || filteredStatusType === "retry") && hasSettledTerminalAssistantTurn({
-        sessionID: props.sessionID,
-        state: draft,
-      })
-        ? { type: "idle" } as const
-        : filteredStatus
+      const status = filteredStatus
       if (areSessionStatusesEqual(draft.session_status[props.sessionID], status)) {
         return false
       }
@@ -688,7 +625,6 @@ export function applyDirectoryEvent(
         return removeHiddenMessageFromDraft(draft, info.sessionID, info.id)
       }
       const activityChanged = updateSessionUserActivityFromMessage(draft, info)
-      const terminalStatusChanged = settleTerminalAssistantStatus(draft, info)
       const messages = draft.message[info.sessionID]
       if (!messages) {
         draft.message[info.sessionID] = [info]
@@ -713,12 +649,13 @@ export function applyDirectoryEvent(
           && (existing.time as { completed?: number })?.completed === (info.time as { completed?: number })?.completed
           && getMessageParentID(existing) === getMessageParentID(info)
           && areMessageDiffSummariesEquivalent(existing, info)
+          && areMessageTokensEquivalent(existing, info)
         if (unchanged) {
           syncDebug.reducer.messageUpdatedUnchanged(info.sessionID, info.id, info.role, (info as { finish?: unknown }).finish, (info.time as { completed?: number })?.completed)
           const partsChanged = info.role === "assistant"
             ? normalizeAssistantMessagePartsInDraft(draft, info.id)
             : false
-          return applyMessageSummaryToSession(draft, info.sessionID) || activityChanged || partsChanged || terminalStatusChanged
+          return applyMessageSummaryToSession(draft, info.sessionID) || activityChanged || partsChanged
         }
         const next = [...messages]
         next[result.index] = info

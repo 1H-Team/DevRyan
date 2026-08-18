@@ -110,6 +110,7 @@ describe('shared lazy view boundaries', () => {
     expect(mainLayout).toContain('<LazySettingsView onClose=');
     expect(mainLayout).toContain('<LazyManagedSettingsView onClose=');
     expect(mainLayout).toContain("principal.scope === 'managed' && principal.role !== 'admin'");
+    expect(mainLayout).toContain('useConfigApplyStatusLifecycle(isSettingsDialogOpen)');
     expect(mainLayout).toContain('<LazyMultiRunWindow');
     expect(mainLayout).toContain('<DeferredLazyView active={canLaunchMultiRun && isMultiRunLauncherOpen}>');
 
@@ -131,6 +132,7 @@ describe('shared lazy view boundaries', () => {
     expect(vscodeLayout).toContain("from '@/components/views/lazyViews'");
     expect(vscodeLayout).toContain('<LazyViewBoundary>');
     expect(vscodeLayout).toContain('<LazySettingsView');
+    expect(vscodeLayout).toContain("useConfigApplyStatusLifecycle(currentView === 'settings')");
   });
 
   test('keeps settings navigation metadata independent from the heavy settings view', () => {
@@ -166,6 +168,7 @@ describe('shared lazy view boundaries', () => {
     expect(managedSettingsView).toContain('<SettingsPagePermissionBoundary slug={activeSlug}>');
     expect(managedSettingsView).toContain('backButtonRef.current?.focus({ preventScroll: true })');
     expect(managedSettingsView).toContain('aria-modal="true"');
+    expect(managedSettingsView).toContain('<ConfigApplyControls variant="sidebar" />');
     expect(managedSettingsView).toContain("group: 'Development'");
     expect(managedSettingsView).toContain('const LazyBugReportsPage = /* @__PURE__ */ lazyWithChunkRecovery');
     for (const page of ['appearance', 'chat', 'shortcuts', 'sessions', 'notifications', 'agents', 'providers', 'usage', 'mcp', 'bug-reports']) {

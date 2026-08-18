@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import type { Message, Part } from '@opencode-ai/sdk/v2';
 import {
     MANAGED_READ_ONLY_PROMPT,
+    MANAGED_RETRY_IN_PLACE_PROMPT,
+    MANAGED_RESUME_CONTINUATION_PROMPT,
     MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT,
     MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT,
     type ManagedTaskEventRecord,
@@ -20,6 +22,7 @@ const entry = ({
     text,
     error,
     finish,
+    createdAt = 1_000,
 }: {
     id: string;
     role: 'user' | 'assistant';
@@ -27,12 +30,13 @@ const entry = ({
     text?: string;
     error?: unknown;
     finish?: string;
+    createdAt?: number;
 }): ChatMessageEntry => ({
     info: {
         id,
         role,
         sessionID: SESSION_ID,
-        time: { created: 1_000, ...(finish ? { completed: 2_000 } : {}) },
+        time: { created: createdAt, ...(finish ? { completed: createdAt + 100 } : {}) },
         ...(parentID ? { parentID } : {}),
         ...(error ? { error } : {}),
         ...(finish ? { finish } : {}),
@@ -46,9 +50,13 @@ const entry = ({
     } as unknown as Part] : [],
 });
 
-const task = (status: ManagedTaskStatus): ManagedTaskEventRecord => ({
+const task = (
+    status: ManagedTaskStatus,
+    overrides: Partial<ManagedTaskEventRecord> = {},
+): ManagedTaskEventRecord => ({
     childSessionId: SESSION_ID,
     status,
+    ...overrides,
 } as ManagedTaskEventRecord);
 
 const transportError = (name: string, detail: string) => ({
@@ -59,6 +67,145 @@ const transportError = (name: string, detail: string) => ({
 const claudeConnectionFailure = '{"type":"api_error","message":"Claude Code returned an error result: API Error: Connection closed mid-response. The response above may be incomplete."}';
 
 describe('projectManagedTransportRecovery', () => {
+    test('folds an automatic resume into the aborted turn and reparents its completion', () => {
+        const originalUser = entry({ id: 'msg_user', role: 'user', text: 'Implement the fix.' });
+        const aborted = entry({
+            id: 'msg_aborted',
+            role: 'assistant',
+            parentID: originalUser.info.id,
+            text: 'Partial implementation',
+            error: { message: 'aborted' },
+        });
+        const continuation = entry({
+            id: 'msg_resume',
+            role: 'user',
+            text: MANAGED_RESUME_CONTINUATION_PROMPT,
+        });
+        const completed = entry({
+            id: 'msg_completed',
+            role: 'assistant',
+            parentID: continuation.info.id,
+            text: 'Implementation complete',
+            finish: 'stop',
+        });
+
+        const projected = projectManagedTransportRecovery(
+            [originalUser, aborted, continuation, completed],
+            task('completed'),
+        );
+
+        expect(projected.map((message) => message.info.id)).toEqual([
+            originalUser.info.id,
+            aborted.info.id,
+            completed.info.id,
+        ]);
+        expect(projected[1].presentation?.managedAbortRecovery).toEqual({ state: 'recovered' });
+        expect((projected[2].info as { parentID?: string }).parentID).toBe(originalUser.info.id);
+    });
+
+    test('restores mixed-provider chronology and folds a manual in-place retry', () => {
+        const originalUser = entry({
+            id: 'msg_1a00579c3bd350dddb2',
+            role: 'user',
+            text: 'Implement the fix.',
+            createdAt: 1_000,
+        });
+        const failedCursorAssistant = entry({
+            id: 'msg_1a00579c3bd350dddb2_assistant',
+            role: 'assistant',
+            parentID: originalUser.info.id,
+            text: 'Partial Cursor work',
+            finish: 'error',
+            createdAt: 1_100,
+        });
+        const retry = entry({
+            id: 'msg_005959f3b0016fR37NuXEYC1vc',
+            role: 'user',
+            text: MANAGED_RETRY_IN_PLACE_PROMPT,
+            createdAt: 2_000,
+        });
+        const completedOpenAiAssistant = entry({
+            id: 'msg_005959f640013jZ67Mdq5lNl0F',
+            role: 'assistant',
+            parentID: retry.info.id,
+            text: 'Completed with the selected model',
+            finish: 'stop',
+            createdAt: 2_100,
+        });
+
+        // This is the order produced by lexically sorting the incompatible ID
+        // formats: the newer OpenCode records precede the legacy Cursor records.
+        const projected = projectManagedTransportRecovery(
+            [retry, completedOpenAiAssistant, originalUser, failedCursorAssistant],
+            task('completed', { executionKind: 'retry_in_place' }),
+        );
+
+        expect(projected.map((message) => message.info.id)).toEqual([
+            originalUser.info.id,
+            failedCursorAssistant.info.id,
+            completedOpenAiAssistant.info.id,
+        ]);
+        expect((projected[2].info as { parentID?: string }).parentID).toBe(originalUser.info.id);
+    });
+
+    test('restores mixed-provider chronology after managed task metadata is gone', () => {
+        const olderCursorMessage = entry({
+            id: 'msg_1a00579c3bd350dddb2',
+            role: 'user',
+            text: 'Original Cursor request',
+            createdAt: 1_000,
+        });
+        const newerOpenAiMessage = entry({
+            id: 'msg_005959f3b0016fR37NuXEYC1vc',
+            role: 'user',
+            text: 'Later OpenAI request',
+            createdAt: 2_000,
+        });
+
+        expect(projectManagedTransportRecovery(
+            [newerOpenAiMessage, olderCursorMessage],
+            undefined,
+        )).toEqual([olderCursorMessage, newerOpenAiMessage]);
+    });
+
+    test('projects live, manual, and terminal abort states from narrow managed-task inputs', () => {
+        const originalUser = entry({ id: 'msg_user', role: 'user', text: 'Implement the fix.' });
+        const aborted = entry({
+            id: 'msg_aborted',
+            role: 'assistant',
+            parentID: originalUser.info.id,
+            error: { data: { message: 'Aborted' } },
+        });
+        const messages = [originalUser, aborted];
+
+        expect(projectManagedTransportRecovery(messages, task('running'))[1]
+            .presentation?.managedAbortRecovery).toEqual({ state: 'continuing' });
+        expect(projectManagedTransportRecovery(messages, task('failed'), 'dvr_task_failed')[1]
+            .presentation?.managedAbortRecovery).toEqual({ state: 'manual_recovery' });
+        expect(projectManagedTransportRecovery(messages, task('failed'))[1]
+            .presentation?.managedAbortRecovery).toEqual({ state: 'stopped' });
+    });
+
+    test('carries the failure kind so a parked timeout can be named as one', () => {
+        const originalUser = entry({ id: 'msg_user', role: 'user', text: 'Implement the fix.' });
+        const aborted = entry({
+            id: 'msg_aborted',
+            role: 'assistant',
+            parentID: originalUser.info.id,
+            error: { data: { message: 'Aborted' } },
+        });
+        const timedOut = {
+            ...task('failed'),
+            failureKind: 'deadline_exceeded',
+        } as ManagedTaskEventRecord;
+
+        expect(projectManagedTransportRecovery([originalUser, aborted], timedOut, 'dvr_task_timeout')[1]
+            .presentation?.managedAbortRecovery).toEqual({
+                state: 'manual_recovery',
+                failureKind: 'deadline_exceeded',
+            });
+    });
+
     test('folds the journal-shaped read-only Claude recovery into the original visible turn', () => {
         const originalUser = entry({ id: 'msg_user', role: 'user', text: 'Inspect the layout.' });
         const interrupted = entry({

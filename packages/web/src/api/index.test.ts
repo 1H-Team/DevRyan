@@ -30,6 +30,7 @@ describe('web RuntimeAPIs adapter contract', () => {
     expect(apis.github).toBeDefined();
     expect(apis.diagnostics).toBeDefined();
     expect(apis.evidence).toBeDefined();
+    expect(apis.contextUsage).toBeDefined();
     expect(apis.editor).toBeUndefined();
     expect(apis.vscode).toBeUndefined();
   });

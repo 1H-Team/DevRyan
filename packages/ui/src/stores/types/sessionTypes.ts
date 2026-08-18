@@ -63,25 +63,6 @@ export interface SessionHistoryMeta {
     loading: boolean;
 }
 
-export type ContextUsageSource =
-    | "system"
-    | "rules"
-    | "skills"
-    | "mcp"
-    | "subagents"
-    | "tools"
-    | "conversation"
-    | "attachments"
-    | "other";
-
-export interface ContextUsageSourceBreakdown {
-    source: ContextUsageSource;
-    tokens: number;
-    label?: string;
-}
-
-export type ContextUsageSourceAccuracy = "reported" | "estimated" | "unavailable";
-
 export interface ContextUsageTokenBreakdown {
     input: number;
     output: number;
@@ -94,7 +75,8 @@ export interface ContextUsageTokenBreakdown {
 export interface ContextUsageRelatedSession {
     sessionId: string;
     title?: string;
-    totalTokens: number;
+    activeInputTokens: number;
+    processedInputTokens?: number;
     capacityLimit: number | null;
     capacityBasis: ContextCapacityBasis;
     inputLimit: number | null;
@@ -102,10 +84,22 @@ export interface ContextUsageRelatedSession {
     outputLimit: number | null;
     percentage: number | null;
     lastMessageId?: string;
+    /** Parent in the subagent tree: the root session for top-level rows. */
+    parentSessionId?: string;
+    /** Nesting depth below the root session; 0 for direct children. */
+    depth?: number;
+    /** False when the child's messages are not loaded, so tokens are unknown. */
+    hasData?: boolean;
+    tokenBreakdown?: ContextUsageTokenBreakdown;
 }
 
 export interface SessionContextUsage {
-    totalTokens: number;
+    providerID?: string;
+    activeInputTokens: number;
+    lastOutputTokens: number;
+    processedInputTokens?: number;
+    source: 'meridian' | 'message-fallback';
+    updatedAt: number;
     percentage: number | null;
     capacityLimit: number | null;
     capacityBasis: ContextCapacityBasis;
@@ -115,11 +109,8 @@ export interface SessionContextUsage {
     lastMessageId?: string;
     tokenBreakdown: ContextUsageTokenBreakdown;
     hasTokenBreakdown: boolean;
-    sources?: ContextUsageSourceBreakdown[];
-    sourceTotalTokens?: number;
-    sourceAccuracy: ContextUsageSourceAccuracy;
     relatedSubagentSessions?: ContextUsageRelatedSession[];
-    relatedSubagentTotalTokens?: number;
+    relatedSubagentActiveInputTokens?: number;
 }
 
 // Default message limit (can be overridden via settings).
@@ -258,6 +249,8 @@ export interface SessionStore {
     error: string | null;
     streamingMessageIds: Map<string, string | null>;
     abortControllers: Map<string, AbortController>;
+    /** Sessions with an optimistic "stopping" state: stop clicked, server abort not yet confirmed. Value = click timestamp. */
+    stoppingSessions: Map<string, number>;
     lastUsedProvider: { providerID: string; modelID: string } | null;
     isSyncing: boolean;
 
@@ -330,6 +323,8 @@ export interface SessionStore {
     abortPendingSend: (key: string) => boolean;
     clearPendingSendAbort: (key: string, controller?: AbortController) => void;
     hasPendingSendAbort: (key: string) => boolean;
+    markSessionStopping: (sessionId: string) => void;
+    clearSessionStopping: (sessionId: string) => void;
 
     createSession: (title?: string, directoryOverride?: string | null, parentID?: string | null) => Promise<Session | null>;
     createSessionFromAssistantMessage: (sourceMessageId: string) => Promise<void>;
@@ -407,7 +402,7 @@ export interface SessionStore {
     setWorktreeMetadata: (sessionId: string, metadata: import('@/types/worktree').WorktreeMetadata | null) => void;
     getWorktreeMetadata: (sessionId: string) => import('@/types/worktree').WorktreeMetadata | undefined;
 
-    getContextUsage: (capacity: ResolvedModelContextCapacity) => SessionContextUsage | null;
+    getContextUsageForSession: (sessionId: string | null, directory?: string | null) => SessionContextUsage | null;
 
     updateSessionContextUsage: (sessionId: string, capacity: ResolvedModelContextCapacity) => void;
 

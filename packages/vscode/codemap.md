@@ -8,7 +8,8 @@ VS Code extension runtime: hosts DevRyan inside VS Code (sidebar + editor panels
   - `src/extension.ts`: activation, command registration, provider wiring.
   - `src/ChatViewProvider.ts`, `AgentManagerPanelProvider.ts`, `SessionEditorPanelProvider.ts`: UI container controllers.
 - **Bridge router pattern**: `src/bridge.ts` dispatches typed messages to focused runtime handlers (`bridge-*-runtime.ts`) for git/fs/config/system/proxy domains.
-- **Connection manager abstraction**: `src/opencode.ts` encapsulates managed/external OpenCode, status transitions, auth header generation, binary detection, and restarts.
+- **Connection manager abstraction**: `src/opencode.ts` encapsulates managed/external OpenCode, status transitions, auth header generation, binary detection, restarts, isolated context-mode storage, and idle-gated SQLITE_IOERR recovery.
+- **Cross-host policy reuse**: `@openchamber/shared-runtime` supplies safe-archive, revisioned configuration-apply, and selected provider-quota behavior; `@openchamber/harness-runtime` supplies durable worktree receipts, post-checkout hook execution, and exact shell-command deadline recovery. `commandDeadlineRuntime.ts` adapts authenticated message/status/abort requests and authoritative event publication to the extension host.
 - **Managed-orchestration owner**: the extension host owns one persisted scheduler with unbounded immediate admission, a private loopback tool bridge, OpenCode/Cursor child executor, scoped bridge routes including confirmed primary-agent handoff and durable provider-recovery parent continuation discovery, and shutdown ordering. External OpenCode connections do not receive this private runtime.
 - **SSE proxy layer**: extension host mediates streamed events to webview without exposing unrestricted local APIs.
 - **Theme/CSP-aware webview bootstrap**: `webviewHtml.ts` generates strict HTML shell with injected runtime config and initial loading state.
@@ -23,7 +24,7 @@ VS Code extension runtime: hosts DevRyan inside VS Code (sidebar + editor panels
 5. Connection, theme, session activity, and safe managed-task events are pushed from extension host to webview; orchestration snapshots, actions, and handoff inspection/cleanup return through API-shaped bridge responses matching web/Electron validation and failure projection.
 
 ## Integration
-- **Depends on**: VS Code extension API, OpenCode CLI/API, `@openchamber/orchestration-runtime`, Cursor SDK runtime, and the shared `@openchamber/ui` webview bundle.
+- **Depends on**: VS Code extension API, OpenCode CLI/API, `@openchamber/shared-runtime`, `@openchamber/harness-runtime`, `@openchamber/orchestration-runtime`, Cursor SDK runtime, and the shared `@openchamber/ui` webview bundle.
 - **Consumes shared UI**: webview app entry under `packages/vscode/webview/*`.
 - **Cross-runtime alignment**: mirrors desktop/web contracts via `openchamber:*` events and API-shaped bridge responses.
 - **Notable policy choice**: backend GitHub bridge operations are explicitly disabled in this runtime and delegated to native VS Code integrations.

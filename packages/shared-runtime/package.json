@@ -1,0 +1,14 @@
+{
+  "name": "@openchamber/shared-runtime",
+  "version": "1.1.4",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "adm-zip": "^0.6.0"
+  }
+}

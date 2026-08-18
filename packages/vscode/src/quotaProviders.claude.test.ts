@@ -54,15 +54,16 @@ describe('VS Code Claude quota parity', () => {
         json: async () => ({
           five_hour: { utilization: 12, resets_at: '2026-08-01T00:00:00.000Z' },
           seven_day: { utilization: 5, resets_at: '2026-08-08T00:00:00.000Z' },
-          seven_day_sonnet: { utilization: 2, resets_at: '2026-08-08T00:00:00.000Z' },
+          seven_day_fable: { utilization: 2, resets_at: '2026-08-08T00:00:00.000Z' },
         }),
       })),
     });
 
     expect(result.ok).toBe(true);
+    expect(result.providerName).toBe('Claude');
     expect(result.usage?.windows['5h'].usedPercent).toBe(12);
     expect(result.usage?.windows['7d'].usedPercent).toBe(5);
-    expect(result.usage?.windows['7d-sonnet'].usedPercent).toBe(2);
+    expect(result.usage?.windows['7d-fable'].usedPercent).toBe(2);
   });
 
   it('falls through from failed OAuth usage to Meridian', async () => {
@@ -150,6 +151,7 @@ describe('VS Code Claude quota parity', () => {
         buckets: [
           { type: 'five_hour', utilization: 0.31, resetsAt: 1_800_000_000_000, observedAt: 1_700_000_000_000 },
           { type: 'seven_day', utilization: 0.03, resetsAt: 1_800_100_000_000, observedAt: 1_700_000_000_000 },
+          { type: 'seven_day_fable', utilization: 0.01, resetsAt: 1_800_100_000_000, observedAt: 1_700_000_000_000 },
         ],
         asOf: 1_700_000_000_000,
       }),
@@ -166,16 +168,18 @@ describe('VS Code Claude quota parity', () => {
     expect(result.usageUpdatedAt).toBe(1_700_000_000_000);
     expect(result.usage?.windows['5h'].usedPercent).toBe(31);
     expect(result.usage?.windows['7d'].usedPercent).toBe(3);
+    expect(result.usage?.windows['7d-fable'].usedPercent).toBe(1);
   });
 
   it('parses the non-billable Claude /usage result', () => {
     const result = parseClaudeCodeUsageOutput(JSON.stringify({
       is_error: false,
-      result: 'Current session: 31% used · resets Jul 24 at 7:39pm\nCurrent week (all models): 3% used · resets Jul 29 at 10:59pm',
+      result: 'Current session: 31% used · resets Jul 24 at 7:39pm\nCurrent week (all models): 3% used · resets Jul 29 at 10:59pm\nCurrent week (Fable): 1% used · resets Jul 29 at 10:59pm',
     }), new Date('2026-07-24T16:00:00+01:00').getTime());
     expect(result.ok).toBe(true);
     expect(result.usage?.windows['5h'].usedPercent).toBe(31);
     expect(result.usage?.windows['7d'].usedPercent).toBe(3);
+    expect(result.usage?.windows['7d-fable'].usedPercent).toBe(1);
   });
 
   it('does not use local Anthropic sources for external runtimes', async () => {

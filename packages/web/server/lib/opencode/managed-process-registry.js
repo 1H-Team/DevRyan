@@ -11,6 +11,14 @@ function getOpenChamberDataDir(env = process.env) {
   return configured ? path.resolve(configured) : path.join(os.homedir(), '.config', 'openchamber');
 }
 
+function buildContextModeStorageEnv(env = process.env) {
+  const dataDir = getOpenChamberDataDir(env);
+  return {
+    CONTEXT_MODE_DATA_DIR: dataDir,
+    CONTEXT_MODE_DIR: path.join(dataDir, 'context-mode'),
+  };
+}
+
 function getManagedOpenCodeRegistryPath(options = {}) {
   if (typeof options.registryPath === 'string' && options.registryPath.trim()) {
     return path.resolve(options.registryPath);
@@ -52,17 +60,74 @@ function readManagedOpenCodeRegistry(options = {}) {
   }
 }
 
+// Registry writers on different processes (packaged app + dev web server) share
+// one file; unlocked read-modify-write lets one clobber the other's record and
+// leaves the dropped child as an untracked orphan.
+const REGISTRY_LOCK_STALE_MS = 2_000;
+const REGISTRY_LOCK_ACQUIRE_TIMEOUT_MS = 1_000;
+
+function acquireRegistryLock(registryPath) {
+  const lockPath = `${registryPath}.lock`;
+  const deadline = Date.now() + REGISTRY_LOCK_ACQUIRE_TIMEOUT_MS;
+  fs.mkdirSync(path.dirname(registryPath), { recursive: true, mode: 0o700 });
+  for (;;) {
+    try {
+      fs.mkdirSync(lockPath);
+      return lockPath;
+    } catch (error) {
+      if (error?.code !== 'EEXIST') return null;
+    }
+    try {
+      if (Date.now() - fs.statSync(lockPath).mtimeMs > REGISTRY_LOCK_STALE_MS) {
+        fs.rmdirSync(lockPath);
+        continue;
+      }
+    } catch {
+      continue;
+    }
+    if (Date.now() >= deadline) {
+      // Proceed unlocked rather than fail the caller; contention is rare and
+      // the fallback matches the historical (unlocked) behavior.
+      return null;
+    }
+    const spinUntil = Date.now() + 25;
+    while (Date.now() < spinUntil) {
+      // Short busy-wait; the critical sections under this lock are tiny.
+    }
+  }
+}
+
+function releaseRegistryLock(lockPath) {
+  if (!lockPath) return;
+  try {
+    fs.rmdirSync(lockPath);
+  } catch {
+  }
+}
+
+function withRegistryLock(options, fn) {
+  const registryPath = getManagedOpenCodeRegistryPath(options);
+  const lockPath = acquireRegistryLock(registryPath);
+  try {
+    return fn();
+  } finally {
+    releaseRegistryLock(lockPath);
+  }
+}
+
 function writeManagedOpenCodeRegistry(records, options = {}) {
   const registryPath = getManagedOpenCodeRegistryPath(options);
   const normalized = Array.isArray(records)
     ? records.map(normalizeRegistryRecord).filter(Boolean)
     : [];
   fs.mkdirSync(path.dirname(registryPath), { recursive: true, mode: 0o700 });
+  const tempPath = `${registryPath}.tmp.${process.pid}`;
   fs.writeFileSync(
-    registryPath,
+    tempPath,
     JSON.stringify({ version: REGISTRY_VERSION, processes: normalized }, null, 2),
     { mode: 0o600 },
   );
+  fs.renameSync(tempPath, registryPath);
   return normalized;
 }
 
@@ -74,20 +139,24 @@ function registerManagedOpenCodeProcess(record, options = {}) {
   });
   if (!normalized) return null;
 
-  const existing = readManagedOpenCodeRegistry(options)
-    .filter((entry) => entry.childPid !== normalized.childPid);
-  writeManagedOpenCodeRegistry([...existing, normalized], options);
+  withRegistryLock(options, () => {
+    const existing = readManagedOpenCodeRegistry(options)
+      .filter((entry) => entry.childPid !== normalized.childPid);
+    writeManagedOpenCodeRegistry([...existing, normalized], options);
+  });
   return normalized;
 }
 
 function unregisterManagedOpenCodeProcess(childPid, options = {}) {
   const normalizedChildPid = normalizePositiveInteger(childPid);
   if (!normalizedChildPid) return false;
-  const existing = readManagedOpenCodeRegistry(options);
-  const next = existing.filter((entry) => entry.childPid !== normalizedChildPid);
-  if (next.length === existing.length) return false;
-  writeManagedOpenCodeRegistry(next, options);
-  return true;
+  return withRegistryLock(options, () => {
+    const existing = readManagedOpenCodeRegistry(options);
+    const next = existing.filter((entry) => entry.childPid !== normalizedChildPid);
+    if (next.length === existing.length) return false;
+    writeManagedOpenCodeRegistry(next, options);
+    return true;
+  });
 }
 
 function isProcessRunning(pid, processKill = process.kill.bind(process)) {
@@ -255,17 +324,32 @@ async function reapOrphanedManagedOpenCodeProcesses(options = {}) {
     reaped.push({ ...record, terminated });
   }
 
-  writeManagedOpenCodeRegistry(kept, options);
+  // Remove only the records this sweep actually processed, from a fresh read:
+  // terminations above can take seconds, and a wholesale write of `kept` would
+  // clobber any record registered by another process mid-sweep.
+  const processedChildPids = new Set([...reaped, ...removed].map((entry) => entry.childPid));
+  withRegistryLock(options, () => {
+    const current = readManagedOpenCodeRegistry(options);
+    writeManagedOpenCodeRegistry(
+      current.filter((entry) => !processedChildPids.has(entry.childPid)),
+      options,
+    );
+  });
   return { kept, reaped, removed, skipped };
 }
 
 export {
   REGISTRY_FILE_NAME,
+  getOpenChamberDataDir,
+  buildContextModeStorageEnv,
   getManagedOpenCodeRegistryPath,
   readManagedOpenCodeRegistry,
   writeManagedOpenCodeRegistry,
   registerManagedOpenCodeProcess,
   unregisterManagedOpenCodeProcess,
   isManagedOpenCodeProcessCommand,
+  isProcessRunning,
+  readProcessCommand,
+  terminateManagedOpenCodePid,
   reapOrphanedManagedOpenCodeProcesses,
 };

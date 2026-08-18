@@ -13,7 +13,10 @@ import type { ChatMessageEntry, TurnRecord, TurnGroupingContext } from './lib/tu
 import { readSessionResponseStyleLevel, type ResponseStyleLevel } from '@/lib/responseStyle';
 import { useTurnRecords } from './hooks/useTurnRecords';
 import { applyRetryOverlay } from './lib/turns/applyRetryOverlay';
-import { projectManagedTransportRecovery } from './lib/turns/projectManagedTransportRecovery';
+import {
+    orderChatMessagesChronologically,
+    projectManagedTransportRecovery,
+} from './lib/turns/projectManagedTransportRecovery';
 import { useUIStore } from '@/stores/useUIStore';
 import { FadeInDisabledProvider } from './message/FadeInOnReveal';
 import { hasPendingUserSendAnimation, consumePendingUserSendAnimation } from '@/lib/userSendAnimation';
@@ -702,17 +705,19 @@ const TurnBlock = React.memo(({
             const isFirstAssistant = assistantIndex === 0;
             const isLastAssistant = assistantIndex === visibleAssistantMessages.length - 1;
             const isActivityOwner = Boolean(activityOwnerMessageId) && message.info.id === activityOwnerMessageId;
-            const hasFileActivityTool = message.parts.some((part) => {
+            const hasTurnRollupTool = message.parts.some((part) => {
                 if (part.type !== 'tool') {
                     return false;
                 }
                 const groupInfo = getToolActivityGroupInfo(part.tool, part);
-                return groupInfo?.kind === 'edit' || groupInfo?.kind === 'read';
+                return groupInfo?.kind === 'edit'
+                    || groupInfo?.kind === 'read'
+                    || groupInfo?.kind === 'browser';
             });
             const isTurnWorking = isLastTurn && sessionIsWorking && turnIsInActiveStream;
             const shouldAttachFullTurnContext = chatRenderMode === 'sorted'
                 ? isAssistantMessage
-                : (isActivityOwner || isFirstAssistant || isLastAssistant || hasFileActivityTool);
+                : (isActivityOwner || isFirstAssistant || isLastAssistant || hasTurnRollupTool);
             const assistantHeaderMessageId = visibleAssistantMessages[0]?.info.id ?? turn.headerMessageId;
 
             const previousMessage = isUserMessage
@@ -1146,15 +1151,18 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     const activityRenderMode = useUIStore((state) => state.activityRenderMode);
     const defaultActivityExpanded = activityRenderMode === 'summary';
     const recordedPlanModeMessageIds = useSessionUIStore((state) => state.planModeUserMessages);
-    const latestRawMessageId = messages.at(-1)?.info.id ?? null;
-    const responseStyleLevel = React.useMemo(
-        () => readSessionResponseStyleLevel(messages),
+    const chronologicalMessages = React.useMemo(
+        () => orderChatMessagesChronologically(messages),
         [messages],
+    );
+    const responseStyleLevel = React.useMemo(
+        () => readSessionResponseStyleLevel(chronologicalMessages),
+        [chronologicalMessages],
     );
     const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
     const taskInvocations = React.useMemo(() => {
         const invocations = [];
-        for (const message of messages) {
+        for (const message of chronologicalMessages) {
             for (const part of message.parts) {
                 const invocation = createTaskInvocationFromToolPart(part, message.info.id, invocations.length);
                 if (invocation && invocation.parentSessionId === sessionKey) {
@@ -1163,13 +1171,14 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
             }
         }
         return invocations;
-    }, [messages, sessionKey]);
+    }, [chronologicalMessages, sessionKey]);
     const taskInvocationSignature = React.useMemo(() => {
         return buildTaskInvocationSignature(taskInvocations);
     }, [taskInvocations]);
     const shouldEnsureSessionChildren = React.useMemo(() => {
-        return taskInvocations.length > 0 || messages.some((message) => isUserSubtaskMessage(message));
-    }, [messages, taskInvocations.length]);
+        return taskInvocations.length > 0
+            || chronologicalMessages.some((message) => isUserSubtaskMessage(message));
+    }, [chronologicalMessages, taskInvocations.length]);
     const taskChildrenFetch = useEnsureSessionChildren(sessionKey, currentDirectory, shouldEnsureSessionChildren, taskInvocationSignature);
     const directorySessions = useDirectorySync(React.useCallback((state) => state.session, []), currentDirectory);
     const childSessions = React.useMemo(() => {
@@ -1202,6 +1211,10 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         () => managedOrchestrationSelectors.latestTaskForChildSession(sessionKey),
         [sessionKey],
     ));
+    const manualRecoveryTaskId = useManagedOrchestrationStore(React.useMemo(
+        () => managedOrchestrationSelectors.manualRecoveryTaskIdForChildSession(sessionKey),
+        [sessionKey],
+    ));
 
     React.useEffect(() => {
         setTurnUiStates(new Map());
@@ -1220,8 +1233,8 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     const baseDisplayMessages = React.useMemo(() => streamPerfMeasure('ui.message_list.base_display_ms', () => {
         const seenIdsFromTail = new Set<string>();
         const dedupedMessages: ChatMessageEntry[] = [];
-        for (let index = messages.length - 1; index >= 0; index -= 1) {
-            const message = messages[index];
+        for (let index = chronologicalMessages.length - 1; index >= 0; index -= 1) {
+            const message = chronologicalMessages[index];
             const messageId = message.info?.id;
             if (typeof messageId === 'string') {
                 if (seenIdsFromTail.has(messageId)) {
@@ -1263,7 +1276,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         }
 
         return output;
-    }), [messages, taskSessionAssignments]);
+    }), [chronologicalMessages, taskSessionAssignments]);
 
     const historyContentRef = React.useRef<HTMLDivElement | null>(null);
     const pendingVirtualMeasureFrameRef = React.useRef<number | null>(null);
@@ -1279,8 +1292,13 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
 
     const recoveryProjectedMessages = React.useMemo(() => streamPerfMeasure(
         'ui.message_list.managed_transport_recovery_ms',
-        () => projectManagedTransportRecovery(baseDisplayMessages, latestManagedTask),
-    ), [baseDisplayMessages, latestManagedTask]);
+        () => projectManagedTransportRecovery(
+            baseDisplayMessages,
+            latestManagedTask,
+            manualRecoveryTaskId,
+        ),
+    ), [baseDisplayMessages, latestManagedTask, manualRecoveryTaskId]);
+    const latestRawMessageId = recoveryProjectedMessages.at(-1)?.info.id ?? null;
 
     const displayMessages = React.useMemo(() => streamPerfMeasure('ui.message_list.retry_overlay_ms', () => {
         return applyRetryOverlay(recoveryProjectedMessages, {
@@ -1470,10 +1488,10 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     });
 
     const currentUserOrder = React.useMemo(() => {
-        return messages
+        return chronologicalMessages
             .filter((message) => resolveMessageRole(message) === 'user')
             .map((message) => message.info.id);
-    }, [messages]);
+    }, [chronologicalMessages]);
 
     // Detect new user messages SYNCHRONOUSLY during render.
     // Must happen during render (not in useEffect) so that ToolRevealOnMount

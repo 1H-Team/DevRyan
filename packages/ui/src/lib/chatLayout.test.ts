@@ -1,48 +1,58 @@
 import { describe, expect, test } from 'bun:test';
 
-import { applyWideChatLayoutClass } from './chatLayout';
+import {
+  DEFAULT_CHAT_WIDTH,
+  MAX_CHAT_WIDTH,
+  MIN_CHAT_WIDTH,
+  applyChatWidth,
+  clampChatWidth,
+} from './chatLayout';
 
-const createRoot = (): HTMLElement => {
-  const classes = new Set<string>();
-  return {
-    classList: {
-      add: (...tokens: string[]) => {
-        for (const token of tokens) classes.add(token);
+const createRoot = () => {
+  const properties = new Map<string, string>();
+  const root = {
+    style: {
+      setProperty: (name: string, value: string) => {
+        properties.set(name, value);
       },
-      remove: (...tokens: string[]) => {
-        for (const token of tokens) classes.delete(token);
+      removeProperty: (name: string) => {
+        const previous = properties.get(name) ?? '';
+        properties.delete(name);
+        return previous;
       },
-      toggle: (token: string, force?: boolean) => {
-        const shouldAdd = force ?? !classes.has(token);
-        if (shouldAdd) {
-          classes.add(token);
-          return true;
-        }
-        classes.delete(token);
-        return false;
-      },
-      contains: (token: string) => classes.has(token),
     },
-  } as HTMLElement;
+  } as unknown as HTMLElement;
+
+  return { properties, root };
 };
 
-describe('applyWideChatLayoutClass', () => {
-  test('removes stale wide layout class when disabled', () => {
-    const root = createRoot();
-    root.classList.add('wide-chat-layout');
+describe('applyChatWidth', () => {
+  test('sets the chat column width custom property', () => {
+    const { properties, root } = createRoot();
 
-    applyWideChatLayoutClass(root, false);
+    applyChatWidth(root, 1024);
 
-    expect(root.classList.contains('wide-chat-layout')).toBe(false);
+    expect(properties.get('--chat-column-width')).toBe('1024px');
   });
 
-  test('adds and removes wide layout class based on preference', () => {
-    const root = createRoot();
+  test('removes the custom property at the default width', () => {
+    const { properties, root } = createRoot();
+    properties.set('--chat-column-width', '1024px');
 
-    applyWideChatLayoutClass(root, true);
-    expect(root.classList.contains('wide-chat-layout')).toBe(true);
+    applyChatWidth(root, DEFAULT_CHAT_WIDTH);
 
-    applyWideChatLayoutClass(root, false);
-    expect(root.classList.contains('wide-chat-layout')).toBe(false);
+    expect(properties.has('--chat-column-width')).toBe(false);
+  });
+});
+
+describe('clampChatWidth', () => {
+  test('clamps values to the supported range', () => {
+    expect(clampChatWidth(MIN_CHAT_WIDTH - 100)).toBe(MIN_CHAT_WIDTH);
+    expect(clampChatWidth(MAX_CHAT_WIDTH + 100)).toBe(MAX_CHAT_WIDTH);
+  });
+
+  test('rounds off-grid values to the nearest step', () => {
+    expect(clampChatWidth(1030)).toBe(1024);
+    expect(clampChatWidth(1033)).toBe(1040);
   });
 });

@@ -30,15 +30,9 @@ import { useSessionPlanFileStore } from "@/stores/useSessionPlanFileStore"
 import { getSafeStorage } from "@/stores/utils/safeStorage"
 import {
   attachRelatedSubagentContextUsage,
-  getContextUsageFromMessages,
+  getProviderContextUsageFromMessages,
   getSubagentContextUsageForSession,
-  type ContextUsageMessage,
 } from "@/stores/utils/contextUsageUtils"
-import {
-  resolveModelContextCapacity,
-  UNAVAILABLE_MODEL_CONTEXT_CAPACITY,
-  type ResolvedModelContextCapacity,
-} from "@/stores/utils/modelContextCapacity"
 import { markPendingUserSendAnimation } from "@/lib/userSendAnimation"
 import { flattenAssistantTextParts } from "@/lib/messages/messageText"
 import { EXECUTION_FORK_META_TEXT } from "@/lib/messages/executionMeta"
@@ -108,7 +102,6 @@ import { useSessionWorktreeStore } from "./session-worktree-store"
 import { getAttachedSessionDirectory } from "./session-worktree-contract"
 import { resolveSubtaskAgentFromMessages } from "./subtask-agent"
 import { nextPlanIndicatorEntry, type PlanIndicatorEntry } from "./plan-indicator"
-import { hasSettledTerminalAssistantTurn } from "./plan-idle-settlement"
 import {
   clearLegacyNewDraftInput,
   createDraftId,
@@ -174,17 +167,7 @@ const deleteSetMatches = <T,>(source: Set<T>, matches: (value: T) => boolean): S
 
 const isLiveSessionWorking = (sessionId: string): boolean => {
   const directory = getSyncSessionDirectoryAnyDirectory(sessionId)
-  const state = directory ? getDirectoryState(directory) : undefined
-  const stateStatus = state?.session_status?.[sessionId]
-  const status = stateStatus ?? (directory ? getSyncSessionStatus(sessionId, directory) : undefined)
-  if (
-    state
-    && stateStatus
-    && (status?.type === "busy" || status?.type === "retry")
-    && hasSettledTerminalAssistantTurn({ sessionID: sessionId, state })
-  ) {
-    return false
-  }
+  const status = directory ? getSyncSessionStatus(sessionId, directory) : undefined
   return status?.type === "busy" || status?.type === "retry"
 }
 
@@ -574,50 +557,6 @@ export type StarterAssistantMessage = {
   pendingContext: boolean
 }
 
-type ProviderModelLimit = {
-  input?: number
-  context?: number
-  output?: number
-}
-
-type ProviderModelLike = {
-  id?: string
-  limit?: ProviderModelLimit
-  variants?: Record<string, { limit?: ProviderModelLimit }>
-}
-
-type ProviderLike = {
-  id?: string
-  models?: ProviderModelLike[]
-}
-
-const getContextMessageInfo = (message: ContextUsageMessage): Message => {
-  return "info" in message ? message.info as Message : message as Message
-}
-
-const resolveContextCapacityFromMessages = (messages: ContextUsageMessage[]): ResolvedModelContextCapacity => {
-  const providers = useConfigStore.getState().providers as ProviderLike[]
-  if (!Array.isArray(providers) || providers.length === 0) {
-    return UNAVAILABLE_MODEL_CONTEXT_CAPACITY
-  }
-
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const info = getContextMessageInfo(messages[index]) as Message & { providerID?: unknown; modelID?: unknown }
-    if (info.role !== "assistant" || typeof info.providerID !== "string" || typeof info.modelID !== "string") {
-      continue
-    }
-
-    const provider = providers.find((entry) => entry.id === info.providerID)
-    const model = provider?.models?.find((entry) => entry.id === info.modelID)
-    const variant = typeof (info as Message & { variant?: unknown }).variant === "string"
-      ? (info as Message & { variant: string }).variant
-      : undefined
-    return resolveModelContextCapacity(model, variant)
-  }
-
-  return UNAVAILABLE_MODEL_CONTEXT_CAPACITY
-}
-
 export type ViewportAnchor = {
   sessionId: string
   value: number
@@ -791,6 +730,8 @@ export type SessionUIState = {
   webUICreatedSessions: Set<string>
   sessionAbortFlags: Map<string, { timestamp: number; acknowledged: boolean; reason?: "manual" | "steered"; id?: string }>
   abortControllers: Map<string, AbortController>
+  /** Sessions with an optimistic "stopping" state: stop clicked, server abort not yet confirmed. Value = click timestamp. */
+  stoppingSessions: Map<string, number>
   isLoading: boolean
   lastLoadedDirectory: string | null
   // Plan mode - per-session plan file availability (set when plan_enter tool creates a plan)
@@ -819,6 +760,8 @@ export type SessionUIState = {
   abortPendingSend: (key: string) => boolean
   clearPendingSendAbort: (key: string, controller?: AbortController) => void
   hasPendingSendAbort: (key: string) => boolean
+  markSessionStopping: (sessionId: string) => void
+  clearSessionStopping: (sessionId: string) => void
   markSessionTurnCompleted: (sessionId: string, messageId: string, completedAt?: number) => void
   clearSessionTurnCompletion: (sessionId: string) => void
   retireDeletedSession: (sessionId: string) => void
@@ -859,7 +802,7 @@ export type SessionUIState = {
   clearError: () => void
   markSessionAsOpenChamberCreated: (sessionId: string) => void
   isOpenChamberCreatedSession: (sessionId: string) => boolean
-  getContextUsage: (capacity: ResolvedModelContextCapacity) => SessionContextUsage | null
+  getContextUsageForSession: (sessionId: string | null, directory?: string | null) => SessionContextUsage | null
   initializeNewOpenChamberSession: (sessionId: string, agents: unknown[]) => void
   setWorktreeMetadata: (sessionId: string, metadata: WorktreeMetadata | null) => void
   overrideNewSessionDraftTarget: (options: Record<string, unknown>) => void
@@ -1776,6 +1719,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   webUICreatedSessions: new Set(),
   sessionAbortFlags: new Map(),
   abortControllers: new Map(),
+  stoppingSessions: new Map(),
   isLoading: false,
   lastLoadedDirectory: null,
   sessionPlanAvailable: new Map(),
@@ -1836,6 +1780,26 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   },
 
   hasPendingSendAbort: (key) => Boolean(key && get().abortControllers.has(key)),
+
+  markSessionStopping: (sessionId) => {
+    if (!sessionId) return
+    set((state) => {
+      if (state.stoppingSessions.has(sessionId)) return state
+      const stoppingSessions = new Map(state.stoppingSessions)
+      stoppingSessions.set(sessionId, Date.now())
+      return { stoppingSessions }
+    })
+  },
+
+  clearSessionStopping: (sessionId) => {
+    if (!sessionId) return
+    set((state) => {
+      if (!state.stoppingSessions.has(sessionId)) return state
+      const stoppingSessions = new Map(state.stoppingSessions)
+      stoppingSessions.delete(sessionId)
+      return { stoppingSessions }
+    })
+  },
 
   getStarterAssistantMessage: (sessionId) => get().starterAssistantMessages.get(sessionId),
 
@@ -2263,22 +2227,28 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
   isOpenChamberCreatedSession: (sessionId) => get().webUICreatedSessions.has(sessionId),
 
-  getContextUsage: (capacity: ResolvedModelContextCapacity) => {
-    if (get().newSessionDraft?.open) return null
-    const sessionId = get().currentSessionId
+  getContextUsageForSession: (sessionId, directory) => {
     if (!sessionId) return null
 
-    const state = getDirectoryState()
-    const messages = state?.message[sessionId] ?? getSyncMessages(sessionId)
+    const resolvedDirectory = normalizePath(directory ?? get().getDirectoryForSession(sessionId))
+    const state = getDirectoryState(resolvedDirectory ?? undefined)
+    const messages = state?.message[sessionId] ?? getSyncMessages(sessionId, resolvedDirectory ?? undefined)
     if (messages.length === 0) return null
-    const usage = getContextUsageFromMessages(messages, capacity)
+    const providers = useConfigStore.getState().providers
+    const messageRecords = state
+      ? messages.map((info) => ({ info, parts: state.part[info.id] ?? [] }))
+      : messages
+    const usage = getProviderContextUsageFromMessages(messageRecords, providers)
     if (!usage || !state) return usage
 
     const relatedSubagents = getSubagentContextUsageForSession(
       sessionId,
       state.session,
-      (childSessionId) => state.message[childSessionId] ?? [],
-      (_session, childMessages) => resolveContextCapacityFromMessages(childMessages),
+      (childSessionId) => (state.message[childSessionId] ?? []).map((info) => ({
+        info,
+        parts: state.part[info.id] ?? [],
+      })),
+      providers,
     )
 
     return attachRelatedSubagentContextUsage(usage, relatedSubagents)

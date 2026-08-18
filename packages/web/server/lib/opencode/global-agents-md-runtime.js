@@ -65,11 +65,21 @@ export const createGlobalAgentsMdRuntime = ({
       );
     }
 
-    if (normalizedContent) {
-      await fileSystem.mkdir(path.dirname(agentsMdPath), { recursive: true });
-      await fileSystem.writeFile(agentsMdPath, normalizedContent, 'utf8');
-    } else {
-      await fileSystem.rm(agentsMdPath, { force: true });
+    let previousContent = '';
+    try {
+      previousContent = await fileSystem.readFile(agentsMdPath, 'utf8');
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+    const changed = previousContent !== normalizedContent;
+
+    if (changed) {
+      if (normalizedContent) {
+        await fileSystem.mkdir(path.dirname(agentsMdPath), { recursive: true });
+        await fileSystem.writeFile(agentsMdPath, normalizedContent, 'utf8');
+      } else {
+        await fileSystem.rm(agentsMdPath, { force: true });
+      }
     }
 
     const result = {
@@ -77,17 +87,17 @@ export const createGlobalAgentsMdRuntime = ({
       content: normalizedContent,
       exists: Boolean(normalizedContent),
       editable: true,
-      runtimeApplied: true,
+      runtimeApplied: false,
     };
 
     try {
-      await refreshRuntime?.();
-      return result;
+      const applyResult = await refreshRuntime?.({ changed });
+      return { ...result, ...(applyResult || {}) };
     } catch (error) {
       return {
         ...result,
         runtimeApplied: false,
-        warning: `Global AGENTS.md was saved, but OpenCode could not reload it automatically: ${formatErrorMessage(error)}`,
+        warning: `Global AGENTS.md was saved, but the apply request could not be recorded: ${formatErrorMessage(error)}`,
       };
     }
   };

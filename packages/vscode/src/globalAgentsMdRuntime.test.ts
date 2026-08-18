@@ -63,7 +63,7 @@ describe('VS Code global AGENTS.md runtime', () => {
       content: '# Rule\n',
       exists: true,
       editable: true,
-      runtimeApplied: true,
+      runtimeApplied: false,
     });
     expect(readsDuringRefresh).toEqual(['# Rule\n']);
   });
@@ -76,7 +76,7 @@ describe('VS Code global AGENTS.md runtime', () => {
     await expect(runtime.save('\n  \t')).resolves.toMatchObject({
       content: '',
       exists: false,
-      runtimeApplied: true,
+      runtimeApplied: false,
     });
     await expect(fs.stat(agentsMdPath)).rejects.toMatchObject({ code: 'ENOENT' });
     expect(refreshRuntime).toHaveBeenCalledTimes(1);
@@ -120,7 +120,7 @@ describe('VS Code global AGENTS.md runtime', () => {
       exists: true,
       editable: true,
       runtimeApplied: false,
-      warning: 'Global AGENTS.md was saved, but OpenCode could not reload it automatically: restart failed',
+      warning: 'Global AGENTS.md was saved, but the apply request could not be recorded: restart failed',
     });
     await expect(fs.readFile(agentsMdPath, 'utf8')).resolves.toBe('# Saved\n');
   });

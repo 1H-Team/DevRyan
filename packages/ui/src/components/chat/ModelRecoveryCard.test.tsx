@@ -39,6 +39,31 @@ describe('ModelRecoveryCard', () => {
     expect(html).toContain('border-[color-mix');
   });
 
+  test('renders a timeout detail line alongside the model picker', () => {
+    const html = renderToStaticMarkup(
+      <I18nProvider>
+        <ModelRecoveryCard
+          embedded
+          title="This subtask ran out of time. Choose a model to continue it:"
+          detail="It hit its time limit before finishing. Try Again continues it from saved progress with at least the original time window."
+          originalModelLabel="Anthropic / Claude Opus 5"
+          providers={[]}
+          selection={{ providerId: 'anthropic', modelId: 'claude-opus-5', variant: 'max' }}
+          pending={false}
+          actionError={null}
+          onSelectionChange={() => undefined}
+          onRetry={() => undefined}
+        />
+      </I18nProvider>,
+    );
+
+    expect(html).toContain('This subtask ran out of time. Choose a model to continue it:');
+    expect(html).toContain('at least the original time window');
+    // The picker stays: the user may still want a different model for the retry.
+    expect(html).toContain('Anthropic / Claude Opus 5');
+    expect(html).toContain('Try Again');
+  });
+
   test('keeps Try Again visible and disables it while one retry is in flight', () => {
     const html = renderToStaticMarkup(
       <I18nProvider>

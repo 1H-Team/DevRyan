@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { RiAddLine } from '@remixicon/react';
+import { RiAddLine, RiDeleteBinLine } from '@remixicon/react';
 
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,8 @@ import {
 } from '@/components/ui/dialog';
 import { SettingsSection } from '@/components/sections/shared/SettingsSection';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useProjectsStore } from '@/stores/useProjectsStore';
+import { ConfirmActionDialog } from './ConfirmActionDialog';
 import { requestJson, type ProjectRow } from './types';
 
 interface ProjectsSectionProps {
@@ -27,6 +29,7 @@ export const ProjectsSection: React.FC<ProjectsSectionProps> = ({ projects, onCh
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [draft, setDraft] = React.useState(emptyProject);
   const [busy, setBusy] = React.useState(false);
+  const [unregisterTarget, setUnregisterTarget] = React.useState<ProjectRow | null>(null);
 
   React.useEffect(() => {
     if (!dialogOpen) setDraft(emptyProject);
@@ -41,6 +44,25 @@ export const ProjectsSection: React.FC<ProjectsSectionProps> = ({ projects, onCh
       toast.success('Managed project registered');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Failed to create project');
+    } finally { setBusy(false); }
+  };
+
+  const unregister = async () => {
+    if (!unregisterTarget) return;
+    setBusy(true);
+    try {
+      await requestJson(`/api/admin/projects/${encodeURIComponent(unregisterTarget.id)}`, { method: 'DELETE' });
+      const local = useProjectsStore.getState().projects.find((project) => (
+        project.id === unregisterTarget.id
+        || project.path === unregisterTarget.repository_path
+        || project.label === unregisterTarget.label
+      ));
+      if (local) useProjectsStore.getState().removeProject(local.id);
+      await onChanged();
+      setUnregisterTarget(null);
+      toast.success('Managed project unregistered');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to unregister project');
     } finally { setBusy(false); }
   };
 
@@ -60,12 +82,13 @@ export const ProjectsSection: React.FC<ProjectsSectionProps> = ({ projects, onCh
               <TableHead>Project</TableHead>
               <TableHead>Default Branch</TableHead>
               <TableHead>Repository Path</TableHead>
+              <TableHead className="w-[1%] whitespace-nowrap">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {projects.length === 0 && (
               <TableRow>
-                <TableCell colSpan={3} className="text-muted-foreground">No managed projects registered.</TableCell>
+                <TableCell colSpan={4} className="text-muted-foreground">No managed projects registered.</TableCell>
               </TableRow>
             )}
             {projects.map((project) => (
@@ -73,6 +96,17 @@ export const ProjectsSection: React.FC<ProjectsSectionProps> = ({ projects, onCh
                 <TableCell className="font-medium">{project.label}</TableCell>
                 <TableCell>{project.default_branch}</TableCell>
                 <TableCell className="typography-meta text-muted-foreground break-all">{project.repository_path}</TableCell>
+                <TableCell>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => setUnregisterTarget(project)}
+                    disabled={busy}
+                  >
+                    <RiDeleteBinLine className="h-4 w-4" /> Unregister
+                  </Button>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -111,6 +145,17 @@ export const ProjectsSection: React.FC<ProjectsSectionProps> = ({ projects, onCh
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmActionDialog
+        open={Boolean(unregisterTarget)}
+        onOpenChange={(open) => { if (!open) setUnregisterTarget(null); }}
+        title="Unregister Managed Project"
+        description={`Unregister ${unregisterTarget?.label || 'this project'} for every user? Assigned access is removed and the project will no longer appear after login.`}
+        confirmLabel="Unregister"
+        destructive
+        busy={busy}
+        onConfirm={() => void unregister()}
+      />
     </SettingsSection>
   );
 };

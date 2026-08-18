@@ -1,6 +1,7 @@
 import React from 'react';
+import type { ManagedTaskEventRecord } from '@openchamber/orchestration-runtime';
 
-import { useAssistantStatus, type AssistantActivePartType } from '@/hooks/useAssistantStatus';
+import { useAssistantStatus } from '@/hooks/useAssistantStatus';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useI18n } from '@/lib/i18n';
 import {
@@ -23,22 +24,59 @@ import {
     useProviderStallStore,
 } from '@/stores/useProviderStallStore';
 import { stopStalledProviderAndOfferRecovery } from '@/sync/provider-stall-recovery';
-import { haveSameProviderStallFingerprint } from '@/sync/reconnect-recovery';
+import {
+    haveSameLongRunningToolFingerprint,
+    haveSameProviderStallFingerprint,
+} from '@/sync/reconnect-recovery';
+import {
+    longRunningToolSelector,
+    useLongRunningToolStore,
+    type LongRunningToolRecord,
+} from '@/stores/useLongRunningToolStore';
+import { stopLongRunningTool } from '@/sync/long-running-tool-recovery';
+import { formatElapsedDuration } from '@/lib/duration';
+
+const useElapsedToolLabel = (startedAt: number | undefined): string | null => {
+    const [, setTick] = React.useState(0);
+
+    React.useEffect(() => {
+        if (typeof startedAt !== 'number') return;
+        const timer = window.setInterval(() => setTick((tick) => tick + 1), 1_000);
+        return () => window.clearInterval(timer);
+    }, [startedAt]);
+
+    if (typeof startedAt !== 'number') return null;
+    const duration = formatElapsedDuration(startedAt, undefined);
+    return duration.available ? duration.label : null;
+};
+
+// Exported for focused regression tests; keeps alias display and action gating deterministic.
+// eslint-disable-next-line react-refresh/only-export-components
+export const resolveLongRunningToolPresentation = (
+    record: Pick<LongRunningToolRecord, 'tool' | 'confirmedAt'> | undefined,
+    elapsed: string | null,
+): { tool: string; elapsed: string | null; actionable: boolean } | null => {
+    if (!record) return null;
+    return {
+        tool: getToolMetadata(record.tool).displayName.replace(/:\s*$/, ''),
+        elapsed,
+        actionable: record.confirmedAt !== null,
+    };
+};
 
 // Exported for focused regression tests; keep component exports unchanged otherwise.
 // eslint-disable-next-line react-refresh/only-export-components
 export const shouldRenderStatusRowAssistantStatus = (
-    activePartType: AssistantActivePartType,
     isWorking: boolean,
-    managedBarrierOwnsStatus = false,
     managedChildOwnsIdleStatus = false,
 ): boolean => (
     // A managed child keeps running after its parent turn ends — that is the
     // normal shape of a recovered subtask, and of one whose parent tool wait
     // detached. Without this the row went blank while a subagent was actively
     // working, so the session looked finished or dead.
-    managedChildOwnsIdleStatus
-    || (isWorking && (activePartType !== 'reasoning' || managedBarrierOwnsStatus))
+    // The row stays visible during reasoning too — it owns the "Thinking"
+    // indicator so activity text never jumps between screen positions.
+    managedChildOwnsIdleStatus || isWorking
 );
 
 // Exported for focused regression tests; keep component exports unchanged otherwise.
@@ -66,6 +104,31 @@ export const resolveStatusRowAssistantDisplay = ({
     };
 };
 
+// Exported for focused regression tests; keep generic managed-child copy tied
+// to the scheduler's authoritative attempt instead of a random working phrase.
+// eslint-disable-next-line react-refresh/only-export-components
+export const resolveManagedChildGenericStatusText = ({
+    task,
+    isGenericStatus,
+    waitingText,
+    recoveringText,
+}: {
+    task?: Pick<ManagedTaskEventRecord, 'executionKind' | 'status'>;
+    isGenericStatus: boolean;
+    waitingText: string;
+    recoveringText: string;
+}): string | null => {
+    if (!isGenericStatus || !task) return null;
+    if (task.status !== 'queued' && task.status !== 'starting' && task.status !== 'running') {
+        return null;
+    }
+    return task.executionKind === 'resume'
+        || task.executionKind === 'recover_in_place'
+        || task.executionKind === 'retry_in_place'
+        ? recoveringText
+        : waitingText;
+};
+
 /**
  * Status row wrapper.
  * Uses the dedicated assistant status hook so the row keeps accurate live activity
@@ -81,6 +144,19 @@ export const StatusRowContainer: React.FC = React.memo(() => {
         () => providerStallSelector(currentSessionId ?? ''),
         [currentSessionId],
     ));
+    const longRunningTool = useLongRunningToolStore(React.useMemo(
+        () => longRunningToolSelector(currentSessionId ?? ''),
+        [currentSessionId],
+    ));
+    const longRunningElapsed = useElapsedToolLabel(
+        longRunningTool && longRunningTool.confirmedAt !== null
+            ? longRunningTool.observedAt
+            : undefined,
+    );
+    const longRunningPresentation = resolveLongRunningToolPresentation(
+        longRunningTool,
+        longRunningElapsed,
+    );
     const abortRecord = useSessionUIStore(
         React.useCallback((state) => {
             if (!currentSessionId) {
@@ -100,6 +176,10 @@ export const StatusRowContainer: React.FC = React.memo(() => {
         () => managedOrchestrationSelectors.hasActiveTasksForRoot(currentSessionId ?? ''),
         [currentSessionId],
     ));
+    const currentManagedTask = useManagedOrchestrationStore(React.useMemo(
+        () => managedOrchestrationSelectors.latestTaskForChildSession(currentSessionId ?? ''),
+        [currentSessionId],
+    ));
 
     const wasAborted = Boolean(abortRecord && !abortRecord.acknowledged);
     // Only speak for the row once the parent turn has nothing of its own to say,
@@ -115,19 +195,36 @@ export const StatusRowContainer: React.FC = React.memo(() => {
         )
     ));
     const showWorkingPlaceholder = shouldRenderStatusRowAssistantStatus(
-        working.activePartType,
         working.isWorking,
-        managedBarrierOwnsStatus,
         managedChildOwnsIdleStatus,
     );
+    const managedChildGenericStatusText = resolveManagedChildGenericStatusText({
+        task: currentManagedTask,
+        isGenericStatus: working.isGenericStatus,
+        waitingText: t('chat.statusRow.managedChild.waitingForModel'),
+        recoveringText: t('chat.statusRow.managedChild.recovering'),
+    });
+    let assistantStatusText = working.statusText;
+    let assistantIsGenericStatus = working.isGenericStatus;
+    if (managedChildGenericStatusText) {
+        assistantStatusText = managedChildGenericStatusText;
+        assistantIsGenericStatus = false;
+    }
+    if (managedBarrierOwnsStatus) {
+        assistantStatusText = getAssistantToolStatusPhrase('devryan_task');
+        assistantIsGenericStatus = false;
+    }
+    if (longRunningPresentation && !longRunningPresentation.actionable) {
+        assistantStatusText = t('chat.statusRow.longRunningTool.running', {
+            tool: longRunningPresentation.tool,
+        });
+    }
     const display = resolveStatusRowAssistantDisplay({
         isRevertPending,
         revertingText: t('chat.statusRow.revertingChat'),
         showWorkingPlaceholder,
-        assistantStatusText: managedBarrierOwnsStatus
-            ? getAssistantToolStatusPhrase('devryan_task')
-            : working.statusText,
-        assistantIsGenericStatus: managedBarrierOwnsStatus ? false : working.isGenericStatus,
+        assistantStatusText,
+        assistantIsGenericStatus,
     });
     const resolveProviderStall = React.useCallback(async () => {
         if (!currentSessionId) return;
@@ -164,7 +261,36 @@ export const StatusRowContainer: React.FC = React.memo(() => {
     const providerStallTool = providerStall?.kind === 'tool-input'
         ? getToolMetadata(providerStall.tool).displayName.replace(/:\s*$/, '')
         : null;
+    const stopCurrentLongRunningTool = React.useCallback(async () => {
+        if (!currentSessionId) return;
+        const current = useLongRunningToolStore.getState().recordsBySessionId[currentSessionId];
+        if (!current?.confirmedAt || current.pending) return;
 
+        useLongRunningToolStore.getState().setActionState(currentSessionId, true, null);
+        try {
+            await stopLongRunningTool(current, {
+                resyncSession,
+                getState: () => childStores.getChild(current.directory)?.getState(),
+                isCurrent: () => {
+                    const latest = useLongRunningToolStore.getState().recordsBySessionId[currentSessionId];
+                    return haveSameLongRunningToolFingerprint(current, latest);
+                },
+                abort: async (sessionID, status) => {
+                    const { abortCurrentOperationConfirmed } = await import('@/sync/session-actions');
+                    const latest = useLongRunningToolStore.getState().recordsBySessionId[sessionID];
+                    if (!haveSameLongRunningToolFingerprint(current, latest)) return false;
+                    return abortCurrentOperationConfirmed(sessionID, status);
+                },
+            });
+            useLongRunningToolStore.getState().clearTool(currentSessionId, current);
+        } catch (error) {
+            useLongRunningToolStore.getState().setActionState(
+                currentSessionId,
+                false,
+                error instanceof Error ? error.message : String(error),
+            );
+        }
+    }, [childStores, currentSessionId, resyncSession]);
     return (
         <StatusRow
             isWorking={display.isWorking}
@@ -182,6 +308,15 @@ export const StatusRowContainer: React.FC = React.memo(() => {
             providerStallPending={providerStall?.pending ?? false}
             providerStallError={providerStall?.actionError ?? null}
             onResolveProviderStall={providerStall ? resolveProviderStall : undefined}
+            longRunningToolStatusText={longRunningPresentation?.actionable
+                ? t('chat.statusRow.longRunningTool.status', {
+                    tool: longRunningPresentation.tool,
+                    elapsed: longRunningPresentation.elapsed ?? '',
+                })
+                : null}
+            longRunningToolPending={longRunningTool?.pending ?? false}
+            longRunningToolError={longRunningTool?.actionError ?? null}
+            onStopLongRunningTool={longRunningPresentation?.actionable ? stopCurrentLongRunningTool : undefined}
             showAssistantStatus
             showTodos={false}
             agentName={currentAgentName}

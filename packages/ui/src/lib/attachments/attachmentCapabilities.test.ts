@@ -1,10 +1,12 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 
 import {
+  getPdfAttachmentValidation,
   getPdfInputSupportFromMetadata,
   hasPdfAttachment,
   type AttachmentCapabilityModelMetadata,
 } from "./attachmentCapabilities"
+import { useConfigApplyStore } from "@/stores/useConfigApplyStore"
 
 const metadata = (input?: string[], attachment?: boolean): AttachmentCapabilityModelMetadata => ({
   id: "model-a",
@@ -12,6 +14,10 @@ const metadata = (input?: string[], attachment?: boolean): AttachmentCapabilityM
   name: "Model A",
   attachment,
   modalities: input ? { input, output: ["text"] } : undefined,
+})
+
+afterEach(() => {
+  useConfigApplyStore.setState({ status: null })
 })
 
 describe("attachment capability helpers", () => {
@@ -33,5 +39,45 @@ describe("attachment capability helpers", () => {
 
   test("returns unknown when metadata is missing", () => {
     expect(getPdfInputSupportFromMetadata(undefined)).toBe("unknown")
+  })
+
+  test("treats PDF input as supported when managed document extraction is active", () => {
+    expect(getPdfAttachmentValidation({
+      providerID: "provider-a",
+      modelID: "model-a",
+      files: [{ mime: "application/pdf", filename: "document.pdf" }],
+      runtimeMode: "managed",
+    })).toEqual({ hasPdf: true, status: "supported" })
+  })
+
+  test("reads managed extraction availability from the authoritative runtime status", () => {
+    useConfigApplyStore.setState({
+      status: {
+        revision: 0,
+        appliedRevision: 0,
+        state: "clean",
+        pending: false,
+        scopes: [],
+        reasonCodes: [],
+        activeSessionCount: 0,
+        runtimeMode: "managed",
+        canApplyWhenIdle: false,
+        canForceRestart: false,
+      },
+    })
+    expect(getPdfAttachmentValidation({
+      providerID: "provider-a",
+      modelID: "model-a",
+      files: [{ mime: "application/pdf", filename: "document.pdf" }],
+    })).toEqual({ hasPdf: true, status: "supported" })
+  })
+
+  test("preserves provider-native PDF capability checks for external runtimes", () => {
+    expect(getPdfAttachmentValidation({
+      providerID: "provider-a",
+      modelID: "model-a",
+      files: [{ mime: "application/pdf", filename: "document.pdf" }],
+      runtimeMode: "external",
+    })).toEqual({ hasPdf: true, status: "unknown" })
   })
 })

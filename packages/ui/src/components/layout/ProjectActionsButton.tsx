@@ -265,9 +265,9 @@ export const ProjectActionsButton = ({
   const setSettingsDialogOpen = useUIStore((state) => state.setSettingsDialogOpen);
   const setSettingsProjectsSelectedId = useUIStore((state) => state.setSettingsProjectsSelectedId);
   const openContextPreview = useUIStore((state) => state.openContextPreview);
-  const openContextBrowser = useUIStore((state) => state.openContextBrowser);
-  const toggleContextBrowser = useUIStore((state) => state.toggleContextBrowser);
-  const openContextBrowserLease = useUIStore((state) => state.openContextBrowserLease);
+  const openBrowserPanel = useUIStore((state) => state.openBrowserPanel);
+  const toggleBrowserPanel = useUIStore((state) => state.toggleBrowserPanel);
+  const openBrowserLease = useUIStore((state) => state.openBrowserLease);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const currentSession = useSession(currentSessionId);
   const selectedRootSessionId = React.useMemo(() => {
@@ -292,11 +292,11 @@ export const ProjectActionsButton = ({
   const isManagedBrowserRuntime = canUseBrowser && (isLocalElectronBrowser || isStandaloneWebRuntime());
   const openProjectUrl = React.useCallback((targetDirectory: string, url: string) => {
     if (isManagedBrowserRuntime) {
-      openContextBrowser(targetDirectory, url);
+      openBrowserPanel(targetDirectory, url);
       return;
     }
     openContextPreview(targetDirectory, url);
-  }, [isManagedBrowserRuntime, openContextBrowser, openContextPreview]);
+  }, [isManagedBrowserRuntime, openBrowserPanel, openContextPreview]);
 
   const terminalSessions = useTerminalStore((state) => state.sessions);
   const ensureDirectory = useTerminalStore((state) => state.ensureDirectory);
@@ -895,17 +895,17 @@ export const ProjectActionsButton = ({
       return;
     }
     if (isManagedBrowserRuntime) {
-      toggleContextBrowser(normalizedDirectory);
+      toggleBrowserPanel(normalizedDirectory);
       return;
     }
     openContextPreview(normalizedDirectory, 'about:blank');
-  }, [canOpenBlankBrowser, isManagedBrowserRuntime, normalizedDirectory, openContextPreview, toggleContextBrowser]);
+  }, [canOpenBlankBrowser, isManagedBrowserRuntime, normalizedDirectory, openContextPreview, toggleBrowserPanel]);
 
   const handleObserveBrowserLease = React.useCallback((leaseId: string) => {
     const lease = useBrowserAgentStore.getState().leasesById.get(leaseId);
     if (!lease || lease.rootSessionId !== selectedRootSessionId || !normalizedDirectory) return;
 
-    openContextBrowserLease(normalizedDirectory, {
+    openBrowserLease(normalizedDirectory, {
       leaseId: lease.leaseId,
       rootSessionId: lease.rootSessionId,
       url: lease.url,
@@ -913,7 +913,7 @@ export const ProjectActionsButton = ({
       hostname: lease.hostname,
     });
     setBrowserPresentationLeaseId(leaseId);
-  }, [normalizedDirectory, openContextBrowserLease, selectedRootSessionId]);
+  }, [normalizedDirectory, openBrowserLease, selectedRootSessionId]);
 
   const browserTrigger = (
     <button

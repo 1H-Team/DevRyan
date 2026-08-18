@@ -1594,6 +1594,12 @@ export async function optimisticSend(input: {
   throwIfAborted(input.signal)
 
   const messageDirectory = input.directory || getSessionUIStore().getState().getDirectoryForSession(input.sessionId) || dir()
+  if (messageDirectory) {
+    // The UI-selected directory owns this session even when a provider emits
+    // events from an equivalent execution worktree or filesystem alias.
+    registerSessionDirectory(input.sessionId, messageDirectory)
+    getSessionUIStore().getState().setSessionDirectory(input.sessionId, messageDirectory)
+  }
   const storeForMessage = directoryStore(messageDirectory)
   assertSessionRevertMutationAllowed(input.sessionId, messageDirectory, "send")
   const messageID = input.messageID ?? createClientMessageId("msg")
@@ -1631,7 +1637,7 @@ export async function optimisticSend(input: {
     agent: input.agent ?? "",
     model: { providerID: input.providerID, modelID: input.modelID },
     metadata: input.planMode === true ? { openchamberPlanMode: true } as Record<string, unknown> : {} as Record<string, unknown>,
-    time: { created: Date.now(), completed: 0 },
+    time: { created: Date.now() },
   } as unknown as Message
   const assistantPlaceholderID = `${messageID}_assistant`
   const optimisticAssistantMessage = input.includeAssistantPlaceholder === true
@@ -1646,7 +1652,7 @@ export async function optimisticSend(input: {
         agent: input.agent ?? "",
         model: { providerID: input.providerID, modelID: input.modelID },
         metadata: { optimisticAssistantPlaceholder: true } as Record<string, unknown>,
-        time: { created: Date.now() + 1, completed: 0 },
+        time: { created: Date.now() + 1 },
       } as unknown as Message
     : null
 
@@ -1768,22 +1774,36 @@ async function cancelActiveManagedSubtasks(rootSessionId: string): Promise<void>
   })
 }
 
+export const ABORT_CONFIRM_TIMEOUT_MS = 8_000
+
 export async function abortCurrentOperationConfirmed(
   sessionId: string,
   statusHint?: SessionStatus,
+  timeoutMs: number = ABORT_CONFIRM_TIMEOUT_MS,
 ): Promise<boolean> {
   if (!sessionId) return false
   const sessionDirectory = getSessionDirectory(sessionId)
   const status = statusHint ?? getSessionStatusForAction(sessionId, sessionDirectory)
   getSessionUIStore().getState().abortPendingSend?.(sessionId)
-  await cancelActiveManagedSubtasks(sessionId)
+  // Cancel managed subtasks in the background — the parent abort must not wait
+  // on their orchestration round-trips (failures are logged inside).
+  void cancelActiveManagedSubtasks(sessionId)
+  let watchdogTimer: ReturnType<typeof setTimeout> | undefined
   try {
     postAbortRequestedMark(sessionId, sessionDirectory)
     registerManualAbortGuard(sessionId, sessionDirectory, status)
-    const result = await sdk().session.abort(
-      { sessionID: sessionId, directory: sessionDirectory },
-      { throwOnError: true },
-    )
+    const watchdog = new Promise<never>((_resolve, reject) => {
+      watchdogTimer = setTimeout(() => {
+        reject(new Error("Session abort timed out"))
+      }, timeoutMs)
+    })
+    const result = await Promise.race([
+      sdk().session.abort(
+        { sessionID: sessionId, directory: sessionDirectory },
+        { throwOnError: true },
+      ),
+      watchdog,
+    ])
     if (!result.data) {
       throw new Error("OpenCode did not confirm the session abort")
     }
@@ -1798,8 +1818,14 @@ export async function abortCurrentOperationConfirmed(
   } catch (error) {
     // The stop never reached the server — do not mask live retry/busy state.
     clearAbortGuard(sessionId)
+    getSessionUIStore().getState().clearSessionStopping?.(sessionId)
     console.error("[session-actions] abort failed", error)
+    void import("sonner").then(({ toast }) => {
+      toast.error("Couldn't stop the session — it may still be running. Try again.")
+    })
     return false
+  } finally {
+    if (watchdogTimer !== undefined) clearTimeout(watchdogTimer)
   }
 }
 

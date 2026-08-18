@@ -111,6 +111,14 @@ describe('SessionNodeItem subagent icons', () => {
 
     expect(source).toContain('record.agent ??');
   });
+
+  test('uses the exact managed-child agent leaf before session metadata', () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'SessionNodeItem.tsx'), 'utf8');
+
+    expect(source).toContain('managedOrchestrationSelectors.latestTaskAgentForChildSession(');
+    expect(source).toContain('managedTaskAgent: managedSubtaskAgent');
+    expect(source).toContain('sessionAgent: (resolvedSession as Session & { agent?: unknown }).agent');
+  });
 });
 
 describe('SessionNodeItem status selectors', () => {

@@ -25,7 +25,10 @@ import {
   resolveCursorQuotaCredential,
   validateCursorQuotaCredential,
 } from './providers/cursor-acp.js';
-import { resolveSafeClaudeQuotaUrl } from './providers/claude-meridian.js';
+import {
+  createMeridianClaudeContextUsageClient,
+  resolveSafeClaudeQuotaUrl,
+} from './providers/claude-meridian.js';
 
 const jsonParser = express.json({ limit: MAX_QUOTA_CREDENTIAL_PAYLOAD_BYTES });
 const CLAUDE_PROVIDER_IDS = new Set([
@@ -34,6 +37,19 @@ const CLAUDE_PROVIDER_IDS = new Set([
   'anthropic-oauth',
   'opencode-with-claude',
 ]);
+const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
+
+const unavailableContextUsage = (sessionID) => ({
+  sessionID,
+  status: 'unavailable',
+  source: 'message-fallback',
+  inputTokens: 0,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+  activeInputTokens: 0,
+  lastOutputTokens: 0,
+  fetchedAt: Date.now(),
+});
 
 const sendCredentialError = (res, code, status) => res.status(status).json({
   code,
@@ -124,12 +140,16 @@ export function registerQuotaRoutes(app, {
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders = () => ({}),
   isExternalOpenCode = () => false,
+  ownsSession,
+  claudeContextUsageClient: claudeContextUsageClientOverride,
   credentialRuntime: credentialRuntimeOverrides,
 }) {
   const credentialRuntime = {
     ...defaultCredentialRuntime,
     ...credentialRuntimeOverrides,
   };
+  const claudeContextUsageClient = claudeContextUsageClientOverride
+    || createMeridianClaudeContextUsageClient();
 
   const resolveQuotaDirectory = async (req) => {
     const headerDirectory = typeof req.get === 'function' ? req.get('x-opencode-directory') : null;
@@ -187,6 +207,41 @@ export function registerQuotaRoutes(app, {
     } catch (error) {
       console.error('Failed to list quota providers:', error);
       res.status(error.statusCode || 500).json({ error: error.message || 'Failed to list quota providers' });
+    }
+  });
+
+  app.get('/api/session/:sessionID/context-usage', async (req, res) => {
+    const sessionID = String(req.params.sessionID || '').trim();
+    if (!SESSION_ID_PATTERN.test(sessionID)) {
+      res.status(400).json({ error: 'Session ID is invalid' });
+      return;
+    }
+    try {
+      if (
+        req.principal?.scope === 'managed'
+        && (typeof ownsSession !== 'function' || !await ownsSession(req.principal, sessionID))
+      ) {
+        res.status(404).json({ error: 'Session not found' });
+        return;
+      }
+      const workingDirectory = await resolveQuotaDirectory(req);
+      const baseUrl = await resolveClaudeProxyBaseUrl(workingDirectory);
+      if (!baseUrl) {
+        res.json(unavailableContextUsage(sessionID));
+        return;
+      }
+      const result = await claudeContextUsageClient.fetchContextUsage({
+        baseUrl,
+        sessionID,
+        refreshSession: req.query.refreshSession === 'true',
+      });
+      res.json(result.ok ? result.usage : unavailableContextUsage(sessionID));
+    } catch (error) {
+      if (error?.statusCode) {
+        res.status(error.statusCode).json({ error: error.message || 'Failed to resolve context usage' });
+        return;
+      }
+      res.json(unavailableContextUsage(sessionID));
     }
   });
 

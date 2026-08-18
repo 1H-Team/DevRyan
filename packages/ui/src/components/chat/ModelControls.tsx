@@ -102,6 +102,7 @@ import {
     shouldHidePairedFastModel,
 } from '@/lib/providers/variantControls';
 import { sortProviderTreeForPicker } from '@/lib/providers/sorting';
+import { getProviderDisplayName as getSharedProviderDisplayName } from '@/lib/providers/display';
 import { isProviderModelAvailable } from '@/lib/providers/modelAvailability';
 import { useIsTextTruncated } from '@/hooks/useIsTextTruncated';
 import {
@@ -735,7 +736,10 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 modelId,
             ),
         );
-        return sortProviderTreeForPicker(filtered);
+        return sortProviderTreeForPicker(filtered.map((provider) => ({
+            ...provider,
+            name: getSharedProviderDisplayName(provider),
+        })));
     }, [providers, hiddenModels]);
 
     const visibleCurrentProvider = React.useMemo(() => {
@@ -800,7 +804,9 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         for (const { model, providerID, modelID } of favoriteModelsList) {
             const provider = providers.find((entry) => entry.id === providerID);
             const displayProviderId = getDisplayProviderId(providerID, model);
-            const providerName = displayProviderId === 'antigravity' ? 'Antigravity' : (provider?.name || providerID);
+            const providerName = displayProviderId === 'antigravity'
+                ? 'Antigravity'
+                : getSharedProviderDisplayName({ id: providerID, name: provider?.name });
             const modelName = getModelDisplayName(model);
             if (!matchesQuery(modelName, providerName)) {
                 continue;
@@ -1688,13 +1694,13 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         return name;
     };
 
-    const getProviderDisplayName = () => {
+    const getCurrentProviderDisplayName = () => {
         const currentModel = models.find((m: ProviderModel) => m.id === currentModelId);
         if (currentModel && getDisplayProviderId(currentProviderId, currentModel) === 'antigravity') {
             return 'Antigravity';
         }
         const provider = providers.find(p => p.id === currentProviderId);
-        return provider?.name || currentProviderId;
+        return getSharedProviderDisplayName({ id: currentProviderId, name: provider?.name });
     };
 
     const getCurrentModelDisplayName = () => {
@@ -1799,7 +1805,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                     {}
                     <div className="rounded-xl border border-border/40 bg-sidebar/30 px-2 py-1.5">
                             <div className="typography-micro text-muted-foreground mb-0.5">{t('chat.modelControls.provider')}</div>
-                        <div className="typography-meta text-foreground font-medium">{getProviderDisplayName()}</div>
+                        <div className="typography-meta text-foreground font-medium">{getCurrentProviderDisplayName()}</div>
                     </div>
 
                     {}
@@ -2026,7 +2032,9 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 return false;
             }
             const displayProviderId = getDisplayProviderId(providerID, model);
-            const providerName = displayProviderId === 'antigravity' ? 'Antigravity' : (provider?.name || providerID);
+            const providerName = displayProviderId === 'antigravity'
+                ? 'Antigravity'
+                : getSharedProviderDisplayName({ id: providerID, name: provider?.name });
             const modelName = getModelDisplayName(model);
             return normalizedQuery.length === 0
                 || matchesModelSearch(modelName, normalizedQuery)
@@ -2670,7 +2678,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                         <span className="typography-micro font-semibold text-foreground">
                             {currentMetadata.name || getCurrentModelDisplayName()}
                         </span>
-                        <span className="typography-meta text-muted-foreground">{getProviderDisplayName()}</span>
+                        <span className="typography-meta text-muted-foreground">{getCurrentProviderDisplayName()}</span>
                     </div>
                     <div className="flex flex-col gap-1.5">
                         <span className="typography-meta font-semibold uppercase tracking-wide text-muted-foreground/90">{t('chat.modelControls.capabilities')}</span>
@@ -2944,7 +2952,9 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                 return false;
             }
             const displayProviderId = getDisplayProviderId(providerID, model);
-            const providerName = displayProviderId === 'antigravity' ? 'Antigravity' : (provider?.name || providerID);
+            const providerName = displayProviderId === 'antigravity'
+                ? 'Antigravity'
+                : getSharedProviderDisplayName({ id: providerID, name: provider?.name });
             const modelName = getModelDisplayName(model);
             return filterByQuery(modelName, providerName, desktopModelQuery);
         });
@@ -3719,11 +3729,11 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                     <span
                                         className={cn(
                                             'model-controls__variant-label',
-                                            'inline-flex items-center gap-1 text-[10px] leading-none font-medium min-w-0 truncate text-muted-foreground',
+                                            'inline-flex items-center gap-1 text-[10px] leading-[14px] -my-[2px] py-[2px] font-medium min-w-0 truncate text-muted-foreground translate-y-[3px]',
                                             isDesktop ? 'max-w-[90px]' : undefined,
                                         )}
                                     >
-                                        <span className="min-w-0 truncate">{displayVariant}</span>
+                                        <span className="min-w-0 truncate leading-[14px] -my-[2px] py-[2px]">{displayVariant}</span>
                                         {fastIcon}
                                     </span>
                                 </button>
@@ -3798,11 +3808,11 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                 <span
                                     className={cn(
                                         'model-controls__variant-label',
-                                        'inline-flex items-center gap-1 text-[10px] leading-none font-medium min-w-0 truncate text-muted-foreground',
+                                        'inline-flex items-center gap-1 text-[10px] leading-[14px] -my-[2px] py-[2px] font-medium min-w-0 truncate text-muted-foreground translate-y-[3px]',
                                         isDesktop ? 'max-w-[90px]' : undefined,
                                     )}
                                 >
-                                    <span className="min-w-0 truncate">{displayVariant}</span>
+                                    <span className="min-w-0 truncate leading-[14px] -my-[2px] py-[2px]">{displayVariant}</span>
                                     {fastIcon}
                                 </span>
                             </button>
@@ -3981,11 +3991,12 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                                     >
                                                         <div className="flex min-w-0 flex-col gap-0.5">
                                                             <div className="flex items-center gap-1.5">
-                                                                <div className={cn(
-                                                                    'h-2 w-2 rounded-full agent-dot',
-                                                                    getAgentColor(agent.name).class
-                                                                )} />
-                                                                 <span className="font-medium">{formatAgentLabel(agent.name)}</span>
+                                                                <RiAiAgentLine
+                                                                    className="h-3.5 w-3.5 flex-shrink-0"
+                                                                    style={{ color: `var(${getAgentIconColor(agent.name).var})` }}
+                                                                    aria-hidden="true"
+                                                                />
+                                                                <span className="font-medium">{formatAgentLabel(agent.name)}</span>
                                                             </div>
                                                         </div>
                                                         {isSelected ? <RiCheckLine className="mt-0.5 h-4 w-4 flex-shrink-0 text-primary" /> : null}

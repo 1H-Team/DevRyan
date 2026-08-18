@@ -1,5 +1,6 @@
 import {
   PROVIDER_USAGE_LIMIT_FAILURE_KIND,
+  classifyManagedTaskFailure,
   classifyProviderRetryFailure,
 } from './provider-retry-policy.js';
 
@@ -240,12 +241,15 @@ export const isManagedTaskAgentRetryAvailable = (task) => {
 };
 
 const projectTaskForEvent = (task) => {
-  const failureKind = classifyProviderRetryFailure(task.failureReason);
+  const failureKind = classifyManagedTaskFailure(task.failureReason);
   return {
     owner: task.owner,
     taskId: task.taskId,
     rootSessionId: task.rootSessionId,
     dispatchCallId: task.dispatchCallId,
+    // The raw group id is deliberately withheld; consumers only need to know whether the
+    // task belongs to a dispatch group so they can mirror the manual-recovery gate.
+    dispatchGrouped: task.dispatchGroupId !== null,
     parentTaskId: task.parentTaskId,
     childSessionId: task.childSessionId,
     directory: task.directory,

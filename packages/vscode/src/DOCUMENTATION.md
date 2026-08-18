@@ -1,6 +1,6 @@
 # VS Code Backend Modules
 
-Managed OpenCode startup provisions the same sanitized repository-owned user profile used by web/Electron before generating runtime overlays. It resolves `default-config/user-profile` from the extension bundle, preserves user-modified managed files, installs missing declared plugins into the user's OpenCode config directory, and fails visibly when required package installation cannot complete. Shared provisioning also gives Meridian's OpenCode adapter a client-only prompt default, performs only the ownership-tracked exact-legacy-default migration, preserves explicit user prompt choices and unrelated Meridian settings, and reports combined prompting without overriding it. Managed agent overlays allow the active workspace, its worktree root, and the matching canonical `~/.config/openchamber/projects/<project-id>/plans` directory while preserving each agent's role-level read/edit restrictions. They also apply the web-owned visible-skill policy: only OpenCode and `.agents` sources are discovered, hidden and package-cache skills are removed, and each effective agent receives deny-by-default skill permissions plus only its visible named directories. Managed launches remove a broad external-skill disable flag and force the Claude-only skill disable flag so `.agents` remains available while `.claude` is never registered. When OpenAI is active through auth, `OPENAI_API_KEY`, or provider config, the managed overlay adds liveness bounds of 120 seconds for response headers, 300 seconds between stream chunks, and 15 minutes for the whole request. Explicit numeric values or `false` remain authoritative; each startup sync replaces stale DevRyan-generated values, removes the generated row when OpenAI becomes inactive, and never creates model availability. Configured external OpenCode URLs remain read-only.
+Managed OpenCode startup provisions the same sanitized repository-owned user profile used by web/Electron before generating runtime overlays. It resolves `default-config/user-profile` from the extension bundle, preserves user-modified managed files, installs missing declared plugins into the user's OpenCode config directory, and fails visibly when required package installation cannot complete. Shared provisioning also gives Meridian's OpenCode adapter a client-only prompt default, performs only the ownership-tracked exact-legacy-default migration, preserves explicit user prompt choices and unrelated Meridian settings, and reports combined prompting without overriding it. Managed agent overlays allow the active workspace, its worktree root, and the matching canonical `~/.config/openchamber/projects/<project-id>/plans` directory while preserving each agent's role-level read/edit restrictions. They also apply the web-owned approved-skill resolver: locally discovered OpenCode and `.agents` paths are authoritative, live runtime metadata may enrich exact path matches only, hidden, retired, cache, upstream-only, `.cursor`, `.codex`, and `.claude` skills are removed, and every skill-capable managed agent receives deny-by-default exact-name permissions plus only its visible named directories. Managed launches remove a broad external-skill disable flag and force the Claude-only skill disable flag so `.agents` remains available while `.claude` is never registered. When OpenAI is active through auth, `OPENAI_API_KEY`, or provider config, the managed overlay adds liveness bounds of 120 seconds for response headers, 300 seconds between stream chunks, and 15 minutes for the whole request. Explicit numeric values or `false` remain authoritative; each startup sync replaces stale DevRyan-generated values, removes the generated row when OpenAI becomes inactive, and never creates model availability. Configured external OpenCode URLs remain read-only.
 
 The extension copies root `opencode.json`, agents, runtime-safe plugins, and sanitized profile assets through the web-owned default-config asset policy. Its packaged VSIX gate SHA-verifies that inventory and smoke-tests provisioning/overlay behavior from the extracted artifact; configured external runtimes are never provisioned or rewritten.
 
@@ -19,6 +19,10 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 - `bridge-git-runtime.ts`
   - Standard Git message handlers, including durable worktree receipt lookup,
     active-list, retry, preview, and legacy directory-status parity.
+  - New worktrees use the shared bounded post-checkout runner immediately after
+    population. Effective `core.hooksPath` semantics, Git 2.36+ capability
+    checks, exact checkout arguments, timeout/output sanitization, and explicit
+    retry behavior match web/Electron.
   - Repository checks and status are rooted at the exact requested project;
     nested non-repository projects do not inherit an ancestor's Git state.
 
@@ -78,11 +82,17 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Routes agent model/variant defaults through OpenCode Slim config when `oh-my-opencode-slim` owns the active agent catalog, using Slim-installed global `agents/*.md` prompts plus Slim preset/root model metadata.
   - Passes Slim's active preset into managed OpenCode with `OH_MY_OPENCODE_SLIM_PRESET`, copies the active Slim config into the runtime overlay `OPENCODE_CONFIG_DIR`, and keeps background subagents enabled for Slim orchestration.
 
+- `configApplyRuntime.ts`
+  - Hosts the same `@openchamber/shared-runtime` revisioned apply coordinator as
+    web/Electron and maps status, when-idle/forced apply, and external-runtime
+    acknowledgement through HTTP-shaped bridge messages. Config mutations only
+    mark exact scopes; restart ownership remains here rather than in UI prompts.
+
 - `opencodeVersionPolicy.ts`
-  - Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.16 and exposes the upstream install command in diagnostics while still using the user/system `opencode` binary.
+  - Target external OpenCode runtime policy. DevRyan recommends `anomalyco/opencode` v1.18.18 and exposes the upstream install command in diagnostics while still using the user/system `opencode` binary.
 
 - `bridge-settings-runtime.ts`
-  - Settings read/write and OpenCode skills discovery via API for bridge consumers.
+  - Settings read/write and OpenCode skills discovery via API for bridge consumers. Shared settings migrate the legacy wide-chat boolean to the numeric chat-width preference before returning it to the webview.
 
 - `bridge-system-runtime.ts`
   - System/editor/provider/quota/notification/update-check message handlers.
@@ -106,10 +116,20 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Resolves quota credentials with web parity: OpenCode Go environment → managed → legacy; Cursor environment/token-file OAuth → managed OAuth/dashboard → legacy dashboard token; Ollama managed → legacy cookie file.
   - Persists a refreshed Cursor OAuth access token only when its source is managed.
   - Resolves managed Claude discovery and fetching from the same active OpenCode provider context, recognizes all supported Anthropic auth aliases, validates OAuth primary windows, uses the loopback-only Meridian structured endpoint, falls back to the non-billable Claude `/usage` command, keeps configured failures visible, and never substitutes local usage for external OpenCode runtimes.
+  - Delegates z.ai, Kimi, Codex, xAI, and DeepSeek requests/normalization to
+    `@openchamber/shared-runtime`. xAI refreshes once on 401 and persists rotated
+    OAuth credentials through the existing OpenCode auth writer; warning and value-only row behavior matches
+    web/Electron.
+
+- `skillsCatalog.ts`
+  - Uses the shared bounded ZIP downloader and transactional safe-archive
+    installer for ClawdHub. Public `ARCHIVE_*` item codes, ordinary
+    `installFailed` errors, cleanup, and rollback behavior match web/Electron.
 
 - `managedOrchestrationRuntime.ts`
   - Composes the one VS Code-owned `@openchamber/orchestration-runtime` scheduler.
-  - Immediately admits every eligible DevRyan-managed child without an artificial concurrency cap, enforces a minimum 30-minute ordinary deadline plus a 60-minute Oracle floor for starts and follow-ups, preserves the private Council three-minute deadline class, gives retry/resume/retry-in-place fresh agent-aware default deadlines, preserves timeout causes with bounded abort-request cancellation and same-child resumability after failed immediate recovery, scopes task access, clamps optional positive-safe-integer wait slices to 25 seconds, exposes abortable `wait_result_action` recovery synchronization, unbounded root `barrier`, and non-blocking `barrier_status` RPCs, performs inspection-first confirmed agent handoff, preserves deterministic admission/cancellation, requires explicit user-selected same-child `retry_in_place` for provider-limit recovery, requires provider prompt rejection recovery to use one rewritten-prompt fresh child, returns recovered lineage to the pending parent tool invocation, maps manual and prompt-rejection policy conflicts to HTTP 409, retains legacy `recover_in_place` ledger compatibility, and reports external-runtime unavailability.
+  - Rejects an unsupported read-only provider with `MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED` and rejects read-only Designer dispatch with `MANAGED_READ_ONLY_AGENT_UNSUPPORTED` before scheduler persistence or event publication, matching web/Electron admission behavior.
+  - Immediately admits every eligible DevRyan-managed child without an artificial concurrency cap, enforces a minimum 60-minute Fixer/Oracle deadline and a 30-minute floor for other ordinary specialists on starts and follow-ups, preserves the private Council three-minute deadline class, makes retry/resume/retry-in-place inherit at least the source task's full window while accepting larger explicit extensions, preserves timeout causes with bounded abort-request cancellation and same-child resumability after failed immediate recovery, scopes task access, clamps optional positive-safe-integer wait slices to 25 seconds, exposes abortable `wait_result_action` recovery synchronization, unbounded root `barrier`, and non-blocking `barrier_status` RPCs, performs inspection-first confirmed agent handoff, preserves deterministic admission/cancellation, requires explicit user-selected same-child `retry_in_place` for provider-limit recovery, requires provider prompt rejection recovery to use one rewritten-prompt fresh child, returns recovered lineage to the pending parent tool invocation, maps manual and prompt-rejection policy conflicts to HTTP 409, retains legacy `recover_in_place` ledger compatibility, and reports external-runtime unavailability.
   - Publishes safe task projections without private dispatch groups, identity-only compaction removals, and corrupt-ledger recovery warnings to open webviews.
 
 - `managedOrchestrationPersistence.ts`
@@ -130,8 +150,9 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Returns HTTP-shaped status/body results inside successful bridge responses so authoritative failures remain visible and retryable.
 
 - `opencode.ts`
-  - Managed launches retain config-origin bundled plugins, including GitHub Copilot Auto/picker fallback and exact OpenAI GPT-5.6 Max/Ultra enrichment, and receive a validated private bridge URL/token pair. The OpenAI plugin also upgrades advertised reasoning-summary defaults from `auto` to `detailed` while preserving explicit provider values and provider reasoning text. The plugins only enrich model rows advertised by that managed runtime. Configuration restarts coalesce while sessions are busy; the explicit Restart API command retains a forced recovery path.
+  - Managed launches retain config-origin bundled plugins, including GitHub Copilot Auto/picker fallback and exact OpenAI GPT-5.6 Max/Ultra enrichment, and receive a validated private bridge URL/token pair. The OpenAI plugin also upgrades advertised reasoning-summary defaults from `auto` to `detailed` while preserving explicit provider values and provider reasoning text. The plugins only enrich model rows advertised by that managed runtime. Configuration changes use the revisioned apply coordinator: they can wait for authoritative idle state or take the administrator-authorized force path without losing concurrent mutations. Managed spawn also sets aligned `CONTEXT_MODE_DATA_DIR` and `CONTEXT_MODE_DIR` under the OpenChamber data directory.
   - Ambient bridge variables are stripped; incomplete or non-IPv4-loopback pairs are rejected.
+  - A surviving context-mode `SQLITE_IOERR` closes prompt and managed-task admission, preserves active turns while polling authoritative runtime status, and restarts at zero active sessions with capped backoff. Recovery status is exposed through diagnostics; lock contention does not restart, and configured external OpenCode receives owner-restart guidance without mutation.
 
 ## Extension guideline
 

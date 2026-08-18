@@ -5,6 +5,7 @@ import path from 'node:path';
 
 import { createRecordStore } from './record-store.js';
 import {
+  WORKTREE_BOOTSTRAP_STAGES,
   createWorktreeBootstrapRuntime,
   validateWorktreeBootstrapReceipt,
 } from './worktree-bootstrap.js';
@@ -38,6 +39,100 @@ afterEach(async () => {
 });
 
 describe('durable worktree bootstrap state machine', () => {
+  test('orders the post-checkout hook immediately after population', () => {
+    expect(WORKTREE_BOOTSTRAP_STAGES).toEqual([
+      'prepare_remote',
+      'create_worktree',
+      'sync_project_metadata',
+      'populate_worktree',
+      'run_post_checkout_hook',
+      'configure_upstream',
+      'run_project_setup',
+      'run_requested_setup',
+      'complete',
+    ]);
+  });
+
+  test('migrates version 1 and 2 receipts without retroactively running terminal hooks', () => {
+    const legacyStages = Object.fromEntries(WORKTREE_BOOTSTRAP_STAGES
+      .filter((stage) => stage !== 'run_post_checkout_hook')
+      .map((stage) => [stage, {
+        status: stage === 'complete' ? 'completed' : 'skipped',
+        startedAt: null,
+        finishedAt: 10,
+        error: null,
+      }]));
+    const base = {
+      operationId: 'legacy-operation',
+      idempotencyKey: 'legacy-request',
+      fingerprint: 'legacy-fingerprint',
+      directory: '/tmp/legacy-worktree',
+      stage: 'complete',
+      status: 'ready',
+      stages: legacyStages,
+      attempt: 1,
+      tombstone: false,
+      warnings: [],
+      error: null,
+      metadata: {},
+      result: null,
+      createdAt: 1,
+      updatedAt: 10,
+    };
+
+    const migratedV1 = validateWorktreeBootstrapReceipt({ ...base, version: 1 });
+    const migratedV2 = validateWorktreeBootstrapReceipt({ ...base, version: 2, ownerId: 'owner-2' });
+    expect(migratedV1).toMatchObject({
+      version: 3,
+      ownerId: 'local-admin',
+      stages: { run_post_checkout_hook: { status: 'skipped' } },
+    });
+    expect(migratedV2).toMatchObject({
+      version: 3,
+      ownerId: 'owner-2',
+      stages: { run_post_checkout_hook: { status: 'skipped' } },
+    });
+  });
+
+  test('migrates in-flight receipts according to legacy stage progress', () => {
+    const stageState = () => ({ status: 'queued', startedAt: null, finishedAt: null, error: null });
+    const stages = Object.fromEntries(WORKTREE_BOOTSTRAP_STAGES
+      .filter((stage) => stage !== 'run_post_checkout_hook')
+      .map((stage) => [stage, stageState()]));
+    for (const stage of ['prepare_remote', 'create_worktree', 'sync_project_metadata', 'populate_worktree']) {
+      stages[stage].status = 'completed';
+    }
+    const base = {
+      version: 2,
+      ownerId: 'owner',
+      operationId: 'legacy-in-flight',
+      idempotencyKey: 'legacy-in-flight-key',
+      fingerprint: 'fingerprint',
+      directory: '/tmp/legacy-in-flight',
+      stage: 'populate_worktree',
+      status: 'queued',
+      stages,
+      attempt: 1,
+      tombstone: false,
+      warnings: [],
+      error: null,
+      metadata: {},
+      result: null,
+      createdAt: 1,
+      updatedAt: 2,
+    };
+
+    expect(validateWorktreeBootstrapReceipt(base).stages.run_post_checkout_hook.status).toBe('queued');
+    const later = structuredClone(base);
+    later.operationId = 'legacy-later';
+    later.idempotencyKey = 'legacy-later-key';
+    later.stage = 'configure_upstream';
+    later.status = 'running';
+    later.stages.configure_upstream.status = 'running';
+    later.stages.configure_upstream.startedAt = 2;
+    expect(validateWorktreeBootstrapReceipt(later).stages.run_post_checkout_hook.status).toBe('skipped');
+  });
+
   test('joins concurrent identical idempotent requests and rejects changed fingerprints', async () => {
     const { runtime } = await makeRuntime();
     const input = {
@@ -281,6 +376,117 @@ describe('durable worktree bootstrap state machine', () => {
     });
     expect(createAttempts).toBe(1);
     expect(populateAttempts).toBe(2);
+  });
+
+  test('never replays a completed post-checkout hook stage', async () => {
+    let hookRuns = 0;
+    const { runtime } = await makeRuntime({
+      run_post_checkout_hook: async () => {
+        hookRuns += 1;
+        return { presence: true, exitStatus: 0, durationMs: 4 };
+      },
+    });
+    const { receipt } = await runtime.beginOperation({
+      idempotencyKey: 'hook-once',
+      directory: '/tmp/hook-once',
+    });
+
+    expect((await runtime.queue(receipt.operationId)).status).toBe('ready');
+    expect((await runtime.queue(receipt.operationId)).status).toBe('ready');
+    expect(hookRuns).toBe(1);
+    expect((await runtime.getReceipt(receipt.operationId)).stages.run_post_checkout_hook).toMatchObject({
+      status: 'completed',
+      output: { presence: true, exitStatus: 0, durationMs: 4 },
+    });
+  });
+
+  test('marks an interrupted post-checkout hook needs attention and retries only after explicit action', async () => {
+    const { directory, runtime } = await makeRuntime();
+    const { receipt } = await runtime.beginOperation({
+      idempotencyKey: 'interrupted-hook',
+      directory: '/tmp/interrupted-hook',
+    });
+    const raw = await runtime.getReceipt(receipt.operationId);
+    raw.stage = 'run_post_checkout_hook';
+    raw.status = 'running';
+    raw.stages.run_post_checkout_hook.status = 'running';
+    raw.stages.run_post_checkout_hook.startedAt = Date.now() - 10;
+    const store = createRecordStore({
+      directory,
+      validateRecord: validateWorktreeBootstrapReceipt,
+      logger: { warn() {} },
+    });
+    await store.writeRecord(raw.operationId, raw);
+
+    let hookRuns = 0;
+    const restarted = createWorktreeBootstrapRuntime({
+      store,
+      effects: {
+        worktreeExists: async () => true,
+        run_post_checkout_hook: async () => {
+          hookRuns += 1;
+          return { presence: true, exitStatus: 0, durationMs: 3 };
+        },
+      },
+    });
+    await restarted.reconcileOnStartup();
+    expect(hookRuns).toBe(0);
+    expect(await restarted.getReceipt(raw.operationId)).toMatchObject({
+      status: 'needs_attention',
+      stage: 'run_post_checkout_hook',
+      stages: {
+        run_post_checkout_hook: {
+          status: 'needs_attention',
+          output: { failureExcerpt: expect.stringContaining('interrupted') },
+        },
+      },
+    });
+
+    await restarted.retry(raw.operationId);
+    await restarted.drain();
+    expect(hookRuns).toBe(1);
+    expect(await restarted.getReceipt(raw.operationId)).toMatchObject({ status: 'ready', attempt: 2 });
+  });
+
+  test('persists migrated legacy receipts as version 3 during initialization', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-worktree-migration-'));
+    temporaryDirectories.push(directory);
+    const unvalidatedStore = createRecordStore({ directory, logger: { warn() {} } });
+    const stages = Object.fromEntries(WORKTREE_BOOTSTRAP_STAGES
+      .filter((stage) => stage !== 'run_post_checkout_hook')
+      .map((stage) => [stage, { status: 'queued', startedAt: null, finishedAt: null, error: null }]));
+    await unvalidatedStore.writeRecord('legacy-durable', {
+      version: 2,
+      ownerId: 'owner',
+      operationId: 'legacy-durable',
+      idempotencyKey: 'legacy-durable-key',
+      fingerprint: 'legacy-durable-fingerprint',
+      directory: '/tmp/legacy-durable',
+      stage: 'populate_worktree',
+      status: 'queued',
+      stages,
+      attempt: 1,
+      tombstone: false,
+      warnings: [],
+      error: null,
+      metadata: {},
+      result: null,
+      createdAt: 1,
+      updatedAt: 2,
+    });
+    const store = createRecordStore({
+      directory,
+      validateRecord: validateWorktreeBootstrapReceipt,
+      logger: { warn() {} },
+    });
+    const migrated = createWorktreeBootstrapRuntime({ store, effects: { worktreeExists: async () => true } });
+    await migrated.initialize();
+
+    const envelope = JSON.parse(await fs.readFile(path.join(directory, 'legacy-durable.json'), 'utf8'));
+    expect(envelope.record).toMatchObject({
+      version: 3,
+      stages: { run_post_checkout_hook: { status: 'queued' } },
+    });
   });
 
   test('reconciles a crash immediately after the durable creation receipt', async () => {

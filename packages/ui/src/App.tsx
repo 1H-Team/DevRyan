@@ -46,7 +46,6 @@ import { McpOAuthCallbackPage } from '@/components/sections/mcp/McpOAuthCallback
 import { MCP_OAUTH_CALLBACK_PATH } from '@/components/sections/mcp/mcpOAuth';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { applyMobileKeyboardMode } from '@/lib/mobileKeyboardMode';
-import { applyWideChatLayoutClass, clearWideChatLayoutClass } from '@/lib/chatLayout';
 import { SyncAppEffects } from '@/apps/AppEffects';
 import { useAppFontEffects } from '@/apps/useAppFontEffects';
 import {
@@ -65,6 +64,7 @@ import { primeWorktreeBootstrap } from '@/lib/worktrees/worktreeBootstrap';
 import { useAgentRuntimeWarmupStore } from '@/stores/useAgentRuntimeWarmupStore';
 import { isPrincipalStorageEvent } from '@/stores/utils/safeStorage';
 import { useAuthPrincipal } from '@/lib/authSession';
+import { initClientErrorCapture } from '@/lib/client-error-capture';
 
 // Lazy-loaded heavy views — loaded on demand to reduce initial bundle size.
 const OnboardingScreen = lazyWithChunkRecovery(() =>
@@ -585,7 +585,6 @@ function App({ apis }: AppProps) {
   const [initRetryExhausted, setInitRetryExhausted] = React.useState(false);
   const [initRetryEpoch, setInitRetryEpoch] = React.useState(0);
   const [manualInitRetrying, setManualInitRetrying] = React.useState(false);
-  const wideChatLayoutEnabled = useUIStore((state) => state.wideChatLayoutEnabled);
   const mobileKeyboardMode = useUIStore((state) => state.mobileKeyboardMode);
   const isDesktopRuntime = React.useMemo(() => isDesktopShell(), []);
   const setPlanModeEnabled = useFeatureFlagsStore((state) => state.setPlanModeEnabled);
@@ -609,6 +608,12 @@ function App({ apis }: AppProps) {
     };
   }, [showMemoryDebug]);
 
+  // Only managed sessions have an endpoint to report to; local scope stays silent.
+  React.useEffect(() => {
+    if (authPrincipal.scope !== 'managed') return;
+    return initClientErrorCapture();
+  }, [authPrincipal.scope]);
+
   React.useEffect(() => {
     applyMobileKeyboardMode(mobileKeyboardMode);
   }, [mobileKeyboardMode]);
@@ -616,13 +621,6 @@ function App({ apis }: AppProps) {
   React.useEffect(() => {
     setIsVSCodeRuntime(apis.runtime.isVSCode);
   }, [apis.runtime.isVSCode]);
-
-  React.useEffect(() => {
-    applyWideChatLayoutClass(document.documentElement, wideChatLayoutEnabled);
-    return () => {
-      clearWideChatLayoutClass(document.documentElement);
-    };
-  }, [wideChatLayoutEnabled]);
 
   React.useEffect(() => {
     registerRuntimeAPIs(apis);
@@ -1040,6 +1038,7 @@ function App({ apis }: AppProps) {
           return await response.json() as {
             openCodeRunning?: unknown;
             isOpenCodeReady?: unknown;
+            lastOpenCodeError?: unknown;
           };
         },
         restartOpenCode: apis.settings.restartOpenCode,

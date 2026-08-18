@@ -1,5 +1,6 @@
 import React from 'react';
 import type { Part } from '@opencode-ai/sdk/v2';
+import { cn } from '@/lib/utils';
 import { MarkdownRenderer } from '../../MarkdownRenderer';
 import type { StreamPhase } from '../types';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
@@ -24,6 +25,7 @@ interface AssistantTextPartProps {
     chatRenderMode?: 'sorted' | 'live';
     isPlanModeSource?: boolean;
     isMessageCompleted?: boolean;
+    isMobile?: boolean;
     onContentChange?: (reason?: ContentChangeReason, messageId?: string) => void;
 }
 
@@ -34,6 +36,7 @@ const AssistantTextPart: React.FC<AssistantTextPartProps> = ({
     streamPhase,
     chatRenderMode = 'live',
     isMessageCompleted = false,
+    isMobile = false,
 }) => {
     // Use part directly from props — parent provides the latest version from the store.
     // No store subscription here to avoid re-render cascade from unrelated delta events.
@@ -112,7 +115,7 @@ const AssistantTextPart: React.FC<AssistantTextPartProps> = ({
 
     return (
         <div
-            className="group/assistant-text relative break-words"
+            className={cn('group/assistant-text relative break-words', isMobile ? 'py-1' : 'py-1.5')}
             key={part.id || `${messageId}-text`}
         >
             <MarkdownRenderer

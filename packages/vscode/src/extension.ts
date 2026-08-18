@@ -21,6 +21,7 @@ import {
   initializeVsCodeHarnessRuntime,
 } from './harnessRuntime';
 import { getVsCodeHarnessRuntime } from './harness-runtime-access';
+import { createVsCodeCommandDeadlineRuntime } from './commandDeadlineRuntime';
 
 let chatViewProvider: ChatViewProvider | undefined;
 let agentManagerProvider: AgentManagerPanelProvider | undefined;
@@ -143,6 +144,18 @@ export async function activate(context: vscode.ExtensionContext) {
       const settings = readSettings({ context });
       return Array.isArray(settings.hiddenSkills) ? settings.hiddenSkills : [];
     },
+    acquireContextModeAdmissionHold: (name, block) => {
+      const runtime = getVsCodeHarnessRuntime();
+      return runtime?.acquirePromptAdmissionHold(name, block) ?? (() => false);
+    },
+    recordContextModeRecoveryIncident: (status) => {
+      getVsCodeHarnessRuntime()?.record({
+        type: 'log',
+        level: status.state === 'healthy' ? 'info' : 'warn',
+        event: 'context_mode_recovery',
+        payload: status,
+      });
+    },
     getManagedOrchestrationEnvironment: async () => {
       if (!managedOrchestrationRuntime) {
         throw new Error('Managed orchestration runtime is unavailable during OpenCode startup');
@@ -150,6 +163,32 @@ export async function activate(context: vscode.ExtensionContext) {
       return await managedOrchestrationRuntime.prepareBridge();
     },
   });
+  getVsCodeHarnessRuntime()?.setContextModeRecoveryStatusProvider(
+    openCodeManager.getContextModeRecoveryStatus,
+  );
+  const harnessRuntime = getVsCodeHarnessRuntime();
+  if (harnessRuntime) {
+    const commandDeadlineRuntime = createVsCodeCommandDeadlineRuntime({
+      store: harnessRuntime.commandDeadlineStore,
+      manager: openCodeManager,
+      publishEvent: (event) => {
+        chatViewProvider?.postMessage(event);
+        agentManagerProvider?.postMessage(event);
+        sessionEditorProvider?.postMessage(event);
+      },
+      recordIncident: (incident) => harnessRuntime.record({
+        type: 'lifecycle',
+        event: incident.type,
+        sessionID: incident.sessionID,
+        directory: incident.directory,
+        messageID: incident.messageID,
+        callID: incident.callID,
+        payload: incident,
+      }),
+      sanitizeError: (error) => harnessRuntime.sanitizer.sanitizeText(error),
+    });
+    harnessRuntime.setCommandDeadlineRuntime(commandDeadlineRuntime);
+  }
   managedOrchestrationRuntime = createVsCodeManagedOrchestrationRuntime({
     storageDirectory: context.globalStorageUri.fsPath,
     manager: openCodeManager,
@@ -159,6 +198,9 @@ export async function activate(context: vscode.ExtensionContext) {
       agentManagerProvider?.postMessage(event);
       sessionEditorProvider?.postMessage(event);
     },
+    getWorkAdmissionBlock: () => (
+      getVsCodeHarnessRuntime()?.getPromptAdmissionBlock() ?? null
+    ),
     logger: console,
   });
 
@@ -724,6 +766,7 @@ export async function activate(context: vscode.ExtensionContext) {
       // Mirrors web server and desktop Tauri behavior
       if (status === 'connected' && chatViewProvider && openCodeManager) {
         setChatViewProvider(chatViewProvider);
+        void getVsCodeHarnessRuntime()?.reconcileCommandDeadlines();
         void startGlobalEventWatcher(openCodeManager, chatViewProvider);
         if (openCodeManager.getDebugInfo().mode === 'managed') {
           void managedOrchestrationRuntime?.initialize().catch((runtimeError) => {

@@ -93,6 +93,19 @@ export const reconcileMcpIssueKinds = (
     }
   }
 
+  // Drop remembered issues for servers no longer reported at all (renamed or
+  // deleted), so a ghost warning can't persist forever in localStorage. An
+  // empty status map is skipped: mid-restart the runtime briefly reports
+  // nothing, and remembered issues exist to survive exactly that window.
+  if (Object.keys(status).length > 0) {
+    for (const name of Object.keys(next)) {
+      if (!(name in status)) {
+        next = next === current ? { ...current } : next;
+        delete next[name];
+      }
+    }
+  }
+
   return next;
 };
 

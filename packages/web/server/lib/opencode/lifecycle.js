@@ -8,11 +8,18 @@ import { buildVisibleSkillPolicy } from './skill-policy.js';
 import { CONFIG_FILE, readConfigFile, writeConfig } from './shared.js';
 import { migrateOpenchamberConfigToSidecar } from './openchamber-sidecar.js';
 import { SLIM_REPLACED_AGENT_NAMES, resolveSlimConfig } from './slim-config.js';
+import { createContextModeRecovery } from './context-mode-recovery.js';
 import {
+  buildContextModeStorageEnv,
   reapOrphanedManagedOpenCodeProcesses,
   registerManagedOpenCodeProcess,
   unregisterManagedOpenCodeProcess,
 } from './managed-process-registry.js';
+
+const isManagedOrchestrationOwnershipError = (error) => (
+  error?.code === 'managed_orchestration_owner_conflict'
+  || error?.code === 'managed_orchestration_ownership_lost'
+);
 
 /**
  * OpenCode 1.15+ rejects unknown top-level config keys, but DevRyan historically
@@ -160,7 +167,9 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     pauseManagedBrowserLeases = async () => null,
     resumeManagedBrowserLeases = async () => false,
     getActiveSessionCount = () => 0,
-    getAuthoritativeActiveSessionCount = async () => getActiveSessionCount(),
+    getAuthoritativeActiveSessionCount = getActiveSessionCount,
+    acquireContextModeAdmissionHold = () => () => {},
+    recordContextModeRecoveryIncident = () => {},
     provisionUserProfile = async () => ({ ok: true, changed: false, conflicts: [] }),
     syncPackagedAgents = async () => ({ changed: false, conflicts: [] }),
     syncRuntimeAgentOverlays = async () => ({ changed: false, targetConfigDirectory: null }),
@@ -171,89 +180,31 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     onOpenCodeRestarted = () => {},
   } = deps;
 
-  const DEFERRED_CONFIG_REFRESH_POLL_MS = 1000;
-  let pendingConfigRefresh = null;
-  let pendingConfigRefreshTimer = null;
-  let activeSessionCheckWarningShown = false;
-
-  const getConfigRefreshActiveSessionCount = async () => {
-    const snapshotCount = getActiveSessionCount();
-    try {
-      const liveCount = await getAuthoritativeActiveSessionCount();
-      if (!Number.isFinite(liveCount) || liveCount < 0) {
-        throw new Error('Active-session query returned an invalid count');
-      }
-      activeSessionCheckWarningShown = false;
-      return Math.max(snapshotCount, Math.trunc(liveCount));
-    } catch (error) {
-      if (!activeSessionCheckWarningShown) {
-        activeSessionCheckWarningShown = true;
-        console.warn(
-          '[OpenCode] Could not verify live session status; preserving the current process until status is available:',
-          error instanceof Error ? error.message : error,
-        );
-      }
-      return Math.max(snapshotCount, 1);
-    }
-  };
-
-  const schedulePendingConfigRefreshCheck = () => {
-    if (pendingConfigRefreshTimer || state.isShuttingDown) return;
-
-    pendingConfigRefreshTimer = setTimeout(async () => {
-      pendingConfigRefreshTimer = null;
-      if (state.isShuttingDown || !pendingConfigRefresh) return;
-
-      if (state.currentRestartPromise) {
-        schedulePendingConfigRefreshCheck();
-        return;
-      }
-
-      const activeSessionCount = await getConfigRefreshActiveSessionCount();
-      if (activeSessionCount > 0) {
-        schedulePendingConfigRefreshCheck();
-        return;
-      }
-
-      const pending = pendingConfigRefresh;
-      pendingConfigRefresh = null;
-      const reason = [...pending.reasons].join(', ');
-      console.log(`[OpenCode] Applying deferred configuration refresh after active sessions became idle: ${reason}`);
-
-      try {
-        await refreshOpenCodeAfterConfigChange(reason, pending.options);
-      } catch (error) {
-        console.error('[OpenCode] Deferred configuration refresh failed:', error instanceof Error ? error.message : error);
-      }
-    }, DEFERRED_CONFIG_REFRESH_POLL_MS);
-    pendingConfigRefreshTimer.unref?.();
-  };
-
-  const deferConfigRefresh = (reason, options) => {
-    if (!pendingConfigRefresh) {
-      pendingConfigRefresh = {
-        reasons: new Set(),
-        options: {},
-      };
-    }
-    pendingConfigRefresh.reasons.add(reason);
-    pendingConfigRefresh.options = { ...pendingConfigRefresh.options, ...options };
-    schedulePendingConfigRefreshCheck();
-  };
-
   let managedOrphanReapDone = false;
+  let managedOrphanReapInFlight = null;
+  const reapManagedOpenCodeOrphans = async () => {
+    if (managedOrphanReapInFlight) return managedOrphanReapInFlight;
+    managedOrphanReapInFlight = (async () => {
+      try {
+        const result = await reapOrphanedManagedOpenCodeProcesses();
+        if (result.reaped.length > 0 || result.removed.length > 0) {
+          console.log('[OpenCode] Managed process registry cleanup', {
+            reaped: result.reaped.length,
+            removed: result.removed.length,
+            skipped: result.skipped.length,
+          });
+        }
+        return result;
+      } finally {
+        managedOrphanReapInFlight = null;
+      }
+    })();
+    return managedOrphanReapInFlight;
+  };
   const reapManagedOpenCodeOrphansOnce = async () => {
     if (managedOrphanReapDone) return null;
     managedOrphanReapDone = true;
-    const result = await reapOrphanedManagedOpenCodeProcesses();
-    if (result.reaped.length > 0 || result.removed.length > 0) {
-      console.log('[OpenCode] Managed process registry cleanup', {
-        reaped: result.reaped.length,
-        removed: result.removed.length,
-        skipped: result.skipped.length,
-      });
-    }
-    return result;
+    return reapManagedOpenCodeOrphans();
   };
 
   const hasChildProcessExited = (child) => {
@@ -530,6 +481,20 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       detached: process.platform !== 'win32',
     });
 
+    // Register before the ready-wait: a crash in the up-to-30s window between
+    // spawn and readiness must not leave an untracked orphan behind.
+    if (child.pid) {
+      registerManagedOpenCodeProcess({
+        childPid: child.pid,
+        ownerPid: process.pid,
+        port,
+        binary,
+        hostRuntime: 'web',
+        hostname,
+        startedAt: Date.now(),
+      });
+    }
+
     let url;
     try {
       url = await new Promise((resolve, reject) => {
@@ -607,19 +572,12 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       child.on('error', onError);
       });
     } catch (error) {
-      await closeManagedOpenCodeChild(child);
+      const closed = await closeManagedOpenCodeChild(child);
+      if (closed && child.pid) {
+        unregisterManagedOpenCodeProcess(child.pid);
+      }
       throw error;
     }
-
-    registerManagedOpenCodeProcess({
-      childPid: child.pid,
-      ownerPid: process.pid,
-      port,
-      binary,
-      hostRuntime: 'web',
-      hostname,
-      startedAt: Date.now(),
-    });
 
     return {
       url,
@@ -854,7 +812,17 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     const shellEnv = typeof getManagedOpenCodeShellEnvSnapshot === 'function'
       ? getManagedOpenCodeShellEnvSnapshot() || {}
       : {};
-    const orchestrationEnvironmentInput = await getManagedOrchestrationEnvironment();
+    const orchestrationEnvironmentInput = await (async () => {
+      try {
+        return await getManagedOrchestrationEnvironment();
+      } catch (error) {
+        if (!isManagedOrchestrationOwnershipError(error)) throw error;
+        console.warn('[OpenCode] Managed orchestration is unavailable; continuing without the private bridge', {
+          code: error.code,
+        });
+        return {};
+      }
+    })();
     const orchestrationUrl = typeof orchestrationEnvironmentInput?.DEVRYAN_ORCHESTRATION_URL === 'string'
       ? orchestrationEnvironmentInput.DEVRYAN_ORCHESTRATION_URL.trim()
       : '';
@@ -908,6 +876,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       ...shellEnv,
       ...process.env,
       PATH: envPath,
+      ...buildContextModeStorageEnv(),
       OPENCODE_SERVER_PASSWORD: openCodePassword,
       // NOTE: We intentionally do NOT set OPENCODE_DISABLE_DEFAULT_PLUGINS or
       // launch with `--pure`. Both disable required provider/bundled plugin
@@ -995,7 +964,11 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         return await startOpenCodeOnce();
       } catch (error) {
         lastError = error;
-        if (error?.code === 'OPENCODE_BINARY_INVALID' || error?.code === 'PACKAGED_AGENT_SYNC_CONFLICT') {
+        if (
+          error?.code === 'OPENCODE_BINARY_INVALID'
+          || error?.code === 'PACKAGED_AGENT_SYNC_CONFLICT'
+          || isManagedOrchestrationOwnershipError(error)
+        ) {
           break;
         }
         if (attempt >= START_OPEN_CODE_MAX_ATTEMPTS) {
@@ -1089,6 +1062,11 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
           clearTimeout(state.openCodeApiDetectionTimer);
           state.openCodeApiDetectionTimer = null;
         }
+
+        // Sweep the registry on every managed restart: orphans from crashed
+        // owners otherwise survive until the next full app launch and race the
+        // replacement child on rotating MCP OAuth refresh tokens.
+        await reapManagedOpenCodeOrphans();
 
         state.lastOpenCodeError = null;
         state.openCodeProcess = await startOpenCode();
@@ -1263,7 +1241,11 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     throw new Error(`Agent "${agentName}" not available after OpenCode restart`);
   };
 
-  const refreshOpenCodeAfterConfigChange = async (reason, options = {}) => {
+  const applyOpenCodeConfigChanges = async ({ scopes = [], changes = [] } = {}) => {
+    const options = [...changes]
+      .reverse()
+      .map((entry) => entry?.metadata)
+      .find((metadata) => metadata && typeof metadata === 'object') || {};
     const { agentName, expectedAgentModelRef, expectedAgentVariant } = options;
     const agentReadyTimeoutMs = Number.isFinite(options.agentReadyTimeoutMs) && options.agentReadyTimeoutMs > 0
       ? Math.trunc(options.agentReadyTimeoutMs)
@@ -1272,31 +1254,9 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       ? Math.trunc(options.agentReadyIntervalMs)
       : 300;
 
-    console.log(`Refreshing OpenCode after ${reason}`);
+    console.log(`Applying saved OpenCode configuration scopes: ${scopes.join(', ') || 'runtime'}`);
     if (state.isExternalOpenCode || env.ENV_SKIP_OPENCODE_START) {
-      return {
-        runtimeApplied: false,
-        requiresReload: false,
-        runtimeMessage: 'Agent model defaults were saved, but DevRyan cannot apply them to a configured external OpenCode runtime automatically.',
-      };
-    }
-
-    const activeSessionCount = state.currentRestartPromise
-      ? getActiveSessionCount()
-      : await getConfigRefreshActiveSessionCount();
-    if (activeSessionCount > 0 || state.currentRestartPromise) {
-      deferConfigRefresh(reason, options);
-      const activeLabel = activeSessionCount === 1 ? '1 active agent' : `${activeSessionCount} active agents`;
-      const waitReason = activeSessionCount > 0 ? `${activeLabel} must finish first` : 'a restart is already in progress';
-      console.log(`[OpenCode] Deferred configuration refresh after ${reason}; ${waitReason}`);
-      return {
-        runtimeApplied: false,
-        requiresReload: false,
-        restartDeferred: true,
-        runtimeMessage: activeSessionCount > 0
-          ? `Configuration saved. OpenCode will restart after ${activeSessionCount === 1 ? 'the active agent finishes' : 'the active agents finish'}.`
-          : 'Configuration saved. OpenCode will restart after the current restart finishes.',
-      };
+      throw new Error('DevRyan cannot restart a configured external OpenCode runtime');
     }
 
     clearResolvedOpenCodeBinary();
@@ -1320,12 +1280,12 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       state.openCodeNotReadySince = 0;
       return {
         runtimeApplied: true,
-        requiresReload: true,
+        requiresReload: false,
       };
     } catch (error) {
       state.isOpenCodeReady = false;
       state.openCodeNotReadySince = Date.now();
-      console.error(`Failed to refresh OpenCode after ${reason}:`, error.message);
+      console.error('Failed to apply saved OpenCode configuration:', error.message);
       throw error;
     }
   };
@@ -1417,7 +1377,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
    * A live child reporting busy is never killed on a health timeout because
    * long-running model/tool work can starve the health endpoint.
    */
-  const shouldSkipRestartForBusySessions = () => {
+  const shouldPreserveBusyProcessAfterHealthFailure = () => {
     const activeCount = getActiveSessionCount();
     if (activeCount === 0) {
       return false;
@@ -1437,7 +1397,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     try {
       const healthy = await isOpenCodeProcessHealthy();
       if (!healthy) {
-        if (shouldSkipRestartForBusySessions()) return;
+        if (shouldPreserveBusyProcessAfterHealthFailure()) return;
         console.log('[lifecycle] immediate health check: OpenCode not healthy, restarting...');
         await restartOpenCode();
       }
@@ -1457,7 +1417,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       try {
         const healthy = await isOpenCodeProcessHealthy();
         if (!healthy) {
-          if (shouldSkipRestartForBusySessions()) return;
+          if (shouldPreserveBusyProcessAfterHealthFailure()) return;
           console.log('OpenCode process not running, restarting...');
           await restartOpenCode();
         }
@@ -1467,16 +1427,26 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     }, healthCheckIntervalMs);
   };
 
+  const contextModeRecovery = createContextModeRecovery({
+    restartOpenCode,
+    getActiveSessionCount: getAuthoritativeActiveSessionCount,
+    isExternalOpenCode: () => state.isExternalOpenCode || Boolean(env.ENV_SKIP_OPENCODE_START),
+    acquireAdmissionHold: acquireContextModeAdmissionHold,
+    recordIncident: recordContextModeRecoveryIncident,
+  });
+
   return {
     startOpenCode,
     restartOpenCode,
     waitForOpenCodeReady,
     waitForAgentPresence,
-    refreshOpenCodeAfterConfigChange,
+    applyOpenCodeConfigChanges,
     bootstrapOpenCodeAtStartup,
     startHealthMonitoring,
     triggerHealthCheck,
     killProcessOnPort,
     waitForPortRelease,
+    observeContextModeToolFailure: contextModeRecovery.observeContextModeToolFailure,
+    getContextModeRecoveryStatus: contextModeRecovery.getStatus,
   };
 };

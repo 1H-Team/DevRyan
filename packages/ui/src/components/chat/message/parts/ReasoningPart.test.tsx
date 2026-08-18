@@ -174,8 +174,10 @@ describe("ReasoningPart", () => {
     }))
 
     expect(activeHtml).toContain('data-streaming="true"')
+    expect(activeHtml).not.toContain('data-reasoning-shimmer')
     expect(activeHtml).toContain("First observation.")
     expect(completedHtml).toContain('data-streaming="false"')
+    expect(completedHtml).not.toContain('data-reasoning-shimmer')
     expect(completedHtml).toContain("First observation.\n\nSecond observation.")
     expectNoDisclosurePresentation(activeHtml)
     expectNoDisclosurePresentation(completedHtml)
@@ -215,19 +217,12 @@ describe("ReasoningPart", () => {
     expect(completedHtml).not.toContain('py-1.5')
   })
 
-  test("renders an accessible status while active reasoning is still empty", () => {
-    const html = renderReasoning(createReasoningPart({
+  test("renders nothing while active reasoning is still empty (status row owns Thinking)", () => {
+    expect(renderReasoning(createReasoningPart({
       id: "reasoning-empty-active",
       text: "",
       active: true,
-    }))
-
-    expect(html).toContain('data-reasoning-block-id="reasoning-empty-active"')
-    expect(html).toContain('role="status"')
-    expect(html).toContain('aria-live="polite"')
-    expect(html).toContain("animate-pulse motion-reduce:animate-none")
-    expect(html).toContain("Thinking…")
-    expect(html).not.toContain("<button")
+    }))).toBe("")
   })
 
   test("renders nothing when completed reasoning has empty text", () => {

@@ -23,6 +23,20 @@ export function normalizeMessageFetchLimit(limit: number | undefined, fallback =
   return Math.floor(limit)
 }
 
+export function normalizeSessionMessagePageLimit(limit: number | undefined): number {
+  return Math.max(DEFAULT_MESSAGE_LIMIT, normalizeMessageFetchLimit(limit))
+}
+
+export function resolveRetainedMessageLimit(input: {
+  requestedLimit: number | undefined
+  materializedCount: number
+}): number {
+  return Math.max(
+    normalizeSessionMessagePageLimit(input.requestedLimit),
+    Number.isFinite(input.materializedCount) ? Math.floor(input.materializedCount) : 0,
+  )
+}
+
 export function resolveMessagePagePagination(input: {
   requestedLimit: number
   returnedCount: number

@@ -134,4 +134,26 @@ describe('areRenderRelevantMessagesEqual', () => {
       },
     )).toBe(false);
   });
+
+  test('treats managed abort recovery presentation changes as render-relevant', () => {
+    const info = {
+      id: 'assistant-aborted',
+      sessionID: 'session-1',
+      role: 'assistant',
+      time: { created: 1, completed: 2 },
+    } as Message;
+
+    expect(areRenderRelevantMessagesEqual(
+      {
+        info,
+        parts: [],
+        presentation: { managedAbortRecovery: { state: 'continuing' } },
+      },
+      {
+        info,
+        parts: [],
+        presentation: { managedAbortRecovery: { state: 'manual_recovery' } },
+      },
+    )).toBe(false);
+  });
 });

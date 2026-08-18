@@ -58,7 +58,7 @@ The web server combines these utilities with `bun-pty` or `node-pty` to drive fu
 
 ### Runtime lifecycle contract
 
-`createTerminalRuntime(...)` returns `shutdown`, `terminateOwnerSessions`, and `getSessionDescriptor`. The descriptor lookup exposes only the live session id, canonical working directory, owner user id, and last-activity timestamp to in-process server runtimes. The project-preview grant registry uses it both to prove that a registration came from a terminal owned by the caller in the exact project directory and to renew the grant while that terminal remains authoritative.
+`createTerminalRuntime(...)` returns `shutdown`, `terminateOwnerSessions`, `getSessionDescriptor`, and `touchSession`. The descriptor lookup exposes only the live session id, canonical working directory, owner user id, and last-activity timestamp to in-process server runtimes. `touchSession(sessionId, ownerUserId)` renews activity only when both identifiers match a live session. The project-preview grant registry uses these operations to prove that a registration came from a terminal owned by the caller in the exact project directory and to keep that terminal alive while its loopback app remains reachable. Ordinary idle shells and unreachable previews retain the existing idle-cleanup behavior.
 
 Callers may provide `onTerminalSessionClosed`. The runtime invokes it exactly once after removing a session for exit, explicit close/restart, idle timeout, force kill, owner revocation, or shutdown. Session removal happens before signalling a PTY so synchronous exit callbacks cannot replace the authoritative close reason. Preview grants use this callback for immediate cleanup; their independent liveness sweep is a fallback and does not depend on an open Browser panel.
 

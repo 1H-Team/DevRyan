@@ -20,7 +20,7 @@ describe('fetchClaudeQuota', () => {
       json: async () => ({
         five_hour: { utilization: 12, resets_at: '2026-01-01T01:00:00.000Z' },
         seven_day: { utilization: 56, resets_at: '2026-01-08T00:00:00.000Z' },
-        seven_day_sonnet: { utilization: 34, resets_at: '2026-01-08T00:00:00.000Z' },
+        seven_day_fable: { utilization: 34, resets_at: '2026-01-08T00:00:00.000Z' },
       }),
     }));
     const fetchMeridianUsage = vi.fn();
@@ -40,10 +40,11 @@ describe('fetchClaudeQuota', () => {
     expect(fetchMeridianUsage).not.toHaveBeenCalled();
     expect(fetchCliUsage).not.toHaveBeenCalled();
     expect(result.ok).toBe(true);
+    expect(result.providerName).toBe('Claude');
     expect(result.usageUpdatedAt).toEqual(expect.any(Number));
     expect(result.usage.windows['5h'].usedPercent).toBe(12);
     expect(result.usage.windows['7d'].usedPercent).toBe(56);
-    expect(result.usage.windows['7d-sonnet'].usedPercent).toBe(34);
+    expect(result.usage.windows['7d-fable'].usedPercent).toBe(34);
   });
 
   it('falls through from failed OAuth usage to the live Meridian proxy', async () => {

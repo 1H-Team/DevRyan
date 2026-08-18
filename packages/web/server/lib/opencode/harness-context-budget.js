@@ -68,6 +68,64 @@ function buildSkillCatalogMeasurement(visibleSkills) {
   }));
 }
 
+const ANTHROPIC_SKILL_DESCRIPTION_LIMIT = 240;
+
+function compactAnthropicSkillDescription(value) {
+  const normalized = String(value || '').replace(/\s+/g, ' ').trim();
+  const characters = Array.from(normalized);
+  if (characters.length <= ANTHROPIC_SKILL_DESCRIPTION_LIMIT) return normalized;
+  return `${characters.slice(0, ANTHROPIC_SKILL_DESCRIPTION_LIMIT - 1).join('').trimEnd()}…`;
+}
+
+function renderAnthropicSkillCatalog(skills, compact) {
+  const entries = skills.map((skill) => {
+    const name = normalizeString(skill.name);
+    const description = compact
+      ? compactAnthropicSkillDescription(skill.description)
+      : String(skill.description || '');
+    const location = getEntryPath(skill);
+    return [
+      '<skill>',
+      `<name>${name}</name>`,
+      `<description>${description}</description>`,
+      ...(!compact && location ? [`<location>${location}</location>`] : []),
+      '</skill>',
+    ].join('');
+  }).join('');
+  const preamble = compact
+    ? ''
+    : 'Skills provide specialized instructions and workflows for specific tasks. Use the skill tool to load a skill when a task matches its description. ';
+  return `${preamble}<available_skills>${entries}</available_skills>`;
+}
+
+function toOptionalCount(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.trunc(value)
+    : null;
+}
+
+function buildAnthropicMeasurement(visibleSkills, usage) {
+  const original = renderAnthropicSkillCatalog(visibleSkills, false);
+  const transformed = renderAnthropicSkillCatalog(visibleSkills, true);
+  const originalBytes = Buffer.byteLength(original, 'utf8');
+  const transformedBytes = Buffer.byteLength(transformed, 'utf8');
+  return {
+    fixedPrefix: {
+      availability: 'available',
+      skillCount: visibleSkills.length,
+      descriptionLimit: ANTHROPIC_SKILL_DESCRIPTION_LIMIT,
+      originalBytes,
+      transformedBytes,
+      savedBytes: Math.max(0, originalBytes - transformedBytes),
+      superpowersBootstrapBytes: 0,
+      tokens: toOptionalCount(usage?.fixedPrefixTokens),
+    },
+    requestCount: toOptionalCount(usage?.requestCount),
+    activeContextTokens: toOptionalCount(usage?.activeContextTokens),
+    cumulativeProcessedInputTokens: toOptionalCount(usage?.cumulativeProcessedInputTokens),
+  };
+}
+
 function getDirectSkillBody(skill) {
   for (const key of ['body', 'content', 'prompt']) {
     if (typeof skill?.[key] === 'string') return skill[key];
@@ -184,6 +242,7 @@ function buildHarnessContextBudget({
   hiddenSkills,
   readSkillBody,
   context,
+  anthropicUsage,
 } = {}) {
   const toolIds = asArray(toolManifest?.toolIds).filter((toolId) => typeof toolId === 'string');
   const mode = toolManifest?.selector?.mode || 'idsOnly';
@@ -210,6 +269,7 @@ function buildHarnessContextBudget({
     packagedAgentPrompts: buildPackagedPromptMeasurement(packagedAgents),
     visibleSkillCatalogMetadata: buildSkillCatalogMeasurement(visibleSkills),
     visibleOnDemandSkillBodies: buildSkillBodyMeasurement(resolvedBodyItems),
+    anthropic: buildAnthropicMeasurement(visibleSkills, anthropicUsage),
     tools: {
       label: 'runtimeCatalogUpperBound',
       mode,

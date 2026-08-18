@@ -95,17 +95,6 @@ export function ServicesIcon(props: ToolbarIconProps) {
   );
 }
 
-export function PlanDocumentIcon(props: ToolbarIconProps) {
-  return (
-    <ToolbarIcon {...props}>
-      <path d="M8 3.75h5.5L18 8.25V19a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5.75a2 2 0 0 1 2-2Z" />
-      <path d="M13.25 4v4.5h4.5" />
-      <path d="M9 13h6" />
-      <path d="M9 16.5h4" />
-    </ToolbarIcon>
-  );
-}
-
 export function NewChatIcon(props: ToolbarIconProps) {
   return (
     <ToolbarIcon {...props}>

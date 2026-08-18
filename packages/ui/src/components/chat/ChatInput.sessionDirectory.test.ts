@@ -6,6 +6,10 @@ const chatInputSource = readFileSync(
   fileURLToPath(new URL("./ChatInput.tsx", import.meta.url)),
   "utf8",
 )
+const contextUsageControlSource = readFileSync(
+  fileURLToPath(new URL("./ComposerContextUsageControl.tsx", import.meta.url)),
+  "utf8",
+)
 
 describe("ChatInput session directory reads", () => {
   test("derives currentSessionDirectory from the selected session", () => {
@@ -14,13 +18,16 @@ describe("ChatInput session directory reads", () => {
     )
   })
 
-  test("passes currentSessionDirectory into session message hooks", () => {
-    expect(
-      chatInputSource.match(/useSessionMessagesResolved\([\s\S]*currentSessionDirectory \?\? undefined/) ?? [],
-    ).toHaveLength(1)
+  test("isolates authoritative context directory resolution from the full composer", () => {
+    expect(chatInputSource).toContain(
+      "fallbackDirectory={currentDirectory}",
+    )
     expect(
       chatInputSource.match(/useUserMessageHistory\([\s\S]*currentSessionDirectory \?\? undefined/) ?? [],
     ).toHaveLength(1)
+    expect(contextUsageControlSource).toContain("{ suspendPartUpdates: true }")
+    expect(contextUsageControlSource).toContain("useEffectiveDirectory() ?? fallbackDirectory")
+    expect(contextUsageControlSource).toContain("getContextUsageForSession(sessionId, directory)")
   })
 })
 

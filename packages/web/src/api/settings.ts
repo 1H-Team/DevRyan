@@ -48,7 +48,13 @@ export const createWebSettingsAPI = (): SettingsAPI => ({
   },
 
   async restartOpenCode(): Promise<{ restarted: boolean }> {
-    const response = await fetch(RELOAD_ENDPOINT, { method: 'POST' });
+    const response = await fetch(RELOAD_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'X-DevRyan-CSRF': '1',
+      },
+    });
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: response.statusText }));
       throw new Error(error.error || 'Failed to restart OpenCode');

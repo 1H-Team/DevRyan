@@ -3,6 +3,7 @@ import type { RuntimeAPIs } from '@/lib/api/types';
 
 import {
   clearWorktreeBootstrapState,
+  getWorktreeBootstrapStageLabel,
   summarizeWorktreeBootstrapError,
   waitForWorktreeBootstrapForSend,
 } from './worktreeBootstrap';
@@ -95,5 +96,9 @@ describe('worktree bootstrap send recovery', () => {
     ].join('\r'))).toBe(
       'Git could not finalize the worktree index. Check disk space and repository permissions, then retry worktree setup.',
     );
+  });
+
+  test('exposes a visible post-checkout hook stage label', () => {
+    expect(getWorktreeBootstrapStageLabel('run_post_checkout_hook')).toBe('Running post-checkout hook');
   });
 });

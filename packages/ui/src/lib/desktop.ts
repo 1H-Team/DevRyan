@@ -157,6 +157,8 @@ export type DesktopSettings = {
   userMessageRenderingMode?: 'markdown' | 'plain';
   collapsibleUserMessages?: boolean;
   stickyUserHeader?: boolean;
+  chatWidth?: number;
+  /** @deprecated read for migration only */
   wideChatLayoutEnabled?: boolean;
   showSplitAssistantMessageActions?: boolean;
   fontSize?: number;

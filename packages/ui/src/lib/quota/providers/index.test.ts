@@ -7,10 +7,11 @@ describe('quota provider metadata', () => {
     const sorted = getSortedQuotaProviders();
 
     expect(sorted.map((provider) => provider.name)).toEqual([
-      'Anthropic',
       'Antigravity',
       'ChatGPT',
+      'Claude',
       'Cursor',
+      'DeepSeek',
       'GitHub Copilot',
       'Google',
       'Kimi for Coding',
@@ -20,10 +21,11 @@ describe('quota provider metadata', () => {
       'Ollama Cloud',
       'OpenCode Go',
       'OpenRouter',
+      'xAI',
       'z.ai',
       'Zhipu AI Coding Plan',
     ]);
     expect(new Set(QUOTA_PROVIDERS.map((provider) => provider.id)).size).toBe(QUOTA_PROVIDERS.length);
-    expect(QUOTA_PROVIDERS[0]).toEqual({ id: 'claude', name: 'Anthropic' });
+    expect(QUOTA_PROVIDERS[0]).toEqual({ id: 'claude', name: 'Claude' });
   });
 });

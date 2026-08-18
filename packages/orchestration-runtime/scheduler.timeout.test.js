@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
 import { createManagedTaskScheduler } from './scheduler.js';
+import { toManagedTaskEvent } from './contract.js';
+import { MANAGED_TASK_TIMEOUT_REASON_PREFIX } from './provider-retry-policy.js';
 
 const input = (index, overrides = {}) => ({
   idempotencyKey: `timeout-${index}`,
@@ -78,12 +80,14 @@ describe('managed scheduler timeouts', () => {
     await scheduler.flush();
 
     expect(aborts).toEqual([task.taskId]);
-    expect(scheduler.getTask(task.taskId)).toMatchObject({
+    const settled = scheduler.getTask(task.taskId);
+    expect(settled).toMatchObject({
       status: 'failed',
-      failureReason: 'Managed task timed out at 1500',
+      failureReason: `${MANAGED_TASK_TIMEOUT_REASON_PREFIX}1500`,
       partial: true,
       recoverablePreview: 'partial before timeout',
     });
+    expect(toManagedTaskEvent(settled).properties.task.failureKind).toBe('deadline_exceeded');
     expect(clock.count()).toBe(0);
   });
 

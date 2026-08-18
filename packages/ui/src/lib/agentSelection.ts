@@ -29,6 +29,12 @@ const getAgentSortLabel = (name: string) => (
   isBuilderAgentName(name) ? "builder" : normalizeAgentName(name)
 )
 
+const PRIMARY_AGENT_SORT_ORDER = new Map([
+  ["builder", 0],
+  ["council", 1],
+  ["orchestrator", 2],
+])
+
 export const isAgentHidden = (agent: AgentSelectionOption) => (
   agent.hidden === true || agent.options?.hidden === true
 )
@@ -40,7 +46,14 @@ export const isSelectablePrimaryAgentOption = (agent: Pick<AgentSelectionOption,
 )
 
 export const compareAgentOptions = (a: { name: string }, b: { name: string }) => {
-  const labelComparison = getAgentSortLabel(a.name).localeCompare(getAgentSortLabel(b.name))
+  const aLabel = getAgentSortLabel(a.name)
+  const bLabel = getAgentSortLabel(b.name)
+  const aRank = PRIMARY_AGENT_SORT_ORDER.get(aLabel) ?? PRIMARY_AGENT_SORT_ORDER.size
+  const bRank = PRIMARY_AGENT_SORT_ORDER.get(bLabel) ?? PRIMARY_AGENT_SORT_ORDER.size
+  const rankComparison = aRank - bRank
+  if (rankComparison !== 0) return rankComparison
+
+  const labelComparison = aLabel.localeCompare(bLabel)
   if (labelComparison !== 0) return labelComparison
 
   return a.name.localeCompare(b.name)

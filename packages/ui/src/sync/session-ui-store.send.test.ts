@@ -1601,7 +1601,7 @@ describe("session-ui-store send routing", () => {
     expect(useSessionUIStore.getState().sessionCompletionIndicator.has("session-a")).toBe(false)
   })
 
-  test("shows settled normal completion when live status is stale busy but the trailing tool turn is finalized", async () => {
+  test("does not show completion while live status is busy even when the trailing tool turn is finalized", async () => {
     mockSessionDirectoryAnyDirectory = "/repo"
     const liveState = {
       message: {
@@ -1641,10 +1641,7 @@ describe("session-ui-store send routing", () => {
 
     await waitForCompletionIndicatorSettlement()
 
-    expect(useSessionUIStore.getState().sessionCompletionIndicator.get("session-a")).toEqual({
-      messageId: "msg-a",
-      completedAt: 123,
-    })
+    expect(useSessionUIStore.getState().sessionCompletionIndicator.has("session-a")).toBe(false)
   })
 
   test("clears completed plan indicators when a session is acknowledged without hiding plan availability", () => {

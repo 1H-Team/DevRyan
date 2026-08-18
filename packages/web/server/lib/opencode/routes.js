@@ -141,7 +141,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     getProviderSources,
     removeProviderConfig,
     ensureAnthropicOAuthProviderConfig,
-    refreshOpenCodeAfterConfigChange,
+    markConfigChange,
     buildAugmentedPath,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders = () => ({}),
@@ -172,7 +172,11 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
   });
   const globalAgentsMdRuntime = injectedGlobalAgentsMdRuntime || createGlobalAgentsMdRuntime({
     agentsMdPath: path.join(os.homedir(), '.config', 'opencode', 'AGENTS.md'),
-    refreshRuntime: () => refreshOpenCodeAfterConfigChange('global behavior (AGENTS.md) updated'),
+    refreshRuntime: ({ changed } = {}) => markConfigChange(
+      'global behavior (AGENTS.md) updated',
+      {},
+      changed !== false,
+    ),
     isEditable: () => !isExternalOpenCode(),
   });
 
@@ -360,9 +364,19 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
   app.put('/api/config/settings', async (req, res) => {
     console.log('[API:PUT /api/config/settings] Received request');
     try {
+      const previous = Object.prototype.hasOwnProperty.call(req.body ?? {}, 'opencodeBinary')
+        ? await readSettingsFromDiskMigrated()
+        : null;
       const updated = await persistSettings(req.body ?? {});
+      const runtimeSettingChanged = previous !== null
+        && String(previous?.opencodeBinary ?? '').trim() !== String(updated?.opencodeBinary ?? '').trim();
+      const applyResult = await markConfigChange(
+        'runtime binary setting',
+        {},
+        runtimeSettingChanged,
+      );
       console.log(`[API:PUT /api/config/settings] Success, returning ${updated.projects?.length || 0} projects`);
-      res.json(updated);
+      res.json({ ...updated, ...applyResult });
     } catch (error) {
       console.error('[API:PUT /api/config/settings] Failed to save settings:', error);
       console.error('[API:PUT /api/config/settings] Error stack:', error.stack);
@@ -518,17 +532,18 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       }
 
       const result = ensureAnthropicOAuthProviderConfig({ workingDirectory: directory });
-      if (result.changed) {
-        await refreshOpenCodeAfterConfigChange('anthropic oauth provider configured');
-      }
+      const applyResult = await markConfigChange(
+        'anthropic oauth provider configured',
+        {},
+        result.changed,
+      );
 
       return res.json({
         success: true,
         configured: true,
         changed: result.changed,
         path: result.path,
-        requiresReload: result.changed,
-        reloadDelayMs: result.changed ? clientReloadDelayMs : undefined,
+        ...applyResult,
         auth: authCheck.auth,
       });
     } catch (error) {
@@ -1234,16 +1249,17 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         return res.status(400).json({ error: 'Invalid scope' });
       }
 
-      if (removed) {
-        await refreshOpenCodeAfterConfigChange(`provider ${providerId} disconnected (${scope})`);
-      }
+      const applyResult = await markConfigChange(
+        `provider ${providerId} disconnected (${scope})`,
+        {},
+        removed,
+      );
 
       return res.json({
         success: true,
         removed,
-        requiresReload: removed,
+        ...applyResult,
         message: removed ? 'Provider disconnected successfully' : 'Provider was not connected',
-        reloadDelayMs: removed ? clientReloadDelayMs : undefined,
       });
     } catch (error) {
       console.error('Failed to disconnect provider:', error);

@@ -4,8 +4,8 @@ import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { RiFolderLine, RiInformationLine } from '@remixicon/react';
 import { isDesktopShell, isTauriShell } from '@/lib/desktop';
-import { updateDesktopSettings } from '@/lib/persistence';
-import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
+import { saveDesktopSettingsNow } from '@/lib/persistence';
+import { recordConfigMutationResponse } from '@/stores/useConfigApplyStore';
 import { useI18n } from '@/lib/i18n';
 
 export const OpenCodeCliSettings: React.FC = () => {
@@ -75,16 +75,12 @@ export const OpenCodeCliSettings: React.FC = () => {
   const handleSaveAndReload = React.useCallback(async () => {
     setIsSaving(true);
     try {
-      await updateDesktopSettings({ opencodeBinary: value.trim() });
-      await reloadOpenCodeConfiguration({
-        message: t('settings.openchamber.opencodeCli.actions.restartingOpenCode'),
-        mode: 'projects',
-        scopes: ['all'],
-      });
+      const result = await saveDesktopSettingsNow({ opencodeBinary: value.trim() });
+      recordConfigMutationResponse(result);
     } finally {
       setIsSaving(false);
     }
-  }, [t, value]);
+  }, [value]);
 
   return (
     <div className="mb-8">

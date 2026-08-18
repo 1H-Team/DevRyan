@@ -1,11 +1,12 @@
 import { CURSOR_ACP_PROVIDER_ID } from '@/lib/providers/cursorAcp';
+import { isAnthropicOAuthProviderId } from '@/lib/providers/display';
 
 export interface ProviderOption {
   id: string;
   name?: string;
 }
 
-const ANTHROPIC_PROVIDER_OPTION: ProviderOption = { id: 'anthropic', name: 'Anthropic' };
+const ANTHROPIC_PROVIDER_OPTION: ProviderOption = { id: 'anthropic', name: 'Claude' };
 const ANTIGRAVITY_PROVIDER_OPTION: ProviderOption = { id: 'antigravity', name: 'Antigravity' };
 const CURSOR_ACP_PROVIDER_OPTION: ProviderOption = { id: CURSOR_ACP_PROVIDER_ID, name: 'Cursor' };
 const GITHUB_COPILOT_PROVIDER_OPTION: ProviderOption = { id: 'github-copilot', name: 'GitHub Copilot' };
@@ -14,7 +15,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
 const normalizeAvailableProviderName = (provider: ProviderOption): ProviderOption => (
-  provider.name === 'Anthropic OAuth' ? { ...provider, name: 'Anthropic' } : provider
+  isAnthropicOAuthProviderId(provider.id) ? { ...provider, name: 'Claude' } : provider
 );
 
 const normalizeProviderOption = (provider: ProviderOption): ProviderOption => {

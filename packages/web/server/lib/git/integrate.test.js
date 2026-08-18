@@ -6,7 +6,7 @@ import { promisify } from 'node:util';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { computeIntegratePlan, integrateCommits } from './integrate.js';
+import { computeIntegratePlan, integrateCommits, isIntegrateTempPath } from './integrate.js';
 
 const execFileAsync = promisify(execFile);
 const tempDirectories = [];
@@ -47,5 +47,14 @@ describe('server-owned commit integration', () => {
     expect(result).toEqual({ kind: 'success', moved: 1 });
     expect(await git(repoRoot, 'show', 'main:developer.txt')).toBe('developer');
     expect(await git(repoRoot, 'branch', '--show-current')).toBe('Dev');
+  });
+
+  it('recognizes git-integrate temp worktree paths', async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-integrate-'));
+    tempDirectories.push(tempDir);
+    expect(isIntegrateTempPath(tempDir)).toBe(true);
+    expect(isIntegrateTempPath(await fs.realpath(tempDir))).toBe(true);
+    expect(isIntegrateTempPath(path.join(os.tmpdir(), 'unrelated-project'))).toBe(false);
+    expect(isIntegrateTempPath('')).toBe(false);
   });
 });

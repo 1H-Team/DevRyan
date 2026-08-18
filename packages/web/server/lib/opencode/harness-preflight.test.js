@@ -13,6 +13,25 @@ import {
 } from './harness-preflight.js';
 
 describe('harness preflight', () => {
+  it('warns that external runtimes cannot guarantee skill-policy enforcement', () => {
+    const findings = lintAgentHarness({
+      agents: [],
+      skills: [],
+      hiddenSkills: [],
+      staleOverrides: [],
+      toolManifest: {},
+      runtimeMode: 'external',
+    });
+
+    expect(findings).toEqual([
+      expect.objectContaining({
+        ruleId: 'external-skill-policy-unenforced',
+        severity: 'warning',
+        summary: expect.stringContaining('cannot guarantee'),
+      }),
+    ]);
+  });
+
   it('reports read-only findings for unavailable delegated agents and invalid permission keys', () => {
     const findings = lintAgentHarness({
       agents: [
@@ -1071,5 +1090,44 @@ describe('harness preflight', () => {
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  });
+});
+
+describe('Anthropic context budget projection', () => {
+  it('separates fixed prefix, request count, active context, and cumulative input', async () => {
+    const preflight = createHarnessPreflight({
+      getAgents: () => [],
+      getSkills: () => [{
+        name: 'alpha',
+        description: `A workflow ${'with repeated detail '.repeat(30)}`,
+        path: '/skills/alpha/SKILL.md',
+        body: 'full body remains on demand',
+      }],
+      getHiddenSkills: () => [],
+      getStaleOverrides: () => [],
+      getPackagedAgents: () => [],
+    });
+
+    const result = await preflight.run({
+      anthropicUsage: {
+        fixedPrefixTokens: 2_000,
+        requestCount: 40,
+        activeContextTokens: 127_040,
+        cumulativeProcessedInputTokens: 4_010_214,
+      },
+    });
+
+    expect(result.contextBudget.anthropic).toMatchObject({
+      fixedPrefix: {
+        descriptionLimit: 240,
+        superpowersBootstrapBytes: 0,
+        tokens: 2_000,
+      },
+      requestCount: 40,
+      activeContextTokens: 127_040,
+      cumulativeProcessedInputTokens: 4_010_214,
+    });
+    expect(result.contextBudget.anthropic.fixedPrefix.transformedBytes)
+      .toBeLessThan(result.contextBudget.anthropic.fixedPrefix.originalBytes);
   });
 });

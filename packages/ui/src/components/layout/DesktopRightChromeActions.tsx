@@ -1,12 +1,11 @@
 import React, { useEffect } from 'react';
-import { RiBarChartLine, RiServerLine, type RemixiconComponentType } from '@remixicon/react';
+import { RiBarChartLine, RiDraftLine, RiServerLine, type RemixiconComponentType } from '@remixicon/react';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import {
-  PlanDocumentIcon,
   SidebarRightCollapseIcon,
   SidebarRightExpandIcon,
   TerminalPanelIcon,
@@ -174,6 +173,7 @@ export const DesktopRightChromeActions: React.FC<DesktopRightChromeActionsProps>
           ?? quotaProviderRefreshState[provider.id]?.lastSuccessAt
           ?? null,
         resetCredits: result?.usage?.resetCredits,
+        warnings: result?.warnings,
         error: quotaProviderRefreshState[provider.id]?.refreshError
           ?? ((result && !result.ok && result.configured) ? result.error : undefined),
       };
@@ -270,6 +270,7 @@ export const DesktopRightChromeActions: React.FC<DesktopRightChromeActionsProps>
         group.resetCredits ||
         (group.modelRows && group.modelRows.length > 0) ||
         (group.modelFamilies && group.modelFamilies.length > 0) ||
+        (group.warnings && group.warnings.length > 0) ||
         group.error
       ) {
         groups.push(group);
@@ -418,7 +419,7 @@ export const DesktopRightChromeActions: React.FC<DesktopRightChromeActionsProps>
               onClick={handleOpenContextPlan}
               className={cn(DESKTOP_HEADER_ICON_BUTTON_CLASS, isContextPlanActive && 'bg-[var(--interactive-hover)]')}
             >
-              <PlanDocumentIcon className="h-[18px] w-[18px]" />
+              <RiDraftLine className="h-[18px] w-[18px]" />
             </button>
           </TooltipTrigger>
           <TooltipContent>

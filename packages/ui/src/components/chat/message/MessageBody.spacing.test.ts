@@ -15,12 +15,23 @@ describe('session output spacing', () => {
         expect(source).toContain('data-session-output-stack="true"');
         expect(source).not.toContain('key={`progressive-group-${segment.id}`} className="mb-3"');
         expect(source).not.toContain("'group/assistant-text relative mt-3 break-words max-w-full'");
+        // Exterior markdown edge-margins are now stripped via scoped CSS, not
+        // partial last-child utilities on the parent stack.
+        expect(source).not.toContain('[&_p:last-child]:mb-0');
+    });
+
+    test('flattens markdown exterior margins inside the session output stack', () => {
+        const css = read('../../../index.css');
+
+        expect(css).toContain('[data-session-output-stack="true"] .markdown-content > :first-child');
+        expect(css).toContain('[data-session-output-stack="true"] .markdown-content > :last-child');
     });
 
     test('keeps Live and Sorted assistant text on the same exterior-spacing contract', () => {
         const source = read('parts/AssistantTextPart.tsx');
 
-        expect(source).toContain('className="group/assistant-text relative break-words"');
+        // Assistant text shares the same symmetric row padding as reasoning/tool rows.
+        expect(source).toContain("cn('group/assistant-text relative break-words', isMobile ? 'py-1' : 'py-1.5')");
         expect(source).not.toContain("chatRenderMode === 'live' ? 'my-1' : ''");
     });
 
@@ -33,7 +44,10 @@ describe('session output spacing', () => {
 
         expect(reasoning).not.toContain('className="my-1" data-reasoning-block-id');
         expect(reasoning).not.toContain('className="my-1 typography-meta text-muted-foreground"');
-        expect(reasoning.match(/isMobile \? 'relative pr-2 py-1' : 'relative pr-2 py-1\.5'/g)).toHaveLength(2);
+        // The timeline block owns the responsive row padding without exterior
+        // margins; the empty-active "Thinking…" placeholder is gone (the bottom
+        // status row owns that indicator).
+        expect(reasoning.match(/isMobile \? 'relative pr-2 py-1' : 'relative pr-2 py-1\.5'/g)).toHaveLength(1);
 
         expect(progressiveGroup).not.toContain('className="mt-1 mb-2 space-y-1.5"');
         expect(progressiveGroup).not.toContain('className="mt-1 mb-2"');

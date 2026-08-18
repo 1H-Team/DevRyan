@@ -52,6 +52,18 @@ describe('DevRyan default plugin catalog', () => {
         delivery: 'bundled-file',
       },
       {
+        pluginId: 'devryan-skill-context',
+        shippedSpec: './plugins/devryan-skill-context.mjs',
+        version: null,
+        delivery: 'bundled-file',
+      },
+      {
+        pluginId: 'devryan-document-reader',
+        shippedSpec: './plugins/devryan-document-reader.mjs',
+        version: null,
+        delivery: 'bundled-file',
+      },
+      {
         pluginId: 'openai-tool-schema-sanitizer',
         shippedSpec: './plugins/openai-tool-schema-sanitizer.mjs',
         version: null,
@@ -65,9 +77,12 @@ describe('DevRyan default plugin catalog', () => {
     expect(getDevRyanDefaultPluginIdForSpec('opencode-with-claude@1.6.17')).toBe('opencode-with-claude');
     expect(getDevRyanDefaultPluginIdForSpec('context-mode@1.0.168')).toBe('context-mode');
     expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-superpowers.mjs')).toBe('superpowers');
+    expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-skill-context.mjs')).toBe('devryan-skill-context');
+    expect(getDevRyanDefaultPluginIdForSpec('./plugins/devryan-document-reader.mjs')).toBe('devryan-document-reader');
     expect(getDevRyanDefaultPluginIdForSpec('./node_modules/@rama_nigg/open-cursor/dist/plugin-entry.js'))
       .toBe('@rama_nigg/open-cursor');
     expect(getDevRyanDefaultPluginIdForFile('openai-tool-schema-sanitizer.mjs')).toBe('openai-tool-schema-sanitizer');
+    expect(getDevRyanDefaultPluginIdForFile('devryan-skill-context.mjs')).toBe('devryan-skill-context');
     expect(getDevRyanDefaultPluginIdForFile('devryan-managed-orchestration.mjs')).toBeNull();
   });
 

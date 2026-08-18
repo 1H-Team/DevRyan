@@ -2957,6 +2957,9 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
     case 'desktop_browser_surface_command':
       return getBrowserSurfaceManager().command(browserWindow, args);
 
+    case 'desktop_browser_surface_set_viewport_mode':
+      return getBrowserSurfaceManager().setViewportMode(browserWindow, args);
+
     case 'desktop_browser_surface_popout':
       return getBrowserSurfaceManager().popout(browserWindow, args);
 
@@ -3875,6 +3878,7 @@ const NATIVE_BROWSER_COMMANDS = new Set([
   'desktop_browser_surface_snapshot',
   'desktop_browser_surface_layout',
   'desktop_browser_surface_command',
+  'desktop_browser_surface_set_viewport_mode',
   'desktop_browser_surface_popout',
   'desktop_browser_surface_dock',
   'desktop_browser_surface_focus_popout',

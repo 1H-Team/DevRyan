@@ -73,6 +73,122 @@ const createWaitScheduler = () => {
 };
 
 describe('web managed orchestration runtime', () => {
+  it('blocks only work-launching RPC actions during context-mode recovery', async () => {
+    const { task } = createWaitScheduler();
+    const submit = vi.fn();
+    const acknowledgeResult = vi.fn(async () => ({
+      envelope: { taskId: task.taskId, action: 'continue' },
+      followUpTask: null,
+    }));
+    const scheduler = {
+      initialize: vi.fn(async () => undefined),
+      submit,
+      getTask: vi.fn(() => task),
+      getResultEnvelope: vi.fn(() => null),
+      acknowledgeResult,
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    };
+    const runtime = createWebManagedOrchestrationRuntime({
+      scheduler,
+      persistence: createPersistence(),
+      executor: { async start() { throw new Error('must not start'); } },
+      getWorkAdmissionBlock: () => ({
+        code: 'CONTEXT_MODE_RECOVERY_PENDING',
+        error: 'Context-mode recovery is pending',
+      }),
+    });
+
+    await expect(runtime.handleRpc({ method: 'submit', params: submitParams(1) }))
+      .rejects.toMatchObject({ code: 'CONTEXT_MODE_RECOVERY_PENDING', statusCode: 503 });
+    expect(submit).not.toHaveBeenCalled();
+    await expect(runtime.handleRpc({
+      method: 'status',
+      params: { taskId: task.taskId, rootSessionId: task.rootSessionId, directory: task.directory },
+    })).resolves.toMatchObject({ task: { taskId: task.taskId } });
+    await expect(runtime.handleRpc({
+      method: 'acknowledge',
+      params: {
+        taskId: task.taskId,
+        rootSessionId: task.rootSessionId,
+        directory: task.directory,
+        action: 'continue',
+        idempotencyKey: 'continue-during-recovery',
+      },
+    })).resolves.toMatchObject({ resultEnvelope: { taskId: task.taskId } });
+    await expect(runtime.handleRpc({
+      method: 'acknowledge',
+      params: {
+        taskId: task.taskId,
+        rootSessionId: task.rootSessionId,
+        directory: task.directory,
+        action: 'retry',
+        idempotencyKey: 'retry-during-recovery',
+      },
+    })).rejects.toMatchObject({ code: 'CONTEXT_MODE_RECOVERY_PENDING', statusCode: 503 });
+    expect(acknowledgeResult).toHaveBeenCalledOnce();
+    await runtime.shutdown();
+  });
+
+  it('rejects read-only Designer before scheduler admission', async () => {
+    const submit = vi.fn();
+    const publishEvent = vi.fn();
+    const scheduler = {
+      initialize: vi.fn(async () => undefined),
+      submit,
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    };
+    const runtime = createWebManagedOrchestrationRuntime({
+      scheduler,
+      persistence: createPersistence(),
+      publishEvent,
+      executor: { async start() { throw new Error('must not start'); } },
+    });
+
+    await expect(runtime.handleRpc({
+      method: 'submit',
+      params: submitParams(1, { readOnly: true, agent: 'designer' }),
+    })).rejects.toMatchObject({
+      code: 'MANAGED_READ_ONLY_AGENT_UNSUPPORTED',
+      statusCode: 409,
+    });
+    expect(submit).not.toHaveBeenCalled();
+    expect(publishEvent).not.toHaveBeenCalled();
+    await runtime.shutdown();
+  });
+
+  it('rejects incompatible read-only providers before scheduler admission', async () => {
+    const submit = vi.fn();
+    const publishEvent = vi.fn();
+    const scheduler = {
+      initialize: vi.fn(async () => undefined),
+      submit,
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    };
+    const runtime = createWebManagedOrchestrationRuntime({
+      scheduler,
+      persistence: createPersistence(),
+      publishEvent,
+      executor: { async start() { throw new Error('must not start'); } },
+    });
+
+    await expect(runtime.handleRpc({
+      method: 'submit',
+      params: submitParams(1, { readOnly: true, providerId: 'cursor-acp' }),
+    })).rejects.toMatchObject({
+      code: 'MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED',
+      statusCode: 409,
+    });
+    expect(submit).not.toHaveBeenCalled();
+    expect(publishEvent).not.toHaveBeenCalled();
+    await runtime.shutdown();
+  });
+
   it('exposes durable provider-recovery continuations through the private bridge', async () => {
     const continuations = [{
       sourceTaskId: 'dvr_task_limited',
@@ -596,7 +712,7 @@ describe('web managed orchestration runtime', () => {
     await runtime.shutdown();
   });
 
-  it('enforces a 60-minute Oracle deadline for starts and follow-ups', async () => {
+  it.each(['fixer', 'oracle'])('enforces a 60-minute %s deadline for starts and follow-ups', async (agent) => {
     const runtime = createWebManagedOrchestrationRuntime({
       persistence: createPersistence(),
       executor: {
@@ -610,17 +726,17 @@ describe('web managed orchestration runtime', () => {
       },
       createTaskId: (() => {
         let index = 0;
-        return () => `dvr_task_oracle_deadline_${++index}`;
+        return () => `dvr_task_specialist_deadline_${++index}`;
       })(),
       createLeaseToken: (() => {
         let index = 0;
-        return () => `dvr_lease_oracle_deadline_${++index}`;
+        return () => `dvr_lease_specialist_deadline_${++index}`;
       })(),
       now: () => 10_000,
     });
     const submitted = await runtime.handleRpc({
       method: 'submit',
-      params: submitParams(1, { agent: 'oracle', timeoutAt: 1_810_000 }),
+      params: submitParams(1, { agent, timeoutAt: 1_810_000 }),
     });
     expect(submitted.task.timeoutAt).toBe(3_610_000);
     await runtime.flush();
@@ -632,7 +748,7 @@ describe('web managed orchestration runtime', () => {
         rootSessionId: 'ses_root',
         directory: '/workspace',
         action: 'retry',
-        idempotencyKey: 'retry-oracle-deadline',
+        idempotencyKey: `retry-${agent}-deadline`,
       },
     });
     expect(retried.followUpTask.task.timeoutAt).toBe(3_610_000);
@@ -695,6 +811,91 @@ describe('web managed orchestration runtime', () => {
       });
       expect(result.followUpTask.task.timeoutAt).toBe(1_810_000);
     }
+
+    await runtime.shutdown();
+  });
+
+  it('carries a long source window into follow-ups and lets timeoutSeconds extend it', async () => {
+    const TWO_HOURS = 2 * 60 * 60 * 1_000;
+    const runtime = createWebManagedOrchestrationRuntime({
+      persistence: createPersistence(),
+      executor: {
+        async start() {
+          return { status: 'failed', failureReason: 'Managed task timed out at 20000', resumable: true };
+        },
+        async resume() {
+          return { status: 'failed', failureReason: 'Managed task timed out at 30000', resumable: true };
+        },
+        async retryInPlace() {
+          return { status: 'failed', failureReason: 'Managed task timed out at 40000', resumable: true };
+        },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' }; },
+        async readRecoverableResult() { return {}; },
+        async shutdown() {},
+      },
+      createTaskId: (() => {
+        let index = 0;
+        return () => `dvr_task_window_${++index}`;
+      })(),
+      createLeaseToken: (() => {
+        let index = 0;
+        return () => `dvr_lease_window_${++index}`;
+      })(),
+      now: () => 10_000,
+    });
+    const submitted = await runtime.handleRpc({
+      method: 'submit',
+      params: submitParams(1, {
+        childSessionId: 'ses_child_window',
+        timeoutAt: 10_000 + TWO_HOURS,
+      }),
+    });
+    expect(submitted.task.timeoutAt).toBe(10_000 + TWO_HOURS);
+    await runtime.flush();
+
+    // A 2h task that times out must not silently drop to the 30-minute default when it
+    // is continued; the remaining work was sized against the original window.
+    const resumed = await runtime.handleRpc({
+      method: 'acknowledge',
+      params: {
+        taskId: submitted.task.taskId,
+        rootSessionId: 'ses_root',
+        directory: '/workspace',
+        action: 'resume',
+        idempotencyKey: 'window-inherit-resume',
+      },
+    });
+    expect(resumed.followUpTask.task.timeoutAt).toBe(10_000 + TWO_HOURS);
+    await runtime.flush();
+
+    const extended = await runtime.handleRpc({
+      method: 'acknowledge',
+      params: {
+        taskId: resumed.followUpTask.task.taskId,
+        rootSessionId: 'ses_root',
+        directory: '/workspace',
+        action: 'retry_in_place',
+        idempotencyKey: 'window-extend-retry',
+        providerId: 'openai',
+        modelId: 'gpt-5.4',
+        variant: null,
+        timeoutSeconds: 4 * 60 * 60,
+      },
+    });
+    expect(extended.followUpTask.task.timeoutAt).toBe(10_000 + 4 * 60 * 60 * 1_000);
+
+    await expect(runtime.handleRpc({
+      method: 'acknowledge',
+      params: {
+        taskId: submitted.task.taskId,
+        rootSessionId: 'ses_root',
+        directory: '/workspace',
+        action: 'resume',
+        idempotencyKey: 'window-invalid-timeout',
+        timeoutSeconds: 0,
+      },
+    })).rejects.toThrow('timeoutSeconds must be a positive safe integer');
 
     await runtime.shutdown();
   });
@@ -950,5 +1151,48 @@ describe('web managed orchestration runtime', () => {
     })).rejects.toMatchObject({ code: 'managed_runtime_unavailable', statusCode: 503 });
     expect((await runtime.getSnapshot())).toMatchObject({ available: false, tasks: [] });
     await runtime.shutdown();
+  });
+
+  it('dispatches auxiliary RPC methods without touching scheduler initialization', async () => {
+    const scheduler = {
+      initialize: vi.fn(async () => undefined),
+      shutdown: vi.fn(async () => undefined),
+      flush: vi.fn(async () => undefined),
+      getDiagnostics: vi.fn(() => ({})),
+    };
+    const report = vi.fn((params) => ({ accepted: true, sampleID: params.sampleID }));
+    const runtime = createWebManagedOrchestrationRuntime({
+      scheduler,
+      persistence: createPersistence(),
+      executor: { async start() { throw new Error('must not start'); } },
+      auxiliaryRpcHandlers: { telemetry_report: report },
+    });
+
+    await expect(runtime.handleRpc({
+      method: 'telemetry_report',
+      params: { sampleID: 'sample_1', value: 10 },
+    })).resolves.toEqual({ accepted: true, sampleID: 'sample_1' });
+    expect(report).toHaveBeenCalledWith(
+      { sampleID: 'sample_1', value: 10 },
+      undefined,
+    );
+    expect(scheduler.initialize).not.toHaveBeenCalled();
+
+    // Auxiliary validation failures surface as normalized invalid_request errors.
+    const throwingRuntime = createWebManagedOrchestrationRuntime({
+      scheduler,
+      persistence: createPersistence(),
+      executor: { async start() { throw new Error('must not start'); } },
+      auxiliaryRpcHandlers: {
+        telemetry_report: () => { throw new TypeError('sampleID is required'); },
+      },
+    });
+    await expect(throwingRuntime.handleRpc({
+      method: 'telemetry_report',
+      params: {},
+    })).rejects.toMatchObject({ code: 'invalid_request', statusCode: 400 });
+
+    await runtime.shutdown();
+    await throwingRuntime.shutdown();
   });
 });

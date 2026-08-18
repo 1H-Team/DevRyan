@@ -5,8 +5,10 @@ import {
   createDiagnosticJournal,
   createDiagnosticSanitizer,
   createHarnessPaths,
+  createPromptAdmissionController,
   createRecordStore,
   createWorktreeBootstrapRuntime,
+  validateCommandDeadlineRecord,
   validateWorktreeBootstrapReceipt,
 } from '@openchamber/harness-runtime';
 
@@ -28,21 +30,27 @@ export const createWebHarnessRuntime = (options = {}) => {
     validateRecord: validateWorktreeBootstrapReceipt,
     logger: options.logger ?? console,
   });
-  let ready = false;
-  let acceptingPrompts = false;
+  const commandDeadlineStore = createRecordStore({
+    directory: paths.commandDeadlineDir,
+    validateRecord: validateCommandDeadlineRecord,
+    logger: options.logger ?? console,
+  });
+  const promptAdmission = createPromptAdmissionController();
   let initialization = null;
   let worktreeRuntime = null;
   let evidenceRuntime = null;
+  let commandDeadlineRuntime = null;
 
   const initialize = () => {
     initialization ??= Promise.all([
       journal.initialize(),
       worktreeStore.initialize(),
+      commandDeadlineStore.initialize(),
       worktreeRuntime?.reconcileOnStartup?.(),
       evidenceRuntime?.initialize?.(),
+      commandDeadlineRuntime?.initialize?.(),
     ]).then(() => {
-      ready = true;
-      acceptingPrompts = true;
+      promptAdmission.markReady();
     });
     return initialization;
   };
@@ -53,6 +61,10 @@ export const createWebHarnessRuntime = (options = {}) => {
 
   const setEvidenceRuntime = (runtime) => {
     evidenceRuntime = runtime;
+  };
+
+  const setCommandDeadlineRuntime = (runtime) => {
+    commandDeadlineRuntime = runtime;
   };
 
   const record = (entry) => journal.enqueue({
@@ -82,13 +94,12 @@ export const createWebHarnessRuntime = (options = {}) => {
   };
 
   const promptAdmissionMiddleware = (turnTimingRuntime) => (req, res, next) => {
-    if (!ready || !acceptingPrompts) {
-      res.setHeader('Retry-After', '1');
+    const admissionBlock = promptAdmission.getBlock();
+    if (admissionBlock) {
+      res.setHeader('Retry-After', String(admissionBlock.retryAfterSeconds));
       res.status(503).json({
-        error: !ready
-          ? 'DevRyan harness is still initializing'
-          : 'DevRyan is shutting down',
-        code: !ready ? 'HARNESS_INITIALIZING' : 'HARNESS_DRAINING',
+        error: admissionBlock.error,
+        code: admissionBlock.code,
       });
       return;
     }
@@ -148,7 +159,7 @@ export const createWebHarnessRuntime = (options = {}) => {
   );
 
   const beginDrain = () => {
-    acceptingPrompts = false;
+    promptAdmission.beginDrain();
   };
 
   const drain = async () => {
@@ -157,7 +168,9 @@ export const createWebHarnessRuntime = (options = {}) => {
       journal.close(),
       worktreeRuntime?.drain?.(),
       evidenceRuntime?.drain?.(),
+      commandDeadlineRuntime?.drain?.(),
       worktreeStore.drain(),
+      commandDeadlineStore.drain(),
     ]);
   };
 
@@ -166,9 +179,12 @@ export const createWebHarnessRuntime = (options = {}) => {
     sanitizer,
     journal,
     worktreeStore,
+    commandDeadlineStore,
     initialize,
-    isReady: () => ready,
-    isAcceptingPrompts: () => acceptingPrompts,
+    isReady: promptAdmission.isReady,
+    isAcceptingPrompts: promptAdmission.isAccepting,
+    getPromptAdmissionBlock: promptAdmission.getBlock,
+    acquirePromptAdmissionHold: promptAdmission.acquireHold,
     promptAdmissionMiddleware,
     controlJournalMiddleware,
     record,
@@ -196,8 +212,10 @@ export const createWebHarnessRuntime = (options = {}) => {
     },
     setWorktreeRuntime,
     setEvidenceRuntime,
+    setCommandDeadlineRuntime,
     getWorktreeRuntime: () => worktreeRuntime,
     getWorktreeReceipts,
+    getCommandDeadlineRecoveryStatus: () => commandDeadlineRuntime?.getStatus?.() ?? null,
     beginDrain,
     drain,
     getStatus: () => journal.getStatus(),

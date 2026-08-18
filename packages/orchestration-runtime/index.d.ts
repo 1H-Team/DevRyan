@@ -13,7 +13,11 @@ export type ManagedTaskTerminalStatus = Extract<ManagedTaskStatus, 'completed' |
 export type ManagedTaskMode = 'builder' | 'orchestrator';
 export type ManagedTaskExecutionKind = 'start' | 'retry' | 'resume' | 'recover_in_place' | 'retry_in_place';
 export type ManagedTaskResultAction = 'continue' | 'resume' | 'retry' | 'recover_in_place' | 'retry_in_place' | 'abandon';
-export type ManagedTaskFailureKind = 'provider_usage_limit' | 'provider_prompt_rejected' | null;
+export type ManagedTaskFailureKind =
+  | 'provider_usage_limit'
+  | 'provider_prompt_rejected'
+  | 'deadline_exceeded'
+  | null;
 export type ProviderTransportFailureKind =
   | 'request_timeout'
   | 'response_header_timeout'
@@ -64,6 +68,7 @@ export function isManagedTaskAgentRetryAvailable(task: ManagedTaskRecord): boole
 
 export type ManagedTaskEventRecord = Omit<ManagedTaskRecord,
   'prompt' | 'idempotencyKey' | 'dispatchGroupId' | 'readOnly' | 'leaseToken'> & {
+    dispatchGrouped: boolean;
     failureKind: ManagedTaskFailureKind;
     agentRetryAvailable: boolean;
   };
@@ -153,6 +158,7 @@ export interface ManagedTaskControl {
 
 export type ManagedTaskReconciliation =
   | { state: 'live'; accepted?: boolean }
+  | { state: 'relaunch' }
   | { state: 'terminal'; result: ManagedTaskExecutorResult }
   | { state: 'transient'; failureReason?: string }
   | {
@@ -290,11 +296,17 @@ export interface ManagedAgentHandoffResult {
 }
 
 export interface ManagedProviderRecoveryContinuation {
-  sourceTaskId: string;
+  sourceTaskId: string | null;
   taskId: string;
   rootSessionId: string;
   childSessionId: string | null;
   directory: string;
+  /**
+   * Collectable unacknowledged terminals the idle parent may wait for and
+   * disposition. The scheduler never emits parked Model Recovery results;
+   * those stay on the unacknowledged envelope and the UI recovery card.
+   */
+  kind: 'collect';
 }
 
 export interface ManagedTaskScheduler {
@@ -361,11 +373,14 @@ export const PROVIDER_USAGE_LIMIT_FAILURE_KIND: 'provider_usage_limit';
 export const PROVIDER_PROMPT_REJECTED_FAILURE_KIND: 'provider_prompt_rejected';
 export const PROVIDER_TRANSPORT_FAILURE_KINDS: readonly ProviderTransportFailureKind[];
 export const MANAGED_RETRY_IN_PLACE_PROMPT: string;
+export const MANAGED_RESUME_CONTINUATION_PROMPT: string;
 export const MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT: string;
 export const MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT: string;
 export const MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT: string;
 export const MANAGED_READ_ONLY_PROMPT: string;
 export function isManagedTransientTransportContinuationPrompt(value: unknown): boolean;
+export function isManagedResumeContinuationPrompt(value: unknown): boolean;
+export function isManagedRetryInPlacePrompt(value: unknown): boolean;
 export const DEFAULT_MANAGED_TERMINAL_MAX_RECORDS: number;
 export const DEFAULT_MANAGED_TERMINAL_MAX_AGE_MS: number;
 export const DEFAULT_MANAGED_LEDGER_MAX_BYTES: number;
@@ -378,6 +393,10 @@ export function classifyProviderTransportFailure(
 ): ProviderTransportFailureKind | null;
 export function isDefiniteProviderUsageLimit(value: unknown): boolean;
 export function isProviderPromptRejected(value: unknown): boolean;
+export const DEADLINE_EXCEEDED_FAILURE_KIND: 'deadline_exceeded';
+export const MANAGED_TASK_TIMEOUT_REASON_PREFIX: string;
+export function isManagedTaskDeadlineExceeded(value: unknown): boolean;
+export function classifyManagedTaskFailure(value: unknown): ManagedTaskFailureKind;
 export function truncateManagedText(value: unknown, maxBytes: number): string;
 export function isTerminalManagedTaskStatus(status: unknown): status is ManagedTaskTerminalStatus;
 export function validateManagedTaskRecord(task: unknown): ManagedTaskRecord;
@@ -429,5 +448,11 @@ export function resolveProviderPromptTools(
   agent?: unknown,
   options?: { readOnly?: boolean },
 ): Readonly<Record<string, boolean>> | undefined;
+export const MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED: 'MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED';
+export const MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE: string;
+export function supportsManagedReadOnlyProvider(providerId: unknown): boolean;
+export const MANAGED_READ_ONLY_AGENT_UNSUPPORTED: 'MANAGED_READ_ONLY_AGENT_UNSUPPORTED';
+export const MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE: string;
+export function supportsManagedReadOnlyAgent(agent: unknown): boolean;
 export function createManagedOpenCodeExecutor(options: ManagedOpenCodeExecutorOptions): ManagedTaskExecutor;
 export function createManagedTaskScheduler(options: ManagedTaskSchedulerOptions): ManagedTaskScheduler;

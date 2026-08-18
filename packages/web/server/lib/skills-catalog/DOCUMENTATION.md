@@ -16,6 +16,7 @@ This module provides skill discovery, scanning, and installation capabilities fo
     - `scan.js`: Scanning ClawdHub registry with pagination.
     - `install.js`: Installation from ClawdHub (ZIP download).
     - `api.js`: ClawdHub API client with rate limiting.
+- `@openchamber/shared-runtime/lib/safe-archive.js`: shared web/VS Code ZIP download, preflight, extraction audit, and transactional target replacement.
 
 ## Public API
 
@@ -44,7 +45,7 @@ The following functions are exported and used by the web server:
 - `isClawdHubSource(source)`: Check if source string refers to ClawdHub.
 - `scanClawdHub()`: Scan entire ClawdHub registry for all skills (paginated, max 20 pages).
 - `scanClawdHubPage({ cursor })`: Scan a single page of ClawdHub results with cursor-based pagination.
-- `installSkillsFromClawdHub({ scope, targetSource, workingDirectory, userSkillDir, selections, conflictPolicy, conflictDecisions })`: Install skills from ClawdHub by downloading ZIP files.
+- `installSkillsFromClawdHub({ scope, targetSource, workingDirectory, userSkillDir, selections, conflictPolicy, conflictDecisions })`: Install skills from ClawdHub through the shared bounded ZIP pipeline.
 - `fetchClawdHubSkills({ cursor })`: Fetch paginated skills list from ClawdHub API.
 - `fetchClawdHubSkillVersion(slug, version)`: Fetch specific skill version details.
 - `fetchClawdHubSkillInfo(slug)`: Fetch skill metadata without version details.
@@ -66,7 +67,7 @@ The following functions are internal helpers used by exported functions:
 ### Skill Name Validation (used in `install.js`, `scan.js`, `clawdhub/install.js`)
 - `validateSkillName(skillName)`: Validate skill name against pattern `/^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/` (1-64 chars, lowercase alphanumeric with hyphens).
 
-### File System Helpers (`install.js`, `scan.js`, `clawdhub/install.js`)
+### File System Helpers (`install.js`, `scan.js`)
 - `safeRm(dir)`: Safely remove directory recursively (ignores errors).
 - `ensureDir(dirPath)`: Ensure directory exists with recursive creation.
 - `copyDirectoryNoSymlinks(srcDir, dstDir)`: Copy directory contents without symlinks, with path traversal protection.
@@ -148,8 +149,9 @@ The following functions are internal helpers used by exported functions:
 - ClawdHub API base URL: `https://clawdhub.com/api/v1`.
 - Pagination uses cursor-based approach with `MAX_PAGES=20` safety limit.
 - Rate limiting: 120 req/min with 100ms delay between requests.
-- Downloaded skills are extracted from ZIP files using `adm-zip`.
-- Always validate `SKILL.md` exists before installation.
+- Downloaded ZIPs use HTTPS-only, bounded, timeout-aware streaming. Redirects must remain on an explicitly allowed origin.
+- Archive metadata is fully preflighted for count/size/path/encryption/special-file/collision hazards before any entry is written. Extraction uses a sibling staging directory, caps actual expanded bytes, audits the completed tree, requires a root `SKILL.md`, and transactionally replaces the target only after validation.
+- Public archive safety failures use stable `ARCHIVE_*` values directly in `skipped[].code`; ordinary network or installation failures remain `installFailed`. Host recovery metadata contains only the safe code and fixed guidance.
 
 ### Cache Management
 - Cache keys include `normalizedRepo`, `subpath`, and `identityId` for isolation.
@@ -159,12 +161,14 @@ The following functions are internal helpers used by exported functions:
 ### Security Considerations
 - Path traversal protection in `copyDirectoryNoSymlinks`: resolves real paths and checks containment.
 - Symlinks are explicitly rejected to prevent escape from skill directory.
+- ClawdHub ZIP entries additionally reject absolute/traversal/NUL/overlong/deep paths, duplicate and case-colliding paths, file/directory conflicts, encryption, symlinks, and other Unix special modes. Containment is rechecked immediately before each staged write.
+- Existing installations are not touched until the staged tree passes its final audit; commit failures restore the prior target, including the cross-device fallback path.
 - SSH key paths are trimmed but not escaped in `git.js` (assumes safe input from profiles).
 - Temporary directories are cleaned up in `finally` blocks.
 
 ### Error Handling
 - All exported functions return `{ ok, ... }` result objects, not throw.
-- Error kinds: `authRequired`, `networkError`, `conflicts`, `invalidSource`, `unknown`.
+- Error kinds: `authRequired`, `networkError`, `conflicts`, `invalidSource`, `archiveRejected`, `unknown`. Per-item ClawdHub failures use stable `skipped[].code` values.
 - Use `looksLikeAuthError` to detect SSH/HTTPS auth failures for better UX.
 - Log errors to console for debugging but return structured errors to callers.
 

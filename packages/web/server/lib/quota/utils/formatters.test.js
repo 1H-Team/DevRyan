@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { calculateResetAfterSeconds, formatResetTime, toUsageWindow } from './formatters.js';
+import { buildResult, calculateResetAfterSeconds, formatResetTime, toUsageWindow } from './formatters.js';
 
 describe('formatResetTime', () => {
   it('returns null for invalid timestamps', () => {
@@ -56,5 +56,21 @@ describe('toUsageWindow', () => {
   it('derives and clamps remaining percent from valid finite usage', () => {
     expect(toUsageWindow({ usedPercent: 60 }).remainingPercent).toBe(40);
     expect(toUsageWindow({ usedPercent: 110 }).remainingPercent).toBe(0);
+  });
+});
+
+describe('buildResult', () => {
+  it('retains non-fatal provider warnings without requiring an error result', () => {
+    const result = buildResult({
+      providerId: 'deepseek',
+      providerName: 'DeepSeek',
+      ok: true,
+      configured: true,
+      usage: { windows: {} },
+      warnings: ['Balance is temporarily unavailable.'],
+    });
+
+    expect(result.warnings).toEqual(['Balance is temporarily unavailable.']);
+    expect(result.ok).toBe(true);
   });
 });

@@ -61,6 +61,21 @@ describe('web harness prompt admission', () => {
     expect(initializingNext).not.toHaveBeenCalled();
 
     await runtime.initialize();
+    const releaseRecoveryHold = runtime.acquirePromptAdmissionHold('context_mode_recovery', {
+      code: 'CONTEXT_MODE_RECOVERY_PENDING',
+      error: 'Context-mode recovery is pending',
+      retryAfterSeconds: 1,
+    });
+    const recoveryResponse = createResponse();
+    middleware(request, recoveryResponse, vi.fn());
+    expect(recoveryResponse.statusCode).toBe(503);
+    expect(recoveryResponse.headers['Retry-After']).toBe('1');
+    expect(recoveryResponse.body).toEqual({
+      code: 'CONTEXT_MODE_RECOVERY_PENDING',
+      error: 'Context-mode recovery is pending',
+    });
+    releaseRecoveryHold();
+
     const acceptedResponse = createResponse();
     const acceptedNext = vi.fn();
     middleware(request, acceptedResponse, acceptedNext);

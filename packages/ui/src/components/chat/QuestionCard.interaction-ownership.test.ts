@@ -56,6 +56,10 @@ describe("QuestionCard option interaction ownership", () => {
     expect(source).not.toContain("data-question-submission-state")
     expect(source).not.toContain("chat.questionCard.submittingAnswer")
     expect(source).not.toContain("chat.questionCard.skippingQuestion")
+    expect(source).toContain("chat.questionCard.sendingResponse")
+    expect(source).toContain('className="flex min-h-[54px] items-center')
+    expect(source).toContain('role="status"')
+    expect(source).toContain('aria-live="polite"')
 
     const optimisticAckIndex = source.indexOf("acknowledgeQuestionRequests(previous, answerGroups")
     const awaitSubmitIndex = source.indexOf("await submitQuestionRequestAnswerGroups")
@@ -72,6 +76,13 @@ describe("QuestionCard option interaction ownership", () => {
     // Failures after unmount/scope change must surface via toast, not vanish.
     expect(source).toContain("from '@/components/ui/toast'")
     expect(source).toContain("chat.questionCard.submitFailedToast")
+
+    // While the authoritative request is still present, the optimistic state
+    // must retain a real surface instead of reducing the composer to its border.
+    const emptyStateIndex = source.indexOf("if (totalCount === 0)")
+    const compactStateIndex = source.indexOf("chat.questionCard.sendingResponse")
+    expect(emptyStateIndex).toBeGreaterThan(-1)
+    expect(compactStateIndex).toBeGreaterThan(emptyStateIndex)
   })
 
   test("renders inside the chat input composer, not the message viewport", () => {

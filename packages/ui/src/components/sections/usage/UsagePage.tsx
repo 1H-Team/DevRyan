@@ -2,7 +2,7 @@ import React from 'react';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { Checkbox } from '@/components/ui/checkbox';
 import { UsageCard } from './UsageCard';
-import { buildQuotaTrendKey, getSortedQuotaProviders, QUOTA_PROVIDERS } from '@/lib/quota';
+import { buildQuotaTrendKey, formatProviderWindowLabel, getSortedQuotaProviders, QUOTA_PROVIDERS } from '@/lib/quota';
 import {
   getEffectiveQuotaRefreshIntervalMs,
   getQuotaProviderRefreshStatus,
@@ -20,6 +20,7 @@ import type { UsageWindows, QuotaProviderId } from '@/types';
 import { getAllModelFamilies, getUsageModelDisplayInfo, sortModelFamilies, groupModelsByFamilyWithGetter } from '@/lib/quota/model-families';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useI18n } from '@/lib/i18n';
+import { sortUsageEntries } from '@/components/layout/usage/usage-groups';
 
 const formatTime = (timestamp: number | null) => {
   if (!timestamp) return '-';
@@ -91,6 +92,7 @@ export const UsagePage: React.FC = () => {
   const providerName = providerMeta?.name ?? selectedProviderId ?? t('settings.usage.sidebar.title');
   const usage = selectedResult?.usage;
   const selectedProviderError = selectedRefreshStatus.refreshError ?? selectedResult?.error ?? null;
+  const selectedProviderWarnings = selectedResult?.warnings ?? [];
   const hasRetainedUsageAfterFailure = Boolean(selectedResult?.ok && selectedRefreshStatus.refreshError);
   const showSelectedProviderError = selectedProviderError
     && selectedProviderError !== error
@@ -176,6 +178,9 @@ export const UsagePage: React.FC = () => {
   );
   const showOverallUsageWindows = selectedProviderId !== 'antigravity' &&
     Boolean(usage?.windows && Object.keys(usage.windows).length > 0);
+  const overallUsageEntries = React.useMemo(() => (
+    sortUsageEntries(selectedProviderId ?? '', Object.entries(usage?.windows ?? {}))
+  ), [selectedProviderId, usage?.windows]);
   const renderModelCard = React.useCallback((model: ModelInfo) => {
     if (!selectedProviderId) return null;
 
@@ -324,15 +329,29 @@ export const UsagePage: React.FC = () => {
           </div>
         )}
 
+        {selectedProviderWarnings.length > 0 && (
+          <div className="mb-8 rounded-lg border border-[var(--status-warning-border)] bg-[var(--status-warning-background)] px-4 py-3">
+            <p className="typography-ui-label font-medium text-[var(--status-warning)]">
+              {t('settings.usage.page.state.providerWarningTitle')}
+            </p>
+            <div className="mt-1 space-y-1 typography-meta text-[var(--status-warning)]/80">
+              {selectedProviderWarnings.map((warning, index) => (
+                <p key={`${selectedProviderId}-warning-${index}`}>{warning}</p>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Overall Usage Windows */}
         {showOverallUsageWindows && usage?.windows && (
           <div className="mb-8">
             <section className="px-2 pb-2 pt-0">
               <div className="divide-y divide-[var(--surface-subtle)]">
-                {Object.entries(usage.windows).map(([label, window]) => (
+                {overallUsageEntries.map(([label, window]) => (
                   <UsageCard
                     key={label}
                     title={label}
+                    displayTitle={formatProviderWindowLabel(selectedProviderId, label)}
                     window={window}
                     trendHistory={trendHistory}
                     trendKey={buildQuotaTrendKey(selectedProviderId, 'window', null, label)}

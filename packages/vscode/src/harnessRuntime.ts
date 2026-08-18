@@ -9,18 +9,24 @@ import {
   createEvidenceLedger,
   createHarnessPaths,
   createLifecycleTracker,
+  createPromptAdmissionController,
   createRecordStore,
   createTurnEvidenceRuntime,
+  type CommandDeadlineController,
+  type CommandDeadlineRecord,
   type DiagnosticJournal,
   type DiagnosticSanitizer,
   type DiagnosticsStatus,
+  type ContextModeRecoveryStatus,
   type HarnessPaths,
   type LifecycleTracker,
+  type PromptAdmissionBlock,
   type RecordStore,
   type WorktreeBootstrapReceipt,
   type WorktreeBootstrapRuntime,
   type EvidenceRecord,
   type TurnEvidenceRuntime,
+  validateCommandDeadlineRecord,
   validateEvidenceRecord,
   validateWorktreeBootstrapReceipt,
 } from '@openchamber/harness-runtime';
@@ -67,11 +73,21 @@ export interface VsCodeHarnessRuntime {
   journal: DiagnosticJournal;
   lifecycle: LifecycleTracker;
   worktreeStore: RecordStore<WorktreeBootstrapReceipt>;
+  commandDeadlineStore: RecordStore<CommandDeadlineRecord>;
   worktreeRuntime: WorktreeBootstrapRuntime;
   evidenceRuntime: TurnEvidenceRuntime;
   initialize(): Promise<void>;
   isReady(): boolean;
   isAcceptingPrompts(): boolean;
+  getPromptAdmissionBlock(): PromptAdmissionBlock | null;
+  acquirePromptAdmissionHold(
+    name: string,
+    block?: Partial<Omit<PromptAdmissionBlock, 'name'>>,
+  ): () => boolean;
+  setContextModeRecoveryStatusProvider(provider: () => ContextModeRecoveryStatus | null): void;
+  setCommandDeadlineRuntime(runtime: CommandDeadlineController): void;
+  observeCommandDeadlineEvent(payload: unknown, directory?: string | null): Promise<boolean>;
+  reconcileCommandDeadlines(): Promise<void>;
   beginDrain(): void;
   record(entry: Record<string, unknown>): boolean;
   recordPrompt(input: PromptInput): void;
@@ -145,6 +161,11 @@ export const createVsCodeHarnessRuntime = (
   const worktreeStore = createRecordStore<WorktreeBootstrapReceipt>({
     directory: paths.worktreeOpsDir,
     validateRecord: validateWorktreeBootstrapReceipt,
+    logger: console,
+  });
+  const commandDeadlineStore = createRecordStore<CommandDeadlineRecord>({
+    directory: paths.commandDeadlineDir,
+    validateRecord: validateCommandDeadlineRecord,
     logger: console,
   });
   const worktreeRuntime = configureWorktreeBootstrapRuntime({
@@ -229,8 +250,9 @@ export const createVsCodeHarnessRuntime = (
     },
   });
 
-  let ready = false;
-  let acceptingPrompts = false;
+  const promptAdmission = createPromptAdmissionController();
+  let getContextModeRecoveryStatus: () => ContextModeRecoveryStatus | null = () => null;
+  let commandDeadlineRuntime: CommandDeadlineController | null = null;
   let initialization: Promise<void> | null = null;
 
   const record = (entry: Record<string, unknown>): boolean => journal.enqueue({
@@ -260,25 +282,40 @@ export const createVsCodeHarnessRuntime = (
     journal,
     lifecycle,
     worktreeStore,
+    commandDeadlineStore,
     worktreeRuntime,
     evidenceRuntime,
     initialize() {
       initialization ??= Promise.all([
         journal.initialize(),
+        commandDeadlineStore.initialize(),
         worktreeRuntime.initialize(),
         evidenceRuntime.initialize(),
       ])
         .then(async () => {
           await worktreeRuntime.reconcileOnStartup();
-          ready = true;
-          acceptingPrompts = true;
+          promptAdmission.markReady();
         });
       return initialization;
     },
-    isReady: () => ready,
-    isAcceptingPrompts: () => acceptingPrompts,
+    isReady: promptAdmission.isReady,
+    isAcceptingPrompts: promptAdmission.isAccepting,
+    getPromptAdmissionBlock: promptAdmission.getBlock,
+    acquirePromptAdmissionHold: promptAdmission.acquireHold,
+    setContextModeRecoveryStatusProvider(provider) {
+      getContextModeRecoveryStatus = provider;
+    },
+    setCommandDeadlineRuntime(nextRuntime) {
+      commandDeadlineRuntime = nextRuntime;
+    },
+    observeCommandDeadlineEvent(payload, directory = null) {
+      return commandDeadlineRuntime?.observe(payload, directory) ?? Promise.resolve(false);
+    },
+    reconcileCommandDeadlines() {
+      return commandDeadlineRuntime?.reconcile() ?? Promise.resolve();
+    },
     beginDrain() {
-      acceptingPrompts = false;
+      promptAdmission.beginDrain();
     },
     record,
     recordPrompt(input) {
@@ -315,6 +352,7 @@ export const createVsCodeHarnessRuntime = (
         payload: normalized.payload,
       });
       lifecycle.processEvent(normalized.payload);
+      void commandDeadlineRuntime?.observe(normalized.payload, resolvedDirectory);
       if (
         normalized.payload
         && typeof normalized.payload === 'object'
@@ -365,14 +403,22 @@ export const createVsCodeHarnessRuntime = (
     async getWorktreeReceipts() {
       return (await worktreeStore.listRecords()).map(({ record: receipt }) => receipt);
     },
-    getStatus: () => journal.getStatus(),
+    async getStatus() {
+      return {
+        ...await journal.getStatus(),
+        contextModeRecovery: getContextModeRecoveryStatus(),
+        commandDeadlineRecovery: commandDeadlineRuntime?.getStatus() ?? null,
+      };
+    },
     async drain() {
-      acceptingPrompts = false;
+      promptAdmission.beginDrain();
       await Promise.allSettled([
         journal.close(),
         worktreeRuntime.drain(),
         evidenceRuntime.drain(),
+        commandDeadlineRuntime?.drain(),
         worktreeStore.drain(),
+        commandDeadlineStore.drain(),
         evidenceStore.drain(),
       ]);
     },

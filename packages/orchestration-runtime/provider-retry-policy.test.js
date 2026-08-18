@@ -1,12 +1,27 @@
 import { describe, expect, it } from 'bun:test';
 
 import {
+  DEADLINE_EXCEEDED_FAILURE_KIND,
+  MANAGED_TASK_TIMEOUT_REASON_PREFIX,
+  classifyManagedTaskFailure,
   classifyProviderRetryFailure,
   classifyProviderTransportFailure,
+  isManagedTaskDeadlineExceeded,
   isProviderPromptRejected,
   PROVIDER_PROMPT_REJECTED_FAILURE_KIND,
   PROVIDER_TRANSPORT_FAILURE_KINDS,
 } from './provider-retry-policy.js';
+
+describe('managed task deadline classification', () => {
+  it('recognizes only the scheduler-owned timeout prefix', () => {
+    const timeout = `${MANAGED_TASK_TIMEOUT_REASON_PREFIX}1786540028910`;
+
+    expect(isManagedTaskDeadlineExceeded(timeout)).toBe(true);
+    expect(classifyManagedTaskFailure(timeout)).toBe(DEADLINE_EXCEEDED_FAILURE_KIND);
+    expect(isManagedTaskDeadlineExceeded('Managed task timed out')).toBe(false);
+    expect(classifyManagedTaskFailure('Managed task timed out')).toBeNull();
+  });
+});
 
 describe('classifyProviderRetryFailure', () => {
   it.each([
@@ -39,6 +54,11 @@ describe('classifyProviderTransportFailure', () => {
     ['UnknownError', 'Timed out waiting for response headers', 'response_header_timeout'],
     ['BodyTimeoutError', 'UND_ERR_BODY_TIMEOUT', 'stream_idle_timeout'],
     ['UnknownError', 'SSE read timed out waiting for stream data', 'stream_idle_timeout'],
+    [
+      'UnknownError',
+      '{"message":"Streaming response failed: [504] Upstream idle timeout exceeded","statusCode":504}',
+      'stream_idle_timeout',
+    ],
     ['UnknownError', 'Upstream request failed: ECONNRESET', 'connection_failure'],
     ['UnknownError', 'The streaming response failed because the socket hung up', 'connection_failure'],
     [

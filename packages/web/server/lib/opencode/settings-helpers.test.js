@@ -209,4 +209,23 @@ describe('settings helpers', () => {
     expect(helpers.sanitizeSettingsUpdate({ sttProvider: 'wasm' })).toEqual({ sttProvider: 'wasm' });
     expect(helpers.sanitizeSettingsUpdate({ sttProvider: 'remote-vendor' })).toEqual({});
   });
+
+  it('sanitizes chat width and migrates the legacy wide layout setting', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ chatWidth: 1028 })).toEqual({ chatWidth: 1024 });
+    expect(helpers.sanitizeSettingsUpdate({ chatWidth: 2000 })).toEqual({ chatWidth: 1408 });
+    expect(helpers.sanitizeSettingsUpdate({ chatWidth: '1024' })).toEqual({});
+
+    const migratedResponse = helpers.formatSettingsResponse({ wideChatLayoutEnabled: true });
+    expect(migratedResponse.chatWidth).toBe(1024);
+    expect(migratedResponse).not.toHaveProperty('wideChatLayoutEnabled');
+
+    const persisted = helpers.mergePersistedSettings(
+      { wideChatLayoutEnabled: true },
+      { chatWidth: 1024 },
+    );
+    expect(persisted.chatWidth).toBe(1024);
+    expect(persisted).not.toHaveProperty('wideChatLayoutEnabled');
+  });
 });

@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { isDeepStrictEqual } from 'node:util';
 import {
   createCommand,
   deleteAgentModelOverride,
@@ -34,6 +35,8 @@ import {
 } from './opencodeConfig';
 import {
   getSkillsCatalog,
+  installSkillsFromClawdHub,
+  isClawdHubSource,
   scanSkillsRepository as scanSkillsRepositoryFromGit,
   installSkillsFromRepository as installSkillsFromGit,
   type SkillsCatalogSourceConfig,
@@ -41,7 +44,13 @@ import {
 import type { BridgeContext, BridgeResponse } from './bridge';
 import { OPENCODE_TARGET_INSTALL_COMMAND, TARGET_OPENCODE_VERSION } from './opencodeVersionPolicy';
 import type { GlobalAgentsMdRuntime } from './globalAgentsMdRuntime';
-import { isRetiredDevRyanSkillName } from '../../web/server/lib/opencode/skill-policy.js';
+import {
+  filterVisibleSkills,
+  isRetiredDevRyanSkillName,
+  normalizeSkillPath,
+  resolveApprovedSkills,
+} from '../../web/server/lib/opencode/skill-policy.js';
+import type { ConfigApplyMutationResponse } from '@openchamber/shared-runtime';
 
 type BridgeMessageInput = {
   id: string;
@@ -65,7 +74,11 @@ type ConfigRuntimeDeps = {
   resetMagicPromptOverride: (id: string) => Promise<{ version: number; overrides: Record<string, string> }>;
   resetAllMagicPromptOverrides: () => Promise<{ version: number; overrides: Record<string, string> }>;
   fetchOpenCodeSkillsFromApi: (ctx: BridgeContext | undefined, workingDirectory?: string) => Promise<DiscoveredSkill[] | null>;
-  clientReloadDelayMs: number;
+  markConfigChange: (
+    reason: string,
+    metadata?: unknown,
+    changed?: boolean,
+  ) => Promise<ConfigApplyMutationResponse & { runtimeApplied: false; runtimeMessage: string }>;
   getGlobalAgentsMdRuntime: (ctx?: BridgeContext) => GlobalAgentsMdRuntime;
   checkForOpenCodeUpdates: (input: {
     currentVersion: string | null;
@@ -78,6 +91,30 @@ const resolveWorkingDirectory = (ctx: BridgeContext | undefined, directory?: str
     ? directory.trim()
     : (ctx?.manager?.getWorkingDirectory() || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath)
 );
+
+const getAgentRuntimeExpectation = (agent: ReturnType<typeof getAgentConfig>) => {
+  const config = agent?.config && typeof agent.config === 'object' && !Array.isArray(agent.config)
+    ? agent.config as Record<string, unknown>
+    : null;
+  if (!config) return {};
+
+  const modelRefs = Array.isArray(config.modelRefs) ? config.modelRefs : [];
+  const firstModelRef = modelRefs.find((entry): entry is string => typeof entry === 'string' && Boolean(entry.trim()));
+  let expectedAgentModelRef = firstModelRef?.trim();
+  if (!expectedAgentModelRef && typeof config.model === 'string' && config.model.trim()) {
+    expectedAgentModelRef = config.model.trim();
+  } else if (!expectedAgentModelRef && config.model && typeof config.model === 'object' && !Array.isArray(config.model)) {
+    const model = config.model as Record<string, unknown>;
+    const providerID = typeof model.providerID === 'string' ? model.providerID.trim() : '';
+    const modelID = typeof model.modelID === 'string' ? model.modelID.trim() : '';
+    if (providerID && modelID) expectedAgentModelRef = `${providerID}/${modelID}`;
+  }
+
+  return {
+    ...(expectedAgentModelRef ? { expectedAgentModelRef } : {}),
+    ...(Object.prototype.hasOwnProperty.call(config, 'variant') ? { expectedAgentVariant: config.variant } : {}),
+  };
+};
 
 const parseSkillsCatalogSources = (settings: Record<string, unknown>): SkillsCatalogSourceConfig[] => {
   const rawCatalogs = (settings as { skillCatalogs?: unknown }).skillCatalogs;
@@ -113,13 +150,6 @@ type HiddenSkillConfig = {
   source?: 'opencode' | 'claude' | 'agents';
 };
 
-const normalizeSkillPath = (skillPath: unknown): string => {
-  if (typeof skillPath !== 'string' || !skillPath.trim()) {
-    return '';
-  }
-  return path.resolve(skillPath.trim());
-};
-
 const sanitizeHiddenSkills = (value: unknown): HiddenSkillConfig[] => {
   if (!Array.isArray(value)) {
     return [];
@@ -149,52 +179,6 @@ const sanitizeHiddenSkills = (value: unknown): HiddenSkillConfig[] => {
   }
 
   return result;
-};
-
-const getHiddenSkillPathSet = (hiddenSkills: HiddenSkillConfig[]) => new Set(
-  hiddenSkills.map((skill) => normalizeSkillPath(skill.path)).filter(Boolean)
-);
-
-const isPackageCacheSkillPath = (skillPath: unknown): boolean => {
-  const normalized = normalizeSkillPath(skillPath).replace(/\\/g, '/');
-  return /\/(\.cache\/opencode|Library\/Caches\/opencode)\/packages\//.test(normalized);
-};
-
-const filterVisibleSkills = (skills: DiscoveredSkill[], hiddenSkills: HiddenSkillConfig[]): DiscoveredSkill[] => {
-  const hiddenPaths = getHiddenSkillPathSet(hiddenSkills);
-  const seenPaths = new Set<string>();
-  const visibleSkills: DiscoveredSkill[] = [];
-  let changed = false;
-
-  for (const skill of skills) {
-    if (isRetiredDevRyanSkillName(skill.name)) {
-      changed = true;
-      continue;
-    }
-    if (skill.source === 'claude') {
-      changed = true;
-      continue;
-    }
-    if (isPackageCacheSkillPath(skill.path)) {
-      changed = true;
-      continue;
-    }
-    const skillPath = normalizeSkillPath(skill.path);
-    if (skillPath && hiddenPaths.has(skillPath)) {
-      changed = true;
-      continue;
-    }
-    if (skillPath && seenPaths.has(skillPath)) {
-      changed = true;
-      continue;
-    }
-    if (skillPath) {
-      seenPaths.add(skillPath);
-    }
-    visibleSkills.push(skill);
-  }
-
-  return changed ? visibleSkills : skills;
 };
 
 const normalizeSkillScopeFilter = (value: unknown): SkillScope | 'all' => {
@@ -243,44 +227,6 @@ const findSkillByIdentity = (
   return byName ? ({ ...byName, preferDiscoveredPath: true } as DiscoveredSkill) : null;
 };
 
-const mergeDiscoveredSkills = (
-  localSkills: DiscoveredSkill[] = [],
-  openCodeSkills: DiscoveredSkill[] = [],
-): DiscoveredSkill[] => {
-  const merged: DiscoveredSkill[] = [];
-  const indexByPath = new Map<string, number>();
-
-  const addOrMerge = (skill: DiscoveredSkill | null | undefined, preferIncoming: boolean) => {
-    if (!skill?.name && !skill?.path) {
-      return;
-    }
-
-    const skillPath = normalizeSkillPath(skill.path);
-    const existingIndex = skillPath ? indexByPath.get(skillPath) : undefined;
-    if (typeof existingIndex === 'number') {
-      merged[existingIndex] = preferIncoming
-        ? { ...merged[existingIndex], ...skill }
-        : { ...skill, ...merged[existingIndex] };
-      return;
-    }
-
-    const nextIndex = merged.length;
-    merged.push(skill);
-    if (skillPath) {
-      indexByPath.set(skillPath, nextIndex);
-    }
-  };
-
-  for (const skill of localSkills) {
-    addOrMerge(skill, false);
-  }
-  for (const skill of openCodeSkills) {
-    addOrMerge(skill, true);
-  }
-
-  return merged;
-};
-
 const resolveDiscoveredSkills = async (
   ctx: BridgeContext | undefined,
   workingDirectory: string | undefined,
@@ -288,7 +234,10 @@ const resolveDiscoveredSkills = async (
 ): Promise<DiscoveredSkill[]> => {
   const localSkills = discoverSkills(workingDirectory);
   const openCodeSkills = await deps.fetchOpenCodeSkillsFromApi(ctx, workingDirectory);
-  return mergeDiscoveredSkills(localSkills, Array.isArray(openCodeSkills) ? openCodeSkills : []);
+  return resolveApprovedSkills({
+    discoveredSkills: localSkills,
+    runtimeSkills: Array.isArray(openCodeSkills) ? openCodeSkills : [],
+  }) as DiscoveredSkill[];
 };
 
 const buildHiddenSkillsResponse = (
@@ -328,23 +277,6 @@ const buildHiddenSkillsResponse = (
   }
 
   return result;
-};
-
-const refreshManagedRuntimeAfterAgentOverride = async (ctx: BridgeContext | undefined) => {
-  const mode = ctx?.manager?.getDebugInfo()?.mode;
-  if (mode === 'external') {
-    return {
-      runtimeApplied: false,
-      requiresReload: false,
-      runtimeMessage: 'Agent model defaults were saved, but DevRyan cannot apply them to an external OpenCode runtime automatically.',
-    };
-  }
-
-  await ctx?.manager?.restart();
-  return {
-    runtimeApplied: true,
-    requiresReload: true,
-  };
 };
 
 export async function handleConfigBridgeMessage(
@@ -420,8 +352,14 @@ export async function handleConfigBridgeMessage(
 
     case 'api:config/settings:save': {
       const changes = (payload as Record<string, unknown>) || {};
+      const previous = Object.prototype.hasOwnProperty.call(changes, 'opencodeBinary')
+        ? deps.readSettings(ctx)
+        : null;
       const updated = await deps.persistSettings(changes, ctx);
-      return { id, type, success: true, data: updated };
+      const runtimeSettingChanged = previous !== null
+        && String(previous.opencodeBinary ?? '').trim() !== String(updated.opencodeBinary ?? '').trim();
+      const applyResult = await deps.markConfigChange('runtime binary setting', {}, runtimeSettingChanged);
+      return { id, type, success: true, data: { ...updated, ...applyResult } };
     }
 
     case 'api:behavior/agents-md:get': {
@@ -467,11 +405,6 @@ export async function handleConfigBridgeMessage(
       return { id, type, success: true, data };
     }
 
-    case 'api:config/reload': {
-      await ctx?.manager?.restart();
-      return { id, type, success: true, data: { restarted: true } };
-    }
-
     case 'api:config/agent-overrides': {
       return { id, type, success: true, data: { overrides: listAgentModelOverrides() } };
     }
@@ -499,9 +432,13 @@ export async function handleConfigBridgeMessage(
 
       if (override === true) {
         if (normalizedMethod === 'PUT') {
+          const previousAgent = getAgentConfig(agentName, workingDirectory);
           const saved = writeAgentModelOverride(agentName, body || {}, workingDirectory);
           const agent = getAgentConfig(agentName, workingDirectory);
-          const refreshResult = await refreshManagedRuntimeAfterAgentOverride(ctx);
+          const applyResult = await deps.markConfigChange('agent model override', {
+            agentName,
+            ...getAgentRuntimeExpectation(agent),
+          }, !isDeepStrictEqual(previousAgent?.config, agent?.config));
           return {
             id,
             type,
@@ -510,8 +447,7 @@ export async function handleConfigBridgeMessage(
               success: true,
               override: saved,
               agent,
-              ...refreshResult,
-              reloadDelayMs: deps.clientReloadDelayMs,
+              ...applyResult,
             },
           };
         }
@@ -519,9 +455,11 @@ export async function handleConfigBridgeMessage(
         if (normalizedMethod === 'DELETE') {
           const deleted = deleteAgentModelOverride(agentName, workingDirectory);
           const agent = getAgentConfig(agentName, workingDirectory);
-          const refreshResult = deleted
-            ? await refreshManagedRuntimeAfterAgentOverride(ctx)
-            : { runtimeApplied: true, requiresReload: false };
+          const applyResult = await deps.markConfigChange(
+            'agent model override deletion',
+            { agentName },
+            deleted,
+          );
           return {
             id,
             type,
@@ -530,8 +468,7 @@ export async function handleConfigBridgeMessage(
               success: true,
               deleted,
               agent,
-              ...refreshResult,
-              reloadDelayMs: deps.clientReloadDelayMs,
+              ...applyResult,
             },
           };
         }
@@ -605,48 +542,45 @@ export async function handleConfigBridgeMessage(
         const scopeValue = body?.scope as string | undefined;
         const scope: CommandScope | undefined = scopeValue === 'project' ? COMMAND_SCOPE.PROJECT : scopeValue === 'user' ? COMMAND_SCOPE.USER : undefined;
         createCommand(commandName, (body || {}) as Record<string, unknown>, workingDirectory, scope);
-        await ctx?.manager?.restart();
+        const applyResult = await deps.markConfigChange('command creation');
         return {
           id,
           type,
           success: true,
           data: {
             success: true,
-            requiresReload: true,
-            message: `Command ${commandName} created successfully. Reloading interface…`,
-            reloadDelayMs: deps.clientReloadDelayMs,
+            ...applyResult,
+            message: `Command ${commandName} created successfully. Changes are pending.`,
           },
         };
       }
 
       if (normalizedMethod === 'PATCH') {
-        updateCommand(commandName, (body || {}) as Record<string, unknown>, workingDirectory);
-        await ctx?.manager?.restart();
+        const changed = updateCommand(commandName, (body || {}) as Record<string, unknown>, workingDirectory);
+        const applyResult = await deps.markConfigChange('command update', {}, changed);
         return {
           id,
           type,
           success: true,
           data: {
             success: true,
-            requiresReload: true,
-            message: `Command ${commandName} updated successfully. Reloading interface…`,
-            reloadDelayMs: deps.clientReloadDelayMs,
+            ...applyResult,
+            message: `Command ${commandName} updated successfully. Changes are pending.`,
           },
         };
       }
 
       if (normalizedMethod === 'DELETE') {
         deleteCommand(commandName, workingDirectory);
-        await ctx?.manager?.restart();
+        const applyResult = await deps.markConfigChange('command deletion');
         return {
           id,
           type,
           success: true,
           data: {
             success: true,
-            requiresReload: true,
-            message: `Command ${commandName} deleted successfully. Reloading interface…`,
-            reloadDelayMs: deps.clientReloadDelayMs,
+            ...applyResult,
+            message: `Command ${commandName} deleted successfully. Changes are pending.`,
           },
         };
       }
@@ -684,49 +618,46 @@ export async function handleConfigBridgeMessage(
 
       if (normalizedMethod === 'POST') {
         const scope = body?.scope as 'user' | 'project' | undefined;
-        createMcpConfig(mcpName, (body || {}) as Record<string, unknown>, workingDirectory, scope);
-        await ctx?.manager?.restart();
+        const mutationResult = createMcpConfig(mcpName, (body || {}) as Record<string, unknown>, workingDirectory, scope);
+        const applyResult = await deps.markConfigChange('mcp creation', {}, mutationResult.changed);
         return {
           id,
           type,
           success: true,
           data: {
             success: true,
-            requiresReload: true,
-            message: `MCP server "${mcpName}" created. Reloading interface…`,
-            reloadDelayMs: deps.clientReloadDelayMs,
+            ...applyResult,
+            message: `MCP server "${mcpName}" created. Changes are pending.`,
           },
         };
       }
 
       if (normalizedMethod === 'PATCH') {
-        updateMcpConfig(mcpName, (body || {}) as Record<string, unknown>, workingDirectory);
-        await ctx?.manager?.restart();
+        const mutationResult = updateMcpConfig(mcpName, (body || {}) as Record<string, unknown>, workingDirectory);
+        const applyResult = await deps.markConfigChange('mcp update', {}, mutationResult.changed);
         return {
           id,
           type,
           success: true,
           data: {
             success: true,
-            requiresReload: true,
-            message: `MCP server "${mcpName}" updated. Reloading interface…`,
-            reloadDelayMs: deps.clientReloadDelayMs,
+            ...applyResult,
+            message: `MCP server "${mcpName}" updated. Changes are pending.`,
           },
         };
       }
 
       if (normalizedMethod === 'DELETE') {
-        deleteMcpConfig(mcpName, workingDirectory);
-        await ctx?.manager?.restart();
+        const mutationResult = deleteMcpConfig(mcpName, workingDirectory);
+        const applyResult = await deps.markConfigChange('mcp deletion', {}, mutationResult.changed);
         return {
           id,
           type,
           success: true,
           data: {
             success: true,
-            requiresReload: true,
-            message: `MCP server "${mcpName}" deleted. Reloading interface…`,
-            reloadDelayMs: deps.clientReloadDelayMs,
+            ...applyResult,
+            message: `MCP server "${mcpName}" deleted. Changes are pending.`,
           },
         };
       }
@@ -739,22 +670,22 @@ export async function handleConfigBridgeMessage(
       const workingDirectory = resolveWorkingDirectory(ctx, directory);
       const result = recoverMcpConfigs(workingDirectory);
       if (result.migrated.length === 0) {
+        const applyResult = await deps.markConfigChange('mcp recovery', {}, false);
         return {
           id,
           type,
           success: true,
-          data: { ...result, requiresReload: false },
+          data: { ...result, ...applyResult },
         };
       }
-      await ctx?.manager?.restart();
+      const applyResult = await deps.markConfigChange('mcp recovery');
       return {
         id,
         type,
         success: true,
         data: {
           ...result,
-          requiresReload: true,
-          reloadDelayMs: deps.clientReloadDelayMs,
+          ...applyResult,
         },
       };
     }
@@ -820,16 +751,15 @@ export async function handleConfigBridgeMessage(
         const scope: SkillScope | undefined = scopeValue === 'project' ? SKILL_SCOPE.PROJECT : scopeValue === 'user' ? SKILL_SCOPE.USER : undefined;
         const normalizedSource = sourceValue === 'agents' ? 'agents' : 'opencode';
         createSkill(skillName, { ...(body || {}), source: normalizedSource } as Record<string, unknown>, workingDirectory, scope);
-        await ctx?.manager?.restart();
+        const applyResult = await deps.markConfigChange('skill creation');
         return {
           id,
           type,
           success: true,
           data: {
             success: true,
-            requiresReload: true,
-            message: `Skill ${skillName} created successfully. Reloading interface…`,
-            reloadDelayMs: deps.clientReloadDelayMs,
+            ...applyResult,
+            message: `Skill ${skillName} created successfully. Changes are pending.`,
           },
         };
       }
@@ -848,17 +778,16 @@ export async function handleConfigBridgeMessage(
         if (scope !== 'all' && sources.md.scope && sources.md.scope !== scope) {
           return { id, type, success: false, error: `Skill "${skillName}" not found` };
         }
-        updateSkill(skillName, (body || {}) as Record<string, unknown>, workingDirectory, discoveredSkill);
-        await ctx?.manager?.restart();
+        const changed = updateSkill(skillName, (body || {}) as Record<string, unknown>, workingDirectory, discoveredSkill);
+        const applyResult = await deps.markConfigChange('skill update', {}, changed);
         return {
           id,
           type,
           success: true,
           data: {
             success: true,
-            requiresReload: true,
-            message: `Skill ${skillName} updated successfully. Reloading interface…`,
-            reloadDelayMs: deps.clientReloadDelayMs,
+            ...applyResult,
+            message: `Skill ${skillName} updated successfully. Changes are pending.`,
           },
         };
       }
@@ -895,29 +824,14 @@ export async function handleConfigBridgeMessage(
             console.warn('[Skill delete] Failed to remove stale hidden-skill settings entry:', settingsError);
           }
         }
-        const externalRuntime = ctx?.manager?.getDebugInfo()?.mode === 'external';
-        const managedRuntimeAvailable = !externalRuntime && Boolean(ctx?.manager);
-        if (managedRuntimeAvailable) {
-          void Promise.resolve()
-            .then(() => ctx?.manager?.restart())
-            .catch((refreshError) => {
-              console.error('[Skill delete] OpenCode refresh failed after deletion:', refreshError);
-            });
-        } else {
-          const restartWarning = externalRuntime
-            ? 'Restart the external OpenCode runtime before relying on the updated skill list.'
-            : 'OpenCode is unavailable; restart it before relying on the updated skill list.';
-          warning = warning ? `${warning} ${restartWarning}` : restartWarning;
-        }
+        const applyResult = await deps.markConfigChange('skill deletion');
         return {
           id,
           type,
           success: true,
           data: {
             success: true,
-            requiresReload: false,
-            runtimeRefreshPending: managedRuntimeAvailable,
-            runtimeApplied: false,
+            ...applyResult,
             message: `Skill ${skillName} permanently deleted.`,
             ...(warning ? { warning } : {}),
           },
@@ -953,7 +867,8 @@ export async function handleConfigBridgeMessage(
       const settings = deps.readSettings(ctx);
       const hiddenSkills = sanitizeHiddenSkills((settings as { hiddenSkills?: unknown }).hiddenSkills);
       const skillPath = normalizeSkillPath(sources.md.path);
-      if (!hiddenSkills.some((skill) => normalizeSkillPath(skill.path) === skillPath)) {
+      const changed = !hiddenSkills.some((skill) => normalizeSkillPath(skill.path) === skillPath);
+      if (changed) {
         await deps.persistSettings({
           hiddenSkills: [
             ...hiddenSkills,
@@ -966,16 +881,15 @@ export async function handleConfigBridgeMessage(
           ],
         }, ctx);
       }
-      await ctx?.manager?.restart();
+      const applyResult = await deps.markConfigChange('skill hide', {}, changed);
       return {
         id,
         type,
         success: true,
         data: {
           success: true,
-          requiresReload: true,
-          message: `Skill ${skillName} hidden successfully. Reloading interface…`,
-          reloadDelayMs: deps.clientReloadDelayMs,
+          ...applyResult,
+          message: `Skill ${skillName} hidden successfully. Changes are pending.`,
         },
       };
     }
@@ -995,7 +909,7 @@ export async function handleConfigBridgeMessage(
       }
 
       const updated = await deps.persistSettings({ hiddenSkills: nextHiddenSkills }, ctx);
-      await ctx?.manager?.restart();
+      const applyResult = await deps.markConfigChange('skill restore');
 
       return {
         id,
@@ -1004,9 +918,8 @@ export async function handleConfigBridgeMessage(
         data: {
           success: true,
           hiddenSkills: sanitizeHiddenSkills((updated as { hiddenSkills?: unknown }).hiddenSkills),
-          requiresReload: true,
-          message: 'Skill restored successfully. Reloading interface…',
-          reloadDelayMs: deps.clientReloadDelayMs,
+          ...applyResult,
+          message: 'Skill restored successfully. Changes are pending.',
         },
       };
     }
@@ -1038,32 +951,35 @@ export async function handleConfigBridgeMessage(
         subpath?: string;
         scope?: 'user' | 'project';
         targetSource?: 'opencode' | 'agents';
-        selections?: Array<{ skillDir: string }>;
+        selections?: Array<{ skillDir: string; clawdhub?: { slug: string; version: string } }>;
         conflictPolicy?: 'prompt' | 'skipAll' | 'overwriteAll';
         conflictDecisions?: Record<string, 'skip' | 'overwrite'>;
       };
 
       const workingDirectory = ctx?.manager?.getWorkingDirectory() || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
-      const data = await installSkillsFromGit({
-        source: String(body.source || ''),
-        subpath: body.subpath,
-        scope: body.scope === 'project' ? 'project' : 'user',
-        targetSource: body.targetSource === 'agents' ? 'agents' : 'opencode',
+      const installOptions = {
+        scope: body.scope === 'project' ? 'project' as const : 'user' as const,
+        targetSource: body.targetSource === 'agents' ? 'agents' as const : 'opencode' as const,
         workingDirectory: body.scope === 'project' ? workingDirectory : undefined,
         selections: Array.isArray(body.selections) ? body.selections : [],
         conflictPolicy: body.conflictPolicy,
         conflictDecisions: body.conflictDecisions,
-      });
+      };
+      const source = String(body.source || '');
+      const data = isClawdHubSource(source)
+        ? await installSkillsFromClawdHub(installOptions)
+        : await installSkillsFromGit({
+          ...installOptions,
+          source,
+          subpath: body.subpath,
+        });
 
       if (data.ok) {
         const installed = data.installed || [];
         const skipped = data.skipped || [];
-        const requiresReload = installed.length > 0;
-
-        if (requiresReload) {
-          await ctx?.manager?.restart();
-        }
+        const changed = installed.length > 0;
+        const applyResult = await deps.markConfigChange('skills install', {}, changed);
 
         return {
           id,
@@ -1073,9 +989,8 @@ export async function handleConfigBridgeMessage(
             ok: true,
             installed,
             skipped,
-            requiresReload,
-            message: requiresReload ? 'Skills installed successfully. Reloading interface…' : 'No skills were installed',
-            reloadDelayMs: requiresReload ? deps.clientReloadDelayMs : undefined,
+            ...applyResult,
+            message: changed ? 'Skills installed successfully. Changes are pending.' : 'No skills were installed',
           },
         };
       }

@@ -9,6 +9,14 @@ const source = (fileName: string) => readFileSync(resolve(testDir, fileName), 'u
 const repoSource = (relativePath: string) => readFileSync(resolve(repoRoot, relativePath), 'utf8');
 
 describe('UsagePage model rows', () => {
+  test('uses shared Claude window ordering and provider-aware labels for overall usage rows', () => {
+    const pageSource = source('UsagePage.tsx');
+
+    expect(pageSource).toContain('sortUsageEntries(selectedProviderId');
+    expect(pageSource).toContain('overallUsageEntries.map');
+    expect(pageSource).toContain('displayTitle={formatProviderWindowLabel(selectedProviderId, label)}');
+  });
+
   test('shows model names as model row titles while keeping window labels for calculations', () => {
     const cardSource = source('UsageCard.tsx');
     const pageSource = source('UsagePage.tsx');
@@ -23,6 +31,16 @@ describe('UsagePage model rows', () => {
 
     expect(cardSource).toContain('description?: string');
     expect(cardSource).toContain('window.description');
+  });
+
+  test('retains provider rows while rendering non-fatal warnings and hides value-only progress', () => {
+    const cardSource = source('UsageCard.tsx');
+    const pageSource = source('UsagePage.tsx');
+
+    expect(cardSource).toContain('hasUsageProgress(window)');
+    expect(cardSource).toContain('showProgress ? (');
+    expect(pageSource).toContain('selectedResult?.warnings ?? []');
+    expect(pageSource).toContain('selectedProviderWarnings.map');
   });
 
   test('hides provider-level summary windows for Antigravity usage', () => {

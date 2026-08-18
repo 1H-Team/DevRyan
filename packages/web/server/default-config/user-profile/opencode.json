@@ -6,7 +6,9 @@
     "./node_modules/opencode-with-claude/dist/index.js",
     "./node_modules/context-mode/build/adapters/opencode/plugin.js",
     "./plugins/devryan-oh-my-opencode-slim.mjs",
-    "./plugins/devryan-superpowers.mjs"
+    "./plugins/devryan-superpowers.mjs",
+    "./plugins/devryan-skill-context.mjs",
+    "./plugins/devryan-document-reader.mjs"
   ],
   "agent": {
     "explore": {

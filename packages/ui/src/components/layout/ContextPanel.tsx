@@ -21,7 +21,6 @@ import { useUIStore, type ContextPanelMode } from '@/stores/useUIStore';
 import { useInlineCommentDraftStore } from '@/stores/useInlineCommentDraftStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { getAllSyncSessions } from '@/sync/sync-refs';
-import { useSession } from '@/sync/sync-context';
 import { useInputStore } from '@/sync/input-store';
 import { useManagedOrchestrationStore } from '@/stores/useManagedOrchestrationStore';
 import { useSessionPlanFileStore } from '@/stores/useSessionPlanFileStore';
@@ -47,16 +46,7 @@ import {
   type PreviewConsoleEvent,
 } from './previewDiagnosticsState';
 import { resolveContextPlanSessionChange } from './contextPlanSessionLifecycle';
-import { DesktopBrowserPane, ManualBrowserWorkspacePane } from './DesktopBrowserPane';
-import { isBrowserPanelRuntimeSupported } from './browserRuntime';
 import { useGuestRetention } from './useGuestRetention';
-import {
-  browserAgentLeaseSelectors,
-  ensureBrowserAgentListeners,
-  setObservedBrowserAgentLease,
-  useBrowserAgentStore,
-} from '@/stores/useBrowserAgentStore';
-import { resolveRootSessionID } from '@/lib/sessionLineage';
 
 const CONTEXT_PANEL_MIN_WIDTH = 360;
 const CONTEXT_PANEL_MAX_WIDTH = 1400;
@@ -112,7 +102,7 @@ const getRelativePathLabel = (filePath: string | null, directory: string): strin
 };
 
 const getModeLabel = (
-  mode: 'diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview' | 'browser',
+  mode: ContextPanelMode,
   t: TranslateFn
 ): string => {
   if (mode === 'chat') return t('contextPanel.mode.chat');
@@ -120,7 +110,6 @@ const getModeLabel = (
   if (mode === 'diff') return t('contextPanel.mode.diff');
   if (mode === 'plan') return t('contextPanel.mode.plan');
   if (mode === 'preview') return t('contextPanel.mode.preview');
-  if (mode === 'browser') return t('contextPanel.mode.browser');
   return t('contextPanel.mode.context');
 };
 
@@ -143,7 +132,7 @@ const getFileNameFromPath = (path: string | null): string | null => {
 };
 
 const getTabLabel = (
-  tab: { mode: 'diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview' | 'browser'; label: string | null; targetPath: string | null },
+  tab: { mode: ContextPanelMode; label: string | null; targetPath: string | null },
   t: TranslateFn
 ): string => {
   if (tab.label) {
@@ -154,9 +143,9 @@ const getTabLabel = (
     return getFileNameFromPath(tab.targetPath) || t('contextPanel.mode.files');
   }
 
-  if (tab.mode === 'preview' || tab.mode === 'browser') {
+  if (tab.mode === 'preview') {
     const url = tab.targetPath;
-    const fallback = tab.mode === 'browser' ? t('contextPanel.mode.browser') : t('contextPanel.mode.preview');
+    const fallback = t('contextPanel.mode.preview');
     if (url) {
       try {
         const parsed = new URL(url);
@@ -171,7 +160,7 @@ const getTabLabel = (
   return getModeLabel(tab.mode, t);
 };
 
-const getTabIcon = (tab: { mode: 'diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview' | 'browser'; targetPath: string | null; leaseId?: string | null }): React.ReactNode | undefined => {
+const getTabIcon = (tab: { mode: ContextPanelMode; targetPath: string | null }): React.ReactNode | undefined => {
   if (tab.mode === 'file') {
     return tab.targetPath
       ? <FileTypeIcon filePath={tab.targetPath} className="h-3.5 w-3.5" />
@@ -198,88 +187,12 @@ const getTabIcon = (tab: { mode: 'diff' | 'file' | 'context' | 'plan' | 'chat' |
     return <RiGlobalLine className="h-3.5 w-3.5 text-[var(--status-info)]" />;
   }
 
-  if (tab.mode === 'browser') {
-    return <BrowserTabIcon leaseId={tab.leaseId} />;
-  }
-
   return undefined;
 };
 
-// Manual browser guests sleep 60s after their tab deactivates (quick flips do
-// not reload). Lease guests have an independent invariant fleet below and stay
-// mounted until their authoritative lease disappears. Chat iframes are
-// same-process but each hosts a full app instance; the long grace mirrors
-// relaunch behavior for long-idle tabs without losing recently-typed drafts.
+// Chat iframes are same-process but each hosts a full app instance; the long
+// grace mirrors relaunch behavior for long-idle tabs without losing drafts.
 const CHAT_GUEST_SLEEP_DELAY_MS = 30 * 60_000;
-
-const BrowserTabIcon: React.FC<{ leaseId?: string | null }> = ({ leaseId }) => {
-  const leaseSelector = React.useMemo(
-    () => browserAgentLeaseSelectors.lease(leaseId ?? ''),
-    [leaseId],
-  );
-  const lease = useBrowserAgentStore(leaseSelector);
-  return (
-    <span className="relative inline-flex">
-      <RiGlobalLine className="h-3.5 w-3.5" />
-      {lease ? (
-        <span
-          className="absolute -right-1 -top-1 h-1.5 w-1.5 rounded-full bg-[var(--status-info)]"
-          aria-hidden="true"
-        />
-      ) : null}
-    </span>
-  );
-};
-
-const BrowserLeasePane: React.FC<{ leaseId: string; active: boolean }> = React.memo(({
-  leaseId,
-  active,
-}) => {
-  const leaseSelector = React.useMemo(
-    () => browserAgentLeaseSelectors.lease(leaseId),
-    [leaseId],
-  );
-  const lease = useBrowserAgentStore(leaseSelector);
-  if (!lease) return null;
-
-  return (
-    <div
-      className={cn(
-        'absolute inset-0',
-        active ? 'z-10 opacity-100' : 'z-0 pointer-events-none opacity-0',
-      )}
-      aria-hidden={!active}
-      data-browser-lease-pane={leaseId}
-    >
-      <DesktopBrowserPane
-        initialUrl={lease.url}
-        directory={lease.directory}
-        tabID={`browser:lease:${leaseId}`}
-        active={active}
-        leaseId={leaseId}
-      />
-    </div>
-  );
-});
-BrowserLeasePane.displayName = 'BrowserLeasePane';
-
-type BrowserLeasePresentationTab = {
-  id: string;
-  mode: ContextPanelMode;
-  leaseId?: string | null;
-  ownerSessionId?: string | null;
-};
-
-const getStaleBrowserLeaseTabIDs = (
-  tabs: readonly BrowserLeasePresentationTab[],
-  currentRootSessionId: string | null,
-): string[] => tabs
-  .filter((tab) => (
-    tab.mode === 'browser'
-    && Boolean(tab.leaseId)
-    && tab.ownerSessionId !== currentRootSessionId
-  ))
-  .map((tab) => tab.id);
 
 const getSessionIDFromDedupeKey = (dedupeKey: string | undefined): string | null => {
   if (!dedupeKey || !dedupeKey.startsWith('session:')) {
@@ -834,15 +747,6 @@ export const ContextPanel: React.FC = () => {
   const effectiveDirectory = useEffectiveDirectory() ?? '';
   const directoryKey = React.useMemo(() => normalizeDirectoryKey(effectiveDirectory), [effectiveDirectory]);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
-  const currentSession = useSession(currentSessionId);
-  const currentRootSessionId = React.useMemo(() => {
-    if (!currentSessionId) return null;
-    const sessions = getAllSyncSessions();
-    if (currentSession && !sessions.some((session) => session.id === currentSession.id)) {
-      sessions.push(currentSession);
-    }
-    return resolveRootSessionID(currentSessionId, sessions);
-  }, [currentSession, currentSessionId]);
   const currentSessionPlanPath = useSessionPlanFileStore((state) => {
     if (!currentSessionId) {
       return null;
@@ -868,8 +772,6 @@ export const ContextPanel: React.FC = () => {
   const setSelectedFilePath = useFilesViewTabsStore((state) => state.setSelectedPath);
   const openContextPreview = useUIStore((state) => state.openContextPreview);
   const setContextPreviewDisplayUrl = useUIStore((state) => state.setContextPreviewDisplayUrl);
-  const leaseIds = useBrowserAgentStore((state) => state.leaseIds);
-  const observedLeaseId = useBrowserAgentStore((state) => state.observedLeaseId);
   const { themeMode, lightThemeId, darkThemeId, currentTheme } = useThemeSystem();
 
   const tabs = React.useMemo(() => panelState?.tabs ?? [], [panelState?.tabs]);
@@ -877,12 +779,6 @@ export const ContextPanel: React.FC = () => {
   const activePreviewTabID = activeTab?.mode === 'preview' ? activeTab.id : null;
   const isOpen = Boolean(panelState?.isOpen && activeTab);
   const isExpanded = Boolean(isOpen && panelState?.expanded);
-  const activeLeaseId = isOpen
-    && activeTab?.mode === 'browser'
-    && activeTab.leaseId
-    && leaseIds.includes(activeTab.leaseId)
-    ? activeTab.leaseId
-    : null;
   const width = clampWidth(panelState?.width ?? CONTEXT_PANEL_DEFAULT_WIDTH);
   const shouldReduceMotion = useReducedMotion() === true
     || (typeof window !== 'undefined'
@@ -900,29 +796,6 @@ export const ContextPanel: React.FC = () => {
   const chatFrameRefs = React.useRef<Map<string, HTMLIFrameElement>>(new Map());
   const wasOpenRef = React.useRef(false);
   const previousSessionIdRef = React.useRef<string | null | undefined>(undefined);
-
-  React.useEffect(() => {
-    ensureBrowserAgentListeners();
-  }, []);
-
-  React.useEffect(() => {
-    void setObservedBrowserAgentLease(activeLeaseId);
-  }, [activeLeaseId]);
-
-  React.useEffect(() => () => {
-    void setObservedBrowserAgentLease(null);
-  }, []);
-
-  React.useLayoutEffect(() => {
-    if (!directoryKey) {
-      return;
-    }
-
-    const staleLeaseTabIDs = getStaleBrowserLeaseTabIDs(tabs, currentRootSessionId);
-    for (const staleTabID of staleLeaseTabIDs) {
-      closeContextPanelTab(directoryKey, staleTabID);
-    }
-  }, [closeContextPanelTab, currentRootSessionId, directoryKey, tabs]);
 
   const finalizePlanExit = React.useCallback((motion: ActiveContextPlanMotion) => {
     if (!directoryKey) {
@@ -1328,10 +1201,6 @@ export const ContextPanel: React.FC = () => {
     () => tabs.filter((tab) => tab.mode === 'chat'),
     [tabs],
   );
-  const manualBrowserTab = React.useMemo(
-    () => tabs.find((tab) => tab.mode === 'browser' && !tab.leaseId) ?? null,
-    [tabs],
-  );
 
   const chatKeepIDs = React.useMemo(
     () => (activeChatTabID ? [activeChatTabID] : []),
@@ -1347,7 +1216,6 @@ export const ContextPanel: React.FC = () => {
   );
 
   const isFileTabActive = activeTab?.mode === 'file';
-  const isBrowserTabActive = activeTab?.mode === 'browser';
 
   const header = (
     <header className="flex h-8 items-stretch pl-1.5">
@@ -1451,9 +1319,9 @@ export const ContextPanel: React.FC = () => {
     >
       {isOpen && !isExpanded && (
         <div
+          data-panel-resize-handle="context-panel"
           className={cn(
-            'absolute left-0 top-0 z-20 h-full w-[3px] cursor-col-resize transition-colors hover:bg-[var(--interactive-border)]/80',
-            isResizing && 'bg-[var(--interactive-border)]'
+            'group absolute left-0 top-0 z-30 h-full w-2 cursor-col-resize',
           )}
           onPointerDown={handleResizeStart}
           onPointerMove={handleResizeMove}
@@ -1462,7 +1330,15 @@ export const ContextPanel: React.FC = () => {
           role="separator"
           aria-orientation="vertical"
           aria-label={t('contextPanel.actions.resizePanelAria')}
-        />
+        >
+          <span
+            aria-hidden="true"
+            className={cn(
+              'pointer-events-none absolute inset-y-0 left-0 w-px bg-border/40 transition-colors group-hover:bg-[var(--interactive-border)]/80',
+              isResizing && 'bg-[var(--interactive-border)]',
+            )}
+          />
+        </div>
       )}
       <div
         data-context-panel-content="true"
@@ -1478,36 +1354,6 @@ export const ContextPanel: React.FC = () => {
               <LazyViewBoundary>
                 <LazyFilesView />
               </LazyViewBoundary>
-            </div>
-          ) : null}
-          {leaseIds.map((leaseId) => (
-            <BrowserLeasePane
-              key={leaseId}
-              leaseId={leaseId}
-              active={activeLeaseId === leaseId && observedLeaseId === leaseId}
-            />
-          ))}
-          {manualBrowserTab ? (
-            <div
-              className={cn(
-                'absolute inset-0',
-                !(isOpen && activeTab?.id === manualBrowserTab.id) && 'invisible pointer-events-none',
-              )}
-              aria-hidden={!(isOpen && activeTab?.id === manualBrowserTab.id)}
-            >
-              {isBrowserPanelRuntimeSupported() ? (
-                <ManualBrowserWorkspacePane
-                  key={directoryKey}
-                  directory={directoryKey ?? ''}
-                  active={isOpen && activeTab?.id === manualBrowserTab.id}
-                  legacyUrl={manualBrowserTab.targetPath}
-                />
-              ) : (
-                <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
-                  <RiGlobalLine className="h-12 w-12 text-muted-foreground/50" />
-                  <div className="max-w-sm typography-micro text-muted-foreground">{t('contextPanel.browser.desktopOnly')}</div>
-                </div>
-              )}
             </div>
           ) : null}
           {isOpen ? chatTabs.map((tab) => {
@@ -1551,7 +1397,7 @@ export const ContextPanel: React.FC = () => {
               />
             );
           }) : null}
-          {isOpen && activeTab?.mode !== 'chat' && !isFileTabActive && !isBrowserTabActive
+          {isOpen && activeTab?.mode !== 'chat' && !isFileTabActive
             ? activeNonChatContent
             : null}
         </div>

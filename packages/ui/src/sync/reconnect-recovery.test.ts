@@ -5,14 +5,17 @@ import {
   captureSessionStatusBaseline,
   filterUnchangedSessionStatusCandidates,
   getActiveSessionRecoveryCooldownMs,
+  getLongRunningToolFingerprint,
   getPendingToolInputStallFingerprint,
   getProviderInferenceStallFingerprint,
   getProviderStallFingerprint,
   getReconnectCandidateSessionIds,
   haveSamePendingToolInputStallFingerprint,
+  haveSameLongRunningToolFingerprint,
   haveSameProviderStallFingerprint,
   mergeAuthoritativeSessionStatuses,
   mergeRecoveredSessionStatuses,
+  shouldConfirmLongRunningTool,
   shouldRecoverStaleActiveSession,
   unwrapSdkResult,
 } from "./reconnect-recovery"
@@ -56,7 +59,24 @@ function createPendingToolPart(
     tool: "todowrite",
     state: { status: "pending", input: {}, raw: "" },
     ...overrides,
-  } as Part
+  } as unknown as Part
+}
+
+function createRunningContextToolPart(
+  id: string,
+  messageID: string,
+  tool = "ctx_execute",
+  status = "running",
+): Part {
+  return {
+    id,
+    messageID,
+    sessionID: "active",
+    callID: `call_${id}`,
+    type: "tool",
+    tool,
+    state: { status, input: { language: "javascript", code: "console.log('ok')" } },
+  } as unknown as Part
 }
 
 function createState(overrides: Partial<State> = {}): State {
@@ -161,7 +181,7 @@ describe("getReconnectCandidateSessionIds", () => {
     })
   })
 
-  test("settles missing authoritative status from a terminal trailing assistant message", () => {
+  test("keeps the previous status when a reconnect snapshot omits it", () => {
     const state = createState({
       session: [createSession("active")],
       session_status: { active: { type: "busy" } as SessionStatus },
@@ -178,9 +198,7 @@ describe("getReconnectCandidateSessionIds", () => {
       candidateSessionIds: ["active"],
       authoritative: {},
       state,
-    })).toEqual({
-      active: { type: "idle" },
-    })
+    })).toBe(state.session_status)
   })
 
   test("keeps missing authoritative status busy when no terminal assistant message proves completion", () => {
@@ -415,6 +433,113 @@ describe("getReconnectCandidateSessionIds", () => {
 
     expect(haveSamePendingToolInputStallFingerprint(first, same)).toBe(true)
     expect(haveSamePendingToolInputStallFingerprint(first, changed)).toBe(false)
+  })
+
+  test("recognizes running Context Mode and shell calls by exact identity", () => {
+    const makeState = (tool: string, partID = "tool-1", status = "running") => createState({
+      session: [createSession("active")],
+      session_status: { active: { type: "busy" } as SessionStatus },
+      message: {
+        active: [{
+          ...createAssistantMessage("assistant-1", "active"),
+          parentID: "user-1",
+        } as Message],
+      },
+      part: {
+        "assistant-1": [createRunningContextToolPart(partID, "assistant-1", tool, status)],
+      },
+    })
+
+    const direct = getLongRunningToolFingerprint({
+      state: makeState("ctx_execute"),
+      sessionID: "active",
+    })
+    expect(direct).toEqual({
+      kind: "long-running-tool",
+      sessionID: "active",
+      assistantMessageID: "assistant-1",
+      anchorUserMessageID: "user-1",
+      partID: "tool-1",
+      callID: "call_tool-1",
+      tool: "ctx_execute",
+    })
+
+    const wrapped = getLongRunningToolFingerprint({
+      state: makeState("mcp__context-mode__ctx_execute"),
+      sessionID: "active",
+    })
+    expect(wrapped?.tool).toBe("mcp__context-mode__ctx_execute")
+    expect(getLongRunningToolFingerprint({
+      state: makeState("bash"),
+      sessionID: "active",
+    })?.tool).toBe("bash")
+    expect(haveSameLongRunningToolFingerprint(direct, direct)).toBe(true)
+    expect(haveSameLongRunningToolFingerprint(direct, wrapped)).toBe(false)
+  })
+
+  test("rejects pending, terminal, unsupported, blocked, and child tool calls", () => {
+    const makeState = (tool = "ctx_execute", status = "running") => createState({
+      session: [createSession("active")],
+      session_status: { active: { type: "busy" } as SessionStatus },
+      message: {
+        active: [{
+          ...createAssistantMessage("assistant-1", "active"),
+          parentID: "user-1",
+        } as Message],
+      },
+      part: {
+        "assistant-1": [createRunningContextToolPart("tool-1", "assistant-1", tool, status)],
+      },
+    })
+
+    expect(getLongRunningToolFingerprint({ state: makeState("ctx_execute", "pending"), sessionID: "active" })).toBeNull()
+    expect(getLongRunningToolFingerprint({ state: makeState("ctx_execute", "completed"), sessionID: "active" })).toBeNull()
+    expect(getLongRunningToolFingerprint({ state: makeState("read"), sessionID: "active" })).toBeNull()
+
+    const blocked = makeState()
+    blocked.permission = { active: [{ id: "permission-1" }] as State["permission"][string] }
+    expect(getLongRunningToolFingerprint({ state: blocked, sessionID: "active" })).toBeNull()
+
+    const child = makeState()
+    child.session = [createSession("active", { parentID: "parent" })]
+    expect(getLongRunningToolFingerprint({ state: child, sessionID: "active" })).toBeNull()
+  })
+
+  test("confirms only an unchanged Context Mode call after five minutes without a managed child", () => {
+    const fingerprint = {
+      kind: "long-running-tool",
+      sessionID: "active",
+      assistantMessageID: "assistant-1",
+      anchorUserMessageID: "user-1",
+      partID: "tool-1",
+      callID: "call-1",
+      tool: "ctx_execute",
+    } as const
+
+    expect(shouldConfirmLongRunningTool({
+      managedChildActive: false,
+      silentForMs: 299_999,
+      before: fingerprint,
+      after: fingerprint,
+    })).toBe(false)
+    expect(shouldConfirmLongRunningTool({
+      managedChildActive: false,
+      silentForMs: 300_000,
+      before: fingerprint,
+      after: fingerprint,
+    })).toBe(true)
+    expect(shouldConfirmLongRunningTool({
+      managedChildActive: true,
+      silentForMs: 300_000,
+      before: fingerprint,
+      after: fingerprint,
+    })).toBe(false)
+    expect(shouldConfirmLongRunningTool({
+      managedChildActive: false,
+      silentForMs: 300_000,
+      before: fingerprint,
+      after: { ...fingerprint, callID: "call-2" },
+    })).toBe(false)
   })
 
   test("does not recover idle active sessions", () => {

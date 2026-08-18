@@ -53,7 +53,7 @@ describe('useQuotaStore refresh ownership', () => {
       const url = String(input);
       calls.push(url);
       if (url === '/api/quota/providers') {
-        return Response.json({ providers: ['cursor-acp', 'unsupported', 'codex'] });
+        return Response.json({ providers: ['cursor-acp', 'unsupported', 'deepseek', 'xai', 'codex'] });
       }
       const providerId = decodeURIComponent(url.split('/').at(-1) ?? '') as QuotaProviderId;
       return Response.json(providerResult(providerId));
@@ -61,11 +61,13 @@ describe('useQuotaStore refresh ownership', () => {
 
     await useQuotaStore.getState().fetchAllQuotas({ rediscover: true });
 
-    expect(useQuotaStore.getState().configuredProviderIds).toEqual(['codex', 'cursor-acp']);
+    expect(useQuotaStore.getState().configuredProviderIds).toEqual(['codex', 'xai', 'cursor-acp', 'deepseek']);
     expect(calls).toEqual([
       '/api/quota/providers',
       '/api/quota/codex',
+      '/api/quota/xai',
       '/api/quota/cursor-acp',
+      '/api/quota/deepseek',
     ]);
   });
 

@@ -37,6 +37,14 @@ So:
 - Use the **global sessions store** for cold/global session coverage (especially archived pages and unopened directories)
 - Use **aggregated child-store snapshots** for live session/status truth across already initialized directories
 
+Anthropic context measurement is deliberately low frequency. Completed
+assistant messages request a normalized provider snapshot when the runtime
+offers the optional context API. `session.compacted` synchronously invalidates
+the previous provider value and triggers a mapping refresh; no UI fallback may
+reuse a token-bearing message before the latest compaction part. Web/Electron
+prefer Meridian, while VS Code and external OpenCode settle on the bounded
+post-compaction message fallback without failing bootstrap.
+
 ## Directory subscription bootstrap authority
 
 Creating a directory store and bootstrapping its OpenCode runtime are separate
@@ -123,6 +131,10 @@ session loads to chat chrome.
 First-page requests from chat, sidebar prefetch, and model restoration are
 coalesced by the same exact key. A caller that arrives during an existing load
 awaits that request instead of treating `loading` as successful completion.
+The retained request limit never falls below the full message page size, even
+when a short initial response contains only one turn. This keeps OpenCode's
+oldest-record cursor from being mistaken for proof of older history on a later
+refresh. Limits may still grow as additional pages are retained in memory.
 Session eviction/deletion and directory disposal remove the matching record and
 invalidate its load token; late responses therefore cannot recreate retired
 pagination state.
@@ -523,7 +535,7 @@ Keep this in sync with `handleDirectoryEvent` in `sync-context.tsx`:
 | `session.diff` | `session_diff` |
 | `session.status` | `session_status` |
 | `todo.updated` | `todo` |
-| `message.updated` | `message`; `session_status` only for terminal trailing assistant status settlement |
+| `message.updated` | `message` |
 | `message.removed` | `message`, `part` |
 | `message.part.updated` | `part`; `message` only when inserting a provisional live assistant message for an orphan assistant text/reasoning/tool part |
 | `message.part.removed/delta` | `part` |
@@ -544,7 +556,7 @@ Server compatibility events named `openchamber:session-status` are normalized in
 
 ## Completion vs active work
 
-Completion indicators combine a settled lifecycle record with unread state; neither historical messages nor unread notifications create green by themselves. Green is restricted to a non-working background session with an unread completion. The active session never renders green, and selecting a session synchronously marks its root/descendant notifications viewed and clears settled normal/completed-plan indicators. Pending questions remain blue and proposed plans remain yellow regardless of which session is active; their precedence is question, proposed plan, unread error, then unread completion.
+Completion indicators combine an authoritatively idle lifecycle record with unread state; neither historical messages nor unread notifications create green by themselves. Green is restricted to an idle background session with a terminal visible summary, no active tools or blocking requests, and unread completion. The active session never renders green, and selecting a session synchronously marks its root/descendant notifications viewed and clears settled normal/completed-plan indicators. Pending questions retain their blocking presentation. For all other states the precedence is active work (neutral spinner), idle proposed plan (yellow), unread error, then idle unread completion (green).
 
 Proposed-plan and unread-completion state are restored after startup from authoritative materialized messages. Restoration is narrowed by the persisted session-to-plan-mode-message ownership map and compact completion identity/read records, processed sequentially per directory, and re-runs normal lifecycle detection after each snapshot load. Only completion identity, directory/session/message IDs, timestamp, and read state are persisted; provider errors and response content are not. This avoids treating arbitrary historical output as active while preserving yellow/green background indicators across reload and reconnect.
 
@@ -552,12 +564,9 @@ Authoritative permanent deletion removes only the deleted session's notification
 
 Plan revision and actionability remain derived from canonical message history rather than a second ledger. Plan-mode user turns are ordered by their canonical user message IDs/turn projection, assistant sources attach through `parentID`, and completed plan cards receive monotonic versions. A newer plan-mode user turn immediately supersedes older cards even before its replacement card is complete; history remains visible, but only the latest completed and unimplemented source is actionable. Unchanged plan trace indexes preserve reference identity while text streams.
 
-A trailing assistant message can settle stale `busy`/`retry` status to `idle` only when it is terminal, has no running tool parts, has no pending permission or question, and is not `finish: "tool-calls"`. This keeps the session working spinner visible between tool calls while OpenCode is still running and prevents an intermediate tool-call shell from hiding the final summary stream.
+Assistant completion and session idleness are separate lifecycle edges. A terminal assistant message, including final text and completed tool rows, never converts `busy`/`retry` to `idle` and never retires streaming ownership. Only authoritative idle (`session.status: idle` or `session.idle`), confirmed abort cleanup, or `session.error` ends working state. A terminal message may trigger a targeted status refresh, but the refreshed status remains the source of truth. `time.completed` is terminal evidence only when it is a finite positive timestamp; optimistic messages omit it entirely.
 
-Canonical `session.idle` and terminal trailing-assistant evidence also retire
-the exact session's stale streaming ownership. An ordinary idle status retains
-the narrow out-of-order safeguard for an incomplete assistant shell, so an
-early status event cannot hide a response that is still streaming.
+Streaming ownership, the Stop action, and the shared working-status shimmer remain active for the full authoritative `busy`/`retry` period. This includes the finalization tail after visible final text or completed tools arrive but before idle. An explicit idle status immediately retires the exact session's streaming ownership; historical incomplete message shells cannot override it.
 
 Accepted `busy`/`retry` status is treated as a new-work edge. When the sync store still contains `busy`/`retry` after reducing a status event, `sync-context.tsx` clears pending and visible completion indicators for that session. Delayed completion timers in `session-ui-store.ts` also re-check live status before writing so a green dot cannot appear after the session has started working again.
 
@@ -569,13 +578,15 @@ When OpenCode emits `message.part.updated` before the owning `message.updated`, 
 
 After five minutes of semantic silence, an unchanged authoritative resync becomes actionable for two exact trailing root-assistant shapes. An identified tool call in `pending + input:{} + raw:""` remains an explicit **Stop & Retry** action. An initial shell containing only `step-start` plus one empty reasoning/text part is inert and is stopped automatically. Both paths perform another authoritative resync and exact fingerprint check before aborting; a resumed or replaced stream wins the race and remains running. A confirmed abort opens the existing manual model-recovery card anchored to the authoritative user message, and DevRyan never resends a recovery prompt automatically. Non-empty or previously productive inference, partial input, running/final tools, terminal assistants, provider retries, permission/question blockers, managed dispatches, and active managed children are excluded. Any semantic event, terminal status, session switch/deletion, or directory disposal clears the low-frequency stall record. Confirmed stalls also emit sanitized operational journal marks containing only identity, source, and elapsed duration.
 
+Running `ctx_execute` calls use a separate low-frequency observation record because a long tool call is not evidence of a provider failure. The record preserves exact session/message/part/call identity plus first-observed and last-activity timestamps. The status row shows elapsed time immediately; after five minutes without a semantic update, the watchdog confirms the same call through an authoritative resync and offers a user-controlled **Stop** action. Stop rechecks identity once more before the existing confirmed abort, never kills work automatically, never retries, and never opens model recovery. Progress clears the warning and restarts the silence window; completion, replacement, blockers, session lifecycle cleanup, and directory disposal retire the record. Confirmation emits one sanitized `renderer_long_running_tool_confirmed` mark containing only tool name, source, and elapsed duration.
+
 Reconnect recovery treats its status response as a snapshot, not a live event.
 For every candidate it captures the complete current status before requesting the
 snapshot and merges the response only while that baseline is unchanged. Because
 the same snapshot is reconsidered after message and blocking-request recovery,
 that second merge uses a new post-merge baseline. A newer live status event in
 either async window therefore remains authoritative; unchanged candidates still
-receive normal snapshot and terminal-message reconciliation. All baselines stay
+receive the authoritative status snapshot without message-based settlement. All baselines stay
 scoped to the existing `directory + sessionID` candidates.
 
 ## Manual provider recovery and stop-during-retry guard
@@ -599,7 +610,7 @@ OpenCode ignores `session.abort` while a session sleeps between provider retry a
 - An unguarded provider `retry` remains authoritative so OpenCode can apply its retry policy, except when a root session reports a definite shared usage-limit classification. That case receives a confirmed abort immediately and creates the same explicit recovery record. Child sessions are excluded by authoritative `parentID` and continue through managed-task recovery.
 - The guard starts with a 60-second base window. When the stopped status is `retry`, it is seeded from the authoritative `attempt`/`next` identity and remains active through that normalized retry target plus the same settlement window. New retry identities can advance the deadline, while duplicate relative deadlines reuse their first normalized target instead of sliding forever.
 - While active, `filterSessionStatusThroughAbortGuard` coerces incoming `retry` statuses to `idle` (live event reduction, reconnect status merge, and directory bootstrap snapshots all route through it) and schedules bounded, debounced re-aborts (max 3) so the server loop is cancelled when its next attempt creates an abortable in-flight request. Snapshot filtering preserves the original status-map reference when no guard changes a value.
-- Streaming derivation does not retain an incomplete assistant shell across that guarded `idle`; the manual-abort guard disables only the narrow premature-idle streaming exception for the stopped session, so the composer unlocks without changing ordinary out-of-order idle handling.
+- Streaming derivation does not retain an incomplete assistant shell across that guarded `idle`; explicit idle is authoritative, so the composer unlocks without consulting historical message completion.
 - After a successful reconnect/bootstrap status snapshot, every listed session omitted from that snapshot is materialized as authoritative `idle`. Bootstrap explicitly settles any pre-existing streaming ownership for those sessions first, so a historical incomplete assistant shell cannot survive the snapshot as live activity or leave a plan card finishing forever.
 - The guard clears on authoritative idle (`session.idle`, `session.error`, idle `session.status`), on any new local send (`optimisticSend`, `usePromptSubmit`), and when an authoritative user message advances the cached user-turn boundary and proves that another connected surface started new work. Historical replay into an empty or newer cache cannot clear it.
 - `useProviderErrorRecovery` creates root-session recovery records after an authoritative active-to-idle transition ends with a matching retryable terminal assistant error. On first observation after reconnect, authoritative idle plus a trailing incomplete root response also becomes an explicit interrupted-response recovery instead of historical live activity. A definite provider usage limit is stopped on its first live retry; other transient stream retry loops remain capped after three attempts. DevRyan first receives a successful abort acknowledgement, then offers the same explicit recovery card. Manual recovery waits for guard settlement before sending the captured provider/model/agent/variant, preventing an explicitly stopped retry loop from overlapping the replacement turn; no recovery is resent automatically. A newer authoritative user turn clears an older recovery record, and the retry action performs the same final check so stale cards disappear without surfacing a misleading “failed turn is no longer available” error.

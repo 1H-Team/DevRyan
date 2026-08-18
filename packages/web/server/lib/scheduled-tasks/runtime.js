@@ -220,6 +220,7 @@ export const createScheduledTasksRuntime = (deps) => {
   const {
     projectConfigRuntime,
     listProjects,
+    listManagedProjectIDs,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     waitForOpenCodeReady,
@@ -230,6 +231,7 @@ export const createScheduledTasksRuntime = (deps) => {
     maxGlobalConcurrency = DEFAULT_GLOBAL_CONCURRENCY,
     maxProjectConcurrency = DEFAULT_PROJECT_CONCURRENCY,
     maxRunDurationMs = DEFAULT_MAX_RUN_MS,
+    createClient = createOpencodeClient,
   } = deps;
 
   let started = false;
@@ -374,6 +376,15 @@ export const createScheduledTasksRuntime = (deps) => {
       projectPathByID.set(project.id, project.path);
     }
 
+    if (typeof listManagedProjectIDs === 'function') {
+      const managedProjectIDs = await listManagedProjectIDs();
+      for (const projectID of Array.isArray(managedProjectIDs) ? managedProjectIDs : []) {
+        if (typeof projectID === 'string' && projectID.trim()) {
+          activeProjectIDs.add(projectID.trim());
+        }
+      }
+    }
+
     for (const existingProjectID of Array.from(tasksByProject.keys())) {
       if (!activeProjectIDs.has(existingProjectID)) {
         clearProjectTimers(existingProjectID);
@@ -472,11 +483,6 @@ export const createScheduledTasksRuntime = (deps) => {
   const runTaskWithWatchdog = async (projectID, task, reason) => {
     const startedAt = Date.now();
     const title = formatScheduledSessionTitle(task, startedAt);
-    let projectPath = projectPathByID.get(projectID);
-    if (!projectPath) {
-      throw new Error('project path is unavailable');
-    }
-
     const executionContext = task.ownerUserId && typeof resolveTaskExecutionContext === 'function'
       ? await resolveTaskExecutionContext({
           ownerUserId: task.ownerUserId,
@@ -488,7 +494,10 @@ export const createScheduledTasksRuntime = (deps) => {
     if (task.ownerUserId && !executionContext?.directory) {
       throw new Error('scheduled task owner or branch target is unavailable');
     }
-    if (executionContext?.directory) projectPath = executionContext.directory;
+    const projectPath = executionContext?.directory || await ensureProjectPath(projectID);
+    if (!projectPath) {
+      throw new Error('project path is unavailable');
+    }
 
     if (typeof waitForOpenCodeReady === 'function') {
       await waitForOpenCodeReady(10_000, 250);
@@ -496,7 +505,7 @@ export const createScheduledTasksRuntime = (deps) => {
 
     const baseUrl = buildOpenCodeUrl('/', '').replace(/\/$/, '');
     const authHeaders = getOpenCodeAuthHeaders();
-    const client = createOpencodeClient({
+    const client = createClient({
       baseUrl,
       headers: authHeaders,
     });

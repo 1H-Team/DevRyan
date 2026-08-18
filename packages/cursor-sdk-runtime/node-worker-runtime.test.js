@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
@@ -298,6 +298,41 @@ describe('Cursor SDK worker runtime config', () => {
       id: 'composer-2.5',
       params: [{ id: 'fast', value: 'false' }],
     });
+  });
+
+  test('generates OpenCode-compatible message identities when the caller omits one', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-worker-generated-id-'));
+    const capture = { calls: [], input: null };
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: {},
+      useNodeWorkerForPrompts: true,
+      usePersistentWorkerForPrompts: false,
+      nodeBinary: '/custom/node',
+      workerPath: '/custom/node-worker.mjs',
+      workerCwd: '/custom/cwd',
+      spawnImpl: createFakeWorkerSpawn(capture),
+    });
+
+    await runtime.handlePromptAsync({
+      sessionID: 'ses_generated_id',
+      directory: '/tmp/project',
+      body: {
+        model: { providerID: 'cursor-acp', modelID: 'composer-2.5' },
+        parts: [{ type: 'text', text: 'hello' }],
+      },
+    });
+
+    await waitFor(() => (
+      runtime.getSessionStatus().ses_generated_id?.type === 'idle' ? true : null
+    ));
+    const records = await runtime.getSessionMessages('ses_generated_id');
+    const user = records.find((record) => record.info.role === 'user');
+    const assistant = records.find((record) => record.info.role === 'assistant');
+    expect(user?.info.id).toMatch(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
+    expect(assistant?.info.parentID).toBe(user?.info.id);
+    await runtime.dispose();
   });
 
   test('generates titles through an ephemeral one-shot Cursor Auto worker request', async () => {
@@ -601,10 +636,13 @@ describe('Cursor SDK worker runtime config', () => {
 
   test('preserves provider-native task output and its failure reason when a run fails', async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-partial-tool-failure-'));
+    const events = [];
     const runtime = createCursorSdkRuntime({
       storageDir: tempDir,
       readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
       env: {},
+      emitEvent: (payload) => { events.push(payload); },
+      logger: { error() {} },
       createPromptRun: async () => ({
         async *stream() {
           yield {
@@ -670,6 +708,157 @@ describe('Cursor SDK worker runtime config', () => {
     expect(stringFailureTool?.state?.status).toBe('error');
     expect(stringFailureTool?.state?.output).toContain('"partialSummary": "Reviewed the retained partial result"');
     expect(stringFailureTool?.state?.error).toBe('reviewer stopped unexpectedly');
+    await waitFor(() => events.some((event) => event?.type === 'session.error'));
+    const errorEventIndex = events.findIndex((event) => event?.type === 'session.error');
+    const idleEventIndex = events.findIndex((event) => (
+      event?.type === 'session.status' && event?.properties?.status?.type === 'idle'
+    ));
+    expect(errorEventIndex).toBeGreaterThan(-1);
+    expect(idleEventIndex).toBeGreaterThan(errorEventIndex);
+
+    await runtime.dispose();
+  });
+
+  test('emits busy before output and publishes durable final parts before terminal metadata and idle', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-lifecycle-order-'));
+    const events = [];
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: {},
+      emitEvent: (payload) => { events.push(payload); },
+      createPromptRun: async () => ({
+        async *stream() {
+          yield { type: 'thinking', text: 'Inspecting the project.' };
+          yield {
+            type: 'tool_call',
+            call_id: 'call_lifecycle',
+            name: 'read',
+            status: 'running',
+            args: { path: 'README.md' },
+          };
+          yield {
+            type: 'tool_call',
+            call_id: 'call_lifecycle',
+            name: 'read',
+            status: 'completed',
+            result: { text: 'project read' },
+          };
+          yield {
+            type: 'assistant',
+            message: { content: [{ type: 'text', text: 'Implementation complete.' }] },
+          };
+        },
+        waitFinalResult: async () => ({
+          ok: true,
+          finalStatus: 'success',
+          finalText: 'Implementation complete.',
+        }),
+      }),
+    });
+
+    await runtime.handlePromptAsync({
+      sessionID: 'ses_lifecycle_order',
+      directory: '/tmp/project',
+      body: {
+        model: { providerID: 'cursor-acp', modelID: 'composer-2.5' },
+        messageID: 'msg_lifecycle_order_user',
+        parts: [{ type: 'text', text: 'inspect and finish' }],
+      },
+    });
+
+    await waitFor(() => events.some((event) => (
+      event?.type === 'session.status' && event?.properties?.status?.type === 'idle'
+    )));
+
+    const busyIndex = events.findIndex((event) => (
+      event?.type === 'session.status' && event?.properties?.status?.type === 'busy'
+    ));
+    const firstAssistantOutputIndex = events.findIndex((event) => (
+      event?.type === 'message.updated' && event?.properties?.info?.role === 'assistant'
+    ));
+    const terminalInfoIndex = events.findIndex((event) => (
+      event?.type === 'message.updated'
+        && event?.properties?.info?.role === 'assistant'
+        && event?.properties?.info?.finish === 'stop'
+    ));
+    const finalPartIndex = events.findLastIndex((event) => (
+      event?.type === 'message.part.updated'
+        && event?.properties?.part?.messageID === 'msg_lifecycle_order_user_assistant'
+    ));
+    const idleIndex = events.findIndex((event) => (
+      event?.type === 'session.status' && event?.properties?.status?.type === 'idle'
+    ));
+
+    expect(busyIndex).toBeGreaterThan(-1);
+    expect(firstAssistantOutputIndex).toBeGreaterThan(busyIndex);
+    expect(finalPartIndex).toBeGreaterThan(firstAssistantOutputIndex);
+    expect(terminalInfoIndex).toBeGreaterThan(finalPartIndex);
+    expect(idleIndex).toBeGreaterThan(terminalInfoIndex);
+
+    await runtime.dispose();
+  });
+
+  test('clears busy with an error and never emits success metadata when final persistence fails', async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'cursor-sdk-final-persist-failure-'));
+    const events = [];
+    let releaseFinalization;
+    const finalizationGate = new Promise((resolve) => { releaseFinalization = resolve; });
+    const runtime = createCursorSdkRuntime({
+      storageDir: tempDir,
+      readAuth: () => ({ 'cursor-acp': { key: 'cursor-sdk-key' } }),
+      env: {},
+      emitEvent: (payload) => { events.push(payload); },
+      logger: { error() {} },
+      createPromptRun: async () => ({
+        async *stream() {
+          yield { type: 'thinking', text: 'Preparing a durable result.' };
+          await finalizationGate;
+          yield {
+            type: 'assistant',
+            message: { content: [{ type: 'text', text: 'This must not look successful.' }] },
+          };
+        },
+        waitFinalResult: async () => ({
+          ok: true,
+          finalStatus: 'success',
+          finalText: 'This must not look successful.',
+        }),
+      }),
+    });
+
+    await runtime.handlePromptAsync({
+      sessionID: 'ses_final_persist_failure',
+      directory: '/tmp/project',
+      body: {
+        model: { providerID: 'cursor-acp', modelID: 'composer-2.5' },
+        messageID: 'msg_final_persist_failure_user',
+        parts: [{ type: 'text', text: 'finish after the gate' }],
+      },
+    });
+
+    await waitFor(async () => {
+      const records = await runtime.getSessionMessages('ses_final_persist_failure');
+      return records.some((record) => record.parts?.some((part) => part.type === 'reasoning'));
+    });
+    rmSync(tempDir, { recursive: true, force: true });
+    writeFileSync(tempDir, 'not-a-directory');
+    releaseFinalization();
+
+    await waitFor(() => events.some((event) => (
+      event?.type === 'session.error'
+        && event?.properties?.error?.name === 'CursorPersistenceError'
+    )));
+    const successMetadata = events.find((event) => (
+      event?.type === 'message.updated' && event?.properties?.info?.finish === 'stop'
+    ));
+    const idleEvent = events.find((event) => (
+      event?.type === 'session.status' && event?.properties?.status?.type === 'idle'
+    ));
+
+    expect(successMetadata).toBeUndefined();
+    expect(idleEvent).toBeTruthy();
+    expect(runtime.getSessionStatus()).toEqual({ ses_final_persist_failure: { type: 'idle' } });
 
     await runtime.dispose();
   });

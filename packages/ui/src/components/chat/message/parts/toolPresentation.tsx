@@ -12,7 +12,7 @@ import {
     RiListCheck3,
     RiMenuSearchLine,
     RiPencilLine,
-    RiSurveyLine,
+    RiQuestionAnswerLine,
     RiTaskLine,
     RiTerminalBoxLine,
     RiToolsLine,
@@ -72,7 +72,7 @@ export const getToolIcon = (toolName: string) => {
         return <RiAiAgentLine className={iconClass} />;
     }
     if (tool === 'question') {
-        return <RiSurveyLine className={iconClass} />;
+        return <RiQuestionAnswerLine className={iconClass} />;
     }
     if (tool === 'plan_enter') {
         return <RiFileList2Line className={iconClass} />;

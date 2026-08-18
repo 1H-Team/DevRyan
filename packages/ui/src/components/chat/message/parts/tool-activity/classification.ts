@@ -26,6 +26,7 @@ const FETCH_TOOL_NAMES = new Set<string>([
     'webfetch', 'fetch', 'curl', 'wget',
     'websearch', 'web-search', 'search_web', 'codesearch',
 ]);
+const BROWSER_TOOL_NAMES = new Set<string>(['devryan_browser']);
 
 const TOOL_NAME_ALIASES = new Map<string, string>([
     ['applypatch', 'apply_patch'],
@@ -62,10 +63,10 @@ const TOOL_NAME_ALIASES = new Map<string, string>([
     ['web_search', 'websearch'],
 ]);
 
-export type ToolActivityGroupKind = 'search' | 'read' | 'edit' | 'fetch' | 'patch' | 'shell';
+export type ToolActivityGroupKind = 'search' | 'read' | 'edit' | 'fetch' | 'patch' | 'shell' | 'browser';
 export type ToolFileMutationAction = 'created' | 'edited' | 'wrote';
 
-const PASSIVE_ROLLUP_GROUP_KINDS = new Set<ToolActivityGroupKind>(['search', 'read', 'fetch', 'edit', 'patch']);
+const PASSIVE_ROLLUP_GROUP_KINDS = new Set<ToolActivityGroupKind>(['search', 'read', 'fetch', 'edit', 'patch', 'browser']);
 
 export interface ToolActivityGroupInfo {
     key: string;
@@ -83,6 +84,9 @@ export const getToolActivityGroupLabelKey = (
     count: number,
 ) => {
     const kind = typeof group === 'string' ? group : group.kind;
+    if (kind === 'browser') {
+        return 'chat.toolGroup.usingDevRyanBrowser';
+    }
     if (kind === 'search') {
         return count === 1 ? 'chat.toolGroup.searchedFileSingle' : 'chat.toolGroup.searchedFilePlural';
     }
@@ -274,6 +278,10 @@ export const isFetchToolName = (toolName: unknown): boolean => {
     return FETCH_TOOL_NAMES.has(normalizeToolName(toolName));
 };
 
+export const isBrowserToolName = (toolName: unknown): boolean => {
+    return BROWSER_TOOL_NAMES.has(normalizeToolName(toolName));
+};
+
 export const getStaticGroupToolName = (toolName: string): string => {
     const normalized = normalizeToolName(toolName);
     if (SEARCH_TOOL_NAMES.has(normalized)) {
@@ -316,6 +324,10 @@ export const getToolActivityGroupInfo = (toolName: unknown, part?: ToolPart): To
 
     if (FETCH_TOOL_NAMES.has(normalized)) {
         return { key: 'fetch', kind: 'fetch', representativeToolName: 'webfetch' };
+    }
+
+    if (BROWSER_TOOL_NAMES.has(normalized)) {
+        return { key: 'browser', kind: 'browser', representativeToolName: 'devryan_browser' };
     }
 
     return null;

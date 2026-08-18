@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   BUG_REPORTS_MIGRATION,
+  DIAGNOSTIC_DISPOSITION_MIGRATION,
   ERROR_DIAGNOSTICS_MIGRATION,
   ERROR_LOG_CLEAR_MIGRATION,
   createBugReportsApi,
+  validateClientErrorBatch,
   validateErrorLogClearRange,
   validateBugReportStatusUpdate,
   validateBugReportSubmission,
@@ -98,6 +100,133 @@ const createRouteHarness = ({
   };
   return { invoke, audit, rpc, withAuditDeliveryBarrier };
 };
+
+const clientReport = (overrides = {}) => ({
+  fingerprint: "a1b2c3",
+  name: "TypeError",
+  message: "Cannot read properties of undefined",
+  stack: "TypeError: boom\n    at render (App.tsx:1:1)",
+  source: "window_error",
+  route: "/settings",
+  occurrenceCount: 3,
+  firstSeenAt: CREATED_AT,
+  ...overrides,
+});
+
+describe("client error capture", () => {
+  it("accepts only the report contract within its bounds", () => {
+    expect(validateClientErrorBatch({ errors: [clientReport()] })).toMatchObject({
+      valid: true,
+      reports: [{ fingerprint: "a1b2c3", errorName: "TypeError", occurrenceCount: 3, source: "window_error" }],
+    });
+    expect(validateClientErrorBatch({ errors: [] }).error).toBe("errors must be a non-empty array");
+    expect(
+      validateClientErrorBatch({ errors: Array.from({ length: 11 }, () => clientReport()) }).error,
+    ).toBe("errors must contain 10 reports or fewer");
+    expect(validateClientErrorBatch({ errors: [clientReport({ cookies: "x" })] }).error).toBe(
+      "A report contains unsupported fields",
+    );
+    expect(validateClientErrorBatch({ errors: [clientReport({ source: "keylogger" })] }).error).toContain(
+      "source must be",
+    );
+    expect(validateClientErrorBatch({ errors: [clientReport({ fingerprint: "../etc" })] }).error).toBe(
+      "fingerprint must be an alphanumeric token",
+    );
+    expect(validateClientErrorBatch({ errors: [clientReport({ firstSeenAt: "today" })] }).error).toBe(
+      "firstSeenAt must be an ISO timestamp",
+    );
+
+    const capped = validateClientErrorBatch({
+      errors: [clientReport({ message: "m".repeat(5_000), stack: "s".repeat(30_000), occurrenceCount: -4 })],
+    });
+    expect(capped.reports[0].message).toHaveLength(2_000);
+    expect(capped.reports[0].stack).toHaveLength(16_000);
+    expect(capped.reports[0].occurrenceCount).toBe(1);
+  });
+
+  it("captures reports from any managed user with a stable idempotent event id", async () => {
+    const audit = vi.fn(async () => {});
+    const harness = createRouteHarness({ rest: vi.fn(async () => []), audit });
+
+    const { response } = await harness.invoke("POST", "/api/client-errors", {
+      principal: developer,
+      body: { errors: [clientReport(), clientReport({ fingerprint: "d4e5f6", source: "error_boundary" })] },
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.payload).toEqual({ accepted: 2 });
+    expect(audit).toHaveBeenCalledTimes(2);
+
+    const [firstPrincipal, firstAction, firstDetails] = audit.mock.calls[0];
+    expect(firstPrincipal).toBe(developer);
+    expect(firstAction).toBe("client.error");
+    expect(firstDetails).toMatchObject({
+      success: false,
+      occurredAt: CREATED_AT,
+      diagnosticImpact: "medium",
+      diagnosticSource: "observed",
+      diagnosticDisposition: "actionable",
+      targetType: "client_error",
+      metadata: { kind: "client", failureClass: "client_runtime", occurrenceCount: 3, route: "/settings" },
+    });
+    // A boundary crash blanks a surface, so it outranks a stray listener error.
+    expect(audit.mock.calls[1][2].diagnosticImpact).toBe("high");
+
+    const replay = await harness.invoke("POST", "/api/client-errors", {
+      principal: developer,
+      body: { errors: [clientReport()] },
+    });
+    expect(replay.response.statusCode).toBe(202);
+    expect(audit.mock.calls[2][2].eventId).toBe(firstDetails.eventId);
+  });
+
+  it("defers unmanaged callers and rate limits a crash loop", async () => {
+    const audit = vi.fn(async () => {});
+    const harness = createRouteHarness({ rest: vi.fn(async () => []), audit });
+
+    const local = await harness.invoke("POST", "/api/client-errors", {
+      principal: { scope: "local" },
+      body: { errors: [clientReport()] },
+    });
+    expect(local.next).toHaveBeenCalled();
+    expect(audit).not.toHaveBeenCalled();
+
+    for (let batch = 0; batch < 3; batch += 1) {
+      const { response } = await harness.invoke("POST", "/api/client-errors", {
+        principal: developer,
+        body: {
+          errors: Array.from({ length: 10 }, (_, index) => clientReport({ fingerprint: `f${batch}${index}` })),
+        },
+      });
+      expect(response.statusCode).toBe(202);
+    }
+
+    const { response } = await harness.invoke("POST", "/api/client-errors", {
+      principal: developer,
+      body: { errors: [clientReport({ fingerprint: "overflow" })] },
+    });
+    expect(response.statusCode).toBe(429);
+    expect(response.payload).toMatchObject({ code: "rate_limited", retryable: true });
+    expect(response.payload.retryAfter).toBeGreaterThan(0);
+  });
+
+  it("redacts environment secrets before the report reaches the outbox", async () => {
+    const secret = "zyxwvutsrqponmlkjihgfedcba987654";
+    // The sanitizer snapshots the environment when the API is constructed.
+    process.env.DEVRYAN_TEST_CLIENT_ERROR_TOKEN = secret;
+    const audit = vi.fn(async () => {});
+    try {
+      const harness = createRouteHarness({ rest: vi.fn(async () => []), audit });
+      await harness.invoke("POST", "/api/client-errors", {
+        principal: developer,
+        body: { errors: [clientReport({ message: `Request failed with ${secret}` })] },
+      });
+    } finally {
+      delete process.env.DEVRYAN_TEST_CLIENT_ERROR_TOKEN;
+    }
+    expect(JSON.stringify(audit.mock.calls.at(-1)[2].metadata)).not.toContain(secret);
+  });
+});
 
 describe("bug report validation", () => {
   it("accepts only a UUID, title, and description within the contract bounds", () => {
@@ -460,10 +589,31 @@ describe("error logs API", () => {
     );
     expect(first.response.payload.logs[0]).toMatchObject({
       impact: "high",
+      disposition: "actionable",
       classificationSource: "inferred",
       failureClass: "session_runtime",
       outcome: "unresolved",
     });
+    expect(rest.mock.calls[0][1].query.diagnostic_disposition).toBe("eq.actionable");
+  });
+
+  it("defaults to actionable diagnostics and supports expected and all dispositions", async () => {
+    const rest = vi.fn(async () => []);
+    const harness = createRouteHarness({ rest });
+
+    await harness.invoke("GET", "/api/error-logs", { principal: admin, query: {} });
+    await harness.invoke("GET", "/api/error-logs", {
+      principal: admin,
+      query: { disposition: "expected" },
+    });
+    await harness.invoke("GET", "/api/error-logs", {
+      principal: admin,
+      query: { disposition: "all" },
+    });
+
+    expect(rest.mock.calls[0][1].query.diagnostic_disposition).toBe("eq.actionable");
+    expect(rest.mock.calls[1][1].query.diagnostic_disposition).toBe("eq.expected");
+    expect(rest.mock.calls[2][1].query.diagnostic_disposition).toBeUndefined();
   });
 
   it("returns only allowlisted sanitized context and supports task diagnostics identifiers", async () => {
@@ -478,6 +628,7 @@ describe("error logs API", () => {
       success: false,
       diagnostic_impact: "low",
       diagnostic_source: "observed",
+      diagnostic_disposition: "expected",
       metadata: {
         kind: "tool",
         tool: "bash",
@@ -529,6 +680,7 @@ describe("error logs API", () => {
       actor: { id: USER_ID, role: "developer" },
       project: { id: PROJECT_ID, label: "DevRyan" },
       impact: "low",
+      disposition: "expected",
       classificationSource: "observed",
       failureClass: "filesystem_target",
       outcome: "recovered",
@@ -568,6 +720,9 @@ describe("error logs API", () => {
       params: { eventId: ERROR_EVENT_ID },
     });
     const serialized = JSON.stringify(detail.response.payload.log);
+    expect(detail.response.payload.log.disposition).toBe("expected");
+    const detailRequest = rest.mock.calls.find(([, options]) => options.query?.event_id);
+    expect(detailRequest[1].query.diagnostic_disposition).toBeUndefined();
     expect(detail.response.payload.log.context).toMatchObject({
       kind: "tool",
       tool: "bash",
@@ -579,7 +734,127 @@ describe("error logs API", () => {
     expect(serialized).not.toContain(`${os.homedir()}/private`);
   });
 
-  it("combines kind and impact filters without changing keyset pagination", async () => {
+  it("truncates the list summary but returns full failure text and stack on the detail", async () => {
+    const failureText = `Boom ${"x".repeat(600)}`;
+    const stack = ["Error: Boom", ...Array.from({ length: 40 }, (_, index) => `    at frame${index} (file.js:${index}:1)`)].join("\n");
+    const row = {
+      id: 1,
+      event_id: ERROR_EVENT_ID,
+      actor_user_id: USER_ID,
+      actor_role: "developer",
+      action: "session.error",
+      project_id: PROJECT_ID,
+      session_id: "ses_root",
+      success: false,
+      diagnostic_impact: "medium",
+      diagnostic_source: "observed",
+      metadata: {
+        kind: "session",
+        errorName: "ProviderError",
+        failureClass: "session_runtime",
+        failureText,
+        stack,
+      },
+      created_at: CREATED_AT,
+    };
+    const rest = vi.fn(async (table, options) => {
+      if (table === "activity_logs" && options.query?.action?.includes("diagnostic.")) return [];
+      if (table === "activity_logs") return options.query?.event_id ? row : [row];
+      return [];
+    });
+    const harness = createRouteHarness({ rest });
+
+    const list = await harness.invoke("GET", "/api/error-logs", {
+      principal: admin,
+      query: {},
+    });
+    expect(list.response.payload.logs[0].summary).toHaveLength(238);
+    expect(list.response.payload.logs[0].summary.endsWith("…")).toBe(true);
+    expect(list.response.payload.logs[0].stack).toBeUndefined();
+
+    const detail = await harness.invoke("GET", "/api/error-logs/:eventId", {
+      principal: admin,
+      params: { eventId: ERROR_EVENT_ID },
+    });
+    expect(detail.response.payload.log.failureText).toBe(failureText);
+    expect(detail.response.payload.log.stack).toBe(stack);
+    expect(detail.response.payload.log.context.stack).toBe(stack);
+  });
+
+  it("rejects malformed search, date, actor, and limit filters", async () => {
+    const harness = createRouteHarness({ rest: vi.fn(async () => []) });
+    const cases = [
+      [{ q: "x".repeat(201) }, "q must be 200 characters or fewer"],
+      [{ from: "yesterday" }, "from must be an ISO timestamp"],
+      [{ to: "2026-13-99" }, "to must be an ISO timestamp"],
+      [{ actor: "not-a-uuid" }, "actor must be a UUID"],
+      [{ limit: "201" }, "limit must be an integer between 1 and 200"],
+      [{ disposition: "ignored" }, "disposition must be actionable, expected, or all"],
+    ];
+    for (const [query, error] of cases) {
+      const { response } = await harness.invoke("GET", "/api/error-logs", {
+        principal: admin,
+        query,
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.payload).toMatchObject({ error });
+    }
+  });
+
+  it("nests the cursor, search, and date range under a single and filter", async () => {
+    const rest = vi.fn(async () => []);
+    const harness = createRouteHarness({ rest });
+    const cursor = Buffer.from(
+      JSON.stringify({ v: 1, kind: "error_logs", createdAt: CREATED_AT, eventId: ERROR_EVENT_ID }),
+      "utf8",
+    ).toString("base64url");
+
+    await harness.invoke("GET", "/api/error-logs", {
+      principal: admin,
+      query: {
+        q: "timed out",
+        from: "2026-08-01T00:00:00.000Z",
+        to: "2026-08-09T00:00:00.000Z",
+        actor: USER_ID,
+        limit: "200",
+        cursor,
+      },
+    });
+
+    const { query } = rest.mock.calls[0][1];
+    expect(query.or).toBeUndefined();
+    expect(query.and).toBe(
+      `(or(created_at.lt.${CREATED_AT},and(created_at.eq.${CREATED_AT},event_id.lt.${ERROR_EVENT_ID}))`
+        + ",or(metadata->>failureText.ilike.*timed out*,metadata->>tool.ilike.*timed out*"
+        + ",metadata->>errorName.ilike.*timed out*)"
+        + ",created_at.gte.2026-08-01T00:00:00.000Z,created_at.lte.2026-08-09T00:00:00.000Z)",
+    );
+    expect(query.actor_user_id).toBe(`eq.${USER_ID}`);
+    expect(query.limit).toBe(201);
+  });
+
+  it("keeps a lone date bound on the column and strips PostgREST grammar from searches", async () => {
+    const rest = vi.fn(async () => []);
+    const harness = createRouteHarness({ rest });
+
+    await harness.invoke("GET", "/api/error-logs", {
+      principal: admin,
+      query: { from: "2026-08-01T00:00:00.000Z" },
+    });
+    expect(rest.mock.calls[0][1].query.created_at).toBe("gte.2026-08-01T00:00:00.000Z");
+    expect(rest.mock.calls[0][1].query.and).toBeUndefined();
+
+    await harness.invoke("GET", "/api/error-logs", {
+      principal: admin,
+      query: { q: 'boom*,or(x)"' },
+    });
+    expect(rest.mock.calls[1][1].query.or).toBe(
+      "(metadata->>failureText.ilike.*boom  or x*,metadata->>tool.ilike.*boom  or x*"
+        + ",metadata->>errorName.ilike.*boom  or x*)",
+    );
+  });
+
+  it("combines disposition, kind, and impact filters without changing keyset pagination", async () => {
     const rest = vi.fn(async (table, options) => {
       if (table !== "activity_logs") return [];
       if (options.query?.action?.includes("diagnostic.")) return [];
@@ -588,12 +863,13 @@ describe("error logs API", () => {
     const harness = createRouteHarness({ rest });
     const { response } = await harness.invoke("GET", "/api/error-logs", {
       principal: admin,
-      query: { kind: "tool", impact: "medium", limit: "20" },
+      query: { disposition: "expected", kind: "tool", impact: "medium", limit: "20" },
     });
 
     expect(response.statusCode).toBe(200);
     expect(rest.mock.calls[0][1].query).toMatchObject({
       action: "eq.tool.failed",
+      diagnostic_disposition: "eq.expected",
       diagnostic_impact: "eq.medium",
       order: "created_at.desc,event_id.desc",
       limit: 21,
@@ -733,6 +1009,30 @@ describe("error logs API", () => {
       payload: {
         code: "schema_migration_required",
         requiredMigration: ERROR_DIAGNOSTICS_MIGRATION,
+        retryable: false,
+      },
+    });
+  });
+
+  it("reports the disposition migration when PostgREST has no disposition column", async () => {
+    const schemaError = new SupabaseRequestError(
+      "Could not find the 'diagnostic_disposition' column of 'activity_logs' in the schema cache",
+      {
+        status: 400,
+        payload: {
+          code: "PGRST204",
+          message: "Could not find the 'diagnostic_disposition' column of 'activity_logs' in the schema cache",
+        },
+      },
+    );
+    const harness = createRouteHarness({ rest: vi.fn(async () => { throw schemaError; }) });
+    const { response } = await harness.invoke("GET", "/api/error-logs", { principal: admin });
+
+    expect(response).toMatchObject({
+      statusCode: 503,
+      payload: {
+        code: "schema_migration_required",
+        requiredMigration: DIAGNOSTIC_DISPOSITION_MIGRATION,
         retryable: false,
       },
     });

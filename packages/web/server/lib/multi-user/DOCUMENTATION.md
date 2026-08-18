@@ -28,7 +28,8 @@ accounts before connector startup or public-host API access.
 
 - Exact read-only `GET /api/config/agents` is a chat-bootstrap dependency. Users without Agents-page read access receive only name/model/variant/modelRefs/councillor selections; prompts, paths, permissions, sources, and stale override internals are omitted. Agent mutations remain Agents-edit gated.
 - Scheduled task routes bypass only the generic Projects-settings gate and enforce project assignment plus task ownership themselves. Managed non-admin users see and mutate only their own tasks; administrators can manage all tasks, including legacy ownerless records.
-- Scheduled execution reloads the owner and branch grant, prepares the branch target, and persists session ownership before submitting a prompt.
+- Scheduler startup enumerates active managed project IDs so persisted owner-scoped timers are restored independently of the host's local-settings project list.
+- Scheduled execution reloads the owner and branch grant, prepares the branch target, and persists session ownership before submitting a prompt. The live assignment directory is authoritative; a cached local project path is neither required nor accepted as managed-task authorization.
 
 ## Configuration
 
@@ -222,6 +223,13 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   assignment snapshots. Successful metadata and icon-image mutations publish a
   project-ID-only invalidation to active administrators and users assigned to
   that project; reconnecting clients reload the authoritative assignment snapshot.
+  `DELETE /api/admin/projects/:projectId` archives the project (`status=archived`),
+  removes every user grant, and hides it from `GET /api/admin/projects`. Hard
+  delete is avoided because session ownership cascades. Registering the same
+  repository path again restores the archived row. Git-integrate temp worktrees
+  (`devryan-integrate-*` under the OS temp dir) cannot be registered; admin
+  sessions opened there bind ownership to the already-registered parent
+  repository instead of creating a leftover managed project.
 - Every branch visibility row stores the registered repository path. Runtime
   principals ignore legacy per-user workspace paths and derive the same shared
   OpenCode worktree container used by `/api/git/worktrees`.
@@ -300,7 +308,8 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   `20260809190612_bug_reports`.
 - Error Logs reuse `activity_logs` and the durable audit outbox. The hot event
   path classifies relevant events before ownership or database work, ignores
-  streaming deltas and intentional aborts, and attributes failures through
+  streaming deltas, intentional session aborts, and exact `Tool execution
+  aborted` boilerplate, and attributes failures through
   durable session ownership even when the user no longer has a current project
   assignment. Failed recoverable managed tasks are held out while a retry is
   available; a recovered retry produces no failure row, while an abandoned or
@@ -308,12 +317,44 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
 - `session.error`, `tool.failed`, and `managed_task.failed` use deterministic
   event UUIDs. Their metadata is limited to actor/project/session correlations,
   provider/model/agent identity, tool/task/message IDs, safe error
-  classification, and sanitized UTF-8 failure text capped at 8 KiB. Prompts,
+  classification, stable tool error codes, and sanitized UTF-8 failure text
+  capped at 8 KiB. Tool arguments are never retained merely to capture a code. Prompts,
   commands, tool output, arbitrary headers, response bodies, credentials, and
-  raw host paths are excluded before the outbox persists the row.
+  raw host paths are excluded before the outbox persists the row. Context-mode
+  SQLITE_IOERR / disk-I/O tool failures are rewritten to a stable wedge message
+  that still contains `SQLITE_IOERR`, so classification stays `medium` /
+  `tool_runtime` without looking like a host disk fault. `database is locked`
+  remains an actionable ordinary runtime error but does not trigger process
+  recovery.
+  Model attempts to call an unavailable tool are classified as low-impact
+  `input` failures because the rejected invocation never enters tool execution.
+  Context Mode's deterministic `ctx_execute_file` project-boundary rejection is
+  also low-impact `input`; genuine Context Mode SQLite, disk-I/O, locking, and
+  other runtime failures remain `medium` / `tool_runtime`. A Context Mode call
+  that successfully invokes a nested command which exits nonzero is retained as
+  low-impact `command_exit`, because the command failed without the tool runtime
+  itself failing.
 - New failures carry immutable `diagnostic_impact` (`low`, `medium`, `high`, or
-  trusted-core-only `critical`) and `diagnostic_source=observed`. Legacy error
-  rows are backfilled by tool/lifecycle family with `diagnostic_source=inferred`.
+  trusted-core-only `critical`), `diagnostic_source=observed`, and
+  `diagnostic_disposition` (`actionable` or `expected`). Legacy error rows are
+  backfilled by narrow failure patterns with `diagnostic_source=inferred`;
+  filesystem probes, patch misses, malformed search regexes, command exits,
+  policy/workspace denials, browser/web target misses (including refused local
+  preview ports), exact targeted ripgrep execution failures with a sanitized
+  path, and record-size limits are expected and low impact. Missing or non-string
+  bundled `read.path` input is rejected before execution with
+  `DEVRYAN_TOOL_INPUT_INVALID` and is also expected input misuse. Session
+  errors without explicit retryability reuse the shared provider transport
+  classifier and expose its existing allowlisted `failureKind`; explicit
+  retryability remains authoritative. Recognized provider transport failures on
+  child sessions are expected and low impact while retryability is not explicitly
+  false; root-session failures and exhausted `managed_task.failed` events remain
+  actionable. `Upstream idle timeout exceeded` is normalized to
+  `stream_idle_timeout`.
+  Context IOERR, generic MCP/runtime failures, non-recoverable session failures, genuine managed
+  task failures, client crashes, and platform integrity/security failures stay
+  actionable. A completed managed task given `retry` is expected input misuse;
+  the safety gate requires `continue` and returns `DEVRYAN_TOOL_INPUT_INVALID`.
   Failure class stays in sanitized metadata. A later successful tool followed
   by authoritative session idle appends `diagnostic.recovered`; terminal
   session/task evidence appends `diagnostic.unresolved`, linked through the
@@ -327,8 +368,10 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   active-worktree-relative `paths` without redirecting or rewriting tool input.
 - `GET /api/error-logs`, `GET /api/error-logs/:eventId`, and
   `DELETE /api/error-logs?range=24h|7d|14d|all` are exact-admin routes over
-  those three actions. Lists support `session`, `tool`, and `managed_task`
-  filters, optional impact filtering, and opaque cursors. Clearing first audits
+  session, tool, managed-task, and client error actions. Lists default to
+  `disposition=actionable` and accept `expected` or `all`, compose that filter
+  with kind/impact/date/actor/search filters, and retain opaque stable cursors.
+  Direct UUID detail lookup is intentionally unfiltered. Clearing first audits
   the request, exclusively flushes the durable outbox, captures a request
   cutoff, and calls the service-role-only `devryan_clear_error_logs` RPC. The
   transaction removes matching user-visible failures plus linked
@@ -339,10 +382,27 @@ The secret key is sent only in Supabase's `apikey` header when it is a modern
   backlog or failed RPC releases the delivery barrier without deleting data;
   an absent RPC returns `schema_migration_required` with
   `20260810182541_clear_managed_error_diagnostics`. List and detail responses
-  expose impact, classification source, failure class, and recovery outcome.
+  expose disposition, impact, classification source, failure class, and recovery outcome.
+  A missing disposition column reports
+  `20260815141850_add_diagnostic_disposition` without hiding direct evidence.
   Detail exposes only an allowlist
   suitable for agent context; task-scoped diagnostic export continues to use
   the existing diagnostics API when a session ID is present.
+
+An Error Log event UUID is an administrative locator, not a journal record ID.
+Resolve it through `GET /api/error-logs/:eventId` and capture the returned
+`sessionId`, timestamp, action/kind, and available `callId`, `toolId`,
+`messageId`, or `taskId`. Then inspect the corresponding host journal with the
+session plus the strongest identifier, normally
+`bun scripts/journal.mjs show <sessionID> --grep <callId>`; fall back to another
+identifier or a bounded timestamp window and always run
+`bun scripts/journal.mjs gaps` before concluding. The Error Log UUID is not
+expected to occur in journal records. Error Logs remain the durable sanitized
+administrative index and classification store; the local journal remains the
+execution-evidence source for prompts, tool output, lifecycle ordering,
+recovery, and detailed failures. If that host journal is unavailable, expired,
+or has a qualifying gap, the missing evidence must be reported rather than
+reconstructed.
 
 ## Real-worktree migration rollout
 
@@ -365,6 +425,13 @@ snapshot-clear route. It installs the service-role-only, security-invoker RPC
 and narrows the retention trigger bypass to the five Error Log actions within
 that RPC's transaction-local scope; all other retention-locked analytics stay
 protected.
+Apply `20260816120000_refine_error_diagnostic_classification.sql` with or before
+the matching runtime changes. It transactionally suspends classification
+immutability, narrowly reclassifies exact tool-abort boilerplate, malformed
+search regexes, refused browser targets, and unqualified request timeouts across
+all users, updates only classification columns and their mirrored sanitized
+metadata, preserves every event and resolution record, then restores the
+immutability trigger.
 The GitHub migration installs the service-role-only atomic reassignment
 function. The real-worktree migration keeps `workspace_path` for rollback
 compatibility but repairs every grant to the registered repository path.

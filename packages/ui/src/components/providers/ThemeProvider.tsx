@@ -10,11 +10,14 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const applyTypography = useUIStore((state) => state.applyTypography);
   const padding = useUIStore((state) => state.padding);
   const applyPadding = useUIStore((state) => state.applyPadding);
+  const chatWidth = useUIStore((state) => state.chatWidth);
+  const applyChatWidth = useUIStore((state) => state.applyChatWidth);
 
   React.useLayoutEffect(() => {
     applyTypography();
     applyPadding();
-  }, [fontSize, applyTypography, padding, applyPadding]);
+    applyChatWidth();
+  }, [fontSize, applyTypography, padding, applyPadding, chatWidth, applyChatWidth]);
 
   return <>{children}</>;
 };

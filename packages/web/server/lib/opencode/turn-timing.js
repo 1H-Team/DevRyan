@@ -54,6 +54,7 @@ const KNOWN_TURN_MARKS = new Set([
   'renderer_status_idle_visible',
   'renderer_tool_input_stall_confirmed',
   'renderer_provider_inference_stall_confirmed',
+  'renderer_long_running_tool_confirmed',
   'cursor_abort_requested',
 ]);
 
@@ -248,14 +249,25 @@ function sanitizeClientMarkMetadata(mark, metadata) {
   }
 
   if (mark.startsWith('renderer_')) {
-    for (const key of ['runtime', 'transport', 'visibilityState', 'source']) {
+    const stringKeys = mark === 'renderer_long_running_tool_confirmed'
+      ? ['source', 'tool']
+      : ['runtime', 'transport', 'visibilityState', 'source', 'tool'];
+    for (const key of stringKeys) {
       if (typeof metadata[key] === 'string' && metadata[key].trim()) {
         sanitized[key] = metadata[key].trim();
       }
     }
-    const stalledForMs = metadata.stalledForMs;
-    if (typeof stalledForMs === 'number' && Number.isFinite(stalledForMs) && stalledForMs >= 0) {
-      sanitized.stalledForMs = Math.trunc(stalledForMs);
+    if (mark !== 'renderer_long_running_tool_confirmed') {
+      const stalledForMs = metadata.stalledForMs;
+      if (typeof stalledForMs === 'number' && Number.isFinite(stalledForMs) && stalledForMs >= 0) {
+        sanitized.stalledForMs = Math.trunc(stalledForMs);
+      }
+    }
+    if (mark === 'renderer_long_running_tool_confirmed') {
+      const elapsedMs = metadata.elapsedMs;
+      if (typeof elapsedMs === 'number' && Number.isFinite(elapsedMs) && elapsedMs >= 0) {
+        sanitized.elapsedMs = Math.trunc(elapsedMs);
+      }
     }
   }
 

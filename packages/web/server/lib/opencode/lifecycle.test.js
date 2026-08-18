@@ -32,6 +32,12 @@ beforeEach(() => {
   const opencodeConfigDir = mkdtempSync(join(tmpdir(), 'openchamber-opencode-config-'));
   tempDirs.push(opencodeConfigDir);
   process.env.OPENCODE_CONFIG_DIR = opencodeConfigDir;
+  // Every startOpenCode() here registers its mock child in the managed-process registry, which
+  // resolves to the developer's real ~/.config/openchamber when this is unset — and each write
+  // replaces the file wholesale, wiping the records that orphan reaping depends on.
+  const dataDir = mkdtempSync(join(tmpdir(), 'openchamber-data-'));
+  tempDirs.push(dataDir);
+  process.env.OPENCHAMBER_DATA_DIR = dataDir;
   delete process.env.OH_MY_OPENCODE_SLIM_PRESET;
 });
 
@@ -237,6 +243,7 @@ describe('OpenCode lifecycle', () => {
     const runtime = createRuntime();
 
     expect(typeof runtime.killProcessOnPort).toBe('function');
+    expect(typeof runtime.observeContextModeToolFailure).toBe('function');
   });
 
   it('launches managed OpenCode with the managed PATH', async () => {
@@ -263,6 +270,8 @@ describe('OpenCode lifecycle', () => {
     expect(options.env.OPENCODE_DISABLE_DEFAULT_PLUGINS).toBeUndefined();
     expect(options.env.OPENCODE_DISABLE_EXTERNAL_SKILLS).toBeUndefined();
     expect(options.env.OPENCODE_DISABLE_CLAUDE_CODE_SKILLS).toBe('1');
+    expect(options.env.CONTEXT_MODE_DATA_DIR).toBe(process.env.OPENCHAMBER_DATA_DIR);
+    expect(options.env.CONTEXT_MODE_DIR).toBe(join(process.env.OPENCHAMBER_DATA_DIR, 'context-mode'));
 
     await server.close();
   });
@@ -327,6 +336,32 @@ describe('OpenCode lifecycle', () => {
     expect(options.env.DEVRYAN_ORCHESTRATION_URL).toBe('http://127.0.0.1:43210/rpc');
     expect(options.env.DEVRYAN_ORCHESTRATION_TOKEN).toBe('opaque-private-token');
     expect(options.env.UNTRUSTED_EXTRA_KEY).toBeUndefined();
+    await server.close();
+  });
+
+  it('starts OpenCode without the private bridge when managed orchestration is already owned', async () => {
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+    const getManagedOrchestrationEnvironment = vi.fn(async () => {
+      throw Object.assign(new Error('Managed orchestration is already owned by another DevRyan runtime using this data directory'), {
+        code: 'managed_orchestration_owner_conflict',
+        statusCode: 409,
+      });
+    });
+    const runtime = createRuntime({ getManagedOrchestrationEnvironment });
+
+    const server = await runtime.startOpenCode();
+    const [, , options] = spawnMock.mock.calls[0];
+
+    expect(getManagedOrchestrationEnvironment).toHaveBeenCalledTimes(1);
+    expect(options.env.DEVRYAN_ORCHESTRATION_URL).toBeUndefined();
+    expect(options.env.DEVRYAN_ORCHESTRATION_TOKEN).toBeUndefined();
+    expect(runtime.__testState.isOpenCodeReady).toBe(true);
     await server.close();
   });
 
@@ -794,196 +829,11 @@ describe('OpenCode lifecycle', () => {
     expect(onOpenCodeRestarted).not.toHaveBeenCalled();
   });
 
-  it('defers a config refresh without stopping or spawning OpenCode while a session is active', async () => {
-    vi.useFakeTimers();
-    const existingProcess = {
-      exitCode: null,
-      signalCode: null,
-      close: vi.fn(async () => {}),
-      hasExited: vi.fn(() => false),
-    };
-    const applyOpencodeBinaryFromSettings = vi.fn(async () => null);
-    const runtime = createRuntime({
-      initialState: {
-        openCodeProcess: existingProcess,
-        openCodePort: 45678,
-        isOpenCodeReady: true,
-      },
-      getActiveSessionCount: vi.fn(() => 1),
-      applyOpencodeBinaryFromSettings,
-    });
+  it('leaves restart scheduling to the host configuration coordinator', () => {
+    const runtime = createRuntime();
 
-    const result = await runtime.refreshOpenCodeAfterConfigChange('agent fixer model override');
-
-    expect(result).toMatchObject({
-      runtimeApplied: false,
-      requiresReload: false,
-      restartDeferred: true,
-    });
-    expect(result.runtimeMessage).toContain('the active agent finishes');
-    expect(existingProcess.close).not.toHaveBeenCalled();
-    expect(spawnMock).not.toHaveBeenCalled();
-    expect(applyOpencodeBinaryFromSettings).not.toHaveBeenCalled();
-    expect(runtime.__testState.isOpenCodeReady).toBe(true);
-    expect(runtime.__testState.isRestartingOpenCode).toBe(false);
-  });
-
-  it('awaits the authoritative session count before deciding whether to refresh configuration', async () => {
-    vi.useFakeTimers();
-    let resolveAuthoritativeCount;
-    const authoritativeCount = new Promise((resolve) => {
-      resolveAuthoritativeCount = resolve;
-    });
-    const existingProcess = {
-      exitCode: null,
-      signalCode: null,
-      close: vi.fn(async () => {}),
-      hasExited: vi.fn(() => false),
-    };
-    const getAuthoritativeActiveSessionCount = vi.fn(() => authoritativeCount);
-    const runtime = createRuntime({
-      initialState: {
-        openCodeProcess: existingProcess,
-        openCodePort: 45678,
-        isOpenCodeReady: true,
-      },
-      getActiveSessionCount: vi.fn(() => 0),
-      getAuthoritativeActiveSessionCount,
-    });
-
-    let refreshSettled = false;
-    const refreshPromise = runtime.refreshOpenCodeAfterConfigChange('mcp update').then((result) => {
-      refreshSettled = true;
-      return result;
-    });
-    await Promise.resolve();
-
-    expect(getAuthoritativeActiveSessionCount).toHaveBeenCalledTimes(1);
-    expect(refreshSettled).toBe(false);
-    expect(existingProcess.close).not.toHaveBeenCalled();
-    expect(spawnMock).not.toHaveBeenCalled();
-
-    resolveAuthoritativeCount(1);
-    await expect(refreshPromise).resolves.toMatchObject({
-      runtimeApplied: false,
-      requiresReload: false,
-      restartDeferred: true,
-    });
-    expect(existingProcess.close).not.toHaveBeenCalled();
-    expect(spawnMock).not.toHaveBeenCalled();
-  });
-
-  it('keeps a deferred refresh queued while the authoritative session count remains active', async () => {
-    vi.useFakeTimers();
-    let authoritativeActiveSessionCount = 1;
-    let resolveRestarted;
-    const restarted = new Promise((resolve) => {
-      resolveRestarted = resolve;
-    });
-    const existingProcess = {
-      exitCode: null,
-      signalCode: null,
-      close: vi.fn(async () => {}),
-      hasExited: vi.fn(() => false),
-    };
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-    globalThis.fetch = vi.fn(async (url) => ({
-      ok: true,
-      json: async () => (String(url).endsWith('/agent') ? [] : {}),
-    }));
-    const getAuthoritativeActiveSessionCount = vi.fn(async () => authoritativeActiveSessionCount);
-    const runtime = createRuntime({
-      initialState: {
-        openCodeProcess: existingProcess,
-        openCodePort: null,
-        isOpenCodeReady: true,
-      },
-      getActiveSessionCount: vi.fn(() => 0),
-      getAuthoritativeActiveSessionCount,
-      onOpenCodeRestarted: vi.fn(() => resolveRestarted()),
-    });
-
-    await expect(runtime.refreshOpenCodeAfterConfigChange('mcp update')).resolves.toMatchObject({
-      restartDeferred: true,
-    });
-
-    vi.advanceTimersByTime(1000);
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(getAuthoritativeActiveSessionCount).toHaveBeenCalledTimes(2);
-    expect(existingProcess.close).not.toHaveBeenCalled();
-    expect(spawnMock).not.toHaveBeenCalled();
-
-    authoritativeActiveSessionCount = 0;
-    vi.advanceTimersByTime(1000);
-    await restarted;
-
-    expect(existingProcess.close).toHaveBeenCalledTimes(1);
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-    await runtime.__testState.openCodeProcess.close();
-  });
-
-  it('coalesces deferred config changes into one restart after session activity becomes idle', async () => {
-    vi.useFakeTimers();
-    let activeSessionCount = 1;
-    let resolveRestarted;
-    const restarted = new Promise((resolve) => {
-      resolveRestarted = resolve;
-    });
-    const existingProcess = {
-      exitCode: null,
-      signalCode: null,
-      close: vi.fn(async () => {}),
-      hasExited: vi.fn(() => false),
-    };
-    const child = createMockChild();
-    spawnMock.mockImplementationOnce(() => {
-      queueMicrotask(() => {
-        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
-      });
-      return child;
-    });
-    globalThis.fetch = vi.fn(async (url) => ({
-      ok: true,
-      json: async () => (String(url).endsWith('/agent') ? [] : {}),
-    }));
-    const runtime = createRuntime({
-      initialState: {
-        openCodeProcess: existingProcess,
-        openCodePort: null,
-        isOpenCodeReady: true,
-      },
-      getActiveSessionCount: vi.fn(() => activeSessionCount),
-      onOpenCodeRestarted: vi.fn(() => resolveRestarted()),
-    });
-
-    await expect(runtime.refreshOpenCodeAfterConfigChange('mcp update')).resolves.toMatchObject({
-      restartDeferred: true,
-    });
-    await expect(runtime.refreshOpenCodeAfterConfigChange('command update')).resolves.toMatchObject({
-      restartDeferred: true,
-    });
-    expect(existingProcess.close).not.toHaveBeenCalled();
-    expect(spawnMock).not.toHaveBeenCalled();
-
-    activeSessionCount = 0;
-    vi.advanceTimersByTime(1000);
-    await restarted;
-
-    expect(existingProcess.close).toHaveBeenCalledTimes(1);
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-    expect(runtime.__testState.isOpenCodeReady).toBe(true);
-
-    vi.advanceTimersByTime(5000);
-    expect(existingProcess.close).toHaveBeenCalledTimes(1);
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-    await runtime.__testState.openCodeProcess.close();
+    expect(runtime.refreshOpenCodeAfterConfigChange).toBeUndefined();
+    expect(runtime.applyOpenCodeConfigChanges).toBeTypeOf('function');
   });
 
   it('preserves a live managed child across repeated failed health checks while a session stays busy', async () => {
@@ -1346,12 +1196,12 @@ describe('OpenCode lifecycle', () => {
 
     const runtime = createRuntime();
 
-    await expect(runtime.refreshOpenCodeAfterConfigChange('agent fixer model override', {
+    await expect(runtime.applyOpenCodeConfigChanges({ scopes: ['agents'], changes: [{ metadata: {
       agentName: 'fixer',
       expectedAgentModelRef: 'cursor-acp/composer-2.5',
       agentReadyTimeoutMs: 50,
       agentReadyIntervalMs: 1,
-    })).resolves.toMatchObject({ runtimeApplied: true, requiresReload: true });
+    } }] })).resolves.toMatchObject({ runtimeApplied: true, requiresReload: false });
   });
 
   it('accepts an omitted runtime variant for a matching Cursor agent model', async () => {
@@ -1383,13 +1233,13 @@ describe('OpenCode lifecycle', () => {
 
     const runtime = createRuntime();
 
-    await expect(runtime.refreshOpenCodeAfterConfigChange('agent fixer model override', {
+    await expect(runtime.applyOpenCodeConfigChanges({ scopes: ['agents'], changes: [{ metadata: {
       agentName: 'fixer',
       expectedAgentModelRef: 'cursor-acp/grok-4.5',
       expectedAgentVariant: 'low',
       agentReadyTimeoutMs: 20,
       agentReadyIntervalMs: 1,
-    })).resolves.toMatchObject({ runtimeApplied: true, requiresReload: true });
+    } }] })).resolves.toMatchObject({ runtimeApplied: true, requiresReload: false });
   });
 
   it('rejects an explicit stale runtime variant for a matching Cursor agent model', async () => {
@@ -1421,13 +1271,13 @@ describe('OpenCode lifecycle', () => {
 
     const runtime = createRuntime();
 
-    await expect(runtime.refreshOpenCodeAfterConfigChange('agent fixer model override', {
+    await expect(runtime.applyOpenCodeConfigChanges({ scopes: ['agents'], changes: [{ metadata: {
       agentName: 'fixer',
       expectedAgentModelRef: 'cursor-acp/grok-4.5',
       expectedAgentVariant: 'low',
       agentReadyTimeoutMs: 20,
       agentReadyIntervalMs: 1,
-    })).rejects.toThrow('Agent "fixer" loaded with model "cursor-acp/grok-4.5" and variant "high"; expected variant "low"; expected "cursor-acp/grok-4.5"');
+    } }] })).rejects.toThrow('Agent "fixer" loaded with model "cursor-acp/grok-4.5" and variant "high"; expected variant "low"; expected "cursor-acp/grok-4.5"');
   });
 
   it('accepts an omitted runtime variant for a matching native agent model', async () => {
@@ -1459,13 +1309,13 @@ describe('OpenCode lifecycle', () => {
 
     const runtime = createRuntime();
 
-    await expect(runtime.refreshOpenCodeAfterConfigChange('agent fixer model override', {
+    await expect(runtime.applyOpenCodeConfigChanges({ scopes: ['agents'], changes: [{ metadata: {
       agentName: 'fixer',
       expectedAgentModelRef: 'openai/gpt-5.5',
       expectedAgentVariant: 'low',
       agentReadyTimeoutMs: 20,
       agentReadyIntervalMs: 1,
-    })).resolves.toMatchObject({ runtimeApplied: true, requiresReload: true });
+    } }] })).resolves.toMatchObject({ runtimeApplied: true, requiresReload: false });
   });
 
   it('fails refresh when the runtime loads a stale model for the overridden agent', async () => {
@@ -1496,11 +1346,11 @@ describe('OpenCode lifecycle', () => {
 
     const runtime = createRuntime();
 
-    await expect(runtime.refreshOpenCodeAfterConfigChange('agent fixer model override', {
+    await expect(runtime.applyOpenCodeConfigChanges({ scopes: ['agents'], changes: [{ metadata: {
       agentName: 'fixer',
       expectedAgentModelRef: 'cursor-acp/composer-2.5',
       agentReadyTimeoutMs: 20,
       agentReadyIntervalMs: 1,
-    })).rejects.toThrow('Agent "fixer" loaded with model "openai/gpt-5.5"; expected "cursor-acp/composer-2.5"');
+    } }] })).rejects.toThrow('Agent "fixer" loaded with model "openai/gpt-5.5"; expected "cursor-acp/composer-2.5"');
   });
 });

@@ -1,3 +1,5 @@
+import { recordConfigMutationResponse } from '@/stores/useConfigApplyStore';
+
 const GLOBAL_AGENTS_MD_ENDPOINT = '/api/behavior/agents-md';
 
 export type GlobalAgentsMdDocument = {
@@ -103,7 +105,9 @@ export const saveGlobalAgentsMd = async (
     throw new Error(await readApiError(response, 'Failed to save global AGENTS.md'));
   }
 
-  return parseSaveResult(await response.json());
+  const payload = await response.json();
+  recordConfigMutationResponse(payload);
+  return parseSaveResult(payload);
 };
 
 export const isGlobalAgentsMdSaveWarning = (result: GlobalAgentsMdSaveResult): boolean => (

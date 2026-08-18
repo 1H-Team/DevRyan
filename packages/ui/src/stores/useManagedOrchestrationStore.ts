@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import {
   canTransitionManagedTaskStatus,
-  classifyProviderRetryFailure,
+  classifyManagedTaskFailure,
   isTerminalManagedTaskStatus,
   MAX_MANAGED_TASK_FAILURE_BYTES,
   MAX_MANAGED_TASK_LABEL_BYTES,
@@ -36,6 +36,7 @@ const IMMUTABLE_PROJECTED_TASK_FIELDS = [
   'taskId',
   'rootSessionId',
   'dispatchCallId',
+  'dispatchGrouped',
   'parentTaskId',
   'directory',
   'sequence',
@@ -133,6 +134,7 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskEventRecord | n
     && typeof value.rootSessionId === 'string'
     && Boolean(value.rootSessionId.trim())
     && isOptionalNullableString(value.dispatchCallId)
+    && (value.dispatchGrouped === undefined || typeof value.dispatchGrouped === 'boolean')
     && isNullableString(value.parentTaskId)
     && isNullableString(value.childSessionId)
     && typeof value.directory === 'string'
@@ -163,6 +165,7 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskEventRecord | n
       || value.failureKind === null
       || value.failureKind === 'provider_usage_limit'
       || value.failureKind === 'provider_prompt_rejected'
+      || value.failureKind === 'deadline_exceeded'
     )
     && typeof value.partial === 'boolean'
     && typeof value.recoverablePreview === 'string'
@@ -177,6 +180,7 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskEventRecord | n
     dispatchCallId: value.dispatchCallId === null || value.dispatchCallId === undefined
       ? null
       : truncateManagedText(value.dispatchCallId, 1_024),
+    dispatchGrouped: value.dispatchGrouped === true,
     parentTaskId: value.parentTaskId as string | null,
     childSessionId: value.childSessionId as string | null,
     directory: value.directory as string,
@@ -198,9 +202,11 @@ const parseManagedTaskEventRecord = (value: unknown): ManagedTaskEventRecord | n
     failureReason: value.failureReason === null
       ? null
       : truncateManagedText(value.failureReason, MAX_MANAGED_TASK_FAILURE_BYTES),
-    failureKind: value.failureKind === 'provider_usage_limit' || value.failureKind === 'provider_prompt_rejected'
+    failureKind: value.failureKind === 'provider_usage_limit'
+      || value.failureKind === 'provider_prompt_rejected'
+      || value.failureKind === 'deadline_exceeded'
       ? value.failureKind
-      : classifyProviderRetryFailure(value.failureReason),
+      : classifyManagedTaskFailure(value.failureReason),
     partial: value.partial as boolean,
     recoverablePreview: truncateManagedText(value.recoverablePreview, MAX_MANAGED_TASK_PREVIEW_BYTES),
     canonicalRefs: (value.canonicalRefs as Array<{ type: string; id: string }>)
@@ -437,6 +443,10 @@ const isManualRecoveryTask = (
   task.childSessionId
   && !task.agentRetryAvailable
   && task.failureKind !== 'provider_prompt_rejected'
+  && (
+    task.failureKind === 'provider_usage_limit'
+    || (task.mode === 'orchestrator' && task.dispatchGrouped && task.attempt >= 2)
+  )
   && (task.status === 'failed' || task.status === 'interrupted')
   && envelope?.resumable
   && envelope.action === null
@@ -1105,6 +1115,12 @@ export const managedOrchestrationSelectors = {
   ) => {
     const taskId = state.latestTaskIdByChildSessionId[childSessionId];
     return taskId ? state.tasksById[taskId] : undefined;
+  },
+  latestTaskAgentForChildSession: (childSessionId: string) => (
+    state: ManagedOrchestrationStore
+  ) => {
+    const taskId = state.latestTaskIdByChildSessionId[childSessionId];
+    return taskId ? state.tasksById[taskId]?.agent : undefined;
   },
   manualRecoveryTaskIdForChildSession: (childSessionId: string) => (
     state: ManagedOrchestrationStore

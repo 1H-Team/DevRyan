@@ -15,6 +15,7 @@ const cssGeneratorSource = () => readFileSync(
 const FIXED_ICON_COLORS = {
   builder: { variable: '--agent-icon-builder-color', value: '#969DA9' },
   council: { variable: '--agent-icon-council-color', value: '#92400E' },
+  orchestrator: { variable: '--agent-icon-orchestrator-color', value: '#0072C3' },
   designer: { variable: '--agent-icon-designer-color', value: '#9333EA' },
   fixer: { variable: '--agent-icon-fixer-color', value: '#DC2626' },
   explorer: { variable: '--agent-icon-explorer-color', value: '#16A34A' },
@@ -44,16 +45,24 @@ describe('agent icon colors', () => {
 
     for (const { variable, value } of Object.values(FIXED_ICON_COLORS)) {
       expect(designSystem).toContain(`${variable}: ${value};`);
-      expect(designSystem.match(new RegExp(variable, 'g'))).toHaveLength(1);
+      expect(designSystem.match(new RegExp(variable, 'g'))).toHaveLength(
+        variable === '--agent-icon-orchestrator-color' ? 2 : 1,
+      );
       expect(cssGenerator).not.toContain(variable);
     }
+  });
+
+  test('keeps the Orchestrator glyph pure white in every dark theme', () => {
+    const designSystem = designSystemSource();
+
+    expect(/\.dark\s*\{[\s\S]*?--agent-icon-orchestrator-color: #FFFFFF;/.test(designSystem)).toBe(true);
   });
 
   test('preserves the existing palette for non-glyph indicators and fallback agents', () => {
     expect(getAgentColor('fixer').var).toBe('--syntax-type');
     expect(getAgentColor('explorer').var).toBe('--syntax-type');
 
-    for (const agentName of [undefined, 'orchestrator', 'custom-agent']) {
+    for (const agentName of [undefined, 'custom-agent']) {
       expect(getAgentIconColor(agentName).var).toBe(getAgentColor(agentName).var);
     }
   });

@@ -205,24 +205,26 @@ const waitForCompletionIndicatorSettlement = async () => {
   await new Promise((resolve) => setTimeout(resolve, SESSION_COMPLETION_INDICATOR_SETTLE_MS + 20))
 }
 
-const contextUsage = (totalTokens: number): SessionContextUsage => ({
-  totalTokens,
-  percentage: totalTokens / 100,
+const contextUsage = (activeInputTokens: number): SessionContextUsage => ({
+  activeInputTokens,
+  lastOutputTokens: 0,
+  source: "message-fallback",
+  updatedAt: 1,
+  percentage: activeInputTokens / 100,
   capacityLimit: 10_000,
   capacityBasis: "context",
   inputLimit: null,
   contextLimit: 10_000,
   outputLimit: null,
   tokenBreakdown: {
-    input: totalTokens,
+    input: activeInputTokens,
     output: 0,
     reasoning: 0,
     cacheRead: 0,
     cacheWrite: 0,
-    total: totalTokens,
+    total: activeInputTokens,
   },
   hasTokenBreakdown: true,
-  sourceAccuracy: "unavailable",
 })
 
 describe("sync plan lifecycle on message.part.delta", () => {
@@ -473,6 +475,35 @@ describe("sync plan lifecycle on message.part.delta", () => {
     expect(store.getState().session_status[SESSION_ID]).toEqual(retryStatus)
   })
 
+  test("routes Cursor execution-worktree events through the session's logical directory mapping", () => {
+    const executionDirectory = "/repo/.cursor/worktrees/run-1"
+    const childStores = new ChildStoreManager()
+    const logicalStore = childStores.ensureChild(DIRECTORY)
+    const executionStore = childStores.ensureChild(executionDirectory)
+    const session = { id: SESSION_ID, title: "Mapped task", time: { created: 1, updated: 2 } } as Session
+
+    logicalStore.setState({
+      ...INITIAL_STATE,
+      session: [session],
+      session_status: { [SESSION_ID]: { type: "idle" } as SessionStatus },
+    })
+    executionStore.setState({
+      ...INITIAL_STATE,
+      session: [session],
+      session_status: { [SESSION_ID]: { type: "idle" } as SessionStatus },
+    })
+
+    applySyncEventForTest(
+      executionDirectory,
+      sessionStatusEvent({ type: "busy" } as SessionStatus),
+      childStores,
+      routingIndexFor([]),
+    )
+
+    expect(logicalStore.getState().session_status[SESSION_ID]).toEqual({ type: "busy" })
+    expect(executionStore.getState().session_status[SESSION_ID]).toEqual({ type: "idle" })
+  })
+
   test("canonical session idle retires stale streaming ownership without opening the chat", () => {
     const childStores = new ChildStoreManager()
     const store = childStores.ensureChild(DIRECTORY)
@@ -502,7 +533,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
       properties: { sessionID: SESSION_ID, status: { type: "idle" } },
     } as Event, childStores, routingIndexFor())
 
-    expect(useStreamingStore.getState().streamingMessageIds.get(SESSION_ID)).toBe(ASSISTANT_MESSAGE_ID)
+    expect(useStreamingStore.getState().streamingMessageIds.get(SESSION_ID)).toBeNull()
 
     applySyncEventForTest(DIRECTORY, {
       type: "session.idle",
@@ -1656,7 +1687,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     })
   })
 
-  test("marks proposed and settles stale busy status when a completed Cursor plan arrives via delta", async () => {
+  test("waits for authoritative idle before marking a completed Cursor plan proposed", async () => {
     const childStores = new ChildStoreManager()
     const store = childStores.ensureChild(DIRECTORY)
 
@@ -1680,6 +1711,17 @@ describe("sync plan lifecycle on message.part.delta", () => {
     const routingIndex = routingIndexFor()
 
     applySyncEventForTest(DIRECTORY, deltaEvent(structuredPlanBody), childStores, routingIndex)
+    await flushAsync()
+
+    expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toBe(undefined)
+    expect(store.getState().session_status[SESSION_ID]).toEqual({ type: "busy" })
+
+    applySyncEventForTest(
+      DIRECTORY,
+      sessionStatusEvent({ type: "idle" } as SessionStatus),
+      childStores,
+      routingIndex,
+    )
     await flushAsync()
 
     expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toEqual({
@@ -1733,8 +1775,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     )
     await flushAsync()
 
-    const planEntry = useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)
-    expect(planEntry).toEqual({
+    expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toEqual({
       state: "proposed",
       sourceMessageId: ASSISTANT_MESSAGE_ID,
     })
@@ -1742,6 +1783,30 @@ describe("sync plan lifecycle on message.part.delta", () => {
       isRootSession: true,
       isWorking: true,
       isActive: true,
+      hasUnreadCompletion: false,
+      hasCompletedStatus: false,
+      hasErrorStatus: false,
+      pendingQuestionCount: 0,
+      planState: null,
+    })).toBeNull()
+
+    applySyncEventForTest(
+      DIRECTORY,
+      sessionStatusEvent({ type: "idle" } as SessionStatus),
+      childStores,
+      routingIndex,
+    )
+    await flushAsync()
+
+    const planEntry = useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)
+    expect(planEntry).toEqual({
+      state: "proposed",
+      sourceMessageId: ASSISTANT_MESSAGE_ID,
+    })
+    expect(resolveSidebarIndicator({
+      isRootSession: true,
+      isWorking: false,
+      isActive: false,
       hasUnreadCompletion: false,
       hasCompletedStatus: false,
       hasErrorStatus: false,
@@ -2460,7 +2525,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     expect(useSessionUIStore.getState().sessionCompletionIndicator.has(SESSION_ID)).toBe(false)
   })
 
-  test("settles stale busy completed normal turn and records completion without a separate idle event", async () => {
+  test("keeps a delayed finalization tail active until authoritative idle", async () => {
     const childStores = new ChildStoreManager()
     const store = childStores.ensureChild(DIRECTORY)
     const completedPart = toolPart(ASSISTANT_MESSAGE_ID, "completed")
@@ -2484,13 +2549,22 @@ describe("sync plan lifecycle on message.part.delta", () => {
     applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndexFor())
     await flushAsync()
 
-    expect(store.getState().session_status[SESSION_ID]).toEqual({ type: "idle" })
+    expect(store.getState().session_status[SESSION_ID]).toEqual({ type: "busy" })
+    expect(useNotificationStore.getState().list).toHaveLength(0)
+    expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(false)
 
-    expect(useNotificationStore.getState().list).toHaveLength(1)
-    expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(true)
+    applySyncEventForTest(
+      DIRECTORY,
+      sessionStatusEvent({ type: "idle" } as SessionStatus),
+      childStores,
+      routingIndexFor(),
+    )
+    await flushAsync()
 
     await waitForCompletionIndicatorSettlement()
 
+    expect(useNotificationStore.getState().list).toHaveLength(1)
+    expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(true)
     expect(useSessionUIStore.getState().sessionCompletionIndicator.get(SESSION_ID)).toEqual({
       messageId: ASSISTANT_MESSAGE_ID,
       completedAt: 3,
@@ -2573,7 +2647,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     expect(useSessionUIStore.getState().sessionCompletionIndicator.has(SESSION_ID)).toBe(false)
   })
 
-  test("preserves normal completion when a stale busy status arrives", async () => {
+  test("clears normal completion attention when authoritative busy starts", async () => {
     const childStores = new ChildStoreManager()
     const store = childStores.ensureChild(DIRECTORY)
 
@@ -2605,12 +2679,9 @@ describe("sync plan lifecycle on message.part.delta", () => {
     await flushAsync()
     await waitForCompletionIndicatorSettlement()
 
-    expect(useSessionUIStore.getState().sessionCompletionIndicator.get(SESSION_ID)).toEqual({
-      messageId: ASSISTANT_MESSAGE_ID,
-      completedAt: 3,
-    })
-    expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(true)
-    expect(store.getState().session_status[SESSION_ID]).toEqual({ type: "idle" })
+    expect(useSessionUIStore.getState().sessionCompletionIndicator.get(SESSION_ID)).toBe(undefined)
+    expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(false)
+    expect(store.getState().session_status[SESSION_ID]).toEqual({ type: "busy" })
   })
 
   test("cancels pending normal completion when a new busy turn starts before settlement", async () => {
@@ -2773,7 +2844,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     })
   })
 
-  test("settles stale busy completed plan implementation and marks plan completed", async () => {
+  test("keeps plan implementation active through final parts until authoritative idle", async () => {
     const childStores = new ChildStoreManager()
     const store = childStores.ensureChild(DIRECTORY)
     const completedPart = toolPart(IMPLEMENT_ASSISTANT_MESSAGE_ID, "completed")
@@ -2819,11 +2890,21 @@ describe("sync plan lifecycle on message.part.delta", () => {
     )
     await flushAsync()
 
-    expect(store.getState().session_status[SESSION_ID]).toEqual({ type: "idle" })
-    expect(useNotificationStore.getState().list).toHaveLength(1)
+    expect(store.getState().session_status[SESSION_ID]).toEqual({ type: "busy" })
+    expect(useNotificationStore.getState().list).toHaveLength(0)
+    expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)?.state).toBe("implementing")
+
+    applySyncEventForTest(
+      DIRECTORY,
+      sessionStatusEvent({ type: "idle" } as SessionStatus),
+      childStores,
+      routingIndexFor([USER_MESSAGE_ID, ASSISTANT_MESSAGE_ID, IMPLEMENT_USER_MESSAGE_ID, IMPLEMENT_ASSISTANT_MESSAGE_ID]),
+    )
+    await flushAsync()
 
     await waitForCompletionIndicatorSettlement()
 
+    expect(useNotificationStore.getState().list).toHaveLength(1)
     expect(useSessionUIStore.getState().sessionCompletionIndicator.has(SESSION_ID)).toBe(false)
     expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toEqual({
       state: "completed",
@@ -3073,7 +3154,7 @@ describe("sync plan lifecycle on message.part.delta", () => {
     expect(useNotificationStore.getState().list).toHaveLength(0)
   })
 
-  test("settles stale busy status to idle when a terminal assistant message lands", async () => {
+  test("keeps busy status when a terminal assistant message lands", async () => {
     const childStores = new ChildStoreManager()
     const store = childStores.ensureChild(DIRECTORY)
     const completedPart = textPart("Completed work.")
@@ -3096,10 +3177,10 @@ describe("sync plan lifecycle on message.part.delta", () => {
     applySyncEventForTest(DIRECTORY, partUpdatedEvent(completedPart), childStores, routingIndexFor())
     await flushAsync()
 
-    expect(store.getState().session_status[SESSION_ID]).toEqual({ type: "idle" })
+    expect(store.getState().session_status[SESSION_ID]).toEqual({ type: "busy" })
   })
 
-  test("clones session status when terminal assistant message settlement happens through sync", () => {
+  test("preserves the status map when terminal assistant metadata lands", () => {
     const childStores = new ChildStoreManager()
     const store = childStores.ensureChild(DIRECTORY)
     const nonCursorAssistant = {
@@ -3141,11 +3222,11 @@ describe("sync plan lifecycle on message.part.delta", () => {
       routingIndexFor(),
     )
 
-    expect(store.getState().session_status).not.toBe(previousStatusMap)
-    expect(store.getState().session_status[SESSION_ID]).toEqual({ type: "idle" })
+    expect(store.getState().session_status).toBe(previousStatusMap)
+    expect(store.getState().session_status[SESSION_ID]).toEqual({ type: "busy" })
   })
 
-  test("preserves completed plan and completion notifications when a stale busy status arrives", async () => {
+  test("clears completed plan attention when authoritative busy starts", async () => {
     const childStores = new ChildStoreManager()
     const store = childStores.ensureChild(DIRECTORY)
 
@@ -3199,14 +3280,11 @@ describe("sync plan lifecycle on message.part.delta", () => {
     applySyncEventForTest(DIRECTORY, sessionStatusEvent({ type: "busy" } as SessionStatus), childStores, routingIndexFor())
     await flushAsync()
 
-    expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toEqual({
-      state: "completed",
-      sourceMessageId: ASSISTANT_MESSAGE_ID,
-      implementationMessageId: IMPLEMENT_USER_MESSAGE_ID,
-    })
+    expect(useSessionUIStore.getState().sessionPlanIndicator.get(SESSION_ID)).toBe(undefined)
     expect(useSessionUIStore.getState().sessionPlanAvailable.get(SESSION_ID)).toBe(true)
-    expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(true)
-    expect(useNotificationStore.getState().sessionHasError(SESSION_ID)).toBe(true)
+    expect(useNotificationStore.getState().sessionHasCompletion(SESSION_ID)).toBe(false)
+    expect(useNotificationStore.getState().sessionHasError(SESSION_ID)).toBe(false)
+    expect(store.getState().session_status[SESSION_ID]).toEqual({ type: "busy" })
   })
 
   test("preserves proposed plan indicator when a stale busy status arrives", async () => {

@@ -326,7 +326,6 @@ describe('message stream websocket runtime', () => {
       },
       buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
       getOpenCodeAuthHeaders: () => ({}),
-      processForwardedEventPayload() {},
       wsClients,
       upstreamReconnectDelayMs: 0,
       fetchImpl: async (_url, options) => {
@@ -383,7 +382,6 @@ describe('message stream websocket runtime', () => {
       },
       buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
       getOpenCodeAuthHeaders: () => ({}),
-      processForwardedEventPayload() {},
       wsClients,
       upstreamReconnectDelayMs: 0,
       fetchImpl: async (_url, options) => {
@@ -444,7 +442,6 @@ describe('message stream websocket runtime', () => {
       },
       buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
       getOpenCodeAuthHeaders: () => ({}),
-      processForwardedEventPayload() {},
       wsClients,
       upstreamReconnectDelayMs: 0,
       fetchImpl: async (url, options) => {
@@ -491,7 +488,6 @@ describe('message stream websocket runtime', () => {
       },
       buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
       getOpenCodeAuthHeaders: () => ({}),
-      processForwardedEventPayload() {},
       wsClients,
       triggerHealthCheck: () => {
         triggerHealthCheckCalls += 1;
@@ -544,7 +540,6 @@ describe('message stream websocket runtime', () => {
         throw new Error('missing OpenCode port');
       },
       getOpenCodeAuthHeaders: () => ({}),
-      processForwardedEventPayload() {},
       wsClients,
       triggerHealthCheck: () => {
         triggerHealthCheckCalls += 1;
@@ -595,7 +590,6 @@ describe('message stream websocket runtime', () => {
       },
       buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
       getOpenCodeAuthHeaders: () => ({}),
-      processForwardedEventPayload() {},
       wsClients,
       triggerHealthCheck: () => {
         triggerHealthCheckCalls += 1;
@@ -648,25 +642,13 @@ describe('message stream websocket runtime', () => {
     await runtime.close();
   });
 
-  it('keeps synthetic event processing on forwarded upstream events', async () => {
+  it('forwards synthetic hub events without reprocessing raw events in the bridge', async () => {
     const server = new EventEmitter();
     const wsClients = new Set();
-
-    const runtime = createMessageStreamWsRuntime({
-      server,
-      uiAuthController: null,
-      isRequestOriginAllowed: async () => true,
-      rejectWebSocketUpgrade() {
-        throw new Error('upgrade should not be used in this test');
-      },
+    const processForwardedEventPayload = vi.fn();
+    const globalEventHub = createGlobalMessageStreamHub({
       buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
       getOpenCodeAuthHeaders: () => ({}),
-      processForwardedEventPayload(payload, emitSynthetic) {
-        if (payload.type === 'session.updated') {
-          emitSynthetic({ type: 'openchamber:session-status', sessionID: 'ses_1' });
-        }
-      },
-      wsClients,
       upstreamReconnectDelayMs: 0,
       fetchImpl: async (_url, options) => createSseResponse({
         signal: options.signal,
@@ -677,10 +659,30 @@ describe('message stream websocket runtime', () => {
       }),
     });
 
+    const runtime = createMessageStreamWsRuntime({
+      server,
+      uiAuthController: null,
+      isRequestOriginAllowed: async () => true,
+      rejectWebSocketUpgrade() {
+        throw new Error('upgrade should not be used in this test');
+      },
+      buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      processForwardedEventPayload,
+      wsClients,
+      globalEventHub,
+    });
+
     const socket = new FakeSocket();
     runtime.wsServer.emit('connection', socket, { url: '/api/global/event/ws' });
 
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    await waitForCondition(() => socket.sent.some((frame) => frame.eventId === 'evt-1'));
+    globalEventHub.publishSyntheticEvent({
+      payload: { type: 'openchamber:session-status', sessionID: 'ses_1' },
+      directory: 'global',
+      eventId: 'synthetic-status-1',
+    });
+    await waitForCondition(() => socket.sent.some((frame) => frame.eventId === 'synthetic-status-1'));
 
     expect(socket.sent).toContainEqual({
       type: 'event',
@@ -691,8 +693,10 @@ describe('message stream websocket runtime', () => {
     expect(socket.sent).toContainEqual({
       type: 'event',
       payload: { type: 'openchamber:session-status', sessionID: 'ses_1' },
+      eventId: 'synthetic-status-1',
       directory: 'global',
     });
+    expect(processForwardedEventPayload).not.toHaveBeenCalled();
 
     socket.close();
     await runtime.close();
@@ -709,7 +713,6 @@ describe('message stream websocket runtime', () => {
       rejectWebSocketUpgrade,
       buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
       getOpenCodeAuthHeaders: () => ({}),
-      processForwardedEventPayload() {},
       wsClients: new Set(),
     });
     const firstRequest = { url: '/api/global/event/ws', headers: {} };
@@ -759,7 +762,6 @@ describe('message stream websocket runtime', () => {
       rejectWebSocketUpgrade() {},
       buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
       getOpenCodeAuthHeaders: () => ({}),
-      processForwardedEventPayload() {},
       wsClients: new Set(),
       globalEventHub,
     });

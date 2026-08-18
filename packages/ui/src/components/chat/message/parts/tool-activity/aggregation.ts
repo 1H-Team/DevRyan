@@ -167,6 +167,9 @@ export const getToolActivityGroupSummaryCount = <T>(
     items: readonly T[],
     getToolPart?: (item: T) => ToolPart | undefined,
 ): number => {
+    if (kind === 'browser') {
+        return 1;
+    }
     if (kind === 'shell') {
         return Math.max(1, items.length);
     }
@@ -236,7 +239,8 @@ export const shouldCollapseToolActivityGroup = <T>(
         || groupInfo.kind === 'fetch'
         || groupInfo.kind === 'edit'
         || groupInfo.kind === 'patch'
-        || groupInfo.kind === 'shell') {
+        || groupInfo.kind === 'shell'
+        || groupInfo.kind === 'browser') {
         return getToolActivityGroupSummaryCount(groupInfo.kind, items, getToolPart) > 0;
     }
     return false;
@@ -418,8 +422,13 @@ export const collectCrossMessageFileActivityGroups = <T>(
     },
 ): Array<{ groupInfo: ToolActivityGroupInfo; items: T[] }> => {
     return collectToolActivityRows(items, options).flatMap((row) => {
-        if (row.type !== 'group' || (row.groupInfo.kind !== 'edit' && row.groupInfo.kind !== 'read')) {
+        if (row.type !== 'group'
+            || (row.groupInfo.kind !== 'edit' && row.groupInfo.kind !== 'read' && row.groupInfo.kind !== 'browser')) {
             return [];
+        }
+
+        if (row.groupInfo.kind === 'browser') {
+            return [{ groupInfo: row.groupInfo, items: row.items }];
         }
 
         const messageIds = new Set(row.items.map(options.getMessageId));

@@ -6,6 +6,8 @@ const normalizeProviderRetryMessage = (value) => (
 
 export const PROVIDER_USAGE_LIMIT_FAILURE_KIND = 'provider_usage_limit';
 export const PROVIDER_PROMPT_REJECTED_FAILURE_KIND = 'provider_prompt_rejected';
+export const DEADLINE_EXCEEDED_FAILURE_KIND = 'deadline_exceeded';
+export const MANAGED_TASK_TIMEOUT_REASON_PREFIX = 'Managed task timed out at ';
 export const PROVIDER_TRANSPORT_FAILURE_KINDS = Object.freeze([
   'request_timeout',
   'response_header_timeout',
@@ -36,7 +38,7 @@ const normalizeTransportFailureText = (value) => {
 const NON_TRANSPORT_FAILURE_PATTERN = /\b(?:abort(?:ed)?|cancel(?:led|ed)?|authentication|authorization|unauthorized|forbidden|invalid api key|missing api key|oauth|access token|refresh token|credential|modelnotfound(?:error)?|model (?:is )?not found|unknown model|invalid model|no such model|certificate|self signed|unable to verify|x509)\b/i;
 const NON_TRANSPORT_FAILURE_NAME_PATTERN = /(?:abort|cancel|auth|oauth|modelnotfound|certificate)/i;
 const RESPONSE_HEADER_TIMEOUT_PATTERN = /(?:\bund_err_headers_timeout\b|\bheaders? timeout(?: error)?\b|\bresponse headers? (?:timed out|timeout)\b|\btimed out (?:while )?waiting for (?:the )?response headers?\b)/i;
-const STREAM_IDLE_TIMEOUT_PATTERN = /(?:\bund_err_body_timeout\b|\bchunk timeout(?: error)?\b|\bstream idle timeout\b|\bsse (?:read )?timed out\b|\btimed out (?:while )?waiting for (?:the )?(?:next )?(?:stream|chunk|response data)\b|\bno (?:stream )?data (?:was )?received\b)/i;
+const STREAM_IDLE_TIMEOUT_PATTERN = /(?:\bund_err_body_timeout\b|\bchunk timeout(?: error)?\b|\bstream idle timeout\b|\bupstream idle timeout exceeded\b|\bsse (?:read )?timed out\b|\btimed out (?:while )?waiting for (?:the )?(?:next )?(?:stream|chunk|response data)\b|\bno (?:stream )?data (?:was )?received\b)/i;
 const REQUEST_TIMEOUT_PATTERN = /^(?:(?:unknown\s*error|unknownerror)\s*:\s*)?(?:(?:the )?(?:operation|request) (?:has )?timed out|request timeout(?:error)?|timeout(?:error)?)\.?$/i;
 const CONNECTION_FAILURE_PATTERN = /(?:^terminated$|\beconn(?:aborted|refused|reset)\b|\behostunreach\b|\benet(?:down|unreach)\b|\benotfound\b|\bepipe\b|\betimedout\b|\bund_err_(?:connect_timeout|socket)\b|\bstreaming response failed\b|\bupstream request failed\b|\bpremature(?:ly)? close(?:d)?\b|\bsocket hang up\b|\bconnection (?:closed|dropped|failed|lost|refused|reset|terminated)\b|\bnetwork (?:connection )?(?:error|failure)\b|\bfetch failed\b)/i;
 
@@ -106,3 +108,12 @@ export const isDefiniteProviderUsageLimit = (value) => {
 export const isProviderPromptRejected = (value) => {
   return classifyProviderRetryFailure(value) === PROVIDER_PROMPT_REJECTED_FAILURE_KIND;
 };
+
+export const isManagedTaskDeadlineExceeded = (value) => (
+  typeof value === 'string' && value.startsWith(MANAGED_TASK_TIMEOUT_REASON_PREFIX)
+);
+
+export const classifyManagedTaskFailure = (value) => (
+  classifyProviderRetryFailure(value)
+  ?? (isManagedTaskDeadlineExceeded(value) ? DEADLINE_EXCEEDED_FAILURE_KIND : null)
+);

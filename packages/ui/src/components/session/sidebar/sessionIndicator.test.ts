@@ -141,7 +141,7 @@ describe('resolveSidebarIndicator', () => {
     });
   });
 
-  test('shows proposed plan indicator even while stale working status is present', () => {
+  test('keeps active work ahead of a proposed plan indicator', () => {
     expect(resolveSidebarIndicator({
       isRootSession: true,
       isWorking: true,
@@ -151,10 +151,7 @@ describe('resolveSidebarIndicator', () => {
       hasErrorStatus: false,
       pendingQuestionCount: 0,
       planState: 'proposed',
-    })).toEqual({
-      className: 'bg-status-warning',
-      labelKey: 'sessions.sidebar.session.status.planReady',
-    });
+    })).toBeNull();
   });
 
   test('does not show green for the active session even when completion state is stale', () => {
@@ -212,12 +209,12 @@ describe('resolveSidebarWorkingStatus', () => {
     })).toBe(false);
   });
 
-  test('does not show a stale active spinner once a plan is ready', () => {
+  test('keeps the active spinner until a proposed plan is authoritatively idle', () => {
     expect(resolveSidebarWorkingStatus({
       isWorking: true,
       pendingQuestionCount: 0,
       planState: 'proposed',
-    })).toBe(false);
+    })).toBe(true);
   });
 
   test('keeps active spinner while a plan is implementing', () => {
@@ -259,7 +256,7 @@ describe('collectSessionIndicatorScopeIds', () => {
 });
 
 describe('resolveMobileSessionIndicatorPresentation', () => {
-  test('renders the shared lifecycle color before a working spinner', () => {
+  test('renders a working spinner before stale lifecycle attention', () => {
     const indicator = resolveSidebarIndicator({
       isRootSession: true,
       isWorking: true,
@@ -276,11 +273,8 @@ describe('resolveMobileSessionIndicatorPresentation', () => {
       isWorking: true,
       planState: null,
     })).toEqual({
-      kind: 'status',
-      indicator: {
-        className: 'bg-status-error',
-        labelKey: 'sessions.sidebar.session.status.error',
-      },
+      kind: 'working',
+      labelKey: 'sessions.sidebar.session.status.active',
     });
   });
 

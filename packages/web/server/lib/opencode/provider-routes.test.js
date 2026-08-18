@@ -59,7 +59,13 @@ const createApp = (overrides = {}) => {
       path: '/tmp/user-config.json',
       config: {},
     })),
-    refreshOpenCodeAfterConfigChange: vi.fn(async () => undefined),
+    markConfigChange: vi.fn(async () => ({
+      requiresApply: true,
+      applyRevision: 1,
+      applyScopes: ['providers'],
+      applyStatus: { state: 'pending', runtimeMode: 'managed' },
+      requiresReload: false,
+    })),
     buildAugmentedPath: vi.fn(() => process.env.PATH || ''),
     getOpenCodeWorkingDirectory: vi.fn(() => '/tmp/project'),
     setOpenCodeWorkingDirectory: vi.fn(),
@@ -227,7 +233,7 @@ describe('OpenCode provider routes', () => {
 
   it('verifies the Cursor SDK connection without writing the old OpenCode bridge config', async () => {
     const ensureDefaultCursorAcpProviderConfig = vi.fn();
-    const refreshOpenCodeAfterConfigChange = vi.fn(async () => undefined);
+    const markConfigChange = vi.fn(async () => undefined);
     const verifyConnection = vi.fn(async () => ({
       ok: true,
       sdkAuthConfigured: true,
@@ -236,7 +242,7 @@ describe('OpenCode provider routes', () => {
     }));
     const { app } = createApp({
       ensureDefaultCursorAcpProviderConfig,
-      refreshOpenCodeAfterConfigChange,
+      markConfigChange,
       clientReloadDelayMs: 25,
       cursorSdkRuntime: {
         getRuntimeStatus: vi.fn(),
@@ -249,7 +255,7 @@ describe('OpenCode provider routes', () => {
       .expect(200);
 
     expect(ensureDefaultCursorAcpProviderConfig).not.toHaveBeenCalled();
-    expect(refreshOpenCodeAfterConfigChange).not.toHaveBeenCalled();
+    expect(markConfigChange).not.toHaveBeenCalled();
     expect(verifyConnection).toHaveBeenCalledWith();
     expect(response.body).toMatchObject({
       success: true,
@@ -1151,8 +1157,6 @@ describe('OpenCode provider routes', () => {
           keep_enabled: true,
           task: false,
           invalid: false,
-          'mcp__*': false,
-          'resend_*': false,
         },
       },
       directory: '/tmp/project',
@@ -1343,8 +1347,6 @@ describe('OpenCode provider routes', () => {
         keep_enabled: true,
         task: false,
         invalid: false,
-        'mcp__*': false,
-        'resend_*': false,
       },
     });
   });

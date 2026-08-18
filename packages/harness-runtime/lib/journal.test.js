@@ -268,7 +268,11 @@ describe('session-partitioned diagnostic journal', () => {
     await journal.flush();
     const cleared = await journal.clear();
     expect(cleared).toMatchObject({ sessionCount: 0, segmentCount: 0, writtenRecords: 0 });
-    expect(await fs.readFile(path.join(directory, 'README.md'), 'utf8')).toContain('session');
+    const readme = await fs.readFile(path.join(directory, 'README.md'), 'utf8');
+    expect(readme).toContain('session');
+    expect(readme).toContain('show <sessionID> --grep <callId>');
+    expect(readme).toContain('Error Log event UUID is a locator');
+    expect(readme).toContain('Run `gaps` before concluding');
     expect(JSON.parse(await fs.readFile(path.join(directory, 'index.json'), 'utf8')).sessions).toEqual([]);
     expect(await journal.readRecords()).toEqual([]);
 

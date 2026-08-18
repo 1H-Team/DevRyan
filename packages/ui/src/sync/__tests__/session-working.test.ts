@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Message, Part, SessionStatus } from "@opencode-ai/sdk/v2/client"
-import { isSessionWorkingFromState } from "../session-working"
+import { isSessionWorkingFromState, isTerminalAssistantMessage } from "../session-working"
 
 function assistantMessage(id: string, completed?: number): Message {
   return {
@@ -41,6 +41,15 @@ function toolPart(messageID: string, status: string): Part {
 }
 
 describe("isSessionWorkingFromState", () => {
+  test("treats a zero completion timestamp as incomplete", () => {
+    expect(isTerminalAssistantMessage(assistantMessage("msg_assistant_1", 0))).toBe(false)
+    expect(isSessionWorkingFromState({
+      status: undefined,
+      permissions: [],
+      messages: [assistantMessage("msg_assistant_1", 0)],
+    })).toBe(true)
+  })
+
   test("trusts authoritative idle status over incomplete assistant messages", () => {
     expect(isSessionWorkingFromState({
       status: { type: "idle" } as SessionStatus,
@@ -49,13 +58,13 @@ describe("isSessionWorkingFromState", () => {
     })).toBe(false)
   })
 
-  test("keeps a live streaming message working through a premature idle status", () => {
+  test("lets authoritative idle settle a tracked streaming message", () => {
     expect(isSessionWorkingFromState({
       status: { type: "idle" } as SessionStatus,
       permissions: [],
       messages: [assistantMessage("msg_assistant_1")],
       liveStreamingMessageId: "msg_assistant_1",
-    })).toBe(true)
+    })).toBe(false)
   })
 
   test("keeps authoritative busy status working until sync settlement", () => {
@@ -83,17 +92,17 @@ describe("isSessionWorkingFromState", () => {
     })).toBe(true)
   })
 
-  test("keeps a completed tool-call assistant working through idle while its tool is in flight", () => {
+  test("lets authoritative idle settle a completed tool-call assistant", () => {
     expect(isSessionWorkingFromState({
       status: { type: "idle" } as SessionStatus,
       permissions: [],
       messages: [completedToolCallsAssistantMessage("msg_assistant_1")],
       liveStreamingMessageId: "msg_assistant_1",
       liveParts: [toolPart("msg_assistant_1", "running")],
-    })).toBe(true)
+    })).toBe(false)
   })
 
-  test("keeps a tracked live tool-call assistant working behind a trailing empty assistant shell", () => {
+  test("does not let tracked message history override authoritative idle", () => {
     expect(isSessionWorkingFromState({
       status: { type: "idle" } as SessionStatus,
       permissions: [],
@@ -103,7 +112,7 @@ describe("isSessionWorkingFromState", () => {
       ],
       liveStreamingMessageId: "msg_assistant_1",
       liveParts: [toolPart("msg_assistant_1", "running")],
-    })).toBe(true)
+    })).toBe(false)
   })
 
   test("stops treating a completed tool-call assistant as working after its tool finalizes", () => {

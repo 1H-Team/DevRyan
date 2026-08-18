@@ -21,13 +21,13 @@ const group = (providerId: string, providerName: string): RateLimitGroup => ({
 const groups: RateLimitGroup[] = [
   group('gemini', 'Gemini'),
   group('cursor', 'Cursor'),
-  group('anthropic', 'Anthropic'),
+  group('claude', 'Claude'),
   group('github-copilot', 'GitHub Copilot'),
   group('codex', 'ChatGPT'),
 ];
 
 const expectProviderLabelsInAlphabeticalOrder = (markup: string) => {
-  const labelPositions = ['Anthropic', 'ChatGPT', 'Cursor', 'Gemini', 'GitHub Copilot']
+  const labelPositions = ['ChatGPT', 'Claude', 'Cursor', 'Gemini', 'GitHub Copilot']
     .map((label) => markup.indexOf(label));
 
   expect(labelPositions.every((position) => position >= 0)).toBe(true);

@@ -226,11 +226,80 @@ describe('MCP config helpers', () => {
 
     const { updateMcpConfig } = await loadMcpModule();
 
-    updateMcpConfig('linear', { enabled: false });
+    const result = updateMcpConfig('linear', { enabled: false });
 
+    expect(result.changed).toBe(true);
     expect(readJson(getMcpAuthPath())).toEqual({
       linear: { clientInfo: { client_id: 'current-linear' }, oauthState: 'current-state' },
     });
+  });
+
+  it('reports an unchanged effective MCP update without rewriting configuration', async () => {
+    const configPath = path.join(tempHome, '.config', 'opencode', 'opencode.json');
+    writeJson(configPath, {
+      mcp: {
+        linear: { type: 'remote', url: 'https://mcp.linear.app/mcp', enabled: true },
+      },
+    });
+    const before = fs.readFileSync(configPath, 'utf8');
+    const { updateMcpConfig } = await loadMcpModule();
+
+    const result = updateMcpConfig('linear', { enabled: true });
+
+    expect(result).toEqual({ changed: false, authReset: { ok: true, removed: false } });
+    expect(fs.readFileSync(configPath, 'utf8')).toBe(before);
+  });
+
+  it('treats a blank oauth payload as a no-op and keeps the OAuth cache', async () => {
+    const configPath = path.join(tempHome, '.config', 'opencode', 'opencode.json');
+    writeJson(configPath, {
+      mcp: {
+        linear: {
+          type: 'remote',
+          url: 'https://mcp.linear.app/mcp',
+          oauth: { redirectUri: 'http://127.0.0.1:57123/mcp/oauth/callback' },
+        },
+      },
+    });
+    writeJson(getMcpAuthPath(), {
+      linear: { clientInfo: { client_id: 'current-linear' }, oauthState: 'current-state' },
+    });
+    const before = fs.readFileSync(configPath, 'utf8');
+    const { updateMcpConfig } = await loadMcpModule();
+
+    const emptyResult = updateMcpConfig('linear', { oauth: {} });
+    const blankResult = updateMcpConfig('linear', {
+      oauth: { clientId: '', clientSecret: ' ', scope: '', redirectUri: '' },
+    });
+
+    expect(emptyResult).toEqual({ changed: false, authReset: { ok: true, removed: false } });
+    expect(blankResult).toEqual({ changed: false, authReset: { ok: true, removed: false } });
+    expect(fs.readFileSync(configPath, 'utf8')).toBe(before);
+    expect(readJson(getMcpAuthPath())).toEqual({
+      linear: { clientInfo: { client_id: 'current-linear' }, oauthState: 'current-state' },
+    });
+  });
+
+  it('still clears oauth and resets the cache on explicit oauth: false', async () => {
+    const configPath = path.join(tempHome, '.config', 'opencode', 'opencode.json');
+    writeJson(configPath, {
+      mcp: {
+        linear: {
+          type: 'remote',
+          url: 'https://mcp.linear.app/mcp',
+          oauth: { redirectUri: 'http://127.0.0.1:57123/mcp/oauth/callback' },
+        },
+      },
+    });
+    writeJson(getMcpAuthPath(), {
+      linear: { clientInfo: { client_id: 'current-linear' }, oauthState: 'current-state' },
+    });
+    const { updateMcpConfig } = await loadMcpModule();
+
+    const result = updateMcpConfig('linear', { oauth: false });
+
+    expect(result.changed).toBe(true);
+    expect(readJson(getMcpAuthPath())).toEqual({});
   });
 
   it('clears stale same-name OAuth cache before creating an MCP config', async () => {

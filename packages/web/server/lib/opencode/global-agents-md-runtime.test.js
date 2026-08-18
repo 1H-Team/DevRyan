@@ -65,7 +65,7 @@ describe('global AGENTS.md runtime', () => {
       content: '# Global rule\n',
       exists: true,
       editable: true,
-      runtimeApplied: true,
+      runtimeApplied: false,
     });
     expect(callOrder).toEqual(['# Global rule\n']);
     await expect(fs.readFile(agentsMdPath, 'utf8')).resolves.toBe('# Global rule\n');
@@ -81,7 +81,7 @@ describe('global AGENTS.md runtime', () => {
       content: '',
       exists: false,
       editable: true,
-      runtimeApplied: true,
+      runtimeApplied: false,
     });
     await expect(fs.stat(agentsMdPath)).rejects.toMatchObject({ code: 'ENOENT' });
     expect(refreshRuntime).toHaveBeenCalledTimes(1);
@@ -126,7 +126,7 @@ describe('global AGENTS.md runtime', () => {
       exists: true,
       editable: true,
       runtimeApplied: false,
-      warning: 'Global AGENTS.md was saved, but OpenCode could not reload it automatically: restart failed',
+      warning: 'Global AGENTS.md was saved, but the apply request could not be recorded: restart failed',
     });
     await expect(fs.readFile(agentsMdPath, 'utf8')).resolves.toBe('# Saved anyway\n');
   });

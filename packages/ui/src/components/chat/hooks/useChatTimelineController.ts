@@ -98,12 +98,16 @@ export const useChatTimelineController = ({
     }, [messages]);
 
     const [turnStart, setTurnStart] = React.useState(() => getInitialTurnStart(turnWindowModel.turnCount));
+    // A session switch renders before the layout-effect reset below. Clamp the
+    // previous session's window immediately so stale buffered-turn state cannot
+    // expose an older-history control in a shorter session for one frame.
+    const effectiveTurnStart = clampTurnStart(turnStart, turnWindowModel.turnCount);
     const [isLoadingOlder, setIsLoadingOlder] = React.useState(false);
     const [pendingRevealWork, setPendingRevealWork] = React.useState(false);
     const [activeTurnId, setActiveTurnId] = React.useState<string | null>(null);
 
     const turnModelRef = React.useRef(turnWindowModel);
-    const turnStartRef = React.useRef(turnStart);
+    const turnStartRef = React.useRef(effectiveTurnStart);
     const isPinnedRef = React.useRef(isPinned);
     const isLoadingOlderRef = React.useRef(isLoadingOlder);
     const pendingRevealWorkRef = React.useRef(pendingRevealWork);
@@ -117,7 +121,7 @@ export const useChatTimelineController = ({
 
     const historySignals = React.useMemo(() => {
         const defaultLimit = getMemoryLimits().HISTORICAL_MESSAGES;
-        const hasBufferedTurns = turnStart > 0;
+        const hasBufferedTurns = effectiveTurnStart > 0;
         const hasMoreAboveTurns = historyMeta
             ? !historyMeta.complete
             : messages.length >= defaultLimit;
@@ -128,12 +132,12 @@ export const useChatTimelineController = ({
             historyLoading,
             canLoadEarlier: hasBufferedTurns || hasMoreAboveTurns,
         };
-    }, [historyMeta, messages.length, turnStart]);
+    }, [effectiveTurnStart, historyMeta, messages.length]);
 
     const historySignalsRef = React.useRef(historySignals);
 
     turnModelRef.current = turnWindowModel;
-    turnStartRef.current = turnStart;
+    turnStartRef.current = effectiveTurnStart;
     isPinnedRef.current = isPinned;
     isLoadingOlderRef.current = isLoadingOlder;
     pendingRevealWorkRef.current = pendingRevealWork;
@@ -241,13 +245,13 @@ export const useChatTimelineController = ({
     }, [resolvePendingRenderWaiters, resolvePendingScrollRequest]);
 
     const renderedMessages = React.useMemo(() => {
-        return windowMessagesByTurn(messages, turnWindowModel, turnStart);
-    }, [messages, turnStart, turnWindowModel]);
+        return windowMessagesByTurn(messages, turnWindowModel, effectiveTurnStart);
+    }, [effectiveTurnStart, messages, turnWindowModel]);
 
     React.useLayoutEffect(() => {
         resolvePendingRenderWaiters();
         attemptPendingScrollRequest();
-    }, [attemptPendingScrollRequest, renderedMessages, resolvePendingRenderWaiters, turnStart]);
+    }, [attemptPendingScrollRequest, effectiveTurnStart, renderedMessages, resolvePendingRenderWaiters]);
 
     // --- Synchronous scroll compensation for load-more / reveal ---
     // fetchOlderHistory and revealBufferedTurns store a snapshot here
@@ -516,7 +520,7 @@ export const useChatTimelineController = ({
 
     return {
         turnIds: turnWindowModel.turnIds,
-        turnStart,
+        turnStart: effectiveTurnStart,
         renderedMessages,
         historySignals,
         isLoadingOlder,

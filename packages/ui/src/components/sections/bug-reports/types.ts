@@ -1,17 +1,20 @@
 export type BugReportStatus = 'submitted' | 'in_progress' | 'resolved';
-export type ErrorLogKind = 'session' | 'tool' | 'managed_task';
+export type ErrorLogKind = 'session' | 'tool' | 'managed_task' | 'client';
 export type ErrorLogClearRange = '24h' | '7d' | '14d' | 'all';
 export type DiagnosticImpact = 'low' | 'medium' | 'high' | 'critical';
+export type DiagnosticDisposition = 'actionable' | 'expected';
 export type DiagnosticClassificationSource = 'observed' | 'inferred';
 export type DiagnosticOutcome = 'recovered' | 'unresolved' | 'unknown';
 export type DiagnosticFailureClass =
   | 'filesystem_target'
   | 'input'
   | 'patch_context'
+  | 'command_exit'
   | 'tool_runtime'
   | 'integration_runtime'
   | 'session_runtime'
   | 'managed_task'
+  | 'client_runtime'
   | 'platform_security'
   | 'platform_integrity'
   | 'unknown';
@@ -48,25 +51,34 @@ export interface ErrorLogProject {
   label: string;
 }
 
+export interface ErrorLogActorOption {
+  id: string;
+  displayName: string;
+}
+
 export interface ErrorLogSummary {
   eventId: string;
   kind: ErrorLogKind;
-  action: 'session.error' | 'tool.failed' | 'managed_task.failed';
+  action: 'session.error' | 'tool.failed' | 'managed_task.failed' | 'client.error';
   createdAt: string;
   actor: ErrorLogActor | null;
   project: ErrorLogProject | null;
   sessionId: string | null;
   impact: DiagnosticImpact;
+  disposition: DiagnosticDisposition;
   classificationSource: DiagnosticClassificationSource;
   failureClass: DiagnosticFailureClass;
   outcome: DiagnosticOutcome;
   summary: string;
+  occurrenceCount: number | null;
   errorName: string | null;
   tool: string | null;
   statusCode: number | null;
 }
 
 export interface ErrorLogDetail extends Omit<ErrorLogSummary, 'errorName' | 'tool' | 'statusCode'> {
+  failureText: string | null;
+  stack: string | null;
   context: Record<string, unknown>;
 }
 
@@ -98,6 +110,7 @@ export const bugReportStatusLabelKey = (status: BugReportStatus) => {
 export const errorLogKindLabelKey = (kind: ErrorLogKind) => {
   if (kind === 'managed_task') return 'settings.bugReports.errors.kind.managedTask' as const;
   if (kind === 'tool') return 'settings.bugReports.errors.kind.tool' as const;
+  if (kind === 'client') return 'settings.bugReports.errors.kind.client' as const;
   return 'settings.bugReports.errors.kind.session' as const;
 };
 
@@ -107,6 +120,12 @@ export const diagnosticImpactLabelKey = (impact: DiagnosticImpact) => {
   if (impact === 'medium') return 'settings.bugReports.errors.impact.medium' as const;
   return 'settings.bugReports.errors.impact.low' as const;
 };
+
+export const diagnosticDispositionLabelKey = (disposition: DiagnosticDisposition) => (
+  disposition === 'expected'
+    ? 'settings.bugReports.errors.disposition.expected' as const
+    : 'settings.bugReports.errors.disposition.actionable' as const
+);
 
 export const diagnosticOutcomeLabelKey = (outcome: DiagnosticOutcome) => {
   if (outcome === 'recovered') return 'settings.bugReports.errors.outcome.recovered' as const;

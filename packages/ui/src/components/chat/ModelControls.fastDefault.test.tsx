@@ -38,6 +38,13 @@ describe('ModelControls Cursor fast-only controls', () => {
         expect(code).toContain('RiFlashlightFill className="h-3.5 w-3.5 text-[var(--status-warning)]"');
     });
 
+    test('keeps descenders visible in both model-adjacent thinking labels', () => {
+        const code = source();
+
+        expect(code.match(/inline-flex items-center gap-1 text-\[10px\] leading-\[14px\] -my-\[2px\] py-\[2px\] font-medium min-w-0 truncate text-muted-foreground/g)).toHaveLength(2);
+        expect(code.match(/<span className="min-w-0 truncate leading-\[14px\] -my-\[2px\] py-\[2px\]">\{displayVariant\}<\/span>/g)).toHaveLength(2);
+    });
+
     test('does not render compact price text in model picker rows', () => {
         const code = source();
 

@@ -43,6 +43,7 @@ import {
   base64EncodeUtf8,
 } from './bridge-localfs-proxy-runtime';
 import { createOpenCodeUpdateRuntime } from '../../web/server/lib/opencode/opencode-update-runtime.js';
+import { handleConfigApplyBridgeMessage, markVsCodeConfigChange } from './configApplyRuntime';
 
 export interface BridgeRequest {
   id: string;
@@ -65,8 +66,6 @@ export interface BridgeContext {
   managedOrchestrationRuntime?: VsCodeManagedOrchestrationRuntime;
   postMessage?: (message: unknown) => void | Promise<void>;
 }
-
-const CLIENT_RELOAD_DELAY_MS = 800;
 
 const GITHUB_LATEST_RELEASE_API_URL = 'https://api.github.com/repos/1H-Team/DevRyan/releases/latest';
 const COMPATIBILITY_UPDATE_CHECK_URL = process.env.OPENCHAMBER_UPDATE_API_URL;
@@ -124,6 +123,10 @@ export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeCo
     if (evidenceResponse) {
       return evidenceResponse;
     }
+    const configApplyResponse = await handleConfigApplyBridgeMessage(message, ctx);
+    if (configApplyResponse) {
+      return configApplyResponse;
+    }
     const configResponse = await handleConfigBridgeMessage(
       { id, type, payload },
       ctx,
@@ -135,12 +138,20 @@ export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeCo
         resetMagicPromptOverride,
         resetAllMagicPromptOverrides,
         fetchOpenCodeSkillsFromApi,
-        clientReloadDelayMs: CLIENT_RELOAD_DELAY_MS,
+        markConfigChange: (reason, metadata, changed) => markVsCodeConfigChange(
+          ctx,
+          reason,
+          metadata,
+          changed,
+        ),
         getGlobalAgentsMdRuntime: (context) => createGlobalAgentsMdRuntime({
           agentsMdPath: path.join(os.homedir(), '.config', 'opencode', 'AGENTS.md'),
-          refreshRuntime: async () => {
-            await context?.manager?.restart();
-          },
+          refreshRuntime: ({ changed } = {}) => markVsCodeConfigChange(
+            context,
+            'global behavior (AGENTS.md) updated',
+            {},
+            changed !== false,
+          ),
           isEditable: () => context?.manager?.getDebugInfo()?.mode !== 'external',
         }),
         checkForOpenCodeUpdates: (input) => openCodeUpdateRuntime.checkForUpdates(input),
@@ -157,7 +168,12 @@ export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeCo
         fetchModelsMetadata,
         updateCheckUrl: UPDATE_CHECK_URL,
         updateCheckUsesCompatibilityContract: Boolean(COMPATIBILITY_UPDATE_CHECK_URL),
-        clientReloadDelayMs: CLIENT_RELOAD_DELAY_MS,
+        markConfigChange: (reason, metadata, changed) => markVsCodeConfigChange(
+          ctx,
+          reason,
+          metadata,
+          changed,
+        ),
       },
     );
     if (systemResponse) {

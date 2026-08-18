@@ -107,6 +107,7 @@ describe('managed orchestration store', () => {
     const initial = projectedTask(1, 'running', { childSessionId: 'ses_child' });
     const followUp = projectedTask(2, 'running', {
       childSessionId: 'ses_child',
+      agent: 'fixer',
       attempt: 2,
       priorTaskId: initial.taskId,
       executionKind: 'resume',
@@ -116,23 +117,35 @@ describe('managed orchestration store', () => {
     expect(managedOrchestrationSelectors.latestTaskForChildSession('ses_child')(
       store.getState(),
     )).toBe(store.getState().tasksById[initial.taskId]);
+    expect(managedOrchestrationSelectors.latestTaskAgentForChildSession('ses_child')(
+      store.getState(),
+    )).toBe('explorer');
 
     store.getState().ingestEvent(taskEvent(followUp));
     expect(store.getState().latestTaskIdByChildSessionId.ses_child).toBe(followUp.taskId);
     expect(managedOrchestrationSelectors.latestTaskForChildSession('ses_child')(
       store.getState(),
     )).toBe(store.getState().tasksById[followUp.taskId]);
+    expect(managedOrchestrationSelectors.latestTaskAgentForChildSession('ses_child')(
+      store.getState(),
+    )).toBe('fixer');
 
     store.getState().ingestEvent(removalEvent(followUp));
     expect(managedOrchestrationSelectors.latestTaskForChildSession('ses_child')(
       store.getState(),
     )).toBe(store.getState().tasksById[initial.taskId]);
+    expect(managedOrchestrationSelectors.latestTaskAgentForChildSession('ses_child')(
+      store.getState(),
+    )).toBe('explorer');
 
     store.getState().ingestEvent(removalEvent(initial));
     expect(managedOrchestrationSelectors.latestTaskForChildSession('ses_child')(
       store.getState(),
     )).toBe(undefined);
     expect(store.getState().latestTaskIdByChildSessionId.ses_child).toBe(undefined);
+    expect(managedOrchestrationSelectors.latestTaskAgentForChildSession('ses_child')(
+      store.getState(),
+    )).toBe(undefined);
   });
 
   test('builds the latest child-task index from an authoritative snapshot', async () => {
@@ -258,6 +271,58 @@ describe('managed orchestration store', () => {
     expect(managedOrchestrationSelectors.hasManualRecoveryForRoot('ses_root')(
       store.getState(),
     )).toBe(true);
+  });
+
+  test('accepts deadline recovery metadata and keeps ungrouped ordinary failures out of Model Recovery', () => {
+    const store = createManagedOrchestrationStore({ api: fakeApi() });
+    const deadline = {
+      ...taskRecord(2, 'failed', {
+        childSessionId: 'ses_child_deadline',
+        failureReason: 'Managed task timed out at 3000',
+        attempt: 2,
+        priorTaskId: 'dvr_task_1',
+        executionKind: 'resume',
+      }),
+      dispatchGroupId: 'msg_parent',
+    };
+    const deadlineEnvelope = createManagedTaskResultEnvelope(deadline, {
+      sequence: 1,
+      createdAt: 4_000,
+      resumable: true,
+    });
+    const deadlineProjection = toManagedTaskEvent(deadline, deadlineEnvelope).properties.task;
+    store.getState().ingestEvent(taskEvent(deadlineProjection, deadlineEnvelope));
+
+    expect({
+      dispatchGrouped: store.getState().tasksById[deadline.taskId]?.dispatchGrouped,
+      failureKind: store.getState().tasksById[deadline.taskId]?.failureKind,
+    }).toEqual({
+      dispatchGrouped: true,
+      failureKind: 'deadline_exceeded',
+    });
+    expect(managedOrchestrationSelectors.manualRecoveryTaskIdForChildSession(
+      'ses_child_deadline',
+    )(store.getState())).toBe(deadline.taskId);
+
+    const ungrouped = taskRecord(3, 'failed', {
+      childSessionId: 'ses_child_ungrouped',
+      failureReason: 'Provider connection ended',
+      attempt: 2,
+      priorTaskId: 'dvr_task_ungrouped_1',
+      executionKind: 'resume',
+    });
+    const ungroupedEnvelope = createManagedTaskResultEnvelope(ungrouped, {
+      sequence: 2,
+      createdAt: 4_100,
+      resumable: true,
+    });
+    const ungroupedProjection = toManagedTaskEvent(ungrouped, ungroupedEnvelope).properties.task;
+    store.getState().ingestEvent(taskEvent(ungroupedProjection, ungroupedEnvelope));
+
+    expect(ungroupedProjection.dispatchGrouped).toBe(false);
+    expect(managedOrchestrationSelectors.manualRecoveryTaskIdForChildSession(
+      'ses_child_ungrouped',
+    )(store.getState())).toBe(undefined);
   });
 
   test('does not index exhausted provider prompt rejection for same-child recovery', () => {
@@ -415,26 +480,32 @@ describe('managed orchestration store', () => {
     }));
     expect(store.getState().manualRecoveryTaskIdByChildSessionId.ses_child_final).toBe(undefined);
 
-    const manualRunning = projectedTask(3, 'running', {
-      childSessionId: 'ses_child_final',
-      attempt: 3,
-      priorTaskId: finalFailed.taskId,
-      executionKind: 'retry_in_place',
-      providerId: 'openai',
-      modelId: 'gpt-5.4',
-    });
+    const manualRunning = toManagedTaskEvent({
+      ...taskRecord(3, 'running', {
+        childSessionId: 'ses_child_final',
+        attempt: 3,
+        priorTaskId: finalFailed.taskId,
+        executionKind: 'retry_in_place',
+        providerId: 'openai',
+        modelId: 'gpt-5.4',
+      }),
+      dispatchGroupId: 'msg_parent',
+    }).properties.task;
     store.getState().ingestEvent(taskEvent(manualRunning));
     expect(store.getState().manualRecoveryTaskIdByChildSessionId.ses_child_final).toBe(undefined);
 
-    const manualFailed = taskRecord(3, 'failed', {
-      childSessionId: 'ses_child_final',
-      failureReason: 'Replacement model failed',
-      attempt: 3,
-      priorTaskId: finalFailed.taskId,
-      executionKind: 'retry_in_place',
-      providerId: 'openai',
-      modelId: 'gpt-5.4',
-    });
+    const manualFailed = {
+      ...taskRecord(3, 'failed', {
+        childSessionId: 'ses_child_final',
+        failureReason: 'Replacement model failed',
+        attempt: 3,
+        priorTaskId: finalFailed.taskId,
+        executionKind: 'retry_in_place',
+        providerId: 'openai',
+        modelId: 'gpt-5.4',
+      }),
+      dispatchGroupId: 'msg_parent',
+    };
     const manualEnvelope = createManagedTaskResultEnvelope(manualFailed, {
       sequence: 3,
       createdAt: 7_000,
@@ -557,6 +628,7 @@ describe('managed orchestration store', () => {
     store.getState().ingestEvent(taskEvent(task));
 
     const stored = store.getState().tasksById.dvr_task_1 as unknown as Record<string, unknown>;
+    expect(stored.dispatchGrouped).toBe(false);
     expect('prompt' in stored).toBe(false);
     expect('leaseToken' in stored).toBe(false);
     expect('unknownLargeField' in stored).toBe(false);

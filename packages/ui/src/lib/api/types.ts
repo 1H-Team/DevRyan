@@ -380,6 +380,7 @@ export interface GitWorktreeBootstrapStatus {
     | 'create_worktree'
     | 'sync_project_metadata'
     | 'populate_worktree'
+    | 'run_post_checkout_hook'
     | 'configure_upstream'
     | 'run_project_setup'
     | 'run_requested_setup'
@@ -402,6 +403,12 @@ export interface GitWorktreeBootstrapStatus {
     startedAt: number | null;
     finishedAt: number | null;
     error: string | null;
+    output?: {
+      presence?: boolean | null;
+      exitStatus?: number | null;
+      durationMs?: number;
+      failureExcerpt?: string;
+    };
   }>;
 }
 
@@ -786,6 +793,7 @@ export interface SettingsPayload {
   mermaidRenderingMode?: 'svg' | 'ascii';
   showSplitAssistantMessageActions?: boolean;
   fontSize?: number;
+  chatWidth?: number;
   terminalFontSize?: number;
   uiFont?: string;
   monoFont?: string;
@@ -862,6 +870,23 @@ export interface DiagnosticsStatus {
   writtenRecords: number;
   gapRecords: number;
   lastError: string | null;
+  contextModeRecovery?: {
+    state: 'healthy' | 'draining' | 'restarting' | 'external_action_required';
+    incidentId: string | null;
+    detectedAt: number | null;
+    updatedAt: number;
+    recoveredAt: number | null;
+    occurrenceCount: number;
+    restartAttempts: number;
+    lastRestartError: string | null;
+    outcome: 'recovered' | 'external_action_required' | null;
+    guidance: string | null;
+    transitions: Array<{
+      state: 'healthy' | 'draining' | 'restarting' | 'external_action_required';
+      at: number;
+      error?: string;
+    }>;
+  } | null;
 }
 
 export type DiagnosticsExportScope =
@@ -933,6 +958,25 @@ export interface EvidenceAPI {
   clearProject(directory: string): Promise<{ removed: number }>;
   listTurns(sessionID: string, directory?: string): Promise<TurnEvidenceCheckpoint[]>;
   getDiff(checkpointID: string, file?: string): Promise<TurnEvidenceDiffSummary | TurnEvidenceFileDiff>;
+}
+
+export type ProviderContextUsageSnapshot = {
+  sessionID: string;
+  status: 'available' | 'unavailable';
+  source: 'meridian' | 'message-fallback';
+  inputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  activeInputTokens: number;
+  lastOutputTokens: number;
+  fetchedAt: number;
+};
+
+export interface ContextUsageAPI {
+  getSessionUsage(
+    sessionID: string,
+    options?: { directory?: string; refreshSession?: boolean },
+  ): Promise<ProviderContextUsageSnapshot>;
 }
 
 export interface ToolManifestEntry {
@@ -1319,6 +1363,7 @@ export interface RuntimeAPIs {
   push?: PushAPI;
   diagnostics?: DiagnosticsAPI;
   evidence?: EvidenceAPI;
+  contextUsage?: ContextUsageAPI;
   tools: ToolsAPI;
   editor?: EditorAPI;
   vscode?: VSCodeAPI;
@@ -1492,11 +1537,23 @@ export interface SkillsRepoScanRequest {
   gitIdentityId?: string;
 }
 
+export type ArchiveErrorCode =
+  | 'ARCHIVE_DOWNLOAD_TOO_LARGE'
+  | 'ARCHIVE_ENTRY_LIMIT'
+  | 'ARCHIVE_INVALID_PATH'
+  | 'ARCHIVE_PATH_COLLISION'
+  | 'ARCHIVE_UNSAFE_ENTRY'
+  | 'ARCHIVE_SIZE_LIMIT'
+  | 'ARCHIVE_CORRUPT'
+  | 'ARCHIVE_MISSING_SKILL_FILE'
+  | 'ARCHIVE_DOWNLOAD_TIMEOUT';
+
 export type SkillsRepoScanError =
   | { kind: 'authRequired'; message: string; sshOnly: true; identities?: Array<{ id: string; name: string }> }
   | { kind: 'invalidSource'; message: string }
   | { kind: 'gitUnavailable'; message: string }
   | { kind: 'networkError'; message: string }
+  | { kind: 'archiveRejected'; message: string; code: ArchiveErrorCode }
   | { kind: 'unknown'; message: string };
 
 export interface SkillsRepoScanResponse {
@@ -1534,7 +1591,11 @@ export type SkillsInstallError = SkillsRepoScanError | {
 export interface SkillsInstallResponse {
   ok: boolean;
   installed?: Array<{ skillName: string; scope: 'user' | 'project'; source?: 'opencode' | 'agents' }>;
-  skipped?: Array<{ skillName: string; reason: string }>;
+  skipped?: Array<{
+    skillName: string;
+    reason: string;
+    code?: 'invalidSkillName' | 'versionUnavailable' | 'alreadyInstalled' | 'installFailed' | ArchiveErrorCode;
+  }>;
   error?: SkillsInstallError;
   requiresReload?: boolean;
   message?: string;

@@ -172,6 +172,17 @@ export function createTerminalRuntime({
   const MAX_TERMINAL_SESSIONS = 20;
   const TERMINAL_IDLE_TIMEOUT = 30 * 60 * 1000;
   const terminalRuntimeName = typeof globalThis.Bun === 'undefined' ? 'node' : 'bun';
+  const touchSession = (sessionId, ownerUserId) => {
+    const normalizedSessionId = String(sessionId || '');
+    const normalizedOwnerUserId = String(ownerUserId || '');
+    if (!normalizedSessionId || !normalizedOwnerUserId) return false;
+
+    const session = terminalSessions.get(normalizedSessionId);
+    if (!session || session.ownerUserId !== normalizedOwnerUserId) return false;
+
+    session.lastActivity = Date.now();
+    return true;
+  };
   const sanitizeTerminalEnv = (env, principal) => {
     const next = principal?.scope === 'managed'
       ? Object.fromEntries(Object.entries(env).filter(([key]) => (
@@ -726,14 +737,15 @@ export function createTerminalRuntime({
 
   app.post('/api/terminal/:sessionId/touch', (req, res) => {
     const { sessionId } = req.params;
-    const session = terminalSessions.get(sessionId);
-
-    if (!session) {
+    const ownerUserId = req.principal?.id || 'local-admin';
+    if (!touchSession(sessionId, ownerUserId)) {
       return res.status(404).json({ error: 'Terminal session not found' });
     }
 
-    session.lastActivity = Date.now();
-    res.json({ success: true, lastActivity: session.lastActivity });
+    res.json({
+      success: true,
+      lastActivity: terminalSessions.get(sessionId).lastActivity,
+    });
   });
 
   app.post('/api/terminal/:sessionId/resize', (req, res) => {
@@ -927,5 +939,5 @@ export function createTerminalRuntime({
     };
   };
 
-  return { shutdown, terminateOwnerSessions, getSessionDescriptor };
+  return { shutdown, terminateOwnerSessions, getSessionDescriptor, touchSession };
 }

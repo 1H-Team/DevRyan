@@ -18,9 +18,10 @@ const LOCAL_PROVIDER_LOGO_MAP = new Map<string, string>();
 const LOGO_ALIAS = new Map<string, string>([
     ['codex', 'openai'],
     ['chatgpt', 'openai'],
-    ['claude', 'anthropic'],
-    ['anthropic-oauth', 'anthropic'],
-    ['opencode-with-claude', 'anthropic'],
+    ['anthropic', 'claude'],
+    ['claude', 'claude'],
+    ['anthropic-oauth', 'claude'],
+    ['opencode-with-claude', 'claude'],
     ['cursor-acp', 'cursor'],
     ['gemini', 'google'],
     ['opencode-go', 'opencode'],

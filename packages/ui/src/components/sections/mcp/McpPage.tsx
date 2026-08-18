@@ -36,7 +36,7 @@ import {
 } from '@remixicon/react';
 import { cn } from '@/lib/utils';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
-import { buildMcpOAuthRedirectUri, parseMcpOAuthCallbackContext, parseMcpOAuthCallbackStateKey } from '@/components/sections/mcp/mcpOAuth';
+import { buildMcpOAuthRedirectUri, parseMcpOAuthCallbackContext, parseMcpOAuthCallbackStateKey, shouldPersistMcpOAuthRedirectUri } from '@/components/sections/mcp/mcpOAuth';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
   Dialog,
@@ -1033,7 +1033,9 @@ export const McpPage: React.FC = () => {
         throw new Error(t('settings.mcp.page.toast.oauthRedirectUrlBuildFailed'));
       }
 
-      if (!oauthRedirectUri.trim() && !isVSCodeAuthRuntime) {
+      // The identity change from this save intentionally resets the cached
+      // auth so the client re-registers against the fresh redirect URI.
+      if (shouldPersistMcpOAuthRedirectUri(oauthRedirectUri, redirectUri) && !isVSCodeAuthRuntime) {
         const saved = await updateMcp(selectedMcpName, {
           oauthEnabled,
           oauthClientId,

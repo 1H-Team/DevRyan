@@ -99,7 +99,7 @@ describe('VS Code Codex quota provider rate-limit windows', () => {
 });
 
 describe('VS Code Codex quota provider reset credits', () => {
-  test('uses dedicated reset-credit details instead of the dollar credits row', async () => {
+  test('keeps dedicated reset-credit details alongside the Extra usage row', async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];
     const fetchImpl = async (url: string, init?: RequestInit) => {
       calls.push({ url, init });
@@ -132,6 +132,7 @@ describe('VS Code Codex quota provider reset credits', () => {
 
     expect(result.ok).toBe(true);
     expect(result.usage?.windows.credits).toBeUndefined();
+    expect(result.usage?.windows['extra-usage']).toMatchObject({ valueLabel: '$12.34 available' });
     expect(result.usage?.resetCredits).toMatchObject({
       availableCount: 2,
       totalEarnedCount: 3,
@@ -166,6 +167,7 @@ describe('VS Code Codex quota provider reset credits', () => {
 
     expect(result.ok).toBe(true);
     expect(result.usage?.windows.credits).toBeUndefined();
+    expect(result.usage?.windows['extra-usage']).toMatchObject({ valueLabel: '$12.34 available' });
     expect(result.usage?.resetCredits).toMatchObject({
       availableCount: 2,
       credits: [],
@@ -173,7 +175,7 @@ describe('VS Code Codex quota provider reset credits', () => {
     });
   });
 
-  test('keeps legacy dollar credits when no reset-credit data is available', async () => {
+  test('keeps the Extra usage balance when no reset-credit data is available', async () => {
     const fetchImpl = async (url: string) => {
       if (url.endsWith('/wham/usage')) {
         return okResponse({ credits: { balance: '12.34' } });
@@ -185,8 +187,9 @@ describe('VS Code Codex quota provider reset credits', () => {
 
     expect(result.ok).toBe(true);
     expect(result.usage?.resetCredits).toBeUndefined();
-    expect(result.usage?.windows.credits).toMatchObject({
-      valueLabel: '$12.34 remaining',
+    expect(result.usage?.windows['extra-usage']).toMatchObject({
+      usedPercent: null,
+      valueLabel: '$12.34 available',
     });
   });
 });

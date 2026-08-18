@@ -10,11 +10,12 @@ import { useI18n } from '@/lib/i18n';
 import { invokeDesktop, isElectronShell } from '@/lib/desktop';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessionWorktreeStore } from '@/sync/session-worktree-store';
-import { useSessionMessages, useSessionMessagesResolved, useSessions } from '@/sync/sync-context';
+import { useSessionMessageRecords, useSessionMessagesResolved, useSessions } from '@/sync/sync-context';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
-import { getContextUsageFromMessages } from '@/stores/utils/contextUsageUtils';
+import { useConfigStore } from '@/stores/useConfigStore';
+import { getProviderContextUsageFromMessages } from '@/stores/utils/contextUsageUtils';
 import { useStableSessionContextUsage } from '@/hooks/useStableSessionContextUsage';
-import { useSelectedModelContextCapacity } from '@/hooks/useSelectedModelContextCapacity';
+import { useProviderBackedContextUsage } from '@/hooks/useProviderBackedContextUsage';
 
 type MiniChatMode = 'session' | 'draft';
 
@@ -38,7 +39,7 @@ const MiniChatHeader: React.FC<{ mode: MiniChatMode }> = ({ mode }) => {
   const draftProjectId = useSessionUIStore((state) => state.newSessionDraft?.selectedProjectId ?? null);
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
   const sessions = useSessions();
-  const currentSessionMessages = useSessionMessages(currentSessionId ?? '');
+  const currentSessionMessages = useSessionMessageRecords(currentSessionId ?? '');
   const currentSessionMessagesResolved = useSessionMessagesResolved(currentSessionId ?? '');
   const worktreePath = useSessionUIStore((state) => currentSessionId ? state.worktreeMetadata.get(currentSessionId)?.path ?? '' : '');
   const worktreeAttachment = useSessionWorktreeStore((state) => currentSessionId ? state.getAttachment(currentSessionId) : undefined);
@@ -76,15 +77,20 @@ const MiniChatHeader: React.FC<{ mode: MiniChatMode }> = ({ mode }) => {
   const worktreeDirectory = normalizePath(worktreePath || sessionWorktreeMetadata?.path || worktreeAttachment?.cwd || worktreeAttachment?.worktreeRoot || '');
   const currentDirectoryNormalized = normalizePath(currentDirectory);
   const openDirectory = worktreeDirectory || sessionDirectory || draftDirectory || currentDirectoryNormalized;
-  const selectedCapacity = useSelectedModelContextCapacity();
+  const providers = useConfigStore((state) => state.providers);
   const contextUsage = React.useMemo(() => {
     if (!currentSessionId || currentSessionMessages.length === 0) return null;
-    return getContextUsageFromMessages(currentSessionMessages, selectedCapacity);
-  }, [currentSessionId, currentSessionMessages, selectedCapacity]);
+    return getProviderContextUsageFromMessages(currentSessionMessages, providers);
+  }, [currentSessionId, currentSessionMessages, providers]);
+  const providerBackedContextUsage = useProviderBackedContextUsage({
+    sessionID: currentSessionId,
+    directory: openDirectory,
+    fallback: contextUsage,
+  });
   const stableContextUsage = useStableSessionContextUsage({
     directory: openDirectory,
     sessionId: currentSessionId,
-    usage: contextUsage,
+    usage: providerBackedContextUsage,
     resolved: !currentSessionId || currentSessionMessagesResolved,
   });
   const dragRegionStyle = { WebkitAppRegion: 'drag' } as React.CSSProperties;
@@ -129,7 +135,7 @@ const MiniChatHeader: React.FC<{ mode: MiniChatMode }> = ({ mode }) => {
           />
         ) : null}
       </div>
-      {stableContextUsage && stableContextUsage.totalTokens > 0 ? (
+      {stableContextUsage && stableContextUsage.activeInputTokens > 0 ? (
         <ContextUsageDisplay
           usage={stableContextUsage}
           className="h-9 shrink-0 pl-1 pr-1 typography-ui-label"

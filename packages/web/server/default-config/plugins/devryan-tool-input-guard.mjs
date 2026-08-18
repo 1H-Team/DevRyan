@@ -3,6 +3,12 @@ const CONTEXT_EXECUTE_TOOLS = new Set([
   'mcp__context_mode__ctx_execute',
 ]);
 
+const SHELL_TOOLS = new Set(['bash', 'shell']);
+
+export const DEFAULT_SHELL_TIMEOUT_MS = 240_000;
+export const MIN_SHELL_TIMEOUT_MS = 1_000;
+export const MAX_SHELL_TIMEOUT_MS = 3_600_000;
+
 const JAVASCRIPT_LANGUAGES = new Set(['javascript', 'js']);
 const ABSOLUTE_PATH_START_PATTERN = /(?:^|\s)["']?(?:\/(?!\/)|[a-z]:[\\/]|\\\\)/gi;
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
@@ -32,6 +38,11 @@ const validateGrepInput = (args) => {
   );
 };
 
+const validateReadInput = (args) => {
+  if (isRecord(args) && typeof args.path === 'string' && args.path.trim()) return;
+  throw inputError('read.path must be a non-empty string.');
+};
+
 const validateContextExecuteInput = (args) => {
   if (!isRecord(args)) return;
   const language = typeof args.language === 'string' ? args.language.trim().toLowerCase() : '';
@@ -48,14 +59,39 @@ const validateContextExecuteInput = (args) => {
   }
 };
 
+const enforceShellTimeout = (args) => {
+  if (!isRecord(args)) return;
+  if (args.timeout === undefined) {
+    args.timeout = DEFAULT_SHELL_TIMEOUT_MS;
+    return;
+  }
+  if (
+    !Number.isSafeInteger(args.timeout)
+    || args.timeout < MIN_SHELL_TIMEOUT_MS
+    || args.timeout > MAX_SHELL_TIMEOUT_MS
+  ) {
+    throw inputError(
+      `shell timeout must be an integer between ${MIN_SHELL_TIMEOUT_MS} and ${MAX_SHELL_TIMEOUT_MS} milliseconds.`,
+    );
+  }
+};
+
 export const DevRyanToolInputGuardPlugin = async () => ({
   'tool.execute.before': async (input, output) => {
+    if (input?.tool === 'read') {
+      validateReadInput(output?.args);
+      return;
+    }
     if (input?.tool === 'grep') {
       validateGrepInput(output?.args);
       return;
     }
     if (CONTEXT_EXECUTE_TOOLS.has(input?.tool)) {
       validateContextExecuteInput(output?.args);
+      return;
+    }
+    if (SHELL_TOOLS.has(input?.tool)) {
+      enforceShellTimeout(output?.args);
     }
   },
 });

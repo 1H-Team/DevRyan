@@ -11,6 +11,42 @@ const DEFAULT_HEIGHT = 760;
 const DEFAULT_TOOLBAR_HEIGHT = 38;
 const DEFAULT_BROWSER_WORKSPACE_CHROME_HEIGHT = 70;
 const MAX_SURFACE_ID_LENGTH = 220;
+const MAX_FAVICON_URL_LENGTH = 32_768;
+
+export const BROWSER_VIEWPORT_PRESETS = Object.freeze({
+  desktop: Object.freeze({ width: 1440, height: 900 }),
+  mobile: Object.freeze({ width: 390, height: 844 }),
+});
+
+export const sanitizeBrowserViewportMode = (value) => (
+  value === 'desktop' || value === 'mobile' ? value : 'responsive'
+);
+
+export const resolveBrowserEmulation = (viewportMode, bounds) => {
+  const mode = sanitizeBrowserViewportMode(viewportMode);
+  if (mode === 'responsive') return { mode, bounds, parameters: null };
+  const preset = BROWSER_VIEWPORT_PRESETS[mode];
+  const scale = Math.min(1, bounds.width / preset.width, bounds.height / preset.height);
+  const width = Math.max(1, Math.floor(preset.width * scale));
+  const height = Math.max(1, Math.floor(preset.height * scale));
+  return {
+    mode,
+    bounds: {
+      x: bounds.x + Math.max(0, Math.floor((bounds.width - width) / 2)),
+      y: bounds.y + Math.max(0, Math.floor((bounds.height - height) / 2)),
+      width,
+      height,
+    },
+    parameters: {
+      screenPosition: mode === 'mobile' ? 'mobile' : 'desktop',
+      screenSize: preset,
+      viewPosition: { x: 0, y: 0 },
+      deviceScaleFactor: 0,
+      viewSize: preset,
+      scale,
+    },
+  };
+};
 
 const BROWSER_INSPECT_CANCEL_SCRIPT = `(() => {
   if (typeof window.__devryanBrowserCancelInspect === 'function') {
@@ -281,8 +317,10 @@ export const createBrowserSurfaceManager = ({
       ...(surface.workspaceId ? { workspaceId: surface.workspaceId } : {}),
       ...(surface.tabId ? { tabId: surface.tabId } : {}),
       placement: surface.placement,
+      viewportMode: surface.viewportMode,
       url: currentUrl,
       title: safeString(contents.getTitle?.(), 1024),
+      faviconUrl: surface.faviconUrl,
       loading: Boolean(contents.isLoading?.()),
       canGoBack,
       canGoForward,
@@ -311,6 +349,16 @@ export const createBrowserSurfaceManager = ({
     surface.attachedWindow = null;
   };
 
+  const applyViewportMode = (surface, bounds) => {
+    const emulation = resolveBrowserEmulation(surface.viewportMode, bounds);
+    surface.view.setBounds(emulation.bounds);
+    if (emulation.parameters) {
+      surface.view.webContents.enableDeviceEmulation?.(emulation.parameters);
+    } else {
+      surface.view.webContents.disableDeviceEmulation?.();
+    }
+  };
+
   const attachView = (surface, ownerWindow, bounds) => {
     if (!isAliveWindow(ownerWindow)) throw new Error('Browser window is not available');
     const nextBounds = normalizeBounds(bounds, ownerWindow);
@@ -319,7 +367,7 @@ export const createBrowserSurfaceManager = ({
       ownerWindow.contentView.addChildView(surface.view);
       surface.attachedWindow = ownerWindow;
     }
-    surface.view.setBounds(nextBounds);
+    applyViewportMode(surface, nextBounds);
     surface.lastBounds = nextBounds;
     surface.view.setVisible?.(true);
     surface.view.webContents.setBackgroundThrottling?.(false);
@@ -378,16 +426,31 @@ export const createBrowserSurfaceManager = ({
       metadataTimer = setTimeout(flush, 50);
       metadataTimer.unref?.();
     };
-    for (const event of ['did-start-loading', 'did-stop-loading', 'did-navigate', 'did-navigate-in-page', 'page-title-updated', 'devtools-opened', 'devtools-closed']) {
+    const metadataEvents = ['did-start-loading', 'did-stop-loading', 'did-navigate-in-page', 'page-title-updated', 'devtools-opened', 'devtools-closed'];
+    for (const event of metadataEvents) {
       contents.on(event, schedule);
     }
+    const onDidNavigate = () => {
+      surface.faviconUrl = '';
+      schedule();
+    };
+    const onFaviconUpdated = (_event, favicons) => {
+      surface.faviconUrl = Array.isArray(favicons)
+        ? safeString(favicons[0], MAX_FAVICON_URL_LENGTH)
+        : '';
+      schedule();
+    };
+    contents.on('did-navigate', onDidNavigate);
+    contents.on('page-favicon-updated', onFaviconUpdated);
     const onDestroyed = () => destroy(surface, 'contents_destroyed');
     contents.once('destroyed', onDestroyed);
     surface.cleanupContents = () => {
       if (metadataTimer) clearTimeout(metadataTimer);
-      for (const event of ['did-start-loading', 'did-stop-loading', 'did-navigate', 'did-navigate-in-page', 'page-title-updated', 'devtools-opened', 'devtools-closed']) {
+      for (const event of metadataEvents) {
         contents.off?.(event, schedule);
       }
+      contents.off?.('did-navigate', onDidNavigate);
+      contents.off?.('page-favicon-updated', onFaviconUpdated);
       contents.off?.('destroyed', onDestroyed);
     };
   };
@@ -399,6 +462,7 @@ export const createBrowserSurfaceManager = ({
     leaseId = '',
     workspaceId = '',
     initialUrl = 'about:blank',
+    viewportMode = 'responsive',
     browserContext = null,
   }) => {
     if (!isAliveWindow(ownerWindow)) throw new Error('Browser window is not available');
@@ -432,7 +496,9 @@ export const createBrowserSurfaceManager = ({
       attachedWindow: null,
       popoutWindow: null,
       placement: 'parked',
+      viewportMode: sanitizeBrowserViewportMode(viewportMode),
       url: normalizeBrowserSurfaceUrl(initialUrl),
+      faviconUrl: '',
       lastBounds: null,
       inlineBounds: null,
       cleanupContents: null,
@@ -515,7 +581,12 @@ export const createBrowserSurfaceManager = ({
     emitSnapshot(active);
   };
 
-  const createManualSurface = (ownerWindow, { tabId, workspaceId, initialUrl } = {}) => {
+  const createManualSurface = (ownerWindow, {
+    tabId,
+    workspaceId,
+    initialUrl,
+    viewportMode = 'responsive',
+  } = {}) => {
     const browserContext = getManualBrowserContext(ownerWindow);
     if (!browserContext?.contextKey || !browserContext?.partition) {
       throw new Error('Authenticated Browser context is required');
@@ -549,6 +620,7 @@ export const createBrowserSurfaceManager = ({
       tabId: normalizedTabId,
       workspaceId: normalizedWorkspaceId,
       initialUrl,
+      viewportMode,
       browserContext,
     });
     surface.manualKey = key;
@@ -617,6 +689,15 @@ export const createBrowserSurfaceManager = ({
       navigateHistory(contents, action);
     } else {
       throw new Error('Unknown browser surface command');
+    }
+    return emitSnapshot(surface);
+  };
+
+  const setViewportMode = (requestWindow, { surfaceId, viewportMode } = {}) => {
+    const surface = getOwnedSurface(requestWindow, surfaceId);
+    surface.viewportMode = sanitizeBrowserViewportMode(viewportMode);
+    if (surface.lastBounds && surface.attachedWindow && isAliveWindow(surface.attachedWindow)) {
+      applyViewportMode(surface, surface.lastBounds);
     }
     return emitSnapshot(surface);
   };
@@ -1052,6 +1133,7 @@ export const createBrowserSurfaceManager = ({
     setAgentCursorVisible,
     setAgentCursorSuppressed,
     setDevTools,
+    setViewportMode,
     setLeaseHomeWindow,
     showAgentInput,
     snapshotForLease: (leaseId) => {

@@ -456,6 +456,14 @@ bun scripts/journal.mjs show <sessionID> --tail 200
 bun scripts/journal.mjs gaps
 ```
 
+When the report starts with an Error Log event UUID, treat that UUID as a durable administrative locator, not as the detailed execution record:
+
+1. Resolve the UUID through the administrator Error Log detail surface/API first. Capture the `sessionId`, timestamp, action/kind, and every available `callId`, `toolId`, `messageId`, or `taskId`.
+2. Use the session plus the strongest correlation identifier to inspect the corresponding local journal, for example `bun scripts/journal.mjs show <sessionID> --grep <callId>`. Fall back to `toolId`, `messageId`, `taskId`, or a bounded `--since`/`--until` timestamp window when no call ID exists.
+3. Run `bun scripts/journal.mjs gaps` before drawing conclusions.
+4. Do not expect the Error Log UUID itself to appear in journal records. Error Logs and the journal are separate stores correlated through session and tool/message/task identifiers: Error Logs provide durable administrative indexing, classification, and bounded sanitized summaries; the journal is the source for prompts, tool output, lifecycle ordering, recovery behavior, and detailed failure evidence.
+5. If the relevant host journal is unavailable, expired, or contains a qualifying gap, report that limitation instead of reconstructing missing detail.
+
 - Location (web/Electron): `~/.config/openchamber/harness/journal/` (data-root override: `$OPENCHAMBER_DATA_DIR`). VS Code uses `<globalStorage>/harness/journal/`. Pass `--dir <journal-dir>` to the CLI for either host.
 - Layout: `index.json` summarizes `sessions/<sessionID>/manifest.json`; closed chunks are `*.ndjson.gz`, the active crash-safe chunk is plain `*.ndjson.open`, large strings are `blobs/<sha256>.txt.gz`, and records without a resolvable session are under `runtime/`. The directory's generated `README.md` is the self-describing format guide.
 - Legacy root `*.ndjson` segments coexist during the transition. They remain readable, are listed as `legacy`, are pruned before session buckets, and are removed by Clear All Data; they are never regrouped.

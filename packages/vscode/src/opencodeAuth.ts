@@ -5,8 +5,8 @@ import os from 'node:os';
 const OPENCODE_DATA_DIR = path.join(os.homedir(), '.local', 'share', 'opencode');
 const AUTH_FILE = path.join(OPENCODE_DATA_DIR, 'auth.json');
 
-type AuthEntry = Record<string, unknown>;
-type AuthFile = Record<string, AuthEntry>;
+export type AuthEntry = Record<string, unknown>;
+export type AuthFile = Record<string, AuthEntry>;
 
 export const readAuthFile = (): AuthFile => {
   if (!fs.existsSync(AUTH_FILE)) {
@@ -25,7 +25,7 @@ export const readAuthFile = (): AuthFile => {
   }
 };
 
-export const writeAuthFile = (auth: AuthFile): void => {
+export const writeAuthFile = (auth: Record<string, AuthEntry | string>): void => {
   try {
     if (!fs.existsSync(OPENCODE_DATA_DIR)) {
       fs.mkdirSync(OPENCODE_DATA_DIR, { recursive: true });

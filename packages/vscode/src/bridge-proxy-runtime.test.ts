@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { setVsCodeHarnessRuntime, takeVsCodeHarnessRuntime } from './harness-runtime-access';
+
 const mocks = vi.hoisted(() => ({
   auth: {} as Record<string, Record<string, unknown>>,
 }));
@@ -29,12 +31,49 @@ const context = {
 };
 
 afterEach(() => {
+  takeVsCodeHarnessRuntime();
   mocks.auth = {};
   vi.restoreAllMocks();
   deps.getCachedCursorProvider.mockReset();
   deps.getCachedCursorProvider.mockReturnValue(null);
   deps.refreshCursorProvider.mockReset();
   context.postMessage.mockReset();
+});
+
+describe('VS Code prompt admission proxy', () => {
+  it('returns the exact context-mode recovery block without forwarding or recording a duplicate prompt', async () => {
+    const recordPrompt = vi.fn();
+    setVsCodeHarnessRuntime({
+      getPromptAdmissionBlock: () => ({
+        name: 'context_mode_recovery',
+        code: 'CONTEXT_MODE_RECOVERY_PENDING',
+        error: 'Context-mode recovery is pending',
+        retryAfterSeconds: 1,
+      }),
+      recordPrompt,
+    } as never);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    const response = await handleProxyBridgeMessage({
+      id: 'prompt-recovery-pending',
+      type: 'api:proxy',
+      payload: {
+        method: 'POST',
+        path: '/session/ses_1/prompt_async?directory=%2Frepo',
+        bodyBase64: Buffer.from(JSON.stringify({ messageID: 'msg_client_1', parts: [] })).toString('base64'),
+      },
+    }, context as never, deps);
+
+    const data = response?.data as { status: number; headers: Record<string, string>; bodyBase64: string };
+    expect(data.status).toBe(503);
+    expect(data.headers['retry-after']).toBe('1');
+    expect(JSON.parse(Buffer.from(data.bodyBase64, 'base64').toString('utf8'))).toEqual({
+      error: 'Context-mode recovery is pending',
+      code: 'CONTEXT_MODE_RECOVERY_PENDING',
+    });
+    expect(recordPrompt).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe('VS Code provider catalog proxy', () => {

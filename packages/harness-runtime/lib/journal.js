@@ -54,10 +54,17 @@ looks like \`{"type":"blob","path":"sessions/<id>/blobs/<sha>.txt.gz","size":123
 \`\`\`bash
 bun scripts/journal.mjs list
 bun scripts/journal.mjs show <sessionID> --tail 100
+bun scripts/journal.mjs show <sessionID> --grep <callId>
 bun scripts/journal.mjs gaps
 gzcat sessions/<sessionID>/*.ndjson.gz | jq -c 'select(.type == "open_code_event")'
 cat sessions/<sessionID>/*.ndjson.open | jq -c .
 \`\`\`
+
+An Error Log event UUID is a locator for the separate administrative Error Log,
+not a journal record ID. Resolve it there first, then correlate this journal by
+session plus \`callId\`, \`toolId\`, \`messageId\`, \`taskId\`, or a bounded timestamp
+window. Run \`gaps\` before concluding. If the host journal is unavailable, expired,
+or has a qualifying gap, report that limitation instead of reconstructing evidence.
 
 Run these commands from the DevRyan repository. See its \`AGENTS.md\` diagnostic-journal
 section for the evidence-first debugging workflow.

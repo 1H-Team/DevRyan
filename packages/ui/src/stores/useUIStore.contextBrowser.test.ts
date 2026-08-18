@@ -6,181 +6,115 @@ import { useUIStore } from './useUIStore';
 
 const DIRECTORY = '/repo/Test';
 
-describe('useUIStore context browser tabs', () => {
+describe('useUIStore dedicated browser panel', () => {
   beforeEach(() => {
     setAuthPrincipal(null);
-    useUIStore.setState({ contextPanelByDirectory: {} });
+    useUIStore.setState({
+      contextPanelByDirectory: {},
+      browserPanelByDirectory: {},
+      browserLeaseTabsByDirectory: {},
+      activeBrowserLeaseIdByDirectory: {},
+    });
     useManualBrowserTabsStore.setState({ byDirectory: {} });
   });
 
   afterEach(() => setAuthPrincipal(null));
 
-  test('opens one singleton browser tab per directory', () => {
-    useUIStore.getState().openContextBrowser(DIRECTORY);
-    useUIStore.getState().openContextBrowser(DIRECTORY, 'https://example.com/docs');
-
-    const panel = useUIStore.getState().contextPanelByDirectory[DIRECTORY];
-    expect(panel?.isOpen).toBe(true);
-    expect(panel?.tabs).toHaveLength(1);
-    expect(panel?.tabs[0]?.mode).toBe('browser');
-    expect(panel?.activeTabId).toBe('browser');
-  });
-
-  test('toggles a browser-only panel open and closed', () => {
-    useUIStore.getState().toggleContextBrowser(DIRECTORY);
-
-    const opened = useUIStore.getState().contextPanelByDirectory[DIRECTORY];
-    expect(opened?.isOpen).toBe(true);
-    expect(opened?.tabs).toHaveLength(1);
-    expect(opened?.activeTabId).toBe('browser');
-
-    useUIStore.getState().toggleContextBrowser(DIRECTORY);
-
-    const closed = useUIStore.getState().contextPanelByDirectory[DIRECTORY];
-    expect(closed?.isOpen).toBe(false);
-    expect(closed?.tabs).toHaveLength(0);
-    expect(closed?.activeTabId).toBeNull();
-  });
-
-  test('reactivates an inactive browser tab without losing its URL', () => {
-    useUIStore.getState().openContextBrowser(DIRECTORY, 'https://example.com/docs');
+  test('opens independently beside an existing context panel', () => {
     useUIStore.getState().openContextOverview(DIRECTORY);
+    useUIStore.getState().openBrowserPanel(DIRECTORY, 'https://example.com/docs');
 
-    useUIStore.getState().toggleContextBrowser(DIRECTORY);
-
-    const panel = useUIStore.getState().contextPanelByDirectory[DIRECTORY];
-    expect(panel?.isOpen).toBe(true);
-    expect(panel?.activeTabId).toBe('browser');
-    expect(panel?.tabs.find((tab) => tab.mode === 'browser')?.targetPath).toBeNull();
+    expect(useUIStore.getState().browserPanelByDirectory[DIRECTORY]?.isOpen).toBe(true);
+    expect(useUIStore.getState().contextPanelByDirectory[DIRECTORY]?.isOpen).toBe(true);
+    expect(useUIStore.getState().contextPanelByDirectory[DIRECTORY]?.tabs.map((tab) => tab.mode))
+      .toEqual(['context']);
     expect(useManualBrowserTabsStore.getState().byDirectory[DIRECTORY]?.tabs[0]?.url)
       .toBe('https://example.com/docs');
   });
 
-  test('closes only the active browser tab when other context tabs remain', () => {
-    useUIStore.getState().openContextOverview(DIRECTORY);
-    useUIStore.getState().openContextBrowser(DIRECTORY);
+  test('toggles panel visibility without discarding manual tabs', () => {
+    useUIStore.getState().openBrowserPanel(DIRECTORY, 'https://example.com/docs');
+    useUIStore.getState().toggleBrowserPanel(DIRECTORY);
+    expect(useUIStore.getState().browserPanelByDirectory[DIRECTORY]?.isOpen).toBe(false);
 
-    useUIStore.getState().toggleContextBrowser(DIRECTORY);
-
-    const panel = useUIStore.getState().contextPanelByDirectory[DIRECTORY];
-    expect(panel?.isOpen).toBe(true);
-    expect(panel?.tabs).toHaveLength(1);
-    expect(panel?.tabs[0]?.mode).toBe('context');
-    expect(panel?.activeTabId).toBe(panel?.tabs[0]?.id);
-    expect(useManualBrowserTabsStore.getState().byDirectory[DIRECTORY]).toBe(undefined);
-  });
-
-  test('reopens a retained browser tab after the whole panel was hidden', () => {
-    useUIStore.getState().openContextBrowser(DIRECTORY, 'https://example.com/docs');
-    useUIStore.getState().closeContextPanel(DIRECTORY);
-
-    useUIStore.getState().toggleContextBrowser(DIRECTORY);
-
-    const panel = useUIStore.getState().contextPanelByDirectory[DIRECTORY];
-    expect(panel?.isOpen).toBe(true);
-    expect(panel?.activeTabId).toBe('browser');
-    expect(panel?.tabs[0]?.targetPath).toBeNull();
+    useUIStore.getState().toggleBrowserPanel(DIRECTORY);
+    expect(useUIStore.getState().browserPanelByDirectory[DIRECTORY]?.isOpen).toBe(true);
     expect(useManualBrowserTabsStore.getState().byDirectory[DIRECTORY]?.tabs[0]?.url)
       .toBe('https://example.com/docs');
   });
 
-  test('records a normalized start URL in the dedicated browser workspace', () => {
-    useUIStore.getState().openContextBrowser(DIRECTORY, 'https://example.com/docs?x=1');
+  test('normalizes safe start URLs and rejects unsupported schemes', () => {
+    useUIStore.getState().openBrowserPanel(DIRECTORY, 'https://example.com/docs?x=1');
+    expect(useManualBrowserTabsStore.getState().byDirectory[DIRECTORY]?.tabs[0]?.url)
+      .toBe('https://example.com/docs?x=1');
 
-    const tab = useUIStore.getState().contextPanelByDirectory[DIRECTORY]?.tabs[0];
-    expect(tab?.mode).toBe('browser');
-    expect(tab?.targetPath).toBeNull();
-    expect(tab?.label).toBe('Browser');
-    const pageTab = useManualBrowserTabsStore.getState().byDirectory[DIRECTORY]?.tabs[0];
-    expect(pageTab?.url).toBe('https://example.com/docs?x=1');
-    expect(pageTab?.label).toBe('example.com');
-  });
-
-  test('ignores non-http(s) start URLs and opens an empty tab', () => {
-    useUIStore.getState().openContextBrowser(DIRECTORY, 'file:///etc/passwd');
-
-    const tab = useUIStore.getState().contextPanelByDirectory[DIRECTORY]?.tabs[0];
-    expect(tab?.mode).toBe('browser');
-    expect(tab?.targetPath).toBeNull();
+    useManualBrowserTabsStore.getState().clearWorkspace(DIRECTORY);
+    useUIStore.getState().openBrowserPanel(DIRECTORY, 'file:///etc/passwd');
     expect(useManualBrowserTabsStore.getState().byDirectory[DIRECTORY]?.tabs[0]?.url).toBe('about:blank');
   });
 
-  test('persists the current safe URL in the dedicated browser store', () => {
-    useUIStore.getState().openContextBrowser(DIRECTORY);
-    const tab = useUIStore.getState().contextPanelByDirectory[DIRECTORY]?.tabs[0];
-    expect(tab).toBeTruthy();
-
-    const pageTab = useManualBrowserTabsStore.getState().byDirectory[DIRECTORY]?.tabs[0];
-    useManualBrowserTabsStore.getState().updateTabUrl(DIRECTORY, pageTab?.id ?? '', 'https://docs.example.com/guide');
-
-    const updated = useManualBrowserTabsStore.getState().byDirectory[DIRECTORY]?.tabs[0];
-    expect(updated?.url).toBe('https://docs.example.com/guide');
-    expect(updated?.label).toBe('docs.example.com');
-    expect(tab?.targetPath).toBeNull();
-  });
-
-  test('returns the original browser-store references for duplicate target updates', () => {
-    useUIStore.getState().openContextBrowser(DIRECTORY, 'https://example.com/');
-    const tab = useManualBrowserTabsStore.getState().byDirectory[DIRECTORY]?.tabs[0];
-
-    const beforeStore = useManualBrowserTabsStore.getState().byDirectory;
-    useManualBrowserTabsStore.getState().updateTabUrl(DIRECTORY, tab?.id ?? '', 'https://example.com/');
-
-    expect(useManualBrowserTabsStore.getState().byDirectory).toBe(beforeStore);
-  });
-
-  test('keeps manual and lease browser tabs as exact separate identities', () => {
-    useUIStore.getState().openContextBrowser(DIRECTORY, 'https://manual.example.com/');
-    useUIStore.getState().openContextBrowserLease(DIRECTORY, {
+  test('keeps manual pages and lease presentation tabs as separate identities', () => {
+    useUIStore.getState().openBrowserPanel(DIRECTORY, 'https://manual.example.com/');
+    useUIStore.getState().openBrowserLease(DIRECTORY, {
       leaseId: 'lease-a',
       rootSessionId: 'root-a',
       url: 'http://localhost:3000/',
       title: 'Home',
-      hostname: 'localhost',
     });
-    useUIStore.getState().openContextBrowserLease(DIRECTORY, {
+    useUIStore.getState().openBrowserLease(DIRECTORY, {
       leaseId: 'lease-b',
       rootSessionId: 'root-a',
       url: 'http://localhost:3001/',
       title: 'Docs',
-      hostname: 'localhost',
     });
 
-    const tabs = useUIStore.getState().contextPanelByDirectory[DIRECTORY]?.tabs ?? [];
-    expect(tabs).toHaveLength(3);
-    expect(tabs.find((tab) => !tab.leaseId)?.id).toBe('browser');
-    expect(tabs.find((tab) => tab.leaseId === 'lease-a')?.id).toBe('browser:lease:lease-a');
-    expect(tabs.find((tab) => tab.leaseId === 'lease-a')?.ownerSessionId).toBe('root-a');
-    expect(tabs.find((tab) => tab.leaseId === 'lease-b')?.id).toBe('browser:lease:lease-b');
+    const leases = useUIStore.getState().browserLeaseTabsByDirectory[DIRECTORY] ?? [];
+    expect(leases.map((tab) => tab.id)).toEqual(['browser:lease:lease-a', 'browser:lease:lease-b']);
+    expect(leases[0]?.rootSessionId).toBe('root-a');
+    expect(useUIStore.getState().activeBrowserLeaseIdByDirectory[DIRECTORY]).toBe('lease-b');
+    expect(useManualBrowserTabsStore.getState().byDirectory[DIRECTORY]?.tabs).toHaveLength(1);
   });
 
-  test('prunes removed lease tabs without touching the manual browser', () => {
-    useUIStore.getState().openContextBrowser(DIRECTORY);
-    useUIStore.getState().openContextBrowserLease(DIRECTORY, {
-      leaseId: 'lease-a',
-      rootSessionId: 'root-a',
-    });
-    useUIStore.getState().openContextBrowserLease(DIRECTORY, {
-      leaseId: 'lease-b',
-      rootSessionId: 'root-a',
-    });
+  test('closing a lease presentation does not close the panel or manual workspace', () => {
+    useUIStore.getState().openBrowserPanel(DIRECTORY);
+    useUIStore.getState().openBrowserLease(DIRECTORY, { leaseId: 'lease-a', rootSessionId: 'root-a' });
+    useUIStore.getState().closeBrowserLease(DIRECTORY, 'lease-a');
 
+    expect(useUIStore.getState().browserLeaseTabsByDirectory[DIRECTORY]).toEqual([]);
+    expect(useUIStore.getState().activeBrowserLeaseIdByDirectory[DIRECTORY]).toBeNull();
+    expect(useUIStore.getState().browserPanelByDirectory[DIRECTORY]?.isOpen).toBe(true);
+    expect(useManualBrowserTabsStore.getState().byDirectory[DIRECTORY]).toBeTruthy();
+  });
+
+  test('prunes ended leases without touching manual pages', () => {
+    useUIStore.getState().openBrowserPanel(DIRECTORY);
+    useUIStore.getState().openBrowserLease(DIRECTORY, { leaseId: 'lease-a', rootSessionId: 'root-a' });
+    useUIStore.getState().openBrowserLease(DIRECTORY, { leaseId: 'lease-b', rootSessionId: 'root-a' });
     useUIStore.getState().pruneBrowserLeaseTabs(['lease-b']);
 
-    const tabs = useUIStore.getState().contextPanelByDirectory[DIRECTORY]?.tabs ?? [];
-    expect(tabs.some((tab) => tab.id === 'browser')).toBe(true);
-    expect(tabs.some((tab) => tab.leaseId === 'lease-a')).toBe(false);
-    expect(tabs.some((tab) => tab.leaseId === 'lease-b')).toBe(true);
+    expect(useUIStore.getState().browserLeaseTabsByDirectory[DIRECTORY]?.map((tab) => tab.leaseId))
+      .toEqual(['lease-b']);
+    expect(useManualBrowserTabsStore.getState().byDirectory[DIRECTORY]).toBeTruthy();
   });
 
-  test('blocks creation and prunes every Browser tab when access is disabled', () => {
+  test('expanding either sibling panel collapses the other expanded state', () => {
     useUIStore.getState().openContextOverview(DIRECTORY);
-    useUIStore.getState().openContextBrowser(DIRECTORY);
-    useUIStore.getState().openContextBrowserLease('/repo/Other', {
-      leaseId: 'lease-a',
-      rootSessionId: 'root-a',
-    });
+    useUIStore.getState().openBrowserPanel(DIRECTORY);
+    useUIStore.getState().toggleContextPanelExpanded(DIRECTORY);
+    expect(useUIStore.getState().contextPanelByDirectory[DIRECTORY]?.expanded).toBe(true);
 
+    useUIStore.getState().toggleBrowserPanelExpanded(DIRECTORY);
+    expect(useUIStore.getState().browserPanelByDirectory[DIRECTORY]?.expanded).toBe(true);
+    expect(useUIStore.getState().contextPanelByDirectory[DIRECTORY]?.expanded).toBe(false);
+
+    useUIStore.getState().toggleContextPanelExpanded(DIRECTORY);
+    expect(useUIStore.getState().contextPanelByDirectory[DIRECTORY]?.expanded).toBe(true);
+    expect(useUIStore.getState().browserPanelByDirectory[DIRECTORY]?.expanded).toBe(false);
+  });
+
+  test('blocks creation and clears every Browser presentation when access is disabled', () => {
+    useUIStore.getState().openBrowserPanel(DIRECTORY);
+    useUIStore.getState().openBrowserLease('/repo/Other', { leaseId: 'lease-a', rootSessionId: 'root-a' });
     setAuthPrincipal({
       id: 'developer-1',
       email: 'developer@example.test',
@@ -188,84 +122,61 @@ describe('useUIStore context browser tabs', () => {
       role: 'developer',
       scope: 'managed',
       policy: {
-        settingsPages: ['home'],
-        files: false,
-        terminal: false,
-        browser: false,
-        createWorktrees: false,
-        createBranches: false,
-        manageProjects: false,
-        manageUsers: false,
-        manageGlobalSettings: false,
-        manageGit: true,
-        push: true,
-        github: true,
+        settingsPages: ['home'], files: false, terminal: false, browser: false,
+        createWorktrees: false, createBranches: false, manageProjects: false,
+        manageUsers: false, manageGlobalSettings: false, manageGit: true, push: true, github: true,
       },
       assignments: [],
     });
-    useUIStore.getState().pruneAllBrowserTabs();
-    useUIStore.getState().openContextBrowser('/repo/Denied');
-    useUIStore.getState().openContextBrowserLease('/repo/Denied', {
-      leaseId: 'lease-denied',
-      rootSessionId: 'root-denied',
-    });
 
-    expect(useUIStore.getState().contextPanelByDirectory['/repo/Denied']).toBe(undefined);
-    expect(useUIStore.getState().contextPanelByDirectory['/repo/Other']?.tabs).toEqual([]);
-    expect(useUIStore.getState().contextPanelByDirectory[DIRECTORY]?.tabs.map((tab) => tab.mode))
-      .toEqual(['context']);
+    useUIStore.getState().pruneAllBrowserTabs();
+    useUIStore.getState().openBrowserPanel('/repo/Denied');
+    useUIStore.getState().openBrowserLease('/repo/Denied', { leaseId: 'lease-denied', rootSessionId: 'root-denied' });
+
+    expect(useUIStore.getState().browserPanelByDirectory['/repo/Denied']).toBe(undefined);
+    expect(useUIStore.getState().browserPanelByDirectory[DIRECTORY]?.isOpen).toBe(false);
+    expect(useUIStore.getState().browserLeaseTabsByDirectory).toEqual({});
+    expect(useManualBrowserTabsStore.getState().byDirectory).toEqual({});
   });
 
-  test('excludes ephemeral lease tabs from persistence', () => {
-    useUIStore.getState().openContextBrowser(DIRECTORY);
-    useUIStore.getState().openContextBrowserLease(DIRECTORY, {
-      leaseId: 'lease-a',
-      rootSessionId: 'root-a',
-    });
-
+  test('persists panel state but excludes runtime lease presentation state', () => {
+    useUIStore.getState().openBrowserPanel(DIRECTORY);
+    useUIStore.getState().openBrowserLease(DIRECTORY, { leaseId: 'lease-a', rootSessionId: 'root-a' });
     const persistApi = (useUIStore as unknown as {
       persist: { getOptions: () => { partialize?: (state: ReturnType<typeof useUIStore.getState>) => unknown } };
     }).persist;
-    const persisted = persistApi.getOptions().partialize?.(useUIStore.getState()) as {
-      contextPanelByDirectory?: Record<string, { tabs: Array<{ leaseId: string | null }> }>;
-    };
+    const persisted = persistApi.getOptions().partialize?.(useUIStore.getState()) as Record<string, unknown>;
 
-    const tabs = persisted.contextPanelByDirectory?.[DIRECTORY]?.tabs ?? [];
-    expect(tabs).toHaveLength(1);
-    expect(tabs[0]?.leaseId).toBeNull();
+    expect((persisted.browserPanelByDirectory as Record<string, { isOpen: boolean }>)[DIRECTORY]?.isOpen).toBe(true);
+    expect(persisted.browserLeaseTabsByDirectory).toBe(undefined);
+    expect(persisted.activeBrowserLeaseIdByDirectory).toBe(undefined);
   });
 
-  test('rehydration sanitizer keeps browser tabs and drops unknown modes', () => {
+  test('v17 migration removes Browser context tabs and opens the dedicated panel when active', () => {
     const persistApi = (useUIStore as unknown as {
       persist: { getOptions: () => { migrate?: (state: unknown, version: number) => unknown } };
     }).persist;
-    const migrate = persistApi.getOptions().migrate;
-    expect(typeof migrate).toBe('function');
-
-    const persisted = {
+    const migrated = persistApi.getOptions().migrate?.({
       contextPanelByDirectory: {
         [DIRECTORY]: {
           isOpen: true,
           expanded: false,
           width: 600,
-          touchedAt: Date.now(),
+          touchedAt: 12,
           activeTabId: 'browser',
           tabs: [
-            { mode: 'browser', targetPath: 'https://example.com/', label: 'example.com', touchedAt: Date.now() },
-            { mode: 'sorcery', targetPath: null, label: null, touchedAt: Date.now() },
+            { id: 'file:/repo/Test/a.ts', mode: 'file', targetPath: '/repo/Test/a.ts', touchedAt: 10 },
+            { id: 'browser', mode: 'browser', targetPath: null, leaseId: null, touchedAt: 12 },
           ],
         },
       },
+    }, 16) as {
+      contextPanelByDirectory: Record<string, { isOpen: boolean; tabs: Array<{ mode: string }> }>;
+      browserPanelByDirectory: Record<string, { isOpen: boolean }>;
     };
 
-    // The tab sanitizer runs unconditionally inside migrate: 'browser' tabs
-    // survive a v10 payload, unknown modes are dropped.
-    const migrated = migrate?.(persisted, 10) as {
-      contextPanelByDirectory: Record<string, { tabs: Array<{ mode: string; targetPath: string | null }> }>;
-    };
-    const tabs = migrated?.contextPanelByDirectory?.[DIRECTORY]?.tabs ?? [];
-    expect(tabs).toHaveLength(1);
-    expect(tabs[0]?.mode).toBe('browser');
-    expect(tabs[0]?.targetPath).toBe('https://example.com/');
+    expect(migrated.contextPanelByDirectory[DIRECTORY]?.tabs.map((tab) => tab.mode)).toEqual(['file']);
+    expect(migrated.contextPanelByDirectory[DIRECTORY]?.isOpen).toBe(true);
+    expect(migrated.browserPanelByDirectory[DIRECTORY]?.isOpen).toBe(true);
   });
 });

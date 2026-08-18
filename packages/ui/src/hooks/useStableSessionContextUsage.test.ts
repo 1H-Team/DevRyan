@@ -2,8 +2,11 @@ import { describe, expect, test } from "bun:test"
 import type { SessionContextUsage } from "@/stores/types/sessionTypes"
 import { reduceStableSessionContextUsage } from "./useStableSessionContextUsage"
 
-const usage = (totalTokens: number): SessionContextUsage => ({
-  totalTokens,
+const usage = (activeInputTokens: number): SessionContextUsage => ({
+  activeInputTokens,
+  lastOutputTokens: 0,
+  source: "message-fallback",
+  updatedAt: 1,
   percentage: 10,
   capacityLimit: 1000,
   capacityBasis: "input",
@@ -11,15 +14,14 @@ const usage = (totalTokens: number): SessionContextUsage => ({
   contextLimit: 1200,
   outputLimit: 200,
   tokenBreakdown: {
-    input: totalTokens,
+    input: activeInputTokens,
     output: 0,
     reasoning: 0,
     cacheRead: 0,
     cacheWrite: 0,
-    total: totalTokens,
+    total: activeInputTokens,
   },
   hasTokenBreakdown: true,
-  sourceAccuracy: "unavailable",
 })
 
 describe("reduceStableSessionContextUsage", () => {

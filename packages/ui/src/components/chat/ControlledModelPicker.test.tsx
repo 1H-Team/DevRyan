@@ -66,5 +66,8 @@ describe('ControlledModelPicker', () => {
     expect(html).toContain('model-controls__variant-trigger');
     expect(html).toContain('High');
     expect(html).toContain('aria-label="Thinking"');
+    expect(html).toContain('leading-[14px]');
+    expect(html).toContain('-my-[2px]');
+    expect(html).toContain('py-[2px]');
   });
 });

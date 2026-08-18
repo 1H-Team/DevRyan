@@ -1,0 +1,305 @@
+import React from 'react';
+import { RiCloseLine, RiFullscreenExitLine, RiFullscreenLine, RiGlobalLine } from '@remixicon/react';
+
+import { Button } from '@/components/ui/button';
+import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
+import { useI18n } from '@/lib/i18n';
+import { resolveRootSessionID } from '@/lib/sessionLineage';
+import { cn } from '@/lib/utils';
+import {
+  browserAgentLeaseSelectors,
+  ensureBrowserAgentListeners,
+  setObservedBrowserAgentLease,
+  useBrowserAgentStore,
+} from '@/stores/useBrowserAgentStore';
+import { useManualBrowserTabsStore } from '@/stores/useManualBrowserTabsStore';
+import { useUIStore } from '@/stores/useUIStore';
+import { getAllSyncSessions } from '@/sync/sync-refs';
+import { useSession } from '@/sync/sync-context';
+import { useSessionUIStore } from '@/sync/session-ui-store';
+import { BrowserTabsBar, DesktopBrowserPane, ManualBrowserWorkspacePane } from './DesktopBrowserPane';
+import { closeBrowserLeaseStripTab, closeManualBrowserStripTab } from './browserPanelClose';
+import { isBrowserPanelRuntimeSupported } from './browserRuntime';
+
+const BROWSER_PANEL_MIN_WIDTH = 360;
+const BROWSER_PANEL_MAX_WIDTH = 1400;
+const BROWSER_PANEL_DEFAULT_WIDTH = 600;
+const EMPTY_BROWSER_LEASE_TABS: never[] = [];
+
+const normalizeDirectoryKey = (value: string): string => {
+  if (!value) return '';
+  const raw = value.replace(/\\/g, '/');
+  const hadUncPrefix = raw.startsWith('//');
+  let normalized = raw.replace(/\/+$/g, '').replace(/\/+/g, '/');
+  if (hadUncPrefix && !normalized.startsWith('//')) normalized = `/${normalized}`;
+  if (!normalized) return raw.startsWith('/') ? '/' : '';
+  return normalized;
+};
+
+const clampWidth = (value: number): number => {
+  if (!Number.isFinite(value)) return BROWSER_PANEL_DEFAULT_WIDTH;
+  return Math.min(BROWSER_PANEL_MAX_WIDTH, Math.max(BROWSER_PANEL_MIN_WIDTH, Math.round(value)));
+};
+
+const BrowserLeasePane: React.FC<{ leaseId: string; active: boolean }> = React.memo(({ leaseId, active }) => {
+  const leaseSelector = React.useMemo(() => browserAgentLeaseSelectors.lease(leaseId), [leaseId]);
+  const lease = useBrowserAgentStore(leaseSelector);
+  if (!lease) return null;
+
+  return (
+    <div
+      className={cn('absolute inset-0', active ? 'z-10 opacity-100' : 'z-0 pointer-events-none opacity-0')}
+      aria-hidden={!active}
+      data-browser-lease-pane={leaseId}
+    >
+      <DesktopBrowserPane
+        initialUrl={lease.url}
+        directory={lease.directory}
+        tabID={`browser:lease:${leaseId}`}
+        active={active}
+        leaseId={leaseId}
+      />
+    </div>
+  );
+});
+BrowserLeasePane.displayName = 'BrowserLeasePane';
+
+const BrowserLeaseRootPruner: React.FC<{ directory: string }> = React.memo(({ directory }) => {
+  const tabs = useUIStore((state) => state.browserLeaseTabsByDirectory[directory] ?? EMPTY_BROWSER_LEASE_TABS);
+  const closeBrowserLease = useUIStore((state) => state.closeBrowserLease);
+  const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
+  const currentSession = useSession(currentSessionId);
+  const currentRootSessionId = React.useMemo(() => {
+    if (!currentSessionId) return null;
+    const sessions = getAllSyncSessions();
+    if (currentSession && !sessions.some((session) => session.id === currentSession.id)) sessions.push(currentSession);
+    return resolveRootSessionID(currentSessionId, sessions);
+  }, [currentSession, currentSessionId]);
+
+  React.useLayoutEffect(() => {
+    for (const tab of tabs) {
+      if (tab.rootSessionId !== currentRootSessionId) closeBrowserLease(directory, tab.leaseId);
+    }
+  }, [closeBrowserLease, currentRootSessionId, directory, tabs]);
+  return null;
+});
+BrowserLeaseRootPruner.displayName = 'BrowserLeaseRootPruner';
+
+export const BrowserPanel: React.FC = () => {
+  const { t } = useI18n();
+  const effectiveDirectory = useEffectiveDirectory() ?? '';
+  const directoryKey = React.useMemo(() => normalizeDirectoryKey(effectiveDirectory), [effectiveDirectory]);
+  const panelState = useUIStore((state) => directoryKey ? state.browserPanelByDirectory[directoryKey] : undefined);
+  const leaseTabs = useUIStore((state) => directoryKey
+    ? state.browserLeaseTabsByDirectory[directoryKey] ?? EMPTY_BROWSER_LEASE_TABS
+    : EMPTY_BROWSER_LEASE_TABS);
+  const activeLeaseId = useUIStore((state) => directoryKey ? state.activeBrowserLeaseIdByDirectory[directoryKey] ?? null : null);
+  const contextPanelExpanded = useUIStore((state) => (
+    directoryKey
+      ? state.contextPanelByDirectory[directoryKey]?.isOpen === true
+        && state.contextPanelByDirectory[directoryKey]?.expanded === true
+      : false
+  ));
+  const closeBrowserPanel = useUIStore((state) => state.closeBrowserPanel);
+  const setBrowserPanelWidth = useUIStore((state) => state.setBrowserPanelWidth);
+  const toggleBrowserPanelExpanded = useUIStore((state) => state.toggleBrowserPanelExpanded);
+  const setActiveBrowserLease = useUIStore((state) => state.setActiveBrowserLease);
+  const workspace = useManualBrowserTabsStore((state) => directoryKey ? state.byDirectory[directoryKey] ?? null : null);
+  const addTab = useManualBrowserTabsStore((state) => state.addTab);
+  const activateTab = useManualBrowserTabsStore((state) => state.activateTab);
+  const reorderTabs = useManualBrowserTabsStore((state) => state.reorderTabs);
+  const liveLeaseIds = useBrowserAgentStore((state) => state.leaseIds);
+
+  const isOpen = Boolean(directoryKey && panelState?.isOpen);
+  const isExpanded = Boolean(isOpen && panelState?.expanded);
+  const width = clampWidth(panelState?.width ?? BROWSER_PANEL_DEFAULT_WIDTH);
+  const surfacesActive = isOpen && !contextPanelExpanded;
+  const observedLeaseId = surfacesActive
+    && activeLeaseId
+    && liveLeaseIds.includes(activeLeaseId)
+    ? activeLeaseId
+    : null;
+  const [isResizing, setIsResizing] = React.useState(false);
+  const panelRef = React.useRef<HTMLElement | null>(null);
+  const startXRef = React.useRef(0);
+  const startWidthRef = React.useRef(width);
+  const resizingWidthRef = React.useRef<number | null>(null);
+  const activeResizePointerIDRef = React.useRef<number | null>(null);
+
+  React.useEffect(() => {
+    ensureBrowserAgentListeners();
+  }, []);
+
+  React.useEffect(() => {
+    void setObservedBrowserAgentLease(observedLeaseId);
+  }, [observedLeaseId]);
+
+  React.useEffect(() => () => {
+    void setObservedBrowserAgentLease(null);
+  }, []);
+
+  const applyLiveWidth = React.useCallback((nextWidth: number) => {
+    panelRef.current?.style.setProperty('--oc-browser-panel-width', `${nextWidth}px`);
+  }, []);
+
+  const handleResizeStart = React.useCallback((event: React.PointerEvent) => {
+    if (!isOpen || isExpanded || !directoryKey) return;
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* fallback pointer events still run */ }
+    activeResizePointerIDRef.current = event.pointerId;
+    startXRef.current = event.clientX;
+    startWidthRef.current = width;
+    resizingWidthRef.current = width;
+    setIsResizing(true);
+    applyLiveWidth(width);
+    event.preventDefault();
+  }, [applyLiveWidth, directoryKey, isExpanded, isOpen, width]);
+
+  const handleResizeMove = React.useCallback((event: React.PointerEvent) => {
+    if (!isResizing || activeResizePointerIDRef.current !== event.pointerId) return;
+    const nextWidth = clampWidth(startWidthRef.current + startXRef.current - event.clientX);
+    if (resizingWidthRef.current === nextWidth) return;
+    resizingWidthRef.current = nextWidth;
+    applyLiveWidth(nextWidth);
+  }, [applyLiveWidth, isResizing]);
+
+  const handleResizeEnd = React.useCallback((event: React.PointerEvent) => {
+    if (!directoryKey || activeResizePointerIDRef.current !== event.pointerId) return;
+    try { event.currentTarget.releasePointerCapture(event.pointerId); } catch { /* capture may already be released */ }
+    const finalWidth = clampWidth(resizingWidthRef.current ?? width);
+    activeResizePointerIDRef.current = null;
+    resizingWidthRef.current = null;
+    setIsResizing(false);
+    setBrowserPanelWidth(directoryKey, finalWidth);
+  }, [directoryKey, setBrowserPanelWidth, width]);
+
+  const panelStyle: React.CSSProperties = !isOpen
+    ? { width: '100%', minWidth: '100%', maxWidth: '100%' }
+    : isExpanded
+      ? { ['--oc-browser-panel-width' as string]: '100%', width: '100%', minWidth: '100%', maxWidth: '100%' }
+      : {
+        ['--oc-browser-panel-width' as string]: `${isResizing ? resizingWidthRef.current ?? width : width}px`,
+        width: 'var(--oc-browser-panel-width)',
+        minWidth: 'var(--oc-browser-panel-width)',
+        maxWidth: 'var(--oc-browser-panel-width)',
+      };
+
+  const trailingActions = directoryKey ? (
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="size-7 p-0"
+        title={isExpanded ? t('contextPanel.actions.collapsePanel') : t('contextPanel.actions.expandPanel')}
+        aria-label={isExpanded ? t('contextPanel.actions.collapsePanel') : t('contextPanel.actions.expandPanel')}
+        onClick={() => toggleBrowserPanelExpanded(directoryKey)}
+      >
+        {isExpanded ? <RiFullscreenExitLine className="size-3.5" /> : <RiFullscreenLine className="size-3.5" />}
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="size-7 p-0"
+        title={t('contextPanel.actions.closePanel')}
+        aria-label={t('contextPanel.actions.closePanel')}
+        onClick={() => closeBrowserPanel(directoryKey)}
+      >
+        <RiCloseLine className="size-3.5" />
+      </Button>
+    </>
+  ) : null;
+
+  return (
+    <aside
+      ref={panelRef}
+      data-browser-panel="true"
+      aria-hidden={!isOpen}
+      tabIndex={-1}
+      className={cn(
+        'flex min-h-0 flex-col overflow-hidden bg-background',
+        !isOpen
+          ? 'pointer-events-none fixed inset-0 -z-10 opacity-0'
+          : isExpanded
+            ? 'absolute inset-0 z-20 min-w-0'
+            : 'relative h-full flex-shrink-0 border-l border-border/40',
+        isResizing ? 'transition-none' : 'transition-[width] duration-200 ease-in-out',
+      )}
+      style={panelStyle}
+      onKeyDownCapture={(event) => {
+        if (event.key !== 'Escape' || !directoryKey) return;
+        event.preventDefault();
+        event.stopPropagation();
+        closeBrowserPanel(directoryKey);
+      }}
+    >
+      {directoryKey ? <BrowserLeaseRootPruner directory={directoryKey} /> : null}
+      {isOpen && !isExpanded ? (
+        <div
+          data-panel-resize-handle="browser-panel"
+          className="group absolute left-0 top-0 z-30 h-full w-2 cursor-col-resize"
+          onPointerDown={handleResizeStart}
+          onPointerMove={handleResizeMove}
+          onPointerUp={handleResizeEnd}
+          onPointerCancel={handleResizeEnd}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={t('contextPanel.actions.resizePanelAria')}
+        >
+          <span
+            aria-hidden="true"
+            className={cn(
+              'pointer-events-none absolute inset-y-0 left-0 w-px bg-border/40 transition-colors group-hover:bg-[var(--interactive-border)]/80',
+              isResizing && 'bg-[var(--interactive-border)]',
+            )}
+          />
+        </div>
+      ) : null}
+      {isOpen && (workspace || leaseTabs.length > 0) ? (
+        <BrowserTabsBar
+          tabs={workspace?.tabs ?? []}
+          activeTabId={workspace?.activeTabId ?? ''}
+          leaseTabs={leaseTabs}
+          activeLeaseId={activeLeaseId}
+          onAdd={() => {
+            addTab(directoryKey);
+            setActiveBrowserLease(directoryKey, null);
+          }}
+          onSelect={(tabId) => {
+            activateTab(directoryKey, tabId);
+            setActiveBrowserLease(directoryKey, null);
+          }}
+          onClose={(tabId) => closeManualBrowserStripTab(directoryKey, tabId)}
+          onReorder={(tabId, overTabId) => reorderTabs(directoryKey, tabId, overTabId)}
+          onSelectLease={(leaseId) => setActiveBrowserLease(directoryKey, leaseId)}
+          onCloseLease={(leaseId) => closeBrowserLeaseStripTab(directoryKey, leaseId)}
+          trailingActions={trailingActions}
+        />
+      ) : null}
+      <div className={cn('relative min-h-0 flex-1 overflow-hidden', isResizing && 'pointer-events-none')}>
+        {isOpen && isBrowserPanelRuntimeSupported() ? (
+          <>
+            <ManualBrowserWorkspacePane
+              key={directoryKey}
+              directory={directoryKey}
+              active={surfacesActive && !activeLeaseId}
+              showTabStrip={false}
+            />
+            {leaseTabs.map((tab) => (
+              <BrowserLeasePane
+                key={tab.leaseId}
+                leaseId={tab.leaseId}
+                active={surfacesActive && observedLeaseId === tab.leaseId}
+              />
+            ))}
+          </>
+        ) : isOpen ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+            <RiGlobalLine className="size-12 text-muted-foreground/50" />
+            <div className="max-w-sm typography-micro text-muted-foreground">{t('contextPanel.browser.desktopOnly')}</div>
+          </div>
+        ) : null}
+      </div>
+    </aside>
+  );
+};

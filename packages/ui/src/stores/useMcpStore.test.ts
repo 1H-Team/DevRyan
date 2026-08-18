@@ -95,6 +95,23 @@ describe('useMcpStore issue memory', () => {
     })).toEqual({ github: 'needs_auth' });
   });
 
+  test('drops remembered issues for servers missing from a non-empty status report', () => {
+    const current = {
+      renamed: 'needs_auth' as const,
+      github: 'failed' as const,
+    };
+
+    expect(reconcileMcpIssueKinds(current, {
+      github: { status: 'failed', error: 'still down' },
+    })).toEqual({ github: 'failed' });
+  });
+
+  test('keeps remembered issues when the status report is empty mid-restart', () => {
+    const current = { linear: 'needs_auth' as const };
+
+    expect(reconcileMcpIssueKinds(current, {})).toBe(current);
+  });
+
   test('persists only sanitized issue kinds and rehydrates them across restarts', async () => {
     const secretError = 'Authorization: Bearer super-secret-token';
     statusData = { linear: { status: 'failed', error: secretError } };

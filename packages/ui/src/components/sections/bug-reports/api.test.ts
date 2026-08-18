@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 
-import { clearErrorLogs, listBugReports, submitBugReport, updateBugReportStatus } from './api';
+import { clearErrorLogs, listBugReports, listErrorLogs, submitBugReport, updateBugReportStatus } from './api';
 import { BugReportsRequestError } from './types';
 
 const originalFetch = globalThis.fetch;
@@ -85,6 +85,43 @@ describe('Bug Reports browser API', () => {
     expect(error).toBeInstanceOf(BugReportsRequestError);
     expect((error as BugReportsRequestError).status).toBe(409);
     expect((error as BugReportsRequestError).code).toBe('stale_update');
+  });
+
+  test('serializes error-log filters and omits the ones left at their defaults', async () => {
+    let capturedInput: RequestInfo | URL | null = null;
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      capturedInput = input;
+      return new Response(JSON.stringify({ logs: [], nextCursor: null }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+
+    await listErrorLogs({
+      kind: 'tool',
+      disposition: 'expected',
+      impact: 'all',
+      search: '  timed out  ',
+      from: '2026-08-01T00:00:00.000Z',
+      actor: 'user-1',
+      limit: 200,
+    });
+
+    const query = new URLSearchParams(String(capturedInput).split('?')[1]);
+    expect(query.get('kind')).toBe('tool');
+    expect(query.get('disposition')).toBe('expected');
+    expect(query.get('q')).toBe('timed out');
+    expect(query.get('from')).toBe('2026-08-01T00:00:00.000Z');
+    expect(query.get('actor')).toBe('user-1');
+    expect(query.get('limit')).toBe('200');
+    expect(query.has('impact')).toBe(false);
+    expect(query.has('to')).toBe(false);
+
+    await listErrorLogs({ kind: 'all', impact: 'all', search: '   ', actor: 'all' });
+    const defaults = new URLSearchParams(String(capturedInput).split('?')[1]);
+    expect([...defaults.keys()]).toEqual(['limit', 'disposition']);
+    expect(defaults.get('limit')).toBe('50');
+    expect(defaults.get('disposition')).toBe('actionable');
   });
 
   test('sends the selected error-log clear range with CSRF protection', async () => {

@@ -154,6 +154,57 @@ describe('managed scheduler restart recovery', () => {
     expect(scheduler.listResultEnvelopes()).toHaveLength(2);
   });
 
+  test('relaunches an unaccepted resume after restart instead of passively settling the old failure', async () => {
+    const resumes = [];
+    const scheduler = createManagedTaskScheduler({
+      persistence: {
+        async load() {
+          return {
+            version: 1,
+            tasks: [record(1, {
+              status: 'starting',
+              childSessionId: 'ses_resume',
+              leaseToken: 'dvr_lease_resume',
+              startedAt: 1_100,
+              attempt: 2,
+              priorTaskId: 'dvr_task_source',
+              executionKind: 'resume',
+            })],
+            resultEnvelopes: [],
+          };
+        },
+        async save() {},
+      },
+      executor: {
+        async start() { throw new Error('must not start a new child'); },
+        async resume(task, control) {
+          resumes.push(task);
+          await control.markAccepted();
+          return { status: 'completed', recoverablePreview: 'continued after restart' };
+        },
+        async observe() { throw new Error('must not passively observe before resume continuation'); },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'relaunch' }; },
+        async readRecoverableResult() { return {}; },
+      },
+      now: () => 2_000,
+    });
+
+    await scheduler.initialize();
+    const settled = await scheduler.waitForTask('dvr_task_1');
+
+    expect(resumes).toHaveLength(1);
+    expect(resumes[0]).toMatchObject({
+      childSessionId: 'ses_resume',
+      executionKind: 'resume',
+      status: 'starting',
+    });
+    expect(settled).toMatchObject({
+      status: 'completed',
+      recoverablePreview: 'continued after restart',
+    });
+  });
+
   test('marks an unavailable child interrupted while retaining recovery output', async () => {
     const scheduler = createManagedTaskScheduler({
       persistence: {

@@ -2,7 +2,6 @@ import type { SessionStatus, Message, Part } from "@opencode-ai/sdk/v2/client"
 import type { Session } from "@opencode-ai/sdk/v2"
 import { filterSessionStatusThroughAbortGuard } from "./abort-retry-guard"
 import { getSessionMaterializationStatus } from "./materialization"
-import { shouldSettleTerminalSessionStatus } from "./plan-idle-settlement"
 import type { State } from "./types"
 
 export { unwrapSdkResult } from "./sdk-result"
@@ -71,6 +70,16 @@ export type ProviderInferenceStallFingerprint = {
   stepStartPartID: string
   partID: string
   partType: "reasoning" | "text"
+}
+
+export type LongRunningToolFingerprint = {
+  kind: "long-running-tool"
+  sessionID: string
+  assistantMessageID: string
+  anchorUserMessageID: string
+  partID: string
+  callID: string
+  tool: string
 }
 
 export type ProviderStallFingerprint = (
@@ -193,6 +202,92 @@ export function getProviderStallFingerprint(input: {
 }): ProviderStallFingerprint | null {
   return getPendingToolInputStallFingerprint(input)
     ?? getProviderInferenceStallFingerprint(input)
+}
+
+const RECOVERABLE_LONG_RUNNING_TOOL_NAMES = new Set([
+  "ctx_execute",
+  "mcp__context_mode__ctx_execute",
+  "bash",
+  "shell",
+])
+
+const isRecoverableLongRunningTool = (tool: string): boolean => (
+  RECOVERABLE_LONG_RUNNING_TOOL_NAMES.has(tool.trim().toLowerCase().replaceAll("-", "_"))
+)
+
+const LONG_RUNNING_TOOL_STATUSES = new Set([
+  "running",
+  "started",
+  "inprogress",
+  "processing",
+  "executing",
+])
+
+const normalizeToolStatus = (status: unknown): string => (
+  typeof status === "string"
+    ? status.trim().toLowerCase().replace(/[\s_-]+/g, "")
+    : ""
+)
+
+export function getLongRunningToolFingerprint(input: {
+  state: PendingToolInputState
+  sessionID: string
+}): LongRunningToolFingerprint | null {
+  const snapshot = getIncompleteRootAssistantSnapshot(input)
+  if (!snapshot) return null
+
+  const trailingPart = snapshot.parts.at(-1) as (Part & {
+    callID?: unknown
+    tool?: unknown
+    state?: { status?: unknown }
+  }) | undefined
+  if (!trailingPart || trailingPart.type !== "tool") return null
+
+  const status = normalizeToolStatus(trailingPart.state?.status)
+  if (!LONG_RUNNING_TOOL_STATUSES.has(status)) return null
+
+  const partID = nonEmptyString(trailingPart.id)
+  const callID = nonEmptyString(trailingPart.callID)
+  const tool = nonEmptyString(trailingPart.tool)
+  if (!partID || !callID || !tool || !isRecoverableLongRunningTool(tool)) return null
+
+  return {
+    kind: "long-running-tool",
+    sessionID: input.sessionID,
+    assistantMessageID: snapshot.assistant.id,
+    anchorUserMessageID: snapshot.anchorUserMessageID,
+    partID,
+    callID,
+    tool,
+  }
+}
+
+export function haveSameLongRunningToolFingerprint(
+  left: LongRunningToolFingerprint | null | undefined,
+  right: LongRunningToolFingerprint | null | undefined,
+): boolean {
+  if (left === right) return true
+  if (!left || !right) return false
+  return left.sessionID === right.sessionID
+    && left.assistantMessageID === right.assistantMessageID
+    && left.anchorUserMessageID === right.anchorUserMessageID
+    && left.partID === right.partID
+    && left.callID === right.callID
+    && left.tool === right.tool
+}
+
+export function shouldConfirmLongRunningTool(input: {
+  managedChildActive: boolean
+  silentForMs: number
+  thresholdMs?: number
+  before: LongRunningToolFingerprint | null | undefined
+  after: LongRunningToolFingerprint | null | undefined
+}): boolean {
+  const thresholdMs = input.thresholdMs ?? PROVIDER_STALL_SEMANTIC_SILENCE_MS
+  return !input.managedChildActive
+    && input.silentForMs >= thresholdMs
+    && Boolean(input.after)
+    && haveSameLongRunningToolFingerprint(input.before, input.after)
 }
 
 export function haveSameProviderStallFingerprint(
@@ -387,22 +482,7 @@ export function mergeRecoveredSessionStatuses(input: {
   authoritative: Record<string, RawSessionStatus | undefined>
   state: RecoveredSessionStatusState
 }): Record<string, SessionStatus> {
-  let next = mergeAuthoritativeSessionStatuses(input)
-
-  for (const sessionId of input.candidateSessionIds) {
-    if (Object.hasOwn(input.authoritative, sessionId)) continue
-
-    const statusType = next[sessionId]?.type
-    if (statusType !== "busy" && statusType !== "retry") continue
-    if (!shouldSettleTerminalSessionStatus({ sessionID: sessionId, state: input.state })) continue
-
-    if (next === input.current) {
-      next = { ...input.current }
-    }
-    next[sessionId] = { type: "idle" } as SessionStatus
-  }
-
-  return next
+  return mergeAuthoritativeSessionStatuses(input)
 }
 
 export function shouldRecoverStaleActiveSession(input: {

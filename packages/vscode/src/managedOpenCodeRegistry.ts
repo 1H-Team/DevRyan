@@ -36,9 +36,20 @@ type ReapOptions = RegistryOptions & {
   platform?: NodeJS.Platform;
 };
 
-function getOpenChamberDataDir(env: NodeJS.ProcessEnv = process.env): string {
+export function getOpenChamberDataDir(env: NodeJS.ProcessEnv = process.env): string {
   const configured = typeof env.OPENCHAMBER_DATA_DIR === 'string' ? env.OPENCHAMBER_DATA_DIR.trim() : '';
   return configured ? path.resolve(configured) : path.join(os.homedir(), '.config', 'openchamber');
+}
+
+export function buildContextModeStorageEnv(env: NodeJS.ProcessEnv = process.env): {
+  CONTEXT_MODE_DATA_DIR: string;
+  CONTEXT_MODE_DIR: string;
+} {
+  const dataDir = getOpenChamberDataDir(env);
+  return {
+    CONTEXT_MODE_DATA_DIR: dataDir,
+    CONTEXT_MODE_DIR: path.join(dataDir, 'context-mode'),
+  };
 }
 
 export function getManagedOpenCodeRegistryPath(options: RegistryOptions = {}): string {

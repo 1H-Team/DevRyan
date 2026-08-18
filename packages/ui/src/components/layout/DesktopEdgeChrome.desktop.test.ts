@@ -68,8 +68,8 @@ describe('DesktopEdgeChrome desktop drag regions', () => {
   test('opens only a blank browser tab without starting preview discovery', () => {
     const source = readSource('ProjectActionsButton.tsx');
 
-    expect(source).toContain('toggleContextBrowser(normalizedDirectory)');
-    expect(source).not.toContain('openContextBrowser(normalizedDirectory)');
+    expect(source).toContain('toggleBrowserPanel(normalizedDirectory)');
+    expect(source).not.toContain('openBrowserPanel(normalizedDirectory)');
     expect(source).toContain("openContextPreview(normalizedDirectory, 'about:blank')");
     expect(source).not.toContain('resolveProjectPreviewBrowserAction');
     expect(source).not.toContain('previewStartInFlightRef.current');

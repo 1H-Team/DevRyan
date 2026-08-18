@@ -3,6 +3,8 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import {
+  buildContextModeStorageEnv,
+  getOpenChamberDataDir,
   isManagedOpenCodeProcessCommand,
   readManagedOpenCodeRegistry,
   reapOrphanedManagedOpenCodeProcesses,
@@ -119,5 +121,14 @@ describe('VS Code managed OpenCode process registry', () => {
       'opencode serve --hostname 127.0.0.1 --port 4096',
       { binary: 'opencode', port: 45678 },
     )).toBe(false);
+  });
+
+  it('aligns context-mode storage under the OpenChamber data dir', () => {
+    const dataDir = path.join(os.tmpdir(), 'openchamber-verify-data');
+    expect(buildContextModeStorageEnv({ OPENCHAMBER_DATA_DIR: dataDir })).toEqual({
+      CONTEXT_MODE_DATA_DIR: path.resolve(dataDir),
+      CONTEXT_MODE_DIR: path.join(path.resolve(dataDir), 'context-mode'),
+    });
+    expect(getOpenChamberDataDir({ OPENCHAMBER_DATA_DIR: dataDir })).toBe(path.resolve(dataDir));
   });
 });

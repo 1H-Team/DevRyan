@@ -13,6 +13,7 @@ import {
 
 export function ModelRecoveryCard({
   title,
+  detail,
   originalModelLabel,
   providers,
   selection,
@@ -24,6 +25,7 @@ export function ModelRecoveryCard({
   embedded = false,
 }: {
   title: string;
+  detail?: string | null;
   originalModelLabel: string;
   providers: ControlledModelPickerProvider[];
   selection: ProviderRecoverySelection;
@@ -83,6 +85,9 @@ export function ModelRecoveryCard({
                 />
               </div>
             </div>
+            {detail ? (
+              <p className="typography-micro text-muted-foreground">{detail}</p>
+            ) : null}
             <p className="typography-micro text-muted-foreground">
               {t('chat.modelRecovery.failedModel', { model: originalModelLabel })}
             </p>

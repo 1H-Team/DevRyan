@@ -40,17 +40,25 @@ describe("agent selection policy", () => {
     expect(resolved.map((agent) => agent.name)).toEqual(["builder", "orchestrator"])
   })
 
-  test("sorts selectable primary agents alphabetically by display name", () => {
+  test("orders Builder, Council, and Orchestrator alphabetically before other agents", () => {
     const resolved = resolveSelectableAgentOptions(
       [
+        { name: "reviewer", mode: "primary" },
         { name: "orchestrator", mode: "primary" },
         { name: "builder", mode: "primary" },
         { name: "council", mode: "all" },
+        { name: "analyst", mode: "primary" },
       ] as Agent[],
       [],
     )
 
-    expect(resolved.map((agent) => agent.name)).toEqual(["builder", "council", "orchestrator"])
+    expect(resolved.map((agent) => agent.name)).toEqual([
+      "builder",
+      "council",
+      "orchestrator",
+      "analyst",
+      "reviewer",
+    ])
   })
 
   test("dedupes build and builder by preferring the canonical builder agent", () => {

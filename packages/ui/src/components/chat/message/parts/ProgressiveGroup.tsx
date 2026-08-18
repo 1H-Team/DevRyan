@@ -31,6 +31,7 @@ import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useI18n } from '@/lib/i18n';
 import ReasoningPart from './ReasoningPart';
+import ReasoningGroup from './ReasoningGroup';
 import JustificationBlock from './JustificationBlock';
 import { areRenderRelevantPartsEqual } from '../renderCompare';
 import { sessionEvents } from '@/lib/sessionEvents';
@@ -57,6 +58,10 @@ import {
     isActivityRunning,
     isPatchActivityFinalized,
 } from './activityTools';
+import {
+    coalesceConsecutiveReasoningRows,
+    type ReasoningGroupRow,
+} from '../reasoningGrouping';
 
 interface ProgressiveGroupProps {
     parts: TurnActivityPart[];
@@ -146,13 +151,15 @@ const getFetchedUrlEntries = (activities: TurnActivityPart[]): string[] => {
     return urls;
 };
 
-type AggregatedRow =
+type AggregatedLeafRow =
     | { type: 'tool-expandable'; activity: TurnActivityPart }
     | { type: 'tool-static-group'; toolName: string; activities: TurnActivityPart[] }
     | { type: 'tool-activity-group'; groupInfo: ToolActivityGroupInfo; activities: TurnActivityPart[] }
     | { type: 'reasoning'; activity: TurnActivityPart }
     | { type: 'justification'; activity: TurnActivityPart }
     | { type: 'tool-fallback'; activity: TurnActivityPart };
+
+type AggregatedRow = AggregatedLeafRow | ReasoningGroupRow<TurnActivityPart>;
 
 interface ExpandableToolRowProps {
     activity: TurnActivityPart;
@@ -456,7 +463,13 @@ const GroupedToolActivityRowInner: React.FC<GroupedToolActivityRowProps> = ({
         return defaultActivityRows;
     }, [currentDirectory, defaultActivityRows, fetchedUrlEntries, groupInfo.kind, handleOpenPatchFile, handleOpenPath, patchFiles, readFileEntries, searchFileEntries]);
 
-    const content = (
+    const content = groupInfo.kind === 'browser' ? (
+        <StaticToolRow
+            toolName="devryan_browser"
+            activities={activities}
+            animateTailText={animateTailText}
+        />
+    ) : (
         <div className="w-full min-w-0">
             <button
                 type="button"
@@ -530,7 +543,7 @@ export const GroupedToolActivityRow = React.memo(GroupedToolActivityRowInner, (p
         && areActivityListsEqual(prev.activities, next.activities);
 });
 
-const toToolActivityRow = (activity: TurnActivityPart): AggregatedRow => {
+const toToolActivityRow = (activity: TurnActivityPart): AggregatedLeafRow => {
     const toolName = getActivityToolName(activity);
     if (isExpandableTool(toolName)) {
         return { type: 'tool-expandable', activity };
@@ -545,18 +558,18 @@ const toToolActivityRow = (activity: TurnActivityPart): AggregatedRow => {
 
 /**
  * Aggregate sorted activity parts into display rows.
- * Passive lookup tools (search/read/fetch) roll up across reasoning text until a hard tool boundary.
+ * Passive lookup and browser tools roll up across reasoning text until a hard tool boundary.
  * Edit/patch tools stay burst-scoped so output remains close to the narrative that produced it.
  * Ungrouped expandable tools (bash, question) stay as individual rows.
  * Unknown tools stay as individual expandable rows (fallback).
  */
 const aggregateRows = (parts: TurnActivityPart[]): AggregatedRow[] => {
-    return collectToolActivityRows(parts, {
+    const rows = collectToolActivityRows(parts, {
         getToolName: getActivityToolName,
         getToolPart: getActivityToolPart,
         isReasoningOrJustification: (activity) => activity.kind === 'reasoning' || activity.kind === 'justification',
         isStandalone: (activity) => activity.kind === 'tool' && isStandaloneTool(getActivityToolName(activity)),
-    }).map((row) => {
+    }).map((row): AggregatedLeafRow => {
         if (row.type === 'group') {
             return {
                 type: 'tool-activity-group',
@@ -575,6 +588,8 @@ const aggregateRows = (parts: TurnActivityPart[]): AggregatedRow[] => {
 
         return toToolActivityRow(row.item);
     });
+
+    return coalesceConsecutiveReasoningRows<TurnActivityPart, AggregatedLeafRow>(rows);
 };
 
 /**
@@ -698,6 +713,21 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                             isMobile={isMobile}
                         />
                     </>
+                );
+
+            case 'reasoning-group':
+                return wrapRow(
+                    row.activities[0]?.id ?? `reasoning-group-${index}`,
+                    <ReasoningGroup
+                        entries={row.activities.map((activity) => ({
+                            part: activity.part,
+                            messageId: activity.messageId,
+                        }))}
+                        providerID={row.activities[row.activities.length - 1]?.providerID ?? providerID}
+                        responseStyleLevel={responseStyleLevel}
+                        onContentChange={onContentChange}
+                        isMobile={isMobile}
+                    />
                 );
 
             case 'justification':

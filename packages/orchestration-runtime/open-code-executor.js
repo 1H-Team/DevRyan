@@ -1,4 +1,12 @@
 import { resolveProviderPromptTools } from './provider-prompt-tools.js';
+import {
+  MANAGED_READ_ONLY_AGENT_UNSUPPORTED,
+  MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE,
+  MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED,
+  MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE,
+  supportsManagedReadOnlyAgent,
+  supportsManagedReadOnlyProvider,
+} from './provider-capabilities.js';
 import { formatManagedTaskDisplayName } from './contract.js';
 import {
   classifyProviderTransportFailure,
@@ -19,7 +27,16 @@ const DEFAULT_LIVE_TRANSCRIPT_REFRESH_MS = 30 * 1_000;
 // continues to report the session as busy. Bound that silent state without
 // interrupting long-running tools or provider-managed retry backoff.
 const DEFAULT_LIVE_PROGRESS_TIMEOUT_MS = 5 * 60 * 1_000;
+// A child aborted moments earlier is still tearing the killed turn down. Give that
+// teardown a bounded window to settle before classifying, so a recovery attempt is not
+// judged by the previous attempt's abort.
+const DEFAULT_RESUME_TEARDOWN_SETTLE_MS = 30 * 1_000;
+// How long a continuation may sit without producing a new assistant message before it is
+// assumed lost and re-posted once.
+const DEFAULT_CONTINUATION_START_GRACE_MS = 2 * 60 * 1_000;
+const MAX_STALE_TAIL_REPROMPTS = 1;
 export const MANAGED_RETRY_IN_PLACE_PROMPT = 'Continue the task from the existing progress. The previous provider could not continue. Do not repeat completed work.';
+export const MANAGED_RESUME_CONTINUATION_PROMPT = 'Continue the task from the existing progress. The previous managed turn stopped before completion. Do not repeat completed work.';
 export const MANAGED_TRANSIENT_TIMEOUT_CONTINUATION_PROMPT = 'Continue the task from the existing progress. The previous model request timed out. Do not repeat completed work.';
 export const MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT = 'Continue the task from the existing progress. The previous model connection was interrupted. Do not repeat completed work.';
 export const MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT = 'Continue the task from the existing progress. The previous model ended before providing a final answer. Reuse completed work and tool results, retry only missing work, and return the requested final output.';
@@ -78,13 +95,20 @@ const defaultSleep = (delayMs, { signal } = {}) => new Promise((resolve, reject)
 
 const trimString = (value) => (typeof value === 'string' ? value.trim() : '');
 
-const isCursorSdkProvider = (providerId) => trimString(providerId).toLowerCase() === 'cursor-acp';
-
 const assertReadOnlyProviderSupport = (task) => {
-  if (!task.readOnly || !isCursorSdkProvider(task.providerId)) return;
-  throw new Error(
-    'Plan-mode managed tasks cannot use Cursor because its SDK does not expose enforceable per-prompt write restrictions',
-  );
+  if (!task.readOnly || supportsManagedReadOnlyProvider(task.providerId)) return;
+  const error = new Error(MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE);
+  error.code = MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED;
+  error.statusCode = 409;
+  throw error;
+};
+
+const assertReadOnlyAgentSupport = (task) => {
+  if (!task.readOnly || supportsManagedReadOnlyAgent(task.agent)) return;
+  const error = new Error(MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE);
+  error.code = MANAGED_READ_ONLY_AGENT_UNSUPPORTED;
+  error.statusCode = 409;
+  throw error;
 };
 
 const resolveTaskPrompt = (task, prompt) => (
@@ -93,11 +117,16 @@ const resolveTaskPrompt = (task, prompt) => (
     : prompt
 );
 
-const resolveTaskPromptTools = (task) => resolveProviderPromptTools(
-  task.providerId,
-  task.agent,
-  { readOnly: task.readOnly },
-);
+const resolveTaskPromptTools = (task) => ({
+  ...resolveProviderPromptTools(
+    task.providerId,
+    task.agent,
+    { readOnly: task.readOnly },
+  ),
+  // Managed tasks are already child sessions. Keep all further delegation
+  // root-owned even when project agent permissions expose OpenCode's task tool.
+  task: false,
+});
 
 const normalizeToolStatus = (value) => trimString(value)
   .toLowerCase()
@@ -114,6 +143,30 @@ const toolPartIsInFlight = (part) => {
   const status = normalizeToolStatus(part.state?.status);
   return !FINAL_TOOL_STATUSES.has(status);
 };
+
+const isEmptyPlainObject = (value) => (
+  value !== null
+  && typeof value === 'object'
+  && !Array.isArray(value)
+  && Object.keys(value).length === 0
+);
+
+// A provider can stop mid-token while it is still constructing a tool call.
+// OpenCode represents that half-written call as pending with no start time and
+// no input. It is not executing user code and must not exempt a silent stream
+// from the managed-child liveness timeout.
+const toolPartIsBlankPendingInput = (part) => {
+  if (!toolPartIsInFlight(part)) return false;
+  if (normalizeToolStatus(part.state?.status) !== 'pending') return false;
+  if (Number.isFinite(part.state?.time?.start)) return false;
+  const raw = part.state?.raw;
+  return isEmptyPlainObject(part.state?.input)
+    && (raw === undefined || raw === null || raw === '');
+};
+
+const toolPartBlocksLiveProgressTimeout = (part) => (
+  toolPartIsInFlight(part) && !toolPartIsBlankPendingInput(part)
+);
 
 const extractFailureReason = (error) => {
   if (typeof error === 'string') return error.trim() || null;
@@ -158,11 +211,16 @@ const isTransientObservationError = (error) => {
   return error instanceof TypeError && /fetch|network|socket|connection/i.test(error.message);
 };
 
+// A tool killed by an abort reports this and nothing else. Treating it as recoverable
+// output makes the whole preview read "Tool execution aborted", hiding the real work the
+// child completed before it was killed.
+const ABORTED_TOOL_ERROR_PATTERN = /^tool execution (?:was )?aborted\.?$/i;
+
 const extractToolOutput = (part) => {
   const candidates = [part?.state?.output, part?.output, part?.state?.error];
   for (const candidate of candidates) {
     const value = trimString(candidate);
-    if (value) return value;
+    if (value && !ABORTED_TOOL_ERROR_PATTERN.test(value)) return value;
   }
   return '';
 };
@@ -237,6 +295,21 @@ export const isManagedTransientTransportContinuationPrompt = (value) => (
   ))
 );
 
+export const isManagedResumeContinuationPrompt = (value) => (
+  matchesManagedUserPrompt(value, MANAGED_RESUME_CONTINUATION_PROMPT)
+);
+
+export const isManagedRetryInPlacePrompt = (value) => (
+  matchesManagedUserPrompt(value, MANAGED_RETRY_IN_PLACE_PROMPT)
+);
+
+const isManagedAttemptContinuationPrompt = (value) => (
+  isManagedTransientTransportContinuationPrompt(value)
+  || isManagedResumeContinuationPrompt(value)
+  || isManagedRetryInPlacePrompt(value)
+  || matchesManagedUserPrompt(value, MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT)
+);
+
 const countExactUserPrompts = (records, prompt) => (
   Array.isArray(records)
     ? records.reduce((count, record) => {
@@ -257,7 +330,34 @@ const countTransientTransportContinuationPrompts = (records) => (
   )
 );
 
-const analyzeMessages = (records, childSessionId) => {
+const findLastRecordIndex = (records, predicate) => {
+  if (!Array.isArray(records)) return -1;
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    if (predicate(records[index])) return index;
+  }
+  return -1;
+};
+
+const orderMessageRecordsChronologically = (records) => {
+  if (!Array.isArray(records) || records.length < 2) return records;
+  const indexed = records.map((record, index) => ({
+    createdAt: record?.info?.time?.created,
+    index,
+    record,
+  }));
+  if (indexed.some(({ createdAt }) => !Number.isFinite(createdAt))) return records;
+
+  const hasInversion = indexed.some((entry, index) => (
+    index > 0 && entry.createdAt < indexed[index - 1].createdAt
+  ));
+  if (!hasInversion) return records;
+
+  indexed.sort((left, right) => left.createdAt - right.createdAt || left.index - right.index);
+  return indexed.map(({ record }) => record);
+};
+
+const analyzeMessages = (inputRecords, childSessionId) => {
+  const records = orderMessageRecordsChronologically(inputRecords);
   const progressSignature = createTranscriptProgressSignature(records);
   const transientTransportContinuationCount = countTransientTransportContinuationPrompts(records);
   const assistants = Array.isArray(records)
@@ -273,16 +373,62 @@ const analyzeMessages = (records, childSessionId) => {
     records,
     MANAGED_EMPTY_OUTPUT_CONTINUATION_PROMPT,
   );
+  const resumeContinuationCount = countExactUserPrompts(
+    records,
+    MANAGED_RESUME_CONTINUATION_PROMPT,
+  );
+  const lastAssistantIndex = findLastRecordIndex(
+    records,
+    (record) => record?.info?.role === 'assistant',
+  );
+  const lastResumeContinuationIndex = findLastRecordIndex(
+    records,
+    (record) => record?.info?.role === 'user'
+      && (Array.isArray(record.parts) ? record.parts : []).some((part) => (
+        part?.type === 'text'
+        && isManagedResumeContinuationPrompt(part.text)
+      )),
+  );
+  const lastContinuationIndex = findLastRecordIndex(
+    records,
+    (record) => record?.info?.role === 'user'
+      && (Array.isArray(record.parts) ? record.parts : []).some((part) => (
+        part?.type === 'text'
+        && (isManagedResumeContinuationPrompt(part.text) || isManagedRetryInPlacePrompt(part.text))
+      )),
+  );
+  const lastAttemptContinuationIndex = findLastRecordIndex(
+    records,
+    (record) => record?.info?.role === 'user'
+      && (Array.isArray(record.parts) ? record.parts : []).some((part) => (
+        part?.type === 'text'
+        && isManagedAttemptContinuationPrompt(part.text)
+      )),
+  );
+  const currentAttemptAssistants = (
+    lastAttemptContinuationIndex >= 0
+      ? records.slice(lastAttemptContinuationIndex + 1)
+      : records
+  ).filter((record) => record?.info?.role === 'assistant');
+  const resumeContinuationPending = lastResumeContinuationIndex > lastAssistantIndex;
+  const continuationPending = lastContinuationIndex > lastAssistantIndex;
+  const latestAssistantMessageId = trimString(latest?.info?.id) || null;
   if (!latest) {
     return {
       canonicalRefs: [],
       childSessionId,
+      continuationPending,
       emptyOutputContinuationCount,
       failureReason: null,
       finish: '',
+      hasBlockingInFlightTool: false,
+      hasInFlightTool: false,
       hasUsefulWork: false,
+      latestAssistantMessageId,
       recoverablePreview: '',
       progressSignature,
+      resumeContinuationCount,
+      resumeContinuationPending,
       terminal: false,
       transientTransportContinuationCount,
       transientTransportFailureCount,
@@ -290,8 +436,11 @@ const analyzeMessages = (records, childSessionId) => {
   }
 
   const latestWork = extractAssistantWork(latest);
-  const hasInFlightTool = assistants.some((record) => (
+  const hasInFlightTool = currentAttemptAssistants.some((record) => (
     (Array.isArray(record.parts) ? record.parts : []).some(toolPartIsInFlight)
+  ));
+  const hasBlockingInFlightTool = currentAttemptAssistants.some((record) => (
+    (Array.isArray(record.parts) ? record.parts : []).some(toolPartBlocksLiveProgressTimeout)
   ));
   let usefulWork = latestWork;
   if (!latestWork.hasUsefulWork) {
@@ -302,8 +451,23 @@ const analyzeMessages = (records, childSessionId) => {
       break;
     }
   }
-  const canonicalRefs = usefulWork !== latestWork
-    ? [...usefulWork.canonicalRefs, ...latestWork.canonicalRefs]
+  // An attempt killed mid-flight leaves a tail carrying tool references but nothing
+  // salvageable to read, so the preview has to come from the last turn that actually
+  // produced something. Without this the user sees an empty preview for real work.
+  let previewWork = usefulWork.recoverablePreview ? usefulWork : null;
+  if (!previewWork) {
+    for (let index = assistants.length - 1; index >= 0; index -= 1) {
+      const candidate = extractAssistantWork(assistants[index]);
+      if (!candidate.recoverablePreview) continue;
+      previewWork = candidate;
+      break;
+    }
+  }
+  const refSources = [];
+  if (previewWork && previewWork !== latestWork) refSources.push(previewWork);
+  if (usefulWork !== latestWork && usefulWork !== previewWork) refSources.push(usefulWork);
+  const canonicalRefs = refSources.length > 0
+    ? [...refSources.flatMap((source) => source.canonicalRefs), ...latestWork.canonicalRefs]
     : latestWork.canonicalRefs;
 
   const finish = trimString(latest.info?.finish).toLowerCase();
@@ -313,14 +477,19 @@ const analyzeMessages = (records, childSessionId) => {
   return {
     canonicalRefs,
     childSessionId,
+    continuationPending,
     emptyOutputContinuationCount,
     failureReason,
     finish,
+    hasBlockingInFlightTool,
     hasFinalUsefulWork: latestWork.hasUsefulWork,
     hasInFlightTool,
     hasUsefulWork: usefulWork.hasUsefulWork,
-    recoverablePreview: usefulWork.recoverablePreview,
+    latestAssistantMessageId,
+    recoverablePreview: previewWork?.recoverablePreview ?? '',
     progressSignature,
+    resumeContinuationCount,
+    resumeContinuationPending,
     terminal: !isToolCallHandoff && Boolean(
       failureReason
       || finish
@@ -419,6 +588,10 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     ?? DEFAULT_LIVE_TRANSCRIPT_REFRESH_MS;
   const liveProgressTimeoutMs = options.liveProgressTimeoutMs
     ?? DEFAULT_LIVE_PROGRESS_TIMEOUT_MS;
+  const resumeTeardownSettleMs = options.resumeTeardownSettleMs
+    ?? DEFAULT_RESUME_TEARDOWN_SETTLE_MS;
+  const continuationStartGraceMs = options.continuationStartGraceMs
+    ?? DEFAULT_CONTINUATION_START_GRACE_MS;
   const retryStopMaxAborts = options.retryStopMaxAborts ?? 3;
   const retryStopPollLimit = options.retryStopPollLimit ?? 80;
   if (!Number.isSafeInteger(pollIntervalMs) || pollIntervalMs < 0) {
@@ -625,6 +798,14 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
     let lastTranscriptReadAt = null;
     let lastLiveProgressAt = null;
     let lastLiveProgressSignature = null;
+    let hasStaleTailAnchor = Boolean(waitOptions.staleTailAnchor);
+    const staleTailAnchorId = trimString(waitOptions.staleTailAnchor?.assistantMessageId) || null;
+    let staleTailPromptPostedAt = Number.isFinite(waitOptions.staleTailAnchor?.promptPostedAt)
+      ? waitOptions.staleTailAnchor.promptPostedAt
+      : now();
+    const staleTailPrompt = trimString(waitOptions.staleTailAnchor?.prompt) || '';
+    let staleTailReprompts = 0;
+    let staleTailGraceExhausted = false;
     while (true) {
       let observation;
       try {
@@ -659,7 +840,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
               lastLiveProgressAt = observedAt;
             } else if (
               liveStatus.statusType === 'busy'
-              && !liveObservation.hasInFlightTool
+              && !liveObservation.hasBlockingInFlightTool
               && lastLiveProgressAt !== null
               && observedAt - lastLiveProgressAt >= liveProgressTimeoutMs
             ) {
@@ -774,6 +955,48 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
           resumable: true,
         };
       }
+      // The tail of the previous attempt is not this attempt's result. A resume or
+      // retry dispatched moments after an abort would otherwise read the killed turn's
+      // error and terminalize instantly, before the child had run a single token. This
+      // check deliberately precedes `continuationPending`: a prompt that reached the
+      // transcript but never started still needs the bounded re-post/failure path.
+      if (
+        hasStaleTailAnchor
+        && observation.latestAssistantMessageId === staleTailAnchorId
+      ) {
+        if (now() - staleTailPromptPostedAt < continuationStartGraceMs) {
+          await sleep(pollIntervalMs, { signal: shutdownController.signal });
+          assertRunning();
+          continue;
+        }
+        if (staleTailReprompts < MAX_STALE_TAIL_REPROMPTS && staleTailPrompt) {
+          // The continuation never reached the child (the abort tore the POST down).
+          staleTailReprompts += 1;
+          staleTailPromptPostedAt = now();
+          await transport.promptSession({
+            sessionId: task.childSessionId,
+            directory: task.directory,
+            providerId: task.providerId,
+            modelId: task.modelId,
+            agent: task.agent,
+            variant: task.variant,
+            prompt: resolveTaskPrompt(task, staleTailPrompt),
+            tools: resolveTaskPromptTools(task),
+          });
+          await sleep(pollIntervalMs, { signal: shutdownController.signal });
+          assertRunning();
+          continue;
+        }
+        // Out of grace and out of re-posts: stop suppressing and report what is there
+        // rather than polling to the hard deadline.
+        hasStaleTailAnchor = false;
+        staleTailGraceExhausted = true;
+      }
+      if (observation.continuationPending && !staleTailGraceExhausted) {
+        await sleep(pollIntervalMs, { signal: shutdownController.signal });
+        assertRunning();
+        continue;
+      }
       if (
         !LIVE_STATUS_TYPES.has(observation.statusType)
         && isTransientAssistantTransportFailure(observation.failureReason)
@@ -842,6 +1065,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
 
   const start = async (task, control) => {
     assertRunning();
+    assertReadOnlyAgentSupport(task);
     assertReadOnlyProviderSupport(task);
     const child = await transport.createSession({
       directory: task.directory,
@@ -882,13 +1106,105 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
 
   const observe = async (task) => await waitForTerminal(task);
 
+  const retainInPlaceAcceptance = async (task, control, stage) => {
+    await retainCheckpoint({
+      task,
+      childSessionId: task.childSessionId,
+      checkpoint: () => control.markAccepted(),
+      stage,
+      deleteSession: false,
+    });
+  };
+
+  const resume = async (task, control) => {
+    if (!task.childSessionId) {
+      throw new Error(`Managed task ${task.taskId} has no child session`);
+    }
+    assertReadOnlyAgentSupport(task);
+    assertReadOnlyProviderSupport(task);
+
+    let status;
+    let observation;
+    try {
+      // A resume dispatched seconds after the previous attempt was aborted finds the
+      // child still reporting busy while that turn tears down. Treating that as "live"
+      // skipped the continuation prompt entirely, and the attempt then died on the
+      // previous turn's abort. Wait a bounded moment for the teardown to settle.
+      status = await readLiveStatus(task);
+      const settleDeadline = now() + resumeTeardownSettleMs;
+      while (normalizeStatusFields(status).statusType === 'busy' && now() < settleDeadline) {
+        await sleep(pollIntervalMs, { signal: shutdownController.signal });
+        assertRunning();
+        status = await readLiveStatus(task);
+      }
+      const liveStatus = normalizeStatusFields(status);
+      if (
+        LIVE_STATUS_TYPES.has(liveStatus.statusType)
+        && !(liveStatus.statusType === 'retry' && isDefiniteProviderUsageLimit(liveStatus.statusMessage))
+      ) {
+        // Still live past the settle window: a genuinely running child, not teardown.
+        await retainInPlaceAcceptance(task, control, 'before resumed live observation');
+        return await waitForTerminal(task);
+      }
+      observation = await readObservation(task, status);
+    } catch (error) {
+      if (!isTransientObservationError(error)) throw error;
+      await retainInPlaceAcceptance(task, control, 'before resumed observation');
+      return await waitForTerminal(task);
+    }
+
+    const terminal = toTerminalResult(observation);
+    if (terminal?.status === 'completed') {
+      await retainInPlaceAcceptance(task, control, 'before accepting completed resumed work');
+      return terminal;
+    }
+
+    if (
+      terminal
+      && !observation.continuationPending
+      && !isTransientAssistantTransportFailure(observation.failureReason)
+      && !isEmptyTerminalObservation(observation)
+    ) {
+      // Anchored to this attempt's tail rather than to a transcript-lifetime count: a
+      // child that was already resumed once still needs its own continuation now.
+      const staleTailAssistantMessageId = observation.latestAssistantMessageId;
+      await transport.promptSession({
+        sessionId: task.childSessionId,
+        directory: task.directory,
+        providerId: task.providerId,
+        modelId: task.modelId,
+        agent: task.agent,
+        variant: task.variant,
+        prompt: resolveTaskPrompt(task, MANAGED_RESUME_CONTINUATION_PROMPT),
+        tools: resolveTaskPromptTools(task),
+      });
+      const staleTailAnchor = {
+        assistantMessageId: staleTailAssistantMessageId,
+        promptPostedAt: now(),
+        prompt: MANAGED_RESUME_CONTINUATION_PROMPT,
+      };
+      await retainInPlaceAcceptance(task, control, 'after resume continuation prompt');
+      await sleep(pollIntervalMs, { signal: shutdownController.signal });
+      assertRunning();
+      return await waitForTerminal(task, { deferEmptyTerminal: true, staleTailAnchor });
+    }
+
+    await retainInPlaceAcceptance(task, control, 'before resumed observation');
+    return await waitForTerminal(task);
+  };
+
   const retryInPlace = async (task, control) => {
     if (!task.childSessionId) {
       throw new Error(`Managed task ${task.taskId} has no child session`);
     }
+    assertReadOnlyAgentSupport(task);
     assertReadOnlyProviderSupport(task);
     const stopError = await ensureRetryStopped(task);
     if (stopError) throw stopError;
+    // Capture the tail this retry inherits, so the first poll cannot settle on the
+    // previous attempt's result before OpenCode has started the new turn.
+    const priorObservation = await readObservation(task);
+    const staleTailAssistantMessageId = priorObservation.latestAssistantMessageId;
     await transport.promptSession({
       sessionId: task.childSessionId,
       directory: task.directory,
@@ -899,6 +1215,11 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       prompt: resolveTaskPrompt(task, MANAGED_RETRY_IN_PLACE_PROMPT),
       tools: resolveTaskPromptTools(task),
     });
+    const staleTailAnchor = {
+      assistantMessageId: staleTailAssistantMessageId,
+      promptPostedAt: now(),
+      prompt: MANAGED_RETRY_IN_PLACE_PROMPT,
+    };
     await retainCheckpoint({
       task,
       childSessionId: task.childSessionId,
@@ -906,7 +1227,10 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       stage: 'after retry-in-place prompt',
       deleteSession: false,
     });
-    return await waitForTerminal(task, { deferEmptyTerminal: true });
+    return await waitForTerminal(task, {
+      deferEmptyTerminal: true,
+      staleTailAnchor,
+    });
   };
 
   const readRecoverableResult = async (task) => {
@@ -914,11 +1238,12 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
       return { recoverablePreview: '', canonicalRefs: [], resumable: false };
     }
     const observation = await readObservation(task);
+    const terminal = toTerminalResult(observation);
     return {
       recoverablePreview: observation.recoverablePreview,
       canonicalRefs: observation.canonicalRefs,
       partial: observation.hasUsefulWork,
-      resumable: true,
+      resumable: terminal?.status !== 'completed',
     };
   };
 
@@ -948,6 +1273,18 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
         };
       }
       const observation = await readObservation(task);
+      if (observation.continuationPending) {
+        return { state: 'live' };
+      }
+      if (
+        task.executionKind === 'resume'
+        && observation.terminal
+        && !isTransientAssistantTransportFailure(observation.failureReason)
+        && !isEmptyTerminalObservation(observation)
+        && toTerminalResult(observation)?.status !== 'completed'
+      ) {
+        return { state: 'relaunch' };
+      }
       if (
         !LIVE_STATUS_TYPES.has(observation.statusType)
         && isTransientAssistantTransportFailure(observation.failureReason)
@@ -981,7 +1318,7 @@ export const createManagedOpenCodeExecutor = (options = {}) => {
 
   return {
     start,
-    resume: observe,
+    resume,
     retryInPlace,
     observe,
     async abort(task, options = {}) {

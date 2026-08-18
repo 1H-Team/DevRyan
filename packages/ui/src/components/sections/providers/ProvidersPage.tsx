@@ -17,7 +17,7 @@ import {
 import { toast } from '@/components/ui';
 import { RiStackLine, RiToolsLine, RiBrainAi3Line, RiFileImageLine, RiArrowDownSLine, RiCheckLine, RiSearchLine, RiInformationLine, RiEyeLine, RiEyeOffLine, RiErrorWarningLine, RiLoader4Line } from '@remixicon/react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
+import { recordConfigMutationResponse } from '@/stores/useConfigApplyStore';
 import { cn } from '@/lib/utils';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { openExternalUrl } from '@/lib/url';
@@ -34,7 +34,10 @@ import {
   getProviderOAuthErrorMessage,
   parseProviderOAuthAuthorization,
   providerCatalogHasModels,
+  requestPostAuthConfigReload,
   requestProviderOAuthCallback,
+  resolveProviderOAuthPhase,
+  type ProviderOAuthPhase,
   type ProviderOAuthAuthorization,
   type ProviderOAuthMethod,
 } from './providerOAuth';
@@ -99,7 +102,6 @@ interface CursorAcpRuntimeStatus {
   };
 }
 
-type ProviderOAuthPhase = 'waiting' | 'loading-models' | 'error';
 
 interface PendingProviderOAuth {
   providerId: string;
@@ -109,7 +111,12 @@ interface PendingProviderOAuth {
   error?: string;
 }
 
-const PROVIDER_CATALOG_RETRY_DELAYS_MS = [0, 250, 500, 750, 1000] as const;
+// Must outlast the server-side readiness hold (6s, see server proxy READINESS_HOLD_MAX_MS) that
+// 503s /api/provider* while OpenCode restarts to pick up newly saved credentials. The old 2.5s
+// budget expired inside that window, so a successful sign-in looked like a failure.
+const PROVIDER_CATALOG_RETRY_DELAYS_MS = [0, 500, 1000, 1500, 2000, 3000, 3000, 4000] as const;
+/** Attempts of plain polling (~1.5s) before asking the server to re-apply config. */
+const PROVIDER_CATALOG_ESCALATE_AFTER_ATTEMPTS = 3;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -470,16 +477,28 @@ export const ProvidersPage: React.FC = () => {
     };
   }, [authMethodsByProvider]);
 
-  const waitForProviderCatalog = React.useCallback(async (providerId: string) => {
+  const waitForProviderCatalog = React.useCallback(async (
+    providerId: string,
+    options?: { onStalled?: () => Promise<boolean> },
+  ) => {
     const activeDirectory = currentDirectory?.trim() || null;
     const directories = activeDirectory ? [null, activeDirectory] : [null];
 
-    for (const delayMs of PROVIDER_CATALOG_RETRY_DELAYS_MS) {
+    for (const [attempt, delayMs] of PROVIDER_CATALOG_RETRY_DELAYS_MS.entries()) {
       if (delayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
 
-      await Promise.all(directories.map((directory) => loadProviders({ directory })));
+      // Escalate once when plain polling hasn't surfaced the provider: the catalog may be stale
+      // rather than slow. Doing this here — instead of unconditionally up front — keeps the
+      // common case free of a needless OpenCode restart.
+      if (attempt === PROVIDER_CATALOG_ESCALATE_AFTER_ATTEMPTS && options?.onStalled) {
+        const keepWaiting = await options.onStalled();
+        if (!keepWaiting) return false;
+      }
+
+      // force: a deduped in-flight load could resolve against the pre-auth catalog and burn a retry.
+      await Promise.all(directories.map((directory) => loadProviders({ directory, force: true })));
       const state = useConfigStore.getState();
       const globalProviders = state.directoryScoped.__global__?.providers
         ?? (activeDirectory ? [] : state.providers);
@@ -491,16 +510,19 @@ export const ProvidersPage: React.FC = () => {
     return false;
   }, [currentDirectory, loadProviders]);
 
-  const finalizeProviderConnection = React.useCallback(async (providerId: string) => {
-    await reloadOpenCodeConfiguration({ scopes: ['providers'], mode: 'active' });
-    const providerReady = await waitForProviderCatalog(providerId);
-    if (!providerReady) {
-      throw new Error(t('settings.providers.page.auth.modelsNotReady', { provider: providerId }));
-    }
+  // Returns whether the model catalog caught up. A `false` result is NOT a failure — the
+  // credentials are already saved by this point; only the catalog is lagging.
+  const finalizeProviderConnection = React.useCallback(async (
+    providerId: string,
+    options?: { onStalled?: () => Promise<boolean> },
+  ) => {
+    const providerReady = await waitForProviderCatalog(providerId, options);
 
     setSelectedProvider(providerId);
     quotaRefreshCoordinator.settingsChanged();
-  }, [setSelectedProvider, t, waitForProviderCatalog]);
+
+    return providerReady;
+  }, [setSelectedProvider, waitForProviderCatalog]);
 
   const handleSaveApiKey = async (providerId: string) => {
     const apiKey = apiKeyInputs[providerId]?.trim() ?? '';
@@ -527,7 +549,7 @@ export const ProvidersPage: React.FC = () => {
 
       toast.success(t('settings.providers.page.toast.apiKeySaved'));
       setApiKeyInputs((prev) => ({ ...prev, [providerId]: '' }));
-      await reloadOpenCodeConfiguration({ scopes: ['providers'], mode: 'active' });
+      recordConfigMutationResponse(payload);
       await loadProviders({ directory: null });
       setSelectedProvider(providerId);
       if (providerId === CURSOR_ACP_PROVIDER_ID) {
@@ -551,6 +573,8 @@ export const ProvidersPage: React.FC = () => {
     const busyKey = `oauth-complete:${providerId}:${methodIndex}`;
     setAuthBusyKey(busyKey);
 
+    // Only the callback itself can fail the sign-in. Once it resolves the credentials are
+    // persisted upstream, so nothing after this point may report failure to the user.
     try {
       const target = resolveAuthMethodTarget(providerId, methodIndex);
       await requestProviderOAuthCallback({
@@ -559,29 +583,47 @@ export const ProvidersPage: React.FC = () => {
         code,
         fallbackError: t('settings.providers.page.toast.oauthCompleteFailed'),
       });
-
-      setPendingOAuth((current) => current?.providerId === providerId && current.methodIndex === methodIndex
-        ? { ...current, phase: 'loading-models', error: undefined }
-        : current);
-      await finalizeProviderConnection(providerId);
-
-      setOauthCodes((prev) => ({ ...prev, [codeKey]: '' }));
-      setOauthDetails((prev) => {
-        const next = { ...prev };
-        delete next[codeKey];
-        return next;
-      });
-      setPendingOAuth(null);
-      toast.success(t('settings.providers.page.toast.oauthCompleted'));
     } catch (error) {
       const message = error instanceof Error
         ? error.message
         : t('settings.providers.page.toast.oauthCompleteFailed');
       console.error('Failed to complete OAuth flow:', error);
+      const outcome = resolveProviderOAuthPhase({ callbackError: message });
       setPendingOAuth((current) => current?.providerId === providerId && current.methodIndex === methodIndex
-        ? { ...current, phase: 'error', error: message }
+        ? { ...current, phase: outcome.phase ?? 'error', error: outcome.error }
         : current);
-      toast.error(t('settings.providers.page.toast.oauthCompleteFailed'));
+      toast.error(`${t('settings.providers.page.toast.oauthCompleteFailed')}: ${message}`);
+      setAuthBusyKey(null);
+      return;
+    }
+
+    setOauthCodes((prev) => ({ ...prev, [codeKey]: '' }));
+    setOauthDetails((prev) => {
+      const next = { ...prev };
+      delete next[codeKey];
+      return next;
+    });
+    toast.success(t('settings.providers.page.toast.oauthCompleted'));
+    setPendingOAuth((current) => current?.providerId === providerId && current.methodIndex === methodIndex
+      ? { ...current, phase: 'loading-models', error: undefined }
+      : current);
+
+    try {
+      const providerReady = await finalizeProviderConnection(providerId, {
+        // Only reached when polling alone did not surface the provider. Ask the server to
+        // re-apply config so OpenCode loads the new credential; if that apply is deferred until
+        // active chats finish, stop waiting — models cannot appear before then.
+        onStalled: async () => {
+          const reload = await requestPostAuthConfigReload();
+          return !reload.deferred;
+        },
+      });
+
+      const outcome = resolveProviderOAuthPhase({ providerReady });
+      setPendingOAuth((current) => {
+        if (current?.providerId !== providerId || current.methodIndex !== methodIndex) return current;
+        return outcome.phase === null ? null : { ...current, phase: outcome.phase, error: undefined };
+      });
     } finally {
       setAuthBusyKey(null);
     }
@@ -635,7 +677,10 @@ export const ProvidersPage: React.FC = () => {
       }
     } catch (error) {
       console.error('Failed to start OAuth flow:', error);
-      toast.error(t('settings.providers.page.toast.oauthStartFailed'));
+      const message = error instanceof Error ? error.message : '';
+      toast.error(message
+        ? `${t('settings.providers.page.toast.oauthStartFailed')}: ${message}`
+        : t('settings.providers.page.toast.oauthStartFailed'));
     } finally {
       setAuthBusyKey(null);
     }
@@ -686,12 +731,16 @@ export const ProvidersPage: React.FC = () => {
       ? t('settings.providers.page.auth.oauthWaitingTitle')
       : pendingOAuth.phase === 'loading-models'
         ? t('settings.providers.page.auth.oauthLoadingModelsTitle')
-        : t('settings.providers.page.auth.oauthErrorTitle');
+        : pendingOAuth.phase === 'models-pending'
+          ? t('settings.providers.page.auth.modelsPendingTitle')
+          : t('settings.providers.page.auth.oauthErrorTitle');
     const description = pendingOAuth.phase === 'waiting'
       ? t('settings.providers.page.auth.oauthWaitingDescription')
       : pendingOAuth.phase === 'loading-models'
         ? t('settings.providers.page.auth.oauthLoadingModelsDescription')
-        : pendingOAuth.error || t('settings.providers.page.toast.oauthCompleteFailed');
+        : pendingOAuth.phase === 'models-pending'
+          ? t('settings.providers.page.auth.modelsPendingDescription', { provider: providerId })
+          : pendingOAuth.error || t('settings.providers.page.toast.oauthCompleteFailed');
 
     return (
       <div
@@ -807,7 +856,7 @@ export const ProvidersPage: React.FC = () => {
       }
 
       toast.success(t('settings.providers.page.toast.claudeOAuthChecked'));
-      await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
+      recordConfigMutationResponse(payload);
       await loadProviders({ directory: null });
       const resolvedProviderId = 'anthropic';
       setSelectedProvider(resolvedProviderId);
@@ -855,7 +904,7 @@ export const ProvidersPage: React.FC = () => {
       }
 
       toast.success(t('settings.providers.page.toast.cursorConfigured'));
-      await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
+      recordConfigMutationResponse(payload);
       await loadProviders({ directory: null });
       setSelectedProvider(CURSOR_ACP_PROVIDER_ID);
       await loadProviderSources(CURSOR_ACP_PROVIDER_ID);
@@ -886,7 +935,7 @@ export const ProvidersPage: React.FC = () => {
       }
 
       toast.success(t('settings.providers.page.toast.providerDisconnected'));
-      await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
+      recordConfigMutationResponse(payload);
       await loadProviders({ directory: null });
       quotaRefreshCoordinator.settingsChanged();
     } catch (error) {

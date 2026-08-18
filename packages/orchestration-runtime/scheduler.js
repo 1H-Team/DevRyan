@@ -22,12 +22,19 @@ import {
   compactManagedOrchestrationState,
 } from './persistence.js';
 import {
+  MANAGED_TASK_TIMEOUT_REASON_PREFIX,
   isDefiniteProviderUsageLimit,
   isProviderPromptRejected,
 } from './provider-retry-policy.js';
+import {
+  MANAGED_READ_ONLY_AGENT_UNSUPPORTED,
+  MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE,
+  supportsManagedReadOnlyAgent,
+} from './provider-capabilities.js';
 
 const ACTIVE_STATUSES = new Set(['starting', 'running']);
 const TERMINAL_RESULT_STATUSES = new Set(['completed', 'failed', 'aborted', 'interrupted']);
+const AGENT_HANDOFF_MANUAL_RECOVERY_ABANDON = Symbol('agent-handoff-manual-recovery-abandon');
 
 const requiresManualModelRecovery = (task, resultEnvelope) => Boolean(
   task.childSessionId
@@ -40,6 +47,18 @@ const requiresManualModelRecovery = (task, resultEnvelope) => Boolean(
     || (task.mode === 'orchestrator' && task.dispatchGroupId !== null && task.attempt >= 2)
   )
 );
+
+// A recovery attempt continues work that was sized for the source task's window, so it
+// inherits that window instead of silently dropping to the caller's default. Without this a
+// task dispatched with a 2h budget gets 30 minutes on every retry and can never finish.
+const resolveFollowUpTimeoutAt = (sourceTask, requestedTimeoutAt, now) => {
+  const requested = Number.isFinite(requestedTimeoutAt) ? requestedTimeoutAt : null;
+  const sourceWindowMs = Number.isFinite(sourceTask.timeoutAt) && Number.isFinite(sourceTask.createdAt)
+    ? Math.max(0, sourceTask.timeoutAt - sourceTask.createdAt)
+    : null;
+  if (sourceWindowMs === null) return requested;
+  return Math.max(requested ?? 0, now() + sourceWindowMs);
+};
 
 const cloneTask = (task) => task ? {
   ...task,
@@ -77,6 +96,14 @@ export class ManagedOrchestrationError extends Error {
     this.code = code;
   }
 }
+
+const assertManagedReadOnlyAgentSupport = (input) => {
+  if (!input.readOnly || supportsManagedReadOnlyAgent(input.agent)) return;
+  throw new ManagedOrchestrationError(
+    MANAGED_READ_ONLY_AGENT_UNSUPPORTED,
+    MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE,
+  );
+};
 
 export const createManagedTaskScheduler = (options = {}) => {
   const executor = options.executor;
@@ -589,6 +616,14 @@ export const createManagedTaskScheduler = (options = {}) => {
       return;
     }
 
+    if (reconciliation?.state === 'relaunch') {
+      const current = tasks.get(task.taskId);
+      if (current && !isTerminalManagedTaskStatus(current.status)) {
+        launchTask(cloneTask(current));
+      }
+      return;
+    }
+
     if (reconciliation?.state === 'live') {
       if (task.status === 'starting') {
         await createTaskControl(task.taskId, task.leaseToken).markAccepted();
@@ -688,7 +723,7 @@ export const createManagedTaskScheduler = (options = {}) => {
   const handleTaskTimeout = async (taskId, timeoutAt) => {
     const task = tasks.get(taskId);
     if (!task || isTerminalManagedTaskStatus(task.status) || task.timeoutAt !== timeoutAt) return;
-    const reason = `Managed task timed out at ${timeoutAt}`;
+    const reason = `${MANAGED_TASK_TIMEOUT_REASON_PREFIX}${timeoutAt}`;
     await cancelSingleTask(taskId, {
       reason,
       terminalStatus: task.status === 'queued' ? 'aborted' : 'failed',
@@ -851,6 +886,8 @@ export const createManagedTaskScheduler = (options = {}) => {
       const indexKey = idempotencyIndexKey(input.rootSessionId, input.idempotencyKey);
       const existingTaskId = idempotencyIndex.get(indexKey);
       if (existingTaskId) return cloneTask(tasks.get(existingTaskId));
+
+      assertManagedReadOnlyAgentSupport(input);
 
       if (input.dispatchGroupId !== null && input.dispatchGroupId !== undefined) {
         const handoff = handoffLocks.get(input.rootSessionId);
@@ -1333,13 +1370,16 @@ export const createManagedTaskScheduler = (options = {}) => {
   // parent wedged, not just the provider-recovery lineage this started as. A
   // child that finished while the parent's tool wait was detached, and a child
   // that hit its hard deadline, both end with an unacknowledged envelope and an
-  // idle root that will never move again on its own. Report all of them so the
-  // packaged plugin can wake the root once.
+  // idle root that will never move again on its own. Report collectable results
+  // so the packaged plugin can wake the root once.
   //
-  // Results requiring user-selected recovery are deliberately excluded: those
-  // stay parked until the user picks a model in the UI, and waking the parent
-  // would bypass that gate. Callers additionally require the root to be idle and
-  // marker-gate each wake, so an attached wait still wins and cannot double-fire.
+  // Results requiring user-selected recovery stay off this list. They must never
+  // be collected or retried by the agent — that would bypass the user's Model
+  // Recovery choice — and they must not inject a synthetic parent notice either.
+  // The attached wait already returns `manualRecoveryRequired`, and the Model
+  // Recovery card is the user-action surface. Callers additionally require the
+  // root to be idle and marker-gate each collect wake, so an attached wait still
+  // wins and cannot double-fire.
   const listReadyProviderRecoveryContinuations = ({ sessionId } = {}) => {
     const normalizedSessionId = typeof sessionId === 'string' ? sessionId.trim() : '';
     return [...tasks.values()]
@@ -1362,13 +1402,8 @@ export const createManagedTaskScheduler = (options = {}) => {
         const resultEnvelope = resultEnvelopes.get(task.taskId);
         // An envelope that already carries an action was disposed of, or was
         // superseded by a follow-up attempt that is tracked in its own right.
-        // A final resumable failure stays parked for the user's Model Recovery
-        // choice instead of waking the parent agent to abandon it.
-        return Boolean(
-          resultEnvelope
-          && resultEnvelope.action === null
-          && !requiresManualModelRecovery(task, resultEnvelope)
-        );
+        if (!resultEnvelope || resultEnvelope.action !== null) return false;
+        return !requiresManualModelRecovery(task, resultEnvelope);
       })
       .sort(compareManagedTaskQueueOrder)
       .map((task) => ({
@@ -1377,6 +1412,7 @@ export const createManagedTaskScheduler = (options = {}) => {
         rootSessionId: task.rootSessionId,
         childSessionId: task.childSessionId,
         directory: task.directory,
+        kind: 'collect',
       }));
   };
 
@@ -1493,6 +1529,10 @@ export const createManagedTaskScheduler = (options = {}) => {
       if (
         requiresManualModelRecovery(sourceTask, currentEnvelope)
         && action !== 'retry_in_place'
+        && !(
+          action === 'abandon'
+          && actionOptions[AGENT_HANDOFF_MANUAL_RECOVERY_ABANDON] === true
+        )
       ) {
         throw new ManagedOrchestrationError(
           'manual_model_recovery_required',
@@ -1580,7 +1620,7 @@ export const createManagedTaskScheduler = (options = {}) => {
           attempt: sourceTask.attempt + 1,
           priorTaskId: sourceTask.taskId,
           executionKind: action,
-          timeoutAt: actionOptions.timeoutAt ?? null,
+          timeoutAt: resolveFollowUpTimeoutAt(sourceTask, actionOptions.timeoutAt, now),
         });
       }
 
@@ -1658,6 +1698,7 @@ export const createManagedTaskScheduler = (options = {}) => {
             await acknowledgeResult(taskId, {
               action: 'abandon',
               idempotencyKey: `handoff:${input.idempotencyKey}:${taskId}`,
+              [AGENT_HANDOFF_MANUAL_RECOVERY_ABANDON]: true,
             });
           }
         } catch {

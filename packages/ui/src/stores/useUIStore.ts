@@ -4,15 +4,21 @@ import { devtools } from './utils/devtoolsGate';
 import type { SidebarSection } from '@/constants/sidebar';
 import { getSafeStorage } from './utils/safeStorage';
 import { SEMANTIC_TYPOGRAPHY, getTypographyVariable, type SemanticTypographyKey } from '@/lib/typography';
-import type { ShortcutCombo } from '@/lib/shortcuts';
+import { migrateSendSelectionShortcutOverrides, type ShortcutCombo } from '@/lib/shortcuts';
 import { DEFAULT_MONO_FONT, DEFAULT_UI_FONT, type MonoFontOption, type UiFontOption } from '@/lib/fontOptions';
 import { getStoredMobileKeyboardMode, type MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 import { getAuthPrincipal, hasAuthCapability } from '@/lib/authSession';
+import {
+  DEFAULT_CHAT_WIDTH,
+  WIDE_CHAT_WIDTH,
+  applyChatWidth as applyChatWidthToRoot,
+  clampChatWidth,
+} from '@/lib/chatLayout';
 import { useManualBrowserTabsStore } from './useManualBrowserTabsStore';
 
 export type MainTab = 'chat' | 'plan' | 'git' | 'diff' | 'terminal';
 export type RightSidebarTab = 'git' | 'files';
-export type ContextPanelMode = 'diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview' | 'browser';
+export type ContextPanelMode = 'diff' | 'file' | 'context' | 'plan' | 'chat' | 'preview';
 export type MermaidRenderingMode = 'svg' | 'ascii';
 export type UserMessageRenderingMode = 'markdown' | 'plain';
 export type ChatRenderMode = 'sorted' | 'live';
@@ -31,7 +37,6 @@ type ContextPanelTab = {
   mode: ContextPanelMode;
   targetPath: string | null;
   ownerSessionId: string | null;
-  leaseId: string | null;
   displayUrl: string | null;
   dedupeKey: string;
   label: string | null;
@@ -42,7 +47,6 @@ type ContextPanelTabDescriptor = {
   mode: ContextPanelMode;
   targetPath?: string | null;
   ownerSessionId?: string | null;
-  leaseId?: string | null;
   dedupeKey?: string | null;
   label?: string | null;
 };
@@ -53,6 +57,22 @@ type ContextPanelDirectoryState = {
   tabs: ContextPanelTab[];
   activeTabId: string | null;
   width: number;
+  touchedAt: number;
+};
+
+export type BrowserPanelDirectoryState = {
+  isOpen: boolean;
+  expanded: boolean;
+  width: number;
+  touchedAt: number;
+};
+
+export type BrowserLeaseTab = {
+  id: string;
+  leaseId: string;
+  rootSessionId: string;
+  url: string;
+  label: string;
   touchedAt: number;
 };
 
@@ -120,6 +140,9 @@ const CONTEXT_PANEL_MIN_WIDTH = 360;
 const CONTEXT_PANEL_MAX_WIDTH = 1400;
 const CONTEXT_PANEL_MAX_TABS = 12;
 const CONTEXT_PANEL_MAX_LABEL_LENGTH = 120;
+const BROWSER_PANEL_DEFAULT_WIDTH = 600;
+const BROWSER_PANEL_MIN_WIDTH = 360;
+const BROWSER_PANEL_MAX_WIDTH = 1400;
 const LEFT_SIDEBAR_MIN_WIDTH = 220;
 const RIGHT_SIDEBAR_MIN_WIDTH = 300;
 
@@ -148,6 +171,11 @@ const clampContextPanelWidth = (width: number): number => {
   }
 
   return Math.min(CONTEXT_PANEL_MAX_WIDTH, Math.max(CONTEXT_PANEL_MIN_WIDTH, Math.round(width)));
+};
+
+const clampBrowserPanelWidth = (width: number): number => {
+  if (!Number.isFinite(width)) return BROWSER_PANEL_DEFAULT_WIDTH;
+  return Math.min(BROWSER_PANEL_MAX_WIDTH, Math.max(BROWSER_PANEL_MIN_WIDTH, Math.round(width)));
 };
 
 const normalizeContextTargetPath = (value: string | null | undefined): string | null => {
@@ -251,9 +279,6 @@ const modelRefsEqual = (a: readonly ModelRef[], b: readonly ModelRef[]): boolean
 
 const createContextPanelTab = (descriptor: ContextPanelTabDescriptor): ContextPanelTab => {
   const normalizedTargetPath = normalizeContextTargetPath(descriptor.targetPath);
-  const leaseId = descriptor.mode === 'browser'
-    ? normalizeContextTargetPath(descriptor.leaseId)
-    : null;
   const dedupeKey = normalizeContextPanelTabDedupeKey(
     descriptor.mode,
     normalizedTargetPath,
@@ -263,10 +288,9 @@ const createContextPanelTab = (descriptor: ContextPanelTabDescriptor): ContextPa
     id: buildContextPanelTabID(descriptor.mode, dedupeKey),
     mode: descriptor.mode,
     targetPath: normalizedTargetPath,
-    ownerSessionId: descriptor.mode === 'plan' || leaseId
+    ownerSessionId: descriptor.mode === 'plan'
       ? normalizeContextTargetPath(descriptor.ownerSessionId)
       : null,
-    leaseId,
     displayUrl: descriptor.mode === 'preview' ? normalizedTargetPath : null,
     dedupeKey,
     label: normalizeContextTabLabel(descriptor.label),
@@ -307,14 +331,13 @@ const sanitizeContextPanelTabs = (tabs: unknown): ContextPanelTab[] => {
       mode?: unknown;
       targetPath?: unknown;
       ownerSessionId?: unknown;
-      leaseId?: unknown;
       displayUrl?: unknown;
       dedupeKey?: unknown;
       label?: unknown;
       touchedAt?: unknown;
     };
 
-    if (candidate.mode !== 'diff' && candidate.mode !== 'file' && candidate.mode !== 'context' && candidate.mode !== 'plan' && candidate.mode !== 'chat' && candidate.mode !== 'preview' && candidate.mode !== 'browser') {
+    if (candidate.mode !== 'diff' && candidate.mode !== 'file' && candidate.mode !== 'context' && candidate.mode !== 'plan' && candidate.mode !== 'chat' && candidate.mode !== 'preview') {
       continue;
     }
 
@@ -334,11 +357,8 @@ const sanitizeContextPanelTabs = (tabs: unknown): ContextPanelTab[] => {
       id,
       mode: candidate.mode,
       targetPath,
-      ownerSessionId: candidate.mode === 'plan' || candidate.mode === 'browser'
+      ownerSessionId: candidate.mode === 'plan'
         ? normalizeContextTargetPath(typeof candidate.ownerSessionId === 'string' ? candidate.ownerSessionId : null)
-        : null,
-      leaseId: candidate.mode === 'browser'
-        ? normalizeContextTargetPath(typeof candidate.leaseId === 'string' ? candidate.leaseId : null)
         : null,
       displayUrl: candidate.mode === 'preview'
         ? normalizeContextTargetPath(typeof candidate.displayUrl === 'string' ? candidate.displayUrl : targetPath)
@@ -402,7 +422,6 @@ const upsertContextPanelTab = (
           mode: nextTab.mode,
           targetPath: nextTab.targetPath,
           ownerSessionId: nextTab.ownerSessionId,
-          leaseId: nextTab.leaseId,
           displayUrl: nextTab.displayUrl,
           dedupeKey: nextTab.dedupeKey,
           label: nextTab.label,
@@ -516,8 +535,8 @@ const sanitizeContextPanelByDirectory = (
     const clampedTabs = clampContextPanelTabs(tabs, CONTEXT_PANEL_MAX_TABS, resolvedActiveTabId);
 
     next[directory] = {
-      isOpen: candidate.isOpen === true,
-      expanded: candidate.expanded === true,
+      isOpen: candidate.isOpen === true && clampedTabs.length > 0,
+      expanded: candidate.expanded === true && clampedTabs.length > 0,
       tabs: clampedTabs,
       activeTabId: resolveActiveContextPanelTabID(clampedTabs, resolvedActiveTabId),
       width: clampContextPanelWidth(typeof candidate.width === 'number' ? candidate.width : CONTEXT_PANEL_DEFAULT_WIDTH),
@@ -547,31 +566,69 @@ const clampContextPanelRoots = (
   return next;
 };
 
-const stripEphemeralBrowserLeaseTabs = (
-  byDirectory: Record<string, ContextPanelDirectoryState>,
-): Record<string, ContextPanelDirectoryState> => {
-  let next: Record<string, ContextPanelDirectoryState> | null = null;
+const normalizeBrowserPanelUrl = (value: string | null | undefined): string => {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw || raw === 'about:blank') return 'about:blank';
+  try {
+    const parsed = new URL(raw);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+      ? parsed.toString()
+      : 'about:blank';
+  } catch {
+    return 'about:blank';
+  }
+};
 
-  for (const [directory, panel] of Object.entries(byDirectory)) {
-    const tabs = panel.tabs.filter((tab) => !tab.leaseId);
-    if (tabs.length === panel.tabs.length) continue;
+const browserLeaseLabel = (lease: { title?: string | null; hostname?: string | null; url?: string | null }): string => {
+  const explicit = normalizeContextTabLabel(lease.title) || normalizeContextTabLabel(lease.hostname);
+  if (explicit) return explicit;
+  const url = normalizeBrowserPanelUrl(lease.url);
+  if (url !== 'about:blank') {
+    try {
+      return new URL(url).host || 'Browser';
+    } catch {
+      // Use the stable fallback below.
+    }
+  }
+  return 'Browser';
+};
 
-    next ??= { ...byDirectory };
-    const activeTabId = resolveActiveContextPanelTabID(
-      tabs,
-      panel.activeTabId && tabs.some((tab) => tab.id === panel.activeTabId)
-        ? panel.activeTabId
-        : null,
-    );
+const touchBrowserPanelState = (prev?: BrowserPanelDirectoryState): BrowserPanelDirectoryState => ({
+  isOpen: prev?.isOpen === true,
+  expanded: prev?.expanded === true,
+  width: clampBrowserPanelWidth(prev?.width ?? BROWSER_PANEL_DEFAULT_WIDTH),
+  touchedAt: Date.now(),
+});
+
+const sanitizeBrowserPanelByDirectory = (
+  value: unknown,
+): Record<string, BrowserPanelDirectoryState> => {
+  if (!value || typeof value !== 'object') return {};
+  const next: Record<string, BrowserPanelDirectoryState> = {};
+  for (const [rawDirectory, rawState] of Object.entries(value as Record<string, unknown>)) {
+    const directory = normalizeDirectoryPath(rawDirectory);
+    if (!directory || !rawState || typeof rawState !== 'object') continue;
+    const candidate = rawState as Record<string, unknown>;
     next[directory] = {
-      ...panel,
-      tabs,
-      activeTabId,
-      isOpen: tabs.length > 0 ? panel.isOpen : false,
+      isOpen: candidate.isOpen === true,
+      expanded: candidate.expanded === true,
+      width: clampBrowserPanelWidth(typeof candidate.width === 'number' ? candidate.width : BROWSER_PANEL_DEFAULT_WIDTH),
+      touchedAt: typeof candidate.touchedAt === 'number' && Number.isFinite(candidate.touchedAt)
+        ? candidate.touchedAt
+        : Date.now(),
     };
   }
+  return next;
+};
 
-  return next ?? byDirectory;
+const clampBrowserPanelRoots = (
+  byDirectory: Record<string, BrowserPanelDirectoryState>,
+  maxRoots: number,
+): Record<string, BrowserPanelDirectoryState> => {
+  const entries = Object.entries(byDirectory);
+  if (entries.length <= maxRoots) return byDirectory;
+  entries.sort((left, right) => right[1].touchedAt - left[1].touchedAt);
+  return Object.fromEntries(entries.slice(0, maxRoots));
 };
 
 interface UIStore {
@@ -587,6 +644,9 @@ interface UIStore {
   hasManuallyResizedRightSidebar: boolean;
   rightSidebarTab: RightSidebarTab;
   contextPanelByDirectory: Record<string, ContextPanelDirectoryState>;
+  browserPanelByDirectory: Record<string, BrowserPanelDirectoryState>;
+  browserLeaseTabsByDirectory: Record<string, BrowserLeaseTab[]>;
+  activeBrowserLeaseIdByDirectory: Record<string, string | null>;
   contextPlanMotionRequest: ContextPlanMotionRequest | null;
   contextPlanMotionSequence: number;
   isBottomTerminalOpen: boolean;
@@ -682,7 +742,7 @@ interface UIStore {
   showTerminalQuickKeysOnDesktop: boolean;
   persistChatDraft: boolean;
   inputSpellcheckEnabled: boolean;
-  wideChatLayoutEnabled: boolean;
+  chatWidth: number;
   showToolFileIcons: boolean;
   showExpandedBashTools: boolean;
   showExpandedEditTools: boolean;
@@ -718,15 +778,20 @@ interface UIStore {
   requestContextPanelTabClose: (directory: string, tabID: string) => void;
   consumeContextPlanMotionRequest: (requestID: number) => void;
   openContextPreview: (directory: string, url: string) => void;
-  openContextBrowser: (directory: string, url?: string | null) => void;
-  openContextBrowserLease: (directory: string, lease: {
+  openBrowserPanel: (directory: string, url?: string | null) => void;
+  openBrowserLease: (directory: string, lease: {
     leaseId: string;
     rootSessionId: string;
     url?: string | null;
     title?: string | null;
     hostname?: string | null;
   }) => void;
-  toggleContextBrowser: (directory: string) => void;
+  toggleBrowserPanel: (directory: string) => void;
+  closeBrowserPanel: (directory: string) => void;
+  setBrowserPanelWidth: (directory: string, width: number) => void;
+  toggleBrowserPanelExpanded: (directory: string) => void;
+  setActiveBrowserLease: (directory: string, leaseId: string | null) => void;
+  closeBrowserLease: (directory: string, leaseId: string) => void;
   pruneBrowserLeaseTabs: (activeLeaseIds: readonly string[]) => void;
   pruneAllBrowserTabs: () => void;
   setContextPreviewDisplayUrl: (directory: string, tabID: string, url: string) => void;
@@ -787,6 +852,7 @@ interface UIStore {
   setMobileKeyboardMode: (mode: MobileKeyboardMode) => void;
   applyTypography: () => void;
   applyPadding: () => void;
+  applyChatWidth: () => void;
   updateProportionalSidebarWidths: () => void;
   toggleFavoriteModel: (providerID: string, modelID: string) => void;
   reorderFavoriteModel: (
@@ -835,7 +901,7 @@ interface UIStore {
   setMaxLastMessageLength: (value: number) => void;
   setPersistChatDraft: (value: boolean) => void;
   setInputSpellcheckEnabled: (value: boolean) => void;
-  setWideChatLayoutEnabled: (value: boolean) => void;
+  setChatWidth: (value: number) => void;
   setShowToolFileIcons: (value: boolean) => void;
   setShowExpandedBashTools: (value: boolean) => void;
   setShowExpandedEditTools: (value: boolean) => void;
@@ -877,6 +943,9 @@ export const useUIStore = create<UIStore>()(
         hasManuallyResizedRightSidebar: false,
         rightSidebarTab: 'git',
         contextPanelByDirectory: {},
+        browserPanelByDirectory: {},
+        browserLeaseTabsByDirectory: {},
+        activeBrowserLeaseIdByDirectory: {},
         contextPlanMotionRequest: null,
         contextPlanMotionSequence: 0,
         isBottomTerminalOpen: false,
@@ -966,7 +1035,7 @@ export const useUIStore = create<UIStore>()(
         showTerminalQuickKeysOnDesktop: false,
         persistChatDraft: true,
         inputSpellcheckEnabled: false,
-        wideChatLayoutEnabled: false,
+        chatWidth: DEFAULT_CHAT_WIDTH,
         showToolFileIcons: true,
         showExpandedBashTools: false,
         showExpandedEditTools: false,
@@ -1308,7 +1377,7 @@ export const useUIStore = create<UIStore>()(
           });
         },
 
-        openContextBrowser: (directory, url) => {
+        openBrowserPanel: (directory, url) => {
           if (!hasAuthCapability(getAuthPrincipal(), 'browser')) {
             return;
           }
@@ -1317,36 +1386,26 @@ export const useUIStore = create<UIStore>()(
             return;
           }
 
-          const normalizedUrl = (url || '').trim();
-          let targetPath: string | null = null;
-          if (normalizedUrl && normalizedUrl !== 'about:blank') {
-            try {
-              const parsed = new URL(normalizedUrl);
-              if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-                targetPath = parsed.toString();
-              }
-            } catch {
-              // ignore invalid URL; open an empty browser tab instead
-            }
-          }
-
-          const legacyBrowserUrl = get().contextPanelByDirectory[normalizedDirectory]?.tabs
-            .find((tab) => tab.mode === 'browser' && !tab.leaseId)?.targetPath ?? null;
           useManualBrowserTabsStore.getState().openWorkspace(
             normalizedDirectory,
-            targetPath ?? legacyBrowserUrl,
+            normalizeBrowserPanelUrl(url),
           );
-
-          get().openContextPanelTab(normalizedDirectory, {
-            mode: 'browser',
-            targetPath: null,
-            label: 'Browser',
-            leaseId: null,
-            ownerSessionId: null,
+          set((state) => {
+            const current = touchBrowserPanelState(state.browserPanelByDirectory[normalizedDirectory]);
+            return {
+              browserPanelByDirectory: clampBrowserPanelRoots({
+                ...state.browserPanelByDirectory,
+                [normalizedDirectory]: { ...current, isOpen: true },
+              }, 20),
+              activeBrowserLeaseIdByDirectory: {
+                ...state.activeBrowserLeaseIdByDirectory,
+                [normalizedDirectory]: null,
+              },
+            };
           });
         },
 
-        openContextBrowserLease: (directory, lease) => {
+        openBrowserLease: (directory, lease) => {
           if (!hasAuthCapability(getAuthPrincipal(), 'browser')) {
             return;
           }
@@ -1357,30 +1416,39 @@ export const useUIStore = create<UIStore>()(
             return;
           }
 
-          let targetPath: string | null = null;
-          const rawUrl = (lease.url || '').trim();
-          if (rawUrl && rawUrl !== 'about:blank') {
-            try {
-              const parsed = new URL(rawUrl);
-              if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
-                targetPath = parsed.toString();
-              }
-            } catch {
-              // The live webview still starts safely at about:blank.
-            }
-          }
-
-          get().openContextPanelTab(normalizedDirectory, {
-            mode: 'browser',
-            targetPath,
-            ownerSessionId: rootSessionId,
-            leaseId,
-            dedupeKey: `lease:${leaseId}`,
-            label: lease.title || lease.hostname || null,
+          set((state) => {
+            const currentPanel = touchBrowserPanelState(state.browserPanelByDirectory[normalizedDirectory]);
+            const currentTabs = state.browserLeaseTabsByDirectory[normalizedDirectory] ?? [];
+            const nextTab: BrowserLeaseTab = {
+              id: `browser:lease:${leaseId}`,
+              leaseId,
+              rootSessionId,
+              url: normalizeBrowserPanelUrl(lease.url),
+              label: browserLeaseLabel(lease),
+              touchedAt: Date.now(),
+            };
+            const existingIndex = currentTabs.findIndex((tab) => tab.leaseId === leaseId);
+            const nextTabs = existingIndex === -1
+              ? [...currentTabs, nextTab]
+              : currentTabs.map((tab, index) => index === existingIndex ? nextTab : tab);
+            return {
+              browserPanelByDirectory: clampBrowserPanelRoots({
+                ...state.browserPanelByDirectory,
+                [normalizedDirectory]: { ...currentPanel, isOpen: true },
+              }, 20),
+              browserLeaseTabsByDirectory: {
+                ...state.browserLeaseTabsByDirectory,
+                [normalizedDirectory]: nextTabs,
+              },
+              activeBrowserLeaseIdByDirectory: {
+                ...state.activeBrowserLeaseIdByDirectory,
+                [normalizedDirectory]: leaseId,
+              },
+            };
           });
         },
 
-        toggleContextBrowser: (directory) => {
+        toggleBrowserPanel: (directory) => {
           if (!hasAuthCapability(getAuthPrincipal(), 'browser')) {
             return;
           }
@@ -1389,19 +1457,105 @@ export const useUIStore = create<UIStore>()(
             return;
           }
 
-          const panelState = get().contextPanelByDirectory[normalizedDirectory];
-          const browserTab = panelState?.tabs.find((tab) => tab.mode === 'browser' && !tab.leaseId);
-          if (panelState?.isOpen && browserTab && panelState.activeTabId === browserTab.id) {
-            get().closeContextPanelTab(normalizedDirectory, browserTab.id);
+          if (get().browserPanelByDirectory[normalizedDirectory]?.isOpen) {
+            get().closeBrowserPanel(normalizedDirectory);
             return;
           }
+          get().openBrowserPanel(normalizedDirectory);
+        },
 
-          if (browserTab) {
-            get().setActiveContextPanelTab(normalizedDirectory, browserTab.id);
-            return;
-          }
+        closeBrowserPanel: (directory) => {
+          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          if (!normalizedDirectory) return;
+          set((state) => {
+            const current = state.browserPanelByDirectory[normalizedDirectory];
+            if (!current?.isOpen && !current?.expanded) return state;
+            return {
+              browserPanelByDirectory: {
+                ...state.browserPanelByDirectory,
+                [normalizedDirectory]: { ...current, isOpen: false, expanded: false, touchedAt: Date.now() },
+              },
+            };
+          });
+        },
 
-          get().openContextBrowser(normalizedDirectory);
+        setBrowserPanelWidth: (directory, width) => {
+          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          if (!normalizedDirectory) return;
+          set((state) => {
+            const current = touchBrowserPanelState(state.browserPanelByDirectory[normalizedDirectory]);
+            const nextWidth = clampBrowserPanelWidth(width);
+            if (current.width === nextWidth) return state;
+            return {
+              browserPanelByDirectory: clampBrowserPanelRoots({
+                ...state.browserPanelByDirectory,
+                [normalizedDirectory]: { ...current, width: nextWidth },
+              }, 20),
+            };
+          });
+        },
+
+        toggleBrowserPanelExpanded: (directory) => {
+          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          if (!normalizedDirectory) return;
+          set((state) => {
+            const current = touchBrowserPanelState(state.browserPanelByDirectory[normalizedDirectory]);
+            const expanded = !current.expanded;
+            const contextPanel = state.contextPanelByDirectory[normalizedDirectory];
+            return {
+              browserPanelByDirectory: {
+                ...state.browserPanelByDirectory,
+                [normalizedDirectory]: { ...current, expanded, isOpen: true },
+              },
+              ...(expanded && contextPanel?.expanded ? {
+                contextPanelByDirectory: {
+                  ...state.contextPanelByDirectory,
+                  [normalizedDirectory]: { ...contextPanel, expanded: false },
+                },
+              } : {}),
+            };
+          });
+        },
+
+        setActiveBrowserLease: (directory, leaseId) => {
+          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedLeaseId = leaseId ? normalizeContextTargetPath(leaseId) : null;
+          if (!normalizedDirectory) return;
+          set((state) => {
+            if (normalizedLeaseId && !(state.browserLeaseTabsByDirectory[normalizedDirectory] ?? [])
+              .some((tab) => tab.leaseId === normalizedLeaseId)) return state;
+            if ((state.activeBrowserLeaseIdByDirectory[normalizedDirectory] ?? null) === normalizedLeaseId) return state;
+            return {
+              activeBrowserLeaseIdByDirectory: {
+                ...state.activeBrowserLeaseIdByDirectory,
+                [normalizedDirectory]: normalizedLeaseId,
+              },
+            };
+          });
+        },
+
+        closeBrowserLease: (directory, leaseId) => {
+          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedLeaseId = normalizeContextTargetPath(leaseId);
+          if (!normalizedDirectory || !normalizedLeaseId) return;
+          set((state) => {
+            const currentTabs = state.browserLeaseTabsByDirectory[normalizedDirectory] ?? [];
+            const nextTabs = currentTabs.filter((tab) => tab.leaseId !== normalizedLeaseId);
+            if (nextTabs.length === currentTabs.length) return state;
+            const currentActive = state.activeBrowserLeaseIdByDirectory[normalizedDirectory] ?? null;
+            return {
+              browserLeaseTabsByDirectory: {
+                ...state.browserLeaseTabsByDirectory,
+                [normalizedDirectory]: nextTabs,
+              },
+              ...(currentActive === normalizedLeaseId ? {
+                activeBrowserLeaseIdByDirectory: {
+                  ...state.activeBrowserLeaseIdByDirectory,
+                  [normalizedDirectory]: null,
+                },
+              } : {}),
+            };
+          });
         },
 
         pruneBrowserLeaseTabs: (activeLeaseIds) => {
@@ -1412,40 +1566,41 @@ export const useUIStore = create<UIStore>()(
           );
 
           set((state) => {
-            let nextByDirectory: Record<string, ContextPanelDirectoryState> | null = null;
-            for (const [directory, panel] of Object.entries(state.contextPanelByDirectory)) {
-              const removedTabs = panel.tabs.filter((tab) => tab.leaseId && !active.has(tab.leaseId));
-              if (removedTabs.length === 0) continue;
-
-              let nextPanel = panel;
-              for (const tab of removedTabs) {
-                nextPanel = closeContextPanelTab(nextPanel, tab.id);
+            let nextTabsByDirectory: Record<string, BrowserLeaseTab[]> | null = null;
+            let nextActiveByDirectory: Record<string, string | null> | null = null;
+            for (const [directory, tabs] of Object.entries(state.browserLeaseTabsByDirectory)) {
+              const nextTabs = tabs.filter((tab) => active.has(tab.leaseId));
+              if (nextTabs.length === tabs.length) continue;
+              nextTabsByDirectory ??= { ...state.browserLeaseTabsByDirectory };
+              nextTabsByDirectory[directory] = nextTabs;
+              const activeLeaseId = state.activeBrowserLeaseIdByDirectory[directory] ?? null;
+              if (activeLeaseId && !active.has(activeLeaseId)) {
+                nextActiveByDirectory ??= { ...state.activeBrowserLeaseIdByDirectory };
+                nextActiveByDirectory[directory] = null;
               }
-              nextByDirectory ??= { ...state.contextPanelByDirectory };
-              nextByDirectory[directory] = nextPanel;
             }
-
-            return nextByDirectory ? { contextPanelByDirectory: nextByDirectory } : state;
+            if (!nextTabsByDirectory && !nextActiveByDirectory) return state;
+            return {
+              ...(nextTabsByDirectory ? { browserLeaseTabsByDirectory: nextTabsByDirectory } : {}),
+              ...(nextActiveByDirectory ? { activeBrowserLeaseIdByDirectory: nextActiveByDirectory } : {}),
+            };
           });
         },
 
         pruneAllBrowserTabs: () => {
           useManualBrowserTabsStore.setState({ byDirectory: {} });
           set((state) => {
-            let nextByDirectory: Record<string, ContextPanelDirectoryState> | null = null;
-            for (const [directory, panel] of Object.entries(state.contextPanelByDirectory)) {
-              const removedTabs = panel.tabs.filter((tab) => tab.mode === 'browser');
-              if (removedTabs.length === 0) continue;
-
-              let nextPanel = panel;
-              for (const tab of removedTabs) {
-                nextPanel = closeContextPanelTab(nextPanel, tab.id);
-              }
-              nextByDirectory ??= { ...state.contextPanelByDirectory };
-              nextByDirectory[directory] = nextPanel;
-            }
-
-            return nextByDirectory ? { contextPanelByDirectory: nextByDirectory } : state;
+            const browserPanelByDirectory = Object.fromEntries(
+              Object.entries(state.browserPanelByDirectory).map(([directory, panel]) => [
+                directory,
+                { ...panel, isOpen: false, expanded: false, touchedAt: Date.now() },
+              ]),
+            );
+            return {
+              browserPanelByDirectory,
+              browserLeaseTabsByDirectory: {},
+              activeBrowserLeaseIdByDirectory: {},
+            };
           });
         },
 
@@ -1469,18 +1624,8 @@ export const useUIStore = create<UIStore>()(
               return state;
             }
 
-            let label = currentTab.label;
-            if (currentTab.mode === 'browser') {
-              try {
-                const parsed = new URL(normalizedTargetPath);
-                label = parsed.host || parsed.hostname || label;
-              } catch {
-                // keep the existing label for non-URL target paths
-              }
-            }
-
             const tabs = current.tabs.map((tab, index) => (
-              index === tabIndex ? { ...tab, targetPath: normalizedTargetPath, label } : tab
+              index === tabIndex ? { ...tab, targetPath: normalizedTargetPath } : tab
             ));
             return {
               contextPanelByDirectory: {
@@ -1594,12 +1739,6 @@ export const useUIStore = create<UIStore>()(
             return;
           }
 
-          const closingTab = get().contextPanelByDirectory[normalizedDirectory]?.tabs
-            .find((tab) => tab.id === normalizedTabID);
-          if (closingTab?.mode === 'browser' && !closingTab.leaseId) {
-            useManualBrowserTabsStore.getState().clearWorkspace(normalizedDirectory);
-          }
-
           set((state) => {
             const prev = state.contextPanelByDirectory[normalizedDirectory];
             const current = touchContextPanelState(prev);
@@ -1649,15 +1788,24 @@ export const useUIStore = create<UIStore>()(
           set((state) => {
             const prev = state.contextPanelByDirectory[normalizedDirectory];
             const current = touchContextPanelState(prev);
+            const expanded = !current.expanded;
             const byDirectory = {
               ...state.contextPanelByDirectory,
               [normalizedDirectory]: {
                 ...current,
-                expanded: !current.expanded,
+                expanded,
               },
             };
-
-            return { contextPanelByDirectory: clampContextPanelRoots(byDirectory, 20) };
+            const browserPanel = state.browserPanelByDirectory[normalizedDirectory];
+            return {
+              contextPanelByDirectory: clampContextPanelRoots(byDirectory, 20),
+              ...(expanded && browserPanel?.expanded ? {
+                browserPanelByDirectory: {
+                  ...state.browserPanelByDirectory,
+                  [normalizedDirectory]: { ...browserPanel, expanded: false },
+                },
+              } : {}),
+            };
           });
         },
 
@@ -1952,6 +2100,11 @@ export const useUIStore = create<UIStore>()(
           get().applyPadding();
         },
 
+        setChatWidth: (width) => {
+          set({ chatWidth: clampChatWidth(width) });
+          get().applyChatWidth();
+        },
+
         setCornerRadius: (radius) => {
           set({ cornerRadius: radius });
         },
@@ -2011,6 +2164,10 @@ export const useUIStore = create<UIStore>()(
           root.style.setProperty('--line-height-normal', (1.5 * lineHeightScale).toFixed(3));
           root.style.setProperty('--line-height-relaxed', (1.625 * lineHeightScale).toFixed(3));
           root.style.setProperty('--line-height-loose', (2 * lineHeightScale).toFixed(3));
+        },
+
+        applyChatWidth: () => {
+          applyChatWidthToRoot(document.documentElement, get().chatWidth);
         },
 
         setDiffLayoutPreference: (mode) => {
@@ -2398,9 +2555,6 @@ export const useUIStore = create<UIStore>()(
         setInputSpellcheckEnabled: (value) => {
           set({ inputSpellcheckEnabled: value });
         },
-        setWideChatLayoutEnabled: (value) => {
-          set({ wideChatLayoutEnabled: value });
-        },
         setShowToolFileIcons: (value) => {
           set({ showToolFileIcons: value });
         },
@@ -2486,12 +2640,13 @@ export const useUIStore = create<UIStore>()(
       {
         name: 'ui-store',
         storage: createJSONStorage(() => getSafeStorage()),
-        version: 12,
+        version: 17,
         migrate: (persistedState, version) => {
           if (!persistedState || typeof persistedState !== 'object') {
             return persistedState;
           }
           const state = persistedState as Record<string, unknown>;
+          const legacyContextPanelByDirectory = state.contextPanelByDirectory;
 
           // v0 -> v1: reset legacy notification templates
           if (version < 1) {
@@ -2556,9 +2711,8 @@ export const useUIStore = create<UIStore>()(
             state.rightSidebarTab = 'git';
           }
 
-          state.contextPanelByDirectory = stripEphemeralBrowserLeaseTabs(
-            sanitizeContextPanelByDirectory(state.contextPanelByDirectory),
-          );
+          state.contextPanelByDirectory = sanitizeContextPanelByDirectory(state.contextPanelByDirectory);
+          const browserPanelByDirectory = sanitizeBrowserPanelByDirectory(state.browserPanelByDirectory);
 
           if (version < 5) {
             if (!state.shortcutOverrides || typeof state.shortcutOverrides !== 'object') {
@@ -2615,6 +2769,65 @@ export const useUIStore = create<UIStore>()(
             // intentionally no-op
           }
 
+          // v12 -> v13: add the Work context-panel tab. The unconditional
+          // sanitizer owns the shape; the schema bump prevents older builds
+          // from trying to interpret a mode they do not know.
+          if (version < 13) {
+            // intentionally no-op
+          }
+
+          // v13 -> v14: Cmd/Ctrl+L sends a chat selection to the composer.
+          // Preserve every explicit user claim on the former sidebar shortcut.
+          if (version < 14) {
+            state.shortcutOverrides = migrateSendSelectionShortcutOverrides(state.shortcutOverrides);
+          }
+
+          // v14 -> v15: remove the Work context-panel mode. The unconditional
+          // sanitizer above drops any persisted Work tab and repairs the active tab.
+          if (version < 15) {
+            // intentionally no-op
+          }
+
+          // v15 -> v16: replace the fixed wide-chat toggle with a numeric width.
+          if (version < 16) {
+            if (state.wideChatLayoutEnabled === true && typeof state.chatWidth !== 'number') {
+              state.chatWidth = WIDE_CHAT_WIDTH;
+            }
+            delete state.wideChatLayoutEnabled;
+          }
+
+          // v16 -> v17: Browser becomes a dedicated sibling panel. Manual page
+          // URLs remain in useManualBrowserTabsStore; this migrates only the
+          // former active Browser tab's open presentation state.
+          if (version < 17 && legacyContextPanelByDirectory && typeof legacyContextPanelByDirectory === 'object') {
+            for (const [rawDirectory, rawPanel] of Object.entries(legacyContextPanelByDirectory as Record<string, unknown>)) {
+              const directory = normalizeDirectoryPath(rawDirectory);
+              if (!directory || !rawPanel || typeof rawPanel !== 'object') continue;
+              const panel = rawPanel as Record<string, unknown>;
+              const tabs = Array.isArray(panel.tabs) ? panel.tabs : [];
+              const manualBrowserTab = tabs.find((entry) => {
+                if (!entry || typeof entry !== 'object') return false;
+                const tab = entry as Record<string, unknown>;
+                return tab.mode === 'browser' && typeof tab.leaseId !== 'string';
+              }) as Record<string, unknown> | undefined;
+              const manualTabID = typeof manualBrowserTab?.id === 'string' ? manualBrowserTab.id : 'browser';
+              const manualBrowserWasActive = panel.isOpen === true && (
+                panel.mode === 'browser'
+                || (Boolean(manualBrowserTab) && (panel.activeTabId === manualTabID || panel.activeTabId === 'browser'))
+              );
+              if (!manualBrowserWasActive) continue;
+              const current = browserPanelByDirectory[directory];
+              browserPanelByDirectory[directory] = {
+                isOpen: true,
+                expanded: false,
+                width: current?.width ?? BROWSER_PANEL_DEFAULT_WIDTH,
+                touchedAt: current?.touchedAt
+                  ?? (typeof panel.touchedAt === 'number' && Number.isFinite(panel.touchedAt) ? panel.touchedAt : Date.now()),
+              };
+            }
+          }
+          state.browserPanelByDirectory = clampBrowserPanelRoots(browserPanelByDirectory, 20);
+
           return state;
         },
         partialize: (state) => ({
@@ -2624,7 +2837,8 @@ export const useUIStore = create<UIStore>()(
           isRightSidebarOpen: state.isRightSidebarOpen,
           rightSidebarWidth: state.rightSidebarWidth,
           rightSidebarTab: state.rightSidebarTab,
-          contextPanelByDirectory: stripEphemeralBrowserLeaseTabs(state.contextPanelByDirectory),
+          contextPanelByDirectory: state.contextPanelByDirectory,
+          browserPanelByDirectory: state.browserPanelByDirectory,
           isBottomTerminalOpen: state.isBottomTerminalOpen,
           isBottomTerminalExpanded: state.isBottomTerminalExpanded,
           bottomTerminalHeight: state.bottomTerminalHeight,
@@ -2678,7 +2892,7 @@ export const useUIStore = create<UIStore>()(
           maxLastMessageLength: state.maxLastMessageLength,
           persistChatDraft: state.persistChatDraft,
           inputSpellcheckEnabled: state.inputSpellcheckEnabled,
-          wideChatLayoutEnabled: state.wideChatLayoutEnabled,
+          chatWidth: state.chatWidth,
           showToolFileIcons: state.showToolFileIcons,
           showExpandedBashTools: state.showExpandedBashTools,
           showExpandedEditTools: state.showExpandedEditTools,

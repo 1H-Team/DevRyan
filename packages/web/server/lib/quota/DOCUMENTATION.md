@@ -11,6 +11,7 @@ This module fetches quota and usage signals for supported providers in the web s
 - `packages/web/server/lib/quota/credentials/`: allowlisted managed-credential normalization, private atomic storage, and explicit Cursor import.
 - `packages/web/server/lib/quota/providers/google/`: Google/Gemini and Antigravity auth-source-specific API and transform modules.
 - `packages/web/server/lib/quota/utils/`: shared auth, transform, and formatting helpers.
+- `@openchamber/shared-runtime/lib/quota-adapters.js`: injected request/parsing contract shared with the VS Code host for z.ai, Kimi, Codex, xAI, and DeepSeek.
 
 ## Supported provider IDs (dispatcher)
 
@@ -18,8 +19,9 @@ These provider IDs are currently dispatchable via `fetchQuotaForProvider(provide
 
 | Provider ID | Display name | Module | Auth aliases/keys |
 | --- | --- | --- | --- |
-| `claude` | Anthropic | `providers/claude.js` | `anthropic`, `claude`, `anthropic-oauth`, `opencode-with-claude` |
+| `claude` | Claude | `providers/claude.js` | `anthropic`, `claude`, `anthropic-oauth`, `opencode-with-claude` |
 | `codex` | ChatGPT | `providers/codex.js` | `openai`, `codex`, `chatgpt` |
+| `deepseek` | DeepSeek | `providers/deepseek.js` | `deepseek` API key/token |
 | `cursor-acp` | Cursor | `providers/cursor-acp.js` | Environment/token-file OAuth, managed OAuth/dashboard credential, then legacy `cursor-acp.usageSessionToken`; API alias `cursor` |
 | `google` | Google | `providers/google/index.js` | `google`, `google.oauth` |
 | `antigravity` | Antigravity | `providers/google/index.js` | Antigravity accounts file |
@@ -30,6 +32,7 @@ These provider IDs are currently dispatchable via `fetchQuotaForProvider(provide
 | `openrouter` | OpenRouter | `providers/openrouter.js` | `openrouter` |
 | `opencode-go` | OpenCode Go | `providers/opencode-go.js` | `opencode-go`, `opencodego`, `go`; environment pair, managed credential, then legacy auth usage fields |
 | `zai-coding-plan` | z.ai | `providers/zai.js` | `zai-coding-plan`, `zai`, `z.ai` |
+| `xai` | xAI | `providers/xai.js` | `xai`, `grok`, `xai-oauth` OAuth access/refresh tokens |
 | `zhipuai-coding-plan` | Zhipu AI Coding Plan | `providers/zhipuai-coding-plan.js` | `zhipuai-coding-plan`, `zhipuai`, `zhipu` |
 | `minimax-coding-plan` | MiniMax Coding Plan (minimax.io) | `providers/minimax-coding-plan.js` | `minimax-coding-plan` |
 | `minimax-cn-coding-plan` | MiniMax Coding Plan (minimaxi.com) | `providers/minimax-cn-coding-plan.js` | `minimax-cn-coding-plan` |
@@ -41,11 +44,17 @@ The Codex provider uses the OpenAI/ChatGPT OAuth entry (`openai`, `codex`, or `c
 
 Codex rate-limit window labels are derived from each window's `limit_window_seconds`, not from whether OpenAI reports it as `primary_window` or `secondary_window`. A 5-hour duration maps to `5h`, a 7-day duration maps to `weekly`, and other positive durations use the shared duration-label convention. If duration metadata is absent or invalid, the compatibility fallback remains primary → `5h` and secondary → `weekly`.
 
-The reset-credit endpoint is undocumented and can change independently of the stable usage payload. Provider failures from this secondary request must not fail quota refresh. If the dedicated request fails, the provider falls back to `rate_limit_reset_credits.available_count` from `/wham/usage` when present; if neither source reports reset-bank data, the legacy `credits.balance` dollar row remains available.
+The reset-credit endpoint is undocumented and can change independently of the stable usage payload. Provider failures from this secondary request must not fail quota refresh. If the dedicated request fails, the provider falls back to `rate_limit_reset_credits.available_count` from `/wham/usage` when present. Extra-usage availability/balance is always rendered as its own value-only row when the usage payload reports it, independently of reset-bank credits.
+
+## Shared provider adapters
+
+z.ai, Kimi, Codex, xAI, and DeepSeek host modules are deliberately thin: credential discovery and persistence stay in the host, while requests and payload normalization live in `@openchamber/shared-runtime`. This keeps web/Electron and VS Code output equivalent and makes adapters independently testable with injected `fetch` and clock functions.
+
+xAI requests the pinned CLI billing endpoint with manual redirect handling. Redirects are rejected, and an HTTP 401 permits one refresh-and-retry when a refresh token and host persistence callback are available; otherwise the result asks the user to re-authenticate. DeepSeek maps available currency balances to value-only rows because the API does not expose a percentage window.
 
 ## Internal-only provider module
 - `providers/openai.js` exists for logic parity/reuse but is intentionally not registered for dispatcher ID routing.
-- `providers/claude-meridian.js` validates and queries the active local `opencode-with-claude`/Meridian runtime through its bounded loopback-only `GET /v1/usage/quota` endpoint.
+- `providers/claude-meridian.js` validates and queries the active local `opencode-with-claude`/Meridian runtime through bounded loopback-only quota and per-session context endpoints. Context lookup resolves and caches the OpenCode → Claude session mapping, coalesces reads per session, and refreshes that mapping after native compaction.
 - `providers/claude-code-usage.js` is the compatibility fallback for older Meridian releases. It runs the local, non-billable `/usage` command with JSON output and no session persistence.
 - `providers/claude-code-status.js` reads legacy status-line JSON only as degraded last-known data. A status-line result is never reported as a successful fresh quota read, and quota reads never install or modify Claude status-line settings.
 
@@ -59,6 +68,12 @@ The Claude provider uses these sources in priority order:
 2. For a locally managed `opencode-with-claude` runtime, the quota route resolves Anthropic's effective `baseURL` from the active OpenCode `/config/providers` response and calls Meridian's structured quota endpoint. Only explicit `http://127.0.0.1:<port>` and `http://localhost:<port>` origins are allowed; the request has a timeout and a 64 KB response limit.
 3. If the structured endpoint is unavailable (including older Meridian versions), DevRyan runs `claude -p /usage --output-format json --no-session-persistence --max-turns 1` and maps the returned subscription limits.
 4. Legacy status-line data may be returned only with `ok: false` and a visible warning after all live sources fail. A provider with a viable configured source remains `configured: true` on total refresh failure so the Usage UI shows the error instead of hiding Anthropic.
+
+### Anthropic active context
+
+`GET /api/session/:sessionID/context-usage` is the authenticated, read-only normalized context contract used by web and Electron. Managed principals must own the requested session. For a safe local Meridian runtime, the route resolves `/v1/sessions/:openCodeSessionID/recover` once and reads `/v1/sessions/:claudeSessionID/context-usage`; `?refreshSession=true` invalidates the mapping at a compaction boundary. Origins must be explicit loopback HTTP ports, responses are capped at 64 KiB, requests time out, and malformed or unavailable data returns a complete `status: "unavailable"`, `source: "message-fallback"` payload instead of failing startup. External OpenCode never reaches host-local Meridian state.
+
+Active context is `inputTokens + cacheReadTokens + cacheWriteTokens`. `lastOutputTokens` is reported separately and is not part of the context meter.
 
 ## OpenCode Go usage source
 
@@ -93,8 +108,9 @@ Credential precedence is intentional:
 ## Response contract
 All providers should return results via shared helpers to preserve API shape:
 - Required fields: `providerId`, `providerName`, `ok`, `configured`, `usage`, `fetchedAt`
-- Optional fields: `error`, `errorCode`, and `usageUpdatedAt` (the provider measurement time for the displayed usage)
-- Usage windows may include optional `description` copy for provider-specific bucket explanations.
+- Optional fields: `error`, `errorCode`, `warnings`, and `usageUpdatedAt` (the provider measurement time for the displayed usage)
+- Usage windows may include optional `description` copy and `valueLabel`. A value-only row has `usedPercent: null`; clients render its label without a progress bar.
+- `warnings` describe skipped or incomplete portions of an otherwise successful provider response. They do not discard valid rows.
 - Unsupported provider requests should return `ok: false`, `configured: false`, `error: Unsupported provider`
 
 Quota routes accept the active project directory via `x-opencode-directory` or `?directory=` so project-local `.opencode/opencode.json` provider config is included in provider detection.

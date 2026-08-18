@@ -1,5 +1,24 @@
 export type ProviderOAuthMethod = 'auto' | 'code';
 
+export type ProviderOAuthPhase = 'waiting' | 'loading-models' | 'models-pending' | 'error';
+
+/**
+ * Final state of an OAuth attempt.
+ *
+ * Only a failed callback may resolve to 'error'. Once the callback succeeds the credentials are
+ * persisted upstream, so a model catalog that has not caught up yet is 'models-pending' — a
+ * non-fatal state — never a failure. A `null` phase means the attempt is fully done.
+ */
+export const resolveProviderOAuthPhase = (input: {
+  callbackError?: string | null;
+  providerReady?: boolean;
+}): { phase: ProviderOAuthPhase | null; error?: string } => {
+  if (input.callbackError) {
+    return { phase: 'error', error: input.callbackError };
+  }
+  return { phase: input.providerReady ? null : 'models-pending' };
+};
+
 export interface ProviderOAuthAuthorization {
   method: ProviderOAuthMethod;
   url?: string;
@@ -95,6 +114,38 @@ export const requestProviderOAuthCallback = async ({
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
     throw new Error(getProviderOAuthErrorMessage(payload, fallbackError));
+  }
+};
+
+export interface PostAuthConfigReloadResult {
+  /** False when the reload could not be requested. Never fatal — credentials are already saved. */
+  ok: boolean;
+  /** True when the server deferred the restart until active chats finish. */
+  deferred: boolean;
+}
+
+/**
+ * Ask the server to re-apply configuration after credentials land, so OpenCode picks them up
+ * instead of leaving the client to poll an unchanging catalog. Mirrors what the API-key path
+ * gets via its config-mutation response. Never throws: the credentials are already persisted.
+ */
+export const requestPostAuthConfigReload = async ({
+  fetchImpl = fetch,
+}: { fetchImpl?: ProviderOAuthFetch } = {}): Promise<PostAuthConfigReloadResult> => {
+  try {
+    const response = await fetchImpl('/api/config/reload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    if (!response.ok) return { ok: false, deferred: false };
+
+    const payload = await response.json().catch(() => null);
+    const data = unwrapPayload(payload);
+    const applyStatus = isRecord(data.applyStatus) ? data.applyStatus : null;
+    return { ok: true, deferred: applyStatus?.state === 'waiting_for_idle' };
+  } catch {
+    return { ok: false, deferred: false };
   }
 };
 

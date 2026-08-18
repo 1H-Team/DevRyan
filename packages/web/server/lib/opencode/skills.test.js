@@ -130,6 +130,35 @@ describe('skill discovery', () => {
     }
   });
 
+  it('discovers only project Agents and OpenCode roots', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-approved-skills-'));
+    const roots = [
+      ['.agents', 'skills', 'agents-helper'],
+      ['.opencode', 'skills', 'opencode-helper'],
+      ['.cursor', 'skills', 'cursor-helper'],
+      ['.codex', 'skills', 'codex-helper'],
+      ['.claude', 'skills', 'claude-helper'],
+    ];
+    for (const segments of roots) {
+      const skillDir = path.join(root, ...segments);
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, 'SKILL.md'),
+        `---\nname: ${segments.at(-1)}\ndescription: Fixture\n---\n`,
+      );
+    }
+
+    try {
+      const skills = discoverSkills(root).filter((skill) => skill.path.startsWith(root));
+      expect(skills.map((skill) => `${skill.source}:${skill.name}`).sort()).toEqual([
+        'agents:agents-helper',
+        'opencode:opencode-helper',
+      ]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('does not discover or create retired Superpowers skills from project harness directories', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-retired-skills-'));
     const controlSkill = path.join(root, '.agents', 'skills', 'control-skill');

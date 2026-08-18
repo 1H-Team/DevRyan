@@ -11,6 +11,7 @@ import * as claude from './claude.js';
 import * as codex from './codex.js';
 import * as copilot from './copilot.js';
 import * as cursorAcp from './cursor-acp.js';
+import * as deepseek from './deepseek.js';
 import * as google from './google/index.js';
 import * as kimi from './kimi.js';
 import * as nanogpt from './nanogpt.js';
@@ -18,6 +19,7 @@ import * as openai from './openai.js';
 import * as opencodeGo from './opencode-go.js';
 import * as openrouter from './openrouter.js';
 import * as zai from './zai.js';
+import * as xai from './xai.js';
 import * as zhipuaiCodingPlan from './zhipuai-coding-plan.js';
 import * as minimaxCodingPlan from './minimax-coding-plan.js';
 import * as minimaxCnCodingPlan from './minimax-cn-coding-plan.js';
@@ -36,11 +38,23 @@ const registry = {
     isConfigured: codex.isConfigured,
     fetchQuota: codex.fetchQuota
   },
+  xai: {
+    providerId: xai.providerId,
+    providerName: xai.providerName,
+    isConfigured: xai.isConfigured,
+    fetchQuota: xai.fetchQuota
+  },
   'cursor-acp': {
     providerId: cursorAcp.providerId,
     providerName: cursorAcp.providerName,
     isConfigured: cursorAcp.isConfigured,
     fetchQuota: cursorAcp.fetchQuota
+  },
+  deepseek: {
+    providerId: deepseek.providerId,
+    providerName: deepseek.providerName,
+    isConfigured: deepseek.isConfigured,
+    fetchQuota: deepseek.fetchQuota
   },
   google: {
     providerId: 'google',
@@ -129,6 +143,8 @@ const providerAliases = new Map([
   ['zhipuai', 'zhipuai-coding-plan'],
   ['zhipu', 'zhipuai-coding-plan'],
   ['cursor', 'cursor-acp'],
+  ['grok', 'xai'],
+  ['xai-oauth', 'xai'],
 ]);
 
 const resolveProviderId = (providerId) => providerAliases.get(providerId) ?? providerId;
@@ -181,6 +197,8 @@ export const fetchOpenaiQuota = openai.fetchQuota;
 export const fetchGoogleQuota = google.fetchGoogleQuota;
 export const fetchAntigravityQuota = google.fetchAntigravityQuota;
 export const fetchCodexQuota = codex.fetchQuota;
+export const fetchXaiQuota = xai.fetchQuota;
+export const fetchDeepSeekQuota = deepseek.fetchQuota;
 export const fetchCursorAcpQuota = cursorAcp.fetchQuota;
 export const fetchCopilotQuota = copilot.fetchQuota;
 export const fetchCopilotAddonQuota = copilot.fetchQuotaAddon;

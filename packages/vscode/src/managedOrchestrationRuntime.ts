@@ -1,5 +1,11 @@
 import {
   createManagedTaskScheduler,
+  MANAGED_READ_ONLY_AGENT_UNSUPPORTED,
+  MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE,
+  MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED,
+  MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE,
+  supportsManagedReadOnlyAgent,
+  supportsManagedReadOnlyProvider,
   toManagedTaskEvent,
   type ManagedTaskExecutor,
   type ManagedTaskMode,
@@ -29,15 +35,17 @@ export { createVsCodeManagedOrchestrationHost } from './managedOrchestrationHost
 export { createVsCodeManagedOrchestrationLedger } from './managedOrchestrationPersistence';
 
 const DEFAULT_TASK_TIMEOUT_MS = 30 * 60 * 1_000;
+const FIXER_TASK_TIMEOUT_MS = 60 * 60 * 1_000;
 const ORACLE_TASK_TIMEOUT_MS = 60 * 60 * 1_000;
 const COUNCIL_TASK_TIMEOUT_MS = 3 * 60 * 1_000;
 const MAX_WAIT_TIMEOUT_MS = 25_000;
 
-const resolveMinimumTaskTimeoutMs = (agent: unknown) => (
-  typeof agent === 'string' && agent.trim().toLowerCase() === 'oracle'
-    ? ORACLE_TASK_TIMEOUT_MS
-    : DEFAULT_TASK_TIMEOUT_MS
-);
+const resolveMinimumTaskTimeoutMs = (agent: unknown) => {
+  const normalizedAgent = typeof agent === 'string' ? agent.trim().toLowerCase() : '';
+  if (normalizedAgent === 'fixer') return FIXER_TASK_TIMEOUT_MS;
+  if (normalizedAgent === 'oracle') return ORACLE_TASK_TIMEOUT_MS;
+  return DEFAULT_TASK_TIMEOUT_MS;
+};
 
 const resolveSubmitTimeoutAt = (params: Record<string, unknown>, now: () => number) => {
   const submittedAt = now();
@@ -46,6 +54,16 @@ const resolveSubmitTimeoutAt = (params: Record<string, unknown>, now: () => numb
   return typeof params.timeoutAt === 'number' && Number.isFinite(params.timeoutAt)
     ? Math.max(params.timeoutAt, minimumTimeoutAt)
     : minimumTimeoutAt;
+};
+
+const resolveRequestedTimeoutAt = (params: Record<string, unknown>, now: () => number) => {
+  if (params.timeoutSeconds === undefined) return params.timeoutAt;
+  if (typeof params.timeoutSeconds !== 'number'
+    || !Number.isSafeInteger(params.timeoutSeconds)
+    || params.timeoutSeconds < 1) {
+    throw new TypeError('timeoutSeconds must be a positive safe integer');
+  }
+  return now() + params.timeoutSeconds * 1_000;
 };
 
 const resolveWaitTimeoutMs = (params: Record<string, unknown>) => {
@@ -83,6 +101,9 @@ const ERROR_STATUS_BY_CODE: Record<string, number> = {
   ledger_capacity_exceeded: 507,
   manual_model_recovery_required: 409,
   managed_retry_limit_reached: 409,
+  MANAGED_READ_ONLY_AGENT_UNSUPPORTED: 409,
+  MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED: 409,
+  CONTEXT_MODE_RECOVERY_PENDING: 503,
   provider_prompt_rejection_requires_fresh_retry: 409,
   provider_prompt_rejection_requires_reframed_prompt: 409,
   managed_runtime_unavailable: 503,
@@ -222,6 +243,7 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
   now?: () => number;
   createTaskId?: () => string;
   createLeaseToken?: () => string;
+  getWorkAdmissionBlock?: () => { code: string; error: string } | null;
 }): VsCodeManagedOrchestrationRuntime => {
   const logger = options.logger ?? console;
   const now = options.now ?? Date.now;
@@ -229,6 +251,7 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
     options.manager?.getDebugInfo?.().mode !== 'external'
   ));
   const publishEvent = options.publishEvent ?? (() => undefined);
+  const getWorkAdmissionBlock = options.getWorkAdmissionBlock ?? (() => null);
   const persistence = options.persistence ?? createVsCodeManagedOrchestrationLedger({
     storageDirectory: options.storageDirectory,
     logger,
@@ -256,6 +279,16 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
   let initializePromise: Promise<void> | null = null;
   let recoveryWarningPublished = false;
   let shutdownPromise: Promise<void> | null = null;
+
+  const assertWorkAdmission = () => {
+    const block = getWorkAdmissionBlock();
+    if (!block) return;
+    throw createRuntimeError(
+      block.code || 'CONTEXT_MODE_RECOVERY_PENDING',
+      block.error || 'Context-mode recovery is pending',
+      503,
+    );
+  };
 
   const assertAvailable = () => {
     if (!isManagedOpenCode()) {
@@ -362,7 +395,25 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
     const params = request.params ?? {};
     switch (request.method) {
       case 'submit': {
+        assertWorkAdmission();
         const timeoutAt = resolveSubmitTimeoutAt(params, now);
+        const readOnly = resolveReadOnly(params);
+        const providerId = requireString(params, 'providerId');
+        const agent = requireString(params, 'agent');
+        if (readOnly && !supportsManagedReadOnlyAgent(agent)) {
+          throw createRuntimeError(
+            MANAGED_READ_ONLY_AGENT_UNSUPPORTED,
+            MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE,
+            409,
+          );
+        }
+        if (readOnly && !supportsManagedReadOnlyProvider(providerId)) {
+          throw createRuntimeError(
+            MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED,
+            MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE,
+            409,
+          );
+        }
         const task = await scheduler.submit({
           idempotencyKey: requireString(params, 'idempotencyKey'),
           rootSessionId: requireString(params, 'rootSessionId'),
@@ -372,10 +423,10 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
           childSessionId: optionalString(params, 'childSessionId'),
           directory: requireString(params, 'directory'),
           mode: requireMode(params.mode),
-          readOnly: resolveReadOnly(params),
-          providerId: requireString(params, 'providerId'),
+          readOnly,
+          providerId,
           modelId: requireString(params, 'modelId'),
-          agent: requireString(params, 'agent'),
+          agent,
           variant: optionalString(params, 'variant'),
           label: requireString(params, 'label'),
           prompt: requireContentString(params, 'prompt'),
@@ -451,13 +502,16 @@ export const createVsCodeManagedOrchestrationRuntime = (options: {
       }
       case 'acknowledge': {
         const task = getScopedTask(params);
+        if (['retry', 'resume', 'retry_in_place', 'recover_in_place'].includes(String(params.action))) {
+          assertWorkAdmission();
+        }
         const providerId = optionalString(params, 'providerId');
         const modelId = optionalString(params, 'modelId');
         const agent = optionalString(params, 'agent');
         const label = optionalString(params, 'label');
         const prompt = optionalContentString(params, 'prompt');
         const timeoutAt = resolveSubmitTimeoutAt({
-          timeoutAt: params.timeoutAt,
+          timeoutAt: resolveRequestedTimeoutAt(params, now),
           agent: agent ?? task.agent,
         }, now);
         const result = await scheduler.acknowledgeResult(task.taskId, {

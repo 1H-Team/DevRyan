@@ -70,6 +70,7 @@ import { hasTreeExpansionStateChange } from './sessionNodeMemo';
 import { SessionSidebarMotionRow } from './SessionSidebarMotionRow';
 import { getAgentIconColor } from '@/lib/agentColors';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
+import { resolveSubtaskIconAgent } from './subtaskAgentIdentity';
 
 type Folder = { id: string; name: string; sessionIds: string[] };
 
@@ -383,9 +384,17 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const isSessionWorking = useIsSessionWorking(session.id, sessionDirectory ?? undefined);
   const sessionParentId = (session as Session & { parentID?: string | null }).parentID ?? null;
   const isRootSession = !sessionParentId;
+  const managedSubtaskAgent = useManagedOrchestrationStore(React.useMemo(
+    () => managedOrchestrationSelectors.latestTaskAgentForChildSession(
+      isRootSession ? '' : session.id,
+    ),
+    [isRootSession, session.id],
+  ));
   const subagentName = !isRootSession
-    && typeof (resolvedSession as Session & { agent?: unknown }).agent === 'string'
-    ? (resolvedSession as Session & { agent: string }).agent.trim() || undefined
+    ? resolveSubtaskIconAgent({
+      managedTaskAgent: managedSubtaskAgent,
+      sessionAgent: (resolvedSession as Session & { agent?: unknown }).agent,
+    })
     : undefined;
   const questionScopeSessionIds = React.useMemo(() => {
     if (!isRootSession) return EMPTY_SESSION_IDS;

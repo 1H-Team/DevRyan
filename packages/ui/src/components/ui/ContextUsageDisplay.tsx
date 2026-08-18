@@ -3,8 +3,9 @@ import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { MobileOverlayPanel } from '@/components/ui/MobileOverlayPanel';
 import { useI18n } from '@/lib/i18n';
-import { RiInformationLine } from '@remixicon/react';
+import { RiInformationLine, RiLoader4Line } from '@remixicon/react';
 import type { SessionContextUsage } from '@/stores/types/sessionTypes';
+import type { ContextUsageAvailability } from '@/lib/contextUsagePresentation';
 
 interface ContextUsageProgressIconProps {
   percentage: number;
@@ -48,7 +49,8 @@ const ContextUsageProgressIcon: React.FC<ContextUsageProgressIconProps> = ({ per
 };
 
 interface ContextUsageDisplayProps {
-  usage: SessionContextUsage;
+  usage: SessionContextUsage | null;
+  availability?: ContextUsageAvailability;
   size?: 'default' | 'compact';
   isMobile?: boolean;
   hideIcon?: boolean;
@@ -59,10 +61,12 @@ interface ContextUsageDisplayProps {
   percentIconClassName?: string;
   onClick?: () => void;
   pressed?: boolean;
+  buttonRef?: React.Ref<HTMLButtonElement>;
 }
 
 export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
   usage,
+  availability,
   size = 'default',
   isMobile = false,
   hideIcon = false,
@@ -73,16 +77,18 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
   percentIconClassName,
   onClick,
   pressed = false,
+  buttonRef,
 }) => {
   const { t } = useI18n();
   const [mobileTooltipOpen, setMobileTooltipOpen] = React.useState(false);
-  const {
-    totalTokens,
-    percentage,
-    capacityLimit,
-    contextLimit,
-    outputLimit,
-  } = usage;
+  let effectiveAvailability: ContextUsageAvailability = availability ?? (usage ? 'available' : 'unavailable');
+  if (effectiveAvailability === 'available' && !usage) effectiveAvailability = 'unavailable';
+  const hasMeasuredUsage = Boolean(usage && effectiveAvailability === 'available');
+  const activeInputTokens = usage?.activeInputTokens ?? 0;
+  const percentage = usage?.percentage ?? null;
+  const capacityLimit = usage?.capacityLimit ?? null;
+  const contextLimit = usage?.contextLimit ?? null;
+  const outputLimit = usage?.outputLimit ?? null;
 
   const formatTokens = (tokens: number) => {
     if (tokens >= 1_000_000) {
@@ -94,28 +100,37 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
     return tokens.toFixed(1).replace(/\.0$/, '');
   };
 
-  const hasKnownCapacity = percentage !== null && capacityLimit !== null;
+  const hasKnownCapacity = hasMeasuredUsage && percentage !== null && capacityLimit !== null;
   const displayPercentage = hasKnownCapacity ? percentage.toFixed(1) : null;
-  const tooltipLines = hasKnownCapacity
-    ? [
-        `${t('contextUsage.mobile.usage')}: ${displayPercentage}%`,
-        t('contextUsage.tooltip.usedTokens', { tokens: formatTokens(totalTokens) }),
-        t('contextUsage.tooltip.usableInputCapacity', { tokens: formatTokens(capacityLimit) }),
-        ...(contextLimit !== null
-          ? [t('contextUsage.tooltip.contextLimit', { tokens: formatTokens(contextLimit) })]
-          : []),
-        ...(outputLimit !== null
-          ? [t('contextUsage.tooltip.outputLimit', { tokens: formatTokens(outputLimit) })]
-          : []),
-      ]
-    : [
-        t('contextUsage.unavailable.title'),
-        t('contextUsage.tooltip.usedTokens', { tokens: formatTokens(totalTokens) }),
-        t('contextUsage.unavailable.description'),
-        ...(outputLimit !== null
-          ? [t('contextUsage.tooltip.outputLimit', { tokens: formatTokens(outputLimit) })]
-          : []),
-      ];
+  let tooltipLines: string[];
+  if (effectiveAvailability === 'idle') {
+    tooltipLines = [t('contextUsage.status.noSession')];
+  } else if (effectiveAvailability === 'loading') {
+    tooltipLines = [t('contextUsage.status.loading')];
+  } else if (effectiveAvailability === 'unavailable') {
+    tooltipLines = [t('contextUsage.status.notMeasured')];
+  } else if (hasKnownCapacity) {
+    tooltipLines = [
+      `${t('contextUsage.mobile.usage')}: ${displayPercentage}%`,
+      t('contextUsage.tooltip.usedTokens', { tokens: formatTokens(activeInputTokens) }),
+      t('contextUsage.tooltip.usableInputCapacity', { tokens: formatTokens(capacityLimit) }),
+      ...(contextLimit !== null
+        ? [t('contextUsage.tooltip.contextLimit', { tokens: formatTokens(contextLimit) })]
+        : []),
+      ...(outputLimit !== null
+        ? [t('contextUsage.tooltip.outputLimit', { tokens: formatTokens(outputLimit) })]
+        : []),
+    ];
+  } else {
+    tooltipLines = [
+      t('contextUsage.unavailable.title'),
+      t('contextUsage.tooltip.usedTokens', { tokens: formatTokens(activeInputTokens) }),
+      t('contextUsage.unavailable.description'),
+      ...(outputLimit !== null
+        ? [t('contextUsage.tooltip.outputLimit', { tokens: formatTokens(outputLimit) })]
+        : []),
+    ];
+  }
   const ariaLabel = `${t('contextUsage.aria.label')}: ${tooltipLines.join(', ')}`;
 
   const isInteractive = !isMobile && typeof onClick === 'function';
@@ -123,7 +138,9 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
   const contextContent = (
     <>
       {!isMobile && !hideIcon && (
-        hasKnownCapacity ? (
+        effectiveAvailability === 'loading' ? (
+          <RiLoader4Line className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden="true" />
+        ) : hasKnownCapacity ? (
           <ContextUsageProgressIcon
             percentage={percentage}
             className="h-4 w-4 text-muted-foreground"
@@ -136,7 +153,12 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
         <span className={cn('font-medium inline-flex items-center gap-1.5', valueClassName)}>
           {showPercentIcon ? (
             <>
-              {hasKnownCapacity ? (
+              {effectiveAvailability === 'loading' ? (
+                <RiLoader4Line
+                  className={cn('h-3.5 w-3.5 animate-spin text-muted-foreground', percentIconClassName)}
+                  aria-hidden="true"
+                />
+              ) : hasKnownCapacity ? (
                 <ContextUsageProgressIcon
                   percentage={percentage}
                   className={cn('h-3.5 w-3.5 text-muted-foreground', percentIconClassName)}
@@ -148,18 +170,27 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
                 />
               )}
               <span className="text-foreground">
-                {hasKnownCapacity ? `${displayPercentage}%` : formatTokens(totalTokens)}
+                {hasMeasuredUsage
+                  ? (hasKnownCapacity ? `${displayPercentage}%` : formatTokens(activeInputTokens))
+                  : t('contextUsage.unavailable.value')}
               </span>
             </>
           ) : (
             <span className="text-foreground">
-              {hasKnownCapacity ? `${displayPercentage}%` : formatTokens(totalTokens)}
+              {hasMeasuredUsage
+                ? (hasKnownCapacity ? `${displayPercentage}%` : formatTokens(activeInputTokens))
+                : t('contextUsage.unavailable.value')}
             </span>
           )}
         </span>
       )}
       {hideValue && showPercentIcon && (
-        hasKnownCapacity ? (
+        effectiveAvailability === 'loading' ? (
+          <RiLoader4Line
+            className={cn('h-3.5 w-3.5 animate-spin text-muted-foreground', percentIconClassName)}
+            aria-hidden="true"
+          />
+        ) : hasKnownCapacity ? (
           <ContextUsageProgressIcon
             percentage={percentage}
             className={cn('h-3.5 w-3.5 text-muted-foreground', percentIconClassName)}
@@ -189,10 +220,12 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
 
   const contextElement = isInteractive ? (
     <button
+      ref={buttonRef}
       type="button"
       className={sharedClassName}
       aria-label={ariaLabel}
       aria-pressed={pressed}
+      aria-busy={effectiveAvailability === 'loading' || undefined}
       onClick={onClick}
     >
       {contextContent}
@@ -202,6 +235,7 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
       type="button"
       className={cn(sharedClassName, 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary')}
       aria-label={ariaLabel}
+      aria-busy={effectiveAvailability === 'loading' || undefined}
       onClick={() => setMobileTooltipOpen(true)}
     >
       {contextContent}
@@ -210,6 +244,7 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
     <div
       className={sharedClassName}
       aria-label={ariaLabel}
+      aria-busy={effectiveAvailability === 'loading' || undefined}
     >
       {contextContent}
     </div>
@@ -224,11 +259,16 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
           onClose={() => setMobileTooltipOpen(false)}
           title={t('contextUsage.mobile.title')}
         >
+          {!hasMeasuredUsage ? (
+            <div className="rounded-xl border border-border/40 bg-sidebar/30 px-3 py-3 typography-meta text-muted-foreground">
+              {tooltipLines[0]}
+            </div>
+          ) : (
           <div className="flex flex-col gap-1.5">
             <div className="rounded-xl border border-border/40 bg-sidebar/30 px-3 py-2 space-y-1">
               <div className="flex justify-between items-center">
                 <span className="typography-meta text-muted-foreground">{t('contextUsage.mobile.usedTokens')}</span>
-                <span className="typography-meta text-foreground font-medium">{formatTokens(totalTokens)}</span>
+                <span className="typography-meta text-foreground font-medium">{formatTokens(activeInputTokens)}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="typography-meta text-muted-foreground">{t('contextUsage.mobile.capacity')}</span>
@@ -256,6 +296,7 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
               </div>
             </div>
           </div>
+          )}
         </MobileOverlayPanel>
       </>
     );

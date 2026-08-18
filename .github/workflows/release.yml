@@ -57,6 +57,7 @@ jobs:
             'packages/cursor-sdk-runtime/package.json',
             'packages/harness-runtime/package.json',
             'packages/orchestration-runtime/package.json',
+            'packages/shared-runtime/package.json',
             'packages/ui/package.json',
             'packages/web/package.json',
             'packages/desktop/package.json',

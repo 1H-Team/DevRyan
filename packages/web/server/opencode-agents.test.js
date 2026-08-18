@@ -519,7 +519,7 @@ describe('Packaged OpenChamber agents', () => {
     const orchestrator = listPackagedAgents().find((agent) => agent.name === 'orchestrator');
 
     expect(orchestrator?.prompt).toContain('missing design intent before `designer` delegation');
-    expect(orchestrator?.prompt).toContain('Clear user requirements are sufficient for `designer` delegation; missing design intent follows the question-routing rule.');
+    expect(orchestrator?.prompt).toContain('Clear user requirements let Orchestrator form the design brief; missing design intent follows the question-routing rule.');
     expect(orchestrator?.prompt).not.toContain('After Explorer returns files for normal-mode design-quality UI work, immediately delegate the implementation or review to @designer.');
     expect(orchestrator?.prompt).not.toContain('Do not present design options, design directions, wireframes, or implementation approaches for user approval before calling @designer.');
   });
@@ -544,14 +544,35 @@ describe('Packaged OpenChamber agents', () => {
     expect(orchestrator?.prompt).toContain('Do not stop after a completed subagent result while incomplete todos remain.');
     expect(orchestrator?.prompt).toContain('Auto-continue is a guardrail for stopping between batches, not the mechanism for resuming after a blocking subagent call returns.');
     expect(orchestrator?.prompt).toContain('Before delegating when the user requested autonomous or batch work, or when you create 4+ todos, enable `auto_continue` only if the runtime exposes that tool.');
-    expect(orchestrator?.prompt).toContain('Ask every delegated subagent to end with exactly one terminal status marker: `<status>complete</status>` or `<status>blocked</status>`.');
+    expect(orchestrator?.prompt).toContain('Ask every delegated subagent to end with exactly one terminal status marker: `**Status:** complete` or `**Status:** blocked`.');
+  });
+
+  it('keeps Fixer assignments closed-scope and returns newly discovered work to the parent', () => {
+    const agents = listPackagedAgents();
+    const orchestrator = agents.find((agent) => agent.name === 'orchestrator');
+    const fixer = agents.find((agent) => agent.name === 'fixer');
+
+    expect(orchestrator?.prompt).toContain('Closed-scope Fixer gate');
+    expect(orchestrator?.prompt).toContain('one closed work unit with exact owned files, symbols, or failing tests, or one cohesive root-cause cluster');
+    expect(orchestrator?.prompt).toContain('retain the backlog in the parent and dispatch bounded waves');
+    expect(orchestrator?.prompt).toContain('must not expand the active child');
+    expect(orchestrator?.prompt).not.toContain('use at least 3,600 seconds for multi-file implementation plus tests');
+    expect(orchestrator?.prompt).toContain('Never lengthen a deadline merely because an implementation spans multiple files or tests');
+
+    expect(fixer?.prompt).toContain('Closed-Scope Execution');
+    expect(fixer?.prompt).toContain('Treat outcomes such as "fix all remaining failures"');
+    expect(fixer?.prompt).toContain('`scope_too_broad`');
+    expect(fixer?.prompt).toContain('do not inspect, edit, or absorb it into this task');
+    expect(fixer?.prompt).toContain('completed changes, verification outcomes, and any deferred failures');
+    expect(fixer?.prompt).toContain('followed by exactly one terminal marker');
   });
 
   it('keeps Orchestrator parallel delegation bounded and failure-tolerant', () => {
     const orchestrator = listPackagedAgents().find((agent) => agent.name === 'orchestrator');
 
     expect(orchestrator?.prompt).toContain('Parallel delegation readiness gate');
-    expect(orchestrator?.prompt).toContain('Default to at most 3 parallel implementation subagents');
+    expect(orchestrator?.prompt).toContain('Default to at most 3 parallel implementation subagents per wave');
+    expect(orchestrator?.prompt).toContain('never compress an open backlog into three oversized assignments');
     expect(orchestrator?.prompt).toContain('Use parallel agents only when tasks are independent and target disjoint files or subsystems.');
     expect(orchestrator?.prompt).toContain('If tasks overlap files, share mutable state, or depend on each other, run them sequentially.');
     expect(orchestrator?.prompt).toContain('Only call `auto_continue` when the runtime exposes that tool.');
@@ -567,7 +588,7 @@ describe('Packaged OpenChamber agents', () => {
     for (const agentName of delegatedAgentNames) {
       const agent = agents.find((candidate) => candidate.name === agentName);
       expect(agent?.prompt).toContain('Runtime Failure Discipline');
-      expect(agent?.prompt).toContain('On unrecoverable provider/tool errors, return `<status>blocked</status>` with a concise reason.');
+      expect(agent?.prompt).toContain('On unrecoverable provider/tool errors, return a final `**Status:** blocked` line with a concise reason.');
       expect(agent?.prompt).toContain('Avoid repeated progress-only messages such as "continuing" or "implementing" without a terminal status marker.');
       expect(agent?.prompt).toContain('Do not retry the same failing runtime operation more than once.');
     }
@@ -624,13 +645,15 @@ describe('Packaged OpenChamber agents', () => {
     expect(orchestrator?.prompt).toContain('Non-design implementation gate');
     expect(orchestrator?.prompt).toContain('default to @fixer');
     expect(orchestrator?.prompt).toContain('bounded non-design implementation');
-    expect(orchestrator?.prompt).toContain('Designer owns every design change end to end');
-    expect(orchestrator?.prompt).toContain('Never hand a Designer-produced plan or review to Fixer for implementation.');
-    expect(orchestrator?.prompt).toContain('Design-change planning in plan mode routes to a read-only Designer task.');
-    expect(designer?.prompt).toContain('End-to-end design-change ownership');
-    expect(designer?.prompt).toContain('Do not stop at a plan, mock recommendation, or review findings.');
+    expect(orchestrator?.prompt).toContain('Orchestrator owns the grounded design approach and decision-complete implementation brief.');
+    expect(orchestrator?.prompt).toContain('Designer owns the approved design implementation end to end');
+    expect(orchestrator?.prompt).toContain('Orchestrator owns design-change planning in plan mode.');
+    expect(orchestrator?.prompt).toContain('never dispatch Designer from a plan-mode turn');
+    expect(designer?.prompt).toContain('End-to-end implementation of an approved design plan or decision-complete brief');
+    expect(designer?.prompt).toContain('do not stop at a plan, mock recommendation, or review findings.');
+    expect(designer?.prompt).toContain('Do not author design plans, propose alternate directions, or take standalone review assignments.');
     expect(fixer?.prompt).toContain('frontend data/state/logic and component correctness');
-    expect(fixer?.prompt).toContain('make no design edits and return `<status>blocked</status>`');
+    expect(fixer?.prompt).toContain('make no design edits and return a final `**Status:** blocked` line');
     expect(orchestrator?.prompt).toContain('Subagent prompt templates');
     expect(orchestrator?.prompt).toContain('structured question tool');
     expect(orchestrator?.prompt).toContain('Skill announcements are tool activity only');
@@ -640,7 +663,7 @@ describe('Packaged OpenChamber agents', () => {
     expect(orchestrator?.prompt).toContain('Explain why instead of merely repeating the tool action');
     expect(orchestrator?.prompt).toContain('Never expose or claim to expose private chain-of-thought');
     expect(orchestrator?.prompt).toContain('If the user skips a question, continue with best judgment and explicitly state the assumption.');
-    expect(orchestrator?.frontmatter.permission.skill['dispatching-parallel-agents']).toBe('allow');
+    expect(orchestrator?.frontmatter.permission.skill).toBe('allow');
     expect(orchestrator?.frontmatter.permission).toMatchObject({
       question: 'allow',
       'question_*': 'allow',
@@ -669,7 +692,7 @@ describe('Packaged OpenChamber agents', () => {
       'question_*': 'allow',
     });
     expect(council?.prompt).toContain('Do not ask the user');
-    expect(fixer?.prompt).toContain('<status>complete|blocked</status>');
+    expect(fixer?.prompt).toContain('**Status:** complete|blocked');
   });
 
   it('requires packaged Council output to show councillor details before consensus', () => {
@@ -706,7 +729,7 @@ describe('OpenCode config agent routes', () => {
     registerConfigEntityRoutes(app, {
       resolveProjectDirectory: async () => ({ directory: projectDirectory }),
       resolveOptionalProjectDirectory: async () => ({ directory: projectDirectory }),
-      refreshOpenCodeAfterConfigChange: async () => {},
+      markConfigChange: async () => ({ runtimeApplied: false, requiresApply: true, applyRevision: 1, applyScopes: ['agents'], applyStatus: { state: 'pending' }, requiresReload: false }),
       clientReloadDelayMs: 0,
       getAgentSources: () => ({ md: { exists: false }, json: { exists: false } }),
       getAgentConfig,
@@ -739,7 +762,7 @@ describe('OpenCode config agent routes', () => {
     registerConfigEntityRoutes(app, {
       resolveProjectDirectory: async () => ({ directory: projectDirectory }),
       resolveOptionalProjectDirectory: async () => ({ directory: projectDirectory }),
-      refreshOpenCodeAfterConfigChange: async () => {},
+      markConfigChange: async () => ({ runtimeApplied: false, requiresApply: true, applyRevision: 1, applyScopes: ['agents'], applyStatus: { state: 'pending' }, requiresReload: false }),
       clientReloadDelayMs: 0,
       getAgentSources: () => ({ md: { exists: true, scope: 'packaged' }, json: { exists: false } }),
       getAgentConfig: (name, directory) => getAgentConfig(name, directory, { userConfigPath }),
@@ -793,7 +816,7 @@ describe('OpenCode config agent routes', () => {
     await fs.rm(userConfigDirectory, { recursive: true, force: true });
   });
 
-  it('refreshes OpenCode after writing and deleting an agent model override', async () => {
+  it('queues OpenCode apply after writing and deleting an agent model override', async () => {
     projectDirectory = await makeTempProject();
     const userConfigDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-route-refresh-'));
     const userConfigPath = path.join(userConfigDirectory, 'config.json');
@@ -803,8 +826,9 @@ describe('OpenCode config agent routes', () => {
     registerConfigEntityRoutes(app, {
       resolveProjectDirectory: async () => ({ directory: projectDirectory }),
       resolveOptionalProjectDirectory: async () => ({ directory: projectDirectory }),
-      refreshOpenCodeAfterConfigChange: async (reason, options) => {
+      markConfigChange: async (reason, options) => {
         refreshCalls.push({ reason, options });
+        return { runtimeApplied: false, requiresApply: true, applyRevision: refreshCalls.length, applyScopes: ['agents'], applyStatus: { state: 'pending' }, requiresReload: false };
       },
       clientReloadDelayMs: 25,
       getAgentSources: () => ({ md: { exists: true, scope: 'packaged' }, json: { exists: false } }),
@@ -830,8 +854,10 @@ describe('OpenCode config agent routes', () => {
       .expect(200)
       .expect((res) => {
         expect(res.body.success).toBe(true);
-        expect(res.body.requiresReload).toBe(true);
-        expect(res.body.reloadDelayMs).toBe(25);
+        expect(res.body.requiresApply).toBe(true);
+        expect(res.body.requiresReload).toBe(false);
+        expect(res.body.applyScopes).toEqual(['agents']);
+        expect(res.body.reloadDelayMs).toBeUndefined();
         expect(res.body.reloadFailed).toBeUndefined();
       });
 
@@ -841,7 +867,8 @@ describe('OpenCode config agent routes', () => {
       .expect((res) => {
         expect(res.body.success).toBe(true);
         expect(res.body.deleted).toBe(true);
-        expect(res.body.requiresReload).toBe(true);
+        expect(res.body.requiresApply).toBe(true);
+        expect(res.body.requiresReload).toBe(false);
         expect(res.body.agent.config.model).toEqual({ providerID: 'opencode', modelID: 'deepseek-v4-flash' });
       });
 
@@ -867,7 +894,7 @@ describe('OpenCode config agent routes', () => {
     await fs.rm(userConfigDirectory, { recursive: true, force: true });
   });
 
-  it('keeps a saved agent override visible when OpenCode refresh fails', async () => {
+  it('keeps a saved agent override visible when the apply request cannot be recorded', async () => {
     projectDirectory = await makeTempProject();
     const userConfigDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-route-refresh-fail-'));
     const userConfigPath = path.join(userConfigDirectory, 'config.json');
@@ -876,8 +903,8 @@ describe('OpenCode config agent routes', () => {
     registerConfigEntityRoutes(app, {
       resolveProjectDirectory: async () => ({ directory: projectDirectory }),
       resolveOptionalProjectDirectory: async () => ({ directory: projectDirectory }),
-      refreshOpenCodeAfterConfigChange: vi.fn(async () => {
-        throw new Error('restart failed');
+      markConfigChange: vi.fn(async () => {
+        throw new Error('coordinator unavailable');
       }),
       clientReloadDelayMs: 25,
       getAgentSources: () => ({ md: { exists: true, scope: 'packaged' }, json: { exists: false } }),
@@ -906,7 +933,7 @@ describe('OpenCode config agent routes', () => {
         expect(res.body.override).toEqual({ model: 'openai/gpt-5.5', variant: 'high' });
         expect(res.body.requiresReload).toBe(false);
         expect(res.body.reloadFailed).toBe(true);
-        expect(res.body.warning).toContain('restart failed');
+        expect(res.body.warning).toContain('coordinator unavailable');
       });
 
     expect(listAgentModelOverrides({ userConfigPath }).explorer).toEqual({
@@ -924,7 +951,7 @@ describe('OpenCode config agent routes', () => {
     registerConfigEntityRoutes(app, {
       resolveProjectDirectory: async () => ({ directory: projectDirectory }),
       resolveOptionalProjectDirectory: async () => ({ directory: projectDirectory }),
-      refreshOpenCodeAfterConfigChange: async () => {},
+      markConfigChange: async () => ({ runtimeApplied: false, requiresApply: true, applyRevision: 1, applyScopes: ['mcp'], applyStatus: { state: 'pending' }, requiresReload: false }),
       clientReloadDelayMs: 25,
       getAgentSources: () => ({ md: { exists: false }, json: { exists: false } }),
       getAgentConfig,
@@ -950,8 +977,10 @@ describe('OpenCode config agent routes', () => {
       .expect(200)
       .expect((res) => {
         expect(res.body.success).toBe(true);
-        expect(res.body.requiresReload).toBe(true);
-        expect(res.body.reloadDelayMs).toBe(25);
+        expect(res.body.requiresApply).toBe(true);
+        expect(res.body.requiresReload).toBe(false);
+        expect(res.body.applyScopes).toEqual(['mcp']);
+        expect(res.body.reloadDelayMs).toBeUndefined();
         expect(res.body.harness).toEqual(expect.objectContaining({
           status: 'success',
           summary: 'MCP server "linear" create completed',
@@ -959,17 +988,20 @@ describe('OpenCode config agent routes', () => {
       });
   });
 
-  it('reports an MCP runtime refresh as deferred while an agent is active', async () => {
+  it('reports an MCP apply as waiting while an agent is active', async () => {
     projectDirectory = await makeTempProject();
     const app = express();
     app.use(express.json());
     registerConfigEntityRoutes(app, {
       resolveProjectDirectory: async () => ({ directory: projectDirectory }),
       resolveOptionalProjectDirectory: async () => ({ directory: projectDirectory }),
-      refreshOpenCodeAfterConfigChange: async () => ({
+      markConfigChange: async () => ({
         runtimeApplied: false,
+        requiresApply: true,
+        applyRevision: 2,
+        applyScopes: ['mcp'],
+        applyStatus: { state: 'waiting_for_idle', activeSessionCount: 1 },
         requiresReload: false,
-        restartDeferred: true,
         runtimeMessage: 'Configuration saved. OpenCode will restart after the active agent finishes.',
       }),
       clientReloadDelayMs: 25,
@@ -998,15 +1030,14 @@ describe('OpenCode config agent routes', () => {
       .expect((res) => {
         expect(res.body).toEqual(expect.objectContaining({
           success: true,
+          requiresApply: true,
           requiresReload: false,
           runtimeApplied: false,
-          restartDeferred: true,
+          applyStatus: { state: 'waiting_for_idle', activeSessionCount: 1 },
           message: 'Configuration saved. OpenCode will restart after the active agent finishes.',
         }));
         expect(res.body.reloadDelayMs).toBeUndefined();
-        expect(res.body.harness.nextActions).toEqual([
-          'Let active agents finish before testing the MCP server',
-        ]);
+        expect(res.body.harness.status).toBe('success');
       });
   });
 
@@ -1016,7 +1047,7 @@ describe('OpenCode config agent routes', () => {
     registerConfigEntityRoutes(app, {
       resolveProjectDirectory: async () => ({ directory: null, error: 'bad directory' }),
       resolveOptionalProjectDirectory: async () => ({ directory: null, error: 'bad directory' }),
-      refreshOpenCodeAfterConfigChange: async () => {},
+      markConfigChange: async () => ({ runtimeApplied: false, requiresApply: true, applyRevision: 1, applyScopes: ['mcp'], applyStatus: { state: 'pending' }, requiresReload: false }),
       clientReloadDelayMs: 25,
       getAgentSources: () => ({ md: { exists: false }, json: { exists: false } }),
       getAgentConfig,

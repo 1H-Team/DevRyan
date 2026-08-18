@@ -181,6 +181,24 @@ describe("startup readiness", () => {
     expect(shouldRestartOpenCodeForStartupRecovery(null)).toBe(false)
   })
 
+  test("restarts when OpenCode recorded a bootstrap error even if running flags are omitted", async () => {
+    const calls: string[] = []
+
+    const result = await recoverStartupInitialization({
+      loadHealth: async () => ({
+        lastOpenCodeError: "Managed orchestration is already owned by another DevRyan runtime using this data directory",
+      }),
+      restartOpenCode: async () => { calls.push("restart") },
+      initializeApp: async () => { calls.push("initialize") },
+    })
+
+    expect(result).toEqual({ restartAttempted: true, restartError: null })
+    expect(calls).toEqual(["restart", "initialize"])
+    expect(shouldRestartOpenCodeForStartupRecovery({
+      lastOpenCodeError: "Managed orchestration is already owned by another DevRyan runtime using this data directory",
+    })).toBe(true)
+  })
+
   test("refreshes client state after a managed runtime restart failure", async () => {
     const restartError = new Error("restart failed")
     const calls: string[] = []

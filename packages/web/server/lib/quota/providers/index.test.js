@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { fetchQuotaMock, fetchOpenCodeGoQuotaMock, fetchCursorQuotaMock } = vi.hoisted(() => ({
+const { fetchQuotaMock, fetchOpenCodeGoQuotaMock, fetchCursorQuotaMock, fetchXaiQuotaMock, fetchDeepSeekQuotaMock } = vi.hoisted(() => ({
   fetchQuotaMock: vi.fn(async () => ({
     providerId: 'zhipuai-coding-plan',
     providerName: 'Zhipu AI Coding Plan',
@@ -20,6 +20,22 @@ const { fetchQuotaMock, fetchOpenCodeGoQuotaMock, fetchCursorQuotaMock } = vi.ho
   fetchCursorQuotaMock: vi.fn(async () => ({
     providerId: 'cursor-acp',
     providerName: 'Cursor',
+    ok: true,
+    configured: true,
+    usage: { windows: {} },
+    fetchedAt: 1,
+  })),
+  fetchXaiQuotaMock: vi.fn(async () => ({
+    providerId: 'xai',
+    providerName: 'xAI',
+    ok: true,
+    configured: true,
+    usage: { windows: {} },
+    fetchedAt: 1,
+  })),
+  fetchDeepSeekQuotaMock: vi.fn(async () => ({
+    providerId: 'deepseek',
+    providerName: 'DeepSeek',
     ok: true,
     configured: true,
     usage: { windows: {} },
@@ -48,6 +64,20 @@ vi.mock('./cursor-acp.js', () => ({
   fetchQuota: fetchCursorQuotaMock,
 }));
 
+vi.mock('./xai.js', () => ({
+  providerId: 'xai',
+  providerName: 'xAI',
+  isConfigured: () => true,
+  fetchQuota: fetchXaiQuotaMock,
+}));
+
+vi.mock('./deepseek.js', () => ({
+  providerId: 'deepseek',
+  providerName: 'DeepSeek',
+  isConfigured: () => true,
+  fetchQuota: fetchDeepSeekQuotaMock,
+}));
+
 import { fetchQuotaForProvider } from './index.js';
 
 describe('quota provider registry', () => {
@@ -74,5 +104,19 @@ describe('quota provider registry', () => {
 
     expect(result.providerId).toBe('cursor-acp');
     expect(fetchCursorQuotaMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes Grok aliases to the canonical xAI provider', async () => {
+    const result = await fetchQuotaForProvider('grok');
+
+    expect(result.providerId).toBe('xai');
+    expect(fetchXaiQuotaMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes DeepSeek requests to its balance provider', async () => {
+    const result = await fetchQuotaForProvider('deepseek');
+
+    expect(result.providerId).toBe('deepseek');
+    expect(fetchDeepSeekQuotaMock).toHaveBeenCalledTimes(1);
   });
 });

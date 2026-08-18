@@ -402,25 +402,42 @@ textarea[data-chat-input="true"]:focus-visible {
   }
 }
 
-@keyframes gradient-shimmer {
+@keyframes oc-text-shimmer {
   0% {
-    stop-color: currentColor;
-  }
-  50% {
-    stop-color: color-mix(in srgb, currentColor 60%, white 40%);
+    background-position: 200% 0;
   }
   100% {
-    stop-color: currentColor;
+    background-position: -200% 0;
   }
 }
 
-@keyframes shimmer-position {
-  0% {
-    x: -100%;
-  }
-  100% {
-    x: 100%;
-  }
+.oc-text-shimmer {
+  --oc-shimmer-base: var(--muted-foreground);
+  --oc-shimmer-highlight: color-mix(in oklch, var(--foreground) 92%, transparent);
+  position: relative;
+  display: inline-block;
+  color: var(--oc-shimmer-base);
+  -webkit-text-fill-color: currentColor;
+}
+
+.oc-text-shimmer::after {
+  content: attr(data-shimmer-text);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(
+    100deg,
+    transparent 40%,
+    var(--oc-shimmer-highlight) 50%,
+    transparent 60%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: oc-text-shimmer 2.2s linear infinite;
 }
 
 @keyframes oc-file-mention-marquee {
@@ -1129,6 +1146,19 @@ html:not(.dark) .chat-scroll {
   line-height: inherit;
 }
 
+/*
+ * Flatten markdown exterior margins inside the assistant message stack so the
+ * parent flex gap is the single source of inter-part vertical rhythm. Intra-part
+ * paragraph spacing (my-2 between paragraphs in one part) is preserved.
+ */
+[data-session-output-stack="true"] .markdown-content > :first-child {
+  margin-top: 0;
+}
+
+[data-session-output-stack="true"] .markdown-content > :last-child {
+  margin-bottom: 0;
+}
+
 /* Tool markdown should render at code size to match tool card typography. */
 .markdown-content.markdown-tool {
   font-size: var(--text-code) !important;
@@ -1732,6 +1762,12 @@ input[aria-label="Terminal input"] {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .oc-text-shimmer::after {
+    content: none;
+    animation: none;
+    background-image: none;
+  }
+
   .marquee-text--auto,
   .group:hover .marquee-text--active,
   .marquee-text--active:hover {

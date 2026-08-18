@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test"
-import { useContextStore } from "./contextStore"
+import { migratePersistedContextUsage, useContextStore } from "./contextStore"
 import { resolveModelContextCapacity } from "./utils/modelContextCapacity"
 
 const SESSION_ID = "ses_context_deferred_delete"
@@ -39,7 +39,7 @@ describe("contextStore permanent session cleanup", () => {
       clearSessionContext?: (sessionId: string) => void
     }
 
-    expect(store.getContextUsage(SESSION_ID, capacity, messages)?.totalTokens).toBe(120)
+    expect(store.getContextUsage(SESSION_ID, capacity, messages)?.activeInputTokens).toBe(100)
     expect(typeof store.clearSessionContext).toBe("function")
     store.clearSessionContext?.(SESSION_ID)
 
@@ -64,5 +64,33 @@ describe("contextStore permanent session cleanup", () => {
     expect(next.sessionModelSelections.has(SESSION_ID)).toBe(false)
     expect(next.sessionAgentSelections).toBe(untouchedAgentSelections)
     expect(next.sessionAgentModelSelections).toBe(untouchedAgentModels)
+  })
+})
+
+describe("contextStore usage migration", () => {
+  test("derives active input from input and cache components", () => {
+    const migrated = migratePersistedContextUsage({
+      totalTokens: 128_504,
+      percentage: 64,
+      capacityLimit: 200_000,
+      capacityBasis: "context",
+      inputLimit: null,
+      contextLimit: 200_000,
+      outputLimit: null,
+      tokenBreakdown: {
+        input: 2,
+        output: 1_464,
+        reasoning: 0,
+        cacheRead: 125_220,
+        cacheWrite: 1_818,
+        total: 128_504,
+      },
+      hasTokenBreakdown: true,
+    })
+
+    expect(migrated?.activeInputTokens).toBe(127_040)
+    expect(migrated?.lastOutputTokens).toBe(1_464)
+    expect(migrated?.source).toBe("message-fallback")
+    expect(migrated?.tokenBreakdown.total).toBe(127_040)
   })
 })

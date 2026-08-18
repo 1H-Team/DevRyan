@@ -594,8 +594,6 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
 export const registerSettingsUtilityRoutes = (app, dependencies) => {
   const {
     readCustomThemesFromDisk,
-    refreshOpenCodeAfterConfigChange,
-    clientReloadDelayMs,
   } = dependencies;
 
   app.get('/api/config/themes', async (_req, res) => {
@@ -608,26 +606,6 @@ export const registerSettingsUtilityRoutes = (app, dependencies) => {
     }
   });
 
-  app.post('/api/config/reload', async (_req, res) => {
-    try {
-      console.log('[Server] Manual configuration reload requested');
-
-      await refreshOpenCodeAfterConfigChange('manual configuration reload');
-
-      res.json({
-        success: true,
-        requiresReload: true,
-        message: 'Configuration reloaded successfully. Refreshing interface…',
-        reloadDelayMs: clientReloadDelayMs,
-      });
-    } catch (error) {
-      console.error('[Server] Failed to reload configuration:', error);
-      res.status(500).json({
-        error: error.message || 'Failed to reload configuration',
-        success: false,
-      });
-    }
-  });
 };
 
 export const registerCommonRequestMiddleware = (app, dependencies) => {
@@ -642,6 +620,7 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
       express.json({ limit: '1mb' })(req, res, next);
     } else if (
       req.path.startsWith('/api/desktop/browser-leases')
+      || req.path.startsWith('/api/config/apply')
       || req.path.startsWith('/api/preview')
     ) {
       express.json({ limit: '16kb' })(req, res, next);
@@ -656,6 +635,7 @@ export const registerCommonRequestMiddleware = (app, dependencies) => {
       req.path.startsWith('/api/analytics') ||
       req.path.startsWith('/api/bug-reports') ||
       req.path.startsWith('/api/error-logs') ||
+      req.path.startsWith('/api/client-errors') ||
       req.path.startsWith('/api/auth') ||
       req.path.startsWith('/api/diagnostics') ||
       req.path.startsWith('/api/evidence') ||

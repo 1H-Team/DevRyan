@@ -2,6 +2,7 @@ import React from 'react';
 import { RiErrorWarningLine, RiRestartLine } from '@remixicon/react';
 import { Button } from './button';
 import { Card, CardContent, CardHeader, CardTitle } from './card';
+import { reportBoundaryError } from '@/lib/client-error-capture';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { useI18n } from '@/lib/i18n';
 
@@ -44,6 +45,7 @@ class InnerErrorBoundary extends React.Component<InnerErrorBoundaryProps, ErrorB
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
     this.setState({ error, errorInfo, copied: false });
+    reportBoundaryError(error, errorInfo.componentStack ?? undefined);
 
     console.error('Error caught by boundary:', error, errorInfo);
   }

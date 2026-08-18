@@ -50,6 +50,9 @@ const NESTED_FIELDS = new Set([
   'model', 'system', 'noReply', 'tools', 'tokens', 'cost', 'snapshot',
 ]);
 
+const TOKEN_FIELDS = new Set(['total', 'input', 'output', 'reasoning', 'cache']);
+const TOKEN_CACHE_FIELDS = new Set(['read', 'write']);
+
 const STABLE_IDENTIFIER_FIELDS = new Set([
   'id', 'sessionID', 'sessionId', 'messageID', 'messageId', 'parentID', 'parentId',
   'callID', 'callId', 'providerID', 'providerId', 'modelID', 'modelId',
@@ -210,8 +213,11 @@ export const createDiagnosticSanitizer = (options = {}) => {
       return output;
     }
     const output = {};
+    const allowedFields = field === 'tokens'
+      ? TOKEN_FIELDS
+      : (field === 'cache' ? TOKEN_CACHE_FIELDS : NESTED_FIELDS);
     for (const [key, nested] of Object.entries(object)) {
-      if (!NESTED_FIELDS.has(key)) {
+      if (!allowedFields.has(key)) {
         report.droppedFields += 1;
         continue;
       }

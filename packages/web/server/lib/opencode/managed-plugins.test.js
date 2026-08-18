@@ -39,6 +39,10 @@ afterEach(() => {
 describe('managed plugin manifest', () => {
   it('pins every dependency plugin and registers managed defaults by local path', () => {
     expect(DEVRYAN_MANAGED_PROFILE_DEPENDENCIES).toEqual({
+      '@opencode-ai/plugin': '1.17.11',
+      'adm-zip': '0.6.0',
+      'mammoth': '1.12.1',
+      'unpdf': '1.8.0',
       'opencode-antigravity-auth': '1.6.0',
       '@rama_nigg/open-cursor': '2.5.4',
       'opencode-with-claude': '1.6.18',
@@ -52,13 +56,15 @@ describe('managed plugin manifest', () => {
       './node_modules/context-mode/build/adapters/opencode/plugin.js',
       './plugins/devryan-oh-my-opencode-slim.mjs',
       './plugins/devryan-superpowers.mjs',
+      './plugins/devryan-skill-context.mjs',
+      './plugins/devryan-document-reader.mjs',
     ]);
     expect(DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS.every((spec) => (
       spec.startsWith('./') && !spec.includes('@latest') && !spec.includes('git+')
     ))).toBe(true);
   });
 
-  it('keeps canonical, VS Code source, and released Tauri profile assets local-only', () => {
+  it('keeps forward managed profiles local-only while leaving released Tauri assets frozen', () => {
     const webProfileConfig = JSON.parse(fs.readFileSync(
       path.join(webDefaultConfigRoot, 'user-profile', 'opencode.json'),
       'utf8',
@@ -85,10 +91,12 @@ describe('managed plugin manifest', () => {
     ));
 
     expect(webProfileConfig.plugin).toEqual(DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS);
-    expect(tauriProfileConfig).toEqual(webProfileConfig);
     expect(tauriRootConfig).toEqual(webRootConfig);
-    expect(tauriPackage).toEqual(webPackage);
     expect(webPackage.dependencies).toMatchObject(DEVRYAN_MANAGED_PROFILE_DEPENDENCIES);
+    expect(tauriProfileConfig.plugin).not.toContain('./plugins/devryan-document-reader.mjs');
+    expect(tauriProfileConfig.plugin).not.toContain('./plugins/devryan-skill-context.mjs');
+    expect(tauriPackage.dependencies).not.toHaveProperty('unpdf');
+    expect(tauriPackage.dependencies).not.toHaveProperty('mammoth');
     for (const config of [webProfileConfig, webRootConfig, tauriProfileConfig, tauriRootConfig]) {
       for (const spec of config.plugin || []) {
         expect(spec).toMatch(/^\.\//);
@@ -98,11 +106,19 @@ describe('managed plugin manifest', () => {
       }
     }
 
-    for (const fileName of ['devryan-oh-my-opencode-slim.mjs', 'devryan-superpowers.mjs']) {
+    for (const fileName of ['devryan-oh-my-opencode-slim.mjs']) {
       expect(fs.readFileSync(path.join(tauriDefaultConfigRoot, 'plugins', fileName), 'utf8')).toBe(
         fs.readFileSync(path.join(webDefaultConfigRoot, 'plugins', fileName), 'utf8'),
       );
     }
+    expect(fs.readFileSync(path.join(webDefaultConfigRoot, 'plugins', 'devryan-superpowers.mjs'), 'utf8'))
+      .not.toContain('experimental.chat.messages.transform');
+    expect(fs.readFileSync(path.join(tauriDefaultConfigRoot, 'plugins', 'devryan-superpowers.mjs'), 'utf8'))
+      .toContain('experimental.chat.messages.transform');
+    expect(fs.existsSync(path.join(webDefaultConfigRoot, 'plugins', 'devryan-document-reader.mjs'))).toBe(true);
+    expect(fs.existsSync(path.join(tauriDefaultConfigRoot, 'plugins', 'devryan-document-reader.mjs'))).toBe(false);
+    expect(fs.existsSync(path.join(webDefaultConfigRoot, 'plugins', 'devryan-skill-context.mjs'))).toBe(true);
+    expect(fs.existsSync(path.join(tauriDefaultConfigRoot, 'plugins', 'devryan-skill-context.mjs'))).toBe(false);
   });
 
   it('migrates only known managed legacy specs and preserves user plugins and custom pins', () => {
@@ -123,6 +139,8 @@ describe('managed plugin manifest', () => {
       './node_modules/context-mode/build/adapters/opencode/plugin.js',
       './plugins/devryan-superpowers.mjs',
       './plugins/devryan-oh-my-opencode-slim.mjs',
+      './plugins/devryan-skill-context.mjs',
+      './plugins/devryan-document-reader.mjs',
     ]);
 
     const customPin = reconcileDevRyanManagedPluginSpecs(['context-mode@1.0.168']);
@@ -185,6 +203,11 @@ describe('managed plugin manifest', () => {
       }),
       expect.objectContaining({
         pluginId: DEVRYAN_MANAGED_PLUGIN_IDS.OPEN_CURSOR,
+        kind: 'missing-package',
+      }),
+      expect.objectContaining({
+        pluginId: DEVRYAN_MANAGED_PLUGIN_IDS.DOCUMENT_READER,
+        packageName: 'unpdf',
         kind: 'missing-package',
       }),
     ]));

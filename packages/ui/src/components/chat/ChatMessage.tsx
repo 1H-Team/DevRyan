@@ -30,6 +30,7 @@ import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import type {
     ChatMessageEntry,
     ManagedTransportRecoveryPresentation,
+    ManagedAbortRecoveryPresentation,
     TurnGroupingContext,
 } from './lib/turns/types';
 import { copyTextToClipboard } from '@/lib/clipboard';
@@ -710,6 +711,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     // Summary body removed — flat rendering means text is always inline.
 
     const managedTransportRecovery = message.presentation?.managedTransportRecovery;
+    const managedAbortRecovery = message.presentation?.managedAbortRecovery;
     const assistantError = React.useMemo(() => {
         if (isUser) {
             return undefined;
@@ -723,12 +725,16 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             steeredAbortMessageId?: string;
             messageId?: string;
             isLatestMessage?: boolean;
+            managedAbortRecovery?: ManagedAbortRecoveryPresentation;
             managedTransportRecovery?: ManagedTransportRecoveryPresentation;
         } = {
             isLatestMessage,
         };
         if (managedTransportRecovery) {
             abortOptions.managedTransportRecovery = managedTransportRecovery;
+        }
+        if (managedAbortRecovery) {
+            abortOptions.managedAbortRecovery = managedAbortRecovery;
         }
         if (manualAbortMessageId) {
             abortOptions.manualAbortMessageId = manualAbortMessageId;
@@ -740,7 +746,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             abortOptions.messageId = messageId;
         }
         return classifyAssistantError(errorInfo, abortOptions) ?? classifySteeredAbortFallback(abortOptions);
-    }, [isLatestMessage, isUser, managedTransportRecovery, manualAbortMessageId, message.info, steeredAbortMessageId]);
+    }, [isLatestMessage, isUser, managedAbortRecovery, managedTransportRecovery, manualAbortMessageId, message.info, steeredAbortMessageId]);
 
     React.useEffect(() => {
         if (assistantError?.abortKind !== 'unexpected' || !messageSessionId) {

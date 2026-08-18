@@ -4,7 +4,7 @@ set local role postgres;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(27);
+select plan(39);
 
 select has_table('public', 'bug_reports', 'bug_reports exists');
 select col_is_pk('public', 'bug_reports', 'id', 'id is the primary key');
@@ -44,6 +44,89 @@ select has_index('public', 'bug_reports', 'bug_reports_reporter_created_idx', 'r
 select has_index('public', 'bug_reports', 'bug_reports_created_idx', 'newest-first cursor index exists');
 select has_index('public', 'bug_reports', 'bug_reports_status_created_idx', 'status cursor index exists');
 select has_index('public', 'activity_logs', 'activity_logs_error_kind_created_idx', 'error-log cursor index exists');
+select has_column('public', 'activity_logs', 'diagnostic_disposition', 'diagnostic disposition exists');
+select is(
+  (select is_nullable from information_schema.columns
+   where table_schema = 'public' and table_name = 'activity_logs' and column_name = 'diagnostic_disposition'),
+  'YES',
+  'diagnostic disposition remains nullable for non-diagnostic activity'
+);
+select has_index(
+  'public',
+  'activity_logs',
+  'activity_logs_diagnostic_disposition_error_idx',
+  'disposition-filtered error-log cursor index exists'
+);
+select has_trigger(
+  'public',
+  'activity_logs',
+  'activity_logs_preserve_diagnostic_classification',
+  'diagnostic classification immutability trigger is attached'
+);
+select throws_ok(
+  $$insert into public.activity_logs (event_id, action, diagnostic_disposition)
+    values ('30000000-0000-4000-8000-000000000001', 'tool.failed', 'ignored')$$,
+  '23514', null, 'unknown diagnostic dispositions are rejected'
+);
+select ok(
+  not exists (
+    select 1 from public.activity_logs
+    where action in ('session.error', 'tool.failed', 'managed_task.failed', 'client.error')
+      and diagnostic_disposition is null
+  ),
+  'the migration backfilled every pre-existing managed diagnostic row'
+);
+select ok(
+  not exists (
+    select 1 from public.activity_logs
+    where diagnostic_disposition = 'expected'
+      and diagnostic_impact is distinct from 'low'
+  ),
+  'backfilled expected outcomes are low impact'
+);
+
+insert into public.activity_logs (
+  event_id,
+  action,
+  diagnostic_impact,
+  diagnostic_source,
+  diagnostic_disposition,
+  metadata
+) values (
+  '30000000-0000-4000-8000-000000000002',
+  'tool.failed',
+  'low',
+  'observed',
+  'expected',
+  '{"tool":"rg"}'::jsonb
+);
+
+select throws_ok(
+  $$update public.activity_logs
+    set diagnostic_disposition = 'actionable'
+    where event_id = '30000000-0000-4000-8000-000000000002'$$,
+  '23514', null, 'diagnostic disposition is immutable'
+);
+select throws_ok(
+  $$update public.activity_logs
+    set diagnostic_impact = 'medium'
+    where event_id = '30000000-0000-4000-8000-000000000002'$$,
+  '23514', null, 'diagnostic impact remains immutable'
+);
+select lives_ok(
+  $$update public.activity_logs
+    set metadata = metadata || '{"verified":true}'::jsonb
+    where event_id = '30000000-0000-4000-8000-000000000002'$$,
+  'non-classification activity metadata remains updateable'
+);
+select ok(
+  has_column_privilege('service_role', 'public.activity_logs', 'diagnostic_disposition', 'select'),
+  'service_role retains diagnostic disposition access'
+);
+select ok(
+  not has_column_privilege('anon', 'public.activity_logs', 'diagnostic_disposition', 'select'),
+  'anon does not gain diagnostic disposition access'
+);
 select has_trigger('public', 'bug_reports', 'bug_reports_updated_at', 'shared updated-at trigger is attached');
 
 select ok(

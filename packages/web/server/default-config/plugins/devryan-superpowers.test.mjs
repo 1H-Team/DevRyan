@@ -38,7 +38,7 @@ describe('DevRyan Superpowers plugin', () => {
     warn.mockRestore();
   });
 
-  it('registers only the installed curated directory and injects bootstrap once', async () => {
+  it('registers only the installed curated directory without injecting a bootstrap body', async () => {
     temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'devryan-superpowers-installed-'));
     process.env.DEVRYAN_OPENCODE_USER_CONFIG_DIR = temporaryRoot;
     const skillPath = path.join(
@@ -64,13 +64,7 @@ describe('DevRyan Superpowers plugin', () => {
         parts: [{ type: 'text', text: 'test request' }],
       }],
     };
-    await plugin['experimental.chat.messages.transform']({}, output);
-    await plugin['experimental.chat.messages.transform']({}, output);
-
-    expect(output.messages[0].parts).toHaveLength(2);
-    expect(output.messages[0].parts[0].text).toContain(
-      "You have DevRyan's curated Superpowers skills installed locally.",
-    );
-    expect(output.messages[0].parts[0].text).toContain('Use installed skills.');
+    expect(plugin).not.toHaveProperty('experimental.chat.messages.transform');
+    expect(output.messages[0].parts).toEqual([{ type: 'text', text: 'test request' }]);
   });
 });

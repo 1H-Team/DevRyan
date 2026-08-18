@@ -11,7 +11,7 @@ import os from 'os';
 import crypto from 'crypto';
 import yaml from 'yaml';
 import { createUiAuth } from './lib/ui-auth/ui-auth.js';
-import { createMultiUserRuntime } from './lib/multi-user/index.js';
+import { createMultiUserRuntime, getRequestPrincipal } from './lib/multi-user/index.js';
 import { canUseBrowser } from './lib/multi-user/policy.js';
 import { createTunnelAuth } from './lib/opencode/tunnel-auth.js';
 import { createManagedTunnelConfigRuntime } from './lib/tunnels/managed-config.js';
@@ -50,8 +50,10 @@ import {
   DEFAULT_UPSTREAM_STALL_TIMEOUT_MS,
   UPSTREAM_STALL_TIMEOUT_CONCURRENT_MS,
 } from './lib/event-stream/index.js';
+import { createCanonicalOpenCodeEventProcessor } from './lib/event-stream/canonical-ingestion.js';
 import { createFsSearchRuntime as createFsSearchRuntimeFactory } from './lib/fs/search.js';
 import { createOpenCodeLifecycleRuntime } from './lib/opencode/lifecycle.js';
+import { createConfigApplyCoordinator, createConfigChangeMarker } from '@openchamber/shared-runtime';
 import { syncPackagedAgents } from './lib/opencode/packaged-agent-sync.js';
 import { syncRuntimeAgentOverlays } from './lib/opencode/runtime-agent-overlays.js';
 import { createUserProfileProvisioningRuntime } from './lib/opencode/user-profile-provisioning.js';
@@ -88,7 +90,7 @@ import { createTurnTimingRuntime, registerTurnTimingRoutes } from './lib/opencod
 import { createAgentRuntimeWarmup, registerAgentRuntimeWarmupRoute } from './lib/opencode/agent-runtime-warmup.js';
 import { createProjectPrewarmRuntime } from './lib/opencode/project-prewarm-runtime.js';
 import { createHarnessPreflight, registerHarnessPreflightRoute } from './lib/opencode/harness-preflight.js';
-import { filterVisibleSkills } from './lib/opencode/skill-policy.js';
+import { resolveApprovedSkills } from './lib/opencode/skill-policy.js';
 import { getAgentConfig, getAgentSources, listConfigAgents, listStaleAgentModelOverrides } from './lib/opencode/agents.js';
 import { listPackagedAgents } from './lib/opencode/packaged-agents.js';
 import {
@@ -120,6 +122,7 @@ import { dynamicNoStoreMiddleware } from './lib/http-cache-policy.js';
 import { createWebManagedOrchestrationRuntime } from './lib/orchestration/runtime.js';
 import { registerManagedOrchestrationRoutes } from './lib/orchestration/routes.js';
 import { createWebHarnessRuntime } from './lib/harness/runtime.js';
+import { createWebCommandDeadlineRuntime } from './lib/harness/command-deadline-runtime.js';
 import { registerDiagnosticsRoutes } from './lib/diagnostics/routes.js';
 import { registerMemoryDebugRoutes } from './lib/debug/memory-routes.js';
 import { createWebEvidenceRuntime } from './lib/evidence/runtime.js';
@@ -734,6 +737,8 @@ let lastOpenCodeLaunchDiagnostics = null;
 let isOpenCodeReady = false;
 let openCodeNotReadySince = 0;
 let isExternalOpenCode = false;
+let observeContextModeToolFailure = () => false;
+let observeCommandDeadline = () => false;
 let exitOnShutdown = true;
 let uiAuthController = null;
 let activeTunnelController = null;
@@ -877,9 +882,9 @@ const buildOpenCodeUrl = (...args) => openCodeNetworkRuntime.buildOpenCodeUrl(..
 const ensureOpenCodeApiPrefix = (...args) => openCodeNetworkRuntime.ensureOpenCodeApiPrefix(...args);
 const scheduleOpenCodeApiDetection = (...args) => openCodeNetworkRuntime.scheduleOpenCodeApiDetection(...args);
 
-const getAuthoritativeActiveSessionCount = async () => {
+const collectAuthoritativeActiveSessions = async () => {
   if (!openCodePort) {
-    return getActiveSessionCount();
+    return [];
   }
 
   const settings = await readSettingsFromDiskMigrated();
@@ -900,7 +905,7 @@ const getAuthoritativeActiveSessionCount = async () => {
     addDirectory(process.cwd());
   }
 
-  const activeSessionIds = new Set();
+  const activeSessionsById = new Map();
   await Promise.all([...directories].map(async (directory) => {
     const statusUrl = new URL(buildOpenCodeUrl('/session/status'));
     statusUrl.searchParams.set('directory', directory);
@@ -917,12 +922,30 @@ const getAuthoritativeActiveSessionCount = async () => {
     }
     for (const [sessionId, status] of Object.entries(statuses)) {
       if (status && typeof status === 'object' && status.type && status.type !== 'idle') {
-        activeSessionIds.add(sessionId);
+        activeSessionsById.set(sessionId, { sessionId, directory });
       }
     }
   }));
 
-  return Math.max(getActiveSessionCount(), activeSessionIds.size);
+  return [...activeSessionsById.values()];
+};
+
+const getAuthoritativeActiveSessionCount = async () => {
+  const activeSessions = await collectAuthoritativeActiveSessions();
+  return Math.max(getActiveSessionCount(), activeSessions.length);
+};
+
+const abortActiveSessionsForConfigRestart = async () => {
+  const sessions = await collectAuthoritativeActiveSessions();
+  await Promise.allSettled(sessions.map(async ({ sessionId, directory }) => {
+    const target = new URL(buildOpenCodeUrl(`/session/${encodeURIComponent(sessionId)}/abort`));
+    target.searchParams.set('directory', directory);
+    await fetch(target, {
+      method: 'POST',
+      headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
+      signal: AbortSignal.timeout(5000),
+    });
+  }));
 };
 
 const ENV_CONFIGURED_API_PREFIX = normalizeApiPrefix(
@@ -1043,97 +1066,33 @@ globalMessageStreamHub = createGlobalMessageStreamHub({
   upstreamStallTimeoutMs: getUpstreamStallTimeoutMs,
 });
 
+const processCanonicalOpenCodeEvent = createCanonicalOpenCodeEventProcessor({
+  cacheSessionInfo: maybeCacheSessionInfoFromEvent,
+  sendPush: maybeSendPushForTrigger,
+  processSessionState: (payload) => sessionRuntime.processOpenCodeSsePayload(payload),
+  processTurnTiming: (payload) => turnTimingRuntime.processOpenCodeEvent(payload),
+  recordJournalEvent: (payload) => harnessRuntime.recordOpenCodeEvent(payload),
+  recordMultiUserActivity: (payload) => multiUserRuntime?.recordOpenCodeActivity?.(payload),
+  processEvidence: (payload) => evidenceRuntime?.processOpenCodeEvent(payload),
+  processBrowserLease: (payload) => browserLeaseRuntime?.processOpenCodeEvent(payload),
+  processContextModeRecovery: (payload) => observeContextModeToolFailure(payload),
+  processCommandDeadline: (payload) => observeCommandDeadline(payload),
+  onSessionDeleted: (deletedSessionId) => {
+    sessionRuntime.clearSessionActivity(deletedSessionId);
+    void cursorSdkRuntime.deleteSessionState(deletedSessionId).catch((error) => {
+      console.warn('[CursorSDK] Failed to clean up deleted session state:', error);
+    });
+  },
+});
+
 const openCodeWatcherRuntime = createOpenCodeWatcherRuntime({
   waitForOpenCodePort: (...args) => waitForOpenCodePort(...args),
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
   parseSseDataPayload: (...args) => parseSseDataPayload(...args),
   globalEventHub: globalMessageStreamHub,
-  onPayload: (payload) => {
-    maybeCacheSessionInfoFromEvent(payload);
-    void maybeSendPushForTrigger(payload);
-    sessionRuntime.processOpenCodeSsePayload(payload);
-    turnTimingRuntime.processOpenCodeEvent(payload);
-    harnessRuntime.recordOpenCodeEvent(payload);
-    void multiUserRuntime?.recordOpenCodeActivity?.(payload).catch((error) => {
-      console.warn('[MultiUser] Failed to project OpenCode activity:', error?.message || error);
-    });
-    void evidenceRuntime?.processOpenCodeEvent(payload);
-    void browserLeaseRuntime?.processOpenCodeEvent(payload).catch((error) => {
-      console.warn('[AgentBrowser] Failed to process session cleanup event:', error?.message ?? error);
-    });
-    if (payload?.type === 'session.deleted') {
-      const deletedSessionId = payload?.properties?.info?.id;
-      if (typeof deletedSessionId === 'string' && deletedSessionId) {
-        sessionRuntime.clearSessionActivity(deletedSessionId);
-        cursorSdkRuntime.deleteSessionState(deletedSessionId).catch((error) => {
-          console.warn('[CursorSDK] Failed to clean up deleted session state:', error);
-        });
-      }
-    }
-  },
+  onPayload: processCanonicalOpenCodeEvent,
 });
-
-const processForwardedEventPayload = (payload, emitSyntheticEvent) => {
-  if (!payload || typeof payload !== 'object' || typeof emitSyntheticEvent !== 'function') {
-    return;
-  }
-
-  maybeCacheSessionInfoFromEvent(payload);
-  turnTimingRuntime.processOpenCodeEvent(payload);
-  harnessRuntime.recordOpenCodeEvent(payload);
-  void multiUserRuntime?.recordOpenCodeActivity?.(payload).catch((error) => {
-    console.warn('[MultiUser] Failed to project OpenCode activity:', error?.message || error);
-  });
-  void evidenceRuntime?.processOpenCodeEvent(payload);
-
-  if (payload.type !== 'session.status') {
-    return;
-  }
-
-  const properties = payload.properties && typeof payload.properties === 'object' ? payload.properties : {};
-  const statusInfo = properties.status && typeof properties.status === 'object' ? properties.status : {};
-  const info = properties.info && typeof properties.info === 'object' ? properties.info : {};
-  const sessionId = typeof properties.sessionID === 'string' ? properties.sessionID.trim() : '';
-  const status = typeof statusInfo.type === 'string'
-    ? statusInfo.type.trim()
-    : (typeof info.type === 'string' ? info.type.trim() : '');
-
-  if (!sessionId || !status) {
-    return;
-  }
-
-  emitSyntheticEvent({
-    type: 'openchamber:session-status',
-    properties: {
-      sessionId,
-      sessionID: sessionId,
-      status,
-      timestamp: Date.now(),
-      metadata: {
-        attempt: typeof statusInfo.attempt === 'number'
-          ? statusInfo.attempt
-          : (typeof info.attempt === 'number' ? info.attempt : undefined),
-        message: typeof statusInfo.message === 'string'
-          ? statusInfo.message
-          : (typeof info.message === 'string' ? info.message : undefined),
-        next: typeof statusInfo.next === 'number'
-          ? statusInfo.next
-          : (typeof info.next === 'number' ? info.next : undefined),
-      },
-      needsAttention: false,
-    },
-  });
-
-  emitSyntheticEvent({
-    type: 'openchamber:session-activity',
-    properties: {
-      sessionId,
-      sessionID: sessionId,
-      phase: status === 'busy' || status === 'retry' ? 'busy' : 'idle',
-    },
-  });
-};
 
 
 const serverUtilsRuntime = createServerUtilsRuntime({
@@ -1311,6 +1270,13 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
   getManagedOpenCodeShellEnvSnapshot: getLoginShellEnvSnapshot,
   getActiveSessionCount,
   getAuthoritativeActiveSessionCount,
+  acquireContextModeAdmissionHold: harnessRuntime.acquirePromptAdmissionHold,
+  recordContextModeRecoveryIncident: (status) => harnessRuntime.record({
+    type: 'log',
+    level: status.state === 'healthy' ? 'info' : 'warn',
+    event: 'context_mode_recovery',
+    payload: status,
+  }),
   provisionUserProfile: createUserProfileProvisioningRuntime({
     configRoot: defaultConfigRoot,
     profileRoot: path.join(defaultConfigRoot, 'user-profile'),
@@ -1355,10 +1321,61 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
   },
 });
 
+observeContextModeToolFailure = (payload) => (
+  openCodeLifecycleRuntime.observeContextModeToolFailure(payload)
+);
 const restartOpenCode = (...args) => openCodeLifecycleRuntime.restartOpenCode(...args);
 const waitForOpenCodeReady = (...args) => openCodeLifecycleRuntime.waitForOpenCodeReady(...args);
 const waitForAgentPresence = (...args) => openCodeLifecycleRuntime.waitForAgentPresence(...args);
-const refreshOpenCodeAfterConfigChange = (...args) => openCodeLifecycleRuntime.refreshOpenCodeAfterConfigChange(...args);
+const commandDeadlineRuntime = createWebCommandDeadlineRuntime({
+  store: harnessRuntime.commandDeadlineStore,
+  buildOpenCodeUrl,
+  getOpenCodeAuthHeaders,
+  fetchImpl: fetch,
+  publishEvent: emitSyntheticOpenCodeEvent,
+  restartOpenCode,
+  isExternalOpenCode: () => (
+    isExternalOpenCode || ENV_SKIP_OPENCODE_START || Boolean(ENV_CONFIGURED_OPENCODE_HOST)
+  ),
+  recordIncident: (incident) => harnessRuntime.record({
+    type: 'lifecycle',
+    event: incident.type,
+    sessionID: incident.sessionID,
+    directory: incident.directory,
+    messageID: incident.messageID,
+    callID: incident.callID,
+    payload: incident,
+  }),
+  sanitizeError: (error) => harnessRuntime.sanitizer.sanitizeText(error),
+});
+harnessRuntime.setCommandDeadlineRuntime(commandDeadlineRuntime);
+observeCommandDeadline = (payload) => commandDeadlineRuntime.observe(payload);
+const canForceConfigRestart = (principal) => (
+  principal?.scope === 'local-admin' || principal?.role === 'admin'
+);
+const getCurrentCanForceConfigRestart = () => {
+  const principal = getRequestPrincipal();
+  if (principal) return canForceConfigRestart(principal);
+  return multiUserRuntime?.enabled !== true;
+};
+const configApplyCoordinator = createConfigApplyCoordinator({
+  getRuntimeMode: () => (
+    isExternalOpenCode || ENV_SKIP_OPENCODE_START ? 'external' : 'managed'
+  ),
+  getActiveSessionCount,
+  getAuthoritativeActiveSessionCount,
+  applyChanges: (input) => openCodeLifecycleRuntime.applyOpenCodeConfigChanges(input),
+});
+const markConfigChange = createConfigChangeMarker({
+  coordinator: configApplyCoordinator,
+  getCanForceRestart: getCurrentCanForceConfigRestart,
+});
+const auditForceConfigRestart = async (principal, { revision, activeSessionCount }) => {
+  if (!multiUserRuntime?.enabled || typeof multiUserRuntime.audit !== 'function') return;
+  await multiUserRuntime.audit(principal, 'config.force_restart_requested', {
+    metadata: { revision, activeSessionCount },
+  });
+};
 const startHealthMonitoring = () => openCodeLifecycleRuntime.startHealthMonitoring(HEALTH_CHECK_INTERVAL);
 const triggerHealthCheck = () => openCodeLifecycleRuntime.triggerHealthCheck();
 const scheduledTasksRuntime = createScheduledTasksRuntime({
@@ -1367,6 +1384,7 @@ const scheduledTasksRuntime = createScheduledTasksRuntime({
     const settings = await readSettingsFromDiskMigrated();
     return sanitizeProjects(settings?.projects || []);
   },
+  listManagedProjectIDs: () => multiUserRuntime?.listScheduledTaskProjectIDs?.() || [],
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
   waitForOpenCodeReady,
@@ -1698,6 +1716,18 @@ async function main(options = {}) {
     readSettingsFromDiskMigrated,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
+    getConfigApplyMutationResponse: (principal) => {
+      const applyStatus = configApplyCoordinator.getStatus({
+        canForceRestart: canForceConfigRestart(principal),
+      });
+      return {
+        requiresApply: applyStatus.pending,
+        applyRevision: applyStatus.revision,
+        applyScopes: applyStatus.scopes,
+        applyStatus,
+        requiresReload: false,
+      };
+    },
   });
   app.use(
     '/api/session/:sessionID/prompt_async',
@@ -1708,6 +1738,8 @@ async function main(options = {}) {
   registerDiagnosticsRoutes(app, {
     runtime: harnessRuntime,
     getEvidenceRecords: (scope) => evidenceRuntime.getRecords(scope),
+    getContextModeRecoveryStatus: openCodeLifecycleRuntime.getContextModeRecoveryStatus,
+    getCommandDeadlineRecoveryStatus: commandDeadlineRuntime.getStatus,
   });
   registerMemoryDebugRoutes(app, {
     getAppMetrics: typeof options.getAppMetrics === 'function' ? options.getAppMetrics : null,
@@ -1726,6 +1758,7 @@ async function main(options = {}) {
       || ENV_SKIP_OPENCODE_START
       || ENV_CONFIGURED_OPENCODE_HOST
     ),
+    getWorkAdmissionBlock: harnessRuntime.getPromptAdmissionBlock,
     logger: console,
   });
   registerManagedOrchestrationRoutes(app, {
@@ -1743,18 +1776,27 @@ async function main(options = {}) {
     onAcceptedMark: (input) => {
       const isToolInputStall = input?.mark === 'renderer_tool_input_stall_confirmed';
       const isInferenceStall = input?.mark === 'renderer_provider_inference_stall_confirmed';
-      if (!isToolInputStall && !isInferenceStall) return;
+      const isLongRunningTool = input?.mark === 'renderer_long_running_tool_confirmed';
+      if (!isToolInputStall && !isInferenceStall && !isLongRunningTool) return;
       const rawStalledForMs = input?.metadata?.stalledForMs;
       const stalledForMs = typeof rawStalledForMs === 'number'
         && Number.isFinite(rawStalledForMs)
         && rawStalledForMs >= 0
         ? Math.trunc(rawStalledForMs)
         : null;
+      const rawElapsedMs = input?.metadata?.elapsedMs;
+      const elapsedMs = typeof rawElapsedMs === 'number'
+        && Number.isFinite(rawElapsedMs)
+        && rawElapsedMs >= 0
+        ? Math.trunc(rawElapsedMs)
+        : null;
       harnessRuntime.record({
         type: 'lifecycle',
-        event: isInferenceStall
-          ? 'provider_inference_stall_confirmed'
-          : 'provider_tool_input_stall_confirmed',
+        event: isLongRunningTool
+          ? 'long_running_tool_confirmed'
+          : isInferenceStall
+            ? 'provider_inference_stall_confirmed'
+            : 'provider_tool_input_stall_confirmed',
         sessionID: typeof input.sessionId === 'string' ? input.sessionId : null,
         directory: typeof input.directory === 'string' ? input.directory : null,
         assistantMessageID: typeof input.assistantMessageId === 'string'
@@ -1762,7 +1804,11 @@ async function main(options = {}) {
           : null,
         payload: {
           source: 'renderer_active_session_watchdog',
-          ...(stalledForMs === null ? {} : { stalledForMs }),
+          ...(!isLongRunningTool && stalledForMs !== null ? { stalledForMs } : {}),
+          ...(elapsedMs === null ? {} : { elapsedMs }),
+          ...(isLongRunningTool && typeof input?.metadata?.tool === 'string'
+            ? { tool: input.metadata.tool }
+            : {}),
         },
       });
     },
@@ -1778,7 +1824,7 @@ async function main(options = {}) {
       const settings = await readSettingsFromDisk();
       return sanitizeHiddenSkills(settings?.hiddenSkills);
     },
-    filterVisibleSkills,
+    resolveApprovedSkills,
   });
   projectPrewarmRuntime = createProjectPrewarmRuntime({
     warm: (warmupOptions) => agentRuntimeWarmup.warm(warmupOptions),
@@ -1832,6 +1878,7 @@ async function main(options = {}) {
     },
     getStaleOverrides: ({ directory } = {}) => (directory ? listStaleAgentModelOverrides(directory) : []),
     getLatestWarmup: () => agentRuntimeWarmup.getLatestResult(),
+    getRuntimeMode: () => (isExternalOpenCode || ENV_SKIP_OPENCODE_START ? 'external' : 'managed'),
     getPackagedAgents: () => listPackagedAgents(),
     readSkillBody: (skill) => parseMdFile(skill.path).body,
     buildOpenCodeUrl,
@@ -1856,7 +1903,11 @@ async function main(options = {}) {
     resolveOptionalProjectDirectory,
     validateDirectoryPath,
     readCustomThemesFromDisk,
-    refreshOpenCodeAfterConfigChange,
+    markConfigChange,
+    configApplyCoordinator,
+    canForceConfigRestart,
+    abortActiveSessionsForConfigRestart,
+    auditForceConfigRestart,
     getOpenCodeResolutionSnapshot,
     checkForOpenCodeUpdates,
     formatSettingsResponse,
@@ -1986,7 +2037,6 @@ async function main(options = {}) {
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     globalEventHub: globalMessageStreamHub,
-    processForwardedEventPayload,
     messageStreamWsClients: uiNotificationWsClients,
     upstreamStallTimeoutMs: getUpstreamStallTimeoutMs,
     terminalHeartbeatIntervalMs: TERMINAL_INPUT_WS_HEARTBEAT_INTERVAL_MS,

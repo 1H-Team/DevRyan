@@ -3,7 +3,9 @@ import {
   getProviderOAuthErrorMessage,
   parseProviderOAuthAuthorization,
   providerCatalogHasModels,
+  requestPostAuthConfigReload,
   requestProviderOAuthCallback,
+  resolveProviderOAuthPhase,
   type ProviderOAuthFetch,
 } from './providerOAuth';
 
@@ -102,5 +104,69 @@ describe('provider OAuth helpers', () => {
     expect(providerCatalogHasModels([
       { id: 'xai', models: [{ id: 'grok' }] },
     ], 'xai')).toBe(true);
+    expect(providerCatalogHasModels(null, 'openai')).toBe(false);
+    expect(providerCatalogHasModels([], 'openai')).toBe(false);
+  });
+});
+
+describe('OAuth attempt phase resolution', () => {
+  test('clears the attempt when the callback succeeded and models are ready', () => {
+    expect(resolveProviderOAuthPhase({ providerReady: true })).toEqual({ phase: null });
+  });
+
+  // Regression: a saved credential used to surface as "Failed to complete OAuth flow" whenever
+  // the model catalog had not caught up within the retry budget.
+  test('reports a lagging model catalog as pending, never as an error', () => {
+    expect(resolveProviderOAuthPhase({ providerReady: false })).toEqual({ phase: 'models-pending' });
+    expect(resolveProviderOAuthPhase({})).toEqual({ phase: 'models-pending' });
+    expect(resolveProviderOAuthPhase({ callbackError: null, providerReady: false }).phase)
+      .not.toBe('error');
+  });
+
+  test('only a failed callback resolves to an error, carrying its message', () => {
+    expect(resolveProviderOAuthPhase({ callbackError: 'Authorization expired.' })).toEqual({
+      phase: 'error',
+      error: 'Authorization expired.',
+    });
+  });
+});
+
+describe('post-auth config reload', () => {
+  test('reports a deferred apply when the server waits for idle', async () => {
+    const calls: Array<{ input: string; init: RequestInit }> = [];
+    const fetchImpl: ProviderOAuthFetch = async (input, init) => {
+      calls.push({ input, init });
+      return {
+        ok: true,
+        json: async () => ({ success: true, applyStatus: { state: 'waiting_for_idle' } }),
+      };
+    };
+
+    expect(await requestPostAuthConfigReload({ fetchImpl })).toEqual({ ok: true, deferred: true });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.input).toBe('/api/config/reload');
+    expect(calls[0]?.init.method).toBe('POST');
+  });
+
+  test('reports an immediate apply as not deferred', async () => {
+    const fetchImpl: ProviderOAuthFetch = async () => ({
+      ok: true,
+      json: async () => ({ success: true, applyStatus: { state: 'applied' } }),
+    });
+
+    expect(await requestPostAuthConfigReload({ fetchImpl })).toEqual({ ok: true, deferred: false });
+  });
+
+  // The credential is already saved by this point, so a reload failure must never throw.
+  test('swallows non-ok responses and network errors', async () => {
+    const rejecting: ProviderOAuthFetch = async () => ({ ok: false, json: async () => ({}) });
+    expect(await requestPostAuthConfigReload({ fetchImpl: rejecting }))
+      .toEqual({ ok: false, deferred: false });
+
+    const throwing: ProviderOAuthFetch = async () => {
+      throw new Error('offline');
+    };
+    expect(await requestPostAuthConfigReload({ fetchImpl: throwing }))
+      .toEqual({ ok: false, deferred: false });
   });
 });

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 
 const read = (relativePath: string) => readFileSync(new URL(relativePath, import.meta.url), 'utf8');
 
-const contextPanel = read('./ContextPanel.tsx');
+const browserPanel = read('./BrowserPanel.tsx');
 const browserPane = read('./DesktopBrowserPane.tsx');
 const browserAgentStore = read('../../stores/useBrowserAgentStore.ts');
 const uiStore = read('../../stores/useUIStore.ts');
@@ -13,59 +13,46 @@ const localPreviewInstances = read('./localPreviewInstances.ts');
 
 describe('session-scoped browser lease lifecycle', () => {
   test('mounts the invariant lease fleet directly from live lease IDs', () => {
-    expect(contextPanel).toContain('{leaseIds.map((leaseId) => (');
-    expect(contextPanel).toContain('key={leaseId}');
-    expect(contextPanel).toContain('<BrowserLeasePane');
-    expect(contextPanel).toContain('leaseId={leaseId}');
-    expect(contextPanel).toContain("? 'pointer-events-none fixed inset-0 -z-10 opacity-0'");
+    expect(browserPanel).toContain('{leaseTabs.map((tab) => (');
+    expect(browserPanel).toContain('key={tab.leaseId}');
+    expect(browserPanel).toContain('<BrowserLeasePane');
+    expect(browserPanel).toContain('leaseId={tab.leaseId}');
+    expect(browserPanel).toContain("? 'pointer-events-none fixed inset-0 -z-10 opacity-0'");
   });
 
   test('shows only the observed lease and keeps every other guest inert but paintable', () => {
-    expect(contextPanel).toContain('active={activeLeaseId === leaseId && observedLeaseId === leaseId}');
-    expect(contextPanel).toContain("active ? 'z-10 opacity-100' : 'z-0 pointer-events-none opacity-0'");
-    expect(contextPanel).not.toContain("!active && 'invisible pointer-events-none'");
-    expect(contextPanel).toContain('void setObservedBrowserAgentLease(activeLeaseId);');
-    expect(contextPanel).toContain('void setObservedBrowserAgentLease(null);');
+    expect(browserPanel).toContain('active={surfacesActive && observedLeaseId === tab.leaseId}');
+    expect(browserPanel).toContain("active ? 'z-10 opacity-100' : 'z-0 pointer-events-none opacity-0'");
+    expect(browserPanel).not.toContain("!active && 'invisible pointer-events-none'");
+    expect(browserPanel).toContain('void setObservedBrowserAgentLease(observedLeaseId);');
+    expect(browserPanel).toContain('void setObservedBrowserAgentLease(null);');
   });
 
-  test('prunes every stale lease tab on a root switch without touching non-lease tabs', () => {
+  test('prunes every stale lease presentation on a root switch', () => {
     const tabs = [
-      { id: 'lease-stale-a', mode: 'browser', leaseId: 'lease-a', ownerSessionId: 'root-a' },
-      { id: 'manual-browser', mode: 'browser', leaseId: null, ownerSessionId: null },
-      { id: 'file-tab', mode: 'file', leaseId: null, ownerSessionId: null },
-      { id: 'lease-current', mode: 'browser', leaseId: 'lease-b', ownerSessionId: 'root-b' },
-      { id: 'lease-stale-c', mode: 'browser', leaseId: 'lease-c', ownerSessionId: 'root-c' },
+      { id: 'lease-stale-a', leaseId: 'lease-a', rootSessionId: 'root-a' },
+      { id: 'lease-current', leaseId: 'lease-b', rootSessionId: 'root-b' },
+      { id: 'lease-stale-c', leaseId: 'lease-c', rootSessionId: 'root-c' },
     ] as const;
     const currentRootSessionId = 'root-b';
     const staleLeaseTabIDs = tabs
-      .filter((tab) => (
-        tab.mode === 'browser'
-        && Boolean(tab.leaseId)
-        && tab.ownerSessionId !== currentRootSessionId
-      ))
+      .filter((tab) => tab.rootSessionId !== currentRootSessionId)
       .map((tab) => tab.id);
 
     expect(staleLeaseTabIDs).toEqual([
       'lease-stale-a',
       'lease-stale-c',
     ]);
-    expect(contextPanel).toContain("tab.mode === 'browser'");
-    expect(contextPanel).toContain('&& Boolean(tab.leaseId)');
-    expect(contextPanel).toContain('&& tab.ownerSessionId !== currentRootSessionId');
-    expect(contextPanel).toContain(
-      'const staleLeaseTabIDs = getStaleBrowserLeaseTabIDs(tabs, currentRootSessionId);',
-    );
-    expect(contextPanel).toContain('for (const staleTabID of staleLeaseTabIDs) {');
-    expect(contextPanel).toContain('closeContextPanelTab(directoryKey, staleTabID);');
+    expect(browserPanel).toContain('if (tab.rootSessionId !== currentRootSessionId) closeBrowserLease(directory, tab.leaseId);');
   });
 
   test('keeps manual browser pages on the dedicated active-or-retained workspace policy', () => {
-    expect(contextPanel).toContain("tabs.find((tab) => tab.mode === 'browser' && !tab.leaseId)");
-    expect(contextPanel).toContain('<ManualBrowserWorkspacePane');
+    expect(browserPanel).toContain('<ManualBrowserWorkspacePane');
+    expect(browserPanel).toContain('showTabStrip={false}');
     expect(browserPane).toContain('const isMounted = isActive || retainedTabIds.has(tab.id);');
     expect(browserPane).toContain('sleepDelayMs: BROWSER_PAGE_SLEEP_DELAY_MS');
-    expect(contextPanel).not.toContain('agentDriving || retainedBrowserTabIDs');
-    expect(uiStore).toContain("tab.mode === 'browser' && !tab.leaseId");
+    expect(browserPanel).not.toContain('agentDriving || retainedBrowserTabIDs');
+    expect(uiStore).toContain('browserLeaseTabsByDirectory');
   });
 
   test('uses the main-owned lease surface and never starts the retired global bridge', () => {

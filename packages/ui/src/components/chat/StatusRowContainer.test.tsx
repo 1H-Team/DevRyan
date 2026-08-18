@@ -1,28 +1,61 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  resolveManagedChildGenericStatusText,
+  resolveLongRunningToolPresentation,
   resolveStatusRowAssistantDisplay,
   shouldRenderStatusRowAssistantStatus,
 } from './StatusRowContainer';
 
+describe('resolveManagedChildGenericStatusText', () => {
+  const copy = {
+    waitingText: 'Waiting for model',
+    recoveringText: 'Recovering subtask',
+  };
+
+  test('replaces random generic copy for an active managed child', () => {
+    expect(resolveManagedChildGenericStatusText({
+      task: { executionKind: 'start', status: 'running' },
+      isGenericStatus: true,
+      ...copy,
+    })).toBe('Waiting for model');
+  });
+
+  test('distinguishes same-child recovery attempts', () => {
+    for (const executionKind of ['resume', 'recover_in_place', 'retry_in_place'] as const) {
+      expect(resolveManagedChildGenericStatusText({
+        task: { executionKind, status: 'running' },
+        isGenericStatus: true,
+        ...copy,
+      })).toBe('Recovering subtask');
+    }
+  });
+
+  test('preserves semantic assistant copy and terminal task state', () => {
+    expect(resolveManagedChildGenericStatusText({
+      task: { executionKind: 'retry_in_place', status: 'running' },
+      isGenericStatus: false,
+      ...copy,
+    })).toBeNull();
+    expect(resolveManagedChildGenericStatusText({
+      task: { executionKind: 'start', status: 'completed' },
+      isGenericStatus: true,
+      ...copy,
+    })).toBeNull();
+  });
+});
+
 describe('shouldRenderStatusRowAssistantStatus', () => {
-  test('suppresses the status row while reasoning owns the visible Thinking indicator', () => {
-    expect(shouldRenderStatusRowAssistantStatus('reasoning', true)).toBe(false);
+  test('keeps the row visible for every working state, including reasoning', () => {
+    expect(shouldRenderStatusRowAssistantStatus(true)).toBe(true);
   });
 
-  test('keeps the waiting row visible when a managed barrier owns live reasoning', () => {
-    expect(shouldRenderStatusRowAssistantStatus('reasoning', true, true)).toBe(true);
-  });
-
-  test('keeps non-reasoning working states visible in the status row', () => {
-    expect(shouldRenderStatusRowAssistantStatus('text', true)).toBe(true);
-    expect(shouldRenderStatusRowAssistantStatus('tool', true)).toBe(true);
-    expect(shouldRenderStatusRowAssistantStatus('editing', true)).toBe(true);
+  test('keeps the row visible when a managed child owns the idle status', () => {
+    expect(shouldRenderStatusRowAssistantStatus(false, true)).toBe(true);
   });
 
   test('does not render the status row assistant placeholder while idle', () => {
-    expect(shouldRenderStatusRowAssistantStatus(undefined, false)).toBe(false);
-    expect(shouldRenderStatusRowAssistantStatus('text', false)).toBe(false);
+    expect(shouldRenderStatusRowAssistantStatus(false)).toBe(false);
   });
 });
 
@@ -63,6 +96,32 @@ describe('resolveStatusRowAssistantDisplay', () => {
       isWorking: false,
       statusText: null,
       isGenericStatus: false,
+    });
+  });
+});
+
+describe('resolveLongRunningToolPresentation', () => {
+  test('shows direct and MCP aliases without elapsed time before enabling Stop', () => {
+    for (const tool of ['ctx_execute', 'mcp__context-mode__ctx_execute']) {
+      const presentation = resolveLongRunningToolPresentation({
+        tool,
+        confirmedAt: null,
+      }, null);
+
+      expect(presentation?.elapsed).toBeNull();
+      expect(presentation?.tool).toBe('C-Mode: Execute');
+      expect(presentation?.actionable).toBe(false);
+    }
+  });
+
+  test('enables Stop only after the unchanged call is confirmed', () => {
+    expect(resolveLongRunningToolPresentation({
+      tool: 'ctx_execute',
+      confirmedAt: 300_000,
+    }, '5m 0s')).toEqual({
+      tool: 'C-Mode: Execute',
+      elapsed: '5m 0s',
+      actionable: true,
     });
   });
 });

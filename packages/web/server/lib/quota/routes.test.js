@@ -120,6 +120,75 @@ describe('managed quota credential routes', () => {
 });
 
 describe('Claude quota runtime resolution', () => {
+  it('returns normalized provider context and enforces managed session ownership', async () => {
+    const app = express();
+    const ownsSession = vi.fn(async (_principal, sessionID) => sessionID === 'session-a');
+    const fetchContextUsage = vi.fn(async () => ({
+      ok: true,
+      usage: {
+        sessionID: 'session-a',
+        status: 'available',
+        source: 'meridian',
+        inputTokens: 2,
+        cacheReadTokens: 125220,
+        cacheWriteTokens: 1818,
+        activeInputTokens: 127040,
+        lastOutputTokens: 1464,
+        fetchedAt: 123,
+      },
+    }));
+    app.use((req, _res, next) => {
+      req.principal = { scope: 'managed', userId: 'user-a' };
+      next();
+    });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: vi.fn(async () => ({
+        providers: [{ id: 'anthropic', options: { baseURL: 'http://127.0.0.1:3456' } }],
+      })),
+    });
+    registerQuotaRoutes(app, {
+      getQuotaProviders: async () => ({
+        listConfiguredQuotaProviders: () => [],
+        fetchQuotaForProvider: async () => ({}),
+      }),
+      buildOpenCodeUrl: (requestPath) => `http://127.0.0.1:4096${requestPath}`,
+      isExternalOpenCode: () => false,
+      ownsSession,
+      claudeContextUsageClient: { fetchContextUsage },
+    });
+
+    const response = await request(app)
+      .get('/api/session/session-a/context-usage?refreshSession=true')
+      .expect(200);
+    expect(response.body.activeInputTokens).toBe(127040);
+    expect(fetchContextUsage).toHaveBeenCalledWith(expect.objectContaining({
+      sessionID: 'session-a',
+      refreshSession: true,
+    }));
+    await request(app).get('/api/session/session-b/context-usage').expect(404);
+    fetchSpy.mockRestore();
+  });
+
+  it('degrades context usage to the message fallback for external runtimes', async () => {
+    const app = express();
+    registerQuotaRoutes(app, {
+      getQuotaProviders: async () => ({
+        listConfiguredQuotaProviders: () => [],
+        fetchQuotaForProvider: async () => ({}),
+      }),
+      isExternalOpenCode: () => true,
+    });
+
+    const response = await request(app).get('/api/session/session-a/context-usage').expect(200);
+    expect(response.body).toMatchObject({
+      sessionID: 'session-a',
+      status: 'unavailable',
+      source: 'message-fallback',
+      activeInputTokens: 0,
+    });
+  });
+
   it('uses the safe live Anthropic proxy for configured-provider discovery', async () => {
     const app = express();
     const listConfiguredQuotaProviders = vi.fn(() => ['claude']);

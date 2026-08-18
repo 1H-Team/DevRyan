@@ -172,6 +172,33 @@ describe("useConfigStore startup load status", () => {
     expect(useConfigStore.getState().providersLoadError).toContain("default workspace failed")
   })
 
+  test("concurrent provider loads dedup by default but force issues a real refetch", async () => {
+    let callCount = 0
+    let releaseFirst: (() => void) | undefined
+    getProvidersImpl = () => {
+      callCount += 1
+      if (callCount === 1) {
+        return new Promise((resolve) => {
+          releaseFirst = () => resolve({ providers: [], default: {} })
+        })
+      }
+      return Promise.resolve({ providers: [], default: {} })
+    }
+
+    const inFlight = useConfigStore.getState().loadProviders()
+    // Deduped: reuses the in-flight request rather than hitting the API again.
+    const deduped = useConfigStore.getState().loadProviders()
+    expect(callCount).toBe(1)
+
+    // Forced: polling for a freshly-authorized provider must not resolve against the
+    // pre-auth catalog that the in-flight request already fetched.
+    const forced = useConfigStore.getState().loadProviders({ force: true })
+    expect(callCount).toBe(2)
+
+    releaseFirst?.()
+    await Promise.all([inFlight, deduped, forced])
+  })
+
   test("initialization preserves healthy connectivity when provider bootstrap fails", async () => {
     getProvidersImpl = () => Promise.reject(new Error("provider bootstrap failed"))
 

@@ -133,6 +133,13 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
     customizable: true,
   },
   {
+    id: 'send_selection_to_input',
+    defaultCombo: 'mod+l',
+    label: 'Send selection to input',
+    description: 'Append selected chat content to the composer',
+    customizable: true,
+  },
+  {
     id: 'focus_input',
     defaultCombo: 'mod+i',
     label: 'Focus input',
@@ -177,7 +184,7 @@ const SHORTCUT_ACTIONS: ReadonlyArray<ShortcutAction> = [
   },
   {
     id: 'toggle_sidebar',
-    defaultCombo: 'mod+l',
+    defaultCombo: 'mod+alt+l',
     label: 'Toggle sidebar',
     description: 'Toggle the session sidebar',
     customizable: true,
@@ -523,6 +530,48 @@ export function getAvailableCustomizableShortcutActions(
   principal: AuthPrincipal,
 ): ReadonlyArray<ShortcutAction> {
   return getCustomizableShortcutActions().filter((action) => isShortcutActionAvailable(action, principal));
+}
+
+export function findShortcutConflict(
+  actionId: string,
+  combo: ShortcutCombo,
+  overrides?: Record<string, ShortcutCombo>,
+): string | null {
+  const normalized = normalizeCombo(combo);
+  if (!normalized || normalized === UNASSIGNED_SHORTCUT) return null;
+
+  for (const action of getCustomizableShortcutActions()) {
+    if (action.id === actionId) continue;
+    const existing = getEffectiveShortcutCombo(action.id, overrides);
+    if (existing && normalizeCombo(existing) === normalized) {
+      return action.id;
+    }
+  }
+  return null;
+}
+
+export function migrateSendSelectionShortcutOverrides(
+  value: unknown,
+): Record<string, ShortcutCombo> {
+  const overrides: Record<string, ShortcutCombo> = {};
+  if (value && typeof value === 'object') {
+    for (const [actionId, combo] of Object.entries(value)) {
+      if (typeof combo === 'string') overrides[actionId] = combo;
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(overrides, 'send_selection_to_input')) {
+    return overrides;
+  }
+
+  const oldPrimaryCombo = normalizeCombo('mod+l');
+  const existingClaim = Object.entries(overrides).some(([, combo]) => (
+    normalizeCombo(combo) === oldPrimaryCombo
+  ));
+  if (existingClaim) {
+    overrides.send_selection_to_input = UNASSIGNED_SHORTCUT;
+  }
+  return overrides;
 }
 
 export function getEffectiveShortcutCombo(

@@ -7,6 +7,7 @@ Contains all user-facing React components, organized by feature area (chat, sett
 - **Domain folders over page-only structure**: chat and settings features keep view logic close to local helpers/hooks.
 - **Shared primitives layer**: `ui/` wraps Base UI / common controls (dialogs, dropdowns, tooltip, toaster, skeleton, etc.) for consistent styling and behavior.
 - **Runtime-capable composition**: desktop/vscode-specific shells are isolated in targeted components while reusing core chat/settings surfaces.
+- **Independent desktop panels**: `layout/ContextPanel.tsx` owns Plan/File/Diff/Preview tabs, while `layout/BrowserPanel.tsx` owns the separate Browser workspace and Chrome-style page/lease tab strip so both panels can remain visible together.
 - **Error isolation**: boundary components (e.g., chat/view-level boundaries) prevent full-app crashes from feature failures.
 
 ## Flow

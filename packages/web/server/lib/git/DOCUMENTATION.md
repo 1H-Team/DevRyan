@@ -11,7 +11,8 @@ Managed callers are additionally constrained by the multi-user layer: worktree c
   - `routes.js`: Express route registration for `/api/git/*` endpoints.
   - `template-routes.js`: Conventional commit template and global `commit-msg` hook setup routes.
   - `service.js`: Core Git operations (repository, branch, worktree, commit, merge/rebase, status/diff, log).
-  - `integrate.js`: Server-owned commit reintegration, temporary worktree lifecycle, and conflict continuation.
+  - `@openchamber/harness-runtime/lib/git-post-checkout-hook.js`: Shared bounded post-checkout hook execution used by web/Electron and VS Code.
+  - `integrate.js`: Server-owned commit reintegration, temporary worktree lifecycle, conflict continuation, and the `isIntegrateTempPath` predicate that keeps those worktrees out of managed-project registration.
   - `commit-message.js`: Session-free commit-subject prompt, normalization, validation, and direct Zen utility-model generation.
   - `commit-message-context.js`: Bounded host-side status, history, and selected-file diff collection for commit-message drafts.
   - `credentials.js`: Git credentials management.
@@ -174,11 +175,22 @@ The following functions are internal helpers used by exported functions:
   warnings, attempt number, and tombstone state.
 
 Synchronous stages are `prepare_remote`, `create_worktree`, and
-`sync_project_metadata`. Population, upstream configuration, project setup, and
-requested setup continue asynchronously. Metadata/upstream failures can settle
-as `ready_with_warnings`; known setup failures are `failed`; setup interrupted
-by process exit becomes `needs_attention` and is rerun only after explicit
-Retry.
+`sync_project_metadata`. Population, post-checkout hook execution, upstream
+configuration, project setup, and requested setup continue asynchronously.
+Metadata/upstream failures can settle as `ready_with_warnings`; known setup
+failures are `failed`; setup interrupted by process exit becomes
+`needs_attention` and is rerun only after explicit Retry.
+
+Immediately after successful population, the shared runner resolves the
+effective Git hooks path. A configured global `core.hooksPath` intentionally
+shadows repository-local hooks, matching Git. Missing hooks are skipped. An
+existing hook requires Git 2.36+ and runs exactly once through
+`git hook run --ignore-missing post-checkout -- 0000000000000000000000000000000000000000 <HEAD> 1`
+with the worktree as `cwd`. Execution is time-bounded; nonzero, timeout, or
+interruption failures do not let setup continue. Captured failure output is
+bounded and sanitized before entering the durable version 3 receipt. Legacy
+terminal receipts migrate with the new stage skipped, so upgrades never run a
+historical hook retroactively.
 
 The `populate_worktree` stage performs one bounded recovery when Git reports an
 `index.lock` collision or cannot finalize a new index file. It resolves the

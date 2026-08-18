@@ -26,11 +26,11 @@ export const getProviderDisplayName = (
   provider: ProviderLike,
   sources?: ProviderSourcesLike
 ) => {
-  if (sources?.anthropicOAuth?.exists && isAnthropicOAuthProviderId(provider.id)) {
-    return 'Anthropic';
+  if (isAnthropicOAuthProviderId(provider.id)) {
+    return 'Claude';
   }
   if (provider.id === 'cursor-acp') {
     return provider.name === 'Cursor ACP' ? 'Cursor' : provider.name || 'Cursor';
   }
-  return provider.name || provider.id || '';
+  return provider.name || provider.id || (sources?.anthropicOAuth?.exists ? 'Claude' : '');
 };

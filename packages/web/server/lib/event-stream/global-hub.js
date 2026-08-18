@@ -24,11 +24,13 @@ export function createGlobalMessageStreamHub({
   upstreamReconnectDelayMs,
   replayLimit = MESSAGE_STREAM_GLOBAL_REPLAY_LIMIT,
   replayByteBudget = MESSAGE_STREAM_GLOBAL_REPLAY_BYTE_BUDGET,
+  transformEventPayload,
 }) {
   const eventSubscribers = new Set();
   const statusSubscribers = new Set();
   const replay = [];
   const replaySizes = [];
+  const replayEventIds = new Set();
   let replayTotalBytes = 0;
   let syntheticEventSequence = 0;
 
@@ -72,13 +74,15 @@ export function createGlobalMessageStreamHub({
     const size = approxEventSizeBytes(normalized);
     replay.push(normalized);
     replaySizes.push(size);
+    replayEventIds.add(normalized.eventId);
     replayTotalBytes += size;
     // Always keep at least the newest event, even if it alone busts the budget.
     while (
       replay.length > 1 &&
       (replay.length > replayLimit || replayTotalBytes > replayByteBudget)
     ) {
-      replay.shift();
+      const removed = replay.shift();
+      if (removed?.eventId) replayEventIds.delete(removed.eventId);
       replayTotalBytes -= replaySizes.shift() ?? 0;
     }
   };
@@ -89,10 +93,14 @@ export function createGlobalMessageStreamHub({
     }
   };
 
+  const normalizeEventId = (value) => (
+    typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
+  );
+
   const normalizeEvent = ({ envelope, payload }) => {
     const directory =
       typeof envelope?.directory === 'string' && envelope.directory.length > 0 ? envelope.directory : 'global';
-    const eventId = typeof envelope?.eventId === 'string' && envelope.eventId.length > 0 ? envelope.eventId : undefined;
+    const eventId = normalizeEventId(envelope?.eventId);
     return {
       envelope,
       payload,
@@ -133,7 +141,26 @@ export function createGlobalMessageStreamHub({
         notifyStatus({ type: 'disconnect', reason });
       },
       onEvent(event) {
-        const normalized = normalizeEvent(event);
+        const upstreamEventId = normalizeEventId(event?.envelope?.eventId);
+        // The upstream can replay the last event after reconnect. Drop it
+        // before enrichment or subscriber fanout so every canonical side
+        // effect observes a non-empty event ID at most once per replay window.
+        if (upstreamEventId && replayEventIds.has(upstreamEventId)) return;
+
+        let next = event;
+        // Applied before rememberReplayEvent so reconnect replays carry the
+        // same enriched payloads as the live stream.
+        if (typeof transformEventPayload === 'function') {
+          try {
+            const payload = transformEventPayload(event.payload);
+            if (payload && payload !== event.payload) {
+              next = { ...event, payload };
+            }
+          } catch (error) {
+            console.warn('Global message stream payload transform failed:', error);
+          }
+        }
+        const normalized = normalizeEvent(next);
         rememberReplayEvent(normalized);
         notifyEvent(normalized);
       },

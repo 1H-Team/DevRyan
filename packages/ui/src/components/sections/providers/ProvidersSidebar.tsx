@@ -7,7 +7,7 @@ import { useConfigStore } from '@/stores/useConfigStore';
 import { quotaRefreshCoordinator } from '@/stores/useQuotaStore';
 import { RiAddLine, RiDeleteBinLine, RiStackLine } from '@remixicon/react';
 import { cn } from '@/lib/utils';
-import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
+import { recordConfigMutationResponse } from '@/stores/useConfigApplyStore';
 import { useI18n } from '@/lib/i18n';
 import { splitAntigravityProviderForDisplay } from '@/lib/providers/antigravity';
 import { getProviderDisplayName } from '@/lib/providers/display';
@@ -118,7 +118,7 @@ export const ProvidersSidebar: React.FC<ProvidersSidebarProps> = ({ onItemSelect
         }
 
         toast.success(t('settings.providers.page.toast.providerDisconnected'));
-        await reloadOpenCodeConfiguration({ scopes: ['providers'], mode: 'active' });
+        recordConfigMutationResponse(payload);
         await loadProviders({ directory: null });
         quotaRefreshCoordinator.settingsChanged();
       } catch (error) {

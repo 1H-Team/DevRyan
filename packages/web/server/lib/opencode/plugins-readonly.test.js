@@ -55,6 +55,8 @@ describe('read-only plugin config model', () => {
         'context-mode',
         'oh-my-opencode-slim',
         'superpowers',
+        'devryan-skill-context',
+        'devryan-document-reader',
         'openai-tool-schema-sanitizer',
       ]);
       expect(result.entries.map((plugin) => `${plugin.scope}:${plugin.spec}:${plugin.parsedKind}`)).toEqual([

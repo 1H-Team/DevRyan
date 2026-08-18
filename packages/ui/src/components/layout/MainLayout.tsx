@@ -7,6 +7,7 @@ import { RightSidebar, RIGHT_SIDEBAR_CONTENT_WIDTH } from './RightSidebar';
 import { RightSidebarTabs } from './RightSidebarTabs';
 import { DesktopEdgeChrome } from './DesktopEdgeChrome';
 import { ContextPanel } from './ContextPanel';
+import { BrowserPanel } from './BrowserPanel';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { CommandPalette } from '../ui/CommandPalette';
 import { HelpDialog } from '../ui/HelpDialog';
@@ -24,6 +25,7 @@ import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { isDesktopShell } from '@/lib/desktop';
 import { getSettingsFullPageOverlayClassName } from '@/components/views/SettingsView.styles';
+import { useConfigApplyStatusLifecycle } from '@/components/views/config-apply/useConfigApplyStatusLifecycle';
 import {
     DeferredLazyView,
     LazyDiffView,
@@ -73,6 +75,8 @@ export const MainLayout: React.FC = () => {
     const isMultiRunLauncherOpen = useUIStore((state) => state.isMultiRunLauncherOpen);
     const setMultiRunLauncherOpen = useUIStore((state) => state.setMultiRunLauncherOpen);
     const multiRunLauncherPrefillPrompt = useUIStore((state) => state.multiRunLauncherPrefillPrompt);
+
+    useConfigApplyStatusLifecycle(isSettingsDialogOpen);
 
     const { isMobile, isTablet } = useDeviceInfo();
     const isDesktopShellRuntime = React.useMemo(() => isDesktopShell(), []);
@@ -564,7 +568,7 @@ export const MainLayout: React.FC = () => {
                         )}
                     >
                         <main className="w-full h-full overflow-hidden bg-background relative" data-page-scroll-lock="true">
-                            <div className={cn('absolute inset-0', !isChatActive && 'invisible')}>
+                            <div data-chat-surface="true" className={cn('absolute inset-0', !isChatActive && 'invisible')}>
                                 <ErrorBoundary><ChatView /></ErrorBoundary>
                             </div>
                             {secondaryView && (
@@ -679,7 +683,7 @@ export const MainLayout: React.FC = () => {
                                 )} data-page-scroll-lock="true">
                                     <div className="relative flex flex-1 min-h-0 min-w-0 overflow-hidden" data-page-scroll-lock="true">
                                         <main className="flex-1 overflow-hidden bg-background relative" data-page-scroll-lock="true">
-                                            <div className={cn('absolute inset-0', !isChatActive && 'invisible')}>
+                                            <div data-chat-surface="true" className={cn('absolute inset-0', !isChatActive && 'invisible')}>
                                                 <ErrorBoundary><ChatView /></ErrorBoundary>
                                             </div>
                                             {secondaryView && (
@@ -689,6 +693,7 @@ export const MainLayout: React.FC = () => {
                                             )}
                                         </main>
                                         <ContextPanel />
+                                        <BrowserPanel />
                                     </div>
                                 </div>
                                 {canUseTerminal ? <BottomTerminalDock isOpen={isBottomTerminalOpen} isMobile={isMobile}>

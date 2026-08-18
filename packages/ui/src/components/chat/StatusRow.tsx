@@ -6,6 +6,7 @@ import {
   RiArrowUpSLine,
   RiCheckboxCircleLine,
   RiCloseCircleLine,
+  RiDraftLine,
   RiErrorWarningLine,
   RiRecordCircleLine,
   RiTimeLine,
@@ -153,6 +154,10 @@ interface StatusRowProps {
   providerStallPending?: boolean;
   providerStallError?: string | null;
   onResolveProviderStall?: () => void;
+  longRunningToolStatusText?: string | null;
+  longRunningToolPending?: boolean;
+  longRunningToolError?: string | null;
+  onStopLongRunningTool?: () => void;
   // Abort state (for mobile/vscode)
   showAbort?: boolean;
   onAbort?: () => void;
@@ -162,6 +167,12 @@ interface StatusRowProps {
   showTodos?: boolean;
   agentName?: string;
   leftAccessory?: React.ReactNode;
+  // When set, renders the task/plan row as the tucked-behind-card "tab" bar
+  // (matching the draft project/branch bar) with tasks left and Plan right.
+  tabBackground?: string;
+  // When true, hide the tucked tab without unmounting so plan auto-reveal /
+  // preload effects keep running. ChatInput sets this while messages are queued.
+  suppressTab?: boolean;
 }
 
 export const StatusRow: React.FC<StatusRowProps> = ({
@@ -176,6 +187,10 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   providerStallPending,
   providerStallError,
   onResolveProviderStall,
+  longRunningToolStatusText,
+  longRunningToolPending,
+  longRunningToolError,
+  onStopLongRunningTool,
   showAbort,
   onAbort,
   showAbortStatus,
@@ -183,8 +198,11 @@ export const StatusRow: React.FC<StatusRowProps> = ({
   showTodos = true,
   agentName,
   leftAccessory,
+  tabBackground,
+  suppressTab,
 }) => {
   const { t } = useI18n();
+  const isTab = Boolean(tabBackground);
   const [isExpanded, setIsExpanded] = React.useState(false);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const isSessionPlanAvailable = useSessionUIStore((state) => (
@@ -232,6 +250,11 @@ export const StatusRow: React.FC<StatusRowProps> = ({
     if (!planActionState.enabled) return;
     void preloadPlanView().catch(() => undefined);
   }, [planActionState.enabled]);
+
+  React.useEffect(() => {
+    if (!suppressTab) return;
+    setIsExpanded(false);
+  }, [suppressTab]);
 
   React.useEffect(() => {
     if (!shouldAutoRevealPlan) return;
@@ -292,7 +315,8 @@ export const StatusRow: React.FC<StatusRowProps> = ({
     isWorking ||
     Boolean(wasAborted) ||
     Boolean(showAbortStatus) ||
-    Boolean(providerStallStatusText)
+    Boolean(providerStallStatusText) ||
+    Boolean(longRunningToolStatusText)
   );
   const hasLeftAccessory = Boolean(leftAccessory);
   // Original logic from ChatInput
@@ -329,6 +353,15 @@ export const StatusRow: React.FC<StatusRowProps> = ({
     completed: displayedProgress,
     total: progress.total,
   });
+  // Saved-plan phases keep their "Phase n: Task x/y" wording; ordinary todos use
+  // the leading "Task n/N: <summary>" form requested for the left of the tab bar.
+  const compactTaskLabel = planPhaseProjection
+    ? `${todoTitle} ${displayedProgress}/${progress.total}`
+    : t('chat.statusRow.summary.taskLabel', {
+        completed: displayedProgress,
+        total: progress.total,
+        task: todoTitle,
+      });
 
   // Abort button for mobile/vscode
   const abortButton = showAbort && onAbort ? (
@@ -347,22 +380,34 @@ export const StatusRow: React.FC<StatusRowProps> = ({
     <button
       type="button"
       onClick={toggleExpanded}
-      className="flex min-w-0 max-w-full items-center gap-1 flex-shrink-0 text-muted-foreground"
+      className={cn(
+        "flex items-center gap-1 text-muted-foreground",
+        isTab ? "min-w-0" : "min-w-0 max-w-full flex-shrink-0",
+      )}
       aria-label={todoSummaryLabel}
       title={todoSummaryLabel}
     >
       <span
         className={cn(
-          "status-row__active-todo typography-ui-label text-foreground truncate min-w-0",
-          isCompact ? "max-w-[38cqw]" : "max-w-[200px]"
+          "typography-ui-label text-foreground truncate min-w-0",
+          isTab
+            ? (isExpanded
+              ? "max-w-[calc(100cqw-2.25rem)]"
+              : "max-w-[min(69cqw,calc(100cqw-6.5rem))]")
+            : "status-row__active-todo max-w-[200px]",
+          !isTab && isCompact && "max-w-[38cqw]",
         )}
       >
-        {todoTitle}
+        {compactTaskLabel}
       </span>
-      <span className="typography-meta flex-shrink-0 tabular-nums" aria-hidden="true">
-        {displayedProgress}/{progress.total}
-      </span>
-      <RiArrowUpSLine className="h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
+      <RiArrowUpSLine
+        className={cn(
+          "h-3.5 w-3.5 flex-shrink-0",
+          isTab && "transition-transform duration-200 ease-in-out",
+          isTab && isExpanded && "rotate-180",
+        )}
+        aria-hidden="true"
+      />
     </button>
   ) : null;
 
@@ -382,11 +427,12 @@ export const StatusRow: React.FC<StatusRowProps> = ({
         <span className="shrink-0" tabIndex={planActionState.enabled ? undefined : 0}>
           <button
             type="button"
-            className="typography-ui-label shrink-0 text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            className="typography-ui-label shrink-0 inline-flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!planActionState.enabled}
             aria-label={t('chat.statusRow.actions.viewPlan')}
             onClick={handleViewPlan}
           >
+            <RiDraftLine className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             {t('chat.statusRow.actions.viewPlan')}
           </button>
         </span>
@@ -409,10 +455,114 @@ export const StatusRow: React.FC<StatusRowProps> = ({
         : t('chat.statusRow.providerStall.action')}
     </button>
   ) : null;
+  const stopLongRunningToolButton = longRunningToolStatusText && onStopLongRunningTool ? (
+    <button
+      type="button"
+      className="typography-ui-label shrink-0 text-[var(--status-warning)] transition-opacity hover:opacity-80 disabled:cursor-wait disabled:opacity-50"
+      disabled={longRunningToolPending}
+      onClick={onStopLongRunningTool}
+      aria-label={t('chat.statusRow.longRunningTool.actionAria')}
+    >
+      {longRunningToolPending
+        ? t('chat.statusRow.longRunningTool.stopping')
+        : t('chat.statusRow.longRunningTool.action')}
+    </button>
+  ) : null;
 
-  // Don't render if nothing to show
-  if (!hasContent) {
+  // Todo rows shared by both layouts.
+  const todoListRows = planPhaseProjection
+    ? planPhaseProjection.items.map(({ todo, title }, index) => (
+      <TodoItemRow
+        key={todo.id ?? `plan-todo-${index}`}
+        todo={todo}
+        displayContent={title}
+      />
+    ))
+    : visibleTodos.map((todo, index) => (
+      <TodoItemRow key={todo.id ?? `todo-${index}`} todo={todo} />
+    ));
+
+  // Popover dropdown for the non-tab layout; anchors right of the trigger.
+  const popover = !isTab && isExpanded && hasTodoContent ? (
+    <div
+      style={{
+        maxWidth: "min(28rem, calc(100cqw - 4ch))",
+        backgroundColor: "var(--surface-elevated)",
+        color: "var(--surface-elevated-foreground)",
+      }}
+      className={cn(
+        "absolute bottom-full mb-1 z-50",
+        isTab ? "left-0" : "right-0",
+        "w-max min-w-[200px] rounded-xl p-1",
+        "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.8),inset_0_0_0_1px_rgba(0,0,0,0.04),0_0_0_1px_rgba(0,0,0,0.10),0_1px_2px_-0.5px_rgba(0,0,0,0.08),0_4px_8px_-2px_rgba(0,0,0,0.08),0_12px_20px_-4px_rgba(0,0,0,0.08)]",
+        "dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_0_0_1px_rgba(255,255,255,0.08),0_0_0_1px_rgba(0,0,0,0.36),0_1px_1px_-0.5px_rgba(0,0,0,0.22),0_3px_3px_-1.5px_rgba(0,0,0,0.20),0_6px_6px_-3px_rgba(0,0,0,0.16)]",
+        "animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2",
+        "duration-150"
+      )}
+    >
+      {/* Header */}
+      <div className="flex items-center gap-1.5 px-2 py-1 typography-ui-label font-medium text-muted-foreground">
+        <span>{planPhaseProjection ? todoTitle : t('chat.statusRow.tasksTitle')}</span>
+        <span className="typography-meta tabular-nums">
+          {displayedProgress}/{progress.total}
+        </span>
+      </div>
+
+      {/* Todo list */}
+      <div className="px-1 max-h-[200px] overflow-y-auto">
+        {todoListRows}
+      </div>
+    </div>
+  ) : null;
+
+  // Don't render if nothing to show. Suppressing the tab (rather than
+  // unmounting the component) keeps plan auto-reveal / preload effects running.
+  if (!hasContent || suppressTab) {
     return null;
+  }
+
+  // Tab layout: tucked-behind-card bar (matches the draft project/branch bar)
+  // with the task summary on the left and the Plan action on the right. The
+  // Plan action hides while the task list is expanded.
+  if (isTab) {
+    return (
+      <div
+        className="relative -mb-3 mx-6 flex min-w-0 flex-col rounded-t-xl px-2 pt-1 pb-3"
+        style={{ backgroundColor: tabBackground, ...STATUS_ROW_CONTAINER_STYLE }}
+        ref={popoverRef}
+      >
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          {/* Left: task summary toggles the inline list below */}
+          <div className="flex min-w-0 items-center">
+            {todoTrigger}
+          </div>
+          {/* Right: Plan action (hidden while the task list is expanded) */}
+          {!isExpanded ? (
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {viewPlanButton}
+            </div>
+          ) : null}
+        </div>
+        {/* Inline expandable task list: the tab container grows/shrinks with a
+            smooth grid-rows transition (mirrors the plan window's 200ms ease). */}
+        {hasTodoContent ? (
+          <div
+            className={cn(
+              "grid min-w-0 transition-[grid-template-rows] duration-200 ease-in-out",
+              isExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+            )}
+            aria-hidden={!isExpanded}
+            {...(!isExpanded ? { inert: true } : {})}
+          >
+            <div className="min-h-0 overflow-hidden">
+              <div className="max-h-[200px] overflow-y-auto px-1 pb-0.5 pt-1">
+                {todoListRows}
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    );
   }
 
   return (
@@ -438,6 +588,17 @@ export const StatusRow: React.FC<StatusRowProps> = ({
               <RiErrorWarningLine size={16} className="shrink-0" aria-hidden="true" />
               <span className="truncate">{providerStallError ?? providerStallStatusText}</span>
             </div>
+          ) : longRunningToolStatusText ? (
+            <div
+              className={cn(
+                "flex min-w-0 items-center gap-1.5 pl-0.5 typography-ui-label",
+                longRunningToolError ? "text-[var(--status-error)]" : "text-[var(--status-warning)]",
+              )}
+              title={longRunningToolError ?? longRunningToolStatusText}
+            >
+              <RiErrorWarningLine size={16} className="shrink-0" aria-hidden="true" />
+              <span className="truncate">{longRunningToolError ?? longRunningToolStatusText}</span>
+            </div>
           ) : showAssistantStatus && shouldRenderPlaceholder ? (
             <WorkingPlaceholder
               key={currentSessionId ?? "no-session"}
@@ -457,50 +618,12 @@ export const StatusRow: React.FC<StatusRowProps> = ({
         <div className={cn("relative flex items-center gap-2 flex-shrink-0", hasLeftAccessory ? "pr-1.5" : "-mr-3")} ref={popoverRef}>
           {abortButton}
           {resolveProviderStallButton}
+          {stopLongRunningToolButton}
           {todoTrigger}
           {viewPlanButton}
 
           {/* Popover dropdown */}
-          {isExpanded && hasTodoContent && (
-            <div
-              style={{
-                maxWidth: "min(28rem, calc(100cqw - 4ch))",
-                backgroundColor: "var(--surface-elevated)",
-                color: "var(--surface-elevated-foreground)",
-              }}
-              className={cn(
-                "absolute right-0 bottom-full mb-1 z-50",
-                "w-max min-w-[200px] rounded-xl p-1",
-                "shadow-[inset_0_1px_0_0_rgba(255,255,255,0.8),inset_0_0_0_1px_rgba(0,0,0,0.04),0_0_0_1px_rgba(0,0,0,0.10),0_1px_2px_-0.5px_rgba(0,0,0,0.08),0_4px_8px_-2px_rgba(0,0,0,0.08),0_12px_20px_-4px_rgba(0,0,0,0.08)]",
-                "dark:shadow-[inset_0_1px_0_0_rgba(255,255,255,0.12),inset_0_0_0_1px_rgba(255,255,255,0.08),0_0_0_1px_rgba(0,0,0,0.36),0_1px_1px_-0.5px_rgba(0,0,0,0.22),0_3px_3px_-1.5px_rgba(0,0,0,0.20),0_6px_6px_-3px_rgba(0,0,0,0.16)]",
-                "animate-in fade-in-0 zoom-in-95 slide-in-from-bottom-2",
-                "duration-150"
-              )}
-            >
-              {/* Header */}
-              <div className="flex items-center gap-1.5 px-2 py-1 typography-ui-label font-medium text-muted-foreground">
-                <span>{planPhaseProjection ? todoTitle : t('chat.statusRow.tasksTitle')}</span>
-                <span className="typography-meta tabular-nums">
-                  {displayedProgress}/{progress.total}
-                </span>
-              </div>
-
-              {/* Todo list */}
-              <div className="px-1 max-h-[200px] overflow-y-auto">
-                {planPhaseProjection
-                  ? planPhaseProjection.items.map(({ todo, title }, index) => (
-                    <TodoItemRow
-                      key={todo.id ?? `plan-todo-${index}`}
-                      todo={todo}
-                      displayContent={title}
-                    />
-                  ))
-                  : visibleTodos.map((todo, index) => (
-                    <TodoItemRow key={todo.id ?? `todo-${index}`} todo={todo} />
-                  ))}
-              </div>
-            </div>
-          )}
+          {popover}
         </div>
       </div>
     </div>

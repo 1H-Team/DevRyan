@@ -6,6 +6,7 @@ import {
   collectForwardProxyHeaders,
   shouldForwardProxyResponseHeader,
 } from '../../proxy-headers.js';
+import { ensureOAuthLoopbackPortAvailable } from './oauth-loopback-preflight.js';
 import { registerScopedSessionRevertRoute } from './session-scoped-revert.js';
 import { createHarnessError, withHarnessResult } from './harness-result.js';
 import { stripMessageDiffContent } from './diff-summary.js';
@@ -112,7 +113,12 @@ export const registerOpenCodeProxy = (app, deps) => {
     buildOpenCodeUrl,
     ensureOpenCodeApiPrefix,
     turnTimingRuntime,
+    ensureOAuthLoopbackPortAvailable: ensureOAuthLoopbackPortAvailableDep,
   } = deps;
+
+  const runOAuthLoopbackPreflight = typeof ensureOAuthLoopbackPortAvailableDep === 'function'
+    ? ensureOAuthLoopbackPortAvailableDep
+    : ensureOAuthLoopbackPortAvailable;
 
   if (app.get('opencodeProxyConfigured')) {
     return;
@@ -677,10 +683,41 @@ export const registerOpenCodeProxy = (app, deps) => {
       // and res.json alone would silently drop it.
       const nextCursor = upstream.headers?.get?.('x-next-cursor');
       if (nextCursor) res.setHeader('x-next-cursor', nextCursor);
-      res.json(records.map(stripMessageDiffContent));
+      const stripped = records.map(stripMessageDiffContent);
+      res.json(stripped);
     } catch {
       if (!res.headersSent) next();
     }
+  });
+
+  // OpenCode's OpenAI browser sign-in binds a fixed loopback port and is permanently broken by a
+  // single collision on it (see oauth-loopback-preflight.js). Refuse the flow up front rather than
+  // letting the user wait out a five-minute callback timeout with no explanation.
+  app.post('/api/provider/:providerID/oauth/authorize', async (req, res, next) => {
+    if (req.params.providerID !== 'openai') {
+      next();
+      return;
+    }
+
+    try {
+      const preflight = await runOAuthLoopbackPreflight();
+      if (preflight.reaped.length > 0) {
+        console.warn(`[OpenCode] Reaped orphaned OpenCode server(s) holding the OAuth loopback port: ${preflight.reaped.join(', ')}`);
+      }
+      if (!preflight.ok) {
+        res.status(503).json({
+          code: 'oauth_loopback_port_busy',
+          error: preflight.message,
+          retryable: true,
+        });
+        return;
+      }
+    } catch (error) {
+      // A preflight that cannot run must never block a sign-in that might have worked.
+      console.warn('[OpenCode] OAuth loopback preflight failed; continuing:', error?.message ?? error);
+    }
+
+    next();
   });
 
   // Generic proxy for non-SSE OpenCode API routes.

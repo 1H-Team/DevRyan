@@ -8,9 +8,11 @@ import { promisify } from 'util';
 import { createRequire } from 'module';
 
 import {
+  createPostCheckoutHookRunner,
   createWorktreeBootstrapRuntime,
 } from '@openchamber/harness-runtime';
 import { populateWorktreeWithLockRecovery } from './worktree-lock-recovery.js';
+import { withIndexLockRetry, withIndexLockRetryResult } from './index-lock-retry.js';
 import { getRequestPrincipal } from '../multi-user/request-context.js';
 import { getGitHubAuthById } from '../github/auth.js';
 
@@ -748,7 +750,7 @@ export const isMissingDirectoryError = (error, directory) => {
     || /no such file or directory.*(?:working directory|cwd)/i.test(text);
 };
 
-export const runGitCommand = async (cwd, args, options = {}) => {
+export const runGitCommand = async (cwd, args, options = {}) => withIndexLockRetryResult(async () => {
   try {
     const { stdout, stderr } = await execFileAsync(getGitBinary(), args, {
       cwd,
@@ -771,7 +773,7 @@ export const runGitCommand = async (cwd, args, options = {}) => {
       message: parseGitErrorText(error),
     };
   }
-};
+});
 
 export const runGitCommandOrThrow = async (cwd, args, fallbackMessage, options = {}) => {
   const result = await runGitCommand(cwd, args, options);
@@ -1101,6 +1103,10 @@ export const configureWorktreeBootstrapRuntime = (options = {}) => {
   if (!options.store) {
     throw new TypeError('Worktree bootstrap record store is required');
   }
+  const postCheckoutHookRunner = createPostCheckoutHookRunner({
+    getGitBinary,
+    getEnv: (directory) => buildGitEnv(directory),
+  });
   worktreeBootstrapRuntime = createWorktreeBootstrapRuntime({
     store: options.store,
     onTransition: options.onTransition,
@@ -1169,6 +1175,7 @@ export const configureWorktreeBootstrapRuntime = (options = {}) => {
         }
         await populateWorktreeWithLockRecovery(receipt.directory, { runGitCommandOrThrow });
       },
+      run_post_checkout_hook: async (receipt) => postCheckoutHookRunner.run(receipt.directory),
       configure_upstream: async (receipt) => {
         const metadata = receipt.metadata || {};
         if (!metadata.setUpstream) return;
@@ -2091,16 +2098,16 @@ export async function revertFile(directory, filePath) {
   }
 
   try {
-    await git.raw(['restore', '--staged', filePath]);
+    await withIndexLockRetry(() => git.raw(['restore', '--staged', filePath]));
   } catch (error) {
-    await git.raw(['reset', 'HEAD', '--', filePath]).catch(() => {});
+    await withIndexLockRetry(() => git.raw(['reset', 'HEAD', '--', filePath])).catch(() => {});
   }
 
   try {
-    await git.raw(['restore', filePath]);
+    await withIndexLockRetry(() => git.raw(['restore', filePath]));
   } catch (error) {
     try {
-      await git.raw(['checkout', '--', filePath]);
+      await withIndexLockRetry(() => git.raw(['checkout', '--', filePath]));
     } catch (fallbackError) {
       console.error('Failed to revert git file:', fallbackError);
       throw fallbackError;
@@ -2122,7 +2129,7 @@ export async function stageFile(directory, filePath) {
   const git = await createGit(directoryPath);
   await assertManagedMutationBranch(directoryPath, git);
   assertPathInsideRepo(directoryPath, filePath);
-  await git.raw(['add', '--', filePath]);
+  await withIndexLockRetry(() => git.raw(['add', '--', filePath]));
 }
 
 export async function unstageFile(directory, filePath) {
@@ -2132,9 +2139,9 @@ export async function unstageFile(directory, filePath) {
   assertPathInsideRepo(directoryPath, filePath);
 
   try {
-    await git.raw(['restore', '--staged', '--', filePath]);
+    await withIndexLockRetry(() => git.raw(['restore', '--staged', '--', filePath]));
   } catch {
-    await git.raw(['reset', 'HEAD', '--', filePath]);
+    await withIndexLockRetry(() => git.raw(['reset', 'HEAD', '--', filePath]));
   }
 }
 
@@ -2202,7 +2209,7 @@ export async function applyHunk(directory, filePath, options = {}) {
       );
     }
 
-    await git.raw(['apply', ...flags, tmpPath]);
+    await withIndexLockRetry(() => git.raw(['apply', ...flags, tmpPath]));
   } finally {
     if (tmpPath) {
       await fsp.rm(tmpPath, { force: true }).catch(() => {});
@@ -2328,7 +2335,9 @@ export async function stashPush(directory, options = {}) {
     ? options.message.trim()
     : `OpenChamber stash ${new Date().toISOString()}`;
   try {
-    const output = await git.raw(['stash', 'push', '--include-untracked', '-m', message]);
+    const output = await withIndexLockRetry(
+      () => git.raw(['stash', 'push', '--include-untracked', '-m', message]),
+    );
     return {
       success: true,
       created: !/no local changes/i.test(String(output || '')),
@@ -2352,14 +2361,14 @@ export async function stashPush(directory, options = {}) {
 export async function stashApply(directory, options = {}) {
   const git = await createGit(directory);
   const ref = typeof options.ref === 'string' && options.ref.trim() ? options.ref.trim() : 'stash@{0}';
-  await git.raw(['stash', 'apply', ref]);
+  await withIndexLockRetry(() => git.raw(['stash', 'apply', ref]));
   return { success: true, ref };
 }
 
 export async function stashDrop(directory, options = {}) {
   const git = await createGit(directory);
   const ref = typeof options.ref === 'string' && options.ref.trim() ? options.ref.trim() : 'stash@{0}';
-  await git.raw(['stash', 'drop', ref]);
+  await withIndexLockRetry(() => git.raw(['stash', 'drop', ref]));
   return { success: true, ref };
 }
 
@@ -2610,7 +2619,7 @@ export async function commit(directory, message, options = {}) {
     if (options.stagedOnly) {
       filesToCommit = [];
     } else if (options.addAll) {
-      await git.add('.');
+      await withIndexLockRetry(() => git.add('.'));
     } else if (requestedFiles.length > 0) {
       const status = await git.status();
       const fileStatusByPath = new Map(status.files.map((file) => [file.path, file]));
@@ -2631,7 +2640,7 @@ export async function commit(directory, message, options = {}) {
       });
 
       if (filesNeedingAdd.length > 0) {
-        await git.add(filesNeedingAdd);
+        await withIndexLockRetry(() => git.add(filesNeedingAdd));
       }
     }
 
@@ -2643,9 +2652,9 @@ export async function commit(directory, message, options = {}) {
     let result;
     try {
       if (options.amend) {
-        result = await git.commit(message, commitArgs, ['--amend']);
+        result = await withIndexLockRetry(() => git.commit(message, commitArgs, ['--amend']));
       } else {
-        result = await git.commit(message, commitArgs);
+        result = await withIndexLockRetry(() => git.commit(message, commitArgs));
       }
     } catch (error) {
       const gitErrorText = parseGitErrorText(error);
@@ -2782,7 +2791,7 @@ export async function checkoutBranch(directory, branchName) {
   const git = await createGit(directory);
 
   try {
-    await git.checkout(branchName);
+    await withIndexLockRetry(() => git.checkout(branchName));
     return { success: true, branch: branchName };
   } catch (error) {
     console.error('Failed to checkout branch:', error);

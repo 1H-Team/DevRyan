@@ -141,6 +141,41 @@ describe('terminal runtime', () => {
     await runtime.shutdown();
   });
 
+  it('renews a live session only for its exact owner', async () => {
+    const server = new EventEmitter();
+    const { runtime, routes } = createRuntime(server, {
+      isExecutable: (candidate) => candidate === '/bin/sh',
+    });
+    const dateNow = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+
+    try {
+      const createRes = await callRoute(routes, 'post', '/api/terminal/create', {
+        principal: { id: 'owner', scope: 'managed' },
+        body: { cwd: process.cwd(), cols: 80, rows: 24 },
+      });
+      const sessionId = createRes.body.sessionId;
+
+      dateNow.mockReturnValue(2_000);
+      expect(runtime.touchSession(sessionId, 'other-owner')).toBe(false);
+      expect(runtime.touchSession('missing-session', 'owner')).toBe(false);
+      expect(runtime.getSessionDescriptor(sessionId)?.lastActivity).toBe(1_000);
+
+      expect(runtime.touchSession(sessionId, 'owner')).toBe(true);
+      expect(runtime.getSessionDescriptor(sessionId)?.lastActivity).toBe(2_000);
+
+      dateNow.mockReturnValue(3_000);
+      const touchRes = await callRoute(routes, 'post', '/api/terminal/:sessionId/touch', {
+        principal: { id: 'owner', scope: 'managed' },
+        params: { sessionId },
+      });
+      expect(touchRes.statusCode).toBe(200);
+      expect(touchRes.body).toEqual({ success: true, lastActivity: 3_000 });
+    } finally {
+      dateNow.mockRestore();
+      await runtime.shutdown();
+    }
+  });
+
   it('builds managed terminal environments from an allowlist with no server secrets', async () => {
     const server = new EventEmitter();
     const originalValues = {
@@ -351,9 +386,11 @@ describe('terminal runtime', () => {
       reason: 'owner-revoked',
     }));
     expect((await callRoute(routes, 'post', '/api/terminal/:sessionId/touch', {
+      principal: { id: 'revoked-user', scope: 'managed' },
       params: { sessionId: first.body.sessionId },
     })).statusCode).toBe(404);
     expect((await callRoute(routes, 'post', '/api/terminal/:sessionId/touch', {
+      principal: { id: 'other-user', scope: 'managed' },
       params: { sessionId: second.body.sessionId },
     })).statusCode).toBe(200);
 

@@ -4,8 +4,11 @@ import { createDiagnosticSanitizer } from '@openchamber/harness-runtime';
 
 import { stableAuditEventId } from './analytics.js';
 import {
+  DIAGNOSTIC_DISPOSITIONS,
   DIAGNOSTIC_IMPACTS,
+  classifyDiagnosticFailure,
   inferLegacyDiagnostic,
+  normalizeDiagnosticDisposition,
   normalizeDiagnosticImpact,
   normalizeDiagnosticSource,
   normalizeFailureClass,
@@ -14,14 +17,17 @@ import { SupabaseRequestError } from './supabase-client.js';
 
 export const BUG_REPORTS_MIGRATION = '20260809190612_bug_reports';
 export const ERROR_DIAGNOSTICS_MIGRATION = '20260810130000_managed_error_diagnostics';
+export const DIAGNOSTIC_DISPOSITION_MIGRATION = '20260815141850_add_diagnostic_disposition';
 export const ERROR_LOG_CLEAR_MIGRATION = '20260810182541_clear_managed_error_diagnostics';
+export const CLIENT_ERROR_LOGS_MIGRATION = '20260812120000_client_error_diagnostics';
 export const BUG_REPORT_STATUSES = Object.freeze(['submitted', 'in_progress', 'resolved']);
-export const ERROR_LOG_KINDS = Object.freeze(['session', 'tool', 'managed_task']);
+export const ERROR_LOG_KINDS = Object.freeze(['session', 'tool', 'managed_task', 'client']);
 export const ERROR_LOG_CLEAR_RANGES = Object.freeze(['24h', '7d', '14d', 'all']);
 
 const BUG_REPORT_STATUS_SET = new Set(BUG_REPORT_STATUSES);
 const ERROR_LOG_KIND_SET = new Set(ERROR_LOG_KINDS);
 const ERROR_LOG_IMPACT_SET = new Set(DIAGNOSTIC_IMPACTS);
+const ERROR_LOG_DISPOSITION_SET = new Set([...DIAGNOSTIC_DISPOSITIONS, 'all']);
 const ERROR_LOG_CLEAR_RANGE_MS = Object.freeze({
   '24h': 24 * 60 * 60 * 1000,
   '7d': 7 * 24 * 60 * 60 * 1000,
@@ -31,6 +37,8 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T/;
 const DEFAULT_PAGE_LIMIT = 50;
 const MAX_PAGE_LIMIT = 50;
+const MAX_ERROR_LOG_PAGE_LIMIT = 200;
+const MAX_ERROR_LOG_SEARCH_LENGTH = 200;
 const MAX_TITLE_LENGTH = 200;
 const MAX_DESCRIPTION_LENGTH = 20_000;
 const CURSOR_VERSION = 1;
@@ -39,7 +47,21 @@ const ERROR_ACTION_BY_KIND = Object.freeze({
   session: 'session.error',
   tool: 'tool.failed',
   managed_task: 'managed_task.failed',
+  client: 'client.error',
 });
+
+export const CLIENT_ERROR_SOURCES = Object.freeze(['window_error', 'unhandled_rejection', 'error_boundary']);
+const CLIENT_ERROR_SOURCE_SET = new Set(CLIENT_ERROR_SOURCES);
+const MAX_CLIENT_ERROR_BATCH = 10;
+const MAX_CLIENT_ERROR_MESSAGE = 2_000;
+const MAX_CLIENT_ERROR_STACK = 16_000;
+const MAX_CLIENT_ERROR_COMPONENT_STACK = 8_000;
+const MAX_CLIENT_ERROR_ROUTE = 500;
+const MAX_CLIENT_ERROR_AGENT = 400;
+const MAX_CLIENT_ERROR_VERSION = 100;
+const MAX_CLIENT_ERROR_FINGERPRINT = 64;
+const CLIENT_ERROR_RATE_LIMIT = 30;
+const CLIENT_ERROR_RATE_WINDOW_MS = 60_000;
 
 const ERROR_KIND_BY_ACTION = Object.freeze(
   Object.fromEntries(Object.entries(ERROR_ACTION_BY_KIND).map(([kind, action]) => [action, kind])),
@@ -63,6 +85,7 @@ const ERROR_CONTEXT_KEYS = Object.freeze([
   'statusCode',
   'retryable',
   'failureText',
+  'stack',
   'tool',
   'status',
   'paths',
@@ -71,6 +94,16 @@ const ERROR_CONTEXT_KEYS = Object.freeze([
   'failureKind',
   'partial',
   'failureClass',
+  'diagnosticDisposition',
+  'source',
+  'route',
+  'appVersion',
+  'userAgent',
+  'componentStack',
+  'fingerprint',
+  'occurrenceCount',
+  'firstSeenAt',
+  'lastSeenAt',
 ]);
 
 const knownSecretsFromEnvironment = () =>
@@ -155,6 +188,77 @@ export const validateBugReportStatusUpdate = (value) => {
   };
 };
 
+const normalizeClientText = (value, maximum) => {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  return text ? text.slice(0, maximum) : null;
+};
+
+const normalizeClientTimestamp = (value) => {
+  if (typeof value !== 'string' || !ISO_TIMESTAMP_PATTERN.test(value)) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+};
+
+export const validateClientErrorBatch = (value) => {
+  if (!hasOnlyKeys(value, new Set(['errors']))) return { valid: false, error: 'Only errors is accepted' };
+  if (!Array.isArray(value.errors) || value.errors.length === 0) {
+    return { valid: false, error: 'errors must be a non-empty array' };
+  }
+  if (value.errors.length > MAX_CLIENT_ERROR_BATCH) {
+    return { valid: false, error: `errors must contain ${MAX_CLIENT_ERROR_BATCH} reports or fewer` };
+  }
+
+  const allowed = new Set([
+    'fingerprint',
+    'name',
+    'message',
+    'stack',
+    'source',
+    'route',
+    'appVersion',
+    'userAgent',
+    'componentStack',
+    'occurrenceCount',
+    'firstSeenAt',
+    'lastSeenAt',
+  ]);
+  const reports = [];
+  for (const entry of value.errors) {
+    if (!hasOnlyKeys(entry, allowed)) return { valid: false, error: 'A report contains unsupported fields' };
+    const fingerprint = normalizeClientText(entry.fingerprint, MAX_CLIENT_ERROR_FINGERPRINT);
+    if (!fingerprint || !/^[a-z0-9_-]+$/i.test(fingerprint)) {
+      return { valid: false, error: 'fingerprint must be an alphanumeric token' };
+    }
+    const message = normalizeClientText(entry.message, MAX_CLIENT_ERROR_MESSAGE);
+    if (!message) return { valid: false, error: 'message is required' };
+    if (!CLIENT_ERROR_SOURCE_SET.has(entry.source)) {
+      return { valid: false, error: `source must be ${CLIENT_ERROR_SOURCES.join(', ')}` };
+    }
+    const firstSeenAt = normalizeClientTimestamp(entry.firstSeenAt);
+    if (!firstSeenAt) return { valid: false, error: 'firstSeenAt must be an ISO timestamp' };
+    const occurrenceCount =
+      Number.isSafeInteger(entry.occurrenceCount) && entry.occurrenceCount > 0
+        ? Math.min(entry.occurrenceCount, 10_000)
+        : 1;
+    reports.push({
+      fingerprint,
+      message,
+      source: entry.source,
+      firstSeenAt,
+      occurrenceCount,
+      errorName: normalizeClientText(entry.name, 160) || 'Error',
+      stack: normalizeClientText(entry.stack, MAX_CLIENT_ERROR_STACK),
+      componentStack: normalizeClientText(entry.componentStack, MAX_CLIENT_ERROR_COMPONENT_STACK),
+      route: normalizeClientText(entry.route, MAX_CLIENT_ERROR_ROUTE),
+      appVersion: normalizeClientText(entry.appVersion, MAX_CLIENT_ERROR_VERSION),
+      userAgent: normalizeClientText(entry.userAgent, MAX_CLIENT_ERROR_AGENT),
+      lastSeenAt: normalizeClientTimestamp(entry.lastSeenAt),
+    });
+  }
+  return { valid: true, reports };
+};
+
 export const validateErrorLogClearRange = (rawRange, now = Date.now()) => {
   const range = rawRange === undefined ? 'all' : rawRange;
   if (typeof range !== 'string' || !ERROR_LOG_CLEAR_RANGES.includes(range)) {
@@ -169,14 +273,64 @@ export const validateErrorLogClearRange = (rawRange, now = Date.now()) => {
   };
 };
 
-const normalizePageLimit = (raw) => {
+const normalizePageLimit = (raw, maximum = MAX_PAGE_LIMIT) => {
+  const invalid = { error: `limit must be an integer between 1 and ${maximum}` };
   if (raw === undefined || raw === null || raw === '') return { value: DEFAULT_PAGE_LIMIT };
-  if (Array.isArray(raw) || !/^\d+$/.test(String(raw))) return { error: 'limit must be an integer between 1 and 50' };
+  if (Array.isArray(raw) || !/^\d+$/.test(String(raw))) return invalid;
   const value = Number(raw);
-  if (!Number.isSafeInteger(value) || value < 1 || value > MAX_PAGE_LIMIT) {
-    return { error: 'limit must be an integer between 1 and 50' };
-  }
+  if (!Number.isSafeInteger(value) || value < 1 || value > maximum) return invalid;
   return { value };
+};
+
+// PostgREST treats these as filter grammar, so they are stripped rather than escaped.
+const escapeLikePattern = (value) => value.replace(/[(),*\\"]/g, ' ').trim();
+
+export const validateErrorLogSearch = (raw) => {
+  if (raw === undefined || raw === null || raw === '') return { value: null };
+  if (typeof raw !== 'string') return { error: 'q must be plain text' };
+  const text = raw.trim();
+  if (!text) return { value: null };
+  if (text.length > MAX_ERROR_LOG_SEARCH_LENGTH) {
+    return { error: `q must be ${MAX_ERROR_LOG_SEARCH_LENGTH} characters or fewer` };
+  }
+  const pattern = escapeLikePattern(text);
+  if (!pattern) return { value: null };
+  return { value: pattern };
+};
+
+const normalizeTimestampBound = (raw, label) => {
+  if (raw === undefined || raw === null || raw === '') return { value: null };
+  if (typeof raw !== 'string' || !ISO_TIMESTAMP_PATTERN.test(raw) || !Number.isFinite(Date.parse(raw))) {
+    return { error: `${label} must be an ISO timestamp` };
+  }
+  return { value: new Date(raw).toISOString() };
+};
+
+const normalizeActorFilter = (raw) => {
+  if (raw === undefined || raw === null || raw === '') return { value: null };
+  if (!isUuid(raw)) return { error: 'actor must be a UUID' };
+  return { value: String(raw).toLowerCase() };
+};
+
+const errorSearchFilter = (pattern) =>
+  `(metadata->>failureText.ilike.*${pattern}*,metadata->>tool.ilike.*${pattern}*,metadata->>errorName.ilike.*${pattern}*)`;
+
+// PostgREST accepts one top-level `or` and one filter per column, so a cursor combined with a
+// search or a two-sided date range has to nest every condition under a single `and`.
+const errorLogLogicFilter = ({ cursor = null, search = null, from = null, to = null } = {}) => {
+  const orGroups = [];
+  if (cursor) orGroups.push(errorCursorFilter(cursor));
+  if (search) orGroups.push(errorSearchFilter(search));
+  const bounds = [];
+  if (from) bounds.push(`gte.${from}`);
+  if (to) bounds.push(`lte.${to}`);
+  if (orGroups.length + bounds.length > 1) {
+    const parts = [...orGroups.map((group) => `or${group}`), ...bounds.map((bound) => `created_at.${bound}`)];
+    return { and: `(${parts.join(',')})` };
+  }
+  if (orGroups.length === 1) return { or: orGroups[0] };
+  if (bounds.length === 1) return { created_at: bounds[0] };
+  return {};
 };
 
 const encodeCursor = (kind, payload) =>
@@ -236,7 +390,14 @@ export const isErrorDiagnosticsSchemaError = (error) => {
   const code = String(error.payload?.code || '');
   const detail = `${error.message || ''} ${error.payload?.message || ''} ${error.payload?.details || ''}`;
   return (code === 'PGRST204' || code === '42703')
-    && /diagnostic_(?:impact|source)/i.test(detail);
+    && /diagnostic_(?:impact|source|disposition)/i.test(detail);
+};
+
+const requiredErrorLogsMigration = (error) => {
+  const detail = `${error?.message || ''} ${error?.payload?.message || ''} ${error?.payload?.details || ''}`;
+  return /diagnostic_disposition/i.test(detail)
+    ? DIAGNOSTIC_DISPOSITION_MIGRATION
+    : ERROR_DIAGNOSTICS_MIGRATION;
 };
 
 export const isErrorLogClearSchemaError = (error) => {
@@ -264,7 +425,7 @@ const sendErrorLogsDependencyError = (res, error) => {
   if (isErrorDiagnosticsSchemaError(error)) {
     return jsonError(res, 503, 'Database migration required', {
       code: 'schema_migration_required',
-      requiredMigration: ERROR_DIAGNOSTICS_MIGRATION,
+      requiredMigration: requiredErrorLogsMigration(error),
       retryable: false,
     });
   }
@@ -313,6 +474,7 @@ const summarizeErrorContext = (kind, context) => {
   if (failure) return failure.length > 240 ? `${failure.slice(0, 237)}…` : failure;
   if (kind === 'tool') return `${typeof context.tool === 'string' && context.tool ? context.tool : 'Tool'} failed`;
   if (kind === 'managed_task') return 'Managed task failed';
+  if (kind === 'client') return typeof context.errorName === 'string' && context.errorName ? context.errorName : 'Client error';
   return typeof context.errorName === 'string' && context.errorName ? context.errorName : 'Session failed';
 };
 
@@ -377,6 +539,7 @@ const formatErrorLog = (row, sanitizer, { detail = false } = {}) => {
   const context = pickErrorContext(row.metadata, sanitizer);
   const inferred = inferLegacyDiagnostic({ action: row.action, metadata: context });
   const impact = normalizeDiagnosticImpact(row.diagnostic_impact) || inferred.impact;
+  const disposition = normalizeDiagnosticDisposition(row.diagnostic_disposition) || inferred.disposition;
   const classificationSource = normalizeDiagnosticSource(row.diagnostic_source) || 'inferred';
   const failureClass = Object.prototype.hasOwnProperty.call(context, 'failureClass')
     ? normalizeFailureClass(context.failureClass)
@@ -400,12 +563,21 @@ const formatErrorLog = (row, sanitizer, { detail = false } = {}) => {
     project: row.project ? { id: row.project.id, label: row.project.label } : null,
     sessionId: row.session_id || null,
     impact,
+    disposition,
     classificationSource,
     failureClass,
     outcome,
     summary: summarizeErrorContext(kind, context),
+    occurrenceCount:
+      Number.isSafeInteger(context.occurrenceCount) && context.occurrenceCount > 1 ? context.occurrenceCount : null,
     ...(detail
-      ? { context }
+      ? {
+          failureText: typeof context.failureText === 'string' && context.failureText.trim()
+            ? context.failureText
+            : null,
+          stack: typeof context.stack === 'string' && context.stack.trim() ? context.stack : null,
+          context,
+        }
       : {
           errorName: typeof context.errorName === 'string' ? context.errorName : null,
           tool: typeof context.tool === 'string' ? context.tool : null,
@@ -438,7 +610,85 @@ export function createBugReportsApi({
     knownSecrets: knownSecretsFromEnvironment(),
   });
 
+  // Per-user sliding window so a crash loop in one browser cannot flood the outbox.
+  const clientErrorWindows = new Map();
+  const admitClientErrors = (userId, count, now = Date.now()) => {
+    const cutoff = now - CLIENT_ERROR_RATE_WINDOW_MS;
+    const recent = (clientErrorWindows.get(userId) || []).filter((stamp) => stamp > cutoff);
+    if (recent.length + count > CLIENT_ERROR_RATE_LIMIT) {
+      clientErrorWindows.set(userId, recent);
+      const retryAfter = Math.max(1, Math.ceil((recent[0] + CLIENT_ERROR_RATE_WINDOW_MS - now) / 1000));
+      return { admitted: false, retryAfter };
+    }
+    for (let index = 0; index < count; index += 1) recent.push(now);
+    clientErrorWindows.set(userId, recent);
+    if (clientErrorWindows.size > 1_000) {
+      for (const [key, stamps] of clientErrorWindows) {
+        if (stamps.every((stamp) => stamp <= cutoff)) clientErrorWindows.delete(key);
+      }
+    }
+    return { admitted: true };
+  };
+
   const registerRoutes = (app) => {
+    app.post('/api/client-errors', async (req, res, next) => {
+      if (req.principal?.scope !== 'managed') return next();
+      const validated = validateClientErrorBatch(req.body);
+      if (!validated.valid) return jsonError(res, 400, validated.error);
+
+      const gate = admitClientErrors(req.principal.id, validated.reports.length);
+      if (!gate.admitted) {
+        return jsonError(res, 429, 'Too many client error reports', {
+          code: 'rate_limited',
+          retryable: true,
+          retryAfter: gate.retryAfter,
+        });
+      }
+
+      try {
+        let accepted = 0;
+        for (const report of validated.reports) {
+          const metadata = sanitizer.sanitizeExportValue({
+            kind: 'client',
+            source: report.source,
+            errorName: report.errorName,
+            failureText: report.message,
+            ...(report.stack ? { stack: report.stack } : {}),
+            ...(report.componentStack ? { componentStack: report.componentStack } : {}),
+            ...(report.route ? { route: report.route } : {}),
+            ...(report.appVersion ? { appVersion: report.appVersion } : {}),
+            ...(report.userAgent ? { userAgent: report.userAgent } : {}),
+            fingerprint: report.fingerprint,
+            occurrenceCount: report.occurrenceCount,
+            firstSeenAt: report.firstSeenAt,
+            ...(report.lastSeenAt ? { lastSeenAt: report.lastSeenAt } : {}),
+          });
+          const classification = classifyDiagnosticFailure({ action: 'client.error', metadata });
+          metadata.failureClass = classification.failureClass;
+          await audit(req.principal, 'client.error', {
+            // Retried flushes of the same coalesced report collapse onto one row.
+            eventId: stableAuditEventId('client.error', `${req.principal.id}:${report.fingerprint}:${report.firstSeenAt}`),
+            targetType: 'client_error',
+            targetId: report.fingerprint,
+            success: false,
+            occurredAt: report.firstSeenAt,
+            diagnosticImpact: classification.impact,
+            diagnosticSource: classification.source,
+            diagnosticDisposition: classification.disposition,
+            metadata,
+          });
+          accepted += 1;
+        }
+        return res.status(202).json({ accepted });
+      } catch (error) {
+        logger.warn?.('[MultiUser] Client error capture failed:', error?.message || error);
+        return jsonError(res, 503, 'Client error capture is temporarily unavailable', {
+          code: 'dependency_unavailable',
+          retryable: true,
+        });
+      }
+    });
+
     app.post('/api/bug-reports', async (req, res, next) => {
       if (req.principal?.scope !== 'managed') return next();
       if (!canEditBugReports(req.principal))
@@ -639,27 +889,48 @@ export function createBugReportsApi({
       if (!isManagedAdmin(req.principal)) return jsonError(res, 403, 'Administrator access required');
       const kind = req.query?.kind;
       if (kind !== undefined && (typeof kind !== 'string' || !ERROR_LOG_KIND_SET.has(kind))) {
-        return jsonError(res, 400, 'kind must be session, tool, or managed_task');
+        return jsonError(res, 400, 'kind must be session, tool, managed_task, or client');
       }
       const impact = req.query?.impact;
       if (impact !== undefined && (typeof impact !== 'string' || !ERROR_LOG_IMPACT_SET.has(impact))) {
         return jsonError(res, 400, 'impact must be low, medium, high, or critical');
       }
-      const limit = normalizePageLimit(req.query?.limit);
+      const disposition = req.query?.disposition ?? 'actionable';
+      if (typeof disposition !== 'string' || !ERROR_LOG_DISPOSITION_SET.has(disposition)) {
+        return jsonError(res, 400, 'disposition must be actionable, expected, or all');
+      }
+      const limit = normalizePageLimit(req.query?.limit, MAX_ERROR_LOG_PAGE_LIMIT);
       if (limit.error) return jsonError(res, 400, limit.error);
       const cursor = decodeErrorLogCursor(req.query?.cursor);
       if (cursor.error) return jsonError(res, 400, cursor.error);
+      const search = validateErrorLogSearch(req.query?.q);
+      if (search.error) return jsonError(res, 400, search.error);
+      const from = normalizeTimestampBound(req.query?.from, 'from');
+      if (from.error) return jsonError(res, 400, from.error);
+      const to = normalizeTimestampBound(req.query?.to, 'to');
+      if (to.error) return jsonError(res, 400, to.error);
+      const actor = normalizeActorFilter(req.query?.actor);
+      if (actor.error) return jsonError(res, 400, actor.error);
+
+      const logicFilter = errorLogLogicFilter({
+        cursor: cursor.value,
+        search: search.value,
+        from: from.value,
+        to: to.value,
+      });
 
       try {
         const rows = await supabase.rest('activity_logs', {
           query: {
             action: kind ? `eq.${ERROR_ACTION_BY_KIND[kind]}` : `in.(${Object.values(ERROR_ACTION_BY_KIND).join(',')})`,
             ...(impact ? { diagnostic_impact: `eq.${impact}` } : {}),
-            ...(cursor.value ? { or: errorCursorFilter(cursor.value) } : {}),
+            ...(disposition === 'all' ? {} : { diagnostic_disposition: `eq.${disposition}` }),
+            ...(actor.value ? { actor_user_id: `eq.${actor.value}` } : {}),
+            ...logicFilter,
             order: 'created_at.desc,event_id.desc',
             limit: limit.value + 1,
           },
-          select: 'id,event_id,actor_user_id,actor_role,action,project_id,session_id,success,diagnostic_impact,diagnostic_source,metadata,created_at',
+          select: 'id,event_id,actor_user_id,actor_role,action,project_id,session_id,success,diagnostic_impact,diagnostic_source,diagnostic_disposition,metadata,created_at',
         });
         const page = (rows || []).slice(0, limit.value);
         const hydrated = await hydrateErrorRows(supabase, page);
@@ -727,7 +998,7 @@ export function createBugReportsApi({
             action: `in.(${Object.values(ERROR_ACTION_BY_KIND).join(',')})`,
             limit: 1,
           },
-          select: 'id,event_id,actor_user_id,actor_role,action,project_id,session_id,success,diagnostic_impact,diagnostic_source,metadata,created_at',
+          select: 'id,event_id,actor_user_id,actor_role,action,project_id,session_id,success,diagnostic_impact,diagnostic_source,diagnostic_disposition,metadata,created_at',
           maybeSingle: true,
         });
         if (!row) return jsonError(res, 404, 'Error log not found');

@@ -8,7 +8,7 @@ Transport-neutral DevRyan-managed task contracts and scheduler policy shared by 
 
 - No third-party runtime dependencies.
 - Only `owner: "devryan"` records with `dvr_*` identities enter this boundary.
-- Full queued prompt input and optional parent-message `dispatchGroupId` remain bounded and private to the durable ledger. The originating managed-tool `dispatchCallId` is durable and safely projected so a provisional chat row can reconcile to its exact task without label heuristics; broadcast projections still omit prompt, idempotency, and dispatch-group content.
+- Full queued prompt input and optional parent-message `dispatchGroupId` remain bounded and private to the durable ledger. The originating managed-tool `dispatchCallId` is durable and safely projected so a provisional chat row can reconcile to its exact task without label heuristics; broadcast projections still omit prompt, idempotency, and raw dispatch-group content while exposing only a `dispatchGrouped` policy boolean.
 - Scheduler policy, persistence limits, transitions, cancellation, recovery, and result envelopes belong here rather than in UI or runtime adapters.
 
 ## Entrypoints
@@ -16,6 +16,7 @@ Transport-neutral DevRyan-managed task contracts and scheduler policy shared by 
 - `index.js` / `index.d.ts`: runtime exports and JSON-compatible TypeScript contract.
 - `contract.js`: task validation, bounds, status helpers, safe task projection, and identity-only compaction removal projection.
 - `open-code-executor.js`: injected canonical child create/prompt/observe/abort/delete/reconcile state machine, including lease-ownership checkpoints, stale fresh-child cleanup, live provider-retry observation, transient polling and reconciliation recovery, retained interruption output, bounded same-child recovery after normalized transport failures or missing final output, same-child manual model continuation, and exact shared recognition of its transcript-recorded transport continuation prompts.
+- `provider-capabilities.js`: shared managed read-only provider and agent compatibility predicates, including the implementation-only Designer boundary and stable pre-admission failure contracts.
 - `provider-prompt-tools.js`: shared minimal provider-specific tool-surface overrides used by normal UI prompts and managed child prompts.
 - `provider-retry-policy.js`: shared provider policy classifiers for definite usage/quota exhaustion, verified provider prompt rejection, and normalized request/header/stream-idle/connection transport failures, with auth/model/certificate/abort precedence.
 - `transitions.js`: immutable terminal records and the explicit lifecycle graph.

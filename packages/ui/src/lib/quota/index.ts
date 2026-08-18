@@ -6,6 +6,8 @@ export {
   formatQuotaValueLabel,
   resolveUsageTone,
   formatWindowLabel,
+  formatProviderWindowLabel,
+  hasUsageProgress,
   calculatePace,
   calculateUsagePrediction,
   buildQuotaTrendKey,

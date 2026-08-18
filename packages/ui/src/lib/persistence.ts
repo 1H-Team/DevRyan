@@ -22,6 +22,7 @@ import {
 import { resolveNotificationTemplatesFromSettingsSnapshot } from '@/lib/notificationTemplateSync';
 import { parseAgentModelSelections } from '@/lib/agentModelSelection';
 import { canEditSettingsPage, getAuthPrincipal } from '@/lib/authSession';
+import { DEFAULT_CHAT_WIDTH, WIDE_CHAT_WIDTH } from '@/lib/chatLayout';
 
 const persistToLocalStorage = (settings: DesktopSettings) => {
   if (typeof window === 'undefined') {
@@ -556,8 +557,12 @@ const applyDesktopUiPreferences = (
   if (typeof settings.stickyUserHeader === 'boolean' && settings.stickyUserHeader !== store.stickyUserHeader) {
     store.setStickyUserHeader(settings.stickyUserHeader);
   }
-  if (typeof settings.wideChatLayoutEnabled === 'boolean' && settings.wideChatLayoutEnabled !== store.wideChatLayoutEnabled) {
-    store.setWideChatLayoutEnabled(settings.wideChatLayoutEnabled);
+  if (typeof settings.chatWidth === 'number' && Number.isFinite(settings.chatWidth)) {
+    if (settings.chatWidth !== store.chatWidth) {
+      store.setChatWidth(settings.chatWidth);
+    }
+  } else if (settings.wideChatLayoutEnabled === true && store.chatWidth === DEFAULT_CHAT_WIDTH) {
+    store.setChatWidth(WIDE_CHAT_WIDTH);
   }
   if (
     typeof settings.showSplitAssistantMessageActions === 'boolean'
@@ -1039,8 +1044,8 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   if (typeof candidate.stickyUserHeader === 'boolean') {
     result.stickyUserHeader = candidate.stickyUserHeader;
   }
-  if (typeof candidate.wideChatLayoutEnabled === 'boolean') {
-    result.wideChatLayoutEnabled = candidate.wideChatLayoutEnabled;
+  if (typeof candidate.chatWidth === 'number' && Number.isFinite(candidate.chatWidth)) {
+    result.chatWidth = candidate.chatWidth;
   }
   if (typeof candidate.showSplitAssistantMessageActions === 'boolean') {
     result.showSplitAssistantMessageActions = candidate.showSplitAssistantMessageActions;

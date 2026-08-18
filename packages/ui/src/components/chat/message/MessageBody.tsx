@@ -6,6 +6,7 @@ import ToolPart from './parts/ToolPart';
 import AssistantTextPart from './parts/AssistantTextPart';
 import PlanCard from './parts/PlanCard';
 import ReasoningPart from './parts/ReasoningPart';
+import ReasoningGroup from './parts/ReasoningGroup';
 import JustificationBlock from './parts/JustificationBlock';
 import { MessageFilesDisplay } from '../FileAttachment';
 import { TurnChangedFilesDropdown } from '../TurnChangedFilesDropdown';
@@ -46,6 +47,7 @@ import { StaticToolRow } from './parts/StaticToolRow';
 import {
     collectCrossMessageFileActivityGroups,
     collectToolActivityBurst,
+    getToolActivityGroupInfo,
     isExpandableTool,
     isHiddenTool,
     isManagedTaskToolName,
@@ -75,6 +77,7 @@ import {
     getReasoningPartRenderKey,
     shouldRenderReasoning,
 } from './reasoningRenderPolicy';
+import { scanConsecutiveReasoningParts } from './reasoningGrouping';
 
 const CONTAIN_LAYOUT_STYLE = { contain: 'layout' as const, transform: 'translateZ(0)' };
 const MESSAGE_FOOTER_CONTAINER_STYLE = { containerType: 'inline-size' as const, containerName: 'message-footer' };
@@ -614,6 +617,7 @@ const UserMessageBody = React.memo(({ messageId, parts, isMobile, alwaysShowActi
 
     return (
         <div
+            data-chat-message="true"
             data-chat-user-message="true"
             className="relative w-full group/message"
             style={CONTAIN_LAYOUT_STYLE}
@@ -1246,7 +1250,38 @@ const AssistantMessageBody = React.memo(({
         if (!isSortedRenderMode || !all) {
             return [];
         }
-        return all.filter((segment) => segment.anchorMessageId === messageId);
+        const browserActivities = all.flatMap((segment) => segment.parts.filter((activity) => (
+            activity.kind === 'tool'
+            && normalizeToolName((activity.part as ToolPartType).tool) === 'devryan_browser'
+        )));
+        const ownerPartId = browserActivities[0]?.id;
+        const ownerSegmentId = ownerPartId
+            ? all.find((segment) => segment.parts.some((activity) => activity.id === ownerPartId))?.id
+            : undefined;
+
+        return all.flatMap((segment) => {
+            if (segment.anchorMessageId !== messageId) {
+                return [];
+            }
+            const firstBrowserIndex = segment.parts.findIndex((activity) => (
+                activity.kind === 'tool'
+                && normalizeToolName((activity.part as ToolPartType).tool) === 'devryan_browser'
+            ));
+            const parts = segment.parts.filter((activity) => !(
+                activity.kind === 'tool'
+                && normalizeToolName((activity.part as ToolPartType).tool) === 'devryan_browser'
+            ));
+            if (segment.id === ownerSegmentId && firstBrowserIndex >= 0) {
+                const insertionIndex = segment.parts
+                    .slice(0, firstBrowserIndex)
+                    .filter((activity) => !(
+                        activity.kind === 'tool'
+                        && normalizeToolName((activity.part as ToolPartType).tool) === 'devryan_browser'
+                    )).length;
+                parts.splice(insertionIndex, 0, ...browserActivities);
+            }
+            return parts.length > 0 ? [{ ...segment, parts }] : [];
+        });
     }, [isSortedRenderMode, messageId, turnGroupingContext?.activityGroupSegments]);
 
     const liveFileActivityGroupByPartId = React.useMemo(() => {
@@ -1281,6 +1316,23 @@ const AssistantMessageBody = React.memo(({
                 const descriptor = { ownerPartId, groupInfo: group.groupInfo, activities };
                 activities.forEach((activity) => byPartId.set(activity.id, descriptor));
             });
+        }
+
+        const browserActivities = (turnGroupingContext?.activityGroupSegments ?? [])
+            .flatMap((segment) => segment.parts)
+            .filter((activity) => (
+                activity.kind === 'tool'
+                && normalizeToolName((activity.part as ToolPartType).tool) === 'devryan_browser'
+            ));
+        const ownerPartId = browserActivities[0]?.id;
+        const browserGroupInfo = getToolActivityGroupInfo('devryan_browser');
+        if (ownerPartId && browserGroupInfo) {
+            const descriptor = {
+                ownerPartId,
+                groupInfo: browserGroupInfo,
+                activities: browserActivities,
+            };
+            browserActivities.forEach((activity) => byPartId.set(activity.id, descriptor));
         }
 
         return byPartId;
@@ -1531,6 +1583,7 @@ const AssistantMessageBody = React.memo(({
                                         chatRenderMode={chatRenderMode}
                                         isPlanModeSource={false}
                                         isMessageCompleted={isMessageCompleted}
+                                        isMobile={isMobile}
                                         onContentChange={onContentChange}
                                     />
                                 </div>
@@ -1563,6 +1616,7 @@ const AssistantMessageBody = React.memo(({
                                 chatRenderMode={chatRenderMode}
                                 isPlanModeSource={isPlanModeSource}
                                 isMessageCompleted={isMessageCompleted}
+                                isMobile={isMobile}
                                 onContentChange={onContentChange}
                             />
                         </div>
@@ -1604,20 +1658,36 @@ const AssistantMessageBody = React.memo(({
             }
 
             if (part.type === 'reasoning') {
+                const groupEndIndex = scanConsecutiveReasoningParts(managedTaskDispatch.contentParts, i);
                 if (shouldRenderReasoning(showReasoningTraces) && !suppressLiveManagedControlReasoning) {
-                    rendered.push(
-                        <ReasoningPart
-                            key={getReasoningPartRenderKey(messageId, part.id, i)}
-                            part={part}
-                            messageId={messageId}
-                            providerID={providerID}
-                            responseStyleLevel={turnGroupingContext?.responseStyleLevel}
-                            onContentChange={onContentChange}
-                            isMobile={isMobile}
-                        />
-                    );
+                    if (groupEndIndex > i) {
+                        rendered.push(
+                            <ReasoningGroup
+                                key={getReasoningPartRenderKey(messageId, part.id, i)}
+                                entries={managedTaskDispatch.contentParts
+                                    .slice(i, groupEndIndex + 1)
+                                    .map((reasoningPart) => ({ part: reasoningPart, messageId }))}
+                                providerID={providerID}
+                                responseStyleLevel={turnGroupingContext?.responseStyleLevel}
+                                onContentChange={onContentChange}
+                                isMobile={isMobile}
+                            />
+                        );
+                    } else {
+                        rendered.push(
+                            <ReasoningPart
+                                key={getReasoningPartRenderKey(messageId, part.id, i)}
+                                part={part}
+                                messageId={messageId}
+                                providerID={providerID}
+                                responseStyleLevel={turnGroupingContext?.responseStyleLevel}
+                                onContentChange={onContentChange}
+                                isMobile={isMobile}
+                            />
+                        );
+                    }
                 }
-                i++;
+                i = groupEndIndex + 1;
                 continue;
             }
 
@@ -1941,6 +2011,8 @@ const AssistantMessageBody = React.memo(({
 
          <div
               ref={messageContentRef}
+              data-chat-message="true"
+              data-chat-assistant-message="true"
               className={cn(
                  'relative w-full group/message'
              )}
@@ -1950,7 +2022,7 @@ const AssistantMessageBody = React.memo(({
               <div>
                  <div
                      className={cn(
-                         'message-content-text flex flex-col leading-relaxed overflow-hidden text-foreground/90 [&_p:last-child]:mb-0 [&_ul:last-child]:mb-0 [&_ol:last-child]:mb-0',
+                         'message-content-text flex flex-col leading-relaxed overflow-hidden text-foreground/90',
                          isMobile ? 'gap-y-1' : 'gap-y-1.5',
                      )}
                      data-session-output-stack="true"

@@ -2,6 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import crypto from 'crypto';
+import { isDeepStrictEqual } from 'node:util';
 import {
   OPENCODE_CONFIG_DIR,
   CONFIG_FILE,
@@ -93,6 +94,11 @@ function identityRelevantMcpFields(entry) {
 
 function didMcpAuthIdentityChange(before, after) {
   return JSON.stringify(identityRelevantMcpFields(before)) !== JSON.stringify(identityRelevantMcpFields(after));
+}
+
+function hasMeaningfulOauthFields(oauth) {
+  return ['clientId', 'clientSecret', 'scope', 'redirectUri']
+    .some((key) => typeof oauth[key] === 'string' && oauth[key].trim());
 }
 
 function formatAuthResetResult(result) {
@@ -290,7 +296,7 @@ function createMcpConfig(name, mcpConfig, workingDirectory, scope) {
 
   writeConfig(config, targetPath);
   console.log(`Created MCP server config: ${name}`);
-  return { authReset: formatAuthResetResult(removeMcpAuthCacheEntry(name)) };
+  return { changed: true, authReset: formatAuthResetResult(removeMcpAuthCacheEntry(name)) };
 }
 
 /**
@@ -314,13 +320,32 @@ function updateMcpConfig(name, updates, workingDirectory) {
   const existing = config.mcp[name];
   const { name: _ignoredName, ...updateData } = updates;
 
+  // A bare `{}` oauth payload (every field blank) is a no-op, not a request to
+  // clear oauth: merging it would erase the stored oauth object and read as an
+  // identity change, wiping the cached OAuth tokens. Explicit `oauth: false`
+  // still clears.
+  if (
+    updateData.oauth
+    && typeof updateData.oauth === 'object'
+    && !Array.isArray(updateData.oauth)
+    && !hasMeaningfulOauthFields(updateData.oauth)
+  ) {
+    delete updateData.oauth;
+  }
+
+  const currentEntry = buildMcpEntry(existing);
   const nextEntry = buildMcpEntry({ ...existing, ...updateData });
-  const shouldResetAuth = didMcpAuthIdentityChange(existing, nextEntry);
+  if (isDeepStrictEqual(currentEntry, nextEntry)) {
+    return { changed: false, authReset: { ok: true, removed: false } };
+  }
+
+  const shouldResetAuth = didMcpAuthIdentityChange(currentEntry, nextEntry);
   config.mcp[name] = nextEntry;
 
   writeConfig(config, targetPath);
   console.log(`Updated MCP server config: ${name}`);
   return {
+    changed: true,
     authReset: shouldResetAuth
       ? formatAuthResetResult(removeMcpAuthCacheEntry(name))
       : { ok: true, removed: false },
@@ -353,7 +378,7 @@ function deleteMcpConfig(name, workingDirectory) {
   }
   console.log(`Deleted MCP server config: ${name}`);
   markMcpRecoveryDeleted(name);
-  return { authReset: formatAuthResetResult(removeMcpAuthCacheEntry(name)) };
+  return { changed: true, authReset: formatAuthResetResult(removeMcpAuthCacheEntry(name)) };
 }
 
 /**

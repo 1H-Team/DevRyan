@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import * as path from 'path';
+import { getOpenChamberDataDir } from './managedOpenCodeRegistry';
 
 vi.mock('vscode', () => ({
   workspace: {
@@ -28,11 +30,14 @@ describe('VS Code managed OpenCode launch', () => {
   });
 
   it('builds managed overlays without suppressing plugin origins', () => {
+    const dataDir = getOpenChamberDataDir();
     expect(buildManagedOpenCodeEnvOverrides({
       overlayConfigDirectory: '/tmp/runtime-overlay',
       slimConfigDirectory: null,
       slimPreset: null,
     })).toEqual({
+      CONTEXT_MODE_DATA_DIR: dataDir,
+      CONTEXT_MODE_DIR: path.join(dataDir, 'context-mode'),
       OPENCODE_CONFIG_DIR: '/tmp/runtime-overlay',
       OPENCODE_DISABLE_CLAUDE_CODE_SKILLS: '1',
       OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: 'true',

@@ -63,6 +63,20 @@ export const buildMcpOAuthRedirectUri = (_name?: string | null, _directory?: str
   return new URL(MCP_OAUTH_CALLBACK_PATH, window.location.origin).toString();
 };
 
+// Persist when the stored redirect URI is empty OR differs from the freshly
+// computed one: the app origin's port is dynamic, and a redirect URI pinned to
+// a dead origin makes the authorization server reject with invalid_client,
+// which the runtime answers by wiping the MCP's stored credentials.
+export const shouldPersistMcpOAuthRedirectUri = (
+  stored: string | null | undefined,
+  fresh: string | null | undefined,
+): boolean => {
+  if (typeof fresh !== 'string' || !fresh.trim()) {
+    return false;
+  }
+  return (stored ?? '').trim() !== fresh;
+};
+
 export const parseMcpOAuthState = (raw: string | null | undefined): {
   name: string;
   directory: string | null;

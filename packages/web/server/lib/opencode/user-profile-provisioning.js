@@ -7,6 +7,10 @@ import { applyEdits, modify, parse as parseJsonc } from 'jsonc-parser';
 
 import { listDefaultConfigAssets } from './default-config-assets.js';
 import {
+  applyContextModeHotfix,
+  CONTEXT_MODE_HOTFIX_INCOMPATIBLE,
+} from './context-mode-hotfix.js';
+import {
   DEVRYAN_MANAGED_PROFILE_DEPENDENCIES,
   DEVRYAN_MANAGED_PROFILE_PLUGIN_FILES,
   inspectDevRyanManagedPluginInstallation,
@@ -81,6 +85,8 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
   const runCommand = dependencies.runCommand || runCommandDefault;
   const inspectManagedPluginInstallation = dependencies.inspectManagedPluginInstallation
     || inspectDevRyanManagedPluginInstallation;
+  const applyContextModeHotfixFn = dependencies.applyContextModeHotfix
+    || applyContextModeHotfix;
   const profileRoot = dependencies.profileRoot || DEFAULT_PROFILE_ROOT;
   const configRoot = dependencies.configRoot || DEFAULT_CONFIG_ROOT;
   const configDirectory = dependencies.configDirectory || pathApi.join(homedir(), '.config', 'opencode');
@@ -104,6 +110,8 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
       updated: [],
       removed: [],
       install: null,
+      contextModeHotfix: null,
+      contextModeHotfixReinstall: null,
       warnings: [],
       meridianPolicy: null,
       managedPluginIssues: [],
@@ -328,6 +336,31 @@ export const createUserProfileProvisioningRuntime = (dependencies = {}) => {
       if (!result.install.ok) {
         result.ok = false;
         result.error = `Failed to install OpenCode user plugins: ${result.install.stderr || `exit ${result.install.exitCode}`}`;
+      }
+    }
+    if (result.ok) {
+      result.contextModeHotfix = applyContextModeHotfixFn({
+        configDirectory,
+        fs: fsApi,
+      });
+      if (!result.contextModeHotfix.ok) {
+        result.contextModeHotfixReinstall = await runCommand(
+          'bun',
+          ['install', '--force', '--ignore-scripts'],
+          { cwd: configDirectory, env: process.env },
+        );
+        if (result.contextModeHotfixReinstall.ok) {
+          result.contextModeHotfix = applyContextModeHotfixFn({
+            configDirectory,
+            fs: fsApi,
+          });
+        }
+      }
+      if (!result.contextModeHotfix.ok) {
+        result.ok = false;
+        result.error = `${CONTEXT_MODE_HOTFIX_INCOMPATIBLE}: ${result.contextModeHotfix.error}`;
+      } else if (result.contextModeHotfix.changed) {
+        result.changed = true;
       }
     }
     if (result.ok) {

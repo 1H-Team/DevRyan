@@ -174,6 +174,8 @@ describe('VS Code plugin discovery', () => {
         'context-mode',
         'oh-my-opencode-slim',
         'superpowers',
+        'devryan-skill-context',
+        'devryan-document-reader',
         'openai-tool-schema-sanitizer',
       ]);
       expect(result.entries.map((plugin) => `${plugin.scope}:${plugin.spec}:${plugin.parsedKind}`)).toEqual([
@@ -911,6 +913,22 @@ describe('VS Code MCP OAuth stale-state handling', () => {
     });
 
     expect(readJson(mcpAuthPath())).toEqual({});
+  });
+
+  it('reports an unchanged effective MCP update without rewriting configuration', async () => {
+    const { updateMcpConfig } = await loadRuntime();
+    const configPath = path.join(tempHome, '.config', 'opencode', 'opencode.json');
+    writeJson(configPath, {
+      mcp: {
+        linear: { type: 'remote', url: 'https://mcp.linear.app/mcp', enabled: true },
+      },
+    });
+    const before = fs.readFileSync(configPath, 'utf8');
+
+    const result = updateMcpConfig('linear', { enabled: true });
+
+    expect(result).toEqual({ changed: false, authReset: { ok: true, removed: false } });
+    expect(fs.readFileSync(configPath, 'utf8')).toBe(before);
   });
 
   it('does not recover explicitly deleted MCP configs', async () => {

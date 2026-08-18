@@ -18,7 +18,10 @@ export function hasToolCallAssistantFinish(message: Message | undefined): boolea
 export function isTerminalAssistantMessage(message: Message | undefined): boolean {
   if (!message || message.role !== "assistant") return false
   const completed = (message as { time?: { completed?: unknown } }).time?.completed
-  return typeof completed === "number" || hasTerminalAssistantFinish(message)
+  const hasCompletedTimestamp = typeof completed === "number"
+    && Number.isFinite(completed)
+    && completed > 0
+  return hasCompletedTimestamp || hasTerminalAssistantFinish(message)
 }
 
 export function isAssistantTurnComplete(message: Message | undefined): boolean {
@@ -122,12 +125,11 @@ export function isSessionWorkingFromState({
       return false
     })()
   )
-  // Trust authoritative idle status over stale incomplete assistant messages.
-  // A currently tracked streaming id is the narrow exception for out-of-order
-  // idle status events during the live turn. OpenCode can append a trailing
-  // empty assistant shell while the prior tool-call assistant is still live.
+  // Live session status is authoritative. Message metadata can recover working
+  // state only while the status snapshot is missing; it cannot override an
+  // explicit idle edge or settle a busy/retry turn on its own.
   if (hasAuthoritativeStatus) {
-    return statusWorking || trackedLiveStreaming
+    return statusWorking
   }
 
   return trackedLiveStreaming || isLiveAssistantMessage(

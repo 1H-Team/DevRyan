@@ -425,6 +425,10 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.fontSize === 'number' && Number.isFinite(candidate.fontSize)) {
       result.fontSize = Math.max(50, Math.min(200, Math.round(candidate.fontSize)));
     }
+    if (typeof candidate.chatWidth === 'number' && Number.isFinite(candidate.chatWidth)) {
+      const clamped = Math.max(640, Math.min(1408, candidate.chatWidth));
+      result.chatWidth = 640 + Math.round((clamped - 640) / 16) * 16;
+    }
     if (typeof candidate.terminalFontSize === 'number' && Number.isFinite(candidate.terminalFontSize)) {
       result.terminalFontSize = Math.max(9, Math.min(52, Math.round(candidate.terminalFontSize)));
     }
@@ -736,11 +740,18 @@ export const createSettingsHelpers = (dependencies) => {
       notificationTemplates: nextNotificationTemplates,
     };
 
+    if (Object.prototype.hasOwnProperty.call(changes, 'chatWidth')) {
+      delete next.wideChatLayoutEnabled;
+    }
+
     return next;
   };
 
   const formatSettingsResponse = (settings) => {
     const sanitized = sanitizeSettingsUpdate(settings);
+    if (typeof sanitized.chatWidth !== 'number' && settings?.wideChatLayoutEnabled === true) {
+      sanitized.chatWidth = 1024;
+    }
     delete sanitized.managedRemoteTunnelToken;
     const approved = normalizeStringArray(settings.approvedDirectories);
     const bookmarks = normalizeStringArray(settings.securityScopedBookmarks);

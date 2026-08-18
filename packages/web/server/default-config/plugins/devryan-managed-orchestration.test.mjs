@@ -52,6 +52,26 @@ const context = (overrides = {}) => ({
   ...overrides,
 });
 
+const rpcResponse = (result, status = 200) => new Response(JSON.stringify({
+  ok: status >= 200 && status < 300,
+  ...(status >= 200 && status < 300 ? { result } : { error: result }),
+}), { status, headers: { 'content-type': 'application/json' } });
+
+const healthyRootSnapshot = (overrides = {}) => ({
+  available: true,
+  bridgeReady: true,
+  recoveryWarning: null,
+  tasks: [],
+  resultEnvelopes: [],
+  ...overrides,
+});
+
+const collectableTaskResult = (taskId, overrides = {}) => ({
+  task: { taskId, status: 'completed' },
+  resultEnvelope: { taskId, action: null },
+  ...overrides,
+});
+
 const createToolOwnerClient = (records) => ({
   session: {
     messages: vi.fn(async () => ({ data: [
@@ -85,15 +105,9 @@ const toolCallRecord = (callID, mode, overrides = {}) => ({
 });
 
 describe('DevRyan managed orchestration plugin', () => {
-  it('derives a private read-only policy from the exact parent plan turn', async () => {
-    const requests = [];
-    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
-      requests.push(JSON.parse(init.body));
-      return new Response(JSON.stringify({ ok: true, result: { task: { taskId: 'dvr_task_plan' } } }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    }));
+  it('rejects Designer from the exact parent plan turn before RPC submission', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
     const client = {
       session: {
         messages: vi.fn(async () => ({ data: [
@@ -117,27 +131,546 @@ describe('DevRyan managed orchestration plugin', () => {
     };
     const plugin = await DevRyanManagedOrchestrationPlugin({ client });
 
-    await plugin.tool.devryan_task.execute({
+    await expect(plugin.tool.devryan_task.execute({
       action: 'start',
       agent: 'designer',
       prompt: 'Inspect the interface without changing it.',
       provider_id: 'anthropic',
       model_id: 'claude-opus-4-5',
-    }, context());
+    }, context())).rejects.toMatchObject({
+      code: 'MANAGED_READ_ONLY_AGENT_UNSUPPORTED',
+      statusCode: 409,
+    });
 
     expect(client.session.messages).toHaveBeenCalledWith({
       path: { id: 'ses_root' },
       query: { directory: '/workspace', limit: 100 },
     });
-    expect(requests[0].params.readOnly).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('fails closed when the parent turn policy cannot be resolved', async () => {
+  it('uses the adjacent persisted same-turn assistant when the in-flight assistant is not visible yet', async () => {
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      requests.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({
+        ok: true,
+        result: { task: { taskId: 'dvr_task_adjacent_parent' } },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+    const client = {
+      session: {
+        messages: vi.fn(async () => ({ data: [
+          {
+            info: { id: 'msg_001', role: 'user', mode: 'plan' },
+            parts: [{ type: 'text', text: 'Inspect only.' }],
+          },
+          {
+            info: {
+              id: 'msg_002',
+              role: 'assistant',
+              parentID: 'msg_001',
+              providerID: 'openai',
+              modelID: 'gpt-5.6-sol',
+              variant: 'xhigh',
+            },
+            parts: [],
+          },
+        ] })),
+      },
+    };
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client });
+
+    const output = JSON.parse(await plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'explorer',
+      prompt: 'Inspect the implementation.',
+      provider_id: 'cursor-acp',
+      model_id: 'composer-2.5',
+    }, context({ messageID: 'msg_003' })));
+
+    expect(requests[0].params).toMatchObject({
+      readOnly: true,
+      providerId: 'openai',
+      modelId: 'gpt-5.6-sol',
+      variant: 'xhigh',
+    });
+    expect(output.executionNotice).toContain('from the parent Orchestrator');
+  });
+
+  it.each(['fixer', 'oracle'])('resolves %s policy by exact message ids after the parent leaves the list window', async (agent) => {
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      requests.push(JSON.parse(init.body));
+      return rpcResponse({ task: { taskId: `dvr_task_${agent}` } });
+    }));
+    const client = {
+      session: {
+        message: vi.fn(async ({ path }) => {
+          if (path.messageID === 'msg_parent') {
+            return { data: {
+              info: {
+                id: 'msg_parent',
+                sessionID: 'ses_root',
+                role: 'assistant',
+                parentID: 'msg_user_older_than_window',
+                providerID: 'openai',
+                modelID: 'gpt-5.6-sol',
+              },
+              parts: [],
+            } };
+          }
+          return { data: {
+            info: {
+              id: 'msg_user_older_than_window',
+              sessionID: 'ses_root',
+              role: 'user',
+              mode: 'plan',
+            },
+            parts: [{ type: 'text', text: 'Inspect this read-only.' }],
+          } };
+        }),
+        messages: vi.fn(async () => ({ data: Array.from({ length: 100 }, (_, index) => ({
+          info: {
+            id: `msg_assistant_${index.toString().padStart(3, '0')}`,
+            role: 'assistant',
+            parentID: 'msg_user_older_than_window',
+          },
+          parts: [],
+        })) })),
+      },
+    };
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client });
+
+    await plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent,
+      prompt: 'Review the bounded target.',
+      provider_id: 'openai',
+      model_id: 'gpt-5.6-sol',
+    }, context());
+
+    expect(client.session.message).toHaveBeenNthCalledWith(1, {
+      path: { id: 'ses_root', messageID: 'msg_parent' },
+      query: { directory: '/workspace' },
+    });
+    expect(client.session.message).toHaveBeenNthCalledWith(2, {
+      path: { id: 'ses_root', messageID: 'msg_user_older_than_window' },
+      query: { directory: '/workspace' },
+    });
+    expect(client.session.messages).not.toHaveBeenCalled();
+    expect(requests[0].params).toMatchObject({ agent, readOnly: true });
+    expect(requests[0].params.timeoutAt).toBeGreaterThan(Date.now() + 59 * 60 * 1_000);
+  });
+
+  it('uses the bounded adjacent-assistant fallback only when the exact assistant is not persisted', async () => {
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      requests.push(JSON.parse(init.body));
+      return rpcResponse({ task: { taskId: 'dvr_task_adjacent_direct_parent' } });
+    }));
+    const client = {
+      session: {
+        message: vi.fn(async ({ path }) => {
+          if (path.messageID === 'msg_003') {
+            return { error: { status: 404 }, response: { status: 404 } };
+          }
+          return { data: {
+            info: { id: 'msg_001', sessionID: 'ses_root', role: 'user', mode: 'plan' },
+            parts: [{ type: 'text', text: 'Inspect only.' }],
+          } };
+        }),
+        messages: vi.fn(async () => ({ data: [{
+          info: {
+            id: 'msg_002',
+            role: 'assistant',
+            parentID: 'msg_001',
+            providerID: 'openai',
+            modelID: 'gpt-5.6-sol',
+          },
+          parts: [],
+        }] })),
+      },
+    };
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client });
+
+    await plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'explorer',
+      prompt: 'Inspect the implementation.',
+      provider_id: 'openai',
+      model_id: 'gpt-5.6-sol',
+    }, context({ messageID: 'msg_003' }));
+
+    expect(client.session.messages).toHaveBeenCalledTimes(1);
+    expect(requests[0].params).toMatchObject({ readOnly: true });
+  });
+
+  it('fails closed when direct message identity does not match the requested assistant', async () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
     const plugin = await DevRyanManagedOrchestrationPlugin({
       client: {
-        session: { messages: vi.fn(async () => ({ data: [] })) },
+        session: {
+          message: vi.fn(async () => ({ data: {
+            info: { id: 'msg_other', sessionID: 'ses_root', role: 'assistant', parentID: 'msg_user' },
+            parts: [],
+          } })),
+        },
+      },
+    });
+
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'oracle',
+      prompt: 'Review the target.',
+      provider_id: 'openai',
+      model_id: 'gpt-5.6-sol',
+    }, context())).rejects.toThrow('Cannot verify the invoking assistant');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the direct parent response mismatches the assistant parent relationship', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const plugin = await DevRyanManagedOrchestrationPlugin({
+      client: {
+        session: {
+          message: vi.fn(async ({ path }) => ({ data: path.messageID === 'msg_parent'
+            ? {
+                info: {
+                  id: 'msg_parent',
+                  sessionID: 'ses_root',
+                  role: 'assistant',
+                  parentID: 'msg_user',
+                },
+                parts: [],
+              }
+            : {
+                info: { id: 'msg_other_user', sessionID: 'ses_root', role: 'user' },
+                parts: [],
+              } })),
+        },
+      },
+    });
+
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'fixer',
+      prompt: 'Implement the bounded fix.',
+      provider_id: 'openai',
+      model_id: 'gpt-5.6-sol',
+    }, context())).rejects.toThrow('Cannot verify the parent turn');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the direct parent is missing', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const plugin = await DevRyanManagedOrchestrationPlugin({
+      client: {
+        session: {
+          message: vi.fn(async ({ path }) => (
+            path.messageID === 'msg_parent'
+              ? { data: {
+                  info: {
+                    id: 'msg_parent',
+                    sessionID: 'ses_root',
+                    role: 'assistant',
+                    parentID: 'msg_user',
+                  },
+                  parts: [],
+                } }
+              : { error: { status: 404 }, response: { status: 404 } }
+          )),
+        },
+      },
+    });
+
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'oracle',
+      prompt: 'Review the bounded fix.',
+      provider_id: 'openai',
+      model_id: 'gpt-5.6-sol',
+    }, context())).rejects.toThrow('Cannot verify the parent turn');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('fails closed with a precise diagnostic when direct message transport fails', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const plugin = await DevRyanManagedOrchestrationPlugin({
+      client: {
+        session: {
+          message: vi.fn(async () => {
+            throw new Error('connection reset');
+          }),
+        },
+      },
+    });
+
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'oracle',
+      prompt: 'Review the bounded fix.',
+      provider_id: 'openai',
+      model_id: 'gpt-5.6-sol',
+    }, context())).rejects.toThrow('Cannot load managed-dispatch message msg_parent: connection reset');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('still submits Designer implementation work from a normal parent turn', async () => {
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      requests.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({ ok: true, result: { task: { taskId: 'dvr_task_designer' } } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin({
+      client: createToolOwnerClient([]),
+    });
+
+    await plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'designer',
+      prompt: 'Implement the approved interface brief and verify it visually.',
+      provider_id: 'anthropic',
+      model_id: 'claude-opus-4-5',
+    }, context());
+
+    expect(requests[0].params).toMatchObject({
+      agent: 'designer',
+      readOnly: false,
+    });
+  });
+
+  it('routes a Cursor specialist plan task through the non-Cursor parent execution', async () => {
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      return new Response(JSON.stringify({
+        ok: true,
+        result: {
+          task: {
+            taskId: 'dvr_task_parent_fallback',
+            providerId: request.params.providerId,
+            modelId: request.params.modelId,
+          },
+        },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+    const client = {
+      app: {
+        agents: vi.fn(async () => ({ data: [
+          {
+            name: 'explorer',
+            model: { providerID: 'cursor-acp', modelID: 'composer-2.5' },
+            variant: 'medium',
+          },
+          {
+            name: 'plan',
+            model: { providerID: 'anthropic', modelID: 'claude-opus-5' },
+            variant: 'high',
+          },
+        ] })),
+      },
+      session: {
+        messages: vi.fn(async () => ({ data: [
+          {
+            info: {
+              id: 'msg_user_plan',
+              role: 'user',
+              model: { providerID: 'openai', modelID: 'gpt-5.6-sol', variant: 'xhigh' },
+            },
+            parts: [{
+              type: 'text',
+              text: 'User has requested to enter plan mode.\nInspect only.',
+              synthetic: true,
+            }],
+          },
+          {
+            info: {
+              id: 'msg_parent',
+              role: 'assistant',
+              parentID: 'msg_user_plan',
+              providerID: 'openai',
+              modelID: 'gpt-5.6-sol',
+            },
+            parts: [],
+          },
+        ] })),
+      },
+    };
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client });
+
+    const output = JSON.parse(await plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'explorer',
+      prompt: 'Map the relevant implementation.',
+    }, context()));
+
+    expect(requests[0].params).toMatchObject({
+      readOnly: true,
+      providerId: 'openai',
+      modelId: 'gpt-5.6-sol',
+      variant: 'xhigh',
+      agent: 'explorer',
+    });
+    expect(output.executionNotice).toContain('from the parent Orchestrator');
+    expect(output.executionNotice).toContain('cursor-acp/composer-2.5');
+    expect(client.session.messages).toHaveBeenCalledTimes(1);
+    expect(client.app.agents).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the configured Plan agent when the parent and specialist both use Cursor', async () => {
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      return new Response(JSON.stringify({
+        ok: true,
+        result: { task: { taskId: 'dvr_task_plan_fallback' } },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+    const client = {
+      app: {
+        agents: vi.fn(async () => ({ data: [
+          {
+            name: 'explorer',
+            model: { providerID: 'cursor-acp', modelID: 'composer-2.5' },
+          },
+          {
+            name: 'plan',
+            model: { providerID: 'anthropic', modelID: 'claude-opus-5' },
+            variant: 'high',
+          },
+        ] })),
+      },
+      session: {
+        messages: vi.fn(async () => ({ data: [
+          {
+            info: { id: 'msg_user_plan', role: 'user', mode: 'plan' },
+            parts: [{ type: 'text', text: 'Plan this work.' }],
+          },
+          {
+            info: {
+              id: 'msg_parent',
+              role: 'assistant',
+              parentID: 'msg_user_plan',
+              providerID: 'cursor-acp',
+              modelID: 'composer-2.5',
+            },
+            parts: [],
+          },
+        ] })),
+      },
+    };
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client });
+
+    const output = JSON.parse(await plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'explorer',
+      prompt: 'Inspect the architecture.',
+    }, context()));
+
+    expect(requests[0].params).toMatchObject({
+      readOnly: true,
+      providerId: 'anthropic',
+      modelId: 'claude-opus-5',
+      variant: 'high',
+    });
+    expect(output.executionNotice).toContain('from the configured Plan agent');
+  });
+
+  it('rejects an incompatible plan task before submission when no plan-safe model exists', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const client = {
+      app: {
+        agents: vi.fn(async () => ({ data: [
+          {
+            name: 'explorer',
+            model: { providerID: 'cursor-acp', modelID: 'composer-2.5' },
+          },
+          {
+            name: 'plan',
+            model: { providerID: 'cursor-acp', modelID: 'composer-2.5' },
+          },
+        ] })),
+      },
+      session: {
+        messages: vi.fn(async () => ({ data: [
+          {
+            info: { id: 'msg_user_plan', role: 'user', mode: 'plan' },
+            parts: [{ type: 'text', text: 'Plan this work.' }],
+          },
+          {
+            info: {
+              id: 'msg_parent',
+              role: 'assistant',
+              parentID: 'msg_user_plan',
+              providerID: 'cursor-acp',
+              modelID: 'composer-2.5',
+            },
+            parts: [],
+          },
+        ] })),
+      },
+    };
+    const plugin = await DevRyanManagedOrchestrationPlugin({ client });
+
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'start',
+      agent: 'explorer',
+      prompt: 'Inspect the architecture.',
+    }, context())).rejects.toMatchObject({
+      code: 'MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED',
+      statusCode: 409,
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['missing records', []],
+    ['first step without a persisted assistant sibling', [
+      { info: { id: 'msg_001', role: 'user' }, parts: [] },
+    ]],
+    ['a conflicting assistant parent', [
+      { info: { id: 'msg_001', role: 'user' }, parts: [] },
+      {
+        info: {
+          id: 'msg_002',
+          role: 'assistant',
+          parentID: 'msg_other',
+          providerID: 'openai',
+          modelID: 'gpt-5.6-sol',
+        },
+        parts: [],
+      },
+    ]],
+    ['records newer than the in-flight assistant', [
+      { info: { id: 'msg_004', role: 'user' }, parts: [] },
+      {
+        info: {
+          id: 'msg_005',
+          role: 'assistant',
+          parentID: 'msg_004',
+          providerID: 'openai',
+          modelID: 'gpt-5.6-sol',
+        },
+        parts: [],
+      },
+    ]],
+  ])('fails closed without RPC submission for %s', async (_case, records) => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const plugin = await DevRyanManagedOrchestrationPlugin({
+      client: {
+        session: { messages: vi.fn(async () => ({ data: records })) },
       },
     });
 
@@ -147,7 +680,7 @@ describe('DevRyan managed orchestration plugin', () => {
       prompt: 'Inspect the interface.',
       provider_id: 'anthropic',
       model_id: 'claude-opus-4-5',
-    }, context())).rejects.toThrow('Cannot verify the parent turn');
+    }, context({ messageID: 'msg_003' }))).rejects.toThrow('Cannot verify the parent turn');
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -174,19 +707,19 @@ describe('DevRyan managed orchestration plugin', () => {
       'does not impose a managed concurrency cap',
     );
     expect(plugin.tool.devryan_task.args.timeout_seconds.description).toContain(
-      'use at least 3600 for multi-file implementation plus tests',
+      'Defaults to 3600 for Fixer and Oracle',
     );
     expect(plugin.tool.devryan_task.args.timeout_seconds.description).toContain(
-      'enforced 3600 minimum for Oracle',
+      '1800 for other ordinary specialists',
     );
     expect(plugin.tool.devryan_task.args.timeout_seconds.description).toContain(
-      '7200 when the child also owns builds or browser verification',
+      '7200 when a closed task also owns builds or browser verification',
     );
     expect(plugin.tool.devryan_task.args.action.description).toContain(
-      'A resumable failure with no agent retry remaining is handled by the user-facing Model Recovery controls',
+      'A resumable failure with no agent retry remaining returns manualRecoveryRequired',
     );
     expect(plugin.tool.devryan_task.args.action.description).toContain(
-      'Wait stays attached until terminal while DevRyan polls internally',
+      'Wait stays attached only until the requested task is terminal',
     );
     expect(plugin.tool.devryan_task.args.action.description).toContain(
       'use status for a non-blocking live snapshot',
@@ -236,7 +769,7 @@ describe('DevRyan managed orchestration plugin', () => {
     expect(requests[1].body.params.idempotencyKey).toBe(requests[0].body.params.idempotencyKey);
   });
 
-  it('defaults omitted deadlines to 30 minutes, enforces 60 minutes for Oracle, and caps at 24 hours', async () => {
+  it('defaults ordinary deadlines to 30 minutes, enforces 60 minutes for Fixer and Oracle, and caps at 24 hours', async () => {
     const requests = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
       requests.push(JSON.parse(init.body));
@@ -265,12 +798,20 @@ describe('DevRyan managed orchestration plugin', () => {
     }, context({ messageID: 'msg_second' }));
     await plugin.tool.devryan_task.execute({
       action: 'start',
+      agent: 'fixer',
+      prompt: 'Fix within the Fixer deadline floor.',
+      provider_id: 'openai',
+      model_id: 'gpt-5.6-luna',
+      timeout_seconds: 1_800,
+    }, context({ messageID: 'msg_third' }));
+    await plugin.tool.devryan_task.execute({
+      action: 'start',
       agent: 'oracle',
       prompt: 'Review within the Oracle deadline floor.',
       provider_id: 'openai',
       model_id: 'gpt-5.6-sol',
       timeout_seconds: 1_800,
-    }, context({ messageID: 'msg_third' }));
+    }, context({ messageID: 'msg_fourth' }));
 
     expect(requests[0].params.timeoutAt).toBeGreaterThanOrEqual(startedAt + 1_800_000);
     expect(requests[0].params.timeoutAt).toBeLessThanOrEqual(Date.now() + 1_800_000);
@@ -278,6 +819,76 @@ describe('DevRyan managed orchestration plugin', () => {
     expect(requests[1].params.timeoutAt).toBeLessThanOrEqual(Date.now() + 86_400_000);
     expect(requests[2].params.timeoutAt).toBeGreaterThanOrEqual(startedAt + 3_600_000);
     expect(requests[2].params.timeoutAt).toBeLessThanOrEqual(Date.now() + 3_600_000);
+    expect(requests[3].params.timeoutAt).toBeGreaterThanOrEqual(startedAt + 3_600_000);
+    expect(requests[3].params.timeoutAt).toBeLessThanOrEqual(Date.now() + 3_600_000);
+  });
+
+  it('clamps an explicit Fixer recovery window to 60 minutes', async () => {
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      const result = request.method === 'wait'
+        ? { task: { taskId: 'dvr_task_fixer_recovery', status: 'failed' } }
+        : { accepted: true };
+      return new Response(JSON.stringify({ ok: true, result }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+
+    await plugin.tool.devryan_task.execute({
+      action: 'wait',
+      task_id: 'dvr_task_fixer_recovery',
+    }, context());
+    await plugin.tool.devryan_task.execute({
+      action: 'retry',
+      task_id: 'dvr_task_fixer_recovery',
+      agent: 'fixer',
+      timeout_seconds: 1_800,
+    }, context());
+
+    expect(requests[1]).toMatchObject({
+      method: 'acknowledge',
+      params: { action: 'retry', agent: 'fixer', timeoutSeconds: 3_600 },
+    });
+  });
+
+  it('forwards timeout_seconds when retrying or resuming an existing task', async () => {
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      const result = request.method === 'wait'
+        ? { task: { taskId: 'dvr_task_long_recovery', status: 'failed' } }
+        : { accepted: true };
+      return new Response(JSON.stringify({ ok: true, result }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+
+    await plugin.tool.devryan_task.execute({
+      action: 'wait',
+      task_id: 'dvr_task_long_recovery',
+    }, context());
+    await plugin.tool.devryan_task.execute({
+      action: 'resume',
+      task_id: 'dvr_task_long_recovery',
+      timeout_seconds: 7_200,
+    }, context());
+
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toMatchObject({
+      method: 'acknowledge',
+      params: {
+        taskId: 'dvr_task_long_recovery',
+        action: 'resume',
+        timeoutSeconds: 7_200,
+      },
+    });
   });
 
   it('requires wait before disposition and routes scoped control actions', async () => {
@@ -311,12 +922,228 @@ describe('DevRyan managed orchestration plugin', () => {
       'wait',
       'cancel',
       'acknowledge',
+      'status',
     ]);
     expect(requests.every((request) => request.params.rootSessionId === 'ses_root')).toBe(true);
     expect(requests.every((request) => request.params.directory === '/workspace')).toBe(true);
     expect(requests.find((request) => request.method === 'wait').params.waitTimeoutMs).toBe(25_000);
-    expect(requests.at(-1).params.action).toBe('retry');
+    expect(requests.find((request) => request.method === 'acknowledge').params.action).toBe('retry');
   });
+
+  it.each(['status', 'wait', 'continue'])(
+    'recovers a compacted task reference during %s when the root snapshot is healthy and clear',
+    async (action) => {
+      const requests = [];
+      vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+        const request = JSON.parse(init.body);
+        requests.push(request);
+        if (request.method === 'snapshot') return rpcResponse(healthyRootSnapshot());
+        if (request.method === 'barrier_status') {
+          return rpcResponse({ state: 'clear', taskIds: [] });
+        }
+        return rpcResponse({ code: 'task_not_found', message: 'task was compacted' }, 404);
+      }));
+      const plugin = await DevRyanManagedOrchestrationPlugin();
+
+      const output = JSON.parse(await plugin.tool.devryan_task.execute({
+        action,
+        task_id: 'dvr_task_compacted',
+      }, context()));
+
+      expect(output).toEqual({
+        state: 'stale_task_reference',
+        taskId: 'dvr_task_compacted',
+        dispositionRequired: false,
+        instruction: expect.stringContaining('without restarting'),
+      });
+      expect(requests.map(({ method }) => method)).toEqual([
+        action === 'continue' ? 'status' : action,
+        'snapshot',
+        'barrier_status',
+      ]);
+      expect(requests.map(({ method }) => method)).not.toContain('submit');
+      expect(requests.map(({ method }) => method)).not.toContain('acknowledge');
+    },
+  );
+
+  it.each([
+    ['active', ['dvr_task_live_a', 'dvr_task_live_b'], 'active managed tasks'],
+    ['awaiting_acknowledgement', ['dvr_task_pending'], 'awaiting acknowledgement'],
+  ])('keeps a missing reference blocked behind the authoritative %s barrier', async (
+    barrierState,
+    taskIds,
+    expectedMessage,
+  ) => {
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const { method } = JSON.parse(init.body);
+      if (method === 'snapshot') return rpcResponse(healthyRootSnapshot());
+      if (method === 'barrier_status') return rpcResponse({ state: barrierState, taskIds });
+      return rpcResponse({ code: 'task_not_found', message: 'task was compacted' }, 404);
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'status',
+      task_id: 'dvr_task_stale',
+    }, context())).rejects.toThrow(expectedMessage);
+    await expect(plugin.tool.devryan_task.execute({
+      action: 'status',
+      task_id: 'dvr_task_stale',
+    }, context())).rejects.toThrow(taskIds.join(', '));
+  });
+
+  it.each([
+    [
+      'a recovery warning',
+      (method) => method === 'snapshot'
+        ? rpcResponse(healthyRootSnapshot({ recoveryWarning: 'ledger quarantined' }))
+        : rpcResponse({ code: 'task_not_found', message: 'task was compacted' }, 404),
+      'recovery warning',
+    ],
+    [
+      'a snapshot bridge failure',
+      (method) => method === 'snapshot'
+        ? rpcResponse({ code: 'bridge_unavailable', message: 'bridge refresh failed' }, 503)
+        : rpcResponse({ code: 'task_not_found', message: 'task was compacted' }, 404),
+      'bridge refresh failed',
+    ],
+    [
+      'a malformed barrier',
+      (method) => method === 'snapshot'
+        ? rpcResponse(healthyRootSnapshot())
+        : method === 'barrier_status'
+          ? rpcResponse({ state: 'clear' })
+          : rpcResponse({ code: 'task_not_found', message: 'task was compacted' }, 404),
+      'barrier status is malformed',
+    ],
+  ])('fails closed for a missing task when root verification has %s', async (
+    _label,
+    respond,
+    expectedMessage,
+  ) => {
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const { method } = JSON.parse(init.body);
+      return respond(method);
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+
+    const request = plugin.tool.devryan_task.execute({
+      action: 'status',
+      task_id: 'dvr_task_stale',
+    }, context());
+    await expect(request).rejects.toMatchObject({ code: 'task_not_found' });
+    await expect(request).rejects.toThrow(expectedMessage);
+  });
+
+  it('recognizes an already-dispositioned retained task after plugin restart', async () => {
+    const requests = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      requests.push(request);
+      if (request.method === 'status') {
+        return rpcResponse({
+          task: { taskId: 'dvr_task_retained', status: 'completed' },
+          resultEnvelope: {
+            taskId: 'dvr_task_retained',
+            action: 'continue',
+            acknowledgedAt: 123,
+          },
+        });
+      }
+      if (request.method === 'snapshot') {
+        return rpcResponse(healthyRootSnapshot({
+          tasks: [{ taskId: 'dvr_task_retained', status: 'completed' }],
+          resultEnvelopes: [{ taskId: 'dvr_task_retained', action: 'continue' }],
+        }));
+      }
+      if (request.method === 'barrier_status') {
+        return rpcResponse({ state: 'clear', taskIds: [] });
+      }
+      throw new Error(`Unexpected RPC method: ${request.method}`);
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+
+    const output = JSON.parse(await plugin.tool.devryan_task.execute({
+      action: 'continue',
+      task_id: 'dvr_task_retained',
+    }, context()));
+
+    expect(output).toMatchObject({
+      state: 'already_dispositioned',
+      dispositionRequired: false,
+      barrier: { state: 'clear', taskIds: [] },
+      resultEnvelope: { action: 'continue' },
+    });
+    expect(requests.map(({ method }) => method)).toEqual([
+      'status',
+      'snapshot',
+      'barrier_status',
+    ]);
+  });
+
+  it.each(['continue', 'retry', 'resume', 'abandon'])(
+    'evicts the collected-result cache after successful %s',
+    async (action) => {
+      const requests = [];
+      let acknowledged = false;
+      const terminalStatus = action === 'continue' ? 'completed' : 'failed';
+      vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+        const request = JSON.parse(init.body);
+        requests.push(request);
+        if (request.method === 'wait') {
+          return rpcResponse({
+            task: { taskId: 'dvr_task_disposed', status: terminalStatus },
+            resultEnvelope: { taskId: 'dvr_task_disposed', action: null },
+          });
+        }
+        if (request.method === 'acknowledge') {
+          acknowledged = true;
+          return rpcResponse({
+            resultEnvelope: { taskId: 'dvr_task_disposed', action },
+            followUpTask: null,
+          });
+        }
+        if (request.method === 'status') {
+          return rpcResponse({
+            task: { taskId: 'dvr_task_disposed', status: terminalStatus },
+            resultEnvelope: {
+              taskId: 'dvr_task_disposed',
+              action: acknowledged ? action : null,
+            },
+          });
+        }
+        if (request.method === 'snapshot') return rpcResponse(healthyRootSnapshot());
+        if (request.method === 'barrier_status') {
+          return rpcResponse({ state: 'clear', taskIds: [] });
+        }
+        throw new Error(`Unexpected RPC method: ${request.method}`);
+      }));
+      const plugin = await DevRyanManagedOrchestrationPlugin();
+
+      await plugin.tool.devryan_task.execute({
+        action: 'wait',
+        task_id: 'dvr_task_disposed',
+      }, context());
+      await plugin.tool.devryan_task.execute({
+        action,
+        task_id: 'dvr_task_disposed',
+      }, context());
+      const repeated = JSON.parse(await plugin.tool.devryan_task.execute({
+        action,
+        task_id: 'dvr_task_disposed',
+      }, context()));
+
+      expect(repeated.state).toBe('already_dispositioned');
+      expect(requests.filter(({ method }) => method === 'acknowledge')).toHaveLength(1);
+      expect(requests.map(({ method }) => method)).toEqual([
+        'wait',
+        'acknowledge',
+        'status',
+        'snapshot',
+        'barrier_status',
+      ]);
+    },
+  );
 
   it('keeps one wait attached across live polling slices until terminal', async () => {
     const requests = [];
@@ -382,6 +1209,10 @@ describe('DevRyan managed orchestration plugin', () => {
     });
     let waitCallCount = 0;
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      if (request.method === 'status') {
+        return rpcResponse({ task: { taskId: 'dvr_task_abort', status: 'running' } });
+      }
       waitCallCount += 1;
       if (waitCallCount === 1) {
         return new Response(JSON.stringify({
@@ -470,10 +1301,22 @@ describe('DevRyan managed orchestration plugin', () => {
     const plugin = await DevRyanManagedOrchestrationPlugin();
 
     await plugin.tool.devryan_task.execute({ action: 'wait', task_id: 'dvr_task_1' }, context());
-    await expect(plugin.tool.devryan_task.execute({
+    const incompatible = plugin.tool.devryan_task.execute({
       action: 'retry',
       task_id: 'dvr_task_1',
-    }, context())).rejects.toThrow('successful result requires continue');
+    }, context());
+    await expect(incompatible).rejects.toMatchObject({
+      code: 'DEVRYAN_TOOL_INPUT_INVALID',
+      details: {
+        taskId: 'dvr_task_1',
+        state: 'completed',
+        receivedAction: 'retry',
+        requiredAction: 'continue',
+      },
+    });
+    await expect(incompatible).rejects.toThrow(
+      'Required next action: {"action":"continue","task_id":"dvr_task_1"}',
+    );
     await plugin.tool.devryan_task.execute({
       action: 'continue',
       task_id: 'dvr_task_1',
@@ -1112,15 +1955,13 @@ describe('DevRyan managed orchestration plugin', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('holds the parent wait through user-facing Model Recovery and returns the recovered result', async () => {
+  it('returns provider Model Recovery immediately without holding the parent tool call', async () => {
     const requests = [];
-    let recoveredWaitCount = 0;
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
       const request = JSON.parse(init.body);
       requests.push(request);
-      let result;
-      if (request.method === 'wait' && request.params.taskId === 'dvr_task_limited') {
-        result = {
+      const result = request.method === 'wait' && request.params.taskId === 'dvr_task_limited'
+        ? {
           task: {
             taskId: 'dvr_task_limited',
             status: 'failed',
@@ -1135,35 +1976,8 @@ describe('DevRyan managed orchestration plugin', () => {
             action: null,
             resumable: true,
           },
-        };
-      } else if (request.method === 'wait_result_action') {
-        result = {
-          resultEnvelope: {
-            taskId: 'dvr_task_limited',
-            action: 'retry_in_place',
-            followUpTaskId: 'dvr_task_recovered',
-          },
-          followUpTask: {
-            task: {
-              taskId: 'dvr_task_recovered',
-              status: 'running',
-              childSessionId: 'ses_designer',
-            },
-          },
-        };
-      } else if (request.method === 'wait' && request.params.taskId === 'dvr_task_recovered') {
-        recoveredWaitCount += 1;
-        result = {
-          task: {
-            taskId: 'dvr_task_recovered',
-            status: recoveredWaitCount === 1 ? 'running' : 'completed',
-            childSessionId: 'ses_designer',
-            recoverablePreview: recoveredWaitCount === 1 ? null : 'Recovered result',
-          },
-        };
-      } else {
-        result = { accepted: true };
-      }
+        }
+        : { accepted: true };
       return new Response(JSON.stringify({ ok: true, result }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -1177,37 +1991,26 @@ describe('DevRyan managed orchestration plugin', () => {
     }, context());
     const parsed = JSON.parse(output);
 
-    expect(parsed.task).toMatchObject({
-      taskId: 'dvr_task_recovered',
-      status: 'completed',
-      childSessionId: 'ses_designer',
-      recoverablePreview: 'Recovered result',
+    expect(parsed).toMatchObject({
+      manualRecoveryRequired: true,
+      manualRecoveryInstruction: expect.stringContaining('awaiting user action'),
+      task: {
+        taskId: 'dvr_task_limited',
+        status: 'failed',
+        childSessionId: 'ses_designer',
+        failureKind: 'provider_usage_limit',
+      },
+      resultEnvelope: {
+        taskId: 'dvr_task_limited',
+        action: null,
+        resumable: true,
+      },
     });
-    expect(output).not.toContain('provider_usage_limit');
     await expect(plugin.tool.devryan_task.execute({
       action: 'continue',
       task_id: 'dvr_task_limited',
-    }, context())).rejects.toThrow('wait for dvr_task_limited');
-    await plugin.tool.devryan_task.execute({
-      action: 'continue',
-      task_id: 'dvr_task_recovered',
-    }, context());
-
-    expect(requests.map(({ method }) => method)).toEqual([
-      'wait',
-      'wait_result_action',
-      'wait',
-      'wait',
-      'acknowledge',
-    ]);
-    expect(requests.slice(1, 4).map(({ params }) => params.taskId)).toEqual([
-      'dvr_task_limited',
-      'dvr_task_recovered',
-      'dvr_task_recovered',
-    ]);
-    expect(requests.slice(2, 4).every(
-      ({ params }) => params.waitTimeoutMs === 25_000,
-    )).toBe(true);
+    }, context())).rejects.toThrow('Manual model recovery requires');
+    expect(requests.map(({ method }) => method)).toEqual(['wait']);
     await expect(plugin.tool.devryan_task.execute({
       action: 'recover_in_place',
       task_id: 'dvr_task_limited',
@@ -1260,7 +2063,7 @@ describe('DevRyan managed orchestration plugin', () => {
     expect(requests.map(({ method }) => method)).toEqual(['wait', 'acknowledge']);
   });
 
-  it('holds the parent wait after a grouped agent retry is exhausted', async () => {
+  it('returns manual Model Recovery immediately after a grouped agent retry is exhausted', async () => {
     const requests = [];
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
       const request = JSON.parse(init.body);
@@ -1272,6 +2075,7 @@ describe('DevRyan managed orchestration plugin', () => {
               status: 'failed',
               childSessionId: 'ses_fixer',
               mode: 'orchestrator',
+              dispatchGrouped: true,
               attempt: 2,
               agentRetryAvailable: false,
               failureKind: null,
@@ -1282,21 +2086,7 @@ describe('DevRyan managed orchestration plugin', () => {
               resumable: true,
             },
           }
-        : {
-            resultEnvelope: {
-              taskId: 'dvr_task_fixer_attempt_2',
-              action: 'retry_in_place',
-              followUpTaskId: 'dvr_task_fixer_manual',
-            },
-            followUpTask: {
-              task: {
-                taskId: 'dvr_task_fixer_manual',
-                status: 'completed',
-                childSessionId: 'ses_fixer',
-                recoverablePreview: 'Recovered fixer result',
-              },
-            },
-          };
+        : { accepted: true };
       return new Response(JSON.stringify({ ok: true, result }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
@@ -1309,12 +2099,20 @@ describe('DevRyan managed orchestration plugin', () => {
       task_id: 'dvr_task_fixer_attempt_2',
     }, context());
 
-    expect(JSON.parse(output).task).toMatchObject({
-      taskId: 'dvr_task_fixer_manual',
-      status: 'completed',
-      recoverablePreview: 'Recovered fixer result',
+    expect(JSON.parse(output)).toMatchObject({
+      manualRecoveryRequired: true,
+      task: {
+        taskId: 'dvr_task_fixer_attempt_2',
+        status: 'failed',
+        childSessionId: 'ses_fixer',
+      },
+      resultEnvelope: {
+        taskId: 'dvr_task_fixer_attempt_2',
+        action: null,
+        resumable: true,
+      },
     });
-    expect(requests.map(({ method }) => method)).toEqual(['wait', 'wait_result_action']);
+    expect(requests.map(({ method }) => method)).toEqual(['wait']);
   });
 
   it('wakes an idle parent exactly once after any detached terminal wait', async () => {
@@ -1355,19 +2153,20 @@ describe('DevRyan managed orchestration plugin', () => {
     };
     vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
       const request = JSON.parse(init.body);
+      if (request.method === 'status') {
+        return rpcResponse(collectableTaskResult('dvr_task_completed'));
+      }
       expect(request.method).toBe('list_provider_recovery_continuations');
-      return new Response(JSON.stringify({
-        ok: true,
-        result: {
+      return rpcResponse({
           continuations: [{
             sourceTaskId: null,
             taskId: 'dvr_task_completed',
             rootSessionId: 'ses_root',
             childSessionId: 'ses_explorer',
             directory: '/workspace',
+            kind: 'collect',
           }],
-        },
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
+      });
     }));
     const plugin = await DevRyanManagedOrchestrationPlugin({
       client,
@@ -1411,8 +2210,123 @@ describe('DevRyan managed orchestration plugin', () => {
     });
     expect(scheduled).toHaveLength(1);
     scheduled.shift()();
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
     expect(client.session.promptAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not claim manual Model Recovery for an ungrouped orchestrator retry', async () => {
+    // The scheduler only parks grouped dispatches; without this the plugin told the user
+    // to use a Model Recovery card that the UI never renders.
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      const result = request.method === 'wait'
+        ? {
+            task: {
+              taskId: 'dvr_task_ungrouped_attempt_2',
+              status: 'failed',
+              childSessionId: 'ses_ungrouped',
+              mode: 'orchestrator',
+              dispatchGrouped: false,
+              attempt: 2,
+              agentRetryAvailable: false,
+              failureKind: null,
+            },
+            resultEnvelope: {
+              taskId: 'dvr_task_ungrouped_attempt_2',
+              action: null,
+              resumable: true,
+            },
+          }
+        : { accepted: true };
+      return new Response(JSON.stringify({ ok: true, result }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }));
+    const plugin = await DevRyanManagedOrchestrationPlugin();
+
+    const output = await plugin.tool.devryan_task.execute({
+      action: 'wait',
+      task_id: 'dvr_task_ungrouped_attempt_2',
+    }, context());
+
+    expect(JSON.parse(output).manualRecoveryRequired).toBeUndefined();
+  });
+
+  const parkedContinuation = (taskId, childSessionId) => ({
+    sourceTaskId: `${taskId}_source`,
+    taskId,
+    rootSessionId: 'ses_root',
+    childSessionId,
+    directory: '/workspace',
+    kind: 'manual_recovery',
+    label: 'Designer',
+    failureReason: 'Monthly usage limit reached',
+    failureKind: 'provider_usage_limit',
+  });
+
+  const scanParkedContinuations = async (continuations) => {
+    const scheduled = [];
+    const methods = [];
+    const client = {
+      session: {
+        messages: vi.fn(async () => ({
+          data: [{
+            info: {
+              id: 'msg_parent_user',
+              role: 'user',
+              agent: 'orchestrator',
+              model: { providerID: 'openai', modelID: 'gpt-5.6', variant: 'xhigh' },
+            },
+            parts: [{ type: 'text', text: 'Ship the release blockers.' }],
+          }],
+        })),
+        status: vi.fn(async () => ({ data: {} })),
+        promptAsync: vi.fn(async () => ({ data: true })),
+      },
+    };
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      methods.push(request.method);
+      return new Response(JSON.stringify({
+        ok: true,
+        result: { continuations },
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }));
+    await DevRyanManagedOrchestrationPlugin({
+      client,
+      scheduleTimeout(callback) {
+        scheduled.push(callback);
+        return { unref() {} };
+      },
+    });
+    expect(scheduled).toHaveLength(1);
+    scheduled.shift()();
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    return { client, methods };
+  };
+
+  it('does not inject a parked-notice turn for one or more parked tasks', async () => {
+    const { client, methods } = await scanParkedContinuations([
+      parkedContinuation('dvr_task_parked_a', 'ses_designer_a'),
+      parkedContinuation('dvr_task_parked_b', 'ses_designer_b'),
+    ]);
+
+    expect(client.session.promptAsync).not.toHaveBeenCalled();
+    expect(client.session.messages).not.toHaveBeenCalled();
+    expect(methods).toEqual(['list_provider_recovery_continuations']);
+    expect(methods).not.toContain('acknowledge');
+  });
+
+  it('ignores a leftover manual_recovery RPC entry instead of collecting it', async () => {
+    const { client, methods } = await scanParkedContinuations([
+      parkedContinuation('dvr_task_parked', 'ses_designer'),
+    ]);
+
+    expect(client.session.promptAsync).not.toHaveBeenCalled();
+    expect(methods).not.toContain('acknowledge');
+    expect(methods).not.toContain('wait');
   });
 
   it('does not re-send a wake that is not yet visible in the parent transcript', async () => {
@@ -1437,18 +2351,22 @@ describe('DevRyan managed orchestration plugin', () => {
         promptAsync: vi.fn(async () => ({ data: true })),
       },
     };
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
-      ok: true,
-      result: {
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      if (request.method === 'status') {
+        return rpcResponse(collectableTaskResult('dvr_task_recovered'));
+      }
+      return rpcResponse({
         continuations: [{
           sourceTaskId: 'dvr_task_limited',
           taskId: 'dvr_task_recovered',
           rootSessionId: 'ses_root',
           childSessionId: 'ses_oracle',
           directory: '/workspace',
+          kind: 'collect',
         }],
-      },
-    }), { status: 200, headers: { 'content-type': 'application/json' } })));
+      });
+    }));
     const plugin = await DevRyanManagedOrchestrationPlugin({
       client,
       scheduleTimeout(callback) {
@@ -1466,7 +2384,7 @@ describe('DevRyan managed orchestration plugin', () => {
     });
     expect(scheduled).toHaveLength(1);
     scheduled.shift()();
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(3));
     // fetch resolves well before a wake would be sent, so let the second scan
     // drain fully before asserting; otherwise a re-send is simply not observed
     // yet and the assertion passes for the wrong reason.
@@ -1508,7 +2426,11 @@ describe('DevRyan managed orchestration plugin', () => {
       },
     };
     let scanCount = 0;
-    vi.stubGlobal('fetch', vi.fn(async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      if (request.method === 'status') {
+        return rpcResponse(collectableTaskResult('dvr_task_recovered'));
+      }
       scanCount += 1;
       const continuations = scanCount < 3
         ? []
@@ -1518,11 +2440,9 @@ describe('DevRyan managed orchestration plugin', () => {
             rootSessionId: 'ses_root',
             childSessionId: 'ses_designer',
             directory: '/workspace',
+            kind: 'collect',
           }];
-      return new Response(JSON.stringify({
-        ok: true,
-        result: { continuations },
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
+      return rpcResponse({ continuations });
     }));
     const plugin = await DevRyanManagedOrchestrationPlugin({
       client,
@@ -1554,11 +2474,11 @@ describe('DevRyan managed orchestration plugin', () => {
     expect(scheduled[0].delayMs).toBe(1_000);
     scheduled.shift().callback();
     await vi.waitFor(() => expect(client.session.promptAsync).toHaveBeenCalledTimes(1));
-    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(scanCount).toBe(3);
 
     await vi.waitFor(() => expect(scheduled).toHaveLength(1));
     scheduled.shift().callback();
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(4));
+    await vi.waitFor(() => expect(scanCount).toBe(4));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(scheduled).toEqual([]);
     expect(client.session.promptAsync).toHaveBeenCalledTimes(1);
@@ -1591,21 +2511,23 @@ describe('DevRyan managed orchestration plugin', () => {
       },
     };
     let scanCount = 0;
-    vi.stubGlobal('fetch', vi.fn(async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+      const request = JSON.parse(init.body);
+      if (request.method === 'status') {
+        return rpcResponse(collectableTaskResult('dvr_task_recovered'));
+      }
       scanCount += 1;
       if (scanCount === 1) return await firstScan;
-      return new Response(JSON.stringify({
-        ok: true,
-        result: {
+      return rpcResponse({
           continuations: [{
             sourceTaskId: 'dvr_task_limited',
             taskId: 'dvr_task_recovered',
             rootSessionId: 'ses_root',
             childSessionId: 'ses_oracle',
             directory: '/workspace',
+            kind: 'collect',
           }],
-        },
-      }), { status: 200, headers: { 'content-type': 'application/json' } });
+      });
     }));
     const plugin = await DevRyanManagedOrchestrationPlugin({
       client,
@@ -1635,6 +2557,74 @@ describe('DevRyan managed orchestration plugin', () => {
     await vi.waitFor(() => expect(client.session.promptAsync).toHaveBeenCalledTimes(1));
   });
 
+  it.each(['already_dispositioned', 'task_compacted'])(
+    'skips a stale recovery wake when the candidate is %s before injection',
+    async (candidateState) => {
+      const scheduled = [];
+      const methods = [];
+      const client = {
+        session: {
+          messages: vi.fn(async () => ({
+            data: [{
+              info: {
+                id: 'msg_parent_user',
+                role: 'user',
+                agent: 'orchestrator',
+                model: { providerID: 'openai', modelID: 'gpt-5.6' },
+              },
+              parts: [{ type: 'text', text: 'Finish the parent task.' }],
+            }],
+          })),
+          status: vi.fn(async () => ({ data: {} })),
+          promptAsync: vi.fn(async () => ({ data: true })),
+        },
+      };
+      vi.stubGlobal('fetch', vi.fn(async (_url, init) => {
+        const request = JSON.parse(init.body);
+        methods.push(request.method);
+        if (request.method === 'list_provider_recovery_continuations') {
+          return rpcResponse({
+            continuations: [{
+              sourceTaskId: null,
+              taskId: 'dvr_task_stale_wake',
+              rootSessionId: 'ses_root',
+              childSessionId: 'ses_child',
+              directory: '/workspace',
+              kind: 'collect',
+            }],
+          });
+        }
+        if (request.method === 'status') {
+          return candidateState === 'already_dispositioned'
+            ? rpcResponse({
+                task: { taskId: 'dvr_task_stale_wake', status: 'completed' },
+                resultEnvelope: { taskId: 'dvr_task_stale_wake', action: 'continue' },
+              })
+            : rpcResponse({ code: 'task_not_found', message: 'task was compacted' }, 404);
+        }
+        if (request.method === 'snapshot') return rpcResponse(healthyRootSnapshot());
+        if (request.method === 'barrier_status') {
+          return rpcResponse({ state: 'clear', taskIds: [] });
+        }
+        throw new Error(`Unexpected RPC method: ${request.method}`);
+      }));
+      await DevRyanManagedOrchestrationPlugin({
+        client,
+        scheduleTimeout(callback) {
+          scheduled.push(callback);
+          return { unref() {} };
+        },
+      });
+
+      scheduled.shift()();
+      const expectedMethods = candidateState === 'already_dispositioned'
+        ? ['list_provider_recovery_continuations', 'status']
+        : ['list_provider_recovery_continuations', 'status', 'snapshot', 'barrier_status'];
+      await vi.waitFor(() => expect(methods).toEqual(expectedMethods));
+      expect(client.session.promptAsync).not.toHaveBeenCalled();
+    },
+  );
+
   it('leaves the live parent wait in control while the root session is busy', async () => {
     const scheduled = [];
     const client = {
@@ -1655,6 +2645,7 @@ describe('DevRyan managed orchestration plugin', () => {
           rootSessionId: 'ses_root',
           childSessionId: 'ses_oracle',
           directory: '/workspace',
+          kind: 'collect',
         }],
       },
     }), { status: 200, headers: { 'content-type': 'application/json' } })));

@@ -5,9 +5,8 @@ import { SessionSidebar } from '@/components/session/SessionSidebar';
 import { ChatView } from '@/components/views/ChatView';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useViewportStore } from '@/sync/viewport-store';
-import { useSessions, useDirectorySync, useSessionMessages, useSessionMessagesResolved } from '@/sync/sync-context';
+import { useSessions, useDirectorySync, useSessionMessageRecords, useSessionMessagesResolved } from '@/sync/sync-context';
 import { useConfigStore } from '@/stores/useConfigStore';
-import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { ContextUsageDisplay } from '@/components/ui/ContextUsageDisplay';
 import { McpDropdown } from '@/components/mcp/McpDropdown';
 import { cn } from '@/lib/utils';
@@ -27,11 +26,13 @@ import { UsageProviderPanel } from '@/components/layout/usage/UsageProviderPanel
 import { UsageProviderTabs } from '@/components/layout/usage/UsageProviderTabs';
 import { resolveActiveUsageProviderId } from '@/components/layout/usage/usage-groups';
 import type { RateLimitGroup } from '@/components/layout/usage/types';
-import { getContextUsageFromMessages } from '@/stores/utils/contextUsageUtils';
+import { getProviderContextUsageFromMessages } from '@/stores/utils/contextUsageUtils';
 import { useStableSessionContextUsage } from '@/hooks/useStableSessionContextUsage';
-import { useSelectedModelContextCapacity } from '@/hooks/useSelectedModelContextCapacity';
+import { useProviderBackedContextUsage } from '@/hooks/useProviderBackedContextUsage';
+import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { RiAddLine, RiArrowLeftLine, RiRobot2Line, RiSettings3Line, RiTimerLine } from '@remixicon/react';
 import { LazySettingsView, LazyViewBoundary } from '@/components/views/lazyViews';
+import { useConfigApplyStatusLifecycle } from '@/components/views/config-apply/useConfigApplyStatusLifecycle';
 import {
   rememberViewBeforeSettings,
   resolveViewAfterSettings,
@@ -132,6 +133,7 @@ export const VSCodeLayout: React.FC = () => {
   const [currentView, setCurrentView] = React.useState<VSCodeView>(() => (bootDraftOpen ? 'chat' : 'sessions'));
   const currentViewRef = React.useRef<VSCodeView>(bootDraftOpen ? 'chat' : 'sessions');
   const viewBeforeSettingsRef = React.useRef<VSCodeContentView | null>(null);
+  useConfigApplyStatusLifecycle(currentView === 'settings');
   const navigateToView = React.useCallback((view: VSCodeView) => {
     currentViewRef.current = view;
     setCurrentView(view);
@@ -446,7 +448,7 @@ export const VSCodeLayout: React.FC = () => {
             showContextUsage
             showRateLimits
           />
-          <div className="flex-1 overflow-hidden">
+          <div data-chat-surface="true" className="flex-1 overflow-hidden">
             <ErrorBoundary>
               <ChatView />
             </ErrorBoundary>
@@ -503,7 +505,7 @@ export const VSCodeLayout: React.FC = () => {
               showContextUsage
               showRateLimits
             />
-            <div className="flex-1 overflow-hidden">
+            <div data-chat-surface="true" className="flex-1 overflow-hidden">
               <ErrorBoundary>
                 <ChatView />
               </ErrorBoundary>
@@ -540,7 +542,7 @@ export const VSCodeLayout: React.FC = () => {
               showContextUsage
               showRateLimits
             />
-            <div className="flex-1 overflow-hidden">
+            <div data-chat-surface="true" className="flex-1 overflow-hidden">
               <ErrorBoundary>
                 <ChatView />
               </ErrorBoundary>
@@ -566,10 +568,17 @@ interface VSCodeHeaderProps {
 
 const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, onNewSession, onSettings, onAgentManager, showMcp, showContextUsage, showRateLimits }) => {
   const { t } = useI18n();
-  const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
-  const currentSessionMessages = useSessionMessages(currentSessionId ?? '');
-  const currentSessionMessagesResolved = useSessionMessagesResolved(currentSessionId ?? '');
+  const contextUsageDirectory = useEffectiveDirectory() ?? null;
+  const currentSessionMessages = useSessionMessageRecords(
+    currentSessionId ?? '',
+    contextUsageDirectory ?? undefined,
+    { suspendPartUpdates: true },
+  );
+  const currentSessionMessagesResolved = useSessionMessagesResolved(
+    currentSessionId ?? '',
+    contextUsageDirectory ?? undefined,
+  );
   const quotaResults = useQuotaStore((state) => state.results);
   const quotaProviderRefreshState = useQuotaStore((state) => state.providerRefreshState);
   const fetchAllQuotas = quotaRefreshCoordinator.refreshNow;
@@ -580,16 +589,21 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
   const toggleFamilyExpanded = useQuotaStore((state) => state.toggleFamilyExpanded);
   const [activeUsageProviderId, setActiveUsageProviderId] = React.useState<string | null>(null);
 
-  const selectedCapacity = useSelectedModelContextCapacity();
+  const providers = useConfigStore((state) => state.providers);
   const contextUsage = React.useMemo(() => {
     if (!currentSessionId || currentSessionMessages.length === 0) return null;
-    return getContextUsageFromMessages(currentSessionMessages, selectedCapacity);
-  }, [currentSessionId, currentSessionMessages, selectedCapacity]);
+    return getProviderContextUsageFromMessages(currentSessionMessages, providers);
+  }, [currentSessionId, currentSessionMessages, providers]);
   const isContextUsageResolvedForSession = !currentSessionId || currentSessionMessagesResolved;
+  const providerBackedContextUsage = useProviderBackedContextUsage({
+    sessionID: currentSessionId,
+    directory: contextUsageDirectory,
+    fallback: contextUsage,
+  });
   const stableContextUsage = useStableSessionContextUsage({
-    directory: currentDirectory,
+    directory: contextUsageDirectory,
     sessionId: currentSessionId,
-    usage: contextUsage,
+    usage: providerBackedContextUsage,
     resolved: isContextUsageResolvedForSession,
   });
 
@@ -606,13 +620,15 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
       const error = quotaProviderRefreshState[provider.id]?.refreshError
         ?? ((result && !result.ok && result.configured) ? result.error : undefined);
       const resetCredits = result?.usage?.resetCredits;
-      if (entries.length > 0 || resetCredits || error) {
+      const warnings = result?.warnings;
+      if (entries.length > 0 || resetCredits || error || warnings?.length) {
         groups.push({
           providerId: provider.id,
           providerName: provider.name,
           entries,
           resetCredits,
           error,
+          warnings,
           usageUpdatedAt: result?.usageUpdatedAt
             ?? quotaProviderRefreshState[provider.id]?.lastSuccessAt
             ?? null,
@@ -723,7 +739,7 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
           <RiSettings3Line className="h-5 w-5" />
         </button>
       )}
-      {showContextUsage && stableContextUsage && stableContextUsage.totalTokens > 0 && (
+      {showContextUsage && stableContextUsage && stableContextUsage.activeInputTokens > 0 && (
         <ContextUsageDisplay
           usage={stableContextUsage}
           className="h-9 shrink-0 pl-1 pr-1 typography-ui-label"

@@ -16,7 +16,6 @@ export function createGlobalMessageStreamWsBridge({
   globalHub,
   ownsGlobalHub,
   wsClients,
-  processForwardedEventPayload,
   triggerHealthCheck,
   heartbeatIntervalMs,
   eventFilter = null,
@@ -122,14 +121,6 @@ export function createGlobalMessageStreamWsBridge({
       sendIfAllowed(socket, { payload, directory, eventId });
     }
 
-    processForwardedEventPayload(payload, (syntheticPayload) => {
-      for (const socket of Array.from(clients)) {
-        if (!readyClients.has(socket)) {
-          continue;
-        }
-        sendIfAllowed(socket, { payload: syntheticPayload, directory: 'global' });
-      }
-    });
   });
 
   const unsubscribeStatus = globalHub.subscribeStatus((status) => {

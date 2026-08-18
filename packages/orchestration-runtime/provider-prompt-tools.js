@@ -5,8 +5,6 @@ const COPILOT_PROMPT_TOOL_OVERRIDES = Object.freeze({
 const ORCHESTRATOR_PROMPT_TOOL_OVERRIDES = Object.freeze({
   task: false,
   invalid: false,
-  'mcp__*': false,
-  'resend_*': false,
 });
 const COPILOT_ORCHESTRATOR_PROMPT_TOOL_OVERRIDES = Object.freeze({
   ...COPILOT_PROMPT_TOOL_OVERRIDES,
@@ -43,9 +41,9 @@ const normalize = (value) => (
  * Return the smallest provider-specific tool override needed for a prompt.
  *
  * GitHub Copilot rejects requests with more than 128 tools. OpenCode composes
- * the core tools with every enabled MCP server. Orchestrator delegates ambient
- * integrations to managed subtasks, so its root prompt retains only the core
- * harness tools and omits invalid/provider-native task/MCP surfaces.
+ * the core tools with every enabled MCP server. Orchestrator retains installed
+ * plugin and MCP surfaces while provider-native task remains disabled so
+ * DevRyan's managed scheduler continues to own delegation.
  */
 export const resolveProviderPromptTools = (providerId, agent, options = {}) => {
   const normalizedProviderId = normalize(providerId);

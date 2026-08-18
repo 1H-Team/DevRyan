@@ -19,6 +19,7 @@ const AGENT_OWNERSHIP_CACHE_TTL_MS = 30_000;
 const AGENT_OWNERSHIP_MESSAGE_LIMIT = 20;
 const DEFAULT_TIMEOUT_SECONDS = 30 * 60;
 const MIN_TIMEOUT_SECONDS = DEFAULT_TIMEOUT_SECONDS;
+const FIXER_MIN_TIMEOUT_SECONDS = 60 * 60;
 const ORACLE_MIN_TIMEOUT_SECONDS = 60 * 60;
 const MAX_TIMEOUT_SECONDS = 24 * 60 * 60;
 const WAIT_TIMEOUT_MS = 25_000;
@@ -32,6 +33,12 @@ const PROVIDER_RECOVERY_SETTLE_RETRY_COUNT = 2;
 const PROVIDER_RECOVERY_MESSAGE_LIMIT = 100;
 const INVOCATION_POLICY_MESSAGE_LIMIT = 100;
 const PLAN_MODE_INSTRUCTION_PREFIX = 'User has requested to enter plan mode';
+const MANAGED_READ_ONLY_AGENT_UNSUPPORTED = 'MANAGED_READ_ONLY_AGENT_UNSUPPORTED';
+const MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE = 'Designer is implementation-only and cannot be dispatched from Plan Mode. Orchestrator owns design planning and may use Explorer for read-only discovery.';
+const MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED = 'MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED';
+const MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE = 'Plan-mode managed tasks cannot use Cursor because its SDK does not expose enforceable per-prompt write restrictions. Configure the parent Orchestrator or Plan agent with a non-Cursor model.';
+const DEVRYAN_TOOL_INPUT_INVALID = 'DEVRYAN_TOOL_INPUT_INVALID';
+const TASK_NOT_FOUND = 'task_not_found';
 const PROVIDER_RECOVERY_MARKER_VERSION = 'v1';
 // A wake is only observable once its message is persisted and visible to
 // session.messages. Until then the marker check cannot see it, so the in-flight
@@ -42,16 +49,24 @@ const PROVIDER_RECOVERY_SENT_MAX_ENTRIES = 512;
 // How long a trailing marker is treated as a wake that may still be starting.
 const RECOVERY_CONTINUATION_STALE_MS = 60_000;
 
-const resolveMinimumTimeoutSeconds = (agent) => (
-  typeof agent === 'string' && agent.trim().toLowerCase() === 'oracle'
-    ? ORACLE_MIN_TIMEOUT_SECONDS
-    : MIN_TIMEOUT_SECONDS
-);
+const resolveMinimumTimeoutSeconds = (agent) => {
+  const normalizedAgent = typeof agent === 'string' ? agent.trim().toLowerCase() : '';
+  if (normalizedAgent === 'fixer') return FIXER_MIN_TIMEOUT_SECONDS;
+  if (normalizedAgent === 'oracle') return ORACLE_MIN_TIMEOUT_SECONDS;
+  return MIN_TIMEOUT_SECONDS;
+};
 
 const requireText = (value, field) => {
   const normalized = typeof value === 'string' ? value.trim() : '';
   if (!normalized) throw new Error(`${field} is required for this managed task action`);
   return normalized;
+};
+
+const createToolInputInvalidError = (message, details) => {
+  const error = new Error(`${DEVRYAN_TOOL_INPUT_INVALID}: ${message}`);
+  error.code = DEVRYAN_TOOL_INPUT_INVALID;
+  error.details = details;
+  return error;
 };
 
 const getBridge = () => {
@@ -101,7 +116,12 @@ const callRpc = async (method, params, { signal } = {}) => {
     const message = typeof body?.error?.message === 'string' && body.error.message.trim()
       ? body.error.message.trim()
       : `Managed orchestration RPC failed (${response.status})`;
-    throw new Error(message);
+    const error = new Error(message);
+    if (typeof body?.error?.code === 'string' && body.error.code.trim()) {
+      error.code = body.error.code.trim();
+    }
+    error.statusCode = response.status;
+    throw error;
   }
   return body.result;
 };
@@ -112,11 +132,67 @@ const isRecord = (value) => (
   && !Array.isArray(value)
 );
 
+const isTaskNotFoundError = (error) => error?.code === TASK_NOT_FOUND;
+
+const createStaleTaskReferenceResult = (taskId) => ({
+  state: 'stale_task_reference',
+  taskId,
+  dispositionRequired: false,
+  instruction: 'The referenced terminal task is no longer retained and the authoritative managed-task barrier is clear. Continue from the last confirmed parent state without restarting, redispatching, or dispositioning this task again.',
+});
+
+const createAlreadyDispositionedResult = (result, barrier) => ({
+  ...result,
+  state: 'already_dispositioned',
+  dispositionRequired: false,
+  barrier,
+  instruction: barrier.state === 'clear'
+    ? 'This terminal task was already dispositioned and the authoritative managed-task barrier is clear. Continue from the current parent state without waiting for or dispositioning this task again.'
+    : `This terminal task was already dispositioned. The authoritative managed-task barrier is ${barrier.state} for: ${barrier.taskIds.join(', ')}. Handle those current task IDs instead of repeating this disposition.`,
+});
+
 const unwrapResponseData = (response) => (
   response && typeof response === 'object' && 'data' in response
     ? response.data
     : response
 );
+
+const responseStatusCode = (responseOrError) => {
+  const candidates = [
+    responseOrError?.response?.status,
+    responseOrError?.statusCode,
+    responseOrError?.status,
+    responseOrError?.error?.statusCode,
+    responseOrError?.error?.status,
+  ];
+  return candidates.find((candidate) => Number.isInteger(candidate)) ?? null;
+};
+
+const readSessionMessage = async (client, { sessionId, messageId, directory }) => {
+  if (!client?.session || typeof client.session.message !== 'function') {
+    return { available: false, record: null };
+  }
+  let response;
+  try {
+    response = await client.session.message({
+      path: { id: sessionId, messageID: messageId },
+      query: { directory },
+    });
+  } catch (error) {
+    if (responseStatusCode(error) === 404) return { available: true, record: null };
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Cannot load managed-dispatch message ${messageId}: ${message}`);
+  }
+  if (response?.error) {
+    if (responseStatusCode(response) === 404) return { available: true, record: null };
+    throw new Error(`Cannot load managed-dispatch message ${messageId}`);
+  }
+  const record = unwrapResponseData(response);
+  if (!isRecord(record) || !isRecord(record.info) || !Array.isArray(record.parts)) {
+    throw new Error(`Managed-dispatch message ${messageId} is malformed`);
+  }
+  return { available: true, record };
+};
 
 const isPlanModeUserRecord = (record) => {
   if (record?.info?.role !== 'user') return false;
@@ -132,44 +208,169 @@ const isPlanModeUserRecord = (record) => {
   ));
 };
 
-const resolveInvocationReadOnly = async (context, client) => {
-  if (!client?.session || typeof client.session.messages !== 'function') return false;
+const resolveMessageExecution = (assistant, parent) => {
+  const assistantModel = isRecord(assistant?.info?.model) ? assistant.info.model : {};
+  const parentModel = isRecord(parent?.info?.model) ? parent.info.model : {};
+  const providerId = typeof assistant?.info?.providerID === 'string'
+    ? assistant.info.providerID.trim()
+    : (typeof assistantModel.providerID === 'string' ? assistantModel.providerID.trim() : '');
+  const modelId = typeof assistant?.info?.modelID === 'string'
+    ? assistant.info.modelID.trim()
+    : (typeof assistantModel.modelID === 'string' ? assistantModel.modelID.trim() : '');
+  if (!providerId || !modelId) return null;
+  const variant = [
+    assistant?.info?.variant,
+    assistantModel.variant,
+    parent?.info?.variant,
+    parentModel.variant,
+  ].find((candidate) => typeof candidate === 'string' && candidate.trim());
+  return {
+    providerId,
+    modelId,
+    variant: typeof variant === 'string' ? variant.trim() : null,
+  };
+};
+
+const resolveAdjacentAssistantSibling = (records, messageId) => {
+  const ordered = records
+    .filter((record) => (
+      (record?.info?.role === 'user' || record?.info?.role === 'assistant')
+      && typeof record.info.id === 'string'
+      && record.info.id.trim()
+    ))
+    .slice()
+    .sort((left, right) => {
+      const leftId = left.info.id.trim();
+      const rightId = right.info.id.trim();
+      return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
+    });
+  if (ordered.length === 0) return null;
+
+  const ids = ordered.map((record) => record.info.id.trim());
+  if (new Set(ids).size !== ids.length || ids.some((id) => id >= messageId)) return null;
+
+  const sibling = ordered.at(-1);
+  if (sibling?.info?.role !== 'assistant') return null;
+  const siblingParentId = typeof sibling.info.parentID === 'string'
+    ? sibling.info.parentID.trim()
+    : '';
+  if (!siblingParentId) return null;
+
+  let parentIndex = -1;
+  for (let index = ordered.length - 2; index >= 0; index -= 1) {
+    if (ordered[index]?.info?.role === 'user') {
+      parentIndex = index;
+      break;
+    }
+  }
+  const parent = parentIndex >= 0 ? ordered[parentIndex] : null;
+  if (parent && parent.info.id.trim() !== siblingParentId) return null;
+
+  const sameTurnAssistants = parentIndex >= 0 ? ordered.slice(parentIndex + 1) : ordered;
+  if (
+    sameTurnAssistants.length === 0
+    || sameTurnAssistants.some((record) => (
+      record.info.role !== 'assistant'
+      || typeof record.info.parentID !== 'string'
+      || record.info.parentID.trim() !== siblingParentId
+    ))
+  ) {
+    return null;
+  }
+  return { assistant: sibling, parent };
+};
+
+const resolveInvocationPolicy = async (context, client) => {
+  if (
+    !client?.session
+    || (
+      typeof client.session.message !== 'function'
+      && typeof client.session.messages !== 'function'
+    )
+  ) {
+    return { readOnly: false, parentExecution: null };
+  }
   const rootSessionId = requireText(context.sessionID, 'context.sessionID');
   const messageId = requireText(context.messageID, 'context.messageID');
   const directory = requireText(context.directory, 'context.directory');
-  let response;
-  try {
-    response = await client.session.messages({
-      path: { id: rootSessionId },
-      query: { directory, limit: INVOCATION_POLICY_MESSAGE_LIMIT },
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Cannot verify parent plan-mode policy before managed dispatch: ${message}`);
+  const directAssistant = await readSessionMessage(client, {
+    sessionId: rootSessionId,
+    messageId,
+    directory,
+  });
+  if (
+    directAssistant.record
+    && (
+      directAssistant.record.info.role !== 'assistant'
+      || directAssistant.record.info.id !== messageId
+      || directAssistant.record.info.sessionID !== rootSessionId
+    )
+  ) {
+    throw new Error('Cannot verify the invoking assistant for managed dispatch');
   }
-  if (response?.error) {
-    throw new Error('Cannot verify parent plan-mode policy before managed dispatch');
+
+  let records = [];
+  let fallback = null;
+  let assistant = directAssistant.record;
+  if (!assistant) {
+    if (typeof client.session.messages !== 'function') {
+      throw new Error('Cannot verify the invoking assistant for managed dispatch');
+    }
+    let response;
+    try {
+      response = await client.session.messages({
+        path: { id: rootSessionId },
+        query: { directory, limit: INVOCATION_POLICY_MESSAGE_LIMIT },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Cannot verify parent plan-mode policy before managed dispatch: ${message}`);
+    }
+    if (response?.error) {
+      throw new Error('Cannot verify parent plan-mode policy before managed dispatch');
+    }
+    records = unwrapResponseData(response);
+    if (!Array.isArray(records)) {
+      throw new Error('Cannot verify parent plan-mode policy before managed dispatch');
+    }
+    const exactAssistant = records.find((record) => (
+      record?.info?.role === 'assistant' && record.info.id === messageId
+    ));
+    fallback = exactAssistant ? null : resolveAdjacentAssistantSibling(records, messageId);
+    assistant = exactAssistant || fallback?.assistant;
   }
-  const records = unwrapResponseData(response);
-  if (!Array.isArray(records)) {
-    throw new Error('Cannot verify parent plan-mode policy before managed dispatch');
-  }
-  const assistant = records.find((record) => (
-    record?.info?.role === 'assistant' && record.info.id === messageId
-  ));
   const parentId = typeof assistant?.info?.parentID === 'string'
     ? assistant.info.parentID.trim()
     : '';
   if (!parentId) {
     throw new Error('Cannot verify the parent turn for managed dispatch');
   }
-  const parent = records.find((record) => (
-    record?.info?.role === 'user' && record.info.id === parentId
-  ));
-  if (!parent) {
+  const directParent = await readSessionMessage(client, {
+    sessionId: rootSessionId,
+    messageId: parentId,
+    directory,
+  });
+  const parent = directParent.record
+    || fallback?.parent
+    || records.find((record) => record?.info?.role === 'user' && record.info.id === parentId);
+  const directParentMismatch = directParent.record && (
+    directParent.record.info?.role !== 'user'
+    || directParent.record.info?.id !== parentId
+    || directParent.record.info?.sessionID !== rootSessionId
+  );
+  if (
+    !parent
+    || parent.info?.role !== 'user'
+    || parent.info?.id !== parentId
+    || directParentMismatch
+    || (parent.info?.sessionID && parent.info.sessionID !== rootSessionId)
+  ) {
     throw new Error('Cannot verify the parent turn for managed dispatch');
   }
-  return isPlanModeUserRecord(parent);
+  return {
+    readOnly: isPlanModeUserRecord(parent),
+    parentExecution: resolveMessageExecution(assistant, parent),
+  };
 };
 
 const DUPLICATE_RESULT_PAYLOAD_FIELDS = [
@@ -232,9 +433,9 @@ const buildScopedParams = (args, context) => ({
   directory: requireText(context.directory, 'context.directory'),
 });
 
-const resolveConfiguredAgentExecution = async (args, context, client) => {
+const readAgentCatalog = async (context, client) => {
   if (!client?.app || typeof client.app.agents !== 'function') {
-    return { catalogAvailable: false, execution: null };
+    return { catalogAvailable: false, agents: [] };
   }
   const response = await client.app.agents({
     query: { directory: requireText(context.directory, 'context.directory') },
@@ -242,8 +443,13 @@ const resolveConfiguredAgentExecution = async (args, context, client) => {
   if (response?.error) {
     throw new Error('Failed to resolve the managed agent model');
   }
-  const agents = Array.isArray(response?.data) ? response.data : [];
-  const agentName = requireText(args.agent, 'agent');
+  return {
+    catalogAvailable: true,
+    agents: Array.isArray(response?.data) ? response.data : [],
+  };
+};
+
+const resolveAgentExecution = (agents, agentName) => {
   const agent = agents.find((entry) => entry?.name === agentName);
   const providerId = typeof agent?.model?.providerID === 'string'
     ? agent.model.providerID.trim()
@@ -251,40 +457,111 @@ const resolveConfiguredAgentExecution = async (args, context, client) => {
   const modelId = typeof agent?.model?.modelID === 'string'
     ? agent.model.modelID.trim()
     : '';
-  if (!providerId || !modelId) {
-    return { catalogAvailable: true, execution: null };
-  }
+  if (!providerId || !modelId) return null;
   return {
-    catalogAvailable: true,
-    execution: {
-      providerId,
-      modelId,
-      variant: typeof agent.variant === 'string' && agent.variant.trim() ? agent.variant.trim() : null,
-    },
+    providerId,
+    modelId,
+    variant: typeof agent.variant === 'string' && agent.variant.trim() ? agent.variant.trim() : null,
   };
 };
 
-const resolveStartExecution = async (args, context, client) => {
-  const agentName = requireText(args.agent, 'agent');
-  const configured = await resolveConfiguredAgentExecution(args, context, client);
-  if (configured.catalogAvailable) {
-    if (configured.execution) return configured.execution;
-    throw new Error(`Managed agent ${agentName} has no executable model`);
-  }
+const resolveConfiguredAgentExecution = async (args, context, client) => {
+  const catalog = await readAgentCatalog(context, client);
+  return {
+    catalogAvailable: catalog.catalogAvailable,
+    execution: catalog.catalogAvailable
+      ? resolveAgentExecution(catalog.agents, requireText(args.agent, 'agent'))
+      : null,
+  };
+};
 
-  const providerId = typeof args.provider_id === 'string' ? args.provider_id.trim() : '';
-  const modelId = typeof args.model_id === 'string' ? args.model_id.trim() : '';
-  if (Boolean(providerId) !== Boolean(modelId)) {
-    throw new Error('provider_id and model_id must be supplied together');
-  }
-  if (providerId && modelId) {
-    return {
+// This plugin is provisioned as a standalone OpenCode asset and cannot import
+// the workspace runtime package. Keep this mirror covered by contract tests;
+// the runtime predicate remains the authoritative admission boundary.
+const supportsManagedReadOnlyProvider = (providerId) => {
+  const normalized = typeof providerId === 'string' ? providerId.trim().toLowerCase() : '';
+  return Boolean(normalized) && normalized !== 'cursor-acp';
+};
+
+const supportsManagedReadOnlyAgent = (agent) => {
+  const normalized = typeof agent === 'string' ? agent.trim().toLowerCase() : '';
+  return Boolean(normalized) && normalized !== 'designer';
+};
+
+const createManagedReadOnlyAgentUnsupportedError = () => {
+  const error = new Error(MANAGED_READ_ONLY_AGENT_UNSUPPORTED_MESSAGE);
+  error.code = MANAGED_READ_ONLY_AGENT_UNSUPPORTED;
+  error.statusCode = 409;
+  return error;
+};
+
+const createManagedReadOnlyProviderUnsupportedError = () => {
+  const error = new Error(MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED_MESSAGE);
+  error.code = MANAGED_READ_ONLY_PROVIDER_UNSUPPORTED;
+  error.statusCode = 409;
+  return error;
+};
+
+const formatExecution = (execution) => `${execution.providerId}/${execution.modelId}`;
+
+const resolveStartExecution = async (args, context, client, invocationPolicy) => {
+  const agentName = requireText(args.agent, 'agent');
+  const catalog = await readAgentCatalog(context, client);
+  let execution;
+  if (catalog.catalogAvailable) {
+    execution = resolveAgentExecution(catalog.agents, agentName);
+    if (!execution) {
+      throw new Error(`Managed agent ${agentName} has no executable model`);
+    }
+  } else {
+    const providerId = typeof args.provider_id === 'string' ? args.provider_id.trim() : '';
+    const modelId = typeof args.model_id === 'string' ? args.model_id.trim() : '';
+    if (Boolean(providerId) !== Boolean(modelId)) {
+      throw new Error('provider_id and model_id must be supplied together');
+    }
+    if (!providerId || !modelId) {
+      throw new Error(`Managed agent ${agentName} has no executable model`);
+    }
+    execution = {
       providerId,
       modelId,
       variant: typeof args.variant === 'string' && args.variant.trim() ? args.variant.trim() : null,
     };
   }
-  throw new Error(`Managed agent ${agentName} has no executable model`);
+
+  if (!invocationPolicy.readOnly || supportsManagedReadOnlyProvider(execution.providerId)) {
+    return { execution, executionNotice: null };
+  }
+
+  let fallback = null;
+  let fallbackSource = null;
+  if (
+    invocationPolicy.parentExecution
+    && supportsManagedReadOnlyProvider(invocationPolicy.parentExecution.providerId)
+  ) {
+    fallback = invocationPolicy.parentExecution;
+    fallbackSource = 'the parent Orchestrator';
+  } else if (catalog.catalogAvailable) {
+    const planAgent = catalog.agents.find((entry) => (
+      typeof entry?.name === 'string' && entry.name.trim().toLowerCase() === 'plan'
+    ));
+    const planExecution = planAgent
+      ? resolveAgentExecution([planAgent], planAgent.name)
+      : null;
+    if (planExecution && supportsManagedReadOnlyProvider(planExecution.providerId)) {
+      fallback = planExecution;
+      fallbackSource = 'the configured Plan agent';
+    }
+  }
+
+  if (!fallback || !fallbackSource) {
+    throw createManagedReadOnlyProviderUnsupportedError();
+  }
+
+  return {
+    execution: fallback,
+    executionNotice: `Plan-safe model fallback: ${agentName} is configured for ${formatExecution(execution)}; this read-only task is running with ${formatExecution(fallback)} from ${fallbackSource}.`,
+  };
 };
 
 const requiresManualModelRecovery = (result) => {
@@ -299,7 +576,11 @@ const requiresManualModelRecovery = (result) => {
     && (task.status === 'failed' || task.status === 'interrupted')
     && (
       task.failureKind === 'provider_usage_limit'
-      || (task.mode === 'orchestrator' && Number(task.attempt) >= 2)
+      || (
+        task.mode === 'orchestrator'
+        && task.dispatchGrouped === true
+        && Number(task.attempt) >= 2
+      )
     )
     && resultEnvelope.resumable === true
     && resultEnvelope.action === null
@@ -338,30 +619,15 @@ const waitForTerminalTask = async (taskId, scoped, signal, initialResult) => {
   }
 };
 
-const waitThroughManualModelRecovery = async (initialResult, scoped, signal) => {
-  let result = initialResult;
-  while (requiresManualModelRecovery(result)) {
-    const recovery = await callRpc('wait_result_action', {
-      ...scoped,
-      taskId: requireText(result.task.taskId, 'recovery task_id'),
-    }, { signal });
-    if (
-      recovery?.resultEnvelope?.action !== 'retry_in_place'
-      || !isRecord(recovery.followUpTask?.task)
-    ) {
-      throw new Error('Manual model recovery ended without a retry-in-place follow-up');
-    }
-
-    const followUpTaskId = requireText(recovery.followUpTask.task.taskId, 'recovery task_id');
-    result = await waitForTerminalTask(
-      followUpTaskId,
-      scoped,
-      signal,
-      recovery.followUpTask,
-    );
-  }
-  return result;
-};
+const exposeManualModelRecovery = (result) => (
+  requiresManualModelRecovery(result)
+    ? {
+        ...result,
+        manualRecoveryRequired: true,
+        manualRecoveryInstruction: 'This task is terminal and awaiting user action. Leave its result unacknowledged, tell the user to choose a model and thinking level in Model Recovery, and do not claim that it is still running or will resume automatically.',
+      }
+    : result
+);
 
 const executeAction = async (args, context, client, dispatchCallId = null) => {
   const action = requireText(args.action, 'action');
@@ -373,8 +639,17 @@ const executeAction = async (args, context, client, dispatchCallId = null) => {
     const timeoutSeconds = Number.isFinite(args.timeout_seconds)
       ? Math.min(MAX_TIMEOUT_SECONDS, Math.max(minimumTimeoutSeconds, Math.trunc(args.timeout_seconds)))
       : minimumTimeoutSeconds;
-    const execution = await resolveStartExecution(args, context, client);
-    const readOnly = await resolveInvocationReadOnly(context, client);
+    const invocationPolicy = await resolveInvocationPolicy(context, client);
+    if (invocationPolicy.readOnly && !supportsManagedReadOnlyAgent(agent)) {
+      throw createManagedReadOnlyAgentUnsupportedError();
+    }
+    const { execution, executionNotice } = await resolveStartExecution(
+      args,
+      context,
+      client,
+      invocationPolicy,
+    );
+    const readOnly = invocationPolicy.readOnly;
     const normalizedArgs = {
       action,
       label: typeof args.label === 'string' ? args.label.trim() : '',
@@ -385,7 +660,7 @@ const executeAction = async (args, context, client, dispatchCallId = null) => {
       variant: execution.variant,
       timeoutSeconds,
     };
-    return await callRpc('submit', {
+    const result = await callRpc('submit', {
       idempotencyKey: buildIdempotencyKey(context, action, normalizedArgs, dispatchCallId),
       rootSessionId: requireText(context.sessionID, 'context.sessionID'),
       dispatchGroupId: context.agent === 'builder'
@@ -404,6 +679,9 @@ const executeAction = async (args, context, client, dispatchCallId = null) => {
       prompt: normalizedArgs.prompt,
       timeoutAt: Date.now() + timeoutSeconds * 1_000,
     }, { signal: context.abort });
+    return executionNotice && isRecord(result)
+      ? { ...result, executionNotice }
+      : result;
   }
 
   const scoped = buildScopedParams(args, context);
@@ -412,7 +690,7 @@ const executeAction = async (args, context, client, dispatchCallId = null) => {
   }
   if (action === 'wait') {
     const result = await waitForTerminalTask(scoped.taskId, scoped, context.abort);
-    return await waitThroughManualModelRecovery(result, scoped, context.abort);
+    return exposeManualModelRecovery(result);
   }
   if (action === 'cancel') {
     return await callRpc('cancel', {
@@ -461,6 +739,17 @@ const executeAction = async (args, context, client, dispatchCallId = null) => {
       ...(configured || args.variant !== undefined ? { variant: normalizedOverrides.variant } : {}),
       ...(normalizedOverrides.label ? { label: normalizedOverrides.label } : {}),
       ...(normalizedOverrides.prompt ? { prompt: normalizedOverrides.prompt } : {}),
+      ...(Number.isFinite(args.timeout_seconds) && args.timeout_seconds > 0
+        ? {
+            timeoutSeconds: Math.min(
+              MAX_TIMEOUT_SECONDS,
+              Math.max(
+                resolveMinimumTimeoutSeconds(normalizedOverrides.agent),
+                Math.floor(args.timeout_seconds),
+              ),
+            ),
+          }
+        : {}),
     }, { signal: context.abort });
   }
 
@@ -494,6 +783,112 @@ export const DevRyanManagedOrchestrationPlugin = async ({
       event,
       ...details,
     }));
+  };
+
+  const readVerifiedRootState = async (rootSessionId, { missingTaskId = null } = {}) => {
+    const normalizedRootSessionId = requireText(rootSessionId, 'rootSessionId');
+    const snapshot = await callRpc('snapshot', { rootSessionId: normalizedRootSessionId });
+    if (
+      !isRecord(snapshot)
+      || snapshot.available !== true
+      || snapshot.bridgeReady !== true
+      || !Array.isArray(snapshot.tasks)
+      || !Array.isArray(snapshot.resultEnvelopes)
+    ) {
+      throw new Error('Managed orchestration snapshot is unavailable or malformed');
+    }
+    if (typeof snapshot.recoveryWarning === 'string' && snapshot.recoveryWarning.trim()) {
+      throw new Error(`Managed orchestration snapshot has a recovery warning: ${snapshot.recoveryWarning.trim()}`);
+    }
+    if (snapshot.recoveryWarning !== null && snapshot.recoveryWarning !== undefined) {
+      throw new Error('Managed orchestration snapshot has a malformed recovery warning');
+    }
+    if (missingTaskId) {
+      const retained = [...snapshot.tasks, ...snapshot.resultEnvelopes].some((entry) => (
+        isRecord(entry) && entry.taskId === missingTaskId
+      ));
+      if (retained) {
+        throw new Error(`Managed task ${missingTaskId} is present in the root snapshot after task_not_found`);
+      }
+    }
+
+    const barrier = await callRpc('barrier_status', { rootSessionId: normalizedRootSessionId });
+    if (
+      !isRecord(barrier)
+      || !['clear', 'active', 'awaiting_acknowledgement'].includes(barrier.state)
+      || !Array.isArray(barrier.taskIds)
+      || barrier.taskIds.some((taskId) => typeof taskId !== 'string' || !taskId.trim())
+      || (barrier.state === 'clear' && barrier.taskIds.length !== 0)
+      || (barrier.state !== 'clear' && barrier.taskIds.length === 0)
+    ) {
+      throw new Error('Managed orchestration barrier status is malformed');
+    }
+    return {
+      snapshot,
+      barrier: {
+        state: barrier.state,
+        taskIds: barrier.taskIds.map((taskId) => taskId.trim()),
+      },
+    };
+  };
+
+  const failClosedFromTaskNotFound = (taskId, taskNotFoundError, verificationError) => {
+    const detail = verificationError instanceof Error
+      ? verificationError.message
+      : String(verificationError);
+    const error = new Error(
+      `${taskNotFoundError.message}. Parent work remains blocked because stale-reference recovery could not verify the managed-task barrier: ${detail}`,
+      { cause: verificationError },
+    );
+    error.code = taskNotFoundError.code;
+    error.statusCode = taskNotFoundError.statusCode;
+    error.taskId = taskId;
+    return error;
+  };
+
+  const recoverMissingTaskReference = async (taskId, rootSessionId, taskNotFoundError) => {
+    let rootState;
+    try {
+      rootState = await readVerifiedRootState(rootSessionId, { missingTaskId: taskId });
+    } catch (error) {
+      throw failClosedFromTaskNotFound(taskId, taskNotFoundError, error);
+    }
+
+    const state = getSessionState(rootSessionId);
+    if (rootState.barrier.state !== 'clear') {
+      state.knownBarrier = true;
+      const label = rootState.barrier.state === 'active'
+        ? 'active managed tasks'
+        : 'managed task results awaiting acknowledgement';
+      throw new Error(
+        `Managed task ${taskId} is no longer retained, but parent work remains blocked by ${label}: ${rootState.barrier.taskIds.join(', ')}`,
+      );
+    }
+
+    state.knownBarrier = false;
+    state.collectedResults.delete(taskId);
+    logRecovery('stale-task-reference-recovered', { rootSessionId, taskId });
+    return createStaleTaskReferenceResult(taskId);
+  };
+
+  const recognizeAlreadyDispositioned = async (result, rootSessionId) => {
+    const action = typeof result?.resultEnvelope?.action === 'string'
+      ? result.resultEnvelope.action.trim()
+      : '';
+    if (!action) return null;
+    const taskId = requireText(result?.task?.taskId, 'task.taskId');
+
+    const rootState = await readVerifiedRootState(rootSessionId);
+    const state = getSessionState(rootSessionId);
+    state.knownBarrier = rootState.barrier.state !== 'clear';
+    state.collectedResults.delete(taskId);
+    logRecovery('already-dispositioned-task-recognized', {
+      rootSessionId,
+      taskId,
+      action,
+      barrierState: rootState.barrier.state,
+    });
+    return createAlreadyDispositionedResult(result, rootState.barrier);
   };
 
   const readSessionMessages = async (sessionId, directory) => {
@@ -612,8 +1007,62 @@ export const DevRyanManagedOrchestrationPlugin = async ({
       : null;
   };
 
+  const isRecoveryContinuationStillCollectable = async ({
+    taskId,
+    rootSessionId,
+    directory,
+  }) => {
+    let result;
+    try {
+      result = await callRpc('status', { taskId, rootSessionId, directory });
+    } catch (error) {
+      if (!isTaskNotFoundError(error)) throw error;
+      await readVerifiedRootState(rootSessionId, { missingTaskId: taskId });
+      rememberRecoveryContinuationSent(taskId);
+      logRecovery('recovered-parent-continuation-skipped', {
+        rootSessionId,
+        taskId,
+        reason: 'task_compacted',
+      });
+      return false;
+    }
+
+    if (
+      !isRecord(result?.task)
+      || result.task.taskId !== taskId
+      || !isRecord(result.resultEnvelope)
+      || result.resultEnvelope.taskId !== taskId
+      || !Object.prototype.hasOwnProperty.call(result.resultEnvelope, 'action')
+    ) {
+      throw new Error('Managed task recovery revalidation returned a malformed task');
+    }
+    const status = typeof result.task.status === 'string' ? result.task.status : '';
+    if (!TERMINAL_TASK_STATUSES.has(status)) {
+      throw new Error('Managed task recovery revalidation returned a non-collectable task');
+    }
+    if (result.resultEnvelope.action !== null) {
+      if (
+        typeof result.resultEnvelope.action !== 'string'
+        || !result.resultEnvelope.action.trim()
+      ) {
+        throw new Error('Managed task recovery revalidation returned a malformed action');
+      }
+      rememberRecoveryContinuationSent(taskId);
+      logRecovery('recovered-parent-continuation-skipped', {
+        rootSessionId,
+        taskId,
+        reason: 'already_dispositioned',
+      });
+      return false;
+    }
+    return true;
+  };
+
   const requestRecoveredParentContinuation = async (continuation) => {
     if (!isRecord(continuation)) return false;
+    // Parked Model Recovery results are never collectable. Ignore a leftover
+    // `manual_recovery` payload from an older host instead of waking the parent.
+    if (continuation.kind !== 'collect') return false;
     const taskId = typeof continuation.taskId === 'string' ? continuation.taskId.trim() : '';
     const rootSessionId = typeof continuation.rootSessionId === 'string'
       ? continuation.rootSessionId.trim()
@@ -646,6 +1095,13 @@ export const DevRyanManagedOrchestrationPlugin = async ({
         throw new Error('Parent model selection is unavailable for provider-recovery continuation');
       }
       if (!await isSessionIdle(rootSessionId, directory)) return false;
+      if (!await isRecoveryContinuationStillCollectable({
+        taskId,
+        rootSessionId,
+        directory,
+      })) {
+        return false;
+      }
 
       // Deliberately no explicit messageID. OpenCode message IDs are ordered,
       // and it processes the turn only when the incoming user message sorts
@@ -968,9 +1424,9 @@ export const DevRyanManagedOrchestrationPlugin = async ({
     'tool.execute.before': beforeToolExecute,
     tool: {
       devryan_task: tool({
-      description: 'Start or control a DevRyan-managed sub-agent. When managed delegation is already the decided next action, start it before any standalone todo read/write whose only purpose is to restate that delegation. DevRyan does not impose a managed concurrency cap: start every independent sub-agent needed by the task without batching around an artificial slot limit. DevRyan preserves partial results after failure or abort. DevRyan keeps each wait call attached while repeating bounded polling slices internally; wait returns only a terminal result, and status is the non-blocking way to inspect queued, starting, or running state. A resumable failure with no agent retry remaining leaves a durable pending result while the user selects a recovery model, except provider prompt rejection, which requires the one agent recovery to use a reframed prompt in a fresh child. This is distinct from provider-native task orchestration.',
+      description: 'Start or control a DevRyan-managed sub-agent. When managed delegation is already the decided next action, start it before any standalone todo read/write whose only purpose is to restate that delegation. DevRyan does not impose a managed concurrency cap: start every independent sub-agent needed by the task without batching around an artificial slot limit. DevRyan preserves partial results after failure or abort. DevRyan keeps each wait call attached while repeating bounded polling slices internally; wait returns only a terminal result, and status is the non-blocking way to inspect queued, starting, or running state. A completed result accepts only continue. Retry is only for an eligible failed result. A resumable failure with no agent retry remaining returns immediately with manualRecoveryRequired while its durable result stays pending for the user-facing Model Recovery controls, except provider prompt rejection, which requires the one agent recovery to use a reframed prompt in a fresh child. A stale_task_reference or already_dispositioned result requires no repeated wait, disposition, or replacement child; follow its authoritative barrier instruction and continue from the last confirmed parent state when clear. This is distinct from provider-native task orchestration.',
       args: {
-        action: tool.schema.enum(ACTIONS).describe('Action: start, status, wait, cancel, continue, retry, resume, or abandon. A resumable failure with no agent retry remaining is handled by the user-facing Model Recovery controls while the durable result remains pending; an attached wait resumes directly, while a detached wait is recovered by an idle-parent continuation. Wait stays attached until terminal while DevRyan polls internally; use status for a non-blocking live snapshot.'),
+        action: tool.schema.enum(ACTIONS).describe('Action: start, status, wait, cancel, continue, retry, resume, or abandon. A completed result accepts only continue; retry is only for an eligible failed result. A resumable failure with no agent retry remaining returns manualRecoveryRequired and remains pending for the user-facing Model Recovery controls. After the user retries, an idle-parent continuation collects the recovered result. Wait stays attached only until the requested task is terminal while DevRyan polls internally; use status for a non-blocking live snapshot. stale_task_reference and already_dispositioned are no-op recovery states and must not trigger a replacement task or repeated acknowledgement.'),
         task_id: tool.schema.string().optional().describe('Managed dvr_task_ ID. Required for every action except start.'),
         label: tool.schema.string().optional().describe('Short task label for start or retry.'),
         prompt: tool.schema.string().optional().describe('Full delegated prompt for start, or a retry override. A provider_prompt_rejected retry requires a compact, semantically complete prompt that differs from the rejected prompt.'),
@@ -978,7 +1434,7 @@ export const DevRyanManagedOrchestrationPlugin = async ({
         model_id: tool.schema.string().optional().describe('Compatibility fallback model ID when no runtime agent catalog is available. Supply together with provider_id; configured agent settings are authoritative.'),
         agent: tool.schema.string().optional().describe('Agent name for start or an optional retry/resume override.'),
         variant: tool.schema.string().optional().describe('Optional compatibility fallback variant. The configured agent variant is authoritative when the runtime catalog is available.'),
-        timeout_seconds: tool.schema.number().int().min(MIN_TIMEOUT_SECONDS).max(MAX_TIMEOUT_SECONDS).optional().describe('Start timeout in seconds. Defaults to 1800, with an enforced 3600 minimum for Oracle; use at least 3600 for multi-file implementation plus tests and 7200 when the child also owns builds or browser verification.'),
+        timeout_seconds: tool.schema.number().int().min(MIN_TIMEOUT_SECONDS).max(MAX_TIMEOUT_SECONDS).optional().describe('Timeout in seconds. Defaults to 3600 for Fixer and Oracle and 1800 for other ordinary specialists. Use 7200 when a closed task also owns builds or browser verification. On retry, resume, and retry_in_place it extends the window, which otherwise inherits the original task\'s.'),
         cascade: tool.schema.boolean().optional().describe('For cancel only: also cancel explicit managed descendants.'),
         reason: tool.schema.string().optional().describe('Optional cancellation reason.'),
       },
@@ -995,22 +1451,89 @@ export const DevRyanManagedOrchestrationPlugin = async ({
             const taskId = requireText(args.task_id, 'task_id');
             const collected = state.collectedResults.get(taskId);
             if (!collected) {
+              let current;
+              try {
+                current = await callRpc('status', buildScopedParams(args, context), {
+                  signal: context.abort,
+                });
+              } catch (error) {
+                if (!isTaskNotFoundError(error)) throw error;
+                const recovered = await recoverMissingTaskReference(
+                  taskId,
+                  context.sessionID,
+                  error,
+                );
+                return JSON.stringify(recovered, null, 2);
+              }
+              const alreadyDispositioned = await recognizeAlreadyDispositioned(
+                current,
+                context.sessionID,
+              );
+              if (alreadyDispositioned) {
+                return JSON.stringify(
+                  compactManagedTaskToolResult(alreadyDispositioned),
+                  null,
+                  2,
+                );
+              }
               throw new Error(`Use devryan_task wait for ${taskId} before ${action}`);
             }
             if (collected.status === 'completed' && action !== 'continue') {
-              throw new Error(`The successful result requires continue after wait: ${taskId}`);
+              throw createToolInputInvalidError(
+                `Managed task ${taskId} is completed; action "${action}" is incompatible. `
+                + `Required next action: {"action":"continue","task_id":"${taskId}"}`,
+                {
+                  taskId,
+                  state: 'completed',
+                  receivedAction: action,
+                  requiredAction: 'continue',
+                },
+              );
             }
             if (requiresManualModelRecovery(collected)) {
               throw new Error('Manual model recovery requires the user-facing Model Recovery controls; leave this result unacknowledged');
             }
           }
-          const result = await executeAction(
-            { ...args, action },
-            context,
-            client,
-            dispatchCallId,
-          );
+          let result;
+          try {
+            result = await executeAction(
+              { ...args, action },
+              context,
+              client,
+              dispatchCallId,
+            );
+          } catch (error) {
+            if (
+              !isTaskNotFoundError(error)
+              || (!['status', 'wait'].includes(action) && !RESULT_ACTIONS.has(action))
+            ) {
+              throw error;
+            }
+            const taskId = requireText(args.task_id, 'task_id');
+            const recovered = await recoverMissingTaskReference(
+              taskId,
+              context.sessionID,
+              error,
+            );
+            return JSON.stringify(recovered, null, 2);
+          }
           if (action === 'start' && context.agent !== 'builder') state.knownBarrier = true;
+          if (RESULT_ACTIONS.has(action)) {
+            state.collectedResults.delete(requireText(args.task_id, 'task_id'));
+          }
+          if (action === 'status' || action === 'wait') {
+            const alreadyDispositioned = await recognizeAlreadyDispositioned(
+              result,
+              context.sessionID,
+            );
+            if (alreadyDispositioned) {
+              return JSON.stringify(
+                compactManagedTaskToolResult(alreadyDispositioned),
+                null,
+                2,
+              );
+            }
+          }
           if (action === 'wait') {
             const requestedTaskId = requireText(args.task_id, 'task_id');
             const status = typeof result?.task?.status === 'string' ? result.task.status : null;

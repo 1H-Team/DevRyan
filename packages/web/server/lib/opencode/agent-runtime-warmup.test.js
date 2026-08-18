@@ -83,6 +83,35 @@ describe('agent runtime warmup', () => {
     }));
   });
 
+  it('warms only skills returned by the approved-skill resolver', async () => {
+    const readSkillFile = vi.fn(() => 'skill content');
+    const resolveApprovedSkills = vi.fn(() => [
+      { name: 'accessibility', path: '/repo/.agents/skills/accessibility/SKILL.md' },
+    ]);
+    const warmup = createAgentRuntimeWarmup({
+      buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      fetchImpl: vi.fn(async () => Response.json({})),
+      discoverSkills: () => [
+        { name: 'accessibility', path: '/repo/.agents/skills/accessibility/SKILL.md' },
+        { name: 'untrusted', path: '/repo/.cursor/skills/untrusted/SKILL.md' },
+      ],
+      getHiddenSkills: () => [{ name: 'hidden', path: '/skills/hidden/SKILL.md' }],
+      resolveApprovedSkills,
+      readSkillFile,
+      now: () => 1_000,
+    });
+
+    await warmup.warm({ directory: '/repo', timeoutMs: 1_000 });
+
+    expect(resolveApprovedSkills).toHaveBeenCalledWith({
+      discoveredSkills: expect.any(Array),
+      hiddenSkills: [{ name: 'hidden', path: '/skills/hidden/SKILL.md' }],
+    });
+    expect(readSkillFile).toHaveBeenCalledOnce();
+    expect(readSkillFile).toHaveBeenCalledWith('/repo/.agents/skills/accessibility/SKILL.md');
+  });
+
   it('returns per-task errors without failing the whole warmup', async () => {
     const warmup = createAgentRuntimeWarmup({
       buildOpenCodeUrl: (requestPath) => `http://opencode.test${requestPath}`,

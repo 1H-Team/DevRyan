@@ -117,7 +117,8 @@ export const createProjectPreviewInstancesRuntime = ({
 
   const refreshGrant = async (grant) => {
     if (grants.get(grant.id) !== grant) return false;
-    const session = getTerminalRuntime?.()?.getSessionDescriptor?.(grant.terminalSessionId);
+    const terminalRuntime = getTerminalRuntime?.();
+    const session = terminalRuntime?.getSessionDescriptor?.(grant.terminalSessionId);
     if (!session || session.ownerUserId !== grant.ownerUserId) {
       removeGrant(grant.id, 'terminal-closed');
       return false;
@@ -132,6 +133,10 @@ export const createProjectPreviewInstancesRuntime = ({
       return false;
     }
     if (grants.get(grant.id) !== grant) return false;
+    if (terminalRuntime?.touchSession?.(grant.terminalSessionId, grant.ownerUserId) !== true) {
+      removeGrant(grant.id, 'terminal-closed');
+      return false;
+    }
     grant.expiresAt = now() + Math.max(15_000, Math.trunc(grantTtlMs));
     return true;
   };
@@ -157,7 +162,8 @@ export const createProjectPreviewInstancesRuntime = ({
     }
 
     const sessionId = typeof terminalSessionId === 'string' ? terminalSessionId.trim() : '';
-    const session = getTerminalRuntime?.()?.getSessionDescriptor?.(sessionId);
+    const terminalRuntime = getTerminalRuntime?.();
+    const session = terminalRuntime?.getSessionDescriptor?.(sessionId);
     if (!session || session.ownerUserId !== (principal?.id || 'local-admin')) {
       return { ok: false, status: 404, error: 'Terminal session not found' };
     }
@@ -183,6 +189,12 @@ export const createProjectPreviewInstancesRuntime = ({
       return { ok: false, status: 422, error: 'Preview app is not reachable' };
     }
 
+    const ownerUserId = principal?.id || 'local-admin';
+    if (terminalRuntime?.touchSession?.(sessionId, ownerUserId) !== true) {
+      if (matchingGrant) removeGrant(matchingGrant.id, 'terminal-closed');
+      return { ok: false, status: 404, error: 'Terminal session not found' };
+    }
+
     const currentTime = now();
     const normalizedLabel = typeof label === 'string'
       ? label.trim().slice(0, PROJECT_PREVIEW_MAX_LABEL_LENGTH)
@@ -196,7 +208,7 @@ export const createProjectPreviewInstancesRuntime = ({
       projectId: project.projectId,
       directory: canonicalDirectory,
       terminalSessionId: sessionId,
-      ownerUserId: principal?.id || 'local-admin',
+      ownerUserId,
       origin: normalizedUrl.origin,
       url: normalizedUrl.url,
       port: normalizedUrl.port,

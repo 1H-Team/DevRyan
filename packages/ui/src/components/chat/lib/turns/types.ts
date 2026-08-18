@@ -1,5 +1,8 @@
 import type { Message, Part } from '@opencode-ai/sdk/v2';
-import type { ProviderTransportFailureKind } from '@openchamber/orchestration-runtime';
+import type {
+    ManagedTaskFailureKind,
+    ProviderTransportFailureKind,
+} from '@openchamber/orchestration-runtime';
 import type { ResponseStyleLevel } from '@/lib/responseStyle';
 
 export type ManagedTransportRecoveryState = 'recovering' | 'recovered' | 'failed';
@@ -9,10 +12,18 @@ export interface ManagedTransportRecoveryPresentation {
     state: ManagedTransportRecoveryState;
 }
 
+export type ManagedAbortRecoveryState = 'continuing' | 'recovered' | 'manual_recovery' | 'stopped';
+
+export interface ManagedAbortRecoveryPresentation {
+    state: ManagedAbortRecoveryState;
+    failureKind?: ManagedTaskFailureKind;
+}
+
 export interface ChatMessageEntry {
     info: Message;
     parts: Part[];
     presentation?: {
+        managedAbortRecovery?: ManagedAbortRecoveryPresentation;
         managedTransportRecovery?: ManagedTransportRecoveryPresentation;
     };
 }

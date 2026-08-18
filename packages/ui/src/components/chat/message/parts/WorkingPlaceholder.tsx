@@ -1,5 +1,5 @@
 import React from 'react';
-import { BusyDots } from './BusyDots';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 
 interface WorkingPlaceholderProps {
   isWorking: boolean;
@@ -59,6 +59,7 @@ export function WorkingPlaceholder({
   isWaitingForPermission,
   retryInfo,
 }: WorkingPlaceholderProps) {
+  const shouldReduceMotion = useReducedMotion() === true;
   const [displayedText, setDisplayedText] = React.useState<string | null>(null);
   const [displayedPermission, setDisplayedPermission] = React.useState<boolean>(false);
   const displayedTextRef = React.useRef(displayedText);
@@ -199,14 +200,18 @@ export function WorkingPlaceholder({
         className="flex h-full min-w-0 items-center text-muted-foreground pl-0.5"
         role="status"
         aria-live="polite"
-        aria-label={retryReason ? `${retryText} — ${retryReason}` : `${retryText}...`}
+        aria-label={retryReason ? `${retryText} — ${retryReason}` : retryText}
       >
         <span className="typography-ui-header flex min-w-0 items-center">
-          <span className="whitespace-nowrap">{retryText}</span>
+          <span
+            className="oc-text-shimmer whitespace-nowrap"
+            data-shimmer-text={retryText}
+          >
+            {retryText}
+          </span>
           {retryReason ? (
             <span className="truncate">&nbsp;— {retryReason}</span>
           ) : null}
-          <BusyDots />
         </span>
       </div>
     );
@@ -225,12 +230,26 @@ export function WorkingPlaceholder({
       }
       role="status"
       aria-live={displayedPermission ? 'assertive' : 'polite'}
-      aria-label={label}
       data-waiting={displayedPermission ? 'true' : undefined}
     >
-      <span className="typography-ui-header">
-        {label}
-        <BusyDots />
+      <span className="sr-only">{label}</span>
+      <span
+        aria-hidden="true"
+        className="typography-ui-header relative inline-flex overflow-hidden"
+      >
+        <AnimatePresence mode="popLayout" initial={false}>
+          <motion.span
+            key={label}
+            initial={shouldReduceMotion ? false : { y: 12, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={shouldReduceMotion ? { opacity: 0 } : { y: -12, opacity: 0 }}
+            transition={{ duration: shouldReduceMotion ? 0 : 0.25, ease: 'easeOut' }}
+            className="oc-text-shimmer whitespace-nowrap"
+            data-shimmer-text={label}
+          >
+            {label}
+          </motion.span>
+        </AnimatePresence>
       </span>
     </div>
   );

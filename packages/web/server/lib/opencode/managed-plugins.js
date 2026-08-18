@@ -8,6 +8,8 @@ export const DEVRYAN_MANAGED_PLUGIN_IDS = Object.freeze({
   CONTEXT_MODE: 'context-mode',
   SLIM: 'oh-my-opencode-slim',
   SUPERPOWERS: 'superpowers',
+  SKILL_CONTEXT: 'devryan-skill-context',
+  DOCUMENT_READER: 'devryan-document-reader',
   OPENAI_TOOL_SCHEMA_SANITIZER: 'openai-tool-schema-sanitizer',
 });
 
@@ -91,6 +93,38 @@ const definitions = [
     public: true,
   },
   {
+    id: DEVRYAN_MANAGED_PLUGIN_IDS.SKILL_CONTEXT,
+    displayName: 'DevRyan Skill Context',
+    packageName: null,
+    version: null,
+    entrypoint: null,
+    registrationPath: './plugins/devryan-skill-context.mjs',
+    legacySpecs: [],
+    delivery: 'bundled-file',
+    sourcePath: 'default-config/plugins/devryan-skill-context.mjs',
+    profileRegistration: true,
+    public: true,
+  },
+  {
+    id: DEVRYAN_MANAGED_PLUGIN_IDS.DOCUMENT_READER,
+    displayName: 'DevRyan Document Reader',
+    packageName: null,
+    version: null,
+    entrypoint: null,
+    registrationPath: './plugins/devryan-document-reader.mjs',
+    legacySpecs: [],
+    delivery: 'bundled-file',
+    sourcePath: 'default-config/plugins/devryan-document-reader.mjs',
+    profileRegistration: true,
+    runtimeDependencies: [
+      { packageName: '@opencode-ai/plugin', version: '1.17.11', entrypoint: 'dist/index.js' },
+      { packageName: 'adm-zip', version: '0.6.0', entrypoint: 'adm-zip.js' },
+      { packageName: 'mammoth', version: '1.12.1', entrypoint: 'lib/index.js' },
+      { packageName: 'unpdf', version: '1.8.0', entrypoint: 'dist/index.mjs' },
+    ],
+    public: true,
+  },
+  {
     id: DEVRYAN_MANAGED_PLUGIN_IDS.OPENAI_TOOL_SCHEMA_SANITIZER,
     displayName: 'OpenAI Tool Schema Sanitizer',
     packageName: null,
@@ -108,6 +142,7 @@ const definitions = [
 export const DEVRYAN_MANAGED_PLUGINS = Object.freeze(definitions.map((definition) => Object.freeze({
   ...definition,
   legacySpecs: Object.freeze([...definition.legacySpecs]),
+  runtimeDependencies: Object.freeze((definition.runtimeDependencies || []).map((dependency) => Object.freeze({ ...dependency }))),
 })));
 
 export const DEVRYAN_MANAGED_PROFILE_PLUGINS = Object.freeze(
@@ -120,8 +155,10 @@ export const DEVRYAN_MANAGED_PROFILE_PLUGIN_SPECS = Object.freeze(
 
 export const DEVRYAN_MANAGED_PROFILE_DEPENDENCIES = Object.freeze(Object.fromEntries(
   DEVRYAN_MANAGED_PLUGINS
-    .filter((plugin) => plugin.packageName && plugin.version)
-    .map((plugin) => [plugin.packageName, plugin.version]),
+    .flatMap((plugin) => [
+      ...(plugin.packageName && plugin.version ? [[plugin.packageName, plugin.version]] : []),
+      ...plugin.runtimeDependencies.map((dependency) => [dependency.packageName, dependency.version]),
+    ]),
 ));
 
 export const DEVRYAN_MANAGED_PROFILE_PLUGIN_FILES = Object.freeze(
@@ -275,40 +312,50 @@ export const inspectDevRyanManagedPluginInstallation = ({
 }) => {
   const issues = [];
   for (const plugin of DEVRYAN_MANAGED_PLUGINS) {
-    if (!plugin.packageName || !plugin.version || !plugin.entrypoint) continue;
-    const packageRoot = pathApi.join(configDirectory, 'node_modules', ...plugin.packageName.split('/'));
-    const packageJsonPath = pathApi.join(packageRoot, 'package.json');
-    let installedVersion = null;
-    try {
-      installedVersion = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'))?.version || null;
-    } catch {
-      issues.push({
-        pluginId: plugin.id,
-        kind: 'missing-package',
-        path: packageJsonPath,
-        expectedVersion: plugin.version,
-        installedVersion: null,
-      });
-      continue;
-    }
-    if (installedVersion !== plugin.version) {
-      issues.push({
-        pluginId: plugin.id,
-        kind: 'version-mismatch',
-        path: packageJsonPath,
-        expectedVersion: plugin.version,
-        installedVersion,
-      });
-    }
-    const entrypointPath = pathApi.join(packageRoot, ...plugin.entrypoint.split('/'));
-    if (!fs.existsSync(entrypointPath)) {
-      issues.push({
-        pluginId: plugin.id,
-        kind: 'missing-entrypoint',
-        path: entrypointPath,
-        expectedVersion: plugin.version,
-        installedVersion,
-      });
+    const dependencies = [
+      ...(plugin.packageName && plugin.version && plugin.entrypoint
+        ? [{ packageName: plugin.packageName, version: plugin.version, entrypoint: plugin.entrypoint }]
+        : []),
+      ...plugin.runtimeDependencies,
+    ];
+    for (const dependency of dependencies) {
+      const packageRoot = pathApi.join(configDirectory, 'node_modules', ...dependency.packageName.split('/'));
+      const packageJsonPath = pathApi.join(packageRoot, 'package.json');
+      let installedVersion = null;
+      try {
+        installedVersion = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'))?.version || null;
+      } catch {
+        issues.push({
+          pluginId: plugin.id,
+          packageName: dependency.packageName,
+          kind: 'missing-package',
+          path: packageJsonPath,
+          expectedVersion: dependency.version,
+          installedVersion: null,
+        });
+        continue;
+      }
+      if (installedVersion !== dependency.version) {
+        issues.push({
+          pluginId: plugin.id,
+          packageName: dependency.packageName,
+          kind: 'version-mismatch',
+          path: packageJsonPath,
+          expectedVersion: dependency.version,
+          installedVersion,
+        });
+      }
+      const entrypointPath = pathApi.join(packageRoot, ...dependency.entrypoint.split('/'));
+      if (!fs.existsSync(entrypointPath)) {
+        issues.push({
+          pluginId: plugin.id,
+          packageName: dependency.packageName,
+          kind: 'missing-entrypoint',
+          path: entrypointPath,
+          expectedVersion: dependency.version,
+          installedVersion,
+        });
+      }
     }
   }
   return issues;

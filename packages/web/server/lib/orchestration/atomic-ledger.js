@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import nodeFs from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -108,6 +109,8 @@ export const createAtomicManagedOrchestrationLedger = (options = {}) => {
   const isProcessAlive = options.isProcessAlive ?? defaultIsProcessAlive;
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_OWNER_HEARTBEAT_MS;
   const ownerStaleMs = options.ownerStaleMs ?? DEFAULT_OWNER_STALE_MS;
+  const processRef = options.process ?? process;
+  const syncFs = options.syncFs ?? nodeFs;
   let saveTail = Promise.resolve();
   let acquirePromise = null;
   let recoveryWarning = null;
@@ -117,6 +120,35 @@ export const createAtomicManagedOrchestrationLedger = (options = {}) => {
   let ownershipState = 'unowned';
   let ownerHeartbeatTimer = null;
   let lastObservedHeartbeatAt = null;
+  let exitReleaseHandler = null;
+
+  const releaseOwnerLockSync = () => {
+    if (!ownershipToken) return;
+    try {
+      const record = JSON.parse(syncFs.readFileSync(ownerPath, 'utf8'));
+      if (!isValidOwnerRecord(record) || record.token !== ownershipToken) return;
+      syncFs.unlinkSync(ownerPath);
+    } catch {
+    }
+  };
+
+  const attachExitRelease = () => {
+    if (exitReleaseHandler) return;
+    exitReleaseHandler = () => {
+      releaseOwnerLockSync();
+    };
+    processRef.on?.('exit', exitReleaseHandler);
+  };
+
+  const detachExitRelease = () => {
+    if (!exitReleaseHandler) return;
+    if (typeof processRef.off === 'function') {
+      processRef.off('exit', exitReleaseHandler);
+    } else {
+      processRef.removeListener?.('exit', exitReleaseHandler);
+    }
+    exitReleaseHandler = null;
+  };
 
   const readOwnerRecord = async () => {
     const stat = await fsApi.stat(ownerPath);
@@ -155,6 +187,7 @@ export const createAtomicManagedOrchestrationLedger = (options = {}) => {
     }
 
     ownershipState = 'lost';
+    detachExitRelease();
     throw createOwnershipError(
       'managed_orchestration_ownership_lost',
       'Managed orchestration lost exclusive ownership of its data directory',
@@ -199,6 +232,18 @@ export const createAtomicManagedOrchestrationLedger = (options = {}) => {
     }
   };
 
+  const dropOwnerLock = async () => {
+    const retiredPath = `${ownerPath}.released-${now()}-${randomId()}`;
+    try {
+      await fsApi.rename(ownerPath, retiredPath);
+    } catch (error) {
+      if (error?.code === 'ENOENT') return false;
+      throw error;
+    }
+    await removeExactPath(retiredPath);
+    return true;
+  };
+
   const inspectExistingOwner = async () => {
     let existing;
     try {
@@ -215,9 +260,8 @@ export const createAtomicManagedOrchestrationLedger = (options = {}) => {
     const heartbeatAt = Math.trunc(existing.stat.mtimeMs);
     lastObservedHeartbeatAt = heartbeatAt;
     const heartbeatAgeMs = Math.max(0, now() - heartbeatAt);
-    const stale = heartbeatAgeMs > ownerStaleMs;
     const alive = await isProcessAlive(existing.record.pid);
-    if (!stale || alive) {
+    if (alive) {
       ownershipState = 'conflict';
       throw createOwnershipError(
         'managed_orchestration_owner_conflict',
@@ -233,8 +277,9 @@ export const createAtomicManagedOrchestrationLedger = (options = {}) => {
       throw error;
     }
     await removeExactPath(retiredPath);
-    logger.warn?.('[ManagedOrchestration] Recovered a stale ledger owner lock', {
+    logger.warn?.('[ManagedOrchestration] Recovered a dead ledger owner lock', {
       heartbeatAgeMs,
+      staleAfterMs: ownerStaleMs,
     });
     return { retry: true };
   };
@@ -263,6 +308,7 @@ export const createAtomicManagedOrchestrationLedger = (options = {}) => {
         ownershipState = 'owned';
         lastObservedHeartbeatAt = acquiredAt;
         startHeartbeat();
+        attachExitRelease();
         return;
       } catch (error) {
         if (error?.code !== 'EEXIST') throw error;
@@ -291,29 +337,30 @@ export const createAtomicManagedOrchestrationLedger = (options = {}) => {
 
   const releaseOwnership = async () => {
     stopHeartbeat();
-    await saveTail;
-    if (!ownershipToken) return false;
+    if (!ownershipToken) {
+      await saveTail;
+      return false;
+    }
 
     try {
       await assertOwnership();
     } catch {
+      detachExitRelease();
       ownershipToken = null;
+      await saveTail;
       return false;
     }
 
-    const retiredPath = `${ownerPath}.released-${now()}-${randomId()}`;
+    let dropped = false;
     try {
-      await fsApi.rename(ownerPath, retiredPath);
-    } catch (error) {
-      if (error?.code !== 'ENOENT') throw error;
+      dropped = await dropOwnerLock();
+    } finally {
+      detachExitRelease();
       ownershipToken = null;
-      ownershipState = 'lost';
-      return false;
+      ownershipState = dropped ? 'unowned' : 'lost';
     }
-    ownershipToken = null;
-    ownershipState = 'unowned';
-    await removeExactPath(retiredPath);
-    return true;
+    await saveTail;
+    return dropped;
   };
 
   const quarantine = async (error) => {

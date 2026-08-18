@@ -11,6 +11,7 @@ import { createWebGitHubAPI } from './github';
 import { createWebDiagnosticsAPI } from './diagnostics';
 import { createWebEvidenceAPI } from './evidence';
 import { createWebSessionPlansAPI } from './sessionPlans';
+import { createWebContextUsageAPI } from './contextUsage';
 
 export const createWebAPIs = (): RuntimeAPIs => ({
   runtime: { platform: 'web', isDesktop: false, isVSCode: false, label: 'web' },
@@ -25,5 +26,6 @@ export const createWebAPIs = (): RuntimeAPIs => ({
   push: createWebPushAPI(),
   diagnostics: createWebDiagnosticsAPI(),
   evidence: createWebEvidenceAPI(),
+  contextUsage: createWebContextUsageAPI(),
   tools: createWebToolsAPI(),
 });

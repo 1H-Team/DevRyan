@@ -69,6 +69,92 @@ const createTerminalHarness = async ({
   return { inPlaceRetries, original: scheduler.getTask(original.taskId), resumes, scheduler, starts };
 };
 
+describe('managed follow-up timeout windows', () => {
+  const NINETY_MINUTES = 90 * 60 * 1_000;
+
+  const createWindowHarness = async (submitOverrides = {}) => {
+    let taskCounter = 0;
+    let leaseCounter = 0;
+    let clock = 1_000;
+    const scheduler = createManagedTaskScheduler({
+      executor: {
+        async start(task, control) {
+          await control.setChildSessionId(`ses_child_${task.taskId}`);
+          await control.markAccepted();
+          return {
+            status: 'failed',
+            failureReason: 'Managed task timed out at 2000',
+            partial: true,
+            recoverablePreview: 'useful partial output',
+            canonicalRefs: [],
+            resumable: true,
+          };
+        },
+        async resume(task, control) { await control.markAccepted(); return { status: 'completed' }; },
+        async retryInPlace(task, control) { await control.markAccepted(); return { status: 'completed' }; },
+        async abort() { return { aborted: true }; },
+        async reconcile() { return { state: 'unavailable' }; },
+        async readRecoverableResult() { return {}; },
+      },
+      createTaskId: () => `dvr_task_${++taskCounter}`,
+      createLeaseToken: () => `dvr_lease_${++leaseCounter}`,
+      now: () => clock,
+    });
+    const original = await scheduler.submit(input({
+      timeoutAt: clock + NINETY_MINUTES,
+      ...submitOverrides,
+    }));
+    await scheduler.waitForTask(original.taskId);
+    return {
+      scheduler,
+      original: scheduler.getTask(original.taskId),
+      advance: (ms) => { clock += ms; },
+      readClock: () => clock,
+    };
+  };
+
+  for (const action of ['retry', 'resume', 'retry_in_place']) {
+    test(`a ${action} follow-up inherits the source task's window`, async () => {
+      const { scheduler, original, advance, readClock } = await createWindowHarness();
+      advance(60 * 60 * 1_000);
+      const result = await scheduler.acknowledgeResult(original.taskId, {
+        action,
+        idempotencyKey: `window-${action}`,
+        providerId: 'openai',
+        modelId: 'gpt-5.6',
+        variant: 'medium',
+        // What the transport supplies today: a bare 30-minute default.
+        timeoutAt: readClock() + 30 * 60 * 1_000,
+      });
+      expect(result.followUpTask.timeoutAt - readClock()).toBe(NINETY_MINUTES);
+    });
+  }
+
+  test('an explicitly longer requested window wins over the inherited one', async () => {
+    const { scheduler, original, advance, readClock } = await createWindowHarness();
+    advance(1_000);
+    const requested = readClock() + 4 * 60 * 60 * 1_000;
+    const result = await scheduler.acknowledgeResult(original.taskId, {
+      action: 'resume',
+      idempotencyKey: 'window-explicit',
+      timeoutAt: requested,
+    });
+    expect(result.followUpTask.timeoutAt).toBe(requested);
+  });
+
+  test('a source task without a deadline leaves the requested window untouched', async () => {
+    const { scheduler, original, advance, readClock } = await createWindowHarness({ timeoutAt: null });
+    advance(1_000);
+    const requested = readClock() + 30 * 60 * 1_000;
+    const result = await scheduler.acknowledgeResult(original.taskId, {
+      action: 'resume',
+      idempotencyKey: 'window-no-source-deadline',
+      timeoutAt: requested,
+    });
+    expect(result.followUpTask.timeoutAt).toBe(requested);
+  });
+});
+
 describe('managed scheduler parent actions', () => {
   test('retries as one linked attempt and deduplicates repeated action requests', async () => {
     const { original, scheduler, starts } = await createTerminalHarness({
@@ -100,6 +186,23 @@ describe('managed scheduler parent actions', () => {
       action: 'abandon',
       idempotencyKey: 'different-action',
     })).rejects.toThrow('result is already acknowledged with retry');
+  });
+
+  test('rejects a read-only retry that overrides Explorer with Designer', async () => {
+    const { original, scheduler, starts } = await createTerminalHarness({
+      submitOverrides: { readOnly: true, agent: 'explorer' },
+    });
+
+    await expect(scheduler.acknowledgeResult(original.taskId, {
+      action: 'retry',
+      agent: 'designer',
+      idempotencyKey: 'retry-as-designer',
+    })).rejects.toMatchObject({
+      code: 'MANAGED_READ_ONLY_AGENT_UNSUPPORTED',
+    });
+
+    expect(scheduler.getResultEnvelope(original.taskId).action).toBeNull();
+    expect(starts).toHaveLength(1);
   });
 
   test('parks a second grouped failure for user-selected manual recovery', async () => {
@@ -377,6 +480,7 @@ describe('managed scheduler parent actions', () => {
       rootSessionId: 'ses_root',
       childSessionId: original.childSessionId,
       directory: '/workspace',
+      kind: 'collect',
     }]);
     expect(scheduler.listReadyProviderRecoveryContinuations({
       sessionId: original.childSessionId,
@@ -407,6 +511,7 @@ describe('managed scheduler parent actions', () => {
       rootSessionId: 'ses_root',
       childSessionId: original.childSessionId,
       directory: '/workspace',
+      kind: 'collect',
     }]);
 
     await scheduler.acknowledgeResult(original.taskId, {
@@ -416,7 +521,7 @@ describe('managed scheduler parent actions', () => {
     expect(scheduler.listReadyProviderRecoveryContinuations()).toEqual([]);
   });
 
-  test('does not wake a parent for ungrouped or repeatedly provider-limited recovery work', async () => {
+  test('never offers ungrouped or parked recovery work for collection', async () => {
     const ungrouped = await createTerminalHarness({
       failureReason: 'Monthly usage limit reached',
     });
@@ -447,8 +552,49 @@ describe('managed scheduler parent actions', () => {
       modelId: 'gpt-5.6',
       variant: 'medium',
     });
-    await limitedAgain.scheduler.waitForTask(repeatedRecovery.followUpTask.taskId);
+    const repeated = await limitedAgain.scheduler.waitForTask(repeatedRecovery.followUpTask.taskId);
+    // Parked for the user's Model Recovery choice: omitted so the parent is not
+    // woken to collect or narrate it. The envelope stays unacknowledged.
+    expect(repeated).toMatchObject({
+      status: 'failed',
+      failureReason: 'OpenAI rate limit reached',
+    });
     expect(limitedAgain.scheduler.listReadyProviderRecoveryContinuations()).toEqual([]);
+  });
+
+  test('omits a deadline-exceeded parked result from continuation scans', async () => {
+    const { original, scheduler } = await createTerminalHarness({
+      failureReason: 'Managed task timed out at 1500',
+      inPlaceRetryResult: {
+        status: 'failed',
+        failureReason: 'Managed task timed out at 4500',
+        partial: true,
+        resumable: true,
+      },
+      submitOverrides: { dispatchGroupId: 'msg_parent' },
+    });
+    const recovery = await scheduler.acknowledgeResult(original.taskId, {
+      action: 'retry_in_place',
+      idempotencyKey: 'deadline-parked-recovery',
+      providerId: 'openai',
+      modelId: 'gpt-5.6',
+      variant: 'medium',
+    });
+    await scheduler.waitForTask(recovery.followUpTask.taskId);
+
+    expect(scheduler.listReadyProviderRecoveryContinuations()).toEqual([]);
+
+    const parkedTaskId = recovery.followUpTask.taskId;
+    await scheduler.acknowledgeResult(parkedTaskId, {
+      action: 'retry_in_place',
+      idempotencyKey: 'deadline-parked-user-retry',
+      providerId: 'openai',
+      modelId: 'gpt-5.6',
+      variant: 'medium',
+    });
+    expect(scheduler.listReadyProviderRecoveryContinuations().some(
+      (continuation) => continuation.taskId === parkedTaskId,
+    )).toBe(false);
   });
 
   test('rejects new automatic in-place recovery while retaining its durable enum', async () => {

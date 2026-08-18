@@ -727,7 +727,7 @@ describe('syncRuntimeAgentOverlays', () => {
     expect(overlay.prompt).toBe('Project prompt');
   });
 
-  it('does not write skill-policy overlays for project agents without skill permissions', async () => {
+  it('writes exact skill-policy overlays for project agents without hardcoded skill permissions', async () => {
     await writeAgent(packagedAgentDirectory, 'builder', [
       'mode: subagent',
       'model: packaged/old',
@@ -755,8 +755,49 @@ describe('syncRuntimeAgentOverlays', () => {
       },
     });
 
-    await expect(fs.stat(path.join(result.targetConfigDirectory, 'agents', 'builder.md'))).rejects.toMatchObject({ code: 'ENOENT' });
-    expect(result.written).toEqual([]);
+    const overlay = await readOverlayAgent(result.targetConfigDirectory, 'builder');
+    expect(result.written).toEqual(['builder']);
+    expect(overlay.frontmatter.permission.skill).toEqual({
+      '*': 'deny',
+      'frontend-design': 'allow',
+    });
+    expect(overlay.frontmatter.permission.external_directory).toEqual({
+      ...runtimeDirectoryAllows(
+        projectDirectory,
+        resolveProjectPlansDirectory(projectDirectory),
+      ),
+      '/tmp/skills/frontend-design/*': 'allow',
+    });
+  });
+
+  it('preserves explicit complete skill denial for project agents', async () => {
+    await writeAgent(path.join(projectDirectory, '.opencode', 'agents'), 'reviewer', [
+      'mode: subagent',
+      'permission:',
+      '  "*": deny',
+      '  skill: deny',
+    ], 'Project reviewer prompt');
+
+    const result = await syncRuntimeAgentOverlays({
+      workingDirectory: projectDirectory,
+      packagedAgentDirectory,
+      overlayRoot,
+      manifestPath,
+      agentOverrides: {},
+      skillPolicy: {
+        skillNames: ['accessibility'],
+        skillDirectories: ['/repo/.agents/skills/accessibility'],
+        skillDirectoriesByName: {
+          accessibility: ['/repo/.agents/skills/accessibility'],
+        },
+      },
+    });
+
+    const overlay = await readOverlayAgent(result.targetConfigDirectory, 'reviewer');
+    expect(overlay.frontmatter.permission.skill).toEqual({ '*': 'deny' });
+    expect(overlay.frontmatter.permission.external_directory).not.toHaveProperty(
+      '/repo/.agents/skills/accessibility/*',
+    );
   });
 
   it('writes runtime directory permissions for project agents without skill or model overrides', async () => {
@@ -894,7 +935,7 @@ describe('syncRuntimeAgentOverlays', () => {
             type: 'remote',
             url: 'https://mcp.example.test/mcp',
             enabled: true,
-            timeout: 5_000,
+            timeout: 60_000,
           },
         },
       });
@@ -948,7 +989,7 @@ describe('syncRuntimeAgentOverlays', () => {
             type: 'remote',
             url: 'https://mcp.example.test/mcp',
             enabled: true,
-            timeout: 5_000,
+            timeout: 60_000,
           },
         },
         provider: {
@@ -1003,7 +1044,7 @@ describe('syncRuntimeAgentOverlays', () => {
               redirectUri: 'http://localhost:55676/mcp/oauth/callback',
               scope: 'projects:read',
             },
-            timeout: 5_000,
+            timeout: 60_000,
           },
         },
       });
@@ -1167,7 +1208,7 @@ describe('syncRuntimeAgentOverlays', () => {
             type: 'remote',
             url: 'https://mcp.example.test/mcp',
             enabled: true,
-            timeout: 5_000,
+            timeout: 60_000,
           },
         },
         plugin: [
@@ -1426,7 +1467,7 @@ describe('syncRuntimeAgentOverlays', () => {
     expect(runtimeConfig.mcp['remote-tools']).toMatchObject({
       type: 'remote',
       url: 'https://example.com/mcp',
-      timeout: 5_000,
+      timeout: 60_000,
     });
   });
 
@@ -1616,6 +1657,7 @@ describe('syncRuntimeAgentOverlays', () => {
   it('copies and registers every canonical runtime plugin from the repository default-config source', async () => {
     const defaultConfigRoot = path.resolve(process.cwd(), 'server', 'default-config');
     const expectedPlugins = await listRuntimePluginAssets(defaultConfigRoot);
+    expect(expectedPlugins).not.toContain('plugins/devryan-context-breakdown.mjs');
     const result = await syncRuntimeAgentOverlays({
       workingDirectory: projectDirectory,
       packagedAgentDirectory: path.join(defaultConfigRoot, 'agents'),
@@ -1635,5 +1677,30 @@ describe('syncRuntimeAgentOverlays', () => {
       await expect(fs.readFile(path.join(result.targetConfigDirectory, relativePath), 'utf8'))
         .resolves.toBe(await fs.readFile(path.join(defaultConfigRoot, relativePath), 'utf8'));
     }
+  });
+
+  it('prunes the retired context-breakdown plugin from a managed overlay', async () => {
+    await fs.mkdir(packagedPluginDirectory, { recursive: true });
+    const retiredPlugin = 'devryan-context-breakdown.mjs';
+    await fs.writeFile(path.join(packagedPluginDirectory, retiredPlugin), 'export default async () => ({});\n');
+
+    const options = {
+      workingDirectory: projectDirectory,
+      packagedAgentDirectory,
+      packagedPluginDirectory,
+      overlayRoot,
+      manifestPath,
+      readConfig: () => ({}),
+      listMcpConfigs: () => [],
+    };
+    const installed = await syncRuntimeAgentOverlays(options);
+    await expect(fs.stat(path.join(installed.targetPluginDirectory, retiredPlugin))).resolves.toBeDefined();
+
+    await fs.unlink(path.join(packagedPluginDirectory, retiredPlugin));
+    const reconciled = await syncRuntimeAgentOverlays(options);
+
+    expect(reconciled.pluginsRemoved).toEqual([retiredPlugin]);
+    await expect(fs.stat(path.join(reconciled.targetPluginDirectory, retiredPlugin)))
+      .rejects.toMatchObject({ code: 'ENOENT' });
   });
 });

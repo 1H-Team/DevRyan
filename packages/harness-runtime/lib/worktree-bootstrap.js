@@ -6,6 +6,7 @@ const WORKTREE_BOOTSTRAP_STAGES = Object.freeze([
   'create_worktree',
   'sync_project_metadata',
   'populate_worktree',
+  'run_post_checkout_hook',
   'configure_upstream',
   'run_project_setup',
   'run_requested_setup',
@@ -21,10 +22,15 @@ const TERMINAL_STATUSES = new Set([
   'not_applicable',
 ]);
 
-const SETUP_STAGES = new Set(['run_project_setup', 'run_requested_setup']);
+const NON_REPLAY_SAFE_STAGES = new Set([
+  'run_post_checkout_hook',
+  'run_project_setup',
+  'run_requested_setup',
+]);
 const WARNING_STAGES = new Set(['sync_project_metadata', 'configure_upstream']);
 const DEFAULT_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_OPERATIONS = 2_000;
+const RECEIPT_MIGRATED = Symbol('worktreeReceiptMigrated');
 
 const asString = (value) => (
   typeof value === 'string' && value.trim().length > 0 ? value.trim() : ''
@@ -54,13 +60,65 @@ const validateStageState = (value) => {
   return value;
 };
 
-export const validateWorktreeBootstrapReceipt = (value) => {
-  if (!value || typeof value !== 'object' || Array.isArray(value) || ![1, 2].includes(value.version)) {
-    throw new TypeError('worktree bootstrap receipt version is invalid');
-  }
-  const receipt = value.version === 1
+const emptyStageState = () => ({
+  status: 'queued',
+  startedAt: null,
+  finishedAt: null,
+  error: null,
+});
+
+const migrateLegacyReceipt = (value) => {
+  let receipt = value.version === 1
     ? { ...value, version: 2, ownerId: 'local-admin' }
     : value;
+  if (receipt.version === 3) return receipt;
+
+  const legacyStages = receipt.stages && typeof receipt.stages === 'object'
+    ? receipt.stages
+    : {};
+  const laterStages = WORKTREE_BOOTSTRAP_STAGES.slice(
+    WORKTREE_BOOTSTRAP_STAGES.indexOf('run_post_checkout_hook') + 1,
+  );
+  const laterStageStarted = laterStages.some((stage) => {
+    const state = legacyStages[stage];
+    return Boolean(state && (
+      state.status !== 'queued'
+      || state.startedAt !== null && state.startedAt !== undefined
+      || state.finishedAt !== null && state.finishedAt !== undefined
+    ));
+  }) || laterStages.includes(receipt.stage);
+  const skipReason = TERMINAL_STATUSES.has(receipt.status)
+    ? 'legacy_terminal_receipt'
+    : (laterStageStarted ? 'legacy_stage_order_preserved' : null);
+  const hookState = skipReason
+    ? {
+        status: 'skipped',
+        startedAt: null,
+        finishedAt: receipt.updatedAt ?? receipt.createdAt ?? null,
+        error: null,
+        output: {
+          presence: null,
+          exitStatus: null,
+          durationMs: 0,
+        },
+      }
+    : emptyStageState();
+  const stages = Object.fromEntries(WORKTREE_BOOTSTRAP_STAGES.map((stage) => [
+    stage,
+    stage === 'run_post_checkout_hook'
+      ? hookState
+      : (legacyStages[stage] ?? emptyStageState()),
+  ]));
+  receipt = { ...receipt, version: 3, stages };
+  Object.defineProperty(receipt, RECEIPT_MIGRATED, { value: true });
+  return receipt;
+};
+
+export const validateWorktreeBootstrapReceipt = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || ![1, 2, 3].includes(value.version)) {
+    throw new TypeError('worktree bootstrap receipt version is invalid');
+  }
+  const receipt = migrateLegacyReceipt(value);
   if (!asString(receipt.ownerId)) {
     throw new TypeError('worktree bootstrap ownerId is required');
   }
@@ -141,7 +199,10 @@ export const createWorktreeBootstrapRuntime = (options = {}) => {
     await store.initialize();
     for (const { record } of await store.listRecords()) {
       const receipt = validateWorktreeBootstrapReceipt(record);
-      indexReceipt(receipt);
+      const durable = receipt[RECEIPT_MIGRATED]
+        ? await store.writeRecord(receipt.operationId, receipt)
+        : receipt;
+      indexReceipt(durable);
     }
     initialized = true;
   };
@@ -233,7 +294,7 @@ export const createWorktreeBootstrapRuntime = (options = {}) => {
       },
     ]));
     const receipt = {
-      version: 2,
+      version: 3,
       ownerId: asString(input.ownerId) || 'local-admin',
       operationId: asString(input.operationId) || `wt_${crypto.randomUUID().replaceAll('-', '')}`,
       idempotencyKey,
@@ -292,7 +353,10 @@ export const createWorktreeBootstrapRuntime = (options = {}) => {
       const output = typeof resolvedEffect === 'function'
         ? await resolvedEffect(clone(receipt))
         : undefined;
-      current.status = stageOptions.skip === true ? 'skipped' : 'completed';
+      current.status = stageOptions.skip === true
+        || (stage === 'run_post_checkout_hook' && output?.presence === false)
+        ? 'skipped'
+        : 'completed';
       current.finishedAt = now();
       current.error = null;
       receipt.error = null;
@@ -303,6 +367,9 @@ export const createWorktreeBootstrapRuntime = (options = {}) => {
       const message = error instanceof Error ? error.message : String(error);
       current.finishedAt = now();
       current.error = message;
+      if (error?.stageOutput && typeof error.stageOutput === 'object') {
+        current.output = clone(error.stageOutput);
+      }
       if (stageOptions.failure === 'warning' || WARNING_STAGES.has(stage)) {
         current.status = 'warning';
         receipt.warnings.push({ stage, message, at: current.finishedAt });
@@ -393,10 +460,20 @@ export const createWorktreeBootstrapRuntime = (options = {}) => {
     for (const receipt of operations.values()) {
       if (receipt.status === 'running') {
         const state = receipt.stages[receipt.stage];
-        if (SETUP_STAGES.has(receipt.stage) && state?.status === 'running') {
+        if (NON_REPLAY_SAFE_STAGES.has(receipt.stage) && state?.status === 'running') {
           state.status = 'needs_attention';
           state.finishedAt = now();
-          state.error = 'Setup execution was interrupted; review it before retrying';
+          state.error = receipt.stage === 'run_post_checkout_hook'
+            ? 'post-checkout hook execution was interrupted; it was not rerun automatically'
+            : 'Setup execution was interrupted; review it before retrying';
+          if (receipt.stage === 'run_post_checkout_hook') {
+            state.output = {
+              presence: null,
+              exitStatus: null,
+              durationMs: Math.max(0, state.finishedAt - (state.startedAt ?? state.finishedAt)),
+              failureExcerpt: state.error,
+            };
+          }
           receipt.status = 'needs_attention';
           receipt.error = state.error;
           await persist(receipt);
@@ -509,7 +586,7 @@ export const createWorktreeBootstrapRuntime = (options = {}) => {
       throw createError('Worktree not found', 'WORKTREE_NOT_FOUND', 404);
     }
     return {
-      version: 2,
+      version: 3,
       ownerId: 'local-admin',
       operationId: null,
       idempotencyKey: null,

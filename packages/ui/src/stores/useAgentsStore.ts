@@ -4,20 +4,13 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { devtools } from './utils/devtoolsGate';
 import type { Agent, PermissionConfig } from "@opencode-ai/sdk/v2";
 import { opencodeClient } from "@/lib/opencode/client";
-import { scopeMatches, subscribeToConfigChanges, type ConfigChangeScope } from "@/lib/configSync";
-import {
-  startConfigUpdate,
-  finishConfigUpdate,
-  updateConfigUpdateMessage,
-} from "@/lib/configUpdate";
+import { scopeMatches, subscribeToConfigChanges } from "@/lib/configSync";
 import { getSafeStorage } from "./utils/safeStorage";
 import { useConfigStore } from "@/stores/useConfigStore";
-import { useCommandsStore } from "@/stores/useCommandsStore";
 import { useProjectsStore } from "@/stores/useProjectsStore";
-import { useSkillsCatalogStore } from "@/stores/useSkillsCatalogStore";
-import { useSkillsStore } from "@/stores/useSkillsStore";
 import { useSelectionStore } from "@/sync/selection-store";
 import { useDirectoryStore } from "@/stores/useDirectoryStore";
+import { recordConfigMutationResponse } from '@/stores/useConfigApplyStore';
 
 const getCurrentDirectory = (): string | null => {
   const opencodeDirectory = opencodeClient.getDirectory();
@@ -424,14 +417,6 @@ export const filterVisibleAgentSelectorOptions = (agents: Agent[]): Agent[] => {
 };
 
 const CONFIG_EVENT_SOURCE = "useAgentsStore";
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-const MAX_HEALTH_WAIT_MS = 20000;
-const FAST_HEALTH_POLL_INTERVAL_MS = 300;
-const FAST_HEALTH_POLL_ATTEMPTS = 4;
-const SLOW_HEALTH_POLL_BASE_MS = 800;
-const SLOW_HEALTH_POLL_INCREMENT_MS = 200;
-const SLOW_HEALTH_POLL_MAX_MS = 2000;
-
 interface AgentsStore {
 
   selectedAgentName: string | null;
@@ -555,6 +540,7 @@ export const useAgentsStore = create<AgentsStore>()(
           }
 
           const payload = await response.json().catch(() => null);
+          recordConfigMutationResponse(payload);
           const responseAgent = payload?.agent?.config ? normalizeAgentModelFields(payload.agent.config as AgentWithExtras) : null;
           const existingAgent = get().agents.find((agent) => agent.name === name) as AgentWithExtras | undefined;
           // Decision: reconcile successful saves locally even if a bridge/proxy returns
@@ -591,6 +577,7 @@ export const useAgentsStore = create<AgentsStore>()(
           }
 
           const payload = await response.json().catch(() => null);
+          recordConfigMutationResponse(payload);
           const nextAgent = payload?.agent?.config ? normalizeAgentModelFields(payload.agent.config as AgentWithExtras) : null;
           if (nextAgent?.name) {
             useSelectionStore.getState().clearAgentModelSelections(name);
@@ -619,200 +606,6 @@ export const useAgentsStore = create<AgentsStore>()(
 
 if (typeof window !== "undefined") {
   window.__zustand_agents_store__ = useAgentsStore;
-}
-
-async function waitForOpenCodeConnection(delayMs?: number) {
-  const initialPause = typeof delayMs === "number" && delayMs > 0
-    ? Math.min(delayMs, FAST_HEALTH_POLL_INTERVAL_MS)
-    : 0;
-
-  if (initialPause > 0) {
-    await sleep(initialPause);
-  }
-
-  const start = Date.now();
-  let attempt = 0;
-  let lastError: unknown = null;
-
-  while (Date.now() - start < MAX_HEALTH_WAIT_MS) {
-    attempt += 1;
-    updateConfigUpdateMessage(`Waiting for OpenCode… (attempt ${attempt})`);
-
-    try {
-      const isHealthy = await opencodeClient.checkHealth();
-      if (isHealthy) {
-        return;
-      }
-      lastError = new Error("OpenCode health check reported not ready");
-    } catch (error) {
-      lastError = error;
-    }
-
-    const elapsed = Date.now() - start;
-
-    const waitMs =
-      attempt <= FAST_HEALTH_POLL_ATTEMPTS && elapsed < 1200
-        ? FAST_HEALTH_POLL_INTERVAL_MS
-        : Math.min(
-            SLOW_HEALTH_POLL_BASE_MS +
-              Math.max(0, attempt - FAST_HEALTH_POLL_ATTEMPTS) * SLOW_HEALTH_POLL_INCREMENT_MS,
-            SLOW_HEALTH_POLL_MAX_MS,
-          );
-
-    await sleep(waitMs);
-  }
-
-  throw lastError || new Error("OpenCode did not become ready in time");
-}
-
-type ConfigRefreshMode = "active" | "projects";
-
-const normalizeRefreshScopes = (scopes?: ConfigChangeScope[]): ConfigChangeScope[] => {
-  if (!scopes || scopes.length === 0) {
-    return ["all"];
-  }
-
-  const unique = Array.from(new Set(scopes));
-  if (unique.includes("all")) {
-    return ["all"];
-  }
-
-  return unique;
-};
-
-async function performConfigRefresh(options: {
-  message?: string;
-  delayMs?: number;
-  scopes?: ConfigChangeScope[];
-  mode?: ConfigRefreshMode;
-} = {}) {
-  const { message, delayMs } = options;
-  const scopes = normalizeRefreshScopes(options.scopes);
-  const mode: ConfigRefreshMode = options.mode ?? (scopes.includes("all") ? "projects" : "active");
-
-  try {
-    updateConfigUpdateMessage(message || "Refreshing configuration…");
-  } catch {
-    // ignore
-  }
-
-  try {
-    await waitForOpenCodeConnection(delayMs);
-
-    const configStore = useConfigStore.getState();
-    const agentConfigStore = useAgentsStore.getState();
-    const commandsStore = useCommandsStore.getState();
-    const skillsStore = useSkillsStore.getState();
-    const skillsCatalogStore = useSkillsCatalogStore.getState();
-
-    const refreshProviders = scopes.includes("all") || scopes.includes("providers");
-    const refreshSdkAgents = scopes.includes("all") || scopes.includes("agents");
-    const refreshAgentConfigs = scopes.includes("all") || scopes.includes("agents");
-    const refreshCommands = scopes.includes("all") || scopes.includes("commands");
-    const refreshSkills = scopes.includes("all") || scopes.includes("skills");
-
-    const currentDirectory = getCurrentDirectory();
-    const projects = mode === "projects" ? useProjectsStore.getState().projects : [];
-    const directoriesToRefresh = Array.from(
-      new Set([
-        ...(currentDirectory ? [currentDirectory] : []),
-        ...projects.map((project) => project.path).filter(Boolean),
-      ]),
-    );
-
-    if (scopes.includes("all") && mode === "projects") {
-      useConfigStore.setState({ directoryScoped: {} });
-    }
-
-    if (refreshProviders) {
-      useConfigStore.getState().invalidateModelMetadataCache();
-    }
-
-    const sdkRefreshTasks: Promise<void>[] = [];
-    for (const directory of directoriesToRefresh) {
-      if (refreshProviders) {
-        sdkRefreshTasks.push(configStore.loadProviders({ directory }).then(() => undefined));
-      }
-      if (refreshSdkAgents) {
-        sdkRefreshTasks.push(configStore.loadAgents({ directory }).then(() => undefined));
-      }
-    }
-
-    const uiRefreshTasks: Promise<void>[] = [];
-    if (refreshAgentConfigs) {
-      uiRefreshTasks.push(agentConfigStore.loadAgents().then(() => undefined));
-    }
-    if (refreshCommands) {
-      uiRefreshTasks.push(commandsStore.loadCommands().then(() => undefined));
-    }
-    if (refreshSkills) {
-      uiRefreshTasks.push(skillsStore.loadSkills().then(() => undefined));
-      uiRefreshTasks.push(skillsCatalogStore.loadCatalog().then(() => undefined));
-    }
-
-    updateConfigUpdateMessage("Refreshing configuration…");
-    await Promise.all([...sdkRefreshTasks, ...uiRefreshTasks]);
-  } catch {
-    updateConfigUpdateMessage("OpenCode refresh failed. Please retry.");
-    await sleep(1500);
-  } finally {
-    finishConfigUpdate();
-  }
-}
-
-export async function refreshAfterOpenCodeRestart(options?: {
-  message?: string;
-  delayMs?: number;
-  scopes?: ConfigChangeScope[];
-  mode?: ConfigRefreshMode;
-}) {
-  await performConfigRefresh(options);
-}
-
-export async function reloadOpenCodeConfiguration(options?: {
-  message?: string;
-  delayMs?: number;
-  scopes?: ConfigChangeScope[];
-  mode?: ConfigRefreshMode;
-}) {
-  startConfigUpdate(options?.message || "Reloading OpenCode configuration…");
-
-  try {
-
-    const response = await fetch('/api/config/reload', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
-
-    const payload = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      const message = payload?.error || 'Failed to reload configuration';
-      throw new Error(message);
-    }
-
-    const refreshOptions = {
-      ...options,
-      scopes: options?.scopes ?? ["all"],
-      mode: options?.mode ?? "projects",
-    };
-
-    if (payload?.requiresReload) {
-      await refreshAfterOpenCodeRestart({
-        ...refreshOptions,
-        message: payload.message,
-        delayMs: payload.reloadDelayMs,
-      });
-    } else {
-      await refreshAfterOpenCodeRestart(refreshOptions);
-    }
-  } catch (error) {
-    console.error('[reloadOpenCodeConfiguration] Failed:', error);
-    updateConfigUpdateMessage('Failed to reload configuration. Please try again.');
-    await sleep(2000);
-    finishConfigUpdate();
-    throw error;
-  }
 }
 
 let unsubscribeAgentsConfigChanges: (() => void) | null = null;

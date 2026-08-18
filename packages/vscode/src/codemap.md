@@ -13,14 +13,21 @@ VS Code extension-host implementation: activation lifecycle, command surface, we
   runtime without importing VS Code-only Git host dependencies.
 - `worktreeLockRecovery.ts` owns bounded, identity-safe recovery for worktree
   population collisions on `index.lock`.
-- `opencode.ts` provides a manager object with explicit connection status and restart/start/stop APIs.
+- `gitService.ts` injects `@openchamber/harness-runtime`'s bounded post-checkout
+  hook runner into version 3 worktree receipts, matching web/Electron stage
+  order and retry semantics.
+- `opencode.ts` provides a manager object with explicit connection status and restart/start/stop APIs. Managed launches isolate context-mode storage under the OpenChamber data directory and expose authoritative live session counts plus recovery status.
+- `contextModeRecovery.ts` owns the single-flight admission-controlled `SQLITE_IOERR` state machine, active-turn preservation, authoritative-idle restart backoff, and external-owner guidance. SQLite lock contention is excluded.
+- `sessionActivityWatcher.ts` tracks session busy/idle/cooldown and feeds true context-mode IOERR tool failures into recovery; historical activity is not the idle source of truth.
 - `opencodeConfig.ts` owns VS Code-side config entity reads/writes, read-only singular/plural plugin-file discovery, OpenCode Slim config/agent override parity, Slim-installed global agent prompt composition, and managed agent runtime overlays so saved user-side agent model defaults, plugin filtering, and blocked ambient MCP tombstones apply to the local OpenCode process.
 - `globalAgentsMdRuntime.ts` owns user-global `~/.config/opencode/AGENTS.md` reads/writes, empty-file removal, UTF-8 limits, external-runtime read-only policy, and restart-warning results for the VS Code bridge.
 - `bridge-system-runtime.ts` owns VS Code provider auth/status/configure bridge behavior, including non-billable Claude Code status checks, Cursor SDK integration via `@openchamber/cursor-sdk-runtime`, and the HTTP-shaped managed quota credential bridge contract.
 - `bridge-config-runtime.ts` owns config/skills requests plus OpenCode resolution and read-only update-check parity for the shared Settings UI; the update check uses the manager's active managed or external runtime version.
+- `configApplyRuntime.ts` hosts the shared revisioned configuration-apply coordinator and its status/apply/external-acknowledgement bridge contract.
 - `claudeAuthStatus.ts` and `anthropicOAuthPlugin.ts` mirror the web/Electron safe auth-status contract and pinned Claude proxy migration policy.
-- `quotaCredentials.ts` owns allowlisted private managed quota files and explicit read-only Cursor import; `quotaProviders.ts` owns quota-source precedence and keeps those credentials separate from Cursor SDK execution auth.
-- `managedOrchestrationRuntime.ts` composes the VS Code-owned scheduler and scoped RPC contract, including validated 25-second maximum wait slices, unbounded root barrier inspection, and confirmed agent handoff.
+- `quotaCredentials.ts` owns allowlisted private managed quota files and explicit read-only Cursor import; `quotaProviders.ts` owns quota-source precedence and keeps those credentials separate from Cursor SDK execution auth. z.ai, Kimi, Codex, xAI, and DeepSeek use `@openchamber/shared-runtime` adapters.
+- `skillsCatalog.ts` adapts ClawdHub transport and destination policy to the shared safe-archive installer.
+- `managedOrchestrationRuntime.ts` composes the VS Code-owned scheduler and scoped RPC contract, including pre-admission read-only provider compatibility and implementation-only Designer checks, validated 25-second maximum wait slices, unbounded root barrier inspection, and confirmed agent handoff.
 - `managedOrchestrationPersistence.ts` owns the private atomic extension-storage ledger, legacy dispatch-group hydration, and corrupt-ledger quarantine.
 - `managedOrchestrationHost.ts` owns the bearer-authenticated IPv4 loopback bridge used only by managed OpenCode plugins.
 - `managedOpenCodeExecutor.ts` owns canonical normal-provider and Cursor child-session execution, including stale fresh-child cleanup through both OpenCode and the Cursor state owner.

@@ -1,4 +1,5 @@
 import { isLikelyProviderAuthFailure, PROVIDER_AUTH_FAILURE_MESSAGE } from "@/lib/messages/providerAuthError"
+import { isLikelyProviderTokenExpired, PROVIDER_TOKEN_EXPIRED_MESSAGE } from "@/lib/messages/providerTokenExpired"
 import {
   isLikelyProviderModelNotFound,
   PROVIDER_MODEL_NOT_FOUND_MESSAGE,
@@ -8,7 +9,10 @@ import {
   isLikelyCertificateVerificationFailure,
   stripWrappedJsonQuotes,
 } from "@/lib/messages/transientStreamError"
-import type { ManagedTransportRecoveryPresentation } from "../lib/turns/types"
+import type {
+  ManagedAbortRecoveryPresentation,
+  ManagedTransportRecoveryPresentation,
+} from "../lib/turns/types"
 
 export type AssistantErrorInfo = {
   data?: { message?: unknown }
@@ -77,6 +81,7 @@ export function classifyAssistantError(
     steeredAbortMessageId?: string | null
     messageId?: string | null
     isLatestMessage?: boolean
+    managedAbortRecovery?: ManagedAbortRecoveryPresentation
     managedTransportRecovery?: ManagedTransportRecoveryPresentation
   } = {},
 ): AssistantErrorClassification | undefined {
@@ -97,6 +102,15 @@ export function classifyAssistantError(
     return {
       text: `The provider rejected the request and OpenCode is retrying automatically. Press Stop to cancel and switch models.\n\`${detail}\``,
       variant: "info",
+    }
+  }
+
+  // Checked before the broader auth-failure heuristic, which would otherwise swallow this into
+  // vaguer copy. Keep the provider's own wording — it is the only thing naming which credential died.
+  if (isLikelyProviderTokenExpired(detail)) {
+    return {
+      text: `${PROVIDER_TOKEN_EXPIRED_MESSAGE}\n\`${detail}\``,
+      variant: "error",
     }
   }
 
@@ -133,8 +147,24 @@ export function classifyAssistantError(
       return undefined
     }
 
+    const managedAbortCopy = (() => {
+      switch (options.managedAbortRecovery?.state) {
+        case "continuing":
+          return "The turn stopped before completion. DevRyan is continuing this subtask from saved progress."
+        case "recovered":
+          return "The turn stopped before completion. DevRyan continued this subtask from saved progress and completed it."
+        case "manual_recovery":
+          return options.managedAbortRecovery?.failureKind === "deadline_exceeded"
+            ? "This subtask ran out of time before completing. Choose a model and thinking level in the parent session’s Model Recovery card, then click Try Again to continue it."
+            : "This subtask stopped before completion. Choose a model and thinking level in the parent session’s Model Recovery card, then click Try Again."
+        case "stopped":
+        case undefined:
+          return "The turn stopped before completion."
+      }
+    })()
+
     return {
-      text: "The turn stopped before completion. Reconnecting session state…",
+      text: managedAbortCopy,
       variant: "info",
       abortKind: "unexpected",
     }

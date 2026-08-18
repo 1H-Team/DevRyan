@@ -916,6 +916,34 @@ describe('turn timing runtime', () => {
     expect(JSON.stringify(record)).not.toContain('secret');
   });
 
+  it('accepts a sanitized renderer long-running tool mark', () => {
+    const runtime = createTurnTimingRuntime();
+
+    expect(runtime.recordClientMark({
+      sessionId: 'ses_long_tool',
+      assistantMessageId: 'msg_assistant',
+      mark: 'renderer_long_running_tool_confirmed',
+      directory: '/project',
+      metadata: {
+        source: 'active-session-watchdog',
+        tool: 'ctx_execute',
+        elapsedMs: 300_123.9,
+        stalledForMs: 300_000,
+        runtime: 'renderer-secret',
+        code: 'secret code',
+        output: 'secret output',
+      },
+    })).toBe(true);
+
+    const record = runtime.getRecentTimings({ sessionId: 'ses_long_tool' }).records[0];
+    expect(record.marks.renderer_long_running_tool_confirmed.metadata).toEqual({
+      source: 'active-session-watchdog',
+      tool: 'ctx_execute',
+      elapsedMs: 300_123,
+    });
+    expect(JSON.stringify(record)).not.toContain('secret');
+  });
+
   it('projects ordered tool-call instances and updates repeated states in place without payloads or identities', () => {
     const runtime = createTurnTimingRuntime();
     runtime.recordClientMark({ sessionId: 'ses_tools', messageId: 'msg_user', mark: 'send_started' });

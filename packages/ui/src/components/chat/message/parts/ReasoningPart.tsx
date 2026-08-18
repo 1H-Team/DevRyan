@@ -1,12 +1,12 @@
 import React from 'react';
 import type { Part } from '@opencode-ai/sdk/v2';
 import type { ContentChangeReason } from '@/hooks/useChatAutoFollow';
-import { useI18n } from '@/lib/i18n';
 import { useUIStore } from '@/stores/useUIStore';
 import { MarkdownRenderer } from '../../MarkdownRenderer';
 import { useStreamingTextThrottle } from '../../hooks/useStreamingTextThrottle';
 import type { ResponseStyleLevel } from '@/lib/responseStyle';
 import { formatReasoningText } from './reasoningSummaryDisplay';
+import { isReasoningPartActive } from '../reasoningGrouping';
 
 type PartWithText = Part & {
     text?: string;
@@ -98,7 +98,6 @@ const ReasoningPart = React.memo(({
     responseStyleLevel = 'provider',
     isMobile = false,
 }: ReasoningPartProps) => {
-    const { t } = useI18n();
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
     const partWithText = part as PartWithText;
     const rawText = partWithText.text || partWithText.content || '';
@@ -106,8 +105,7 @@ const ReasoningPart = React.memo(({
         () => formatReasoningText(rawText, providerID, responseStyleLevel),
         [providerID, rawText, responseStyleLevel],
     );
-    const time = partWithText.time;
-    const isActive = typeof time?.end !== 'number';
+    const isActive = isReasoningPartActive(part);
     const isStreaming = chatRenderMode === 'live' && isActive;
     const throttledText = useStreamingTextThrottle({
         text: textContent,
@@ -115,25 +113,9 @@ const ReasoningPart = React.memo(({
         identityKey: `${messageId}:${part.id ?? 'reasoning'}`,
     });
 
-    // Show reasoning even if time.end isn't set yet (during streaming)
-    // If no text has arrived yet, keep active reasoning visible so the user can see work in progress.
+    // Empty reasoning renders nothing; the bottom status row owns the
+    // "Thinking" indicator so activity text never jumps between positions.
     if (!throttledText || throttledText.trim().length === 0) {
-        if (isActive) {
-            return (
-                <div
-                    className="typography-meta text-muted-foreground"
-                    data-reasoning-block-id={part.id || `${messageId}-reasoning`}
-                    role="status"
-                    aria-live="polite"
-                >
-                    <div className={isMobile ? 'relative pr-2 py-1' : 'relative pr-2 py-1.5'}>
-                        <span className="inline-flex animate-pulse motion-reduce:animate-none">
-                            {t('chat.reasoning.thinking')}
-                        </span>
-                    </div>
-                </div>
-            );
-        }
         return null;
     }
 

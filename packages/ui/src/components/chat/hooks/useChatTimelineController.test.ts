@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { shouldCapturePrependScrollSnapshot } from './useChatTimelineController';
+import { clampTurnStart } from '../lib/turns/windowTurns';
 
 describe('shouldCapturePrependScrollSnapshot', () => {
     test('captures reader position when loading older history while released', () => {
@@ -25,5 +26,11 @@ describe('shouldCapturePrependScrollSnapshot', () => {
             isPinned: false,
             hasContainer: true,
         })).toBe(false);
+    });
+});
+
+describe('session-switch turn window', () => {
+    test('clamps a longer session window before rendering a one-turn session', () => {
+        expect(clampTurnStart(12, 1)).toBe(0);
     });
 });

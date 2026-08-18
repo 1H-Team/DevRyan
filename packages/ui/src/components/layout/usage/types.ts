@@ -5,6 +5,7 @@ export interface RateLimitGroup {
   providerName: string;
   entries: Array<[string, UsageWindow]>;
   error?: string;
+  warnings?: string[];
   usageUpdatedAt?: number | null;
   resetCredits?: UsageResetCredits;
   modelRows?: Array<{

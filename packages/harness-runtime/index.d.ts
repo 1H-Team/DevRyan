@@ -1,11 +1,94 @@
 export interface HarnessPaths {
   harnessDir: string;
+  commandDeadlineDir: string;
   worktreeOpsDir: string;
   journalDir: string;
   evidenceDir: string;
 }
 
 export function createHarnessPaths(options: { rootDir: string }): HarnessPaths;
+
+export interface CommandDeadlineFingerprint {
+  sessionID: string;
+  messageID: string;
+  partID: string;
+  callID: string;
+  tool: 'bash' | 'shell';
+}
+
+export interface CommandDeadlineRecord {
+  version: 1;
+  fingerprint: CommandDeadlineFingerprint;
+  directory: string;
+  startedAt: number;
+  deadlineAt: number;
+  phase: 'active' | 'recovering' | 'unresolved';
+  abortRequestedAt: number | null;
+}
+
+export interface CommandDeadlineRecoveryStatus {
+  activeCount: number;
+  recoveredCount: number;
+  unresolvedCount: number;
+  lastOutcome: 'recovered' | 'cleared' | 'unresolved' | null;
+  lastError: string | null;
+  updatedAt: number | null;
+}
+
+export const DEFAULT_COMMAND_TIMEOUT_MS: 240000;
+export const MAX_COMMAND_TIMEOUT_MS: 3600000;
+export const COMMAND_DEADLINE_GRACE_MS: 30000;
+export const COMMAND_ABORT_CONFIRMATION_MS: 10000;
+
+export function validateCommandDeadlineRecord(value: unknown): CommandDeadlineRecord;
+
+export interface CommandDeadlineController {
+  initialize(): Promise<void>;
+  observe(payload: unknown, directory?: string | null): Promise<boolean>;
+  reconcile(): Promise<void>;
+  getStatus(): CommandDeadlineRecoveryStatus;
+  drain(): Promise<void>;
+}
+
+export function createCommandDeadlineController(options: {
+  store: RecordStore<CommandDeadlineRecord>;
+  fetchMessage(input: CommandDeadlineFingerprint & { directory: string }): Promise<unknown>;
+  abortSession(input: { sessionID: string; directory: string }): Promise<unknown>;
+  publishPart?(input: { record: CommandDeadlineRecord; part: unknown }): unknown;
+  listActiveSessions?(input: { directory: string }): Promise<Array<string | { sessionID?: string; sessionId?: string }>>;
+  restartManagedRuntime?(input: { sessionID: string; directory: string }): Promise<unknown>;
+  isExternalRuntime?(): boolean | Promise<boolean>;
+  recordIncident?(incident: Record<string, unknown>): unknown;
+  sanitizeError?(error: string): string;
+  now?: () => number;
+  setTimeout?: typeof setTimeout;
+  clearTimeout?: typeof clearTimeout;
+  wait?: (milliseconds: number) => Promise<void>;
+  graceMs?: number;
+  confirmationMs?: number;
+  confirmationPollMs?: number;
+}): CommandDeadlineController;
+
+export interface PromptAdmissionBlock {
+  name: string;
+  code: string;
+  error: string;
+  retryAfterSeconds: number;
+}
+
+export interface PromptAdmissionController {
+  markReady(): void;
+  beginDrain(): void;
+  acquireHold(
+    name: string,
+    block?: Partial<Omit<PromptAdmissionBlock, 'name'>>,
+  ): () => boolean;
+  isReady(): boolean;
+  isAccepting(): boolean;
+  getBlock(): PromptAdmissionBlock | null;
+}
+
+export function createPromptAdmissionController(): PromptAdmissionController;
 
 export function cleanupStaleAtomicFiles(
   filePath: string,
@@ -106,11 +189,33 @@ export function createLifecycleTracker(options?: {
   maxCompletedTools?: number;
 }): LifecycleTracker;
 
+export interface PostCheckoutHookResult {
+  presence: boolean;
+  exitStatus: number;
+  durationMs: number;
+}
+
+export interface PostCheckoutHookRunner {
+  run(directory: string): Promise<PostCheckoutHookResult>;
+}
+
+export function createPostCheckoutHookRunner(options?: {
+  gitBinary?: string;
+  getGitBinary?: () => string;
+  getEnv?: (directory: string) => Promise<NodeJS.ProcessEnv> | NodeJS.ProcessEnv;
+  hookTimeoutMs?: number;
+  commandTimeoutMs?: number;
+  maxOutputBytes?: number;
+  maxFailureExcerptBytes?: number;
+  now?: () => number;
+}): PostCheckoutHookRunner;
+
 export type WorktreeBootstrapStage =
   | 'prepare_remote'
   | 'create_worktree'
   | 'sync_project_metadata'
   | 'populate_worktree'
+  | 'run_post_checkout_hook'
   | 'configure_upstream'
   | 'run_project_setup'
   | 'run_requested_setup'
@@ -127,7 +232,7 @@ export type WorktreeBootstrapStatus =
   | 'not_applicable';
 
 export interface WorktreeBootstrapReceipt {
-  version: 2;
+  version: 3;
   ownerId: string;
   operationId: string | null;
   idempotencyKey: string | null;
@@ -226,6 +331,26 @@ export function createDiagnosticSanitizer(options?: {
   pathMappings?: Array<{ path: string; placeholder: string }>;
 }): DiagnosticSanitizer;
 
+export type ContextModeRecoveryState =
+  | 'healthy'
+  | 'draining'
+  | 'restarting'
+  | 'external_action_required';
+
+export interface ContextModeRecoveryStatus {
+  state: ContextModeRecoveryState;
+  incidentId: string | null;
+  detectedAt: number | null;
+  updatedAt: number;
+  recoveredAt: number | null;
+  occurrenceCount: number;
+  restartAttempts: number;
+  lastRestartError: string | null;
+  outcome: 'recovered' | 'external_action_required' | null;
+  guidance: string | null;
+  transitions: Array<{ state: ContextModeRecoveryState; at: number; error?: string }>;
+}
+
 export interface DiagnosticsStatus {
   enabled: true;
   directory: string;
@@ -237,6 +362,8 @@ export interface DiagnosticsStatus {
   writtenRecords: number;
   gapRecords: number;
   lastError: string | null;
+  contextModeRecovery?: ContextModeRecoveryStatus | null;
+  commandDeadlineRecovery?: CommandDeadlineRecoveryStatus | null;
 }
 
 export interface JournalSessionManifest {

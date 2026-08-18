@@ -392,7 +392,7 @@ describe("applyDirectoryEvent", () => {
     expect(draft.session_status.ses_1).toBe(statusRef)
   })
 
-  test("clears busy status from terminal assistant message updates for any provider", () => {
+  test("keeps busy status when terminal assistant metadata arrives", () => {
     const draft = state({
       message: {
         ses_1: [{
@@ -411,7 +411,7 @@ describe("applyDirectoryEvent", () => {
     } as unknown as Message))
 
     expect(result).toBe(true)
-    expect(draft.session_status.ses_1).toEqual({ type: "idle" })
+    expect(draft.session_status.ses_1).toEqual({ type: "busy" })
   })
 
   test("does not settle busy status from an older terminal assistant turn", () => {
@@ -816,7 +816,7 @@ describe("applyDirectoryEvent", () => {
     expect(draft.session_status.ses_1).toEqual({ type: "busy" })
   })
 
-  test("settles busy status when the final assistant message completes", () => {
+  test("keeps busy status until an authoritative idle event arrives", () => {
     const draft = state({
       message: {
         ses_1: [
@@ -833,7 +833,7 @@ describe("applyDirectoryEvent", () => {
     )
 
     expect(result).toBe(true)
-    expect(draft.session_status.ses_1).toEqual({ type: "idle" })
+    expect(draft.session_status.ses_1).toEqual({ type: "busy" })
   })
 
   test("suppresses retry status resurrection after a manual abort", () => {

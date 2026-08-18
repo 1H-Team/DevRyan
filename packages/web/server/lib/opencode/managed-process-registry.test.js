@@ -1,8 +1,10 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  buildContextModeStorageEnv,
+  getOpenChamberDataDir,
   isManagedOpenCodeProcessCommand,
   readManagedOpenCodeRegistry,
   reapOrphanedManagedOpenCodeProcesses,
@@ -121,6 +123,58 @@ describe('managed OpenCode process registry', () => {
     expect(readManagedOpenCodeRegistry({ registryPath })).toEqual([]);
   });
 
+  it('takes over a stale registry lock instead of blocking writers', () => {
+    const registryPath = createRegistryPath();
+    const lockPath = `${registryPath}.lock`;
+    mkdirSync(lockPath, { recursive: true });
+    const staleTime = new Date(Date.now() - 60_000);
+    utimesSync(lockPath, staleTime, staleTime);
+
+    registerManagedOpenCodeProcess({
+      childPid: 200,
+      ownerPid: 100,
+      port: 45678,
+      binary: 'opencode',
+      hostRuntime: 'web',
+    }, { registryPath });
+
+    expect(readManagedOpenCodeRegistry({ registryPath })).toHaveLength(1);
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
+  it('keeps records registered by another process during a slow sweep', async () => {
+    const registryPath = createRegistryPath();
+    registerManagedOpenCodeProcess({
+      childPid: 200,
+      ownerPid: 100,
+      port: 45678,
+      binary: 'opencode',
+      hostRuntime: 'web',
+    }, { registryPath });
+
+    const result = await reapOrphanedManagedOpenCodeProcesses({
+      registryPath,
+      isProcessRunning: (pid) => pid === 200,
+      readProcessCommand: () => 'opencode serve --hostname 127.0.0.1 --port 45678',
+      terminateManagedOpenCodePid: async () => {
+        // Simulates a concurrent process registering its child mid-sweep.
+        registerManagedOpenCodeProcess({
+          childPid: 300,
+          ownerPid: 101,
+          port: 45679,
+          binary: 'opencode',
+          hostRuntime: 'web',
+        }, { registryPath });
+        return true;
+      },
+    });
+
+    expect(result.reaped).toEqual([expect.objectContaining({ childPid: 200 })]);
+    expect(readManagedOpenCodeRegistry({ registryPath })).toEqual([
+      expect.objectContaining({ childPid: 300 }),
+    ]);
+  });
+
   it('does not reap a reused PID whose command is no longer OpenCode', async () => {
     const registryPath = createRegistryPath();
     registerManagedOpenCodeProcess({
@@ -154,5 +208,14 @@ describe('managed OpenCode process registry', () => {
       'opencode serve --hostname 127.0.0.1 --port 4096',
       { binary: 'opencode', port: 45678 },
     )).toBe(false);
+  });
+
+  it('aligns context-mode storage under the OpenChamber data dir', () => {
+    const dataDir = path.join(tmpdir(), 'openchamber-verify-data');
+    expect(buildContextModeStorageEnv({ OPENCHAMBER_DATA_DIR: dataDir })).toEqual({
+      CONTEXT_MODE_DATA_DIR: path.resolve(dataDir),
+      CONTEXT_MODE_DIR: path.join(path.resolve(dataDir), 'context-mode'),
+    });
+    expect(getOpenChamberDataDir({ OPENCHAMBER_DATA_DIR: dataDir })).toBe(path.resolve(dataDir));
   });
 });

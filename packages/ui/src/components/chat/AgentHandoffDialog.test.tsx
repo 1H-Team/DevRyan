@@ -14,6 +14,7 @@ const tasks: ManagedTaskProjection[] = Array.from({ length: 12 }, (_, index) => 
     taskId: `dvr_task_${index + 1}`,
     rootSessionId: 'ses_root',
     dispatchCallId: null,
+    dispatchGrouped: false,
     parentTaskId: null,
     childSessionId: null,
     directory: '/workspace',

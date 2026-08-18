@@ -61,6 +61,25 @@ const submitInput = (index, overrides = {}) => ({
 });
 
 describe('managed scheduler admission', () => {
+  test('rejects read-only Designer while accepting Explorer and writable Designer work', async () => {
+    const { published, runs, scheduler } = await createHarness();
+
+    await expect(scheduler.submit(submitInput(1, {
+      readOnly: true,
+      agent: 'designer',
+    }))).rejects.toMatchObject({
+      code: 'MANAGED_READ_ONLY_AGENT_UNSUPPORTED',
+    });
+
+    const explorer = await scheduler.submit(submitInput(2, { readOnly: true }));
+    const designer = await scheduler.submit(submitInput(3, { agent: 'designer' }));
+
+    expect(explorer).toMatchObject({ agent: 'explorer', readOnly: true });
+    expect(designer).toMatchObject({ agent: 'designer', readOnly: false });
+    expect(runs.map((run) => run.task.agent)).toEqual(['explorer', 'designer']);
+    expect(published).toHaveLength(4);
+  });
+
   test('admits every submitted task immediately without a scheduler concurrency cap', async () => {
     const { runs, scheduler } = await createHarness();
 

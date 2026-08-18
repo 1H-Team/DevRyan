@@ -13,10 +13,10 @@ import type {
   SkillsCatalogSourceResponse,
 } from '@/lib/api/types';
 
-import { refreshSkillsAfterOpenCodeRestart, useSkillsStore } from '@/stores/useSkillsStore';
+import { useSkillsStore } from '@/stores/useSkillsStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { opencodeClient } from '@/lib/opencode/client';
-import { startConfigUpdate, finishConfigUpdate, updateConfigUpdateMessage } from '@/lib/configUpdate';
+import { recordConfigMutationResponse } from '@/stores/useConfigApplyStore';
 
 const FALLBACK_SOURCES: SkillsCatalogSource[] = [
   {
@@ -375,9 +375,7 @@ export const useSkillsCatalogStore = create<SkillsCatalogState>()(
       },
 
       installSkills: async (request, options) => {
-        startConfigUpdate('Installing skills…');
         set({ isInstalling: true, lastInstallError: null });
-        let requiresReload = false;
         try {
           const directoryOverride = typeof options?.directory === 'string' && options.directory.trim().length > 0
             ? options.directory.trim()
@@ -395,39 +393,25 @@ export const useSkillsCatalogStore = create<SkillsCatalogState>()(
           if (!payload) {
             const error = { kind: 'unknown', message: 'Failed to install skills' } as SkillsInstallError;
             set({ lastInstallError: error });
-            updateConfigUpdateMessage('Failed to install skills. Please retry.');
             return { ok: false, error };
           }
 
           if (!response.ok || !payload.ok) {
             const error = payload.error || ({ kind: 'unknown', message: 'Failed to install skills' } as SkillsInstallError);
             set({ lastInstallError: error });
-            updateConfigUpdateMessage(error.message || 'Failed to install skills. Please retry.');
             return { ok: false, error };
           }
 
-          if (payload.requiresReload) {
-            requiresReload = true;
-            await refreshSkillsAfterOpenCodeRestart({
-              message: payload.message,
-              delayMs: payload.reloadDelayMs,
-            });
-          } else {
-            updateConfigUpdateMessage(payload.message || 'Refreshing skills…');
-            void useSkillsStore.getState().loadSkills({ refresh: true });
-          }
+          recordConfigMutationResponse(payload);
+          void useSkillsStore.getState().loadSkills({ refresh: true });
 
           return payload;
         } catch (error) {
           const err = { kind: 'unknown', message: error instanceof Error ? error.message : String(error) } as SkillsInstallError;
           set({ lastInstallError: err });
-          updateConfigUpdateMessage('Failed to install skills. Please retry.');
           return { ok: false, error: err };
         } finally {
           set({ isInstalling: false });
-          if (!requiresReload) {
-            finishConfigUpdate();
-          }
         }
       },
     }),

@@ -7,6 +7,7 @@ import {
   applyRuntimeExternalDirectoryPolicy,
   buildVisibleSkillPolicy,
   filterVisibleSkills,
+  resolveApprovedSkills,
   sanitizeAgentSkillPolicy,
 } from './skill-policy.js';
 
@@ -107,6 +108,44 @@ describe('skill policy', () => {
     expect(result.map((skill) => skill.path)).toEqual([
       '/Users/test/.config/opencode/skills/superpowers/dispatching-parallel-agents/SKILL.md',
     ]);
+  });
+
+  it('rejects unsupported skill roots and sources', () => {
+    const result = filterVisibleSkills([
+      { name: 'agents-ok', path: '/repo/.agents/skills/agents-ok/SKILL.md', source: 'agents' },
+      { name: 'opencode-ok', path: '/repo/.opencode/skills/opencode-ok/SKILL.md', source: 'opencode' },
+      { name: 'cursor-no', path: '/repo/.cursor/skills/cursor-no/SKILL.md', source: 'opencode' },
+      { name: 'codex-no', path: '/repo/.codex/skills/codex-no/SKILL.md', source: 'opencode' },
+      { name: 'claude-no', path: '/repo/.claude/skills/claude-no/SKILL.md', source: 'claude' },
+      { name: 'plugin-no', path: '/home/test/.codex/plugins/cache/example/skills/plugin-no/SKILL.md', source: 'opencode' },
+    ], []);
+
+    expect(result.map((skill) => skill.name)).toEqual(['agents-ok', 'opencode-ok']);
+  });
+
+  it('uses local discovery as authority and only enriches exact runtime paths', () => {
+    const approvedPath = '/repo/.agents/skills/accessibility/SKILL.md';
+    const result = resolveApprovedSkills({
+      discoveredSkills: [{
+        name: 'accessibility',
+        path: approvedPath,
+        scope: 'project',
+        source: 'agents',
+        description: 'Local description',
+      }],
+      runtimeSkills: [
+        { name: 'accessibility', path: approvedPath, description: 'Runtime description' },
+        { name: 'runtime-only', path: '/runtime/skills/runtime-only/SKILL.md', description: 'Untrusted' },
+      ],
+    });
+
+    expect(result).toEqual([{
+      name: 'accessibility',
+      path: approvedPath,
+      scope: 'project',
+      source: 'agents',
+      description: 'Runtime description',
+    }]);
   });
 
   it('denies retired Superpowers skill names regardless of their directory', () => {
@@ -281,7 +320,7 @@ describe('skill policy', () => {
     }
   });
 
-  it('keeps explicit wildcard-deny agents restricted to their previous visible allows', () => {
+  it('replaces stale per-skill lists with the complete approved set', () => {
     const policy = buildVisibleSkillPolicy({
       skills: [
         { name: 'codemap', path: '/tmp/skills/codemap/SKILL.md' },
@@ -303,13 +342,15 @@ describe('skill policy', () => {
     expect(frontmatter.permission.skill).toEqual({
       '*': 'deny',
       codemap: 'allow',
+      'project-audit': 'allow',
     });
     expect(frontmatter.permission.external_directory).toEqual({
       '/tmp/skills/codemap/*': 'allow',
+      '/tmp/project/.opencode/skills/project-audit/*': 'allow',
     });
   });
 
-  it('denies skill use for agents without local skill permission', () => {
+  it('allows the approved set for agents without a per-skill list when their role permits tools', () => {
     const policy = buildVisibleSkillPolicy({
       skills: [{ name: 'frontend-design', path: '/tmp/skills/frontend-design/SKILL.md' }],
       hiddenSkills: [],
@@ -321,6 +362,21 @@ describe('skill policy', () => {
       },
     }, policy);
 
-    expect(frontmatter.permission.skill).toEqual({ '*': 'deny' });
+    expect(frontmatter.permission.skill).toEqual({
+      '*': 'deny',
+      'frontend-design': 'allow',
+    });
+  });
+
+  it('preserves explicit complete skill denial', () => {
+    const policy = buildVisibleSkillPolicy({
+      skills: [{ name: 'frontend-design', path: '/tmp/skills/frontend-design/SKILL.md' }],
+    });
+
+    const directDeny = sanitizeAgentSkillPolicy({ permission: { '*': 'allow', skill: 'deny' } }, policy);
+    const globalDeny = sanitizeAgentSkillPolicy({ permission: { '*': 'deny' } }, policy);
+
+    expect(directDeny.permission.skill).toEqual({ '*': 'deny' });
+    expect(globalDeny.permission.skill).toEqual({ '*': 'deny' });
   });
 });

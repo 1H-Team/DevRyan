@@ -12,12 +12,10 @@ import { useRouter } from '@/hooks/useRouter';
 import { useWindowTitle } from '@/hooks/useWindowTitle';
 import { opencodeClient } from '@/lib/opencode/client';
 import type { RuntimeAPIs } from '@/lib/api/types';
-import { applyWideChatLayoutClass, clearWideChatLayoutClass } from '@/lib/chatLayout';
 import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useConfigStore } from '@/stores/useConfigStore';
-import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { SyncProvider, useDirectorySync, useGlobalSyncSelector } from '@/sync/sync-context';
 import { SyncAppEffects } from './AppEffects';
@@ -320,7 +318,6 @@ export function VSCodeApp({ apis }: VSCodeAppProps) {
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
   const error = useSessionUIStore((state) => state.error);
   const clearError = useSessionUIStore((state) => state.clearError);
-  const wideChatLayoutEnabled = useUIStore((state) => state.wideChatLayoutEnabled);
   const refreshGitHubAuthStatus = useGitHubAuthStore((state) => state.refreshStatus);
   const setPlanModeEnabled = useFeatureFlagsStore((state) => state.setPlanModeEnabled);
   const panelType = typeof window !== 'undefined'
@@ -336,13 +333,6 @@ export function VSCodeApp({ apis }: VSCodeAppProps) {
   usePushVisibilityBeacon({ enabled: true });
   useWindowTitle();
   useRouter();
-
-  React.useEffect(() => {
-    applyWideChatLayoutClass(document.documentElement, wideChatLayoutEnabled);
-    return () => {
-      clearWideChatLayoutClass(document.documentElement);
-    };
-  }, [wideChatLayoutEnabled]);
 
   React.useEffect(() => {
     void refreshGitHubAuthStatus(apis.github, { force: true });

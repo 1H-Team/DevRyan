@@ -696,7 +696,7 @@ interface ConfigStore {
 
     activateDirectory: (directory: string | null | undefined) => Promise<void>;
 
-    loadProviders: (options?: { directory?: string | null }) => Promise<void>;
+    loadProviders: (options?: { directory?: string | null; force?: boolean }) => Promise<void>;
     loadAgents: (options?: { directory?: string | null }) => Promise<boolean>;
     invalidateModelMetadataCache: () => void;
     setProvider: (providerId: string) => void;
@@ -1100,9 +1100,11 @@ export const useConfigStore = create<ConfigStore>()(
                 loadProviders: async (options) => {
                     const directoryKey = toDirectoryKey(options?.directory ?? fromDirectoryKey(get().activeDirectoryKey));
 
-                    // Dedup: if a load is already in-flight for this directory, reuse it
+                    // Dedup: if a load is already in-flight for this directory, reuse it.
+                    // `force` opts out — callers polling for a freshly-authorized provider need a
+                    // genuine refetch, not a promise that resolved against a pre-auth catalog.
                     const existing = _inFlightProviders.get(directoryKey);
-                    if (existing) return existing;
+                    if (existing && !options?.force) return existing;
                     if (get().activeDirectoryKey === directoryKey) {
                         set({ providersLoadStatus: "loading", providersLoadError: undefined });
                     }

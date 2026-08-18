@@ -14,7 +14,7 @@ import {
 } from '../utils/index.js';
 
 export const providerId = 'claude';
-export const providerName = 'Anthropic';
+export const providerName = 'Claude';
 
 export const aliases = ['anthropic', 'claude', 'anthropic-oauth', 'opencode-with-claude'];
 

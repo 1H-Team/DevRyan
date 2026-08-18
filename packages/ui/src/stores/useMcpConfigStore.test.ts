@@ -102,6 +102,57 @@ describe("useMcpConfigStore", () => {
     ]);
   });
 
+  test("omits oauth from the update body when enabled with all fields blank", async () => {
+    const bodies: string[] = [];
+    globalThis.fetch = (async (_input, init) => {
+      if (init?.method === "PATCH") {
+        bodies.push(String(init.body ?? ""));
+      }
+      return Response.json({ success: true, requiresReload: false });
+    }) as typeof fetch;
+
+    await useMcpConfigStore.getState().updateMcp(
+      "linear",
+      {
+        enabled: true,
+        oauthEnabled: true,
+        oauthClientId: "",
+        oauthClientSecret: "",
+        oauthScope: "",
+        oauthRedirectUri: " ",
+      },
+      { directory: "/repo/project" },
+    );
+
+    expect(bodies).toEqual(['{"enabled":true}']);
+  });
+
+  test("sends oauth: false only on explicit disable and keeps populated oauth fields", async () => {
+    const bodies: string[] = [];
+    globalThis.fetch = (async (_input, init) => {
+      if (init?.method === "PATCH") {
+        bodies.push(String(init.body ?? ""));
+      }
+      return Response.json({ success: true, requiresReload: false });
+    }) as typeof fetch;
+
+    await useMcpConfigStore.getState().updateMcp(
+      "linear",
+      { oauthEnabled: false },
+      { directory: "/repo/project" },
+    );
+    await useMcpConfigStore.getState().updateMcp(
+      "linear",
+      { oauthEnabled: true, oauthRedirectUri: "http://127.0.0.1:57123/mcp/oauth/callback" },
+      { directory: "/repo/project" },
+    );
+
+    expect(bodies).toEqual([
+      '{"oauth":false}',
+      '{"oauth":{"redirectUri":"http://127.0.0.1:57123/mcp/oauth/callback"}}',
+    ]);
+  });
+
   test("clears only the deleted server's remembered issue after deletion succeeds", async () => {
     opencodeClient.setDirectory("/repo/delete");
     useMcpStore.setState({

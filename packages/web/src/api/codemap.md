@@ -4,7 +4,7 @@
 Implements web-platform `RuntimeAPIs` adapters that bridge shared UI calls to server HTTP/SSE/WebSocket endpoints.
 
 ## Design
-- **Per-domain adapter modules** (`terminal`, `git`, `files`, `settings`, `permissions`, `notifications`, `github`, `push`, `tools`).
+- **Per-domain adapter modules** (`terminal`, `git`, `files`, `settings`, `permissions`, `notifications`, `github`, `push`, `contextUsage`, `tools`).
 - **Composition root**: `index.ts` returns a single `RuntimeAPIs` object with fixed `runtime.platform = "web"` metadata.
 - **Contract parity**: adapter shapes mirror interfaces defined in `@openchamber/ui/lib/api/types`.
 - **Tool discovery contract**: dynamic tool IDs are validated, deduplicated, sorted, and attributed to the active directory through the shared tool-manifest helper; unknown plugin tools remain available through generic presentation fallback.
@@ -15,6 +15,10 @@ Implements web-platform `RuntimeAPIs` adapters that bridge shared UI calls to se
 2. UI hooks/components call RuntimeAPI methods.
 3. Adapters execute fetch/WebSocket operations against `/api/*` routes.
 4. Responses are normalized into shared-ui friendly payloads/errors.
+
+`contextUsage.ts` calls the authenticated per-session context route, forwards
+directory and compaction-refresh hints, and fails closed to a complete
+`message-fallback` response when HTTP or payload validation fails.
 
 ## Integration
 - Upstream consumer: `packages/web/src/main.tsx`.

@@ -21,8 +21,6 @@ const CURSOR_OAUTH_USAGE_URL = `${CURSOR_OAUTH_BASE_URL}/aiserver.v1.DashboardSe
 const CURSOR_OAUTH_REFRESH_URL = `${CURSOR_OAUTH_BASE_URL}/oauth/token`;
 const CURSOR_OAUTH_CLIENT_ID = 'KbZUR41cY7W6zRSdpSUJ7I7mLYBKOCmB';
 const CURSOR_REFRESH_BUFFER_MS = 5 * 60 * 1000;
-const AUTO_COMPOSER_DESCRIPTION = 'Additional usage beyond limits consumes API quota or on-demand spend.';
-const API_DESCRIPTION = 'Additional usage beyond limits consumes on-demand spend.';
 
 export const getCursorUsageSessionToken = (auth) => {
   const entry = normalizeAuthEntry(getAuthEntry(auth, aliases));
@@ -146,13 +144,11 @@ const buildCursorUsage = (payload) => {
     usedPercent: autoPercent,
     windowSeconds,
     resetAt: billingCycleEnd,
-    description: AUTO_COMPOSER_DESCRIPTION,
   });
   windows.api = toUsageWindow({
     usedPercent: apiPercent,
     windowSeconds,
     resetAt: billingCycleEnd,
-    description: API_DESCRIPTION,
   });
 
   return {

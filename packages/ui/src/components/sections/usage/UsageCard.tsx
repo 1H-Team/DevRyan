@@ -1,6 +1,6 @@
 import React from 'react';
 import type { UsageWindow } from '@/types';
-import { buildQuotaWindowDisplayState, formatWindowLabel, type UsageTrendHistory } from '@/lib/quota';
+import { buildQuotaWindowDisplayState, formatWindowLabel, hasUsageProgress, type UsageTrendHistory } from '@/lib/quota';
 import { UsageProgressBar } from './UsageProgressBar';
 import { PaceIndicator } from './PaceIndicator';
 import { useQuotaStore } from '@/stores/useQuotaStore';
@@ -35,6 +35,7 @@ export const UsageCard: React.FC<UsageCardProps> = ({
   const showPredictionValues = useQuotaStore((state) => state.showPredictionValues);
   const windowLabel = formatWindowLabel(title);
   const visibleTitle = displayTitle ?? windowLabel;
+  const showProgress = hasUsageProgress(window);
 
   const displayState = React.useMemo(() => buildQuotaWindowDisplayState(
     window,
@@ -70,24 +71,30 @@ export const UsageCard: React.FC<UsageCardProps> = ({
         </div>
       </div>
 
-      <div className="mt-2.5">
+      {showProgress ? (
+        <div className="mt-2.5">
           <UsageProgressBar
-          percent={displayState.displayPercent}
-          tonePercent={window.usedPercent}
-          expectedMarkerPercent={displayState.expectedMarkerPercent}
-          className="h-1.5"
-        />
-        <div className="mt-1 flex items-center justify-between">
-          <span className="typography-micro text-muted-foreground">
-            {displayState.resetLabel ? `Resets ${displayState.resetLabel}` : ''}
-          </span>
-          <span className="typography-micro text-muted-foreground">
-            {displayState.barLabel}
-          </span>
+            percent={displayState.displayPercent}
+            tonePercent={window.usedPercent}
+            expectedMarkerPercent={displayState.expectedMarkerPercent}
+            className="h-1.5"
+          />
+          <div className="mt-1 flex items-center justify-between">
+            <span className="typography-micro text-muted-foreground">
+              {displayState.resetLabel ? `Resets ${displayState.resetLabel}` : ''}
+            </span>
+            <span className="typography-micro text-muted-foreground">
+              {displayState.barLabel}
+            </span>
+          </div>
         </div>
-      </div>
+      ) : displayState.resetLabel ? (
+        <div className="mt-1 typography-micro text-muted-foreground">
+          {`Resets ${displayState.resetLabel}`}
+        </div>
+      ) : null}
 
-      {showPredictionValues && displayState.paceInfo && (
+      {showProgress && showPredictionValues && displayState.paceInfo && (
         <div className="mt-1.5">
           <PaceIndicator paceInfo={displayState.paceInfo} displayMode={displayMode} />
         </div>

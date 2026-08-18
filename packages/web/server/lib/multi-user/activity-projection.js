@@ -1,9 +1,12 @@
 import path from 'node:path';
 
+import { classifyProviderTransportFailure } from '@openchamber/orchestration-runtime';
+import { rewriteContextModeWedgeFailureText } from '../opencode/context-mode-recovery.js';
 import { stableAuditEventId } from './analytics.js';
 import { classifyDiagnosticFailure } from './error-diagnostics.js';
 
 export const ERROR_CONTEXT_TEXT_LIMIT_BYTES = 8 * 1024;
+export const ERROR_STACK_TEXT_LIMIT_BYTES = 16 * 1024;
 
 const TOOL_ACTIONS = Object.freeze({
   pending: 'tool.requested',
@@ -115,11 +118,27 @@ const safeString = (value, maximum = 512) =>
 
 const safeNumber = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
 
+const isToolExecutionAbort = (value) => {
+  const text = typeof value === 'string'
+    ? value
+    : value && typeof value === 'object' && typeof value.message === 'string'
+      ? value.message
+      : '';
+  return /^tool execution (?:was )?aborted\.?$/i.test(text.trim());
+};
+
 const safeFailureText = (value, sanitizeFailureText) => {
   const text = safeString(value, 100_000);
   if (!text) return null;
   const sanitized = typeof sanitizeFailureText === 'function' ? sanitizeFailureText(text) : text;
   return truncateUtf8(sanitized);
+};
+
+const safeStackText = (value, sanitizeFailureText) => {
+  const text = safeString(value, 200_000);
+  if (!text) return null;
+  const sanitized = typeof sanitizeFailureText === 'function' ? sanitizeFailureText(text) : text;
+  return truncateUtf8(sanitized, ERROR_STACK_TEXT_LIMIT_BYTES);
 };
 
 const rootAndChildContext = (sessionId, context) => {
@@ -138,12 +157,14 @@ const errorMetadata = ({ error, sessionId, ownership, context, sanitizeFailureTe
   const messageContext = context?.message && typeof context.message === 'object' ? context.message : {};
   const errorName = safeString(error?.name) || 'UnknownError';
   const failureText = safeFailureText(data.message || error?.message || errorName, sanitizeFailureText);
+  const stack = safeStackText(data.stack || error?.stack, sanitizeFailureText);
   const providerId = safeString(data.providerID || data.providerId || messageContext.providerId);
   const modelId = safeString(messageContext.modelId);
   const agent = safeString(messageContext.agent);
   const messageId = safeString(messageContext.messageId);
   const errorCode = safeString(data.code, 160) || safeNumber(data.code);
   const statusCode = safeNumber(data.statusCode ?? data.status);
+  const failureKind = classifyProviderTransportFailure(errorName, failureText);
   return {
     kind: 'session',
     branch: ownership.branch_name,
@@ -155,8 +176,10 @@ const errorMetadata = ({ error, sessionId, ownership, context, sanitizeFailureTe
     errorName,
     ...(errorCode !== null ? { errorCode } : {}),
     ...(statusCode !== null ? { statusCode } : {}),
+    ...(failureKind ? { failureKind } : {}),
     ...(typeof data.isRetryable === 'boolean' ? { retryable: data.isRetryable } : {}),
     ...(failureText ? { failureText } : {}),
+    ...(stack ? { stack } : {}),
   };
 };
 
@@ -165,6 +188,9 @@ export const isProjectableOpenCodeActivity = (payload) => {
   if (payload.type === 'message.part.updated') {
     const part = payload.properties?.part;
     const status = typeof part?.state?.status === 'string' ? part.state.status.toLowerCase() : '';
+    if (part?.type === 'tool' && status === 'error' && isToolExecutionAbort(part.state?.error)) {
+      return false;
+    }
     return part?.type === 'tool' && Boolean(TOOL_ACTIONS[status]);
   }
   if (payload.type === 'session.diff' || FILE_EVENT_TYPES.has(payload.type)) return true;
@@ -191,12 +217,28 @@ export const projectOpenCodeActivity = ({
     const part = payload.properties?.part;
     if (!part || part.type !== 'tool') return null;
     const status = typeof part.state?.status === 'string' ? part.state.status.toLowerCase() : '';
+    if (status === 'error' && isToolExecutionAbort(part.state?.error)) return null;
     const action = TOOL_ACTIONS[status];
     const partId = safeString(part.id);
     const tool = safeString(part.tool, 160);
     if (!action || !partId || !tool) return null;
     const paths = [...collectPaths(assignment, part.state?.input, '', new Set(), 0, context?.activeDirectory)];
-    const failureText = status === 'error' ? safeFailureText(part.state?.error, sanitizeFailureText) : null;
+    const stateError = part.state?.error;
+    const errorCode = status === 'error' && typeof stateError === 'object' && stateError !== null
+      ? safeString(stateError.code, 160) || safeNumber(stateError.code)
+      : null;
+    const failureText = status === 'error'
+      ? rewriteContextModeWedgeFailureText({
+          tool,
+          failureText: safeFailureText(
+            typeof stateError === 'object' && stateError !== null ? stateError.message : stateError,
+            sanitizeFailureText,
+          ),
+        })
+      : null;
+    const stack = status === 'error' && typeof stateError === 'object' && stateError !== null
+      ? safeStackText(stateError.stack, sanitizeFailureText)
+      : null;
     const messageId = safeString(part.messageID || payload.properties?.messageID);
     const callId = safeString(part.callID);
     const messageContext = context?.message && typeof context.message === 'object' ? context.message : {};
@@ -212,16 +254,21 @@ export const projectOpenCodeActivity = ({
       ...(messageId ? { messageId } : {}),
       ...(callId ? { callId } : {}),
       ...(status === 'error' ? { toolId: partId, ...rootAndChildContext(sessionId, context) } : {}),
+      ...(errorCode !== null ? { errorCode } : {}),
       ...(providerId ? { providerId } : {}),
       ...(modelId ? { modelId } : {}),
       ...(agent ? { agent } : {}),
       ...(failureText ? { failureText } : {}),
+      ...(stack ? { stack } : {}),
       ...(paths.length > 0 ? { paths } : {}),
     };
     const classification = status === 'error'
       ? classifyDiagnosticFailure({ action, metadata })
       : null;
-    if (classification) metadata.failureClass = classification.failureClass;
+    if (classification) {
+      metadata.failureClass = classification.failureClass;
+      metadata.diagnosticDisposition = classification.disposition;
+    }
     return {
       dedupeKey: eventId || `tool:${sessionId}:${partId}:${status}`,
       action,
@@ -235,6 +282,7 @@ export const projectOpenCodeActivity = ({
         ...(classification ? {
           diagnosticImpact: classification.impact,
           diagnosticSource: classification.source,
+          diagnosticDisposition: classification.disposition,
         } : {}),
         metadata,
       },
@@ -251,6 +299,7 @@ export const projectOpenCodeActivity = ({
     const eventId = stableAuditEventId('session.error', sourceId);
     const classification = classifyDiagnosticFailure({ action: 'session.error', metadata });
     metadata.failureClass = classification.failureClass;
+    metadata.diagnosticDisposition = classification.disposition;
     return {
       dedupeKey: eventId,
       eventId,
@@ -264,6 +313,7 @@ export const projectOpenCodeActivity = ({
         success: false,
         diagnosticImpact: classification.impact,
         diagnosticSource: classification.source,
+        diagnosticDisposition: classification.disposition,
         metadata,
       },
     };
@@ -274,6 +324,7 @@ export const projectOpenCodeActivity = ({
     const taskId = safeString(managedTask.taskId);
     if (!taskId) return null;
     const failureText = safeFailureText(managedTask.failureReason, sanitizeFailureText);
+    const stack = safeStackText(managedTask.failureStack, sanitizeFailureText);
     const childSessionId = safeString(managedTask.childSessionId);
     const eventId = stableAuditEventId(
       'managed_task.failed',
@@ -299,9 +350,11 @@ export const projectOpenCodeActivity = ({
       ...(Number.isSafeInteger(managedTask.attempt) ? { attempt: managedTask.attempt } : {}),
       ...(typeof managedTask.partial === 'boolean' ? { partial: managedTask.partial } : {}),
       ...(failureText ? { failureText } : {}),
+      ...(stack ? { stack } : {}),
     };
     const classification = classifyDiagnosticFailure({ action: 'managed_task.failed', metadata });
     metadata.failureClass = classification.failureClass;
+    metadata.diagnosticDisposition = classification.disposition;
     return {
       dedupeKey: eventId,
       eventId,
@@ -315,6 +368,7 @@ export const projectOpenCodeActivity = ({
         success: false,
         diagnosticImpact: classification.impact,
         diagnosticSource: classification.source,
+        diagnosticDisposition: classification.disposition,
         metadata,
       },
     };

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import yaml from 'yaml';
 import { parse as parseJsonc } from 'jsonc-parser';
 import { readAuthFile } from './opencodeAuth';
@@ -1369,7 +1370,7 @@ export const createMcpConfig = (
   mcp[name] = buildMcpEntry(entryData);
   config.mcp = mcp;
   writeConfig(config, targetPath);
-  return { authReset: removeMcpAuthCacheEntry(name) };
+  return { changed: true, authReset: removeMcpAuthCacheEntry(name) };
 };
 
 export const updateMcpConfig = (name: string, updates: Record<string, unknown>, workingDirectory?: string) => {
@@ -1382,12 +1383,18 @@ export const updateMcpConfig = (name: string, updates: Record<string, unknown>, 
 
   const { name: _ignoredName, ...updateData } = updates;
   void _ignoredName;
+  const currentEntry = buildMcpEntry(existing as Record<string, unknown>);
   const nextEntry = buildMcpEntry({ ...(existing as Record<string, unknown>), ...updateData });
-  const shouldResetAuth = didMcpAuthIdentityChange(existing as Record<string, unknown>, nextEntry as Record<string, unknown>);
+  if (isDeepStrictEqual(currentEntry, nextEntry)) {
+    return { changed: false, authReset: { ok: true, removed: false } };
+  }
+
+  const shouldResetAuth = didMcpAuthIdentityChange(currentEntry, nextEntry as Record<string, unknown>);
   mcp[name] = nextEntry;
   config.mcp = mcp;
   writeConfig(config, targetPath);
   return {
+    changed: true,
     authReset: shouldResetAuth
       ? removeMcpAuthCacheEntry(name)
       : { ok: true, removed: false },
@@ -1422,7 +1429,7 @@ export const deleteMcpConfig = (name: string, workingDirectory?: string) => {
     writeConfig(config, targetPath);
   }
   markMcpRecoveryDeleted(name);
-  return { authReset: removeMcpAuthCacheEntry(name) };
+  return { changed: true, authReset: removeMcpAuthCacheEntry(name) };
 };
 
 const splitMcpCommand = (value: string): string[] =>
@@ -2152,17 +2159,8 @@ const applyRuntimeAgentOverride = (
     { ...frontmatter },
     runtimeExternalDirectories,
   );
-  const shouldApplySkillPolicy = Boolean(skillPolicy) && (
-    agent.scope === AGENT_SCOPE.PACKAGED
-    || (
-      agent.scope === AGENT_SCOPE.PROJECT
-      && isPlainObject(frontmatterWithRuntimeDirectories.permission)
-      && (
-        frontmatterWithRuntimeDirectories.permission.skill === 'allow'
-        || isPlainObject(frontmatterWithRuntimeDirectories.permission.skill)
-      )
-    )
-  );
+  const shouldApplySkillPolicy = Boolean(skillPolicy)
+    && (agent.scope === AGENT_SCOPE.PACKAGED || agent.scope === AGENT_SCOPE.PROJECT);
   const next = shouldApplySkillPolicy
     ? sanitizeAgentSkillPolicy(frontmatterWithRuntimeDirectories, skillPolicy)
     : frontmatterWithRuntimeDirectories;
@@ -2440,14 +2438,7 @@ export const syncRuntimeAgentOverlays = (
     ...Array.from(baseAgents.values())
       .filter((agent) => (
         agent.scope === AGENT_SCOPE.PACKAGED
-        || (
-          agent.scope === AGENT_SCOPE.PROJECT
-          && isPlainObject(agent.permission)
-          && (
-            agent.permission.skill === 'allow'
-            || isPlainObject(agent.permission.skill)
-          )
-        )
+        || agent.scope === AGENT_SCOPE.PROJECT
         || (isPlainObject(agent.permission) && runtimeExternalDirectories.length > 0)
       ))
       .map((agent) => agent.name),
@@ -2829,6 +2820,7 @@ export const updateCommand = (commandName: string, updates: Record<string, unkno
 
   let mdModified = false;
   let jsonModified = false;
+  let promptFileModified = false;
   const creatingNewMd = isBuiltinOverride;
 
   for (const [field, value] of Object.entries(updates || {})) {
@@ -2836,7 +2828,7 @@ export const updateCommand = (commandName: string, updates: Record<string, unkno
       const normalizedValue = typeof value === 'string' ? value : value == null ? '' : String(value);
 
       if (mdExists || creatingNewMd) {
-        if (mdData) {
+        if (mdData && mdData.body !== normalizedValue) {
           mdData.body = normalizedValue;
           mdModified = true;
         }
@@ -2846,15 +2838,23 @@ export const updateCommand = (commandName: string, updates: Record<string, unkno
       if (isPromptFileReference(jsonSection?.template)) {
         const templateFilePath = resolvePromptFilePath(jsonSection.template);
         if (!templateFilePath) throw new Error(`Invalid template file reference for command ${commandName}`);
-        writePromptFile(templateFilePath, normalizedValue);
+        const currentTemplate = fs.existsSync(templateFilePath)
+          ? fs.readFileSync(templateFilePath, 'utf8')
+          : null;
+        if (currentTemplate !== normalizedValue) {
+          writePromptFile(templateFilePath, normalizedValue);
+          promptFileModified = true;
+        }
         continue;
       }
 
       // For JSON-only commands, store template inline in JSON
-      if (!config.command) config.command = {};
-      const current = ((config.command as Record<string, unknown>)[commandName] as Record<string, unknown> | undefined) ?? {};
-      (config.command as Record<string, unknown>)[commandName] = { ...current, template: normalizedValue };
-      jsonModified = true;
+      if (!isDeepStrictEqual(jsonSection?.template, normalizedValue)) {
+        if (!config.command) config.command = {};
+        const current = ((config.command as Record<string, unknown>)[commandName] as Record<string, unknown> | undefined) ?? {};
+        (config.command as Record<string, unknown>)[commandName] = { ...current, template: normalizedValue };
+        jsonModified = true;
+      }
       continue;
     }
 
@@ -2863,15 +2863,17 @@ export const updateCommand = (commandName: string, updates: Record<string, unkno
 
     // JSON takes precedence over md, so update JSON first if field exists there
     if (hasJsonField) {
-      if (!config.command) config.command = {};
-      const current = ((config.command as Record<string, unknown>)[commandName] as Record<string, unknown> | undefined) ?? {};
-      (config.command as Record<string, unknown>)[commandName] = { ...current, [field]: value };
-      jsonModified = true;
+      if (!isDeepStrictEqual(jsonSection?.[field], value)) {
+        if (!config.command) config.command = {};
+        const current = ((config.command as Record<string, unknown>)[commandName] as Record<string, unknown> | undefined) ?? {};
+        (config.command as Record<string, unknown>)[commandName] = { ...current, [field]: value };
+        jsonModified = true;
+      }
       continue;
     }
 
     if (hasMdField || creatingNewMd) {
-      if (mdData) {
+      if (mdData && !isDeepStrictEqual(mdData.frontmatter[field], value)) {
         mdData.frontmatter[field] = value;
         mdModified = true;
       }
@@ -2880,13 +2882,17 @@ export const updateCommand = (commandName: string, updates: Record<string, unkno
 
     // New field - add to appropriate location based on command source
     if ((mdExists || creatingNewMd) && mdData) {
-      mdData.frontmatter[field] = value;
-      mdModified = true;
+      if (!isDeepStrictEqual(mdData.frontmatter[field], value)) {
+        mdData.frontmatter[field] = value;
+        mdModified = true;
+      }
     } else {
-      if (!config.command) config.command = {};
-      const current = ((config.command as Record<string, unknown>)[commandName] as Record<string, unknown> | undefined) ?? {};
-      (config.command as Record<string, unknown>)[commandName] = { ...current, [field]: value };
-      jsonModified = true;
+      if (!isDeepStrictEqual(jsonSection?.[field], value)) {
+        if (!config.command) config.command = {};
+        const current = ((config.command as Record<string, unknown>)[commandName] as Record<string, unknown> | undefined) ?? {};
+        (config.command as Record<string, unknown>)[commandName] = { ...current, [field]: value };
+        jsonModified = true;
+      }
     }
   }
 
@@ -2897,6 +2903,8 @@ export const updateCommand = (commandName: string, updates: Record<string, unkno
   if (jsonModified) {
     writeConfig(config, jsonTarget.path || CONFIG_FILE);
   }
+
+  return mdModified || jsonModified || promptFileModified;
 };
 
 export const getProviderSources = (providerId: string, workingDirectory?: string) => {
@@ -3382,48 +3390,6 @@ export const discoverSkills = (workingDirectory?: string): DiscoveredSkill[] => 
     }
   }
 
-  // 4) Additional config.skills.paths
-  let configuredPaths: unknown[] = [];
-  try {
-    const config = readConfig(workingDirectory);
-    const skillsConfig = isPlainObject(config.skills) ? config.skills : null;
-    configuredPaths = Array.isArray(skillsConfig?.paths) ? skillsConfig.paths : [];
-  } catch {
-    configuredPaths = [];
-  }
-  for (const skillPath of configuredPaths) {
-    if (typeof skillPath !== 'string' || !skillPath.trim()) continue;
-    const expanded = skillPath.startsWith('~/')
-      ? path.join(os.homedir(), skillPath.slice(2))
-      : skillPath;
-    const resolved = path.isAbsolute(expanded)
-      ? path.resolve(expanded)
-      : path.resolve(workingDirectory || process.cwd(), expanded);
-    for (const skillMdPath of walkSkillMdFiles(resolved)) {
-      addSkillFromMdFile(skills, skillMdPath, SKILL_SCOPE.PROJECT, 'opencode');
-    }
-  }
-
-  // 5) Cached skills from config.skills.urls pulls (best-effort, no network)
-  const cacheCandidates: string[] = [];
-  if (process.env.XDG_CACHE_HOME) {
-    cacheCandidates.push(path.join(process.env.XDG_CACHE_HOME, 'opencode', 'skills'));
-  }
-  cacheCandidates.push(path.join(os.homedir(), '.cache', 'opencode', 'skills'));
-  cacheCandidates.push(path.join(os.homedir(), 'Library', 'Caches', 'opencode', 'skills'));
-
-  for (const cacheRoot of cacheCandidates) {
-    if (!fs.existsSync(cacheRoot)) continue;
-    const entries = fs.readdirSync(cacheRoot, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const skillRoot = path.join(cacheRoot, entry.name);
-      for (const skillMdPath of walkSkillMdFiles(skillRoot)) {
-        addSkillFromMdFile(skills, skillMdPath, SKILL_SCOPE.USER, 'opencode');
-      }
-    }
-  }
-
   return Array.from(skills.values()).filter((skill) => !isRetiredDevRyanSkillName(skill?.name));
 };
 
@@ -3612,7 +3578,7 @@ export const updateSkill = (
   updates: Record<string, unknown>,
   workingDirectory?: string,
   discoveredSkill?: DiscoveredSkill | null,
-): void => {
+): boolean => {
   const existing = discoveredSkill?.name === skillName && discoveredSkill.path
     ? { scope: discoveredSkill.scope, path: discoveredSkill.path, source: discoveredSkill.source }
     : getSkillScope(skillName, workingDirectory);
@@ -3624,35 +3590,49 @@ export const updateSkill = (
   const mdDir = path.dirname(mdPath);
   const mdData = parseMdFile(mdPath);
   let mdModified = false;
+  let supportingFilesModified = false;
   
   for (const [field, value] of Object.entries(updates || {})) {
     if (field === 'scope') continue;
     
     if (field === 'instructions') {
       const normalizedValue = typeof value === 'string' ? value : value == null ? '' : String(value);
-      mdData.body = normalizedValue;
-      mdModified = true;
+      if (mdData.body !== normalizedValue) {
+        mdData.body = normalizedValue;
+        mdModified = true;
+      }
       continue;
     }
     
     if (field === 'supportingFiles' && Array.isArray(value)) {
       for (const file of value as Array<{ delete?: boolean; path?: string; content?: string }>) {
         if (file.delete && file.path) {
-          deleteSkillSupportingFile(mdDir, file.path);
+          if (readSkillSupportingFile(mdDir, file.path) !== null) {
+            deleteSkillSupportingFile(mdDir, file.path);
+            supportingFilesModified = true;
+          }
         } else if (file.path && file.content !== undefined) {
-          writeSkillSupportingFile(mdDir, file.path, file.content);
+          const currentContent = readSkillSupportingFile(mdDir, file.path);
+          if (currentContent !== file.content) {
+            writeSkillSupportingFile(mdDir, file.path, file.content);
+            supportingFilesModified = true;
+          }
         }
       }
       continue;
     }
     
-    mdData.frontmatter[field] = value;
-    mdModified = true;
+    if (!isDeepStrictEqual(mdData.frontmatter[field], value)) {
+      mdData.frontmatter[field] = value;
+      mdModified = true;
+    }
   }
   
   if (mdModified) {
     writeMdFile(mdPath, mdData.frontmatter, mdData.body);
   }
+
+  return mdModified || supportingFilesModified;
 };
 
 export const deleteSkill = (skillName: string, workingDirectory?: string, discoveredSkill?: DiscoveredSkill | null): void => {

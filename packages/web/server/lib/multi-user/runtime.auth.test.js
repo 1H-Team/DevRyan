@@ -1,12 +1,50 @@
 import crypto from 'node:crypto';
+import { execFile } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createMultiUserRuntime } from './runtime.js';
 import { createSessionVault } from './vault.js';
 import { getOpenCodeDataPath } from '../git/service.js';
+
+const execFileAsync = promisify(execFile);
+
+const git = async (cwd, ...args) => {
+  await execFileAsync('git', args, { cwd });
+};
+
+const createGitRepo = async () => {
+  const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-managed-repo-'));
+  temporaryDirectories.push(repoRoot);
+  await git(repoRoot, 'init', '-b', 'main');
+  await git(repoRoot, 'config', 'user.name', 'DevRyan Test');
+  await git(repoRoot, 'config', 'user.email', 'devryan@example.test');
+  await fs.writeFile(path.join(repoRoot, 'README.md'), 'test\n');
+  await git(repoRoot, 'add', 'README.md');
+  await git(repoRoot, 'commit', '-m', 'test: init');
+  return fs.realpath(repoRoot);
+};
+
+const createIntegrateWorktree = async (repoRoot) => {
+  const worktreePath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-integrate-'));
+  temporaryDirectories.push(worktreePath);
+  await fs.rm(worktreePath, { recursive: true, force: true });
+  await git(repoRoot, 'worktree', 'add', '--detach', worktreePath);
+  return fs.realpath(worktreePath);
+};
+
+const registerAdminRoutes = (harness, extras = {}) => {
+  const handlers = new Map();
+  const app = Object.fromEntries(['get', 'post', 'put', 'patch', 'delete', 'use'].map((method) => [
+    method,
+    (route, handler) => handlers.set(`${method.toUpperCase()} ${route}`, handler),
+  ]));
+  harness.runtime.registerRoutes(app, extras);
+  return handlers;
+};
 
 const USER_IDS = {
   developer: '11111111-1111-4111-8111-111111111111',
@@ -189,6 +227,8 @@ const createHarness = async ({
   const mutableOwnershipRows = ownershipRows.map((row) => ({ ...row }));
   const mutableOpenCodeSessions = openCodeSessions.map((session) => structuredClone(session));
   const mutableActivityRows = activityRows.map((row) => structuredClone(row));
+  const mutableAccessRows = accessRows;
+  const mutableBranchRows = branchRows;
   const projectsById = new Map(projects.map((project) => [project.id, { ...project }]));
   const githubAccountsById = new Map(githubAccounts.map((account) => [account.accountId, structuredClone(account)]));
 
@@ -320,7 +360,7 @@ const createHarness = async ({
       }
       if (previousProfile && previousProfile.id !== targetUserId) previousProfile.github_account_id = null;
       if (targetProfile && previousProfile?.id !== targetUserId) targetProfile.github_account_id = accountId;
-      for (const access of accessRows) {
+      for (const access of mutableAccessRows) {
         const profile = profileById(access.user_id);
         access.github_account_id = profile?.github_account_id || null;
       }
@@ -395,7 +435,16 @@ const createHarness = async ({
         if (ownershipArchiveUnavailable && body?.archived_at) {
           return jsonResponse({ message: 'ownership temporarily unavailable' }, 503);
         }
-        for (const row of matching) Object.assign(row, body);
+        const userIdFilter = url.searchParams.get('user_id');
+        const projectIdFilter = url.searchParams.get('project_id');
+        const archivedFilter = url.searchParams.get('archived_at');
+        for (const row of mutableOwnershipRows) {
+          const sessionMatches = !sessionFilter || row.session_id === sessionFilter.replace(/^eq\./, '');
+          const userMatches = !userIdFilter || row.user_id === userIdFilter.replace(/^eq\./, '');
+          const projectMatches = !projectIdFilter || row.project_id === projectIdFilter.replace(/^eq\./, '');
+          const archivedMatches = archivedFilter !== 'is.null' || !row.archived_at;
+          if (sessionMatches && userMatches && projectMatches && archivedMatches) Object.assign(row, body);
+        }
         return jsonResponse([]);
       }
       return jsonResponse(matching);
@@ -460,11 +509,25 @@ const createHarness = async ({
     }
     if (table === 'managed_projects') {
       const idFilter = url.searchParams.get('id');
-      const matching = [...projectsById.values()].filter((project) => (
-        !idFilter
-        || (idFilter.startsWith('eq.') && project.id === idFilter.slice(3))
-        || (idFilter.startsWith('in.(') && idFilter.slice(4, -1).split(',').includes(project.id))
-      ));
+      const statusFilter = url.searchParams.get('status');
+      const pathFilter = url.searchParams.get('repository_path');
+      const matching = [...projectsById.values()].filter((project) => {
+        if (idFilter?.startsWith('eq.') && project.id !== idFilter.slice(3)) return false;
+        if (idFilter?.startsWith('in.(') && !idFilter.slice(4, -1).split(',').includes(project.id)) return false;
+        if (statusFilter?.startsWith('eq.') && project.status !== statusFilter.slice(3)) return false;
+        if (pathFilter?.startsWith('eq.') && project.repository_path !== pathFilter.slice(3)) return false;
+        return true;
+      });
+      if (method === 'POST') {
+        const project = {
+          id: body?.id || crypto.randomUUID(),
+          status: 'active',
+          remote_url: null,
+          ...body,
+        };
+        projectsById.set(project.id, project);
+        return jsonResponse([project]);
+      }
       if (method === 'PATCH') {
         const project = matching[0];
         if (!project) return jsonResponse([]);
@@ -476,11 +539,82 @@ const createHarness = async ({
     }
     if (table === 'user_project_access') {
       const userId = url.searchParams.get('user_id')?.replace(/^eq\./, '');
-      return jsonResponse(accessRows.filter((row) => !userId || row.user_id === userId));
+      const projectId = url.searchParams.get('project_id')?.replace(/^eq\./, '');
+      const defaultFilter = url.searchParams.get('is_default');
+      const matching = mutableAccessRows.filter((row) => (
+        (!userId || row.user_id === userId)
+        && (!projectId || row.project_id === projectId)
+        && (defaultFilter !== 'eq.true' || row.is_default === true)
+      ));
+      if (method === 'POST') {
+        const index = mutableAccessRows.findIndex((row) => (
+          row.user_id === body.user_id && row.project_id === body.project_id
+        ));
+        if (index >= 0) mutableAccessRows[index] = { ...mutableAccessRows[index], ...body };
+        else mutableAccessRows.push({ ...body });
+        return jsonResponse([]);
+      }
+      if (method === 'PATCH') {
+        for (const row of matching) Object.assign(row, body);
+        return jsonResponse([]);
+      }
+      if (method === 'DELETE') {
+        for (let index = mutableAccessRows.length - 1; index >= 0; index -= 1) {
+          const row = mutableAccessRows[index];
+          if ((!userId || row.user_id === userId) && (!projectId || row.project_id === projectId)) {
+            mutableAccessRows.splice(index, 1);
+            for (let branchIndex = mutableBranchRows.length - 1; branchIndex >= 0; branchIndex -= 1) {
+              const branch = mutableBranchRows[branchIndex];
+              if (branch.user_id === row.user_id && branch.project_id === row.project_id) {
+                mutableBranchRows.splice(branchIndex, 1);
+              }
+            }
+          }
+        }
+        return jsonResponse([]);
+      }
+      return jsonResponse(matching);
     }
     if (table === 'user_project_branches') {
       const userId = url.searchParams.get('user_id')?.replace(/^eq\./, '');
-      return jsonResponse(branchRows.filter((row) => !userId || row.user_id === userId));
+      const projectId = url.searchParams.get('project_id')?.replace(/^eq\./, '');
+      const branchName = url.searchParams.get('branch_name');
+      const defaultFilter = url.searchParams.get('is_default');
+      const matching = mutableBranchRows.filter((row) => {
+        if (userId && row.user_id !== userId) return false;
+        if (projectId && row.project_id !== projectId) return false;
+        if (defaultFilter === 'eq.true' && row.is_default !== true) return false;
+        if (branchName?.startsWith('eq.') && row.branch_name !== branchName.slice(3)) return false;
+        if (branchName?.startsWith('in.(') && !branchName.slice(4, -1).split(',').includes(row.branch_name)) return false;
+        return true;
+      });
+      if (method === 'POST') {
+        const index = mutableBranchRows.findIndex((row) => (
+          row.user_id === body.user_id
+          && row.project_id === body.project_id
+          && row.branch_name === body.branch_name
+        ));
+        if (index >= 0) mutableBranchRows[index] = { ...mutableBranchRows[index], ...body };
+        else mutableBranchRows.push({ ...body });
+        return jsonResponse([]);
+      }
+      if (method === 'PATCH') {
+        for (const row of matching) Object.assign(row, body);
+        return jsonResponse([]);
+      }
+      if (method === 'DELETE') {
+        for (let index = mutableBranchRows.length - 1; index >= 0; index -= 1) {
+          const row = mutableBranchRows[index];
+          const keep = matching.every((match) => (
+            match.user_id !== row.user_id
+            || match.project_id !== row.project_id
+            || match.branch_name !== row.branch_name
+          ));
+          if (!keep) mutableBranchRows.splice(index, 1);
+        }
+        return jsonResponse([]);
+      }
+      return jsonResponse(matching);
     }
     if (table === 'user_policies') {
       const userId = url.searchParams.get('user_id')?.replace(/^eq\./, '');
@@ -558,6 +692,8 @@ const createHarness = async ({
     onManagedSessionOwnershipCommitted,
     openCodeDeleteRequests,
     projectsById,
+    getAccessRows: () => mutableAccessRows.map((row) => ({ ...row })),
+    getBranchRows: () => mutableBranchRows.map((row) => ({ ...row })),
     setAppSessionUnavailable(value) { appSessionUnavailable = value; },
     setOwnershipArchiveUnavailable(value) { ownershipArchiveUnavailable = value; },
     setOpenCodeDeleteUnavailable(value) { openCodeDeleteUnavailable = value; },
@@ -2633,6 +2769,241 @@ describe('multi-user authentication runtime', () => {
     }, forbiddenResponse);
     expect(forbiddenResponse.statusCode).toBe(403);
     expect(harness.onManagedProjectMetadataChanged).toHaveBeenCalledTimes(3);
+  });
+
+  it('unregisters a managed project, drops grants, and hides it from the admin list', async () => {
+    const repositoryPath = await createGitRepo();
+    const project = {
+      id: '33333333-3333-4333-8333-333333333333',
+      label: 'Leftover Integrate',
+      repository_path: repositoryPath,
+      remote_url: null,
+      default_branch: 'main',
+      status: 'active',
+    };
+    const harness = await createHarness({
+      signedInRole: 'admin',
+      projects: [project],
+      accessRows: [
+        { user_id: USER_IDS.admin, project_id: project.id, is_default: true, github_account_id: null },
+        { user_id: USER_IDS.developer, project_id: project.id, is_default: true, github_account_id: null },
+      ],
+      branchRows: [
+        {
+          user_id: USER_IDS.admin,
+          project_id: project.id,
+          branch_name: 'main',
+          workspace_path: repositoryPath,
+          is_default: true,
+        },
+        {
+          user_id: USER_IDS.developer,
+          project_id: project.id,
+          branch_name: 'main',
+          workspace_path: repositoryPath,
+          is_default: true,
+        },
+      ],
+      ownershipRows: [{
+        session_id: 'session-leftover',
+        user_id: USER_IDS.admin,
+        project_id: project.id,
+        branch_name: 'main',
+        public_directory: repositoryPath,
+        archived_at: null,
+      }],
+    });
+    const login = await passwordLogin(harness, { role: 'admin' });
+    const handlers = registerAdminRoutes(harness, {
+      buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
+      getOpenCodeAuthHeaders: () => ({}),
+    });
+    const principal = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
+
+    const unregisterResponse = makeResponse();
+    await handlers.get('DELETE /api/admin/projects/:projectId')({
+      params: { projectId: project.id },
+      principal,
+    }, unregisterResponse);
+    expect(unregisterResponse.statusCode).toBe(200);
+    expect(unregisterResponse.payload).toEqual({
+      removed: true,
+      archived: true,
+      projectId: project.id,
+      userCount: 2,
+    });
+    expect(harness.projectsById.get(project.id)?.status).toBe('archived');
+    expect(harness.getAccessRows()).toEqual([]);
+    expect(harness.getBranchRows()).toEqual([]);
+    expect(harness.getOwnership('session-leftover')?.archived_at).toBeTruthy();
+    expect(harness.onManagedProjectMetadataChanged).toHaveBeenCalledWith(project.id);
+    await expect(waitForAudit(harness, 'project.unregistered', project.id)).resolves.toEqual(
+      expect.objectContaining({ action: 'project.unregistered', project_id: project.id }),
+    );
+
+    const listResponse = makeResponse();
+    await handlers.get('GET /api/admin/projects')({ principal }, listResponse);
+    expect(listResponse.statusCode).toBe(200);
+    expect(listResponse.payload.projects).toEqual([]);
+
+    const sessionResponse = makeResponse();
+    await handlers.get('POST /api/session')({
+      ...makeRequest({
+        body: { directory: repositoryPath },
+        method: 'POST',
+        path: '/api/session',
+        csrf: true,
+      }),
+      originalUrl: '/api/session',
+      principal: {
+        scope: 'managed',
+        id: USER_IDS.admin,
+        role: 'admin',
+        assignments: [],
+      },
+    }, sessionResponse, vi.fn());
+    expect(sessionResponse.statusCode).not.toBe(200);
+    expect([...harness.projectsById.values()].filter((entry) => entry.status === 'active')).toEqual([]);
+  });
+
+  it('rejects git-integrate temp directories and binds conflict sessions to the parent project', async () => {
+    const repoRoot = await createGitRepo();
+    const worktreePath = await createIntegrateWorktree(repoRoot);
+    const project = {
+      id: '44444444-4444-4444-8444-444444444444',
+      label: 'Parent Repo',
+      repository_path: repoRoot,
+      remote_url: null,
+      default_branch: 'main',
+      status: 'active',
+    };
+    const harness = await createHarness({
+      signedInRole: 'admin',
+      projects: [project],
+      accessRows: [{ user_id: USER_IDS.admin, project_id: project.id, is_default: true, github_account_id: null }],
+      branchRows: [{
+        user_id: USER_IDS.admin,
+        project_id: project.id,
+        branch_name: 'main',
+        workspace_path: repoRoot,
+        is_default: true,
+      }],
+    });
+    const login = await passwordLogin(harness, { role: 'admin' });
+    const handlers = registerAdminRoutes(harness, {
+      buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
+      getOpenCodeAuthHeaders: () => ({}),
+    });
+    const principal = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
+
+    const rejectResponse = makeResponse();
+    await handlers.get('POST /api/admin/projects')({
+      body: { repositoryPath: worktreePath, defaultBranch: 'main', label: 'Temp' },
+      principal,
+    }, rejectResponse);
+    expect(rejectResponse.statusCode).toBe(400);
+    expect(rejectResponse.payload.error).toMatch(/temp directories cannot be registered/i);
+
+    const sessionResponse = makeResponse();
+    await handlers.get('POST /api/session')({
+      ...makeRequest({
+        body: { directory: worktreePath },
+        method: 'POST',
+        path: '/api/session',
+        csrf: true,
+      }),
+      originalUrl: '/api/session',
+      principal: {
+        scope: 'managed',
+        id: USER_IDS.admin,
+        role: 'admin',
+        githubAccountId: null,
+        assignments: [],
+      },
+    }, sessionResponse, vi.fn());
+    expect(sessionResponse.statusCode).toBe(200);
+    expect(harness.getOwnership(sessionResponse.payload.id)).toEqual(expect.objectContaining({
+      user_id: USER_IDS.admin,
+      project_id: project.id,
+      public_directory: repoRoot,
+    }));
+    expect([...harness.projectsById.values()]).toHaveLength(1);
+    expect(harness.projectsById.get(project.id)?.repository_path).toBe(repoRoot);
+  });
+
+  it('does not register a git-integrate temp directory when the parent repo is unregistered', async () => {
+    const repoRoot = await createGitRepo();
+    const worktreePath = await createIntegrateWorktree(repoRoot);
+    const harness = await createHarness({ signedInRole: 'admin' });
+    const handlers = registerAdminRoutes(harness, {
+      buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
+      getOpenCodeAuthHeaders: () => ({}),
+    });
+    const sessionResponse = makeResponse();
+    await handlers.get('POST /api/session')({
+      ...makeRequest({
+        body: { directory: worktreePath },
+        method: 'POST',
+        path: '/api/session',
+        csrf: true,
+      }),
+      originalUrl: '/api/session',
+      principal: {
+        scope: 'managed',
+        id: USER_IDS.admin,
+        role: 'admin',
+        githubAccountId: null,
+        assignments: [],
+      },
+    }, sessionResponse, vi.fn());
+    expect(sessionResponse.statusCode).not.toBe(200);
+    expect(harness.projectsById.size).toBe(0);
+    expect(harness.getOwnership(sessionResponse.payload?.id || 'created-session-1')).toBeNull();
+  });
+
+  it('restores an archived managed project when the same path is registered again', async () => {
+    const repositoryPath = await fs.mkdtemp(path.join(os.tmpdir(), 'devryan-restore-project-'));
+    temporaryDirectories.push(repositoryPath);
+    const project = {
+      id: '55555555-5555-4555-8555-555555555555',
+      label: 'Old Label',
+      repository_path: repositoryPath,
+      remote_url: null,
+      default_branch: 'main',
+      status: 'archived',
+    };
+    const harness = await createHarness({
+      signedInRole: 'admin',
+      projects: [project],
+    });
+    const login = await passwordLogin(harness, { role: 'admin' });
+    const handlers = registerAdminRoutes(harness);
+    const principal = await harness.runtime.resolvePrincipal(makeRequest({ cookie: login.cookie }));
+
+    const restoreResponse = makeResponse();
+    await handlers.get('POST /api/admin/projects')({
+      body: {
+        repositoryPath,
+        defaultBranch: 'develop',
+        label: 'Restored',
+        remoteUrl: 'https://github.com/example/restored.git',
+      },
+      principal,
+    }, restoreResponse);
+    expect(restoreResponse.statusCode).toBe(201);
+    expect(restoreResponse.payload.restored).toBe(true);
+    expect(restoreResponse.payload.project).toEqual(expect.objectContaining({
+      id: project.id,
+      label: 'Restored',
+      status: 'active',
+      default_branch: 'develop',
+    }));
+
+    const listResponse = makeResponse();
+    await handlers.get('GET /api/admin/projects')({ principal }, listResponse);
+    expect(listResponse.payload.projects).toEqual([
+      expect.objectContaining({ id: project.id, status: 'active' }),
+    ]);
   });
 
   it('starts in a fail-closed degraded state and preserves the local ownership index during an outage', async () => {

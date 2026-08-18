@@ -62,6 +62,7 @@ export const buildResult = ({
   usage,
   error,
   errorCode,
+  warnings,
   usageUpdatedAt,
 }) => ({
   providerId,
@@ -71,6 +72,7 @@ export const buildResult = ({
   usage: usage ?? null,
   ...(error ? { error } : {}),
   ...(errorCode ? { errorCode } : {}),
+  ...(Array.isArray(warnings) && warnings.length > 0 ? { warnings } : {}),
   ...(typeof usageUpdatedAt === 'number' && Number.isFinite(usageUpdatedAt) ? { usageUpdatedAt } : {}),
   fetchedAt: Date.now()
 });

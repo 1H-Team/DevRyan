@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createProjectPreviewInstancesRuntime,
@@ -47,6 +47,9 @@ const createRuntime = ({
   resolveManagedProjectForDirectory,
 } = {}) => {
   const sessions = new Map();
+  const touchSession = vi.fn((sessionId, ownerUserId) => (
+    sessions.get(sessionId)?.ownerUserId === ownerUserId
+  ));
   const runtime = createProjectPreviewInstancesRuntime({
     crypto,
     fs,
@@ -57,10 +60,11 @@ const createRuntime = ({
     ...(resolveManagedProjectForDirectory ? { resolveManagedProjectForDirectory } : {}),
     getTerminalRuntime: () => ({
       getSessionDescriptor: (sessionId) => sessions.get(sessionId) ?? null,
+      touchSession,
     }),
   });
   runtimes.push(runtime);
-  return { runtime, sessions };
+  return { runtime, sessions, touchSession };
 };
 
 afterEach(() => {
@@ -117,6 +121,30 @@ describe('project preview grants', () => {
     });
     expect(registered.ok).toBe(true);
     expect(runtime.getSnapshot()).toHaveLength(1);
+  });
+
+  it('renews the source terminal when a reachable preview registers and refreshes', async () => {
+    const { runtime, sessions, touchSession } = createRuntime();
+    sessions.set('terminal-1', {
+      sessionId: 'terminal-1',
+      cwd: projectDirectory,
+      ownerUserId: 'owner',
+    });
+
+    const registered = await runtime.register({
+      principal: principal('owner'),
+      directory: projectDirectory,
+      terminalSessionId: 'terminal-1',
+      url: 'http://localhost:4173',
+    });
+    expect(registered.ok).toBe(true);
+    expect(touchSession).toHaveBeenLastCalledWith('terminal-1', 'owner');
+
+    touchSession.mockClear();
+    const listed = await runtime.list({ principal: principal('viewer'), directory: projectDirectory });
+    expect(listed.instances).toHaveLength(1);
+    expect(touchSession).toHaveBeenCalledOnce();
+    expect(touchSession).toHaveBeenLastCalledWith('terminal-1', 'owner');
   });
 
   it('shares live grants inside one project but not across project identities', async () => {
@@ -182,7 +210,7 @@ describe('project preview grants', () => {
   });
 
   it('rejects unreachable registrations', async () => {
-    const { runtime, sessions } = createRuntime({ reachable: false });
+    const { runtime, sessions, touchSession } = createRuntime({ reachable: false });
     sessions.set('terminal-1', {
       sessionId: 'terminal-1',
       cwd: projectDirectory,
@@ -196,6 +224,7 @@ describe('project preview grants', () => {
     });
     expect(result).toMatchObject({ ok: false, status: 422 });
     expect(runtime.getSnapshot()).toEqual([]);
+    expect(touchSession).not.toHaveBeenCalled();
   });
 
   it('removes an existing grant after a failed liveness check', async () => {
@@ -236,6 +265,29 @@ describe('project preview grants', () => {
     const result = await runtime.list({ principal: principal('viewer'), directory: projectDirectory });
     expect(result).toMatchObject({ ok: true, instances: [] });
     expect(runtime.getSnapshot()).toEqual([]);
+  });
+
+  it('removes a grant when terminal renewal loses a race with closure', async () => {
+    const { runtime, sessions, touchSession } = createRuntime();
+    sessions.set('terminal-1', {
+      sessionId: 'terminal-1',
+      cwd: projectDirectory,
+      ownerUserId: 'owner',
+    });
+    const removed = [];
+    runtime.setGrantRemovalHandler((grant) => removed.push(grant));
+    await runtime.register({
+      principal: principal('owner'),
+      directory: projectDirectory,
+      terminalSessionId: 'terminal-1',
+      url: 'http://localhost:4173',
+    });
+
+    touchSession.mockReturnValue(false);
+    const result = await runtime.list({ principal: principal('viewer'), directory: projectDirectory });
+    expect(result).toMatchObject({ ok: true, instances: [] });
+    expect(runtime.getSnapshot()).toEqual([]);
+    expect(removed.at(-1)?.reason).toBe('terminal-closed');
   });
 
   it('coalesces concurrent project reads onto one liveness refresh', async () => {

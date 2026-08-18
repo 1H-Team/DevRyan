@@ -73,6 +73,7 @@ describe('web managed OpenCode executor transport', () => {
       tools: {
         'resend_*': false,
         'mcp__resend__*': false,
+        task: false,
       },
       parts: [{ type: 'text', text: 'Inspect the project.' }],
     });
@@ -169,6 +170,7 @@ describe('web managed OpenCode executor transport', () => {
       agent: 'fixer',
       model: { providerID: 'github-copilot', modelID: 'gpt-4.1' },
       variant: 'high',
+      tools: { task: false },
       parts: [{ type: 'text', text: MANAGED_TRANSIENT_TRANSPORT_CONTINUATION_PROMPT }],
     });
     // OpenCode must mint the id. A task-derived one is not ordered like an
@@ -274,6 +276,7 @@ describe('web managed OpenCode executor transport', () => {
         model: { providerID: 'cursor-acp', modelID: 'composer-2' },
         variant: 'fast',
         parts: [{ type: 'text', text: 'Implement the change.' }],
+        tools: { task: false },
       },
     });
     expect(await executor.abort({ ...task, childSessionId })).toEqual({ aborted: true });

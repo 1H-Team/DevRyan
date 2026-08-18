@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -147,6 +147,61 @@ describe('worktree bootstrap compatibility status', () => {
 
     expect(await readFile(join(worktree, 'tracked.txt'), 'utf8')).toBe('initial\n');
     expect(await runtime.getReceipt(receipt.operationId)).toMatchObject({ status: 'ready' });
+  });
+
+  it.skipIf(process.platform === 'win32')('runs a populated worktree post-checkout hook exactly once', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'openchamber-bootstrap-hook-'));
+    tempDirs.push(directory);
+    const git = simpleGit(directory);
+    await git.init();
+    await git.addConfig('user.name', 'DevRyan Test');
+    await git.addConfig('user.email', 'devryan@example.com');
+    await writeFile(
+      join(directory, '.git', 'config'),
+      '\n[core]\n\thooksPath = .git/hooks\n',
+      { flag: 'a' },
+    );
+    await writeFile(join(directory, 'tracked.txt'), 'initial\n');
+    await git.add('tracked.txt');
+    await git.commit('initial commit');
+    const hookPath = join(directory, '.git', 'hooks', 'post-checkout');
+    await writeFile(hookPath, [
+      '#!/bin/sh',
+      'printf "%s\\n%s\\n%s\\n%s\\n" "$PWD" "$1" "$2" "$3" > "$PWD/hook-result.txt"',
+      '',
+    ].join('\n'));
+    await chmod(hookPath, 0o700);
+
+    const runtime = configureWorktreeBootstrapRuntime({
+      store: createRecordStore({ directory: join(directory, '.operations') }),
+    });
+    const { receipt } = await runtime.beginOperation({
+      idempotencyKey: 'standard-post-checkout-hook',
+      directory,
+    });
+    await runtime.executeStage(receipt.operationId, 'prepare_remote', async () => undefined);
+    await runtime.executeStage(receipt.operationId, 'create_worktree', async () => undefined);
+    await runtime.executeStage(receipt.operationId, 'sync_project_metadata', async () => undefined);
+    await runtime.queue(receipt.operationId);
+    await runtime.queue(receipt.operationId);
+    await runtime.drain();
+
+    const head = (await git.revparse(['HEAD'])).trim();
+    expect((await readFile(join(directory, 'hook-result.txt'), 'utf8')).trim().split('\n')).toEqual([
+      await realpath(directory),
+      '0000000000000000000000000000000000000000',
+      head,
+      '1',
+    ]);
+    expect(await runtime.getReceipt(receipt.operationId)).toMatchObject({
+      status: 'ready',
+      stages: {
+        run_post_checkout_hook: {
+          status: 'completed',
+          output: { presence: true, exitStatus: 0 },
+        },
+      },
+    });
   });
 });
 

@@ -2,6 +2,11 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { normalizeBrowserUrl } from '@/components/layout/browserUrl';
+import {
+  sanitizeBrowserViewportMode,
+  type BrowserViewportMode,
+} from '@/components/layout/browserViewport';
+import { sanitizeBrowserFaviconUrl } from '@/components/layout/browserFavicon';
 import { getSafeStorage } from './utils/safeStorage';
 import { devtools } from './utils/devtoolsGate';
 
@@ -9,6 +14,8 @@ export type ManualBrowserTab = {
   id: string;
   url: string;
   label: string;
+  viewportMode: BrowserViewportMode;
+  faviconUrl?: string;
 };
 
 export type ManualBrowserWorkspace = {
@@ -25,6 +32,9 @@ type ManualBrowserTabsState = {
   addTab: (directory: string, url?: string | null) => string | null;
   activateTab: (directory: string, tabId: string) => void;
   updateTabUrl: (directory: string, tabId: string, url: string) => void;
+  updateTabTitle: (directory: string, tabId: string, title: string | null) => void;
+  updateTabFavicon: (directory: string, tabId: string, url: string | null) => void;
+  updateTabViewportMode: (directory: string, tabId: string, mode: BrowserViewportMode) => void;
   reorderTabs: (directory: string, activeTabId: string, overTabId: string) => void;
   closeTab: (directory: string, tabId: string) => void;
   replaceWorkspace: (directory: string, workspace: unknown) => void;
@@ -66,12 +76,21 @@ export const browserTabLabelForUrl = (value: string): string => {
   }
 };
 
+const browserHostForUrl = (value: string): string => {
+  try {
+    return new URL(normalizeBrowserUrl(value)).host;
+  } catch {
+    return '';
+  }
+};
+
 const createTab = (value?: string | null): ManualBrowserTab => {
   const url = normalizeBrowserUrl(value || '');
   return {
     id: randomId('browser-tab'),
     url,
     label: browserTabLabelForUrl(url),
+    viewportMode: 'responsive',
   };
 };
 
@@ -87,14 +106,21 @@ const createWorkspace = (value?: string | null): ManualBrowserWorkspace => {
 
 const sanitizeTab = (value: unknown): ManualBrowserTab | null => {
   if (!value || typeof value !== 'object') return null;
-  const candidate = value as { id?: unknown; url?: unknown; label?: unknown };
+  const candidate = value as { id?: unknown; url?: unknown; label?: unknown; viewportMode?: unknown; faviconUrl?: unknown };
   const id = typeof candidate.id === 'string' ? candidate.id.trim().slice(0, 220) : '';
   if (!id) return null;
   const url = normalizeBrowserUrl(typeof candidate.url === 'string' ? candidate.url : '');
   const label = typeof candidate.label === 'string' && candidate.label.trim()
     ? candidate.label.trim().slice(0, 120)
     : browserTabLabelForUrl(url);
-  return { id, url, label };
+  const faviconUrl = sanitizeBrowserFaviconUrl(candidate.faviconUrl);
+  return {
+    id,
+    url,
+    label,
+    viewportMode: sanitizeBrowserViewportMode(candidate.viewportMode),
+    ...(faviconUrl ? { faviconUrl } : {}),
+  };
 };
 
 export const sanitizeManualBrowserWorkspace = (value: unknown): ManualBrowserWorkspace | null => {
@@ -175,7 +201,12 @@ export const useManualBrowserTabsStore = create<ManualBrowserTabsState>()(
           const shouldNavigate = Boolean(url && nextUrl !== 'about:blank');
           const tabs = shouldNavigate
             ? current.tabs.map((tab) => tab.id === current.activeTabId
-              ? { ...tab, url: nextUrl, label: browserTabLabelForUrl(nextUrl) }
+              ? {
+                ...tab,
+                url: nextUrl,
+                label: browserTabLabelForUrl(nextUrl),
+                ...(browserHostForUrl(tab.url) !== browserHostForUrl(nextUrl) ? { faviconUrl: undefined } : {}),
+              }
               : tab)
             : current.tabs;
           const next = { ...current, tabs, touchedAt: Date.now() };
@@ -229,13 +260,94 @@ export const useManualBrowserTabsStore = create<ManualBrowserTabsState>()(
             const current = state.byDirectory[normalizedDirectory];
             const existing = current?.tabs.find((tab) => tab.id === normalizedTabId);
             if (!current || !existing || existing.url === nextUrl) return state;
+            const hostChanged = browserHostForUrl(existing.url) !== browserHostForUrl(nextUrl);
             return {
               byDirectory: {
                 ...state.byDirectory,
                 [normalizedDirectory]: {
                   ...current,
                   tabs: current.tabs.map((tab) => tab.id === normalizedTabId
-                    ? { ...tab, url: nextUrl, label: browserTabLabelForUrl(nextUrl) }
+                    ? {
+                      ...tab,
+                      url: nextUrl,
+                      label: browserTabLabelForUrl(nextUrl),
+                      ...(hostChanged ? { faviconUrl: undefined } : {}),
+                    }
+                    : tab),
+                  touchedAt: Date.now(),
+                },
+              },
+            };
+          });
+        },
+
+        updateTabTitle: (directory, tabId, title) => {
+          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedTabId = (tabId || '').trim();
+          if (!normalizedDirectory || !normalizedTabId) return;
+          set((state) => {
+            const current = state.byDirectory[normalizedDirectory];
+            const existing = current?.tabs.find((tab) => tab.id === normalizedTabId);
+            if (!current || !existing) return state;
+            const label = typeof title === 'string' && title.trim()
+              ? title.trim().slice(0, 120)
+              : browserTabLabelForUrl(existing.url);
+            if (existing.label === label) return state;
+            return {
+              byDirectory: {
+                ...state.byDirectory,
+                [normalizedDirectory]: {
+                  ...current,
+                  tabs: current.tabs.map((tab) => tab.id === normalizedTabId
+                    ? { ...tab, label }
+                    : tab),
+                  touchedAt: Date.now(),
+                },
+              },
+            };
+          });
+        },
+
+        updateTabFavicon: (directory, tabId, url) => {
+          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedTabId = (tabId || '').trim();
+          const faviconUrl = sanitizeBrowserFaviconUrl(url);
+          if (!normalizedDirectory || !normalizedTabId) return;
+          set((state) => {
+            const current = state.byDirectory[normalizedDirectory];
+            const existing = current?.tabs.find((tab) => tab.id === normalizedTabId);
+            if (!current || !existing || existing.faviconUrl === faviconUrl) return state;
+            return {
+              byDirectory: {
+                ...state.byDirectory,
+                [normalizedDirectory]: {
+                  ...current,
+                  tabs: current.tabs.map((tab) => tab.id === normalizedTabId
+                    ? { ...tab, faviconUrl }
+                    : tab),
+                  touchedAt: Date.now(),
+                },
+              },
+            };
+          });
+        },
+
+        updateTabViewportMode: (directory, tabId, mode) => {
+          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedTabId = (tabId || '').trim();
+          const viewportMode = sanitizeBrowserViewportMode(mode);
+          if (!normalizedDirectory || !normalizedTabId) return;
+          set((state) => {
+            const current = state.byDirectory[normalizedDirectory];
+            const existing = current?.tabs.find((tab) => tab.id === normalizedTabId);
+            if (!current || !existing || existing.viewportMode === viewportMode) return state;
+            return {
+              byDirectory: {
+                ...state.byDirectory,
+                [normalizedDirectory]: {
+                  ...current,
+                  tabs: current.tabs.map((tab) => tab.id === normalizedTabId
+                    ? { ...tab, viewportMode }
                     : tab),
                   touchedAt: Date.now(),
                 },
@@ -276,18 +388,9 @@ export const useManualBrowserTabsStore = create<ManualBrowserTabsState>()(
             const removedIndex = current.tabs.findIndex((tab) => tab.id === normalizedTabId);
             if (removedIndex === -1) return state;
             if (current.tabs.length === 1) {
-              const replacement = createTab();
-              return {
-                byDirectory: {
-                  ...state.byDirectory,
-                  [normalizedDirectory]: {
-                    ...current,
-                    tabs: [replacement],
-                    activeTabId: replacement.id,
-                    touchedAt: Date.now(),
-                  },
-                },
-              };
+              const byDirectory = { ...state.byDirectory };
+              delete byDirectory[normalizedDirectory];
+              return { byDirectory };
             }
             const tabs = current.tabs.filter((tab) => tab.id !== normalizedTabId);
             const activeTabId = current.activeTabId === normalizedTabId
@@ -324,7 +427,7 @@ export const useManualBrowserTabsStore = create<ManualBrowserTabsState>()(
       }),
       {
         name: 'manual-browser-tabs-store',
-        version: 1,
+        version: 2,
         storage: createJSONStorage(() => getSafeStorage()),
         migrate: (persistedState) => ({
           byDirectory: sanitizeManualBrowserWorkspaces(
